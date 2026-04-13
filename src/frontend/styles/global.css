@@ -284,6 +284,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0; /* allow flex child to scroll */
+}
+
+/* Prevent flex children from being squashed */
+.viewer-messages > * {
+  flex-shrink: 0;
 }
 
 .message-bubble {
@@ -583,6 +589,14 @@ body {
 
 .session-link-pr {
   background: #238636;
+  color: white;
+}
+.session-link-pr-merged {
+  background: #8957e5;
+  color: white;
+}
+.session-link-pr-closed {
+  background: #6b7280;
   color: white;
 }
 .session-link-linear {

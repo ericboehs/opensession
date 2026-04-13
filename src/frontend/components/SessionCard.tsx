@@ -77,10 +77,10 @@ export function SessionCard({ session, onClick, onDeleted }: Props) {
               href={session.prUrl}
               target="_blank"
               rel="noopener"
-              className="session-link session-link-pr"
+              className={`session-link ${session.prState === "MERGED" ? "session-link-pr-merged" : session.prState === "CLOSED" ? "session-link-pr-closed" : "session-link-pr"}`}
               onClick={(e) => e.stopPropagation()}
             >
-              PR
+              PR {session.prState === "MERGED" ? "✓" : ""}
             </a>
           )}
           {session.linearIssue?.url && (

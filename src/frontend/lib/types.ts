@@ -13,6 +13,7 @@ export interface UnifiedSession {
   isRunning: boolean;
   transcriptPath: string | null;
   prUrl?: string;
+  prState?: "OPEN" | "MERGED" | "CLOSED";
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
 }

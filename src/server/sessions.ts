@@ -230,21 +230,22 @@ function getRunningPids(): Map<string, number> {
   return running;
 }
 
-// PR URL cache: branch → URL, refreshed every 60s
-let prCache: { data: Map<string, string>; ts: number } | null = null;
+// PR cache: branch → { url, state }, refreshed every 60s
+interface PrInfo { url: string; state: "OPEN" | "MERGED" | "CLOSED"; }
+let prCache: { data: Map<string, PrInfo>; ts: number } | null = null;
 const PR_CACHE_TTL = 60_000;
 
-function getPrsByBranch(): Map<string, string> {
+function getPrsByBranch(): Map<string, PrInfo> {
   if (prCache && Date.now() - prCache.ts < PR_CACHE_TTL) return prCache.data;
-  const map = new Map<string, string>();
+  const map = new Map<string, PrInfo>();
   try {
     const raw = execSync(
-      'gh pr list --repo tellahq/tella-fusion --state all --limit 200 --json headRefName,url',
+      'gh pr list --repo tellahq/tella-fusion --state all --limit 200 --json headRefName,url,state',
       { encoding: "utf-8", timeout: 10_000 }
     );
-    const prs = JSON.parse(raw) as Array<{ headRefName: string; url: string }>;
+    const prs = JSON.parse(raw) as Array<{ headRefName: string; url: string; state: string }>;
     for (const pr of prs) {
-      map.set(pr.headRefName, pr.url);
+      map.set(pr.headRefName, { url: pr.url, state: pr.state as PrInfo["state"] });
     }
   } catch (e) {
     console.error("Failed to fetch PRs:", e);
@@ -289,12 +290,15 @@ export function getAllSessions(): UnifiedSession[] {
     allSessions.push(session);
   }
 
-  // Enrich with PR URLs
+  // Enrich with PR URLs and state
   const prs = getPrsByBranch();
   for (const session of allSessions) {
     if (session.branch) {
-      const prUrl = prs.get(session.branch);
-      if (prUrl) session.prUrl = prUrl;
+      const pr = prs.get(session.branch);
+      if (pr) {
+        session.prUrl = pr.url;
+        session.prState = pr.state;
+      }
     }
   }
 

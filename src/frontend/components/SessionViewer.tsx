@@ -126,7 +126,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           </span>
           <span className="viewer-branch">{session.title}</span>
           {session.prUrl && (
-            <a href={session.prUrl} target="_blank" rel="noopener" className="session-link session-link-pr">PR</a>
+            <a href={session.prUrl} target="_blank" rel="noopener" className={`session-link ${session.prState === "MERGED" ? "session-link-pr-merged" : session.prState === "CLOSED" ? "session-link-pr-closed" : "session-link-pr"}`}>
+              PR {session.prState === "MERGED" ? "✓" : ""}
+            </a>
           )}
           {session.linearIssue?.url && (
             <a href={session.linearIssue.url} target="_blank" rel="noopener" className="session-link session-link-linear">{session.linearIssue.identifier}</a>
