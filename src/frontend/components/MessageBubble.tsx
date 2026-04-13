@@ -8,13 +8,12 @@ interface Props {
 
 export function MessageBubble({ entry }: Props) {
   const html = useMemo(() => {
-    if (entry.type === "user") return null; // rendered as plain text
     try {
-      return marked.parse(entry.content, { async: false }) as string;
+      return marked.parse(entry.content, { async: false, breaks: true }) as string;
     } catch {
       return entry.content;
     }
-  }, [entry.content, entry.type]);
+  }, [entry.content]);
 
   if (entry.type === "system") {
     return (
@@ -24,20 +23,10 @@ export function MessageBubble({ entry }: Props) {
     );
   }
 
-  if (entry.type === "user") {
-    return (
-      <div className="message-bubble message-user">
-        <div className="message-content">{entry.content}</div>
-        <div className="message-time">
-          {new Date(entry.timestamp).toLocaleTimeString()}
-        </div>
-      </div>
-    );
-  }
+  const className = entry.type === "user" ? "message-user" : "message-assistant";
 
-  // assistant
   return (
-    <div className="message-bubble message-assistant">
+    <div className={`message-bubble ${className}`}>
       <div
         className="message-content markdown"
         dangerouslySetInnerHTML={{ __html: html || "" }}
