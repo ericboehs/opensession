@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Dashboard } from "./components/Dashboard";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
-import { UserPicker } from "./components/UserPicker";
+import { UserPicker, UserGate } from "./components/UserPicker";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import type { UnifiedSession } from "./lib/types";
@@ -15,7 +15,7 @@ type Route =
   | { page: "new" };
 
 function App() {
-  const { sessions, loading } = useSessions();
+  const { sessions, loading, refresh } = useSessions();
   const { connected, send, addHandler } = useWebSocket();
   const [route, setRoute] = useState<Route>({ page: "dashboard" });
 
@@ -47,6 +47,7 @@ function App() {
   }
 
   return (
+    <UserGate>
     <div className="app">
       <header className="app-header">
         <h1
@@ -69,6 +70,7 @@ function App() {
             loading={loading}
             onSelectSession={(s) => navigate(`/session/${encodeURIComponent(s.id)}`)}
             onNewSession={() => navigate("/new")}
+            onRefresh={refresh}
           />
         )}
         {route.page === "session" && (
@@ -89,6 +91,7 @@ function App() {
         )}
       </main>
     </div>
+    </UserGate>
   );
 }
 

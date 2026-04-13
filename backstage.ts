@@ -3,15 +3,15 @@
 import { randomUUIDv7 } from "bun";
 import { mkdirSync, existsSync, writeFileSync, readFileSync } from "fs";
 import homepage from "./src/frontend/index.html";
-import { getAllSessions } from "./src/server/sessions";
+import { getAllSessions, deleteSession } from "./src/server/sessions";
 import { parseTranscript } from "./src/server/jsonl-parser";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
-import { listWorktrees, createWorktree } from "./src/server/worktree";
+import { listWorktrees, createWorktree, removeWorktree } from "./src/server/worktree";
 import { runClaude, isSessionBusy, cancelRun } from "./src/server/claude-runner";
 import type { UnifiedSession, BackstageSessionFile } from "./src/server/types";
 
 const PORT = parseInt(process.env.PORT || "3850");
-const HOST = process.env.HOST || "100.65.135.7";
+const HOST = process.env.HOST || "127.0.0.1";
 const HOME = process.env.HOME || "/home/ubuntu";
 const BACKSTAGE_SESSIONS_DIR = `${HOME}/.backstage-sessions`;
 
@@ -84,6 +84,25 @@ const server = Bun.serve<WSClientData>({
       return Response.json(parseTranscript(session.transcriptPath));
     }
 
+    // Delete a session (+ optional worktree cleanup)
+    if (path.match(/^\/backstage\/api\/sessions\/(.+)$/) && req.method === "DELETE") {
+      const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)$/)![1]);
+      const session = findSession(sessionId);
+      if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+
+      const cleanWorktree = url.searchParams.get("worktree") === "true";
+      try {
+        deleteSession(session);
+        if (cleanWorktree && session.worktreeDir && session.branch) {
+          await removeWorktree(session.branch);
+        }
+        sessionsCache = null;
+        return Response.json({ ok: true });
+      } catch (e: any) {
+        return Response.json({ error: e.message }, { status: 500 });
+      }
+    }
+
     // List worktrees
     if (path === "/backstage/api/worktrees" && req.method === "GET") {
       return Response.json(await listWorktrees());
@@ -126,6 +145,9 @@ const server = Bun.serve<WSClientData>({
             ws.send(JSON.stringify({ type: "error", message: "Session not found" }));
             return;
           }
+
+          // Stop watching any previous session first
+          stopAllWatchesForClient(ws);
 
           // Update client state
           const data = ws.data;

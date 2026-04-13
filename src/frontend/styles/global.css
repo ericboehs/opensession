@@ -360,10 +360,12 @@ body {
 /* Tool Calls */
 .tool-call-block {
   align-self: flex-start;
+  width: 90%;
   max-width: 90%;
-  background: var(--tool-bg);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px 8px 8px 4px;
   font-size: 13px;
   overflow: hidden;
 }
@@ -375,6 +377,7 @@ body {
   padding: 8px 12px;
   cursor: pointer;
   user-select: none;
+  min-height: 36px;
 }
 .tool-call-header:hover {
   background: var(--surface-hover);
@@ -558,6 +561,158 @@ body {
   padding: 40px;
   color: var(--text-dim);
   font-size: 14px;
+}
+
+/* Session links */
+.session-card-links {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.session-link {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 4px;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+.session-link:hover { opacity: 0.8; }
+
+.session-link-pr {
+  background: #238636;
+  color: white;
+}
+.session-link-linear {
+  background: #5E6AD2;
+  color: white;
+}
+
+/* Session card actions */
+.session-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-delete-small {
+  display: none;
+  background: transparent;
+  color: var(--text-dim);
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.btn-delete-small:hover {
+  color: var(--red);
+  background: rgba(239, 68, 68, 0.1);
+}
+.session-card:hover .btn-delete-small {
+  display: block;
+}
+
+/* Delete confirmation */
+.delete-confirm {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.delete-confirm-text {
+  font-size: 13px;
+  color: var(--text-dim);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.delete-confirm-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-delete-wt {
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn-delete-only {
+  background: #92400e;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn-delete-cancel {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* User gate overlay */
+.user-gate-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.user-gate-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+}
+
+.user-gate-card h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.user-gate-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.user-gate-btn {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.user-gate-btn:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
 }
 
 /* Responsive */

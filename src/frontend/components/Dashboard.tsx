@@ -7,11 +7,12 @@ interface Props {
   loading: boolean;
   onSelectSession: (session: UnifiedSession) => void;
   onNewSession: () => void;
+  onRefresh: () => void;
 }
 
 type Filter = "all" | SessionSource;
 
-export function Dashboard({ sessions, loading, onSelectSession, onNewSession }: Props) {
+export function Dashboard({ sessions, loading, onSelectSession, onNewSession, onRefresh }: Props) {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
 
@@ -72,6 +73,7 @@ export function Dashboard({ sessions, loading, onSelectSession, onNewSession }: 
               key={s.id}
               session={s}
               onClick={() => onSelectSession(s)}
+              onDeleted={onRefresh}
             />
           ))}
         </div>

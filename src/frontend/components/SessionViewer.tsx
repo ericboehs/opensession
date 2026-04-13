@@ -125,6 +125,12 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             {session.source}
           </span>
           <span className="viewer-branch">{session.title}</span>
+          {session.prUrl && (
+            <a href={session.prUrl} target="_blank" rel="noopener" className="session-link session-link-pr">PR</a>
+          )}
+          {session.linearIssue?.url && (
+            <a href={session.linearIssue.url} target="_blank" rel="noopener" className="session-link session-link-linear">{session.linearIssue.identifier}</a>
+          )}
           {isBusy && <span className="streaming-indicator">● Running</span>}
         </div>
       </div>

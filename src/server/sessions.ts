@@ -1,5 +1,6 @@
-import { readdirSync, readFileSync, statSync } from "fs";
+import { readdirSync, readFileSync, statSync, unlinkSync } from "fs";
 import { existsSync } from "fs";
+import { execSync } from "child_process";
 import type {
   UnifiedSession,
   SlackSessionFile,
@@ -229,6 +230,29 @@ function getRunningPids(): Map<string, number> {
   return running;
 }
 
+// PR URL cache: branch → URL, refreshed every 60s
+let prCache: { data: Map<string, string>; ts: number } | null = null;
+const PR_CACHE_TTL = 60_000;
+
+function getPrsByBranch(): Map<string, string> {
+  if (prCache && Date.now() - prCache.ts < PR_CACHE_TTL) return prCache.data;
+  const map = new Map<string, string>();
+  try {
+    const raw = execSync(
+      'gh pr list --repo tellahq/tella-fusion --state all --limit 200 --json headRefName,url',
+      { encoding: "utf-8", timeout: 10_000 }
+    );
+    const prs = JSON.parse(raw) as Array<{ headRefName: string; url: string }>;
+    for (const pr of prs) {
+      map.set(pr.headRefName, pr.url);
+    }
+  } catch (e) {
+    console.error("Failed to fetch PRs:", e);
+  }
+  prCache = { data: map, ts: Date.now() };
+  return map;
+}
+
 export function getAllSessions(): UnifiedSession[] {
   const slackSessions = scanSlackSessions();
   const linearSessions = scanLinearSessions();
@@ -265,6 +289,15 @@ export function getAllSessions(): UnifiedSession[] {
     allSessions.push(session);
   }
 
+  // Enrich with PR URLs
+  const prs = getPrsByBranch();
+  for (const session of allSessions) {
+    if (session.branch) {
+      const prUrl = prs.get(session.branch);
+      if (prUrl) session.prUrl = prUrl;
+    }
+  }
+
   // Sort by lastActivity descending
   allSessions.sort(
     (a, b) =>
@@ -272,4 +305,29 @@ export function getAllSessions(): UnifiedSession[] {
   );
 
   return allSessions;
+}
+
+export function deleteSession(session: UnifiedSession): void {
+  // Delete the session JSON file based on source
+  switch (session.source) {
+    case "slack": {
+      // ID format: slack-{filename}
+      const filename = session.id.replace(/^slack-/, "") + ".json";
+      const path = `${SLACK_SESSIONS_DIR}/${filename}`;
+      if (existsSync(path)) unlinkSync(path);
+      break;
+    }
+    case "linear": {
+      // ID format: linear-{branch}
+      const branch = session.id.replace(/^linear-/, "");
+      const path = `${LINEAR_SESSIONS_DIR}/${branch}.json`;
+      if (existsSync(path)) unlinkSync(path);
+      break;
+    }
+    case "backstage": {
+      const path = `${BACKSTAGE_SESSIONS_DIR}/${session.id}.json`;
+      if (existsSync(path)) unlinkSync(path);
+      break;
+    }
+  }
 }

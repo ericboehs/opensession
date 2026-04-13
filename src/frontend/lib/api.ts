@@ -20,6 +20,17 @@ export async function fetchWorktrees() {
   return res.json();
 }
 
+export async function deleteSessionApi(sessionId: string, cleanWorktree: boolean): Promise<void> {
+  const params = cleanWorktree ? "?worktree=true" : "";
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}${params}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to delete: ${res.status}`);
+  }
+}
+
 export function getWebSocketUrl(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}/backstage/ws`;

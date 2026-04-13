@@ -36,6 +36,21 @@ export async function listWorktrees(): Promise<WorktreeInfo[]> {
   }
 }
 
+export async function removeWorktree(branch: string): Promise<void> {
+  try {
+    // Use the wt delete script if available, otherwise git worktree remove
+    const wtPath = `${WORKTREES_DIR}/tella-fusion-${branch}`;
+    if (await Bun.file("/home/ubuntu/bin/wt").exists()) {
+      await $`/home/ubuntu/bin/wt delete ${branch}`.quiet();
+    } else {
+      await $`git -C ${TELLA_FUSION} worktree remove ${wtPath} --force`.quiet();
+    }
+  } catch (e) {
+    console.error(`Failed to remove worktree for ${branch}:`, e);
+    // Don't throw — session deletion should still succeed
+  }
+}
+
 export async function createWorktree(branch: string): Promise<string> {
   const wtPath = `${WORKTREES_DIR}/tella-fusion-${branch}`;
 

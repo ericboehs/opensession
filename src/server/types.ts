@@ -12,6 +12,7 @@ export interface UnifiedSession {
   createdAt: string;
   isRunning: boolean;
   transcriptPath: string | null;
+  prUrl?: string;
   // Source-specific
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
