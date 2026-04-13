@@ -264,6 +264,33 @@ body {
   white-space: nowrap;
 }
 
+.viewer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-viewer-delete {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-viewer-delete:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.viewer-delete-confirm {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
 .streaming-indicator {
   color: var(--green);
   font-size: 13px;

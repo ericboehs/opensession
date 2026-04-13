@@ -3,6 +3,7 @@ import type { UnifiedSession, TranscriptEntry, WSServerMessage } from "../lib/ty
 import { MessageBubble } from "./MessageBubble";
 import { ToolCallBlock } from "./ToolCallBlock";
 import { getCurrentUser } from "./UserPicker";
+import { deleteSessionApi } from "../lib/api";
 
 interface Props {
   session: UnifiedSession;
@@ -101,8 +102,29 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     }
   }
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const isBusy = session.isRunning || isStreaming;
   const canSend = connected && !isBusy && session.transcriptPath;
+
+  async function handleDelete(cleanWorktree: boolean) {
+    setDeleting(true);
+    try {
+      await deleteSessionApi(session.id, cleanWorktree);
+      onBack();
+    } catch (e: any) {
+      alert(`Delete failed: ${e.message}`);
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
+
+  const prClass = session.prState === "MERGED"
+    ? "session-link-pr-merged"
+    : session.prState === "CLOSED"
+      ? "session-link-pr-closed"
+      : "session-link-pr";
 
   return (
     <div className="session-viewer">
@@ -125,15 +147,42 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             {session.source}
           </span>
           <span className="viewer-branch">{session.title}</span>
+          {isBusy && <span className="streaming-indicator">● Running</span>}
+        </div>
+        <div className="viewer-header-actions">
           {session.prUrl && (
-            <a href={session.prUrl} target="_blank" rel="noopener" className={`session-link ${session.prState === "MERGED" ? "session-link-pr-merged" : session.prState === "CLOSED" ? "session-link-pr-closed" : "session-link-pr"}`}>
+            <a href={session.prUrl} target="_blank" rel="noopener" className={`session-link ${prClass}`}>
               PR {session.prState === "MERGED" ? "✓" : ""}
             </a>
           )}
           {session.linearIssue?.url && (
-            <a href={session.linearIssue.url} target="_blank" rel="noopener" className="session-link session-link-linear">{session.linearIssue.identifier}</a>
+            <a href={session.linearIssue.url} target="_blank" rel="noopener" className="session-link session-link-linear">
+              {session.linearIssue.identifier}
+            </a>
           )}
-          {isBusy && <span className="streaming-indicator">● Running</span>}
+          {!showDeleteConfirm ? (
+            <button
+              className="btn-viewer-delete"
+              onClick={() => setShowDeleteConfirm(true)}
+              title="Delete session"
+            >
+              Delete
+            </button>
+          ) : (
+            <div className="viewer-delete-confirm">
+              {session.worktreeDir && (
+                <button className="btn-delete-wt" onClick={() => handleDelete(true)} disabled={deleting}>
+                  {deleting ? "..." : "+ Worktree"}
+                </button>
+              )}
+              <button className="btn-delete-only" onClick={() => handleDelete(false)} disabled={deleting}>
+                {deleting ? "..." : "Session"}
+              </button>
+              <button className="btn-delete-cancel" onClick={() => setShowDeleteConfirm(false)}>
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
