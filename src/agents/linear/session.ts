@@ -118,6 +118,7 @@ export async function generateBranchName(title: string, issueIdentifier?: string
     const q = query({
       prompt: `Generate a 1-2 word branch name (lowercase, hyphen-separated, no special chars) for this ticket: "${title}". Output ONLY the branch name, nothing else.`,
       options: {
+        model: "haiku",
         maxTurns: 1,
         cwd: "/home/ubuntu/projects/tella-fusion",
         allowedTools: [],

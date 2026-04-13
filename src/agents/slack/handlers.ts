@@ -87,6 +87,7 @@ async function generateBranchName(text: string): Promise<string> {
     const q = query({
       prompt: `Generate a 1-3 word branch name (lowercase, hyphen-separated, no special chars) for this task: "${text.substring(0, 200)}". Output ONLY the branch name, nothing else.`,
       options: {
+        model: "haiku",
         maxTurns: 1,
         cwd: DEFAULT_CWD,
         allowedTools: [],
@@ -97,8 +98,8 @@ async function generateBranchName(text: string): Promise<string> {
 
     let branchName = "";
     for await (const msg of q) {
-      if (msg.type === "result" && msg.subtype === "success") {
-        branchName = (msg as any).result;
+      if (msg.type === "result" && (msg as any).subtype === "success") {
+        branchName = (msg as any).result || "";
       }
     }
 
