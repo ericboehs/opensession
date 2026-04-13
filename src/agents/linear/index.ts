@@ -63,8 +63,8 @@ export class LinearAgent implements AgentModule {
 
   async shutdown(): Promise<void> {
     for (const [, session] of activeSessions) {
-      if (session.claudeProcess) {
-        session.claudeProcess.kill();
+      if (session.abortController) {
+        session.abortController.abort();
       }
       if (session.ralphProcess) {
         session.ralphProcess.kill();

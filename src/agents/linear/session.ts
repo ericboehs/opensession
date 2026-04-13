@@ -1,8 +1,10 @@
 /**
  * Linear agent session lifecycle, Claude runner, polling, and Ralph mode.
  */
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import { spawn, execSync } from "child_process";
 import { unlinkSync } from "fs";
+import mcpConfig from "../../../mcp-config.json";
 import { linearEmailToGithubUsername } from "../../server/shared/user-mappings";
 import {
   createAgentActivity,
@@ -49,7 +51,7 @@ export interface ActiveSession {
   linearSessionId: string;
   lastMessageUuid: string | null;
   pollInterval?: ReturnType<typeof setInterval>;
-  claudeProcess?: ReturnType<typeof Bun.spawn>;
+  abortController?: AbortController;
   isPlanning: boolean;
   planningConversation: Array<{ role: "michael" | "user"; content: string; timestamp: string }>;
   awaitingImplementationConfirmation: boolean;
@@ -111,14 +113,28 @@ Co-Authored-By: ${lastActiveUser.name} <${email}>`;
 // --- Branch & Worktree ---
 
 export async function generateBranchName(title: string, issueIdentifier?: string): Promise<string> {
-  const proc = Bun.spawn([
-    "/home/ubuntu/.local/bin/claude",
-    "-p",
-    `Generate a 1-2 word branch name (lowercase, hyphen-separated, no special chars) for this ticket: "${title}". Output ONLY the branch name, nothing else.`,
-  ]);
-  const output = await new Response(proc.stdout).text();
-  let branch = output
-    .trim()
+  let branchName = "";
+  try {
+    const q = query({
+      prompt: `Generate a 1-2 word branch name (lowercase, hyphen-separated, no special chars) for this ticket: "${title}". Output ONLY the branch name, nothing else.`,
+      options: {
+        maxTurns: 1,
+        cwd: "/home/ubuntu/projects/tella-fusion",
+        allowedTools: [],
+        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        executable: "bun",
+      },
+    });
+    for await (const msg of q) {
+      if (msg.type === "result" && (msg as any).subtype === "success") {
+        branchName = ((msg as any).result || "").trim();
+      }
+    }
+  } catch (e) {
+    console.error("[linear] Error generating branch name:", e);
+  }
+
+  let branch = branchName
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "")
     .slice(0, 30);
@@ -299,90 +315,93 @@ export async function runClaudeHeadless(
   resumeClaudeId?: string,
   session?: ActiveSession
 ): Promise<{ result: string; claudeSessionId: string }> {
-  const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"];
-  if (resumeClaudeId) {
-    args.push("--resume", resumeClaudeId);
-  }
+  console.log(`[linear] Running Claude SDK in ${worktreeDir}${resumeClaudeId ? ` (resuming ${resumeClaudeId})` : ""}`);
 
-  console.log(`[linear] Running Claude headless in ${worktreeDir}`);
-
-  const proc = Bun.spawn(["/home/ubuntu/.local/bin/claude", ...args], {
-    cwd: worktreeDir,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: {
-      ...process.env,
-      PATH: "/home/ubuntu/.cargo/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/home/ubuntu/bin:/home/ubuntu/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      HOME: "/home/ubuntu",
-    },
-  });
-
+  const abortController = new AbortController();
   if (session) {
-    session.claudeProcess = proc;
+    session.abortController = abortController;
   }
 
   let result = "";
-  let claudeSessionId = "";
-  let buffer = "";
+  let claudeSessionId = resumeClaudeId || "";
   let lastThoughtTime = 0;
   const THOUGHT_THROTTLE_MS = 5000;
 
-  const reader = proc.stdout.getReader();
-  const decoder = new TextDecoder();
-
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    const q = query({
+      prompt,
+      options: {
+        resume: resumeClaudeId || undefined,
+        cwd: worktreeDir,
+        allowedTools: [
+          "Bash", "Read", "Edit", "Write", "Grep", "Glob",
+          "Task", "TaskOutput", "WebFetch", "WebSearch",
+          "NotebookEdit", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
+          "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
+        ],
+        canUseTool: async (_toolName: string, input: unknown) => {
+          return { behavior: "allow" as const, updatedInput: input };
+        },
+        mcpServers: mcpConfig.mcpServers as any,
+        strictMcpConfig: true,
+        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        executable: "bun",
+        abortController,
+        systemPrompt: {
+          type: "preset" as const,
+          preset: "claude_code" as const,
+        },
+        settingSources: ["user", "project"],
+      },
+    });
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+    for await (const msg of q) {
+      if (abortController.signal.aborted) break;
 
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const data = JSON.parse(line);
+      // Extract session ID from init
+      if (msg.type === "system" && (msg as any).subtype === "init") {
+        claudeSessionId = (msg as any).session_id || claudeSessionId;
+      }
 
-          if (data.type === "assistant" && data.message?.content) {
-            const text = data.message.content
-              .filter((c: any) => c.type === "text")
-              .map((c: any) => c.text)
-              .join("");
+      // Stream thoughts to Linear (throttled)
+      if (msg.type === "assistant" && (msg as any).message?.content) {
+        const content = (msg as any).message.content;
+        if (Array.isArray(content)) {
+          const text = content
+            .filter((c: any) => c.type === "text")
+            .map((c: any) => c.text)
+            .join("");
 
-            if (text && text.length > 20) {
-              const now = Date.now();
-              if (now - lastThoughtTime > THOUGHT_THROTTLE_MS) {
-                lastThoughtTime = now;
-                createAgentActivity(accessToken, linearSessionId, {
-                  type: "thought",
-                  body: text.substring(0, 2000),
-                }).catch((e) => console.error("[linear] Failed to send thought:", e));
-              }
+          if (text && text.length > 20) {
+            const now = Date.now();
+            if (now - lastThoughtTime > THOUGHT_THROTTLE_MS) {
+              lastThoughtTime = now;
+              createAgentActivity(accessToken, linearSessionId, {
+                type: "thought",
+                body: text.substring(0, 2000),
+              }).catch((e) => console.error("[linear] Failed to send thought:", e));
             }
           }
+        }
+      }
 
-          if (data.type === "result") {
-            result = data.result || "";
-            claudeSessionId = data.session_id || "";
-            console.log(`[linear] Claude finished. Session ID: ${claudeSessionId}`);
-          }
-        } catch {}
+      // Final result
+      if (msg.type === "result") {
+        const rm = msg as any;
+        claudeSessionId = rm.session_id || claudeSessionId;
+        result = rm.subtype === "success" ? (rm.result || "") : `Error: ${rm.errors?.join(", ") || "Unknown"}`;
+        console.log(`[linear] Claude finished. Session ID: ${claudeSessionId}`);
       }
     }
+  } catch (e: any) {
+    if (!abortController.signal.aborted) {
+      console.error(`[linear] Claude SDK error:`, e);
+      result = `Error: ${e.message || String(e)}`;
+    }
   } finally {
-    reader.releaseLock();
-  }
-
-  await proc.exited;
-
-  if (session) {
-    session.claudeProcess = undefined;
-  }
-
-  if (proc.exitCode !== 0) {
-    const stderr = await new Response(proc.stderr).text();
-    console.error(`[linear] Claude exited with code ${proc.exitCode}: ${stderr}`);
+    if (session) {
+      session.abortController = undefined;
+    }
   }
 
   return { result, claudeSessionId };

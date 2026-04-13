@@ -1,6 +1,8 @@
 /**
  * Plain agent webhook and mention handlers.
  */
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import mcpConfig from "../../../mcp-config.json";
 import {
   getThreadWithMessages,
   postNote,
@@ -82,70 +84,60 @@ export interface PlainWebhookPayload {
   };
 }
 
-// --- Claude runner (Bun.spawn, same as original) ---
+// --- Claude runner (Agent SDK) ---
 
 async function runClaude(
   prompt: string,
   cwd: string = TELLA_FUSION_DIR,
   resumeSessionId?: string
 ): Promise<{ result: string; sessionId: string }> {
-  const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"];
-  if (resumeSessionId) {
-    args.push("--resume", resumeSessionId);
-  }
-
-  console.log(`[plain] Running Claude in ${cwd}`);
-
-  const proc = Bun.spawn(["/home/ubuntu/.local/bin/claude", ...args], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: {
-      ...process.env,
-      PATH: "/home/ubuntu/.cargo/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/home/ubuntu/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      HOME: "/home/ubuntu",
-    },
-  });
+  console.log(`[plain] Running Claude SDK in ${cwd}${resumeSessionId ? ` (resuming ${resumeSessionId})` : ""}`);
 
   let result = "";
-  let sessionId = "";
-  let buffer = "";
-
-  const reader = proc.stdout.getReader();
-  const decoder = new TextDecoder();
+  let sessionId = resumeSessionId || "";
 
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    const q = query({
+      prompt,
+      options: {
+        resume: resumeSessionId || undefined,
+        cwd,
+        allowedTools: [
+          "Bash", "Read", "Edit", "Write", "Grep", "Glob",
+          "Task", "TaskOutput", "WebFetch", "WebSearch",
+          "NotebookEdit", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
+          "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
+        ],
+        canUseTool: async (_toolName: string, input: unknown) => {
+          return { behavior: "allow" as const, updatedInput: input };
+        },
+        mcpServers: mcpConfig.mcpServers as any,
+        strictMcpConfig: true,
+        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        executable: "bun",
+        systemPrompt: {
+          type: "preset" as const,
+          preset: "claude_code" as const,
+        },
+        settingSources: ["user", "project"],
+      },
+    });
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+    for await (const msg of q) {
+      if (msg.type === "system" && (msg as any).subtype === "init") {
+        sessionId = (msg as any).session_id || sessionId;
+      }
 
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const data = JSON.parse(line);
-          if (data.type === "result") {
-            result = data.result || "";
-            sessionId = data.session_id || "";
-            console.log(`[plain] Claude finished. Session ID: ${sessionId}`);
-          }
-        } catch {
-          // Not valid JSON
-        }
+      if (msg.type === "result") {
+        const rm = msg as any;
+        sessionId = rm.session_id || sessionId;
+        result = rm.subtype === "success" ? (rm.result || "") : `Error: ${rm.errors?.join(", ") || "Unknown"}`;
+        console.log(`[plain] Claude finished. Session ID: ${sessionId}`);
       }
     }
-  } finally {
-    reader.releaseLock();
-  }
-
-  await proc.exited;
-
-  if (proc.exitCode !== 0) {
-    const stderr = await new Response(proc.stderr).text();
-    console.error(`[plain] Claude exited with code ${proc.exitCode}: ${stderr}`);
+  } catch (e: any) {
+    console.error(`[plain] Claude SDK error:`, e);
+    result = `Error: ${e.message || String(e)}`;
   }
 
   return { result, sessionId };

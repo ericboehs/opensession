@@ -36,19 +36,6 @@ export function startWebhookServer(agents: AgentModule[]) {
       const url = new URL(req.url);
       const path = url.pathname;
 
-      // Health endpoint — combined from all agents
-      if (path === "/health" && req.method === "GET") {
-        const agentHealth: Record<string, unknown> = {};
-        for (const agent of activeAgents) {
-          agentHealth[agent.name] = agent.health();
-        }
-        return Response.json({
-          ok: true,
-          uptime: process.uptime(),
-          agents: agentHealth,
-        });
-      }
-
       // Look up route: "POST /slack/events"
       const routeKey = `${req.method} ${path}`;
       const handler = routeTable.get(routeKey);
@@ -82,16 +69,6 @@ export function startWebhookServer(agents: AgentModule[]) {
             }
           }
         }
-      }
-
-      // Root page
-      if (path === "/" && req.method === "GET") {
-        return new Response(
-          `<html><body><h1>Michael Webhook Server</h1>` +
-            `<p>Agents: ${activeAgents.map((a) => a.name).join(", ") || "none"}</p>` +
-            `<p><a href="/health">/health</a></p></body></html>`,
-          { headers: { "Content-Type": "text/html" } }
-        );
       }
 
       return Response.json({ error: "Not found" }, { status: 404 });

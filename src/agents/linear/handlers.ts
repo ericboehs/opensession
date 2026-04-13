@@ -259,9 +259,9 @@ export async function handleAgentSession(
     console.log(`[linear] Stop signal for issue: ${agentSession.issue.identifier}`);
     const session = activeSessions.get(agentSession.id);
     if (session) {
-      if (session.claudeProcess) {
-        session.claudeProcess.kill();
-        session.claudeProcess = undefined;
+      if (session.abortController) {
+        session.abortController.abort();
+        session.abortController = undefined;
       }
       if (session.isRalphMode && session.ralphProcess) {
         session.ralphProcess.kill();

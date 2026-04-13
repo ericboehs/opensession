@@ -67,9 +67,13 @@ const server = Bun.serve<WSClientData>({
       });
     }
 
-    // Health check
+    // Health check (includes agent health — Tailscale-only, not public)
     if (path === "/backstage/api/health") {
-      return Response.json({ ok: true, uptime: process.uptime() });
+      const agentHealth: Record<string, unknown> = {};
+      for (const a of agents) {
+        agentHealth[a.name] = a.health();
+      }
+      return Response.json({ ok: true, uptime: process.uptime(), agents: agentHealth });
     }
 
     // List sessions
