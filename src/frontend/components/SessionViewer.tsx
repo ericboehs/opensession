@@ -129,9 +129,6 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   return (
     <div className="session-viewer">
       <div className="viewer-header">
-        <button className="btn-back" onClick={onBack}>
-          ← Back
-        </button>
         <div className="viewer-title">
           <span
             className="source-badge"
@@ -141,7 +138,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                   ? "#4A154B"
                   : session.source === "linear"
                     ? "#5E6AD2"
-                    : "#0D9488",
+                    : session.source === "backstage"
+                      ? "#0D9488"
+                      : "#6B7280",
             }}
           >
             {session.source}
