@@ -14,6 +14,7 @@ function App() {
   const { connected, send, addHandler } = useWebSocket();
   const [selected, setSelected] = useState<UnifiedSession | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Keep selected session in sync with latest data
   const currentSession = selected
@@ -23,18 +24,29 @@ function App() {
   function handleSelect(session: UnifiedSession) {
     setSelected(session);
     setShowNew(false);
+    setSidebarOpen(false);
   }
 
   function handleNewSession() {
     setShowNew(true);
     setSelected(null);
+    setSidebarOpen(false);
   }
 
   return (
     <UserGate>
       <div className="app">
         <header className="app-header">
-          <h1 className="app-title">Backstage</h1>
+          <div className="app-header-left">
+            <button
+              className="hamburger"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              aria-label="Toggle sidebar"
+            >
+              <span /><span /><span />
+            </button>
+            <h1 className="app-title">Backstage</h1>
+          </div>
           <div className="app-header-right">
             <span className={`connection-dot ${connected ? "connected" : "disconnected"}`} />
             <UserPicker />
@@ -42,12 +54,19 @@ function App() {
         </header>
 
         <div className="app-body">
-          <Sidebar
-            sessions={sessions}
-            selectedId={currentSession?.id || null}
-            onSelect={handleSelect}
-            onNewSession={handleNewSession}
-          />
+          {/* Overlay to close sidebar on mobile */}
+          {sidebarOpen && (
+            <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+          )}
+
+          <div className={`sidebar-container ${sidebarOpen ? "sidebar-open" : ""}`}>
+            <Sidebar
+              sessions={sessions}
+              selectedId={currentSession?.id || null}
+              onSelect={handleSelect}
+              onNewSession={handleNewSession}
+            />
+          </div>
 
           <main className="detail-pane">
             {showNew ? (

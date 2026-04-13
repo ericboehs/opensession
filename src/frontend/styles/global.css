@@ -54,6 +54,12 @@ body {
   flex-shrink: 0;
 }
 
+.app-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .app-title {
   font-size: 16px;
   font-weight: 600;
@@ -65,6 +71,27 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Hamburger — hidden on desktop */
+.hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.hamburger span {
+  display: block;
+  height: 2px;
+  background: var(--text);
+  border-radius: 1px;
 }
 
 .connection-dot {
@@ -92,7 +119,15 @@ body {
   min-height: 0;
 }
 
-/* ─── Sidebar ─── */
+/* ─── Sidebar container ─── */
+.sidebar-container {
+  flex-shrink: 0;
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
 .sidebar {
   width: var(--sidebar-w);
   min-width: var(--sidebar-w);
@@ -101,6 +136,7 @@ body {
   border-right: 1px solid var(--border);
   background: var(--surface);
   overflow: hidden;
+  height: 100%;
 }
 
 .sidebar-header {
@@ -872,13 +908,57 @@ body {
 }
 
 /* ─── Responsive ─── */
-@media (max-width: 640px) {
-  .sidebar {
-    width: 220px;
-    min-width: 220px;
+@media (max-width: 768px) {
+  .hamburger {
+    display: flex;
   }
 
-  .message-bubble { max-width: 95%; }
-  .message-assistant { max-width: 98%; }
-  .viewer-input { padding: 10px 12px; }
+  .sidebar-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .sidebar-container.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  .sidebar {
+    width: 280px;
+    min-width: 280px;
+    height: 100vh;
+  }
+
+  .viewer-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .viewer-input {
+    padding: 10px 12px;
+  }
+
+  .prompt-input {
+    font-size: 16px; /* prevent iOS zoom */
+  }
+
+  .msg {
+    padding: 10px 12px 8px;
+  }
+
+  .tool {
+    margin-left: 8px;
+  }
 }
