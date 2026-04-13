@@ -57,9 +57,14 @@ function findTranscriptPath(
     const path = getTranscriptPath(worktreeDir, sessionId);
     if (existsSync(path)) return path;
   }
-  // Fallback: search common project dirs
-  const homePath = `${CLAUDE_PROJECTS_DIR}/-home-ubuntu/${sessionId}.jsonl`;
-  if (existsSync(homePath)) return homePath;
+  // Fallback: check common CWD paths the agents use
+  const fallbacks = [
+    `${CLAUDE_PROJECTS_DIR}/-home-ubuntu-projects-tella-fusion/${sessionId}.jsonl`,
+    `${CLAUDE_PROJECTS_DIR}/-home-ubuntu/${sessionId}.jsonl`,
+  ];
+  for (const path of fallbacks) {
+    if (existsSync(path)) return path;
+  }
   return null;
 }
 
