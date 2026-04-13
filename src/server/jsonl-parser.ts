@@ -49,6 +49,9 @@ function resolveSlackIds(text: string): string {
     const channelName = name || SLACK_CHANNELS[id] || id;
     return `[#${channelName}](https://app.slack.com/client/T8VB51YAR/${id})`;
   });
+  // Ensure --- separators have blank lines around them (prevents setext heading)
+  text = text.replace(/([^\n])\n---(\n)/g, "$1\n\n---$2");
+  text = text.replace(/\n---\n([^\n])/g, "\n---\n\n$1");
   return text;
 }
 
