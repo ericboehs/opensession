@@ -17,23 +17,28 @@ export function MessageBubble({ entry }: Props) {
 
   if (entry.type === "system") {
     return (
-      <div className="message-bubble message-system">
-        <em>{entry.content}</em>
+      <div className="cc-system">
+        {entry.content}
       </div>
     );
   }
 
-  const className = entry.type === "user" ? "message-user" : "message-assistant";
+  if (entry.type === "user") {
+    return (
+      <div className="cc-user">
+        <span className="cc-user-prompt">❯</span>
+        <div className="cc-user-text">{entry.content}</div>
+      </div>
+    );
+  }
 
+  // assistant
   return (
-    <div className={`message-bubble ${className}`}>
+    <div className="cc-assistant">
       <div
-        className="message-content markdown"
+        className="cc-assistant-text markdown"
         dangerouslySetInnerHTML={{ __html: html || "" }}
       />
-      <div className="message-time">
-        {new Date(entry.timestamp).toLocaleTimeString()}
-      </div>
     </div>
   );
 }

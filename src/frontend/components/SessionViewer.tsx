@@ -214,8 +214,8 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
         )}
 
         {streamText && (
-          <div className="message-bubble message-assistant streaming">
-            <div className="message-content">{streamText}</div>
+          <div className="cc-assistant cc-streaming">
+            <div className="cc-assistant-text">{streamText}</div>
           </div>
         )}
 

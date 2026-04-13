@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import type { UnifiedSession, SessionSource } from "../lib/types";
 import { relativeTime } from "../lib/api";
+import { getCurrentUser } from "./UserPicker";
 
 const SOURCE_COLORS: Record<string, string> = {
   slack: "#4A154B",
@@ -35,6 +36,17 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession }: Props)
 
   const grouped = useMemo(() => {
     const map = new Map<string, UnifiedSession[]>();
+    const currentUser = getCurrentUser().toLowerCase();
+
+    // "Mine" group: sessions started by the current user
+    const mine = filtered.filter(
+      (s) => s.startedBy && s.startedBy.toLowerCase() === currentUser
+    );
+    if (mine.length > 0) {
+      map.set("mine", mine);
+    }
+
+    // Source groups
     for (const source of SOURCE_ORDER) {
       const items = filtered.filter((s) => s.source === source);
       if (items.length > 0) {
@@ -81,11 +93,15 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession }: Props)
               <span className="sidebar-group-chevron">
                 {collapsed.has(source) ? "▸" : "▾"}
               </span>
-              <span
-                className="sidebar-group-dot"
-                style={{ backgroundColor: SOURCE_COLORS[source] || "#6B7280" }}
-              />
-              <span className="sidebar-group-name">{source}</span>
+              {source !== "mine" && (
+                <span
+                  className="sidebar-group-dot"
+                  style={{ backgroundColor: SOURCE_COLORS[source] || "#6B7280" }}
+                />
+              )}
+              <span className="sidebar-group-name">
+                {source === "mine" ? `${getCurrentUser()}'s sessions` : source}
+              </span>
               <span className="sidebar-group-count">{items.length}</span>
             </button>
 
