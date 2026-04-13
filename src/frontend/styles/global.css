@@ -264,6 +264,12 @@ body {
   white-space: nowrap;
 }
 
+.viewer-started-by {
+  color: var(--text-dim);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .viewer-header-actions {
   display: flex;
   align-items: center;

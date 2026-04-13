@@ -147,6 +147,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             {session.source}
           </span>
           <span className="viewer-branch">{session.title}</span>
+          {session.startedBy && (
+            <span className="viewer-started-by">by {session.startedBy}</span>
+          )}
           {isBusy && <span className="streaming-indicator">● Running</span>}
         </div>
         <div className="viewer-header-actions">
