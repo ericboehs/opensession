@@ -1,0 +1,962 @@
+/**
+ * Core event handlers for the Slack agent.
+ *
+ * handleMessageEvent  — DM messages
+ * handleMentionEvent  — @mention in channels
+ * processMessage      — runs the Claude Agent SDK query() for a queued message
+ */
+
+import { existsSync } from "fs";
+import { execSync } from "child_process";
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  SDKResultMessage,
+  PermissionResult,
+  PostToolUseHookInput,
+  HookJSONOutput,
+} from "@anthropic-ai/claude-agent-sdk";
+
+import { markdownToSlack } from "../../server/shared/markdown";
+import { SLACK_SYSTEM_PROMPT_APPEND } from "./prompts";
+import {
+  sendSlackMessage,
+  addReaction,
+  removeReaction,
+  getUserInfo,
+  fetchThreadContext,
+  fetchChannelContext,
+  postSlackBlocks,
+  updateSlackBlocks,
+  openSlackModal,
+  slackApiCall,
+  MESSAGES,
+} from "./slack-api";
+import { SlackStreamer, buildToolStatus, isSilentTool } from "./streamer";
+import { enqueueMessage, getOrCreateQueue } from "./queue";
+import type { QueuedMessage, SessionQueue } from "./queue";
+import { sessionQueues } from "./queue";
+import { pollForVercelPreview } from "./github-reviews";
+import {
+  isWorktreeChannel,
+  getWorktreeDirForChannel,
+  worktreeChannels,
+} from "./worktree-channels";
+import {
+  activeSessions,
+  processedEvents,
+  pendingAnswers,
+  getSessionKey,
+  saveSession,
+  loadSession,
+  DEFAULT_CWD,
+  MCP_CONFIG_PATH,
+  SESSION_DIR,
+  GITHUB_REPO,
+  slackBotUserId,
+} from "./state";
+import type { SlackSession, PendingAnswer } from "./state";
+
+const ALLOWED_USER_ID = process.env.ALLOWED_SLACK_USER_ID;
+
+// ---------------------------------------------------------------------------
+// Worktree helpers
+// ---------------------------------------------------------------------------
+
+function branchExists(branch: string): boolean {
+  try {
+    const { spawnSync } = require("child_process");
+    // Check if worktree directory exists
+    const worktreeDir = `/home/ubuntu/worktrees/tella-fusion-${branch}`;
+    const dirCheck = spawnSync("test", ["-d", worktreeDir]);
+    if (dirCheck.status === 0) return true;
+    // Check if branch exists in git (local or registered worktree)
+    const gitCheck = spawnSync(
+      "git",
+      ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+      { cwd: DEFAULT_CWD }
+    );
+    return gitCheck.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+async function generateBranchName(text: string): Promise<string> {
+  let baseName: string;
+  try {
+    const q = query({
+      prompt: `Generate a 1-3 word branch name (lowercase, hyphen-separated, no special chars) for this task: "${text.substring(0, 200)}". Output ONLY the branch name, nothing else.`,
+      options: {
+        maxTurns: 1,
+        cwd: DEFAULT_CWD,
+        allowedTools: [],
+        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        executable: "bun",
+      },
+    });
+
+    let branchName = "";
+    for await (const msg of q) {
+      if (msg.type === "result" && msg.subtype === "success") {
+        branchName = (msg as any).result;
+      }
+    }
+
+    baseName =
+      branchName
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "")
+        .slice(0, 30) || "slack-task";
+  } catch (e) {
+    console.error("[slack] Failed to generate branch name:", e);
+    baseName = "slack-task";
+  }
+
+  // Deduplicate: if branch already exists, append a numeric suffix
+  if (!branchExists(baseName)) return baseName;
+  for (let i = 2; i <= 20; i++) {
+    const candidate = `${baseName}-${i}`;
+    if (!branchExists(candidate)) return candidate;
+  }
+  // Last resort: timestamp suffix
+  return `${baseName}-${Date.now().toString(36)}`;
+}
+
+function createWorktree(
+  branch: string,
+  userId: string,
+  message: string
+): string {
+  const worktreeDir = `/home/ubuntu/worktrees/tella-fusion-${branch}`;
+
+  try {
+    const { spawnSync } = require("child_process");
+    const result = spawnSync(
+      "/home/ubuntu/bin/wt",
+      [
+        "new-slack",
+        branch,
+        `--user=${userId}`,
+        `--message=${(message || "").substring(0, 500)}`,
+      ],
+      { encoding: "utf-8", timeout: 120000 }
+    );
+
+    if (result.status !== 0) {
+      const stderr =
+        result.stderr?.trim() || result.stdout?.trim() || "unknown error";
+      throw new Error(
+        `wt new-slack exited with code ${result.status}: ${stderr}`
+      );
+    }
+    console.log(`[slack] Created worktree: ${branch}`);
+  } catch (e) {
+    console.error(`[slack] Failed to create worktree ${branch}:`, e);
+    throw e;
+  }
+
+  return worktreeDir;
+}
+
+// ---------------------------------------------------------------------------
+// AskUserQuestion via Block Kit
+// ---------------------------------------------------------------------------
+
+async function handleAskUserQuestion(
+  sessionKey: string,
+  input: Record<string, unknown>,
+  channel: string,
+  threadTs: string
+): Promise<PermissionResult> {
+  const questions = input.questions as Array<{
+    question: string;
+    header: string;
+    options: Array<{ label: string; description: string }>;
+    multiSelect?: boolean;
+  }>;
+
+  if (!questions || questions.length === 0) {
+    return { behavior: "allow", updatedInput: input };
+  }
+
+  const answers: Record<string, string> = {};
+
+  for (let qIdx = 0; qIdx < questions.length; qIdx++) {
+    const q = questions[qIdx]!;
+    const questionId = `${Date.now()}-${qIdx}`;
+
+    // Build Block Kit blocks
+    const blocks: any[] = [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: q.header || "Question",
+          emoji: true,
+        },
+      },
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: q.question },
+      },
+    ];
+
+    // Add option descriptions as context
+    if (q.options.length > 0) {
+      const descriptionLines = q.options
+        .map(
+          (opt, i) =>
+            `*${i + 1}. ${opt.label}*${opt.description ? ` \u2014 ${opt.description}` : ""}`
+        )
+        .join("\n");
+      blocks.push({
+        type: "section",
+        text: { type: "mrkdwn", text: descriptionLines },
+      });
+    }
+
+    // Action buttons
+    const buttons: any[] = q.options.map((opt, optIdx) => ({
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: opt.label.substring(0, 75),
+        emoji: true,
+      },
+      action_id: `askq-${questionId}-opt-${optIdx}`,
+      value: opt.label,
+    }));
+
+    // "Other..." button
+    buttons.push({
+      type: "button",
+      text: { type: "plain_text", text: "Other...", emoji: true },
+      action_id: `askq-${questionId}-other`,
+      style: "primary",
+    });
+
+    blocks.push({
+      type: "actions",
+      elements: buttons,
+    });
+
+    // Post to Slack
+    const postResult = await postSlackBlocks(
+      channel,
+      `Question: ${q.question}`,
+      blocks,
+      threadTs
+    );
+    const blockMsgTs = postResult?.ts || "";
+
+    // Create promise to wait for answer
+    const answer = await new Promise<string>((resolve) => {
+      const timeoutId = setTimeout(() => {
+        const pending = pendingAnswers.get(questionId);
+        if (pending) {
+          pendingAnswers.delete(questionId);
+          // Update the message to show it timed out
+          updateSlackBlocks(
+            channel,
+            blockMsgTs,
+            `Question timed out: ${q.question}`,
+            [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `~${q.question}~\n_Timed out \u2014 skipped_`,
+                },
+              },
+            ]
+          ).catch(() => {});
+          resolve("__TIMED_OUT__");
+        }
+      }, 5 * 60 * 1000); // 5 minute timeout
+
+      pendingAnswers.set(questionId, {
+        resolve,
+        messageTs: blockMsgTs,
+        channel,
+        threadTs,
+        timeoutId,
+        questionText: q.question,
+        header: q.header || "Question",
+      });
+    });
+
+    if (answer === "__TIMED_OUT__") {
+      return {
+        behavior: "deny",
+        message: `Question "${q.question}" timed out after 5 minutes with no response.`,
+      };
+    }
+
+    answers[q.question] = answer;
+
+    // Update the Block Kit message to show the selected answer
+    await updateSlackBlocks(channel, blockMsgTs, `Answered: ${answer}`, [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*${q.header || "Question"}*\n${q.question}\n\n*Answer:* ${answer}`,
+        },
+      },
+    ]).catch(() => {});
+  }
+
+  return {
+    behavior: "allow",
+    updatedInput: { ...input, answers },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// processMessage — core: runs the Claude Agent SDK query()
+// ---------------------------------------------------------------------------
+
+export async function processMessage(
+  sessionKey: string,
+  msg: QueuedMessage
+): Promise<void> {
+  const { prompt, channel, userName, isNewSession } = msg;
+  const threadTs = msg.threadTs;
+
+  // Load or create session
+  let session: SlackSession | undefined = activeSessions.get(sessionKey);
+  if (!session) {
+    session = (await loadSession(sessionKey)) ?? undefined;
+    if (session) {
+      activeSessions.set(sessionKey, session);
+    }
+  }
+
+  if (isNewSession && !session) {
+    session = {
+      channel,
+      threadTs,
+      userId: msg.userName,
+      claudeSessionId: null,
+      worktreeDir: msg.worktreeDir || null,
+      branch: msg.branch || null,
+      mode: msg.worktreeDir ? "worktree" : "conversational",
+      createdAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString(),
+    };
+    activeSessions.set(sessionKey, session);
+  }
+
+  if (!session) {
+    console.error(`[slack] No session found for ${sessionKey}`);
+    await sendSlackMessage(channel, "No active session found.", threadTs);
+    return;
+  }
+
+  // Set up abort controller
+  const abortController = new AbortController();
+  const sq = getOrCreateQueue(sessionKey);
+  sq.abortController = abortController;
+
+  // Read MCP config
+  let mcpConfig: { mcpServers: Record<string, any> } = { mcpServers: {} };
+  try {
+    const file = Bun.file(MCP_CONFIG_PATH);
+    if (await file.exists()) {
+      mcpConfig = JSON.parse(await file.text());
+    }
+  } catch (e) {
+    console.warn("[slack] Failed to load MCP config:", e);
+  }
+
+  // Set up streaming (stream starts lazily on first content)
+  const streamer = new SlackStreamer(channel, threadTs, msg.userId);
+  await streamer.setStatus("is thinking...");
+
+  // Recreate worktree if it was cleaned up (revived thread)
+  if (
+    session.worktreeDir &&
+    !existsSync(session.worktreeDir) &&
+    session.branch
+  ) {
+    console.log(
+      `[slack] [revive] Worktree ${session.branch} was cleaned up, recreating...`
+    );
+    await streamer.setStatus("recreating worktree...");
+    try {
+      const { spawnSync } = require("child_process");
+      const branch = session.branch;
+      const wtPath = session.worktreeDir;
+
+      // Prune stale registrations
+      spawnSync("git", ["worktree", "prune"], { cwd: DEFAULT_CWD });
+
+      // Fetch latest main
+      spawnSync("git", ["fetch", "origin", "main", "--quiet"], {
+        cwd: DEFAULT_CWD,
+        timeout: 30000,
+      });
+
+      // Create worktree — reuse existing branch or create from main
+      let addResult;
+      if (
+        spawnSync(
+          "git",
+          ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+          { cwd: DEFAULT_CWD }
+        ).status === 0
+      ) {
+        addResult = spawnSync("git", ["worktree", "add", wtPath, branch], {
+          cwd: DEFAULT_CWD,
+          encoding: "utf-8",
+          timeout: 60000,
+        });
+      } else {
+        addResult = spawnSync(
+          "git",
+          ["worktree", "add", "-b", branch, wtPath, "main"],
+          { cwd: DEFAULT_CWD, encoding: "utf-8", timeout: 60000 }
+        );
+      }
+
+      if (addResult.status !== 0) {
+        throw new Error(
+          `git worktree add failed: ${addResult.stderr?.trim() || addResult.stdout?.trim()}`
+        );
+      }
+
+      // Rebase on latest main
+      spawnSync("git", ["pull", "origin", "main", "--rebase"], {
+        cwd: wtPath,
+        encoding: "utf-8",
+        timeout: 60000,
+      });
+
+      // Copy env files (quick, no bun install — Claude can do that if needed)
+      const envFiles = [
+        [".envrc", ".envrc"],
+        ["packages/core/webapp/.env.local", "packages/core/webapp/.env.local"],
+        ["packages/core/instant/.env", "packages/core/instant/.env"],
+        ["packages/core/temporal/.env", "packages/core/temporal/.env"],
+      ];
+      for (const [src, dst] of envFiles) {
+        try {
+          spawnSync("cp", [`${DEFAULT_CWD}/${src}`, `${wtPath}/${dst}`]);
+        } catch {}
+      }
+
+      console.log(`[slack] [revive] Worktree ${branch} recreated`);
+      // Reset Claude session since old one is stale after cleanup
+      session.claudeSessionId = null;
+      await saveSession(session);
+    } catch (e) {
+      console.error(
+        `[slack] [revive] Failed to recreate worktree ${session.branch}:`,
+        e
+      );
+      await streamer.error(`Failed to recreate worktree: ${e}`);
+      await streamer.clearStatus();
+      return;
+    }
+  }
+
+  const cwd = session.worktreeDir || DEFAULT_CWD;
+
+  console.log(
+    `[slack] Running Claude SDK for ${sessionKey} in ${cwd}${session.claudeSessionId ? ` (resuming ${session.claudeSessionId})` : ""}`
+  );
+
+  let resultText = "";
+  let resultSessionId = session.claudeSessionId || "";
+
+  try {
+    const q = query({
+      prompt,
+      options: {
+        resume: session.claudeSessionId || undefined,
+        cwd,
+        allowedTools: [
+          "Bash",
+          "Read",
+          "Edit",
+          "Write",
+          "Grep",
+          "Glob",
+          "Task",
+          "TaskOutput",
+          "WebFetch",
+          "WebSearch",
+          "NotebookEdit",
+          "EnterPlanMode",
+          "ExitPlanMode",
+          "TaskCreate",
+          "TaskUpdate",
+          "TaskList",
+          "TaskGet",
+          "Skill",
+          "ListMcpResourcesTool",
+          "ReadMcpResourceTool",
+          "ToolSearch",
+        ],
+        canUseTool: async (toolName, input, options) => {
+          if (toolName === "AskUserQuestion") {
+            return handleAskUserQuestion(
+              sessionKey,
+              input,
+              channel,
+              threadTs
+            );
+          }
+          // Allow everything else that isn't in allowedTools (e.g. MCP tools)
+          return { behavior: "allow", updatedInput: input };
+        },
+        mcpServers: mcpConfig.mcpServers,
+        strictMcpConfig: true,
+        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        executable: "bun",
+        abortController,
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          append: SLACK_SYSTEM_PROMPT_APPEND,
+        },
+        settingSources: ["user", "project"],
+        hooks: {
+          PostToolUse: [
+            {
+              matcher: "Bash",
+              hooks: [
+                async (
+                  input: PostToolUseHookInput | any
+                ): Promise<HookJSONOutput> => {
+                  const command = input?.tool_input?.command || "";
+                  if (
+                    typeof command === "string" &&
+                    command.includes("git push")
+                  ) {
+                    const PATH = `/home/ubuntu/.cargo/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/home/ubuntu/bin:/home/ubuntu/.npm-global/bin:${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`;
+                    try {
+                      console.log(
+                        `[slack] [hook] Running just format after git push in ${cwd}`
+                      );
+                      execSync("just format", {
+                        cwd,
+                        encoding: "utf-8",
+                        timeout: 120000,
+                        env: { ...process.env, PATH },
+                      });
+                      const diff = execSync(
+                        "git diff --quiet 2>&1; echo $?",
+                        { cwd, encoding: "utf-8" }
+                      ).trim();
+                      if (diff !== "0") {
+                        execSync(
+                          'git add -u && git commit -m "format" && git push',
+                          {
+                            cwd,
+                            encoding: "utf-8",
+                            timeout: 60000,
+                          }
+                        );
+                        console.log(
+                          `[slack] [hook] Format commit pushed in ${cwd}`
+                        );
+                      }
+                    } catch (e) {
+                      console.error(
+                        `[slack] [hook] Format after push failed:`,
+                        e
+                      );
+                    }
+                  }
+                  // Detect PR creation and poll for Vercel preview
+                  if (
+                    typeof command === "string" &&
+                    command.includes("gh pr create")
+                  ) {
+                    const response = String(input?.tool_response || "");
+                    const prMatch = response.match(
+                      /github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/
+                    );
+                    if (prMatch) {
+                      const prNumber = parseInt(prMatch[1], 10);
+                      console.log(
+                        `[slack] [hook] PR #${prNumber} created, polling for Vercel preview`
+                      );
+                      pollForVercelPreview(prNumber, channel, threadTs).catch(
+                        (e) =>
+                          console.error(
+                            `[slack] [vercel] Preview poll error:`,
+                            e
+                          )
+                      );
+                    }
+                  }
+                  return {} as HookJSONOutput;
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    for await (const sdkMsg of q) {
+      if (abortController.signal.aborted) break;
+
+      if (sdkMsg.type === "system" && sdkMsg.subtype === "init") {
+        resultSessionId = (sdkMsg as any).session_id;
+        console.log(
+          `[slack] SDK session initialized: ${resultSessionId}`
+        );
+      }
+
+      // Update assistant thread status based on tool calls
+      if (sdkMsg.type === "assistant" && (sdkMsg as any).message?.content) {
+        const content = (sdkMsg as any).message.content;
+        for (const block of content as any[]) {
+          if (block.type !== "tool_use") continue;
+
+          // TaskCreate -> use activeForm as status (high-level progress)
+          if (block.name === "TaskCreate") {
+            const status =
+              block.input?.activeForm ||
+              block.input?.subject ||
+              "Working...";
+            await streamer.setStatus(status);
+            continue;
+          }
+
+          // Skip silent/read-only tools — don't change status
+          if (isSilentTool(block.name)) continue;
+
+          // Write/action tools -> show what's happening
+          await streamer.setStatus(buildToolStatus(block.name, block.input));
+        }
+      }
+
+      if (sdkMsg.type === "result") {
+        const resultMsg = sdkMsg as SDKResultMessage;
+        if (resultMsg.subtype === "success") {
+          resultText = resultMsg.result || "";
+        } else {
+          resultText = `Error: ${(resultMsg as any).errors?.join(", ") || "Unknown error"}`;
+        }
+        resultSessionId = resultMsg.session_id;
+        console.log(
+          `[slack] Claude SDK finished. Session ID: ${resultSessionId}, subtype: ${resultMsg.subtype}`
+        );
+      }
+    }
+  } catch (e: any) {
+    if (abortController.signal.aborted) {
+      console.log(`[slack] SDK query aborted for ${sessionKey}`);
+      await streamer.error("Cancelled by user.");
+      await streamer.clearStatus();
+      return;
+    }
+    console.error(`[slack] SDK query error for ${sessionKey}:`, e);
+    resultText = `Error running Claude: ${e.message || e}`;
+  }
+
+  // Update session
+  session.claudeSessionId = resultSessionId || session.claudeSessionId;
+  session.lastActivity = new Date().toISOString();
+  await saveSession(session);
+
+  // Also update the branch-named session file if it exists (written by `wt new-slack`)
+  if (session.branch) {
+    const branchFile = `${SESSION_DIR}/${session.branch}.json`;
+    try {
+      const bf = Bun.file(branchFile);
+      if (await bf.exists()) {
+        const branchData = JSON.parse(await bf.text());
+        branchData.claudeSessionId = session.claudeSessionId;
+        branchData.lastActivity = session.lastActivity;
+        await Bun.write(branchFile, JSON.stringify(branchData, null, 2));
+      }
+    } catch {}
+  }
+
+  // Send result to Slack via streamer (convert markdown -> Slack mrkdwn)
+  const formatted = resultText ? markdownToSlack(resultText) : "";
+  const truncated = formatted
+    ? formatted.length > 3000
+      ? formatted.substring(0, 3000) + "...(truncated)"
+      : formatted
+    : "Done! (no text output)";
+
+  await streamer.stop(truncated);
+  await streamer.clearStatus();
+}
+
+// ---------------------------------------------------------------------------
+// handleMessageEvent — DM messages
+// ---------------------------------------------------------------------------
+
+export async function handleMessageEvent(event: any): Promise<void> {
+  const { channel, user, ts, thread_ts } = event;
+  const text = event.text || "";
+
+  if (!text.trim()) return;
+
+  const isDM = channel.startsWith("D");
+  const threadTs = isDM ? thread_ts : thread_ts || ts;
+  const sessionKey = getSessionKey(channel, threadTs);
+
+  console.log(
+    `[slack] Message from ${user} in ${channel}: ${text.substring(0, 50)}...`
+  );
+
+  if (ALLOWED_USER_ID && user !== ALLOWED_USER_ID) {
+    console.log(`[slack] Ignoring message from non-allowed user: ${user}`);
+    return;
+  }
+
+  // Handle cancel/stop/abort
+  if (/^(cancel|stop|abort)$/i.test(text?.trim())) {
+    const sq = sessionQueues.get(sessionKey);
+    if (sq) {
+      if (sq.abortController) {
+        sq.abortController.abort();
+      }
+      sq.queue.length = 0;
+      await addReaction(channel, ts, "octagonal_sign");
+      await sendSlackMessage(
+        channel,
+        "Cancelled. Queue cleared.",
+        threadTs || ts
+      );
+    } else {
+      await sendSlackMessage(channel, "Nothing to cancel.", threadTs || ts);
+    }
+    return;
+  }
+
+  // Add eyes reaction to acknowledge
+  await addReaction(channel, ts, "eyes");
+
+  // Check for existing session
+  let session: SlackSession | undefined = activeSessions.get(sessionKey);
+  if (!session) {
+    session = (await loadSession(sessionKey)) ?? undefined;
+    if (session) {
+      activeSessions.set(sessionKey, session);
+    }
+  }
+
+  const userInfo = await getUserInfo(user);
+  const userName = userInfo?.real_name || user;
+
+  if (session) {
+    // Continue existing session
+    console.log(`[slack] Continuing session: ${sessionKey}`);
+    session.lastActivity = new Date().toISOString();
+
+    enqueueMessage(sessionKey, {
+      prompt: text,
+      channel,
+      threadTs: threadTs || ts,
+      messageTs: ts,
+      userName,
+      userId: user,
+      isNewSession: false,
+    });
+  } else {
+    // New session — always create a worktree
+    console.log(`[slack] New session: ${sessionKey}, mode: worktree`);
+
+    let worktreeDir: string | undefined;
+    let branch: string | undefined;
+    let prompt: string;
+
+    try {
+      branch = await generateBranchName(text);
+      worktreeDir = createWorktree(branch, user, text);
+
+      prompt = `${userName} sent me a Slack message:
+
+"${text}"
+
+---
+
+I'm now in a worktree (branch: ${branch}) for this task. Please analyze what needs to be done and help with this request. Start by exploring the codebase to understand the relevant code.`;
+    } catch (e) {
+      await sendSlackMessage(
+        channel,
+        `${MESSAGES.error} Failed to create worktree: ${e}`,
+        threadTs || ts
+      );
+      await removeReaction(channel, ts, "eyes").catch(() => {});
+      return;
+    }
+
+    enqueueMessage(sessionKey, {
+      prompt,
+      channel,
+      threadTs: threadTs || ts,
+      messageTs: ts,
+      userName,
+      userId: user,
+      isNewSession: true,
+      worktreeDir,
+      branch,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// handleMentionEvent — @mention in channels
+// ---------------------------------------------------------------------------
+
+export async function handleMentionEvent(event: any): Promise<void> {
+  const { channel, user, ts, thread_ts } = event;
+  const text = event.text || "";
+
+  const cleanText = text.replace(/<@[A-Z0-9]+>/g, "").trim();
+
+  if (!cleanText) return;
+
+  console.log(
+    `[slack] Mention from ${user} in ${channel}: ${cleanText?.substring(0, 50)}...`
+  );
+
+  // Worktree channels bypass the ALLOWED_USER_ID check — anyone can interact
+  const inWorktreeChannel = isWorktreeChannel(channel);
+
+  if (!inWorktreeChannel && ALLOWED_USER_ID && user !== ALLOWED_USER_ID) {
+    console.log(`[slack] Ignoring mention from non-allowed user: ${user}`);
+    return;
+  }
+
+  // For worktree channels, use channel ID as session key (one session per worktree)
+  // so all threads share the same Claude session context
+  const threadTs = thread_ts || ts;
+  const sessionKey = inWorktreeChannel
+    ? channel
+    : getSessionKey(channel, threadTs);
+
+  // Handle cancel/stop/abort
+  if (/^(cancel|stop|abort)$/i.test(cleanText)) {
+    const sq = sessionQueues.get(sessionKey);
+    if (sq) {
+      if (sq.abortController) {
+        sq.abortController.abort();
+      }
+      sq.queue.length = 0;
+      await addReaction(channel, ts, "octagonal_sign");
+      await sendSlackMessage(channel, "Cancelled. Queue cleared.", threadTs);
+    }
+    return;
+  }
+
+  await addReaction(channel, ts, "eyes");
+
+  const userInfo = await getUserInfo(user);
+  const userName = userInfo?.real_name || user;
+
+  // Worktree channel: route to existing worktree session
+  if (inWorktreeChannel) {
+    const worktreeDir = getWorktreeDirForChannel(channel)!;
+    const branch = worktreeChannels.get(channel)!;
+
+    console.log(
+      `[slack] Worktree channel mention from ${userName} for branch ${branch} (session: ${sessionKey})`
+    );
+
+    // Check for existing session
+    let session: SlackSession | undefined = activeSessions.get(sessionKey);
+    if (!session) {
+      session = (await loadSession(sessionKey)) ?? undefined;
+      if (session) {
+        activeSessions.set(sessionKey, session);
+      }
+    }
+
+    // Fetch thread/channel context
+    let context = "";
+    if (thread_ts) {
+      context = await fetchThreadContext(channel, thread_ts);
+    }
+
+    let prompt: string;
+    if (session) {
+      // Continue existing session
+      prompt = context
+        ? `${userName} said (in a thread):\n\nThread context:\n---\n${context}\n---\n\nTheir message: "${cleanText}"`
+        : `${userName} said: "${cleanText}"`;
+    } else {
+      // New session for this worktree channel
+      prompt = `${userName} tagged me in the #worktree-${branch} Slack channel.
+
+I'm working in worktree branch \`${branch}\` at \`${worktreeDir}\`.
+${context ? `\nThread context:\n---\n${context}\n---\n` : ""}
+Their message: "${cleanText}"
+
+Please help with this request. Start by exploring the codebase to understand what's relevant.`;
+    }
+
+    enqueueMessage(sessionKey, {
+      prompt,
+      channel,
+      threadTs,
+      messageTs: ts,
+      userName,
+      userId: user,
+      isNewSession: !session,
+      worktreeDir,
+      branch,
+    });
+    return;
+  }
+
+  // Regular (non-worktree) channel mention — existing behavior
+
+  // Fetch context
+  let context = "";
+  if (thread_ts) {
+    context = await fetchThreadContext(channel, thread_ts);
+  } else {
+    context = await fetchChannelContext(channel, 10);
+  }
+
+  let worktreeDir: string | undefined;
+  let branch: string | undefined;
+  let prompt: string;
+
+  try {
+    branch = await generateBranchName(cleanText);
+    worktreeDir = createWorktree(branch, user, cleanText);
+
+    prompt = `${userName} tagged me in a Slack ${thread_ts ? "thread" : "channel"} with this context:
+
+---
+${context}
+---
+
+Their message: "${cleanText}"
+
+I'm now in a worktree (branch: ${branch}) for this task. Please help with this request. Start by exploring the codebase to understand the relevant code.`;
+  } catch (e) {
+    await sendSlackMessage(
+      channel,
+      `${MESSAGES.error} Failed to create worktree: ${e}`,
+      threadTs
+    );
+    await removeReaction(channel, ts, "eyes").catch(() => {});
+    return;
+  }
+
+  enqueueMessage(sessionKey, {
+    prompt,
+    channel,
+    threadTs,
+    messageTs: ts,
+    userName,
+    userId: user,
+    isNewSession: true,
+    worktreeDir,
+    branch,
+  });
+}

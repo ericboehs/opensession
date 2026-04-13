@@ -8,6 +8,8 @@ import { parseTranscript } from "./src/server/jsonl-parser";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
 import { listWorktrees, createWorktree, removeWorktree } from "./src/server/worktree";
 import { runClaude, isSessionBusy, cancelRun } from "./src/server/claude-runner";
+import { startWebhookServer } from "./src/server/webhook-server";
+import type { AgentModule } from "./src/agents/types";
 import type { UnifiedSession, BackstageSessionFile } from "./src/server/types";
 
 const PORT = parseInt(process.env.PORT || "3850");
@@ -328,3 +330,80 @@ const server = Bun.serve<WSClientData>({
 });
 
 console.log(`Backstage running at http://${HOST}:${PORT}/backstage/`);
+
+// --- Agent loading and webhook server ---
+
+async function loadAgents(): Promise<AgentModule[]> {
+  const agents: AgentModule[] = [];
+
+  if (process.env.ENABLE_PLAIN_AGENT !== "false") {
+    try {
+      const { PlainAgent } = await import("./src/agents/plain/index");
+      agents.push(new PlainAgent());
+      console.log("[agents] Plain agent loaded");
+    } catch (e) {
+      console.error("[agents] Failed to load plain agent:", e);
+    }
+  }
+
+  if (process.env.ENABLE_LINEAR_AGENT !== "false") {
+    try {
+      const { LinearAgent } = await import("./src/agents/linear/index");
+      agents.push(new LinearAgent());
+      console.log("[agents] Linear agent loaded");
+    } catch (e) {
+      console.error("[agents] Failed to load linear agent:", e);
+    }
+  }
+
+  if (process.env.ENABLE_SLACK_AGENT !== "false") {
+    try {
+      const { SlackAgent } = await import("./src/agents/slack/index");
+      agents.push(new SlackAgent());
+      console.log("[agents] Slack agent loaded");
+    } catch (e) {
+      console.error("[agents] Failed to load slack agent:", e);
+    }
+  }
+
+  return agents;
+}
+
+// Start webhook server with enabled agents
+const agents = await loadAgents();
+const webhookServer = startWebhookServer(agents);
+
+// Run agent startup hooks
+for (const agent of agents) {
+  try {
+    await agent.startup();
+    console.log(`[agents] ${agent.name} agent started`);
+  } catch (e) {
+    console.error(`[agents] ${agent.name} agent startup failed:`, e);
+  }
+}
+
+// Graceful shutdown
+process.on("SIGTERM", async () => {
+  console.log("[shutdown] SIGTERM received, shutting down agents...");
+  for (const agent of agents) {
+    try {
+      await agent.shutdown();
+    } catch (e) {
+      console.error(`[shutdown] ${agent.name} shutdown error:`, e);
+    }
+  }
+  process.exit(0);
+});
+
+process.on("SIGINT", async () => {
+  console.log("[shutdown] SIGINT received, shutting down agents...");
+  for (const agent of agents) {
+    try {
+      await agent.shutdown();
+    } catch (e) {
+      console.error(`[shutdown] ${agent.name} shutdown error:`, e);
+    }
+  }
+  process.exit(0);
+});

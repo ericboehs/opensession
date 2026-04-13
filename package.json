@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",
+    "@team-plain/typescript-sdk": "^5.12.1",
     "marked": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

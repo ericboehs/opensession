@@ -1,0 +1,265 @@
+/**
+ * Slack API helpers for the Slack agent.
+ *
+ * Wraps common Slack Web API calls (chat.postMessage, reactions, etc.)
+ * using fetch() + SLACK_BOT_TOKEN from process.env.
+ */
+
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
+
+// ---------------------------------------------------------------------------
+// Status messages
+// ---------------------------------------------------------------------------
+
+export const MESSAGES = {
+  received: "Got it, let me think about this...",
+  thinking: "I'm analyzing the situation...",
+  worktreeCreating: "Setting up a worktree for this task...",
+  worktreeReady: "Worktree ready! Running Claude Code...",
+  complete: "Done!",
+  error: "Oops, something went wrong.",
+};
+
+// ---------------------------------------------------------------------------
+// Core API call helper
+// ---------------------------------------------------------------------------
+
+export async function slackApiCall(
+  method: string,
+  params: Record<string, any>
+): Promise<any> {
+  const resp = await fetch(`https://slack.com/api/${method}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await resp.json();
+  if (!(data as any).ok) {
+    console.warn(`[slack] Slack API ${method} error:`, (data as any).error);
+  }
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Message helpers
+// ---------------------------------------------------------------------------
+
+export async function sendSlackMessage(
+  channel: string,
+  text: string,
+  threadTs?: string
+): Promise<any> {
+  const response = await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+    },
+    body: JSON.stringify({
+      channel,
+      text,
+      thread_ts: threadTs,
+      mrkdwn: true,
+    }),
+  });
+  return response.json();
+}
+
+export async function updateSlackMessage(
+  channel: string,
+  ts: string,
+  text: string
+): Promise<any> {
+  const response = await fetch("https://slack.com/api/chat.update", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+    },
+    body: JSON.stringify({ channel, ts, text, mrkdwn: true }),
+  });
+  return response.json();
+}
+
+export async function addReaction(
+  channel: string,
+  ts: string,
+  emoji: string
+): Promise<void> {
+  await fetch("https://slack.com/api/reactions.add", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+    },
+    body: JSON.stringify({ channel, timestamp: ts, name: emoji }),
+  });
+}
+
+export async function removeReaction(
+  channel: string,
+  ts: string,
+  emoji: string
+): Promise<void> {
+  await fetch("https://slack.com/api/reactions.remove", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+    },
+    body: JSON.stringify({ channel, timestamp: ts, name: emoji }),
+  });
+}
+
+export async function postSlackBlocks(
+  channel: string,
+  fallbackText: string,
+  blocks: any[],
+  threadTs?: string
+): Promise<any> {
+  const response = await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+    },
+    body: JSON.stringify({
+      channel,
+      text: fallbackText,
+      blocks,
+      thread_ts: threadTs,
+    }),
+  });
+  return response.json();
+}
+
+export async function updateSlackBlocks(
+  channel: string,
+  ts: string,
+  text: string,
+  blocks: any[]
+): Promise<any> {
+  const response = await fetch("https://slack.com/api/chat.update", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+    },
+    body: JSON.stringify({ channel, ts, text, blocks }),
+  });
+  return response.json();
+}
+
+export async function openSlackModal(
+  triggerId: string,
+  questionId: string,
+  questionText: string
+): Promise<any> {
+  const response = await fetch("https://slack.com/api/views.open", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+    },
+    body: JSON.stringify({
+      trigger_id: triggerId,
+      view: {
+        type: "modal",
+        callback_id: `askq-modal-${questionId}`,
+        title: { type: "plain_text", text: "Custom Answer", emoji: true },
+        submit: { type: "plain_text", text: "Submit", emoji: true },
+        close: { type: "plain_text", text: "Cancel", emoji: true },
+        blocks: [
+          {
+            type: "section",
+            text: { type: "mrkdwn", text: questionText },
+          },
+          {
+            type: "input",
+            block_id: "answer_block",
+            element: {
+              type: "plain_text_input",
+              action_id: "answer_input",
+              multiline: true,
+              placeholder: {
+                type: "plain_text",
+                text: "Type your answer...",
+              },
+            },
+            label: { type: "plain_text", text: "Your answer", emoji: true },
+          },
+        ],
+      },
+    }),
+  });
+  return response.json();
+}
+
+// ---------------------------------------------------------------------------
+// Context fetchers
+// ---------------------------------------------------------------------------
+
+export async function fetchThreadContext(
+  channel: string,
+  threadTs: string
+): Promise<string> {
+  const response = await fetch(
+    `https://slack.com/api/conversations.replies?channel=${channel}&ts=${threadTs}&limit=20`,
+    { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
+  );
+  const data = (await response.json()) as any;
+
+  if (!data.ok || !data.messages) {
+    console.error("[slack] Failed to fetch thread:", data.error);
+    return "";
+  }
+
+  return data.messages
+    .map((msg: any) => `[${msg.user || "bot"}]: ${msg.text}`)
+    .join("\n\n");
+}
+
+export async function fetchChannelContext(
+  channel: string,
+  limit: number = 10
+): Promise<string> {
+  const response = await fetch(
+    `https://slack.com/api/conversations.history?channel=${channel}&limit=${limit}`,
+    { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
+  );
+  const data = (await response.json()) as any;
+
+  if (!data.ok || !data.messages) {
+    console.error("[slack] Failed to fetch channel history:", data.error);
+    return "";
+  }
+
+  return data.messages
+    .reverse()
+    .map((msg: any) => `[${msg.user || "bot"}]: ${msg.text}`)
+    .join("\n\n");
+}
+
+// ---------------------------------------------------------------------------
+// User info
+// ---------------------------------------------------------------------------
+
+export async function getUserInfo(
+  userId: string
+): Promise<{ name: string; real_name: string } | null> {
+  const response = await fetch(
+    `https://slack.com/api/users.info?user=${userId}`,
+    { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
+  );
+  const data = (await response.json()) as any;
+  if (data.ok && data.user) {
+    return {
+      name: data.user.name,
+      real_name: data.user.real_name || data.user.name,
+    };
+  }
+  return null;
+}
