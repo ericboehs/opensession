@@ -702,7 +702,10 @@ export async function handleMessageEvent(event: any): Promise<void> {
   if (!text.trim()) return;
 
   const isDM = channel.startsWith("D");
-  const threadTs = isDM ? thread_ts : thread_ts || ts;
+  // For DMs: thread_ts means a reply in an existing thread; no thread_ts means
+  // a new top-level message (e.g. Slack's "New Chat"). Use ts as the thread
+  // anchor so each top-level DM starts its own session/worktree.
+  const threadTs = thread_ts || ts;
   const sessionKey = getSessionKey(channel, threadTs);
 
   console.log(
