@@ -17,26 +17,27 @@ export function MessageBubble({ entry }: Props) {
 
   if (entry.type === "system") {
     return (
-      <div className="cc-system">
-        {entry.content}
+      <div className="msg msg-system">
+        <span className="msg-system-text">{entry.content}</span>
       </div>
     );
   }
 
   if (entry.type === "user") {
     return (
-      <div className="cc-user">
-        <span className="cc-user-prompt">❯</span>
-        <div className="cc-user-text">{entry.content}</div>
+      <div className="msg msg-user">
+        <div className="msg-label msg-label-user">You</div>
+        <div className="msg-body msg-body-user">{entry.content}</div>
       </div>
     );
   }
 
   // assistant
   return (
-    <div className="cc-assistant">
+    <div className="msg msg-assistant">
+      <div className="msg-label msg-label-assistant">Claude</div>
       <div
-        className="cc-assistant-text markdown"
+        className="msg-body msg-body-assistant markdown"
         dangerouslySetInnerHTML={{ __html: html || "" }}
       />
     </div>

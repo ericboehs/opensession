@@ -214,8 +214,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
         )}
 
         {streamText && (
-          <div className="cc-assistant cc-streaming">
-            <div className="cc-assistant-text">{streamText}</div>
+          <div className="msg msg-assistant msg-streaming">
+            <div className="msg-label msg-label-assistant">Claude</div>
+            <div className="msg-body msg-body-assistant">{streamText}</div>
           </div>
         )}
 
@@ -236,23 +237,28 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           </div>
         ) : (
           <>
-            <textarea
-              ref={textareaRef}
-              className="prompt-input"
-              placeholder={canSend ? "Send a prompt... (⌘+Enter)" : "Not connected"}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={!canSend}
-              rows={2}
-            />
-            <button
-              className="btn-send"
-              onClick={handleSend}
-              disabled={!canSend || !input.trim()}
-            >
-              Send
-            </button>
+            <div className="viewer-input-row">
+              <textarea
+                ref={textareaRef}
+                className="prompt-input"
+                placeholder={canSend ? "Send a message..." : "Not connected"}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={!canSend}
+                rows={2}
+              />
+              <button
+                className="btn-send"
+                onClick={handleSend}
+                disabled={!canSend || !input.trim()}
+              >
+                Send
+              </button>
+            </div>
+            <div className="prompt-hint">
+              {"\u2318"}+Enter to send
+            </div>
           </>
         )}
       </div>

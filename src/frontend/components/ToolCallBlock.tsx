@@ -12,23 +12,20 @@ export function ToolCallBlock({ entry, result }: Props) {
   const summary = getSummary(toolName, entry.toolInput, entry.content);
 
   return (
-    <div className="cc-tool">
-      <div
-        className="cc-tool-header"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <span className="cc-tool-prefix">⎿</span>
-        <span className="cc-tool-name">{toolName}</span>
-        <span className="cc-tool-summary">{summary}</span>
-        {result && <span className="cc-tool-check">✓</span>}
+    <div className="tool">
+      <div className="tool-header" onClick={() => setExpanded(!expanded)}>
+        <span className="tool-icon">{expanded ? "▾" : "▸"}</span>
+        <span className="tool-name">{toolName}</span>
+        <span className="tool-summary">{summary}</span>
+        {result && <span className="tool-ok">✓</span>}
       </div>
       {expanded && (
-        <div className="cc-tool-detail">
-          <pre className="cc-tool-pre">{formatInput(entry.toolInput)}</pre>
+        <div className="tool-detail">
+          <pre className="tool-pre">{formatInput(entry.toolInput)}</pre>
           {result && (
             <>
-              <div className="cc-tool-result-label">Output</div>
-              <pre className="cc-tool-pre">{truncate(result.content, 2000)}</pre>
+              <div className="tool-result-divider">Output</div>
+              <pre className="tool-pre">{truncate(result.content, 2000)}</pre>
             </>
           )}
         </div>
