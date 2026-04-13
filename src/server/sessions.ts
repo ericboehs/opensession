@@ -1,0 +1,275 @@
+import { readdirSync, readFileSync, statSync } from "fs";
+import { existsSync } from "fs";
+import type {
+  UnifiedSession,
+  SlackSessionFile,
+  LinearSessionFile,
+  CLISessionFile,
+  BackstageSessionFile,
+} from "./types";
+
+const HOME = process.env.HOME || "/home/ubuntu";
+const SLACK_SESSIONS_DIR = `${HOME}/.slack-sessions`;
+const LINEAR_SESSIONS_DIR = `${HOME}/.linear-sessions`;
+const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
+const BACKSTAGE_SESSIONS_DIR = `${HOME}/.backstage-sessions`;
+const CLAUDE_PROJECTS_DIR = `${HOME}/.claude/projects`;
+
+const SKIP_FILES = new Set([
+  "worktree-channels.json",
+  "message-queue.json",
+  "active-worktrees.json",
+]);
+
+// Slack user ID → display name mapping
+const SLACK_USERS: Record<string, string> = {
+  UT41L6GCC: "Michiel",
+  U0866D7PCCU: "Jaap",
+  U084XSXRQNB: "Kent",
+  U086HCZURPM: "Grant",
+  U01D3KX3ATW: "Johnny",
+  U01E8UE6L15: "Louise",
+};
+
+function resolveSlackUser(userId: string): string {
+  // Could be a Slack user ID (e.g. UT41L6GCC) or already a display name
+  if (SLACK_USERS[userId]) return SLACK_USERS[userId];
+  // Extract first name from "Firstname Lastname" format
+  if (userId.includes(" ")) return userId.split(" ")[0];
+  return userId;
+}
+
+export function getTranscriptPath(
+  worktreeDir: string,
+  sessionId: string
+): string {
+  const hash = worktreeDir.replaceAll("/", "-").replace(/^-/, "");
+  return `${CLAUDE_PROJECTS_DIR}/-${hash}/${sessionId}.jsonl`;
+}
+
+function findTranscriptPath(
+  worktreeDir: string | null,
+  sessionId: string | null
+): string | null {
+  if (!sessionId) return null;
+  if (worktreeDir) {
+    const path = getTranscriptPath(worktreeDir, sessionId);
+    if (existsSync(path)) return path;
+  }
+  // Fallback: search common project dirs
+  const homePath = `${CLAUDE_PROJECTS_DIR}/-home-ubuntu/${sessionId}.jsonl`;
+  if (existsSync(homePath)) return homePath;
+  return null;
+}
+
+function readJsonSafe<T>(path: string): T | null {
+  try {
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function getFileMtime(path: string): string {
+  try {
+    return statSync(path).mtime.toISOString();
+  } catch {
+    return new Date(0).toISOString();
+  }
+}
+
+function scanSlackSessions(): UnifiedSession[] {
+  if (!existsSync(SLACK_SESSIONS_DIR)) return [];
+  const sessions: UnifiedSession[] = [];
+
+  for (const file of readdirSync(SLACK_SESSIONS_DIR)) {
+    if (!file.endsWith(".json") || SKIP_FILES.has(file)) continue;
+    const data = readJsonSafe<SlackSessionFile>(
+      `${SLACK_SESSIONS_DIR}/${file}`
+    );
+    if (!data) continue;
+
+    const branch = data.branch || file.replace(".json", "");
+    const startedBy = data.userId
+      ? resolveSlackUser(data.userId)
+      : null;
+
+    // Use a stable ID based on filename
+    const id = `slack-${file.replace(".json", "")}`;
+
+    sessions.push({
+      id,
+      claudeSessionId: data.claudeSessionId || null,
+      source: "slack",
+      branch,
+      worktreeDir: data.worktreeDir || null,
+      startedBy,
+      title: branch,
+      lastActivity:
+        data.lastActivity ||
+        data.createdAt ||
+        getFileMtime(`${SLACK_SESSIONS_DIR}/${file}`),
+      createdAt:
+        data.createdAt || getFileMtime(`${SLACK_SESSIONS_DIR}/${file}`),
+      isRunning: false,
+      transcriptPath: findTranscriptPath(
+        data.worktreeDir || null,
+        data.claudeSessionId || null
+      ),
+      slackThread: data.channel
+        ? { channel: data.channel, threadTs: data.threadTs || "" }
+        : undefined,
+    });
+  }
+  return sessions;
+}
+
+function scanLinearSessions(): UnifiedSession[] {
+  if (!existsSync(LINEAR_SESSIONS_DIR)) return [];
+  const sessions: UnifiedSession[] = [];
+
+  for (const file of readdirSync(LINEAR_SESSIONS_DIR)) {
+    if (!file.endsWith(".json")) continue;
+    const data = readJsonSafe<LinearSessionFile>(
+      `${LINEAR_SESSIONS_DIR}/${file}`
+    );
+    if (!data) continue;
+
+    const rawName =
+      data.participants?.[0]?.name ||
+      data.lastActiveUser?.name ||
+      null;
+    // Clean up email-style names (e.g. "john@tella.com" → "John")
+    const startedBy = rawName?.includes("@")
+      ? rawName.split("@")[0].charAt(0).toUpperCase() + rawName.split("@")[0].slice(1)
+      : rawName;
+
+    const title = data.issueIdentifier
+      ? `${data.issueIdentifier}: ${data.issueTitle || data.branch}`
+      : data.branch;
+
+    const id = `linear-${data.branch}`;
+
+    sessions.push({
+      id,
+      claudeSessionId: data.claudeSessionId,
+      source: "linear",
+      branch: data.branch,
+      worktreeDir: data.worktreeDir || null,
+      startedBy,
+      title,
+      lastActivity:
+        data.updatedAt || getFileMtime(`${LINEAR_SESSIONS_DIR}/${file}`),
+      createdAt: getFileMtime(`${LINEAR_SESSIONS_DIR}/${file}`),
+      isRunning: false,
+      transcriptPath: findTranscriptPath(
+        data.worktreeDir || null,
+        data.claudeSessionId
+      ),
+      linearIssue: data.issueIdentifier
+        ? {
+            identifier: data.issueIdentifier,
+            title: data.issueTitle || data.branch,
+            url: data.issueUrl,
+          }
+        : undefined,
+    });
+  }
+  return sessions;
+}
+
+function scanBackstageSessions(): UnifiedSession[] {
+  if (!existsSync(BACKSTAGE_SESSIONS_DIR)) return [];
+  const sessions: UnifiedSession[] = [];
+
+  for (const file of readdirSync(BACKSTAGE_SESSIONS_DIR)) {
+    if (!file.endsWith(".json")) continue;
+    const data = readJsonSafe<BackstageSessionFile>(
+      `${BACKSTAGE_SESSIONS_DIR}/${file}`
+    );
+    if (!data) continue;
+
+    sessions.push({
+      id: data.id,
+      claudeSessionId: data.claudeSessionId,
+      source: "backstage",
+      branch: data.branch,
+      worktreeDir: data.worktreeDir,
+      startedBy: data.createdBy,
+      title: data.branch,
+      lastActivity: data.lastActivity,
+      createdAt: data.createdAt,
+      isRunning: false,
+      transcriptPath: findTranscriptPath(
+        data.worktreeDir,
+        data.claudeSessionId
+      ),
+    });
+  }
+  return sessions;
+}
+
+function getRunningPids(): Map<string, number> {
+  // Map of sessionId → pid for currently running CLI sessions
+  const running = new Map<string, number>();
+  if (!existsSync(CLI_SESSIONS_DIR)) return running;
+
+  for (const file of readdirSync(CLI_SESSIONS_DIR)) {
+    if (!file.endsWith(".json")) continue;
+    const data = readJsonSafe<CLISessionFile>(`${CLI_SESSIONS_DIR}/${file}`);
+    if (!data) continue;
+
+    try {
+      process.kill(data.pid, 0); // Check if PID is alive
+      running.set(data.sessionId, data.pid);
+    } catch {
+      // PID is dead
+    }
+  }
+  return running;
+}
+
+export function getAllSessions(): UnifiedSession[] {
+  const slackSessions = scanSlackSessions();
+  const linearSessions = scanLinearSessions();
+  const backstageSessions = scanBackstageSessions();
+  const runningPids = getRunningPids();
+
+  // Merge all sessions, deduplicating by claudeSessionId
+  const byClaudeId = new Map<string, UnifiedSession>();
+  const allSessions: UnifiedSession[] = [];
+
+  for (const session of [
+    ...backstageSessions,
+    ...linearSessions,
+    ...slackSessions,
+  ]) {
+    if (session.claudeSessionId) {
+      const existing = byClaudeId.get(session.claudeSessionId);
+      if (existing) {
+        // Keep the one with richer data (linear > backstage > slack)
+        // but mark running status from either
+        if (runningPids.has(session.claudeSessionId)) {
+          existing.isRunning = true;
+        }
+        continue;
+      }
+      byClaudeId.set(session.claudeSessionId, session);
+    }
+
+    // Mark running status
+    if (session.claudeSessionId && runningPids.has(session.claudeSessionId)) {
+      session.isRunning = true;
+    }
+
+    allSessions.push(session);
+  }
+
+  // Sort by lastActivity descending
+  allSessions.sort(
+    (a, b) =>
+      new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+  );
+
+  return allSessions;
+}

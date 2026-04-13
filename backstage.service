@@ -1,0 +1,15 @@
+[Unit]
+Description=Michael - Tella Backstage Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/projects/tella-backstage
+EnvironmentFile=/home/ubuntu/.backstage.env
+ExecStart=/home/ubuntu/.bun/bin/bun run backstage.ts
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

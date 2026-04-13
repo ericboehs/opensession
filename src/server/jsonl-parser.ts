@@ -1,0 +1,221 @@
+import { readFileSync, statSync } from "fs";
+import { existsSync } from "fs";
+import type { TranscriptEntry } from "./types";
+
+interface RawJsonlEntry {
+  type?: string;
+  subtype?: string;
+  uuid?: string;
+  timestamp?: string;
+  requestId?: string;
+  message?: {
+    role?: string;
+    content?: any;
+  };
+}
+
+function extractText(content: any): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((b: any) => b.type === "text")
+      .map((b: any) => b.text || "")
+      .join("\n");
+  }
+  return "";
+}
+
+function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
+  const entries: TranscriptEntry[] = [];
+  if (!raw.message?.content) return entries;
+
+  const ts = raw.timestamp || new Date().toISOString();
+
+  if (raw.type === "user") {
+    const content = raw.message.content;
+
+    // Check for tool_result blocks
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block.type === "tool_result") {
+          const resultText =
+            typeof block.content === "string"
+              ? block.content
+              : Array.isArray(block.content)
+                ? block.content
+                    .filter((c: any) => c.type === "text")
+                    .map((c: any) => c.text)
+                    .join("\n")
+                : "";
+          entries.push({
+            id: raw.uuid || crypto.randomUUID(),
+            type: "tool_result",
+            content: resultText,
+            timestamp: ts,
+            toolUseId: block.tool_use_id,
+          });
+        } else if (block.type === "text") {
+          entries.push({
+            id: raw.uuid || crypto.randomUUID(),
+            type: "user",
+            content: block.text,
+            timestamp: ts,
+          });
+        }
+      }
+    } else {
+      const text = extractText(content);
+      if (text) {
+        entries.push({
+          id: raw.uuid || crypto.randomUUID(),
+          type: "user",
+          content: text,
+          timestamp: ts,
+        });
+      }
+    }
+  }
+
+  if (raw.type === "assistant") {
+    const content = raw.message.content;
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block.type === "text" && block.text) {
+          entries.push({
+            id: raw.uuid || crypto.randomUUID(),
+            type: "assistant",
+            content: block.text,
+            timestamp: ts,
+            requestId: raw.requestId,
+          });
+        }
+        if (block.type === "tool_use") {
+          entries.push({
+            id: block.id || crypto.randomUUID(),
+            type: "tool_use",
+            content: summarizeToolUse(block.name, block.input),
+            timestamp: ts,
+            toolName: block.name,
+            toolInput: block.input,
+            toolUseId: block.id,
+            requestId: raw.requestId,
+          });
+        }
+      }
+    } else {
+      const text = extractText(content);
+      if (text) {
+        entries.push({
+          id: raw.uuid || crypto.randomUUID(),
+          type: "assistant",
+          content: text,
+          timestamp: ts,
+          requestId: raw.requestId,
+        });
+      }
+    }
+  }
+
+  return entries;
+}
+
+function summarizeToolUse(name: string, input: any): string {
+  if (!input) return `Using ${name}`;
+  switch (name) {
+    case "Read":
+      return `Read ${input.file_path || "file"}`;
+    case "Edit":
+      return `Edit ${input.file_path || "file"}`;
+    case "Write":
+      return `Write ${input.file_path || "file"}`;
+    case "Bash":
+      return `$ ${(input.command || "").split("\n")[0].slice(0, 80)}`;
+    case "Grep":
+      return `Grep: ${input.pattern || ""} ${input.glob || ""}`;
+    case "Glob":
+      return `Glob: ${input.pattern || ""}`;
+    case "WebFetch":
+      return `Fetch ${input.url || ""}`;
+    case "WebSearch":
+      return `Search: ${input.query || ""}`;
+    case "Agent":
+    case "Task":
+      return `Agent: ${input.description || input.prompt?.slice(0, 60) || ""}`;
+    default:
+      return `Using ${name}`;
+  }
+}
+
+export function parseTranscript(path: string): TranscriptEntry[] {
+  if (!existsSync(path)) return [];
+
+  const raw = readFileSync(path, "utf-8");
+  const lines = raw.split("\n").filter((l) => l.trim());
+  const entries: TranscriptEntry[] = [];
+  const seenRequestIds = new Map<string, number>(); // requestId → last index in entries
+
+  for (const line of lines) {
+    let parsed: RawJsonlEntry;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    // Skip non-message types
+    if (
+      parsed.type !== "user" &&
+      parsed.type !== "assistant"
+    ) {
+      continue;
+    }
+
+    const newEntries = parseEntry(parsed);
+    for (const entry of newEntries) {
+      // Deduplicate assistant messages with same requestId (keep last)
+      if (
+        entry.type === "assistant" &&
+        entry.requestId
+      ) {
+        const prevIdx = seenRequestIds.get(entry.requestId);
+        if (prevIdx !== undefined) {
+          entries[prevIdx] = entry;
+          continue;
+        }
+        seenRequestIds.set(entry.requestId, entries.length);
+      }
+      entries.push(entry);
+    }
+  }
+
+  return entries;
+}
+
+export function parseTranscriptFrom(
+  path: string,
+  byteOffset: number
+): { entries: TranscriptEntry[]; newOffset: number } {
+  if (!existsSync(path)) return { entries: [], newOffset: byteOffset };
+
+  const file = Bun.file(path);
+  const size = file.size;
+  if (size <= byteOffset) return { entries: [], newOffset: byteOffset };
+
+  const buf = readFileSync(path);
+  const chunk = buf.subarray(byteOffset).toString("utf-8");
+  const lines = chunk.split("\n").filter((l) => l.trim());
+  const entries: TranscriptEntry[] = [];
+
+  for (const line of lines) {
+    let parsed: RawJsonlEntry;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (parsed.type !== "user" && parsed.type !== "assistant") continue;
+    entries.push(...parseEntry(parsed));
+  }
+
+  return { entries, newOffset: size };
+}
