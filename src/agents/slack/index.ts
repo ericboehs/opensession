@@ -34,6 +34,7 @@ import {
   enqueueMessage,
   getOrCreateQueue,
 } from "./queue";
+import { cancelSession } from "./cancel";
 import {
   slackApiCall,
   sendSlackMessage,
@@ -237,6 +238,25 @@ export class SlackAgent implements AgentModule {
               pending.resolve(selectedLabel);
             }
           });
+          return new Response("", { status: 200 });
+        }
+
+        // Stop button — cancel the running session
+        if (actionId.startsWith("stop:")) {
+          const sessionKey = actionId.slice("stop:".length);
+          const didCancel = cancelSession(sessionKey);
+
+          const msgChannel = payload.channel?.id;
+          const msgTs = payload.message?.ts;
+          if (msgTs && msgChannel) {
+            const label = didCancel ? "Cancelled" : "Nothing to cancel";
+            await updateSlackBlocks(msgChannel, msgTs, label, [
+              {
+                type: "context",
+                elements: [{ type: "mrkdwn", text: `_${label}_` }],
+              },
+            ]);
+          }
           return new Response("", { status: 200 });
         }
 

@@ -35,6 +35,7 @@ import { SlackStreamer, buildToolStatus, isSilentTool } from "./streamer";
 import { enqueueMessage, getOrCreateQueue } from "./queue";
 import type { QueuedMessage, SessionQueue } from "./queue";
 import { sessionQueues } from "./queue";
+import { isStopMessage, cancelSession } from "./cancel";
 import { pollForVercelPreview } from "./github-reviews";
 import {
   isWorktreeChannel,
@@ -53,6 +54,7 @@ import {
   SESSION_DIR,
   GITHUB_REPO,
   slackBotUserId,
+  CANCELLED_ANSWER,
 } from "./state";
 import type { SlackSession, PendingAnswer } from "./state";
 
@@ -281,6 +283,7 @@ async function handleAskUserQuestion(
         messageTs: blockMsgTs,
         channel,
         threadTs,
+        sessionKey,
         timeoutId,
         questionText: q.question,
         header: q.header || "Question",
@@ -291,6 +294,23 @@ async function handleAskUserQuestion(
       return {
         behavior: "deny",
         message: `Question "${q.question}" timed out after 5 minutes with no response.`,
+      };
+    }
+
+    if (answer === CANCELLED_ANSWER) {
+      // Mark the open modal as cancelled and clean it up visually.
+      updateSlackBlocks(channel, blockMsgTs, `Cancelled: ${q.question}`, [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `~${q.question}~\n_Cancelled by user_`,
+          },
+        },
+      ]).catch(() => {});
+      return {
+        behavior: "deny",
+        message: "User cancelled the request.",
       };
     }
 
@@ -375,6 +395,50 @@ export async function processMessage(
   const streamer = new SlackStreamer(channel, threadTs, msg.userId);
   await streamer.setStatus("is thinking...");
 
+  // Post a Stop button so the user can cancel even if Slack's assistant DM
+  // disables the input field while we're working.
+  let stopButtonTs: string | null = null;
+  try {
+    const postResult = await postSlackBlocks(
+      channel,
+      "Working — tap Stop to cancel.",
+      [
+        {
+          type: "actions",
+          block_id: `stop-actions-${sessionKey}`,
+          elements: [
+            {
+              type: "button",
+              text: { type: "plain_text", text: ":octagonal_sign: Stop", emoji: true },
+              style: "danger",
+              action_id: `stop:${sessionKey}`,
+              value: sessionKey,
+            },
+          ],
+        },
+      ],
+      threadTs
+    );
+    stopButtonTs = postResult?.ts || null;
+  } catch (e) {
+    console.warn("[slack] Failed to post stop button:", e);
+  }
+
+  const dismissStopButton = async (label: string): Promise<void> => {
+    if (!stopButtonTs) return;
+    try {
+      await updateSlackBlocks(channel, stopButtonTs, label, [
+        {
+          type: "context",
+          elements: [{ type: "mrkdwn", text: `_${label}_` }],
+        },
+      ]);
+    } catch (e) {
+      console.warn("[slack] Failed to dismiss stop button:", e);
+    }
+    stopButtonTs = null;
+  };
+
   // Recreate worktree if it was cleaned up (revived thread)
   if (
     session.worktreeDir &&
@@ -458,6 +522,7 @@ export async function processMessage(
       );
       await streamer.error(`Failed to recreate worktree: ${e}`);
       await streamer.clearStatus();
+      await dismissStopButton("Failed");
       return;
     }
   }
@@ -655,6 +720,7 @@ export async function processMessage(
       console.log(`[slack] SDK query aborted for ${sessionKey}`);
       await streamer.error("Cancelled by user.");
       await streamer.clearStatus();
+      await dismissStopButton("Cancelled");
       return;
     }
     console.error(`[slack] SDK query error for ${sessionKey}:`, e);
@@ -690,6 +756,7 @@ export async function processMessage(
 
   await streamer.stop(truncated);
   await streamer.clearStatus();
+  await dismissStopButton("Done");
 }
 
 // ---------------------------------------------------------------------------
@@ -718,14 +785,10 @@ export async function handleMessageEvent(event: any): Promise<void> {
     return;
   }
 
-  // Handle cancel/stop/abort
-  if (/^(cancel|stop|abort)$/i.test(text?.trim())) {
-    const sq = sessionQueues.get(sessionKey);
-    if (sq) {
-      if (sq.abortController) {
-        sq.abortController.abort();
-      }
-      sq.queue.length = 0;
+  // Handle stop/cancel keywords
+  if (isStopMessage(text)) {
+    const didCancel = cancelSession(sessionKey);
+    if (didCancel) {
       await addReaction(channel, ts, "octagonal_sign");
       await sendSlackMessage(
         channel,
@@ -841,14 +904,10 @@ export async function handleMentionEvent(event: any): Promise<void> {
     ? channel
     : getSessionKey(channel, threadTs);
 
-  // Handle cancel/stop/abort
-  if (/^(cancel|stop|abort)$/i.test(cleanText)) {
-    const sq = sessionQueues.get(sessionKey);
-    if (sq) {
-      if (sq.abortController) {
-        sq.abortController.abort();
-      }
-      sq.queue.length = 0;
+  // Handle stop/cancel keywords
+  if (isStopMessage(cleanText)) {
+    const didCancel = cancelSession(sessionKey);
+    if (didCancel) {
       await addReaction(channel, ts, "octagonal_sign");
       await sendSlackMessage(channel, "Cancelled. Queue cleared.", threadTs);
     }

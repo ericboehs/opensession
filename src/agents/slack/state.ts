@@ -26,10 +26,14 @@ export interface PendingAnswer {
   messageTs: string;
   channel: string;
   threadTs: string;
+  sessionKey: string;
   timeoutId: ReturnType<typeof setTimeout>;
   questionText: string;
   header: string;
 }
+
+/** Sentinel returned to handleAskUserQuestion when the user cancels mid-modal. */
+export const CANCELLED_ANSWER = "__CANCELLED__";
 
 // ---------------------------------------------------------------------------
 // Constants

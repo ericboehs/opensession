@@ -10,8 +10,10 @@ import {
   slackApiCall,
   sendSlackMessage,
   updateSlackMessage,
+  postSlackBlocks,
 } from "./slack-api";
 import { slackTeamId } from "./state";
+import { extractBlocks } from "./blocks";
 
 // ---------------------------------------------------------------------------
 // Tool status helpers
@@ -142,18 +144,34 @@ export class SlackStreamer {
 
   /** Finalize the stream with the result text */
   async stop(resultText: string): Promise<void> {
+    const { cleanedText, blocks } = extractBlocks(resultText);
+    // If every paragraph was a block, streaming still needs *some* text.
+    const streamText = cleanedText || (blocks.length > 0 ? " " : resultText);
+
     if (this.useStreaming && this.streamMessageTs) {
       await slackApiCall("chat.stopStream", {
         channel: this.channel,
         ts: this.streamMessageTs,
-        chunks: [{ type: "markdown_text", text: resultText }],
+        chunks: [{ type: "markdown_text", text: streamText }],
       });
       this.streamMessageTs = null;
     } else if (this.fallbackTs) {
-      await updateSlackMessage(this.channel, this.fallbackTs, resultText);
+      await updateSlackMessage(this.channel, this.fallbackTs, streamText);
       this.fallbackTs = null;
     } else {
-      await sendSlackMessage(this.channel, resultText, this.threadTs);
+      await sendSlackMessage(this.channel, streamText, this.threadTs);
+    }
+
+    // Slack requires one table per message, so post each extracted block
+    // as its own follow-up to preserve document order.
+    for (const { block, type } of blocks) {
+      const fallback =
+        type === "table" ? "(table)" : block?.text?.text || "(alert)";
+      try {
+        await postSlackBlocks(this.channel, fallback, [block], this.threadTs);
+      } catch (e) {
+        console.warn(`[slack] Failed to post ${type} block:`, e);
+      }
     }
   }
 

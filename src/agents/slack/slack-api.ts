@@ -7,6 +7,27 @@
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 
+/**
+ * Slack's API should respond in a couple seconds; if we don't hear back in 30s
+ * something is wrong (network, Slack side, auth). Without this, a wedged fetch
+ * can stall the entire message queue indefinitely.
+ */
+const SLACK_FETCH_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs = SLACK_FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Status messages
 // ---------------------------------------------------------------------------
@@ -28,7 +49,7 @@ export async function slackApiCall(
   method: string,
   params: Record<string, any>
 ): Promise<any> {
-  const resp = await fetch(`https://slack.com/api/${method}`, {
+  const resp = await fetchWithTimeout(`https://slack.com/api/${method}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -52,7 +73,7 @@ export async function sendSlackMessage(
   text: string,
   threadTs?: string
 ): Promise<any> {
-  const response = await fetch("https://slack.com/api/chat.postMessage", {
+  const response = await fetchWithTimeout("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -73,7 +94,7 @@ export async function updateSlackMessage(
   ts: string,
   text: string
 ): Promise<any> {
-  const response = await fetch("https://slack.com/api/chat.update", {
+  const response = await fetchWithTimeout("https://slack.com/api/chat.update", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -89,7 +110,7 @@ export async function addReaction(
   ts: string,
   emoji: string
 ): Promise<void> {
-  await fetch("https://slack.com/api/reactions.add", {
+  await fetchWithTimeout("https://slack.com/api/reactions.add", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -104,7 +125,7 @@ export async function removeReaction(
   ts: string,
   emoji: string
 ): Promise<void> {
-  await fetch("https://slack.com/api/reactions.remove", {
+  await fetchWithTimeout("https://slack.com/api/reactions.remove", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -120,7 +141,7 @@ export async function postSlackBlocks(
   blocks: any[],
   threadTs?: string
 ): Promise<any> {
-  const response = await fetch("https://slack.com/api/chat.postMessage", {
+  const response = await fetchWithTimeout("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -142,7 +163,7 @@ export async function updateSlackBlocks(
   text: string,
   blocks: any[]
 ): Promise<any> {
-  const response = await fetch("https://slack.com/api/chat.update", {
+  const response = await fetchWithTimeout("https://slack.com/api/chat.update", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -158,7 +179,7 @@ export async function openSlackModal(
   questionId: string,
   questionText: string
 ): Promise<any> {
-  const response = await fetch("https://slack.com/api/views.open", {
+  const response = await fetchWithTimeout("https://slack.com/api/views.open", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -206,7 +227,7 @@ export async function fetchThreadContext(
   channel: string,
   threadTs: string
 ): Promise<string> {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://slack.com/api/conversations.replies?channel=${channel}&ts=${threadTs}&limit=20`,
     { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
   );
@@ -226,7 +247,7 @@ export async function fetchChannelContext(
   channel: string,
   limit: number = 10
 ): Promise<string> {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://slack.com/api/conversations.history?channel=${channel}&limit=${limit}`,
     { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
   );
@@ -250,7 +271,7 @@ export async function fetchChannelContext(
 export async function getUserInfo(
   userId: string
 ): Promise<{ name: string; real_name: string } | null> {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://slack.com/api/users.info?user=${userId}`,
     { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
   );

@@ -8,6 +8,9 @@ export function markdownToSlack(text: string): string {
   // Headers: ## Header → *Header*
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "*$1*");
 
+  // Bold URLs: **url** → <url> (Slack renders <url> as a proper link; bold-wrapped bare URLs don't auto-link)
+  result = result.replace(/\*\*(https?:\/\/[^\s*]+)\*\*/g, "<$1>");
+
   // Bold: **text** → *text*
   result = result.replace(/\*\*(.+?)\*\*/g, "*$1*");
 
