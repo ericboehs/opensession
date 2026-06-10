@@ -243,27 +243,6 @@ export async function fetchThreadContext(
     .join("\n\n");
 }
 
-export async function fetchChannelContext(
-  channel: string,
-  limit: number = 10
-): Promise<string> {
-  const response = await fetchWithTimeout(
-    `https://slack.com/api/conversations.history?channel=${channel}&limit=${limit}`,
-    { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
-  );
-  const data = (await response.json()) as any;
-
-  if (!data.ok || !data.messages) {
-    console.error("[slack] Failed to fetch channel history:", data.error);
-    return "";
-  }
-
-  return data.messages
-    .reverse()
-    .map((msg: any) => `[${msg.user || "bot"}]: ${msg.text}`)
-    .join("\n\n");
-}
-
 // ---------------------------------------------------------------------------
 // User info
 // ---------------------------------------------------------------------------
