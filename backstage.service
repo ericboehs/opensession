@@ -10,6 +10,11 @@ EnvironmentFile=/home/ubuntu/.backstage.env
 ExecStart=/home/ubuntu/.bun/bin/bun run backstage.ts
 Restart=always
 RestartSec=5
+# Agent runs are driven by untrusted text (customer tickets); none of them
+# should be able to mint EC2 instance-role credentials from the metadata
+# endpoint. eBPF egress filter — covers every child the service spawns.
+# Remove if a backstage-driven session ever legitimately needs the role.
+IPAddressDeny=169.254.169.254/32
 
 [Install]
 WantedBy=multi-user.target
