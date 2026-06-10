@@ -126,23 +126,47 @@ a {
   font-size: 14px;
 }
 
-.app-nav {
+.sidebar-nav {
   display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 14px;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 8px 6px;
 }
 
-.app-nav-link {
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
   color: var(--text-dim);
-  text-decoration: none;
   font-size: 13px;
   font-weight: 500;
-  padding: 5px 11px;
-  border-radius: 6px;
+  padding: 6px 8px;
 }
-.app-nav-link:hover { color: var(--text); background: var(--bg-hover); }
-.app-nav-link.active { color: var(--text); background: var(--bg-active); }
+.sidebar-nav-item:hover { color: var(--text); background: var(--bg-hover); }
+.sidebar-nav-item.active { color: var(--text); background: var(--bg-active); }
+
+.sidebar-nav-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+.sidebar-nav-item.active .sidebar-nav-icon,
+.sidebar-nav-item:hover .sidebar-nav-icon { color: var(--text-dim); }
+
+.sidebar-section-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+  padding: 10px 14px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
 
 .app-header-right {
   display: flex;
@@ -2589,9 +2613,7 @@ a {
   .home-row { padding: 10px 10px; gap: 8px; }
   .status-pill { min-width: 0; padding: 3px 8px; }
 
-  .app-title-text { display: none; }
-  .app-nav { margin-left: 4px; }
-  .app-nav-link { padding: 5px 8px; font-size: 12.5px; }
+
 
   .automations { padding: 18px 14px 48px; }
   .connections { padding: 18px 14px 48px; }

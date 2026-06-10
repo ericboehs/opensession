@@ -89,30 +89,23 @@ function App() {
       ? sessions.find((s) => s.id === route.id) || null
       : null;
 
-  const showSessionsSidebar =
-    route.view === "home" || route.view === "new" || route.view === "session";
-
-  const navItems: Array<{ label: string; active: boolean; to: Route }> = [
-    { label: "Sessions", active: showSessionsSidebar, to: { view: "home" } },
-    { label: "Automations", active: route.view === "automations", to: { view: "automations" } },
-    { label: "Wiki", active: route.view === "wiki", to: { view: "wiki", path: null } },
-    { label: "Connections", active: route.view === "connections", to: { view: "connections" } },
-  ];
+  const activeView =
+    route.view === "automations" || route.view === "wiki" || route.view === "connections"
+      ? route.view
+      : ("sessions" as const);
 
   return (
     <UserGate>
       <div className="app">
         <header className="app-header">
           <div className="app-header-left">
-            {showSessionsSidebar && (
-              <button
-                className="hamburger"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                aria-label="Toggle sidebar"
-              >
-                <span /><span /><span />
-              </button>
-            )}
+            <button
+              className="hamburger"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              aria-label="Toggle sidebar"
+            >
+              <span /><span /><span />
+            </button>
             <a
               className="app-title"
               href="/backstage/"
@@ -124,21 +117,6 @@ function App() {
               <span className="app-logo">M</span>
               <span className="app-title-text">Michael</span>
             </a>
-            <nav className="app-nav">
-              {navItems.map((item) => (
-                <a
-                  key={item.label}
-                  className={`app-nav-link ${item.active ? "active" : ""}`}
-                  href={routePath(item.to)}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    navigate(item.to);
-                  }}
-                >
-                  {item.label}
-                </a>
-              ))}
-            </nav>
           </div>
           <div className="app-header-right">
             <span className={`connection-dot ${connected ? "connected" : "disconnected"}`} />
@@ -148,21 +126,29 @@ function App() {
 
         <div className="app-body">
           {/* Overlay to close sidebar on mobile */}
-          {sidebarOpen && showSessionsSidebar && (
+          {sidebarOpen && (
             <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
           )}
 
-          {showSessionsSidebar && (
-            <div className={`sidebar-container ${sidebarOpen ? "sidebar-open" : ""}`}>
-              <Sidebar
-                sessions={sessions}
-                selectedId={currentSession?.id || null}
-                onSelect={(s) => navigate({ view: "session", id: s.id })}
-                onNewSession={() => navigate({ view: "new" })}
-                onOpenArchived={() => navigate({ view: "archived" })}
-              />
-            </div>
-          )}
+          <div className={`sidebar-container ${sidebarOpen ? "sidebar-open" : ""}`}>
+            <Sidebar
+              sessions={sessions}
+              selectedId={currentSession?.id || null}
+              activeView={activeView}
+              onNavigate={(view) =>
+                navigate(
+                  view === "sessions"
+                    ? { view: "home" }
+                    : view === "wiki"
+                      ? { view: "wiki", path: null }
+                      : { view }
+                )
+              }
+              onSelect={(s) => navigate({ view: "session", id: s.id })}
+              onNewSession={() => navigate({ view: "new" })}
+              onOpenArchived={() => navigate({ view: "archived" })}
+            />
+          </div>
 
           <main className="detail-pane">
             {route.view === "new" ? (

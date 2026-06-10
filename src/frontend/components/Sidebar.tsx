@@ -15,13 +15,60 @@ const AUTOMATION_COLOR = "#d29922";
 
 const SOURCE_ORDER: SessionSource[] = ["slack", "linear", "backstage", "cli"];
 
+export type NavView = "sessions" | "automations" | "wiki" | "connections";
+
 interface Props {
   sessions: UnifiedSession[];
   selectedId: string | null;
+  activeView: NavView;
+  onNavigate: (view: NavView) => void;
   onSelect: (session: UnifiedSession) => void;
   onNewSession: () => void;
   onOpenArchived: () => void;
 }
+
+const NAV_ITEMS: Array<{ view: NavView; label: string; icon: React.ReactNode }> = [
+  {
+    view: "sessions",
+    label: "Sessions",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+        <path d="M2.5 4h11M2.5 8h11M2.5 12h7" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    view: "automations",
+    label: "Automations",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+        <circle cx="8" cy="8" r="5.5" />
+        <path d="M8 5v3l2 1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    view: "wiki",
+    label: "Wiki",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+        <path d="M3 2.5h7a2 2 0 0 1 2 2v9l-3-1.8-3 1.8-3-1.8V2.5z" strokeLinejoin="round" transform="translate(0.5,0)" />
+      </svg>
+    ),
+  },
+  {
+    view: "connections",
+    label: "Connections",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+        <circle cx="4.5" cy="8" r="2" />
+        <circle cx="11.5" cy="4" r="2" />
+        <circle cx="11.5" cy="12" r="2" />
+        <path d="M6.3 7.1l3.4-2.2M6.3 8.9l3.4 2.2" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+];
 
 interface Group {
   key: string;
@@ -40,7 +87,15 @@ function readExpanded(): Set<string> {
   }
 }
 
-export function Sidebar({ sessions, selectedId, onSelect, onNewSession, onOpenArchived }: Props) {
+export function Sidebar({
+  sessions,
+  selectedId,
+  activeView,
+  onNavigate,
+  onSelect,
+  onNewSession,
+  onOpenArchived,
+}: Props) {
   const [search, setSearch] = useState("");
   // Groups are collapsed by default; the expanded set persists per browser
   const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
@@ -135,6 +190,21 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession, onOpenAr
 
   return (
     <div className="sidebar">
+      <nav className="sidebar-nav">
+        {NAV_ITEMS.map((item) => (
+          <button
+            key={item.view}
+            className={`sidebar-nav-item ${activeView === item.view ? "active" : ""}`}
+            onClick={() => onNavigate(item.view)}
+          >
+            <span className="sidebar-nav-icon">{item.icon}</span>
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="sidebar-section-label">Sessions</div>
+
       <div className="sidebar-header">
         <div className="sidebar-search-wrap">
           <svg className="sidebar-search-icon" width="13" height="13" viewBox="0 0 16 16" fill="none">
