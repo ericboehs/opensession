@@ -66,6 +66,7 @@ export interface BackstageSessionFile {
   createdBy: string;
   createdAt: string;
   lastActivity: string;
+  title?: string;
 }
 
 export interface TranscriptEntry {

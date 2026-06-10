@@ -8,6 +8,8 @@ import { parseTranscript } from "./src/server/jsonl-parser";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
 import { listWorktrees, createWorktree, removeWorktree } from "./src/server/worktree";
 import { runClaude, isSessionBusy, cancelRun } from "./src/server/claude-runner";
+import { getSessionDiff } from "./src/server/git-diff";
+import { getPrDetails } from "./src/server/pr-info";
 import { startWebhookServer } from "./src/server/webhook-server";
 import type { AgentModule } from "./src/agents/types";
 import type { UnifiedSession, BackstageSessionFile } from "./src/server/types";
@@ -28,6 +30,12 @@ function getCachedSessions(): UnifiedSession[] {
     return sessionsCache.data;
   }
   const data = getAllSessions();
+  // Sessions driven from the web UI run in-process; surface those too
+  for (const s of data) {
+    if (!s.isRunning && s.claudeSessionId && isSessionBusy(s.claudeSessionId)) {
+      s.isRunning = true;
+    }
+  }
   sessionsCache = { data, ts: Date.now() };
   return data;
 }
@@ -36,13 +44,74 @@ function findSession(sessionId: string): UnifiedSession | undefined {
   return getCachedSessions().find((s) => s.id === sessionId);
 }
 
+function touchBackstageSession(
+  bksId: string,
+  patch: Partial<BackstageSessionFile>
+): void {
+  const path = `${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`;
+  try {
+    const data: BackstageSessionFile = existsSync(path)
+      ? JSON.parse(readFileSync(path, "utf-8"))
+      : ({} as BackstageSessionFile);
+    writeFileSync(
+      path,
+      JSON.stringify({ ...data, ...patch, lastActivity: new Date().toISOString() }, null, 2)
+    );
+    sessionsCache = null;
+  } catch (e) {
+    console.error(`Failed to update backstage session ${bksId}:`, e);
+  }
+}
+
 // WebSocket client state
 interface WSClientData {
   watchingSessionId: string | null;
-  activeRunSessionId: string | null;
+  user: string | null;
 }
 
-const clientData = new WeakMap<any, WSClientData>();
+// sessionId → sockets currently viewing that session (collaboration fan-out)
+const sessionWatchers = new Map<string, Set<any>>();
+
+function joinSession(ws: any, sessionId: string) {
+  let set = sessionWatchers.get(sessionId);
+  if (!set) {
+    set = new Set();
+    sessionWatchers.set(sessionId, set);
+  }
+  set.add(ws);
+  broadcastPresence(sessionId);
+}
+
+function leaveSession(ws: any) {
+  const sessionId = ws.data?.watchingSessionId;
+  if (!sessionId) return;
+  const set = sessionWatchers.get(sessionId);
+  if (set) {
+    set.delete(ws);
+    if (set.size === 0) sessionWatchers.delete(sessionId);
+    else broadcastPresence(sessionId);
+  }
+  ws.data.watchingSessionId = null;
+}
+
+function broadcastToSession(sessionId: string, msg: object) {
+  const set = sessionWatchers.get(sessionId);
+  if (!set) return;
+  const payload = JSON.stringify(msg);
+  for (const ws of set) {
+    try {
+      ws.send(payload);
+    } catch {}
+  }
+}
+
+function broadcastPresence(sessionId: string) {
+  const set = sessionWatchers.get(sessionId);
+  const viewers = set
+    ? Array.from(set, (ws: any) => ws.data?.user || "Anonymous")
+    : [];
+  broadcastToSession(sessionId, { type: "presence", sessionId, viewers });
+}
 
 console.log(`Starting Backstage server on ${HOST}:${PORT}...`);
 
@@ -54,18 +123,14 @@ const server = Bun.serve<WSClientData>({
     "/backstage": homepage,
     "/backstage/": homepage,
     "/backstage/index.html": homepage,
+    // Client-side routes must go through the bundled HTML import, not the raw file
+    "/backstage/new": homepage,
+    "/backstage/session/*": homepage,
   },
 
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname;
-
-    // Client-side routing — serve index.html for /backstage/session/*
-    if (path.startsWith("/backstage/session/") || path === "/backstage/new") {
-      return new Response(Bun.file("./src/frontend/index.html").stream(), {
-        headers: { "Content-Type": "text/html" },
-      });
-    }
 
     // Health check (includes agent health — Tailscale-only, not public)
     if (path === "/backstage/api/health") {
@@ -88,6 +153,30 @@ const server = Bun.serve<WSClientData>({
       if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
       if (!session.transcriptPath) return Response.json([]);
       return Response.json(parseTranscript(session.transcriptPath));
+    }
+
+    // Live git diff for a session's worktree (Changes tab)
+    if (path.match(/^\/backstage\/api\/sessions\/(.+)\/diff$/) && req.method === "GET") {
+      const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/diff$/)![1]);
+      const session = findSession(sessionId);
+      if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+      if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
+        return Response.json({ branch: session.branch, baseRef: null, files: [], totalAdditions: 0, totalDeletions: 0 });
+      }
+      try {
+        return Response.json(await getSessionDiff(session.worktreeDir));
+      } catch (e: any) {
+        return Response.json({ error: e.message || String(e) }, { status: 500 });
+      }
+    }
+
+    // PR details for a session's branch (PR tab)
+    if (path.match(/^\/backstage\/api\/sessions\/(.+)\/pr$/) && req.method === "GET") {
+      const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/pr$/)![1]);
+      const session = findSession(sessionId);
+      if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+      if (!session.branch) return Response.json(null);
+      return Response.json(await getPrDetails(session.branch));
     }
 
     // Delete a session (+ optional worktree cleanup)
@@ -117,7 +206,7 @@ const server = Bun.serve<WSClientData>({
     // WebSocket upgrade
     if (path === "/backstage/ws") {
       const upgraded = server.upgrade(req, {
-        data: { watchingSessionId: null, activeRunSessionId: null },
+        data: { watchingSessionId: null, user: null },
       });
       if (!upgraded) {
         return new Response("WebSocket upgrade failed", { status: 400 });
@@ -154,10 +243,12 @@ const server = Bun.serve<WSClientData>({
 
           // Stop watching any previous session first
           stopAllWatchesForClient(ws);
+          leaveSession(ws);
 
-          // Update client state
           const data = ws.data;
           data.watchingSessionId = sessionId;
+          if (msg.user) data.user = msg.user;
+          joinSession(ws, sessionId);
 
           // Send full transcript
           const entries = session.transcriptPath
@@ -181,7 +272,7 @@ const server = Bun.serve<WSClientData>({
         }
 
         case "prompt": {
-          const { sessionId, content } = msg;
+          const { sessionId, content, user } = msg;
           const session = findSession(sessionId);
           if (!session) {
             ws.send(JSON.stringify({ type: "error", message: "Session not found" }));
@@ -194,7 +285,11 @@ const server = Bun.serve<WSClientData>({
 
           const cwd = session.worktreeDir || `${HOME}/projects/tella-fusion`;
 
-          ws.send(JSON.stringify({ type: "stream_start", sessionId }));
+          // Everyone viewing this session sees the prompt and the live run
+          broadcastToSession(sessionId, { type: "stream_start", sessionId, by: user || "Anonymous" });
+          broadcastToSession(sessionId, { type: "session_status", isRunning: true });
+
+          let finalSessionId = session.claudeSessionId;
 
           for await (const event of runClaude({
             prompt: content,
@@ -205,49 +300,51 @@ const server = Bun.serve<WSClientData>({
               case "init":
                 break;
               case "text_chunk":
-                ws.send(JSON.stringify({ type: "stream_text", text: event.text }));
+                broadcastToSession(sessionId, { type: "stream_text", text: event.text });
                 break;
               case "tool_use":
-                ws.send(
-                  JSON.stringify({
-                    type: "stream_tool_use",
-                    entry: {
-                      id: event.toolUseId || crypto.randomUUID(),
-                      type: "tool_use",
-                      content: `Using ${event.toolName}`,
-                      timestamp: new Date().toISOString(),
-                      toolName: event.toolName,
-                      toolInput: event.toolInput,
-                      toolUseId: event.toolUseId,
-                    },
-                  })
-                );
+                broadcastToSession(sessionId, {
+                  type: "stream_tool_use",
+                  entry: {
+                    id: event.toolUseId || crypto.randomUUID(),
+                    type: "tool_use",
+                    content: `Using ${event.toolName}`,
+                    timestamp: new Date().toISOString(),
+                    toolName: event.toolName,
+                    toolInput: event.toolInput,
+                    toolUseId: event.toolUseId,
+                  },
+                });
                 break;
               case "tool_result":
-                ws.send(
-                  JSON.stringify({
-                    type: "stream_tool_result",
-                    entry: {
-                      id: crypto.randomUUID(),
-                      type: "tool_result",
-                      content: event.content || "",
-                      timestamp: new Date().toISOString(),
-                      toolUseId: event.toolUseId,
-                    },
-                  })
-                );
+                broadcastToSession(sessionId, {
+                  type: "stream_tool_result",
+                  entry: {
+                    id: crypto.randomUUID(),
+                    type: "tool_result",
+                    content: event.content || "",
+                    timestamp: new Date().toISOString(),
+                    toolUseId: event.toolUseId,
+                  },
+                });
                 break;
               case "done":
-                // Invalidate session cache
+                finalSessionId = event.sessionId || finalSessionId;
                 sessionsCache = null;
                 break;
               case "error":
-                ws.send(JSON.stringify({ type: "error", message: event.content }));
+                broadcastToSession(sessionId, { type: "error", message: event.content });
                 break;
             }
           }
 
-          ws.send(JSON.stringify({ type: "stream_done" }));
+          // Persist activity on our own session store (slack/linear stores are read-only)
+          if (session.source === "backstage") {
+            touchBackstageSession(session.id, { claudeSessionId: finalSessionId || undefined });
+          }
+
+          broadcastToSession(sessionId, { type: "stream_done" });
+          broadcastToSession(sessionId, { type: "session_status", isRunning: false });
           break;
         }
 
@@ -273,19 +370,44 @@ const server = Bun.serve<WSClientData>({
             }
 
             const bksId = `bks-${randomUUIDv7()}`;
+            const title = prompt.trim().split("\n")[0].slice(0, 80);
 
             ws.send(JSON.stringify({ type: "stream_start", sessionId: bksId }));
 
             let claudeSessionId = "";
+            let persisted = false;
+            const persist = () => {
+              const sessionData: BackstageSessionFile = {
+                id: bksId,
+                claudeSessionId,
+                branch,
+                worktreeDir: wtPath!,
+                createdBy: user || "Anonymous",
+                createdAt: new Date().toISOString(),
+                lastActivity: new Date().toISOString(),
+                title,
+              };
+              writeFileSync(
+                `${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
+                JSON.stringify(sessionData, null, 2)
+              );
+              sessionsCache = null;
+              persisted = true;
+            };
+
             for await (const event of runClaude({
               prompt,
               cwd: wtPath,
             })) {
               if (event.type === "init") {
                 claudeSessionId = event.sessionId || "";
+                // Persist immediately so the session is visible/shareable while running
+                persist();
+                ws.send(JSON.stringify({ type: "session_created", id: bksId }));
               }
               if (event.type === "text_chunk") {
                 ws.send(JSON.stringify({ type: "stream_text", text: event.text }));
+                broadcastToSession(bksId, { type: "stream_text", text: event.text });
               }
               if (event.type === "done") {
                 claudeSessionId = event.sessionId || claudeSessionId;
@@ -295,24 +417,12 @@ const server = Bun.serve<WSClientData>({
               }
             }
 
-            // Save backstage session
-            const sessionData: BackstageSessionFile = {
-              id: bksId,
-              claudeSessionId,
-              branch,
-              worktreeDir: wtPath,
-              createdBy: user || "Anonymous",
-              createdAt: new Date().toISOString(),
-              lastActivity: new Date().toISOString(),
-            };
-            writeFileSync(
-              `${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
-              JSON.stringify(sessionData, null, 2)
-            );
+            if (!persisted) persist();
+            else touchBackstageSession(bksId, { claudeSessionId });
 
-            sessionsCache = null;
             ws.send(JSON.stringify({ type: "stream_done" }));
-            ws.send(JSON.stringify({ type: "session_created", id: bksId }));
+            broadcastToSession(bksId, { type: "stream_done" });
+            broadcastToSession(bksId, { type: "session_status", isRunning: false });
           } catch (e: any) {
             ws.send(JSON.stringify({ type: "error", message: e.message || String(e) }));
           }
@@ -323,6 +433,7 @@ const server = Bun.serve<WSClientData>({
 
     close(ws) {
       stopAllWatchesForClient(ws);
+      leaveSession(ws);
       console.log("WebSocket client disconnected");
     },
   },

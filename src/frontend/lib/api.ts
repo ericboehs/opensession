@@ -31,6 +31,18 @@ export async function deleteSessionApi(sessionId: string, cleanWorktree: boolean
   }
 }
 
+export async function fetchDiff(sessionId: string) {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/diff`);
+  if (!res.ok) throw new Error(`Failed to fetch diff: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPr(sessionId: string) {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr`);
+  if (!res.ok) throw new Error(`Failed to fetch PR: ${res.status}`);
+  return res.json();
+}
+
 export function getWebSocketUrl(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}/backstage/ws`;

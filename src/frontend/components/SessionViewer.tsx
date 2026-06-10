@@ -4,6 +4,8 @@ import { MessageBubble } from "./MessageBubble";
 import { ToolCallBlock } from "./ToolCallBlock";
 import { getCurrentUser } from "./UserPicker";
 import { deleteSessionApi } from "../lib/api";
+import { DiffPanel } from "./DiffPanel";
+import { PrPanel } from "./PrPanel";
 
 interface Props {
   session: UnifiedSession;
@@ -13,20 +15,47 @@ interface Props {
   connected: boolean;
 }
 
+type PanelTab = "changes" | "pr";
+
+/** Upsert incoming entries by id so stream events and the file watcher never duplicate. */
+function mergeEntries(prev: TranscriptEntry[], incoming: TranscriptEntry[]): TranscriptEntry[] {
+  if (incoming.length === 0) return prev;
+  const indexById = new Map(prev.map((e, i) => [e.id, i] as const));
+  const next = [...prev];
+  for (const entry of incoming) {
+    const idx = indexById.get(entry.id);
+    if (idx !== undefined) {
+      next[idx] = entry;
+    } else {
+      indexById.set(entry.id, next.length);
+      next.push(entry);
+    }
+  }
+  return next;
+}
+
 export function SessionViewer({ session, onBack, send, addHandler, connected }: Props) {
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isRunningLive, setIsRunningLive] = useState(session.isRunning);
   const [streamText, setStreamText] = useState("");
+  const [streamBy, setStreamBy] = useState<string | null>(null);
+  const [viewers, setViewers] = useState<string[]>([]);
+  const [panelTab, setPanelTab] = useState<PanelTab>("changes");
+  const [panelOpen, setPanelOpen] = useState(true);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const hasWorkspace = Boolean(session.worktreeDir || session.branch);
 
   // Subscribe to WebSocket messages
   useEffect(() => {
     if (!connected) return;
 
-    send({ type: "watch", sessionId: session.id });
+    send({ type: "watch", sessionId: session.id, user: getCurrentUser() });
 
     const unsubscribe = addHandler((msg) => {
       switch (msg.type) {
@@ -35,26 +64,29 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           setLoading(false);
           break;
         case "transcript_append":
-          setEntries((prev) => [...prev, ...msg.entries]);
+          setEntries((prev) => mergeEntries(prev, msg.entries));
+          break;
+        case "presence":
+          if (msg.sessionId === session.id) setViewers(msg.viewers);
+          break;
+        case "session_status":
+          setIsRunningLive(msg.isRunning);
           break;
         case "stream_start":
           setIsStreaming(true);
+          setStreamBy(msg.by || null);
           setStreamText("");
           break;
         case "stream_text":
           setStreamText((prev) => prev + msg.text);
           break;
         case "stream_tool_use":
-          setEntries((prev) => [...prev, msg.entry]);
-          break;
         case "stream_tool_result":
-          setEntries((prev) => [...prev, msg.entry]);
+          setEntries((prev) => mergeEntries(prev, [msg.entry]));
           break;
         case "stream_done":
           setIsStreaming(false);
-          if (streamText) {
-            // The final text will come through transcript_append from file watcher
-          }
+          setStreamBy(null);
           setStreamText("");
           break;
         case "error":
@@ -66,9 +98,12 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     return unsubscribe;
   }, [session.id, connected]);
 
-  // Auto-scroll
+  // Auto-scroll, unless the reader has scrolled up to inspect history
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = messagesRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 400;
+    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [entries, streamText]);
 
   function handleSend() {
@@ -79,6 +114,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
       type: "prompt",
       sessionId: session.id,
       content: text,
+      user: getCurrentUser(),
     });
     setInput("");
   }
@@ -105,8 +141,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const isBusy = session.isRunning || isStreaming;
+  const isBusy = isRunningLive || isStreaming;
   const canSend = connected && !isBusy && session.transcriptPath;
+  const me = getCurrentUser();
 
   async function handleDelete(cleanWorktree: boolean) {
     setDeleting(true);
@@ -120,47 +157,46 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     }
   }
 
-  const prClass = session.prState === "MERGED"
-    ? "session-link-pr-merged"
-    : session.prState === "CLOSED"
-      ? "session-link-pr-closed"
-      : "session-link-pr";
-
   return (
     <div className="session-viewer">
       <div className="viewer-header">
         <div className="viewer-title">
-          <span
-            className="source-badge"
-            style={{
-              backgroundColor:
-                session.source === "slack"
-                  ? "#4A154B"
-                  : session.source === "linear"
-                    ? "#5E6AD2"
-                    : session.source === "backstage"
-                      ? "#0D9488"
-                      : "#6B7280",
-            }}
-          >
-            {session.source}
-          </span>
-          <span className="viewer-branch">{session.title}</span>
+          <span className={`source-chip source-${session.source}`}>{session.source}</span>
+          <span className="viewer-branch" title={session.title}>{session.title}</span>
           {session.startedBy && (
             <span className="viewer-started-by">by {session.startedBy}</span>
           )}
-          {isBusy && <span className="streaming-indicator">● Running</span>}
+          {isBusy && (
+            <span className="working-pill">
+              <span className="working-dot" />
+              {streamBy ? `Working for ${streamBy}` : "Working"}
+            </span>
+          )}
         </div>
         <div className="viewer-header-actions">
-          {session.prUrl && (
-            <a href={session.prUrl} target="_blank" rel="noopener" className={`session-link ${prClass}`}>
-              PR {session.prState === "MERGED" ? "✓" : ""}
-            </a>
+          {viewers.length > 1 && (
+            <div className="presence" title={`Viewing: ${viewers.join(", ")}`}>
+              {dedupeViewers(viewers).map((v) => (
+                <span key={v.name} className={`presence-avatar ${v.name === me ? "presence-me" : ""}`}>
+                  {v.name.charAt(0).toUpperCase()}
+                  {v.count > 1 ? <span className="presence-count">{v.count}</span> : null}
+                </span>
+              ))}
+            </div>
           )}
           {session.linearIssue?.url && (
             <a href={session.linearIssue.url} target="_blank" rel="noopener" className="session-link session-link-linear">
               {session.linearIssue.identifier}
             </a>
+          )}
+          {hasWorkspace && (
+            <button
+              className={`btn-panel-toggle ${panelOpen ? "active" : ""}`}
+              onClick={() => setPanelOpen(!panelOpen)}
+              title="Toggle workspace panel"
+            >
+              ⫼
+            </button>
           )}
           {!showDeleteConfirm ? (
             <button
@@ -174,11 +210,11 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             <div className="viewer-delete-confirm">
               {session.worktreeDir && (
                 <button className="btn-delete-wt" onClick={() => handleDelete(true)} disabled={deleting}>
-                  {deleting ? "..." : "+ Worktree"}
+                  {deleting ? "…" : "+ Worktree"}
                 </button>
               )}
               <button className="btn-delete-only" onClick={() => handleDelete(false)} disabled={deleting}>
-                {deleting ? "..." : "Session"}
+                {deleting ? "…" : "Session"}
               </button>
               <button className="btn-delete-cancel" onClick={() => setShowDeleteConfirm(false)}>
                 Cancel
@@ -188,80 +224,117 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
         </div>
       </div>
 
-      <div className="viewer-messages">
-        {loading ? (
-          <div className="loading">Loading transcript...</div>
-        ) : entries.length === 0 && !session.transcriptPath ? (
-          <div className="empty">No transcript available for this session</div>
-        ) : entries.length === 0 ? (
-          <div className="empty">Empty transcript</div>
-        ) : (
-          entries.map((entry) => {
-            if (entry.type === "tool_use") {
-              return (
-                <ToolCallBlock
-                  key={entry.id}
-                  entry={entry}
-                  result={entry.toolUseId ? toolResults.get(entry.toolUseId) : undefined}
-                />
-              );
-            }
-            if (entry.type === "tool_result") {
-              return null; // rendered inside ToolCallBlock
-            }
-            return <MessageBubble key={entry.id} entry={entry} />;
-          })
-        )}
+      <div className="viewer-split">
+        <div className="viewer-chat">
+          <div className="viewer-messages" ref={messagesRef}>
+            {loading ? (
+              <div className="loading">Loading transcript…</div>
+            ) : entries.length === 0 && !session.transcriptPath ? (
+              <div className="empty">No transcript available for this session</div>
+            ) : entries.length === 0 ? (
+              <div className="empty">Empty transcript</div>
+            ) : (
+              entries.map((entry) => {
+                if (entry.type === "tool_use") {
+                  return (
+                    <ToolCallBlock
+                      key={entry.id}
+                      entry={entry}
+                      result={entry.toolUseId ? toolResults.get(entry.toolUseId) : undefined}
+                    />
+                  );
+                }
+                if (entry.type === "tool_result") {
+                  return null; // rendered inside ToolCallBlock
+                }
+                return <MessageBubble key={entry.id} entry={entry} />;
+              })
+            )}
 
-        {streamText && (
-          <div className="msg msg-assistant msg-streaming">
-            <div className="msg-label msg-label-assistant">Claude</div>
-            <div className="msg-body msg-body-assistant">{streamText}</div>
-          </div>
-        )}
+            {streamText && (
+              <div className="msg msg-assistant msg-streaming">
+                <div className="msg-label msg-label-assistant">Michael</div>
+                <div className="msg-body msg-body-assistant">{streamText}</div>
+              </div>
+            )}
 
-        <div ref={bottomRef} />
-      </div>
+            <div ref={bottomRef} />
+          </div>
 
-      <div className="viewer-input">
-        {isBusy ? (
-          <div className="input-busy">
-            <span className="pulse-dot" /> Claude is working...
-            <button className="btn-cancel" onClick={handleCancel}>
-              Cancel
-            </button>
+          <div className="viewer-input">
+            {isBusy ? (
+              <div className="input-busy">
+                <span className="pulse-dot" />
+                {streamBy && streamBy !== me ? `${streamBy} is driving — Michael is working…` : "Michael is working…"}
+                <button className="btn-cancel" onClick={handleCancel}>
+                  Cancel
+                </button>
+              </div>
+            ) : !session.claudeSessionId ? (
+              <div className="input-disabled">No Claude session to resume</div>
+            ) : (
+              <>
+                <div className="viewer-input-row">
+                  <textarea
+                    ref={textareaRef}
+                    className="prompt-input"
+                    placeholder={canSend ? "Ask Michael to build, fix, or explain…" : "Not connected"}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={!canSend}
+                    rows={2}
+                  />
+                  <button
+                    className="btn-send"
+                    onClick={handleSend}
+                    disabled={!canSend || !input.trim()}
+                  >
+                    Send
+                  </button>
+                </div>
+                <div className="prompt-hint">{"⌘"}+Enter to send</div>
+              </>
+            )}
           </div>
-        ) : !session.claudeSessionId ? (
-          <div className="input-disabled">
-            No Claude session to resume
-          </div>
-        ) : (
-          <>
-            <div className="viewer-input-row">
-              <textarea
-                ref={textareaRef}
-                className="prompt-input"
-                placeholder={canSend ? "Send a message..." : "Not connected"}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={!canSend}
-                rows={2}
-              />
+        </div>
+
+        {hasWorkspace && panelOpen && (
+          <div className="viewer-panel">
+            <div className="panel-tabs">
               <button
-                className="btn-send"
-                onClick={handleSend}
-                disabled={!canSend || !input.trim()}
+                className={`panel-tab ${panelTab === "changes" ? "active" : ""}`}
+                onClick={() => setPanelTab("changes")}
               >
-                Send
+                Changes
               </button>
+              <button
+                className={`panel-tab ${panelTab === "pr" ? "active" : ""}`}
+                onClick={() => setPanelTab("pr")}
+              >
+                PR
+                {session.prState && (
+                  <span className={`panel-tab-dot pr-dot-${session.prState.toLowerCase()}`} />
+                )}
+              </button>
+              {session.branch && <span className="panel-branch" title={session.branch}>{session.branch}</span>}
             </div>
-            <div className="prompt-hint">
-              {"\u2318"}+Enter to send
+            <div className="panel-body">
+              {panelTab === "changes" ? (
+                <DiffPanel sessionId={session.id} isRunning={isBusy} />
+              ) : (
+                <PrPanel sessionId={session.id} />
+              )}
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>
   );
+}
+
+function dedupeViewers(viewers: string[]): Array<{ name: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const v of viewers) counts.set(v, (counts.get(v) || 0) + 1);
+  return Array.from(counts, ([name, count]) => ({ name, count }));
 }

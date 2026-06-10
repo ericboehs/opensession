@@ -29,9 +29,51 @@ export interface TranscriptEntry {
   requestId?: string;
 }
 
+export interface DiffFile {
+  path: string;
+  oldPath?: string;
+  status: "added" | "modified" | "deleted" | "renamed" | "untracked";
+  additions: number;
+  deletions: number;
+  patch: string;
+  binary?: boolean;
+}
+
+export interface SessionDiff {
+  branch: string | null;
+  baseRef: string | null;
+  files: DiffFile[];
+  totalAdditions: number;
+  totalDeletions: number;
+}
+
+export interface PrCheck {
+  name: string;
+  status: string;
+  conclusion: string;
+  url?: string;
+}
+
+export interface PrDetails {
+  number: number;
+  title: string;
+  url: string;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  isDraft: boolean;
+  baseRefName: string;
+  headRefName: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  reviewDecision: string;
+  author: string;
+  body: string;
+  checks: PrCheck[];
+}
+
 export type WSClientMessage =
-  | { type: "watch"; sessionId: string }
-  | { type: "prompt"; sessionId: string; content: string }
+  | { type: "watch"; sessionId: string; user?: string }
+  | { type: "prompt"; sessionId: string; content: string; user?: string }
   | { type: "cancel" }
   | { type: "create_session"; branch: string; prompt: string; user: string };
 
@@ -39,9 +81,11 @@ export type WSServerMessage =
   | { type: "transcript_init"; entries: TranscriptEntry[] }
   | { type: "transcript_append"; entries: TranscriptEntry[] }
   | { type: "session_status"; isRunning: boolean }
-  | { type: "stream_start"; sessionId: string }
+  | { type: "presence"; sessionId: string; viewers: string[] }
+  | { type: "stream_start"; sessionId: string; by?: string }
   | { type: "stream_text"; text: string }
   | { type: "stream_tool_use"; entry: TranscriptEntry }
   | { type: "stream_tool_result"; entry: TranscriptEntry }
   | { type: "stream_done" }
+  | { type: "session_created"; id: string }
   | { type: "error"; message: string };

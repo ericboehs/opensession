@@ -1,6 +1,5 @@
 import { readdirSync, readFileSync, statSync, unlinkSync } from "fs";
 import { existsSync } from "fs";
-import { execSync } from "child_process";
 import type {
   UnifiedSession,
   SlackSessionFile,
@@ -202,7 +201,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       branch: data.branch,
       worktreeDir: data.worktreeDir,
       startedBy: data.createdBy,
-      title: data.branch,
+      title: data.title || data.branch,
       lastActivity: data.lastActivity,
       createdAt: data.createdAt,
       isRunning: false,
@@ -237,26 +236,39 @@ function getRunningPids(): Map<string, number> {
 
 // PR cache: branch → { url, state }, refreshed every 60s
 interface PrInfo { url: string; state: "OPEN" | "MERGED" | "CLOSED"; }
-let prCache: { data: Map<string, PrInfo>; ts: number } | null = null;
+let prCache: { data: Map<string, PrInfo>; ts: number } = { data: new Map(), ts: 0 };
 const PR_CACHE_TTL = 60_000;
+let prRefreshing = false;
 
+// Stale-while-revalidate: never block the event loop on gh (it takes ~10s on
+// this repo, which used to freeze every agent in the process).
 function getPrsByBranch(): Map<string, PrInfo> {
-  if (prCache && Date.now() - prCache.ts < PR_CACHE_TTL) return prCache.data;
-  const map = new Map<string, PrInfo>();
+  if (Date.now() - prCache.ts >= PR_CACHE_TTL) void refreshPrCache();
+  return prCache.data;
+}
+
+async function refreshPrCache(): Promise<void> {
+  if (prRefreshing) return;
+  prRefreshing = true;
   try {
-    const raw = execSync(
-      'gh pr list --repo tellahq/tella-fusion --state all --limit 200 --json headRefName,url,state',
-      { encoding: "utf-8", timeout: 10_000 }
+    const proc = Bun.spawn(
+      ["gh", "pr", "list", "--repo", "tellahq/tella-fusion", "--state", "all",
+       "--limit", "200", "--json", "headRefName,url,state"],
+      { stdout: "pipe", stderr: "ignore" }
     );
+    const raw = await new Response(proc.stdout).text();
     const prs = JSON.parse(raw) as Array<{ headRefName: string; url: string; state: string }>;
+    const map = new Map<string, PrInfo>();
     for (const pr of prs) {
       map.set(pr.headRefName, { url: pr.url, state: pr.state as PrInfo["state"] });
     }
+    prCache = { data: map, ts: Date.now() };
   } catch (e) {
     console.error("Failed to fetch PRs:", e);
+    prCache.ts = Date.now(); // back off on failure too
+  } finally {
+    prRefreshing = false;
   }
-  prCache = { data: map, ts: Date.now() };
-  return map;
 }
 
 export function getAllSessions(): UnifiedSession[] {
