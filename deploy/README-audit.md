@@ -31,15 +31,11 @@ never hold AWS credentials — instead the standalone amazon-cloudwatch-agent
 (its own systemd service, IMDS allowed) tails the audit files into the
 `/tella/backstage/prod` log group.
 
-The `michael-ai` instance role only has `ReadOnlyAccess` + SSM. Attach the
-audit-log write policy (from an admin session, e.g. `tella-admin`):
-
-```bash
-aws iam put-role-policy \
-  --role-name michael-ai \
-  --policy-name backstage-audit-logs \
-  --policy-document file://deploy/iam-backstage-audit-logs.json
-```
+The `michael-ai` instance role only has `ReadOnlyAccess` + SSM by default.
+The audit-log write policy (scoped to `log-group:/tella/backstage/*`) is
+managed in Terraform: `tellahq/shared-infra`, `components.tfcomponent.hcl`,
+component `michael_instance_profile` → `inline_policies.backstage-audit-logs`
+(added in shared-infra#55).
 
 Then install and start the agent on the VPS (needs sudo):
 
@@ -53,10 +49,11 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
   -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.d/backstage.json
 ```
 
-Verify:
+Verify (the VPS is in eu-west-2 — unlike the rest of Tella — and the agent
+ships to the instance's own region, so the log group lives there):
 
 ```bash
-aws logs tail /tella/backstage/prod --region us-east-2 --since 10m
+aws logs tail /tella/backstage/prod --region eu-west-2 --since 10m
 ```
 
 ## Querying
