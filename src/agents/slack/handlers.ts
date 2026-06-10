@@ -24,7 +24,6 @@ import {
   removeReaction,
   getUserInfo,
   fetchThreadContext,
-  fetchChannelContext,
   postSlackBlocks,
   updateSlackBlocks,
   openSlackModal,
@@ -992,12 +991,12 @@ Please help with this request. Start by exploring the codebase to understand wha
 
   // Regular (non-worktree) channel mention — existing behavior
 
-  // Fetch context
+  // Only thread mentions get surrounding context: a thread is one coherent
+  // conversation, while channel history is mostly other people's unrelated
+  // requests and would leak into the session prompt.
   let context = "";
   if (thread_ts) {
     context = await fetchThreadContext(channel, thread_ts);
-  } else {
-    context = await fetchChannelContext(channel, 10);
   }
 
   let worktreeDir: string | undefined;
@@ -1008,13 +1007,17 @@ Please help with this request. Start by exploring the codebase to understand wha
     branch = await generateBranchName(cleanText);
     worktreeDir = createWorktree(branch, user, cleanText);
 
-    prompt = `${userName} tagged me in a Slack ${thread_ts ? "thread" : "channel"} with this context:
+    const intro = context
+      ? `${userName} tagged me in a Slack thread with this context:
 
 ---
 ${context}
 ---
 
-Their message: "${cleanText}"
+Their message: "${cleanText}"`
+      : `${userName} tagged me in a Slack channel with this message: "${cleanText}"`;
+
+    prompt = `${intro}
 
 I'm now in a worktree (branch: ${branch}) for this task. Please help with this request. Start by exploring the codebase to understand the relevant code.`;
   } catch (e) {
