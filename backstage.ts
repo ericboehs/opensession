@@ -9,7 +9,7 @@ import { startWatching, stopAllWatchesForClient } from "./src/server/file-watche
 import { listWorktrees, createWorktree, removeWorktree } from "./src/server/worktree";
 import { runClaude, isSessionBusy, cancelRun } from "./src/server/claude-runner";
 import { getSessionDiff } from "./src/server/git-diff";
-import { getPrDetails } from "./src/server/pr-info";
+import { getPrDetails, getPrDiff, postPrComment } from "./src/server/pr-info";
 import {
   listAutomations,
   getAutomation,
@@ -23,6 +23,7 @@ import {
   setEventSessionCallback,
 } from "./src/server/automations";
 import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
+import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { getConnections, addMcpServer, removeMcpServer } from "./src/server/connections";
 import { startWebhookServer } from "./src/server/webhook-server";
 import type { AgentModule } from "./src/agents/types";
@@ -132,6 +133,9 @@ console.log(`Starting Backstage server on ${HOST}:${PORT}...`);
 const server = Bun.serve<WSClientData>({
   port: PORT,
   hostname: HOST,
+  // The plain-triage route waits for worktree+session boot (~15-60s);
+  // Bun's default 10s idleTimeout would drop the connection mid-wait
+  idleTimeout: 240,
 
   routes: {
     "/backstage": homepage,
@@ -149,6 +153,56 @@ const server = Bun.serve<WSClientData>({
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname;
+
+    // Start a Plain triage session for a thread — same context as the
+    // automation gets on thread_created — and land the user in it.
+    // Linked from the Plain support cards.
+    const plainTriageMatch = path.match(/^\/backstage\/plain-triage\/([^/]+)$/);
+    if (plainTriageMatch && req.method === "GET") {
+      const threadId = decodeURIComponent(plainTriageMatch[1]);
+      const automation = listAutomations().find(
+        (a) => a.eventKey === "plain:thread_created"
+      );
+
+      const redirect = (to: string) =>
+        new Response(null, { status: 302, headers: { Location: to } });
+
+      if (!automation) return redirect("/backstage/");
+
+      // Build the same payload shape the webhook event carries
+      let payload: Record<string, unknown> = { threadId };
+      try {
+        const { getThreadWithMessages } = await import("./src/agents/plain/api");
+        const thread = await getThreadWithMessages(threadId);
+        payload = {
+          threadId,
+          title: thread?.title || null,
+          previewText: thread?.previewText || thread?.description || null,
+          status: thread?.status || null,
+          customer: {
+            email: thread?.customer?.email?.email || null,
+            fullName: thread?.customer?.fullName || null,
+          },
+        };
+      } catch (e) {
+        console.error(`[plain-triage] Thread lookup failed for ${threadId}:`, e);
+      }
+
+      const sessionId = await new Promise<string | null>((resolve) => {
+        const timer = setTimeout(() => resolve(null), 120_000);
+        void runAutomation(
+          automation,
+          (id) => {
+            sessionsCache = null;
+            clearTimeout(timer);
+            resolve(id);
+          },
+          { trigger: "event", eventContext: JSON.stringify(payload, null, 2) }
+        );
+      });
+
+      return redirect(sessionId ? `/backstage/session/${sessionId}` : "/backstage/");
+    }
 
     // Health check (includes agent health — Tailscale-only, not public)
     if (path === "/backstage/api/health") {
@@ -195,6 +249,38 @@ const server = Bun.serve<WSClientData>({
       if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
       if (!session.branch) return Response.json(null);
       return Response.json(await getPrDetails(session.branch));
+    }
+
+    // PR diff for inline review in the PR tab
+    if (path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-diff$/) && req.method === "GET") {
+      const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-diff$/)![1]);
+      const session = findSession(sessionId);
+      if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+      if (!session.branch) return Response.json(null);
+      return Response.json(await getPrDiff(session.branch));
+    }
+
+    // Post a comment on the session's PR (inline when path+line present)
+    if (path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-comment$/) && req.method === "POST") {
+      const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-comment$/)![1]);
+      const session = findSession(sessionId);
+      if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+      if (!session.branch) return Response.json({ error: "Session has no branch" }, { status: 400 });
+
+      const body = await req.json().catch(() => null);
+      if (!body?.text?.trim()) return Response.json({ error: "Empty comment" }, { status: 400 });
+
+      const user = body.user || "Someone";
+      const result = await postPrComment(session.branch, {
+        body: `**${user}** via Michael:\n\n${body.text.trim()}`,
+        path: body.path,
+        line: body.line,
+        startLine: body.startLine,
+        side: body.side,
+        startSide: body.startSide,
+      });
+      if ("error" in result) return Response.json(result, { status: 502 });
+      return Response.json(result);
     }
 
     // Delete a session (+ optional worktree cleanup)
@@ -613,6 +699,11 @@ startScheduler(() => {
   sessionsCache = null;
 });
 setEventSessionCallback(() => {
+  sessionsCache = null;
+});
+
+// Archive triage sessions when their Plain ticket is done
+startPlainArchiveSweep(() => {
   sessionsCache = null;
 });
 

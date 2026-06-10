@@ -188,6 +188,16 @@ export async function runAutomation(
       prompt += `\n\n## Triggering event\n\nThis run was triggered by ${trigger === "event" ? `an internal event (${automation.eventKey})` : "a webhook"}. Event payload:\n\n\`\`\`\n${options.eventContext.slice(0, 10_000)}\n\`\`\``;
     }
 
+    // Tie the session to its Plain thread (if the event carries one) so it
+    // can be auto-archived when the ticket is done
+    let plainThreadId: string | undefined;
+    if (options?.eventContext) {
+      try {
+        const parsed = JSON.parse(options.eventContext);
+        if (typeof parsed.threadId === "string") plainThreadId = parsed.threadId;
+      } catch {}
+    }
+
     const persistSession = (claudeSessionId: string) => {
       const data: BackstageSessionFile = {
         id: bksId,
@@ -200,6 +210,7 @@ export async function runAutomation(
         title: `${automation.name} — ${stamp}`,
         mode: automation.mode,
         automation: automation.name,
+        plainThreadId,
       };
       writeFileSync(`${SESSIONS_DIR}/${bksId}.json`, JSON.stringify(data, null, 2));
     };

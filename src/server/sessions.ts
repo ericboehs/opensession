@@ -200,6 +200,7 @@ function scanBackstageSessions(): UnifiedSession[] {
         (data.createdBy?.endsWith(" (automation)")
           ? data.createdBy.slice(0, -" (automation)".length)
           : undefined),
+      archived: data.archived || undefined,
       lastActivity: data.lastActivity,
       createdAt: data.createdAt,
       isRunning: false,

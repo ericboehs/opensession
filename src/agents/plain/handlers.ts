@@ -425,6 +425,13 @@ export async function handleWebhook(payload: PlainWebhookPayload): Promise<Respo
     );
   }
 
+  // Archive triage sessions when their ticket is done
+  if (eventType === "thread.thread_status_transitioned" && thread.status === "DONE") {
+    const { archiveSessionsForThread } = await import("../../server/plain-archive");
+    const n = archiveSessionsForThread(thread.id);
+    if (n > 0) console.log(`[plain] Archived ${n} session(s) for done thread ${thread.id}`);
+  }
+
   // Handle note_created for @michael mentions
   if (eventType === "thread.note_created" && payload.payload.note) {
     const note = payload.payload.note;

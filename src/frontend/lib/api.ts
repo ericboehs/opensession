@@ -43,6 +43,33 @@ export async function fetchPr(sessionId: string) {
   return res.json();
 }
 
+export async function fetchPrDiff(sessionId: string) {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-diff`);
+  if (!res.ok) throw new Error(`Failed to fetch PR diff: ${res.status}`);
+  return res.json();
+}
+
+export async function postPrCommentApi(
+  sessionId: string,
+  payload: {
+    text: string;
+    user: string;
+    path?: string;
+    line?: number;
+    startLine?: number;
+    side?: "RIGHT" | "LEFT";
+  }
+) {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-comment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+  return body as { ok: true; url?: string };
+}
+
 // ── Automations ──
 
 export async function fetchAutomations() {

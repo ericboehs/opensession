@@ -34,9 +34,10 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession }: Props)
   const currentUser = useCurrentUser();
 
   const filtered = useMemo(() => {
-    if (!search) return sessions;
+    const visible = sessions.filter((s) => !s.archived);
+    if (!search) return visible;
     const q = search.toLowerCase();
-    return sessions.filter(
+    return visible.filter(
       (s) =>
         s.title.toLowerCase().includes(q) ||
         (s.branch || "").toLowerCase().includes(q) ||

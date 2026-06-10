@@ -32,6 +32,98 @@ const REPO = "tellahq/tella-fusion";
 const cache = new Map<string, { data: PrDetails | null; ts: number }>();
 const TTL = 30_000;
 
+export interface PrDiffData {
+  number: number;
+  headRefOid: string;
+  patch: string;
+}
+
+const diffCache = new Map<string, { data: PrDiffData | null; ts: number }>();
+
+export async function getPrDiff(branch: string): Promise<PrDiffData | null> {
+  const hit = diffCache.get(branch);
+  if (hit && Date.now() - hit.ts < TTL) return hit.data;
+
+  let data: PrDiffData | null = null;
+  try {
+    const metaRaw = await $`gh pr view ${branch} --repo ${REPO} --json number,headRefOid`
+      .quiet()
+      .text();
+    const meta = JSON.parse(metaRaw);
+    const patch = await $`gh pr diff ${meta.number} --repo ${REPO}`.quiet().text();
+    data = { number: meta.number, headRefOid: meta.headRefOid, patch };
+  } catch {
+    data = null;
+  }
+
+  diffCache.set(branch, { data, ts: Date.now() });
+  return data;
+}
+
+export interface PrCommentInput {
+  body: string;
+  path?: string;
+  line?: number;
+  startLine?: number;
+  side?: "RIGHT" | "LEFT";
+  startSide?: "RIGHT" | "LEFT";
+}
+
+/** Post a PR comment — inline review comment when path+line given, else a general comment. */
+export async function postPrComment(
+  branch: string,
+  input: PrCommentInput
+): Promise<{ ok: true; url?: string } | { error: string }> {
+  const diff = await getPrDiff(branch);
+  if (!diff) return { error: "No PR found for this branch" };
+
+  try {
+    if (input.path && input.line) {
+      const args = [
+        "api", "-X", "POST", `repos/${REPO}/pulls/${diff.number}/comments`,
+        "-f", `body=${input.body}`,
+        "-f", `commit_id=${diff.headRefOid}`,
+        "-f", `path=${input.path}`,
+        "-F", `line=${input.line}`,
+        "-f", `side=${input.side || "RIGHT"}`,
+      ];
+      if (input.startLine && input.startLine !== input.line) {
+        args.push("-F", `start_line=${input.startLine}`);
+        args.push("-f", `start_side=${input.startSide || input.side || "RIGHT"}`);
+      }
+      const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
+      const [out, err, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      if (code !== 0) return { error: (err || "gh api failed").slice(0, 300) };
+      const url = (() => {
+        try {
+          return JSON.parse(out).html_url as string;
+        } catch {
+          return undefined;
+        }
+      })();
+      return { ok: true, url };
+    }
+
+    const proc = Bun.spawn(
+      ["gh", "pr", "comment", String(diff.number), "--repo", REPO, "--body", input.body],
+      { stdout: "pipe", stderr: "pipe" }
+    );
+    const [out, err, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (code !== 0) return { error: (err || "gh pr comment failed").slice(0, 300) };
+    return { ok: true, url: out.trim() || undefined };
+  } catch (e: any) {
+    return { error: e.message || String(e) };
+  }
+}
+
 export async function getPrDetails(branch: string): Promise<PrDetails | null> {
   const hit = cache.get(branch);
   if (hit && Date.now() - hit.ts < TTL) return hit.data;

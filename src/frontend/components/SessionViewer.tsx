@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { marked } from "marked";
 import type { UnifiedSession, TranscriptEntry, WSServerMessage } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { WorkBlock } from "./WorkBlock";
@@ -204,6 +205,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           {session.startedBy && (
             <span className="viewer-started-by">by {session.startedBy}</span>
           )}
+          {session.archived && <span className="source-chip source-cli">archived</span>}
           {isBusy && (
             <span className="working-pill">
               <span className="working-dot" />
@@ -287,12 +289,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               )
             )}
 
-            {streamText && (
-              <div className="msg msg-assistant msg-streaming">
-                <div className="msg-label msg-label-assistant">Michael</div>
-                <div className="msg-body msg-body-assistant">{streamText}</div>
-              </div>
-            )}
+            {streamText && <StreamingMessage text={streamText} />}
 
             <div ref={bottomRef} />
           </div>
@@ -373,7 +370,12 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             </div>
             <div className="panel-body">
               {panelTab === "changes" ? (
-                <DiffPanel sessionId={session.id} isRunning={isBusy} />
+                <DiffPanel
+                  sessionId={session.id}
+                  isRunning={isBusy}
+                  canSend={Boolean(canSend)}
+                  send={send}
+                />
               ) : panelTab === "terminal" ? (
                 <TerminalPanel entries={entries} />
               ) : (
@@ -383,6 +385,26 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function StreamingMessage({ text }: { text: string }) {
+  const html = React.useMemo(() => {
+    try {
+      return marked.parse(text, { async: false, breaks: true }) as string;
+    } catch {
+      return text;
+    }
+  }, [text]);
+
+  return (
+    <div className="msg msg-assistant msg-streaming">
+      <div className="msg-label msg-label-assistant">Michael</div>
+      <div
+        className="msg-body msg-body-assistant markdown"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </div>
   );
 }

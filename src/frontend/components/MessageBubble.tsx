@@ -27,7 +27,10 @@ export function MessageBubble({ entry }: Props) {
     return (
       <div className="msg msg-user">
         <div className="msg-label msg-label-user">You</div>
-        <div className="msg-body msg-body-user">{entry.content}</div>
+        <div
+          className="msg-body msg-body-user markdown"
+          dangerouslySetInnerHTML={{ __html: html || "" }}
+        />
       </div>
     );
   }

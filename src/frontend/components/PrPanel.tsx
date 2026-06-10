@@ -1,18 +1,33 @@
 import React, { useEffect, useState, useCallback } from "react";
 import type { PrDetails } from "../lib/types";
-import { fetchPr } from "../lib/api";
+import { fetchPr, fetchPrDiff, postPrCommentApi } from "../lib/api";
+import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
+import { getCurrentUser } from "./UserPicker";
 
 interface Props {
   sessionId: string;
 }
 
+interface PrDiffData {
+  number: number;
+  headRefOid: string;
+  patch: string;
+}
+
 export function PrPanel({ sessionId }: Props) {
   const [pr, setPr] = useState<PrDetails | null>(null);
+  const [diff, setDiff] = useState<PrDiffData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastCommentUrl, setLastCommentUrl] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setPr(await fetchPr(sessionId));
+      const [prData, diffData] = await Promise.all([
+        fetchPr(sessionId),
+        fetchPrDiff(sessionId).catch(() => null),
+      ]);
+      setPr(prData);
+      setDiff(diffData);
     } catch {
       setPr(null);
     } finally {
@@ -25,6 +40,18 @@ export function PrPanel({ sessionId }: Props) {
     const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
   }, [load]);
+
+  async function handlePrComment(target: CommentTarget, text: string) {
+    const result = await postPrCommentApi(sessionId, {
+      text,
+      user: getCurrentUser(),
+      path: target.path,
+      line: target.endLine,
+      startLine: target.startLine !== target.endLine ? target.startLine : undefined,
+      side: target.side === "deletions" ? "LEFT" : "RIGHT",
+    });
+    setLastCommentUrl(result.url || null);
+  }
 
   if (loading) return <div className="panel-placeholder">Loading PR…</div>;
   if (!pr) return <div className="panel-placeholder">No pull request for this branch yet</div>;
@@ -94,6 +121,25 @@ export function PrPanel({ sessionId }: Props) {
       <a className="btn-open-pr" href={pr.url} target="_blank" rel="noopener">
         Open on GitHub ↗
       </a>
+
+      {diff?.patch && (
+        <div className="pr-diff-section">
+          <div className="pr-checks-title">
+            Review — comments land on the PR
+            {lastCommentUrl && (
+              <a className="pr-comment-link" href={lastCommentUrl} target="_blank" rel="noopener">
+                last comment ↗
+              </a>
+            )}
+          </div>
+          <CommentableDiff
+            patch={diff.patch}
+            submitLabel="Comment on PR"
+            placeholder={`Review comment — posts on #${diff.number} as an inline comment…`}
+            onSubmit={handlePrComment}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -39,9 +39,10 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
     setPins(togglePin(id));
   }
 
-  const running = sessions.filter((s) => s.isRunning);
-  const pinned = sessions.filter((s) => pins.includes(s.id) && !s.isRunning);
-  const recent = sessions
+  const visible = sessions.filter((s) => !s.archived);
+  const running = visible.filter((s) => s.isRunning);
+  const pinned = visible.filter((s) => pins.includes(s.id) && !s.isRunning);
+  const recent = visible
     .filter((s) => !s.isRunning && !pins.includes(s.id))
     .slice(0, 12);
 
