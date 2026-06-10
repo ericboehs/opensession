@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import type { UnifiedSession, SessionSource } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
+import { getPins, onPinsChanged } from "../lib/pins";
 
 const SOURCE_COLORS: Record<string, string> = {
-  slack: "#4A154B",
-  linear: "#5E6AD2",
-  backstage: "#0D9488",
+  slack: "#a36ba5",
+  linear: "#7b86e8",
+  backstage: "#5eead4",
   cli: "#6B7280",
 };
 
@@ -33,9 +34,9 @@ const EXPANDED_KEY = "michael-sidebar-expanded";
 
 function readExpanded(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) || "[]"));
+    return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) || '["pinned","mine"]'));
   } catch {
-    return new Set();
+    return new Set(["pinned", "mine"]);
   }
 }
 
@@ -43,7 +44,10 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession, onOpenAr
   const [search, setSearch] = useState("");
   // Groups are collapsed by default; the expanded set persists per browser
   const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
+  const [pins, setPins] = useState<string[]>(getPins);
   const currentUser = useCurrentUser();
+
+  useEffect(() => onPinsChanged(() => setPins(getPins())), []);
 
   const archivedCount = useMemo(() => sessions.filter((s) => s.archived).length, [sessions]);
 
@@ -63,19 +67,29 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession, onOpenAr
   const groups = useMemo(() => {
     const out: Group[] = [];
     const user = currentUser.toLowerCase();
+    const pinSet = new Set(pins);
+
+    const pinned = filtered.filter((s) => pinSet.has(s.id));
+    if (pinned.length > 0) {
+      out.push({ key: "pinned", label: "Pinned", dotColor: null, items: pinned });
+    }
 
     // "Mine": sessions started by the current user (automations excluded)
     const mine = filtered.filter(
-      (s) => !s.automation && s.startedBy && s.startedBy.toLowerCase() === user
+      (s) =>
+        !s.automation &&
+        !pinSet.has(s.id) &&
+        s.startedBy &&
+        s.startedBy.toLowerCase() === user
     );
     if (mine.length > 0) {
-      out.push({ key: "mine", label: `${currentUser}'s sessions`, dotColor: null, items: mine });
+      out.push({ key: "mine", label: "My sessions", dotColor: null, items: mine });
     }
 
     // One group per automation
     const byAutomation = new Map<string, UnifiedSession[]>();
     for (const s of filtered) {
-      if (!s.automation) continue;
+      if (!s.automation || pinSet.has(s.id)) continue;
       const list = byAutomation.get(s.automation) || [];
       list.push(s);
       byAutomation.set(s.automation, list);
@@ -91,7 +105,9 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession, onOpenAr
 
     // Source groups (automation sessions live in their own groups above)
     for (const source of SOURCE_ORDER) {
-      const items = filtered.filter((s) => s.source === source && !s.automation);
+      const items = filtered.filter(
+        (s) => s.source === source && !s.automation && !pinSet.has(s.id)
+      );
       if (items.length > 0) {
         out.push({
           key: source,
@@ -102,7 +118,7 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession, onOpenAr
       }
     }
     return out;
-  }, [filtered, currentUser]);
+  }, [filtered, currentUser, pins]);
 
   function toggleGroup(key: string) {
     setExpanded((prev) => {
@@ -120,13 +136,19 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession, onOpenAr
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <input
-          className="sidebar-search"
-          type="text"
-          placeholder="Search..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div className="sidebar-search-wrap">
+          <svg className="sidebar-search-icon" width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M14 14L10.7 10.7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <input
+            className="sidebar-search"
+            type="text"
+            placeholder="Search sessions"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         <button className="sidebar-new-btn" onClick={onNewSession} title="New session">
           +
         </button>
@@ -140,9 +162,6 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession, onOpenAr
               className="sidebar-group-header"
               onClick={() => toggleGroup(group.key)}
             >
-              <span className="sidebar-group-chevron">
-                {isOpen(group.key) ? "▾" : "▸"}
-              </span>
               {group.dotColor && (
                 <span
                   className="sidebar-group-dot"
@@ -151,6 +170,9 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession, onOpenAr
               )}
               <span className="sidebar-group-name">{group.label}</span>
               <span className="sidebar-group-count">{group.items.length}</span>
+              <span className="sidebar-group-chevron">
+                {isOpen(group.key) ? "▾" : "▸"}
+              </span>
             </button>
 
             {isOpen(group.key) &&
@@ -184,11 +206,37 @@ function SidebarItem({
   selected: boolean;
   onClick: () => void;
 }) {
-  const statusColor = session.isRunning
-    ? "var(--green)"
-    : isRecent(session.lastActivity)
-      ? "var(--yellow)"
-      : "transparent";
+  const running = session.isRunning;
+  const recent = isRecent(session.lastActivity);
+
+  const metaParts: React.ReactNode[] = [];
+  if (session.startedBy && !session.automation) {
+    metaParts.push(<span key="u">{session.startedBy}</span>);
+  }
+  metaParts.push(<span key="t">{relativeTime(session.lastActivity)}</span>);
+  if (session.prUrl) {
+    metaParts.push(
+      <span
+        key="pr"
+        className={
+          session.prState === "MERGED"
+            ? "sidebar-meta-merged"
+            : session.prState === "CLOSED"
+              ? "sidebar-meta-closed"
+              : "sidebar-meta-pr"
+        }
+      >
+        {session.prState === "MERGED" ? "merged" : session.prState === "CLOSED" ? "closed" : "PR open"}
+      </span>
+    );
+  }
+  if (session.linearIssue) {
+    metaParts.push(
+      <span key="lin" className="sidebar-meta-linear">
+        {session.linearIssue.identifier}
+      </span>
+    );
+  }
 
   return (
     <button
@@ -196,29 +244,21 @@ function SidebarItem({
       onClick={onClick}
     >
       <div className="sidebar-item-top">
-        <span className="sidebar-item-status" style={{ backgroundColor: statusColor }} />
+        {(running || recent) && (
+          <span
+            className={`sidebar-item-status ${running ? "sidebar-status-running" : "sidebar-status-recent"}`}
+          />
+        )}
         <span className="sidebar-item-title">{session.title}</span>
       </div>
       <div className="sidebar-item-meta">
-        {session.startedBy && !session.automation && (
-          <span className="sidebar-item-user">{session.startedBy}</span>
-        )}
-        <span className="sidebar-item-time">{relativeTime(session.lastActivity)}</span>
+        {metaParts.map((part, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <span className="sidebar-meta-sep">·</span>}
+            {part}
+          </React.Fragment>
+        ))}
       </div>
-      {(session.prUrl || session.linearIssue) && (
-        <div className="sidebar-item-badges">
-          {session.prUrl && (
-            <span className={`sidebar-badge ${session.prState === "MERGED" ? "badge-merged" : session.prState === "CLOSED" ? "badge-closed" : "badge-pr"}`}>
-              PR{session.prState === "MERGED" ? " ✓" : ""}
-            </span>
-          )}
-          {session.linearIssue && (
-            <span className="sidebar-badge badge-linear">
-              {session.linearIssue.identifier}
-            </span>
-          )}
-        </div>
-      )}
     </button>
   );
 }

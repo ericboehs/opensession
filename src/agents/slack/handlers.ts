@@ -395,18 +395,28 @@ export async function processMessage(
   const streamer = new SlackStreamer(channel, threadTs, msg.userId);
   await streamer.setStatus("is thinking...");
 
-  // Post a Stop button so the user can cancel even if Slack's assistant DM
+  // Post a status message with the live Backstage session link and a Stop
+  // button, so the run can be followed/cancelled even if Slack's assistant DM
   // disables the input field while we're working.
+  const backstageUrl = `https://michael.taila5d766.ts.net:8443/backstage/session/slack-${encodeURIComponent(sessionKey)}`;
+  const backstageButton = {
+    type: "button",
+    text: { type: "plain_text", text: ":desktop_computer: Open in Backstage", emoji: true },
+    url: backstageUrl,
+    action_id: `backstage:${sessionKey}`,
+  };
+
   let stopButtonTs: string | null = null;
   try {
     const postResult = await postSlackBlocks(
       channel,
-      "Working — tap Stop to cancel.",
+      "Working — follow along in Backstage or tap Stop to cancel.",
       [
         {
           type: "actions",
           block_id: `stop-actions-${sessionKey}`,
           elements: [
+            backstageButton,
             {
               type: "button",
               text: { type: "plain_text", text: ":octagonal_sign: Stop", emoji: true },
@@ -427,10 +437,16 @@ export async function processMessage(
   const dismissStopButton = async (label: string): Promise<void> => {
     if (!stopButtonTs) return;
     try {
+      // Keep the Backstage link around after the run finishes
       await updateSlackBlocks(channel, stopButtonTs, label, [
         {
           type: "context",
           elements: [{ type: "mrkdwn", text: `_${label}_` }],
+        },
+        {
+          type: "actions",
+          block_id: `backstage-link-${sessionKey}`,
+          elements: [backstageButton],
         },
       ]);
     } catch (e) {
