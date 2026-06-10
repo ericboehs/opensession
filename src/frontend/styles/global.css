@@ -1343,6 +1343,135 @@ a {
 .work-block-body .tool { margin-bottom: 4px; }
 .work-block-body .tool:last-child { margin-bottom: 0; }
 
+/* ── Spin-off menu ───────────────────────────────────────── */
+
+.spinoff { position: relative; }
+
+.spinoff-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 320px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.spinoff-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
+}
+.spinoff-item:last-child { border-bottom: none; }
+.spinoff-item:hover { background: var(--bg-hover); }
+
+.spinoff-item-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.spinoff-item-sub {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.spinoff-form {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 380px;
+  max-width: 90vw;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.spinoff-form-title {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.spinoff-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.spinoff-form input,
+.spinoff-form textarea {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  color: var(--text);
+  padding: 7px 10px;
+  font-size: 13px;
+  outline: none;
+}
+.spinoff-form input:focus,
+.spinoff-form textarea:focus { border-color: var(--accent); }
+.spinoff-form textarea { resize: vertical; line-height: 1.45; }
+
+.spinoff-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.spinoff-note {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+/* automation webhook row */
+.automation-webhook {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.automation-webhook-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.automation-webhook-url {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
 /* ── Terminal panel ──────────────────────────────────────── */
 
 .terminal {

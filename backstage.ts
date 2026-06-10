@@ -19,6 +19,7 @@ import {
   runAutomation,
   isAutomationRunning,
   startScheduler,
+  getWebhookRoutes,
 } from "./src/server/automations";
 import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
 import { getConnections, addMcpServer, removeMcpServer } from "./src/server/connections";
@@ -597,9 +598,14 @@ async function loadAgents(): Promise<AgentModule[]> {
   return agents;
 }
 
-// Start webhook server with enabled agents
+// Start webhook server with enabled agents + automation webhook triggers
 const agents = await loadAgents();
-const webhookServer = startWebhookServer(agents);
+const webhookServer = startWebhookServer(
+  agents,
+  getWebhookRoutes(() => {
+    sessionsCache = null;
+  })
+);
 
 // Cron-scheduled automations
 startScheduler(() => {

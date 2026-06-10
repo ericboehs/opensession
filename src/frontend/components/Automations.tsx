@@ -18,10 +18,12 @@ interface Automation {
   enabled: boolean;
   createdBy: string;
   createdAt: string;
+  webhookSecret?: string;
   lastRunAt?: string;
   lastRunSessionId?: string;
   lastRunStatus?: "running" | "ok" | "error";
   lastRunError?: string;
+  lastTrigger?: "cron" | "webhook" | "manual";
   nextRunAt: string | null;
   isRunning?: boolean;
 }
@@ -29,6 +31,8 @@ interface Automation {
 interface Props {
   onOpenSession: (sessionId: string) => void;
 }
+
+const CUSTOM = "__custom__";
 
 const PRESETS: Array<{ label: string; cron: string }> = [
   { label: "Every 15 minutes", cron: "*/15 * * * *" },
@@ -38,8 +42,11 @@ const PRESETS: Array<{ label: string; cron: string }> = [
   { label: "Weekdays · 9:00 AM PT", cron: "0 16 * * 1-5" },
   { label: "Weekdays · 9:00 AM CET", cron: "0 8 * * 1-5" },
   { label: "Mondays · 9:00 AM CET", cron: "0 8 * * 1" },
-  { label: "Custom cron…", cron: "" },
+  { label: "No schedule — webhook / manual only", cron: "" },
+  { label: "Custom cron…", cron: CUSTOM },
 ];
+
+const WEBHOOK_BASE = "https://michael.tella.dev";
 
 export function Automations({ onOpenSession }: Props) {
   const [automations, setAutomations] = useState<Automation[]>([]);
@@ -184,13 +191,18 @@ export function Automations({ onOpenSession }: Props) {
               <div className="automation-prompt">{a.prompt}</div>
 
               <div className="automation-meta">
-                <span className="automation-cron" title="UTC">{a.schedule}</span>
+                {a.schedule ? (
+                  <span className="automation-cron" title="UTC">{a.schedule}</span>
+                ) : (
+                  <span className="automation-cron">webhook / manual</span>
+                )}
                 {a.nextRunAt && a.enabled && (
                   <span>next {formatNext(a.nextRunAt)}</span>
                 )}
                 {a.lastRunAt && (
                   <span className="automation-lastrun">
                     last run {relativeTime(a.lastRunAt)}
+                    {a.lastTrigger ? ` via ${a.lastTrigger}` : ""}
                     {a.lastRunStatus === "ok" && <span className="auto-status-ok"> ✓</span>}
                     {a.lastRunStatus === "error" && (
                       <span className="auto-status-err" title={a.lastRunError}> ✗</span>
@@ -214,10 +226,37 @@ export function Automations({ onOpenSession }: Props) {
                 )}
                 <span className="automation-by">by {a.createdBy}</span>
               </div>
+
+              {a.webhookSecret && <WebhookUrl id={a.id} secret={a.webhookSecret} />}
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function WebhookUrl({ id, secret }: { id: string; secret: string }) {
+  const [copied, setCopied] = useState(false);
+  const url = `${WEBHOOK_BASE}/automations/${id}/${secret}`;
+
+  return (
+    <div className="automation-webhook">
+      <span className="automation-webhook-label">webhook</span>
+      <span className="automation-webhook-url" title={url}>
+        POST {url.replace(secret, secret.slice(0, 6) + "…")}
+      </span>
+      <button
+        className="btn-small"
+        onClick={() => {
+          navigator.clipboard.writeText(url).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+      >
+        {copied ? "Copied ✓" : "Copy URL"}
+      </button>
     </div>
   );
 }
@@ -239,20 +278,21 @@ function AutomationForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const initialPreset =
-    initial ? (PRESETS.find((p) => p.cron === initial.schedule) ? initial.schedule : "") : PRESETS[2].cron;
+  const matchesPreset = initial
+    ? PRESETS.some((p) => p.cron === initial.schedule && p.cron !== CUSTOM)
+    : true;
+  const initialPreset = initial ? (matchesPreset ? initial.schedule : CUSTOM) : PRESETS[2].cron;
 
   const [name, setName] = useState(initial?.name || "");
   const [prompt, setPrompt] = useState(initial?.prompt || "");
   const [preset, setPreset] = useState(initialPreset);
-  const [customCron, setCustomCron] = useState(
-    initial && !PRESETS.find((p) => p.cron === initial.schedule) ? initial.schedule : ""
-  );
+  const [customCron, setCustomCron] = useState(initial && !matchesPreset ? initial.schedule : "");
   const [mode, setMode] = useState<"ask" | "code">(initial?.mode || "ask");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const schedule = preset === "" ? customCron.trim() : preset;
+  const schedule = preset === CUSTOM ? customCron.trim() : preset;
+  const scheduleValid = preset !== CUSTOM || customCron.trim().length > 0;
 
   async function handleSave() {
     setSaving(true);
@@ -318,7 +358,7 @@ function AutomationForm({
         </label>
       </div>
 
-      {preset === "" && (
+      {preset === CUSTOM && (
         <label>
           Cron expression (UTC)
           <input
@@ -340,7 +380,7 @@ function AutomationForm({
           className="btn-create"
           style={{ padding: "8px 22px" }}
           onClick={handleSave}
-          disabled={saving || !name.trim() || !prompt.trim() || !schedule}
+          disabled={saving || !name.trim() || !prompt.trim() || !scheduleValid}
         >
           {saving ? "Saving…" : initial ? "Save changes" : "Create automation"}
         </button>

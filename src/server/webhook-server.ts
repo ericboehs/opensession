@@ -14,7 +14,10 @@ let routeTable = new Map<string, (req: Request, url: URL) => Promise<Response>>(
 /** Active agent modules for health reporting */
 let activeAgents: AgentModule[] = [];
 
-export function startWebhookServer(agents: AgentModule[]) {
+export function startWebhookServer(
+  agents: AgentModule[],
+  extraRoutes?: Map<string, (req: Request, url: URL) => Promise<Response>>
+) {
   activeAgents = agents;
 
   // Build combined route table from all agents
@@ -26,6 +29,12 @@ export function startWebhookServer(agents: AgentModule[]) {
       }
       routeTable.set(key, handler);
     }
+  }
+  for (const [key, handler] of extraRoutes || []) {
+    if (routeTable.has(key)) {
+      console.warn(`[webhook] Route collision: ${key} (extra)`);
+    }
+    routeTable.set(key, handler);
   }
 
   const server = Bun.serve({

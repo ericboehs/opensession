@@ -19,15 +19,17 @@ export interface Automation {
   id: string;
   name: string;
   prompt: string;
-  schedule: string; // 5-field cron, UTC
+  schedule: string; // 5-field cron, UTC; "" = webhook/manual only
   mode: "ask" | "code";
   enabled: boolean;
   createdBy: string;
   createdAt: string;
+  webhookSecret: string; // every automation is also webhook-triggerable
   lastRunAt?: string;
   lastRunSessionId?: string;
   lastRunStatus?: "running" | "ok" | "error";
   lastRunError?: string;
+  lastTrigger?: "cron" | "webhook" | "manual";
 }
 
 export interface AutomationWithNext extends Automation {
@@ -46,7 +48,8 @@ export function listAutomations(): AutomationWithNext[] {
       const a = JSON.parse(readFileSync(`${AUTOMATIONS_DIR}/${file}`, "utf-8")) as Automation;
       out.push({
         ...a,
-        nextRunAt: a.enabled ? nextRun(a.schedule)?.toISOString() || null : null,
+        nextRunAt:
+          a.enabled && a.schedule ? nextRun(a.schedule)?.toISOString() || null : null,
       });
     } catch {}
   }
@@ -68,6 +71,12 @@ export function saveAutomation(a: Automation): void {
   writeFileSync(`${AUTOMATIONS_DIR}/${a.id}.json`, JSON.stringify(a, null, 2));
 }
 
+function generateSecret(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) =>
+    b.toString(16).padStart(2, "0")
+  ).join("");
+}
+
 export function createAutomation(input: {
   name: string;
   prompt: string;
@@ -77,17 +86,21 @@ export function createAutomation(input: {
 }): Automation | { error: string } {
   if (!input.name.trim()) return { error: "Name is required" };
   if (!input.prompt.trim()) return { error: "Prompt is required" };
-  if (!parseCron(input.schedule)) return { error: `Invalid cron expression: "${input.schedule}"` };
+  const schedule = (input.schedule || "").trim();
+  if (schedule && !parseCron(schedule)) {
+    return { error: `Invalid cron expression: "${schedule}"` };
+  }
 
   const a: Automation = {
     id: `auto-${randomUUIDv7()}`,
     name: input.name.trim(),
     prompt: input.prompt.trim(),
-    schedule: input.schedule.trim(),
+    schedule,
     mode: input.mode === "code" ? "code" : "ask",
     enabled: true,
     createdBy: input.createdBy || "Anonymous",
     createdAt: new Date().toISOString(),
+    webhookSecret: generateSecret(),
   };
   saveAutomation(a);
   return a;
@@ -99,10 +112,12 @@ export function updateAutomation(
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
-  if (patch.schedule !== undefined && !parseCron(patch.schedule)) {
+  if (patch.schedule !== undefined && patch.schedule.trim() && !parseCron(patch.schedule)) {
     return { error: `Invalid cron expression: "${patch.schedule}"` };
   }
   const next = { ...a, ...patch };
+  // Backfill secrets for automations created before webhook support
+  if (!next.webhookSecret) next.webhookSecret = generateSecret();
   saveAutomation(next);
   return next;
 }
@@ -128,7 +143,8 @@ export function isAutomationRunning(id: string): boolean {
 
 export async function runAutomation(
   automation: Automation,
-  onSessionCreated?: (sessionId: string) => void
+  onSessionCreated?: (sessionId: string) => void,
+  options?: { trigger?: "cron" | "webhook" | "manual"; eventContext?: string }
 ): Promise<void> {
   if (runningNow.has(automation.id)) {
     console.log(`[automations] "${automation.name}" still running, skipping`);
@@ -158,7 +174,13 @@ export async function runAutomation(
       lastRunSessionId: bksId,
       lastRunStatus: "running",
       lastRunError: undefined,
+      lastTrigger: options?.trigger || "manual",
     });
+
+    let prompt = automation.prompt;
+    if (options?.eventContext) {
+      prompt += `\n\n## Triggering event\n\nThis run was triggered by a webhook. Event payload:\n\n\`\`\`\n${options.eventContext.slice(0, 10_000)}\n\`\`\``;
+    }
 
     const persistSession = (claudeSessionId: string) => {
       const data: BackstageSessionFile = {
@@ -180,7 +202,7 @@ export async function runAutomation(
     let claudeSessionId = "";
     let errorMsg = "";
     for await (const event of runClaude({
-      prompt: automation.prompt,
+      prompt,
       cwd,
       mode: automation.mode,
     })) {
@@ -244,10 +266,10 @@ export function startScheduler(onSessionCreated?: (sessionId: string) => void): 
     lastFiredMinute = minuteKey;
 
     for (const automation of listAutomations()) {
-      if (!automation.enabled) continue;
+      if (!automation.enabled || !automation.schedule) continue;
       if (cronMatches(automation.schedule, now)) {
         // Fire and forget — runner guards against overlap per automation
-        void runAutomation(automation, onSessionCreated);
+        void runAutomation(automation, onSessionCreated, { trigger: "cron" });
       }
     }
   }, 20_000);
@@ -260,4 +282,47 @@ export function stopScheduler(): void {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
   }
+}
+
+// ── Webhook trigger ──────────────────────────────────────────
+// POST /automations/<id>/<secret> on the public webhook server (3848,
+// proxied by Caddy). The secret in the path is the only auth, so it's
+// long-random and rotatable by editing the automation file.
+
+export function getWebhookRoutes(
+  onSessionCreated?: (sessionId: string) => void
+): Map<string, (req: Request, url: URL) => Promise<Response>> {
+  const routes = new Map<string, (req: Request, url: URL) => Promise<Response>>();
+
+  routes.set("POST /automations/*", async (req, url) => {
+    const m = url.pathname.match(/^\/automations\/([^/]+)\/([^/]+)$/);
+    if (!m) return Response.json({ error: "Bad path" }, { status: 400 });
+
+    const automation = getAutomation(m[1]);
+    // Same response for unknown id and bad secret — don't leak which ids exist
+    if (!automation || !automation.webhookSecret || automation.webhookSecret !== m[2]) {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+    if (!automation.enabled) {
+      return Response.json({ ok: false, skipped: "disabled" });
+    }
+    if (isAutomationRunning(automation.id)) {
+      return Response.json({ ok: false, skipped: "already running" });
+    }
+
+    let payload = "";
+    try {
+      payload = (await req.text()).slice(0, 10_000);
+    } catch {}
+
+    console.log(`[automations] Webhook trigger: "${automation.name}"`);
+    void runAutomation(automation, onSessionCreated, {
+      trigger: "webhook",
+      eventContext: payload || "(empty body)",
+    });
+
+    return Response.json({ ok: true });
+  });
+
+  return routes;
 }

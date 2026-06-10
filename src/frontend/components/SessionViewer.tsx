@@ -7,6 +7,7 @@ import { getCurrentUser } from "./UserPicker";
 import { deleteSessionApi } from "../lib/api";
 import { DiffPanel } from "./DiffPanel";
 import { PrPanel } from "./PrPanel";
+import { SpinOffMenu } from "./SpinOffMenu";
 
 interface Props {
   session: UnifiedSession;
@@ -226,6 +227,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               {session.linearIssue.identifier}
             </a>
           )}
+          <SpinOffMenu session={session} entries={entries} send={send} connected={connected} />
           {hasWorkspace && (
             <button
               className={`btn-panel-toggle ${panelOpen ? "active" : ""}`}
