@@ -403,6 +403,28 @@ export async function handleWebhook(payload: PlainWebhookPayload): Promise<Respo
     return Response.json({ ok: true });
   }
 
+  // Publish new tickets to the automation event bus (e.g. auto-triage)
+  if (eventType === "thread.thread_created") {
+    const { fireAutomationsForEvent } = await import("../../server/automations");
+    fireAutomationsForEvent(
+      "plain:thread_created",
+      JSON.stringify(
+        {
+          threadId: thread.id,
+          title: thread.title || null,
+          previewText: thread.previewText || null,
+          status: thread.status,
+          customer: {
+            email: thread.customer?.email?.email || null,
+            fullName: thread.customer?.fullName || null,
+          },
+        },
+        null,
+        2
+      )
+    );
+  }
+
   // Handle note_created for @michael mentions
   if (eventType === "thread.note_created" && payload.payload.note) {
     const note = payload.payload.note;

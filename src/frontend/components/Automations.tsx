@@ -19,6 +19,7 @@ interface Automation {
   createdBy: string;
   createdAt: string;
   webhookSecret?: string;
+  eventKey?: string;
   lastRunAt?: string;
   lastRunSessionId?: string;
   lastRunStatus?: "running" | "ok" | "error";
@@ -193,8 +194,13 @@ export function Automations({ onOpenSession }: Props) {
               <div className="automation-meta">
                 {a.schedule ? (
                   <span className="automation-cron" title="UTC">{a.schedule}</span>
-                ) : (
+                ) : !a.eventKey ? (
                   <span className="automation-cron">webhook / manual</span>
+                ) : null}
+                {a.eventKey && (
+                  <span className="automation-cron automation-event" title="Internal event trigger">
+                    on {a.eventKey}
+                  </span>
                 )}
                 {a.nextRunAt && a.enabled && (
                   <span>next {formatNext(a.nextRunAt)}</span>
@@ -288,6 +294,7 @@ function AutomationForm({
   const [preset, setPreset] = useState(initialPreset);
   const [customCron, setCustomCron] = useState(initial && !matchesPreset ? initial.schedule : "");
   const [mode, setMode] = useState<"ask" | "code">(initial?.mode || "ask");
+  const [eventKey, setEventKey] = useState(initial?.eventKey || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -299,13 +306,14 @@ function AutomationForm({
     setError(null);
     try {
       if (initial) {
-        await updateAutomationApi(initial.id, { name, prompt, schedule, mode });
+        await updateAutomationApi(initial.id, { name, prompt, schedule, mode, eventKey });
       } else {
         await createAutomationApi({
           name,
           prompt,
           schedule,
           mode,
+          eventKey: eventKey || undefined,
           createdBy: getCurrentUser(),
         });
       }
@@ -369,6 +377,14 @@ function AutomationForm({
           />
         </label>
       )}
+
+      <label>
+        Event trigger (optional — also runs when this internal event fires)
+        <select value={eventKey} onChange={(e) => setEventKey(e.target.value)}>
+          <option value="">None</option>
+          <option value="plain:thread_created">Plain — new support ticket created</option>
+        </select>
+      </label>
 
       {error && <div className="form-error">{error}</div>}
 

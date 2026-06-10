@@ -57,6 +57,7 @@ export async function createAutomationApi(input: {
   schedule: string;
   mode: "ask" | "code";
   createdBy: string;
+  eventKey?: string;
 }) {
   const res = await fetch(`${BASE}/automations`, {
     method: "POST",

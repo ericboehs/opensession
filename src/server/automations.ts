@@ -25,11 +25,12 @@ export interface Automation {
   createdBy: string;
   createdAt: string;
   webhookSecret: string; // every automation is also webhook-triggerable
+  eventKey?: string; // internal event subscription, e.g. "plain:thread_created"
   lastRunAt?: string;
   lastRunSessionId?: string;
   lastRunStatus?: "running" | "ok" | "error";
   lastRunError?: string;
-  lastTrigger?: "cron" | "webhook" | "manual";
+  lastTrigger?: "cron" | "webhook" | "manual" | "event";
 }
 
 export interface AutomationWithNext extends Automation {
@@ -83,6 +84,7 @@ export function createAutomation(input: {
   schedule: string;
   mode: "ask" | "code";
   createdBy: string;
+  eventKey?: string;
 }): Automation | { error: string } {
   if (!input.name.trim()) return { error: "Name is required" };
   if (!input.prompt.trim()) return { error: "Prompt is required" };
@@ -101,6 +103,7 @@ export function createAutomation(input: {
     createdBy: input.createdBy || "Anonymous",
     createdAt: new Date().toISOString(),
     webhookSecret: generateSecret(),
+    eventKey: (input.eventKey || "").trim() || undefined,
   };
   saveAutomation(a);
   return a;
@@ -108,7 +111,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "mode" | "enabled">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "mode" | "enabled" | "eventKey">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -131,26 +134,29 @@ export function deleteAutomation(id: string): boolean {
 
 // ── Runner ───────────────────────────────────────────────────
 
-const runningNow = new Set<string>();
+const runningCounts = new Map<string, number>();
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "automation";
 }
 
 export function isAutomationRunning(id: string): boolean {
-  return runningNow.has(id);
+  return (runningCounts.get(id) || 0) > 0;
 }
 
 export async function runAutomation(
   automation: Automation,
   onSessionCreated?: (sessionId: string) => void,
-  options?: { trigger?: "cron" | "webhook" | "manual"; eventContext?: string }
+  options?: { trigger?: "cron" | "webhook" | "manual" | "event"; eventContext?: string }
 ): Promise<void> {
-  if (runningNow.has(automation.id)) {
+  const trigger = options?.trigger || "manual";
+  // Cron/manual runs don't stack; event/webhook runs are per-event, so they may overlap
+  const concurrent = trigger === "event" || trigger === "webhook";
+  if (!concurrent && isAutomationRunning(automation.id)) {
     console.log(`[automations] "${automation.name}" still running, skipping`);
     return;
   }
-  runningNow.add(automation.id);
+  runningCounts.set(automation.id, (runningCounts.get(automation.id) || 0) + 1);
 
   const startedAt = new Date();
   const stamp = startedAt.toISOString().slice(0, 16).replace("T", " ");
@@ -174,12 +180,12 @@ export async function runAutomation(
       lastRunSessionId: bksId,
       lastRunStatus: "running",
       lastRunError: undefined,
-      lastTrigger: options?.trigger || "manual",
+      lastTrigger: trigger,
     });
 
     let prompt = automation.prompt;
     if (options?.eventContext) {
-      prompt += `\n\n## Triggering event\n\nThis run was triggered by a webhook. Event payload:\n\n\`\`\`\n${options.eventContext.slice(0, 10_000)}\n\`\`\``;
+      prompt += `\n\n## Triggering event\n\nThis run was triggered by ${trigger === "event" ? `an internal event (${automation.eventKey})` : "a webhook"}. Event payload:\n\n\`\`\`\n${options.eventContext.slice(0, 10_000)}\n\`\`\``;
     }
 
     const persistSession = (claudeSessionId: string) => {
@@ -247,8 +253,34 @@ export async function runAutomation(
       });
     }
   } finally {
-    runningNow.delete(automation.id);
+    const left = (runningCounts.get(automation.id) || 1) - 1;
+    if (left <= 0) runningCounts.delete(automation.id);
+    else runningCounts.set(automation.id, left);
   }
+}
+
+// ── Internal event bus ───────────────────────────────────────
+// Agents (Plain/Slack/Linear) publish events; automations subscribe
+// via their eventKey. Each event gets its own run (may overlap).
+
+let eventSessionCallback: ((sessionId: string) => void) | undefined;
+
+export function setEventSessionCallback(cb: (sessionId: string) => void): void {
+  eventSessionCallback = cb;
+}
+
+export function fireAutomationsForEvent(eventKey: string, payload: string): number {
+  let fired = 0;
+  for (const automation of listAutomations()) {
+    if (!automation.enabled || automation.eventKey !== eventKey) continue;
+    console.log(`[automations] Event ${eventKey} → "${automation.name}"`);
+    void runAutomation(automation, eventSessionCallback, {
+      trigger: "event",
+      eventContext: payload,
+    });
+    fired++;
+  }
+  return fired;
 }
 
 // ── Scheduler ────────────────────────────────────────────────

@@ -20,6 +20,7 @@ import {
   isAutomationRunning,
   startScheduler,
   getWebhookRoutes,
+  setEventSessionCallback,
 } from "./src/server/automations";
 import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
 import { getConnections, addMcpServer, removeMcpServer } from "./src/server/connections";
@@ -607,8 +608,11 @@ const webhookServer = startWebhookServer(
   })
 );
 
-// Cron-scheduled automations
+// Cron-scheduled automations + internal event bus (agents → automations)
 startScheduler(() => {
+  sessionsCache = null;
+});
+setEventSessionCallback(() => {
   sessionsCache = null;
 });
 

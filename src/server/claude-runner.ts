@@ -4,6 +4,8 @@ import { readMcpConfig } from "./connections";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
+// Default model for all backstage-driven sessions (override via env)
+const MODEL = process.env.MICHAEL_MODEL || "claude-fable-5";
 
 export interface StreamEvent {
   type: "init" | "text_chunk" | "tool_use" | "tool_result" | "done" | "error";
@@ -75,6 +77,7 @@ export async function* runClaude(opts: {
       options: {
         resume: sessionId || undefined,
         cwd,
+        model: MODEL,
         allowedTools: isAsk
           ? [
               "Bash", "Read", "Grep", "Glob",
