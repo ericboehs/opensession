@@ -11,7 +11,7 @@ interface Props {
   connected: boolean;
   send: (msg: any) => void;
   onSelect: (session: UnifiedSession) => void;
-  onNewSession: () => void;
+  onNewSession: (prompt?: string) => void;
 }
 
 const SUGGESTIONS: Array<{ chip: string; color: string; prompt: string }> = [
@@ -117,7 +117,11 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
               disabled={asking}
             />
             <div className="ask-actions">
-              <button className="btn-task" onClick={onNewSession} disabled={asking}>
+              <button
+                className="btn-task"
+                onClick={() => onNewSession(question.trim() || undefined)}
+                disabled={asking}
+              >
                 Start a coding task
               </button>
               <button

@@ -16,7 +16,7 @@ import "./styles/global.css";
 
 type Route =
   | { view: "home" }
-  | { view: "new" }
+  | { view: "new"; prompt?: string }
   | { view: "session"; id: string }
   | { view: "automations" }
   | { view: "wiki"; path: string | null }
@@ -40,7 +40,9 @@ function routePath(route: Route): string {
     case "session":
       return `/backstage/session/${encodeURIComponent(route.id)}`;
     case "new":
-      return "/backstage/new";
+      return route.prompt
+        ? `/backstage/new?prompt=${encodeURIComponent(route.prompt)}`
+        : "/backstage/new";
     case "automations":
       return "/backstage/automations";
     case "connections":
@@ -202,7 +204,7 @@ function App() {
                 connected={connected}
                 send={send}
                 onSelect={(s) => navigate({ view: "session", id: s.id })}
-                onNewSession={() => navigate({ view: "new" })}
+                onNewSession={(prompt) => navigate({ view: "new", prompt })}
               />
             )}
           </main>
