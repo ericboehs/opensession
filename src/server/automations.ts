@@ -228,6 +228,7 @@ export async function runAutomation(
       prompt,
       cwd,
       mode: automation.mode,
+      journal: { bksSessionId: bksId, kind: "automation" },
     })) {
       if (event.type === "init") {
         claudeSessionId = event.sessionId || "";

@@ -21,6 +21,64 @@ export interface StreamEvent {
 // Track active runs to prevent concurrent runs on same session
 const activeRuns = new Map<string, AbortController>();
 
+// ── Crash/restart journal ────────────────────────────────────
+// Every in-flight run is recorded on disk; entries that survive a process
+// restart are interrupted runs, which backstage resumes on boot.
+
+const ACTIVE_RUNS_PATH = `${HOME}/.backstage-sessions/active-runs.json`;
+
+export interface ActiveRunRecord {
+  runKey: string;
+  bksSessionId?: string;
+  claudeSessionId?: string;
+  cwd: string;
+  mode?: "ask" | "code";
+  kind?: string;
+  startedAt: string;
+}
+
+function readRunJournal(): Record<string, ActiveRunRecord> {
+  try {
+    return existsSync(ACTIVE_RUNS_PATH)
+      ? JSON.parse(readFileSync(ACTIVE_RUNS_PATH, "utf-8"))
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRunJournal(journal: Record<string, ActiveRunRecord>): void {
+  try {
+    require("fs").writeFileSync(ACTIVE_RUNS_PATH, JSON.stringify(journal, null, 2));
+  } catch (e) {
+    console.error("[runner] Failed to write run journal:", e);
+  }
+}
+
+function journalSet(record: ActiveRunRecord): void {
+  const journal = readRunJournal();
+  journal[record.runKey] = record;
+  writeRunJournal(journal);
+}
+
+function journalClear(runKey: string): void {
+  const journal = readRunJournal();
+  if (runKey in journal) {
+    delete journal[runKey];
+    writeRunJournal(journal);
+  }
+}
+
+/** Drain interrupted runs left by a previous process (clears the journal). */
+export function takeInterruptedRuns(): ActiveRunRecord[] {
+  const journal = readRunJournal();
+  const entries = Object.values(journal).filter(
+    (r) => !activeRuns.has(r.runKey)
+  );
+  if (entries.length > 0) writeRunJournal({});
+  return entries;
+}
+
 export function isSessionBusy(sessionId: string): boolean {
   // Check if we have an active run
   if (activeRuns.has(sessionId)) return true;
@@ -58,8 +116,9 @@ export async function* runClaude(opts: {
   sessionId?: string;
   cwd: string;
   mode?: "ask" | "code";
+  journal?: { bksSessionId?: string; kind?: string };
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode } = opts;
+  const { prompt, sessionId, cwd, mode, journal } = opts;
   const isAsk = mode === "ask";
 
   if (sessionId && isSessionBusy(sessionId)) {
@@ -70,6 +129,15 @@ export async function* runClaude(opts: {
   const abortController = new AbortController();
   const runKey = sessionId || crypto.randomUUID();
   activeRuns.set(runKey, abortController);
+  journalSet({
+    runKey,
+    bksSessionId: journal?.bksSessionId,
+    claudeSessionId: sessionId,
+    cwd,
+    mode,
+    kind: journal?.kind,
+    startedAt: new Date().toISOString(),
+  });
 
   try {
     const q = query({
@@ -123,6 +191,15 @@ export async function* runClaude(opts: {
 
       if (msg.type === "system" && (msg as any).subtype === "init") {
         resultSessionId = (msg as any).session_id;
+        journalSet({
+          runKey,
+          bksSessionId: journal?.bksSessionId,
+          claudeSessionId: resultSessionId,
+          cwd,
+          mode,
+          kind: journal?.kind,
+          startedAt: new Date().toISOString(),
+        });
         yield { type: "init", sessionId: resultSessionId };
       }
 
@@ -181,5 +258,51 @@ export async function* runClaude(opts: {
     }
   } finally {
     activeRuns.delete(runKey);
+    journalClear(runKey);
   }
+}
+
+/**
+ * Resume runs that a previous process left in-flight (service restart or
+ * crash). Each resumable run gets a continuation prompt against its Claude
+ * session; the transcript file-watcher keeps any open viewers up to date.
+ */
+export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => void): number {
+  const interrupted = takeInterruptedRuns();
+  let resumed = 0;
+
+  for (const run of interrupted) {
+    if (!run.claudeSessionId) {
+      console.warn(
+        `[runner] Interrupted run ${run.runKey} (${run.kind || "unknown"}) had no Claude session yet — cannot resume`
+      );
+      continue;
+    }
+    resumed++;
+    console.log(
+      `[runner] Resuming interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} (started ${run.startedAt})`
+    );
+    void (async () => {
+      try {
+        for await (const event of runClaude({
+          prompt:
+            "This session was interrupted by a Michael service restart mid-run. " +
+            "Review what you had already done, pick up where you left off, and finish the task. " +
+            "If the work was actually complete, just post the final summary/answer.",
+          sessionId: run.claudeSessionId,
+          cwd: run.cwd,
+          mode: run.mode,
+          journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
+        })) {
+          if (event.type === "done" || event.type === "error") {
+            onResumed?.(run.bksSessionId);
+          }
+        }
+      } catch (e) {
+        console.error(`[runner] Resume failed for ${run.runKey}:`, e);
+      }
+    })();
+  }
+
+  return resumed;
 }

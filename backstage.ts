@@ -7,7 +7,7 @@ import { getAllSessions, deleteSession } from "./src/server/sessions";
 import { parseTranscript } from "./src/server/jsonl-parser";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
 import { listWorktrees, createWorktree, removeWorktree } from "./src/server/worktree";
-import { runClaude, isSessionBusy, cancelRun } from "./src/server/claude-runner";
+import { runClaude, isSessionBusy, cancelRun, resumeInterruptedRuns } from "./src/server/claude-runner";
 import { getSessionDiff } from "./src/server/git-diff";
 import { getPrDetails, getPrDiff, postPrComment } from "./src/server/pr-info";
 import {
@@ -517,6 +517,7 @@ const server = Bun.serve<WSClientData>({
             sessionId: session.claudeSessionId,
             cwd,
             mode: session.mode,
+            journal: { bksSessionId: session.id, kind: "prompt" },
           })) {
             switch (event.type) {
               case "init":
@@ -629,6 +630,7 @@ const server = Bun.serve<WSClientData>({
               prompt,
               cwd: wtPath,
               mode: isAsk ? "ask" : "code",
+              journal: { bksSessionId: bksId, kind: "create" },
             })) {
               if (event.type === "init") {
                 claudeSessionId = event.sessionId || "";
@@ -736,6 +738,17 @@ setEventSessionCallback(() => {
 startPlainArchiveSweep(() => {
   sessionsCache = null;
 });
+
+// Resume Claude runs a previous process left in-flight (restart/crash)
+setTimeout(() => {
+  const resumed = resumeInterruptedRuns(() => {
+    sessionsCache = null;
+  });
+  if (resumed > 0) {
+    console.log(`[runner] Resumed ${resumed} interrupted run(s) from before restart`);
+    sessionsCache = null;
+  }
+}, 3000);
 
 // Ongoing hygiene: archive sessions idle for more than a week (every 6h)
 setInterval(() => {
