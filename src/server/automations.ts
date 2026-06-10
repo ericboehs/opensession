@@ -26,6 +26,12 @@ export interface Automation {
   createdAt: string;
   webhookSecret: string; // every automation is also webhook-triggerable
   eventKey?: string; // internal event subscription, e.g. "plain:thread_created"
+  /**
+   * MCP server allowlist for this automation's runs (least privilege).
+   * Omitted = all configured servers, for automations created before this
+   * existed. Prefer naming just what the automation actually uses.
+   */
+  mcpServers?: string[];
   lastRunAt?: string;
   lastRunSessionId?: string;
   lastRunStatus?: "running" | "ok" | "error";
@@ -72,6 +78,13 @@ export function saveAutomation(a: Automation): void {
   writeFileSync(`${AUTOMATIONS_DIR}/${a.id}.json`, JSON.stringify(a, null, 2));
 }
 
+function sanitizeMcpList(list?: unknown): string[] | undefined {
+  if (!Array.isArray(list)) return undefined;
+  const names = list.filter((s): s is string => typeof s === "string" && !!s.trim());
+  // [] is meaningful: no MCP servers at all
+  return names.map((s) => s.trim());
+}
+
 function generateSecret(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) =>
     b.toString(16).padStart(2, "0")
@@ -85,6 +98,7 @@ export function createAutomation(input: {
   mode: "ask" | "code";
   createdBy: string;
   eventKey?: string;
+  mcpServers?: string[];
 }): Automation | { error: string } {
   if (!input.name.trim()) return { error: "Name is required" };
   if (!input.prompt.trim()) return { error: "Prompt is required" };
@@ -104,6 +118,7 @@ export function createAutomation(input: {
     createdAt: new Date().toISOString(),
     webhookSecret: generateSecret(),
     eventKey: (input.eventKey || "").trim() || undefined,
+    mcpServers: sanitizeMcpList(input.mcpServers),
   };
   saveAutomation(a);
   return a;
@@ -111,7 +126,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "mode" | "enabled" | "eventKey">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "mode" | "enabled" | "eventKey" | "mcpServers">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -119,6 +134,7 @@ export function updateAutomation(
     return { error: `Invalid cron expression: "${patch.schedule}"` };
   }
   const next = { ...a, ...patch };
+  if ("mcpServers" in patch) next.mcpServers = sanitizeMcpList(patch.mcpServers);
   // Backfill secrets for automations created before webhook support
   if (!next.webhookSecret) next.webhookSecret = generateSecret();
   saveAutomation(next);
@@ -228,6 +244,7 @@ export async function runAutomation(
       prompt,
       cwd,
       mode: automation.mode,
+      mcpServers: automation.mcpServers,
       journal: { bksSessionId: bksId, kind: "automation" },
     })) {
       if (event.type === "init") {

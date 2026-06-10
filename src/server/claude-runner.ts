@@ -35,6 +35,18 @@ function childEnv(): Record<string, string | undefined> {
   };
 }
 
+/** Resolve the MCP servers for a run: all configured, or just the allowlist. */
+function filterMcpServers(allowlist?: string[]): Record<string, unknown> {
+  const all = readMcpConfig().mcpServers;
+  if (!allowlist) return all;
+  const out: Record<string, unknown> = {};
+  for (const name of allowlist) {
+    if (all[name]) out[name] = all[name];
+    else console.warn(`[runner] MCP allowlist names unknown server "${name}" — skipping`);
+  }
+  return out;
+}
+
 // ── Crash/restart journal ────────────────────────────────────
 // Every in-flight run is recorded on disk; entries that survive a process
 // restart are interrupted runs, which backstage resumes on boot.
@@ -47,6 +59,7 @@ export interface ActiveRunRecord {
   claudeSessionId?: string;
   cwd: string;
   mode?: "ask" | "code";
+  mcpServers?: string[]; // per-run MCP allowlist, preserved across resume
   kind?: string;
   startedAt: string;
 }
@@ -130,13 +143,19 @@ export async function* runClaude(opts: {
   sessionId?: string;
   cwd: string;
   mode?: "ask" | "code";
+  /**
+   * MCP server allowlist for this run — only the named servers from
+   * mcp-config.json are made available. Omitted = all configured servers
+   * (interactive sessions). Automations should pass only what they use.
+   */
+  mcpServers?: string[];
   journal?: { bksSessionId?: string; kind?: string };
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
     | { behavior: "deny"; message: string }
   >;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, journal, onAskUser } = opts;
+  const { prompt, sessionId, cwd, mode, mcpServers, journal, onAskUser } = opts;
   const isAsk = mode === "ask";
 
   if (sessionId && isSessionBusy(sessionId)) {
@@ -153,6 +172,7 @@ export async function* runClaude(opts: {
     claudeSessionId: sessionId,
     cwd,
     mode,
+    mcpServers,
     kind: journal?.kind,
     startedAt: new Date().toISOString(),
   });
@@ -199,7 +219,7 @@ export async function* runClaude(opts: {
           return { behavior: "allow" as const, updatedInput: input };
         },
         // Read per run so MCP servers added/removed in the UI apply immediately
-        mcpServers: readMcpConfig().mcpServers as any,
+        mcpServers: filterMcpServers(mcpServers) as any,
         strictMcpConfig: true,
         env: childEnv(),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
@@ -235,6 +255,7 @@ export async function* runClaude(opts: {
           claudeSessionId: resultSessionId,
           cwd,
           mode,
+          mcpServers,
           kind: journal?.kind,
           startedAt: new Date().toISOString(),
         });
@@ -330,6 +351,7 @@ export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => voi
           sessionId: run.claudeSessionId,
           cwd: run.cwd,
           mode: run.mode,
+          mcpServers: run.mcpServers,
           journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
         })) {
           if (event.type === "done" || event.type === "error") {
