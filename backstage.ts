@@ -235,7 +235,14 @@ const server = Bun.serve<WSClientData>({
       const session = findSession(sessionId);
       if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
       if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
-        return Response.json({ branch: session.branch, baseRef: null, files: [], totalAdditions: 0, totalDeletions: 0 });
+        return Response.json({
+          branch: session.branch,
+          baseRef: null,
+          files: [],
+          totalAdditions: 0,
+          totalDeletions: 0,
+          rawPatch: "",
+        });
       }
       try {
         return Response.json(await getSessionDiff(session.worktreeDir));

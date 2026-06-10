@@ -56,7 +56,7 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
 
   if (loading) return <div className="panel-placeholder">Loading diff…</div>;
   if (error) return <div className="panel-placeholder panel-error">{error}</div>;
-  if (!diff || (!diff.rawPatch.trim() && diff.files.length === 0)) {
+  if (!diff || (!diff.rawPatch?.trim() && diff.files.length === 0)) {
     return <div className="panel-placeholder">No changes yet</div>;
   }
 
@@ -74,7 +74,7 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
 
       <div className="diff-render">
         <CommentableDiff
-          patch={diff.rawPatch}
+          patch={diff.rawPatch || ""}
           submitLabel="Send to Michael"
           placeholder="Leave feedback on these lines — Michael picks it up in this session…"
           disabled={!canSend}
