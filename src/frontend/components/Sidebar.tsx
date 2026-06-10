@@ -19,6 +19,7 @@ interface Props {
   selectedId: string | null;
   onSelect: (session: UnifiedSession) => void;
   onNewSession: () => void;
+  onOpenArchived: () => void;
 }
 
 interface Group {
@@ -28,10 +29,23 @@ interface Group {
   items: UnifiedSession[];
 }
 
-export function Sidebar({ sessions, selectedId, onSelect, onNewSession }: Props) {
+const EXPANDED_KEY = "michael-sidebar-expanded";
+
+function readExpanded(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+export function Sidebar({ sessions, selectedId, onSelect, onNewSession, onOpenArchived }: Props) {
   const [search, setSearch] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Groups are collapsed by default; the expanded set persists per browser
+  const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
   const currentUser = useCurrentUser();
+
+  const archivedCount = useMemo(() => sessions.filter((s) => s.archived).length, [sessions]);
 
   const filtered = useMemo(() => {
     const visible = sessions.filter((s) => !s.archived);
@@ -91,13 +105,17 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession }: Props)
   }, [filtered, currentUser]);
 
   function toggleGroup(key: string) {
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
       return next;
     });
   }
+
+  // While searching, show everything that matched
+  const isOpen = (key: string) => search.trim().length > 0 || expanded.has(key);
 
   return (
     <div className="sidebar">
@@ -123,7 +141,7 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession }: Props)
               onClick={() => toggleGroup(group.key)}
             >
               <span className="sidebar-group-chevron">
-                {collapsed.has(group.key) ? "▸" : "▾"}
+                {isOpen(group.key) ? "▾" : "▸"}
               </span>
               {group.dotColor && (
                 <span
@@ -135,7 +153,7 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession }: Props)
               <span className="sidebar-group-count">{group.items.length}</span>
             </button>
 
-            {!collapsed.has(group.key) &&
+            {isOpen(group.key) &&
               group.items.map((s) => (
                 <SidebarItem
                   key={s.id}
@@ -146,6 +164,12 @@ export function Sidebar({ sessions, selectedId, onSelect, onNewSession }: Props)
               ))}
           </div>
         ))}
+
+        {archivedCount > 0 && (
+          <button className="sidebar-archived-link" onClick={onOpenArchived}>
+            Archived ({archivedCount}) →
+          </button>
+        )}
       </div>
     </div>
   );

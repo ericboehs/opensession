@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync, unlinkSync } from "fs";
 import { existsSync } from "fs";
 import { slackIdToFirstName } from "./shared/user-mappings";
+import { isArchivedId } from "./archive";
 import type {
   UnifiedSession,
   SlackSessionFile,
@@ -201,6 +202,7 @@ function scanBackstageSessions(): UnifiedSession[] {
           ? data.createdBy.slice(0, -" (automation)".length)
           : undefined),
       archived: data.archived || undefined,
+      plainThreadId: data.plainThreadId,
       lastActivity: data.lastActivity,
       createdAt: data.createdAt,
       isRunning: false,
@@ -316,6 +318,11 @@ export function getAllSessions(): UnifiedSession[] {
         session.prState = pr.state;
       }
     }
+  }
+
+  // Apply the cross-source archive registry
+  for (const session of allSessions) {
+    if (!session.archived && isArchivedId(session.id)) session.archived = true;
   }
 
   // Sort by lastActivity descending

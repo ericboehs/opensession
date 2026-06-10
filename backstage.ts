@@ -24,6 +24,7 @@ import {
 } from "./src/server/automations";
 import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
+import { setArchived, archiveOlderThan } from "./src/server/archive";
 import { getConnections, addMcpServer, removeMcpServer } from "./src/server/connections";
 import { startWebhookServer } from "./src/server/webhook-server";
 import type { AgentModule } from "./src/agents/types";
@@ -148,6 +149,7 @@ const server = Bun.serve<WSClientData>({
     "/backstage/wiki": homepage,
     "/backstage/wiki/*": homepage,
     "/backstage/connections": homepage,
+    "/backstage/archived": homepage,
   },
 
   async fetch(req) {
@@ -281,6 +283,27 @@ const server = Bun.serve<WSClientData>({
       });
       if ("error" in result) return Response.json(result, { status: 502 });
       return Response.json(result);
+    }
+
+    // Bulk-archive idle sessions
+    if (path === "/backstage/api/sessions/archive-old" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const days = Math.max(1, parseInt(body.days) || 7);
+      const count = archiveOlderThan(getAllSessions(), days);
+      sessionsCache = null;
+      return Response.json({ archived: count });
+    }
+
+    // Archive / unarchive a single session
+    const archiveMatch = path.match(/^\/backstage\/api\/sessions\/(.+)\/archive$/);
+    if (archiveMatch && req.method === "POST") {
+      const sessionId = decodeURIComponent(archiveMatch[1]);
+      const session = findSession(sessionId);
+      if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+      const body = await req.json().catch(() => ({}));
+      setArchived(sessionId, body.archived !== false);
+      sessionsCache = null;
+      return Response.json({ ok: true });
     }
 
     // Delete a session (+ optional worktree cleanup)
@@ -706,6 +729,15 @@ setEventSessionCallback(() => {
 startPlainArchiveSweep(() => {
   sessionsCache = null;
 });
+
+// Ongoing hygiene: archive sessions idle for more than a week (every 6h)
+setInterval(() => {
+  const count = archiveOlderThan(getAllSessions(), 7);
+  if (count > 0) {
+    console.log(`[archive] Auto-archived ${count} session(s) idle >7 days`);
+    sessionsCache = null;
+  }
+}, 6 * 60 * 60 * 1000);
 
 // Run agent startup hooks
 for (const agent of agents) {

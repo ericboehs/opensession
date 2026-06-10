@@ -17,6 +17,7 @@ export interface UnifiedSession {
   mode?: "ask" | "code";
   automation?: string;
   archived?: boolean;
+  plainThreadId?: string;
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
 }

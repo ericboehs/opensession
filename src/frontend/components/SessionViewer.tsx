@@ -229,6 +229,16 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               {session.linearIssue.identifier}
             </a>
           )}
+          {session.plainThreadId && (
+            <a
+              href={`https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/thread/${session.plainThreadId}/`}
+              target="_blank"
+              rel="noopener"
+              className="session-link session-link-plain"
+            >
+              Plain ↗
+            </a>
+          )}
           <SpinOffMenu session={session} entries={entries} send={send} connected={connected} />
           {hasWorkspace && (
             <button

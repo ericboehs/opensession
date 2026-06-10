@@ -138,6 +138,25 @@ export async function searchWikiApi(q: string) {
   return res.json();
 }
 
+export async function archiveSessionApi(sessionId: string, archived: boolean) {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/archive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archived }),
+  });
+  if (!res.ok) throw new Error(`Failed to update archive state: ${res.status}`);
+}
+
+export async function archiveOldApi(days: number): Promise<{ archived: number }> {
+  const res = await fetch(`${BASE}/sessions/archive-old`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ days }),
+  });
+  if (!res.ok) throw new Error(`Failed to archive: ${res.status}`);
+  return res.json();
+}
+
 export function getWebSocketUrl(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}/backstage/ws`;

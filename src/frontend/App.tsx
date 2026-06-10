@@ -7,6 +7,7 @@ import { Home } from "./components/Home";
 import { Automations } from "./components/Automations";
 import { Wiki } from "./components/Wiki";
 import { Connections } from "./components/Connections";
+import { Archived } from "./components/Archived";
 import { UserPicker, UserGate } from "./components/UserPicker";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -19,7 +20,8 @@ type Route =
   | { view: "session"; id: string }
   | { view: "automations" }
   | { view: "wiki"; path: string | null }
-  | { view: "connections" };
+  | { view: "connections" }
+  | { view: "archived" };
 
 function parseRoute(pathname: string): Route {
   const sessionMatch = pathname.match(/^\/backstage\/session\/(.+)$/);
@@ -27,6 +29,7 @@ function parseRoute(pathname: string): Route {
   if (pathname === "/backstage/new") return { view: "new" };
   if (pathname === "/backstage/automations") return { view: "automations" };
   if (pathname === "/backstage/connections") return { view: "connections" };
+  if (pathname === "/backstage/archived") return { view: "archived" };
   const wikiMatch = pathname.match(/^\/backstage\/wiki(?:\/(.*))?$/);
   if (wikiMatch) return { view: "wiki", path: wikiMatch[1] ? decodeURIComponent(wikiMatch[1]) : null };
   return { view: "home" };
@@ -42,6 +45,8 @@ function routePath(route: Route): string {
       return "/backstage/automations";
     case "connections":
       return "/backstage/connections";
+    case "archived":
+      return "/backstage/archived";
     case "wiki":
       return route.path
         ? `/backstage/wiki/${route.path.split("/").map(encodeURIComponent).join("/")}`
@@ -154,6 +159,7 @@ function App() {
                 selectedId={currentSession?.id || null}
                 onSelect={(s) => navigate({ view: "session", id: s.id })}
                 onNewSession={() => navigate({ view: "new" })}
+                onOpenArchived={() => navigate({ view: "archived" })}
               />
             </div>
           )}
@@ -170,6 +176,12 @@ function App() {
               <Automations onOpenSession={(id) => navigate({ view: "session", id })} />
             ) : route.view === "connections" ? (
               <Connections />
+            ) : route.view === "archived" ? (
+              <Archived
+                sessions={sessions}
+                onSelect={(s) => navigate({ view: "session", id: s.id })}
+                onChanged={refresh}
+              />
             ) : route.view === "wiki" ? (
               <Wiki
                 docPath={route.path}
