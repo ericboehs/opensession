@@ -1,10 +1,14 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { readdirSync, readFileSync, existsSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { readMcpConfig } from "./connections";
 import { getAgentAwsEnv } from "./aws-creds";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
+const CLAUDE_DIR = `${HOME}/.claude`;
+const CLAUDE_CREDENTIALS_PATH = `${CLAUDE_DIR}/.credentials.json`;
+const CLAUDE_ACCOUNTS_DIR = `${CLAUDE_DIR}/accounts`;
+const CLAUDE_ACTIVE_ACCOUNT_PATH = `${CLAUDE_ACCOUNTS_DIR}/.active`;
 // Default model for all backstage-driven sessions (override via env)
 const MODEL = process.env.MICHAEL_MODEL || "claude-fable-5";
 
@@ -39,6 +43,55 @@ function childEnv(awsEnv?: Record<string, string>): Record<string, string | unde
     MICHAEL_MODEL: process.env.MICHAEL_MODEL,
     ...awsEnv,
   };
+}
+
+function isClaudeUsageLimitError(message: string): boolean {
+  const s = message.toLowerCase();
+  return (
+    (s.includes("usage") || s.includes("rate") || s.includes("limit")) &&
+    (s.includes("exceeded") || s.includes("reached") || s.includes("429") || s.includes("too many requests"))
+  );
+}
+
+function listSavedClaudeAccounts(): string[] {
+  if (!existsSync(CLAUDE_ACCOUNTS_DIR)) return [];
+  return readdirSync(CLAUDE_ACCOUNTS_DIR).filter((name) => {
+    if (name.startsWith(".")) return false;
+    return existsSync(`${CLAUDE_ACCOUNTS_DIR}/${name}/credentials.json`);
+  });
+}
+
+function readActiveClaudeAccount(): string | undefined {
+  try {
+    return existsSync(CLAUDE_ACTIVE_ACCOUNT_PATH)
+      ? readFileSync(CLAUDE_ACTIVE_ACCOUNT_PATH, "utf-8").trim()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function switchClaudeAccountAfterLimit(): string | undefined {
+  const preferred = process.env.CLAUDE_FALLBACK_PROFILE;
+  const active = readActiveClaudeAccount();
+  const accounts = listSavedClaudeAccounts();
+  const next = preferred && preferred !== active && accounts.includes(preferred)
+    ? preferred
+    : accounts.find((name) => name !== active);
+
+  if (!next) return undefined;
+
+  mkdirSync(`${CLAUDE_DIR}/backups`, { recursive: true });
+  if (existsSync(CLAUDE_CREDENTIALS_PATH)) {
+    copyFileSync(
+      CLAUDE_CREDENTIALS_PATH,
+      `${CLAUDE_DIR}/backups/credentials-before-auto-switch-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "Z")}.json`
+    );
+  }
+  copyFileSync(`${CLAUDE_ACCOUNTS_DIR}/${next}/credentials.json`, CLAUDE_CREDENTIALS_PATH);
+  writeFileSync(CLAUDE_ACTIVE_ACCOUNT_PATH, `${next}\n`);
+  console.warn(`[runner] Claude usage limit hit on ${active || "unknown"}; switched credentials to ${next}`);
+  return next;
 }
 
 /** Resolve the MCP servers for a run: all configured, or just the allowlist. */
@@ -202,10 +255,14 @@ export async function* runClaude(opts: {
   });
 
   try {
-    const q = query({
-      prompt,
-      options: {
-        resume: sessionId || undefined,
+    let resultSessionId = sessionId || "";
+    let switchedForUsageLimit = false;
+    for (;;) {
+      let shouldRetryAfterSwitch = false;
+      const q = query({
+        prompt,
+        options: {
+        resume: resultSessionId || sessionId || undefined,
         cwd,
         model: MODEL,
         allowedTools: isAsk
@@ -267,12 +324,10 @@ export async function* runClaude(opts: {
         },
         settingSources: ["user", "project"],
       },
-    });
+      });
 
-    let resultSessionId = sessionId || "";
-
-    for await (const msg of q) {
-      if (abortController.signal.aborted) break;
+      for await (const msg of q) {
+        if (abortController.signal.aborted) break;
 
       if (msg.type === "system" && (msg as any).subtype === "init") {
         resultSessionId = (msg as any).session_id;
@@ -333,12 +388,31 @@ export async function* runClaude(opts: {
       if (msg.type === "result") {
         const rm = msg as any;
         resultSessionId = rm.session_id || resultSessionId;
+        const resultText = rm.subtype === "success" ? rm.result : `Error: ${rm.errors?.join(", ") || "Unknown"}`;
+
+        if (rm.subtype !== "success" && !switchedForUsageLimit && isClaudeUsageLimitError(resultText)) {
+          const nextAccount = switchClaudeAccountAfterLimit();
+          if (nextAccount) {
+            switchedForUsageLimit = true;
+            shouldRetryAfterSwitch = true;
+            yield {
+              type: "text_chunk",
+              text: `\n\n[runner] Claude usage limit hit; switched to ${nextAccount} and retrying.\n\n`,
+            };
+            break;
+          }
+        }
+
         yield {
           type: "done",
           sessionId: resultSessionId,
-          result: rm.subtype === "success" ? rm.result : `Error: ${rm.errors?.join(", ") || "Unknown"}`,
+          result: resultText,
         };
+        return;
       }
+    }
+
+      if (!shouldRetryAfterSwitch) break;
     }
   } catch (e: any) {
     if (!abortController.signal.aborted) {
