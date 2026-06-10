@@ -55,11 +55,17 @@ export async function createWorktree(branch: string): Promise<string> {
   const wtPath = `${WORKTREES_DIR}/tella-fusion-${branch}`;
 
   await $`git -C ${TELLA_FUSION} fetch origin main --quiet`;
-  await $`git -C ${TELLA_FUSION} worktree add -b ${branch} ${wtPath} main`;
+  await $`git -C ${TELLA_FUSION} worktree add -b ${branch} ${wtPath} origin/main`;
 
-  // Install deps
-  const webappDir = `${wtPath}/packages/webapp`;
-  await $`cd ${webappDir} && bun install`.quiet();
+  // Best-effort dep install — sessions can always run `bun install` themselves
+  const webappDir = `${wtPath}/packages/core/webapp`;
+  try {
+    if (await Bun.file(`${webappDir}/package.json`).exists()) {
+      await $`cd ${webappDir} && bun install`.quiet();
+    }
+  } catch (e) {
+    console.warn(`[worktree] bun install failed for ${branch} (continuing):`, e);
+  }
 
   return wtPath;
 }
