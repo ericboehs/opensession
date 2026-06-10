@@ -149,12 +149,13 @@ export async function* runClaude(opts: {
         allowedTools: isAsk
           ? [
               "Bash", "Read", "Grep", "Glob",
-              "Task", "TaskOutput", "WebFetch", "WebSearch",
+              "Task", "TaskOutput", "Agent", "WebFetch", "WebSearch",
               "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
             ]
           : [
               "Bash", "Read", "Edit", "Write", "Grep", "Glob",
-              "Task", "TaskOutput", "WebFetch", "WebSearch",
+              "Task", "TaskOutput", "Agent", "Workflow", "TaskStop",
+              "WebFetch", "WebSearch",
               "NotebookEdit", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
               "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
             ],

@@ -129,6 +129,163 @@ function broadcastPresence(sessionId: string) {
   broadcastToSession(sessionId, { type: "presence", sessionId, viewers });
 }
 
+/** Run a prompt against an existing session, broadcasting to all watchers. */
+async function runSessionPrompt(sessionId: string, content: string, user?: string): Promise<void> {
+  const session = findSession(sessionId);
+  if (!session?.claudeSessionId) return;
+
+  const cwd = session.worktreeDir || `${HOME}/projects/tella-fusion`;
+  let prompt = content;
+  if (session.goal) {
+    prompt += `\n\n[Pinned session goal — keep working toward it and note how this turn advanced it: ${session.goal}]`;
+  }
+
+  // Everyone viewing this session sees the prompt and the live run
+  broadcastToSession(sessionId, { type: "stream_start", sessionId, by: user || "Anonymous" });
+  broadcastToSession(sessionId, { type: "session_status", isRunning: true });
+
+  let finalSessionId = session.claudeSessionId;
+
+  for await (const event of runClaude({
+    prompt,
+    sessionId: session.claudeSessionId,
+    cwd,
+    mode: session.mode,
+    journal: { bksSessionId: session.id, kind: "prompt" },
+  })) {
+    switch (event.type) {
+      case "init":
+        break;
+      case "text_chunk":
+        broadcastToSession(sessionId, { type: "stream_text", text: event.text });
+        break;
+      case "tool_use":
+        broadcastToSession(sessionId, {
+          type: "stream_tool_use",
+          entry: {
+            id: event.toolUseId || crypto.randomUUID(),
+            type: "tool_use",
+            content: `Using ${event.toolName}`,
+            timestamp: new Date().toISOString(),
+            toolName: event.toolName,
+            toolInput: event.toolInput,
+            toolUseId: event.toolUseId,
+          },
+        });
+        break;
+      case "tool_result":
+        broadcastToSession(sessionId, {
+          type: "stream_tool_result",
+          entry: {
+            id: crypto.randomUUID(),
+            type: "tool_result",
+            content: event.content || "",
+            timestamp: new Date().toISOString(),
+            toolUseId: event.toolUseId,
+          },
+        });
+        break;
+      case "done":
+        finalSessionId = event.sessionId || finalSessionId;
+        sessionsCache = null;
+        break;
+      case "error":
+        broadcastToSession(sessionId, { type: "error", message: event.content });
+        break;
+    }
+  }
+
+  // Persist activity on our own session store (slack/linear stores are read-only)
+  if (session.source === "backstage") {
+    touchBackstageSession(session.id, { claudeSessionId: finalSessionId || undefined });
+  }
+
+  broadcastToSession(sessionId, { type: "stream_done" });
+  broadcastToSession(sessionId, { type: "session_status", isRunning: false });
+}
+
+/**
+ * Backstage-native slash commands. Returns a notice string when the message
+ * was consumed as a command, or null to send it to Claude as a normal prompt.
+ */
+function handleSlashCommand(
+  session: UnifiedSession,
+  text: string,
+  user?: string
+): string | null {
+  if (!text.startsWith("/goal") && !text.startsWith("/loop") && text !== "/help") {
+    return null;
+  }
+  if (session.source !== "backstage") {
+    return "Slash commands only work on backstage-created sessions (Slack/Linear session files are agent-owned).";
+  }
+
+  if (text === "/help") {
+    return [
+      "Backstage commands:",
+      "/goal <text> — pin a goal, appended to every prompt until cleared",
+      "/goal clear — remove the goal",
+      "/loop <interval> <prompt> — re-run a prompt on an interval (e.g. /loop 30m check CI and fix failures)",
+      "/loop stop — stop the loop",
+    ].join("\n");
+  }
+
+  if (text === "/goal" || text === "/goal show") {
+    return session.goal ? `Current goal: ${session.goal}` : "No goal set. Use /goal <text>.";
+  }
+  if (text === "/goal clear") {
+    touchBackstageSession(session.id, { goal: undefined });
+    return "Goal cleared.";
+  }
+  if (text.startsWith("/goal ")) {
+    const goal = text.slice("/goal ".length).trim();
+    if (!goal) return "Usage: /goal <text>";
+    touchBackstageSession(session.id, { goal });
+    return `Goal pinned: ${goal} — it will ride along with every prompt until /goal clear.`;
+  }
+
+  if (text === "/loop" || text === "/loop status") {
+    return session.loop
+      ? `Loop active: every ${session.loop.intervalMinutes}m — "${session.loop.prompt}"`
+      : "No loop set. Use /loop <interval> <prompt> (e.g. /loop 30m check CI).";
+  }
+  if (text === "/loop stop" || text === "/loop off" || text === "/loop clear") {
+    touchBackstageSession(session.id, { loop: undefined });
+    return "Loop stopped.";
+  }
+  if (text.startsWith("/loop ")) {
+    const rest = text.slice("/loop ".length).trim();
+    const match = rest.match(/^(\d+)\s*(m|min|h|hr)?\s+([\s\S]+)$/);
+    if (!match) return "Usage: /loop <interval> <prompt> — e.g. /loop 30m check CI and fix failures";
+    let minutes = parseInt(match[1]);
+    if (match[2] === "h" || match[2] === "hr") minutes *= 60;
+    minutes = Math.max(5, minutes);
+    const prompt = match[3].trim();
+    touchBackstageSession(session.id, {
+      loop: { prompt, intervalMinutes: minutes, lastRunAt: new Date().toISOString(), setBy: user },
+    });
+    return `Loop set: every ${minutes}m — "${prompt}". First run in ${minutes}m; /loop stop to end it.`;
+  }
+
+  return null;
+}
+
+// Loop ticker: fire due session loops (skips busy/archived sessions)
+setInterval(() => {
+  for (const session of getCachedSessions()) {
+    const loop = session.loop;
+    if (!loop || session.archived || session.source !== "backstage") continue;
+    if (!session.claudeSessionId || isSessionBusy(session.claudeSessionId)) continue;
+    const last = loop.lastRunAt ? new Date(loop.lastRunAt).getTime() : 0;
+    if (Date.now() - last < loop.intervalMinutes * 60_000) continue;
+    touchBackstageSession(session.id, {
+      loop: { ...loop, lastRunAt: new Date().toISOString() },
+    });
+    console.log(`[loop] Firing loop prompt for ${session.id} (every ${loop.intervalMinutes}m)`);
+    void runSessionPrompt(session.id, loop.prompt, loop.setBy ? `${loop.setBy} (loop)` : "loop");
+  }
+}, 60_000);
+
 console.log(`Starting Backstage server on ${HOST}:${PORT}...`);
 
 const server = Bun.serve<WSClientData>({
@@ -499,75 +656,21 @@ const server = Bun.serve<WSClientData>({
             ws.send(JSON.stringify({ type: "error", message: "Session not found" }));
             return;
           }
+
+          // Slash commands are handled by backstage itself
+          const notice = handleSlashCommand(session, String(content || "").trim(), user);
+          if (notice !== null) {
+            ws.send(JSON.stringify({ type: "notice", message: notice }));
+            sessionsCache = null;
+            break;
+          }
+
           if (!session.claudeSessionId) {
             ws.send(JSON.stringify({ type: "error", message: "No Claude session to resume" }));
             return;
           }
 
-          const cwd = session.worktreeDir || `${HOME}/projects/tella-fusion`;
-
-          // Everyone viewing this session sees the prompt and the live run
-          broadcastToSession(sessionId, { type: "stream_start", sessionId, by: user || "Anonymous" });
-          broadcastToSession(sessionId, { type: "session_status", isRunning: true });
-
-          let finalSessionId = session.claudeSessionId;
-
-          for await (const event of runClaude({
-            prompt: content,
-            sessionId: session.claudeSessionId,
-            cwd,
-            mode: session.mode,
-            journal: { bksSessionId: session.id, kind: "prompt" },
-          })) {
-            switch (event.type) {
-              case "init":
-                break;
-              case "text_chunk":
-                broadcastToSession(sessionId, { type: "stream_text", text: event.text });
-                break;
-              case "tool_use":
-                broadcastToSession(sessionId, {
-                  type: "stream_tool_use",
-                  entry: {
-                    id: event.toolUseId || crypto.randomUUID(),
-                    type: "tool_use",
-                    content: `Using ${event.toolName}`,
-                    timestamp: new Date().toISOString(),
-                    toolName: event.toolName,
-                    toolInput: event.toolInput,
-                    toolUseId: event.toolUseId,
-                  },
-                });
-                break;
-              case "tool_result":
-                broadcastToSession(sessionId, {
-                  type: "stream_tool_result",
-                  entry: {
-                    id: crypto.randomUUID(),
-                    type: "tool_result",
-                    content: event.content || "",
-                    timestamp: new Date().toISOString(),
-                    toolUseId: event.toolUseId,
-                  },
-                });
-                break;
-              case "done":
-                finalSessionId = event.sessionId || finalSessionId;
-                sessionsCache = null;
-                break;
-              case "error":
-                broadcastToSession(sessionId, { type: "error", message: event.content });
-                break;
-            }
-          }
-
-          // Persist activity on our own session store (slack/linear stores are read-only)
-          if (session.source === "backstage") {
-            touchBackstageSession(session.id, { claudeSessionId: finalSessionId || undefined });
-          }
-
-          broadcastToSession(sessionId, { type: "stream_done" });
-          broadcastToSession(sessionId, { type: "session_status", isRunning: false });
+          await runSessionPrompt(sessionId, content, user);
           break;
         }
 

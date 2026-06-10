@@ -115,6 +115,17 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           setStreamBy(null);
           setStreamText("");
           break;
+        case "notice":
+          setEntries((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              type: "system",
+              content: msg.message,
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          break;
         case "error":
           setIsStreaming(false);
           break;
@@ -282,6 +293,22 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
         </div>
       </div>
 
+      {(session.goal || session.loop) && (
+        <div className="session-banners">
+          {session.goal && (
+            <span className="session-banner" title="Cleared with /goal clear">
+              🎯 {session.goal}
+            </span>
+          )}
+          {session.loop && (
+            <span className="session-banner" title={`"${session.loop.prompt}" — stop with /loop stop`}>
+              ⟳ every {session.loop.intervalMinutes}m — {session.loop.prompt.slice(0, 60)}
+              {session.loop.prompt.length > 60 ? "…" : ""}
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="viewer-split">
         <div className="viewer-chat">
           <div className="viewer-messages" ref={messagesRef}>
@@ -343,7 +370,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                     Send
                   </button>
                 </div>
-                <div className="prompt-hint">{"⌘"}+Enter to send</div>
+                <div className="prompt-hint">
+                  {"⌘"}+Enter to send · /goal pins a goal · /loop runs on an interval
+                </div>
               </>
             )}
           </div>

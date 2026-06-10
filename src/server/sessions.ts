@@ -203,6 +203,8 @@ function scanBackstageSessions(): UnifiedSession[] {
           : undefined),
       archived: data.archived || undefined,
       plainThreadId: data.plainThreadId,
+      goal: data.goal,
+      loop: data.loop,
       lastActivity: data.lastActivity,
       createdAt: data.createdAt,
       isRunning: false,

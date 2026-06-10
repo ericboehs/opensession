@@ -18,6 +18,8 @@ export interface UnifiedSession {
   automation?: string;
   archived?: boolean;
   plainThreadId?: string;
+  goal?: string;
+  loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   // Source-specific
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
@@ -76,6 +78,8 @@ export interface BackstageSessionFile {
   plainThreadId?: string; // Plain thread this session is triaging
   archived?: boolean;
   archivedAt?: string;
+  goal?: string; // pinned goal, appended to every prompt until cleared
+  loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
 }
 
 export interface TranscriptEntry {

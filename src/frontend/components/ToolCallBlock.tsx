@@ -68,7 +68,9 @@ function getSummary(toolName: string, input: unknown, fallback: string): string 
       return `${inp.pattern || ""} ${inp.path || ""}`;
     case "Task":
     case "Agent":
-      return (inp.description as string) || fallback;
+      return [inp.subagent_type, inp.description].filter(Boolean).join(": ") || fallback;
+    case "Workflow":
+      return (inp.name as string) || (inp.description as string) || "orchestration script";
     case "Skill":
       return (inp.skill as string) || fallback;
     case "WebFetch":

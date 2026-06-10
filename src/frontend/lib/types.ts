@@ -18,6 +18,8 @@ export interface UnifiedSession {
   automation?: string;
   archived?: boolean;
   plainThreadId?: string;
+  goal?: string;
+  loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
 }
@@ -93,4 +95,5 @@ export type WSServerMessage =
   | { type: "stream_tool_result"; entry: TranscriptEntry }
   | { type: "stream_done" }
   | { type: "session_created"; id: string }
+  | { type: "notice"; message: string }
   | { type: "error"; message: string };
