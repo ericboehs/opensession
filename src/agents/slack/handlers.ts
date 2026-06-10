@@ -594,6 +594,7 @@ export async function processMessage(
         },
         mcpServers: mcpConfig.mcpServers,
         strictMcpConfig: true,
+        model: process.env.MICHAEL_MODEL || "claude-fable-5",
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
         executable: "bun",
         abortController,
