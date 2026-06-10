@@ -96,4 +96,14 @@ export type WSServerMessage =
   | { type: "stream_done" }
   | { type: "session_created"; id: string }
   | { type: "notice"; message: string }
+  | { type: "queue_update"; sessionId: string; queued: Array<{ content: string; user?: string }> }
+  | { type: "ask_question"; sessionId: string; questionId: string; questions: AskQuestion[] }
+  | { type: "ask_resolved"; sessionId: string; questionId: string }
   | { type: "error"; message: string };
+
+export interface AskQuestion {
+  question: string;
+  header?: string;
+  options: Array<{ label: string; description?: string }>;
+  multiSelect?: boolean;
+}

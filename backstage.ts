@@ -129,6 +129,88 @@ function broadcastPresence(sessionId: string) {
   broadcastToSession(sessionId, { type: "presence", sessionId, viewers });
 }
 
+// Interactive AskUserQuestion: questions broadcast to session watchers,
+// answered from the UI, with a 10-minute timeout falling back to deny.
+interface PendingAsk {
+  questionId: string;
+  questions: unknown[];
+  resolve: (answers: Record<string, string> | null) => void;
+}
+const pendingAsks = new Map<string, PendingAsk>();
+
+function makeAskHandler(sessionId: string) {
+  return async (
+    input: Record<string, unknown>
+  ): Promise<
+    | { behavior: "allow"; updatedInput: Record<string, unknown> }
+    | { behavior: "deny"; message: string }
+  > => {
+    const questions = input.questions as unknown[] | undefined;
+    if (!questions || questions.length === 0) {
+      return { behavior: "allow", updatedInput: input };
+    }
+
+    const questionId = crypto.randomUUID();
+    const answers = await new Promise<Record<string, string> | null>((resolve) => {
+      const timeoutId = setTimeout(() => {
+        pendingAsks.delete(sessionId);
+        resolve(null);
+      }, 10 * 60 * 1000);
+      pendingAsks.set(sessionId, {
+        questionId,
+        questions,
+        resolve: (a) => {
+          clearTimeout(timeoutId);
+          pendingAsks.delete(sessionId);
+          resolve(a);
+        },
+      });
+      broadcastToSession(sessionId, { type: "ask_question", sessionId, questionId, questions });
+    });
+
+    broadcastToSession(sessionId, { type: "ask_resolved", sessionId, questionId });
+
+    if (!answers) {
+      return {
+        behavior: "deny",
+        message:
+          "Nobody answered within 10 minutes. Proceed with your best judgment and clearly note the open question and the assumption you made.",
+      };
+    }
+    return { behavior: "allow", updatedInput: { ...input, answers } };
+  };
+}
+
+// Messages sent while a run is in flight queue up and deliver afterwards,
+// the same way Claude Code handles interruptions.
+const promptQueues = new Map<string, Array<{ content: string; user?: string }>>();
+
+function broadcastQueue(sessionId: string) {
+  broadcastToSession(sessionId, {
+    type: "queue_update",
+    sessionId,
+    queued: promptQueues.get(sessionId) || [],
+  });
+}
+
+async function runSessionPromptAndDrain(
+  sessionId: string,
+  content: string,
+  user?: string
+): Promise<void> {
+  await runSessionPrompt(sessionId, content, user);
+
+  let queue;
+  while ((queue = promptQueues.get(sessionId)) && queue.length > 0) {
+    const batch = queue.splice(0, queue.length);
+    broadcastQueue(sessionId);
+    const combined = batch
+      .map((m) => (batch.length > 1 && m.user ? `[${m.user}] ${m.content}` : m.content))
+      .join("\n\n");
+    await runSessionPrompt(sessionId, combined, batch[0].user);
+  }
+}
+
 /** Run a prompt against an existing session, broadcasting to all watchers. */
 async function runSessionPrompt(sessionId: string, content: string, user?: string): Promise<void> {
   const session = findSession(sessionId);
@@ -152,6 +234,7 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
     cwd,
     mode: session.mode,
     journal: { bksSessionId: session.id, kind: "prompt" },
+    onAskUser: makeAskHandler(sessionId),
   })) {
     switch (event.type) {
       case "init":
@@ -282,7 +365,7 @@ setInterval(() => {
       loop: { ...loop, lastRunAt: new Date().toISOString() },
     });
     console.log(`[loop] Firing loop prompt for ${session.id} (every ${loop.intervalMinutes}m)`);
-    void runSessionPrompt(session.id, loop.prompt, loop.setBy ? `${loop.setBy} (loop)` : "loop");
+    void runSessionPromptAndDrain(session.id, loop.prompt, loop.setBy ? `${loop.setBy} (loop)` : "loop");
   }
 }, 60_000);
 
@@ -639,6 +722,28 @@ const server = Bun.serve<WSClientData>({
             startWatching(session.transcriptPath, ws);
           }
 
+          // Pending interactive question, if any
+          const pendingAsk = pendingAsks.get(sessionId);
+          if (pendingAsk) {
+            ws.send(
+              JSON.stringify({
+                type: "ask_question",
+                sessionId,
+                questionId: pendingAsk.questionId,
+                questions: pendingAsk.questions,
+              })
+            );
+          }
+
+          // Current message queue for this session
+          ws.send(
+            JSON.stringify({
+              type: "queue_update",
+              sessionId,
+              queued: promptQueues.get(sessionId) || [],
+            })
+          );
+
           // Send running status
           ws.send(
             JSON.stringify({
@@ -670,7 +775,15 @@ const server = Bun.serve<WSClientData>({
             return;
           }
 
-          await runSessionPrompt(sessionId, content, user);
+          if (isSessionBusy(session.claudeSessionId)) {
+            const queue = promptQueues.get(sessionId) || [];
+            queue.push({ content, user });
+            promptQueues.set(sessionId, queue);
+            broadcastQueue(sessionId);
+            break;
+          }
+
+          await runSessionPromptAndDrain(sessionId, content, user);
           break;
         }
 
@@ -681,6 +794,24 @@ const server = Bun.serve<WSClientData>({
             if (session?.claudeSessionId) {
               cancelRun(session.claudeSessionId);
             }
+            const dropped = promptQueues.get(data.watchingSessionId)?.length || 0;
+            if (dropped > 0) {
+              promptQueues.delete(data.watchingSessionId);
+              broadcastQueue(data.watchingSessionId);
+              broadcastToSession(data.watchingSessionId, {
+                type: "notice",
+                message: `Cancelled — ${dropped} queued message${dropped === 1 ? "" : "s"} dropped.`,
+              });
+            }
+          }
+          break;
+        }
+
+        case "answer_question": {
+          const { sessionId, questionId, answers } = msg;
+          const pending = pendingAsks.get(sessionId);
+          if (pending && pending.questionId === questionId) {
+            pending.resolve(answers && typeof answers === "object" ? answers : null);
           }
           break;
         }
@@ -734,6 +865,7 @@ const server = Bun.serve<WSClientData>({
               cwd: wtPath,
               mode: isAsk ? "ask" : "code",
               journal: { bksSessionId: bksId, kind: "create" },
+              onAskUser: makeAskHandler(bksId),
             })) {
               if (event.type === "init") {
                 claudeSessionId = event.sessionId || "";

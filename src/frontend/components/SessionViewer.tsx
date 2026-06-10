@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { marked } from "marked";
-import type { UnifiedSession, TranscriptEntry, WSServerMessage } from "../lib/types";
+import type { UnifiedSession, TranscriptEntry, WSServerMessage, AskQuestion } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { WorkBlock } from "./WorkBlock";
 import { TerminalPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
 import { deleteSessionApi } from "../lib/api";
 import { DiffPanel } from "./DiffPanel";
+import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { SpinOffMenu } from "./SpinOffMenu";
 
@@ -50,6 +51,8 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const [streamText, setStreamText] = useState("");
   const [streamBy, setStreamBy] = useState<string | null>(null);
   const [viewers, setViewers] = useState<string[]>([]);
+  const [queued, setQueued] = useState<Array<{ content: string; user?: string }>>([]);
+  const [ask, setAsk] = useState<{ questionId: string; questions: AskQuestion[] } | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>("changes");
   // Remembered per browser; on phones the panel overlays the chat, so default closed there
   const [panelOpen, setPanelOpenState] = useState(() => {
@@ -94,6 +97,19 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           break;
         case "presence":
           if (msg.sessionId === session.id) setViewers(msg.viewers);
+          break;
+        case "queue_update":
+          if (msg.sessionId === session.id) setQueued(msg.queued);
+          break;
+        case "ask_question":
+          if (msg.sessionId === session.id) {
+            setAsk({ questionId: msg.questionId, questions: msg.questions });
+          }
+          break;
+        case "ask_resolved":
+          if (msg.sessionId === session.id) {
+            setAsk((prev) => (prev?.questionId === msg.questionId ? null : prev));
+          }
           break;
         case "session_status":
           setIsRunningLive(msg.isRunning);
@@ -147,8 +163,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
 
   function handleSend() {
     const text = input.trim();
-    if (!text || isStreaming) return;
+    if (!text) return;
 
+    // While Michael is busy the server queues this and delivers it after the run
     send({
       type: "prompt",
       sessionId: session.id,
@@ -335,39 +352,75 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
 
             {streamText && <StreamingMessage text={streamText} />}
 
+            {ask && (
+              <AskCard
+                key={ask.questionId}
+                questions={ask.questions}
+                onAnswer={(answers) =>
+                  send({
+                    type: "answer_question",
+                    sessionId: session.id,
+                    questionId: ask.questionId,
+                    answers,
+                  })
+                }
+              />
+            )}
+
+            {queued.map((q, i) => (
+              <div key={`queued-${i}`} className="msg msg-user msg-queued">
+                <div className="msg-label msg-label-user">
+                  {q.user || "You"} · queued
+                </div>
+                <div className="msg-body msg-body-user">{q.content}</div>
+              </div>
+            ))}
+
             <div ref={bottomRef} />
           </div>
 
           <div className="viewer-input">
-            {isBusy ? (
-              <div className="input-busy">
-                <span className="pulse-dot" />
-                {streamBy && streamBy !== me ? `${streamBy} is driving — Michael is working…` : "Michael is working…"}
-                <button className="btn-cancel" onClick={handleCancel}>
-                  Cancel
-                </button>
-              </div>
-            ) : !session.claudeSessionId ? (
+            {!session.claudeSessionId ? (
               <div className="input-disabled">No Claude session to resume</div>
             ) : (
               <>
+                {isBusy && (
+                  <div className="input-busy">
+                    <span className="pulse-dot" />
+                    {streamBy && streamBy !== me ? `${streamBy} is driving — Michael is working…` : "Michael is working…"}
+                    {queued.length > 0 && (
+                      <span className="queue-count">
+                        {queued.length} queued
+                      </span>
+                    )}
+                    <button className="btn-cancel" onClick={handleCancel}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
                 <div className="viewer-input-row">
                   <textarea
                     ref={textareaRef}
                     className="prompt-input"
-                    placeholder={canSend ? "Ask Michael to build, fix, or explain…" : "Not connected"}
+                    placeholder={
+                      !connected
+                        ? "Not connected"
+                        : isBusy
+                          ? "Message Michael — delivered when this run finishes…"
+                          : "Ask Michael to build, fix, or explain…"
+                    }
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    disabled={!canSend}
+                    disabled={!connected || !session.transcriptPath}
                     rows={2}
                   />
                   <button
                     className="btn-send"
                     onClick={handleSend}
-                    disabled={!canSend || !input.trim()}
+                    disabled={!connected || !session.transcriptPath || !input.trim()}
                   >
-                    Send
+                    {isBusy ? "Queue" : "Send"}
                   </button>
                 </div>
                 <div className="prompt-hint">

@@ -117,8 +117,12 @@ export async function* runClaude(opts: {
   cwd: string;
   mode?: "ask" | "code";
   journal?: { bksSessionId?: string; kind?: string };
+  onAskUser?: (input: Record<string, unknown>) => Promise<
+    | { behavior: "allow"; updatedInput: Record<string, unknown> }
+    | { behavior: "deny"; message: string }
+  >;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, journal } = opts;
+  const { prompt, sessionId, cwd, mode, journal, onAskUser } = opts;
   const isAsk = mode === "ask";
 
   if (sessionId && isSessionBusy(sessionId)) {
@@ -159,7 +163,25 @@ export async function* runClaude(opts: {
               "NotebookEdit", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
               "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
             ],
-        canUseTool: async (_toolName: string, input: Record<string, unknown>) => {
+        canUseTool: async (toolName: string, input: Record<string, unknown>) => {
+          if (toolName === "AskUserQuestion") {
+            if (onAskUser) {
+              try {
+                return await onAskUser(input);
+              } catch (e: any) {
+                return {
+                  behavior: "deny" as const,
+                  message: `Question UI failed (${e?.message || e}) — decide yourself and note the assumption.`,
+                };
+              }
+            }
+            // Headless runs (automations) have nobody to answer
+            return {
+              behavior: "deny" as const,
+              message:
+                "This run is headless — nobody can answer questions. Use your best judgment, note the open question and your assumption in your final output.",
+            };
+          }
           return { behavior: "allow" as const, updatedInput: input };
         },
         // Read per run so MCP servers added/removed in the UI apply immediately
