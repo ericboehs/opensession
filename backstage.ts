@@ -21,6 +21,8 @@ import {
   startScheduler,
   getWebhookRoutes,
   setEventSessionCallback,
+  automationDeniedTools,
+  automationMcpServersByName,
 } from "./src/server/automations";
 import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
@@ -222,6 +224,15 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
     prompt += `\n\n[Pinned session goal — keep working toward it and note how this turn advanced it: ${session.goal}]`;
   }
 
+  // Resuming an automation-owned session must keep that automation's scoping
+  // (MCP allowlist + tool denials) — otherwise a resume would silently hand it
+  // every MCP server and drop the customer/identity write denials.
+  const isAutomationSession = !!session.automation;
+  const mcpServers = isAutomationSession
+    ? automationMcpServersByName(session.automation!)
+    : undefined;
+  const deniedTools = isAutomationSession ? automationDeniedTools() : undefined;
+
   // Everyone viewing this session sees the prompt and the live run
   broadcastToSession(sessionId, { type: "stream_start", sessionId, by: user || "Anonymous" });
   broadcastToSession(sessionId, { type: "session_status", isRunning: true });
@@ -233,7 +244,9 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
     sessionId: session.claudeSessionId,
     cwd,
     mode: session.mode,
-    aws: true, // interactive sessions keep AWS read access (via injected creds)
+    mcpServers,
+    deniedTools,
+    aws: true, // sessions keep AWS read access (via injected creds)
     journal: { bksSessionId: session.id, kind: "prompt" },
     onAskUser: makeAskHandler(sessionId),
   })) {
