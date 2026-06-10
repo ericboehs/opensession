@@ -43,6 +43,8 @@ interface RawJsonlEntry {
   uuid?: string;
   timestamp?: string;
   requestId?: string;
+  // Harness-injected user lines (skill bodies, command output) — not typed by the user
+  isMeta?: boolean;
   message?: {
     role?: string;
     content?: any;
@@ -108,7 +110,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
             toolUseId: block.tool_use_id,
             ...(images.length > 0 ? { images } : {}),
           });
-        } else if (block.type === "text") {
+        } else if (block.type === "text" && !raw.isMeta) {
           entries.push({
             id: raw.uuid || crypto.randomUUID(),
             type: "user",
@@ -134,7 +136,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
           });
         }
       }
-    } else {
+    } else if (!raw.isMeta) {
       const text = extractText(content);
       if (text) {
         entries.push({

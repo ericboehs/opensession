@@ -41,6 +41,21 @@ const SUGGESTIONS: Array<{ chip: string; color: string; prompt: string }> = [
     prompt: "Any notable new organizations in WorkOS this week? List name, plan and member count.",
   },
   {
+    chip: "grafana",
+    color: "#f48f57",
+    prompt: "How healthy is the recording flow right now? Check completion rate, upload failures and encoder errors in Grafana.",
+  },
+  {
+    chip: "grafana",
+    color: "#f48f57",
+    prompt: "Any failed renders or exports in the last 24 hours? Check the render metrics and Temporal worker logs in Grafana.",
+  },
+  {
+    chip: "grafana",
+    color: "#f48f57",
+    prompt: "How is the webapp doing — any 5xx spikes, cold starts or slow routes on tella.tv? Check the Vercel logs in Grafana.",
+  },
+  {
     chip: "codebase",
     color: "#e3b341",
     prompt: "Explain how the video export pipeline works end to end — from clicking Export to the final file.",
