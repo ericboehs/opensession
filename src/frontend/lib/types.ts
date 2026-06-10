@@ -14,6 +14,7 @@ export interface UnifiedSession {
   transcriptPath: string | null;
   prUrl?: string;
   prState?: "OPEN" | "MERGED" | "CLOSED";
+  mode?: "ask" | "code";
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
 }
@@ -75,7 +76,7 @@ export type WSClientMessage =
   | { type: "watch"; sessionId: string; user?: string }
   | { type: "prompt"; sessionId: string; content: string; user?: string }
   | { type: "cancel" }
-  | { type: "create_session"; branch: string; prompt: string; user: string };
+  | { type: "create_session"; branch: string; prompt: string; user: string; mode?: "ask" | "code" };
 
 export type WSServerMessage =
   | { type: "transcript_init"; entries: TranscriptEntry[] }

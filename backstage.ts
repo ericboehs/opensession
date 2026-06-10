@@ -295,6 +295,7 @@ const server = Bun.serve<WSClientData>({
             prompt: content,
             sessionId: session.claudeSessionId,
             cwd,
+            mode: session.mode,
           })) {
             switch (event.type) {
               case "init":
@@ -360,13 +361,20 @@ const server = Bun.serve<WSClientData>({
         }
 
         case "create_session": {
-          const { branch, prompt, user } = msg;
+          const { branch, prompt, user, mode } = msg;
+          const isAsk = mode === "ask";
           try {
-            // Check if worktree exists, create if needed
-            const worktrees = await listWorktrees();
-            let wtPath = worktrees.find((w) => w.branch === branch)?.path;
-            if (!wtPath) {
-              wtPath = await createWorktree(branch);
+            let wtPath: string;
+            if (isAsk) {
+              // Ask sessions run read-only on the main checkout — no worktree
+              wtPath = `${HOME}/projects/tella-fusion`;
+            } else {
+              // Check if worktree exists, create if needed
+              const worktrees = await listWorktrees();
+              wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
+              if (!wtPath) {
+                wtPath = await createWorktree(branch);
+              }
             }
 
             const bksId = `bks-${randomUUIDv7()}`;
@@ -380,12 +388,13 @@ const server = Bun.serve<WSClientData>({
               const sessionData: BackstageSessionFile = {
                 id: bksId,
                 claudeSessionId,
-                branch,
-                worktreeDir: wtPath!,
+                branch: isAsk ? "" : branch,
+                worktreeDir: wtPath,
                 createdBy: user || "Anonymous",
                 createdAt: new Date().toISOString(),
                 lastActivity: new Date().toISOString(),
                 title,
+                mode: isAsk ? "ask" : "code",
               };
               writeFileSync(
                 `${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
@@ -398,6 +407,7 @@ const server = Bun.serve<WSClientData>({
             for await (const event of runClaude({
               prompt,
               cwd: wtPath,
+              mode: isAsk ? "ask" : "code",
             })) {
               if (event.type === "init") {
                 claudeSessionId = event.sessionId || "";

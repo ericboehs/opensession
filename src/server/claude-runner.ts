@@ -55,8 +55,10 @@ export async function* runClaude(opts: {
   prompt: string;
   sessionId?: string;
   cwd: string;
+  mode?: "ask" | "code";
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd } = opts;
+  const { prompt, sessionId, cwd, mode } = opts;
+  const isAsk = mode === "ask";
 
   if (sessionId && isSessionBusy(sessionId)) {
     yield { type: "error", content: "Session is busy" };
@@ -73,13 +75,19 @@ export async function* runClaude(opts: {
       options: {
         resume: sessionId || undefined,
         cwd,
-        allowedTools: [
-          "Bash", "Read", "Edit", "Write", "Grep", "Glob",
-          "Task", "TaskOutput", "WebFetch", "WebSearch",
-          "NotebookEdit", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
-          "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
-        ],
-        canUseTool: async (_toolName: string, input: unknown) => {
+        allowedTools: isAsk
+          ? [
+              "Bash", "Read", "Grep", "Glob",
+              "Task", "TaskOutput", "WebFetch", "WebSearch",
+              "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
+            ]
+          : [
+              "Bash", "Read", "Edit", "Write", "Grep", "Glob",
+              "Task", "TaskOutput", "WebFetch", "WebSearch",
+              "NotebookEdit", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
+              "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
+            ],
+        canUseTool: async (_toolName: string, input: Record<string, unknown>) => {
           return { behavior: "allow" as const, updatedInput: input };
         },
         mcpServers: mcpConfig.mcpServers as any,
@@ -90,6 +98,15 @@ export async function* runClaude(opts: {
         systemPrompt: {
           type: "preset" as const,
           preset: "claude_code" as const,
+          ...(isAsk
+            ? {
+                append:
+                  "You are Michael in Ask mode: answer questions about the tella-fusion codebase. " +
+                  "This is a READ-ONLY session on the main checkout — never modify, create, or delete " +
+                  "files, never commit, never run state-changing commands. Explore with Read/Grep/Glob " +
+                  "and read-only git commands, then answer clearly and concisely.",
+              }
+            : {}),
         },
         settingSources: ["user", "project"],
       },

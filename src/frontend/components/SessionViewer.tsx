@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { UnifiedSession, TranscriptEntry, WSServerMessage } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
-import { ToolCallBlock } from "./ToolCallBlock";
+import { WorkBlock } from "./WorkBlock";
+import { TerminalPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
 import { deleteSessionApi } from "../lib/api";
 import { DiffPanel } from "./DiffPanel";
@@ -15,7 +16,11 @@ interface Props {
   connected: boolean;
 }
 
-type PanelTab = "changes" | "pr";
+type PanelTab = "changes" | "terminal" | "pr";
+
+type RenderBlock =
+  | { kind: "entry"; entry: TranscriptEntry }
+  | { kind: "work"; items: TranscriptEntry[] };
 
 /** Upsert incoming entries by id so stream events and the file watcher never duplicate. */
 function mergeEntries(prev: TranscriptEntry[], incoming: TranscriptEntry[]): TranscriptEntry[] {
@@ -52,7 +57,16 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const hasWorkspace = Boolean(session.worktreeDir || session.branch);
+  const isAsk = session.mode === "ask";
+  const hasWorkspace = !isAsk && Boolean(session.worktreeDir || session.branch);
+
+  // Browser tab title follows the session
+  useEffect(() => {
+    document.title = `${session.title} — Michael`;
+    return () => {
+      document.title = "Michael — Tella";
+    };
+  }, [session.title]);
 
   // Subscribe to WebSocket messages
   useEffect(() => {
@@ -99,7 +113,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     });
 
     return unsubscribe;
-  }, [session.id, connected]);
+    // transcriptPath in deps: new sessions start without a transcript file —
+    // re-watch once it appears so the live tail attaches
+  }, [session.id, connected, session.transcriptPath]);
 
   // Auto-scroll, unless the reader has scrolled up to inspect history
   useEffect(() => {
@@ -141,6 +157,20 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     }
   }
 
+  // Group consecutive tool calls into Devin-style work blocks
+  const blocks: RenderBlock[] = [];
+  for (const entry of entries) {
+    if (entry.type === "tool_use") {
+      const last = blocks[blocks.length - 1];
+      if (last?.kind === "work") last.items.push(entry);
+      else blocks.push({ kind: "work", items: [entry] });
+    } else if (entry.type === "tool_result") {
+      continue; // rendered inside work blocks via toolResults
+    } else {
+      blocks.push({ kind: "entry", entry });
+    }
+  }
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -164,7 +194,11 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     <div className="session-viewer">
       <div className="viewer-header">
         <div className="viewer-title">
-          <span className={`source-chip source-${session.source}`}>{session.source}</span>
+          {isAsk ? (
+            <span className="source-chip source-ask">ask</span>
+          ) : (
+            <span className={`source-chip source-${session.source}`}>{session.source}</span>
+          )}
           <span className="viewer-branch" title={session.title}>{session.title}</span>
           {session.startedBy && (
             <span className="viewer-started-by">by {session.startedBy}</span>
@@ -211,7 +245,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             </button>
           ) : (
             <div className="viewer-delete-confirm">
-              {session.worktreeDir && (
+              {session.worktreeDir && !isAsk && (
                 <button className="btn-delete-wt" onClick={() => handleDelete(true)} disabled={deleting}>
                   {deleting ? "…" : "+ Worktree"}
                 </button>
@@ -237,21 +271,18 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             ) : entries.length === 0 ? (
               <div className="empty">Empty transcript</div>
             ) : (
-              entries.map((entry) => {
-                if (entry.type === "tool_use") {
-                  return (
-                    <ToolCallBlock
-                      key={entry.id}
-                      entry={entry}
-                      result={entry.toolUseId ? toolResults.get(entry.toolUseId) : undefined}
-                    />
-                  );
-                }
-                if (entry.type === "tool_result") {
-                  return null; // rendered inside ToolCallBlock
-                }
-                return <MessageBubble key={entry.id} entry={entry} />;
-              })
+              blocks.map((block, i) =>
+                block.kind === "work" ? (
+                  <WorkBlock
+                    key={block.items[0].id}
+                    items={block.items}
+                    toolResults={toolResults}
+                    live={isBusy && i === blocks.length - 1}
+                  />
+                ) : (
+                  <MessageBubble key={block.entry.id} entry={block.entry} />
+                )
+              )
             )}
 
             {streamText && (
@@ -315,6 +346,12 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                 Changes
               </button>
               <button
+                className={`panel-tab ${panelTab === "terminal" ? "active" : ""}`}
+                onClick={() => setPanelTab("terminal")}
+              >
+                Terminal
+              </button>
+              <button
                 className={`panel-tab ${panelTab === "pr" ? "active" : ""}`}
                 onClick={() => setPanelTab("pr")}
               >
@@ -335,6 +372,8 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             <div className="panel-body">
               {panelTab === "changes" ? (
                 <DiffPanel sessionId={session.id} isRunning={isBusy} />
+              ) : panelTab === "terminal" ? (
+                <TerminalPanel entries={entries} />
               ) : (
                 <PrPanel sessionId={session.id} />
               )}

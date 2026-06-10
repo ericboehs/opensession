@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Sidebar } from "./components/Sidebar";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
+import { Home } from "./components/Home";
 import { UserPicker, UserGate } from "./components/UserPicker";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -142,20 +143,14 @@ function App() {
                 </div>
               )
             ) : (
-              <div className="detail-empty">
-                <div className="detail-empty-inner">
-                  <div className="detail-empty-logo">M</div>
-                  <div className="detail-empty-title">Michael</div>
-                  <div className="detail-empty-sub">
-                    {loading
-                      ? "Loading sessions…"
-                      : `${sessions.length} sessions · ${sessions.filter((s) => s.isRunning).length} running`}
-                  </div>
-                  <button className="btn-new-session" onClick={() => navigate({ view: "new" })}>
-                    + New session
-                  </button>
-                </div>
-              </div>
+              <Home
+                sessions={sessions}
+                loading={loading}
+                connected={connected}
+                send={send}
+                onSelect={(s) => navigate({ view: "session", id: s.id })}
+                onNewSession={() => navigate({ view: "new" })}
+              />
             )}
           </main>
         </div>
