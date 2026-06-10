@@ -35,7 +35,7 @@ export function MessageBubble({ entry }: Props) {
   // assistant
   return (
     <div className="msg msg-assistant">
-      <div className="msg-label msg-label-assistant">Claude</div>
+      <div className="msg-label msg-label-assistant">Michael</div>
       <div
         className="msg-body msg-body-assistant markdown"
         dangerouslySetInnerHTML={{ __html: html || "" }}

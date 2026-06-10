@@ -44,7 +44,10 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const [streamBy, setStreamBy] = useState<string | null>(null);
   const [viewers, setViewers] = useState<string[]>([]);
   const [panelTab, setPanelTab] = useState<PanelTab>("changes");
-  const [panelOpen, setPanelOpen] = useState(true);
+  // On phones the panel overlays the chat, so start closed there
+  const [panelOpen, setPanelOpen] = useState(
+    () => typeof window === "undefined" || window.innerWidth > 920
+  );
   const messagesRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -300,6 +303,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
         </div>
 
         {hasWorkspace && panelOpen && (
+          <div className="panel-overlay" onClick={() => setPanelOpen(false)} />
+        )}
+        {hasWorkspace && panelOpen && (
           <div className="viewer-panel">
             <div className="panel-tabs">
               <button
@@ -318,6 +324,13 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                 )}
               </button>
               {session.branch && <span className="panel-branch" title={session.branch}>{session.branch}</span>}
+              <button
+                className="panel-close"
+                onClick={() => setPanelOpen(false)}
+                aria-label="Close panel"
+              >
+                ✕
+              </button>
             </div>
             <div className="panel-body">
               {panelTab === "changes" ? (
