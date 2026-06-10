@@ -51,10 +51,17 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const [streamBy, setStreamBy] = useState<string | null>(null);
   const [viewers, setViewers] = useState<string[]>([]);
   const [panelTab, setPanelTab] = useState<PanelTab>("changes");
-  // On phones the panel overlays the chat, so start closed there
-  const [panelOpen, setPanelOpen] = useState(
-    () => typeof window === "undefined" || window.innerWidth > 920
-  );
+  // Remembered per browser; on phones the panel overlays the chat, so default closed there
+  const [panelOpen, setPanelOpenState] = useState(() => {
+    const stored = localStorage.getItem("michael-panel-open");
+    if (stored !== null) return stored === "true" && window.innerWidth > 920;
+    return window.innerWidth > 920;
+  });
+
+  function setPanelOpen(open: boolean) {
+    setPanelOpenState(open);
+    localStorage.setItem("michael-panel-open", String(open));
+  }
   const messagesRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -342,6 +349,16 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           </div>
         </div>
 
+        {hasWorkspace && !panelOpen && (
+          <button
+            className="panel-reopen"
+            onClick={() => setPanelOpen(true)}
+            title="Open workspace panel"
+          >
+            <span className="panel-reopen-icon">«</span>
+            <span className="panel-reopen-label">Workspace</span>
+          </button>
+        )}
         {hasWorkspace && panelOpen && (
           <div className="panel-overlay" onClick={() => setPanelOpen(false)} />
         )}

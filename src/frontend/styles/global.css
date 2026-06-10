@@ -718,15 +718,43 @@ a {
 .pr-dot-closed { background: var(--red); }
 
 .panel-close {
-  display: none;
   background: none;
   border: none;
-  color: var(--text-dim);
-  font-size: 14px;
+  color: var(--text-faint);
+  font-size: 13px;
   padding: 4px 8px 8px;
   margin-left: 6px;
 }
 .panel-close:hover { color: var(--text); }
+
+/* Slim rail to reopen the collapsed workspace panel */
+.panel-reopen {
+  width: 26px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 14px;
+  background: var(--bg-raised);
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--text-faint);
+}
+.panel-reopen:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.panel-reopen-icon { font-size: 13px; }
+
+.panel-reopen-label {
+  writing-mode: vertical-rl;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
 
 .panel-overlay {
   display: none;
