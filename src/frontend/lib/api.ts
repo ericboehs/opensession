@@ -43,6 +43,73 @@ export async function fetchPr(sessionId: string) {
   return res.json();
 }
 
+// ── Automations ──
+
+export async function fetchAutomations() {
+  const res = await fetch(`${BASE}/automations`);
+  if (!res.ok) throw new Error(`Failed to fetch automations: ${res.status}`);
+  return res.json();
+}
+
+export async function createAutomationApi(input: {
+  name: string;
+  prompt: string;
+  schedule: string;
+  mode: "ask" | "code";
+  createdBy: string;
+}) {
+  const res = await fetch(`${BASE}/automations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+  return body;
+}
+
+export async function updateAutomationApi(id: string, patch: object) {
+  const res = await fetch(`${BASE}/automations/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+  return body;
+}
+
+export async function deleteAutomationApi(id: string) {
+  const res = await fetch(`${BASE}/automations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
+}
+
+export async function runAutomationApi(id: string) {
+  const res = await fetch(`${BASE}/automations/${encodeURIComponent(id)}/run`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+}
+
+// ── Wiki ──
+
+export async function fetchWikiTree() {
+  const res = await fetch(`${BASE}/wiki/tree`);
+  if (!res.ok) throw new Error(`Failed to fetch wiki tree: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchWikiFile(path: string) {
+  const res = await fetch(`${BASE}/wiki/file?path=${encodeURIComponent(path)}`);
+  if (!res.ok) throw new Error(`Failed to fetch doc: ${res.status}`);
+  return res.json();
+}
+
+export async function searchWikiApi(q: string) {
+  const res = await fetch(`${BASE}/wiki/search?q=${encodeURIComponent(q)}`);
+  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  return res.json();
+}
+
 export function getWebSocketUrl(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}/backstage/ws`;

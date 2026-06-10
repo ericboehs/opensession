@@ -10,6 +10,17 @@ import { listWorktrees, createWorktree, removeWorktree } from "./src/server/work
 import { runClaude, isSessionBusy, cancelRun } from "./src/server/claude-runner";
 import { getSessionDiff } from "./src/server/git-diff";
 import { getPrDetails } from "./src/server/pr-info";
+import {
+  listAutomations,
+  getAutomation,
+  createAutomation,
+  updateAutomation,
+  deleteAutomation,
+  runAutomation,
+  isAutomationRunning,
+  startScheduler,
+} from "./src/server/automations";
+import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
 import { startWebhookServer } from "./src/server/webhook-server";
 import type { AgentModule } from "./src/agents/types";
 import type { UnifiedSession, BackstageSessionFile } from "./src/server/types";
@@ -126,6 +137,9 @@ const server = Bun.serve<WSClientData>({
     // Client-side routes must go through the bundled HTML import, not the raw file
     "/backstage/new": homepage,
     "/backstage/session/*": homepage,
+    "/backstage/automations": homepage,
+    "/backstage/wiki": homepage,
+    "/backstage/wiki/*": homepage,
   },
 
   async fetch(req) {
@@ -201,6 +215,69 @@ const server = Bun.serve<WSClientData>({
     // List worktrees
     if (path === "/backstage/api/worktrees" && req.method === "GET") {
       return Response.json(await listWorktrees());
+    }
+
+    // ── Automations ──
+    if (path === "/backstage/api/automations" && req.method === "GET") {
+      const list = listAutomations().map((a) => ({
+        ...a,
+        isRunning: isAutomationRunning(a.id),
+      }));
+      return Response.json(list);
+    }
+
+    if (path === "/backstage/api/automations" && req.method === "POST") {
+      const body = await req.json().catch(() => null);
+      if (!body) return Response.json({ error: "Invalid JSON" }, { status: 400 });
+      const result = createAutomation(body);
+      if ("error" in result) return Response.json(result, { status: 400 });
+      return Response.json(result);
+    }
+
+    const autoRunMatch = path.match(/^\/backstage\/api\/automations\/([^/]+)\/run$/);
+    if (autoRunMatch && req.method === "POST") {
+      const automation = getAutomation(autoRunMatch[1]);
+      if (!automation) return Response.json({ error: "Not found" }, { status: 404 });
+      if (isAutomationRunning(automation.id)) {
+        return Response.json({ error: "Already running" }, { status: 409 });
+      }
+      // Fire and forget; session shows up in the list once it boots
+      void runAutomation(automation, () => {
+        sessionsCache = null;
+      });
+      return Response.json({ ok: true });
+    }
+
+    const autoMatch = path.match(/^\/backstage\/api\/automations\/([^/]+)$/);
+    if (autoMatch && req.method === "PUT") {
+      const body = await req.json().catch(() => null);
+      if (!body) return Response.json({ error: "Invalid JSON" }, { status: 400 });
+      const result = updateAutomation(autoMatch[1], body);
+      if ("error" in result) return Response.json(result, { status: 400 });
+      return Response.json(result);
+    }
+
+    if (autoMatch && req.method === "DELETE") {
+      return deleteAutomation(autoMatch[1])
+        ? Response.json({ ok: true })
+        : Response.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // ── Wiki ──
+    if (path === "/backstage/api/wiki/tree" && req.method === "GET") {
+      return Response.json(getWikiTree());
+    }
+
+    if (path === "/backstage/api/wiki/file" && req.method === "GET") {
+      const rel = url.searchParams.get("path") || "";
+      const file = getWikiFile(rel);
+      if (!file) return Response.json({ error: "Not found" }, { status: 404 });
+      return Response.json(file);
+    }
+
+    if (path === "/backstage/api/wiki/search" && req.method === "GET") {
+      const q = url.searchParams.get("q") || "";
+      return Response.json(searchWiki(q));
     }
 
     // WebSocket upgrade
@@ -497,6 +574,11 @@ async function loadAgents(): Promise<AgentModule[]> {
 // Start webhook server with enabled agents
 const agents = await loadAgents();
 const webhookServer = startWebhookServer(agents);
+
+// Cron-scheduled automations
+startScheduler(() => {
+  sessionsCache = null;
+});
 
 // Run agent startup hooks
 for (const agent of agents) {
