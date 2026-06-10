@@ -1369,6 +1369,42 @@ a {
 .btn-ask:disabled { opacity: 0.4; cursor: default; }
 .btn-ask:not(:disabled):hover { filter: brightness(1.1); }
 
+.ask-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.ask-suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 5px 12px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ask-suggestion:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.ask-suggestion-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .home-section { margin-bottom: 26px; }
 
 .home-section-title {
