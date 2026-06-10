@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { marked } from "marked";
+import { renderMarkdown } from "../lib/markdown";
 import type { UnifiedSession, TranscriptEntry, WSServerMessage, AskQuestion } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { WorkBlock } from "./WorkBlock";
@@ -213,7 +213,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+    // Enter submits; Shift+Enter inserts a newline. (⌘/Ctrl+Enter also submits,
+    // for muscle memory.) Ignore Enter mid-IME-composition.
+    if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) {
       e.preventDefault();
       handleSend();
     }
@@ -466,7 +468,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                   </button>
                 </div>
                 <div className="prompt-hint">
-                  {"⌘"}+Enter to send · /goal pins a goal · /loop runs on an interval
+                  Enter to send · Shift+Enter for newline · /goal pins a goal · /loop runs on an interval
                 </div>
               </>
             )}
@@ -541,13 +543,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
 }
 
 function StreamingMessage({ text }: { text: string }) {
-  const html = React.useMemo(() => {
-    try {
-      return marked.parse(text, { async: false, breaks: true }) as string;
-    } catch {
-      return text;
-    }
-  }, [text]);
+  const html = React.useMemo(() => renderMarkdown(text), [text]);
 
   return (
     <div className="msg msg-assistant msg-streaming">

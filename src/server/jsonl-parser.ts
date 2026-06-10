@@ -60,6 +60,23 @@ function extractText(content: any): string {
   return "";
 }
 
+/** Pull renderable image srcs out of content blocks (base64 → data URL, or a
+ *  direct url). Covers Read-of-image tool results and pasted images. */
+function extractImages(content: any): string[] {
+  if (!Array.isArray(content)) return [];
+  const out: string[] = [];
+  for (const b of content) {
+    if (b?.type !== "image" || !b.source) continue;
+    const src = b.source;
+    if (src.type === "base64" && src.media_type && src.data) {
+      out.push(`data:${src.media_type};base64,${src.data}`);
+    } else if (src.type === "url" && src.url) {
+      out.push(src.url);
+    }
+  }
+  return out;
+}
+
 function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
   if (!raw.message?.content) return entries;
@@ -82,12 +99,14 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
                     .map((c: any) => c.text)
                     .join("\n")
                 : "";
+          const images = extractImages(block.content);
           entries.push({
             id: raw.uuid || crypto.randomUUID(),
             type: "tool_result",
             content: resultText,
             timestamp: ts,
             toolUseId: block.tool_use_id,
+            ...(images.length > 0 ? { images } : {}),
           });
         } else if (block.type === "text") {
           entries.push({
@@ -95,6 +114,23 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
             type: "user",
             content: resolveSlackIds(block.text),
             timestamp: ts,
+          });
+        }
+      }
+
+      // Images pasted into a user message ride alongside its text blocks
+      const pastedImages = extractImages(content);
+      if (pastedImages.length > 0) {
+        const lastUser = [...entries].reverse().find((e) => e.type === "user");
+        if (lastUser) {
+          lastUser.images = [...(lastUser.images || []), ...pastedImages];
+        } else {
+          entries.push({
+            id: raw.uuid || crypto.randomUUID(),
+            type: "user",
+            content: "",
+            timestamp: ts,
+            images: pastedImages,
           });
         }
       }

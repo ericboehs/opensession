@@ -33,6 +33,9 @@ export interface TranscriptEntry {
   toolInput?: unknown;
   toolUseId?: string;
   requestId?: string;
+  // Ready-to-render image srcs (http(s) URLs or data: URLs), e.g. from a Read
+  // of an image file or a pasted image.
+  images?: string[];
 }
 
 export interface DiffFile {

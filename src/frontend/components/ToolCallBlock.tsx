@@ -37,10 +37,19 @@ export function ToolCallBlock({ entry, result }: Props) {
       {expanded && (
         <div className="tool-detail">
           <pre className="tool-pre">{formatInput(entry.toolInput)}</pre>
-          {result && (
+          {result && (result.content || result.images?.length) && (
             <>
               <div className="tool-result-divider">Output</div>
-              <pre className="tool-pre">{truncate(result.content, 2000)}</pre>
+              {result.content && <pre className="tool-pre">{truncate(result.content, 2000)}</pre>}
+              {result.images && result.images.length > 0 && (
+                <div className="tool-result-images">
+                  {result.images.map((src, i) => (
+                    <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="md-image-link">
+                      <img className="md-image" src={src} alt="" loading="lazy" />
+                    </a>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>

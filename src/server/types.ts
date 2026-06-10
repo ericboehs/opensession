@@ -91,6 +91,9 @@ export interface TranscriptEntry {
   toolInput?: unknown;
   toolUseId?: string;
   requestId?: string;
+  // Ready-to-render image srcs (http(s) URLs or data: URLs) extracted from
+  // image blocks — e.g. a Read of an image file, or a pasted image.
+  images?: string[];
 }
 
 export interface FileWatcherState {
