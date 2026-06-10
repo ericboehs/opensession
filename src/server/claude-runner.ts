@@ -60,6 +60,7 @@ export interface ActiveRunRecord {
   cwd: string;
   mode?: "ask" | "code";
   mcpServers?: string[]; // per-run MCP allowlist, preserved across resume
+  deniedTools?: Record<string, string>; // per-run tool denials, preserved across resume
   kind?: string;
   startedAt: string;
 }
@@ -149,13 +150,19 @@ export async function* runClaude(opts: {
    * (interactive sessions). Automations should pass only what they use.
    */
   mcpServers?: string[];
+  /**
+   * Tools to hard-deny at the permission layer, mapping tool name → message
+   * shown to the agent. Enforced in canUseTool, so it holds even if the
+   * prompt (e.g. freeform ticket text) tries to talk the agent into it.
+   */
+  deniedTools?: Record<string, string>;
   journal?: { bksSessionId?: string; kind?: string };
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
     | { behavior: "deny"; message: string }
   >;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, mcpServers, journal, onAskUser } = opts;
+  const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, journal, onAskUser } = opts;
   const isAsk = mode === "ask";
 
   if (sessionId && isSessionBusy(sessionId)) {
@@ -173,6 +180,7 @@ export async function* runClaude(opts: {
     cwd,
     mode,
     mcpServers,
+    deniedTools,
     kind: journal?.kind,
     startedAt: new Date().toISOString(),
   });
@@ -198,6 +206,9 @@ export async function* runClaude(opts: {
               "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
             ],
         canUseTool: async (toolName: string, input: Record<string, unknown>) => {
+          if (deniedTools && toolName in deniedTools) {
+            return { behavior: "deny" as const, message: deniedTools[toolName] };
+          }
           if (toolName === "AskUserQuestion") {
             if (onAskUser) {
               try {
@@ -256,6 +267,7 @@ export async function* runClaude(opts: {
           cwd,
           mode,
           mcpServers,
+          deniedTools,
           kind: journal?.kind,
           startedAt: new Date().toISOString(),
         });
@@ -352,6 +364,7 @@ export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => voi
           cwd: run.cwd,
           mode: run.mode,
           mcpServers: run.mcpServers,
+          deniedTools: run.deniedTools,
           journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
         })) {
           if (event.type === "done" || event.type === "error") {

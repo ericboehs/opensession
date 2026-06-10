@@ -152,6 +152,21 @@ export function deleteAutomation(id: string): boolean {
 
 const runningCounts = new Map<string, number>();
 
+// Automation runs are headless and often driven by untrusted text (e.g.
+// customer ticket content), so they must stay read-only toward the customer:
+// no replying to or changing the state of a Plain thread. Enforced at the
+// tool-permission layer — prompt instructions alone don't constrain a run.
+const PLAIN_WRITE_DENIAL =
+  "This tool isn't available in automation runs — they are read-only toward the " +
+  "customer thread. Put your suggested reply or status change in the internal " +
+  "note (mcp__plain__create_note) for a human to act on instead.";
+const AUTOMATION_DENIED_TOOLS: Record<string, string> = {
+  mcp__plain__reply_to_thread: PLAIN_WRITE_DENIAL,
+  mcp__plain__mark_thread_done: PLAIN_WRITE_DENIAL,
+  mcp__plain__mark_thread_todo: PLAIN_WRITE_DENIAL,
+  mcp__plain__snooze_thread: PLAIN_WRITE_DENIAL,
+};
+
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "automation";
 }
@@ -245,6 +260,7 @@ export async function runAutomation(
       cwd,
       mode: automation.mode,
       mcpServers: automation.mcpServers,
+      deniedTools: AUTOMATION_DENIED_TOOLS,
       journal: { bksSessionId: bksId, kind: "automation" },
     })) {
       if (event.type === "init") {
