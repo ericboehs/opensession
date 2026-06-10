@@ -1,6 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { readdirSync, readFileSync, existsSync } from "fs";
 import { readMcpConfig } from "./connections";
+import { getAgentAwsEnv } from "./aws-creds";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
@@ -26,12 +27,17 @@ const activeRuns = new Map<string, AbortController>();
 // child needs none of those — MCP servers get their credentials via
 // mcp-config.json's per-server `env` (or load it themselves, like the
 // workos-mcp wrapper). Only pass what the child needs to launch and run.
-function childEnv(): Record<string, string | undefined> {
+//
+// `awsEnv` (optional) carries short-lived AWS credentials minted for this run;
+// see aws-creds.ts. The child can't reach IMDS (cgroup deny), so these injected
+// vars are its only AWS access.
+function childEnv(awsEnv?: Record<string, string>): Record<string, string | undefined> {
   return {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
     LANG: process.env.LANG,
     MICHAEL_MODEL: process.env.MICHAEL_MODEL,
+    ...awsEnv,
   };
 }
 
@@ -61,6 +67,7 @@ export interface ActiveRunRecord {
   mode?: "ask" | "code";
   mcpServers?: string[]; // per-run MCP allowlist, preserved across resume
   deniedTools?: Record<string, string>; // per-run tool denials, preserved across resume
+  aws?: boolean; // whether to inject AWS creds, preserved across resume
   kind?: string;
   startedAt: string;
 }
@@ -156,19 +163,27 @@ export async function* runClaude(opts: {
    * prompt (e.g. freeform ticket text) tries to talk the agent into it.
    */
   deniedTools?: Record<string, string>;
+  /**
+   * Inject short-lived AWS credentials (instance-role read scope) into the
+   * child env. Off by default; the run's `aws` calls otherwise have no creds
+   * since IMDS is blocked. Enable for runs that legitimately need AWS.
+   */
+  aws?: boolean;
   journal?: { bksSessionId?: string; kind?: string };
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
     | { behavior: "deny"; message: string }
   >;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, journal, onAskUser } = opts;
+  const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, aws, journal, onAskUser } = opts;
   const isAsk = mode === "ask";
 
   if (sessionId && isSessionBusy(sessionId)) {
     yield { type: "error", content: "Session is busy" };
     return;
   }
+
+  const awsEnv = aws ? await getAgentAwsEnv() : undefined;
 
   const abortController = new AbortController();
   const runKey = sessionId || crypto.randomUUID();
@@ -181,6 +196,7 @@ export async function* runClaude(opts: {
     mode,
     mcpServers,
     deniedTools,
+    aws,
     kind: journal?.kind,
     startedAt: new Date().toISOString(),
   });
@@ -232,7 +248,7 @@ export async function* runClaude(opts: {
         // Read per run so MCP servers added/removed in the UI apply immediately
         mcpServers: filterMcpServers(mcpServers) as any,
         strictMcpConfig: true,
-        env: childEnv(),
+        env: childEnv(awsEnv),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
         executable: "bun",
         abortController,
@@ -268,6 +284,7 @@ export async function* runClaude(opts: {
           mode,
           mcpServers,
           deniedTools,
+          aws,
           kind: journal?.kind,
           startedAt: new Date().toISOString(),
         });
@@ -365,6 +382,7 @@ export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => voi
           mode: run.mode,
           mcpServers: run.mcpServers,
           deniedTools: run.deniedTools,
+          aws: run.aws,
           journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
         })) {
           if (event.type === "done" || event.type === "error") {

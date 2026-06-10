@@ -233,6 +233,7 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
     sessionId: session.claudeSessionId,
     cwd,
     mode: session.mode,
+    aws: true, // interactive sessions keep AWS read access (via injected creds)
     journal: { bksSessionId: session.id, kind: "prompt" },
     onAskUser: makeAskHandler(sessionId),
   })) {
@@ -864,6 +865,7 @@ const server = Bun.serve<WSClientData>({
               prompt,
               cwd: wtPath,
               mode: isAsk ? "ask" : "code",
+              aws: true, // interactive sessions keep AWS read access (via injected creds)
               journal: { bksSessionId: bksId, kind: "create" },
               onAskUser: makeAskHandler(bksId),
             })) {

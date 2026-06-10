@@ -261,6 +261,7 @@ export async function runAutomation(
       mode: automation.mode,
       mcpServers: automation.mcpServers,
       deniedTools: AUTOMATION_DENIED_TOOLS,
+      aws: true, // automation runs get short-lived instance-role read creds
       journal: { bksSessionId: bksId, kind: "automation" },
     })) {
       if (event.type === "init") {
