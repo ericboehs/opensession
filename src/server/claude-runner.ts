@@ -2,6 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { readMcpConfig } from "./connections";
 import { getAgentAwsEnv } from "./aws-creds";
+import { audit, summarizeText } from "./audit";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
@@ -254,8 +255,34 @@ export async function* runClaude(opts: {
     startedAt: new Date().toISOString(),
   });
 
+  // Audit trail (incident-agent style): one claude_turn_event per prompt,
+  // assistant block, tool call/result, and outcome. Bodies are stored as
+  // sha256 + bounded snippet — the full text lives in the session jsonl.
+  const turnId = crypto.randomUUID();
+  let resultSessionId = sessionId || "";
+  const turnEvent = (fields: Record<string, unknown>) =>
+    audit({
+      msg: "claude_turn_event",
+      turn_id: turnId,
+      run_key: runKey,
+      bks_session_id: journal?.bksSessionId,
+      run_kind: journal?.kind,
+      mode: mode || "code",
+      claude_session_id: resultSessionId || undefined,
+      ...fields,
+    });
+
+  turnEvent({
+    direction: "in",
+    kind: "user_prompt",
+    cwd,
+    mcp_servers: mcpServers,
+    denied_tools: deniedTools ? Object.keys(deniedTools) : undefined,
+    aws: aws ?? false,
+    ...summarizeText(prompt),
+  });
+
   try {
-    let resultSessionId = sessionId || "";
     let switchedForUsageLimit = false;
     for (;;) {
       let shouldRetryAfterSwitch = false;
@@ -280,13 +307,35 @@ export async function* runClaude(opts: {
             ],
         canUseTool: async (toolName: string, input: Record<string, unknown>) => {
           if (deniedTools && toolName in deniedTools) {
+            turnEvent({
+              direction: "out",
+              kind: "permission_decision",
+              tool_name: toolName,
+              decision: "deny",
+              reason: "denied_tool",
+            });
             return { behavior: "deny" as const, message: deniedTools[toolName] };
           }
           if (toolName === "AskUserQuestion") {
             if (onAskUser) {
               try {
-                return await onAskUser(input);
+                const answer = await onAskUser(input);
+                turnEvent({
+                  direction: "out",
+                  kind: "permission_decision",
+                  tool_name: toolName,
+                  decision: answer.behavior,
+                  reason: "ask_user",
+                });
+                return answer;
               } catch (e: any) {
+                turnEvent({
+                  direction: "out",
+                  kind: "permission_decision",
+                  tool_name: toolName,
+                  decision: "deny",
+                  reason: "ask_user_failed",
+                });
                 return {
                   behavior: "deny" as const,
                   message: `Question UI failed (${e?.message || e}) — decide yourself and note the assumption.`,
@@ -294,6 +343,13 @@ export async function* runClaude(opts: {
               }
             }
             // Headless runs (automations) have nobody to answer
+            turnEvent({
+              direction: "out",
+              kind: "permission_decision",
+              tool_name: toolName,
+              decision: "deny",
+              reason: "headless",
+            });
             return {
               behavior: "deny" as const,
               message:
@@ -351,9 +407,20 @@ export async function* runClaude(opts: {
         if (Array.isArray(content)) {
           for (const block of content) {
             if (block.type === "text" && block.text) {
+              turnEvent({ direction: "out", kind: "assistant_text", ...summarizeText(block.text) });
               yield { type: "text_chunk", text: block.text };
             }
+            if (block.type === "thinking" && block.thinking) {
+              turnEvent({ direction: "out", kind: "assistant_thinking", ...summarizeText(block.thinking) });
+            }
             if (block.type === "tool_use") {
+              turnEvent({
+                direction: "out",
+                kind: "tool_use",
+                tool_name: block.name,
+                tool_use_id: block.id,
+                ...summarizeText(JSON.stringify(block.input ?? {}), 500),
+              });
               yield {
                 type: "tool_use",
                 toolName: block.name,
@@ -375,6 +442,13 @@ export async function* runClaude(opts: {
                 : Array.isArray(block.content)
                   ? block.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n")
                   : "";
+              turnEvent({
+                direction: "in",
+                kind: "tool_result",
+                tool_use_id: block.tool_use_id,
+                is_error: block.is_error ?? false,
+                ...summarizeText(text),
+              });
               yield {
                 type: "tool_result",
                 toolUseId: block.tool_use_id,
@@ -390,9 +464,25 @@ export async function* runClaude(opts: {
         resultSessionId = rm.session_id || resultSessionId;
         const resultText = rm.subtype === "success" ? rm.result : `Error: ${rm.errors?.join(", ") || "Unknown"}`;
 
+        turnEvent({
+          direction: "out",
+          kind: "result",
+          result_subtype: rm.subtype,
+          is_error: rm.is_error ?? rm.subtype !== "success",
+          duration_ms: rm.duration_ms,
+          num_turns: rm.num_turns,
+          total_cost_usd: rm.total_cost_usd,
+          input_tokens: rm.usage?.input_tokens,
+          output_tokens: rm.usage?.output_tokens,
+          cache_read_input_tokens: rm.usage?.cache_read_input_tokens,
+          cache_creation_input_tokens: rm.usage?.cache_creation_input_tokens,
+          ...summarizeText(resultText),
+        });
+
         if (rm.subtype !== "success" && !switchedForUsageLimit && isClaudeUsageLimitError(resultText)) {
           const nextAccount = switchClaudeAccountAfterLimit();
           if (nextAccount) {
+            turnEvent({ direction: "out", kind: "account_switch", account: nextAccount });
             switchedForUsageLimit = true;
             shouldRetryAfterSwitch = true;
             yield {
@@ -416,9 +506,13 @@ export async function* runClaude(opts: {
     }
   } catch (e: any) {
     if (!abortController.signal.aborted) {
+      turnEvent({ direction: "out", kind: "error", error: e.message || String(e) });
       yield { type: "error", content: e.message || String(e) };
     }
   } finally {
+    if (abortController.signal.aborted) {
+      turnEvent({ direction: "out", kind: "cancelled" });
+    }
     activeRuns.delete(runKey);
     journalClear(runKey);
   }
