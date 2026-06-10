@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { marked } from "marked";
+import { FileTree, useFileTree } from "@pierre/trees/react";
 import { fetchWikiTree, fetchWikiFile, searchWikiApi } from "../lib/api";
 
 interface WikiNode {
@@ -21,37 +22,72 @@ interface Props {
   onNavigate: (docPath: string | null) => void;
 }
 
+function flattenPaths(nodes: WikiNode[]): string[] {
+  const out: string[] = [];
+  const walk = (ns: WikiNode[]) => {
+    for (const n of ns) {
+      if (n.type === "file") out.push(n.path);
+      else if (n.children) walk(n.children);
+    }
+  };
+  walk(nodes);
+  return out;
+}
+
+function ancestorDirs(docPath: string): string[] {
+  const parts = docPath.split("/");
+  const dirs: string[] = [];
+  for (let i = 1; i < parts.length; i++) {
+    dirs.push(parts.slice(0, i).join("/"));
+  }
+  return dirs;
+}
+
+/** Mounted only once paths exist, so useFileTree sees the real input. */
+function WikiTree({
+  paths,
+  docPath,
+  onOpen,
+}: {
+  paths: string[];
+  docPath: string | null;
+  onOpen: (path: string) => void;
+}) {
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+
+  const { model } = useFileTree({
+    paths,
+    initialExpandedPaths: docPath ? ancestorDirs(docPath) : ["kb"],
+    initialSelectedPaths: docPath ? [docPath] : undefined,
+    onSelectionChange: (selected) => {
+      const p = selected[0] ? String(selected[0]) : null;
+      if (p && /\.(md|mdx)$/.test(p)) onOpenRef.current(p);
+    },
+  });
+
+  return <FileTree model={model} className="wiki-filetree" />;
+}
+
 export function Wiki({ docPath, onNavigate }: Props) {
   const [tree, setTree] = useState<WikiNode[]>([]);
   const [content, setContent] = useState<string | null>(null);
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => {
     fetchWikiTree().then(setTree).catch(() => {});
   }, []);
 
+  const paths = useMemo(() => flattenPaths(tree), [tree]);
+
   useEffect(() => {
     document.title = docPath ? `${docPath.split("/").pop()} — Wiki — Michael` : "Wiki — Michael";
     return () => {
       document.title = "Michael — Tella";
     };
-  }, [docPath]);
-
-  // Auto-expand ancestors of the open doc
-  useEffect(() => {
-    if (!docPath) return;
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      const parts = docPath.split("/");
-      for (let i = 1; i < parts.length; i++) {
-        next.add(parts.slice(0, i).join("/"));
-      }
-      return next;
-    });
   }, [docPath]);
 
   useEffect(() => {
@@ -66,7 +102,7 @@ export function Wiki({ docPath, onNavigate }: Props) {
       .finally(() => setLoadingDoc(false));
   }, [docPath]);
 
-  // Debounced search
+  // Debounced content search
   useEffect(() => {
     if (query.trim().length < 2) {
       setHits(null);
@@ -86,15 +122,6 @@ export function Wiki({ docPath, onNavigate }: Props) {
       return `<pre>${content}</pre>`;
     }
   }, [content]);
-
-  const toggleDir = useCallback((path: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  }, []);
 
   function openDoc(path: string) {
     setQuery("");
@@ -131,17 +158,9 @@ export function Wiki({ docPath, onNavigate }: Props) {
           </div>
         ) : (
           <div className="wiki-tree">
-            {tree.map((node) => (
-              <TreeNode
-                key={node.path}
-                node={node}
-                depth={0}
-                selected={docPath}
-                expanded={expanded}
-                onToggle={toggleDir}
-                onOpen={openDoc}
-              />
-            ))}
+            {paths.length > 0 && (
+              <WikiTree paths={paths} docPath={docPath} onOpen={openDoc} />
+            )}
           </div>
         )}
       </div>
@@ -174,60 +193,6 @@ export function Wiki({ docPath, onNavigate }: Props) {
         )}
       </div>
     </div>
-  );
-}
-
-function TreeNode({
-  node,
-  depth,
-  selected,
-  expanded,
-  onToggle,
-  onOpen,
-}: {
-  node: WikiNode;
-  depth: number;
-  selected: string | null;
-  expanded: Set<string>;
-  onToggle: (path: string) => void;
-  onOpen: (path: string) => void;
-}) {
-  if (node.type === "dir") {
-    const isOpen = expanded.has(node.path);
-    return (
-      <>
-        <button
-          className="wiki-dir"
-          style={{ paddingLeft: 10 + depth * 14 }}
-          onClick={() => onToggle(node.path)}
-        >
-          <span className="wiki-chevron">{isOpen ? "▾" : "▸"}</span>
-          {node.name}
-        </button>
-        {isOpen &&
-          node.children?.map((child) => (
-            <TreeNode
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              selected={selected}
-              expanded={expanded}
-              onToggle={onToggle}
-              onOpen={onOpen}
-            />
-          ))}
-      </>
-    );
-  }
-
-  return (
-    <button
-      className={`wiki-file ${selected === node.path ? "wiki-file-selected" : ""}`}
-      style={{ paddingLeft: 24 + depth * 14 }}
-      onClick={() => onOpen(node.path)}
-    >
-      {node.name.replace(/\.(md|mdx)$/, "")}
-    </button>
   );
 }
 

@@ -31,6 +31,11 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Drives light-dark() in embedded components (@pierre/trees) + native UI */
+  color-scheme: dark;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -742,6 +747,21 @@ a {
   border-radius: 4px;
 }
 .btn-icon:hover { color: var(--text); background: var(--bg-hover); }
+
+.diff-truncated {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--yellow);
+  background: rgba(210, 153, 34, 0.15);
+  border-radius: 4px;
+  padding: 1px 7px;
+}
+
+.diff-render {
+  padding: 10px 10px 28px;
+}
+.diff-render [class*="pierre"] { max-width: 100%; }
 
 .diff-files {
   padding: 8px 10px 24px;
@@ -2143,6 +2163,16 @@ a {
   flex: 1;
   overflow-y: auto;
   padding: 8px 6px 24px;
+}
+
+.wiki-tree { padding: 6px 4px 16px; }
+
+.wiki-filetree {
+  display: block;
+  height: 100%;
+  /* The tree's shadow styles use light-dark(); force the dark arm —
+     the app is dark-only regardless of OS preference */
+  color-scheme: dark;
 }
 
 .wiki-dir, .wiki-file {

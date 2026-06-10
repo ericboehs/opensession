@@ -1,0 +1,95 @@
+{
+  "name": "@pierre/trees",
+  "version": "1.0.0-beta.4",
+  "license": "apache-2.0",
+  "files": [
+    "dist",
+    "LICENSE.md",
+    "NOTICE.md",
+    "README.md"
+  ],
+  "type": "module",
+  "sideEffects": [
+    "./dist/components/web-components.js"
+  ],
+  "typesVersions": {
+    "*": {
+      "*": [
+        "dist/*"
+      ],
+      "react": [
+        "dist/react/index.d.ts"
+      ],
+      "ssr": [
+        "dist/ssr/index.d.ts"
+      ],
+      "web-components": [
+        "dist/web-components.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./web-components": {
+      "types": "./dist/web-components.d.ts",
+      "import": "./dist/web-components.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./ssr": {
+      "types": "./dist/ssr/index.d.ts",
+      "import": "./dist/ssr/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown --clean && bun scripts/assert-no-path-store.ts",
+    "benchmark": "bun run ./scripts/benchmark.ts",
+    "benchmark:file-tree-get-item": "bun run ./scripts/benchmark.ts --preset get-item",
+    "benchmark:sticky-scroll": "bun run ./scripts/benchmark.ts --preset sticky-scroll",
+    "profile:file-tree": "bun run ./scripts/profileFileTree.ts",
+    "dev": "echo 'Watching for changes…' && tsdown --watch src --watch ../path-store/src --log-level error",
+    "test": "bun test",
+    "coverage": "bun test --coverage",
+    "test:e2e:base": "bun run build && (bun ./test/e2e/check-playwright-binary.ts || bun run test:e2e:installbinary)",
+    "test:e2e": "bun run test:e2e:base && bunx playwright test -c test/e2e/playwright.config.ts --grep-invert @diagnostic",
+    "test:e2e:sticky-drift": "bun run test:e2e:base && bunx playwright test -c test/e2e/playwright.config.ts test/e2e/file-tree-sticky-context-menu-scroll-drift.pw.ts",
+    "test:e2e:installbinary": "bunx playwright@1.51.1 install chromium",
+    "test:e2e:server": "FILE_TREE_E2E_PORT=${FILE_TREE_E2E_PORT:-$((${PIERRE_PORT_OFFSET:-0} + 9221))} vite --config test/e2e/vite.config.ts",
+    "tsc": "tsgo --noEmit --pretty",
+    "generate-icons": "bun scripts/generate-built-in-icons.ts"
+  },
+  "dependencies": {
+    "preact": "11.0.0-beta.0",
+    "preact-render-to-string": "6.6.5"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/core": "0.18.2",
+    "@pierre/tree-test-data": "0.0.1",
+    "@pierre/vscode-icons": "0.0.9",
+    "@playwright/test": "1.51.1",
+    "@radix-ui/react-dropdown-menu": "2.1.16",
+    "@types/jsdom": "28.0.1",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "autoprefixer": "10.4.22",
+    "jsdom": "26.1.0",
+    "postcss": "8.5.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tsdown": "0.15.11",
+    "typescript": "5.9.2",
+    "vite": "npm:rolldown-vite@7.1.12"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1 || ^19.0.0",
+    "react-dom": "^18.3.1 || ^19.0.0"
+  }
+}

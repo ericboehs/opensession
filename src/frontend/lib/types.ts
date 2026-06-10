@@ -36,7 +36,6 @@ export interface DiffFile {
   status: "added" | "modified" | "deleted" | "renamed" | "untracked";
   additions: number;
   deletions: number;
-  patch: string;
   binary?: boolean;
 }
 
@@ -46,6 +45,8 @@ export interface SessionDiff {
   files: DiffFile[];
   totalAdditions: number;
   totalDeletions: number;
+  rawPatch: string;
+  truncated?: boolean;
 }
 
 export interface PrCheck {
