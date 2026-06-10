@@ -52,6 +52,11 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const [streamBy, setStreamBy] = useState<string | null>(null);
   const [viewers, setViewers] = useState<string[]>([]);
   const [queued, setQueued] = useState<Array<{ content: string; user?: string }>>([]);
+  // Optimistic just-sent messages, shown instantly and reconciled once the real
+  // turn lands (transcript) or the server confirms it as queued (busy path).
+  const [pending, setPending] = useState<
+    Array<{ id: string; content: string; user: string; sentAt: number }>
+  >([]);
   const [ask, setAsk] = useState<{ questionId: string; questions: AskQuestion[] } | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>("changes");
   // Remembered per browser; on phones the panel overlays the chat, so default closed there
@@ -153,25 +158,53 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     // re-watch once it appears so the live tail attaches
   }, [session.id, connected, session.transcriptPath]);
 
+  // Drop optimistic bubbles once their real turn shows up. Each pending message
+  // is claimed (one-to-one) either by a transcript user entry recorded around or
+  // after we sent it, or by a server-confirmed queued entry (the busy path).
+  // A long-unmatched bubble is dropped so a dead send never sticks as "sending…".
+  useEffect(() => {
+    setPending((prev) => {
+      if (prev.length === 0) return prev;
+      const userPool = entries
+        .filter((e) => e.type === "user")
+        .map((e) => ({ c: e.content.trim(), t: new Date(e.timestamp).getTime() }));
+      const queuedPool = queued.map((q) => q.content.trim());
+      const remaining = prev.filter((p) => {
+        const c = p.content.trim();
+        const qi = queuedPool.indexOf(c);
+        if (qi >= 0) { queuedPool.splice(qi, 1); return false; }
+        const ui = userPool.findIndex((u) => u.c === c && u.t >= p.sentAt - 30_000);
+        if (ui >= 0) { userPool.splice(ui, 1); return false; }
+        return Date.now() - p.sentAt < 120_000;
+      });
+      return remaining.length === prev.length ? prev : remaining;
+    });
+  }, [entries, queued]);
+
+  // Forget optimistic bubbles when switching sessions
+  useEffect(() => { setPending([]); }, [session.id]);
+
   // Auto-scroll, unless the reader has scrolled up to inspect history
   useEffect(() => {
     const el = messagesRef.current;
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 400;
     if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [entries, streamText]);
+  }, [entries, streamText, pending]);
 
   function handleSend() {
     const text = input.trim();
     if (!text) return;
+    if (!connected || !session.transcriptPath) return;
 
+    const user = getCurrentUser();
     // While Michael is busy the server queues this and delivers it after the run
-    send({
-      type: "prompt",
-      sessionId: session.id,
-      content: text,
-      user: getCurrentUser(),
-    });
+    send({ type: "prompt", sessionId: session.id, content: text, user });
+    // Show it immediately; reconciled away when the real turn / queue echo lands
+    setPending((p) => [
+      ...p,
+      { id: `pending-${crypto.randomUUID()}`, content: text, user, sentAt: Date.now() },
+    ]);
     setInput("");
   }
 
@@ -373,6 +406,15 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                   {q.user || "You"} · queued
                 </div>
                 <div className="msg-body msg-body-user">{q.content}</div>
+              </div>
+            ))}
+
+            {pending.map((p) => (
+              <div key={p.id} className="msg msg-user msg-sending">
+                <div className="msg-label msg-label-user">
+                  {p.user || "You"} · {isBusy ? "queueing…" : "sending…"}
+                </div>
+                <div className="msg-body msg-body-user">{p.content}</div>
               </div>
             ))}
 

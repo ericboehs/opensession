@@ -2848,6 +2848,11 @@ a {
 
 .msg-queued { opacity: 0.55; }
 
+/* Optimistic just-sent bubble: present but visibly not-yet-confirmed */
+.msg-sending { opacity: 0.6; }
+.msg-sending .msg-label-user { animation: sendingPulse 1.2s ease-in-out infinite; }
+@keyframes sendingPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+
 .queue-count {
   font-size: 11.5px;
   color: var(--accent);
