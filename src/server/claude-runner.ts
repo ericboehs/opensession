@@ -21,6 +21,20 @@ export interface StreamEvent {
 // Track active runs to prevent concurrent runs on same session
 const activeRuns = new Map<string, AbortController>();
 
+// Minimal environment for the spawned Claude process. Backstage's own env
+// carries every API token and webhook secret from ~/.backstage.env; the agent
+// child needs none of those — MCP servers get their credentials via
+// mcp-config.json's per-server `env` (or load it themselves, like the
+// workos-mcp wrapper). Only pass what the child needs to launch and run.
+function childEnv(): Record<string, string | undefined> {
+  return {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    LANG: process.env.LANG,
+    MICHAEL_MODEL: process.env.MICHAEL_MODEL,
+  };
+}
+
 // ── Crash/restart journal ────────────────────────────────────
 // Every in-flight run is recorded on disk; entries that survive a process
 // restart are interrupted runs, which backstage resumes on boot.
@@ -187,6 +201,7 @@ export async function* runClaude(opts: {
         // Read per run so MCP servers added/removed in the UI apply immediately
         mcpServers: readMcpConfig().mcpServers as any,
         strictMcpConfig: true,
+        env: childEnv(),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
         executable: "bun",
         abortController,
