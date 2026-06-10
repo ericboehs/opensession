@@ -410,19 +410,30 @@ const server = Bun.serve<WSClientData>({
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Start a Plain triage session for a thread — same context as the
-    // automation gets on thread_created — and land the user in it.
+    // Land the user in a Plain triage session for a thread. If one already
+    // exists for this thread, jump straight to it; otherwise start a fresh
+    // triage run with the same context the automation gets on thread_created.
     // Linked from the Plain support cards.
     const plainTriageMatch = path.match(/^\/backstage\/plain-triage\/([^/]+)$/);
     if (plainTriageMatch && req.method === "GET") {
       const threadId = decodeURIComponent(plainTriageMatch[1]);
-      const automation = listAutomations().find(
-        (a) => a.eventKey === "plain:thread_created"
-      );
 
       const redirect = (to: string) =>
         new Response(null, { status: 302, headers: { Location: to } });
 
+      // Reuse the most recent live (non-archived) session for this thread so
+      // the card links to ongoing work instead of spawning a duplicate run.
+      const existing = getCachedSessions()
+        .filter((s) => s.plainThreadId === threadId && !s.archived)
+        .sort(
+          (a, b) =>
+            new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+        )[0];
+      if (existing) return redirect(`/backstage/session/${existing.id}`);
+
+      const automation = listAutomations().find(
+        (a) => a.eventKey === "plain:thread_created"
+      );
       if (!automation) return redirect("/backstage/");
 
       // Build the same payload shape the webhook event carries
