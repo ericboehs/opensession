@@ -15,6 +15,7 @@ export interface UnifiedSession {
   prUrl?: string;
   prState?: "OPEN" | "MERGED" | "CLOSED";
   mode?: "ask" | "code";
+  automation?: string;
   // Source-specific
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
@@ -69,6 +70,7 @@ export interface BackstageSessionFile {
   lastActivity: string;
   title?: string;
   mode?: "ask" | "code";
+  automation?: string; // name of the automation that created this session
 }
 
 export interface TranscriptEntry {

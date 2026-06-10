@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync, unlinkSync } from "fs";
 import { existsSync } from "fs";
+import { slackIdToFirstName } from "./shared/user-mappings";
 import type {
   UnifiedSession,
   SlackSessionFile,
@@ -21,29 +22,10 @@ const SKIP_FILES = new Set([
   "active-worktrees.json",
 ]);
 
-// Slack user ID → display name mapping
-const SLACK_USERS: Record<string, string> = {
-  UT41L6GCC: "Michiel",
-  U0866D7PCCU: "Jaap",
-  U084XSXRQNB: "Kent",
-  U086HCZURPM: "Grant",
-  USU9S2YRF: "Grant",
-  U01D3KX3ATW: "Johnny",
-  U01E8UE6L15: "Louise",
-  U08CXTV7ML2: "John",
-  U08EWERLX8D: "Jaap",
-  U08JGAT5KNK: "Louise",
-  U08S8B3P83X: "Kent",
-  U065GD4757C: "Thibault",
-  U066K2VRDHA: "Andres",
-  U0A3CERFC57: "Connor",
-  U0A3PB2MJET: "Ankita",
-  U0A7T08405R: "Michael",
-};
-
 function resolveSlackUser(userId: string): string {
   // Could be a Slack user ID (e.g. UT41L6GCC) or already a display name
-  if (SLACK_USERS[userId]) return SLACK_USERS[userId];
+  const mapped = slackIdToFirstName(userId);
+  if (mapped) return mapped;
   // Extract first name from "Firstname Lastname" format
   if (userId.includes(" ")) return userId.split(" ")[0];
   return userId;
@@ -213,6 +195,11 @@ function scanBackstageSessions(): UnifiedSession[] {
       startedBy: data.createdBy,
       title: data.title || data.branch || "Ask session",
       mode: data.mode,
+      automation:
+        data.automation ||
+        (data.createdBy?.endsWith(" (automation)")
+          ? data.createdBy.slice(0, -" (automation)".length)
+          : undefined),
       lastActivity: data.lastActivity,
       createdAt: data.createdAt,
       isRunning: false,

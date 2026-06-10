@@ -25,6 +25,33 @@ export const LINEAR_EMAIL_TO_GITHUB: Record<string, string> = {
   "tsaunier@igalia.com": "thiblahute",
 };
 
+/** Slack user ID → full display name (single source of truth) */
+export const SLACK_ID_TO_NAME: Record<string, string> = {
+  UT41L6GCC: "Michiel Westerbeek",
+  U0866D7PCCU: "Johnny Lin",
+  USU9S2YRF: "Grant Shaddick",
+  U065GD4757C: "Thibault Saunier",
+  U066K2VRDHA: "Andres Gomez",
+  U08CXTV7ML2: "John Soutar",
+  U08EWERLX8D: "Jaap Frolich",
+  U08JGAT5KNK: "Louise de Sadeleer",
+  U08S8B3P83X: "Kent de Bruin",
+  U0A3CERFC57: "Connor",
+  U0A3PB2MJET: "Ankita Kulkarni",
+  U0A7T08405R: "Michael",
+  U03EACNTLA1: "Linear",
+  // Legacy workspace ids
+  U01D3KX3ATW: "Johnny",
+  U01E8UE6L15: "Louise",
+  U084XSXRQNB: "Kent",
+  U086HCZURPM: "Grant",
+};
+
+export function slackIdToFirstName(id: string): string | null {
+  const name = SLACK_ID_TO_NAME[id];
+  return name ? name.split(" ")[0] : null;
+}
+
 export function githubUsernameToSlackId(username: string): string | null {
   return GITHUB_TO_SLACK[username] || null;
 }

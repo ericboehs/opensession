@@ -3,7 +3,7 @@ import type { UnifiedSession } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { sessionStatus } from "../lib/status";
 import { getPins, togglePin } from "../lib/pins";
-import { getCurrentUser } from "./UserPicker";
+import { useCurrentUser } from "./UserPicker";
 
 interface Props {
   sessions: UnifiedSession[];
@@ -18,6 +18,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [pins, setPins] = useState<string[]>(() => getPins());
+  const currentUser = useCurrentUser();
 
   function handleAsk() {
     const q = question.trim();
@@ -28,7 +29,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
       mode: "ask",
       branch: "",
       prompt: q,
-      user: getCurrentUser(),
+      user: currentUser,
     });
     // App navigates into the session on session_created
   }
@@ -49,7 +50,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
       <div className="home-inner">
         <div className="home-hero">
           <div className="home-greeting">
-            What should Michael work on{getCurrentUser() !== "Anonymous" ? `, ${getCurrentUser()}` : ""}?
+            What should Michael work on{currentUser !== "Anonymous" ? `, ${currentUser}` : ""}?
           </div>
           <div className="ask-box">
             <textarea

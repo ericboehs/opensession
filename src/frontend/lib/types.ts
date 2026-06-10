@@ -15,6 +15,7 @@ export interface UnifiedSession {
   prUrl?: string;
   prState?: "OPEN" | "MERGED" | "CLOSED";
   mode?: "ask" | "code";
+  automation?: string;
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
 }

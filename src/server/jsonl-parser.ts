@@ -1,27 +1,9 @@
 import { readFileSync, statSync } from "fs";
 import { existsSync } from "fs";
 import type { TranscriptEntry } from "./types";
+import { SLACK_ID_TO_NAME } from "./shared/user-mappings";
 
-// Slack ID → display name
-const SLACK_USERS: Record<string, string> = {
-  USU9S2YRF: "Grant Shaddick",
-  UT41L6GCC: "Michiel Westerbeek",
-  U03EACNTLA1: "Linear",
-  U065GD4757C: "Thibault Saunier",
-  U066K2VRDHA: "Andres Gomez",
-  U0866D7PCCU: "Johnny Lin",
-  U08CXTV7ML2: "John Soutar",
-  U08EWERLX8D: "Jaap Frolich",
-  U08JGAT5KNK: "Louise de Sadeleer",
-  U08S8B3P83X: "Kent de Bruin",
-  U0A3CERFC57: "Connor",
-  U0A3PB2MJET: "Ankita Kulkarni",
-  U0A7T08405R: "Michael",
-  U01D3KX3ATW: "Johnny",
-  U01E8UE6L15: "Louise",
-  U084XSXRQNB: "Kent",
-  U086HCZURPM: "Grant",
-};
+const SLACK_USERS = SLACK_ID_TO_NAME;
 
 const SLACK_CHANNELS: Record<string, string> = {
   C0AFQ7PV057: "michael-tinker",

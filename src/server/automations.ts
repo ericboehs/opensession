@@ -199,6 +199,7 @@ export async function runAutomation(
         lastActivity: new Date().toISOString(),
         title: `${automation.name} — ${stamp}`,
         mode: automation.mode,
+        automation: automation.name,
       };
       writeFileSync(`${SESSIONS_DIR}/${bksId}.json`, JSON.stringify(data, null, 2));
     };
