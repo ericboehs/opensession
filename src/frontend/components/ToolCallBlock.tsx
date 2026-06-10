@@ -6,16 +6,31 @@ interface Props {
   result?: TranscriptEntry;
 }
 
+/** Split "mcp__linear__list_issues" into { server: "linear", tool: "list_issues" }. */
+export function parseMcpTool(name: string): { server: string; tool: string } | null {
+  const parts = name.split("__");
+  if (parts[0] !== "mcp" || parts.length < 3) return null;
+  return { server: parts[1], tool: parts.slice(2).join("__") };
+}
+
 export function ToolCallBlock({ entry, result }: Props) {
   const [expanded, setExpanded] = useState(false);
   const toolName = entry.toolName || "Tool";
+  const mcp = parseMcpTool(toolName);
   const summary = getSummary(toolName, entry.toolInput, entry.content);
 
   return (
     <div className="tool">
       <div className="tool-header" onClick={() => setExpanded(!expanded)}>
         <span className="tool-icon">{expanded ? "▾" : "▸"}</span>
-        <span className="tool-name">{toolName}</span>
+        {mcp ? (
+          <>
+            <span className="tool-mcp-chip">{mcp.server}</span>
+            <span className="tool-name">{mcp.tool}</span>
+          </>
+        ) : (
+          <span className="tool-name">{toolName}</span>
+        )}
         <span className="tool-summary">{summary}</span>
         {result && <span className="tool-ok">✓</span>}
       </div>

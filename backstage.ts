@@ -21,6 +21,7 @@ import {
   startScheduler,
 } from "./src/server/automations";
 import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
+import { getConnections } from "./src/server/connections";
 import { startWebhookServer } from "./src/server/webhook-server";
 import type { AgentModule } from "./src/agents/types";
 import type { UnifiedSession, BackstageSessionFile } from "./src/server/types";
@@ -140,6 +141,7 @@ const server = Bun.serve<WSClientData>({
     "/backstage/automations": homepage,
     "/backstage/wiki": homepage,
     "/backstage/wiki/*": homepage,
+    "/backstage/connections": homepage,
   },
 
   async fetch(req) {
@@ -261,6 +263,15 @@ const server = Bun.serve<WSClientData>({
       return deleteAutomation(autoMatch[1])
         ? Response.json({ ok: true })
         : Response.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // ── Connections ──
+    if (path === "/backstage/api/connections" && req.method === "GET") {
+      const force = url.searchParams.get("refresh") === "1";
+      const mcpServers = await getConnections(force);
+      const agentHealth: Record<string, unknown> = {};
+      for (const a of agents) agentHealth[a.name] = a.health();
+      return Response.json({ mcpServers, agents: agentHealth });
     }
 
     // ── Wiki ──

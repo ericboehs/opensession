@@ -6,6 +6,7 @@ import { NewSession } from "./components/NewSession";
 import { Home } from "./components/Home";
 import { Automations } from "./components/Automations";
 import { Wiki } from "./components/Wiki";
+import { Connections } from "./components/Connections";
 import { UserPicker, UserGate } from "./components/UserPicker";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -17,13 +18,15 @@ type Route =
   | { view: "new" }
   | { view: "session"; id: string }
   | { view: "automations" }
-  | { view: "wiki"; path: string | null };
+  | { view: "wiki"; path: string | null }
+  | { view: "connections" };
 
 function parseRoute(pathname: string): Route {
   const sessionMatch = pathname.match(/^\/backstage\/session\/(.+)$/);
   if (sessionMatch) return { view: "session", id: decodeURIComponent(sessionMatch[1]) };
   if (pathname === "/backstage/new") return { view: "new" };
   if (pathname === "/backstage/automations") return { view: "automations" };
+  if (pathname === "/backstage/connections") return { view: "connections" };
   const wikiMatch = pathname.match(/^\/backstage\/wiki(?:\/(.*))?$/);
   if (wikiMatch) return { view: "wiki", path: wikiMatch[1] ? decodeURIComponent(wikiMatch[1]) : null };
   return { view: "home" };
@@ -37,6 +40,8 @@ function routePath(route: Route): string {
       return "/backstage/new";
     case "automations":
       return "/backstage/automations";
+    case "connections":
+      return "/backstage/connections";
     case "wiki":
       return route.path
         ? `/backstage/wiki/${route.path.split("/").map(encodeURIComponent).join("/")}`
@@ -86,6 +91,7 @@ function App() {
     { label: "Sessions", active: showSessionsSidebar, to: { view: "home" } },
     { label: "Automations", active: route.view === "automations", to: { view: "automations" } },
     { label: "Wiki", active: route.view === "wiki", to: { view: "wiki", path: null } },
+    { label: "Connections", active: route.view === "connections", to: { view: "connections" } },
   ];
 
   return (
@@ -162,6 +168,8 @@ function App() {
               />
             ) : route.view === "automations" ? (
               <Automations onOpenSession={(id) => navigate({ view: "session", id })} />
+            ) : route.view === "connections" ? (
+              <Connections />
             ) : route.view === "wiki" ? (
               <Wiki
                 docPath={route.path}

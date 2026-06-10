@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import type { TranscriptEntry } from "../lib/types";
-import { ToolCallBlock } from "./ToolCallBlock";
+import { ToolCallBlock, parseMcpTool } from "./ToolCallBlock";
 
 interface Props {
   items: TranscriptEntry[]; // tool_use entries, in order
@@ -33,7 +33,7 @@ export function WorkBlock({ items, toolResults, live }: Props) {
         </span>
         {!expanded && last && (
           <span className="work-block-preview">
-            {last.toolName}: {previewOf(last)}
+            {displayToolName(last.toolName)}: {previewOf(last)}
           </span>
         )}
         {live && <span className="work-block-spinner" />}
@@ -68,6 +68,12 @@ function blockDuration(
   if (secs < 60) return `${secs}s`;
   const mins = Math.floor(secs / 60);
   return `${mins}m ${secs % 60}s`;
+}
+
+function displayToolName(name?: string): string {
+  if (!name) return "Tool";
+  const mcp = parseMcpTool(name);
+  return mcp ? `${mcp.server}:${mcp.tool}` : name;
 }
 
 function previewOf(entry: TranscriptEntry): string {
