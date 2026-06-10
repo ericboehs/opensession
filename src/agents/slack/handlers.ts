@@ -397,7 +397,7 @@ export async function processMessage(
   // Post a status message with the live Backstage session link and a Stop
   // button, so the run can be followed/cancelled even if Slack's assistant DM
   // disables the input field while we're working.
-  const backstageUrl = `https://michael.taila5d766.ts.net:8443/backstage/session/slack-${encodeURIComponent(sessionKey)}`;
+  const backstageUrl = `https://michael.taila5d766.ts.net/backstage/session/slack-${encodeURIComponent(sessionKey)}`;
   const backstageButton = {
     type: "button",
     text: { type: "plain_text", text: ":desktop_computer: Open in Backstage", emoji: true },
