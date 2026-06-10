@@ -189,12 +189,17 @@ export async function runAutomation(
     }
 
     // Tie the session to its Plain thread (if the event carries one) so it
-    // can be auto-archived when the ticket is done
+    // can be auto-archived when the ticket is done, and use the ticket's
+    // title as the session title
     let plainThreadId: string | undefined;
+    let eventTitle: string | undefined;
     if (options?.eventContext) {
       try {
         const parsed = JSON.parse(options.eventContext);
         if (typeof parsed.threadId === "string") plainThreadId = parsed.threadId;
+        if (typeof parsed.title === "string" && parsed.title.trim()) {
+          eventTitle = parsed.title.trim().slice(0, 100);
+        }
       } catch {}
     }
 
@@ -207,7 +212,7 @@ export async function runAutomation(
         createdBy: `${automation.name} (automation)`,
         createdAt: startedAt.toISOString(),
         lastActivity: new Date().toISOString(),
-        title: `${automation.name} — ${stamp}`,
+        title: eventTitle || `${automation.name} — ${stamp}`,
         mode: automation.mode,
         automation: automation.name,
         plainThreadId,
