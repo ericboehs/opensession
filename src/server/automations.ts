@@ -6,7 +6,7 @@
 import { randomUUIDv7 } from "bun";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from "fs";
 import { parseCron, cronMatches, nextRun } from "./cron";
-import { runClaude } from "./claude-runner";
+import { runClaude, STRIPE_CONFIRM_TOOLS } from "./claude-runner";
 import { createWorktree, listWorktrees } from "./worktree";
 import type { BackstageSessionFile } from "./types";
 
@@ -299,6 +299,8 @@ export async function runAutomation(
       mode: automation.mode,
       mcpServers: automation.mcpServers,
       deniedTools: AUTOMATION_DENIED_TOOLS,
+      // No onAskUser here, so confirm tools deny with "propose it for a human"
+      confirmTools: STRIPE_CONFIRM_TOOLS,
       aws: true, // automation runs get short-lived instance-role read creds
       journal: { bksSessionId: bksId, kind: "automation" },
     })) {

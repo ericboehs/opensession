@@ -200,6 +200,19 @@ export function cancelRun(sessionId: string): boolean {
   return false;
 }
 
+/**
+ * Money-moving Stripe tools: every call pauses for a human approve/deny in the
+ * session UI (via onAskUser); unattended runs get a deny telling the agent to
+ * propose the action instead. stripe_api_execute is included because it can
+ * hit any endpoint the restricted key allows, including refunds and cancels.
+ */
+export const STRIPE_CONFIRM_TOOLS: Record<string, string> = {
+  mcp__stripe__create_refund: "Create a refund",
+  mcp__stripe__cancel_subscription: "Cancel a subscription",
+  mcp__stripe__update_subscription: "Update a subscription",
+  mcp__stripe__stripe_api_execute: "Execute a raw Stripe API call",
+};
+
 export async function* runClaude(opts: {
   prompt: string;
   sessionId?: string;
@@ -218,6 +231,13 @@ export async function* runClaude(opts: {
    */
   deniedTools?: Record<string, string>;
   /**
+   * Tools that need an explicit human approve/deny per call, mapping tool
+   * name → short action label. With onAskUser available the run pauses on an
+   * approval card showing the exact input; without it (unattended runs) the
+   * call is denied with instructions to propose the action for a human.
+   */
+  confirmTools?: Record<string, string>;
+  /**
    * Inject short-lived AWS credentials (instance-role read scope) into the
    * child env. Off by default; the run's `aws` calls otherwise have no creds
    * since IMDS is blocked. Enable for runs that legitimately need AWS.
@@ -229,7 +249,7 @@ export async function* runClaude(opts: {
     | { behavior: "deny"; message: string }
   >;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, aws, journal, onAskUser } = opts;
+  const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, confirmTools, aws, journal, onAskUser } = opts;
   const isAsk = mode === "ask";
 
   if (sessionId && isSessionBusy(sessionId)) {
@@ -315,6 +335,64 @@ export async function* runClaude(opts: {
               reason: "denied_tool",
             });
             return { behavior: "deny" as const, message: deniedTools[toolName] };
+          }
+          if (confirmTools && toolName in confirmTools) {
+            if (!onAskUser) {
+              turnEvent({
+                direction: "out",
+                kind: "permission_decision",
+                tool_name: toolName,
+                decision: "deny",
+                reason: "confirm_unattended",
+              });
+              return {
+                behavior: "deny" as const,
+                message:
+                  `"${confirmTools[toolName]}" requires per-call human approval, and this run is unattended. ` +
+                  "Post the exact action you want to take (tool name and full parameters, including amounts and IDs) " +
+                  "in your internal note and ask a human to open this session and approve it.",
+              };
+            }
+            let approved = false;
+            try {
+              const answer = await onAskUser({
+                questions: [
+                  {
+                    question:
+                      `Michael wants to: ${confirmTools[toolName]} (${toolName})\n\n` +
+                      JSON.stringify(input, null, 2),
+                    header: "Stripe",
+                    options: [
+                      { label: "Approve", description: "Execute this action against live Stripe" },
+                      { label: "Deny", description: "Block it — Michael continues without executing" },
+                    ],
+                    multiSelect: false,
+                  },
+                ],
+              });
+              if (answer.behavior === "allow") {
+                const answers = (answer.updatedInput as any)?.answers as
+                  | Record<string, string>
+                  | undefined;
+                approved = Object.values(answers || {}).includes("Approve");
+              }
+            } catch {
+              approved = false;
+            }
+            turnEvent({
+              direction: "out",
+              kind: "permission_decision",
+              tool_name: toolName,
+              decision: approved ? "allow" : "deny",
+              reason: "human_confirmation",
+            });
+            if (approved) return { behavior: "allow" as const, updatedInput: input };
+            return {
+              behavior: "deny" as const,
+              message:
+                "This action was NOT executed — no human approved it (denied or timed out). " +
+                "Do not retry; record the proposed action and its status in your summary.",
+            };
           }
           if (toolName === "AskUserQuestion") {
             if (onAskUser) {

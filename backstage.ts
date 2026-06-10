@@ -7,7 +7,7 @@ import { getAllSessions, deleteSession } from "./src/server/sessions";
 import { parseTranscript } from "./src/server/jsonl-parser";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
 import { listWorktrees, createWorktree, removeWorktree } from "./src/server/worktree";
-import { runClaude, isSessionBusy, cancelRun, resumeInterruptedRuns } from "./src/server/claude-runner";
+import { runClaude, isSessionBusy, cancelRun, resumeInterruptedRuns, STRIPE_CONFIRM_TOOLS } from "./src/server/claude-runner";
 import { getSessionDiff } from "./src/server/git-diff";
 import { getPrDetails, getPrDiff, postPrComment } from "./src/server/pr-info";
 import {
@@ -246,6 +246,7 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
     mode: session.mode,
     mcpServers,
     deniedTools,
+    confirmTools: STRIPE_CONFIRM_TOOLS,
     aws: true, // sessions keep AWS read access (via injected creds)
     journal: { bksSessionId: session.id, kind: "prompt" },
     onAskUser: makeAskHandler(sessionId),
@@ -889,6 +890,7 @@ const server = Bun.serve<WSClientData>({
               prompt,
               cwd: wtPath,
               mode: isAsk ? "ask" : "code",
+              confirmTools: STRIPE_CONFIRM_TOOLS,
               aws: true, // interactive sessions keep AWS read access (via injected creds)
               journal: { bksSessionId: bksId, kind: "create" },
               onAskUser: makeAskHandler(bksId),
