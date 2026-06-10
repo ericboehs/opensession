@@ -1,6 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { readdirSync, readFileSync, existsSync } from "fs";
-import mcpConfig from "../../mcp-config.json";
+import { readMcpConfig } from "./connections";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
@@ -90,7 +90,8 @@ export async function* runClaude(opts: {
         canUseTool: async (_toolName: string, input: Record<string, unknown>) => {
           return { behavior: "allow" as const, updatedInput: input };
         },
-        mcpServers: mcpConfig.mcpServers as any,
+        // Read per run so MCP servers added/removed in the UI apply immediately
+        mcpServers: readMcpConfig().mcpServers as any,
         strictMcpConfig: true,
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
         executable: "bun",

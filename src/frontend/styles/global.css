@@ -1937,6 +1937,17 @@ a {
   font-family: var(--mono);
 }
 
+.conn-remove {
+  margin-top: 10px;
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  color: var(--text-faint);
+  padding: 2px 9px;
+  font-size: 11.5px;
+}
+.conn-remove:hover { color: var(--red); border-color: var(--red); }
+
 .conn-footnote {
   margin-top: 24px;
   color: var(--text-faint);

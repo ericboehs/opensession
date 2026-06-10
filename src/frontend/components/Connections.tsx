@@ -45,6 +45,8 @@ const AGENT_BLURBS: Record<string, string> = {
 export function Connections() {
   const [data, setData] = useState<ConnectionsData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const load = useCallback(async (force = false) => {
     if (force) setRefreshing(true);
@@ -63,6 +65,20 @@ export function Connections() {
     };
   }, [load]);
 
+  async function handleRemove(name: string) {
+    if (!confirm(`Remove MCP server "${name}"? New sessions will no longer get its tools.`)) return;
+    try {
+      const res = await fetch(`/backstage/api/connections/mcp/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      load(true);
+    } catch (e: any) {
+      setRemoveError(e.message);
+    }
+  }
+
   return (
     <div className="connections">
       <div className="page-header">
@@ -72,10 +88,29 @@ export function Connections() {
             What Michael is wired into — inbound agents and the MCP tools every session can use.
           </div>
         </div>
-        <button className="btn-small" onClick={() => load(true)} disabled={refreshing}>
-          {refreshing ? "Checking…" : "↻ Re-check"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn-small" onClick={() => load(true)} disabled={refreshing}>
+            {refreshing ? "Checking…" : "↻ Re-check"}
+          </button>
+          <button className="btn-new-session" style={{ marginTop: 0, padding: "6px 14px" }} onClick={() => setShowAdd(true)}>
+            + Add MCP server
+          </button>
+        </div>
       </div>
+
+      {removeError && (
+        <div className="form-error" onClick={() => setRemoveError(null)}>{removeError}</div>
+      )}
+
+      {showAdd && (
+        <AddMcpForm
+          onClose={() => setShowAdd(false)}
+          onAdded={() => {
+            setShowAdd(false);
+            load(true);
+          }}
+        />
+      )}
 
       {!data ? (
         <div className="loading">Checking connections…</div>
@@ -124,17 +159,153 @@ export function Connections() {
                   {s.status !== "connected" && s.status !== "ready" && s.detail && (
                     <div className="conn-error">{s.detail}</div>
                   )}
+                  <button
+                    className="conn-remove"
+                    onClick={() => handleRemove(s.name)}
+                    title="Remove this MCP server"
+                  >
+                    Remove
+                  </button>
                 </div>
               );
             })}
           </div>
 
           <div className="conn-footnote">
-            MCP servers are configured in <code>tella-backstage/mcp-config.json</code>. In a session
+            Changes apply to new session runs immediately (config is read per run). In a session
             transcript, MCP tool calls show up tagged with their server name.
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function AddMcpForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [transport, setTransport] = useState<"http" | "stdio">("http");
+  const [url, setUrl] = useState("");
+  const [command, setCommand] = useState("");
+  const [args, setArgs] = useState("");
+  const [env, setEnv] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd() {
+    setSaving(true);
+    setError(null);
+    try {
+      const envObj: Record<string, string> = {};
+      for (const line of env.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq === -1) throw new Error(`Env line "${trimmed}" must be KEY=VALUE`);
+        envObj[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+      }
+
+      const res = await fetch("/backstage/api/connections/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          transport,
+          url: transport === "http" ? url.trim() : undefined,
+          command: transport === "stdio" ? command.trim() : undefined,
+          args: transport === "stdio" ? args.split(/\s+/).filter(Boolean) : undefined,
+          env: transport === "stdio" ? envObj : undefined,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      onAdded();
+    } catch (e: any) {
+      setError(e.message);
+      setSaving(false);
+    }
+  }
+
+  const valid =
+    name.trim() && (transport === "http" ? url.trim() : command.trim());
+
+  return (
+    <div className="automation-form" style={{ marginBottom: 18 }}>
+      <div className="automation-form-title">Add MCP server</div>
+
+      <div className="automation-form-row">
+        <label>
+          Name
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="github" />
+        </label>
+        <label>
+          Transport
+          <select value={transport} onChange={(e) => setTransport(e.target.value as any)}>
+            <option value="http">http — remote MCP endpoint</option>
+            <option value="stdio">stdio — local command</option>
+          </select>
+        </label>
+      </div>
+
+      {transport === "http" ? (
+        <label>
+          URL
+          <input
+            className="mono-input"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://api.example.com/mcp"
+          />
+        </label>
+      ) : (
+        <>
+          <div className="automation-form-row">
+            <label>
+              Command
+              <input
+                className="mono-input"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                placeholder="/home/ubuntu/bin/my-mcp"
+              />
+            </label>
+            <label>
+              Args (space-separated)
+              <input
+                className="mono-input"
+                value={args}
+                onChange={(e) => setArgs(e.target.value)}
+                placeholder="run /path/to/server.ts"
+              />
+            </label>
+          </div>
+          <label>
+            Env (KEY=VALUE, one per line — stored in mcp-config.json)
+            <textarea
+              className="mono-input"
+              value={env}
+              onChange={(e) => setEnv(e.target.value)}
+              rows={2}
+              placeholder={"API_KEY=${MY_API_KEY}"}
+            />
+          </label>
+        </>
+      )}
+
+      {error && <div className="form-error">{error}</div>}
+
+      <div className="automation-form-actions">
+        <button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+          Cancel
+        </button>
+        <button
+          className="btn-create"
+          style={{ padding: "8px 22px" }}
+          onClick={handleAdd}
+          disabled={saving || !valid}
+        >
+          {saving ? "Adding…" : "Add server"}
+        </button>
+      </div>
     </div>
   );
 }

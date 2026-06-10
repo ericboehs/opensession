@@ -21,7 +21,7 @@ import {
   startScheduler,
 } from "./src/server/automations";
 import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
-import { getConnections } from "./src/server/connections";
+import { getConnections, addMcpServer, removeMcpServer } from "./src/server/connections";
 import { startWebhookServer } from "./src/server/webhook-server";
 import type { AgentModule } from "./src/agents/types";
 import type { UnifiedSession, BackstageSessionFile } from "./src/server/types";
@@ -272,6 +272,21 @@ const server = Bun.serve<WSClientData>({
       const agentHealth: Record<string, unknown> = {};
       for (const a of agents) agentHealth[a.name] = a.health();
       return Response.json({ mcpServers, agents: agentHealth });
+    }
+
+    if (path === "/backstage/api/connections/mcp" && req.method === "POST") {
+      const body = await req.json().catch(() => null);
+      if (!body) return Response.json({ error: "Invalid JSON" }, { status: 400 });
+      const result = addMcpServer(body);
+      if ("error" in result) return Response.json(result, { status: 400 });
+      return Response.json(result);
+    }
+
+    const mcpDelMatch = path.match(/^\/backstage\/api\/connections\/mcp\/([^/]+)$/);
+    if (mcpDelMatch && req.method === "DELETE") {
+      const result = removeMcpServer(decodeURIComponent(mcpDelMatch[1]));
+      if ("error" in result) return Response.json(result, { status: 404 });
+      return Response.json(result);
     }
 
     // ── Wiki ──

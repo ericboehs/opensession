@@ -1,10 +1,84 @@
 /**
- * Connection status for the MCP servers Michael's sessions run with
- * (mcp-config.json). Targets are sanitized — never expose URL query
- * strings (they can embed tokens) or env values.
+ * Connection status + management for the MCP servers Michael's sessions
+ * run with (mcp-config.json). Targets are sanitized — never expose URL
+ * query strings (they can embed tokens) or env values.
  */
-import { existsSync } from "fs";
-import mcpConfig from "../../mcp-config.json";
+import { existsSync, readFileSync, writeFileSync, copyFileSync } from "fs";
+
+const HOME = process.env.HOME || "/home/ubuntu";
+const CONFIG_PATH = `${HOME}/projects/tella-backstage/mcp-config.json`;
+
+export function readMcpConfig(): { mcpServers: Record<string, any> } {
+  try {
+    return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+  } catch {
+    return { mcpServers: {} };
+  }
+}
+
+function writeMcpConfig(config: { mcpServers: Record<string, any> }): void {
+  // Keep one backup so a bad edit is always recoverable
+  try {
+    copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.bak`);
+  } catch {}
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
+  cache = null;
+}
+
+export interface AddMcpInput {
+  name: string;
+  transport: "http" | "stdio";
+  url?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+export function addMcpServer(input: AddMcpInput): { ok: true } | { error: string } {
+  const name = (input.name || "").trim();
+  if (!/^[a-z0-9][a-z0-9_-]{0,40}$/i.test(name)) {
+    return { error: "Name must be alphanumeric (dashes/underscores allowed)" };
+  }
+
+  const config = readMcpConfig();
+  if (config.mcpServers[name]) {
+    return { error: `Server "${name}" already exists — remove it first` };
+  }
+
+  let entry: any;
+  if (input.transport === "http") {
+    let parsed: URL;
+    try {
+      parsed = new URL(input.url || "");
+    } catch {
+      return { error: "Invalid URL" };
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return { error: "URL must be http(s)" };
+    }
+    entry = { type: "http", url: input.url };
+  } else {
+    const command = (input.command || "").trim();
+    if (!command) return { error: "Command is required for stdio servers" };
+    entry = { command };
+    const args = (input.args || []).map((a) => a.trim()).filter(Boolean);
+    if (args.length > 0) entry.args = args;
+    const env = input.env || {};
+    if (Object.keys(env).length > 0) entry.env = env;
+  }
+
+  config.mcpServers[name] = entry;
+  writeMcpConfig(config);
+  return { ok: true };
+}
+
+export function removeMcpServer(name: string): { ok: true } | { error: string } {
+  const config = readMcpConfig();
+  if (!config.mcpServers[name]) return { error: `Server "${name}" not found` };
+  delete config.mcpServers[name];
+  writeMcpConfig(config);
+  return { ok: true };
+}
 
 export interface McpConnection {
   name: string;
@@ -21,7 +95,7 @@ const TTL = 60_000;
 export async function getConnections(force = false): Promise<McpConnection[]> {
   if (!force && cache && Date.now() - cache.ts < TTL) return cache.data;
 
-  const servers = (mcpConfig as any).mcpServers as Record<string, any>;
+  const servers = readMcpConfig().mcpServers;
   const results = await Promise.all(
     Object.entries(servers).map(([name, cfg]) => checkServer(name, cfg))
   );
