@@ -79,6 +79,28 @@ function extractImages(content: any): string[] {
   return out;
 }
 
+/**
+ * Harness-injected user turns (not typed by a person). Task notifications get
+ * a system line built from their <summary>; system-reminders are dropped.
+ */
+function harnessEntryFor(text: string, ts: string): TranscriptEntry[] | null {
+  const t = text.trimStart();
+  if (t.startsWith("<task-notification>")) {
+    const summary = t.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim();
+    const status = t.match(/<status>([\s\S]*?)<\/status>/)?.[1]?.trim();
+    return [{
+      id: crypto.randomUUID(),
+      type: "system",
+      content: summary
+        ? `Background task ${status || "update"}: ${summary}`
+        : `Background task ${status || "update"}`,
+      timestamp: ts,
+    }];
+  }
+  if (t.startsWith("<system-reminder>")) return [];
+  return null;
+}
+
 function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
   if (!raw.message?.content) return entries;
@@ -111,6 +133,11 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
             ...(images.length > 0 ? { images } : {}),
           });
         } else if (block.type === "text" && !raw.isMeta) {
+          const harness = harnessEntryFor(block.text || "", ts);
+          if (harness) {
+            entries.push(...harness);
+            continue;
+          }
           entries.push({
             id: raw.uuid || crypto.randomUUID(),
             type: "user",
@@ -139,12 +166,17 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
     } else if (!raw.isMeta) {
       const text = extractText(content);
       if (text) {
-        entries.push({
-          id: raw.uuid || crypto.randomUUID(),
-          type: "user",
-          content: resolveSlackIds(text),
-          timestamp: ts,
-        });
+        const harness = harnessEntryFor(text, ts);
+        if (harness) {
+          entries.push(...harness);
+        } else {
+          entries.push({
+            id: raw.uuid || crypto.randomUUID(),
+            type: "user",
+            content: resolveSlackIds(text),
+            timestamp: ts,
+          });
+        }
       }
     }
   }
