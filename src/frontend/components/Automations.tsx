@@ -5,7 +5,9 @@ import {
   updateAutomationApi,
   deleteAutomationApi,
   runAutomationApi,
+  fetchModels,
   relativeTime,
+  type ModelOption,
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 
@@ -20,6 +22,8 @@ interface Automation {
   createdAt: string;
   webhookSecret?: string;
   eventKey?: string;
+  model?: string;
+  fallbackModel?: string;
   lastRunAt?: string;
   lastRunSessionId?: string;
   lastRunStatus?: "running" | "ok" | "error";
@@ -51,7 +55,14 @@ const WEBHOOK_BASE = "https://michael.tella.dev";
 
 export function Automations({ onOpenSession }: Props) {
   const [automations, setAutomations] = useState<Automation[]>([]);
+  const [defaultModel, setDefaultModel] = useState("");
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchModels()
+      .then((m) => setDefaultModel(m.default))
+      .catch(() => {});
+  }, []);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Automation | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +176,20 @@ export function Automations({ onOpenSession }: Props) {
                 <span className={`source-chip ${a.mode === "ask" ? "source-ask" : "source-backstage"}`}>
                   {a.mode}
                 </span>
+                <span
+                  className="source-chip"
+                  title={a.model ? "Model for this automation's runs" : "Default model (not overridden)"}
+                >
+                  {a.model || defaultModel || "default"}
+                </span>
+                {a.fallbackModel !== "none" && (
+                  <span
+                    className="source-chip chip-fallback"
+                    title="Fallback — used only when every account for the primary model has hit its usage limit"
+                  >
+                    ↯ {a.fallbackModel || "gpt-5.5"}
+                  </span>
+                )}
                 {(a.isRunning || a.lastRunStatus === "running") && (
                   <span className="working-pill">
                     <span className="working-dot" /> Running
@@ -295,6 +320,19 @@ function AutomationForm({
   const [customCron, setCustomCron] = useState(initial && !matchesPreset ? initial.schedule : "");
   const [mode, setMode] = useState<"ask" | "code">(initial?.mode || "ask");
   const [eventKey, setEventKey] = useState(initial?.eventKey || "");
+  const [model, setModel] = useState(initial?.model || "");
+  const [fallbackModel, setFallbackModel] = useState(initial?.fallbackModel || "");
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [defaultModel, setDefaultModel] = useState("");
+
+  useEffect(() => {
+    fetchModels()
+      .then((m) => {
+        setModels(m.models);
+        setDefaultModel(m.default);
+      })
+      .catch(() => {});
+  }, []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -306,7 +344,7 @@ function AutomationForm({
     setError(null);
     try {
       if (initial) {
-        await updateAutomationApi(initial.id, { name, prompt, schedule, mode, eventKey });
+        await updateAutomationApi(initial.id, { name, prompt, schedule, mode, eventKey, model, fallbackModel });
       } else {
         await createAutomationApi({
           name,
@@ -314,6 +352,8 @@ function AutomationForm({
           schedule,
           mode,
           eventKey: eventKey || undefined,
+          model: model || undefined,
+          fallbackModel: fallbackModel || undefined,
           createdBy: getCurrentUser(),
         });
       }
@@ -362,6 +402,31 @@ function AutomationForm({
           <select value={mode} onChange={(e) => setMode(e.target.value as "ask" | "code")}>
             <option value="ask">Ask — read-only on main</option>
             <option value="code">Code — fresh worktree per run</option>
+          </select>
+        </label>
+
+        <label>
+          Model
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="">Default{defaultModel ? ` — ${defaultModel}` : ""}</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} ({m.provider === "codex" ? "OpenAI Codex" : "Claude"})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Fallback (when all accounts hit usage limits)
+          <select value={fallbackModel} onChange={(e) => setFallbackModel(e.target.value)}>
+            <option value="">Default — gpt-5.5</option>
+            <option value="none">None — fail instead of falling back</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} ({m.provider === "codex" ? "OpenAI Codex" : "Claude"})
+              </option>
+            ))}
           </select>
         </label>
       </div>

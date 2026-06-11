@@ -18,6 +18,12 @@ export interface UnifiedSession {
   automation?: string;
   archived?: boolean;
   plainThreadId?: string;
+  /** Model id for runs in this session; unset = default (MICHAEL_MODEL). */
+  model?: string;
+  /** Codex thread id, when this session has run on a codex-provider model. */
+  codexThreadId?: string;
+  /** /model switches, newest last — rendered as dividers in the conversation. */
+  modelHistory?: Array<{ model: string; at: string; by?: string }>;
   goal?: string;
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   // Other IDs that resolve to this session. The same Claude session can be
@@ -41,6 +47,8 @@ export interface SlackSessionFile {
   channel?: string;
   threadTs?: string;
   mode?: "conversational" | "worktree";
+  model?: string;
+  codexThreadId?: string | null;
 }
 
 // Linear session file format
@@ -57,6 +65,7 @@ export interface LinearSessionFile {
   participants?: Array<{ id: string; name: string; email: string | null }>;
   lastActiveUser?: { id: string; name: string; email: string | null } | null;
   updatedAt?: string;
+  model?: string;
 }
 
 // CLI session file format (~/.claude/sessions/*.json)
@@ -80,6 +89,9 @@ export interface BackstageSessionFile {
   mode?: "ask" | "code";
   automation?: string; // name of the automation that created this session
   plainThreadId?: string; // Plain thread this session is triaging
+  model?: string; // model id for this session's runs; unset = default
+  codexThreadId?: string; // codex thread id once the session has run on a codex model
+  modelHistory?: Array<{ model: string; at: string; by?: string }>;
   archived?: boolean;
   archivedAt?: string;
   goal?: string; // pinned goal, appended to every prompt until cleared

@@ -5,7 +5,8 @@ import { MessageBubble } from "./MessageBubble";
 import { WorkBlock } from "./WorkBlock";
 import { TerminalPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
-import { deleteSessionApi } from "../lib/api";
+import { deleteSessionApi, fetchModels, type ModelOption } from "../lib/api";
+import { Composer } from "./Composer";
 import { DiffPanel } from "./DiffPanel";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
@@ -72,7 +73,22 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   }
   const messagesRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Per-session model (switchable from the composer; "" = default)
+  const [model, setModel] = useState(session.model || "");
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [defaultModel, setDefaultModel] = useState("");
+  useEffect(() => {
+    fetchModels()
+      .then((m) => {
+        setModels(m.models);
+        setDefaultModel(m.default);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    setModel(session.model || "");
+  }, [session.id, session.model]);
 
   const isAsk = session.mode === "ask";
   const hasWorkspace = !isAsk && Boolean(session.worktreeDir || session.branch);
@@ -93,10 +109,21 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
 
     const unsubscribe = addHandler((msg) => {
       switch (msg.type) {
-        case "transcript_init":
-          setEntries(msg.entries);
+        case "transcript_init": {
+          // Weave persisted model switches into the conversation as dividers
+          const switches: TranscriptEntry[] = (session.modelHistory || []).map((h) => ({
+            id: `model-switch-${h.at}`,
+            type: "system" as const,
+            content: `Model switched to ${h.model}${h.by ? ` by ${h.by}` : ""}`,
+            timestamp: h.at,
+          }));
+          const merged = [...msg.entries, ...switches].sort(
+            (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+          setEntries(merged);
           setLoading(false);
           break;
+        }
         case "transcript_append":
           setEntries((prev) => mergeEntries(prev, msg.entries));
           break;
@@ -135,6 +162,21 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           setIsStreaming(false);
           setStreamBy(null);
           setStreamText("");
+          break;
+        case "model_changed":
+          if (msg.sessionId !== session.id) break;
+          setModel(msg.model);
+          if (msg.by && msg.by !== getCurrentUser()) {
+            setEntries((prev) => [
+              ...prev,
+              {
+                id: `model-switch-${Date.now()}`,
+                type: "system",
+                content: `Model switched to ${msg.model} by ${msg.by}`,
+                timestamp: new Date().toISOString(),
+              },
+            ]);
+          }
           break;
         case "notice":
           setEntries((prev) => [
@@ -192,10 +234,16 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [entries, streamText, pending]);
 
+  // Codex-model sessions start fresh threads server-side; only Claude-model
+  // sessions need an existing claude session id to resume.
+  const effectiveModel = model || defaultModel;
+  const isCodexModel = effectiveModel.startsWith("gpt") || effectiveModel.startsWith("codex");
+  const noEngine = !isCodexModel && !session.claudeSessionId && !session.codexThreadId;
+
   function handleSend() {
     const text = input.trim();
     if (!text) return;
-    if (!connected || !session.transcriptPath) return;
+    if (!connected || noEngine) return;
 
     const user = getCurrentUser();
     // While Michael is busy the server queues this and delivers it after the run
@@ -212,13 +260,18 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     send({ type: "cancel" });
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
-    // Enter submits; Shift+Enter inserts a newline. (⌘/Ctrl+Enter also submits,
-    // for muscle memory.) Ignore Enter mid-IME-composition.
-    if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) {
-      e.preventDefault();
-      handleSend();
-    }
+  function handleModelChange(next: string) {
+    const target = next || defaultModel;
+    if (!target || target === (model || defaultModel)) return;
+    setModel(next);
+    // Routed through the /model slash command so it persists, notices, and
+    // broadcasts to other viewers.
+    send({
+      type: "prompt",
+      sessionId: session.id,
+      content: `/model ${target}`,
+      user: getCurrentUser(),
+    });
   }
 
   // Build tool_use → tool_result map
@@ -247,7 +300,6 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const [deleting, setDeleting] = useState(false);
 
   const isBusy = isRunningLive || isStreaming;
-  const canSend = connected && !isBusy && session.transcriptPath;
   const me = getCurrentUser();
 
   async function handleDelete(cleanWorktree: boolean) {
@@ -274,6 +326,14 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           <span className="viewer-branch" title={session.title}>{session.title}</span>
           {session.startedBy && (
             <span className="viewer-started-by">by {session.startedBy}</span>
+          )}
+          {(model || defaultModel) && (
+            <span
+              className={`model-pill ${isCodexModel ? "model-pill-codex" : "model-pill-claude"}`}
+              title={model ? "Model set for this session" : "Default model"}
+            >
+              {model || defaultModel}
+            </span>
           )}
           {session.archived && <span className="source-chip source-cli">archived</span>}
           {isBusy && (
@@ -424,8 +484,8 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           </div>
 
           <div className="viewer-input">
-            {!session.claudeSessionId ? (
-              <div className="input-disabled">No Claude session to resume</div>
+            {noEngine ? (
+              <div className="input-disabled">No engine session to resume</div>
             ) : (
               <>
                 {isBusy && (
@@ -442,34 +502,32 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                     </button>
                   </div>
                 )}
-                <div className="viewer-input-row">
-                  <textarea
-                    ref={textareaRef}
-                    className="prompt-input"
-                    placeholder={
-                      !connected
-                        ? "Not connected"
-                        : isBusy
-                          ? "Message Michael — delivered when this run finishes…"
-                          : "Ask Michael to build, fix, or explain…"
-                    }
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    disabled={!connected || !session.transcriptPath}
-                    rows={2}
-                  />
-                  <button
-                    className="btn-send"
-                    onClick={handleSend}
-                    disabled={!connected || !session.transcriptPath || !input.trim()}
-                  >
-                    {isBusy ? "Queue" : "Send"}
-                  </button>
-                </div>
-                <div className="prompt-hint">
-                  Enter to send · Shift+Enter for newline · /goal pins a goal · /loop runs on an interval
-                </div>
+                <Composer
+                  value={input}
+                  onChange={setInput}
+                  onSend={handleSend}
+                  placeholder={
+                    !connected
+                      ? "Not connected"
+                      : isBusy
+                        ? "Message Michael — delivered when this run finishes…"
+                        : "Ask Michael to build, fix, or explain…"
+                  }
+                  disabled={!connected}
+                  sendDisabled={!input.trim()}
+                  busy={isBusy}
+                  models={models}
+                  defaultModel={defaultModel}
+                  model={model}
+                  onModelChange={handleModelChange}
+                  modelDisabled={session.source !== "backstage"}
+                  modelTitle={
+                    session.source !== "backstage"
+                      ? "Set the model from the owning agent (/model in the Slack thread)"
+                      : "Switch the model for this session"
+                  }
+                  hint="Enter to send · Shift+Enter for newline · /goal pins a goal · /loop runs on an interval"
+                />
               </>
             )}
           </div>
@@ -526,7 +584,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                 <DiffPanel
                   sessionId={session.id}
                   isRunning={isBusy}
-                  canSend={Boolean(canSend)}
+                  canSend={connected && !isBusy && !noEngine}
                   send={send}
                 />
               ) : panelTab === "terminal" ? (

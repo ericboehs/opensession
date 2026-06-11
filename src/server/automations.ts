@@ -6,7 +6,9 @@
 import { randomUUIDv7 } from "bun";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from "fs";
 import { parseCron, cronMatches, nextRun } from "./cron";
-import { runClaude, STRIPE_CONFIRM_TOOLS } from "./claude-runner";
+import { STRIPE_CONFIRM_TOOLS } from "./claude-runner";
+import { runAgent } from "./agent-runner";
+import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL } from "./models";
 import { createWorktree, listWorktrees } from "./worktree";
 import type { BackstageSessionFile } from "./types";
 
@@ -32,6 +34,17 @@ export interface Automation {
    * existed. Prefer naming just what the automation actually uses.
    */
   mcpServers?: string[];
+  /**
+   * Model id for new runs (claude-* or gpt-*; see models.ts). Omitted =
+   * default model. Codex models enforce tool denials as per-server
+   * disabled_tools instead of canUseTool — see codex-runner.ts.
+   */
+  model?: string;
+  /**
+   * Model to switch to when the primary's whole account pool is exhausted.
+   * Unset = the global default fallback (gpt-5.5); "none" disables fallback.
+   */
+  fallbackModel?: string;
   lastRunAt?: string;
   lastRunSessionId?: string;
   lastRunStatus?: "running" | "ok" | "error";
@@ -91,6 +104,14 @@ function generateSecret(): string {
   ).join("");
 }
 
+function sanitizeModel(model?: unknown, allowNone = false): string | { error: string } | undefined {
+  if (typeof model !== "string" || !model.trim()) return undefined;
+  if (allowNone && model.trim().toLowerCase() === "none") return "none";
+  const resolved = resolveModel(model);
+  if (!resolved) return { error: `Unknown model "${model}"` };
+  return resolved.id;
+}
+
 export function createAutomation(input: {
   name: string;
   prompt: string;
@@ -99,6 +120,8 @@ export function createAutomation(input: {
   createdBy: string;
   eventKey?: string;
   mcpServers?: string[];
+  model?: string;
+  fallbackModel?: string;
 }): Automation | { error: string } {
   if (!input.name.trim()) return { error: "Name is required" };
   if (!input.prompt.trim()) return { error: "Prompt is required" };
@@ -106,6 +129,10 @@ export function createAutomation(input: {
   if (schedule && !parseCron(schedule)) {
     return { error: `Invalid cron expression: "${schedule}"` };
   }
+  const model = sanitizeModel(input.model);
+  if (model && typeof model === "object") return model;
+  const fallbackModel = sanitizeModel(input.fallbackModel, true);
+  if (fallbackModel && typeof fallbackModel === "object") return fallbackModel;
 
   const a: Automation = {
     id: `auto-${randomUUIDv7()}`,
@@ -119,6 +146,8 @@ export function createAutomation(input: {
     webhookSecret: generateSecret(),
     eventKey: (input.eventKey || "").trim() || undefined,
     mcpServers: sanitizeMcpList(input.mcpServers),
+    model,
+    fallbackModel,
   };
   saveAutomation(a);
   return a;
@@ -126,7 +155,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "mode" | "enabled" | "eventKey" | "mcpServers">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -135,6 +164,16 @@ export function updateAutomation(
   }
   const next = { ...a, ...patch };
   if ("mcpServers" in patch) next.mcpServers = sanitizeMcpList(patch.mcpServers);
+  if ("model" in patch) {
+    const model = sanitizeModel(patch.model);
+    if (model && typeof model === "object") return model;
+    next.model = model;
+  }
+  if ("fallbackModel" in patch) {
+    const fallbackModel = sanitizeModel(patch.fallbackModel, true);
+    if (fallbackModel && typeof fallbackModel === "object") return fallbackModel;
+    next.fallbackModel = fallbackModel;
+  }
   // Backfill secrets for automations created before webhook support
   if (!next.webhookSecret) next.webhookSecret = generateSecret();
   saveAutomation(next);
@@ -272,10 +311,17 @@ export async function runAutomation(
       } catch {}
     }
 
-    const persistSession = (claudeSessionId: string) => {
+    // The effective model/provider can change mid-run (usage-limit fallback),
+    // so track them from the runner's init/done events for persistence.
+    let effectiveModel = automation.model;
+    let effectiveProvider = providerFor(automation.model);
+    const persistSession = (engineSessionId: string) => {
+      const isCodex = effectiveProvider === "codex";
       const data: BackstageSessionFile = {
         id: bksId,
-        claudeSessionId,
+        claudeSessionId: isCodex ? "" : engineSessionId,
+        ...(isCodex && engineSessionId ? { codexThreadId: engineSessionId } : {}),
+        ...(effectiveModel ? { model: effectiveModel } : {}),
         branch,
         worktreeDir: cwd,
         createdBy: `${automation.name} (automation)`,
@@ -289,35 +335,47 @@ export async function runAutomation(
       writeFileSync(`${SESSIONS_DIR}/${bksId}.json`, JSON.stringify(data, null, 2));
     };
 
-    console.log(`[automations] Running "${automation.name}" → ${bksId}`);
+    console.log(
+      `[automations] Running "${automation.name}" → ${bksId}${automation.model ? ` (${automation.model})` : ""}`
+    );
 
-    let claudeSessionId = "";
+    let engineSessionId = "";
     let errorMsg = "";
-    for await (const event of runClaude({
+    for await (const event of runAgent({
       prompt,
       cwd,
       mode: automation.mode,
+      model: automation.model,
       mcpServers: automation.mcpServers,
       deniedTools: AUTOMATION_DENIED_TOOLS,
       // No onAskUser here, so confirm tools deny with "propose it for a human"
+      // (on codex models they're disabled outright — see codex-runner.ts)
       confirmTools: STRIPE_CONFIRM_TOOLS,
       aws: true, // automation runs get short-lived instance-role read creds
+      fallbackModel:
+        automation.fallbackModel === "none"
+          ? undefined
+          : automation.fallbackModel || DEFAULT_FALLBACK_MODEL,
       journal: { bksSessionId: bksId, kind: "automation" },
     })) {
       if (event.type === "init") {
-        claudeSessionId = event.sessionId || "";
-        persistSession(claudeSessionId);
+        engineSessionId = event.sessionId || "";
+        if (event.provider) effectiveProvider = event.provider;
+        if (event.model) effectiveModel = event.model;
+        persistSession(engineSessionId);
         onSessionCreated?.(bksId);
       }
       if (event.type === "done") {
-        claudeSessionId = event.sessionId || claudeSessionId;
+        engineSessionId = event.sessionId || engineSessionId;
+        if (event.provider) effectiveProvider = event.provider;
+        if (event.model) effectiveModel = event.model;
       }
       if (event.type === "error") {
         errorMsg = event.content || "Unknown error";
       }
     }
 
-    persistSession(claudeSessionId);
+    persistSession(engineSessionId);
 
     const fresh = getAutomation(automation.id);
     if (fresh) {

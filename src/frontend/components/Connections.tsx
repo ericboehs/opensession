@@ -173,6 +173,8 @@ export function Connections() {
 
           <ClaudeAccounts />
 
+          <CodexAccounts />
+
           <div className="conn-footnote">
             Changes apply to new session runs immediately (config is read per run). In a session
             transcript, MCP tool calls show up tagged with their server name.
@@ -199,7 +201,9 @@ interface ClaudeAccountInfo {
     fiveHour: UsageWindow | null;
     sevenDay: UsageWindow | null;
     error?: string;
+    errorStatus?: number;
   } | null;
+  noUsageScope: boolean;
   exhaustedUntil: string | null;
   usable: boolean;
 }
@@ -307,7 +311,7 @@ function ClaudeAccounts() {
               <div className="conn-card-top">
                 <span className="conn-logo conn-logo-claude">{a.name.charAt(0).toUpperCase()}</span>
                 <span className="conn-name">{a.name}</span>
-                {a.usage?.error ? (
+                {a.usage?.error && a.usage.errorStatus === 401 ? (
                   <span className="status-pill status-red" title={a.usage.error}>Token error</span>
                 ) : a.exhaustedUntil ? (
                   <span className="status-pill status-red" title={`Sidelined until ${a.exhaustedUntil}`}>
@@ -318,6 +322,14 @@ function ClaudeAccounts() {
                 ) : (
                   <span className="status-pill status-yellow">Near limit</span>
                 )}
+                {a.noUsageScope && (
+                  <span
+                    className="status-pill status-gray"
+                    title="This token can't read the usage endpoint (setup-tokens lack the user:profile scope). Runs work fine; usage isn't shown."
+                  >
+                    No usage data
+                  </span>
+                )}
               </div>
               <div className="conn-blurb">
                 {a.email || "unknown email"}
@@ -326,9 +338,13 @@ function ClaudeAccounts() {
               <div className="conn-detail">
                 <span className="conn-target">{a.tokenMasked}</span>
               </div>
-              <UsageBar label="5h" window={a.usage?.fiveHour ?? null} />
-              <UsageBar label="7d" window={a.usage?.sevenDay ?? null} />
-              {a.usage?.error && <div className="conn-error">{a.usage.error}</div>}
+              {!a.noUsageScope && (
+                <>
+                  <UsageBar label="5h" window={a.usage?.fiveHour ?? null} />
+                  <UsageBar label="7d" window={a.usage?.sevenDay ?? null} />
+                  {a.usage?.error && <div className="conn-error">{a.usage.error}</div>}
+                </>
+              )}
               <button className="conn-remove" onClick={() => handleRemove(a)} title="Remove this account">
                 Remove
               </button>
@@ -337,6 +353,187 @@ function ClaudeAccounts() {
         </div>
       )}
     </>
+  );
+}
+
+interface CodexAccountInfo {
+  id: string;
+  name: string;
+  kind: "api_key" | "home";
+  valueMasked: string;
+  createdAt: string;
+  exhaustedUntil: string | null;
+  usable: boolean;
+}
+
+function CodexAccounts() {
+  const [accounts, setAccounts] = useState<CodexAccountInfo[] | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/backstage/api/codex-accounts");
+      if (res.ok) setAccounts((await res.json()).accounts);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(() => load(), 60_000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  async function handleRemove(a: CodexAccountInfo) {
+    if (!confirm(`Remove Codex account "${a.name}"? Runs will stop using it.`)) return;
+    try {
+      const res = await fetch(`/backstage/api/codex-accounts/${encodeURIComponent(a.id)}`, {
+        method: "DELETE",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <>
+      <div className="conn-section-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span>Codex accounts — pool for GPT/Codex session runs</span>
+        <button className="btn-small" onClick={() => setShowAdd(true)}>
+          + Add account
+        </button>
+      </div>
+
+      {error && (
+        <div className="form-error" onClick={() => setError(null)}>{error}</div>
+      )}
+
+      {showAdd && (
+        <AddCodexAccountForm
+          onClose={() => setShowAdd(false)}
+          onAdded={() => {
+            setShowAdd(false);
+            load();
+          }}
+        />
+      )}
+
+      {!accounts ? (
+        <div className="loading">Loading accounts…</div>
+      ) : accounts.length === 0 ? (
+        <div className="conn-footnote">
+          No accounts yet. Codex runs use the VPS's own <code>codex login</code> (~/.codex). Add an
+          OpenAI API key, or a CODEX_HOME directory holding a ChatGPT-plan <code>auth.json</code>,
+          and runs will rotate across the pool when one hits its usage limit.
+        </div>
+      ) : (
+        <div className="conn-grid">
+          {accounts.map((a) => (
+            <div key={a.id} className="conn-card">
+              <div className="conn-card-top">
+                <span className="conn-logo conn-logo-codex">{a.name.charAt(0).toUpperCase()}</span>
+                <span className="conn-name">{a.name}</span>
+                {a.exhaustedUntil ? (
+                  <span className="status-pill status-red" title={`Sidelined until ${a.exhaustedUntil}`}>
+                    Limit hit
+                  </span>
+                ) : (
+                  <span className="status-pill status-green">In rotation</span>
+                )}
+                <span className="status-pill status-gray">
+                  {a.kind === "api_key" ? "API key" : "ChatGPT login"}
+                </span>
+              </div>
+              <div className="conn-detail">
+                <span className="conn-target">{a.valueMasked}</span>
+              </div>
+              <button className="conn-remove" onClick={() => handleRemove(a)} title="Remove this account">
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<"api_key" | "home">("home");
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/backstage/api/codex-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), kind, value: value.trim() }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      onAdded();
+    } catch (e: any) {
+      setError(e.message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="automation-form" style={{ marginBottom: 18 }}>
+      <div className="automation-form-title">Add Codex account</div>
+      <div className="conn-footnote" style={{ marginTop: 0 }}>
+        For a ChatGPT plan: on the VPS run <code>CODEX_HOME=~/.codex-accounts/&lt;name&gt; codex login</code>,
+        then register that directory here. For platform billing, paste an OpenAI API key instead.
+      </div>
+
+      <div className="automation-form-row">
+        <label>
+          Name
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="tella-dev" />
+        </label>
+        <label>
+          Kind
+          <select value={kind} onChange={(e) => setKind(e.target.value as "api_key" | "home")}>
+            <option value="home">ChatGPT login — CODEX_HOME directory</option>
+            <option value="api_key">OpenAI API key</option>
+          </select>
+        </label>
+        <label>
+          {kind === "api_key" ? "API key" : "CODEX_HOME path"}
+          <input
+            className="mono-input"
+            type={kind === "api_key" ? "password" : "text"}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={kind === "api_key" ? "sk-…" : "/home/ubuntu/.codex-accounts/tella-dev"}
+          />
+        </label>
+      </div>
+
+      {error && <div className="form-error">{error}</div>}
+
+      <div className="automation-form-actions">
+        <button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+          Cancel
+        </button>
+        <button
+          className="btn-create"
+          style={{ padding: "8px 22px" }}
+          onClick={handleAdd}
+          disabled={saving || !name.trim() || !value.trim()}
+        >
+          {saving ? "Adding…" : "Add account"}
+        </button>
+      </div>
+    </div>
   );
 }
 

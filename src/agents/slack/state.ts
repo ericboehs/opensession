@@ -14,6 +14,10 @@ export interface SlackSession {
   threadTs: string;
   userId: string;
   claudeSessionId: string | null;
+  /** Codex thread id, once the session has run on a codex-provider model. */
+  codexThreadId?: string | null;
+  /** Model id for this session's runs (set via /model); unset = default. */
+  model?: string;
   worktreeDir: string | null;
   branch: string | null;
   mode: "conversational" | "worktree";
@@ -87,6 +91,8 @@ export async function saveSession(session: SlackSession): Promise<void> {
     threadTs: session.threadTs,
     userId: session.userId,
     claudeSessionId: session.claudeSessionId,
+    codexThreadId: session.codexThreadId ?? null,
+    model: session.model,
     worktreeDir: session.worktreeDir,
     branch: session.branch,
     mode: session.mode,

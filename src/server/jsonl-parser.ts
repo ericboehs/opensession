@@ -219,8 +219,142 @@ function summarizeToolUse(name: string, input: any): string {
   }
 }
 
+// ── Codex rollout transcripts ────────────────────────────────
+// Codex threads persist as rollout-<ts>-<threadId>.jsonl under a CODEX_HOME's
+// sessions/YYYY/MM/DD/ tree. Lines are { timestamp, type, payload }. Messages
+// are read from event_msg payloads (response_item message lines duplicate
+// them and additionally carry harness-injected developer/AGENTS.md content);
+// tool calls only exist as response_item lines.
+
+function isCodexRolloutPath(path: string): boolean {
+  return path.includes("/rollout-") || path.includes("\\rollout-");
+}
+
+function parseCodexEntry(raw: any): TranscriptEntry[] {
+  const ts = raw.timestamp || new Date().toISOString();
+  const p = raw.payload;
+  if (!p || typeof p !== "object") return [];
+
+  if (raw.type === "event_msg") {
+    if (p.type === "user_message" && typeof p.message === "string" && p.message.trim()) {
+      // Hide harness-appended run-policy/fallback notes from the rendered prompt
+      const message = p.message
+        .split("\n\n[Run policy:")[0]
+        .split("\n\n[Note: a previous attempt")[0];
+      return [{
+        id: crypto.randomUUID(),
+        type: "user",
+        content: resolveSlackIds(message),
+        timestamp: ts,
+      }];
+    }
+    if (p.type === "agent_message" && typeof p.message === "string" && p.message.trim()) {
+      return [{
+        id: crypto.randomUUID(),
+        type: "assistant",
+        content: p.message,
+        timestamp: ts,
+      }];
+    }
+    return [];
+  }
+
+  if (raw.type === "response_item") {
+    const parseArgs = (v: unknown): unknown => {
+      if (typeof v !== "string") return v;
+      try { return JSON.parse(v); } catch { return v; }
+    };
+    const outputText = (v: unknown): string => {
+      const parsed = parseArgs(v) as any;
+      if (typeof parsed === "string") return parsed;
+      if (parsed && typeof parsed === "object") {
+        if (typeof parsed.output === "string") return parsed.output;
+        return JSON.stringify(parsed, null, 2);
+      }
+      return String(v ?? "");
+    };
+
+    // MCP / custom tool calls
+    if ((p.type === "function_call" || p.type === "custom_tool_call") && p.name) {
+      const input = parseArgs(p.arguments ?? p.input);
+      return [{
+        id: p.call_id || crypto.randomUUID(),
+        type: "tool_use",
+        content: `Using ${p.name}`,
+        timestamp: ts,
+        toolName: p.name,
+        toolInput: input,
+        toolUseId: p.call_id,
+      }];
+    }
+    if (p.type === "function_call_output" || p.type === "custom_tool_call_output") {
+      return [{
+        id: crypto.randomUUID(),
+        type: "tool_result",
+        content: outputText(p.output),
+        timestamp: ts,
+        toolUseId: p.call_id,
+      }];
+    }
+    // Shell commands
+    if (p.type === "local_shell_call") {
+      const command = Array.isArray(p.action?.command)
+        ? p.action.command.join(" ")
+        : String(p.action?.command || "");
+      return [{
+        id: p.call_id || crypto.randomUUID(),
+        type: "tool_use",
+        content: `$ ${command.split("\n")[0].slice(0, 80)}`,
+        timestamp: ts,
+        toolName: "Bash",
+        toolInput: { command },
+        toolUseId: p.call_id,
+      }];
+    }
+    if (p.type === "local_shell_call_output") {
+      return [{
+        id: crypto.randomUUID(),
+        type: "tool_result",
+        content: outputText(p.output),
+        timestamp: ts,
+        toolUseId: p.call_id,
+      }];
+    }
+    if (p.type === "web_search_call") {
+      return [{
+        id: crypto.randomUUID(),
+        type: "tool_use",
+        content: `Search: ${p.action?.query || ""}`,
+        timestamp: ts,
+        toolName: "WebSearch",
+        toolInput: p.action,
+      }];
+    }
+    return [];
+  }
+
+  return [];
+}
+
+function parseCodexLines(lines: string[]): TranscriptEntry[] {
+  const entries: TranscriptEntry[] = [];
+  for (const line of lines) {
+    try {
+      entries.push(...parseCodexEntry(JSON.parse(line)));
+    } catch {
+      continue;
+    }
+  }
+  return entries;
+}
+
 export function parseTranscript(path: string): TranscriptEntry[] {
   if (!existsSync(path)) return [];
+
+  if (isCodexRolloutPath(path)) {
+    const raw = readFileSync(path, "utf-8");
+    return parseCodexLines(raw.split("\n").filter((l) => l.trim()));
+  }
 
   const raw = readFileSync(path, "utf-8");
   const lines = raw.split("\n").filter((l) => l.trim());
@@ -277,6 +411,11 @@ export function parseTranscriptFrom(
   const buf = readFileSync(path);
   const chunk = buf.subarray(byteOffset).toString("utf-8");
   const lines = chunk.split("\n").filter((l) => l.trim());
+
+  if (isCodexRolloutPath(path)) {
+    return { entries: parseCodexLines(lines), newOffset: size };
+  }
+
   const entries: TranscriptEntry[] = [];
 
   for (const line of lines) {

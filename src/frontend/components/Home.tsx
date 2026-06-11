@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
-import { relativeTime } from "../lib/api";
+import { relativeTime, fetchModels, type ModelOption } from "../lib/api";
 import { sessionStatus } from "../lib/status";
 import { getPins, togglePin } from "../lib/pins";
 import { useCurrentUser } from "./UserPicker";
+import { Composer } from "./Composer";
 
 interface Props {
   sessions: UnifiedSession[];
@@ -66,7 +67,19 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [pins, setPins] = useState<string[]>(() => getPins());
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [defaultModel, setDefaultModel] = useState("");
+  const [askModel, setAskModel] = useState(""); // "" = default
   const currentUser = useCurrentUser();
+
+  useEffect(() => {
+    fetchModels()
+      .then((m) => {
+        setModels(m.models);
+        setDefaultModel(m.default);
+      })
+      .catch(() => {});
+  }, []);
 
   function handleAsk() {
     const q = question.trim();
@@ -78,6 +91,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
       branch: "",
       prompt: q,
       user: currentUser,
+      ...(askModel ? { model: askModel } : {}),
     });
     // App navigates into the session on session_created
   }
@@ -101,22 +115,20 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
           <div className="home-greeting">
             What should Michael work on{currentUser !== "Anonymous" ? `, ${currentUser}` : ""}?
           </div>
-          <div className="ask-box">
-            <textarea
-              className="ask-input"
-              placeholder="Ask a question about the codebase — Michael answers without touching anything…"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                  e.preventDefault();
-                  handleAsk();
-                }
-              }}
-              rows={2}
-              disabled={asking}
-            />
-            <div className="ask-actions">
+          <Composer
+            value={question}
+            onChange={setQuestion}
+            onSend={handleAsk}
+            placeholder="Ask a question about the codebase — Michael answers without touching anything…"
+            disabled={asking}
+            sendDisabled={asking || !connected || !question.trim()}
+            sendTitle="Ask (Enter)"
+            models={models}
+            defaultModel={defaultModel}
+            model={askModel}
+            onModelChange={setAskModel}
+            modelTitle="Model for this Ask session"
+            leftExtra={
               <button
                 className="btn-task"
                 onClick={() => onNewSession(question.trim() || undefined)}
@@ -124,15 +136,9 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
               >
                 Start a coding task
               </button>
-              <button
-                className="btn-ask"
-                onClick={handleAsk}
-                disabled={asking || !connected || !question.trim()}
-              >
-                {asking ? "Starting…" : "Ask"}
-              </button>
-            </div>
-          </div>
+            }
+            autoFocus
+          />
 
           <div className="ask-suggestions">
             {SUGGESTIONS.map((s) => (

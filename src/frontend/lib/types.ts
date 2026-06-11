@@ -21,6 +21,9 @@ export interface UnifiedSession {
   goal?: string;
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   aliasIds?: string[];
+  model?: string;
+  codexThreadId?: string;
+  modelHistory?: Array<{ model: string; at: string; by?: string }>;
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
 }
@@ -100,6 +103,7 @@ export type WSServerMessage =
   | { type: "stream_done" }
   | { type: "session_created"; id: string }
   | { type: "notice"; message: string }
+  | { type: "model_changed"; sessionId: string; model: string; by?: string }
   | { type: "queue_update"; sessionId: string; queued: Array<{ content: string; user?: string }> }
   | { type: "ask_question"; sessionId: string; questionId: string; questions: AskQuestion[] }
   | { type: "ask_resolved"; sessionId: string; questionId: string }

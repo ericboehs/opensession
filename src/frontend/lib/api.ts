@@ -72,6 +72,19 @@ export async function postPrCommentApi(
 
 // ── Automations ──
 
+export interface ModelOption {
+  id: string;
+  provider: "claude" | "codex";
+  label: string;
+  aliases: string[];
+}
+
+export async function fetchModels(): Promise<{ models: ModelOption[]; default: string }> {
+  const res = await fetch(`${BASE}/models`);
+  if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchAutomations() {
   const res = await fetch(`${BASE}/automations`);
   if (!res.ok) throw new Error(`Failed to fetch automations: ${res.status}`);
@@ -85,6 +98,8 @@ export async function createAutomationApi(input: {
   mode: "ask" | "code";
   createdBy: string;
   eventKey?: string;
+  model?: string;
+  fallbackModel?: string;
 }) {
   const res = await fetch(`${BASE}/automations`, {
     method: "POST",

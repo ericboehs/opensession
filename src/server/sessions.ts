@@ -2,6 +2,8 @@ import { readdirSync, readFileSync, statSync, unlinkSync } from "fs";
 import { existsSync } from "fs";
 import { slackIdToFirstName } from "./shared/user-mappings";
 import { isArchivedId } from "./archive";
+import { findCodexRollout } from "./codex-accounts";
+import { providerFor } from "./models";
 import type {
   UnifiedSession,
   SlackSessionFile,
@@ -60,6 +62,22 @@ function findTranscriptPath(
   return null;
 }
 
+/**
+ * Transcript for a session that may have run on either engine: codex-model
+ * sessions render their rollout jsonl; everything else the claude transcript.
+ */
+function resolveTranscriptPath(
+  claudePath: string | null,
+  codexThreadId: string | null | undefined,
+  model: string | null | undefined
+): string | null {
+  if (codexThreadId && providerFor(model) === "codex") {
+    const rollout = findCodexRollout(codexThreadId);
+    if (rollout) return rollout.path;
+  }
+  return claudePath;
+}
+
 function readJsonSafe<T>(path: string): T | null {
   try {
     return JSON.parse(readFileSync(path, "utf-8"));
@@ -110,13 +128,16 @@ function scanSlackSessions(): UnifiedSession[] {
       createdAt:
         data.createdAt || getFileMtime(`${SLACK_SESSIONS_DIR}/${file}`),
       isRunning: false,
-      transcriptPath: findTranscriptPath(
-        data.worktreeDir || null,
-        data.claudeSessionId || null
+      transcriptPath: resolveTranscriptPath(
+        findTranscriptPath(data.worktreeDir || null, data.claudeSessionId || null),
+        data.codexThreadId,
+        data.model
       ),
       slackThread: data.channel
         ? { channel: data.channel, threadTs: data.threadTs || "" }
         : undefined,
+      model: data.model,
+      codexThreadId: data.codexThreadId || undefined,
     });
   }
   return sessions;
@@ -171,6 +192,7 @@ function scanLinearSessions(): UnifiedSession[] {
             url: data.issueUrl,
           }
         : undefined,
+      model: data.model,
     });
   }
   return sessions;
@@ -203,14 +225,18 @@ function scanBackstageSessions(): UnifiedSession[] {
           : undefined),
       archived: data.archived || undefined,
       plainThreadId: data.plainThreadId,
+      model: data.model,
+      codexThreadId: data.codexThreadId,
+      modelHistory: data.modelHistory,
       goal: data.goal,
       loop: data.loop,
       lastActivity: data.lastActivity,
       createdAt: data.createdAt,
       isRunning: false,
-      transcriptPath: findTranscriptPath(
-        data.worktreeDir,
-        data.claudeSessionId
+      transcriptPath: resolveTranscriptPath(
+        findTranscriptPath(data.worktreeDir, data.claudeSessionId),
+        data.codexThreadId,
+        data.model
       ),
     });
   }

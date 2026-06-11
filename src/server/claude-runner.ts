@@ -23,6 +23,15 @@ export interface StreamEvent {
   toolUseId?: string;
   content?: string;
   result?: string;
+  /** Which backend emitted this event (set on init/done). */
+  provider?: "claude" | "codex";
+  /** Effective model for the run (set on init/done). */
+  model?: string;
+  /**
+   * Set on a terminal done/error when the run died on usage limits with no
+   * account left to rotate to — the dispatcher's cue to try a fallback model.
+   */
+  usageLimitExhausted?: boolean;
 }
 
 // Track active runs to prevent concurrent runs on same session
@@ -59,7 +68,7 @@ function childEnv(
 // "5-hour limit reached ∙ resets …"), with subtype "success". The looser
 // heuristic only applies to error results, where false positives can't
 // clobber a legitimate answer.
-function isClaudeUsageLimitError(message: string, isErrorResult: boolean): boolean {
+export function isClaudeUsageLimitError(message: string, isErrorResult: boolean): boolean {
   const s = message.toLowerCase();
   // Observed CLI phrasings: "You've hit your session limit · resets 12:50pm (UTC)",
   // "Claude AI usage limit reached|<ts>", "5-hour limit reached ∙ resets 3am"
@@ -138,12 +147,13 @@ const ACTIVE_RUNS_PATH = `${HOME}/.backstage-sessions/active-runs.json`;
 export interface ActiveRunRecord {
   runKey: string;
   bksSessionId?: string;
-  claudeSessionId?: string;
+  claudeSessionId?: string; // claude session id or codex thread id, per model's provider
   cwd: string;
   mode?: "ask" | "code";
   mcpServers?: string[]; // per-run MCP allowlist, preserved across resume
   deniedTools?: Record<string, string>; // per-run tool denials, preserved across resume
   aws?: boolean; // whether to inject AWS creds, preserved across resume
+  model?: string; // per-session model, preserved across resume (decides the provider)
   kind?: string;
   startedAt: string;
 }
@@ -166,13 +176,13 @@ function writeRunJournal(journal: Record<string, ActiveRunRecord>): void {
   }
 }
 
-function journalSet(record: ActiveRunRecord): void {
+export function journalSet(record: ActiveRunRecord): void {
   const journal = readRunJournal();
   journal[record.runKey] = record;
   writeRunJournal(journal);
 }
 
-function journalClear(runKey: string): void {
+export function journalClear(runKey: string): void {
   const journal = readRunJournal();
   if (runKey in journal) {
     delete journal[runKey];
@@ -240,6 +250,8 @@ export async function* runClaude(opts: {
   sessionId?: string;
   cwd: string;
   mode?: "ask" | "code";
+  /** Claude model id for this run; defaults to MICHAEL_MODEL / claude-fable-5. */
+  model?: string;
   /**
    * MCP server allowlist for this run — only the named servers from
    * mcp-config.json are made available. Omitted = all configured servers
@@ -272,7 +284,22 @@ export async function* runClaude(opts: {
   >;
 }): AsyncGenerator<StreamEvent> {
   const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, confirmTools, aws, journal, onAskUser } = opts;
+  const model = opts.model || MODEL;
   const isAsk = mode === "ask";
+
+  // Test hook: pretend the whole Claude account pool is exhausted, so the
+  // usage-limit fallback chain can be verified without burning real limits.
+  // Set MICHAEL_FORCE_LIMIT=1 on a dev process only — never the service env.
+  if (process.env.MICHAEL_FORCE_LIMIT === "1") {
+    yield {
+      type: "done",
+      result: "Claude AI usage limit reached|forced-by-MICHAEL_FORCE_LIMIT",
+      provider: "claude",
+      model,
+      usageLimitExhausted: true,
+    };
+    return;
+  }
 
   if (sessionId && isSessionBusy(sessionId)) {
     yield { type: "error", content: "Session is busy" };
@@ -293,6 +320,7 @@ export async function* runClaude(opts: {
     mcpServers,
     deniedTools,
     aws,
+    model: opts.model,
     kind: journal?.kind,
     startedAt: new Date().toISOString(),
   });
@@ -359,7 +387,7 @@ export async function* runClaude(opts: {
         options: {
         resume: resultSessionId || sessionId || undefined,
         cwd,
-        model: MODEL,
+        model,
         allowedTools: isAsk
           ? [
               "Bash", "Read", "Grep", "Glob",
@@ -523,10 +551,11 @@ export async function* runClaude(opts: {
           mcpServers,
           deniedTools,
           aws,
+          model: opts.model,
           kind: journal?.kind,
           startedAt: new Date().toISOString(),
         });
-        yield { type: "init", sessionId: resultSessionId };
+        yield { type: "init", sessionId: resultSessionId, provider: "claude", model };
       }
 
       if (msg.type === "assistant" && (msg as any).message?.content) {
@@ -606,6 +635,7 @@ export async function* runClaude(opts: {
           ...summarizeText(resultText),
         });
 
+        let limitExhausted = false;
         if (isClaudeUsageLimitError(resultText, rm.subtype !== "success")) {
           const nextAccount = rotateAfterLimit();
           if (nextAccount) {
@@ -617,12 +647,18 @@ export async function* runClaude(opts: {
             };
             break;
           }
+          // No account left to rotate to — surface that so a dispatcher with a
+          // fallback model can take over.
+          limitExhausted = true;
         }
 
         yield {
           type: "done",
           sessionId: resultSessionId,
           result: resultText,
+          provider: "claude",
+          model,
+          usageLimitExhausted: limitExhausted || undefined,
         };
         return;
       }
@@ -651,8 +687,15 @@ export async function* runClaude(opts: {
     }
   } catch (e: any) {
     if (!abortController.signal.aborted) {
-      turnEvent({ direction: "out", kind: "error", error: e.message || String(e) });
-      yield { type: "error", content: e.message || String(e) };
+      const message = e.message || String(e);
+      turnEvent({ direction: "out", kind: "error", error: message });
+      yield {
+        type: "error",
+        content: message,
+        provider: "claude",
+        model,
+        usageLimitExhausted: isClaudeUsageLimitError(message, true) || undefined,
+      };
     }
   } finally {
     if (abortController.signal.aborted) {
@@ -663,50 +706,5 @@ export async function* runClaude(opts: {
   }
 }
 
-/**
- * Resume runs that a previous process left in-flight (service restart or
- * crash). Each resumable run gets a continuation prompt against its Claude
- * session; the transcript file-watcher keeps any open viewers up to date.
- */
-export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => void): number {
-  const interrupted = takeInterruptedRuns();
-  let resumed = 0;
-
-  for (const run of interrupted) {
-    if (!run.claudeSessionId) {
-      console.warn(
-        `[runner] Interrupted run ${run.runKey} (${run.kind || "unknown"}) had no Claude session yet — cannot resume`
-      );
-      continue;
-    }
-    resumed++;
-    console.log(
-      `[runner] Resuming interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} (started ${run.startedAt})`
-    );
-    void (async () => {
-      try {
-        for await (const event of runClaude({
-          prompt:
-            "This session was interrupted by a Michael service restart mid-run. " +
-            "Review what you had already done, pick up where you left off, and finish the task. " +
-            "If the work was actually complete, just post the final summary/answer.",
-          sessionId: run.claudeSessionId,
-          cwd: run.cwd,
-          mode: run.mode,
-          mcpServers: run.mcpServers,
-          deniedTools: run.deniedTools,
-          aws: run.aws,
-          journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
-        })) {
-          if (event.type === "done" || event.type === "error") {
-            onResumed?.(run.bksSessionId);
-          }
-        }
-      } catch (e) {
-        console.error(`[runner] Resume failed for ${run.runKey}:`, e);
-      }
-    })();
-  }
-
-  return resumed;
-}
+// resumeInterruptedRuns lives in agent-runner.ts — it routes each interrupted
+// run to the right backend (Claude or Codex) based on the journaled model.

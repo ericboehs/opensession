@@ -145,6 +145,7 @@ export async function handleIssueUpdate(webhook: IssueWebhook, tokens: LinearTok
         participants: diskSession.participants || [],
         lastActiveUser: diskSession.lastActiveUser || null,
         issueCreator: diskSession.issueCreator || details.creator || null,
+        model: diskSession.model,
       };
       if (diskSession.linearSessionId) {
         activeSessions.set(diskSession.linearSessionId, existingSession);
@@ -311,6 +312,7 @@ export async function handleAgentSession(
           participants: diskSession.participants || [],
           lastActiveUser: diskSession.lastActiveUser || null,
           issueCreator: diskSession.issueCreator || null,
+          model: diskSession.model,
         };
         activeSessions.set(agentSession.id, session);
         if (diskSession.claudeSessionId) {

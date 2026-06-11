@@ -1190,6 +1190,8 @@ a {
 .msg {
   margin-bottom: 18px;
   max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .msg-user { margin-top: 22px; }
@@ -1409,6 +1411,7 @@ a {
   gap: 10px;
 }
 
+
 .btn-task {
   background: none;
   border: 1px solid var(--border-strong);
@@ -1571,7 +1574,7 @@ a {
 
 .work-block {
   max-width: 860px;
-  margin-bottom: 12px;
+  margin: 0 auto 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-raised);
@@ -1867,6 +1870,26 @@ a {
   overflow-y: auto;
 }
 
+/* Shiki-highlighted variant: keep .tool-pre's box, strip shiki's own chrome */
+.tool-pre-code pre.shiki {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tool-pre-code pre.shiki code {
+  font-family: inherit;
+  font-size: inherit;
+}
+.shiki-gutter {
+  color: var(--text-faint);
+  user-select: none;
+}
+
 .tool-result-divider {
   margin: 10px 0 6px;
   font-size: 10.5px;
@@ -1890,6 +1913,7 @@ a {
   gap: 10px;
   align-items: flex-end;
   max-width: 860px;
+  margin: 0 auto;
 }
 
 .prompt-input {
@@ -1920,6 +1944,146 @@ a {
 .btn-send:disabled { opacity: 0.4; cursor: default; }
 .btn-send:not(:disabled):hover { filter: brightness(1.1); }
 
+/* ── Composer (shared chat input — Claude/Codex style) ─────────────── */
+
+.composer-wrap {
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.composer {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  padding: 12px 12px 8px 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.composer-disabled { opacity: 0.6; }
+
+.composer-textarea {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  outline: none;
+  resize: none;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.55;
+  min-height: 22px;
+  max-height: 220px;
+  padding: 0;
+  font-family: inherit;
+}
+.composer-textarea::placeholder { color: var(--text-faint); }
+
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.composer-spacer { flex: 1; }
+
+.composer-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px 3px 9px;
+  color: var(--text-dim);
+  font-size: 12px;
+  max-width: 240px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.composer-model:hover { border-color: var(--text-faint); color: var(--text); }
+.composer-model select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: none;
+  outline: none;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 180px;
+  text-overflow: ellipsis;
+  padding-right: 2px;
+}
+.composer-model select:disabled { cursor: default; opacity: 0.7; }
+.composer-model-chevron {
+  font-size: 9px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.composer-model-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-claude { background: #d97757; }
+.dot-codex { background: #19c37d; }
+
+.composer-send {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: filter 0.15s, transform 0.1s;
+}
+.composer-send:disabled { opacity: 0.35; cursor: default; }
+.composer-send:not(:disabled):hover { filter: brightness(1.12); transform: scale(1.05); }
+.composer-send-queue { background: var(--bg-raised); color: var(--text-dim); border: 1px solid var(--border-strong); }
+
+.composer-hint {
+  color: var(--text-faint);
+  font-size: 11px;
+  text-align: center;
+  margin-top: 7px;
+}
+
+.chip-fallback { opacity: 0.65; }
+
+/* Model pill in the session header */
+.model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.model-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.model-pill-claude::before { background: #d97757; }
+.model-pill-codex::before { background: #19c37d; }
+
 .prompt-hint {
   color: var(--text-faint);
   font-size: 11px;
@@ -1932,6 +2096,8 @@ a {
   gap: 10px;
   color: var(--text-dim);
   font-size: 13px;
+  max-width: 860px;
+  margin: 0 auto;
 }
 
 .pulse-dot {
@@ -1956,6 +2122,8 @@ a {
 .input-disabled {
   color: var(--text-faint);
   font-size: 13px;
+  max-width: 860px;
+  margin: 0 auto;
 }
 
 /* ── New session form ────────────────────────────────────── */
@@ -2770,7 +2938,7 @@ a {
 
 .ask-card {
   max-width: 860px;
-  margin: 4px 0 16px;
+  margin: 4px auto 16px;
   background: var(--bg-panel);
   border: 1px solid rgba(91, 124, 250, 0.45);
   border-radius: 12px;

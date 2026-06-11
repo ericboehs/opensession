@@ -7,7 +7,26 @@ import { getAllSessions, deleteSession } from "./src/server/sessions";
 import { parseTranscript } from "./src/server/jsonl-parser";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
 import { listWorktrees, createWorktree, removeWorktree, sweepArchivedWorktrees } from "./src/server/worktree";
-import { runClaude, isSessionBusy, cancelRun, resumeInterruptedRuns, STRIPE_CONFIRM_TOOLS } from "./src/server/claude-runner";
+import { STRIPE_CONFIRM_TOOLS } from "./src/server/claude-runner";
+import {
+  runAgent,
+  isAgentSessionBusy,
+  cancelAgentRun,
+  resumeInterruptedRuns,
+} from "./src/server/agent-runner";
+import {
+  KNOWN_MODELS,
+  DEFAULT_MODEL,
+  resolveModel,
+  providerFor,
+  modelLabel,
+  formatModelList,
+} from "./src/server/models";
+import {
+  listCodexAccountsPublic,
+  addCodexAccount,
+  removeCodexAccount,
+} from "./src/server/codex-accounts";
 import { getSessionDiff } from "./src/server/git-diff";
 import { getPrDetails, getPrDiff, postPrComment } from "./src/server/pr-info";
 import {
@@ -57,7 +76,7 @@ function getCachedSessions(): UnifiedSession[] {
   const data = getAllSessions();
   // Sessions driven from the web UI run in-process; surface those too
   for (const s of data) {
-    if (!s.isRunning && s.claudeSessionId && isSessionBusy(s.claudeSessionId)) {
+    if (!s.isRunning && isAgentSessionBusy(s.claudeSessionId, s.codexThreadId, s.id)) {
       s.isRunning = true;
     }
   }
@@ -223,7 +242,15 @@ async function runSessionPromptAndDrain(
 /** Run a prompt against an existing session, broadcasting to all watchers. */
 async function runSessionPrompt(sessionId: string, content: string, user?: string): Promise<void> {
   const session = findSession(sessionId);
-  if (!session?.claudeSessionId) return;
+  if (!session) return;
+
+  // The engine session id depends on the session's model: codex models resume
+  // the codex thread, claude models the claude session. A missing engine id
+  // just means "first run on this provider" — a fresh thread/session starts.
+  const provider = providerFor(session.model);
+  const engineSessionId =
+    provider === "codex" ? session.codexThreadId : session.claudeSessionId;
+  if (provider === "claude" && !engineSessionId) return;
 
   const cwd = session.worktreeDir || `${HOME}/projects/tella-fusion`;
   let prompt = content;
@@ -244,13 +271,14 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
   broadcastToSession(sessionId, { type: "stream_start", sessionId, by: user || "Anonymous" });
   broadcastToSession(sessionId, { type: "session_status", isRunning: true });
 
-  let finalSessionId = session.claudeSessionId;
+  let finalSessionId = engineSessionId || "";
 
-  for await (const event of runClaude({
+  for await (const event of runAgent({
     prompt,
-    sessionId: session.claudeSessionId,
+    sessionId: engineSessionId || undefined,
     cwd,
     mode: session.mode,
+    model: session.model,
     mcpServers,
     deniedTools,
     confirmTools: STRIPE_CONFIRM_TOOLS,
@@ -260,6 +288,7 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
   })) {
     switch (event.type) {
       case "init":
+        finalSessionId = event.sessionId || finalSessionId;
         break;
       case "text_chunk":
         broadcastToSession(sessionId, { type: "stream_text", text: event.text });
@@ -302,7 +331,12 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
 
   // Persist activity on our own session store (slack/linear stores are read-only)
   if (session.source === "backstage") {
-    touchBackstageSession(session.id, { claudeSessionId: finalSessionId || undefined });
+    touchBackstageSession(
+      session.id,
+      provider === "codex"
+        ? { codexThreadId: finalSessionId || undefined }
+        : { claudeSessionId: finalSessionId || undefined }
+    );
   }
 
   broadcastToSession(sessionId, { type: "stream_done" });
@@ -318,10 +352,18 @@ function handleSlashCommand(
   text: string,
   user?: string
 ): string | null {
-  if (!text.startsWith("/goal") && !text.startsWith("/loop") && text !== "/help") {
+  if (
+    !text.startsWith("/goal") &&
+    !text.startsWith("/loop") &&
+    !text.startsWith("/model") &&
+    text !== "/help"
+  ) {
     return null;
   }
   if (session.source !== "backstage") {
+    if (text.startsWith("/model") && session.source === "slack") {
+      return "Set the model from Slack instead — send /model <name> in the Slack thread (its session file is agent-owned).";
+    }
     return "Slash commands only work on backstage-created sessions (Slack/Linear session files are agent-owned).";
   }
 
@@ -332,7 +374,52 @@ function handleSlashCommand(
       "/goal clear — remove the goal",
       "/loop <interval> <prompt> — re-run a prompt on an interval (e.g. /loop 30m check CI and fix failures)",
       "/loop stop — stop the loop",
+      "/model — show the session's model and what's available",
+      "/model <name> — switch model (e.g. /model opus, /model gpt-5.5)",
     ].join("\n");
+  }
+
+  if (text === "/model" || text === "/model show" || text === "/model list") {
+    return [
+      `Current model: ${session.model || DEFAULT_MODEL}${session.model ? "" : " (default)"}`,
+      "",
+      "Available models (set with /model <name or alias>):",
+      formatModelList(session.model),
+    ].join("\n");
+  }
+  if (text.startsWith("/model ")) {
+    const input = text.slice("/model ".length).trim();
+    const resolved = resolveModel(input);
+    if (!resolved) {
+      return [
+        `Unknown model "${input}". Available:`,
+        formatModelList(session.model),
+      ].join("\n");
+    }
+    const prevProvider = providerFor(session.model);
+    touchBackstageSession(session.id, {
+      model: resolved.id,
+      modelHistory: [
+        ...(session.modelHistory || []),
+        { model: resolved.id, at: new Date().toISOString(), by: user },
+      ],
+    });
+    // Everyone watching sees the switch (pill + inline divider) immediately
+    broadcastToSession(session.id, {
+      type: "model_changed",
+      sessionId: session.id,
+      model: resolved.id,
+      by: user,
+    });
+    const switchedProvider = prevProvider !== resolved.provider;
+    return (
+      `Model set to ${resolved.id} (${modelLabel(resolved.id)}). Applies from the next prompt.` +
+      (switchedProvider
+        ? resolved.provider === "codex"
+          ? " Heads up: this switches the engine to Codex — the Claude conversation history doesn't carry over, so the next prompt starts a fresh Codex thread (switching back to a Claude model resumes the old history)."
+          : " Heads up: this switches the engine back to Claude — the Codex thread's history doesn't carry over, but the earlier Claude history (if any) resumes."
+        : "")
+    );
   }
 
   if (text === "/goal" || text === "/goal show") {
@@ -380,7 +467,8 @@ setInterval(() => {
   for (const session of getCachedSessions()) {
     const loop = session.loop;
     if (!loop || session.archived || session.source !== "backstage") continue;
-    if (!session.claudeSessionId || isSessionBusy(session.claudeSessionId)) continue;
+    if (!session.claudeSessionId && !session.codexThreadId) continue;
+    if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) continue;
     const last = loop.lastRunAt ? new Date(loop.lastRunAt).getTime() : 0;
     if (Date.now() - last < loop.intervalMinutes * 60_000) continue;
     touchBackstageSession(session.id, {
@@ -707,6 +795,36 @@ const server = Bun.serve<WSClientData>({
         : Response.json({ error: "Not found" }, { status: 404 });
     }
 
+    // ── Models available to sessions ──
+    if (path === "/backstage/api/models" && req.method === "GET") {
+      return Response.json({ models: KNOWN_MODELS, default: DEFAULT_MODEL });
+    }
+
+    // ── Codex (OpenAI) account pool ──
+    if (path === "/backstage/api/codex-accounts" && req.method === "GET") {
+      return Response.json({ accounts: listCodexAccountsPublic() });
+    }
+
+    if (path === "/backstage/api/codex-accounts" && req.method === "POST") {
+      const body = await req.json().catch(() => null);
+      if (!body?.name || !body?.value || !["api_key", "home"].includes(body?.kind)) {
+        return Response.json(
+          { error: "name, kind (api_key|home) and value are required" },
+          { status: 400 }
+        );
+      }
+      const result = addCodexAccount(body.name, body.kind, body.value);
+      if ("error" in result) return Response.json(result, { status: 400 });
+      return Response.json(result);
+    }
+
+    const codexAccountDelMatch = path.match(/^\/backstage\/api\/codex-accounts\/([^/]+)$/);
+    if (codexAccountDelMatch && req.method === "DELETE") {
+      return removeCodexAccount(decodeURIComponent(codexAccountDelMatch[1]))
+        ? Response.json({ ok: true })
+        : Response.json({ error: "Not found" }, { status: 404 });
+    }
+
     // ── Wiki ──
     if (path === "/backstage/api/wiki/tree" && req.method === "GET") {
       return Response.json(getWikiTree());
@@ -808,7 +926,9 @@ const server = Bun.serve<WSClientData>({
           ws.send(
             JSON.stringify({
               type: "session_status",
-              isRunning: session.isRunning || isSessionBusy(session.claudeSessionId || ""),
+              isRunning:
+                session.isRunning ||
+                isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id),
             })
           );
           break;
@@ -830,12 +950,14 @@ const server = Bun.serve<WSClientData>({
             break;
           }
 
-          if (!session.claudeSessionId) {
+          // Codex sessions start a fresh thread on first prompt; Claude needs
+          // a session id to resume.
+          if (providerFor(session.model) === "claude" && !session.claudeSessionId) {
             ws.send(JSON.stringify({ type: "error", message: "No Claude session to resume" }));
             return;
           }
 
-          if (isSessionBusy(session.claudeSessionId)) {
+          if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) {
             const queue = promptQueues.get(sessionId) || [];
             queue.push({ content, user });
             promptQueues.set(sessionId, queue);
@@ -851,8 +973,8 @@ const server = Bun.serve<WSClientData>({
           const data = ws.data;
           if (data.watchingSessionId) {
             const session = findSession(data.watchingSessionId);
-            if (session?.claudeSessionId) {
-              cancelRun(session.claudeSessionId);
+            if (session) {
+              cancelAgentRun(session.claudeSessionId, session.codexThreadId, session.id);
             }
             const dropped = promptQueues.get(data.watchingSessionId)?.length || 0;
             if (dropped > 0) {
@@ -879,6 +1001,9 @@ const server = Bun.serve<WSClientData>({
         case "create_session": {
           const { branch, prompt, user, mode } = msg;
           const isAsk = mode === "ask";
+          // Optional model pick from the UI; invalid input falls back to default
+          const model = msg.model ? resolveModel(String(msg.model))?.id : undefined;
+          const isCodex = providerFor(model) === "codex";
           try {
             let wtPath: string;
             if (isAsk) {
@@ -898,12 +1023,14 @@ const server = Bun.serve<WSClientData>({
 
             ws.send(JSON.stringify({ type: "stream_start", sessionId: bksId }));
 
-            let claudeSessionId = "";
+            let engineSessionId = "";
             let persisted = false;
             const persist = () => {
               const sessionData: BackstageSessionFile = {
                 id: bksId,
-                claudeSessionId,
+                claudeSessionId: isCodex ? "" : engineSessionId,
+                ...(isCodex && engineSessionId ? { codexThreadId: engineSessionId } : {}),
+                ...(model ? { model } : {}),
                 branch: isAsk ? "" : branch,
                 worktreeDir: wtPath,
                 createdBy: user || "Anonymous",
@@ -920,17 +1047,18 @@ const server = Bun.serve<WSClientData>({
               persisted = true;
             };
 
-            for await (const event of runClaude({
+            for await (const event of runAgent({
               prompt,
               cwd: wtPath,
               mode: isAsk ? "ask" : "code",
+              model,
               confirmTools: STRIPE_CONFIRM_TOOLS,
               aws: true, // interactive sessions keep AWS read access (via injected creds)
               journal: { bksSessionId: bksId, kind: "create" },
               onAskUser: makeAskHandler(bksId),
             })) {
               if (event.type === "init") {
-                claudeSessionId = event.sessionId || "";
+                engineSessionId = event.sessionId || "";
                 // Persist immediately so the session is visible/shareable while running
                 persist();
                 ws.send(JSON.stringify({ type: "session_created", id: bksId }));
@@ -940,7 +1068,7 @@ const server = Bun.serve<WSClientData>({
                 broadcastToSession(bksId, { type: "stream_text", text: event.text });
               }
               if (event.type === "done") {
-                claudeSessionId = event.sessionId || claudeSessionId;
+                engineSessionId = event.sessionId || engineSessionId;
               }
               if (event.type === "error") {
                 ws.send(JSON.stringify({ type: "error", message: event.content }));
@@ -948,7 +1076,11 @@ const server = Bun.serve<WSClientData>({
             }
 
             if (!persisted) persist();
-            else touchBackstageSession(bksId, { claudeSessionId });
+            else
+              touchBackstageSession(
+                bksId,
+                isCodex ? { codexThreadId: engineSessionId } : { claudeSessionId: engineSessionId }
+              );
 
             ws.send(JSON.stringify({ type: "stream_done" }));
             broadcastToSession(bksId, { type: "stream_done" });

@@ -2,6 +2,10 @@
  * Linear agent session lifecycle, Claude runner, polling, and Ralph mode.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { isClaudeUsageLimitError } from "../../server/claude-runner";
+import { pickAccount, markExhausted } from "../../server/claude-accounts";
+import { runCodex } from "../../server/codex-runner";
+import { DEFAULT_FALLBACK_MODEL, resolveModel } from "../../server/models";
 import { spawn, execSync } from "child_process";
 import { unlinkSync } from "fs";
 import mcpConfig from "../../../mcp-config.json";
@@ -62,6 +66,8 @@ export interface ActiveSession {
   participants: Participant[];
   lastActiveUser: Participant | null;
   issueCreator: Participant | null;
+  /** Model id for this session's runs (from the session file); unset = default. */
+  model?: string;
 }
 
 /** In-memory active sessions: linearSessionId -> ActiveSession */
@@ -230,6 +236,7 @@ export async function saveSessionInfo(
     participants: participants !== undefined ? participants : (existing.participants || []),
     lastActiveUser: lastActiveUser !== undefined ? lastActiveUser : (existing.lastActiveUser || null),
     issueCreator: issueCreator !== undefined ? issueCreator : (existing.issueCreator || null),
+    model: existing.model || undefined,
     updatedAt: new Date().toISOString(),
   };
   await Bun.write(sessionFile, JSON.stringify(data, null, 2));
@@ -249,6 +256,7 @@ export async function loadSessionInfo(branch: string): Promise<{
   participants?: Participant[];
   lastActiveUser?: Participant | null;
   issueCreator?: Participant | null;
+  model?: string;
 } | null> {
   try {
     const file = Bun.file(`${SESSION_DIR}/${branch}.json`);
@@ -328,12 +336,29 @@ export async function runClaudeHeadless(
   let lastThoughtTime = 0;
   const THOUGHT_THROTTLE_MS = 5000;
 
+  // Account rotation (same pool as the backstage runner); when every account
+  // is exhausted, fall back to the codex model as the last resort.
+  const triedAccountIds = new Set<string>();
+  let account = pickAccount(triedAccountIds);
+  let limitExhausted = false;
+
+  rotation: for (;;) {
+  let limitHit = false;
+  let resultWasError = false;
   try {
     const q = query({
       prompt,
       options: {
-        resume: resumeClaudeId || undefined,
+        resume: claudeSessionId || resumeClaudeId || undefined,
         cwd: worktreeDir,
+        ...(account
+          ? {
+              env: {
+                ...(process.env as Record<string, string>),
+                CLAUDE_CODE_OAUTH_TOKEN: account.token,
+              },
+            }
+          : {}),
         allowedTools: [
           "Bash", "Read", "Edit", "Write", "Grep", "Glob",
           "Task", "TaskOutput", "WebFetch", "WebSearch",
@@ -345,7 +370,7 @@ export async function runClaudeHeadless(
         },
         mcpServers: mcpConfig.mcpServers as any,
         strictMcpConfig: true,
-        model: process.env.MICHAEL_MODEL || "claude-fable-5",
+        model: session?.model || process.env.MICHAEL_MODEL || "claude-fable-5",
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
         executable: "bun",
         abortController,
@@ -391,21 +416,88 @@ export async function runClaudeHeadless(
       if (msg.type === "result") {
         const rm = msg as any;
         claudeSessionId = rm.session_id || claudeSessionId;
-        result = rm.subtype === "success" ? (rm.result || "") : `Error: ${rm.errors?.join(", ") || "Unknown"}`;
+        if (rm.subtype === "success") {
+          result = rm.result || "";
+        } else {
+          result = `Error: ${rm.errors?.join(", ") || "Unknown"}`;
+          resultWasError = true;
+        }
         console.log(`[linear] Claude finished. Session ID: ${claudeSessionId}`);
       }
     }
+    if (isClaudeUsageLimitError(result, resultWasError)) limitHit = true;
   } catch (e: any) {
-    if (!abortController.signal.aborted) {
-      console.error(`[linear] Claude SDK error:`, e);
-      result = `Error: ${e.message || String(e)}`;
+    if (abortController.signal.aborted) {
+      if (session) session.abortController = undefined;
+      return { result, claudeSessionId };
     }
-  } finally {
-    if (session) {
-      session.abortController = undefined;
+    console.error(`[linear] Claude SDK error:`, e);
+    if (isClaudeUsageLimitError(e.message || String(e), true)) {
+      limitHit = true;
+    } else {
+      result = `Error: ${e.message || String(e)}`;
     }
   }
 
+  if (!limitHit) break rotation;
+
+  if (account) {
+    triedAccountIds.add(account.id);
+    markExhausted(account.id);
+  }
+  const next = pickAccount(triedAccountIds);
+  if (next && next.id !== account?.id) {
+    account = next;
+    console.warn(`[linear] Usage limit hit; retrying on account ${next.name}`);
+    createAgentActivity(accessToken, linearSessionId, {
+      type: "thought",
+      body: `Claude usage limit hit — retrying on account ${next.name}.`,
+    }).catch(() => {});
+    continue rotation;
+  }
+  limitExhausted = true;
+  break rotation;
+  } // rotation
+
+  // Every Claude account exhausted → run the turn on the codex fallback model.
+  // The codex thread has no Claude history, so this is a fresh-context turn in
+  // the same worktree; claudeSessionId is left untouched so later turns resume
+  // the Claude history once limits reset.
+  if (limitExhausted) {
+    const fallback = DEFAULT_FALLBACK_MODEL ? resolveModel(DEFAULT_FALLBACK_MODEL) : null;
+    if (fallback?.provider === "codex") {
+      console.warn(`[linear] Claude usage exhausted; falling back to ${fallback.id}`);
+      createAgentActivity(accessToken, linearSessionId, {
+        type: "thought",
+        body: `Claude usage limits exhausted on all accounts — continuing this turn on ${fallback.id} (Codex). Conversation history doesn't carry over, but the worktree state does.`,
+      }).catch(() => {});
+      try {
+        let fallbackResult = "";
+        for await (const event of runCodex({
+          prompt:
+            prompt +
+            "\n\n[Note: a previous attempt on another model may have left partial work in this worktree — review what's already done before continuing.]",
+          cwd: worktreeDir,
+          mode: "code",
+          model: fallback.id,
+          busyKeys: [`linear-${linearSessionId}`],
+        })) {
+          if (abortController.signal.aborted) break;
+          if (event.type === "done") fallbackResult = event.result || "";
+          if (event.type === "error") fallbackResult = `Error running Codex: ${event.content}`;
+        }
+        result = fallbackResult || result;
+      } catch (e: any) {
+        result = `Error running Codex fallback: ${e.message || String(e)}`;
+      }
+    } else if (!result) {
+      result = "Claude usage limits exhausted on all accounts and no fallback model is configured.";
+    }
+  }
+
+  if (session) {
+    session.abortController = undefined;
+  }
   return { result, claudeSessionId };
 }
 

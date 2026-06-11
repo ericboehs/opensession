@@ -36,6 +36,17 @@ import type { QueuedMessage, SessionQueue } from "./queue";
 import { sessionQueues } from "./queue";
 import { isStopMessage, cancelSession } from "./cancel";
 import { pollForVercelPreview } from "./github-reviews";
+import { runCodex } from "../../server/codex-runner";
+import { isClaudeUsageLimitError } from "../../server/claude-runner";
+import { pickAccount, markExhausted } from "../../server/claude-accounts";
+import {
+  DEFAULT_MODEL,
+  DEFAULT_CODEX_MODEL,
+  DEFAULT_FALLBACK_MODEL,
+  providerFor,
+  resolveModel,
+  formatModelList,
+} from "../../server/models";
 import {
   isWorktreeChannel,
   getWorktreeDirForChannel,
@@ -334,6 +345,163 @@ async function handleAskUserQuestion(
 }
 
 // ---------------------------------------------------------------------------
+// /model command — per-session model selection (Claude or Codex models)
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle "/model" / "/model <name>" in a Slack message. Returns true when the
+ * message was consumed as a command (caller should stop processing).
+ */
+export async function handleModelCommand(
+  sessionKey: string,
+  text: string,
+  channel: string,
+  threadTs: string
+): Promise<boolean> {
+  if (!/^\/model(\s|$)/i.test(text.trim())) return false;
+
+  let session: SlackSession | undefined = activeSessions.get(sessionKey);
+  if (!session) {
+    session = (await loadSession(sessionKey)) ?? undefined;
+    if (session) activeSessions.set(sessionKey, session);
+  }
+
+  const arg = text.trim().replace(/^\/model\s*/i, "").trim();
+
+  if (!arg || arg === "show" || arg === "list") {
+    const current = session?.model || DEFAULT_MODEL;
+    await sendSlackMessage(
+      channel,
+      `Current model: \`${current}\`${session?.model ? "" : " (default)"}\n\nAvailable (set with \`/model <name>\`):\n\`\`\`\n${formatModelList(session?.model)}\n\`\`\``,
+      threadTs
+    );
+    return true;
+  }
+
+  const resolved = resolveModel(arg);
+  if (!resolved) {
+    await sendSlackMessage(
+      channel,
+      `Unknown model \`${arg}\`. Available:\n\`\`\`\n${formatModelList(session?.model)}\n\`\`\``,
+      threadTs
+    );
+    return true;
+  }
+
+  if (!session) {
+    await sendSlackMessage(
+      channel,
+      `No session in this thread yet — send the task first, then \`/model ${resolved.id}\`. (New sessions start on \`${DEFAULT_MODEL}\`.)`,
+      threadTs
+    );
+    return true;
+  }
+
+  const prevProvider = providerFor(session.model);
+  session.model = resolved.id;
+  session.lastActivity = new Date().toISOString();
+  await saveSession(session);
+
+  let note = "";
+  if (prevProvider !== resolved.provider) {
+    note =
+      resolved.provider === "codex"
+        ? " This switches the engine to Codex — the Claude history doesn't carry over; the next message starts a fresh Codex thread in the same worktree."
+        : " This switches back to Claude — the Codex thread's history doesn't carry over, but the earlier Claude history (if any) resumes.";
+  }
+  await sendSlackMessage(
+    channel,
+    `Model set to \`${resolved.id}\`. Applies from the next message.${note}`,
+    threadTs
+  );
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// processCodexMessage — runs a queued message on the Codex backend
+// ---------------------------------------------------------------------------
+
+async function processCodexMessage(
+  session: SlackSession,
+  sessionKey: string,
+  msg: QueuedMessage,
+  streamer: SlackStreamer,
+  cwd: string,
+  abortController: AbortController,
+  dismissStopButton: (label: string) => Promise<void>,
+  /** Run on this model without changing the session's configured model (fallback). */
+  modelOverride?: string
+): Promise<void> {
+  const model = modelOverride || session.model || DEFAULT_CODEX_MODEL;
+  console.log(
+    `[slack] Running Codex SDK for ${sessionKey} in ${cwd}${session.codexThreadId ? ` (resuming ${session.codexThreadId})` : ""} (${model})`
+  );
+
+  let resultText = "";
+  let resultThreadId = session.codexThreadId || "";
+  const busyKey = `slack-${sessionKey}`;
+
+  // Bridge the Slack queue's abort controller into the codex run
+  const { cancelCodexRun } = await import("../../server/codex-runner");
+  const onAbort = () => cancelCodexRun(resultThreadId || busyKey);
+  abortController.signal.addEventListener("abort", onAbort, { once: true });
+
+  try {
+    for await (const event of runCodex({
+      prompt: msg.prompt,
+      sessionId: session.codexThreadId || undefined,
+      cwd,
+      mode: "code",
+      model,
+      busyKeys: [busyKey],
+      // No journal: interrupted Slack messages are re-delivered by the queue
+    })) {
+      if (abortController.signal.aborted) break;
+      if (event.type === "init") {
+        resultThreadId = event.sessionId || resultThreadId;
+        console.log(`[slack] Codex thread initialized: ${resultThreadId}`);
+      }
+      if (event.type === "tool_use" && event.toolName && !isSilentTool(event.toolName)) {
+        await streamer.setStatus(buildToolStatus(event.toolName, event.toolInput));
+      }
+      if (event.type === "done") {
+        resultText = event.result || "";
+      }
+      if (event.type === "error") {
+        resultText = `Error running Codex: ${event.content}`;
+      }
+    }
+  } catch (e: any) {
+    resultText = `Error running Codex: ${e.message || e}`;
+  } finally {
+    abortController.signal.removeEventListener("abort", onAbort);
+  }
+
+  if (abortController.signal.aborted) {
+    console.log(`[slack] Codex run aborted for ${sessionKey}`);
+    await streamer.error("Cancelled by user.");
+    await streamer.clearStatus();
+    await dismissStopButton("Cancelled");
+    return;
+  }
+
+  session.codexThreadId = resultThreadId || session.codexThreadId;
+  session.lastActivity = new Date().toISOString();
+  await saveSession(session);
+
+  const formatted = resultText ? markdownToSlack(resultText) : "";
+  const truncated = formatted
+    ? formatted.length > 3000
+      ? formatted.substring(0, 3000) + "...(truncated)"
+      : formatted
+    : "Done! (no text output)";
+
+  await streamer.stop(truncated);
+  await streamer.clearStatus();
+  await dismissStopButton("Done");
+}
+
+// ---------------------------------------------------------------------------
 // processMessage — core: runs the Claude Agent SDK query()
 // ---------------------------------------------------------------------------
 
@@ -544,6 +712,20 @@ export async function processMessage(
 
   const cwd = session.worktreeDir || DEFAULT_CWD;
 
+  // Codex-provider models run through the Codex SDK instead of query()
+  if (providerFor(session.model) === "codex") {
+    await processCodexMessage(
+      session,
+      sessionKey,
+      msg,
+      streamer,
+      cwd,
+      abortController,
+      dismissStopButton
+    );
+    return;
+  }
+
   console.log(
     `[slack] Running Claude SDK for ${sessionKey} in ${cwd}${session.claudeSessionId ? ` (resuming ${session.claudeSessionId})` : ""}`
   );
@@ -551,12 +733,31 @@ export async function processMessage(
   let resultText = "";
   let resultSessionId = session.claudeSessionId || "";
 
+  // Account rotation (same pool as the backstage runner): pick the
+  // least-recently-used token; when a turn dies on usage limits, sideline the
+  // account and retry on the next one. With the pool empty, fall back to the
+  // codex model (DEFAULT_FALLBACK_MODEL) as the last resort.
+  const triedAccountIds = new Set<string>();
+  let account = pickAccount(triedAccountIds);
+  let limitExhausted = false;
+
+  rotation: for (;;) {
+  let limitHit = false;
+  let resultWasError = false;
   try {
     const q = query({
       prompt,
       options: {
-        resume: session.claudeSessionId || undefined,
+        resume: resultSessionId || session.claudeSessionId || undefined,
         cwd,
+        ...(account
+          ? {
+              env: {
+                ...(process.env as Record<string, string>),
+                CLAUDE_CODE_OAUTH_TOKEN: account.token,
+              },
+            }
+          : {}),
         allowedTools: [
           "Bash",
           "Read",
@@ -594,7 +795,7 @@ export async function processMessage(
         },
         mcpServers: mcpConfig.mcpServers,
         strictMcpConfig: true,
-        model: process.env.MICHAEL_MODEL || "claude-fable-5",
+        model: session.model || process.env.MICHAEL_MODEL || "claude-fable-5",
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
         executable: "bun",
         abortController,
@@ -724,6 +925,7 @@ export async function processMessage(
           resultText = resultMsg.result || "";
         } else {
           resultText = `Error: ${(resultMsg as any).errors?.join(", ") || "Unknown error"}`;
+          resultWasError = true;
         }
         resultSessionId = resultMsg.session_id;
         console.log(
@@ -731,6 +933,7 @@ export async function processMessage(
         );
       }
     }
+    if (isClaudeUsageLimitError(resultText, resultWasError)) limitHit = true;
   } catch (e: any) {
     if (abortController.signal.aborted) {
       console.log(`[slack] SDK query aborted for ${sessionKey}`);
@@ -740,7 +943,56 @@ export async function processMessage(
       return;
     }
     console.error(`[slack] SDK query error for ${sessionKey}:`, e);
-    resultText = `Error running Claude: ${e.message || e}`;
+    if (isClaudeUsageLimitError(e.message || String(e), true)) {
+      limitHit = true;
+    } else {
+      resultText = `Error running Claude: ${e.message || e}`;
+    }
+  }
+
+  if (!limitHit) break rotation;
+
+  // Usage limit: sideline the account (if any) and rotate
+  if (account) {
+    triedAccountIds.add(account.id);
+    markExhausted(account.id);
+  }
+  const next = pickAccount(triedAccountIds);
+  if (next && next.id !== account?.id) {
+    account = next;
+    console.warn(`[slack] Usage limit hit for ${sessionKey}; retrying on account ${next.name}`);
+    await streamer.setStatus(`usage limit hit — retrying on ${next.name}...`);
+    continue rotation;
+  }
+  limitExhausted = true;
+  break rotation;
+  } // rotation
+
+  // Every Claude account exhausted → last resort: the codex fallback model
+  if (limitExhausted) {
+    const fallback = DEFAULT_FALLBACK_MODEL ? resolveModel(DEFAULT_FALLBACK_MODEL) : null;
+    if (fallback?.provider === "codex") {
+      console.warn(`[slack] Claude usage exhausted for ${sessionKey}; falling back to ${fallback.id}`);
+      await sendSlackMessage(
+        channel,
+        `:warning: Claude usage limits exhausted on all accounts — continuing on \`${fallback.id}\` (Codex). History from this thread doesn't carry over to the Codex engine.`,
+        threadTs
+      );
+      await processCodexMessage(
+        session,
+        sessionKey,
+        msg,
+        streamer,
+        cwd,
+        abortController,
+        dismissStopButton,
+        fallback.id
+      );
+      return;
+    }
+    resultText =
+      resultText ||
+      "Claude usage limits exhausted on all accounts and no fallback model is configured.";
   }
 
   // Update session
@@ -814,6 +1066,11 @@ export async function handleMessageEvent(event: any): Promise<void> {
     } else {
       await sendSlackMessage(channel, "Nothing to cancel.", threadTs || ts);
     }
+    return;
+  }
+
+  // Handle /model — set or show this session's model
+  if (await handleModelCommand(sessionKey, text, channel, threadTs || ts)) {
     return;
   }
 
@@ -927,6 +1184,11 @@ export async function handleMentionEvent(event: any): Promise<void> {
       await addReaction(channel, ts, "octagonal_sign");
       await sendSlackMessage(channel, "Cancelled. Queue cleared.", threadTs);
     }
+    return;
+  }
+
+  // Handle /model — set or show this session's model
+  if (await handleModelCommand(sessionKey, cleanText, channel, threadTs)) {
     return;
   }
 

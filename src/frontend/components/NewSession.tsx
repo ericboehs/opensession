@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { fetchWorktrees } from "../lib/api";
+import { fetchWorktrees, fetchModels, type ModelOption } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import type { WSServerMessage } from "../lib/types";
 
@@ -34,10 +34,19 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
   const [prompt, setPrompt] = useState(prefill.prompt);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [defaultModel, setDefaultModel] = useState("");
+  const [model, setModel] = useState(""); // "" = default
 
   useEffect(() => {
     fetchWorktrees()
       .then(setWorktrees)
+      .catch(() => {});
+    fetchModels()
+      .then((m) => {
+        setModels(m.models);
+        setDefaultModel(m.default);
+      })
       .catch(() => {});
   }, []);
 
@@ -65,6 +74,7 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
       branch: mode === "ask" ? "" : branch,
       prompt: prompt.trim(),
       user: getCurrentUser(),
+      ...(model ? { model } : {}),
     });
   }
 
@@ -129,6 +139,18 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
             )}
           </>
         )}
+
+        <label>
+          Model
+          <select value={model} onChange={(e) => setModel(e.target.value)} disabled={creating}>
+            <option value="">Default{defaultModel ? ` — ${defaultModel}` : ""}</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} ({m.provider === "codex" ? "OpenAI Codex" : "Claude"})
+              </option>
+            ))}
+          </select>
+        </label>
 
         <label>
           What should Michael do?
