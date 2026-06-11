@@ -20,6 +20,7 @@ export interface UnifiedSession {
   plainThreadId?: string;
   goal?: string;
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
+  aliasIds?: string[];
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
 }

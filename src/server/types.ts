@@ -20,6 +20,10 @@ export interface UnifiedSession {
   plainThreadId?: string;
   goal?: string;
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
+  // Other IDs that resolve to this session. The same Claude session can be
+  // tracked by multiple files (e.g. a Slack run writes both <branch>.json and
+  // <channel>-<threadTs>.json) and external deep links may use any of them.
+  aliasIds?: string[];
   // Source-specific
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };

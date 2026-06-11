@@ -297,6 +297,10 @@ export function getAllSessions(): UnifiedSession[] {
         if (runningPids.has(session.claudeSessionId)) {
           existing.isRunning = true;
         }
+        // Keep the dropped ID as an alias so deep links to it (e.g. the
+        // Slack "Open in Backstage" button, which uses slack-<channel>-<ts>)
+        // still resolve to the surviving session.
+        existing.aliasIds = [...(existing.aliasIds || []), session.id];
         continue;
       }
       byClaudeId.set(session.claudeSessionId, session);

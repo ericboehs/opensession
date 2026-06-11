@@ -88,7 +88,7 @@ function App() {
 
   const currentSession: UnifiedSession | null =
     route.view === "session"
-      ? sessions.find((s) => s.id === route.id) || null
+      ? sessions.find((s) => s.id === route.id || s.aliasIds?.includes(route.id)) || null
       : null;
 
   const activeView =
