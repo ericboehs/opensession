@@ -6,7 +6,7 @@ import homepage from "./src/frontend/index.html";
 import { getAllSessions, deleteSession } from "./src/server/sessions";
 import { parseTranscript } from "./src/server/jsonl-parser";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
-import { listWorktrees, createWorktree, removeWorktree } from "./src/server/worktree";
+import { listWorktrees, createWorktree, removeWorktree, sweepArchivedWorktrees } from "./src/server/worktree";
 import { runClaude, isSessionBusy, cancelRun, resumeInterruptedRuns, STRIPE_CONFIRM_TOOLS } from "./src/server/claude-runner";
 import { getSessionDiff } from "./src/server/git-diff";
 import { getPrDetails, getPrDiff, postPrComment } from "./src/server/pr-info";
@@ -1013,12 +1013,24 @@ setTimeout(() => {
   }
 }, 3000);
 
-// Ongoing hygiene: archive sessions idle for more than a week (every 6h)
-setInterval(() => {
+// Ongoing hygiene (every 6h): archive sessions idle for more than a week,
+// then remove worktrees of archived sessions idle >14 days with no WIP.
+setInterval(async () => {
   const count = archiveOlderThan(getAllSessions(), 7);
   if (count > 0) {
     console.log(`[archive] Auto-archived ${count} session(s) idle >7 days`);
     sessionsCache = null;
+  }
+  try {
+    const removed = await sweepArchivedWorktrees(getAllSessions(), 14);
+    if (removed.length > 0) {
+      console.log(
+        `[worktree-sweep] Removed ${removed.length} clean worktree(s): ${removed.join(", ")}`
+      );
+      sessionsCache = null;
+    }
+  } catch (e) {
+    console.error("[worktree-sweep] Sweep failed:", e);
   }
 }, 6 * 60 * 60 * 1000);
 

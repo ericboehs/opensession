@@ -1,4 +1,6 @@
 import { $ } from "bun";
+import { existsSync } from "fs";
+import type { UnifiedSession } from "./types";
 
 const TELLA_FUSION = "/home/ubuntu/projects/tella-fusion";
 const WORKTREES_DIR = "/home/ubuntu/worktrees";
@@ -49,6 +51,61 @@ export async function removeWorktree(branch: string): Promise<void> {
     console.error(`Failed to remove worktree for ${branch}:`, e);
     // Don't throw — session deletion should still succeed
   }
+}
+
+// No uncommitted/untracked changes, and every commit reachable from some
+// remote ref (covers both pushed branches and branches merged to origin/main).
+// Stale remote refs err on the safe side: recently-pushed work looks unpushed.
+async function isWorktreeClean(wtPath: string, branch: string): Promise<boolean> {
+  const status = await $`git -C ${wtPath} status --porcelain`.text();
+  if (status.trim() !== "") return false;
+  const unpushed =
+    await $`git -C ${wtPath} rev-list ${branch} --not --remotes --count`.text();
+  return unpushed.trim() === "0";
+}
+
+/**
+ * Remove worktrees of archived sessions idle for more than `days` days.
+ * A worktree survives the sweep if any session sharing its branch is still
+ * live (running, unarchived, or recently active), or if it has uncommitted
+ * changes or commits that exist on no remote ref — WIP is never deleted.
+ * Returns the branches whose worktrees were removed.
+ */
+export async function sweepArchivedWorktrees(
+  sessions: UnifiedSession[],
+  days: number
+): Promise<string[]> {
+  const cutoff = Date.now() - days * 86_400_000;
+  const inUse = new Set<string>();
+  const candidates = new Set<string>();
+
+  for (const s of sessions) {
+    if (!s.branch) continue;
+    const sweepable =
+      s.archived && !s.isRunning && new Date(s.lastActivity).getTime() < cutoff;
+    if (sweepable && s.worktreeDir) candidates.add(s.branch);
+    else if (!sweepable) inUse.add(s.branch);
+  }
+
+  const existing = new Map(
+    (await listWorktrees()).map((w) => [w.branch, w.path])
+  );
+  const removed: string[] = [];
+
+  for (const branch of candidates) {
+    if (inUse.has(branch)) continue;
+    const wtPath = existing.get(branch);
+    if (!wtPath) continue; // worktree already gone
+    try {
+      if (!(await isWorktreeClean(wtPath, branch))) continue;
+      await removeWorktree(branch);
+      if (!existsSync(wtPath)) removed.push(branch);
+    } catch (e) {
+      console.error(`[worktree-sweep] Skipping ${branch}:`, e);
+    }
+  }
+
+  return removed;
 }
 
 export async function createWorktree(branch: string): Promise<string> {
