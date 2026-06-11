@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { TranscriptEntry } from "../lib/types";
+import { CodeHighlight, langForFile, langForGrep } from "./CodeHighlight";
 
 interface Props {
   entry: TranscriptEntry;
@@ -36,11 +37,15 @@ export function ToolCallBlock({ entry, result }: Props) {
       </div>
       {expanded && (
         <div className="tool-detail">
-          <pre className="tool-pre">{formatInput(entry.toolInput)}</pre>
+          {toolName === "Bash" && bashCommand(entry.toolInput) ? (
+            <CodeHighlight code={bashCommand(entry.toolInput)!} lang="bash" />
+          ) : (
+            <pre className="tool-pre">{formatInput(entry.toolInput)}</pre>
+          )}
           {result && (result.content || result.images?.length) && (
             <>
               <div className="tool-result-divider">Output</div>
-              {result.content && <pre className="tool-pre">{truncate(result.content, 2000)}</pre>}
+              {result.content && renderResultContent(toolName, entry.toolInput, result.content)}
               {result.images && result.images.length > 0 && (
                 <div className="tool-result-images">
                   {result.images.map((src, i) => (
@@ -88,6 +93,50 @@ function getSummary(toolName: string, input: unknown, fallback: string): string 
     default:
       return fallback;
   }
+}
+
+/**
+ * Tool outputs that carry code get syntax highlighting: Read (cat -n format,
+ * lang from file_path) and Grep content output (rg -n format, lang inferred
+ * from path/glob/type — only highlighted when the gutter format is detected,
+ * so file-list output stays plain).
+ */
+function renderResultContent(toolName: string, input: unknown, content: string) {
+  const text = truncate(content, 2000);
+  const lang =
+    toolName === "Read"
+      ? langForFile((input as any)?.file_path)
+      : toolName === "Grep"
+        ? langForGrep(input)
+        : null;
+  if (lang) {
+    return <CodeHighlight code={text} lang={lang} gutter requireGutter={toolName === "Grep"} />;
+  }
+  // Unified diffs (git diff/show in Bash output) highlight as diff
+  if (toolName === "Bash" && (text.startsWith("diff --git") || /^@@ -\d/m.test(text))) {
+    return <CodeHighlight code={text} lang="diff" />;
+  }
+  return <pre className="tool-pre">{text}</pre>;
+}
+
+/**
+ * Bash input rendered as a script: description and flags become `#` comments
+ * above the command, so the whole block highlights as bash without losing info.
+ */
+function bashCommand(input: unknown): string | null {
+  if (!input || typeof input !== "object") return null;
+  const inp = input as Record<string, unknown>;
+  if (typeof inp.command !== "string") return null;
+
+  const comments: string[] = [];
+  if (typeof inp.description === "string" && inp.description) {
+    comments.push(`# ${inp.description}`);
+  }
+  for (const [key, value] of Object.entries(inp)) {
+    if (key === "command" || key === "description") continue;
+    comments.push(`# ${key}: ${JSON.stringify(value)}`);
+  }
+  return [...comments, inp.command].join("\n");
 }
 
 function formatInput(input: unknown): string {
