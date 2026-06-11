@@ -394,6 +394,71 @@ export async function processMichaelMention(
   }
 }
 
+/**
+ * Spam-gate a new ticket, then fire the automation event bus.
+ *
+ * A no-tools Haiku call (see spam-check.ts) classifies the ticket before any
+ * triage automation starts a session. Confident spam → no run, just an
+ * internal note explaining the skip. Everything else — including classifier
+ * errors — fails open and fires the event as before.
+ */
+async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<void> {
+  const thread = payload.payload.thread;
+
+  const { fireAutomationsForEvent, listAutomations } = await import("../../server/automations");
+
+  // No subscriber, no run to protect — skip the classifier call too
+  const hasSubscriber = listAutomations().some(
+    (a) => a.enabled && a.eventKey === "plain:thread_created"
+  );
+  if (!hasSubscriber) return;
+
+  // Give the classifier the real ticket content when we can fetch it; the
+  // webhook payload (title + preview) is the fallback
+  let ticketContent =
+    `Title: ${thread.title || "(none)"}\n` +
+    `Customer: ${thread.customer?.fullName || "(unknown)"} <${thread.customer?.email?.email || "no email"}>\n` +
+    `Preview: ${thread.previewText || "(none)"}`;
+  try {
+    const full = await getThreadWithMessages(thread.id);
+    if (full) ticketContent = formatThreadContext(full, true);
+  } catch {}
+
+  const { classifyTicketSpam } = await import("./spam-check");
+  const verdict = await classifyTicketSpam(ticketContent);
+
+  if (verdict?.spam) {
+    console.log(`[plain] Skipping auto-triage for thread ${thread.id} — spam: ${verdict.reason}`);
+    if (thread.customer?.id) {
+      await postNote(
+        thread.id,
+        thread.customer.id,
+        `Auto-triage skipped — this ticket looks like spam.\n\nReason: ${verdict.reason}\n\nIf this is a real ticket, mention @michael or run the triage automation manually from Backstage.`,
+        `**Auto-triage skipped — this ticket looks like spam.**\n\nReason: ${verdict.reason}\n\n*If this is a real ticket, mention @michael or run the triage automation manually from Backstage.*`
+      );
+    }
+    return;
+  }
+
+  fireAutomationsForEvent(
+    "plain:thread_created",
+    JSON.stringify(
+      {
+        threadId: thread.id,
+        title: thread.title || null,
+        previewText: thread.previewText || null,
+        status: thread.status,
+        customer: {
+          email: thread.customer?.email?.email || null,
+          fullName: thread.customer?.fullName || null,
+        },
+      },
+      null,
+      2
+    )
+  );
+}
+
 export async function handleWebhook(payload: PlainWebhookPayload): Promise<Response> {
   const eventType = payload.type;
   console.log(`[plain] Webhook received: ${eventType}`);
@@ -404,25 +469,12 @@ export async function handleWebhook(payload: PlainWebhookPayload): Promise<Respo
     return Response.json({ ok: true });
   }
 
-  // Publish new tickets to the automation event bus (e.g. auto-triage)
+  // Publish new tickets to the automation event bus (e.g. auto-triage),
+  // behind a cheap spam gate so spam never starts an expensive session.
+  // Runs async — the webhook response doesn't wait for the classifier.
   if (eventType === "thread.thread_created") {
-    const { fireAutomationsForEvent } = await import("../../server/automations");
-    fireAutomationsForEvent(
-      "plain:thread_created",
-      JSON.stringify(
-        {
-          threadId: thread.id,
-          title: thread.title || null,
-          previewText: thread.previewText || null,
-          status: thread.status,
-          customer: {
-            email: thread.customer?.email?.email || null,
-            fullName: thread.customer?.fullName || null,
-          },
-        },
-        null,
-        2
-      )
+    void gateAndFireThreadCreated(payload).catch((e) =>
+      console.error("[plain] thread_created gate failed:", e)
     );
   }
 
