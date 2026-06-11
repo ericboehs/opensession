@@ -16,7 +16,9 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from "fs";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const STORE_PATH = `${HOME}/.backstage-claude-accounts.json`;
-const POLL_INTERVAL_MS = 10 * 60 * 1000;
+// Keep this conservative: the usage endpoint rate-limits per token with
+// ~hour-long lockouts (observed Retry-After of ~50m after 10-minute polling).
+const POLL_INTERVAL_MS = 60 * 60 * 1000;
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
 // When a run hits a limit but the usage endpoint gives no reset time,
@@ -32,6 +34,10 @@ export interface ClaudeAccount {
   email?: string;
   plan?: string;
   createdAt: string;
+  // "missing" once the usage endpoint has returned 403 for this token
+  // (`claude setup-token` tokens lack the user:profile scope). Persisted so
+  // we never poll such accounts again, across restarts.
+  usageScope?: "missing";
 }
 
 interface UsageWindow {
@@ -45,6 +51,7 @@ export interface AccountUsage {
   sevenDay: UsageWindow | null;
   extraUsage?: { enabled: boolean; usedCredits: number; monthlyLimit: number } | null;
   error?: string;
+  errorStatus?: number;
 }
 
 export interface ClaudeAccountPublic {
@@ -55,6 +62,7 @@ export interface ClaudeAccountPublic {
   plan?: string;
   createdAt: string;
   usage: AccountUsage | null;
+  noUsageScope: boolean;
   exhaustedUntil: string | null;
   usable: boolean;
 }
@@ -62,6 +70,11 @@ export interface ClaudeAccountPublic {
 const usageCache = new Map<string, AccountUsage>();
 const exhaustedUntil = new Map<string, number>();
 const lastPickedAt = new Map<string, number>();
+// After a 429 from the usage endpoint, don't hit it again until this passes
+// (429s carry Retry-After of up to ~1h, and blocked requests still count).
+let usageRateLimitedUntil = 0;
+const MAX_RATE_LIMIT_WAIT_MS = 60 * 60 * 1000;
+const DEFAULT_RATE_LIMIT_WAIT_MS = 10 * 60 * 1000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 function fetchWithTimeout(url: string, token: string, timeoutMs = 10_000): Promise<Response> {
@@ -97,14 +110,33 @@ export function maskToken(token: string): string {
 }
 
 async function fetchUsage(token: string): Promise<AccountUsage> {
+  if (Date.now() < usageRateLimitedUntil) {
+    return {
+      fetchedAt: new Date().toISOString(),
+      fiveHour: null,
+      sevenDay: null,
+      error: `usage endpoint rate-limited, retrying after ${new Date(usageRateLimitedUntil).toLocaleTimeString("en-GB", { timeZone: "UTC" })} UTC`,
+      errorStatus: 429,
+    };
+  }
   try {
     const res = await fetchWithTimeout(USAGE_URL, token);
     if (!res.ok) {
+      if (res.status === 429) {
+        const retryAfter = Number(res.headers.get("retry-after"));
+        const waitMs =
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? Math.min(retryAfter * 1000, MAX_RATE_LIMIT_WAIT_MS)
+            : DEFAULT_RATE_LIMIT_WAIT_MS;
+        usageRateLimitedUntil = Date.now() + waitMs;
+        console.warn(`[claude-accounts] usage endpoint rate-limited; backing off ${Math.round(waitMs / 60000)}m`);
+      }
       return {
         fetchedAt: new Date().toISOString(),
         fiveHour: null,
         sevenDay: null,
         error: `usage endpoint returned ${res.status}`,
+        errorStatus: res.status,
       };
     }
     const body: any = await res.json();
@@ -146,9 +178,30 @@ async function fetchProfile(token: string): Promise<{ email?: string; plan?: str
   }
 }
 
+/** Persist that this account's token can't read the usage endpoint. */
+function markUsageScopeMissing(id: string): void {
+  const accounts = readStore();
+  const idx = accounts.findIndex((a) => a.id === id);
+  if (idx === -1 || accounts[idx].usageScope === "missing") return;
+  accounts[idx] = { ...accounts[idx], usageScope: "missing" };
+  writeStore(accounts);
+  console.log(`[claude-accounts] ${accounts[idx].name} token lacks user:profile scope; usage polling disabled`);
+}
+
 /** Refresh cached usage for one account; clears exhausted state once reset has passed. */
-async function refreshAccountUsage(account: ClaudeAccount): Promise<AccountUsage> {
+async function refreshAccountUsage(account: ClaudeAccount): Promise<AccountUsage | null> {
+  if (account.usageScope === "missing") return null;
+  const cached = usageCache.get(account.id);
+
   const usage = await fetchUsage(account.token);
+  if (usage.errorStatus === 403) {
+    markUsageScopeMissing(account.id);
+    usageCache.delete(account.id);
+    return null;
+  }
+  // On a transient failure (rate limit, 5xx, timeout), keep showing the last
+  // good snapshot instead of blanking it with an error.
+  if (usage.error && cached && !cached.error) return cached;
   usageCache.set(account.id, usage);
 
   const until = exhaustedUntil.get(account.id);
@@ -163,8 +216,12 @@ async function refreshAccountUsage(account: ClaudeAccount): Promise<AccountUsage
 }
 
 export async function refreshAllUsage(): Promise<void> {
-  const accounts = readStore();
-  await Promise.all(accounts.map((a) => refreshAccountUsage(a)));
+  // Sequential, not Promise.all — the endpoint rate-limits aggressively and a
+  // burst of N simultaneous requests from one IP makes that worse.
+  for (const account of readStore()) {
+    if (account.usageScope === "missing") continue;
+    await refreshAccountUsage(account);
+  }
 }
 
 export function startUsagePoller(): void {
@@ -201,6 +258,7 @@ function toPublic(a: ClaudeAccount): ClaudeAccountPublic {
     plan: a.plan,
     createdAt: a.createdAt,
     usage,
+    noUsageScope: a.usageScope === "missing",
     exhaustedUntil: until !== undefined && until > Date.now() ? new Date(until).toISOString() : null,
     usable:
       !isExhausted(a.id) &&
@@ -234,10 +292,16 @@ export async function addAccount(
     return { error: "This token is already registered" };
   }
 
-  // Validate the token by fetching usage; also grab the profile for display.
+  // Best-effort validation via the usage endpoint. Only a 401 proves the
+  // token is bad: `claude setup-token` tokens get a 403 here (no user:profile
+  // scope) and the endpoint 429s aggressively — neither means the token can't
+  // run Claude Code.
   const usage = await fetchUsage(trimmedToken);
-  if (usage.error) {
+  if (usage.errorStatus === 401) {
     return { error: `Token validation failed: ${usage.error}` };
+  }
+  if (usage.error) {
+    console.warn(`[claude-accounts] Adding ${trimmedName} without usage validation: ${usage.error}`);
   }
   const profile = await fetchProfile(trimmedToken);
 
@@ -248,9 +312,10 @@ export async function addAccount(
     email: profile.email,
     plan: profile.plan,
     createdAt: new Date().toISOString(),
+    ...(usage.errorStatus === 403 ? { usageScope: "missing" as const } : {}),
   };
   writeStore([...accounts, account]);
-  usageCache.set(account.id, usage);
+  if (!usage.error) usageCache.set(account.id, usage);
   console.log(`[claude-accounts] Added account ${trimmedName} (${profile.email || "unknown email"})`);
   return toPublic(account);
 }
