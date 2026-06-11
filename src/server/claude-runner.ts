@@ -4,6 +4,7 @@ import { readMcpConfig } from "./connections";
 import { getAgentAwsEnv } from "./aws-creds";
 import { audit, summarizeText } from "./audit";
 import { pickAccount, markExhausted, type ClaudeAccount } from "./claude-accounts";
+import { cleanPlainToolInput } from "./shared/note-style";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
@@ -510,7 +511,7 @@ export async function* runClaude(opts: {
                 "This run is headless — nobody can answer questions. Use your best judgment, note the open question and your assumption in your final output.",
             };
           }
-          return { behavior: "allow" as const, updatedInput: input };
+          return { behavior: "allow" as const, updatedInput: cleanPlainToolInput(toolName, input) };
         },
         // Read per run so MCP servers added/removed in the UI apply immediately
         mcpServers: filterMcpServers(mcpServers) as any,

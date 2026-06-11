@@ -6,6 +6,7 @@ import { isClaudeUsageLimitError } from "../../server/claude-runner";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";
 import { runCodex } from "../../server/codex-runner";
 import { DEFAULT_FALLBACK_MODEL, resolveModel } from "../../server/models";
+import { cleanPlainToolInput } from "../../server/shared/note-style";
 import { spawn, execSync } from "child_process";
 import { unlinkSync } from "fs";
 import mcpConfig from "../../../mcp-config.json";
@@ -365,8 +366,11 @@ export async function runClaudeHeadless(
           "NotebookEdit", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
           "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
         ],
-        canUseTool: async (_toolName: string, input: unknown) => {
-          return { behavior: "allow" as const, updatedInput: input };
+        canUseTool: async (toolName: string, input: unknown) => {
+          return {
+            behavior: "allow" as const,
+            updatedInput: cleanPlainToolInput(toolName, input as Record<string, unknown>),
+          };
         },
         mcpServers: mcpConfig.mcpServers as any,
         strictMcpConfig: true,

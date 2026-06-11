@@ -17,6 +17,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import { markdownToSlack } from "../../server/shared/markdown";
+import { cleanPlainToolInput } from "../../server/shared/note-style";
 import { SLACK_SYSTEM_PROMPT_APPEND } from "./prompts";
 import {
   sendSlackMessage,
@@ -791,7 +792,7 @@ export async function processMessage(
             );
           }
           // Allow everything else that isn't in allowedTools (e.g. MCP tools)
-          return { behavior: "allow", updatedInput: input };
+          return { behavior: "allow", updatedInput: cleanPlainToolInput(toolName, input) };
         },
         mcpServers: mcpConfig.mcpServers,
         strictMcpConfig: true,
