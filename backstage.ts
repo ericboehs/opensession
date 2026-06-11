@@ -28,6 +28,13 @@ import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { setArchived, archiveOlderThan } from "./src/server/archive";
 import { getConnections, addMcpServer, removeMcpServer } from "./src/server/connections";
+import {
+  listAccountsPublic,
+  addAccount,
+  removeAccount,
+  refreshAllUsage,
+  startUsagePoller,
+} from "./src/server/claude-accounts";
 import { startWebhookServer } from "./src/server/webhook-server";
 import type { AgentModule } from "./src/agents/types";
 import type { UnifiedSession, BackstageSessionFile } from "./src/server/types";
@@ -673,6 +680,33 @@ const server = Bun.serve<WSClientData>({
       return Response.json(result);
     }
 
+    // ── Claude account pool (tokens are never sent back, only masked) ──
+    if (path === "/backstage/api/claude-accounts" && req.method === "GET") {
+      return Response.json({ accounts: listAccountsPublic() });
+    }
+
+    if (path === "/backstage/api/claude-accounts" && req.method === "POST") {
+      const body = await req.json().catch(() => null);
+      if (!body?.name || !body?.token) {
+        return Response.json({ error: "name and token are required" }, { status: 400 });
+      }
+      const result = await addAccount(body.name, body.token);
+      if ("error" in result) return Response.json(result, { status: 400 });
+      return Response.json(result);
+    }
+
+    if (path === "/backstage/api/claude-accounts/refresh" && req.method === "POST") {
+      await refreshAllUsage();
+      return Response.json({ accounts: listAccountsPublic() });
+    }
+
+    const accountDelMatch = path.match(/^\/backstage\/api\/claude-accounts\/([^/]+)$/);
+    if (accountDelMatch && req.method === "DELETE") {
+      return removeAccount(decodeURIComponent(accountDelMatch[1]))
+        ? Response.json({ ok: true })
+        : Response.json({ error: "Not found" }, { status: 404 });
+    }
+
     // ── Wiki ──
     if (path === "/backstage/api/wiki/tree" && req.method === "GET") {
       return Response.json(getWikiTree());
@@ -1001,6 +1035,9 @@ setEventSessionCallback(() => {
 startPlainArchiveSweep(() => {
   sessionsCache = null;
 });
+
+// Poll per-account Claude usage (drives account picking + the Connections UI)
+startUsagePoller();
 
 // Resume Claude runs a previous process left in-flight (restart/crash)
 setTimeout(() => {

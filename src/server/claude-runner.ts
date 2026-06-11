@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFi
 import { readMcpConfig } from "./connections";
 import { getAgentAwsEnv } from "./aws-creds";
 import { audit, summarizeText } from "./audit";
+import { pickAccount, markExhausted, type ClaudeAccount } from "./claude-accounts";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
@@ -36,21 +37,42 @@ const activeRuns = new Map<string, AbortController>();
 // `awsEnv` (optional) carries short-lived AWS credentials minted for this run;
 // see aws-creds.ts. The child can't reach IMDS (cgroup deny), so these injected
 // vars are its only AWS access.
-function childEnv(awsEnv?: Record<string, string>): Record<string, string | undefined> {
+function childEnv(
+  awsEnv?: Record<string, string>,
+  oauthToken?: string
+): Record<string, string | undefined> {
   return {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
     LANG: process.env.LANG,
     MICHAEL_MODEL: process.env.MICHAEL_MODEL,
+    // Account-pool token (claude-accounts.ts). Beats ~/.claude/.credentials.json
+    // in the CLI's auth precedence, so runs rotate accounts without touching
+    // the interactive CLI's login.
+    ...(oauthToken ? { CLAUDE_CODE_OAUTH_TOKEN: oauthToken } : {}),
     ...awsEnv,
   };
 }
 
-function isClaudeUsageLimitError(message: string): boolean {
+// `strict` matching applies to successful results too — the CLI reports usage
+// limits as a plain result text ("Claude AI usage limit reached|<ts>",
+// "5-hour limit reached ∙ resets …"), with subtype "success". The looser
+// heuristic only applies to error results, where false positives can't
+// clobber a legitimate answer.
+function isClaudeUsageLimitError(message: string, isErrorResult: boolean): boolean {
   const s = message.toLowerCase();
+  // Observed CLI phrasings: "You've hit your session limit · resets 12:50pm (UTC)",
+  // "Claude AI usage limit reached|<ts>", "5-hour limit reached ∙ resets 3am"
+  if (/you've hit your .{0,20}limit/.test(s)) return true;
+  if (/claude (ai )?usage limit reached/.test(s)) return true;
+  if (/limit (reached|hit).{0,60}resets/.test(s)) return true;
+  // Short result that is just a limit notice, whatever the exact phrasing
+  if (s.length < 200 && /\blimit\b/.test(s) && /\bresets\b/.test(s)) return true;
+  if (!isErrorResult) return false;
+  if (s.includes("rate_limit_error") || s.includes("429") || s.includes("too many requests")) return true;
   return (
     (s.includes("usage") || s.includes("rate") || s.includes("limit")) &&
-    (s.includes("exceeded") || s.includes("reached") || s.includes("429") || s.includes("too many requests"))
+    (s.includes("exceeded") || s.includes("reached"))
   );
 }
 
@@ -303,7 +325,33 @@ export async function* runClaude(opts: {
   });
 
   try {
-    let switchedForUsageLimit = false;
+    // Account rotation: prefer the token pool (claude-accounts.ts); when a
+    // run exhausts an account's usage, sideline it and retry on the next one
+    // until the pool is empty. With no pool configured, fall back to the
+    // legacy one-shot credentials-file switch (~/.claude/accounts).
+    const triedAccountIds = new Set<string>();
+    let account: ClaudeAccount | undefined = pickAccount(triedAccountIds);
+    let legacySwitched = false;
+
+    const rotateAfterLimit = (): string | undefined => {
+      if (account) {
+        triedAccountIds.add(account.id);
+        markExhausted(account.id);
+        const next = pickAccount(triedAccountIds);
+        if (!next) return undefined;
+        account = next;
+        return next.name;
+      }
+      if (legacySwitched) return undefined;
+      const next = switchClaudeAccountAfterLimit();
+      if (next) legacySwitched = true;
+      return next;
+    };
+
+    if (account) {
+      turnEvent({ direction: "out", kind: "account_used", account: account.name });
+    }
+
     for (;;) {
       let shouldRetryAfterSwitch = false;
       const q = query({
@@ -439,7 +487,7 @@ export async function* runClaude(opts: {
         // Read per run so MCP servers added/removed in the UI apply immediately
         mcpServers: filterMcpServers(mcpServers) as any,
         strictMcpConfig: true,
-        env: childEnv(awsEnv),
+        env: childEnv(awsEnv, account?.token),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
         executable: "bun",
         abortController,
@@ -460,6 +508,7 @@ export async function* runClaude(opts: {
       },
       });
 
+      try {
       for await (const msg of q) {
         if (abortController.signal.aborted) break;
 
@@ -557,11 +606,10 @@ export async function* runClaude(opts: {
           ...summarizeText(resultText),
         });
 
-        if (rm.subtype !== "success" && !switchedForUsageLimit && isClaudeUsageLimitError(resultText)) {
-          const nextAccount = switchClaudeAccountAfterLimit();
+        if (isClaudeUsageLimitError(resultText, rm.subtype !== "success")) {
+          const nextAccount = rotateAfterLimit();
           if (nextAccount) {
             turnEvent({ direction: "out", kind: "account_switch", account: nextAccount });
-            switchedForUsageLimit = true;
             shouldRetryAfterSwitch = true;
             yield {
               type: "text_chunk",
@@ -579,6 +627,25 @@ export async function* runClaude(opts: {
         return;
       }
     }
+      } catch (e: any) {
+        // Usage limits can also surface as a thrown stream error (CLI process
+        // exit), not just a result message — rotate and resume the session.
+        if (
+          !abortController.signal.aborted &&
+          isClaudeUsageLimitError(e?.message || String(e), true)
+        ) {
+          const nextAccount = rotateAfterLimit();
+          if (nextAccount) {
+            turnEvent({ direction: "out", kind: "account_switch", account: nextAccount });
+            yield {
+              type: "text_chunk",
+              text: `\n\n[runner] Claude usage limit hit; switched to ${nextAccount} and retrying.\n\n`,
+            };
+            continue;
+          }
+        }
+        throw e;
+      }
 
       if (!shouldRetryAfterSwitch) break;
     }

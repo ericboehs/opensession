@@ -171,12 +171,240 @@ export function Connections() {
             })}
           </div>
 
+          <ClaudeAccounts />
+
           <div className="conn-footnote">
             Changes apply to new session runs immediately (config is read per run). In a session
             transcript, MCP tool calls show up tagged with their server name.
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+interface UsageWindow {
+  utilization: number | null;
+  resetsAt: string | null;
+}
+
+interface ClaudeAccountInfo {
+  id: string;
+  name: string;
+  tokenMasked: string;
+  email?: string;
+  plan?: string;
+  usage: {
+    fetchedAt: string;
+    fiveHour: UsageWindow | null;
+    sevenDay: UsageWindow | null;
+    error?: string;
+  } | null;
+  exhaustedUntil: string | null;
+  usable: boolean;
+}
+
+function formatReset(resetsAt: string | null): string {
+  if (!resetsAt) return "";
+  const d = new Date(resetsAt);
+  if (isNaN(d.getTime())) return "";
+  return `resets ${d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}`;
+}
+
+function UsageBar({ label, window: w }: { label: string; window: UsageWindow | null }) {
+  const pct = w?.utilization ?? null;
+  const tone = pct === null ? "gray" : pct >= 90 ? "red" : pct >= 70 ? "yellow" : "green";
+  return (
+    <div className="acct-usage-row">
+      <span className="acct-usage-label">{label}</span>
+      <div className="acct-usage-bar">
+        <div
+          className={`acct-usage-fill acct-usage-${tone}`}
+          style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
+        />
+      </div>
+      <span className="acct-usage-pct">{pct === null ? "—" : `${Math.round(pct)}%`}</span>
+      <span className="acct-usage-reset">{formatReset(w?.resetsAt ?? null)}</span>
+    </div>
+  );
+}
+
+function ClaudeAccounts() {
+  const [accounts, setAccounts] = useState<ClaudeAccountInfo[] | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (forceUsage = false) => {
+    if (forceUsage) setRefreshing(true);
+    try {
+      const res = forceUsage
+        ? await fetch("/backstage/api/claude-accounts/refresh", { method: "POST" })
+        : await fetch("/backstage/api/claude-accounts");
+      if (res.ok) setAccounts((await res.json()).accounts);
+    } catch {}
+    setRefreshing(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(() => load(), 60_000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  async function handleRemove(a: ClaudeAccountInfo) {
+    if (!confirm(`Remove Claude account "${a.name}"? Runs will stop using its token.`)) return;
+    try {
+      const res = await fetch(`/backstage/api/claude-accounts/${encodeURIComponent(a.id)}`, {
+        method: "DELETE",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <>
+      <div className="conn-section-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span>Claude accounts — usage pool for session runs</span>
+        <button className="btn-small" onClick={() => load(true)} disabled={refreshing}>
+          {refreshing ? "Checking…" : "↻ Refresh usage"}
+        </button>
+        <button className="btn-small" onClick={() => setShowAdd(true)}>
+          + Add account
+        </button>
+      </div>
+
+      {error && (
+        <div className="form-error" onClick={() => setError(null)}>{error}</div>
+      )}
+
+      {showAdd && (
+        <AddAccountForm
+          onClose={() => setShowAdd(false)}
+          onAdded={() => {
+            setShowAdd(false);
+            load();
+          }}
+        />
+      )}
+
+      {!accounts ? (
+        <div className="loading">Loading accounts…</div>
+      ) : accounts.length === 0 ? (
+        <div className="conn-footnote">
+          No accounts yet. Runs use the VPS's own Claude login. Add Max-account tokens
+          (<code>claude setup-token</code> on a machine logged into that account) and runs will
+          pick the least-used one, rotating automatically when one hits its usage limit.
+        </div>
+      ) : (
+        <div className="conn-grid">
+          {accounts.map((a) => (
+            <div key={a.id} className="conn-card">
+              <div className="conn-card-top">
+                <span className="conn-logo conn-logo-claude">{a.name.charAt(0).toUpperCase()}</span>
+                <span className="conn-name">{a.name}</span>
+                {a.usage?.error ? (
+                  <span className="status-pill status-red" title={a.usage.error}>Token error</span>
+                ) : a.exhaustedUntil ? (
+                  <span className="status-pill status-red" title={`Sidelined until ${a.exhaustedUntil}`}>
+                    Limit hit
+                  </span>
+                ) : a.usable ? (
+                  <span className="status-pill status-green">In rotation</span>
+                ) : (
+                  <span className="status-pill status-yellow">Near limit</span>
+                )}
+              </div>
+              <div className="conn-blurb">
+                {a.email || "unknown email"}
+                {a.plan ? ` · ${a.plan.replace("default_claude_", "")}` : ""}
+              </div>
+              <div className="conn-detail">
+                <span className="conn-target">{a.tokenMasked}</span>
+              </div>
+              <UsageBar label="5h" window={a.usage?.fiveHour ?? null} />
+              <UsageBar label="7d" window={a.usage?.sevenDay ?? null} />
+              {a.usage?.error && <div className="conn-error">{a.usage.error}</div>}
+              <button className="conn-remove" onClick={() => handleRemove(a)} title="Remove this account">
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function AddAccountForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [token, setToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/backstage/api/claude-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), token: token.trim() }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      onAdded();
+    } catch (e: any) {
+      setError(e.message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="automation-form" style={{ marginBottom: 18 }}>
+      <div className="automation-form-title">Add Claude account</div>
+      <div className="conn-footnote" style={{ marginTop: 0 }}>
+        On any machine, log into the Max account with <code>claude</code>, run{" "}
+        <code>claude setup-token</code>, and paste the one-year token here. It's stored on the VPS
+        (0600) and only ever shown masked.
+      </div>
+
+      <div className="automation-form-row">
+        <label>
+          Name
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="tella-dev" />
+        </label>
+        <label>
+          Token
+          <input
+            className="mono-input"
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="sk-ant-oat01-…"
+          />
+        </label>
+      </div>
+
+      {error && <div className="form-error">{error}</div>}
+
+      <div className="automation-form-actions">
+        <button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+          Cancel
+        </button>
+        <button
+          className="btn-create"
+          style={{ padding: "8px 22px" }}
+          onClick={handleAdd}
+          disabled={saving || !name.trim() || !token.trim()}
+        >
+          {saving ? "Validating…" : "Add account"}
+        </button>
+      </div>
     </div>
   );
 }

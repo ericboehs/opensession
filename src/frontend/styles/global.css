@@ -2878,3 +2878,53 @@ a {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* ── Claude account pool (Connections page) ── */
+.conn-logo-claude { background: #D97757; }
+
+.acct-usage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.acct-usage-label {
+  width: 18px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.acct-usage-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-active);
+  overflow: hidden;
+  min-width: 40px;
+}
+
+.acct-usage-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.acct-usage-green { background: #34d399; }
+.acct-usage-yellow { background: #fbbf24; }
+.acct-usage-red { background: #f87171; }
+.acct-usage-gray { background: var(--border); }
+
+.acct-usage-pct {
+  width: 34px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.acct-usage-reset {
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
