@@ -125,7 +125,10 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
                 : "";
           const images = extractImages(block.content);
           entries.push({
-            id: raw.uuid || crypto.randomUUID(),
+            // Keyed on the tool_use id: one jsonl line can carry several
+            // tool_result blocks (parallel calls), and the live-stream copy
+            // of the same result must upsert rather than duplicate.
+            id: block.tool_use_id ? `tr-${block.tool_use_id}` : raw.uuid || crypto.randomUUID(),
             type: "tool_result",
             content: resultText,
             timestamp: ts,

@@ -22,6 +22,8 @@ interface Props {
   leftExtra?: React.ReactNode;
   hint?: string;
   autoFocus?: boolean;
+  /** Exposes the textarea so parents can focus it (e.g. keyboard shortcuts). */
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
 }
 
 function modelShortLabel(id: string, models: ModelOption[]): string {
@@ -52,8 +54,10 @@ export function Composer({
   leftExtra,
   hint,
   autoFocus,
+  textareaRef: externalRef,
 }: Props) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const internalRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = externalRef ?? internalRef;
 
   // Auto-grow up to the CSS max-height
   useEffect(() => {

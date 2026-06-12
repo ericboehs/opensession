@@ -138,11 +138,12 @@ function leaveSession(ws: any) {
   ws.data.watchingSessionId = null;
 }
 
-function broadcastToSession(sessionId: string, msg: object) {
+function broadcastToSession(sessionId: string, msg: object, except?: any) {
   const set = sessionWatchers.get(sessionId);
   if (!set) return;
   const payload = JSON.stringify(msg);
   for (const ws of set) {
+    if (ws === except) continue;
     try {
       ws.send(payload);
     } catch {}
@@ -311,7 +312,9 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
         broadcastToSession(sessionId, {
           type: "stream_tool_result",
           entry: {
-            id: crypto.randomUUID(),
+            // Same id scheme as the jsonl tail so the full (untruncated)
+            // transcript entry upserts over this streamed copy
+            id: event.toolUseId ? `tr-${event.toolUseId}` : crypto.randomUUID(),
             type: "tool_result",
             content: event.content || "",
             timestamp: new Date().toISOString(),
@@ -1064,8 +1067,10 @@ const server = Bun.serve<WSClientData>({
                 ws.send(JSON.stringify({ type: "session_created", id: bksId }));
               }
               if (event.type === "text_chunk") {
+                // Direct send for the creator (not in the room until they watch),
+                // room broadcast for everyone else — never both to the same socket
                 ws.send(JSON.stringify({ type: "stream_text", text: event.text }));
-                broadcastToSession(bksId, { type: "stream_text", text: event.text });
+                broadcastToSession(bksId, { type: "stream_text", text: event.text }, ws);
               }
               if (event.type === "done") {
                 engineSessionId = event.sessionId || engineSessionId;
@@ -1083,7 +1088,7 @@ const server = Bun.serve<WSClientData>({
               );
 
             ws.send(JSON.stringify({ type: "stream_done" }));
-            broadcastToSession(bksId, { type: "stream_done" });
+            broadcastToSession(bksId, { type: "stream_done" }, ws);
             broadcastToSession(bksId, { type: "session_status", isRunning: false });
           } catch (e: any) {
             ws.send(JSON.stringify({ type: "error", message: e.message || String(e) }));

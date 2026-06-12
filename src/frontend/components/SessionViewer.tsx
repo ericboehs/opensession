@@ -93,6 +93,19 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const isAsk = session.mode === "ask";
   const hasWorkspace = !isAsk && Boolean(session.worktreeDir || session.branch);
 
+  // Ctrl+R focuses the composer (overrides browser reload while in a session)
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key.toLowerCase() === "r" && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        composerRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   // Browser tab title follows the session
   useEffect(() => {
     document.title = `${session.title} — Michael`;
@@ -124,9 +137,24 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           setLoading(false);
           break;
         }
-        case "transcript_append":
+        case "transcript_append": {
           setEntries((prev) => mergeEntries(prev, msg.entries));
+          // The live stream and the transcript tail both carry assistant text.
+          // stream_text accumulates whole blocks until stream_done (end of the
+          // run), so a mid-run text block would otherwise show twice: as the
+          // persisted entry above later tool steps AND in the streaming bubble
+          // at the bottom. Once a block lands as an entry, drop it from the
+          // stream buffer.
+          const landed = msg.entries.filter((e) => e.type === "assistant" && e.content);
+          if (landed.length) {
+            setStreamText((prev) => {
+              let next = prev;
+              for (const e of landed) next = next.replace(e.content, "");
+              return next.trim() ? next : "";
+            });
+          }
           break;
+        }
         case "presence":
           if (msg.sessionId === session.id) setViewers(msg.viewers);
           break;
@@ -527,6 +555,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                       : "Switch the model for this session"
                   }
                   hint="Enter to send · Shift+Enter for newline · /goal pins a goal · /loop runs on an interval"
+                  textareaRef={composerRef}
                 />
               </>
             )}
