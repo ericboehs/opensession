@@ -1,6 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
-import { readMcpConfig } from "./connections";
+import { readMcpConfig, withDynamicCredentials } from "./connections";
 import { getAgentAwsEnv } from "./aws-creds";
 import { audit, summarizeText } from "./audit";
 import { pickAccount, markExhausted, type ClaudeAccount } from "./claude-accounts";
@@ -129,7 +129,7 @@ function switchClaudeAccountAfterLimit(): string | undefined {
 
 /** Resolve the MCP servers for a run: all configured, or just the allowlist. */
 function filterMcpServers(allowlist?: string[]): Record<string, unknown> {
-  const all = readMcpConfig().mcpServers;
+  const all = withDynamicCredentials(readMcpConfig().mcpServers);
   if (!allowlist) return all;
   const out: Record<string, unknown> = {};
   for (const name of allowlist) {

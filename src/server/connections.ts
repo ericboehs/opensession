@@ -16,6 +16,36 @@ export function readMcpConfig(): { mcpServers: Record<string, any> } {
   }
 }
 
+const LINEAR_AGENT_TOKENS_PATH = `${HOME}/.linear-agent-tokens.json`;
+
+/**
+ * Overlay credentials that rotate outside this process. Linear runs as the
+ * Michael bot via the linear-agent's OAuth token (actor=app, refreshed by
+ * that service) so issues/comments attribute to the bot, not Michiel. When
+ * the token file is missing or stale, the static header in mcp-config.json
+ * (personal API key) applies instead. Read per run — never persisted back.
+ */
+export function withDynamicCredentials(
+  servers: Record<string, any>
+): Record<string, any> {
+  const linear = servers.linear;
+  if (!linear?.url?.includes("mcp.linear.app")) return servers;
+  try {
+    const tokens = JSON.parse(readFileSync(LINEAR_AGENT_TOKENS_PATH, "utf-8"));
+    const t: any = Object.values(tokens)[0];
+    if (t?.accessToken && (!t.expiresAt || t.expiresAt > Date.now() + 60_000)) {
+      return {
+        ...servers,
+        linear: {
+          ...linear,
+          headers: { ...linear.headers, Authorization: `Bearer ${t.accessToken}` },
+        },
+      };
+    }
+  } catch {}
+  return servers;
+}
+
 function writeMcpConfig(config: { mcpServers: Record<string, any> }): void {
   // Keep one backup so a bad edit is always recoverable
   try {

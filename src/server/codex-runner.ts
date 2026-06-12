@@ -19,7 +19,7 @@
  */
 
 import { Codex, type ThreadEvent, type ThreadItem } from "@openai/codex-sdk";
-import { readMcpConfig } from "./connections";
+import { readMcpConfig, withDynamicCredentials } from "./connections";
 import { audit, summarizeText } from "./audit";
 import {
   pickCodexAccount,
@@ -70,7 +70,7 @@ function buildCodexMcpConfig(
   allowlist: string[] | undefined,
   disabledToolNames: string[]
 ): Record<string, Record<string, unknown>> {
-  const all = readMcpConfig().mcpServers as Record<string, any>;
+  const all = withDynamicCredentials(readMcpConfig().mcpServers) as Record<string, any>;
   const names = allowlist ?? Object.keys(all);
 
   // mcp__<server>__<tool> → { server: [tool, ...] }
