@@ -10,6 +10,7 @@ import {
   issueHasPlan,
   moveToStatus,
   postComment,
+  updateAgentSession,
 } from "./api";
 import type { LinearTokens } from "./oauth";
 import { getValidToken } from "./oauth";
@@ -32,6 +33,7 @@ import {
   generateBranchName,
   getLastMessageUuid,
   loadSessionInfo,
+  michaelSessionUrl,
   runClaudeHeadless,
   saveSessionInfo,
   startRalphLoop,
@@ -291,6 +293,14 @@ export async function handleAgentSession(
       const diskSession = await loadSessionInfo(branch);
       if (diskSession) {
         console.log(`[linear] Recovered session from disk for branch: ${branch}`);
+        // Older sessions may predate external links — idempotent by url
+        getValidToken(organizationId, tokens).then((t) => {
+          if (t) {
+            updateAgentSession(t, agentSession.id, {
+              addedExternalUrls: [{ url: michaelSessionUrl(branch), label: "Open in Michael" }],
+            }).catch(() => {});
+          }
+        }).catch(() => {});
         session = {
           branch,
           claudeSessionId: diskSession.claudeSessionId,
@@ -529,7 +539,7 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
                 );
 
                 await createAgentActivity(accessToken, agentSession.id, {
-                  type: "response",
+                  type: "elicitation",
                   body: `${MESSAGES.planningComplete}\n\n**How would you like to proceed?**\n- Reply "one-shot" - Single Claude session implementation\n- Reply "ralph" - Iterative task loop with progress updates`,
                 });
               } else if (result.includes("IMPLEMENTATION_COMPLETE")) {
@@ -557,8 +567,15 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
                     timestamp: new Date().toISOString(),
                   });
                 }
+                // Planning-interview turns are questions by design → elicitation
+                // (Linear prompts the user to answer); runner failures → error.
+                const type = s.isPlanning
+                  ? "elicitation"
+                  : result.startsWith("Error:")
+                    ? "error"
+                    : "response";
                 await createAgentActivity(accessToken, agentSession.id, {
-                  type: "response",
+                  type,
                   body: result,
                 });
               }
@@ -566,8 +583,8 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
           } catch (e) {
             console.error(`[linear] Error running Claude for prompt:`, e);
             await createAgentActivity(accessToken, agentSession.id, {
-              type: "response",
-              body: `Error: ${e}`,
+              type: "error",
+              body: `${e}`,
             });
           }
         })();
@@ -674,18 +691,24 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
         session.issueCreator
       );
 
+      // Link the Linear session to the Michael web UI session viewer
+      updateAgentSession(accessToken, agentSession.id, {
+        addedExternalUrls: [{ url: michaelSessionUrl(branch), label: "Open in Michael" }],
+      }).catch(() => {});
+
       const greeting = GREETING_PROMPT
         .replaceAll("$ISSUE_ID", issue.identifier)
         .replaceAll("$ISSUE_TITLE", issue.title);
 
+      // The greeting asks for direction (plan/implement/other) → elicitation
       await createAgentActivity(accessToken, agentSession.id, {
-        type: "response",
+        type: "elicitation",
         body: greeting,
       });
     } catch (e) {
       console.error(`[linear] Error in session creation:`, e);
       await createAgentActivity(accessToken, agentSession.id, {
-        type: "response",
+        type: "error",
         body: `${MESSAGES.error} Failed to initialize: ${e}`,
       });
     }

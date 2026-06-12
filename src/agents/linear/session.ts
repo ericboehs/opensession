@@ -17,6 +17,8 @@ import {
   getIssueDetails,
   moveToStatus,
   postComment,
+  updateAgentSession,
+  type PlanStep,
 } from "./api";
 import type { LinearTokens } from "./oauth";
 import { getValidToken } from "./oauth";
@@ -315,6 +317,99 @@ export async function getLastMessageUuid(worktreeDir: string, claudeSessionId: s
   }
 }
 
+// --- Action activity streaming ---
+
+/** Base URL of the Michael web UI, linked from Linear sessions. */
+export const MICHAEL_UI_BASE =
+  process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+
+export function michaelSessionUrl(branch: string): string {
+  return `${MICHAEL_UI_BASE}/session/${encodeURIComponent(`linear-${branch}`)}`;
+}
+
+/** Compact action row for a tool call: { action: "Read", parameter: "src/foo.ts" }. */
+function summarizeAction(name: string, input: any): { action: string; parameter: string } {
+  const inp = input || {};
+  const mcp = name.match(/^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/);
+  if (mcp) {
+    return { action: mcp[1], parameter: `${mcp[2]} ${clip(JSON.stringify(inp))}`.trim() };
+  }
+  switch (name) {
+    case "Read":
+    case "Edit":
+    case "Write":
+      return { action: name, parameter: inp.file_path || "" };
+    case "Bash":
+      return { action: "Ran", parameter: clip((inp.command || "").split("\n")[0]) };
+    case "Grep":
+      return { action: "Searched", parameter: clip(`${inp.pattern || ""} ${inp.path || inp.glob || ""}`) };
+    case "Glob":
+      return { action: "Globbed", parameter: clip(`${inp.pattern || ""} ${inp.path || ""}`) };
+    case "Task":
+    case "Agent":
+      return { action: "Spawned agent", parameter: clip(inp.description || inp.subagent_type || "") };
+    case "WebFetch":
+      return { action: "Fetched", parameter: clip(inp.url || "") };
+    case "WebSearch":
+      return { action: "Searched web", parameter: clip(inp.query || "") };
+    case "Skill":
+      return { action: "Skill", parameter: clip(inp.skill || "") };
+    default:
+      return { action: name, parameter: clip(JSON.stringify(inp)) };
+  }
+}
+
+function clip(s: string, max = 120): string {
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
+
+const ACTION_MIN_GAP_MS = 2000;
+
+/**
+ * Coalescing sender for action activities: tool bursts post at most one
+ * activity per ACTION_MIN_GAP_MS (latest wins, trailing flush) so a busy run
+ * doesn't flood the Linear timeline or the API. The full log stays in the
+ * Michael UI; this is a progress feed.
+ */
+function makeActionStreamer(accessToken: string, linearSessionId: string) {
+  let lastSent = 0;
+  let pending: { action: string; parameter: string } | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const post = (a: { action: string; parameter: string }) => {
+    createAgentActivity(accessToken, linearSessionId, { type: "action", ...a })
+      .catch((e) => console.error("[linear] Failed to send action:", e));
+  };
+
+  return {
+    send(toolName: string, input: unknown) {
+      const a = summarizeAction(toolName, input);
+      const now = Date.now();
+      if (now - lastSent >= ACTION_MIN_GAP_MS) {
+        lastSent = now;
+        post(a);
+        return;
+      }
+      pending = a;
+      if (!timer) {
+        timer = setTimeout(() => {
+          timer = null;
+          if (pending) {
+            lastSent = Date.now();
+            post(pending);
+            pending = null;
+          }
+        }, ACTION_MIN_GAP_MS - (now - lastSent));
+      }
+    },
+    stop() {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      pending = null;
+    },
+  };
+}
+
 // --- Claude headless runner ---
 
 export async function runClaudeHeadless(
@@ -336,6 +431,7 @@ export async function runClaudeHeadless(
   let claudeSessionId = resumeClaudeId || "";
   let lastThoughtTime = 0;
   const THOUGHT_THROTTLE_MS = 5000;
+  const actions = makeActionStreamer(accessToken, linearSessionId);
 
   // Account rotation (same pool as the backstage runner); when every account
   // is exhausted, fall back to the codex model as the last resort.
@@ -394,10 +490,13 @@ export async function runClaudeHeadless(
         claudeSessionId = (msg as any).session_id || claudeSessionId;
       }
 
-      // Stream thoughts to Linear (throttled)
+      // Stream thoughts (throttled) and tool calls (coalesced actions) to Linear
       if (msg.type === "assistant" && (msg as any).message?.content) {
         const content = (msg as any).message.content;
         if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === "tool_use") actions.send(block.name, block.input);
+          }
           const text = content
             .filter((c: any) => c.type === "text")
             .map((c: any) => c.text)
@@ -433,6 +532,7 @@ export async function runClaudeHeadless(
   } catch (e: any) {
     if (abortController.signal.aborted) {
       if (session) session.abortController = undefined;
+      actions.stop();
       return { result, claudeSessionId };
     }
     console.error(`[linear] Claude SDK error:`, e);
@@ -502,6 +602,7 @@ export async function runClaudeHeadless(
   if (session) {
     session.abortController = undefined;
   }
+  actions.stop();
   return { result, claudeSessionId };
 }
 
@@ -641,6 +742,28 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>`;
 
 // --- Ralph mode ---
 
+/** Map a Ralph prd.json to Linear's session plan panel. Empty plans are rejected by the API. */
+function ralphPlanFromPrd(prd: any, currentTaskId?: string): PlanStep[] {
+  if (!Array.isArray(prd)) return [];
+  return prd.map((t: any) => ({
+    content: clip(String(t.title || t.description || t.id || "task"), 200),
+    status: t.passes ? "completed" : t.id === currentTaskId ? "inProgress" : "pending",
+  }));
+}
+
+async function syncRalphPlan(session: ActiveSession, accessToken: string, linearSessionId: string): Promise<void> {
+  try {
+    const prdFile = Bun.file(`${session.worktreeDir}/prd.json`);
+    if (!(await prdFile.exists())) return;
+    const plan = ralphPlanFromPrd(JSON.parse(await prdFile.text()));
+    if (plan.length > 0) {
+      await updateAgentSession(accessToken, linearSessionId, { plan });
+    }
+  } catch (e) {
+    console.error("[linear] Failed to sync Ralph plan:", e);
+  }
+}
+
 export async function startRalphLoop(
   session: ActiveSession,
   accessToken: string,
@@ -658,8 +781,8 @@ export async function startRalphLoop(
   const plan = await fetchPlanFromLinear(accessToken, session.issueId);
   if (!plan) {
     await createAgentActivity(accessToken, linearSessionId, {
-      type: "response",
-      body: "Error: Could not find implementation plan in issue comments.",
+      type: "error",
+      body: "Could not find implementation plan in issue comments.",
     });
     return;
   }
@@ -678,8 +801,8 @@ export async function startRalphLoop(
   } catch (e) {
     console.error(`[linear] Ralph import failed:`, e);
     await createAgentActivity(accessToken, linearSessionId, {
-      type: "response",
-      body: `Error: Ralph import failed - ${e}`,
+      type: "error",
+      body: `Ralph import failed - ${e}`,
     });
     return;
   }
@@ -701,6 +824,9 @@ export async function startRalphLoop(
     ? `🔄 **PRD generated. Starting iterative loop...**\n\n\`\`\`json\n${prdContent}\`\`\``
     : "🔄 PRD generated. Starting iterative loop...";
   await postComment(accessToken, session.issueId, prdMessage);
+
+  // Publish the task list to the session's plan panel
+  await syncRalphPlan(session, accessToken, linearSessionId);
 
   session.ralphProcess = Bun.spawn(["just", "ralph", "loop"], {
     cwd: session.worktreeDir,
@@ -762,35 +888,29 @@ export function startRalphPolling(
       lastPostedIteration = status.iteration;
       lastStatus = status.status;
 
-      let message = `**Ralph** iteration ${status.iteration}/${status.max}`;
+      // Task statuses live in the session's plan panel; the thought is a
+      // compact ephemeral ticker that the next update replaces.
+      await syncRalphPlan(session, accessToken, linearSessionId);
 
+      let message = `**Ralph** iteration ${status.iteration}/${status.max}`;
       const prdFile = Bun.file(prdPath);
       if (await prdFile.exists()) {
         try {
           const prd = JSON.parse(await prdFile.text());
           const completed = prd.filter((t: { passes?: boolean }) => t.passes);
-          const remaining = prd.filter((t: { passes?: boolean }) => !t.passes);
-
-          if (completed.length > 0 || remaining.length > 0) {
-            message += ` (${completed.length}/${prd.length} tasks)`;
-          }
-          if (completed.length > 0) {
-            message += `\n\n${completed.map((t: { id: string }) => `✓ ${t.id}`).join("\n")}`;
-          }
-          if (remaining.length > 0) {
-            message += `\n\n${remaining.map((t: { id: string }) => `○ ${t.id}`).join("\n")}`;
-          }
+          message += ` (${completed.length}/${prd.length} tasks)`;
         } catch {}
       }
-
       if (status.current_tool) {
         message += `\n\n_${status.current_tool}_`;
       }
 
-      await createAgentActivity(accessToken, linearSessionId, {
-        type: "thought",
-        body: message,
-      });
+      await createAgentActivity(
+        accessToken,
+        linearSessionId,
+        { type: "thought", body: message },
+        true
+      );
     } catch (e) {
       console.error(`[linear] Error polling Ralph status:`, e);
     }
@@ -821,6 +941,9 @@ async function handleRalphCompletion(
   const message = isSuccess
     ? `Ralph completed all tasks after ${status.iteration} iterations!`
     : `Ralph reached max iterations (${status.max}).`;
+
+  // Final plan-panel state before the summary lands
+  await syncRalphPlan(session, accessToken, linearSessionId);
 
   await createAgentActivity(accessToken, linearSessionId, {
     type: "thought",
@@ -915,7 +1038,7 @@ Linear: ${issueUrl}`;
   } catch (e) {
     console.error(`[linear] Error creating PR:`, e);
     await createAgentActivity(accessToken, linearSessionId, {
-      type: "response",
+      type: "error",
       body: `${message}\n\nFailed to create PR: ${e}`,
     });
   }

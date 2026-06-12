@@ -55,11 +55,22 @@ export async function fetchLinearUser(accessToken: string, userId: string): Prom
   return null;
 }
 
-/** Create agent activity (thought/response) */
+/** All activity content shapes Linear renders in an agent session timeline. */
+export type AgentActivityContent =
+  | { type: "thought"; body: string }
+  | { type: "response"; body: string }
+  /** Asks the user for input — Linear highlights it and prompts for a reply. */
+  | { type: "elicitation"; body: string }
+  | { type: "error"; body: string }
+  /** Tool/step row, e.g. action: "Read", parameter: "src/foo.ts". */
+  | { type: "action"; action: string; parameter: string; result?: string };
+
+/** Create agent activity. `ephemeral` (thought/action only) is replaced by the next activity. */
 export async function createAgentActivity(
   accessToken: string,
   sessionId: string,
-  content: { type: "thought" | "response"; body: string }
+  content: AgentActivityContent,
+  ephemeral?: boolean
 ): Promise<void> {
   const result = await gql(accessToken, `
     mutation CreateAgentActivity($input: AgentActivityCreateInput!) {
@@ -71,13 +82,44 @@ export async function createAgentActivity(
   `, {
     input: {
       agentSessionId: sessionId,
-      content: { type: content.type, body: content.body },
+      content,
+      ...(ephemeral ? { ephemeral: true } : {}),
     },
   });
 
   if (!result.data?.agentActivityCreate?.success) {
     console.error("[linear] Failed to create agent activity:", result);
   }
+}
+
+export interface PlanStep {
+  content: string;
+  status: "pending" | "inProgress" | "completed" | "canceled";
+}
+
+/**
+ * Update session metadata: external links (e.g. the Michael web UI) and the
+ * plan panel. Fire-and-forget friendly — failures only log.
+ */
+export async function updateAgentSession(
+  accessToken: string,
+  sessionId: string,
+  input: {
+    addedExternalUrls?: Array<{ url: string; label: string }>;
+    plan?: PlanStep[];
+  }
+): Promise<boolean> {
+  const result = await gql(accessToken, `
+    mutation UpdateAgentSession($id: String!, $input: AgentSessionUpdateInput!) {
+      agentSessionUpdate(id: $id, input: $input) { success }
+    }
+  `, { id: sessionId, input });
+
+  if (!result.data?.agentSessionUpdate?.success) {
+    console.error("[linear] Failed to update agent session:", JSON.stringify(result));
+    return false;
+  }
+  return true;
 }
 
 /** Fetch issue status and team */
