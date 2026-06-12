@@ -141,9 +141,9 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
           />
 
           <div className="ask-suggestions">
-            {SUGGESTIONS.map((s) => (
+            {SUGGESTIONS.map((s, i) => (
               <button
-                key={s.chip}
+                key={`${s.chip}-${i}`}
                 className="ask-suggestion"
                 onClick={() => setQuestion(s.prompt)}
                 disabled={asking}

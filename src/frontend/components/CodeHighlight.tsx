@@ -14,6 +14,8 @@ import markdown from "@shikijs/langs/markdown";
 import sql from "@shikijs/langs/sql";
 import diff from "@shikijs/langs/diff";
 import toml from "@shikijs/langs/toml";
+import rust from "@shikijs/langs/rust";
+import swift from "@shikijs/langs/swift";
 import githubDark from "@shikijs/themes/github-dark-default";
 // Shiki ships no ReScript grammar — vendored from rescript-vscode
 import rescriptGrammar from "../lib/rescript.tmLanguage.json";
@@ -45,6 +47,9 @@ const LANG_BY_EXT: Record<string, string> = {
   sh: "bash",
   bash: "bash",
   zsh: "bash",
+  rs: "rust",
+  rust: "rust", // ripgrep --type name
+  swift: "swift",
 };
 
 /** Map a file path to a registered shiki lang, or null if we can't highlight it. */
@@ -78,7 +83,7 @@ function getHighlighter(): Promise<HighlighterCore> {
       themes: [githubDark],
       langs: [
         bash, typescript, tsx, javascript, jsx, json, css, html,
-        yaml, markdown, sql, diff, toml, rescript,
+        yaml, markdown, sql, diff, toml, rust, swift, rescript,
       ],
       engine: createJavaScriptRegexEngine({ forgiving: true }),
     });
