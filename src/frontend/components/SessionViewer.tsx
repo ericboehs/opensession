@@ -219,6 +219,19 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           break;
         case "error":
           setIsStreaming(false);
+          // Show the failure where the reply would have been — otherwise a
+          // failed run looks like a send that silently went nowhere.
+          if (msg.message) {
+            setEntries((prev) => [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                type: "system",
+                content: `⚠ Run failed: ${msg.message}`,
+                timestamp: new Date().toISOString(),
+              },
+            ]);
+          }
           break;
       }
     });
@@ -254,10 +267,21 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   // Forget optimistic bubbles when switching sessions
   useEffect(() => { setPending([]); }, [session.id]);
 
-  // Auto-scroll, unless the reader has scrolled up to inspect history
+  // Jump straight to the latest message when a session first renders…
+  const didInitialScroll = useRef(false);
+  useEffect(() => { didInitialScroll.current = false; }, [session.id]);
+
+  // …then auto-scroll on updates, unless the reader has scrolled up to
+  // inspect history
   useEffect(() => {
     const el = messagesRef.current;
     if (!el) return;
+    if (!didInitialScroll.current) {
+      if (entries.length === 0) return;
+      el.scrollTop = el.scrollHeight;
+      didInitialScroll.current = true;
+      return;
+    }
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 400;
     if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [entries, streamText, pending]);
@@ -277,6 +301,21 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     // While Michael is busy the server queues this and delivers it after the run
     send({ type: "prompt", sessionId: session.id, content: text, user });
     // Show it immediately; reconciled away when the real turn / queue echo lands
+    setPending((p) => [
+      ...p,
+      { id: `pending-${crypto.randomUUID()}`, content: text, user, sentAt: Date.now() },
+    ]);
+    setInput("");
+  }
+
+  function handleInterruptSend() {
+    const text = input.trim();
+    if (!text) return;
+    if (!connected || noEngine) return;
+
+    const user = getCurrentUser();
+    // Stops the current turn and continues right away with this message
+    send({ type: "interrupt_prompt", sessionId: session.id, content: text, user });
     setPending((p) => [
       ...p,
       { id: `pending-${crypto.randomUUID()}`, content: text, user, sentAt: Date.now() },
@@ -538,12 +577,13 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                     !connected
                       ? "Not connected"
                       : isBusy
-                        ? "Message Michael — delivered when this run finishes…"
+                        ? "Message Michael — picked up at the next stopping point…"
                         : "Ask Michael to build, fix, or explain…"
                   }
                   disabled={!connected}
                   sendDisabled={!input.trim()}
                   busy={isBusy}
+                  onInterruptSend={handleInterruptSend}
                   models={models}
                   defaultModel={defaultModel}
                   model={model}

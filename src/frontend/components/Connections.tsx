@@ -112,6 +112,8 @@ export function Connections() {
         />
       )}
 
+      <DefaultModel />
+
       {!data ? (
         <div className="loading">Checking connections…</div>
       ) : (
@@ -230,6 +232,97 @@ function UsageBar({ label, window: w }: { label: string; window: UsageWindow | n
       <span className="acct-usage-pct">{pct === null ? "—" : `${Math.round(pct)}%`}</span>
       <span className="acct-usage-reset">{formatReset(w?.resetsAt ?? null)}</span>
     </div>
+  );
+}
+
+interface ModelInfo {
+  id: string;
+  provider: "claude" | "codex";
+  label: string;
+  aliases: string[];
+}
+
+function DefaultModel() {
+  const [models, setModels] = useState<ModelInfo[] | null>(null);
+  const [current, setCurrent] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/backstage/api/models");
+      if (res.ok) {
+        const body = await res.json();
+        setModels(body.models);
+        setCurrent(body.default);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleChange(id: string) {
+    if (id === current) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/backstage/api/models/default", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: id }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      setCurrent(body.default);
+    } catch (e: any) {
+      setError(e.message);
+    }
+    setSaving(false);
+  }
+
+  const claudeModels = (models || []).filter((m) => m.provider === "claude");
+  const codexModels = (models || []).filter((m) => m.provider === "codex");
+
+  return (
+    <>
+      <div className="conn-section-title">Default model — what new sessions run on</div>
+      {error && (
+        <div className="form-error" onClick={() => setError(null)}>{error}</div>
+      )}
+      <div className="conn-card" style={{ maxWidth: 460 }}>
+        <div className="conn-blurb">
+          New sessions and agent runs (Slack, Linear, Plain, automations without their own model)
+          start on this model. Per-session overrides still win. Applies to the next run — no restart.
+        </div>
+        <div className="conn-detail" style={{ alignItems: "center", gap: 10 }}>
+          <select
+            value={current}
+            disabled={!models || saving}
+            onChange={(e) => handleChange(e.target.value)}
+            aria-label="Default model"
+            style={{ flex: 1, minWidth: 0 }}
+          >
+            {claudeModels.length > 0 && (
+              <optgroup label="Claude">
+                {claudeModels.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </optgroup>
+            )}
+            {codexModels.length > 0 && (
+              <optgroup label="Codex">
+                {codexModels.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          {saving && <span className="conn-target">Saving…</span>}
+        </div>
+      </div>
+    </>
   );
 }
 

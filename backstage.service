@@ -7,6 +7,7 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/projects/tella-backstage
 EnvironmentFile=/home/ubuntu/.backstage.env
+Environment="NODE_ENV=production"
 ExecStart=/home/ubuntu/.bun/bin/bun run backstage.ts
 Restart=always
 RestartSec=5

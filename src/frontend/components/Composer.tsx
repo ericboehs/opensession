@@ -20,6 +20,11 @@ interface Props {
   modelTitle?: string;
   /** Extra control rendered in the toolbar, left of the send button. */
   leftExtra?: React.ReactNode;
+  /**
+   * When set and busy, renders an extra "interrupt" send button that stops
+   * the current turn and redirects with the typed message immediately.
+   */
+  onInterruptSend?: () => void;
   hint?: string;
   autoFocus?: boolean;
   /** Exposes the textarea so parents can focus it (e.g. keyboard shortcuts). */
@@ -52,6 +57,7 @@ export function Composer({
   modelDisabled,
   modelTitle,
   leftExtra,
+  onInterruptSend,
   hint,
   autoFocus,
   textareaRef: externalRef,
@@ -112,11 +118,21 @@ export function Composer({
           </div>
           {leftExtra}
           <div className="composer-spacer" />
+          {busy && onInterruptSend && (
+            <button
+              className="composer-send composer-send-interrupt"
+              onClick={onInterruptSend}
+              disabled={disabled || sendDisabled}
+              title="Interrupt — stop the current turn and redirect with this message now"
+            >
+              ⚡
+            </button>
+          )}
           <button
             className={`composer-send ${busy ? "composer-send-queue" : ""}`}
             onClick={onSend}
             disabled={disabled || sendDisabled}
-            title={sendTitle || (busy ? "Queue — delivered when this run finishes" : "Send (Enter)")}
+            title={sendTitle || (busy ? "Send — Michael folds it in at the next stopping point" : "Send (Enter)")}
           >
             {busy ? "+" : "↑"}
           </button>

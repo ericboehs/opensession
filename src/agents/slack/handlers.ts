@@ -41,7 +41,7 @@ import { runCodex } from "../../server/codex-runner";
 import { isClaudeUsageLimitError } from "../../server/claude-runner";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";
 import {
-  DEFAULT_MODEL,
+  getDefaultModel,
   DEFAULT_CODEX_MODEL,
   DEFAULT_FALLBACK_MODEL,
   providerFor,
@@ -70,6 +70,24 @@ import {
 import type { SlackSession, PendingAnswer } from "./state";
 
 const ALLOWED_USER_ID = process.env.ALLOWED_SLACK_USER_ID;
+
+// Save the session and mirror claudeSessionId/lastActivity into the
+// branch-named session file (written by `wt new-slack`), so backstage can
+// dedupe the two into one session as soon as the id exists.
+async function persistSession(session: SlackSession): Promise<void> {
+  await saveSession(session);
+  if (!session.branch) return;
+  const branchFile = `${SESSION_DIR}/${session.branch}.json`;
+  try {
+    const bf = Bun.file(branchFile);
+    if (await bf.exists()) {
+      const branchData = JSON.parse(await bf.text());
+      branchData.claudeSessionId = session.claudeSessionId;
+      branchData.lastActivity = session.lastActivity;
+      await Bun.write(branchFile, JSON.stringify(branchData, null, 2));
+    }
+  } catch {}
+}
 
 // ---------------------------------------------------------------------------
 // Worktree helpers
@@ -370,7 +388,7 @@ export async function handleModelCommand(
   const arg = text.trim().replace(/^\/model\s*/i, "").trim();
 
   if (!arg || arg === "show" || arg === "list") {
-    const current = session?.model || DEFAULT_MODEL;
+    const current = session?.model || getDefaultModel();
     await sendSlackMessage(
       channel,
       `Current model: \`${current}\`${session?.model ? "" : " (default)"}\n\nAvailable (set with \`/model <name>\`):\n\`\`\`\n${formatModelList(session?.model)}\n\`\`\``,
@@ -392,7 +410,7 @@ export async function handleModelCommand(
   if (!session) {
     await sendSlackMessage(
       channel,
-      `No session in this thread yet — send the task first, then \`/model ${resolved.id}\`. (New sessions start on \`${DEFAULT_MODEL}\`.)`,
+      `No session in this thread yet — send the task first, then \`/model ${resolved.id}\`. (New sessions start on \`${getDefaultModel()}\`.)`,
       threadTs
     );
     return true;
@@ -535,6 +553,9 @@ export async function processMessage(
       lastActivity: new Date().toISOString(),
     };
     activeSessions.set(sessionKey, session);
+    // Persist immediately — the "Open in Backstage" link posted below points
+    // at slack-<channel>-<ts>, which only resolves once this file exists.
+    await saveSession(session);
   }
 
   if (!session) {
@@ -796,7 +817,7 @@ export async function processMessage(
         },
         mcpServers: mcpConfig.mcpServers,
         strictMcpConfig: true,
-        model: session.model || process.env.MICHAEL_MODEL || "claude-fable-5",
+        model: session.model || getDefaultModel(),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
         executable: "bun",
         abortController,
@@ -894,6 +915,13 @@ export async function processMessage(
         console.log(
           `[slack] SDK session initialized: ${resultSessionId}`
         );
+        // Persist the id right away — the backstage UI resolves the live
+        // transcript (and dedupes the branch-named session) through it, so
+        // waiting until the run ends leaves the session page empty.
+        if (resultSessionId && resultSessionId !== session.claudeSessionId) {
+          session.claudeSessionId = resultSessionId;
+          await persistSession(session);
+        }
       }
 
       // Update assistant thread status based on tool calls
@@ -999,21 +1027,7 @@ export async function processMessage(
   // Update session
   session.claudeSessionId = resultSessionId || session.claudeSessionId;
   session.lastActivity = new Date().toISOString();
-  await saveSession(session);
-
-  // Also update the branch-named session file if it exists (written by `wt new-slack`)
-  if (session.branch) {
-    const branchFile = `${SESSION_DIR}/${session.branch}.json`;
-    try {
-      const bf = Bun.file(branchFile);
-      if (await bf.exists()) {
-        const branchData = JSON.parse(await bf.text());
-        branchData.claudeSessionId = session.claudeSessionId;
-        branchData.lastActivity = session.lastActivity;
-        await Bun.write(branchFile, JSON.stringify(branchData, null, 2));
-      }
-    } catch {}
-  }
+  await persistSession(session);
 
   // Send result to Slack via streamer (convert markdown -> Slack mrkdwn)
   const formatted = resultText ? markdownToSlack(resultText) : "";

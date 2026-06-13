@@ -1,10 +1,11 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { readMcpConfig, withDynamicCredentials } from "./connections";
 import { getAgentAwsEnv } from "./aws-creds";
 import { audit, summarizeText } from "./audit";
 import { pickAccount, markExhausted, type ClaudeAccount } from "./claude-accounts";
 import { cleanPlainToolInput } from "./shared/note-style";
+import { getDefaultModel } from "./models";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
@@ -12,8 +13,6 @@ const CLAUDE_DIR = `${HOME}/.claude`;
 const CLAUDE_CREDENTIALS_PATH = `${CLAUDE_DIR}/.credentials.json`;
 const CLAUDE_ACCOUNTS_DIR = `${CLAUDE_DIR}/accounts`;
 const CLAUDE_ACTIVE_ACCOUNT_PATH = `${CLAUDE_ACCOUNTS_DIR}/.active`;
-// Default model for all backstage-driven sessions (override via env)
-const MODEL = process.env.MICHAEL_MODEL || "claude-fable-5";
 
 export interface StreamEvent {
   type: "init" | "text_chunk" | "tool_use" | "tool_result" | "done" | "error";
@@ -233,6 +232,36 @@ export function cancelRun(sessionId: string): boolean {
   return false;
 }
 
+// ── Steering ─────────────────────────────────────────────────
+// In-flight runs accept extra user messages, Claude-Code style: a message
+// arriving mid-turn is merged into the running turn by the SDK; one arriving
+// at a turn boundary starts a fresh turn in the same run. Keyed by every id a
+// caller might know (run key, engine session id, backstage session id).
+const steerControllers = new Map<string, (text: string) => void>();
+const interrupters = new Map<string, () => void>();
+
+/** Deliver a message into a running query. False = no steerable run found. */
+export function steerRun(sessionId: string, text: string): boolean {
+  const push = steerControllers.get(sessionId);
+  if (!push) return false;
+  push(text);
+  return true;
+}
+
+/**
+ * Esc-style redirect: abort the current turn (graceful — the session and the
+ * query survive) and continue immediately with the given message as the next
+ * turn. False = no interruptible run found.
+ */
+export function interruptAndSteerRun(sessionId: string, text: string): boolean {
+  const push = steerControllers.get(sessionId);
+  const interrupt = interrupters.get(sessionId);
+  if (!push || !interrupt) return false;
+  push(text); // queue first so the interrupt's turn boundary releases it
+  interrupt();
+  return true;
+}
+
 /**
  * Money-moving Stripe tools: every call pauses for a human approve/deny in the
  * session UI (via onAskUser); unattended runs get a deny telling the agent to
@@ -251,7 +280,7 @@ export async function* runClaude(opts: {
   sessionId?: string;
   cwd: string;
   mode?: "ask" | "code";
-  /** Claude model id for this run; defaults to MICHAEL_MODEL / claude-fable-5. */
+  /** Claude model id for this run; falls back to the global default (getDefaultModel). */
   model?: string;
   /**
    * MCP server allowlist for this run — only the named servers from
@@ -285,7 +314,7 @@ export async function* runClaude(opts: {
   >;
 }): AsyncGenerator<StreamEvent> {
   const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, confirmTools, aws, journal, onAskUser } = opts;
-  const model = opts.model || MODEL;
+  const model = opts.model || getDefaultModel();
   const isAsk = mode === "ask";
 
   // Test hook: pretend the whole Claude account pool is exhausted, so the
@@ -353,6 +382,65 @@ export async function* runClaude(opts: {
     ...summarizeText(prompt),
   });
 
+  // Steering state. Messages pushed via steerRun while this run is in flight
+  // are held in steerPending and released into the query ONLY at a turn
+  // boundary (when a result message lands) — the CLI ignores stream-json user
+  // input delivered mid-turn (verified: the message is consumed but no new
+  // turn ever starts, hanging the run). Each boundary release starts exactly
+  // one more turn in the same query, so the end-of-run rule stays simple:
+  // finish on a result with nothing held.
+  const steerPending: string[] = [];
+  let steerWake: (() => void) | null = null; // woken by releaseSteers/shutdown
+  let steerReleases = 0; // boundary releases granted but not yet consumed
+  let inputDone = false;
+  const releaseSteers = () => {
+    steerReleases++;
+    steerWake?.();
+  };
+  const mkUserMsg = (content: string): SDKUserMessage =>
+    ({
+      type: "user",
+      message: { role: "user", content },
+      parent_tool_use_id: null,
+    }) as SDKUserMessage;
+  const pushSteer = (text: string) => {
+    turnEvent({ direction: "in", kind: "steered_prompt", ...summarizeText(text) });
+    steerPending.push(text);
+  };
+  // Points at the live Query of the current rotation attempt; lets
+  // interruptAndSteerRun stop the in-flight turn without killing the run.
+  let currentInterrupt: (() => void) | null = null;
+  const steerKeys = new Set<string>([runKey]);
+  if (journal?.bksSessionId) steerKeys.add(journal.bksSessionId);
+  const registerSteerKey = (key: string) => {
+    steerKeys.add(key);
+    steerControllers.set(key, pushSteer);
+    interrupters.set(key, () => currentInterrupt?.());
+  };
+  for (const k of [...steerKeys]) registerSteerKey(k);
+  // Stop accepting steers (steerRun → false; callers fall back to their queue)
+  const stopAcceptingSteers = () => {
+    for (const k of steerKeys) {
+      steerControllers.delete(k);
+      interrupters.delete(k);
+    }
+  };
+  const mkInputStream = (initial: string) =>
+    (async function* (): AsyncGenerator<SDKUserMessage> {
+      yield mkUserMsg(initial);
+      while (true) {
+        if (inputDone) return;
+        if (steerReleases > 0) {
+          steerReleases--;
+          const batch = steerPending.splice(0);
+          if (batch.length > 0) yield mkUserMsg(batch.join("\n\n"));
+          continue;
+        }
+        await new Promise<void>((resolve) => (steerWake = resolve));
+        steerWake = null;
+      }
+    })();
+
   try {
     // Account rotation: prefer the token pool (claude-accounts.ts); when a
     // run exhausts an account's usage, sideline it and retry on the next one
@@ -384,7 +472,7 @@ export async function* runClaude(opts: {
     for (;;) {
       let shouldRetryAfterSwitch = false;
       const q = query({
-        prompt,
+        prompt: mkInputStream(prompt),
         options: {
         resume: resultSessionId || sessionId || undefined,
         cwd,
@@ -536,6 +624,11 @@ export async function* runClaude(opts: {
         settingSources: ["user", "project"],
       },
       });
+      currentInterrupt = () => {
+        q.interrupt().catch((e) =>
+          console.warn(`[runner] interrupt() failed (turn may have already ended):`, e?.message || e)
+        );
+      };
 
       try {
       for await (const msg of q) {
@@ -543,6 +636,9 @@ export async function* runClaude(opts: {
 
       if (msg.type === "system" && (msg as any).subtype === "init") {
         resultSessionId = (msg as any).session_id;
+        if (resultSessionId && !steerKeys.has(resultSessionId)) {
+          registerSteerKey(resultSessionId);
+        }
         journalSet({
           runKey,
           bksSessionId: journal?.bksSessionId,
@@ -653,6 +749,24 @@ export async function* runClaude(opts: {
           limitExhausted = true;
         }
 
+        // Turn boundary: release steered messages into the same query as a
+        // fresh turn instead of finishing. (Skipped when the run is dying on
+        // usage limits — the queued text stays in steerPending and callers'
+        // queue fallback picks it up once steering deregisters.)
+        if (!limitExhausted && steerPending.length > 0) {
+          turnEvent({ direction: "out", kind: "steer_release", count: steerPending.length });
+          releaseSteers();
+          continue;
+        }
+
+        // Finishing: stop accepting steers first, then re-check — a message
+        // that raced in between gets one more turn rather than being dropped.
+        stopAcceptingSteers();
+        if (!limitExhausted && steerPending.length > 0) {
+          releaseSteers();
+          continue;
+        }
+
         yield {
           type: "done",
           sessionId: resultSessionId,
@@ -702,6 +816,9 @@ export async function* runClaude(opts: {
     if (abortController.signal.aborted) {
       turnEvent({ direction: "out", kind: "cancelled" });
     }
+    stopAcceptingSteers();
+    inputDone = true;
+    steerWake?.();
     activeRuns.delete(runKey);
     journalClear(runKey);
   }

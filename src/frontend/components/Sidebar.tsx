@@ -25,6 +25,7 @@ interface Props {
   onSelect: (session: UnifiedSession) => void;
   onNewSession: () => void;
   onOpenArchived: () => void;
+  onArchive: (session: UnifiedSession) => void;
 }
 
 const NAV_ITEMS: Array<{ view: NavView; label: string; icon: React.ReactNode }> = [
@@ -95,6 +96,7 @@ export function Sidebar({
   onSelect,
   onNewSession,
   onOpenArchived,
+  onArchive,
 }: Props) {
   const [search, setSearch] = useState("");
   // Groups are collapsed by default; the expanded set persists per browser
@@ -252,6 +254,7 @@ export function Sidebar({
                   session={s}
                   selected={s.id === selectedId}
                   onClick={() => onSelect(s)}
+                  onArchive={() => onArchive(s)}
                 />
               ))}
           </div>
@@ -271,10 +274,12 @@ function SidebarItem({
   session,
   selected,
   onClick,
+  onArchive,
 }: {
   session: UnifiedSession;
   selected: boolean;
   onClick: () => void;
+  onArchive: () => void;
 }) {
   const running = session.isRunning;
   const recent = isRecent(session.lastActivity);
@@ -329,6 +334,18 @@ function SidebarItem({
           </React.Fragment>
         ))}
       </div>
+      <span
+        className="sidebar-item-x"
+        role="button"
+        aria-label="Archive session"
+        title="Archive session"
+        onClick={(e) => {
+          e.stopPropagation();
+          onArchive();
+        }}
+      >
+        ×
+      </span>
     </button>
   );
 }

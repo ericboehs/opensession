@@ -6,6 +6,8 @@
  * canonical id, never an alias.
  */
 
+import { existsSync, readFileSync, writeFileSync } from "fs";
+
 export type Provider = "claude" | "codex";
 
 export interface ModelInfo {
@@ -26,12 +28,70 @@ export const KNOWN_MODELS: ModelInfo[] = [
   { id: "gpt-5.3-codex-spark", provider: "codex", label: "GPT-5.3 Codex Spark", aliases: ["spark"] },
 ];
 
-/** Per-provider defaults: claude-fable-5 for Anthropic, gpt-5.5 for OpenAI. */
-export const DEFAULT_CLAUDE_MODEL = "claude-fable-5";
+/**
+ * Per-provider defaults: claude-opus-4-8 for Anthropic, gpt-5.5 for OpenAI.
+ * NOTE: temporarily on Opus while claude-fable-5 is unavailable — revert to
+ * "claude-fable-5" once Fable is back.
+ */
+export const DEFAULT_CLAUDE_MODEL = "claude-opus-4-8";
 export const DEFAULT_CODEX_MODEL = "gpt-5.5";
 
-/** Global default when a session has no model set (same env var as before). */
-export const DEFAULT_MODEL = process.env.MICHAEL_MODEL || DEFAULT_CLAUDE_MODEL;
+/**
+ * Persisted override for the global default model, set from the Connections UI
+ * (PUT /api/models/default). Lets us switch what new sessions run on without a
+ * code change or restart. Resolution order: this override → MICHAEL_MODEL env →
+ * DEFAULT_CLAUDE_MODEL. Stored as { model: "<id>" | null } in this file.
+ */
+const HOME = process.env.HOME || "/home/ubuntu";
+const DEFAULT_MODEL_STORE = `${HOME}/.backstage-default-model.json`;
+
+// undefined = not yet loaded from disk; null = no override set.
+let overrideCache: string | null | undefined;
+
+function loadOverride(): string | null {
+  if (overrideCache !== undefined) return overrideCache;
+  try {
+    if (existsSync(DEFAULT_MODEL_STORE)) {
+      const raw = JSON.parse(readFileSync(DEFAULT_MODEL_STORE, "utf8"));
+      const id = typeof raw?.model === "string" ? raw.model.trim() : "";
+      overrideCache = id && resolveModel(id) ? resolveModel(id)!.id : null;
+    } else {
+      overrideCache = null;
+    }
+  } catch {
+    overrideCache = null;
+  }
+  return overrideCache;
+}
+
+/**
+ * Global default when a session has no model set: UI override → MICHAEL_MODEL
+ * env → DEFAULT_CLAUDE_MODEL. Read fresh per call so UI changes take effect on
+ * the next run without a restart.
+ */
+export function getDefaultModel(): string {
+  return loadOverride() || process.env.MICHAEL_MODEL || DEFAULT_CLAUDE_MODEL;
+}
+
+/**
+ * Persist the UI-selected default model (or clear it with null to fall back to
+ * env/constant). Returns the resolved default after the change; throws on an
+ * unknown model id.
+ */
+export function setDefaultModel(input: string | null): string {
+  if (input === null || input.trim() === "") {
+    overrideCache = null;
+    try {
+      writeFileSync(DEFAULT_MODEL_STORE, JSON.stringify({ model: null }, null, 2));
+    } catch {}
+    return getDefaultModel();
+  }
+  const m = resolveModel(input);
+  if (!m) throw new Error(`Unknown model: ${input}`);
+  overrideCache = m.id;
+  writeFileSync(DEFAULT_MODEL_STORE, JSON.stringify({ model: m.id }, null, 2));
+  return m.id;
+}
 
 /**
  * Global fallback model when a run dies on usage limits with every account in
@@ -64,18 +124,18 @@ export function resolveModel(input: string): ModelInfo | null {
 
 /** Provider for a session's stored model (undefined/unknown → claude). */
 export function providerFor(model?: string | null): Provider {
-  if (!model) return resolveModel(DEFAULT_MODEL)?.provider ?? "claude";
+  if (!model) return resolveModel(getDefaultModel())?.provider ?? "claude";
   return resolveModel(model)?.provider ?? "claude";
 }
 
 export function modelLabel(model?: string | null): string {
-  const id = model || DEFAULT_MODEL;
+  const id = model || getDefaultModel();
   return KNOWN_MODELS.find((m) => m.id === id)?.label || id;
 }
 
 /** Human list for /model help output. */
 export function formatModelList(current?: string | null): string {
-  const cur = current || DEFAULT_MODEL;
+  const cur = current || getDefaultModel();
   return KNOWN_MODELS.map((m) => {
     const marker = m.id === cur ? "→ " : "   ";
     const aliases = m.aliases.length ? ` (${m.aliases.join(", ")})` : "";

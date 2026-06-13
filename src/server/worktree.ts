@@ -108,6 +108,29 @@ export async function sweepArchivedWorktrees(
   return removed;
 }
 
+/**
+ * Recreate a worktree that was cleaned up while its session lives on. Reuses
+ * the local branch when it still exists (uncommitted work is gone, but the
+ * branch history survives); otherwise starts the branch fresh from main. The
+ * path is identical to the original, so claude session resume keeps working
+ * (transcripts are keyed by cwd).
+ */
+export async function reviveWorktree(branch: string): Promise<string> {
+  const wtPath = `${WORKTREES_DIR}/tella-fusion-${branch}`;
+  if (existsSync(wtPath)) return wtPath;
+
+  await $`git -C ${TELLA_FUSION} worktree prune`.quiet();
+  const hasBranch =
+    (await $`git -C ${TELLA_FUSION} show-ref --verify --quiet refs/heads/${branch}`.nothrow()).exitCode === 0;
+  if (hasBranch) {
+    await $`git -C ${TELLA_FUSION} worktree add ${wtPath} ${branch}`;
+  } else {
+    await $`git -C ${TELLA_FUSION} fetch origin main --quiet`;
+    await $`git -C ${TELLA_FUSION} worktree add -b ${branch} ${wtPath} origin/main`;
+  }
+  return wtPath;
+}
+
 export async function createWorktree(branch: string): Promise<string> {
   const wtPath = `${WORKTREES_DIR}/tella-fusion-${branch}`;
 

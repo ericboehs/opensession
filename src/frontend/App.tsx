@@ -11,6 +11,7 @@ import { Archived } from "./components/Archived";
 import { UserPicker, UserGate } from "./components/UserPicker";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { archiveSessionApi } from "./lib/api";
 import type { UnifiedSession } from "./lib/types";
 import "./styles/global.css";
 
@@ -149,6 +150,14 @@ function App() {
               onSelect={(s) => navigate({ view: "session", id: s.id })}
               onNewSession={() => navigate({ view: "new" })}
               onOpenArchived={() => navigate({ view: "archived" })}
+              onArchive={async (s) => {
+                try {
+                  await archiveSessionApi(s.id, true);
+                } catch (e) {
+                  console.error("Archive failed:", e);
+                }
+                refresh();
+              }}
             />
           </div>
 

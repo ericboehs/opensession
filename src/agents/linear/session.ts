@@ -5,7 +5,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { isClaudeUsageLimitError } from "../../server/claude-runner";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";
 import { runCodex } from "../../server/codex-runner";
-import { DEFAULT_FALLBACK_MODEL, resolveModel } from "../../server/models";
+import { DEFAULT_FALLBACK_MODEL, resolveModel, getDefaultModel } from "../../server/models";
 import { cleanPlainToolInput } from "../../server/shared/note-style";
 import { spawn, execSync } from "child_process";
 import { unlinkSync } from "fs";
@@ -470,7 +470,7 @@ export async function runClaudeHeadless(
         },
         mcpServers: mcpConfig.mcpServers as any,
         strictMcpConfig: true,
-        model: session?.model || process.env.MICHAEL_MODEL || "claude-fable-5",
+        model: session?.model || getDefaultModel(),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
         executable: "bun",
         abortController,

@@ -6,17 +6,20 @@ import homepage from "./src/frontend/index.html";
 import { getAllSessions, deleteSession } from "./src/server/sessions";
 import { parseTranscript } from "./src/server/jsonl-parser";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
-import { listWorktrees, createWorktree, removeWorktree, sweepArchivedWorktrees } from "./src/server/worktree";
+import { listWorktrees, createWorktree, removeWorktree, reviveWorktree, sweepArchivedWorktrees } from "./src/server/worktree";
 import { STRIPE_CONFIRM_TOOLS } from "./src/server/claude-runner";
 import {
   runAgent,
   isAgentSessionBusy,
   cancelAgentRun,
+  steerAgentRun,
+  interruptAndSteerAgentRun,
   resumeInterruptedRuns,
 } from "./src/server/agent-runner";
 import {
   KNOWN_MODELS,
-  DEFAULT_MODEL,
+  getDefaultModel,
+  setDefaultModel,
   resolveModel,
   providerFor,
   modelLabel,
@@ -222,13 +225,7 @@ function broadcastQueue(sessionId: string) {
   });
 }
 
-async function runSessionPromptAndDrain(
-  sessionId: string,
-  content: string,
-  user?: string
-): Promise<void> {
-  await runSessionPrompt(sessionId, content, user);
-
+async function drainQueue(sessionId: string): Promise<void> {
   let queue;
   while ((queue = promptQueues.get(sessionId)) && queue.length > 0) {
     const batch = queue.splice(0, queue.length);
@@ -238,6 +235,40 @@ async function runSessionPromptAndDrain(
       .join("\n\n");
     await runSessionPrompt(sessionId, combined, batch[0].user);
   }
+}
+
+async function runSessionPromptAndDrain(
+  sessionId: string,
+  content: string,
+  user?: string
+): Promise<void> {
+  await runSessionPrompt(sessionId, content, user);
+  await drainQueue(sessionId);
+}
+
+// Messages queued while a run we didn't start is in flight (Slack runs, CLI
+// sessions in tmux, automations) have no drain loop of their own — watch the
+// busy state and deliver the queue once the external run finishes.
+const drainWatchers = new Set<string>();
+function watchExternalRunAndDrain(sessionId: string): void {
+  if (drainWatchers.has(sessionId)) return;
+  drainWatchers.add(sessionId);
+  const timer = setInterval(async () => {
+    const session = findSession(sessionId);
+    if (!session || !(promptQueues.get(sessionId) || []).length) {
+      clearInterval(timer);
+      drainWatchers.delete(sessionId);
+      return;
+    }
+    if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) return;
+    clearInterval(timer);
+    drainWatchers.delete(sessionId);
+    try {
+      await drainQueue(sessionId);
+    } catch (e) {
+      console.error(`[queue] Drain after external run failed for ${sessionId}:`, e);
+    }
+  }, 3000);
 }
 
 /** Run a prompt against an existing session, broadcasting to all watchers. */
@@ -251,9 +282,43 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
   const provider = providerFor(session.model);
   const engineSessionId =
     provider === "codex" ? session.codexThreadId : session.claudeSessionId;
-  if (provider === "claude" && !engineSessionId) return;
+  if (provider === "claude" && !engineSessionId) {
+    // Never swallow a message silently (queued ones land here on drain)
+    console.error(`[queue] Can't deliver prompt for ${sessionId} — no claude session id`);
+    broadcastToSession(sessionId, {
+      type: "notice",
+      message: "Couldn't deliver your message — the session has no Claude session id yet. Try again in a moment.",
+    });
+    return;
+  }
 
-  const cwd = session.worktreeDir || `${HOME}/projects/tella-fusion`;
+  // A cleaned-up worktree makes the SDK spawn fail with a misleading "binary
+  // not found" (ENOENT on the missing cwd) — revive it first. Same path as
+  // before, so resuming the claude session keeps its history.
+  let cwd = session.worktreeDir || `${HOME}/projects/tella-fusion`;
+  if (session.worktreeDir && !existsSync(session.worktreeDir)) {
+    if (session.branch) {
+      broadcastToSession(sessionId, {
+        type: "notice",
+        message: `This session's worktree was cleaned up — recreating it from branch ${session.branch}…`,
+      });
+      try {
+        cwd = await reviveWorktree(session.branch);
+      } catch (e) {
+        broadcastToSession(sessionId, {
+          type: "notice",
+          message: `Couldn't recreate the worktree (${e}); running in the main checkout instead.`,
+        });
+        cwd = `${HOME}/projects/tella-fusion`;
+      }
+    } else {
+      broadcastToSession(sessionId, {
+        type: "notice",
+        message: "This session's worktree is gone; running in the main checkout.",
+      });
+      cwd = `${HOME}/projects/tella-fusion`;
+    }
+  }
   let prompt = content;
   if (session.goal) {
     prompt += `\n\n[Pinned session goal — keep working toward it and note how this turn advanced it: ${session.goal}]`;
@@ -384,7 +449,7 @@ function handleSlashCommand(
 
   if (text === "/model" || text === "/model show" || text === "/model list") {
     return [
-      `Current model: ${session.model || DEFAULT_MODEL}${session.model ? "" : " (default)"}`,
+      `Current model: ${session.model || getDefaultModel()}${session.model ? "" : " (default)"}`,
       "",
       "Available models (set with /model <name or alias>):",
       formatModelList(session.model),
@@ -800,7 +865,21 @@ const server = Bun.serve<WSClientData>({
 
     // ── Models available to sessions ──
     if (path === "/backstage/api/models" && req.method === "GET") {
-      return Response.json({ models: KNOWN_MODELS, default: DEFAULT_MODEL });
+      return Response.json({ models: KNOWN_MODELS, default: getDefaultModel() });
+    }
+
+    // Set (or clear, with model:null) the default model new sessions run on.
+    if (path === "/backstage/api/models/default" && req.method === "PUT") {
+      const body = await req.json().catch(() => null);
+      if (!body || !("model" in body)) {
+        return Response.json({ error: "model is required (id, or null to clear)" }, { status: 400 });
+      }
+      try {
+        const next = setDefaultModel(body.model ?? null);
+        return Response.json({ default: next });
+      } catch (e: any) {
+        return Response.json({ error: e?.message || "Failed to set default model" }, { status: 400 });
+      }
     }
 
     // ── Codex (OpenAI) account pool ──
@@ -953,6 +1032,30 @@ const server = Bun.serve<WSClientData>({
             break;
           }
 
+          // Busy → steer it into the running query (delivered at the next
+          // turn boundary, Claude-Code style). Falls back to the queue when
+          // the run isn't steerable: codex runs, runs owned by another
+          // process (Slack handler, CLI in tmux), or a run that's finishing.
+          if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) {
+            const attributed = user ? `[${user}] ${content}` : content;
+            if (steerAgentRun([session.claudeSessionId, session.codexThreadId, session.id], attributed)) {
+              // The message itself lands in the transcript when its turn
+              // starts; until then this notice is the visible receipt. Not
+              // mirrored into promptQueues — the drain would re-deliver it.
+              broadcastToSession(sessionId, {
+                type: "notice",
+                message: `Message from ${user || "you"} folded into the run — Michael picks it up at the next stopping point.`,
+              });
+              break;
+            }
+            const queue = promptQueues.get(sessionId) || [];
+            queue.push({ content, user });
+            promptQueues.set(sessionId, queue);
+            broadcastQueue(sessionId);
+            watchExternalRunAndDrain(sessionId);
+            break;
+          }
+
           // Codex sessions start a fresh thread on first prompt; Claude needs
           // a session id to resume.
           if (providerFor(session.model) === "claude" && !session.claudeSessionId) {
@@ -960,14 +1063,44 @@ const server = Bun.serve<WSClientData>({
             return;
           }
 
+          await runSessionPromptAndDrain(sessionId, content, user);
+          break;
+        }
+
+        case "interrupt_prompt": {
+          // Esc-style redirect: stop the current turn, keep the session, and
+          // continue right away with this message. Falls back to a normal
+          // prompt (steer/queue/run) when there's nothing to interrupt.
+          const { sessionId, content, user } = msg;
+          const session = findSession(sessionId);
+          if (!session) {
+            ws.send(JSON.stringify({ type: "error", message: "Session not found" }));
+            return;
+          }
+          const attributed = user ? `[${user}] ${content}` : content;
+          if (
+            isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id) &&
+            interruptAndSteerAgentRun(
+              [session.claudeSessionId, session.codexThreadId, session.id],
+              attributed
+            )
+          ) {
+            broadcastToSession(sessionId, {
+              type: "notice",
+              message: `${user || "Someone"} interrupted — redirecting Michael now.`,
+            });
+            break;
+          }
+          // Not interruptible (external run, codex, or just finished): treat
+          // like a normal send so the message is never lost.
           if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) {
             const queue = promptQueues.get(sessionId) || [];
             queue.push({ content, user });
             promptQueues.set(sessionId, queue);
             broadcastQueue(sessionId);
+            watchExternalRunAndDrain(sessionId);
             break;
           }
-
           await runSessionPromptAndDrain(sessionId, content, user);
           break;
         }
@@ -1105,10 +1238,16 @@ const server = Bun.serve<WSClientData>({
     },
   },
 
-  development: {
-    hmr: true,
-    console: true,
-  },
+  // Dev mode (HMR + error overlay + browser-console streaming) only when
+  // explicitly asked for — the systemd service is production, and the overlay
+  // pops "Script error." boxes on iOS with no diagnostics behind them.
+  development:
+    process.env.BACKSTAGE_DEV === "1"
+      ? {
+          hmr: true,
+          console: true,
+        }
+      : false,
 });
 
 console.log(`Backstage running at http://${HOST}:${PORT}/backstage/`);

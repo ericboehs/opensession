@@ -14,11 +14,13 @@ import {
   runClaude,
   isSessionBusy,
   cancelRun,
+  steerRun,
+  interruptAndSteerRun,
   takeInterruptedRuns,
   type StreamEvent,
 } from "./claude-runner";
 import { runCodex, isCodexSessionBusy, cancelCodexRun } from "./codex-runner";
-import { providerFor, resolveModel, DEFAULT_CODEX_MODEL, DEFAULT_MODEL } from "./models";
+import { providerFor, resolveModel, DEFAULT_CODEX_MODEL, getDefaultModel } from "./models";
 
 export type { StreamEvent };
 
@@ -68,7 +70,7 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerat
 
 export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
   const fallback = opts.fallbackModel ? resolveModel(opts.fallbackModel) : null;
-  if (!fallback || fallback.id === (opts.model || DEFAULT_MODEL)) {
+  if (!fallback || fallback.id === (opts.model || getDefaultModel())) {
     yield* runOnModel(opts, opts.model);
     return;
   }
@@ -89,7 +91,7 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
 
     // Primary model out of usage on every account — switch to the fallback.
     const crossProvider = providerFor(opts.model) !== fallback.provider;
-    const primaryName = opts.model || DEFAULT_MODEL;
+    const primaryName = opts.model || getDefaultModel();
     console.warn(`[runner] ${primaryName} exhausted on all accounts; falling back to ${fallback.id}`);
     yield {
       type: "text_chunk",
@@ -124,6 +126,36 @@ export function isAgentSessionBusy(...ids: Array<string | null | undefined>): bo
   for (const id of ids) {
     if (!id) continue;
     if (isSessionBusy(id) || isCodexSessionBusy(id)) return true;
+  }
+  return false;
+}
+
+/**
+ * Steer a message into an in-flight Claude run (merged in at the next turn
+ * boundary, same query). False = nothing steerable (codex runs, external
+ * processes, or the run is finishing) — caller should queue instead.
+ */
+export function steerAgentRun(
+  ids: Array<string | null | undefined>,
+  text: string
+): boolean {
+  for (const id of ids) {
+    if (id && steerRun(id, text)) return true;
+  }
+  return false;
+}
+
+/**
+ * Esc-style redirect on an in-flight Claude run: abort the current turn but
+ * keep the query alive, continuing immediately with the given message.
+ * False = nothing interruptible — caller should fall back to steer/queue.
+ */
+export function interruptAndSteerAgentRun(
+  ids: Array<string | null | undefined>,
+  text: string
+): boolean {
+  for (const id of ids) {
+    if (id && interruptAndSteerRun(id, text)) return true;
   }
   return false;
 }

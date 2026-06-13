@@ -88,6 +88,7 @@ export interface PrDetails {
 export type WSClientMessage =
   | { type: "watch"; sessionId: string; user?: string }
   | { type: "prompt"; sessionId: string; content: string; user?: string }
+  | { type: "interrupt_prompt"; sessionId: string; content: string; user?: string }
   | { type: "cancel" }
   | { type: "create_session"; branch: string; prompt: string; user: string; mode?: "ask" | "code" };
 
