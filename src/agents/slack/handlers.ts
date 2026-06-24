@@ -32,6 +32,7 @@ import {
   MESSAGES,
 } from "./slack-api";
 import { SlackStreamer, buildToolStatus, isSilentTool } from "./streamer";
+import { SlackProgress } from "./progress";
 import { enqueueMessage, getOrCreateQueue } from "./queue";
 import type { QueuedMessage, SessionQueue } from "./queue";
 import { sessionQueues } from "./queue";
@@ -448,6 +449,7 @@ async function processCodexMessage(
   cwd: string,
   abortController: AbortController,
   dismissStopButton: (label: string) => Promise<void>,
+  progress: SlackProgress,
   /** Run on this model without changing the session's configured model (fallback). */
   modelOverride?: string
 ): Promise<void> {
@@ -481,7 +483,9 @@ async function processCodexMessage(
         console.log(`[slack] Codex thread initialized: ${resultThreadId}`);
       }
       if (event.type === "tool_use" && event.toolName && !isSilentTool(event.toolName)) {
-        await streamer.setStatus(buildToolStatus(event.toolName, event.toolInput));
+        const status = buildToolStatus(event.toolName, event.toolInput);
+        progress.setAction(status);
+        await streamer.setStatus(status);
       }
       if (event.type === "done") {
         resultText = event.result || "";
@@ -595,26 +599,45 @@ export async function processMessage(
     action_id: `backstage:${sessionKey}`,
   };
 
+  // Action rows for the live progress card: Stop+Backstage while running,
+  // Backstage-only once finished.
+  const runningActions = {
+    type: "actions",
+    block_id: `stop-actions-${sessionKey}`,
+    elements: [
+      backstageButton,
+      {
+        type: "button",
+        text: { type: "plain_text", text: ":octagonal_sign: Stop", emoji: true },
+        style: "danger",
+        action_id: `stop:${sessionKey}`,
+        value: sessionKey,
+      },
+    ],
+  };
+  const finalActions = {
+    type: "actions",
+    block_id: `backstage-link-${sessionKey}`,
+    elements: [backstageButton],
+  };
+
   let stopButtonTs: string | null = null;
   try {
+    // Post the card with an initial progress section already rendered, so the
+    // channel sees a visible reply immediately (the SlackProgress object then
+    // edits this same message in place as work proceeds).
     const postResult = await postSlackBlocks(
       channel,
       "Working — follow along in Backstage or tap Stop to cancel.",
       [
         {
-          type: "actions",
-          block_id: `stop-actions-${sessionKey}`,
-          elements: [
-            backstageButton,
-            {
-              type: "button",
-              text: { type: "plain_text", text: ":octagonal_sign: Stop", emoji: true },
-              style: "danger",
-              action_id: `stop:${sessionKey}`,
-              value: sessionKey,
-            },
-          ],
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: ":hourglass_flowing_sand: *Working…*",
+          },
         },
+        runningActions,
       ],
       threadTs
     );
@@ -623,26 +646,20 @@ export async function processMessage(
     console.warn("[slack] Failed to post stop button:", e);
   }
 
-  const dismissStopButton = async (label: string): Promise<void> => {
-    if (!stopButtonTs) return;
-    try {
-      // Keep the Backstage link around after the run finishes
-      await updateSlackBlocks(channel, stopButtonTs, label, [
-        {
-          type: "context",
-          elements: [{ type: "mrkdwn", text: `_${label}_` }],
-        },
-        {
-          type: "actions",
-          block_id: `backstage-link-${sessionKey}`,
-          elements: [backstageButton],
-        },
-      ]);
-    } catch (e) {
-      console.warn("[slack] Failed to dismiss stop button:", e);
-    }
-    stopButtonTs = null;
-  };
+  // Live, in-place checklist on the card above. Works in channels (unlike the
+  // DM-only assistant typing status), throttled to ~1 edit/sec.
+  const progress = new SlackProgress(
+    channel,
+    stopButtonTs,
+    [runningActions],
+    [finalActions]
+  );
+
+  // Backwards-compatible alias: every exit path already calls this to collapse
+  // the Stop button into the Backstage link. Now it also renders the terminal
+  // checklist state.
+  const dismissStopButton = (label: string): Promise<void> =>
+    progress.finish(label);
 
   // Recreate worktree if it was cleaned up (revived thread)
   if (
@@ -653,6 +670,7 @@ export async function processMessage(
     console.log(
       `[slack] [revive] Worktree ${session.branch} was cleaned up, recreating...`
     );
+    progress.setTitle("Recreating worktree…");
     await streamer.setStatus("recreating worktree...");
     try {
       const { spawnSync } = require("child_process");
@@ -743,7 +761,8 @@ export async function processMessage(
       streamer,
       cwd,
       abortController,
-      dismissStopButton
+      dismissStopButton,
+      progress
     );
     return;
   }
@@ -924,11 +943,17 @@ export async function processMessage(
         }
       }
 
-      // Update assistant thread status based on tool calls
+      // Update the live progress checklist + assistant thread status from tools
       if (sdkMsg.type === "assistant" && (sdkMsg as any).message?.content) {
         const content = (sdkMsg as any).message.content;
         for (const block of content as any[]) {
           if (block.type !== "tool_use") continue;
+
+          // TodoWrite -> the model's own plan IS the checklist (Claude Tag style)
+          if (block.name === "TodoWrite") {
+            progress.setTodos(block.input?.todos);
+            continue;
+          }
 
           // TaskCreate -> use activeForm as status (high-level progress)
           if (block.name === "TaskCreate") {
@@ -936,6 +961,7 @@ export async function processMessage(
               block.input?.activeForm ||
               block.input?.subject ||
               "Working...";
+            progress.setAction(status);
             await streamer.setStatus(status);
             continue;
           }
@@ -944,7 +970,9 @@ export async function processMessage(
           if (isSilentTool(block.name)) continue;
 
           // Write/action tools -> show what's happening
-          await streamer.setStatus(buildToolStatus(block.name, block.input));
+          const status = buildToolStatus(block.name, block.input);
+          progress.setAction(status);
+          await streamer.setStatus(status);
         }
       }
 
@@ -1015,6 +1043,7 @@ export async function processMessage(
         cwd,
         abortController,
         dismissStopButton,
+        progress,
         fallback.id
       );
       return;
