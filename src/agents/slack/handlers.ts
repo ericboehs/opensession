@@ -307,6 +307,13 @@ async function handleAskUserQuestion(
               },
             ]
           ).catch(() => {});
+          // Tell the thread what was skipped and that we're proceeding anyway,
+          // so a silent thread doesn't look stuck.
+          sendSlackMessage(
+            channel,
+            `:hourglass_flowing_sand: No answer in 5 min, so I'm skipping *"${q.question}"* and proceeding with my best assumption. Reply anytime if I got it wrong.`,
+            threadTs
+          ).catch(() => {});
           resolve("__TIMED_OUT__");
         }
       }, 5 * 60 * 1000); // 5 minute timeout
@@ -326,7 +333,7 @@ async function handleAskUserQuestion(
     if (answer === "__TIMED_OUT__") {
       return {
         behavior: "deny",
-        message: `Question "${q.question}" timed out after 5 minutes with no response.`,
+        message: `Question "${q.question}" timed out after 5 minutes with no response. Proceed with your best assumption, and state clearly in your reply what you assumed for this question so the user can correct it if needed.`,
       };
     }
 
