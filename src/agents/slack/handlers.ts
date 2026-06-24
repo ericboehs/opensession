@@ -29,10 +29,13 @@ import {
   updateSlackBlocks,
   openSlackModal,
   slackApiCall,
+  getChannelKind,
   MESSAGES,
 } from "./slack-api";
 import { SlackStreamer, buildToolStatus, isSilentTool } from "./streamer";
 import { SlackProgress } from "./progress";
+import { createAdminMcpServer } from "./admin-tools";
+import { renderMemoryForPrompt, type MemoryContext } from "./memory";
 import { enqueueMessage, getOrCreateQueue } from "./queue";
 import type { QueuedMessage, SessionQueue } from "./queue";
 import { sessionQueues } from "./queue";
@@ -782,6 +785,40 @@ export async function processMessage(
   let account = pickAccount(triedAccountIds);
   let limitExhausted = false;
 
+  // --- Channel memory + self-management tools (interactive Slack only) -------
+  // processMessage only ever runs for whitelisted users (gated at the event
+  // handlers; worktree channels are team-only by design), so admin tools are
+  // safe here. The powerful automation/MCP tools are further gated to the
+  // configured trusted user; channel memory is available to anyone.
+  let adminMcpServers: Record<string, any> = {};
+  let memoryAppend = "";
+  try {
+    const kind = await getChannelKind(channel);
+    const memCtx: MemoryContext = {
+      channel,
+      userId: msg.userId,
+      isDM: kind.isDM,
+      isPrivate: kind.isPrivate,
+    };
+    memoryAppend = await renderMemoryForPrompt(memCtx);
+    const isAdmin = !ALLOWED_USER_ID || msg.userId === ALLOWED_USER_ID;
+    adminMcpServers = {
+      "michael-admin": createAdminMcpServer({
+        ...memCtx,
+        createdBy: userName || msg.userId,
+        isAdmin,
+      }),
+    };
+  } catch (e) {
+    console.warn("[slack] failed to build admin tools / memory:", e);
+  }
+  const ADMIN_TOOLS_PROMPT =
+    "\n\n## Self-management\nYou can manage your own setup via the michael-admin MCP tools: " +
+    "channel memory (remember / list_memory / forget) and, for trusted users, automations " +
+    "(list/create/update/delete/run_automation — routines on a UTC cron, or event/webhook) and " +
+    "MCP connections (list/add/remove_mcp_server). When a user asks you to remember something, " +
+    "set up a recurring job, or connect a tool, use these tools rather than just describing how.";
+
   rotation: for (;;) {
   let limitHit = false;
   let resultWasError = false;
@@ -834,7 +871,7 @@ export async function processMessage(
           // Allow everything else that isn't in allowedTools (e.g. MCP tools)
           return { behavior: "allow", updatedInput: cleanPlainToolInput(toolName, input) };
         },
-        mcpServers: mcpConfig.mcpServers,
+        mcpServers: { ...mcpConfig.mcpServers, ...adminMcpServers },
         strictMcpConfig: true,
         model: session.model || getDefaultModel(),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
@@ -843,7 +880,7 @@ export async function processMessage(
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
-          append: SLACK_SYSTEM_PROMPT_APPEND,
+          append: SLACK_SYSTEM_PROMPT_APPEND + ADMIN_TOOLS_PROMPT + memoryAppend,
         },
         settingSources: ["user", "project"],
         hooks: {

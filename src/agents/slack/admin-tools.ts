@@ -1,0 +1,319 @@
+/**
+ * michael-admin — an in-process MCP server that lets Michael manage his own
+ * setup conversationally from Slack: automations (routines), MCP connections,
+ * and channel memory.
+ *
+ * This server is created per interactive Slack message in handlers.ts and added
+ * to the query()'s mcpServers. Because the tool handlers run in the parent
+ * backstage process, they call the same automations.ts / connections.ts modules
+ * the scheduler and HTTP API use — so changes are picked up immediately (the
+ * scheduler re-reads disk every tick; MCP config is read fresh per run).
+ *
+ * Gating: it is ONLY wired into interactive Slack runs (never automation runs,
+ * which never go through handlers.processMessage). The powerful automation/MCP
+ * tools are further gated to the trusted user via `isAdmin`; channel-memory
+ * tools are available to anyone who can talk to Michael.
+ */
+
+import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+import {
+  listAutomations,
+  getAutomation,
+  createAutomation,
+  updateAutomation,
+  deleteAutomation,
+  runAutomation,
+} from "../../server/automations";
+import {
+  readMcpConfig,
+  addMcpServer,
+  removeMcpServer,
+} from "../../server/connections";
+import {
+  addMemory,
+  listMemory,
+  forgetMemory,
+  type MemoryContext,
+  type MemoryEntry,
+} from "./memory";
+
+export interface AdminToolContext extends MemoryContext {
+  /** Display name credited as the author of memories/automations. */
+  createdBy: string;
+  /** Trusted user — gates automation + MCP management tools. */
+  isAdmin: boolean;
+}
+
+function text(s: string) {
+  return { content: [{ type: "text" as const, text: s }] };
+}
+
+function fmtEntry(e: MemoryEntry): string {
+  return `• [${e.id}] ${e.text}  _(${e.by})_`;
+}
+
+export function createAdminMcpServer(ctx: AdminToolContext) {
+  const memCtx: MemoryContext = {
+    channel: ctx.channel,
+    userId: ctx.userId,
+    isDM: ctx.isDM,
+    isPrivate: ctx.isPrivate,
+  };
+
+  const tools: any[] = [
+    // -----------------------------------------------------------------------
+    // Channel memory (available to anyone who can talk to Michael)
+    // -----------------------------------------------------------------------
+    tool(
+      "remember",
+      "Save a fact, preference, or standing instruction to this channel's memory so you recall it in future threads. In a public channel this is shared workspace-wide; in a private channel or DM it stays local. Use when the user says 'remember…' or states a durable preference.",
+      { text: z.string().describe("The fact or instruction to remember.") },
+      async (args: { text: string }) => {
+        if (!args.text?.trim()) return text("Nothing to remember (empty text).");
+        const e = await addMemory(memCtx, args.text, ctx.createdBy);
+        return text(`Got it — remembered (id \`${e.id}\`).`);
+      }
+    ),
+    tool(
+      "list_memory",
+      "List what you currently remember for this channel/DM, including shared workspace memory. Returns entry ids you can pass to forget.",
+      {},
+      async () => {
+        const v = await listMemory(memCtx);
+        if (!v.local.length && !v.shared.length) {
+          return text("I don't have any memory for this channel yet.");
+        }
+        const parts: string[] = [];
+        if (v.local.length) {
+          parts.push(
+            (v.localIsWorkspace ? "*Workspace memory:*" : "*This channel:*") +
+              "\n" +
+              v.local.map(fmtEntry).join("\n")
+          );
+        }
+        if (v.shared.length) {
+          parts.push(
+            "*Workspace memory (shared, read-only here):*\n" +
+              v.shared.map(fmtEntry).join("\n")
+          );
+        }
+        return text(parts.join("\n\n"));
+      }
+    ),
+    tool(
+      "forget",
+      "Forget a remembered entry by its id (from list_memory).",
+      { id: z.string().describe("The entry id to forget, e.g. 'a1b2c3d4'.") },
+      async (args: { id: string }) => {
+        const r = await forgetMemory(memCtx, args.id);
+        return text(r.ok ? `Forgot: "${r.removed.text}".` : r.error);
+      }
+    ),
+  ];
+
+  if (ctx.isAdmin) {
+    tools.push(
+      // ---------------------------------------------------------------------
+      // Automations (routines)
+      // ---------------------------------------------------------------------
+      tool(
+        "list_automations",
+        "List all of Michael's automations (routines): scheduled, event- and webhook-triggered jobs.",
+        {},
+        async () => {
+          const all = listAutomations();
+          if (!all.length) return text("No automations configured.");
+          const lines = all.map((a) => {
+            const trig = a.schedule
+              ? `cron \`${a.schedule}\` (UTC)`
+              : a.eventKey
+                ? `event \`${a.eventKey}\``
+                : "manual/webhook";
+            const next = a.nextRunAt ? `, next ${a.nextRunAt}` : "";
+            const last = a.lastRunStatus ? `, last ${a.lastRunStatus}` : "";
+            return `• *${a.name}* [\`${a.id}\`] — ${trig}, ${a.mode}, ${a.enabled ? "enabled" : "disabled"}${next}${last}`;
+          });
+          return text(lines.join("\n"));
+        }
+      ),
+      tool(
+        "create_automation",
+        "Create a new automation (routine). Provide a clear prompt describing the task. Use a 5-field UTC cron `schedule` for recurring jobs (omit for manual/webhook only). Pick mode 'ask' for read-only or 'code' if it must edit files / open PRs. Optionally restrict tools with mcpServers and set a model.",
+        {
+          name: z.string().describe("Short display name."),
+          prompt: z
+            .string()
+            .describe("The task instructions the automation runs each time."),
+          schedule: z
+            .string()
+            .optional()
+            .describe(
+              "5-field UTC cron, e.g. '0 16 * * 1-5' = 9am PT weekdays. Omit for manual/webhook only. Note: server is UTC."
+            ),
+          mode: z
+            .enum(["ask", "code"])
+            .optional()
+            .describe("'ask' = read-only (default), 'code' = worktree + can open PRs."),
+          mcpServers: z
+            .array(z.string())
+            .optional()
+            .describe("Optional allowlist of MCP server names this run may use."),
+          model: z
+            .string()
+            .optional()
+            .describe("Optional model id (e.g. 'claude-opus-4-8', 'gpt-5.5')."),
+        },
+        async (args: {
+          name: string;
+          prompt: string;
+          schedule?: string;
+          mode?: "ask" | "code";
+          mcpServers?: string[];
+          model?: string;
+        }) => {
+          const res = createAutomation({
+            name: args.name,
+            prompt: args.prompt,
+            schedule: args.schedule || "",
+            mode: args.mode || "ask",
+            createdBy: ctx.createdBy,
+            mcpServers: args.mcpServers,
+            model: args.model,
+          });
+          if ("error" in res) return text(`Couldn't create it: ${res.error}`);
+          return text(
+            `Created automation *${res.name}* [\`${res.id}\`]` +
+              (res.schedule ? ` on cron \`${res.schedule}\` (UTC)` : " (manual/webhook)") +
+              `, mode ${res.mode}.`
+          );
+        }
+      ),
+      tool(
+        "update_automation",
+        "Update an existing automation by id. Only provided fields change. Use enabled to pause/resume.",
+        {
+          id: z.string(),
+          name: z.string().optional(),
+          prompt: z.string().optional(),
+          schedule: z.string().optional().describe("5-field UTC cron; '' clears it."),
+          mode: z.enum(["ask", "code"]).optional(),
+          enabled: z.boolean().optional(),
+          mcpServers: z.array(z.string()).optional(),
+          model: z.string().optional(),
+        },
+        async (args: {
+          id: string;
+          name?: string;
+          prompt?: string;
+          schedule?: string;
+          mode?: "ask" | "code";
+          enabled?: boolean;
+          mcpServers?: string[];
+          model?: string;
+        }) => {
+          const { id, ...patch } = args;
+          const res = updateAutomation(id, patch);
+          if ("error" in res) return text(`Couldn't update it: ${res.error}`);
+          return text(
+            `Updated *${res.name}* [\`${res.id}\`] — ${res.enabled ? "enabled" : "disabled"}, ${res.mode}` +
+              (res.schedule ? `, cron \`${res.schedule}\`` : "")
+          );
+        }
+      ),
+      tool(
+        "delete_automation",
+        "Delete an automation by id. This is permanent.",
+        { id: z.string() },
+        async (args: { id: string }) => {
+          const a = getAutomation(args.id);
+          const ok = deleteAutomation(args.id);
+          return text(
+            ok
+              ? `Deleted automation ${a ? `*${a.name}* ` : ""}[\`${args.id}\`].`
+              : `No automation with id \`${args.id}\`.`
+          );
+        }
+      ),
+      tool(
+        "run_automation",
+        "Trigger an automation to run now (manual trigger), without waiting for its schedule.",
+        { id: z.string() },
+        async (args: { id: string }) => {
+          const a = getAutomation(args.id);
+          if (!a) return text(`No automation with id \`${args.id}\`.`);
+          // Fire-and-forget; the run reports into the Backstage session list.
+          void runAutomation(a, undefined, { trigger: "manual" }).catch((e) =>
+            console.error("[admin] run_automation failed:", e)
+          );
+          return text(`Triggered *${a.name}* [\`${a.id}\`] — running now.`);
+        }
+      ),
+      // ---------------------------------------------------------------------
+      // MCP connections
+      // ---------------------------------------------------------------------
+      tool(
+        "list_mcp_servers",
+        "List the configured MCP servers (connections) Michael can use.",
+        {},
+        async () => {
+          const cfg = readMcpConfig().mcpServers || {};
+          const names = Object.keys(cfg);
+          if (!names.length) return text("No MCP servers configured.");
+          const lines = names.map((n) => {
+            const s = cfg[n] || {};
+            const where = s.url
+              ? `http ${s.url}`
+              : `stdio ${[s.command, ...(s.args || [])].join(" ")}`;
+            return `• *${n}* — ${where}`;
+          });
+          return text(lines.join("\n"));
+        }
+      ),
+      tool(
+        "add_mcp_server",
+        "Install/configure a new MCP server. For 'http' provide url; for 'stdio' provide command (and optional args/env). Picked up on the next message — no restart. Secrets go in env/headers and aren't echoed back.",
+        {
+          name: z
+            .string()
+            .describe("Unique short name (alphanumeric, dashes/underscores)."),
+          transport: z.enum(["http", "stdio"]),
+          url: z.string().optional().describe("Required for http transport."),
+          command: z.string().optional().describe("Required for stdio transport."),
+          args: z.array(z.string()).optional(),
+          env: z.record(z.string(), z.string()).optional(),
+        },
+        async (args: {
+          name: string;
+          transport: "http" | "stdio";
+          url?: string;
+          command?: string;
+          args?: string[];
+          env?: Record<string, string>;
+        }) => {
+          const res = addMcpServer(args);
+          if ("error" in res) return text(`Couldn't add it: ${res.error}`);
+          return text(
+            `Added MCP server *${args.name}* (${args.transport}). It'll be available on the next message.`
+          );
+        }
+      ),
+      tool(
+        "remove_mcp_server",
+        "Remove a configured MCP server by name.",
+        { name: z.string() },
+        async (args: { name: string }) => {
+          const res = removeMcpServer(args.name);
+          if ("error" in res) return text(`Couldn't remove it: ${res.error}`);
+          return text(`Removed MCP server *${args.name}*.`);
+        }
+      )
+    );
+  }
+
+  return createSdkMcpServer({
+    name: "michael-admin",
+    version: "1.0.0",
+    tools,
+  });
+}

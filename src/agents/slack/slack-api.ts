@@ -244,6 +244,43 @@ export async function fetchThreadContext(
 }
 
 // ---------------------------------------------------------------------------
+// Channel info / kind (for memory scoping)
+// ---------------------------------------------------------------------------
+
+export async function getChannelInfo(
+  channelId: string
+): Promise<{ is_private?: boolean; is_im?: boolean } | null> {
+  const data = await slackApiCall("conversations.info", { channel: channelId });
+  if (data.ok && data.channel) return data.channel;
+  return null;
+}
+
+const channelKindCache = new Map<
+  string,
+  { isDM: boolean; isPrivate: boolean; at: number }
+>();
+const CHANNEL_KIND_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Resolve whether a channel is a DM / private channel. Cached for an hour —
+ * modern Slack uses "C…" ids for both public and private channels, so we can't
+ * tell them apart from the id alone and must ask conversations.info.
+ */
+export async function getChannelKind(
+  channelId: string
+): Promise<{ isDM: boolean; isPrivate: boolean }> {
+  if (channelId.startsWith("D")) return { isDM: true, isPrivate: false };
+  const cached = channelKindCache.get(channelId);
+  if (cached && Date.now() - cached.at < CHANNEL_KIND_TTL_MS) {
+    return { isDM: cached.isDM, isPrivate: cached.isPrivate };
+  }
+  const info = await getChannelInfo(channelId);
+  const kind = { isDM: !!info?.is_im, isPrivate: !!info?.is_private };
+  channelKindCache.set(channelId, { ...kind, at: Date.now() });
+  return kind;
+}
+
+// ---------------------------------------------------------------------------
 // User info
 // ---------------------------------------------------------------------------
 
