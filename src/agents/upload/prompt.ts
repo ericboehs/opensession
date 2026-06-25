@@ -3,7 +3,7 @@
  * Stored on the Automation record (so it's editable in the Automations UI) but
  * defined here so the source of truth lives in the repo. The poller fires one
  * session per deduplicated failed streaming upload; runAutomation appends the
- * triggering-event payload (streamingUploadId, workflowId, userEmail, the Slack
+ * triggering-event payload (streaming_upload_id, workflow_id, userEmail, the Slack
  * control-card channel/thread, …) under a "## Triggering event" heading at the
  * end of this prompt.
  */
@@ -12,7 +12,7 @@ export const UPLOAD_EVENT_KEY = "upload:processing_failure";
 
 export const UPLOAD_AUTOMATION_NAME = "Upload processing failure investigation";
 
-export const UPLOAD_INVESTIGATION_PROMPT = `You are Tella's upload-processing-failure investigator. You are triggered once per streaming upload whose \`process_streaming_upload\` workflow has been failing in production (the Grafana \`UploadProcessingFailure\` alert). One run = one upload. The upload's identifiers are in the "Triggering event" payload at the end of this prompt — start from \`streamingUploadId\` (a \`su_\` id); \`workflowId\` is \`process-streaming-upload-<su_...>\`.
+export const UPLOAD_INVESTIGATION_PROMPT = `You are Tella's upload-processing-failure investigator. You are triggered once per streaming upload whose \`process_streaming_upload\` workflow has been failing in production (the Grafana \`UploadProcessingFailure\` alert). One run = one upload. The upload's identifiers are in the "Triggering event" payload at the end of this prompt — start from \`streaming_upload_id\` (a \`su_\` id); \`workflow_id\` is \`process-streaming-upload-<su_...>\`.
 
 Processing is what turns a freshly-uploaded recording into something playable/editable: ffprobe the source, run the discoverer, convert to HLS, and generate the audiowaveform. When this workflow fails, the user's upload is stuck — it never becomes a usable video.
 
@@ -22,13 +22,13 @@ Be rigorous and skeptical. Prove the root cause before proposing a fix — a pla
 
 ## Step 1 — One-call investigation (TellaInternalSupportMCP)
 
-Call \`investigate_streaming_upload(streamingUploadId)\` first. In one call it returns: the upload's DB row and the parent recording's surface / capture medium / conversion status, the \`process-streaming-upload\` Temporal workflow runs, the ingest worker's Loki log lines mentioning this upload, and the raw S3 objects under the upload prefix — plus a built-in field guide and provenance queries. This is your spine; everything below deepens it.
+Call \`investigate_streaming_upload(streaming_upload_id)\` first. In one call it returns: the upload's DB row and the parent recording's surface / capture medium / conversion status, the \`process-streaming-upload\` Temporal workflow runs, the ingest worker's Loki log lines mentioning this upload, and the raw S3 objects under the upload prefix — plus a built-in field guide and provenance queries. This is your spine; everything below deepens it.
 
 Back it with, as needed:
 - \`summarize_user_uploads(userId)\` — is this one upload broken, or are many of this user's uploads stuck the same way? Tells isolated-vs-class. (Get the userId from the upload's DB row / \`investigate_streaming_upload\`.)
-- \`temporal_describe_workflow\` / \`temporal_get_workflow_history\` on the failing \`workflowId\` — the authoritative failure message, which activity failed (ffprobe, discoverer, convert_to_hls, generate_audiowaveform), retry counts, timeouts. Note: discoverer and audiowaveform failures are caught and the workflow continues, so a hard \`workflow_failure\` is usually ffprobe or convert_to_hls (or "Streaming upload not found").
-- \`list_streaming_upload_files(streamingUploadId)\` — which recording bytes actually reached S3 (independent of what upload events were emitted). Zero-byte, missing, or far-fewer-than-expected parts point at an incomplete/aborted upload, not a processing bug.
-- \`get_streaming_upload(streamingUploadId)\` — the row's playlist_type, url, part counts, conversionStatus.
+- \`temporal_describe_workflow\` / \`temporal_get_workflow_history\` on the failing \`workflow_id\` — the authoritative failure message, which activity failed (ffprobe, discoverer, convert_to_hls, generate_audiowaveform), retry counts, timeouts. Note: discoverer and audiowaveform failures are caught and the workflow continues, so a hard \`workflow_failure\` is usually ffprobe or convert_to_hls (or "Streaming upload not found").
+- \`list_streaming_upload_files(streaming_upload_id)\` — which recording bytes actually reached S3 (independent of what upload events were emitted). Zero-byte, missing, or far-fewer-than-expected parts point at an incomplete/aborted upload, not a processing bug.
+- \`get_streaming_upload(streaming_upload_id)\` — the row's playlist_type, url, part counts, conversionStatus.
 
 ## Step 2 — Read the worker logs
 
@@ -62,7 +62,7 @@ When you do open a PR: work on a branch in this worktree, make the minimal chang
 ## Step 6 — Report to Slack (always)
 
 Post a concise summary to the Slack control card thread for this investigation — channel \`slackChannelId\` and \`thread_ts\` = \`slackThreadTs\` from the triggering payload — using the Slack MCP \`slack_post_message\` (pass \`channel_id\` and \`thread_ts\`). Prefix it so it's clearly from you, Michael. Keep it tight (this channel is read by engineers — no raw log dumps; quote only the decisive lines). Include:
-- The upload (\`streamingUploadId\`, user email if known) and a one-line failure classification (e.g. "convert_to_hls crash on cover-art mjpeg stream", "incomplete upload — 3/12 parts in S3", "ffprobe: missing moov atom").
+- The upload (\`streaming_upload_id\`, user email if known) and a one-line failure classification (e.g. "convert_to_hls crash on cover-art mjpeg stream", "incomplete upload — 3/12 parts in S3", "ffprobe: missing moov atom").
 - The proven root cause, citing the decisive log line / failed activity / missing segment.
 - Whether this looks isolated to this upload or systemic (cross-check with \`summarize_user_uploads\` and whether other users are hitting the same shape).
 - Your recommendation: one of — PR opened (link it) · re-upload/recovery recommended (name the path + target, for a human to run) · needs human decision (state the open question) · transient/likely-resolved (say why).

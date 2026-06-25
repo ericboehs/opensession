@@ -1330,27 +1330,16 @@ async function loadAgents(): Promise<AgentModule[]> {
     }
   }
 
-  // Polls Grafana for failed export workflows and starts one investigation per
-  // broken video. Gated on Grafana creds (the agent no-ops without them).
-  if (process.env.ENABLE_EXPORT_AGENT !== "false") {
+  // Generic Grafana poller: drives every automation that carries a `grafanaPoll`
+  // config (export failures, upload-processing failures, and any future signal
+  // added as data). Gated on Grafana creds (the agent no-ops without them).
+  if (process.env.ENABLE_GRAFANA_POLLER !== "false") {
     try {
-      const { ExportAgent } = await import("./src/agents/export/index");
-      agents.push(new ExportAgent({ onSessionInvalidate: () => { sessionsCache = null; } }));
-      console.log("[agents] Export agent loaded");
+      const { GrafanaPollerAgent } = await import("./src/agents/grafana-poller/index");
+      agents.push(new GrafanaPollerAgent({ onSessionInvalidate: () => { sessionsCache = null; } }));
+      console.log("[agents] Grafana poller loaded");
     } catch (e) {
-      console.error("[agents] Failed to load export agent:", e);
-    }
-  }
-
-  // Polls Grafana for failed process-streaming-upload workflows and starts one
-  // investigation per broken upload. Gated on Grafana creds (no-ops without them).
-  if (process.env.ENABLE_UPLOAD_AGENT !== "false") {
-    try {
-      const { UploadAgent } = await import("./src/agents/upload/index");
-      agents.push(new UploadAgent({ onSessionInvalidate: () => { sessionsCache = null; } }));
-      console.log("[agents] Upload agent loaded");
-    } catch (e) {
-      console.error("[agents] Failed to load upload agent:", e);
+      console.error("[agents] Failed to load grafana poller:", e);
     }
   }
 

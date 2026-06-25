@@ -17,6 +17,34 @@ const AUTOMATIONS_DIR = `${HOME}/.backstage-automations`;
 const SESSIONS_DIR = `${HOME}/.backstage-sessions`;
 const TELLA_FUSION = `${HOME}/projects/tella-fusion`;
 
+/**
+ * Config for an automation that is driven by polling a Grafana Loki failure
+ * signal: a generic poller (src/agents/grafana-poller) re-runs `lokiQuery` on a
+ * timer, collapses the result series to one row per distinct `dedupLabel` value,
+ * and fires one run of this automation per fresh failure (deduped over
+ * `dedupDays`). The matched Loki labels are handed to the run as the triggering
+ * event. Adding a new failure-signal investigator is therefore data — create an
+ * automation with this config; no code change or restart.
+ */
+export interface GrafanaPollConfig {
+  /** LogQL instant query. The literal token `$LOOKBACK` is replaced with `lookback`. */
+  lokiQuery: string;
+  /** Label whose distinct values define one failure (e.g. "story_id", "streaming_upload_id"). */
+  dedupLabel: string;
+  /** Slack channel id for the control card + investigation thread. */
+  slackChannel: string;
+  /** Human label for the card, e.g. "export failure" / "upload processing failure". */
+  cardTitle: string;
+  /** Range vector for the query, default "20m". */
+  lookback?: string;
+  /** Poll cadence in minutes, default 15. */
+  pollMinutes?: number;
+  /** Dedup window in days, default 7. */
+  dedupDays?: number;
+  /** Only fire for this namespace label, default "prod". Empty string disables the filter. */
+  namespace?: string;
+}
+
 export interface Automation {
   id: string;
   name: string;
@@ -34,6 +62,11 @@ export interface Automation {
    * existed. Prefer naming just what the automation actually uses.
    */
   mcpServers?: string[];
+  /**
+   * If set, this automation is poll-triggered off a Grafana Loki signal by the
+   * generic grafana-poller agent (one run per fresh failure). See GrafanaPollConfig.
+   */
+  grafanaPoll?: GrafanaPollConfig;
   /**
    * Model id for new runs (claude-* or gpt-*; see models.ts). Omitted =
    * default model. Codex models enforce tool denials as per-server
@@ -98,6 +131,26 @@ function sanitizeMcpList(list?: unknown): string[] | undefined {
   return names.map((s) => s.trim());
 }
 
+function sanitizeGrafanaPoll(cfg?: unknown): GrafanaPollConfig | { error: string } | undefined {
+  if (cfg === undefined || cfg === null) return undefined;
+  if (typeof cfg !== "object") return { error: "grafanaPoll must be an object" };
+  const c = cfg as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const lokiQuery = str(c.lokiQuery);
+  const dedupLabel = str(c.dedupLabel);
+  const slackChannel = str(c.slackChannel);
+  const cardTitle = str(c.cardTitle);
+  if (!lokiQuery || !dedupLabel || !slackChannel || !cardTitle) {
+    return { error: "grafanaPoll requires lokiQuery, dedupLabel, slackChannel, and cardTitle" };
+  }
+  const out: GrafanaPollConfig = { lokiQuery, dedupLabel, slackChannel, cardTitle };
+  if (str(c.lookback)) out.lookback = str(c.lookback);
+  if (typeof c.namespace === "string") out.namespace = c.namespace.trim(); // "" = no filter
+  if (typeof c.pollMinutes === "number" && c.pollMinutes > 0) out.pollMinutes = c.pollMinutes;
+  if (typeof c.dedupDays === "number" && c.dedupDays > 0) out.dedupDays = c.dedupDays;
+  return out;
+}
+
 function generateSecret(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) =>
     b.toString(16).padStart(2, "0")
@@ -122,6 +175,7 @@ export function createAutomation(input: {
   mcpServers?: string[];
   model?: string;
   fallbackModel?: string;
+  grafanaPoll?: GrafanaPollConfig;
 }): Automation | { error: string } {
   if (!input.name.trim()) return { error: "Name is required" };
   if (!input.prompt.trim()) return { error: "Prompt is required" };
@@ -133,6 +187,8 @@ export function createAutomation(input: {
   if (model && typeof model === "object") return model;
   const fallbackModel = sanitizeModel(input.fallbackModel, true);
   if (fallbackModel && typeof fallbackModel === "object") return fallbackModel;
+  const grafanaPoll = sanitizeGrafanaPoll(input.grafanaPoll);
+  if (grafanaPoll && "error" in grafanaPoll) return grafanaPoll;
 
   const a: Automation = {
     id: `auto-${randomUUIDv7()}`,
@@ -148,6 +204,7 @@ export function createAutomation(input: {
     mcpServers: sanitizeMcpList(input.mcpServers),
     model,
     fallbackModel,
+    grafanaPoll,
   };
   saveAutomation(a);
   return a;
@@ -155,7 +212,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "grafanaPoll">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -164,6 +221,11 @@ export function updateAutomation(
   }
   const next = { ...a, ...patch };
   if ("mcpServers" in patch) next.mcpServers = sanitizeMcpList(patch.mcpServers);
+  if ("grafanaPoll" in patch) {
+    const grafanaPoll = sanitizeGrafanaPoll(patch.grafanaPoll);
+    if (grafanaPoll && "error" in grafanaPoll) return grafanaPoll;
+    next.grafanaPoll = grafanaPoll;
+  }
   if ("model" in patch) {
     const model = sanitizeModel(patch.model);
     if (model && typeof model === "object") return model;
