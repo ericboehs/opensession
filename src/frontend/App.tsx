@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Sidebar } from "./components/Sidebar";
 import { SessionViewer } from "./components/SessionViewer";
@@ -11,6 +11,7 @@ import { Archived } from "./components/Archived";
 import { UserPicker, UserGate } from "./components/UserPicker";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { useSidebarSwipe } from "./hooks/useSidebarSwipe";
 import { archiveSessionApi } from "./lib/api";
 import type { UnifiedSession } from "./lib/types";
 import "./styles/global.css";
@@ -64,6 +65,9 @@ function App() {
   const { connected, send, addHandler } = useWebSocket();
   const [route, setRoute] = useState<Route>(() => parseRoute(location.pathname));
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement | null>(null);
+
+  useSidebarSwipe({ open: sidebarOpen, setOpen: setSidebarOpen, panelRef: sidebarRef });
 
   function navigate(route: Route) {
     history.pushState(null, "", routePath(route));
@@ -133,7 +137,7 @@ function App() {
             <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
           )}
 
-          <div className={`sidebar-container ${sidebarOpen ? "sidebar-open" : ""}`}>
+          <div ref={sidebarRef} className={`sidebar-container ${sidebarOpen ? "sidebar-open" : ""}`}>
             <Sidebar
               sessions={sessions}
               selectedId={currentSession?.id || null}

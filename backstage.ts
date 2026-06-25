@@ -574,6 +574,37 @@ const server = Bun.serve<WSClientData>({
     const url = new URL(req.url);
     const path = url.pathname;
 
+    // App icons (KITT/red-M) — real PNGs so iOS home-screen and PWA installs
+    // pick them up; data-URI apple-touch-icons don't work on iOS. Short cache
+    // + must-revalidate so a refreshed design isn't pinned by a stale copy.
+    const iconFiles: Record<string, string> = {
+      "/backstage/apple-touch-icon.png": "apple-touch-icon.png", // 180×180
+      "/backstage/icon-192.png": "icon-192.png",
+      "/backstage/icon.png": "icon.png", // 512×512
+    };
+    if (iconFiles[path]) {
+      return new Response(Bun.file(`${import.meta.dir}/src/frontend/${iconFiles[path]}`), {
+        headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=3600, must-revalidate" },
+      });
+    }
+    if (path === "/backstage/manifest.webmanifest") {
+      return Response.json(
+        {
+          name: "Michael",
+          short_name: "Michael",
+          start_url: "/backstage/",
+          display: "standalone",
+          background_color: "#0b0809",
+          theme_color: "#0b0809",
+          icons: [
+            { src: "/backstage/icon-192.png?v=3", sizes: "192x192", type: "image/png", purpose: "any" },
+            { src: "/backstage/icon.png?v=3", sizes: "512x512", type: "image/png", purpose: "any" },
+          ],
+        },
+        { headers: { "Content-Type": "application/manifest+json" } }
+      );
+    }
+
     // Land the user in a Plain triage session for a thread. If one already
     // exists for this thread, jump straight to it; otherwise start a fresh
     // triage run with the same context the automation gets on thread_created.

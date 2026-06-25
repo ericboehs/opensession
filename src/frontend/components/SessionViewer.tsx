@@ -59,6 +59,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     Array<{ id: string; content: string; user: string; sentAt: number }>
   >([]);
   const [ask, setAsk] = useState<{ questionId: string; questions: AskQuestion[] } | null>(null);
+  const [copied, setCopied] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>("changes");
   // Remembered per browser; on phones the panel overlays the chat, so default closed there
   const [panelOpen, setPanelOpenState] = useState(() => {
@@ -327,6 +328,20 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     send({ type: "cancel" });
   }
 
+  function handleShare() {
+    const link = `${location.origin}/backstage/session/${encodeURIComponent(session.id)}`;
+    const flash = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    };
+    // navigator.clipboard needs a secure context; fall back to a temp textarea
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(link).then(flash, () => fallbackCopy(link, flash));
+    } else {
+      fallbackCopy(link, flash);
+    }
+  }
+
   function handleModelChange(next: string) {
     const target = next || defaultModel;
     if (!target || target === (model || defaultModel)) return;
@@ -436,6 +451,13 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               Plain ↗
             </a>
           )}
+          <button
+            className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
+            onClick={handleShare}
+            title="Copy a link to this session"
+          >
+            {copied ? "Copied ✓" : "Share"}
+          </button>
           <SpinOffMenu session={session} entries={entries} send={send} connected={connected} />
           {hasWorkspace && (
             <button
@@ -687,4 +709,22 @@ function dedupeViewers(viewers: string[]): Array<{ name: string; count: number }
   const counts = new Map<string, number>();
   for (const v of viewers) counts.set(v, (counts.get(v) || 0) + 1);
   return Array.from(counts, ([name, count]) => ({ name, count }));
+}
+
+// Clipboard fallback for non-secure contexts (where navigator.clipboard is absent)
+function fallbackCopy(text: string, onDone: () => void) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    onDone();
+  } catch {
+    // Last resort: show the link so it can be copied by hand
+    window.prompt("Copy this session link:", text);
+  }
 }
