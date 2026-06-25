@@ -242,11 +242,12 @@ export class SlackAgent implements AgentModule {
           return new Response("", { status: 200 });
         }
 
-        // Stop button on an export-failure investigation card — cancel the
-        // automation-run session by its backstage id (registered in activeRuns
-        // under the bks id, so cancelAgentRun reaches it).
-        if (actionId.startsWith("export-stop:")) {
-          const bksId = actionId.slice("export-stop:".length);
+        // Stop button on an export- or upload-failure investigation card —
+        // cancel the automation-run session by its backstage id (registered in
+        // activeRuns under the bks id, so cancelAgentRun reaches it).
+        if (actionId.startsWith("export-stop:") || actionId.startsWith("upload-stop:")) {
+          const prefix = actionId.startsWith("export-stop:") ? "export-stop:" : "upload-stop:";
+          const bksId = actionId.slice(prefix.length);
           const didCancel = cancelAgentRun(bksId);
 
           const msgChannel = payload.channel?.id;

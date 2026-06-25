@@ -1342,6 +1342,18 @@ async function loadAgents(): Promise<AgentModule[]> {
     }
   }
 
+  // Polls Grafana for failed process-streaming-upload workflows and starts one
+  // investigation per broken upload. Gated on Grafana creds (no-ops without them).
+  if (process.env.ENABLE_UPLOAD_AGENT !== "false") {
+    try {
+      const { UploadAgent } = await import("./src/agents/upload/index");
+      agents.push(new UploadAgent({ onSessionInvalidate: () => { sessionsCache = null; } }));
+      console.log("[agents] Upload agent loaded");
+    } catch (e) {
+      console.error("[agents] Failed to load upload agent:", e);
+    }
+  }
+
   return agents;
 }
 
