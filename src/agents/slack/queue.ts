@@ -143,8 +143,13 @@ export async function processQueue(sessionKey: string): Promise<void> {
       console.error(`[slack] Error processing message for ${sessionKey}:`, e);
       await sendSlackMessage(msg.channel, `${MESSAGES.error} ${e}`, msg.threadTs);
     }
-    // Now remove from queue and persist
-    sq.queue.shift();
+    // Remove the message we just processed BY IDENTITY, not a blind shift().
+    // A Stop/cancel clears the queue (sq.queue.length = 0); if a new message
+    // arrives while this one is still processing it becomes queue[0], and a
+    // blind shift() would silently drop that new message. Matching on messageTs
+    // removes only what we actually handled and leaves anything new to run next.
+    const doneIdx = sq.queue.findIndex((m) => m.messageTs === msg.messageTs);
+    if (doneIdx !== -1) sq.queue.splice(doneIdx, 1);
     await saveQueueToDisk().catch((e) =>
       console.warn("[slack] Failed to save queue:", e)
     );
