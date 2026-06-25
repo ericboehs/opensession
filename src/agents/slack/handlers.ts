@@ -680,7 +680,9 @@ export async function processMessage(
     console.log(
       `[slack] [revive] Worktree ${session.branch} was cleaned up, recreating...`
     );
-    progress.setTitle("Recreating worktree…");
+    // Transient activity line, not the header — otherwise the card stays stuck
+    // on "Recreating worktree…" for the whole run after the (quick) recreate.
+    progress.setAction("Recreating worktree…");
     await streamer.setStatus("recreating worktree...");
     try {
       const { spawnSync } = require("child_process");

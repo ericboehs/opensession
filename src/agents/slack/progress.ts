@@ -76,12 +76,6 @@ export class SlackProgress {
     this.schedule();
   }
 
-  /** Override the header line (e.g. "Recreating worktree…"). */
-  setTitle(text: string): void {
-    this.title = text;
-    this.schedule();
-  }
-
   private renderText(includeAction: boolean): string {
     const lines: string[] = [`:hourglass_flowing_sand: *${this.title}*`];
     for (const t of this.todos) {
