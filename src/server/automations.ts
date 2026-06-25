@@ -255,7 +255,16 @@ export function isAutomationRunning(id: string): boolean {
 export async function runAutomation(
   automation: Automation,
   onSessionCreated?: (sessionId: string) => void,
-  options?: { trigger?: "cron" | "webhook" | "manual" | "event"; eventContext?: string }
+  options?: {
+    trigger?: "cron" | "webhook" | "manual" | "event";
+    eventContext?: string;
+    /**
+     * Pre-generated backstage session id. Lets a caller post UI/Slack controls
+     * that reference the session (e.g. an Open-in-Backstage link and a Stop
+     * button) before the run starts, instead of waiting for onSessionCreated.
+     */
+    bksSessionId?: string;
+  }
 ): Promise<void> {
   const trigger = options?.trigger || "manual";
   // Cron/manual runs don't stack; event/webhook runs are per-event, so they may overlap
@@ -268,7 +277,7 @@ export async function runAutomation(
 
   const startedAt = new Date();
   const stamp = startedAt.toISOString().slice(0, 16).replace("T", " ");
-  const bksId = `bks-${randomUUIDv7()}`;
+  const bksId = options?.bksSessionId || `bks-${randomUUIDv7()}`;
 
   try {
     let cwd = TELLA_FUSION;

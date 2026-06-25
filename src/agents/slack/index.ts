@@ -35,6 +35,7 @@ import {
   getOrCreateQueue,
 } from "./queue";
 import { cancelSession } from "./cancel";
+import { cancelAgentRun } from "../../server/agent-runner";
 import {
   slackApiCall,
   sendSlackMessage,
@@ -238,6 +239,29 @@ export class SlackAgent implements AgentModule {
               pending.resolve(selectedLabel);
             }
           });
+          return new Response("", { status: 200 });
+        }
+
+        // Stop button on an export-failure investigation card — cancel the
+        // automation-run session by its backstage id (registered in activeRuns
+        // under the bks id, so cancelAgentRun reaches it).
+        if (actionId.startsWith("export-stop:")) {
+          const bksId = actionId.slice("export-stop:".length);
+          const didCancel = cancelAgentRun(bksId);
+
+          const msgChannel = payload.channel?.id;
+          const msgTs = payload.message?.ts;
+          if (msgTs && msgChannel) {
+            const label = didCancel ? "Stopped" : "Nothing to stop";
+            const keptBlocks = (payload.message?.blocks || []).filter(
+              (b: any) => b.type !== "actions"
+            );
+            keptBlocks.push({
+              type: "context",
+              elements: [{ type: "mrkdwn", text: `_${label}_` }],
+            });
+            await updateSlackBlocks(msgChannel, msgTs, label, keptBlocks);
+          }
           return new Response("", { status: 200 });
         }
 

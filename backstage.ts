@@ -1330,6 +1330,18 @@ async function loadAgents(): Promise<AgentModule[]> {
     }
   }
 
+  // Polls Grafana for failed export workflows and starts one investigation per
+  // broken video. Gated on Grafana creds (the agent no-ops without them).
+  if (process.env.ENABLE_EXPORT_AGENT !== "false") {
+    try {
+      const { ExportAgent } = await import("./src/agents/export/index");
+      agents.push(new ExportAgent({ onSessionInvalidate: () => { sessionsCache = null; } }));
+      console.log("[agents] Export agent loaded");
+    } catch (e) {
+      console.error("[agents] Failed to load export agent:", e);
+    }
+  }
+
   return agents;
 }
 

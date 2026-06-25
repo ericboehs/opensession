@@ -340,7 +340,14 @@ export async function* runClaude(opts: {
 
   const abortController = new AbortController();
   const runKey = sessionId || crypto.randomUUID();
-  activeRuns.set(runKey, abortController);
+  // Key the run by every id a canceller might know — the run key, the engine
+  // session id (added on init below), and the backstage session id. Without
+  // the bks key, a fresh run (runKey is a random UUID until the first resume)
+  // can't be cancelled by callers that only hold the bks id, e.g. the Slack
+  // Stop button on an automation-triggered session. Mirrors codex-runner.
+  const activeKeys = new Set<string>([runKey]);
+  if (journal?.bksSessionId) activeKeys.add(journal.bksSessionId);
+  for (const key of activeKeys) activeRuns.set(key, abortController);
   journalSet({
     runKey,
     bksSessionId: journal?.bksSessionId,
@@ -639,6 +646,10 @@ export async function* runClaude(opts: {
         if (resultSessionId && !steerKeys.has(resultSessionId)) {
           registerSteerKey(resultSessionId);
         }
+        if (resultSessionId && !activeKeys.has(resultSessionId)) {
+          activeKeys.add(resultSessionId);
+          activeRuns.set(resultSessionId, abortController);
+        }
         journalSet({
           runKey,
           bksSessionId: journal?.bksSessionId,
@@ -819,7 +830,7 @@ export async function* runClaude(opts: {
     stopAcceptingSteers();
     inputDone = true;
     steerWake?.();
-    activeRuns.delete(runKey);
+    for (const key of activeKeys) activeRuns.delete(key);
     journalClear(runKey);
   }
 }
