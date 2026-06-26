@@ -42,6 +42,7 @@ import { sessionQueues } from "./queue";
 import { isStopMessage, cancelSession } from "./cancel";
 import { pollForVercelPreview } from "./github-reviews";
 import { runCodex } from "../../server/codex-runner";
+import { gitIdentityFor } from "../../server/shared/user-mappings";
 import { isClaudeUsageLimitError } from "../../server/claude-runner";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";
 import {
@@ -485,6 +486,8 @@ async function processCodexMessage(
       mode: "code",
       model,
       busyKeys: [busyKey],
+      // Attribute commits to the Slack user who sent this message.
+      author: gitIdentityFor(msg.userId),
       // No journal: interrupted Slack messages are re-delivered by the queue
     })) {
       if (abortController.signal.aborted) break;

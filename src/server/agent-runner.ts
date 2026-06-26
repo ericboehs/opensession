@@ -21,6 +21,7 @@ import {
 } from "./claude-runner";
 import { runCodex, isCodexSessionBusy, cancelCodexRun } from "./codex-runner";
 import { providerFor, resolveModel, DEFAULT_CODEX_MODEL, getDefaultModel } from "./models";
+import type { GitIdentity } from "./shared/user-mappings";
 
 export type { StreamEvent };
 
@@ -36,6 +37,8 @@ export interface RunAgentOpts {
   deniedTools?: Record<string, string>;
   confirmTools?: Record<string, string>;
   aws?: boolean;
+  /** Git identity for commits this run makes, attributing them to the prompt's author. */
+  author?: GitIdentity | null;
   /**
    * Model to switch to when the primary model dies on usage limits with no
    * account left in its pool (claude-runner/codex-runner rotate their own
@@ -63,6 +66,7 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerat
       deniedTools: opts.deniedTools,
       confirmTools: opts.confirmTools,
       journal: opts.journal,
+      author: opts.author,
     });
   }
   return runClaude({ ...opts, model });

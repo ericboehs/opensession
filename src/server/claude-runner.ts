@@ -5,6 +5,7 @@ import { getAgentAwsEnv } from "./aws-creds";
 import { audit, summarizeText } from "./audit";
 import { pickAccount, markExhausted, type ClaudeAccount } from "./claude-accounts";
 import { cleanPlainToolInput } from "./shared/note-style";
+import { gitIdentityEnv, type GitIdentity } from "./shared/user-mappings";
 import { getDefaultModel } from "./models";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -48,13 +49,17 @@ const activeRuns = new Map<string, AbortController>();
 // vars are its only AWS access.
 function childEnv(
   awsEnv?: Record<string, string>,
-  oauthToken?: string
+  oauthToken?: string,
+  author?: GitIdentity | null
 ): Record<string, string | undefined> {
   return {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
     LANG: process.env.LANG,
     MICHAEL_MODEL: process.env.MICHAEL_MODEL,
+    // Attribute commits this run makes to the user who sent the prompt (empty for
+    // unknown/automation authors → keeps the machine's default git identity).
+    ...gitIdentityEnv(author),
     // Account-pool token (claude-accounts.ts). Beats ~/.claude/.credentials.json
     // in the CLI's auth precedence, so runs rotate accounts without touching
     // the interactive CLI's login.
@@ -307,13 +312,19 @@ export async function* runClaude(opts: {
    * since IMDS is blocked. Enable for runs that legitimately need AWS.
    */
   aws?: boolean;
+  /**
+   * Git identity for commits this run makes, attributing them to the prompt's
+   * author. Set on the child process env (not via git config) so concurrent runs
+   * in separate worktrees never race. Omitted = the machine's default identity.
+   */
+  author?: GitIdentity | null;
   journal?: { bksSessionId?: string; kind?: string };
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
     | { behavior: "deny"; message: string }
   >;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, confirmTools, aws, journal, onAskUser } = opts;
+  const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, confirmTools, aws, author, journal, onAskUser } = opts;
   const model = opts.model || getDefaultModel();
   const isAsk = mode === "ask";
 
@@ -611,7 +622,7 @@ export async function* runClaude(opts: {
         // Read per run so MCP servers added/removed in the UI apply immediately
         mcpServers: filterMcpServers(mcpServers) as any,
         strictMcpConfig: true,
-        env: childEnv(awsEnv, account?.token),
+        env: childEnv(awsEnv, account?.token, author),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
         executable: "bun",
         abortController,

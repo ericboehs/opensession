@@ -60,3 +60,92 @@ export function linearEmailToGithubUsername(email: string | null): string | null
   if (!email) return null;
   return LINEAR_EMAIL_TO_GITHUB[email] || null;
 }
+
+/** A git author/committer identity. */
+export interface GitIdentity {
+  name: string;
+  email: string;
+}
+
+/**
+ * Ground-truth git identities, mined from tella-fusion commit history: the exact
+ * (name, email) each teammate's commits already use, so GitHub attributes commits
+ * we author on their behalf to the right account. `noreply` addresses are used
+ * where the person commits with one (guarantees linkage regardless of email
+ * privacy); otherwise their current/most-recent author email.
+ *
+ * `aliases` covers the web user-picker first names (UserPicker TEAM) and is matched
+ * case-insensitively; `slackId`/`github` let us resolve Slack senders and Linear
+ * issue creators to the same identity.
+ */
+const TEAM_GIT_IDENTITY: Array<
+  GitIdentity & { aliases: string[]; slackId?: string; github?: string }
+> = [
+  { name: "Michiel Westerbeek", email: "happylinks@gmail.com", aliases: ["michiel"], slackId: "UT41L6GCC", github: "happylinks" },
+  { name: "Jaap Frolich", email: "jfrolich@gmail.com", aliases: ["jaap"], slackId: "U08EWERLX8D", github: "jfrolich" },
+  { name: "Kent de Bruin", email: "52224550+kentdebruin@users.noreply.github.com", aliases: ["kent"], slackId: "U08S8B3P83X", github: "kentdebruin" },
+  { name: "Grant Shaddick", email: "grant@tella.com", aliases: ["grant"], slackId: "USU9S2YRF", github: "9ranty" },
+  { name: "Johnny Lin", email: "67078496+johnnylinsf@users.noreply.github.com", aliases: ["johnny"], slackId: "U0866D7PCCU", github: "johnnylinsf" },
+  { name: "John Soutar", email: "john@tella.com", aliases: ["john"], slackId: "U08CXTV7ML2", github: "soutar" },
+  { name: "Louise de Sadeleer", email: "54376811+louisedesadeleer@users.noreply.github.com", aliases: ["louise"], slackId: "U08JGAT5KNK", github: "louisedesadeleer" },
+  { name: "Thibault Saunier", email: "tsaunier@igalia.com", aliases: ["thibault"], slackId: "U065GD4757C", github: "thiblahute" },
+];
+
+/**
+ * Resolve a prompt author — a web user-picker name, a Slack user id, or an email
+ * (e.g. a Linear issue creator) — to a git identity for commit attribution.
+ * Returns null for unknown/anonymous/bot authors so their commits keep the
+ * machine's default git identity rather than being mis-attributed.
+ */
+export function gitIdentityFor(user?: string | null): GitIdentity | null {
+  if (!user) return null;
+  // Drop a trailing parenthetical like " (loop)" the queue/loop paths append.
+  const key = user.trim().replace(/\s*\([^)]*\)\s*$/, "").trim();
+  if (!key || key.toLowerCase() === "anonymous") return null;
+
+  const found = ((): (typeof TEAM_GIT_IDENTITY)[number] | undefined => {
+    // Slack user id (e.g. "U08S8B3P83X")
+    if (/^U[A-Z0-9]{6,}$/.test(key)) {
+      const bySlack = TEAM_GIT_IDENTITY.find((p) => p.slackId === key);
+      if (bySlack) return bySlack;
+      const name = SLACK_ID_TO_NAME[key]?.toLowerCase();
+      return name ? TEAM_GIT_IDENTITY.find((p) => p.name.toLowerCase() === name) : undefined;
+    }
+    // Email — match the git email directly, or map a Linear account email → github.
+    if (key.includes("@")) {
+      const lower = key.toLowerCase();
+      const byEmail = TEAM_GIT_IDENTITY.find((p) => p.email.toLowerCase() === lower);
+      if (byEmail) return byEmail;
+      const gh = LINEAR_EMAIL_TO_GITHUB[lower];
+      return gh ? TEAM_GIT_IDENTITY.find((p) => p.github === gh) : undefined;
+    }
+    // A GitHub login (e.g. a PR author / label applier), a web-picker name, an
+    // alias (first name), or the first token of the full name.
+    const lower = key.toLowerCase();
+    return TEAM_GIT_IDENTITY.find(
+      (p) =>
+        p.github?.toLowerCase() === lower ||
+        p.name.toLowerCase() === lower ||
+        p.aliases.includes(lower) ||
+        p.name.toLowerCase().split(" ")[0] === lower
+    );
+  })();
+
+  return found ? { name: found.name, email: found.email } : null;
+}
+
+/**
+ * Build the git author/committer env vars for an agent's child process. Setting
+ * these on the process attributes every commit it makes during the run, without
+ * mutating repo config (so parallel runs in different worktrees never race).
+ * Empty when there's no resolved author — the run keeps the default identity.
+ */
+export function gitIdentityEnv(author?: GitIdentity | null): Record<string, string> {
+  if (!author) return {};
+  return {
+    GIT_AUTHOR_NAME: author.name,
+    GIT_AUTHOR_EMAIL: author.email,
+    GIT_COMMITTER_NAME: author.name,
+    GIT_COMMITTER_EMAIL: author.email,
+  };
+}

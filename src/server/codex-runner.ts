@@ -28,6 +28,7 @@ import {
   type CodexAccount,
 } from "./codex-accounts";
 import { journalSet, journalClear, type StreamEvent } from "./claude-runner";
+import { gitIdentityEnv, type GitIdentity } from "./shared/user-mappings";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
@@ -117,11 +118,13 @@ function accountCanResume(threadId: string, account?: CodexAccount): boolean {
 }
 
 /** Minimal env for the codex child process (mirrors claude-runner childEnv). */
-function codexEnv(account?: CodexAccount): Record<string, string> {
+function codexEnv(account?: CodexAccount, author?: GitIdentity | null): Record<string, string> {
   const env: Record<string, string> = {
     PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
     HOME,
     LANG: process.env.LANG || "en_US.UTF-8",
+    // Attribute commits this run makes to the prompt's author (empty otherwise).
+    ...gitIdentityEnv(author),
   };
   if (account?.kind === "home") env.CODEX_HOME = account.value;
   return env;
@@ -187,8 +190,10 @@ export async function* runCodex(opts: {
   journal?: { bksSessionId?: string; kind?: string };
   /** Extra ids to register for busy checks / cancellation (e.g. slack-<key>). */
   busyKeys?: string[];
+  /** Git identity for commits this run makes (attributes them to the prompt's author). */
+  author?: GitIdentity | null;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, model, mcpServers, deniedTools, confirmTools, journal, busyKeys } = opts;
+  const { prompt, sessionId, cwd, mode, model, mcpServers, deniedTools, confirmTools, journal, busyKeys, author } = opts;
   const isAsk = mode === "ask";
 
   const runKey = sessionId || journal?.bksSessionId || busyKeys?.[0] || crypto.randomUUID();
@@ -280,7 +285,7 @@ export async function* runCodex(opts: {
       let shouldRetryAfterSwitch = false;
 
       const codex = new Codex({
-        env: codexEnv(account),
+        env: codexEnv(account, author),
         ...(account?.kind === "api_key" ? { apiKey: account.value } : {}),
         config: {
           mcp_servers: buildCodexMcpConfig(mcpServers, disabledToolNames) as any,

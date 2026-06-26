@@ -10,7 +10,7 @@ import { cleanPlainToolInput } from "../../server/shared/note-style";
 import { spawn, execSync } from "child_process";
 import { unlinkSync } from "fs";
 import mcpConfig from "../../../mcp-config.json";
-import { linearEmailToGithubUsername } from "../../server/shared/user-mappings";
+import { linearEmailToGithubUsername, gitIdentityFor, gitIdentityEnv } from "../../server/shared/user-mappings";
 import {
   createAgentActivity,
   fetchPlanFromLinear,
@@ -422,6 +422,9 @@ export async function runClaudeHeadless(
 ): Promise<{ result: string; claudeSessionId: string }> {
   console.log(`[linear] Running Claude SDK in ${worktreeDir}${resumeClaudeId ? ` (resuming ${resumeClaudeId})` : ""}`);
 
+  // Attribute commits this run makes to the Linear issue creator.
+  const commitAuthor = gitIdentityFor(session?.issueCreator?.email);
+
   const abortController = new AbortController();
   if (session) {
     session.abortController = abortController;
@@ -448,14 +451,12 @@ export async function runClaudeHeadless(
       options: {
         resume: claudeSessionId || resumeClaudeId || undefined,
         cwd: worktreeDir,
-        ...(account
-          ? {
-              env: {
-                ...(process.env as Record<string, string>),
-                CLAUDE_CODE_OAUTH_TOKEN: account.token,
-              },
-            }
-          : {}),
+        env: {
+          ...(process.env as Record<string, string>),
+          ...(account ? { CLAUDE_CODE_OAUTH_TOKEN: account.token } : {}),
+          // Attribute commits to the Linear issue creator.
+          ...gitIdentityEnv(commitAuthor),
+        },
         allowedTools: [
           "Bash", "Read", "Edit", "Write", "Grep", "Glob",
           "Task", "TaskOutput", "WebFetch", "WebSearch",
@@ -585,6 +586,7 @@ export async function runClaudeHeadless(
           mode: "code",
           model: fallback.id,
           busyKeys: [`linear-${linearSessionId}`],
+          author: commitAuthor,
         })) {
           if (abortController.signal.aborted) break;
           if (event.type === "done") fallbackResult = event.result || "";
