@@ -131,6 +131,39 @@ export async function reviveWorktree(branch: string): Promise<string> {
   return wtPath;
 }
 
+/**
+ * Worktree checked out to an EXISTING PR head branch (not branched from main),
+ * so commits/pushes land back on that PR. Uses a dedicated `-michael` path so it
+ * never clobbers a human/Slack worktree on the same branch. On reuse, hard-resets
+ * to the freshly fetched PR head (each fix iteration pushes before yielding, so
+ * there's no un-pushed local work to lose). Push back with
+ * `git push origin HEAD:<headRef>`.
+ */
+export async function createWorktreeForPrBranch(headRef: string): Promise<string> {
+  const wtPath = `${WORKTREES_DIR}/tella-fusion-${headRef}-michael`;
+
+  await $`git -C ${TELLA_FUSION} fetch origin ${headRef} --quiet`;
+  if (existsSync(wtPath)) {
+    await $`git -C ${wtPath} fetch origin ${headRef} --quiet`.nothrow();
+    await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet().nothrow();
+    return wtPath;
+  }
+  await $`git -C ${TELLA_FUSION} worktree prune`.quiet();
+  await $`git -C ${TELLA_FUSION} worktree add ${wtPath} -B ${headRef}-michael origin/${headRef}`;
+
+  // Best-effort dep install so checks/builds the agent runs have deps available.
+  const webappDir = `${wtPath}/packages/core/webapp`;
+  try {
+    if (await Bun.file(`${webappDir}/package.json`).exists()) {
+      await $`cd ${webappDir} && bun install`.quiet();
+    }
+  } catch (e) {
+    console.warn(`[worktree] bun install failed for ${headRef} (continuing):`, e);
+  }
+
+  return wtPath;
+}
+
 export async function createWorktree(branch: string): Promise<string> {
   const wtPath = `${WORKTREES_DIR}/tella-fusion-${branch}`;
 

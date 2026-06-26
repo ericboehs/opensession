@@ -31,6 +31,7 @@ import {
   removeCodexAccount,
 } from "./src/server/codex-accounts";
 import { getSessionDiff } from "./src/server/git-diff";
+import { gitIdentityFor } from "./src/server/shared/user-mappings";
 import { getPrDetails, getPrDiff, postPrComment } from "./src/server/pr-info";
 import {
   listAutomations,
@@ -349,6 +350,8 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
     deniedTools,
     confirmTools: STRIPE_CONFIRM_TOOLS,
     aws: true, // sessions keep AWS read access (via injected creds)
+    // Attribute any commits this turn makes to whoever sent the prompt.
+    author: gitIdentityFor(user),
     journal: { bksSessionId: session.id, kind: "prompt" },
     onAskUser: makeAskHandler(sessionId),
   })) {
@@ -1340,6 +1343,19 @@ async function loadAgents(): Promise<AgentModule[]> {
       console.log("[agents] Grafana poller loaded");
     } catch (e) {
       console.error("[agents] Failed to load grafana poller:", e);
+    }
+  }
+
+  // GitHub PR agent: review / auto-fix / simplify on tella-fusion PRs. Receives
+  // PR events forwarded from the Slack agent's /github/webhook; owns lifecycle
+  // (seeds the disabled review automation, recovers interrupted fix loops).
+  if (process.env.ENABLE_GITHUB_AGENT !== "false") {
+    try {
+      const { GithubAgent } = await import("./src/agents/github/index");
+      agents.push(new GithubAgent({ onSessionInvalidate: () => { sessionsCache = null; } }));
+      console.log("[agents] GitHub agent loaded");
+    } catch (e) {
+      console.error("[agents] Failed to load github agent:", e);
     }
   }
 

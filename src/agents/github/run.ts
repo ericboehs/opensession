@@ -1,0 +1,129 @@
+/**
+ * Shared headless-run helper for the github agent. Composes `runAgent` like
+ * automations.ts does, but persists its own visible BackstageSessionFile so each
+ * PR review/fix/simplify shows up as a Michael session in the web UI, and resumes
+ * the engine conversation across rounds via the deterministic per-PR session file.
+ */
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { runAgent } from "../../server/agent-runner";
+import { providerFor, DEFAULT_FALLBACK_MODEL } from "../../server/models";
+import { STRIPE_CONFIRM_TOOLS } from "../../server/claude-runner";
+import { gitIdentityFor, type GitIdentity } from "../../server/shared/user-mappings";
+import type { BackstageSessionFile } from "../../server/types";
+
+const HOME = process.env.HOME || "/home/ubuntu";
+const SESSIONS_DIR = `${HOME}/.backstage-sessions`;
+
+export type GithubRunKind = "review" | "autofix" | "simplify";
+
+/** Stable, deterministic backstage session id per PR + behavior (one resumable session each). */
+export function bksIdFor(prNumber: number, kind: GithubRunKind): string {
+  return `bks-ghpr-${prNumber}-${kind}`;
+}
+
+/** Map a GitHub login to a git identity for commit attribution (fix/simplify). */
+export function authorForLogin(login?: string): GitIdentity | null {
+  return gitIdentityFor(login || null);
+}
+
+function readEngineSessionId(bksId: string): { id: string; isCodex: boolean } | null {
+  const path = `${SESSIONS_DIR}/${bksId}.json`;
+  if (!existsSync(path)) return null;
+  try {
+    const f = JSON.parse(readFileSync(path, "utf-8")) as BackstageSessionFile;
+    if (f.codexThreadId) return { id: f.codexThreadId, isCodex: true };
+    if (f.claudeSessionId) return { id: f.claudeSessionId, isCodex: false };
+  } catch {}
+  return null;
+}
+
+export interface GithubRunOpts {
+  prNumber: number;
+  kind: GithubRunKind;
+  prompt: string;
+  cwd: string;
+  mode: "ask" | "code";
+  model?: string;
+  branch: string;
+  title: string;
+  /** Resume the prior engine conversation for this PR+behavior if one exists. */
+  resume?: boolean;
+  /** Commit attribution for code-mode runs (the human who asked). */
+  author?: GitIdentity | null;
+  onSessionCreated?: (bksId: string) => void;
+}
+
+export interface GithubRunResult {
+  bksId: string;
+  text: string;
+  error?: string;
+}
+
+/** Run one headless turn for a PR behavior; returns the agent's accumulated text. */
+export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResult> {
+  const bksId = bksIdFor(opts.prNumber, opts.kind);
+  const startedAt = new Date();
+
+  const resumeFrom = opts.resume ? readEngineSessionId(bksId) : null;
+
+  let effectiveModel = opts.model;
+  let effectiveProvider = providerFor(opts.model);
+  const persist = (engineSessionId: string) => {
+    const isCodex = effectiveProvider === "codex";
+    const data: BackstageSessionFile = {
+      id: bksId,
+      claudeSessionId: isCodex ? "" : engineSessionId,
+      ...(isCodex && engineSessionId ? { codexThreadId: engineSessionId } : {}),
+      ...(effectiveModel ? { model: effectiveModel } : {}),
+      branch: opts.branch,
+      worktreeDir: opts.cwd,
+      createdBy: "GitHub (automation)",
+      createdAt: startedAt.toISOString(),
+      lastActivity: new Date().toISOString(),
+      title: opts.title,
+      mode: opts.mode,
+      automation: "github-pr-review",
+    };
+    writeFileSync(`${SESSIONS_DIR}/${bksId}.json`, JSON.stringify(data, null, 2));
+  };
+
+  let text = "";
+  let engineSessionId = resumeFrom?.id || "";
+  let errorMsg = "";
+
+  try {
+    for await (const event of runAgent({
+      prompt: opts.prompt,
+      sessionId: resumeFrom?.id || undefined,
+      cwd: opts.cwd,
+      mode: opts.mode,
+      model: opts.model,
+      confirmTools: STRIPE_CONFIRM_TOOLS,
+      aws: true,
+      author: opts.author,
+      fallbackModel: DEFAULT_FALLBACK_MODEL,
+      journal: { bksSessionId: bksId, kind: `github-${opts.kind}` },
+    })) {
+      if (event.type === "init") {
+        engineSessionId = event.sessionId || engineSessionId;
+        if (event.provider) effectiveProvider = event.provider;
+        if (event.model) effectiveModel = event.model;
+        persist(engineSessionId);
+        opts.onSessionCreated?.(bksId);
+      } else if (event.type === "text_chunk") {
+        text += event.text;
+      } else if (event.type === "done") {
+        engineSessionId = event.sessionId || engineSessionId;
+        if (event.provider) effectiveProvider = event.provider;
+        if (event.model) effectiveModel = event.model;
+      } else if (event.type === "error") {
+        errorMsg = event.content || "Unknown error";
+      }
+    }
+  } catch (e: any) {
+    errorMsg = e.message || String(e);
+  }
+
+  persist(engineSessionId);
+  return { bksId, text, error: errorMsg || undefined };
+}
