@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { renderMarkdown } from "../lib/markdown";
 import type { UnifiedSession, TranscriptEntry, WSServerMessage, AskQuestion } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
@@ -11,6 +11,7 @@ import { DiffPanel } from "./DiffPanel";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { SpinOffMenu } from "./SpinOffMenu";
+import { useChatScroll } from "../hooks/useChatScroll";
 
 interface Props {
   session: UnifiedSession;
@@ -72,8 +73,20 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     setPanelOpenState(open);
     localStorage.setItem("michael-panel-open", String(open));
   }
-  const messagesRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  // Intent-aware scrolling: stick to the live edge only while the reader is there,
+  // pin new turns near the top, and surface a "Jump to latest" affordance.
+  const {
+    containerRef: messagesRef,
+    spacerRef,
+    following,
+    newBelow,
+    scrollToLatest,
+    anchorToTop,
+    beginTurn,
+    endTurn,
+    relayout,
+    onScroll,
+  } = useChatScroll();
 
   // Per-session model (switchable from the composer; "" = default)
   const [model, setModel] = useState(session.model || "");
@@ -93,6 +106,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
 
   const isAsk = session.mode === "ask";
   const hasWorkspace = !isAsk && Boolean(session.worktreeDir || session.branch);
+  const isBusy = isRunningLive || isStreaming;
 
   // Ctrl+R focuses the composer (overrides browser reload while in a session)
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -268,24 +282,37 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   // Forget optimistic bubbles when switching sessions
   useEffect(() => { setPending([]); }, [session.id]);
 
-  // Jump straight to the latest message when a session first renders…
+  // Reopen where the reader left off. A running session jumps to the live edge to
+  // track the stream; an idle one opens at the last user turn so its reply reads
+  // from the start, not the absolute bottom (principle 11).
   const didInitialScroll = useRef(false);
   useEffect(() => { didInitialScroll.current = false; }, [session.id]);
-
-  // …then auto-scroll on updates, unless the reader has scrolled up to
-  // inspect history
   useEffect(() => {
     const el = messagesRef.current;
-    if (!el) return;
-    if (!didInitialScroll.current) {
-      if (entries.length === 0) return;
-      el.scrollTop = el.scrollHeight;
-      didInitialScroll.current = true;
-      return;
+    if (!el || didInitialScroll.current || entries.length === 0) return;
+    didInitialScroll.current = true;
+    if (session.isRunning) {
+      scrollToLatest("auto");
+    } else {
+      const userEls = el.querySelectorAll<HTMLElement>(".msg-user");
+      const lastUser = userEls[userEls.length - 1];
+      if (lastUser) anchorToTop(lastUser); else scrollToLatest("auto");
     }
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 400;
-    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [entries, streamText, pending]);
+  }, [entries, session.isRunning, scrollToLatest, anchorToTop]);
+
+  // After any content change: keep a following reader at the live edge, or maintain
+  // the pinned-turn spacer for a turn streaming into the space below (principles 4–6).
+  // Layout effect so the adjustment happens before the browser paints — no flicker.
+  useLayoutEffect(() => {
+    relayout();
+  }, [entries, streamText, queued, pending, relayout]);
+
+  // When a turn finishes, release the spacer so the layout settles back.
+  const wasBusyRef = useRef(false);
+  useEffect(() => {
+    if (wasBusyRef.current && !isBusy) endTurn();
+    wasBusyRef.current = isBusy;
+  });
 
   // Codex-model sessions start fresh threads server-side; only Claude-model
   // sessions need an existing claude session id to resume.
@@ -301,6 +328,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     const user = getCurrentUser();
     // While Michael is busy the server queues this and delivers it after the run
     send({ type: "prompt", sessionId: session.id, content: text, user });
+    beginTurn(); // pin this new turn near the top so its reply streams in below
     // Show it immediately; reconciled away when the real turn / queue echo lands
     setPending((p) => [
       ...p,
@@ -317,6 +345,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     const user = getCurrentUser();
     // Stops the current turn and continues right away with this message
     send({ type: "interrupt_prompt", sessionId: session.id, content: text, user });
+    beginTurn(); // pin this new turn near the top so its reply streams in below
     setPending((p) => [
       ...p,
       { id: `pending-${crypto.randomUUID()}`, content: text, user, sentAt: Date.now() },
@@ -381,7 +410,6 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const isBusy = isRunningLive || isStreaming;
   const me = getCurrentUser();
 
   async function handleDelete(cleanWorktree: boolean) {
@@ -512,7 +540,8 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
 
       <div className="viewer-split">
         <div className="viewer-chat">
-          <div className="viewer-messages" ref={messagesRef}>
+          <div className="viewer-messages-region">
+          <div className="viewer-messages" ref={messagesRef} onScroll={onScroll}>
             {loading ? (
               <div className="loading">Loading transcript…</div>
             ) : entries.length === 0 && !session.transcriptPath ? (
@@ -569,7 +598,21 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               </div>
             ))}
 
-            <div ref={bottomRef} />
+            {/* Reserves room so a freshly-sent turn can sit near the top while its
+                reply streams into the space below; sized by the scroll hook. */}
+            <div ref={spacerRef} className="turn-spacer" aria-hidden="true" />
+          </div>
+
+          {!following && entries.length > 0 && (
+            <button
+              className={`jump-latest ${newBelow ? "jump-latest-new" : ""}`}
+              onClick={() => scrollToLatest("smooth")}
+              title="Return to the latest reply"
+            >
+              <span className="jump-latest-arrow">↓</span>
+              {isBusy ? "Michael is replying" : newBelow ? "New messages" : "Jump to latest"}
+            </button>
+          )}
           </div>
 
           <div className="viewer-input">

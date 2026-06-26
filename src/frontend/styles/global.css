@@ -1251,11 +1251,72 @@ a {
 
 /* ── Messages ────────────────────────────────────────────── */
 
+/* Holds the scroll area plus the floating "Jump to latest" pill. */
+.viewer-messages-region {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .viewer-messages {
   flex: 1;
   overflow-y: auto;
   padding: 18px 20px 10px;
   min-height: 0;
+  /* Keep the reader's place when content loads/expands above them (principle 12):
+     the browser anchors scroll to on-screen content instead of jumping. */
+  overflow-anchor: auto;
+}
+
+/* The streaming tail is excluded from anchoring so a glued-to-bottom follow
+   isn't fought by the anchor as tokens append. */
+.msg-streaming { overflow-anchor: none; }
+
+/* Bottom spacer that lets the latest turn reach the top of the viewport. Height is
+   set imperatively by the scroll hook; no transition so it tracks streaming exactly. */
+.turn-spacer {
+  flex-shrink: 0;
+  height: 0;
+  pointer-events: none;
+  overflow-anchor: none;
+}
+
+/* Make it easy to return to the latest reply (principles 8 & 9). Floats just
+   above the composer; appears only when the reader has scrolled away. */
+.jump-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  z-index: 5;
+  animation: jump-rise 0.18s ease-out;
+}
+.jump-latest:hover { border-color: var(--accent); }
+.jump-latest-arrow { font-size: 14px; line-height: 1; }
+/* Content arrived out of view — draw the eye with the accent. */
+.jump-latest-new {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.jump-latest-new .jump-latest-arrow { animation: pulse 1s ease-in-out infinite; }
+
+@keyframes jump-rise {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
 .msg {
