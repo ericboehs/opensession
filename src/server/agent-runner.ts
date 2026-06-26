@@ -185,6 +185,12 @@ export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => voi
   let resumed = 0;
 
   for (const run of interrupted) {
+    // The github agent owns its own recovery (review/simplify re-trigger on the
+    // next PR event; auto-fix loops are resumed by the github agent's startup
+    // sweep). Resuming them generically would double-drive an auto-fix loop.
+    if (run.kind?.startsWith("github-")) {
+      continue;
+    }
     if (!run.claudeSessionId) {
       console.warn(
         `[runner] Interrupted run ${run.runKey} (${run.kind || "unknown"}) had no engine session yet — cannot resume`
