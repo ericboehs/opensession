@@ -175,8 +175,8 @@ async function postReview(
   const findingCount = parsed?.findings?.length || 0;
   // Next-steps footer pointing at the action labels.
   const tip = findingCount
-    ? "> 💡 Add the **`michael-auto-fix`** label and I'll fix these and push to this branch until CI passes — or **`michael-adversarial`** for a deeper, two-pass review."
-    : "> 💡 Add the **`michael-adversarial`** label for a deeper, two-pass adversarial review — or **`michael-auto-fix`** to fix anything outstanding and push until CI passes.";
+    ? "> 💡 Labels: **`michael-auto-fix`** — I fix these and push until CI passes · **`michael-adversarial`** — deeper two-pass review · **`michael-simplify`** — quality cleanup pass."
+    : "> 💡 Labels: **`michael-adversarial`** — deeper two-pass review · **`michael-simplify`** — quality cleanup pass · **`michael-auto-fix`** — fix anything outstanding and push until CI passes.";
   const composed = [
     REVIEW_MARKER,
     `### 🤖 Michael review${verdict}${confidence}`,

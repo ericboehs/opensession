@@ -1275,7 +1275,9 @@ function prActionCardBlocks(message: string, bksId: string, running: boolean): a
     action_id: `pr-stop:${bksId}`,
     value: bksId,
   };
-  const blocks: any[] = [
+  // On completion we just drop the Stop button — the separate "✓ Finished" reply
+  // (posted by the caller) is the completion signal, so no redundant footer here.
+  return [
     { type: "section", text: { type: "mrkdwn", text: message } },
     {
       type: "actions",
@@ -1283,10 +1285,6 @@ function prActionCardBlocks(message: string, bksId: string, running: boolean): a
       elements: running ? [backstageButton, stopButton] : [backstageButton],
     },
   ];
-  if (!running) {
-    blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: "_✓ Finished — results are on the PR._" }] });
-  }
-  return blocks;
 }
 
 export async function handleMentionEvent(event: any): Promise<void> {
