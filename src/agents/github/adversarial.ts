@@ -7,7 +7,7 @@
 import { getPrDetails } from "../../server/pr-info";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
-import { runGithubAgent, authorForLogin } from "./run";
+import { runGithubAgent, authorForLogin, finalSummary } from "./run";
 import { buildAdversarialPrompt } from "./prompts";
 import { postIssueComment, removeLabel } from "./github-rest";
 import { LABEL_ADVERSARIAL } from "./constants";
@@ -46,7 +46,7 @@ export async function runAdversarial(
       onSessionCreated,
     });
 
-    const summary = (result.text || "").trim().slice(0, 6000) || "Done.";
+    const summary = finalSummary(result.text).slice(0, 6000) || "Done.";
     await postIssueComment(
       pr.number,
       `<!-- michael-adversarial -->\n🔍 **Michael adversarial review** — ${result.error ? `errored: ${result.error}` : summary}`,

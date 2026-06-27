@@ -11,7 +11,7 @@ import { getPrDetails } from "../../server/pr-info";
 import { listAutomations } from "../../server/automations";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock } from "./state";
-import { runGithubAgent, authorForLogin } from "./run";
+import { runGithubAgent, authorForLogin, finalSummary } from "./run";
 import { buildMentionPrompt } from "./prompts";
 import {
   postIssueComment,
@@ -117,7 +117,7 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
       author: authorForLogin(authorLogin),
     });
 
-    const reply = (result.text || "").trim();
+    const reply = finalSummary(result.text);
     if (!reply) {
       console.warn(`[github] mention produced no reply for PR #${prNumber}`);
       return;

@@ -26,6 +26,20 @@ export function authorForLogin(login?: string): GitIdentity | null {
   return gitIdentityFor(login || null);
 }
 
+/**
+ * Marker the code-mode behaviors emit right before their final summary. We post
+ * only the text after it, so the agent's working narration ("let me run the
+ * subagents…") never lands on the PR.
+ */
+export const SUMMARY_SENTINEL = "===MICHAEL-SUMMARY===";
+
+/** Text after the last summary sentinel; falls back to the full trimmed text. */
+export function finalSummary(text: string): string {
+  if (!text) return "";
+  const idx = text.lastIndexOf(SUMMARY_SENTINEL);
+  return idx === -1 ? text.trim() : text.slice(idx + SUMMARY_SENTINEL.length).trim();
+}
+
 function readEngineSessionId(bksId: string): { id: string; isCodex: boolean } | null {
   const path = `${SESSIONS_DIR}/${bksId}.json`;
   if (!existsSync(path)) return null;

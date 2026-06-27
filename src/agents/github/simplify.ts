@@ -6,7 +6,7 @@
 import { getPrDetails, getPrDiff } from "../../server/pr-info";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
-import { runGithubAgent, authorForLogin } from "./run";
+import { runGithubAgent, authorForLogin, finalSummary } from "./run";
 import { buildSimplifyPrompt } from "./prompts";
 import { postIssueComment, removeLabel } from "./github-rest";
 import { LABEL_SIMPLIFY } from "./constants";
@@ -50,7 +50,7 @@ export async function runSimplify(
       onSessionCreated,
     });
 
-    const summary = (result.text || "").trim().slice(0, 2000) || "Done.";
+    const summary = finalSummary(result.text).slice(0, 2000) || "Done.";
     await postIssueComment(
       pr.number,
       `<!-- michael-simplify -->\n✨ **Michael simplify** — ${result.error ? `errored: ${result.error}` : summary}`,

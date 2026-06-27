@@ -101,7 +101,7 @@ You ARE responsible for completing the implementation: for every accepted, actio
 
 When done, if you made changes, commit them with a clear message and push to the PR branch: \`git push origin HEAD:${pr.headRefName}\`. If nothing actionable was found, make no commits and say so.
 
-End your turn with a concise summary as Michael: the key adjudicated findings (severity + \`file:line\`) and exactly what you changed and pushed (or that nothing needed fixing). Output only that summary as GitHub markdown.`;
+When finished, output the marker \`===MICHAEL-SUMMARY===\` on its own line, then your concise summary as Michael: the key adjudicated findings (severity + \`file:line\`) and exactly what you changed and pushed (or that nothing needed fixing). ONLY the text after that marker is posted to the PR — everything before it is working notes that stay private.`;
 }
 
 export function buildMentionPrompt(opts: {
@@ -133,7 +133,7 @@ Decide what they need:
 
 Then write a concise reply as Michael: answer the question, or describe exactly what you changed and pushed. Only claim changes you actually made and pushed; if you couldn't do something, say so.
 
-Output ONLY your reply text as GitHub markdown — no JSON, and do not post anything yourself; the reply is posted for you.`;
+When finished, output the marker \`===MICHAEL-SUMMARY===\` on its own line, then your reply as GitHub markdown. ONLY the text after that marker is posted as the reply — everything before it is working notes that stay private. Do not post anything yourself.`;
 }
 
 export function buildSimplifyPrompt(pr: PrDetails): string {
@@ -143,5 +143,5 @@ Run the \`/simplify\` skill scoped to this PR's changes: review the changed code
 
 Then commit the cleanups with a clear message and push to the PR branch: \`git push origin HEAD:${pr.headRefName}\`. If there was nothing worth simplifying, make no commits and say so. NEVER merge the PR (\`gh pr merge\` is forbidden).
 
-End your turn with a one-line summary of what you simplified (or "Nothing to simplify").`;
+When finished, output the marker \`===MICHAEL-SUMMARY===\` on its own line, then a one-line summary of what you simplified (or "Nothing to simplify"). ONLY the text after that marker is posted to the PR — everything before it is working notes that stay private.`;
 }
