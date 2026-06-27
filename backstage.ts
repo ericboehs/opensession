@@ -38,6 +38,8 @@ import {
   type SessionSummary,
 } from "./src/server/session-control";
 import { gitIdentityFor } from "./src/server/shared/user-mappings";
+import { createSessionsMcpServer } from "./src/agents/slack/sessions-tools";
+import { createAdminMcpServer } from "./src/agents/slack/admin-tools";
 import { getPrDetails, getPrDiff, postPrComment } from "./src/server/pr-info";
 import {
   listAutomations,
@@ -105,6 +107,29 @@ function getCachedSessions(): UnifiedSession[] {
   }
   sessionsCache = { data, ts: Date.now() };
   return data;
+}
+
+// In-process self-management MCP servers for INTERACTIVE Backstage sessions
+// (web UI + loops) — the same michael-sessions / michael-admin tools the Slack
+// agent gets, so you can list/steer sessions and manage automations/MCPs from a
+// Michael session. Built fresh per run from the prompt's author. NEVER pass
+// these to automation runs or to interactive resumes of automation-owned
+// sessions — untrusted ticket text must not reach session-control / config
+// tools. Backstage is Tailscale- and team-gated and already exposes all of this
+// through its UI, so interactive users are treated as admin.
+function interactiveMcpServers(user?: string): Record<string, unknown> {
+  const createdBy = user || "Backstage";
+  return {
+    "michael-sessions": createSessionsMcpServer({ createdBy, isAdmin: true }),
+    "michael-admin": createAdminMcpServer({
+      channel: "backstage",
+      userId: user || "backstage",
+      isDM: false,
+      isPrivate: false,
+      createdBy,
+      isAdmin: true,
+    }),
+  };
 }
 
 function findSession(sessionId: string): UnifiedSession | undefined {
@@ -399,6 +424,9 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
     mode: session.mode,
     model: session.model,
     mcpServers,
+    // Self-management tools for normal sessions; withheld from automation
+    // sessions (and their interactive resumes) — same gate as deniedTools above.
+    inProcessMcp: isAutomationSession ? undefined : interactiveMcpServers(user),
     deniedTools,
     confirmTools: STRIPE_CONFIRM_TOOLS,
     aws: true, // sessions keep AWS read access (via injected creds)
@@ -1281,6 +1309,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
               cwd: wtPath,
               mode: isAsk ? "ask" : "code",
               model,
+              inProcessMcp: interactiveMcpServers(user),
               confirmTools: STRIPE_CONFIRM_TOOLS,
               aws: true, // interactive sessions keep AWS read access (via injected creds)
               journal: { bksSessionId: bksId, kind: "create" },
@@ -1469,6 +1498,7 @@ registerSessionControl({
           cwd: wtPath,
           mode: isAsk ? "ask" : "code",
           model,
+          inProcessMcp: interactiveMcpServers(user),
           confirmTools: STRIPE_CONFIRM_TOOLS,
           aws: true,
           journal: { bksSessionId: bksId, kind: "create" },

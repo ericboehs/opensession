@@ -302,6 +302,15 @@ export async function* runClaude(opts: {
    */
   mcpServers?: string[];
   /**
+   * In-process SDK MCP servers (createSdkMcpServer instances) to merge into this
+   * run, keyed by name — e.g. michael-sessions / michael-admin for interactive
+   * Backstage sessions. These run in the parent process, so ONLY pass them for
+   * trusted interactive runs; never for automations (untrusted ticket text must
+   * not get session-control / self-management tools). Not journaled — rebuilt
+   * fresh from caller context on each run/resume.
+   */
+  inProcessMcp?: Record<string, unknown>;
+  /**
    * Tools to hard-deny at the permission layer, mapping tool name → message
    * shown to the agent. Enforced in canUseTool, so it holds even if the
    * prompt (e.g. freeform ticket text) tries to talk the agent into it.
@@ -627,8 +636,9 @@ export async function* runClaude(opts: {
           }
           return { behavior: "allow" as const, updatedInput: cleanPlainToolInput(toolName, input) };
         },
-        // Read per run so MCP servers added/removed in the UI apply immediately
-        mcpServers: filterMcpServers(mcpServers) as any,
+        // Read per run so MCP servers added/removed in the UI apply immediately;
+        // merge any in-process SDK servers (michael-sessions/-admin) on top.
+        mcpServers: { ...filterMcpServers(mcpServers), ...(opts.inProcessMcp || {}) } as any,
         strictMcpConfig: true,
         env: childEnv(awsEnv, account?.token, author),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
@@ -637,15 +647,28 @@ export async function* runClaude(opts: {
         systemPrompt: {
           type: "preset" as const,
           preset: "claude_code" as const,
-          ...(isAsk
-            ? {
-                append:
-                  "You are Michael in Ask mode: answer questions about the tella-fusion codebase. " +
+          ...(() => {
+            const parts: string[] = [];
+            if (isAsk) {
+              parts.push(
+                "You are Michael in Ask mode: answer questions about the tella-fusion codebase. " +
                   "This is a READ-ONLY session on the main checkout — never modify, create, or delete " +
                   "files, never commit, never run state-changing commands. Explore with Read/Grep/Glob " +
-                  "and read-only git commands, then answer clearly and concisely.",
-              }
-            : {}),
+                  "and read-only git commands, then answer clearly and concisely."
+              );
+            }
+            if (opts.inProcessMcp && Object.keys(opts.inProcessMcp).length) {
+              parts.push(
+                "## Managing Michael\nYou can see and steer your other Backstage sessions via the " +
+                  "michael-sessions MCP tools (list_sessions — filter 'waiting' for sessions blocked on a " +
+                  "question; get_session; send_to_session; answer_session_question; cancel_session; " +
+                  "create_session) and manage your own setup via michael-admin (automations, MCP " +
+                  "connections, channel memory). Use these tools when asked to inspect or steer sessions, " +
+                  "or to change configuration, rather than only describing how."
+              );
+            }
+            return parts.length ? { append: parts.join("\n\n") } : {};
+          })(),
         },
         settingSources: ["user", "project"],
       },

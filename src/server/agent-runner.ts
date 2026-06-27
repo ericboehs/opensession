@@ -35,6 +35,12 @@ export interface RunAgentOpts {
   /** Model id; decides the backend. Omitted = default Claude model. */
   model?: string;
   mcpServers?: string[];
+  /**
+   * In-process SDK MCP servers (michael-sessions / michael-admin) for trusted
+   * interactive runs only — never automations. Claude backend only; the Codex
+   * runner ignores it. See runClaude opts for the full contract.
+   */
+  inProcessMcp?: Record<string, unknown>;
   deniedTools?: Record<string, string>;
   confirmTools?: Record<string, string>;
   aws?: boolean;
