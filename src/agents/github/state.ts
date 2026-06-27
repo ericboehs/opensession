@@ -42,6 +42,12 @@ export interface GithubPrState {
   lastReviewedSha?: string;
   autoFix?: AutoFixState;
   simplify?: SimplifyState;
+  /**
+   * Set while a one-shot action (review/simplify/adversarial) is in flight; cleared
+   * in its finally. If the process is killed mid-run, this persists so the github
+   * agent re-runs it on startup. (Auto-fix uses its own `autoFix.active`.)
+   */
+  activeRun?: { kind: "review" | "simplify" | "adversarial"; requestedBy: string; startedAt: string };
   updatedAt: string;
 }
 

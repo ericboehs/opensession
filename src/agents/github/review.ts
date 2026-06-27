@@ -79,6 +79,7 @@ export async function runReview(
     // the SHA is recorded only AFTER a successful run (below) so a transient
     // failure can be retried rather than permanently suppressed.
     const isUpdate = state.reviewedShas.length > 0;
+    state.activeRun = { kind: "review", requestedBy: "", startedAt: new Date().toISOString() };
 
     // Post a fresh "reviewing…" comment immediately (progress ASAP), then collapse
     // the previous review under an "Outdated review" <details>. Each review is its
@@ -133,6 +134,13 @@ export async function runReview(
   } catch (e) {
     console.error(`[github] review failed for PR #${pr.number}:`, e);
   } finally {
+    // Clear the recovery flag on completion; a killed process leaves it set so the
+    // github agent re-runs the review on startup.
+    const s = getOrInitPrState(pr.number, pr.headRef);
+    if (s.activeRun?.kind === "review") {
+      s.activeRun = undefined;
+      writePrState(s);
+    }
     releaseLock("review", pr.number);
   }
 }

@@ -58,6 +58,20 @@ async function recoverFixLoops(): Promise<void> {
   }
 }
 
+/** Re-run one-shot actions (review/simplify/adversarial) that a restart interrupted. */
+async function recoverOneShots(): Promise<void> {
+  const interrupted = listPrStates().filter((s) => s.activeRun);
+  if (!interrupted.length) return;
+  const { triggerPrAction } = await import("./trigger");
+  for (const s of interrupted) {
+    const run = s.activeRun!;
+    console.log(`[github] Recovering interrupted ${run.kind} for PR #${s.prNumber}`);
+    void triggerPrAction(run.kind, s.prNumber, run.requestedBy).catch((e) =>
+      console.error(`[github] ${run.kind} recovery failed for PR #${s.prNumber}:`, e),
+    );
+  }
+}
+
 export class GithubAgent implements AgentModule {
   name = "github";
   private readonly onSessionInvalidate?: () => void;
@@ -112,6 +126,7 @@ export class GithubAgent implements AgentModule {
     if (this.onSessionInvalidate) setGithubSessionInvalidate(this.onSessionInvalidate);
     ensureReviewAutomation();
     await recoverFixLoops();
+    await recoverOneShots();
     const { autoEnabled } = resolveReviewConfig();
     console.log(`[github] Agent started — review automation ${autoEnabled ? "ENABLED (all non-draft PRs)" : "disabled (label-only)"}`);
   }

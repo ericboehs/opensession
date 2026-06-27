@@ -9,7 +9,7 @@ import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
 import { runGithubAgent, authorForLogin, finalSummary } from "./run";
 import { buildAdversarialPrompt } from "./prompts";
-import { postIssueComment, editIssueComment, removeLabel } from "./github-rest";
+import { upsertMarkedComment, removeLabel, ADVERSARIAL_MARKER } from "./github-rest";
 import { LABEL_ADVERSARIAL } from "./constants";
 import type { PrRef } from "./review";
 
@@ -31,11 +31,16 @@ export async function runAdversarial(
     }
     if (details.state !== "OPEN") return;
 
-    // Immediate progress comment (before the slow worktree + two-pass run), edited
-    // in place with the result at the end.
-    const progressId = await postIssueComment(
+    const s = getOrInitPrState(pr.number, details.headRefName);
+    s.activeRun = { kind: "adversarial", requestedBy, startedAt: new Date().toISOString() };
+    writePrState(s);
+
+    // Immediate progress comment (reused across re-runs by marker) before the slow
+    // worktree + two-pass run; replaced with the result at the end.
+    await upsertMarkedComment(
       pr.number,
-      `<!-- michael-adversarial -->\n🔍 **Michael adversarial review** — running two independent review passes on PR #${pr.number}…`,
+      ADVERSARIAL_MARKER,
+      `🔍 **Michael adversarial review** — running two independent review passes on PR #${pr.number}…`,
     );
 
     const worktreeDir = await createWorktreeForPrBranch(details.headRefName);
@@ -54,16 +59,19 @@ export async function runAdversarial(
     });
 
     const summary = finalSummary(result.text).slice(0, 6000) || "Done.";
-    const body = `<!-- michael-adversarial -->\n🔍 **Michael adversarial review** — ${result.error ? `errored: ${result.error}` : summary}`;
-    if (progressId) await editIssueComment(progressId, body);
-    else await postIssueComment(pr.number, body);
-
-    // Touch state for visibility/dedup parity with the other behaviors.
-    const s = getOrInitPrState(pr.number, details.headRefName);
-    writePrState(s);
+    await upsertMarkedComment(
+      pr.number,
+      ADVERSARIAL_MARKER,
+      `🔍 **Michael adversarial review** — ${result.error ? `errored: ${result.error}` : summary}`,
+    );
   } catch (e) {
     console.error(`[github] adversarial error for PR #${pr.number}:`, e);
   } finally {
+    // Clear the recovery flag on completion; a killed process leaves it set so the
+    // github agent re-runs it on startup.
+    const fin = getOrInitPrState(pr.number, pr.headRef);
+    fin.activeRun = undefined;
+    writePrState(fin);
     await removeLabel(pr.number, LABEL_ADVERSARIAL).catch(() => {});
     releaseLock("code", pr.number);
   }

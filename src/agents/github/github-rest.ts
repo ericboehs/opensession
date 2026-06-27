@@ -11,16 +11,21 @@ const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 export const GITHUB_REPO = "tellahq/tella-fusion";
 /** The bot account our token posts as — used to recognise our own comments/events. */
 export const BOT_LOGIN = process.env.GITHUB_BOT_LOGIN || "tella-butler";
-/** Hidden marker on the single review summary comment, so we can re-find it if state is lost. */
+/** Hidden markers Michael stamps on the comments it posts (one per behavior). */
 export const REVIEW_MARKER = "<!-- michael-review -->";
-/** Marker on @mention replies. */
+export const REVIEW_OUTDATED_MARKER = "<!-- michael-review-outdated -->";
 export const REPLY_MARKER = "<!-- michael-reply -->";
-/** Every marker Michael stamps on content it posts — used to skip our own comments (no self-loop). */
+export const AUTOFIX_MARKER = "<!-- michael-autofix -->";
+export const SIMPLIFY_MARKER = "<!-- michael-simplify -->";
+export const ADVERSARIAL_MARKER = "<!-- michael-adversarial -->";
+/** Every marker — used to skip our own comments (no self-trigger loop). */
 export const MICHAEL_MARKERS = [
   REVIEW_MARKER,
+  REVIEW_OUTDATED_MARKER,
   REPLY_MARKER,
-  "<!-- michael-autofix -->",
-  "<!-- michael-simplify -->",
+  AUTOFIX_MARKER,
+  SIMPLIFY_MARKER,
+  ADVERSARIAL_MARKER,
 ];
 
 export function githubConfigured(): boolean {
@@ -79,9 +84,6 @@ interface IssueComment {
   body: string;
   user: { login: string };
 }
-
-/** Marker on a superseded review comment (collapsed, "outdated"). */
-export const REVIEW_OUTDATED_MARKER = "<!-- michael-review-outdated -->";
 
 /** Fetch a single issue comment's body. */
 export async function getComment(commentId: number): Promise<IssueComment | null> {
@@ -152,6 +154,39 @@ export async function replyToReviewComment(
     { body }
   );
   return r.ok;
+}
+
+/**
+ * Maintain ONE comment per marker on a PR: PATCH the existing comment whose body
+ * starts with `marker`, else create one. Keeps simplify/adversarial/status to a
+ * single comment that's reused across re-runs (so a restart-interrupted run that's
+ * re-triggered updates the stale placeholder instead of leaving a duplicate).
+ */
+export async function upsertMarkedComment(
+  prNumber: number,
+  marker: string,
+  body: string,
+): Promise<number | null> {
+  const withMarker = body.startsWith(marker) ? body : `${marker}\n${body}`;
+  const list = await githubRequest<IssueComment[]>(
+    "GET",
+    `/repos/${GITHUB_REPO}/issues/${prNumber}/comments?per_page=100`,
+  );
+  if (list.ok && Array.isArray(list.data)) {
+    const mine = list.data.find((c) => typeof c.body === "string" && c.body.startsWith(marker));
+    if (mine) {
+      const patched = await githubRequest("PATCH", `/repos/${GITHUB_REPO}/issues/comments/${mine.id}`, {
+        body: withMarker,
+      });
+      if (patched.ok) return mine.id;
+    }
+  }
+  const created = await githubRequest<IssueComment>(
+    "POST",
+    `/repos/${GITHUB_REPO}/issues/${prNumber}/comments`,
+    { body: withMarker },
+  );
+  return created.ok && created.data ? created.data.id : null;
 }
 
 /** Post a plain (non-marker) comment on the PR — used for fix/simplify status. */

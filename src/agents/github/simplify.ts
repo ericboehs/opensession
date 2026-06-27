@@ -8,7 +8,7 @@ import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
 import { runGithubAgent, authorForLogin, finalSummary } from "./run";
 import { buildSimplifyPrompt } from "./prompts";
-import { postIssueComment, editIssueComment, removeLabel } from "./github-rest";
+import { upsertMarkedComment, removeLabel, SIMPLIFY_MARKER } from "./github-rest";
 import { LABEL_SIMPLIFY } from "./constants";
 import { runReview, type PrRef } from "./review";
 import { resolveReviewConfig } from "./webhook";
@@ -33,14 +33,12 @@ export async function runSimplify(
 
     const s = getOrInitPrState(pr.number, pr.headRef);
     s.simplify = { active: true, requestedBy, startedAt: new Date().toISOString() };
+    s.activeRun = { kind: "simplify", requestedBy, startedAt: new Date().toISOString() };
     writePrState(s);
 
-    // Immediate progress comment so the PR shows it's working, before the slow
-    // worktree checkout + agent run. Edited in place with the result at the end.
-    const progressId = await postIssueComment(
-      pr.number,
-      `<!-- michael-simplify -->\n✨ **Michael simplify** — working on PR #${pr.number}…`,
-    );
+    // Immediate progress comment (reused across re-runs by marker) before the slow
+    // worktree + agent run; replaced with the result at the end.
+    await upsertMarkedComment(pr.number, SIMPLIFY_MARKER, `✨ **Michael simplify** — working on PR #${pr.number}…`);
 
     const worktreeDir = await createWorktreeForPrBranch(pr.headRef);
     console.log(`[github] Simplifying PR #${pr.number}`);
@@ -58,12 +56,16 @@ export async function runSimplify(
     });
 
     const summary = finalSummary(result.text).slice(0, 2000) || "Done.";
-    const body = `<!-- michael-simplify -->\n✨ **Michael simplify** — ${result.error ? `errored: ${result.error}` : summary}`;
-    if (progressId) await editIssueComment(progressId, body);
-    else await postIssueComment(pr.number, body);
+    await upsertMarkedComment(
+      pr.number,
+      SIMPLIFY_MARKER,
+      `✨ **Michael simplify** — ${result.error ? `errored: ${result.error}` : summary}`,
+    );
 
     const fin = getOrInitPrState(pr.number, pr.headRef);
-    if (fin.simplify) { fin.simplify.active = false; fin.simplify.doneSha = pr.headSha; writePrState(fin); }
+    if (fin.simplify) { fin.simplify.active = false; fin.simplify.doneSha = pr.headSha; }
+    fin.activeRun = undefined;
+    writePrState(fin);
 
     // Re-review the simplified result (per the "simplify then re-review" decision).
     if (!result.error) {
@@ -81,9 +83,14 @@ export async function runSimplify(
     }
   } catch (e) {
     console.error(`[github] simplify error for PR #${pr.number}:`, e);
-    const fin = getOrInitPrState(pr.number, pr.headRef);
-    if (fin.simplify) { fin.simplify.active = false; writePrState(fin); }
   } finally {
+    // Clear the recovery flag on any completion (success/handled error). If the
+    // process is KILLED mid-run, finally doesn't run → activeRun persists → the
+    // github agent re-runs it on startup.
+    const fin = getOrInitPrState(pr.number, pr.headRef);
+    if (fin.simplify) fin.simplify.active = false;
+    fin.activeRun = undefined;
+    writePrState(fin);
     await removeLabel(pr.number, LABEL_SIMPLIFY).catch(() => {});
     releaseLock("code", pr.number);
   }
