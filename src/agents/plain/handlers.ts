@@ -13,8 +13,10 @@ import {
   createLinearIssue,
   plain,
 } from "./api";
-import { buildMentionPrompt, buildWorkPrompt } from "./prompts";
+import { buildMentionPrompt, buildWorkPrompt, buildRefundExecutionPrompt } from "./prompts";
 import { getDefaultModel } from "../../server/models";
+import { STRIPE_CONFIRM_TOOLS } from "../../server/claude-runner";
+import { classifyRefundApproval } from "./refund-intent";
 
 const TELLA_FUSION_DIR = "/home/ubuntu/projects/tella-fusion";
 
@@ -91,9 +93,13 @@ export interface PlainWebhookPayload {
 async function runClaude(
   prompt: string,
   cwd: string = TELLA_FUSION_DIR,
-  resumeSessionId?: string
+  resumeSessionId?: string,
+  // Money-moving Stripe tools (refunds/cancellations) are denied unless this is
+  // the approved "@michael go ahead" execution path. Closes the gap where any
+  // @michael note ran with every tool — including Stripe writes — allowed.
+  allowMoneyTools: boolean = false
 ): Promise<{ result: string; sessionId: string }> {
-  console.log(`[plain] Running Claude SDK in ${cwd}${resumeSessionId ? ` (resuming ${resumeSessionId})` : ""}`);
+  console.log(`[plain] Running Claude SDK in ${cwd}${resumeSessionId ? ` (resuming ${resumeSessionId})` : ""}${allowMoneyTools ? " [money tools UNLOCKED]" : ""}`);
 
   let result = "";
   let sessionId = resumeSessionId || "";
@@ -111,6 +117,15 @@ async function runClaude(
           "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
         ],
         canUseTool: async (toolName: string, input: unknown) => {
+          if (!allowMoneyTools && toolName in STRIPE_CONFIRM_TOOLS) {
+            return {
+              behavior: "deny" as const,
+              message:
+                "Money-moving Stripe actions (refunds/cancellations) can't run from a normal @michael note. " +
+                "They must be proposed by triage and then approved with an explicit '@michael go ahead' on that proposal. " +
+                "Describe the proposed action instead.",
+            };
+          }
           return {
             behavior: "allow" as const,
             updatedInput: cleanPlainToolInput(toolName, input as Record<string, unknown>),
@@ -222,6 +237,50 @@ async function handleMichaelMention(
   }
 
   const threadContext = formatThreadContext(thread, true);
+
+  // Refund/cancellation approval: a teammate approving a refund Michael proposed
+  // earlier in this thread. Fail-closed classifier; only this path unlocks the
+  // Stripe money tools, and only to execute the EXACT proposed action.
+  const refundVerdict = await classifyRefundApproval(request, threadContext);
+  if (refundVerdict.approve) {
+    console.log(`[plain] Refund go-ahead on thread ${threadId}: ${refundVerdict.reason}`);
+    try {
+      const { result } = await runClaude(
+        buildRefundExecutionPrompt(request, threadContext),
+        TELLA_FUSION_DIR,
+        undefined,
+        /*allowMoneyTools*/ true
+      );
+      // If it produced a customer draft, route it through the existing
+      // "@michael yes - to send" confirmation; otherwise post its note as-is.
+      const draftMatch = result.match(/DRAFT REPLY:\s*([\s\S]*?)(?:$|(?=\n##|\n---))/i);
+      if (draftMatch) {
+        const draft = cleanDraftText(draftMatch[1]);
+        const summary = result.slice(0, draftMatch.index).trim();
+        if (summary) await postNote(threadId, customerId, summary);
+        pendingConfirmations.set(threadId, {
+          threadId,
+          customerId,
+          type: "customer_reply",
+          draftText: draft,
+          timestamp: Date.now(),
+        });
+        await postNote(
+          threadId,
+          customerId,
+          `**Draft reply for customer:**\n\n${draft}\n\n---\n\n@michael yes - to send this reply`,
+          `**Draft reply for customer:**\n\n${draft}\n\n---\n\n*@michael yes* - to send this reply`
+        );
+      } else {
+        await postNote(threadId, customerId, result);
+      }
+    } catch (e) {
+      console.error("[plain] Error executing approved refund:", e);
+      await postNote(threadId, customerId, `Error executing the approved refund: ${e}. No money was moved if Stripe wasn't reached — please verify in Stripe.`);
+    }
+    return;
+  }
+
   const prompt = buildMentionPrompt(request, threadContext);
 
   try {
