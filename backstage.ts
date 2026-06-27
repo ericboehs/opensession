@@ -1371,6 +1371,15 @@ const webhookServer = startWebhookServer(
   })
 );
 
+// Seed cron-scheduled "sweep" loops (Production Error Sweep, …) as automations
+// before the scheduler starts. Create-if-absent, so UI edits are preserved.
+try {
+  const { ensureSweepLoops } = await import("./src/agents/loops/sweep");
+  ensureSweepLoops();
+} catch (e) {
+  console.error("[loops] Failed to seed sweep loops:", e);
+}
+
 // Cron-scheduled automations + internal event bus (agents → automations)
 startScheduler(() => {
   sessionsCache = null;
