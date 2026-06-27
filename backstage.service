@@ -3,6 +3,7 @@ Description=Michael - Tella Backstage Dashboard
 After=network.target
 
 [Service]
+Environment="PATH=/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/projects/tella-backstage
