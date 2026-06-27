@@ -8,7 +8,7 @@ import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
 import { runGithubAgent, authorForLogin, finalSummary } from "./run";
 import { buildSimplifyPrompt } from "./prompts";
-import { postIssueComment, removeLabel } from "./github-rest";
+import { postIssueComment, editIssueComment, removeLabel } from "./github-rest";
 import { LABEL_SIMPLIFY } from "./constants";
 import { runReview, type PrRef } from "./review";
 import { resolveReviewConfig } from "./webhook";
@@ -35,6 +35,13 @@ export async function runSimplify(
     s.simplify = { active: true, requestedBy, startedAt: new Date().toISOString() };
     writePrState(s);
 
+    // Immediate progress comment so the PR shows it's working, before the slow
+    // worktree checkout + agent run. Edited in place with the result at the end.
+    const progressId = await postIssueComment(
+      pr.number,
+      `<!-- michael-simplify -->\n✨ **Michael simplify** — working on PR #${pr.number}…`,
+    );
+
     const worktreeDir = await createWorktreeForPrBranch(pr.headRef);
     console.log(`[github] Simplifying PR #${pr.number}`);
 
@@ -51,10 +58,9 @@ export async function runSimplify(
     });
 
     const summary = finalSummary(result.text).slice(0, 2000) || "Done.";
-    await postIssueComment(
-      pr.number,
-      `<!-- michael-simplify -->\n✨ **Michael simplify** — ${result.error ? `errored: ${result.error}` : summary}`,
-    );
+    const body = `<!-- michael-simplify -->\n✨ **Michael simplify** — ${result.error ? `errored: ${result.error}` : summary}`;
+    if (progressId) await editIssueComment(progressId, body);
+    else await postIssueComment(pr.number, body);
 
     const fin = getOrInitPrState(pr.number, pr.headRef);
     if (fin.simplify) { fin.simplify.active = false; fin.simplify.doneSha = pr.headSha; writePrState(fin); }

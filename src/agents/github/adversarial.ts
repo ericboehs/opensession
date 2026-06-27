@@ -9,7 +9,7 @@ import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
 import { runGithubAgent, authorForLogin, finalSummary } from "./run";
 import { buildAdversarialPrompt } from "./prompts";
-import { postIssueComment, removeLabel } from "./github-rest";
+import { postIssueComment, editIssueComment, removeLabel } from "./github-rest";
 import { LABEL_ADVERSARIAL } from "./constants";
 import type { PrRef } from "./review";
 
@@ -31,6 +31,13 @@ export async function runAdversarial(
     }
     if (details.state !== "OPEN") return;
 
+    // Immediate progress comment (before the slow worktree + two-pass run), edited
+    // in place with the result at the end.
+    const progressId = await postIssueComment(
+      pr.number,
+      `<!-- michael-adversarial -->\n🔍 **Michael adversarial review** — running two independent review passes on PR #${pr.number}…`,
+    );
+
     const worktreeDir = await createWorktreeForPrBranch(details.headRefName);
     console.log(`[github] Adversarial review on PR #${pr.number}`);
 
@@ -47,10 +54,9 @@ export async function runAdversarial(
     });
 
     const summary = finalSummary(result.text).slice(0, 6000) || "Done.";
-    await postIssueComment(
-      pr.number,
-      `<!-- michael-adversarial -->\n🔍 **Michael adversarial review** — ${result.error ? `errored: ${result.error}` : summary}`,
-    );
+    const body = `<!-- michael-adversarial -->\n🔍 **Michael adversarial review** — ${result.error ? `errored: ${result.error}` : summary}`;
+    if (progressId) await editIssueComment(progressId, body);
+    else await postIssueComment(pr.number, body);
 
     // Touch state for visibility/dedup parity with the other behaviors.
     const s = getOrInitPrState(pr.number, details.headRefName);

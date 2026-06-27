@@ -80,51 +80,64 @@ interface IssueComment {
   user: { login: string };
 }
 
-/**
- * Maintain ONE summary comment on the PR, edited in place. Tries the known id,
- * then re-discovers our comment by the hidden marker (so a lost id never spawns a
- * duplicate), else creates a new one. Returns the comment id to persist.
- */
-export async function upsertSummaryComment(
-  prNumber: number,
-  knownId: number | undefined,
-  body: string
-): Promise<number | null> {
-  const withMarker = body.startsWith(REVIEW_MARKER) ? body : `${REVIEW_MARKER}\n${body}`;
+/** Marker on a superseded review comment (collapsed, "outdated"). */
+export const REVIEW_OUTDATED_MARKER = "<!-- michael-review-outdated -->";
 
-  if (knownId) {
-    const patched = await githubRequest(
-      "PATCH",
-      `/repos/${GITHUB_REPO}/issues/comments/${knownId}`,
-      { body: withMarker }
-    );
-    if (patched.ok) return knownId;
-    // 404 → comment was deleted; fall through to re-discover/create.
-  }
+/** Fetch a single issue comment's body. */
+export async function getComment(commentId: number): Promise<IssueComment | null> {
+  const r = await githubRequest<IssueComment>("GET", `/repos/${GITHUB_REPO}/issues/comments/${commentId}`);
+  return r.ok && r.data ? r.data : null;
+}
 
-  // Re-discover by marker (primary) — robust even if the token account differs.
+/** Find the current (active, not-outdated) Michael review comment id, if any. */
+export async function findActiveReviewComment(prNumber: number): Promise<number | null> {
   const list = await githubRequest<IssueComment[]>(
     "GET",
-    `/repos/${GITHUB_REPO}/issues/${prNumber}/comments?per_page=100`
+    `/repos/${GITHUB_REPO}/issues/${prNumber}/comments?per_page=100`,
   );
-  if (list.ok && Array.isArray(list.data)) {
-    const mine = list.data.find((c) => typeof c.body === "string" && c.body.startsWith(REVIEW_MARKER));
-    if (mine) {
-      const patched = await githubRequest(
-        "PATCH",
-        `/repos/${GITHUB_REPO}/issues/comments/${mine.id}`,
-        { body: withMarker }
-      );
-      if (patched.ok) return mine.id;
-    }
-  }
+  if (!list.ok || !Array.isArray(list.data)) return null;
+  // Newest first — supersede the most recent active one.
+  const mine = list.data.reverse().find((c) => typeof c.body === "string" && c.body.startsWith(REVIEW_MARKER));
+  return mine ? mine.id : null;
+}
 
-  const created = await githubRequest<IssueComment>(
-    "POST",
-    `/repos/${GITHUB_REPO}/issues/${prNumber}/comments`,
-    { body: withMarker }
+/** Collapse a prior review comment under a "Outdated review" <details> and re-mark it. */
+export async function supersedeReviewComment(commentId: number): Promise<void> {
+  const old = await getComment(commentId);
+  if (!old?.body) return;
+  // Strip the active marker and any previous outdated wrapper, then re-collapse.
+  let inner = old.body.replace(REVIEW_MARKER, "").replace(REVIEW_OUTDATED_MARKER, "").trim();
+  const detailsMatch = inner.match(/<details>[\s\S]*?<summary>[\s\S]*?<\/summary>\s*([\s\S]*?)<\/details>/i);
+  if (detailsMatch) inner = detailsMatch[1].trim(); // avoid nesting details on re-supersede
+  const collapsed = `${REVIEW_OUTDATED_MARKER}\n<details>\n<summary>🕙 Outdated review — superseded by a newer review below</summary>\n\n${inner}\n\n</details>`;
+  await githubRequest("PATCH", `/repos/${GITHUB_REPO}/issues/comments/${commentId}`, { body: collapsed });
+}
+
+export interface ReviewCommentInfo {
+  path: string;
+  line: number | null;
+  body: string;
+  login: string;
+  outdated: boolean;
+}
+
+/** List the inline review comments on a PR (for auto-fix to address). Newest first. */
+export async function listReviewComments(prNumber: number): Promise<ReviewCommentInfo[]> {
+  const r = await githubRequest<any[]>(
+    "GET",
+    `/repos/${GITHUB_REPO}/pulls/${prNumber}/comments?per_page=100`,
   );
-  return created.ok && created.data ? created.data.id : null;
+  if (!r.ok || !Array.isArray(r.data)) return [];
+  return r.data
+    .map((c) => ({
+      path: c.path,
+      // `line` is null once a comment goes outdated (the line changed/disappeared).
+      line: typeof c.line === "number" ? c.line : null,
+      body: typeof c.body === "string" ? c.body : "",
+      login: c.user?.login || "",
+      outdated: c.line == null && c.original_line != null,
+    }))
+    .reverse();
 }
 
 /** Reply within a review-comment thread (inline @mention replies). */

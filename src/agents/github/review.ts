@@ -1,16 +1,19 @@
 /**
  * Behavior 1: PR review. Runs an ask-mode agent that reads the diff and emits
- * structured findings; the module then maintains ONE summary comment (edited in
- * place) plus a formal GitHub review carrying inline comments (GitHub auto-outdates
- * stale ones across commits). Deduped on head SHA so the same commit isn't reviewed
- * twice.
+ * structured findings. The module posts a fresh summary comment per review (the
+ * previous one collapses under an "Outdated review" <details>) plus a formal GitHub
+ * review carrying inline comments (GitHub auto-outdates stale ones across commits).
+ * Deduped on head SHA so the same commit isn't reviewed twice.
  */
 import { getPrDetails, getPrDiff, type PrDetails } from "../../server/pr-info";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
 import { runGithubAgent } from "./run";
 import { buildReviewPrompt, DEFAULT_REVIEW_PROMPT } from "./prompts";
 import {
-  upsertSummaryComment,
+  postIssueComment,
+  editIssueComment,
+  supersedeReviewComment,
+  findActiveReviewComment,
   submitReview,
   REVIEW_MARKER,
   type ReviewInlineComment,
@@ -76,6 +79,22 @@ export async function runReview(
     // the SHA is recorded only AFTER a successful run (below) so a transient
     // failure can be retried rather than permanently suppressed.
     const isUpdate = state.reviewedShas.length > 0;
+
+    // Post a fresh "reviewing…" comment immediately (progress ASAP), then collapse
+    // the previous review under an "Outdated review" <details>. Each review is its
+    // own comment; postReview edits this placeholder with the result.
+    const prevId = state.summaryCommentId ?? (await findActiveReviewComment(pr.number)) ?? undefined;
+    const shortSha0 = (pr.headSha || "").slice(0, 7);
+    const placeholderId = await postIssueComment(
+      pr.number,
+      `${REVIEW_MARKER}\n### 🤖 Michael review\n\n🔄 Reviewing${shortSha0 ? ` \`${shortSha0}\`` : ""}…`,
+    );
+    if (placeholderId) {
+      state.summaryCommentId = placeholderId;
+      writePrState(state);
+      if (prevId && prevId !== placeholderId) await supersedeReviewComment(prevId).catch(() => {});
+    }
+    // If the placeholder failed, summaryCommentId keeps prevId and postReview edits it.
 
     const details = await getPrDetails(pr.headRef);
     if (!details) {
@@ -158,13 +177,20 @@ async function postReview(
     "",
     findingCount ? `_${findingCount} inline comment${findingCount === 1 ? "" : "s"} below._` : "",
     tip,
-    `<sub>Reviewed \`${shortSha}\` · updates in place on new commits.</sub>`,
+    `<sub>Reviewed \`${shortSha}\` · earlier reviews collapse above.</sub>`,
   ]
     .filter((l) => l !== "")
     .join("\n");
 
-  const id = await upsertSummaryComment(pr.number, state.summaryCommentId, composed);
+  // Edit the placeholder posted at the start; fall back to a new comment if it's gone.
+  let id: number | null = state.summaryCommentId ?? null;
   if (id) {
+    const ok = await editIssueComment(id, composed);
+    if (!ok) id = await postIssueComment(pr.number, composed);
+  } else {
+    id = await postIssueComment(pr.number, composed);
+  }
+  if (id && id !== state.summaryCommentId) {
     state.summaryCommentId = id;
     writePrState(state);
   }

@@ -17,7 +17,7 @@ import {
 } from "./state";
 import { runGithubAgent, authorForLogin } from "./run";
 import { buildAutoFixPrompt } from "./prompts";
-import { postIssueComment, editIssueComment, removeLabel } from "./github-rest";
+import { postIssueComment, editIssueComment, removeLabel, listReviewComments } from "./github-rest";
 import { LABEL_AUTOFIX } from "./constants";
 import type { PrRef } from "./review";
 
@@ -105,8 +105,9 @@ export async function runAutoFix(
     s.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir: prior?.worktreeDir, lastPushedSha: prior?.lastPushedSha };
     writePrState(s);
 
+    // Post the first status BEFORE the (slow) worktree checkout so the PR shows it's working ASAP.
+    await updateStatus(resuming ? `resuming (iteration ${iterations + 1}/${MAX_ITERATIONS})…` : `starting (up to ${MAX_ITERATIONS} iterations) — setting up a worktree…`);
     const worktreeDir = await createWorktreeForPrBranch(pr.headRef);
-    await updateStatus(resuming ? `resuming (iteration ${iterations + 1}/${MAX_ITERATIONS})…` : `starting (up to ${MAX_ITERATIONS} iterations)…`);
 
     // Baseline to the CURRENT head so an iteration that pushes nothing compares
     // equal (no false "pushed" / false success on iteration 1).
@@ -125,7 +126,7 @@ export async function runAutoFix(
       if (details.state !== "OPEN") { outcome = `PR is ${details.state.toLowerCase()} — stopping.`; break; }
 
       const ciBefore = evaluateChecks(details);
-      const reviewSummary = readReviewSummary(pr.number);
+      const reviewSummary = await fetchReviewFindings(pr.number);
       await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: working on fixes…`);
 
       const prompt = buildAutoFixPrompt(details, reviewSummary, ciBefore.failing, iterations);
@@ -210,9 +211,16 @@ function parseRemaining(text: string): string {
   return v.toLowerCase() === "none" ? "none" : v;
 }
 
-/** The last review's summary text from the pinned review comment, for fix context. */
-function readReviewSummary(_prNumber: number): string {
-  // The review session transcript carries the detail; the fix agent will also read
-  // the PR comments itself. We pass an empty hint here and let the agent inspect.
-  return "";
+/**
+ * The PR's inline review findings, formatted for the fix prompt so auto-fix
+ * actually addresses Michael's review comments (not just CI). Skips outdated
+ * comments (line already changed). Returns "" when there are none.
+ */
+async function fetchReviewFindings(prNumber: number): Promise<string> {
+  const comments = await listReviewComments(prNumber);
+  const current = comments.filter((c) => !c.outdated && c.line != null);
+  if (!current.length) return "";
+  return current
+    .map((c) => `- ${c.path}:${c.line} — ${c.body.replace(/\s+/g, " ").trim().slice(0, 400)}`)
+    .join("\n");
 }

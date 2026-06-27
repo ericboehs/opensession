@@ -86,10 +86,10 @@ export function buildAutoFixPrompt(
 
   return `You are Michael, working on PR #${pr.number} ("${pr.title}") on tella-fusion. You are checked out on the PR's head branch \`${pr.headRefName}\` in a worktree. This is auto-fix iteration ${iteration}.
 
-Your job: address the outstanding review findings AND any failing CI on this PR, then commit and push.
+Your job: address the open code-review findings AND any failing CI on this PR, then commit and push.
 
-Latest review of this PR:
-${reviewSummary || "(no prior review text available — run `gh pr diff " + pr.number + "` and assess)"}
+Open review findings to address (from Michael's review comments — fix each one):
+${reviewSummary || "(none fetched — also run `gh pr view " + pr.number + " --comments` and `gh api repos/tellahq/tella-fusion/pulls/" + pr.number + "/comments` to find any review comments, then assess the diff)"}
 
 ${ci}
 
