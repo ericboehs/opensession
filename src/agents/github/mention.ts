@@ -11,10 +11,11 @@ import { getPrDetails } from "../../server/pr-info";
 import { listAutomations } from "../../server/automations";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock } from "./state";
-import { runGithubAgent, authorForLogin, finalSummary } from "./run";
+import { runGithubAgent, authorForLogin, finalSummary, sessionUrl } from "./run";
 import { buildMentionPrompt } from "./prompts";
 import {
   postIssueComment,
+  editIssueComment,
   replyToReviewComment,
   BOT_LOGIN,
   REPLY_MARKER,
@@ -91,6 +92,14 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
     if (details.state !== "OPEN") return;
     const headRef = details.headRefName;
     const model = listAutomations().find((a) => a.eventKey === PR_EVENT_KEY)?.model;
+    const link = `[📺 open session](${sessionUrl(prNumber, "mention")})`;
+
+    // Progress comment up front (with the session link, so you can open it to
+    // monitor) before the slow worktree + agent run.
+    const progressId = await postIssueComment(
+      prNumber,
+      `${REPLY_MARKER}\n🔄 On it — working on @${authorLogin}'s request… · ${link}`,
+    );
 
     // Code mode in the PR-branch worktree so Michael can make + push changes if asked.
     const worktreeDir = await createWorktreeForPrBranch(headRef);
@@ -117,17 +126,23 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
       author: authorForLogin(authorLogin),
     });
 
-    const reply = finalSummary(result.text);
-    if (!reply) {
-      console.warn(`[github] mention produced no reply for PR #${prNumber}`);
-      return;
+    const reply = finalSummary(result.text) || "(no reply produced)";
+    const out = `${REPLY_MARKER}\n${reply}\n\n<sub>${link}</sub>`;
+    if (kind === "review" && replyToId) {
+      // Answer in the inline thread; the progress comment becomes a pointer to it.
+      const ok = await replyToReviewComment(prNumber, replyToId, out);
+      if (!ok) console.warn(`[github] failed to post mention thread reply for PR #${prNumber}`);
+      if (progressId) {
+        await editIssueComment(progressId, `${REPLY_MARKER}\n✓ Replied in the review thread above. · ${link}`);
+      }
+    } else {
+      // Conversation reply: turn the progress comment into the answer.
+      if (progressId) {
+        if (!(await editIssueComment(progressId, out))) await postIssueComment(prNumber, out);
+      } else {
+        await postIssueComment(prNumber, out);
+      }
     }
-    const out = `${REPLY_MARKER}\n${reply}`;
-    const ok =
-      kind === "review" && replyToId
-        ? await replyToReviewComment(prNumber, replyToId, out)
-        : !!(await postIssueComment(prNumber, out));
-    if (!ok) console.warn(`[github] failed to post mention reply for PR #${prNumber}`);
   } catch (e) {
     console.error(`[github] mention reply error for PR #${prNumber}:`, e);
   } finally {
