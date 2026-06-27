@@ -1,0 +1,80 @@
+/**
+ * Shared entry point for triggering the GitHub PR behaviors from a PR number —
+ * used by both the Slack @mention intercept (handlers.ts) and the michael-github
+ * MCP tools (slack/github-tools.ts). Resolves the PR, fires the behavior
+ * fire-and-forget, and returns a human message to relay.
+ */
+import { getPrDetails, getPrDiff } from "../../server/pr-info";
+import { runReview, type PrRef } from "./review";
+import { runAutoFix } from "./autofix";
+import { runSimplify } from "./simplify";
+import { runAdversarial } from "./adversarial";
+import { resolveReviewConfig } from "./webhook";
+
+export type PrActionKind = "review" | "autofix" | "simplify" | "adversarial";
+
+/** Extract a PR number from "4296", "#4296", "pr 4296", or a GitHub PR URL. */
+export function parsePrNumber(input: number | string): number | null {
+  if (typeof input === "number") return Number.isFinite(input) ? Math.trunc(input) : null;
+  const s = String(input);
+  const m = s.match(/\/pull\/(\d+)/) || s.match(/#?(\d+)\s*$/) || s.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+const LABELS: Record<PrActionKind, string> = {
+  review: "reviewing",
+  autofix: "auto-fixing",
+  simplify: "running a simplify pass on",
+  adversarial: "running an adversarial review of",
+};
+
+export interface TriggerResult {
+  ok: boolean;
+  message: string;
+  url?: string;
+}
+
+/**
+ * Resolve the PR and start the requested behavior. `requestedBy` is the requester
+ * (Slack id or GitHub login) — used for commit attribution on fix/simplify/adversarial.
+ */
+export async function triggerPrAction(
+  kind: PrActionKind,
+  prNumber: number,
+  requestedBy: string,
+): Promise<TriggerResult> {
+  const details = await getPrDetails(String(prNumber));
+  if (!details) {
+    return { ok: false, message: `I couldn't find PR #${prNumber} on tellahq/tella-fusion.` };
+  }
+  const diff = await getPrDiff(details.headRefName);
+  const ref: PrRef = {
+    number: prNumber,
+    headRef: details.headRefName,
+    headSha: diff?.headRefOid || "",
+    title: details.title,
+  };
+
+  const fail = (e: unknown) => console.error(`[github] ${kind} trigger failed for PR #${prNumber}:`, e);
+  switch (kind) {
+    case "review":
+      // force=true: an explicit request reviews even an already-reviewed SHA.
+      void runReview(ref, resolveReviewConfig().config, undefined, true).catch(fail);
+      break;
+    case "autofix":
+      void runAutoFix(ref, requestedBy).catch(fail);
+      break;
+    case "simplify":
+      void runSimplify(ref, requestedBy).catch(fail);
+      break;
+    case "adversarial":
+      void runAdversarial(ref, requestedBy).catch(fail);
+      break;
+  }
+
+  return {
+    ok: true,
+    url: details.url,
+    message: `${LABELS[kind]} PR #${prNumber} (“${details.title}”). I'll post the results on the PR: ${details.url}`,
+  };
+}

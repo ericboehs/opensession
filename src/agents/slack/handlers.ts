@@ -36,6 +36,8 @@ import { SlackStreamer, buildToolStatus, isSilentTool } from "./streamer";
 import { SlackProgress } from "./progress";
 import { createAdminMcpServer } from "./admin-tools";
 import { createGithubMcpServer } from "./github-tools";
+import { triggerPrAction } from "../github/trigger";
+import { classifyMention } from "./mention-intent";
 import { renderMemoryForPrompt, type MemoryContext } from "./memory";
 import { enqueueMessage, getOrCreateQueue } from "./queue";
 import type { QueuedMessage, SessionQueue } from "./queue";
@@ -1351,7 +1353,17 @@ Please help with this request. Start by exploring the codebase to understand wha
     return;
   }
 
-  // Regular (non-worktree) channel mention — existing behavior
+  // Regular (non-worktree) channel mention. A quick Haiku classifier decides the
+  // route: an explicit PR action runs directly (no worktree), a question runs
+  // in-thread in the main checkout (no worktree), and a coding task spins up a
+  // worktree as before. Fail-open: a null verdict falls through to the code path.
+  const intent = await classifyMention(cleanText);
+
+  if (intent && intent.action !== "none" && intent.prNumber) {
+    const res = await triggerPrAction(intent.action, intent.prNumber, user);
+    await sendSlackMessage(channel, res.ok ? `On it — ${res.message}` : res.message, threadTs);
+    return;
+  }
 
   // Only thread mentions get surrounding context: a thread is one coherent
   // conversation, while channel history is mostly other people's unrelated
@@ -1361,6 +1373,29 @@ Please help with this request. Start by exploring the codebase to understand wha
     context = await fetchThreadContext(channel, thread_ts);
   }
 
+  // Ask mode: a question/discussion — answer in-thread in the main checkout, no
+  // worktree or dedicated channel.
+  if (intent?.mode === "ask") {
+    let askSession: SlackSession | undefined =
+      activeSessions.get(sessionKey) ?? (await loadSession(sessionKey)) ?? undefined;
+    if (askSession) activeSessions.set(sessionKey, askSession);
+    const intro = context
+      ? `${userName} asked me in a Slack thread (with context):\n\n---\n${context}\n---\n\nTheir question: "${cleanText}"`
+      : `${userName} asked me in Slack: "${cleanText}"`;
+    enqueueMessage(sessionKey, {
+      prompt: `${intro}\n\nThis is a question/discussion, not a coding task — don't create a branch or change code. Read the codebase as needed for context and answer concisely.`,
+      channel,
+      threadTs,
+      messageTs: ts,
+      userName,
+      userId: user,
+      isNewSession: !askSession,
+      // No worktreeDir → runs conversationally in the main checkout, replies in-thread.
+    });
+    return;
+  }
+
+  // Code mode: a real coding task — spin up a worktree (existing behavior).
   let worktreeDir: string | undefined;
   let branch: string | undefined;
   let prompt: string;
