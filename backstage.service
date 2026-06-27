@@ -8,9 +8,17 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/projects/tella-backstage
 EnvironmentFile=/home/ubuntu/.backstage.env
 Environment="NODE_ENV=production"
-ExecStart=/home/ubuntu/.bun/bin/bun run backstage.ts
+# --hot: edits to backstage source hot-reload in-process (request handlers and
+# the session-control registry refresh; WebSocket clients and in-flight runs
+# survive) instead of restarting and dropping every session. One-time setup
+# (agents, schedulers, timers) is guarded against double-start; long-lived agent
+# loop code still needs a real `systemctl restart`, which is now graceful.
+ExecStart=/home/ubuntu/.bun/bin/bun --hot run backstage.ts
 Restart=always
 RestartSec=5
+# Give graceful shutdown time to drain in-flight runs (SHUTDOWN_DRAIN_MS, 25s)
+# before systemd escalates to SIGKILL.
+TimeoutStopSec=40
 # Agent runs are driven by untrusted text (customer tickets); none of them
 # should be able to mint EC2 instance-role credentials from the metadata
 # endpoint. eBPF egress filter — covers every child the service spawns.

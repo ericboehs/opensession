@@ -35,10 +35,18 @@ const HOME = process.env.HOME || "/home/ubuntu";
 // Active runs, keyed by codex thread id AND the backstage session id (both
 // resolve for busy checks / cancellation, since a brand-new thread has no
 // thread id until the first event).
-const activeCodexRuns = new Map<string, AbortController>();
+// Parked on globalThis so a `bun --hot` reload keeps runs tracked (see the
+// matching note in claude-runner.ts).
+const activeCodexRuns: Map<string, AbortController> = ((globalThis as any).__activeCodexRuns ??=
+  new Map());
 
 export function isCodexSessionBusy(id: string): boolean {
   return activeCodexRuns.has(id);
+}
+
+/** Number of Codex runs this process is actively driving (for shutdown drain). */
+export function activeCodexRunCount(): number {
+  return activeCodexRuns.size;
 }
 
 export function cancelCodexRun(id: string): boolean {

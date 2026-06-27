@@ -35,8 +35,16 @@ export interface StreamEvent {
   usageLimitExhausted?: boolean;
 }
 
-// Track active runs to prevent concurrent runs on same session
-const activeRuns = new Map<string, AbortController>();
+// Track active runs to prevent concurrent runs on same session. Parked on
+// globalThis so a `bun --hot` reload of this module keeps existing runs
+// steerable/cancelable (and countable for graceful shutdown).
+const activeRuns: Map<string, AbortController> = ((globalThis as any).__activeClaudeRuns ??=
+  new Map());
+
+/** Number of Claude runs this process is actively driving (for shutdown drain). */
+export function activeRunCount(): number {
+  return activeRuns.size;
+}
 
 // Minimal environment for the spawned Claude process. Backstage's own env
 // carries every API token and webhook secret from ~/.backstage.env; the agent

@@ -17,9 +17,10 @@ import {
   steerRun,
   interruptAndSteerRun,
   takeInterruptedRuns,
+  activeRunCount,
   type StreamEvent,
 } from "./claude-runner";
-import { runCodex, isCodexSessionBusy, cancelCodexRun } from "./codex-runner";
+import { runCodex, isCodexSessionBusy, cancelCodexRun, activeCodexRunCount } from "./codex-runner";
 import { providerFor, resolveModel, DEFAULT_CODEX_MODEL, getDefaultModel } from "./models";
 import type { GitIdentity } from "./shared/user-mappings";
 
@@ -132,6 +133,15 @@ export function isAgentSessionBusy(...ids: Array<string | null | undefined>): bo
     if (isSessionBusy(id) || isCodexSessionBusy(id)) return true;
   }
   return false;
+}
+
+/**
+ * How many runs this process is actively driving across both backends. Used by
+ * graceful shutdown to wait for in-flight work to reach a stopping point before
+ * exiting. (Does not count external CLI/tmux runs — we can't drain those.)
+ */
+export function activeAgentRunCount(): number {
+  return activeRunCount() + activeCodexRunCount();
 }
 
 /**

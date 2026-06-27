@@ -66,6 +66,12 @@ function App() {
   const [route, setRoute] = useState<Route>(() => parseRoute(location.pathname));
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
+  // A session we've just navigated to that may not be in the polled list yet
+  // (create → navigate races the async refresh, and the file is only written
+  // once the run's `init` lands). While pending, the detail pane shows
+  // "Loading…" instead of flashing "Session not found".
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useSidebarSwipe({ open: sidebarOpen, setOpen: setSidebarOpen, panelRef: sidebarRef });
 
@@ -94,11 +100,27 @@ function App() {
   useEffect(() => {
     return addHandler((msg) => {
       if (msg.type === "session_created") {
+        // Mark it pending so the viewer shows "Loading…" until the poll catches
+        // up; a fallback timeout clears it so a failed create can't stick.
+        setPendingSessionId(msg.id);
+        clearTimeout(pendingTimer.current);
+        pendingTimer.current = setTimeout(() => setPendingSessionId(null), 30000);
         refresh();
         navigate({ view: "session", id: msg.id });
       }
     });
   }, [addHandler, refresh]);
+
+  // Clear the pending flag once the session shows up in the polled list.
+  useEffect(() => {
+    if (
+      pendingSessionId &&
+      sessions.some((s) => s.id === pendingSessionId || s.aliasIds?.includes(pendingSessionId))
+    ) {
+      setPendingSessionId(null);
+      clearTimeout(pendingTimer.current);
+    }
+  }, [sessions, pendingSessionId]);
 
   const currentSession: UnifiedSession | null =
     route.view === "session"
@@ -210,12 +232,19 @@ function App() {
               ) : (
                 <div className="detail-empty">
                   <div className="detail-empty-inner">
-                    <div className="detail-empty-title">
-                      {loading ? "Loading session…" : "Session not found"}
-                    </div>
-                    <div className="detail-empty-sub">
-                      {loading ? "" : "It may have been deleted."}
-                    </div>
+                    {(() => {
+                      const isLoading = loading || route.id === pendingSessionId;
+                      return (
+                        <>
+                          <div className="detail-empty-title">
+                            {isLoading ? "Loading session…" : "Session not found"}
+                          </div>
+                          <div className="detail-empty-sub">
+                            {isLoading ? "" : "It may have been deleted."}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               )

@@ -15,6 +15,7 @@ import {
   steerAgentRun,
   interruptAndSteerAgentRun,
   resumeInterruptedRuns,
+  activeAgentRunCount,
 } from "./src/server/agent-runner";
 import {
   KNOWN_MODELS,
@@ -73,6 +74,19 @@ const HOME = process.env.HOME || "/home/ubuntu";
 const BACKSTAGE_SESSIONS_DIR = `${HOME}/.backstage-sessions`;
 
 mkdirSync(BACKSTAGE_SESSIONS_DIR, { recursive: true });
+
+// --- Hot-reload support (bun --hot) ---------------------------------------
+// Under `bun --hot`, editing a module re-evaluates this entry file in the SAME
+// process, preserving `globalThis`. We exploit that so simple tweaks apply
+// without dropping WebSocket clients or killing in-flight runs: live state
+// (watchers, pending questions, queues) is parked on globalThis so the fresh
+// module binding reuses the same instances, the HTTP/WS server is reloaded in
+// place rather than rebound, and all one-time setup (agents, schedulers, timers,
+// signal handlers) is guarded behind `__backstageBooted` so it never stacks.
+// Long-lived agent *loop code* still needs a real restart — but that's now
+// graceful (see SIGTERM handler below). A plain `bun run` (no --hot) just runs
+// each branch once, exactly as before.
+const g = globalThis as any;
 
 // Cache sessions with short TTL
 let sessionsCache: { data: UnifiedSession[]; ts: number } | null = null;
@@ -150,7 +164,7 @@ interface WSClientData {
 }
 
 // sessionId → sockets currently viewing that session (collaboration fan-out)
-const sessionWatchers = new Map<string, Set<any>>();
+const sessionWatchers: Map<string, Set<any>> = (g.__sessionWatchers ??= new Map());
 
 function joinSession(ws: any, sessionId: string) {
   let set = sessionWatchers.get(sessionId);
@@ -201,7 +215,7 @@ interface PendingAsk {
   questions: unknown[];
   resolve: (answers: Record<string, string> | null) => void;
 }
-const pendingAsks = new Map<string, PendingAsk>();
+const pendingAsks: Map<string, PendingAsk> = (g.__pendingAsks ??= new Map());
 
 function makeAskHandler(sessionId: string) {
   return async (
@@ -248,7 +262,13 @@ function makeAskHandler(sessionId: string) {
 
 // Messages sent while a run is in flight queue up and deliver afterwards,
 // the same way Claude Code handles interruptions.
-const promptQueues = new Map<string, Array<{ content: string; user?: string }>>();
+const promptQueues: Map<string, Array<{ content: string; user?: string }>> = (g.__promptQueues ??=
+  new Map());
+
+// Loaded agents (Plain/Linear/Slack/Stripe/…). Module-scoped because request
+// handlers (health routes) read it, and globalThis-backed so the set survives a
+// hot reload (loadAgents runs only on a real boot, inside the guard below).
+let agents: AgentModule[] = (g.__agents as AgentModule[] | undefined) ?? [];
 
 function broadcastQueue(sessionId: string) {
   broadcastToSession(sessionId, {
@@ -282,7 +302,7 @@ async function runSessionPromptAndDrain(
 // Messages queued while a run we didn't start is in flight (Slack runs, CLI
 // sessions in tmux, automations) have no drain loop of their own — watch the
 // busy state and deliver the queue once the external run finishes.
-const drainWatchers = new Set<string>();
+const drainWatchers: Set<string> = (g.__drainWatchers ??= new Set());
 function watchExternalRunAndDrain(sessionId: string): void {
   if (drainWatchers.has(sessionId)) return;
   drainWatchers.add(sessionId);
@@ -565,26 +585,33 @@ function handleSlashCommand(
   return null;
 }
 
-// Loop ticker: fire due session loops (skips busy/archived sessions)
-setInterval(() => {
-  for (const session of getCachedSessions()) {
-    const loop = session.loop;
-    if (!loop || session.archived || session.source !== "backstage") continue;
-    if (!session.claudeSessionId && !session.codexThreadId) continue;
-    if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) continue;
-    const last = loop.lastRunAt ? new Date(loop.lastRunAt).getTime() : 0;
-    if (Date.now() - last < loop.intervalMinutes * 60_000) continue;
-    touchBackstageSession(session.id, {
-      loop: { ...loop, lastRunAt: new Date().toISOString() },
-    });
-    console.log(`[loop] Firing loop prompt for ${session.id} (every ${loop.intervalMinutes}m)`);
-    void runSessionPromptAndDrain(session.id, loop.prompt, loop.setBy ? `${loop.setBy} (loop)` : "loop");
-  }
-}, 60_000);
+// Loop ticker: fire due session loops (skips busy/archived sessions).
+// Guarded so a hot reload doesn't stack a second interval.
+if (!g.__backstageBooted) {
+  setInterval(() => {
+    for (const session of getCachedSessions()) {
+      const loop = session.loop;
+      if (!loop || session.archived || session.source !== "backstage") continue;
+      if (!session.claudeSessionId && !session.codexThreadId) continue;
+      if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) continue;
+      const last = loop.lastRunAt ? new Date(loop.lastRunAt).getTime() : 0;
+      if (Date.now() - last < loop.intervalMinutes * 60_000) continue;
+      touchBackstageSession(session.id, {
+        loop: { ...loop, lastRunAt: new Date().toISOString() },
+      });
+      console.log(`[loop] Firing loop prompt for ${session.id} (every ${loop.intervalMinutes}m)`);
+      void runSessionPromptAndDrain(session.id, loop.prompt, loop.setBy ? `${loop.setBy} (loop)` : "loop");
+    }
+  }, 60_000);
+}
 
 console.log(`Starting Backstage server on ${HOST}:${PORT}...`);
 
-const server = Bun.serve<WSClientData>({
+// Reuse the listening server across hot reloads so existing WebSocket clients
+// and in-flight runs survive a tweak; a fresh `bun run` just creates it once.
+// (Session/agent logic still hot-updates: the registry below is re-registered
+// on every reload, and per-message config is read fresh.)
+const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.serve<WSClientData>({
   port: PORT,
   hostname: HOST,
   // The plain-triage route waits for worktree+session boot (~15-60s);
@@ -1314,7 +1341,7 @@ const server = Bun.serve<WSClientData>({
           console: true,
         }
       : false,
-});
+}));
 
 console.log(`Backstage running at http://${HOST}:${PORT}/backstage/`);
 
@@ -1554,111 +1581,141 @@ async function loadAgents(): Promise<AgentModule[]> {
   return agents;
 }
 
-// Start webhook server with enabled agents + automation webhook triggers
-const agents = await loadAgents();
-const webhookServer = startWebhookServer(
-  agents,
-  getWebhookRoutes(() => {
-    sessionsCache = null;
-  })
-);
+// One-time startup: agents, schedulers, recurring timers, and signal handlers.
+// Guarded behind __backstageBooted so a `bun --hot` reload never double-starts
+// any of it — the already-running agents/timers keep going untouched (only a
+// real restart reloads their code, and that restart is now graceful, below).
+if (!g.__backstageBooted) {
+  // Start webhook server with enabled agents + automation webhook triggers
+  agents = await loadAgents();
+  g.__agents = agents;
+  const webhookServer = startWebhookServer(
+    agents,
+    getWebhookRoutes(() => {
+      sessionsCache = null;
+    })
+  );
+  void webhookServer;
 
-// Seed cron-scheduled "sweep" loops (Production Error Sweep, …) as automations
-// before the scheduler starts. Create-if-absent, so UI edits are preserved.
-try {
-  const { ensureSweepLoops } = await import("./src/agents/loops/sweep");
-  ensureSweepLoops();
-  const { ensureMonitors } = await import("./src/agents/loops/monitor");
-  ensureMonitors();
-  const { ensureSeoLoops } = await import("./src/agents/loops/seo");
-  ensureSeoLoops();
-  const { ensureStalePrMonitor } = await import("./src/agents/loops/stale-prs");
-  ensureStalePrMonitor();
-  const { ensureCronJobs } = await import("./src/agents/loops/cron-jobs");
-  ensureCronJobs();
-} catch (e) {
-  console.error("[loops] Failed to seed sweep/monitor/seo/stale-pr/cron loops:", e);
-}
+  // Seed cron-scheduled "sweep" loops (Production Error Sweep, …) as automations
+  // before the scheduler starts. Create-if-absent, so UI edits are preserved.
+  try {
+    const { ensureSweepLoops } = await import("./src/agents/loops/sweep");
+    ensureSweepLoops();
+    const { ensureMonitors } = await import("./src/agents/loops/monitor");
+    ensureMonitors();
+    const { ensureSeoLoops } = await import("./src/agents/loops/seo");
+    ensureSeoLoops();
+    const { ensureStalePrMonitor } = await import("./src/agents/loops/stale-prs");
+    ensureStalePrMonitor();
+    const { ensureCronJobs } = await import("./src/agents/loops/cron-jobs");
+    ensureCronJobs();
+  } catch (e) {
+    console.error("[loops] Failed to seed sweep/monitor/seo/stale-pr/cron loops:", e);
+  }
 
-// Cron-scheduled automations + internal event bus (agents → automations)
-startScheduler(() => {
-  sessionsCache = null;
-});
-setEventSessionCallback(() => {
-  sessionsCache = null;
-});
-
-// Archive triage sessions when their Plain ticket is done
-startPlainArchiveSweep(() => {
-  sessionsCache = null;
-});
-
-// Poll per-account Claude usage (drives account picking + the Connections UI)
-startUsagePoller();
-
-// Resume Claude runs a previous process left in-flight (restart/crash)
-setTimeout(() => {
-  const resumed = resumeInterruptedRuns(() => {
+  // Cron-scheduled automations + internal event bus (agents → automations)
+  startScheduler(() => {
     sessionsCache = null;
   });
-  if (resumed > 0) {
-    console.log(`[runner] Resumed ${resumed} interrupted run(s) from before restart`);
+  setEventSessionCallback(() => {
     sessionsCache = null;
-  }
-}, 3000);
+  });
 
-// Ongoing hygiene (every 6h): archive sessions idle for more than a week,
-// then remove worktrees of archived sessions idle >14 days with no WIP.
-setInterval(async () => {
-  const count = archiveOlderThan(getAllSessions(), 7);
-  if (count > 0) {
-    console.log(`[archive] Auto-archived ${count} session(s) idle >7 days`);
+  // Archive triage sessions when their Plain ticket is done
+  startPlainArchiveSweep(() => {
     sessionsCache = null;
-  }
-  try {
-    const removed = await sweepArchivedWorktrees(getAllSessions(), 14);
-    if (removed.length > 0) {
-      console.log(
-        `[worktree-sweep] Removed ${removed.length} clean worktree(s): ${removed.join(", ")}`
-      );
+  });
+
+  // Poll per-account Claude usage (drives account picking + the Connections UI)
+  startUsagePoller();
+
+  // Resume Claude runs a previous process left in-flight (restart/crash)
+  setTimeout(() => {
+    const resumed = resumeInterruptedRuns(() => {
+      sessionsCache = null;
+    });
+    if (resumed > 0) {
+      console.log(`[runner] Resumed ${resumed} interrupted run(s) from before restart`);
       sessionsCache = null;
     }
-  } catch (e) {
-    console.error("[worktree-sweep] Sweep failed:", e);
-  }
-}, 6 * 60 * 60 * 1000);
+  }, 3000);
 
-// Run agent startup hooks
-for (const agent of agents) {
-  try {
-    await agent.startup();
-    console.log(`[agents] ${agent.name} agent started`);
-  } catch (e) {
-    console.error(`[agents] ${agent.name} agent startup failed:`, e);
+  // Ongoing hygiene (every 6h): archive sessions idle for more than a week,
+  // then remove worktrees of archived sessions idle >14 days with no WIP.
+  setInterval(
+    async () => {
+      const count = archiveOlderThan(getAllSessions(), 7);
+      if (count > 0) {
+        console.log(`[archive] Auto-archived ${count} session(s) idle >7 days`);
+        sessionsCache = null;
+      }
+      try {
+        const removed = await sweepArchivedWorktrees(getAllSessions(), 14);
+        if (removed.length > 0) {
+          console.log(
+            `[worktree-sweep] Removed ${removed.length} clean worktree(s): ${removed.join(", ")}`
+          );
+          sessionsCache = null;
+        }
+      } catch (e) {
+        console.error("[worktree-sweep] Sweep failed:", e);
+      }
+    },
+    6 * 60 * 60 * 1000
+  );
+
+  // Run agent startup hooks
+  for (const agent of agents) {
+    try {
+      await agent.startup();
+      console.log(`[agents] ${agent.name} agent started`);
+    } catch (e) {
+      console.error(`[agents] ${agent.name} agent startup failed:`, e);
+    }
   }
+
+  // Graceful shutdown: stop taking new work, let in-flight runs reach a natural
+  // stopping point (bounded), then exit — instead of killing every run mid-turn.
+  // Anything still running after the drain window is picked up by the run
+  // journal on the next boot (resumeInterruptedRuns), so nothing is lost.
+  const DRAIN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_DRAIN_MS || "25000");
+  let shuttingDown = false;
+  const gracefulShutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[shutdown] ${signal} — stopping intake and draining in-flight runs…`);
+    // Stop agents from accepting new work (Slack socket, webhook intake, …).
+    for (const agent of agents) {
+      try {
+        await agent.shutdown();
+      } catch (e) {
+        console.error(`[shutdown] ${agent.name} shutdown error:`, e);
+      }
+    }
+    // Stop accepting new HTTP/WS connections; existing ones can finish.
+    try {
+      server.stop();
+    } catch {}
+    // Wait for runner-driven runs (web UI / automations / loops) to settle.
+    const deadline = Date.now() + DRAIN_TIMEOUT_MS;
+    let n = activeAgentRunCount();
+    while (n > 0 && Date.now() < deadline) {
+      console.log(`[shutdown] waiting on ${n} in-flight run(s)…`);
+      await new Promise((r) => setTimeout(r, 500));
+      n = activeAgentRunCount();
+    }
+    if (n > 0) {
+      console.log(
+        `[shutdown] ${n} run(s) still active after ${DRAIN_TIMEOUT_MS}ms — the journal will resume them on restart`
+      );
+    } else {
+      console.log("[shutdown] all in-flight runs drained cleanly");
+    }
+    process.exit(0);
+  };
+  process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
+
+  g.__backstageBooted = true;
 }
-
-// Graceful shutdown
-process.on("SIGTERM", async () => {
-  console.log("[shutdown] SIGTERM received, shutting down agents...");
-  for (const agent of agents) {
-    try {
-      await agent.shutdown();
-    } catch (e) {
-      console.error(`[shutdown] ${agent.name} shutdown error:`, e);
-    }
-  }
-  process.exit(0);
-});
-
-process.on("SIGINT", async () => {
-  console.log("[shutdown] SIGINT received, shutting down agents...");
-  for (const agent of agents) {
-    try {
-      await agent.shutdown();
-    } catch (e) {
-      console.error(`[shutdown] ${agent.name} shutdown error:`, e);
-    }
-  }
-  process.exit(0);
-});
