@@ -54,12 +54,19 @@ export interface TopIssuesData {
   movers: IssueRollup[]; // got new links, not already in top3, by newLinks desc
 }
 
-/** Previous weekday's 14:00 UTC (the prior scheduled run). Mon → last Friday. */
+// UTC weekdays the rollup runs (0=Sun..6=Sat). Keep in sync with the automation
+// cron `0 14 * * 2,4`. The "new links" window = since the previous scheduled run.
+const RUN_DAYS = [2, 4]; // Tue, Thu
+
+/** 14:00 UTC of the most recent prior run day (so the window covers since the last rollup). */
 function windowSince(now: Date): Date {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 14, 0, 0));
-  const dow = now.getUTCDay(); // 0 Sun .. 6 Sat
-  const back = dow === 1 ? 3 : dow === 0 ? 2 : dow === 6 ? 1 : 1; // Mon→Fri, weekend→Fri, else yesterday
-  d.setUTCDate(d.getUTCDate() - back);
+  for (let back = 1; back <= 7; back++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 14, 0, 0));
+    d.setUTCDate(d.getUTCDate() - back);
+    if (RUN_DAYS.includes(d.getUTCDay())) return d;
+  }
+  const d = new Date(now);
+  d.setUTCDate(d.getUTCDate() - 7);
   return d;
 }
 

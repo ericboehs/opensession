@@ -1,7 +1,7 @@
 /**
  * "Plain Top Issues rollup" — code-seeded automation (create-if-absent).
  *
- * Weekday 14:00 UTC (~4pm Amsterdam): a Haiku agent runs the deterministic
+ * Tue & Thu 14:00 UTC (~4pm Amsterdam): a Haiku agent runs the deterministic
  * top-issues helper, then for each shown issue PICKS the nicest genuine customer
  * quote from the raw candidates (Haiku judgment, not regex), and posts one rollup
  * to #chat — but only if there are new links since the previous run.
@@ -42,7 +42,7 @@ export function ensureTopIssuesRollup(): void {
   const created = createAutomation({
     name: "Plain Top Issues rollup",
     prompt: PROMPT,
-    schedule: "0 14 * * 1-5", // ~4pm Amsterdam every weekday (drifts 1h with DST, like the other team crons)
+    schedule: "0 14 * * 2,4", // Tue & Thu ~4pm Amsterdam (drifts 1h with DST); keep in sync with RUN_DAYS in top-issues.ts
     mode: "ask",
     createdBy: "Michael (plain agent)",
     eventKey: EVENT_KEY,
