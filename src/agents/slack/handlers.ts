@@ -1253,30 +1253,36 @@ I'm now in a worktree (branch: ${branch}) for this task. Please analyze what nee
 
 const UI_BASE = process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
 
-/** Slack card for a triggered PR action: the message + Open-in-Backstage and Stop buttons. */
-function prActionCardBlocks(message: string, bksId: string): any[] {
-  return [
+/**
+ * Slack card for a triggered PR action. While running: Open-in-Backstage + Stop.
+ * Once done: Stop is dropped (it's useless) and a "finished" note is added.
+ */
+function prActionCardBlocks(message: string, bksId: string, running: boolean): any[] {
+  const backstageButton = {
+    type: "button",
+    text: { type: "plain_text", text: ":desktop_computer: Open in Backstage", emoji: true },
+    url: `${UI_BASE}/session/${bksId}`,
+    action_id: `backstage:${bksId}`,
+  };
+  const stopButton = {
+    type: "button",
+    text: { type: "plain_text", text: ":octagonal_sign: Stop", emoji: true },
+    style: "danger",
+    action_id: `pr-stop:${bksId}`,
+    value: bksId,
+  };
+  const blocks: any[] = [
     { type: "section", text: { type: "mrkdwn", text: message } },
     {
       type: "actions",
       block_id: `pr-action-${bksId}`,
-      elements: [
-        {
-          type: "button",
-          text: { type: "plain_text", text: ":desktop_computer: Open in Backstage", emoji: true },
-          url: `${UI_BASE}/session/${bksId}`,
-          action_id: `backstage:${bksId}`,
-        },
-        {
-          type: "button",
-          text: { type: "plain_text", text: ":octagonal_sign: Stop", emoji: true },
-          style: "danger",
-          action_id: `pr-stop:${bksId}`,
-          value: bksId,
-        },
-      ],
+      elements: running ? [backstageButton, stopButton] : [backstageButton],
     },
   ];
+  if (!running) {
+    blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: "_✓ Finished — results are on the PR._" }] });
+  }
+  return blocks;
 }
 
 export async function handleMentionEvent(event: any): Promise<void> {
@@ -1391,7 +1397,15 @@ Please help with this request. Start by exploring the codebase to understand wha
     const res = await triggerPrAction(intent.action, intent.prNumber, user);
     if (res.ok && res.bksId) {
       const msg = `On it — ${res.message}`;
-      await postSlackBlocks(channel, msg, prActionCardBlocks(msg, res.bksId), threadTs);
+      const bksId = res.bksId;
+      const posted = await postSlackBlocks(channel, msg, prActionCardBlocks(msg, bksId, true), threadTs);
+      const cardTs = posted?.ts;
+      // Drop the Stop button once the run finishes.
+      if (cardTs && res.done) {
+        void res.done.finally(() =>
+          updateSlackBlocks(channel, cardTs, msg, prActionCardBlocks(msg, bksId, false)).catch(() => {}),
+        );
+      }
     } else {
       await sendSlackMessage(channel, res.message, threadTs);
     }

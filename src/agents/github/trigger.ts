@@ -35,6 +35,8 @@ export interface TriggerResult {
   url?: string;
   /** Backstage session id for this run (for an Open-in-Backstage link + Stop button). */
   bksId?: string;
+  /** Resolves when the behavior finishes — lets the caller update a control card (drop Stop). */
+  done?: Promise<void>;
 }
 
 /**
@@ -59,19 +61,20 @@ export async function triggerPrAction(
   };
 
   const fail = (e: unknown) => console.error(`[github] ${kind} trigger failed for PR #${prNumber}:`, e);
+  let done: Promise<void>;
   switch (kind) {
     case "review":
       // force=true: an explicit request reviews even an already-reviewed SHA.
-      void runReview(ref, resolveReviewConfig().config, undefined, true).catch(fail);
+      done = runReview(ref, resolveReviewConfig().config, undefined, true).catch(fail);
       break;
     case "autofix":
-      void runAutoFix(ref, requestedBy).catch(fail);
+      done = runAutoFix(ref, requestedBy).catch(fail);
       break;
     case "simplify":
-      void runSimplify(ref, requestedBy).catch(fail);
+      done = runSimplify(ref, requestedBy).catch(fail);
       break;
     case "adversarial":
-      void runAdversarial(ref, requestedBy).catch(fail);
+      done = runAdversarial(ref, requestedBy).catch(fail);
       break;
   }
 
@@ -79,6 +82,7 @@ export async function triggerPrAction(
     ok: true,
     url: details.url,
     bksId: bksIdFor(prNumber, kind),
+    done,
     message: `${LABELS[kind]} PR #${prNumber} (“${details.title}”). I'll post the results on the PR: ${details.url}`,
   };
 }
