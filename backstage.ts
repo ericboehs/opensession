@@ -1378,8 +1378,10 @@ try {
   ensureSweepLoops();
   const { ensureMonitors } = await import("./src/agents/loops/monitor");
   ensureMonitors();
+  const { ensureSeoLoops } = await import("./src/agents/loops/seo");
+  ensureSeoLoops();
 } catch (e) {
-  console.error("[loops] Failed to seed sweep/monitor loops:", e);
+  console.error("[loops] Failed to seed sweep/monitor/seo loops:", e);
 }
 
 // Cron-scheduled automations + internal event bus (agents → automations)

@@ -18,6 +18,7 @@ import {
 } from "./constants";
 import { runReview, type PrRef, type ReviewConfig } from "./review";
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
+import { SEO_LABEL } from "../loops/seo";
 
 let onSessionInvalidate: (() => void) | undefined;
 export function setGithubSessionInvalidate(cb: () => void): void {
@@ -34,6 +35,8 @@ interface PrPayload {
   head?: { ref?: string; sha?: string };
   user?: { login?: string };
   labels?: Array<{ name: string }>;
+  merged?: boolean;
+  merged_at?: string;
 }
 
 function prRef(pr: PrPayload): PrRef | null {
@@ -92,6 +95,15 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
         void fireSimplify(ref, requestedBy);
       } else if (label === LABEL_ADVERSARIAL) {
         void fireAdversarial(ref, requestedBy);
+      }
+      return;
+    }
+
+    // ── Merge → queue seo-sweep PRs for later Ahrefs validation ──
+    if (action === "closed" && pr.merged) {
+      if ((pr.labels || []).some((l) => l.name === SEO_LABEL)) {
+        const { recordMergedSeoPr } = await import("../loops/seo");
+        recordMergedSeoPr(pr.number, pr.merged_at || new Date().toISOString());
       }
       return;
     }
