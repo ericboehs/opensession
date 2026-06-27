@@ -11,15 +11,26 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { parsePrNumber, triggerPrAction, type PrActionKind } from "../github/trigger";
+import { sendSlackMessage } from "./slack-api";
 
 export interface GithubToolContext {
   /** Slack user id of the requester — used for commit attribution on fix/simplify/adversarial. */
   requestedBy: string;
+  /** Slack channel + thread to report back to when the action finishes. */
+  channel?: string;
+  threadTs?: string;
 }
 
 function text(s: string) {
   return { content: [{ type: "text" as const, text: s }] };
 }
+
+const KIND_LABEL: Record<PrActionKind, string> = {
+  review: "review",
+  autofix: "auto-fix",
+  simplify: "simplify pass",
+  adversarial: "adversarial review",
+};
 
 const prArg = {
   pr: z
@@ -32,6 +43,19 @@ export function createGithubMcpServer(ctx: GithubToolContext) {
     const n = parsePrNumber(pr);
     if (!n) return text(`Couldn't read a PR number from "${pr}".`);
     const res = await triggerPrAction(kind, n, ctx.requestedBy);
+    // Report back to the Slack thread when it finishes (this session has ended by
+    // then, so the runner posts the follow-up).
+    if (res.ok && res.done && ctx.channel) {
+      const channel = ctx.channel;
+      const threadTs = ctx.threadTs;
+      void res.done.finally(() =>
+        sendSlackMessage(
+          channel,
+          `✓ Finished the ${KIND_LABEL[kind]} on PR #${n} — results are on the PR${res.url ? `: ${res.url}` : ""}`,
+          threadTs,
+        ).catch(() => {}),
+      );
+    }
     return text(res.ok ? `On it — ${res.message}` : res.message);
   };
 

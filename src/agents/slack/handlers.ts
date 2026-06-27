@@ -823,7 +823,11 @@ export async function processMessage(
         createdBy: userName || msg.userId,
         isAdmin,
       }),
-      "michael-github": createGithubMcpServer({ requestedBy: msg.userId }),
+      "michael-github": createGithubMcpServer({
+        requestedBy: msg.userId,
+        channel,
+        threadTs: msg.threadTs,
+      }),
     };
   } catch (e) {
     console.warn("[slack] failed to build admin tools / memory:", e);
@@ -1400,11 +1404,19 @@ Please help with this request. Start by exploring the codebase to understand wha
       const bksId = res.bksId;
       const posted = await postSlackBlocks(channel, msg, prActionCardBlocks(msg, bksId, true), threadTs);
       const cardTs = posted?.ts;
-      // Drop the Stop button once the run finishes.
-      if (cardTs && res.done) {
-        void res.done.finally(() =>
-          updateSlackBlocks(channel, cardTs, msg, prActionCardBlocks(msg, bksId, false)).catch(() => {}),
-        );
+      // When the run finishes: drop the Stop button and report back in-thread.
+      if (res.done) {
+        const url = res.url;
+        void res.done.finally(() => {
+          if (cardTs) {
+            void updateSlackBlocks(channel, cardTs, msg, prActionCardBlocks(msg, bksId, false)).catch(() => {});
+          }
+          void sendSlackMessage(
+            channel,
+            `✓ Finished — results are on the PR${url ? `: ${url}` : ""}`,
+            threadTs,
+          ).catch(() => {});
+        });
       }
     } else {
       await sendSlackMessage(channel, res.message, threadTs);
