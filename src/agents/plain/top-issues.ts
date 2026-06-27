@@ -13,6 +13,8 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 
 const PLAIN_API_URL = process.env.PLAIN_API_URL || "https://core-api.uk.plain.com/graphql/v1";
 const CHAT_CHANNEL = "C01ED50A2KG"; // #chat
+const TOP_ISSUES_URL =
+  "https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/insights/top-issues/";
 const QUOTE_MODEL = process.env.PLAIN_TOPISSUES_QUOTE_MODEL || "claude-haiku-4-5";
 // Automation runs get a minimal env (no tokens), so fall back to the env file the
 // cron scripts use — HOME is always present.
@@ -177,7 +179,8 @@ export async function getTopIssuesData(now: Date = new Date()): Promise<TopIssue
   const top3Urls = new Set(top3.map((i) => i.url));
   const movers = issues
     .filter((i) => i.newLinks > 0 && !top3Urls.has(i.url))
-    .sort((a, b) => b.newLinks - a.newLinks);
+    .sort((a, b) => b.newLinks - a.newLinks)
+    .slice(0, 3); // top 3 movers; the rest are covered by the "view all" footer link
 
   const totalNewLinks = issues.reduce((s, i) => s + i.newLinks, 0);
 
@@ -262,6 +265,8 @@ function assembleMessage(data: TopIssuesData, top3q: string[], moverq: string[])
       L.push(quoteLine(moverq[n]));
     });
   }
+  L.push("");
+  L.push(`:mag: <${TOP_ISSUES_URL}|View all top issues in Plain →>`);
   return L.join("\n");
 }
 
