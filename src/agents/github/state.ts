@@ -105,6 +105,9 @@ export function listPrStates(): GithubPrState[] {
 // auto-fix AND simplify because they operate on the same PR-branch worktree —
 // running them concurrently on one PR would corrupt that worktree.
 
+// "review" is independent (read-only, main checkout). "code" is shared by
+// auto-fix, simplify, AND mention replies — they all operate on the same
+// PR-branch worktree, so they must not run concurrently on one PR.
 const locks: Record<"review" | "code", Set<number>> = {
   review: new Set(),
   code: new Set(),

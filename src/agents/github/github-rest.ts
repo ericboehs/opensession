@@ -13,6 +13,15 @@ export const GITHUB_REPO = "tellahq/tella-fusion";
 export const BOT_LOGIN = process.env.GITHUB_BOT_LOGIN || "tella-butler";
 /** Hidden marker on the single review summary comment, so we can re-find it if state is lost. */
 export const REVIEW_MARKER = "<!-- michael-review -->";
+/** Marker on @mention replies. */
+export const REPLY_MARKER = "<!-- michael-reply -->";
+/** Every marker Michael stamps on content it posts — used to skip our own comments (no self-loop). */
+export const MICHAEL_MARKERS = [
+  REVIEW_MARKER,
+  REPLY_MARKER,
+  "<!-- michael-autofix -->",
+  "<!-- michael-simplify -->",
+];
 
 export function githubConfigured(): boolean {
   return !!GITHUB_TOKEN;
@@ -116,6 +125,20 @@ export async function upsertSummaryComment(
     { body: withMarker }
   );
   return created.ok && created.data ? created.data.id : null;
+}
+
+/** Reply within a review-comment thread (inline @mention replies). */
+export async function replyToReviewComment(
+  prNumber: number,
+  commentId: number,
+  body: string
+): Promise<boolean> {
+  const r = await githubRequest(
+    "POST",
+    `/repos/${GITHUB_REPO}/pulls/${prNumber}/comments/${commentId}/replies`,
+    { body }
+  );
+  return r.ok;
 }
 
 /** Post a plain (non-marker) comment on the PR — used for fix/simplify status. */

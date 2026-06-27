@@ -444,9 +444,14 @@ Please address this feedback:
         });
       }
 
-      // Forward PR events to the github agent (review / auto-fix / simplify).
-      // Fire-and-forget so a github-module error never breaks the Slack path.
-      if (event === "pull_request") {
+      // Forward PR events to the github agent (review / auto-fix / simplify, and
+      // @mention replies on PR comments). Fire-and-forget so a github-module
+      // error never breaks the Slack path.
+      if (
+        event === "pull_request" ||
+        event === "issue_comment" ||
+        event === "pull_request_review_comment"
+      ) {
         import("../github/webhook")
           .then((m) => m.handleGithubPrEvent(event, payload))
           .catch((e) => console.error("[slack] github agent dispatch failed:", e));

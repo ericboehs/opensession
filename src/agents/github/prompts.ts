@@ -92,6 +92,38 @@ End your turn with a single line in exactly this format so the loop knows whethe
 or \`REMAINING_FINDINGS: <short description>\`  (if something couldn't be fixed this round).`;
 }
 
+export function buildMentionPrompt(opts: {
+  prNumber: number;
+  prTitle: string;
+  headRef: string;
+  author: string;
+  commentBody: string;
+  inline?: { path: string; line?: number; diffHunk?: string };
+}): string {
+  const where = opts.inline
+    ? `They left an inline comment on \`${opts.inline.path}\`${opts.inline.line ? `:${opts.inline.line}` : ""}.${
+        opts.inline.diffHunk
+          ? `\n\nDiff hunk for context:\n\`\`\`diff\n${opts.inline.diffHunk.slice(0, 2000)}\n\`\`\``
+          : ""
+      }`
+    : "They commented in the PR conversation.";
+
+  return `You are Michael, replying to @${opts.author}, who mentioned you on PR #${opts.prNumber} ("${opts.prTitle}") on tella-fusion. You are checked out on the PR's head branch \`${opts.headRef}\` in a worktree, so you can make and push changes if they ask. ${where}
+
+Their comment:
+"""
+${opts.commentBody}
+"""
+
+Decide what they need:
+- If it's a question or discussion, gather context (\`gh pr diff ${opts.prNumber}\`, read files, \`gh pr view ${opts.prNumber} --comments\`, your earlier review) and answer it directly. Make no changes.
+- If they're asking for a code change, just do it: make the edit, commit with a clear message, and push to the PR branch with \`git push origin HEAD:${opts.headRef}\`. Keep it tightly scoped to exactly what they asked — this is a one-shot request. (The autonomous "keep fixing until CI is green and all review findings are resolved" pass is a separate thing, triggered by the \`michael-auto-fix\` label — don't try to replicate that whole loop here; just handle their specific request.) Never run \`gh pr merge\`.
+
+Then write a concise reply as Michael: answer the question, or describe exactly what you changed and pushed. Only claim changes you actually made and pushed; if you couldn't do something, say so.
+
+Output ONLY your reply text as GitHub markdown — no JSON, and do not post anything yourself; the reply is posted for you.`;
+}
+
 export function buildSimplifyPrompt(pr: PrDetails): string {
   return `You are Michael, simplifying PR #${pr.number} ("${pr.title}") on tella-fusion. You are checked out on the PR's head branch \`${pr.headRefName}\` in a worktree.
 

@@ -14,7 +14,7 @@ import type { BackstageSessionFile } from "../../server/types";
 const HOME = process.env.HOME || "/home/ubuntu";
 const SESSIONS_DIR = `${HOME}/.backstage-sessions`;
 
-export type GithubRunKind = "review" | "autofix" | "simplify";
+export type GithubRunKind = "review" | "autofix" | "simplify" | "mention";
 
 /** Stable, deterministic backstage session id per PR + behavior (one resumable session each). */
 export function bksIdFor(prNumber: number, kind: GithubRunKind): string {

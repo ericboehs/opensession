@@ -62,6 +62,16 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     if (payload?.repository?.full_name && payload.repository.full_name !== GITHUB_REPO) return;
     // Ignore our own actions to avoid self-trigger loops.
     if (payload?.sender?.login && payload.sender.login === BOT_LOGIN) return;
+
+    // @mention replies on PR comments (inline + conversation).
+    if (event === "issue_comment" || event === "pull_request_review_comment") {
+      const { handleMention } = await import("./mention");
+      void handleMention(event === "issue_comment" ? "issue" : "review", payload).catch((e) =>
+        console.error("[github] handleMention failed:", e),
+      );
+      return;
+    }
+
     if (event !== "pull_request") return;
 
     const pr = payload.pull_request as PrPayload;
