@@ -31,6 +31,11 @@ import {
   removeCodexAccount,
 } from "./src/server/codex-accounts";
 import { getSessionDiff } from "./src/server/git-diff";
+import {
+  registerSessionControl,
+  type SessionState,
+  type SessionSummary,
+} from "./src/server/session-control";
 import { gitIdentityFor } from "./src/server/shared/user-mappings";
 import { getPrDetails, getPrDiff, postPrComment } from "./src/server/pr-info";
 import {
@@ -90,6 +95,33 @@ function getCachedSessions(): UnifiedSession[] {
 
 function findSession(sessionId: string): UnifiedSession | undefined {
   return getCachedSessions().find((s) => s.id === sessionId);
+}
+
+/** Derive the at-a-glance state + control surface for a session (for the MCP). */
+function buildSummary(s: UnifiedSession): SessionSummary {
+  const busyHere = isAgentSessionBusy(s.claudeSessionId, s.codexThreadId, s.id);
+  // External runs (CLI in tmux, another process) show as running via PID but
+  // aren't in our activeRuns — observe-only, can't steer/cancel them.
+  const runningExternal = !!s.isRunning && !busyHere;
+  const pending = pendingAsks.get(s.id);
+  const queuedCount = promptQueues.get(s.id)?.length || 0;
+
+  let state: SessionState;
+  if (s.archived) state = "archived";
+  else if (pending) state = "waiting_question";
+  else if (busyHere || s.isRunning) state = "running";
+  else if (queuedCount > 0) state = "queued";
+  else state = "idle";
+
+  return {
+    ...s,
+    state,
+    queuedCount,
+    controllable: !runningExternal,
+    ...(pending
+      ? { pendingQuestion: { questionId: pending.questionId, questions: pending.questions } }
+      : {}),
+  };
 }
 
 function touchBackstageSession(
@@ -1285,6 +1317,166 @@ const server = Bun.serve<WSClientData>({
 });
 
 console.log(`Backstage running at http://${HOST}:${PORT}/backstage/`);
+
+// --- Session control surface (powers the michael-sessions MCP) ---
+// Wires the MCP's tools into the same in-process state and helpers the
+// WebSocket handlers use, so a management session steers/answers/creates the
+// exact same way a human does in the web UI. See src/server/session-control.ts.
+registerSessionControl({
+  listSessions: () => getCachedSessions().map(buildSummary),
+
+  getSession: (id) => {
+    const s = findSession(id);
+    return s ? buildSummary(s) : undefined;
+  },
+
+  transcriptTail: (id, n) => {
+    const s = findSession(id);
+    if (!s?.transcriptPath) return [];
+    return parseTranscript(s.transcriptPath).slice(-Math.max(0, n));
+  },
+
+  answerQuestion: (id, answers) => {
+    const pending = pendingAsks.get(id);
+    if (!pending) return false;
+    // resolve() clears the timeout, deletes the entry and unblocks makeAskHandler,
+    // which broadcasts ask_resolved and lets the run continue with these answers.
+    pending.resolve(answers && typeof answers === "object" ? answers : null);
+    return true;
+  },
+
+  deliverToSession: async (id, content, user) => {
+    const session = findSession(id);
+    if (!session) return { status: "error" as const, message: "No session with that id." };
+    const attributed = user ? `[${user}] ${content}` : content;
+
+    if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) {
+      // Busy + owned here → fold into the running turn (delivered at the next
+      // stopping point). Otherwise queue and drain when the external run ends.
+      if (steerAgentRun([session.claudeSessionId, session.codexThreadId, session.id], attributed)) {
+        broadcastToSession(id, {
+          type: "notice",
+          message: `Message from ${user || "Michael"} folded into the run — picked up at the next stopping point.`,
+        });
+        return { status: "steered" as const, message: "Folded into the running turn." };
+      }
+      const queue = promptQueues.get(id) || [];
+      queue.push({ content, user });
+      promptQueues.set(id, queue);
+      broadcastQueue(id);
+      watchExternalRunAndDrain(id);
+      return { status: "queued" as const, message: "Queued behind the current run." };
+    }
+
+    if (providerFor(session.model) === "claude" && !session.claudeSessionId) {
+      return { status: "error" as const, message: "Session has no Claude session to resume yet." };
+    }
+
+    // Idle → start a fresh turn in the background; don't block the tool call on
+    // the whole run finishing.
+    void runSessionPromptAndDrain(id, content, user).catch((e) =>
+      console.error(`[sessions-mcp] deliver to ${id} failed:`, e)
+    );
+    return { status: "started" as const, message: "Started a new turn on the session." };
+  },
+
+  cancelSession: (id) => {
+    const session = findSession(id);
+    if (!session) return false;
+    const cancelled = cancelAgentRun(session.claudeSessionId, session.codexThreadId, session.id);
+    const dropped = promptQueues.get(id)?.length || 0;
+    if (dropped > 0) {
+      promptQueues.delete(id);
+      broadcastQueue(id);
+    }
+    return cancelled;
+  },
+
+  createSession: async ({ prompt, branch, mode, model: modelInput, user }) => {
+    const isAsk = mode !== "code";
+    const model = modelInput ? resolveModel(String(modelInput))?.id : undefined;
+    const isCodex = providerFor(model) === "codex";
+
+    let wtPath: string;
+    if (isAsk) {
+      wtPath = `${HOME}/projects/tella-fusion`;
+    } else {
+      const worktrees = await listWorktrees();
+      wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
+      if (!wtPath) wtPath = await createWorktree(branch!);
+    }
+
+    const bksId = `bks-${randomUUIDv7()}`;
+    const title = prompt.trim().split("\n")[0].slice(0, 80);
+
+    let engineSessionId = "";
+    let persisted = false;
+    const persist = () => {
+      const sessionData: BackstageSessionFile = {
+        id: bksId,
+        claudeSessionId: isCodex ? "" : engineSessionId,
+        ...(isCodex && engineSessionId ? { codexThreadId: engineSessionId } : {}),
+        ...(model ? { model } : {}),
+        branch: isAsk ? "" : branch || "",
+        worktreeDir: wtPath,
+        createdBy: user || "Michael",
+        createdAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+        title,
+        mode: isAsk ? "ask" : "code",
+      };
+      writeFileSync(
+        `${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
+        JSON.stringify(sessionData, null, 2)
+      );
+      sessionsCache = null;
+      persisted = true;
+    };
+
+    // Run in the background; watchers (web UI) see the live stream, the same as
+    // a UI-created session. The tool returns the id immediately.
+    void (async () => {
+      try {
+        for await (const event of runAgent({
+          prompt,
+          cwd: wtPath,
+          mode: isAsk ? "ask" : "code",
+          model,
+          confirmTools: STRIPE_CONFIRM_TOOLS,
+          aws: true,
+          journal: { bksSessionId: bksId, kind: "create" },
+          onAskUser: makeAskHandler(bksId),
+        })) {
+          if (event.type === "init") {
+            engineSessionId = event.sessionId || "";
+            persist();
+          }
+          if (event.type === "text_chunk") {
+            broadcastToSession(bksId, { type: "stream_text", text: event.text });
+          }
+          if (event.type === "done") {
+            engineSessionId = event.sessionId || engineSessionId;
+          }
+          if (event.type === "error") {
+            broadcastToSession(bksId, { type: "error", message: event.content });
+          }
+        }
+        if (!persisted) persist();
+        else
+          touchBackstageSession(
+            bksId,
+            isCodex ? { codexThreadId: engineSessionId } : { claudeSessionId: engineSessionId }
+          );
+        broadcastToSession(bksId, { type: "stream_done" });
+        broadcastToSession(bksId, { type: "session_status", isRunning: false });
+      } catch (e) {
+        console.error(`[sessions-mcp] create session ${bksId} failed:`, e);
+      }
+    })();
+
+    return { id: bksId };
+  },
+});
 
 // --- Agent loading and webhook server ---
 

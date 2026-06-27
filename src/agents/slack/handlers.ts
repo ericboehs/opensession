@@ -36,6 +36,7 @@ import { SlackStreamer, buildToolStatus, isSilentTool } from "./streamer";
 import { SlackProgress } from "./progress";
 import { createAdminMcpServer } from "./admin-tools";
 import { createGithubMcpServer } from "./github-tools";
+import { createSessionsMcpServer } from "./sessions-tools";
 import { triggerPrAction } from "../github/trigger";
 import { classifyMention } from "./mention-intent";
 import { renderMemoryForPrompt, type MemoryContext } from "./memory";
@@ -828,6 +829,10 @@ export async function processMessage(
         channel,
         threadTs: msg.threadTs,
       }),
+      "michael-sessions": createSessionsMcpServer({
+        createdBy: userName || msg.userId,
+        isAdmin,
+      }),
     };
   } catch (e) {
     console.warn("[slack] failed to build admin tools / memory:", e);
@@ -841,7 +846,13 @@ export async function processMessage(
     "\n\n## GitHub PR actions\nWhen asked to review, auto-fix, simplify, or adversarially review a tella-fusion PR " +
     "(e.g. \"review PR 4296\", \"auto-fix PR 4296\", \"adversarial review PR 4296\"), use the michael-github MCP tools " +
     "(review_pr / auto_fix_pr / simplify_pr / adversarial_review_pr) — they run the same actions as the PR labels and " +
-    "post the results on the PR. Pass the PR number; the tool starts it and reports back, so just relay what it says.";
+    "post the results on the PR. Pass the PR number; the tool starts it and reports back, so just relay what it says." +
+    "\n\n## Managing other sessions\nYou can see and steer every other Backstage session via the michael-sessions MCP tools. " +
+    "Use list_sessions (filter 'waiting' to find sessions blocked on a question, 'active' for what's running) and get_session " +
+    "to inspect state and transcripts. For trusted users: answer_session_question unblocks a session paused on a question, " +
+    "send_to_session messages/redirects a running or idle session, cancel_session stops a run, and create_session spins up a new " +
+    "ask- or code-mode session. When asked things like \"what's still running?\", \"what's waiting on me?\", or \"tell session X to …\", " +
+    "use these tools. Combine with the gh CLI (Bash) for deeper PR status (CI checks, review state) beyond the PR link list_sessions already shows.";
 
   rotation: for (;;) {
   let limitHit = false;

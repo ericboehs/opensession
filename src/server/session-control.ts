@@ -1,0 +1,112 @@
+/**
+ * session-control — a tiny registry that decouples the michael-sessions MCP
+ * (src/agents/slack/sessions-tools.ts) from the live in-process state that only
+ * exists inside the main backstage.ts process: the running-run map, the pending
+ * AskUserQuestion map, the prompt queues, and the WebSocket broadcast fan-out.
+ *
+ * backstage.ts owns all of that and calls registerSessionControl() at startup
+ * with an implementation that wires into its own helpers (runSessionPromptAndDrain,
+ * steerAgentRun, makeAskHandler, …). The MCP — which is constructed in the Slack
+ * handler module, NOT in backstage.ts — reaches it through getSessionControl()
+ * without importing backstage.ts (that would re-run the server bootstrap and
+ * create a circular import).
+ *
+ * A future autonomous monitor (src/agents/loops) can call the same
+ * getSessionControl() surface directly, no MCP involved.
+ */
+import type { UnifiedSession, TranscriptEntry } from "./types";
+
+/**
+ * Derived, at-a-glance status for a session. `waiting_question` is the one the
+ * UI/MCP most cares about — a run paused on an AskUserQuestion, needing a human.
+ */
+export type SessionState =
+  | "running"
+  | "waiting_question"
+  | "queued"
+  | "idle"
+  | "archived";
+
+/** A pending AskUserQuestion a session is blocked on, surfaced for answering. */
+export interface PendingQuestionView {
+  questionId: string;
+  /** Raw AskUserQuestion `questions` array: each has header/question/options. */
+  questions: unknown[];
+}
+
+export interface SessionSummary extends UnifiedSession {
+  state: SessionState;
+  /** Present only when state === "waiting_question". */
+  pendingQuestion?: PendingQuestionView;
+  /** Messages queued behind an in-flight run. */
+  queuedCount: number;
+  /** Whether this session's run is owned by this process (steerable/cancelable). */
+  controllable: boolean;
+}
+
+export interface DeliverResult {
+  status: "steered" | "queued" | "started" | "error";
+  message: string;
+}
+
+export interface CreateSessionOpts {
+  prompt: string;
+  /** Branch for a code-mode worktree session. Ignored for ask mode. */
+  branch?: string;
+  /** "ask" (default) runs read-only on the main checkout; "code" gets a worktree. */
+  mode?: "ask" | "code";
+  /** Optional model id; invalid input falls back to the default. */
+  model?: string;
+  /** Display name credited as the creator. */
+  user?: string;
+}
+
+/**
+ * The control surface the MCP (and future loops) use. Every method operates on
+ * the live backstage process state.
+ */
+export interface SessionControl {
+  /** All sessions with a derived state, queue depth and controllability. */
+  listSessions(): SessionSummary[];
+  /** One session's summary, or undefined if no such id. */
+  getSession(id: string): SessionSummary | undefined;
+  /** Last `n` transcript entries for a session (for the "what's it doing" view). */
+  transcriptTail(id: string, n: number): TranscriptEntry[];
+  /**
+   * Resolve a session's pending AskUserQuestion. `answers` maps each question's
+   * header to the chosen option label. Returns false if nothing was waiting.
+   */
+  answerQuestion(id: string, answers: Record<string, string>): boolean;
+  /**
+   * Deliver a message to a session: steer it into the running turn if busy and
+   * owned by this process, queue it behind an external run, or start a fresh
+   * turn when idle. Fire-and-forget — returns once the message is placed.
+   */
+  deliverToSession(id: string, content: string, user?: string): Promise<DeliverResult>;
+  /** Cancel a session's in-flight run (only runs this process owns). */
+  cancelSession(id: string): boolean;
+  /** Create a new session and start its first turn in the background. */
+  createSession(opts: CreateSessionOpts): Promise<{ id: string }>;
+}
+
+let impl: SessionControl | null = null;
+
+/** Called once by backstage.ts at startup. */
+export function registerSessionControl(c: SessionControl): void {
+  impl = c;
+}
+
+/** Throws if called before backstage.ts has registered (i.e. outside the server). */
+export function getSessionControl(): SessionControl {
+  if (!impl) {
+    throw new Error(
+      "session control not registered — michael-sessions tools only work inside the backstage server process"
+    );
+  }
+  return impl;
+}
+
+/** Non-throwing variant for callers that want to degrade gracefully. */
+export function tryGetSessionControl(): SessionControl | null {
+  return impl;
+}
