@@ -146,6 +146,10 @@ async function postReview(
   const confidence =
     typeof parsed?.confidence === "number" ? ` · confidence ${parsed.confidence}/5` : "";
   const findingCount = parsed?.findings?.length || 0;
+  // Next-steps footer pointing at the action labels.
+  const tip = findingCount
+    ? "> 💡 Add the **`michael-auto-fix`** label and I'll fix these and push to this branch until CI passes — or **`michael-adversarial`** for a deeper, two-pass review."
+    : "> 💡 Add the **`michael-adversarial`** label for a deeper, two-pass adversarial review — or **`michael-auto-fix`** to fix anything outstanding and push until CI passes.";
   const composed = [
     REVIEW_MARKER,
     `### 🤖 Michael review${verdict}${confidence}`,
@@ -153,6 +157,7 @@ async function postReview(
     summaryBody,
     "",
     findingCount ? `_${findingCount} inline comment${findingCount === 1 ? "" : "s"} below._` : "",
+    tip,
     `<sub>Reviewed \`${shortSha}\` · updates in place on new commits.</sub>`,
   ]
     .filter((l) => l !== "")
