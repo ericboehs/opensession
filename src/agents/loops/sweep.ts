@@ -26,8 +26,8 @@ export interface SweepConfig {
   schedule: string;
   mcpServers: string[];
   model: string;
-  /** Prompt fragment describing where/how to find the issues this sweep targets. */
-  sources: string;
+  /** The task: what to look for, what to protect, and how to approach it. */
+  task: string;
 }
 
 const REPO = "tellahq/tella-fusion";
@@ -37,14 +37,13 @@ export function buildSweepPrompt(cfg: SweepConfig): string {
 
 Goal: find genuinely NEW, actionable issues, fix each at the root, verify the fix, and open one PR per issue — and crucially, never open a PR that duplicates one a previous run already opened.
 
-## 1. Find issues
-${cfg.sources}
-Focus on real, recurring, actionable problems — not one-offs, known-flaky noise, or things outside our control. Prioritize by impact and frequency.
+## 1. Find work to do
+${cfg.task}
 
 ## 2. Avoid duplicate PRs (do this BEFORE fixing or opening anything)
 Run:
 \`gh pr list --repo ${REPO} --label ${cfg.label} --state open --json number,title,body,headRefName\`
-These are still-open PRs from previous "${cfg.name}" runs. For each candidate issue, check whether an open PR already addresses the same root cause / error signature / component. If it does, DO NOT open another PR for it — skip it. (You may add a brief comment to the existing PR only if you have genuinely new diagnostic info, e.g. "still occurring as of <date>".) Only continue with issues that are NOT already covered.
+These are still-open PRs from previous "${cfg.name}" runs. For each candidate, check whether an open PR already addresses the same thing (same root cause / file / component). If it does, DO NOT open another PR for it — skip it. (You may add a brief comment to the existing PR only if you have genuinely new, useful information.) Only continue with work that is NOT already covered.
 
 ## 3. Fix + verify each new issue
 For each genuinely new, actionable issue:
@@ -58,7 +57,10 @@ For each genuinely new, actionable issue:
 Keep each PR scoped to a single issue. NEVER run \`gh pr merge\`.
 
 ## 5. If there's nothing new
-If you find no actionable issues, or every issue you found is already covered by an open "${cfg.name}" PR, STOP and make no changes and no PRs. Do not open empty or speculative PRs.`;
+If you find nothing actionable, or everything you found is already covered by an open "${cfg.name}" PR, STOP and make no changes and no PRs. Do not open empty or speculative PRs.
+
+## 6. Wrap up
+End with a brief summary: what you changed and the evidence it's verified, plus any candidates you deliberately deferred and why (uncertain, needs human approval, or couldn't be verified). Defer rather than force anything you can't confidently verify.`;
 }
 
 const SWEEP_LOOPS: SweepConfig[] = [
@@ -70,8 +72,21 @@ const SWEEP_LOOPS: SweepConfig[] = [
     schedule: "0 16 * * 1-5", // ~9am PT, weekday mornings (server is UTC)
     mcpServers: ["grafana", "sentry"],
     model: "claude-opus-4-8",
-    sources:
-      "Use the Grafana MCP to review production logs for errors. The high-volume targets are worth checking first — `vercel` especially — plus `instant` and `temporal`. The Sentry MCP is also available for additional error context.",
+    task:
+      "Use the Grafana MCP to review production logs for errors — the high-volume targets first (`vercel` especially), plus `instant` and `temporal`. The Sentry MCP is also available for error context. Focus on real, recurring, actionable errors — not one-offs, known-flaky noise, or things outside our control; prioritize by impact and frequency, and trace each to its root cause before fixing.",
+  },
+  {
+    eventKey: "loop:code-cleanup-sweep",
+    name: "Code Cleanup Sweep",
+    label: "code-cleanup-sweep",
+    titlePrefix: "Code Cleanup Sweep",
+    schedule: "0 17 * * 1", // ~10am PT, Mondays (weekly; cleanup is low-urgency)
+    mcpServers: [],
+    model: "claude-opus-4-8",
+    task:
+      "Review the tella-fusion codebase for cleanup opportunities: dead code (unreachable or unused), stale files or comments, unused dependencies, duplication, broken links, inconsistent names, and confusing structure.\n\n" +
+      "Protect active and uncertain work: do NOT touch unrelated changes, uncommitted/work-in-progress, generated files, or anything you're not confident is safe to remove — when in doubt, leave it and defer it.\n\n" +
+      "Be conservative and incremental: prove ONE low-risk cleanup at a time and make the smallest coherent change rather than a sweeping refactor; a few clearly-safe cleanups per run is plenty. If the build/tests aren't available to verify a change, defer it rather than guessing. Stop when no clearly-safe cleanups remain or progress stalls.",
   },
 ];
 
