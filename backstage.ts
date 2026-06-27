@@ -1376,8 +1376,10 @@ const webhookServer = startWebhookServer(
 try {
   const { ensureSweepLoops } = await import("./src/agents/loops/sweep");
   ensureSweepLoops();
+  const { ensureMonitors } = await import("./src/agents/loops/monitor");
+  ensureMonitors();
 } catch (e) {
-  console.error("[loops] Failed to seed sweep loops:", e);
+  console.error("[loops] Failed to seed sweep/monitor loops:", e);
 }
 
 // Cron-scheduled automations + internal event bus (agents → automations)
