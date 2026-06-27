@@ -5,6 +5,20 @@ import type { UnifiedSession } from "./types";
 const TELLA_FUSION = "/home/ubuntu/projects/tella-fusion";
 const WORKTREES_DIR = "/home/ubuntu/worktrees";
 
+// Serialize git operations that mutate the shared repo's worktrees. Concurrent
+// `git worktree add` race on `.git/config` ("could not lock config file") when two
+// runs create worktrees at once — e.g. two loops triggered together, or a loop plus
+// a PR action. This in-process mutex runs them one at a time.
+let gitOpChain: Promise<unknown> = Promise.resolve();
+function withGitLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = gitOpChain.then(fn, fn);
+  gitOpChain = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
+}
+
 export interface WorktreeInfo {
   branch: string;
   path: string;
@@ -119,16 +133,18 @@ export async function reviveWorktree(branch: string): Promise<string> {
   const wtPath = `${WORKTREES_DIR}/tella-fusion-${branch}`;
   if (existsSync(wtPath)) return wtPath;
 
-  await $`git -C ${TELLA_FUSION} worktree prune`.quiet();
-  const hasBranch =
-    (await $`git -C ${TELLA_FUSION} show-ref --verify --quiet refs/heads/${branch}`.nothrow()).exitCode === 0;
-  if (hasBranch) {
-    await $`git -C ${TELLA_FUSION} worktree add ${wtPath} ${branch}`;
-  } else {
-    await $`git -C ${TELLA_FUSION} fetch origin main --quiet`;
-    await $`git -C ${TELLA_FUSION} worktree add -b ${branch} ${wtPath} origin/main`;
-  }
-  return wtPath;
+  return withGitLock(async () => {
+    await $`git -C ${TELLA_FUSION} worktree prune`.quiet();
+    const hasBranch =
+      (await $`git -C ${TELLA_FUSION} show-ref --verify --quiet refs/heads/${branch}`.nothrow()).exitCode === 0;
+    if (hasBranch) {
+      await $`git -C ${TELLA_FUSION} worktree add ${wtPath} ${branch}`;
+    } else {
+      await $`git -C ${TELLA_FUSION} fetch origin main --quiet`;
+      await $`git -C ${TELLA_FUSION} worktree add -b ${branch} ${wtPath} origin/main`;
+    }
+    return wtPath;
+  });
 }
 
 /**
@@ -142,14 +158,18 @@ export async function reviveWorktree(branch: string): Promise<string> {
 export async function createWorktreeForPrBranch(headRef: string): Promise<string> {
   const wtPath = `${WORKTREES_DIR}/tella-fusion-${headRef}-michael`;
 
-  await $`git -C ${TELLA_FUSION} fetch origin ${headRef} --quiet`;
-  if (existsSync(wtPath)) {
-    await $`git -C ${wtPath} fetch origin ${headRef} --quiet`.nothrow();
-    await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet().nothrow();
-    return wtPath;
-  }
-  await $`git -C ${TELLA_FUSION} worktree prune`.quiet();
-  await $`git -C ${TELLA_FUSION} worktree add ${wtPath} -B ${headRef}-michael origin/${headRef}`;
+  const reused = await withGitLock(async () => {
+    await $`git -C ${TELLA_FUSION} fetch origin ${headRef} --quiet`;
+    if (existsSync(wtPath)) {
+      await $`git -C ${wtPath} fetch origin ${headRef} --quiet`.nothrow();
+      await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet().nothrow();
+      return true;
+    }
+    await $`git -C ${TELLA_FUSION} worktree prune`.quiet();
+    await $`git -C ${TELLA_FUSION} worktree add ${wtPath} -B ${headRef}-michael origin/${headRef}`;
+    return false;
+  });
+  if (reused) return wtPath;
 
   // Best-effort dep install so checks/builds the agent runs have deps available.
   const webappDir = `${wtPath}/packages/core/webapp`;
@@ -167,8 +187,10 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
 export async function createWorktree(branch: string): Promise<string> {
   const wtPath = `${WORKTREES_DIR}/tella-fusion-${branch}`;
 
-  await $`git -C ${TELLA_FUSION} fetch origin main --quiet`;
-  await $`git -C ${TELLA_FUSION} worktree add -b ${branch} ${wtPath} origin/main`;
+  await withGitLock(async () => {
+    await $`git -C ${TELLA_FUSION} fetch origin main --quiet`;
+    await $`git -C ${TELLA_FUSION} worktree add -b ${branch} ${wtPath} origin/main`;
+  });
 
   // Best-effort dep install — sessions can always run `bun install` themselves
   const webappDir = `${wtPath}/packages/core/webapp`;
