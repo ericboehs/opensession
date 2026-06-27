@@ -141,9 +141,10 @@ ${opts.commentBody}
 
 Decide what they need:
 - If it's a question or discussion, gather context (\`gh pr diff ${opts.prNumber}\`, read files, \`gh pr view ${opts.prNumber} --comments\`, your earlier review) and answer it directly. Make no changes.
+- If they ask you to run, build, test, reproduce, or investigate something, actually do it — you have a full shell in the PR's worktree (the source is already checked out). Run the commands, capture the output, and paste the relevant commands + logs/results in your reply (excerpt long output; don't dump tens of thousands of lines). If you need an input file that isn't in the repo, find a fixture or generate one and say which you used. Don't claim a result you didn't actually produce.
 - If they're asking for a code change, just do it: make the edit, commit with a clear message, and push to the PR branch with \`git push origin HEAD:${opts.headRef}\`. Keep it tightly scoped to exactly what they asked — this is a one-shot request. (The autonomous "keep fixing until CI is green and all review findings are resolved" pass is a separate thing, triggered by the \`michael-auto-fix\` label — don't try to replicate that whole loop here; just handle their specific request.) Never run \`gh pr merge\`.
 
-Then write a concise reply as Michael: answer the question, or describe exactly what you changed and pushed. Only claim changes you actually made and pushed; if you couldn't do something, say so.
+Then write a concise reply as Michael: answer the question, show what you ran and found, or describe exactly what you changed and pushed. Only claim results/changes you actually produced; if you couldn't do something, say so.
 
 When finished, output the marker \`===MICHAEL-SUMMARY===\` on its own line, then your reply as GitHub markdown. ONLY the text after that marker is posted as the reply — everything before it is working notes that stay private. Do not post anything yourself.`;
 }
