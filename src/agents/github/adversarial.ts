@@ -7,9 +7,9 @@
 import { getPrDetails } from "../../server/pr-info";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
-import { runGithubAgent, authorForLogin, finalSummary } from "./run";
+import { runGithubAgent, authorForLogin, finalSummary, sessionUrl } from "./run";
 import { buildAdversarialPrompt } from "./prompts";
-import { upsertMarkedComment, removeLabel, ADVERSARIAL_MARKER } from "./github-rest";
+import { postOrEditComment, removeLabel, ADVERSARIAL_MARKER } from "./github-rest";
 import { LABEL_ADVERSARIAL } from "./constants";
 import type { PrRef } from "./review";
 
@@ -31,17 +31,17 @@ export async function runAdversarial(
     }
     if (details.state !== "OPEN") return;
 
+    const startedAt = new Date().toISOString();
+    const link = `[📺 open session](${sessionUrl(pr.number, "adversarial")})`;
     const s = getOrInitPrState(pr.number, details.headRefName);
-    s.activeRun = { kind: "adversarial", requestedBy, startedAt: new Date().toISOString() };
-    writePrState(s);
-
-    // Immediate progress comment (reused across re-runs by marker) before the slow
-    // worktree + two-pass run; replaced with the result at the end.
-    await upsertMarkedComment(
+    const reuseId = s.activeRun?.kind === "adversarial" ? s.activeRun.progressCommentId : undefined;
+    const progressId = await postOrEditComment(
       pr.number,
-      ADVERSARIAL_MARKER,
-      `🔍 **Michael adversarial review** — running two independent review passes on PR #${pr.number}…`,
+      reuseId,
+      `${ADVERSARIAL_MARKER}\n🔍 **Michael adversarial review** — running two independent review passes on PR #${pr.number}… · ${link}`,
     );
+    s.activeRun = { kind: "adversarial", requestedBy, startedAt, progressCommentId: progressId ?? undefined };
+    writePrState(s);
 
     const worktreeDir = await createWorktreeForPrBranch(details.headRefName);
     console.log(`[github] Adversarial review on PR #${pr.number}`);
@@ -59,10 +59,10 @@ export async function runAdversarial(
     });
 
     const summary = finalSummary(result.text).slice(0, 6000) || "Done.";
-    await upsertMarkedComment(
+    await postOrEditComment(
       pr.number,
-      ADVERSARIAL_MARKER,
-      `🔍 **Michael adversarial review** — ${result.error ? `errored: ${result.error}` : summary}`,
+      progressId ?? undefined,
+      `${ADVERSARIAL_MARKER}\n🔍 **Michael adversarial review** — ${result.error ? `errored: ${result.error}` : summary} · ${link}`,
     );
   } catch (e) {
     console.error(`[github] adversarial error for PR #${pr.number}:`, e);

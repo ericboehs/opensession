@@ -6,9 +6,9 @@
 import { getPrDetails, getPrDiff } from "../../server/pr-info";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
-import { runGithubAgent, authorForLogin, finalSummary } from "./run";
+import { runGithubAgent, authorForLogin, finalSummary, sessionUrl } from "./run";
 import { buildSimplifyPrompt } from "./prompts";
-import { upsertMarkedComment, removeLabel, SIMPLIFY_MARKER } from "./github-rest";
+import { postOrEditComment, removeLabel, SIMPLIFY_MARKER } from "./github-rest";
 import { LABEL_SIMPLIFY } from "./constants";
 import { runReview, type PrRef } from "./review";
 import { resolveReviewConfig } from "./webhook";
@@ -31,14 +31,20 @@ export async function runSimplify(
     }
     if (details.state !== "OPEN") return;
 
+    const startedAt = new Date().toISOString();
+    const link = `[📺 open session](${sessionUrl(pr.number, "simplify")})`;
     const s = getOrInitPrState(pr.number, pr.headRef);
-    s.simplify = { active: true, requestedBy, startedAt: new Date().toISOString() };
-    s.activeRun = { kind: "simplify", requestedBy, startedAt: new Date().toISOString() };
+    // Reuse this run's comment only when recovering an interrupted run; a fresh
+    // trigger (no activeRun) posts a new comment.
+    const reuseId = s.activeRun?.kind === "simplify" ? s.activeRun.progressCommentId : undefined;
+    const progressId = await postOrEditComment(
+      pr.number,
+      reuseId,
+      `${SIMPLIFY_MARKER}\n✨ **Michael simplify** — working on PR #${pr.number}… · ${link}`,
+    );
+    s.simplify = { active: true, requestedBy, startedAt };
+    s.activeRun = { kind: "simplify", requestedBy, startedAt, progressCommentId: progressId ?? undefined };
     writePrState(s);
-
-    // Immediate progress comment (reused across re-runs by marker) before the slow
-    // worktree + agent run; replaced with the result at the end.
-    await upsertMarkedComment(pr.number, SIMPLIFY_MARKER, `✨ **Michael simplify** — working on PR #${pr.number}…`);
 
     const worktreeDir = await createWorktreeForPrBranch(pr.headRef);
     console.log(`[github] Simplifying PR #${pr.number}`);
@@ -56,10 +62,10 @@ export async function runSimplify(
     });
 
     const summary = finalSummary(result.text).slice(0, 2000) || "Done.";
-    await upsertMarkedComment(
+    await postOrEditComment(
       pr.number,
-      SIMPLIFY_MARKER,
-      `✨ **Michael simplify** — ${result.error ? `errored: ${result.error}` : summary}`,
+      progressId ?? undefined,
+      `${SIMPLIFY_MARKER}\n✨ **Michael simplify** — ${result.error ? `errored: ${result.error}` : summary} · ${link}`,
     );
 
     const fin = getOrInitPrState(pr.number, pr.headRef);

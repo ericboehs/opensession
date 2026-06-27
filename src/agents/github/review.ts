@@ -7,7 +7,7 @@
  */
 import { getPrDetails, getPrDiff, type PrDetails } from "../../server/pr-info";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
-import { runGithubAgent } from "./run";
+import { runGithubAgent, sessionUrl } from "./run";
 import { buildReviewPrompt, DEFAULT_REVIEW_PROMPT } from "./prompts";
 import {
   postIssueComment,
@@ -88,7 +88,7 @@ export async function runReview(
     const shortSha0 = (pr.headSha || "").slice(0, 7);
     const placeholderId = await postIssueComment(
       pr.number,
-      `${REVIEW_MARKER}\n### 🤖 Michael review\n\n🔄 Reviewing${shortSha0 ? ` \`${shortSha0}\`` : ""}…`,
+      `${REVIEW_MARKER}\n### 🤖 Michael review\n\n🔄 Reviewing${shortSha0 ? ` \`${shortSha0}\`` : ""}… · [📺 open session](${sessionUrl(pr.number, "review")})`,
     );
     if (placeholderId) {
       state.summaryCommentId = placeholderId;
@@ -185,7 +185,7 @@ async function postReview(
     "",
     findingCount ? `_${findingCount} inline comment${findingCount === 1 ? "" : "s"} below._` : "",
     tip,
-    `<sub>Reviewed \`${shortSha}\` · earlier reviews collapse above.</sub>`,
+    `<sub>Reviewed \`${shortSha}\` · earlier reviews collapse above · [open session](${sessionUrl(pr.number, "review")})</sub>`,
   ]
     .filter((l) => l !== "")
     .join("\n");

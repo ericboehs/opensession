@@ -173,39 +173,6 @@ export async function replyToReviewComment(
   return r.ok;
 }
 
-/**
- * Maintain ONE comment per marker on a PR: PATCH the existing comment whose body
- * starts with `marker`, else create one. Keeps simplify/adversarial/status to a
- * single comment that's reused across re-runs (so a restart-interrupted run that's
- * re-triggered updates the stale placeholder instead of leaving a duplicate).
- */
-export async function upsertMarkedComment(
-  prNumber: number,
-  marker: string,
-  body: string,
-): Promise<number | null> {
-  const withMarker = body.startsWith(marker) ? body : `${marker}\n${body}`;
-  const list = await githubRequest<IssueComment[]>(
-    "GET",
-    `/repos/${GITHUB_REPO}/issues/${prNumber}/comments?per_page=100`,
-  );
-  if (list.ok && Array.isArray(list.data)) {
-    const mine = list.data.find((c) => typeof c.body === "string" && c.body.startsWith(marker));
-    if (mine) {
-      const patched = await githubRequest("PATCH", `/repos/${GITHUB_REPO}/issues/comments/${mine.id}`, {
-        body: withMarker,
-      });
-      if (patched.ok) return mine.id;
-    }
-  }
-  const created = await githubRequest<IssueComment>(
-    "POST",
-    `/repos/${GITHUB_REPO}/issues/${prNumber}/comments`,
-    { body: withMarker },
-  );
-  return created.ok && created.data ? created.data.id : null;
-}
-
 /** Post a plain (non-marker) comment on the PR — used for fix/simplify status. */
 export async function postIssueComment(prNumber: number, body: string): Promise<number | null> {
   const created = await githubRequest<IssueComment>(
@@ -220,6 +187,22 @@ export async function postIssueComment(prNumber: number, body: string): Promise<
 export async function editIssueComment(commentId: number, body: string): Promise<boolean> {
   const r = await githubRequest("PATCH", `/repos/${GITHUB_REPO}/issues/comments/${commentId}`, { body });
   return r.ok;
+}
+
+/**
+ * Edit `reuseId` if given and still editable, else post a new comment. Returns the
+ * comment id. Used so a run reuses its own progress comment within the run (and on
+ * restart recovery) but a fresh trigger — which passes no reuseId — posts a new one.
+ */
+export async function postOrEditComment(
+  prNumber: number,
+  reuseId: number | undefined,
+  body: string,
+): Promise<number | null> {
+  if (reuseId) {
+    if (await editIssueComment(reuseId, body)) return reuseId;
+  }
+  return postIssueComment(prNumber, body);
 }
 
 // ── Formal review with inline comments ───────────────────────

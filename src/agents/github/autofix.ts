@@ -15,7 +15,7 @@ import {
   writePrState,
   readPrState,
 } from "./state";
-import { runGithubAgent, authorForLogin } from "./run";
+import { runGithubAgent, authorForLogin, sessionUrl } from "./run";
 import { buildAutoFixPrompt } from "./prompts";
 import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, BOT_LOGIN } from "./github-rest";
 import { LABEL_AUTOFIX } from "./constants";
@@ -79,9 +79,10 @@ export async function runAutoFix(
 
   const author = authorForLogin(requestedBy);
   let statusCommentId: number | undefined;
+  const link = `[📺 open session](${sessionUrl(pr.number, "autofix")})`;
 
   const updateStatus = async (text: string) => {
-    const body = `<!-- michael-autofix -->\n🛠️ **Michael auto-fix** — ${text}`;
+    const body = `<!-- michael-autofix -->\n🛠️ **Michael auto-fix** — ${text} · ${link}`;
     if (statusCommentId) {
       await editIssueComment(statusCommentId, body);
     } else {
@@ -97,7 +98,9 @@ export async function runAutoFix(
 
   try {
     const prior = readPrState(pr.number)?.autoFix;
-    statusCommentId = prior?.statusCommentId;
+    // Reuse the status comment only when recovering an interrupted loop; a fresh
+    // re-trigger posts a new comment instead of editing the previous run's.
+    statusCommentId = resuming ? prior?.statusCommentId : undefined;
     const startedAt = resuming && prior?.startedAt ? prior.startedAt : new Date().toISOString();
     let iterations = resuming ? prior?.iterations || 0 : 0;
 

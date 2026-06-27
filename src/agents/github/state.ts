@@ -47,7 +47,13 @@ export interface GithubPrState {
    * in its finally. If the process is killed mid-run, this persists so the github
    * agent re-runs it on startup. (Auto-fix uses its own `autoFix.active`.)
    */
-  activeRun?: { kind: "review" | "simplify" | "adversarial"; requestedBy: string; startedAt: string };
+  activeRun?: {
+    kind: "review" | "simplify" | "adversarial";
+    requestedBy: string;
+    startedAt: string;
+    /** The run's progress comment id — reused only on restart recovery, not on a fresh re-trigger. */
+    progressCommentId?: number;
+  };
   updatedAt: string;
 }
 

@@ -21,6 +21,13 @@ export function bksIdFor(prNumber: number, kind: GithubRunKind): string {
   return `bks-ghpr-${prNumber}-${kind}`;
 }
 
+const UI_BASE = process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+
+/** Backstage UI link to a run's session, for "open to monitor" links in PR comments. */
+export function sessionUrl(prNumber: number, kind: GithubRunKind): string {
+  return `${UI_BASE}/session/${bksIdFor(prNumber, kind)}`;
+}
+
 /** Map a GitHub login to a git identity for commit attribution (fix/simplify). */
 export function authorForLogin(login?: string): GitIdentity | null {
   return gitIdentityFor(login || null);
