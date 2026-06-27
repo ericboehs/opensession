@@ -50,7 +50,11 @@ For each genuinely new, actionable issue:
 - Start a dedicated branch off the latest main: \`git fetch origin main --quiet && git checkout -B sweep-<short-slug> origin/main\`.
 - Trace it to the root cause (read the code, logs, traces — don't guess).
 - Make the smallest correct fix.
-- VERIFY it: run the relevant tests / typecheck / build, or a targeted repro. If you cannot confidently fix AND verify an issue, do NOT open a PR for it — leave your analysis in this session and move on. A wrong "fix" is worse than none.
+- VERIFY it — this is a REAL, dependency-installed checkout (node_modules present, \`cargo\` on PATH), so you CAN and MUST build/verify, not just eyeball it. Follow the repo's own AGENTS.md / CLAUDE.md verify steps for whatever you touched:
+  - ReScript (\`.res\` files): run \`bun rescript-check\` in \`packages/core/webapp\` and resolve every error/warning your change introduced (it parses + compiles all modules, ~30-60s).
+  - Rust: run the narrowest \`cargo check\` / \`cargo test\` for the touched crate — per AGENTS.md, some crates under \`packages/core/\` aren't root workspace members, so run cargo from the crate dir or with \`--manifest-path\`. Don't run the broad root \`just build\` for webapp/WASM-only work.
+  - Anything else: the relevant tests / typecheck / build, or a targeted repro.
+  If you cannot confidently fix AND verify an issue, do NOT open a PR for it — leave your analysis in this session and move on. A wrong "fix" is worse than none. NEVER open a PR for a code change you have not actually built and verified.
 
 ## 4. Open one PR per fixed issue
 \`gh pr create --repo ${REPO} --label ${cfg.label} --head sweep-<short-slug> --title "${cfg.titlePrefix}: <short issue name>" --body "<root cause · the fix · how you verified it · the log/source evidence>"\`
@@ -63,7 +67,7 @@ If you find nothing actionable, or everything you found is already covered by an
 End with a brief summary: what you changed and the evidence it's verified, plus any candidates you deliberately deferred and why (uncertain, needs human approval, or couldn't be verified). Defer rather than force anything you can't confidently verify.`;
 }
 
-const SWEEP_LOOPS: SweepConfig[] = [
+export const SWEEP_LOOPS: SweepConfig[] = [
   {
     eventKey: "loop:production-error-sweep",
     name: "Production Error Sweep",
