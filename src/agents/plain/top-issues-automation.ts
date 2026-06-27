@@ -12,30 +12,13 @@ const EVENT_KEY = "cron:plain-top-issues";
 const CHAT = "C01ED50A2KG"; // #chat
 const HELPER = "/home/ubuntu/projects/tella-backstage/src/agents/plain/top-issues.ts";
 
-const PROMPT = `You are Michael, posting the daily "Plain Top Issues" rollup to the team in Slack channel \`${CHAT}\` (#chat).
+const PROMPT = `You are Michael. Post the twice-weekly "Plain Top Issues" rollup to #chat.
 
-Permissions: read-only except the one Slack post via the MCP, which is the purpose of this run — don't refuse it.
+Run this once via Bash: \`bun ${HELPER} --post\`
 
-## 1. Get the data
-Run: \`bun ${HELPER}\` (Bash). It prints JSON: { shouldPost, totalNewLinks, windowLabel, top3[], movers[] }. Each issue has: shortName, slackLink (a ready Slack hyperlink — use it VERBATIM, never rewrite it), totalLinks, newLinks, and quoteCandidates (raw inbound customer texts from linked threads).
+That command does everything deterministically: it pulls Plain's Top Issues (ranked Linear issues by linked tickets), finds which got new links since the last run, picks the nicest genuine customer quote per issue with Haiku, and posts the rollup to ${CHAT} (#chat) with link-unfurling disabled — but ONLY if there are new links (otherwise it posts nothing). It prints one line summarizing what it did.
 
-## 2. If shouldPost is false, STOP
-Post nothing (no new customer links since the last rollup). End quietly.
-
-## 3. Pick ONE genuine customer quote per issue (your judgment)
-For each issue you'll show, choose the single best quote from its quoteCandidates:
-- It must be the CUSTOMER's own words asking for / describing THIS feature (match the issue title).
-- IGNORE: auto-replies ("Thanks for reaching out…", "normal support hours"), CSAT/survey emails ("we'd love your feedback"), support/agent messages, quoted email reply chains and signatures, and anything off-topic.
-- Trim to one clean sentence or two (~max 220 chars), fix obvious typos lightly, keep the customer's voice. Do not invent words.
-- If NONE of the candidates is a clean on-topic customer quote, omit the quote for that issue (write "_(newly linked — no clean customer quote yet)_") rather than forcing one.
-
-## 4. Post ONE message to ${CHAT}
-Format (Slack mrkdwn), concise and skimmable. Each issue's name MUST be its \`slackLink\` dropped in verbatim (this is the clickable Linear link — do not unwrap it or strip the \`<…|…>\`).
-- Header: \`:bar_chart: *Plain Top Issues rollup*  ·  _<N> new customer links since <windowLabel>_\` then a one-line intro that it's you, Michael.
-- Section \`:trophy: *Top 3 most-requested*\`: numbered list. Each item: \`<slackLink>  ·  <totalLinks> linked tickets\` then on the next line the quote as a blockquote (\`> "…"\`), or the no-quote note.
-  Example item: \`1. <https://linear.app/tella/issue/TELLA-3669|Two-step recording>  ·  110 linked tickets\`
-- Section \`:chart_with_upwards_trend: *Got new links since the last rollup*\`: the movers as bullets. Each: \`• <slackLink>  ·  <totalLinks> linked · +<newLinks> new\` then its quote blockquote (or the no-quote note).
-Post it with the Slack MCP \`conversations_add_message\` to channel \`${CHAT}\`. Post exactly once.`;
+Report that line back. Do not post anything yourself or take any other action.`;
 
 export function ensureTopIssuesRollup(): void {
   if (listAutomations().some((a) => a.eventKey === EVENT_KEY)) return;
@@ -46,7 +29,7 @@ export function ensureTopIssuesRollup(): void {
     mode: "ask",
     createdBy: "Michael (plain agent)",
     eventKey: EVENT_KEY,
-    mcpServers: ["slack"],
+    mcpServers: [], // the helper posts to Slack itself (chat.postMessage, unfurl off)
     model: "claude-haiku-4-5",
   });
   if ("error" in created) {

@@ -9,8 +9,11 @@
  * links" window is derived from the weekday (Mon looks back over the weekend).
  */
 import { readFileSync } from "fs";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
 const PLAIN_API_URL = process.env.PLAIN_API_URL || "https://core-api.uk.plain.com/graphql/v1";
+const CHAT_CHANNEL = "C01ED50A2KG"; // #chat
+const QUOTE_MODEL = process.env.PLAIN_TOPISSUES_QUOTE_MODEL || "claude-haiku-4-5";
 // Automation runs get a minimal env (no tokens), so fall back to the env file the
 // cron scripts use — HOME is always present.
 function plainKey(): string {
@@ -194,7 +197,113 @@ export async function getTopIssuesData(now: Date = new Date()): Promise<TopIssue
   };
 }
 
-if (import.meta.main) {
+// ── Quote picking (Haiku) ─────────────────────────────────────────────────
+const QUOTE_SYSTEM = `You pick the single best customer quote for each feature request, from candidate support messages.
+For each issue choose the quote that is the CUSTOMER's OWN words about THAT feature.
+IGNORE: auto-replies ("Thanks for reaching out", "normal support hours"), CSAT/survey emails ("we'd love your feedback"), support/agent messages, quoted email reply chains, signatures, and anything off-topic.
+Trim to one clean sentence (~max 200 chars), fix obvious typos lightly, keep the customer's voice, don't invent words.
+If NONE of an issue's candidates is a clean on-topic customer quote, use an empty string for it.
+Respond with ONLY a JSON array of strings, one per issue, in the same order.`;
+
+/** One Haiku call → best quote per issue (or "" ). Fail-soft: all "" on error. */
+async function pickQuotes(issues: IssueRollup[]): Promise<string[]> {
+  const blank = issues.map(() => "");
+  if (!issues.length) return blank;
+  const payload = issues.map((i, n) => ({ n, feature: i.shortName, candidates: i.quoteCandidates }));
+  try {
+    let out = "";
+    const q = query({
+      prompt: `Pick a quote for each of these ${issues.length} issues:\n\n${JSON.stringify(payload).slice(0, 22000)}`,
+      options: {
+        model: QUOTE_MODEL,
+        maxTurns: 1,
+        allowedTools: [],
+        canUseTool: async () => ({ behavior: "deny" as const, message: "no tools" }),
+        mcpServers: {},
+        strictMcpConfig: true,
+        systemPrompt: QUOTE_SYSTEM,
+        settingSources: [],
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
+        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        executable: "bun",
+      },
+    });
+    for await (const m of q) if (m.type === "result") out = (m as any).result || "";
+    const match = out.match(/\[[\s\S]*\]/);
+    if (!match) return blank;
+    const arr = JSON.parse(match[0]);
+    return issues.map((_, n) => (typeof arr[n] === "string" ? arr[n].trim() : ""));
+  } catch (e) {
+    console.error("[top-issues] quote pick failed (using none):", e);
+    return blank;
+  }
+}
+
+// ── Message assembly + Slack post (unfurl disabled) ───────────────────────
+function quoteLine(q: string): string {
+  return q ? `> "${q}"` : `> _(newly linked — no clean customer quote yet)_`;
+}
+
+function assembleMessage(data: TopIssuesData, top3q: string[], moverq: string[]): string {
+  const L: string[] = [];
+  L.push(`:bar_chart: *Plain Top Issues rollup*  ·  _${data.totalNewLinks} new customer links since ${data.windowLabel}_`);
+  L.push("Michael here :wave: — what customers are asking for most, and what moved since the last rollup.");
+  L.push("");
+  L.push(":trophy: *Top 3 most-requested*");
+  data.top3.forEach((i, n) => {
+    L.push(`${n + 1}. ${i.slackLink}  ·  ${i.totalLinks} linked tickets`);
+    L.push(quoteLine(top3q[n]));
+  });
+  if (data.movers.length) {
+    L.push("");
+    L.push(":chart_with_upwards_trend: *Got new links since the last rollup*");
+    data.movers.forEach((i, n) => {
+      L.push(`• ${i.slackLink}  ·  ${i.totalLinks} linked · +${i.newLinks} new`);
+      L.push(quoteLine(moverq[n]));
+    });
+  }
+  return L.join("\n");
+}
+
+function slackToken(): string {
+  if (process.env.SLACK_BOT_TOKEN) return process.env.SLACK_BOT_TOKEN;
+  const home = process.env.HOME || "/home/ubuntu";
+  try {
+    const m = readFileSync(`${home}/.backstage.env`, "utf8").match(/^SLACK_BOT_TOKEN=(.*)$/m);
+    if (m) return m[1].trim().replace(/^["']|["']$/g, "");
+  } catch {}
+  try {
+    const cfg = JSON.parse(readFileSync(`${home}/projects/tella-backstage/mcp-config.json`, "utf8"));
+    return cfg.mcpServers?.slack?.env?.SLACK_BOT_TOKEN || "";
+  } catch {}
+  return "";
+}
+
+/** Post to Slack with link unfurling OFF so the many Linear links stay compact. */
+async function postToSlack(channel: string, text: string): Promise<void> {
+  const res = await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${slackToken()}` },
+    body: JSON.stringify({ channel, text, mrkdwn: true, unfurl_links: false, unfurl_media: false }),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error("Slack post failed: " + JSON.stringify(json).slice(0, 300));
+}
+
+/** Full pipeline used by the automation: fetch → pick quotes (Haiku) → post (only if new links). */
+export async function runAndPost(): Promise<string> {
   const data = await getTopIssuesData();
-  console.log(JSON.stringify(data, null, 2));
+  if (!data.shouldPost) return "No new customer links since the last rollup — nothing posted.";
+  const [top3q, moverq] = await Promise.all([pickQuotes(data.top3), pickQuotes(data.movers)]);
+  const message = assembleMessage(data, top3q, moverq);
+  await postToSlack(CHAT_CHANNEL, message);
+  return `Posted rollup to #chat: ${data.top3.length} top issues + ${data.movers.length} movers (${data.totalNewLinks} new links).`;
+}
+
+if (import.meta.main) {
+  if (process.argv.includes("--post")) {
+    console.log(await runAndPost());
+  } else {
+    console.log(JSON.stringify(await getTopIssuesData(), null, 2));
+  }
 }
