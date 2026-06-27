@@ -92,6 +92,18 @@ End your turn with a single line in exactly this format so the loop knows whethe
 or \`REMAINING_FINDINGS: <short description>\`  (if something couldn't be fixed this round).`;
 }
 
+export function buildAdversarialPrompt(pr: PrDetails): string {
+  return `You are Michael, running an ADVERSARIAL code review on PR #${pr.number} ("${pr.title}") on tella-fusion. You are checked out on the PR's head branch \`${pr.headRefName}\` in a worktree.
+
+Use the **adversarial-code-review** skill (invoke it via the Skill tool; the target is this PR — run \`gh pr diff ${pr.number}\` for the diff). It runs two independent hostile review passes and adjudicates their findings.
+
+You ARE responsible for completing the implementation: for every accepted, actionable finding, implement the smallest correct fix and re-run targeted validation, following the skill's review → fix → validate loop until there are no accepted findings left to act on. Keep changes scoped strictly to this PR's code — no unrelated changes. Never run \`gh pr merge\`.
+
+When done, if you made changes, commit them with a clear message and push to the PR branch: \`git push origin HEAD:${pr.headRefName}\`. If nothing actionable was found, make no commits and say so.
+
+End your turn with a concise summary as Michael: the key adjudicated findings (severity + \`file:line\`) and exactly what you changed and pushed (or that nothing needed fixing). Output only that summary as GitHub markdown.`;
+}
+
 export function buildMentionPrompt(opts: {
   prNumber: number;
   prTitle: string;

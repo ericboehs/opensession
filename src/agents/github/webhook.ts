@@ -14,6 +14,7 @@ import {
   LABEL_REVIEW,
   LABEL_AUTOFIX,
   LABEL_SIMPLIFY,
+  LABEL_ADVERSARIAL,
 } from "./constants";
 import { runReview, type PrRef, type ReviewConfig } from "./review";
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
@@ -89,6 +90,8 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
         void fireAutoFix(ref, requestedBy);
       } else if (label === LABEL_SIMPLIFY) {
         void fireSimplify(ref, requestedBy);
+      } else if (label === LABEL_ADVERSARIAL) {
+        void fireAdversarial(ref, requestedBy);
       }
       return;
     }
@@ -123,5 +126,12 @@ async function fireSimplify(ref: PrRef, requestedBy: string): Promise<void> {
   const { runSimplify } = await import("./simplify");
   await runSimplify(ref, requestedBy, onSessionInvalidate).catch((e) =>
     console.error(`[github] runSimplify failed for PR #${ref.number}:`, e),
+  );
+}
+
+async function fireAdversarial(ref: PrRef, requestedBy: string): Promise<void> {
+  const { runAdversarial } = await import("./adversarial");
+  await runAdversarial(ref, requestedBy, onSessionInvalidate).catch((e) =>
+    console.error(`[github] runAdversarial failed for PR #${ref.number}:`, e),
   );
 }

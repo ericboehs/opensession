@@ -8,3 +8,4 @@ export const REVIEW_AUTOMATION_NAME = "github-pr-review";
 export const LABEL_REVIEW = "michael-review";
 export const LABEL_AUTOFIX = "michael-auto-fix";
 export const LABEL_SIMPLIFY = "michael-simplify";
+export const LABEL_ADVERSARIAL = "michael-adversarial";
