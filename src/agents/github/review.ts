@@ -36,16 +36,24 @@ interface Finding {
   line: number;
   side?: "RIGHT" | "LEFT";
   severity?: string;
+  title?: string;
   body: string;
+  suggestion?: string;
 }
 
 interface ReviewOutput {
   verdict?: string;
+  confidence?: number;
   summary_markdown?: string;
   findings?: Finding[];
 }
 
-const SEV_EMOJI: Record<string, string> = { high: "🔴", medium: "🟡", low: "⚪" };
+// P0/P1 are blocking-ish (red), P2 should-fix (orange), P3 minor (white).
+// Legacy high/medium/low kept as aliases in case a prompt variant emits them.
+const SEV_EMOJI: Record<string, string> = {
+  p0: "🔴", p1: "🔴", p2: "🟠", p3: "⚪",
+  high: "🔴", medium: "🟠", low: "⚪",
+};
 
 export async function runReview(
   pr: PrRef,
@@ -108,6 +116,18 @@ export async function runReview(
   }
 }
 
+/** Render one finding as an inline comment: severity badge + title, body, optional suggestion block. */
+function composeInlineBody(f: Finding): string {
+  const sev = (f.severity || "").toUpperCase();
+  const emoji = SEV_EMOJI[(f.severity || "").toLowerCase()] || "";
+  const head = [emoji, sev && `**${sev}**`, f.title && `— ${f.title}`].filter(Boolean).join(" ").trim();
+  let out = [head, f.body?.trim()].filter(Boolean).join("\n\n");
+  if (f.suggestion?.trim()) {
+    out += `\n\n\`\`\`suggestion\n${f.suggestion.replace(/\n+$/, "")}\n\`\`\``;
+  }
+  return out.trim();
+}
+
 async function postReview(
   pr: PrRef,
   details: PrDetails,
@@ -121,10 +141,12 @@ async function postReview(
   // Summary comment (single, edited in place).
   const summaryBody = parsed?.summary_markdown?.trim() || fallbackSummary(rawText, runError);
   const verdict = parsed?.verdict ? ` · **${parsed.verdict.replace(/_/g, " ")}**` : "";
+  const confidence =
+    typeof parsed?.confidence === "number" ? ` · confidence ${parsed.confidence}/5` : "";
   const findingCount = parsed?.findings?.length || 0;
   const composed = [
     REVIEW_MARKER,
-    `### 🤖 Michael review${verdict}`,
+    `### 🤖 Michael review${verdict}${confidence}`,
     "",
     summaryBody,
     "",
@@ -150,7 +172,7 @@ async function postReview(
       path: f.path,
       line: f.line,
       side: f.side === "LEFT" ? "LEFT" : "RIGHT",
-      body: `${SEV_EMOJI[(f.severity || "").toLowerCase()] || ""} ${f.body}`.trim(),
+      body: composeInlineBody(f),
     }));
     if (inline.length) {
       const ok = await submitReview(pr.number, commitId, `Michael review · \`${shortSha}\``, inline);
@@ -179,12 +201,25 @@ export function parseReviewOutput(text: string): ReviewOutput | null {
   try {
     const obj = JSON.parse(candidate.trim());
     if (obj && typeof obj === "object") {
-      const findings = Array.isArray(obj.findings)
-        ? obj.findings.filter(
-            (f: any) => f && typeof f.path === "string" && Number.isFinite(f.line) && typeof f.body === "string",
-          )
+      const findings: Finding[] = Array.isArray(obj.findings)
+        ? obj.findings
+            .filter((f: any) => f && typeof f.path === "string" && Number.isFinite(f.line) && typeof f.body === "string")
+            .map((f: any) => ({
+              path: f.path,
+              line: f.line,
+              side: f.side === "LEFT" ? "LEFT" : "RIGHT",
+              severity: typeof f.severity === "string" ? f.severity : undefined,
+              title: typeof f.title === "string" ? f.title : undefined,
+              body: f.body,
+              suggestion: typeof f.suggestion === "string" && f.suggestion.trim() ? f.suggestion : undefined,
+            }))
         : [];
-      return { verdict: obj.verdict, summary_markdown: obj.summary_markdown, findings };
+      return {
+        verdict: obj.verdict,
+        confidence: typeof obj.confidence === "number" ? obj.confidence : undefined,
+        summary_markdown: obj.summary_markdown,
+        findings,
+      };
     }
   } catch {}
   return null;
