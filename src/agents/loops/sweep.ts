@@ -14,7 +14,7 @@
  */
 import { listAutomations, createAutomation } from "../../server/automations";
 
-export interface SweepLoopConfig {
+export interface SweepConfig {
   /** Stable seed key (so we don't re-create it every startup). */
   eventKey: string;
   name: string;
@@ -32,7 +32,7 @@ export interface SweepLoopConfig {
 
 const REPO = "tellahq/tella-fusion";
 
-export function buildSweepPrompt(cfg: SweepLoopConfig): string {
+export function buildSweepPrompt(cfg: SweepConfig): string {
   return `You are Michael, running the "${cfg.name}" sweep on ${REPO}.
 
 Goal: find genuinely NEW, actionable issues, fix each at the root, verify the fix, and open one PR per issue — and crucially, never open a PR that duplicates one a previous run already opened.
@@ -61,7 +61,7 @@ Keep each PR scoped to a single issue. NEVER run \`gh pr merge\`.
 If you find no actionable issues, or every issue you found is already covered by an open "${cfg.name}" PR, STOP and make no changes and no PRs. Do not open empty or speculative PRs.`;
 }
 
-const SWEEP_LOOPS: SweepLoopConfig[] = [
+const SWEEP_LOOPS: SweepConfig[] = [
   {
     eventKey: "loop:production-error-sweep",
     name: "Production Error Sweep",
