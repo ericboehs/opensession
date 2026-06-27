@@ -247,7 +247,7 @@ export class SlackAgent implements AgentModule {
         // under the bks id, so cancelAgentRun reaches it). `investigate-stop:`
         // is the current prefix; `export-stop:`/`upload-stop:` are kept for any
         // cards posted before the generic poller landed.
-        const stopPrefix = ["investigate-stop:", "export-stop:", "upload-stop:"].find((p) =>
+        const stopPrefix = ["investigate-stop:", "export-stop:", "upload-stop:", "pr-stop:"].find((p) =>
           actionId.startsWith(p)
         );
         if (stopPrefix) {

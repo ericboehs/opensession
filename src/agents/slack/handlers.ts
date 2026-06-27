@@ -1251,6 +1251,34 @@ I'm now in a worktree (branch: ${branch}) for this task. Please analyze what nee
 // handleMentionEvent — @mention in channels
 // ---------------------------------------------------------------------------
 
+const UI_BASE = process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+
+/** Slack card for a triggered PR action: the message + Open-in-Backstage and Stop buttons. */
+function prActionCardBlocks(message: string, bksId: string): any[] {
+  return [
+    { type: "section", text: { type: "mrkdwn", text: message } },
+    {
+      type: "actions",
+      block_id: `pr-action-${bksId}`,
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: ":desktop_computer: Open in Backstage", emoji: true },
+          url: `${UI_BASE}/session/${bksId}`,
+          action_id: `backstage:${bksId}`,
+        },
+        {
+          type: "button",
+          text: { type: "plain_text", text: ":octagonal_sign: Stop", emoji: true },
+          style: "danger",
+          action_id: `pr-stop:${bksId}`,
+          value: bksId,
+        },
+      ],
+    },
+  ];
+}
+
 export async function handleMentionEvent(event: any): Promise<void> {
   const { channel, user, ts, thread_ts } = event;
   const text = event.text || "";
@@ -1361,7 +1389,12 @@ Please help with this request. Start by exploring the codebase to understand wha
 
   if (intent && intent.action !== "none" && intent.prNumber) {
     const res = await triggerPrAction(intent.action, intent.prNumber, user);
-    await sendSlackMessage(channel, res.ok ? `On it — ${res.message}` : res.message, threadTs);
+    if (res.ok && res.bksId) {
+      const msg = `On it — ${res.message}`;
+      await postSlackBlocks(channel, msg, prActionCardBlocks(msg, res.bksId), threadTs);
+    } else {
+      await sendSlackMessage(channel, res.message, threadTs);
+    }
     return;
   }
 

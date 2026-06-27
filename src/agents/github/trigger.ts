@@ -10,6 +10,7 @@ import { runAutoFix } from "./autofix";
 import { runSimplify } from "./simplify";
 import { runAdversarial } from "./adversarial";
 import { resolveReviewConfig } from "./webhook";
+import { bksIdFor } from "./run";
 
 export type PrActionKind = "review" | "autofix" | "simplify" | "adversarial";
 
@@ -32,6 +33,8 @@ export interface TriggerResult {
   ok: boolean;
   message: string;
   url?: string;
+  /** Backstage session id for this run (for an Open-in-Backstage link + Stop button). */
+  bksId?: string;
 }
 
 /**
@@ -75,6 +78,7 @@ export async function triggerPrAction(
   return {
     ok: true,
     url: details.url,
+    bksId: bksIdFor(prNumber, kind),
     message: `${LABELS[kind]} PR #${prNumber} (“${details.title}”). I'll post the results on the PR: ${details.url}`,
   };
 }
