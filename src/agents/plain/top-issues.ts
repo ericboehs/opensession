@@ -38,7 +38,11 @@ async function gql(query: string, variables: Record<string, unknown> = {}): Prom
 export interface IssueRollup {
   rank: number | null;
   title: string;
+  /** Title without the ": …" descriptor suffix, for a tidy display name. */
+  shortName: string;
   url: string;
+  /** Ready-to-use Slack link the agent should drop in verbatim, so links never get mangled. */
+  slackLink: string;
   totalLinks: number;
   newLinks: number;
   /** Raw inbound customer texts from linked threads — a Haiku step picks the nicest genuine on-topic quote. */
@@ -149,10 +153,15 @@ export async function getTopIssuesData(now: Date = new Date()): Promise<TopIssue
       ...newOnes.map((l: any) => l.threadId),
       ...links.map((l: any) => l.threadId),
     ].filter((v, i, a) => v && a.indexOf(v) === i);
+    const title = first.title || "(untitled issue)";
+    const shortName = title.split(":")[0].trim() || title;
+    const url = first.url || "";
     return {
       rank: g.currentViewRank ?? null,
-      title: first.title || "(untitled issue)",
-      url: first.url || "",
+      title,
+      shortName,
+      url,
+      slackLink: url ? `<${url}|${shortName}>` : `*${shortName}*`,
       totalLinks: g.threadLinks.totalCount,
       newLinks: newOnes.length,
       candidateThreadIds,

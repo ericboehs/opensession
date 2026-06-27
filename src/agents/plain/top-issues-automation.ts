@@ -17,7 +17,7 @@ const PROMPT = `You are Michael, posting the daily "Plain Top Issues" rollup to 
 Permissions: read-only except the one Slack post via the MCP, which is the purpose of this run — don't refuse it.
 
 ## 1. Get the data
-Run: \`bun ${HELPER}\` (Bash). It prints JSON: { shouldPost, totalNewLinks, windowLabel, top3[], movers[] }. Each issue has: title, url (Linear), totalLinks, newLinks, and quoteCandidates (raw inbound customer texts from linked threads).
+Run: \`bun ${HELPER}\` (Bash). It prints JSON: { shouldPost, totalNewLinks, windowLabel, top3[], movers[] }. Each issue has: shortName, slackLink (a ready Slack hyperlink — use it VERBATIM, never rewrite it), totalLinks, newLinks, and quoteCandidates (raw inbound customer texts from linked threads).
 
 ## 2. If shouldPost is false, STOP
 Post nothing (no new customer links since the last rollup). End quietly.
@@ -30,11 +30,11 @@ For each issue you'll show, choose the single best quote from its quoteCandidate
 - If NONE of the candidates is a clean on-topic customer quote, omit the quote for that issue (write "_(newly linked — no clean customer quote yet)_") rather than forcing one.
 
 ## 4. Post ONE message to ${CHAT}
-Format (Slack mrkdwn), concise and skimmable:
-\`:bar_chart: *Plain Top Issues — daily rollup*  ·  _<N> new customer links since <windowLabel>_\`
-then a one-line intro that it's you, Michael.
-Section \`:trophy: *Top 3 most-requested*\`: numbered list, each \`*<url|Issue name>*  ·  <totalLinks> linked tickets\` then the quote on the next line as a blockquote (\`> "…"\`). Use a short issue name (strip any ": …" suffix from the title).
-Section \`:chart_with_upwards_trend: *Got new links since the last rollup*\`: the movers as bullets, each \`• *<url|Issue name>*  ·  <totalLinks> linked · +<newLinks> new\` then its quote blockquote (or the no-quote note).
+Format (Slack mrkdwn), concise and skimmable. Each issue's name MUST be its \`slackLink\` dropped in verbatim (this is the clickable Linear link — do not unwrap it or strip the \`<…|…>\`).
+- Header: \`:bar_chart: *Plain Top Issues rollup*  ·  _<N> new customer links since <windowLabel>_\` then a one-line intro that it's you, Michael.
+- Section \`:trophy: *Top 3 most-requested*\`: numbered list. Each item: \`<slackLink>  ·  <totalLinks> linked tickets\` then on the next line the quote as a blockquote (\`> "…"\`), or the no-quote note.
+  Example item: \`1. <https://linear.app/tella/issue/TELLA-3669|Two-step recording>  ·  110 linked tickets\`
+- Section \`:chart_with_upwards_trend: *Got new links since the last rollup*\`: the movers as bullets. Each: \`• <slackLink>  ·  <totalLinks> linked · +<newLinks> new\` then its quote blockquote (or the no-quote note).
 Post it with the Slack MCP \`conversations_add_message\` to channel \`${CHAT}\`. Post exactly once.`;
 
 export function ensureTopIssuesRollup(): void {
