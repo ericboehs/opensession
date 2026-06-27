@@ -50,9 +50,21 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Lock the outer document to the viewport so only inner containers scroll.
+   position: fixed stops iOS rubber-band/elastic overscroll of the whole page
+   (header included); overscroll-behavior stops scroll-chaining to the body. */
+body {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-x pan-y;
+}
+
 #root {
   height: 100vh;
   height: 100dvh;
+  overflow: hidden;
 }
 
 button {
@@ -1263,6 +1275,7 @@ a {
 .viewer-messages {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 18px 20px 10px;
   min-height: 0;
   /* Keep the reader's place when content loads/expands above them (principle 12):

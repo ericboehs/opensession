@@ -81,6 +81,15 @@ function App() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
+  // Tear down the launch splash (rendered in index.html) once the app has mounted.
+  useEffect(() => {
+    const splash = document.getElementById("splash");
+    if (!splash) return;
+    splash.classList.add("splash-hide");
+    const t = setTimeout(() => splash.remove(), 400);
+    return () => clearTimeout(t);
+  }, []);
+
   // When a session is created from the New Session form or Ask box, jump straight into it
   useEffect(() => {
     return addHandler((msg) => {
