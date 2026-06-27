@@ -9,8 +9,8 @@
 import { listAutomations, createAutomation } from "../../server/automations";
 
 const REPO = "tellahq/tella-fusion";
-// #michael-tinker — easy to repoint at an eng channel via the Automations UI.
-const ALARM_CHANNEL = "C0AFQ7PV057";
+// #engineering — repointable via the Automations UI.
+const ALARM_CHANNEL = "C047JD2KX8B";
 const EVENT_KEY = "monitor:stale-prs";
 
 const PROMPT = `You are Michael, running the weekly stale-PR digest for ${REPO}. This is OBSERVE-ONLY: you read the open-PR backlog and post ONE Slack digest so reviewers can act. Do NOT open, edit, close, or comment on any PR.

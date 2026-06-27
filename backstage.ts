@@ -1382,8 +1382,10 @@ try {
   ensureSeoLoops();
   const { ensureStalePrMonitor } = await import("./src/agents/loops/stale-prs");
   ensureStalePrMonitor();
+  const { ensureCronJobs } = await import("./src/agents/loops/cron-jobs");
+  ensureCronJobs();
 } catch (e) {
-  console.error("[loops] Failed to seed sweep/monitor/seo/stale-pr loops:", e);
+  console.error("[loops] Failed to seed sweep/monitor/seo/stale-pr/cron loops:", e);
 }
 
 // Cron-scheduled automations + internal event bus (agents → automations)
