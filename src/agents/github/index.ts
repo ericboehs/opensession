@@ -72,6 +72,21 @@ async function recoverOneShots(): Promise<void> {
   }
 }
 
+/** Re-run conversational @mentions that a restart interrupted. */
+async function recoverMentions(): Promise<void> {
+  const interrupted = listPrStates().filter((s) => s.activeMention);
+  if (!interrupted.length) return;
+  const { runConversationalMention } = await import("./mention");
+  for (const s of interrupted) {
+    const m = s.activeMention!;
+    console.log(`[github] Recovering interrupted mention for PR #${s.prNumber}`);
+    void runConversationalMention(
+      { prNumber: s.prNumber, author: m.author, body: m.body, kind: m.kind, replyToId: m.replyToId, inline: m.inline },
+      /*recovering*/ true,
+    ).catch((e) => console.error(`[github] mention recovery failed for PR #${s.prNumber}:`, e));
+  }
+}
+
 export class GithubAgent implements AgentModule {
   name = "github";
   private readonly onSessionInvalidate?: () => void;
@@ -127,6 +142,7 @@ export class GithubAgent implements AgentModule {
     ensureReviewAutomation();
     await recoverFixLoops();
     await recoverOneShots();
+    await recoverMentions();
     const { autoEnabled } = resolveReviewConfig();
     console.log(`[github] Agent started — review automation ${autoEnabled ? "ENABLED (all non-draft PRs)" : "disabled (label-only)"}`);
   }

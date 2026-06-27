@@ -10,18 +10,21 @@
 import { getPrDetails } from "../../server/pr-info";
 import { listAutomations } from "../../server/automations";
 import { createWorktreeForPrBranch } from "../../server/worktree";
-import { claimLock, releaseLock } from "./state";
+import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
 import { runGithubAgent, authorForLogin, finalSummary, sessionUrl } from "./run";
 import { buildMentionPrompt } from "./prompts";
+import { triggerPrAction } from "./trigger";
 import {
   postIssueComment,
   editIssueComment,
+  postOrEditComment,
   replyToReviewComment,
   BOT_LOGIN,
   REPLY_MARKER,
   MICHAEL_MARKERS,
 } from "./github-rest";
 import { PR_EVENT_KEY } from "./constants";
+import { classifyPrActionIntent } from "../slack/mention-intent";
 
 // Handles that mean "Michael". @michael isn't a real GitHub user (renders as
 // plain text) but people type it; tella-butler is the bot's actual handle.
@@ -77,34 +80,70 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
   if (!prNumber || !comment?.id) return;
   if (alreadyHandled(`${kind}:${comment.id}`)) return;
 
-  // Shares the "code" lock with auto-fix/simplify: a mention can push changes, so
-  // it must not run concurrently with them on the same PR-branch worktree.
+  // A whole-PR action request ("@michael adversarial review plz") → run the dedicated
+  // behavior. Classified before any lock, since triggerPrAction claims the "code" lock.
+  const action = await classifyPrActionIntent(body);
+  if (action !== "none") {
+    const res = await triggerPrAction(action, prNumber, authorLogin);
+    const ack = `${REPLY_MARKER}\nOn it — ${res.message}`;
+    if (kind === "review" && replyToId) await replyToReviewComment(prNumber, replyToId, ack).catch(() => {});
+    else await postIssueComment(prNumber, ack).catch(() => {});
+    return;
+  }
+
+  // Otherwise it's a conversational request — answer (and act) in a worktree session.
+  await runConversationalMention({ prNumber, author: authorLogin, body, kind, replyToId, inline });
+}
+
+export interface ConversationalMentionArgs {
+  prNumber: number;
+  author: string;
+  body: string;
+  kind: MentionKind;
+  replyToId?: number;
+  inline?: { path: string; line?: number; diffHunk?: string };
+}
+
+/** Run (or, on restart recovery, re-run) a conversational @mention in a PR-branch worktree. */
+export async function runConversationalMention(
+  args: ConversationalMentionArgs,
+  recovering = false,
+): Promise<void> {
+  const { prNumber } = args;
   if (!claimLock("code", prNumber)) {
     console.log(`[github] a code action is already running for PR #${prNumber}, skipping mention`);
     return;
   }
+  let headRef = "";
   try {
     const details = await getPrDetails(String(prNumber));
-    if (!details) {
-      console.warn(`[github] no PR details for #${prNumber}; skipping mention`);
-      return;
-    }
-    if (details.state !== "OPEN") return;
-    const headRef = details.headRefName;
+    if (!details || details.state !== "OPEN") return;
+    headRef = details.headRefName;
     const model = listAutomations().find((a) => a.eventKey === PR_EVENT_KEY)?.model;
     const link = `[📺 open session](${sessionUrl(prNumber, "mention")})`;
 
-    // Progress comment up front (with the session link, so you can open it to
-    // monitor) before the slow worktree + agent run.
-    const progressId = await postIssueComment(
+    const st = getOrInitPrState(prNumber, headRef);
+    // Reuse the progress comment only when recovering an interrupted run.
+    const reuseId = recovering ? st.activeMention?.progressCommentId : undefined;
+    const progressId = await postOrEditComment(
       prNumber,
-      `${REPLY_MARKER}\n🔄 On it — working on @${authorLogin}'s request… · ${link}`,
+      reuseId,
+      `${REPLY_MARKER}\n🔄 On it — working on @${args.author}'s request… · ${link}`,
     );
+    st.activeMention = {
+      author: args.author,
+      body: args.body,
+      kind: args.kind,
+      replyToId: args.replyToId,
+      inline: args.inline,
+      progressCommentId: progressId ?? undefined,
+      startedAt: new Date().toISOString(),
+    };
+    writePrState(st);
 
     // Code mode in the PR-branch worktree so Michael can make + push changes if asked.
     const worktreeDir = await createWorktreeForPrBranch(headRef);
-
-    console.log(`[github] Mention reply on PR #${prNumber} (${kind}) from @${authorLogin}`);
+    console.log(`[github] Mention reply on PR #${prNumber} (${args.kind}) from @${args.author}`);
     const result = await runGithubAgent({
       prNumber,
       kind: "mention",
@@ -112,9 +151,9 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
         prNumber,
         prTitle: details.title,
         headRef,
-        author: authorLogin,
-        commentBody: body,
-        inline,
+        author: args.author,
+        commentBody: args.body,
+        inline: args.inline,
       }),
       cwd: worktreeDir,
       mode: "code",
@@ -122,19 +161,16 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
       branch: headRef,
       title: `Mention · PR #${prNumber} ${details.title}`.slice(0, 100),
       resume: true, // keep a conversation across mentions on the same PR
-      // Attribute any commits to the person who asked.
-      author: authorForLogin(authorLogin),
+      author: authorForLogin(args.author), // attribute any commits to the person who asked
     });
 
     const reply = finalSummary(result.text) || "(no reply produced)";
     const out = `${REPLY_MARKER}\n${reply}\n\n<sub>${link}</sub>`;
-    if (kind === "review" && replyToId) {
+    if (args.kind === "review" && args.replyToId) {
       // Answer in the inline thread; the progress comment becomes a pointer to it.
-      const ok = await replyToReviewComment(prNumber, replyToId, out);
+      const ok = await replyToReviewComment(prNumber, args.replyToId, out);
       if (!ok) console.warn(`[github] failed to post mention thread reply for PR #${prNumber}`);
-      if (progressId) {
-        await editIssueComment(progressId, `${REPLY_MARKER}\n✓ Replied in the review thread above. · ${link}`);
-      }
+      if (progressId) await editIssueComment(progressId, `${REPLY_MARKER}\n✓ Replied in the review thread above. · ${link}`);
     } else {
       // Conversation reply: turn the progress comment into the answer.
       if (progressId) {
@@ -146,6 +182,11 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
   } catch (e) {
     console.error(`[github] mention reply error for PR #${prNumber}:`, e);
   } finally {
+    // Clear recovery state on completion; a killed process leaves it set so the
+    // github agent re-runs the mention on startup.
+    const fin = getOrInitPrState(prNumber, headRef || `pr-${prNumber}`);
+    fin.activeMention = undefined;
+    writePrState(fin);
     releaseLock("code", prNumber);
   }
 }
