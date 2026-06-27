@@ -116,6 +116,7 @@ export async function supersedeReviewComment(commentId: number): Promise<void> {
 }
 
 export interface ReviewCommentInfo {
+  id: number;
   path: string;
   line: number | null;
   body: string;
@@ -123,7 +124,7 @@ export interface ReviewCommentInfo {
   outdated: boolean;
 }
 
-/** List the inline review comments on a PR (for auto-fix to address). Newest first. */
+/** List the inline review comments on a PR (for auto-fix to address + reply to). Newest first. */
 export async function listReviewComments(prNumber: number): Promise<ReviewCommentInfo[]> {
   const r = await githubRequest<any[]>(
     "GET",
@@ -132,6 +133,7 @@ export async function listReviewComments(prNumber: number): Promise<ReviewCommen
   if (!r.ok || !Array.isArray(r.data)) return [];
   return r.data
     .map((c) => ({
+      id: c.id,
       path: c.path,
       // `line` is null once a comment goes outdated (the line changed/disappeared).
       line: typeof c.line === "number" ? c.line : null,
@@ -140,6 +142,21 @@ export async function listReviewComments(prNumber: number): Promise<ReviewCommen
       outdated: c.line == null && c.original_line != null,
     }))
     .reverse();
+}
+
+export interface ReviewInfo {
+  login: string;
+  body: string;
+  state: string;
+}
+
+/** List the formal reviews on a PR that carry a summary body (Greptile/human/Michael). */
+export async function listReviews(prNumber: number): Promise<ReviewInfo[]> {
+  const r = await githubRequest<any[]>("GET", `/repos/${GITHUB_REPO}/pulls/${prNumber}/reviews?per_page=100`);
+  if (!r.ok || !Array.isArray(r.data)) return [];
+  return r.data
+    .filter((rv) => typeof rv.body === "string" && rv.body.trim())
+    .map((rv) => ({ login: rv.user?.login || "", body: rv.body, state: rv.state || "" }));
 }
 
 /** Reply within a review-comment thread (inline @mention replies). */

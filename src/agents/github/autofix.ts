@@ -17,7 +17,7 @@ import {
 } from "./state";
 import { runGithubAgent, authorForLogin } from "./run";
 import { buildAutoFixPrompt } from "./prompts";
-import { postIssueComment, editIssueComment, removeLabel, listReviewComments } from "./github-rest";
+import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, BOT_LOGIN } from "./github-rest";
 import { LABEL_AUTOFIX } from "./constants";
 import type { PrRef } from "./review";
 
@@ -212,15 +212,28 @@ function parseRemaining(text: string): string {
 }
 
 /**
- * The PR's inline review findings, formatted for the fix prompt so auto-fix
- * actually addresses Michael's review comments (not just CI). Skips outdated
- * comments (line already changed). Returns "" when there are none.
+ * All open review feedback on the PR, formatted for the fix prompt — inline
+ * comments AND review summaries, from EVERY reviewer (Michael, Greptile, humans),
+ * each tagged with its author so the agent addresses them all (not just Michael's,
+ * not just CI). Skips outdated inline comments and Michael's own boilerplate review
+ * body. Returns "" when there's nothing.
  */
 async function fetchReviewFindings(prNumber: number): Promise<string> {
-  const comments = await listReviewComments(prNumber);
-  const current = comments.filter((c) => !c.outdated && c.line != null);
-  if (!current.length) return "";
-  return current
-    .map((c) => `- ${c.path}:${c.line} — ${c.body.replace(/\s+/g, " ").trim().slice(0, 400)}`)
-    .join("\n");
+  const [comments, reviews] = await Promise.all([
+    listReviewComments(prNumber),
+    listReviews(prNumber),
+  ]);
+  const lines: string[] = [];
+  for (const c of comments.filter((c) => !c.outdated && c.line != null)) {
+    // `comment <id>` lets the agent reply in that thread after fixing.
+    lines.push(`- [@${c.login} · comment ${c.id}] ${c.path}:${c.line} — ${c.body.replace(/\s+/g, " ").trim().slice(0, 400)}`);
+  }
+  for (const rv of reviews) {
+    // Skip Michael's own short "Michael review · <sha>" boilerplate (the inline
+    // comments above already carry its findings).
+    if (rv.login === BOT_LOGIN && /^Michael review/.test(rv.body.trim())) continue;
+    const state = rv.state ? ` ${rv.state.toLowerCase().replace(/_/g, " ")}` : "";
+    lines.push(`- [@${rv.login} review${state}] ${rv.body.replace(/\s+/g, " ").trim().slice(0, 600)}`);
+  }
+  return lines.join("\n");
 }

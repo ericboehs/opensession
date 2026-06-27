@@ -86,18 +86,19 @@ export function buildAutoFixPrompt(
 
   return `You are Michael, working on PR #${pr.number} ("${pr.title}") on tella-fusion. You are checked out on the PR's head branch \`${pr.headRefName}\` in a worktree. This is auto-fix iteration ${iteration}.
 
-Your job: address the open code-review findings AND any failing CI on this PR, then commit and push.
+Your job: address ALL the open review feedback on this PR — from EVERY reviewer (Michael, Greptile, and human reviewers alike), not just Michael's — AND any failing CI, then commit, push, and reply in each thread you addressed.
 
-Open review findings to address (from Michael's review comments — fix each one):
-${reviewSummary || "(none fetched — also run `gh pr view " + pr.number + " --comments` and `gh api repos/tellahq/tella-fusion/pulls/" + pr.number + "/comments` to find any review comments, then assess the diff)"}
+Open review feedback to address (inline comments + review summaries; each tagged with its author and, for inline comments, a \`comment <id>\` — fix every actionable point):
+${reviewSummary || "(none fetched — run `gh pr view " + pr.number + " --comments`, `gh api repos/tellahq/tella-fusion/pulls/" + pr.number + "/comments`, and `.../reviews` to gather them, then assess the diff)"}
 
 ${ci}
 
 Instructions:
-1. Run \`gh pr diff ${pr.number}\` and inspect the failing checks (e.g. \`gh pr checks ${pr.number}\`, run the relevant tests/typecheck/lint locally) to understand what needs fixing.
+1. Run \`gh pr diff ${pr.number}\` and inspect the failing checks (e.g. \`gh pr checks ${pr.number}\`, run the relevant tests/typecheck/lint locally) to understand what needs fixing. Also skim \`gh pr view ${pr.number} --comments\` for any human requests in the conversation not listed above.
 2. Make the smallest correct changes that resolve the findings and the CI failures. Match the surrounding code style. Do NOT make unrelated changes.
 3. Commit your work with a clear message, then push to the PR branch with: \`git push origin HEAD:${pr.headRefName}\`
-4. NEVER merge the PR (\`gh pr merge\` is forbidden) and never force-push over other people's work.
+4. **Reply in each review thread you addressed** so reviewers see it was handled: for an inline comment with id \`<id>\`, run \`gh api repos/tellahq/tella-fusion/pulls/${pr.number}/comments/<id>/replies -f body="Fixed in <short-sha> — <what you changed>."\` (and a short note if you intentionally didn't act on something). This applies to Greptile and human comments too, not just Michael's.
+5. NEVER merge the PR (\`gh pr merge\` is forbidden) and never force-push over other people's work.
 
 End your turn with a single line in exactly this format so the loop knows whether to continue:
 \`REMAINING_FINDINGS: none\`  (if you addressed everything and pushed)
