@@ -10,6 +10,16 @@ Default to using Bun instead of Node.js.
 - Audit log: every agent run emits structured JSON events (incident-agent style) to ~/.backstage-audit/audit-YYYY-MM-DD.jsonl via src/server/audit.ts — see deploy/README-audit.md for the event catalog and CloudWatch shipping
 - Internal notes and draft replies (Plain, Linear) are always written in English, regardless of the customer's language — note the customer's language so the team can translate before sending. This applies to agent prompts here (src/agents/plain/prompts.ts) and to automation prompts stored in ~/.backstage-automations/.
 
+## Hot reload & restarts
+
+The systemd service runs `bun --hot run backstage.ts`: editing source hot-reloads in-process so WebSocket clients and in-flight runs survive (rather than restarting and dropping every session). One-time setup (agents, schedulers, timers, signal handlers) is guarded behind `globalThis.__backstageBooted`; live state (watchers, pendingAsks, promptQueues, loaded agents, runner active-run maps) is parked on `globalThis`; the `Bun.serve` server is reused, not rebound.
+
+What hot-reloads vs. what needs a real `systemctl restart` — **important, this has bitten us:**
+- **Hot-applies:** HTTP/route + WebSocket handlers, the `SessionControl` registry (re-registered on every reload, so session-control / MCP-injection logic updates), per-message config and prompts read fresh.
+- **Needs a real restart:** long-lived **agent loop code** (Slack/Linear/Stripe event loops — guarded against double-start, so the old code keeps running), and **runner internals** (`claude-runner.ts` / `agent-runner.ts` / `runClaude`, e.g. how a run's MCP/tool list is built). `--hot` does NOT propagate a change in a deeply-imported module like runClaude into the running process even though health/PID look fine. Before declaring a runner-path change live, `systemctl restart` and verify with a real run.
+
+Restarts are graceful: SIGTERM stops new intake, then drains in-flight runner runs (bounded by `SHUTDOWN_DRAIN_MS`, default 25s; unit `TimeoutStopSec=40`) before exiting; anything still going is resumed from the run journal on next boot. The deployed `/etc/systemd/system/backstage.service` is a **copy** of the repo `backstage.service`, not a symlink — sync with `sudo cp` + `systemctl daemon-reload`.
+
 ## Automation least-privilege
 
 Automation runs (especially event-triggered ones like Plain ticket triage) process untrusted text — customer ticket content is data the agent reads, never configuration for the run. Constraints are enforced at the tool/env layer, not just in prompts:
