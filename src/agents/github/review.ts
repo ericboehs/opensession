@@ -59,6 +59,7 @@ export async function runReview(
   pr: PrRef,
   config: ReviewConfig,
   onSessionCreated?: (bksId: string) => void,
+  force = false,
 ): Promise<void> {
   if (!claimLock("review", pr.number)) {
     console.log(`[github] review already running for PR #${pr.number}, skipping`);
@@ -66,7 +67,8 @@ export async function runReview(
   }
   try {
     const state = getOrInitPrState(pr.number, pr.headRef);
-    if (pr.headSha && state.reviewedShas.includes(pr.headSha)) {
+    // `force` (manual Slack trigger) reviews even an already-reviewed SHA.
+    if (!force && pr.headSha && state.reviewedShas.includes(pr.headSha)) {
       console.log(`[github] PR #${pr.number} @ ${pr.headSha.slice(0, 7)} already reviewed`);
       return;
     }

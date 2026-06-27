@@ -35,6 +35,7 @@ import {
 import { SlackStreamer, buildToolStatus, isSilentTool } from "./streamer";
 import { SlackProgress } from "./progress";
 import { createAdminMcpServer } from "./admin-tools";
+import { createGithubMcpServer } from "./github-tools";
 import { renderMemoryForPrompt, type MemoryContext } from "./memory";
 import { enqueueMessage, getOrCreateQueue } from "./queue";
 import type { QueuedMessage, SessionQueue } from "./queue";
@@ -820,6 +821,7 @@ export async function processMessage(
         createdBy: userName || msg.userId,
         isAdmin,
       }),
+      "michael-github": createGithubMcpServer({ requestedBy: msg.userId }),
     };
   } catch (e) {
     console.warn("[slack] failed to build admin tools / memory:", e);
@@ -829,7 +831,11 @@ export async function processMessage(
     "channel memory (remember / list_memory / forget) and, for trusted users, automations " +
     "(list/create/update/delete/run_automation — routines on a UTC cron, or event/webhook) and " +
     "MCP connections (list/add/remove_mcp_server). When a user asks you to remember something, " +
-    "set up a recurring job, or connect a tool, use these tools rather than just describing how.";
+    "set up a recurring job, or connect a tool, use these tools rather than just describing how." +
+    "\n\n## GitHub PR actions\nWhen asked to review, auto-fix, simplify, or adversarially review a tella-fusion PR " +
+    "(e.g. \"review PR 4296\", \"auto-fix PR 4296\", \"adversarial review PR 4296\"), use the michael-github MCP tools " +
+    "(review_pr / auto_fix_pr / simplify_pr / adversarial_review_pr) — they run the same actions as the PR labels and " +
+    "post the results on the PR. Pass the PR number; the tool starts it and reports back, so just relay what it says.";
 
   rotation: for (;;) {
   let limitHit = false;
