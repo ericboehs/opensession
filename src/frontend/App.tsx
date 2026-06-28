@@ -63,7 +63,23 @@ function routePath(route: Route): string {
 function App() {
   const { sessions, loading, refresh } = useSessions();
   const { connected, send, addHandler } = useWebSocket();
-  const [route, setRoute] = useState<Route>(() => parseRoute(location.pathname));
+  // iOS evicts standalone PWAs from memory and relaunches them at the manifest
+  // start_url (/backstage/) — losing the session you had open. On a cold load
+  // that lands on home, restore the last session so it isn't dropped. This only
+  // runs on a fresh document load (never on in-app navigation, which uses
+  // pushState), so tapping the logo to go home still works.
+  const [route, setRoute] = useState<Route>(() => {
+    const parsed = parseRoute(location.pathname);
+    if (parsed.view === "home") {
+      const lastId = localStorage.getItem("michael-last-session");
+      if (lastId) {
+        const restored: Route = { view: "session", id: lastId };
+        history.replaceState(null, "", routePath(restored));
+        return restored;
+      }
+    }
+    return parsed;
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   // A session we've just navigated to that may not be in the polled list yet
@@ -86,6 +102,13 @@ function App() {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
+
+  // Remember the last session so a cold relaunch can restore it (see above);
+  // clear it when the user deliberately goes home so we don't force them back in.
+  useEffect(() => {
+    if (route.view === "session") localStorage.setItem("michael-last-session", route.id);
+    else if (route.view === "home") localStorage.removeItem("michael-last-session");
+  }, [route]);
 
   // Tear down the launch splash (rendered in index.html) once the app has mounted.
   useEffect(() => {
