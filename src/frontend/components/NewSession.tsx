@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { fetchWorktrees, fetchModels, type ModelOption } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
+import { filesToDataUrls, imageFilesFromPaste } from "../lib/images";
+import { ImageThumbs } from "./ImageThumbs";
 import type { WSServerMessage } from "../lib/types";
 
 interface Props {
@@ -32,6 +34,7 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
   const [selectedWorktree, setSelectedWorktree] = useState("__new__");
   const [newBranch, setNewBranch] = useState(prefill.branch);
   const [prompt, setPrompt] = useState(prefill.prompt);
+  const [images, setImages] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -61,10 +64,23 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
     });
   }, [creating, addHandler]);
 
+  async function addImageFiles(files: FileList | File[]) {
+    const urls = await filesToDataUrls(files);
+    if (urls.length) setImages((prev) => [...prev, ...urls]);
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    const files = imageFilesFromPaste(e);
+    if (files.length) {
+      e.preventDefault();
+      void addImageFiles(files);
+    }
+  }
+
   function handleCreate() {
     const branch = selectedWorktree === "__new__" ? newBranch.trim() : selectedWorktree;
     if (mode === "code" && !branch) return;
-    if (!prompt.trim()) return;
+    if (!prompt.trim() && images.length === 0) return;
 
     setError(null);
     setCreating(true);
@@ -75,13 +91,14 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
       prompt: prompt.trim(),
       user: getCurrentUser(),
       ...(model ? { model } : {}),
+      ...(images.length ? { images } : {}),
     });
   }
 
   const canCreate =
     !creating &&
     connected &&
-    prompt.trim() &&
+    (prompt.trim() || images.length > 0) &&
     (mode === "ask" ||
       (selectedWorktree && (selectedWorktree !== "__new__" || newBranch.trim())));
 
@@ -154,17 +171,29 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
 
         <label>
           What should Michael do?
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={
-              mode === "ask"
-                ? "Ask anything about the codebase or product — read-only."
-                : "Describe the task — Michael gets a fresh worktree on tella-fusion and starts right away."
-            }
-            rows={6}
-            disabled={creating}
-          />
+          <div
+            onDrop={(e) => {
+              if (e.dataTransfer?.files?.length) {
+                e.preventDefault();
+                void addImageFiles(e.dataTransfer.files);
+              }
+            }}
+            onDragOver={(e) => e.preventDefault()}
+          >
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onPaste={handlePaste}
+              placeholder={
+                mode === "ask"
+                  ? "Ask anything about the codebase or product — read-only. Paste a screenshot to include it."
+                  : "Describe the task — Michael gets a fresh worktree on tella-fusion and starts right away. Paste a screenshot to include it."
+              }
+              rows={6}
+              disabled={creating}
+            />
+            <ImageThumbs images={images} onRemove={(i) => setImages((p) => p.filter((_, idx) => idx !== i))} disabled={creating} />
+          </div>
         </label>
 
         {error && <div className="form-error">{error}</div>}

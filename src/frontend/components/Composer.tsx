@@ -1,5 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import type { ModelOption } from "../lib/api";
+import { filesToDataUrls, imageFilesFromPaste } from "../lib/images";
+import { ImageThumbs } from "./ImageThumbs";
 
 interface Props {
   value: string;
@@ -35,15 +37,6 @@ interface Props {
    */
   images?: string[];
   onImagesChange?: (images: string[]) => void;
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(file);
-  });
 }
 
 function modelShortLabel(id: string, models: ModelOption[]): string {
@@ -85,18 +78,13 @@ export function Composer({
 
   async function addFiles(files: FileList | File[]) {
     if (!onImagesChange) return;
-    const picked = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    if (!picked.length) return;
-    const urls = await Promise.all(picked.map(readFileAsDataUrl));
-    onImagesChange([...imgs, ...urls]);
+    const urls = await filesToDataUrls(files);
+    if (urls.length) onImagesChange([...imgs, ...urls]);
   }
 
   function handlePaste(e: React.ClipboardEvent) {
     if (!onImagesChange) return;
-    const files = Array.from(e.clipboardData?.items || [])
-      .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
-      .map((it) => it.getAsFile())
-      .filter((f): f is File => !!f);
+    const files = imageFilesFromPaste(e);
     if (files.length) {
       e.preventDefault();
       void addFiles(files);
@@ -137,24 +125,7 @@ export function Composer({
         onDrop={handleDrop}
         onDragOver={(e) => onImagesChange && e.preventDefault()}
       >
-        {imgs.length > 0 && (
-          <div className="composer-images">
-            {imgs.map((src, i) => (
-              <div key={i} className="composer-image-thumb">
-                <img src={src} alt="" />
-                <button
-                  type="button"
-                  className="composer-image-remove"
-                  onClick={() => removeImage(i)}
-                  disabled={disabled}
-                  title="Remove image"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <ImageThumbs images={imgs} onRemove={removeImage} disabled={disabled} />
         <textarea
           ref={textareaRef}
           className="composer-textarea"
