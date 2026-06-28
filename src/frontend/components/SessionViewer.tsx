@@ -527,11 +527,11 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           <SpinOffMenu session={session} entries={entries} send={send} connected={connected} />
           {hasWorkspace && (
             <button
-              className={`btn-panel-toggle ${panelOpen ? "active" : ""}`}
+              className={`btn-panel-toggle btn-workspace ${panelOpen ? "active" : ""}`}
               onClick={() => setPanelOpen(!panelOpen)}
-              title="Toggle workspace panel"
+              title="Toggle workspace panel (changes, terminal, PR)"
             >
-              <span className="btn-panel-toggle-icon">⫼</span>
+              <span className="btn-panel-toggle-icon">◨</span>
               <span className="btn-panel-toggle-label">Workspace</span>
             </button>
           )}

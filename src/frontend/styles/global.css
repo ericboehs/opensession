@@ -2989,16 +2989,48 @@ a {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .viewer-header-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
-  /* Compact controls so they stay on one row */
+  /* The model pill duplicates the composer's model selector — drop it from the
+     title row on phones so the title gets the full width (less truncation). */
+  .viewer-title .model-pill { display: none; }
+
+  .viewer-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  /* Compact, comfortably-tappable controls that stay on one row */
   .viewer-header-actions button,
   .viewer-header-actions .session-link {
     font-size: 11px;
-    padding: 3px 8px;
+    padding: 5px 9px;
+    min-height: 30px;
   }
   /* Icon-only workspace toggle on phones — the label is kept on desktop */
   .btn-panel-toggle-label { display: none; }
+  /* Make the Workspace toggle the one standout control — it's how you reach the
+     diff / terminal / PR on a phone. (Scoped to .btn-workspace so the Spin-off
+     trigger, which shares .btn-panel-toggle, stays neutral.) */
+  .viewer-header-actions .btn-workspace {
+    order: 2;
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    padding: 5px 11px;
+    font-size: 15px;
+  }
+  .viewer-header-actions .btn-workspace.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
   .working-pill { padding: 3px 8px; font-size: 11px; }
+
+  /* The keyboard-shortcut hint is irrelevant on touch and eats vertical space
+     right where the keyboard appears — hide it. */
+  .composer-hint,
+  .prompt-hint { display: none; }
 
   .viewer-messages { padding: 12px 12px 8px; }
 
@@ -3039,6 +3071,10 @@ a {
 
   .btn-send { padding: 10px 14px; }
   .prompt-hint { display: none; }
+
+  /* Keep the home Ask toolbar on one tidy row */
+  .btn-task { white-space: nowrap; }
+  .composer-toolbar { gap: 6px; }
 
   /* Automation cards: the single top row (toggle · name · chips · buttons)
      starves the title of width on phones — wrap it instead. Title gets the

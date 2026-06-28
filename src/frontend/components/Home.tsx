@@ -101,6 +101,8 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
     setPins(togglePin(id));
   }
 
+  const isPhone =
+    typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
   const visible = sessions.filter((s) => !s.archived);
   const running = visible.filter((s) => s.isRunning);
   const pinned = visible.filter((s) => pins.includes(s.id) && !s.isRunning);
@@ -128,16 +130,18 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
             model={askModel}
             onModelChange={setAskModel}
             modelTitle="Model for this Ask session"
+            autoFocus={
+              typeof window === "undefined" || !window.matchMedia("(max-width: 720px)").matches
+            }
             leftExtra={
               <button
                 className="btn-task"
                 onClick={() => onNewSession(question.trim() || undefined)}
                 disabled={asking}
               >
-                Start a coding task
+                {isPhone ? "Code task" : "Start a coding task"}
               </button>
             }
-            autoFocus
           />
 
           <div className="ask-suggestions">
