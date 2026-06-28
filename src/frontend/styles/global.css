@@ -2999,8 +2999,9 @@ a {
   .viewer-input {
     padding: 8px 10px;
     /* The hint is the bottom-most (non-interactive) element, so it can sit
-       closer to the home indicator — trim most of the safe-area inset. */
-    padding-bottom: max(6px, calc(env(safe-area-inset-bottom, 0px) - 14px));
+       right next to the home indicator — drop almost all of the safe-area
+       inset to keep the gap tight (~8px) on home-indicator iPhones. */
+    padding-bottom: max(8px, calc(env(safe-area-inset-bottom, 0px) - 26px));
   }
 
   /* 16px stops iOS Safari from zooming into focused inputs */
