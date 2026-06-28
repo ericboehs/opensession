@@ -706,13 +706,18 @@ a {
 .session-link-plain { color: #5eead4; border-color: rgba(13, 148, 136, 0.5); }
 
 .btn-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: none;
   border: 1px solid var(--border-strong);
   border-radius: 5px;
   color: var(--text-dim);
-  padding: 3px 9px;
-  font-size: 13px;
+  padding: 3px 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
+.btn-panel-toggle-icon { font-size: 13px; line-height: 1; }
 .btn-panel-toggle.active,
 .btn-panel-toggle:hover {
   color: var(--accent);
@@ -833,35 +838,6 @@ a {
   margin-left: 6px;
 }
 .panel-close:hover { color: var(--text); }
-
-/* Slim rail to reopen the collapsed workspace panel */
-.panel-reopen {
-  width: 26px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding-top: 14px;
-  background: var(--bg-raised);
-  border: none;
-  border-left: 1px solid var(--border);
-  color: var(--text-faint);
-}
-.panel-reopen:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
-.panel-reopen-icon { font-size: 13px; }
-
-.panel-reopen-label {
-  writing-mode: vertical-rl;
-  font-size: 10.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
 
 .panel-overlay {
   display: none;
@@ -3022,7 +2998,9 @@ a {
 
   .viewer-input {
     padding: 8px 10px;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    /* The hint is the bottom-most (non-interactive) element, so it can sit
+       closer to the home indicator — trim most of the safe-area inset. */
+    padding-bottom: max(6px, calc(env(safe-area-inset-bottom, 0px) - 14px));
   }
 
   /* 16px stops iOS Safari from zooming into focused inputs */

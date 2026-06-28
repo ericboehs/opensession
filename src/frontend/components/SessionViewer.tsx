@@ -493,7 +493,8 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               onClick={() => setPanelOpen(!panelOpen)}
               title="Toggle workspace panel"
             >
-              ⫼
+              <span className="btn-panel-toggle-icon">⫼</span>
+              <span className="btn-panel-toggle-label">Workspace</span>
             </button>
           )}
           {!showDeleteConfirm ? (
@@ -667,16 +668,6 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           </div>
         </div>
 
-        {hasWorkspace && !panelOpen && (
-          <button
-            className="panel-reopen"
-            onClick={() => setPanelOpen(true)}
-            title="Open workspace panel"
-          >
-            <span className="panel-reopen-icon">«</span>
-            <span className="panel-reopen-label">Workspace</span>
-          </button>
-        )}
         {hasWorkspace && panelOpen && (
           <div className="panel-overlay" onClick={() => setPanelOpen(false)} />
         )}
