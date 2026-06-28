@@ -653,6 +653,59 @@ if (!g.__backstageBooted) {
   }, 60_000);
 }
 
+// Production frontend: build the SPA with code-splitting so the initial
+// download is ~1MB instead of shipping every shiki grammar/theme (~10MB)
+// upfront — the heavy chunks load on demand. Dev keeps the HMR HTMLBundle
+// (`homepage`) below. Built once per process and parked on globalThis so a
+// hot reload reuses it. Assets are content-hashed → safe to cache forever.
+const IS_DEV = process.env.BACKSTAGE_DEV === "1";
+const FRONTEND_DIST = `${import.meta.dir}/.frontend-dist`;
+
+if (!IS_DEV && !g.__backstageFrontend) {
+  console.log("Building frontend (split + minified)…");
+  const srcDir = `${import.meta.dir}/src/frontend`;
+  const result = await Bun.build({
+    entrypoints: [`${srcDir}/App.tsx`],
+    outdir: FRONTEND_DIST,
+    minify: true,
+    splitting: true,
+    sourcemap: "none",
+    publicPath: "/backstage/",
+    naming: { entry: "[name]-[hash].[ext]", chunk: "[name]-[hash].[ext]", asset: "[name]-[hash].[ext]" },
+  });
+  if (!result.success) {
+    throw new AggregateError(result.logs, "frontend build failed");
+  }
+  // Bun's HTML-entry splitting mis-points the bootstrap <script> at a leaf
+  // chunk, so we build the JS entry and stitch index.html ourselves: keep the
+  // source shell (icons, splash, manifest links) and point it at the hashed
+  // entry + the extracted CSS.
+  const entry = result.outputs.find((o) => o.kind === "entry-point");
+  const css = result.outputs.find((o) => o.path.endsWith(".css"));
+  if (!entry) throw new Error("frontend build produced no entry point");
+  const entryName = entry.path.split("/").pop();
+  const cssName = css?.path.split("/").pop();
+
+  let indexHtml = await Bun.file(`${srcDir}/index.html`).text();
+  indexHtml = indexHtml.replace(
+    '<script type="module" src="./App.tsx"></script>',
+    `<script type="module" crossorigin src="/backstage/${entryName}"></script>`
+  );
+  if (cssName) {
+    indexHtml = indexHtml.replace("</head>", `  <link rel="stylesheet" href="/backstage/${cssName}">\n</head>`);
+  }
+  g.__backstageFrontend = { indexHtml, gzip: new Map<string, Blob>() };
+  console.log(`Frontend built: ${result.outputs.length} files → ${FRONTEND_DIST}`);
+}
+
+const frontend: { indexHtml: string; gzip: Map<string, Blob> } | null =
+  IS_DEV ? null : g.__backstageFrontend;
+
+// SPA entry: the HMR bundle in dev, the prebuilt index.html in prod.
+const spaEntry = frontend
+  ? () => new Response(frontend.indexHtml, { headers: { "Content-Type": "text/html; charset=utf-8" } })
+  : homepage;
+
 console.log(`Starting Backstage server on ${HOST}:${PORT}...`);
 
 // Reuse the listening server across hot reloads so existing WebSocket clients
@@ -667,17 +720,17 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
   idleTimeout: 240,
 
   routes: {
-    "/backstage": homepage,
-    "/backstage/": homepage,
-    "/backstage/index.html": homepage,
-    // Client-side routes must go through the bundled HTML import, not the raw file
-    "/backstage/new": homepage,
-    "/backstage/session/*": homepage,
-    "/backstage/automations": homepage,
-    "/backstage/wiki": homepage,
-    "/backstage/wiki/*": homepage,
-    "/backstage/connections": homepage,
-    "/backstage/archived": homepage,
+    "/backstage": spaEntry,
+    "/backstage/": spaEntry,
+    "/backstage/index.html": spaEntry,
+    // Client-side routes must serve the SPA shell, not the raw file
+    "/backstage/new": spaEntry,
+    "/backstage/session/*": spaEntry,
+    "/backstage/automations": spaEntry,
+    "/backstage/wiki": spaEntry,
+    "/backstage/wiki/*": spaEntry,
+    "/backstage/connections": spaEntry,
+    "/backstage/archived": spaEntry,
   },
 
   async fetch(req) {
@@ -706,6 +759,36 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       return new Response(Bun.file(`${import.meta.dir}/src/frontend/splash/${splashMatch[1]}`), {
         headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" },
       });
+    }
+
+    // Built SPA assets (prod only). Content-hashed filenames → cache forever.
+    // Served gzipped (computed once, then memoised) since the JS is large.
+    const assetMatch = frontend && path.match(/^\/backstage\/([\w.-]+\.(?:js|css|map))$/);
+    if (assetMatch) {
+      const name = assetMatch[1];
+      const file = Bun.file(`${FRONTEND_DIST}/${name}`);
+      if (await file.exists()) {
+        const type = name.endsWith(".css")
+          ? "text/css"
+          : name.endsWith(".map")
+            ? "application/json"
+            : "text/javascript";
+        const headers: Record<string, string> = {
+          "Content-Type": `${type}; charset=utf-8`,
+          "Cache-Control": "public, max-age=31536000, immutable",
+        };
+        if ((req.headers.get("accept-encoding") || "").includes("gzip")) {
+          let gz = frontend.gzip.get(name);
+          if (!gz) {
+            gz = new Blob([Bun.gzipSync(new Uint8Array(await file.arrayBuffer()))]);
+            frontend.gzip.set(name, gz);
+          }
+          headers["Content-Encoding"] = "gzip";
+          headers["Vary"] = "Accept-Encoding";
+          return new Response(gz, { headers });
+        }
+        return new Response(file, { headers });
+      }
     }
     if (path === "/backstage/manifest.webmanifest") {
       return Response.json(

@@ -13,3 +13,4 @@ mcp-config.json.bak
 # Codex CLI platform binary (223MB — exceeds GitHub's file limit; restored by `bun install`)
 node_modules/@openai/codex-linux-x64/
 node_modules/.bin/codex
+.frontend-dist/
