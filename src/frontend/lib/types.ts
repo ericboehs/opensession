@@ -87,10 +87,20 @@ export interface PrDetails {
 
 export type WSClientMessage =
   | { type: "watch"; sessionId: string; user?: string }
-  | { type: "prompt"; sessionId: string; content: string; user?: string }
+  | { type: "prompt"; sessionId: string; content: string; user?: string; images?: string[] }
   | { type: "interrupt_prompt"; sessionId: string; content: string; user?: string }
   | { type: "cancel" }
-  | { type: "create_session"; branch: string; prompt: string; user: string; mode?: "ask" | "code" };
+  | {
+      type: "create_session";
+      branch: string;
+      prompt: string;
+      user: string;
+      mode?: "ask" | "code";
+      model?: string;
+      images?: string[];
+      /** Fork an existing session, keeping its real conversation history. */
+      forkFrom?: { sourceId: string; messageId?: string };
+    };
 
 export type WSServerMessage =
   | { type: "transcript_init"; entries: TranscriptEntry[] }

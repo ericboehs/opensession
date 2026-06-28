@@ -288,11 +288,27 @@ export const STRIPE_CONFIRM_TOOLS: Record<string, string> = {
   mcp__stripe__stripe_api_execute: "Execute a raw Stripe API call",
 };
 
+/** A pasted/dropped image, decoded to raw base64 (no `data:` prefix). */
+export interface ImageInput {
+  mediaType: string;
+  data: string;
+}
+
 export async function* runClaude(opts: {
   prompt: string;
   sessionId?: string;
   cwd: string;
   mode?: "ask" | "code";
+  /** Images to attach to the opening message (vision). Claude only. */
+  images?: ImageInput[];
+  /**
+   * Fork instead of continuing: when `sessionId` is set and `forkSession` is
+   * true, the resumed conversation branches into a NEW engine session id rather
+   * than appending to the original. Pair with `resumeSessionAt` to branch from a
+   * specific past message (its UUID); omit to branch from the latest state.
+   */
+  forkSession?: boolean;
+  resumeSessionAt?: string;
   /** Claude model id for this run; falls back to the global default (getDefaultModel). */
   model?: string;
   /**
@@ -395,6 +411,9 @@ export async function* runClaude(opts: {
   // sha256 + bounded snippet — the full text lives in the session jsonl.
   const turnId = crypto.randomUUID();
   let resultSessionId = sessionId || "";
+  // Fork happens once, on the first attempt; after the SDK hands back the new
+  // forked session id (init) we just resume that id on any rotation retry.
+  let forkConsumed = false;
   const turnEvent = (fields: Record<string, unknown>) =>
     audit({
       msg: "claude_turn_event",
@@ -438,6 +457,24 @@ export async function* runClaude(opts: {
       message: { role: "user", content },
       parent_tool_use_id: null,
     }) as SDKUserMessage;
+  // The opening message can carry pasted/dropped images as content blocks
+  // (steered follow-ups stay text-only).
+  const mkUserMsgWithImages = (text: string, images?: ImageInput[]): SDKUserMessage => {
+    if (!images || images.length === 0) return mkUserMsg(text);
+    const blocks: unknown[] = [];
+    if (text) blocks.push({ type: "text", text });
+    for (const im of images) {
+      blocks.push({
+        type: "image",
+        source: { type: "base64", media_type: im.mediaType, data: im.data },
+      });
+    }
+    return {
+      type: "user",
+      message: { role: "user", content: blocks },
+      parent_tool_use_id: null,
+    } as SDKUserMessage;
+  };
   const pushSteer = (text: string) => {
     turnEvent({ direction: "in", kind: "steered_prompt", ...summarizeText(text) });
     steerPending.push(text);
@@ -462,7 +499,7 @@ export async function* runClaude(opts: {
   };
   const mkInputStream = (initial: string) =>
     (async function* (): AsyncGenerator<SDKUserMessage> {
-      yield mkUserMsg(initial);
+      yield mkUserMsgWithImages(initial, opts.images);
       while (true) {
         if (inputDone) return;
         if (steerReleases > 0) {
@@ -510,6 +547,11 @@ export async function* runClaude(opts: {
         prompt: mkInputStream(prompt),
         options: {
         resume: resultSessionId || sessionId || undefined,
+        // Fork applies only on the first attempt (before resultSessionId is the
+        // new forked id); once forked, later rotations just resume the fork.
+        ...(opts.forkSession && !forkConsumed
+          ? { forkSession: true as const, ...(opts.resumeSessionAt ? { resumeSessionAt: opts.resumeSessionAt } : {}) }
+          : {}),
         cwd,
         model,
         allowedTools: isAsk
@@ -685,6 +727,7 @@ export async function* runClaude(opts: {
 
       if (msg.type === "system" && (msg as any).subtype === "init") {
         resultSessionId = (msg as any).session_id;
+        forkConsumed = true; // we now have the forked id; don't re-fork on retry
         if (resultSessionId && !steerKeys.has(resultSessionId)) {
           registerSteerKey(resultSessionId);
         }

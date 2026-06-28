@@ -4,6 +4,8 @@ import { renderMarkdown } from "../lib/markdown";
 
 interface Props {
   entry: TranscriptEntry;
+  /** When provided, assistant messages show a "Fork from here" action. */
+  onFork?: (entryId: string) => void;
 }
 
 /** Inline images carried on an entry (Read-of-image results, pasted images). */
@@ -20,7 +22,7 @@ function EntryImages({ images }: { images?: string[] }) {
   );
 }
 
-export function MessageBubble({ entry }: Props) {
+export function MessageBubble({ entry, onFork }: Props) {
   const html = useMemo(() => renderMarkdown(entry.content), [entry.content]);
 
   if (entry.type === "system") {
@@ -49,7 +51,18 @@ export function MessageBubble({ entry }: Props) {
   // assistant
   return (
     <div className="msg msg-assistant">
-      <div className="msg-label msg-label-assistant">Michael</div>
+      <div className="msg-label msg-label-assistant">
+        Michael
+        {onFork && (
+          <button
+            className="msg-fork-btn"
+            onClick={() => onFork(entry.id)}
+            title="Fork a new session that branches from this point, keeping the conversation so far"
+          >
+            ⑂ Fork from here
+          </button>
+        )}
+      </div>
       <div
         className="msg-body msg-body-assistant markdown"
         dangerouslySetInnerHTML={{ __html: html || "" }}

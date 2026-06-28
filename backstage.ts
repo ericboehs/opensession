@@ -17,6 +17,7 @@ import {
   resumeInterruptedRuns,
   activeAgentRunCount,
 } from "./src/server/agent-runner";
+import type { ImageInput } from "./src/server/claude-runner";
 import {
   KNOWN_MODELS,
   getDefaultModel,
@@ -318,10 +319,23 @@ async function drainQueue(sessionId: string): Promise<void> {
 async function runSessionPromptAndDrain(
   sessionId: string,
   content: string,
-  user?: string
+  user?: string,
+  images?: ImageInput[]
 ): Promise<void> {
-  await runSessionPrompt(sessionId, content, user);
+  await runSessionPrompt(sessionId, content, user, images);
   await drainQueue(sessionId);
+}
+
+/** Decode composer `data:<mediatype>;base64,<data>` URLs into runner ImageInputs. */
+function parseImageDataUrls(urls?: unknown): ImageInput[] | undefined {
+  if (!Array.isArray(urls)) return undefined;
+  const out: ImageInput[] = [];
+  for (const u of urls) {
+    if (typeof u !== "string") continue;
+    const m = u.match(/^data:([^;]+);base64,(.+)$/s);
+    if (m && m[1].startsWith("image/")) out.push({ mediaType: m[1], data: m[2] });
+  }
+  return out.length ? out : undefined;
 }
 
 // Messages queued while a run we didn't start is in flight (Slack runs, CLI
@@ -350,7 +364,12 @@ function watchExternalRunAndDrain(sessionId: string): void {
 }
 
 /** Run a prompt against an existing session, broadcasting to all watchers. */
-async function runSessionPrompt(sessionId: string, content: string, user?: string): Promise<void> {
+async function runSessionPrompt(
+  sessionId: string,
+  content: string,
+  user?: string,
+  images?: ImageInput[]
+): Promise<void> {
   const session = findSession(sessionId);
   if (!session) return;
 
@@ -423,6 +442,7 @@ async function runSessionPrompt(sessionId: string, content: string, user?: strin
     cwd,
     mode: session.mode,
     model: session.model,
+    images,
     mcpServers,
     // Self-management tools for normal sessions; withheld from automation
     // sessions (and their interactive resumes) — same gate as deniedTools above.
@@ -1149,6 +1169,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
 
         case "prompt": {
           const { sessionId, content, user } = msg;
+          const images = parseImageDataUrls(msg.images);
           const session = findSession(sessionId);
           if (!session) {
             ws.send(JSON.stringify({ type: "error", message: "Session not found" }));
@@ -1194,7 +1215,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
             return;
           }
 
-          await runSessionPromptAndDrain(sessionId, content, user);
+          await runSessionPromptAndDrain(sessionId, content, user, images);
           break;
         }
 
@@ -1267,13 +1288,41 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
 
         case "create_session": {
           const { branch, prompt, user, mode } = msg;
-          const isAsk = mode === "ask";
-          // Optional model pick from the UI; invalid input falls back to default
-          const model = msg.model ? resolveModel(String(msg.model))?.id : undefined;
+          const images = parseImageDataUrls(msg.images);
+
+          // Fork: branch a new session off an existing one, keeping the REAL
+          // engine conversation (via SDK forkSession), optionally from a chosen
+          // message. Inherits the source's mode/model/cwd. Claude-only.
+          const forkFrom = msg.forkFrom as { sourceId?: string; messageId?: string } | undefined;
+          const forkSource = forkFrom?.sourceId ? findSession(forkFrom.sourceId) : undefined;
+          if (forkFrom?.sourceId && !forkSource) {
+            ws.send(JSON.stringify({ type: "error", message: "Fork source session not found" }));
+            return;
+          }
+          const canFork =
+            !!forkSource &&
+            providerFor(forkSource.model) === "claude" &&
+            !!forkSource.claudeSessionId;
+          if (forkSource && !canFork) {
+            ws.send(JSON.stringify({ type: "error", message: "Fork is only supported for Claude sessions" }));
+            return;
+          }
+
+          const isAsk = forkSource ? forkSource.mode !== "code" : mode === "ask";
+          // Optional model pick from the UI; invalid input falls back to default.
+          // A fork inherits the source's model.
+          const model = forkSource
+            ? forkSource.model
+            : msg.model
+              ? resolveModel(String(msg.model))?.id
+              : undefined;
           const isCodex = providerFor(model) === "codex";
           try {
             let wtPath: string;
-            if (isAsk) {
+            if (forkSource) {
+              // Share the source's cwd so the fork sees the same code state.
+              wtPath = forkSource.worktreeDir || `${HOME}/projects/tella-fusion`;
+            } else if (isAsk) {
               // Ask sessions run read-only on the main checkout — no worktree
               wtPath = `${HOME}/projects/tella-fusion`;
             } else {
@@ -1298,7 +1347,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
                 claudeSessionId: isCodex ? "" : engineSessionId,
                 ...(isCodex && engineSessionId ? { codexThreadId: engineSessionId } : {}),
                 ...(model ? { model } : {}),
-                branch: isAsk ? "" : branch,
+                branch: forkSource ? forkSource.branch || "" : isAsk ? "" : branch,
                 worktreeDir: wtPath,
                 createdBy: user || "Anonymous",
                 createdAt: new Date().toISOString(),
@@ -1319,6 +1368,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
               cwd: wtPath,
               mode: isAsk ? "ask" : "code",
               model,
+              images,
+              // Fork: resume the source engine session into a new branch,
+              // optionally from a specific past message.
+              ...(canFork
+                ? {
+                    sessionId: forkSource!.claudeSessionId!,
+                    forkSession: true,
+                    resumeSessionAt: forkFrom?.messageId,
+                  }
+                : {}),
               inProcessMcp: interactiveMcpServers(user),
               confirmTools: STRIPE_CONFIRM_TOOLS,
               aws: true, // interactive sessions keep AWS read access (via injected creds)

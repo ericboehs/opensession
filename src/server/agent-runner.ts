@@ -19,6 +19,7 @@ import {
   takeInterruptedRuns,
   activeRunCount,
   type StreamEvent,
+  type ImageInput,
 } from "./claude-runner";
 import { runCodex, isCodexSessionBusy, cancelCodexRun, activeCodexRunCount } from "./codex-runner";
 import { providerFor, resolveModel, DEFAULT_CODEX_MODEL, getDefaultModel } from "./models";
@@ -41,6 +42,11 @@ export interface RunAgentOpts {
    * runner ignores it. See runClaude opts for the full contract.
    */
   inProcessMcp?: Record<string, unknown>;
+  /** Images attached to the opening message (vision). Claude only. */
+  images?: ImageInput[];
+  /** Fork the resumed session into a new id (optionally from `resumeSessionAt`). Claude only. */
+  forkSession?: boolean;
+  resumeSessionAt?: string;
   deniedTools?: Record<string, string>;
   confirmTools?: Record<string, string>;
   aws?: boolean;

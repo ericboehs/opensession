@@ -48,6 +48,11 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
+  // Pasted/dropped images (data URLs) staged for the next send.
+  const [images, setImages] = useState<string[]>([]);
+  // When set, the next send forks a new session branching from this message
+  // instead of continuing this one.
+  const [forkFrom, setForkFrom] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isRunningLive, setIsRunningLive] = useState(session.isRunning);
   const [streamText, setStreamText] = useState("");
@@ -57,7 +62,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   // Optimistic just-sent messages, shown instantly and reconciled once the real
   // turn lands (transcript) or the server confirms it as queued (busy path).
   const [pending, setPending] = useState<
-    Array<{ id: string; content: string; user: string; sentAt: number }>
+    Array<{ id: string; content: string; user: string; sentAt: number; images?: string[] }>
   >([]);
   const [ask, setAsk] = useState<{ questionId: string; questions: AskQuestion[] } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -319,22 +324,55 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const effectiveModel = model || defaultModel;
   const isCodexModel = effectiveModel.startsWith("gpt") || effectiveModel.startsWith("codex");
   const noEngine = !isCodexModel && !session.claudeSessionId && !session.codexThreadId;
+  // Fork uses the SDK's forkSession, which is Claude-only.
+  const isClaudeSession = !isCodexModel && !!session.claudeSessionId;
+
+  function handleFork(messageId: string) {
+    setForkFrom(messageId);
+  }
 
   function handleSend() {
     const text = input.trim();
-    if (!text) return;
-    if (!connected || noEngine) return;
+    const imgs = images;
+    if (!text && imgs.length === 0) return;
+    if (!connected) return;
 
     const user = getCurrentUser();
+
+    // Fork mode: branch a brand-new session from the selected message, keeping
+    // the real conversation history. App navigates into it on session_created.
+    if (forkFrom) {
+      send({
+        type: "create_session",
+        branch: "",
+        prompt: text || "Continue from here.",
+        user,
+        forkFrom: { sourceId: session.id, messageId: forkFrom },
+        ...(imgs.length ? { images: imgs } : {}),
+      });
+      setForkFrom(null);
+      setInput("");
+      setImages([]);
+      return;
+    }
+
+    if (noEngine) return;
     // While Michael is busy the server queues this and delivers it after the run
-    send({ type: "prompt", sessionId: session.id, content: text, user });
+    send({
+      type: "prompt",
+      sessionId: session.id,
+      content: text,
+      user,
+      ...(imgs.length ? { images: imgs } : {}),
+    });
     beginTurn(); // pin this new turn near the top so its reply streams in below
     // Show it immediately; reconciled away when the real turn / queue echo lands
     setPending((p) => [
       ...p,
-      { id: `pending-${crypto.randomUUID()}`, content: text, user, sentAt: Date.now() },
+      { id: `pending-${crypto.randomUUID()}`, content: text, user, sentAt: Date.now(), images: imgs.length ? imgs : undefined },
     ]);
     setInput("");
+    setImages([]);
   }
 
   function handleInterruptSend() {
@@ -559,7 +597,11 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                     live={isBusy && i === blocks.length - 1}
                   />
                 ) : (
-                  <MessageBubble key={block.entry.id} entry={block.entry} />
+                  <MessageBubble
+                    key={block.entry.id}
+                    entry={block.entry}
+                    onFork={isClaudeSession ? handleFork : undefined}
+                  />
                 )
               )
             )}
@@ -595,7 +637,14 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                 <div className="msg-label msg-label-user">
                   {p.user || "You"} · {isBusy ? "queueing…" : "sending…"}
                 </div>
-                <div className="msg-body msg-body-user">{p.content}</div>
+                {p.content && <div className="msg-body msg-body-user">{p.content}</div>}
+                {p.images && p.images.length > 0 && (
+                  <div className="msg-images">
+                    {p.images.map((src, i) => (
+                      <img key={i} className="md-image" src={src} alt="" loading="lazy" />
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
 
@@ -635,21 +684,33 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                     </button>
                   </div>
                 )}
+                {forkFrom && (
+                  <div className="fork-banner">
+                    <span>⑂ Forking a new session from the selected message — type the new direction.</span>
+                    <button className="fork-banner-cancel" onClick={() => setForkFrom(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
                 <Composer
                   value={input}
                   onChange={setInput}
                   onSend={handleSend}
+                  images={images}
+                  onImagesChange={setImages}
                   placeholder={
                     !connected
                       ? "Not connected"
-                      : isBusy
-                        ? "Message Michael — picked up at the next stopping point…"
-                        : "Ask Michael to build, fix, or explain…"
+                      : forkFrom
+                        ? "New direction for the forked session…"
+                        : isBusy
+                          ? "Message Michael — picked up at the next stopping point…"
+                          : "Ask Michael to build, fix, or explain…"
                   }
                   disabled={!connected}
-                  sendDisabled={!input.trim()}
-                  busy={isBusy}
-                  onInterruptSend={handleInterruptSend}
+                  sendDisabled={!input.trim() && images.length === 0 && !forkFrom}
+                  busy={isBusy && !forkFrom}
+                  onInterruptSend={forkFrom ? undefined : handleInterruptSend}
                   models={models}
                   defaultModel={defaultModel}
                   model={model}
