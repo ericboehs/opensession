@@ -11,6 +11,7 @@ import { DiffPanel } from "./DiffPanel";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { SpinOffMenu } from "./SpinOffMenu";
+import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
 
 interface Props {
@@ -66,6 +67,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   >([]);
   const [ask, setAsk] = useState<{ questionId: string; questions: AskQuestion[] } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [pinned, setPinned] = useState(() => isPinned(session.id));
   const [panelTab, setPanelTab] = useState<PanelTab>("changes");
   // Remembered per browser; on phones the panel overlays the chat, so default closed there
   const [panelOpen, setPanelOpenState] = useState(() => {
@@ -108,6 +110,11 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   useEffect(() => {
     setModel(session.model || "");
   }, [session.id, session.model]);
+
+  // Keep the pin star in sync with the store (changes can come from the tab bar
+  // or the Home screen) and reset when switching sessions.
+  useEffect(() => setPinned(isPinned(session.id)), [session.id]);
+  useEffect(() => onPinsChanged(() => setPinned(isPinned(session.id))), [session.id]);
 
   const isAsk = session.mode === "ask";
   const hasWorkspace = !isAsk && Boolean(session.worktreeDir || session.branch);
@@ -517,6 +524,14 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               Plain ↗
             </a>
           )}
+          <button
+            className={`btn-viewer-pin ${pinned ? "active" : ""}`}
+            onClick={() => togglePin(session.id)}
+            title={pinned ? "Unpin tab" : "Pin as tab"}
+            aria-pressed={pinned}
+          >
+            {pinned ? "★" : "☆"}
+          </button>
           <button
             className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
             onClick={handleShare}

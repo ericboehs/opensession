@@ -508,6 +508,73 @@ a {
   flex-direction: column;
 }
 
+/* Pinned sessions as tabs, above the session title (mobile + desktop) */
+.session-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  padding: 6px 8px 0;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  flex-shrink: 0;
+  scrollbar-width: none;
+}
+.session-tabs::-webkit-scrollbar { display: none; }
+
+.session-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 200px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.session-tab:hover { color: var(--text); background: var(--bg-hover); }
+.session-tab-active {
+  color: var(--text);
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.session-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+.session-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.session-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.session-tab-close:hover { color: var(--red); background: var(--red-soft); }
+
 .detail-empty {
   flex: 1;
   display: flex;
@@ -745,6 +812,18 @@ a {
 }
 .btn-viewer-share:hover { color: var(--text); border-color: var(--text-faint); }
 .btn-viewer-share-done { color: var(--green); border-color: var(--green); }
+
+.btn-viewer-pin {
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  color: var(--text-dim);
+  padding: 3px 9px;
+  font-size: 13px;
+  line-height: 1;
+}
+.btn-viewer-pin:hover { color: var(--text); border-color: var(--text-faint); }
+.btn-viewer-pin.active { color: var(--yellow); border-color: var(--yellow); }
 .btn-viewer-delete:hover {
   color: var(--red);
   border-color: var(--red);

@@ -9,11 +9,13 @@ import { Wiki } from "./components/Wiki";
 import { Connections } from "./components/Connections";
 import { Archived } from "./components/Archived";
 import { UserPicker, UserGate } from "./components/UserPicker";
+import { SessionTabs } from "./components/SessionTabs";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSidebarSwipe } from "./hooks/useSidebarSwipe";
 import { archiveSessionApi } from "./lib/api";
 import { pushRecent } from "./lib/recents";
+import { getPins, togglePin, onPinsChanged } from "./lib/pins";
 import type { UnifiedSession } from "./lib/types";
 import "./styles/global.css";
 
@@ -89,6 +91,9 @@ function App() {
   // "Loading…" instead of flashing "Session not found".
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const pendingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [pins, setPins] = useState<string[]>(getPins);
+
+  useEffect(() => onPinsChanged(() => setPins(getPins())), []);
 
   useSidebarSwipe({ open: sidebarOpen, setOpen: setSidebarOpen, panelRef: sidebarRef });
 
@@ -155,6 +160,11 @@ function App() {
     route.view === "session"
       ? sessions.find((s) => s.id === route.id || s.aliasIds?.includes(route.id)) || null
       : null;
+
+  // Pinned sessions shown as tabs above the title (pin order preserved).
+  const pinnedTabs = pins
+    .map((id) => sessions.find((s) => s.id === id || s.aliasIds?.includes(id)))
+    .filter((s): s is UnifiedSession => Boolean(s));
 
   const activeView =
     route.view === "automations" || route.view === "wiki" || route.view === "connections"
@@ -226,6 +236,12 @@ function App() {
           </div>
 
           <main className="detail-pane">
+            <SessionTabs
+              tabs={pinnedTabs}
+              activeId={currentSession?.id || null}
+              onSelect={(s) => navigate({ view: "session", id: s.id })}
+              onUnpin={(id) => setPins(togglePin(id))}
+            />
             {route.view === "new" ? (
               <NewSession
                 onBack={() => navigate({ view: "home" })}
