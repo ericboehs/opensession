@@ -13,6 +13,7 @@ import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSidebarSwipe } from "./hooks/useSidebarSwipe";
 import { archiveSessionApi } from "./lib/api";
+import { pushRecent } from "./lib/recents";
 import type { UnifiedSession } from "./lib/types";
 import "./styles/global.css";
 
@@ -105,9 +106,14 @@ function App() {
 
   // Remember the last session so a cold relaunch can restore it (see above);
   // clear it when the user deliberately goes home so we don't force them back in.
+  // Also feed the sidebar's "Recently opened" list.
   useEffect(() => {
-    if (route.view === "session") localStorage.setItem("michael-last-session", route.id);
-    else if (route.view === "home") localStorage.removeItem("michael-last-session");
+    if (route.view === "session") {
+      localStorage.setItem("michael-last-session", route.id);
+      pushRecent(route.id);
+    } else if (route.view === "home") {
+      localStorage.removeItem("michael-last-session");
+    }
   }, [route]);
 
   // Tear down the launch splash (rendered in index.html) once the app has mounted.

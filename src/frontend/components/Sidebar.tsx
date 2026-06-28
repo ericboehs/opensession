@@ -3,6 +3,9 @@ import type { UnifiedSession, SessionSource } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
 import { getPins, onPinsChanged } from "../lib/pins";
+import { getRecents, onRecentsChanged } from "../lib/recents";
+
+const RECENTLY_OPENED_COUNT = 6;
 
 const SOURCE_COLORS: Record<string, string> = {
   slack: "#a36ba5",
@@ -82,9 +85,9 @@ const EXPANDED_KEY = "michael-sidebar-expanded";
 
 function readExpanded(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) || '["pinned","mine"]'));
+    return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) || '["recently","pinned","mine"]'));
   } catch {
-    return new Set(["pinned", "mine"]);
+    return new Set(["recently", "pinned", "mine"]);
   }
 }
 
@@ -102,9 +105,11 @@ export function Sidebar({
   // Groups are collapsed by default; the expanded set persists per browser
   const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
   const [pins, setPins] = useState<string[]>(getPins);
+  const [recents, setRecents] = useState<string[]>(getRecents);
   const currentUser = useCurrentUser();
 
   useEffect(() => onPinsChanged(() => setPins(getPins())), []);
+  useEffect(() => onRecentsChanged(() => setRecents(getRecents())), []);
 
   const archivedCount = useMemo(() => sessions.filter((s) => s.archived).length, [sessions]);
 
@@ -125,6 +130,20 @@ export function Sidebar({
     const out: Group[] = [];
     const user = currentUser.toLowerCase();
     const pinSet = new Set(pins);
+
+    // "Recently opened": a quick-access shortcut to the sessions you last opened
+    // (newest first). Hidden while searching; items still appear in their normal
+    // groups below. Only the freshest few are shown.
+    if (!search.trim()) {
+      const byId = new Map(filtered.map((s) => [s.id, s] as const));
+      const recentItems = recents
+        .map((id) => byId.get(id))
+        .filter((s): s is UnifiedSession => Boolean(s))
+        .slice(0, RECENTLY_OPENED_COUNT);
+      if (recentItems.length > 0) {
+        out.push({ key: "recently", label: "Recently opened", dotColor: null, items: recentItems });
+      }
+    }
 
     const pinned = filtered.filter((s) => pinSet.has(s.id));
     if (pinned.length > 0) {
@@ -175,7 +194,7 @@ export function Sidebar({
       }
     }
     return out;
-  }, [filtered, currentUser, pins]);
+  }, [filtered, currentUser, pins, recents, search]);
 
   function toggleGroup(key: string) {
     setExpanded((prev) => {
