@@ -24,6 +24,27 @@ export interface WorktreeInfo {
   path: string;
 }
 
+/**
+ * Seed the webapp's gitignored `.env.local` from the main checkout into a fresh
+ * worktree. It carries the WorkOS/AWS config AND the dev-auth bypass
+ * (DEV_AUTH_*), so a session can run `just dev` and browser/CDP-test the webapp
+ * fully authenticated — no WorkOS login, no per-worktree `vercel env pull`.
+ * Best-effort and idempotent: only copies when the source exists and the
+ * destination doesn't.
+ */
+async function seedWebappEnv(webappDir: string): Promise<void> {
+  const src = `${TELLA_FUSION}/packages/core/webapp/.env.local`;
+  const dest = `${webappDir}/.env.local`;
+  try {
+    if (existsSync(src) && !existsSync(dest)) {
+      await Bun.write(dest, Bun.file(src));
+      console.log(`[worktree] seeded .env.local into ${webappDir}`);
+    }
+  } catch (e) {
+    console.warn(`[worktree] failed to seed .env.local into ${webappDir}:`, e);
+  }
+}
+
 export async function listWorktrees(): Promise<WorktreeInfo[]> {
   try {
     const result = await $`git -C ${TELLA_FUSION} worktree list --porcelain`.text();
@@ -173,6 +194,7 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
 
   // Best-effort dep install so checks/builds the agent runs have deps available.
   const webappDir = `${wtPath}/packages/core/webapp`;
+  await seedWebappEnv(webappDir);
   try {
     if (await Bun.file(`${webappDir}/package.json`).exists()) {
       await $`cd ${webappDir} && bun install`.quiet();
@@ -194,6 +216,7 @@ export async function createWorktree(branch: string): Promise<string> {
 
   // Best-effort dep install — sessions can always run `bun install` themselves
   const webappDir = `${wtPath}/packages/core/webapp`;
+  await seedWebappEnv(webappDir);
   try {
     if (await Bun.file(`${webappDir}/package.json`).exists()) {
       await $`cd ${webappDir} && bun install`.quiet();
