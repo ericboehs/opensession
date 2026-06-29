@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useCallback } from "react";
 import type { PrDetails } from "../lib/types";
-import { fetchPr, fetchPrDiff, postPrCommentApi } from "../lib/api";
+import { fetchPr, fetchPrDiff, postPrCommentApi, mergePrApi } from "../lib/api";
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
 
 interface Props {
   sessionId: string;
+  /** When provided, renders an "Open session →" action (used by the Reviews view). */
+  onOpenSession?: () => void;
 }
 
 interface PrDiffData {
@@ -14,11 +16,14 @@ interface PrDiffData {
   patch: string;
 }
 
-export function PrPanel({ sessionId }: Props) {
+export function PrPanel({ sessionId, onOpenSession }: Props) {
   const [pr, setPr] = useState<PrDetails | null>(null);
   const [diff, setDiff] = useState<PrDiffData | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastCommentUrl, setLastCommentUrl] = useState<string | null>(null);
+  const [merging, setMerging] = useState(false);
+  const [confirmMerge, setConfirmMerge] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -51,6 +56,27 @@ export function PrPanel({ sessionId }: Props) {
       side: target.side === "deletions" ? "LEFT" : "RIGHT",
     });
     setLastCommentUrl(result.url || null);
+  }
+
+  // Two-click confirm guards against accidental merges (this mutates the repo).
+  async function handleMerge() {
+    if (!confirmMerge) {
+      setConfirmMerge(true);
+      setMergeError(null);
+      setTimeout(() => setConfirmMerge(false), 4000);
+      return;
+    }
+    setConfirmMerge(false);
+    setMerging(true);
+    setMergeError(null);
+    try {
+      await mergePrApi(sessionId, "squash");
+      await load();
+    } catch (e: any) {
+      setMergeError(e.message || "Merge failed");
+    } finally {
+      setMerging(false);
+    }
   }
 
   if (loading) return <div className="panel-placeholder">Loading PR…</div>;
@@ -118,9 +144,27 @@ export function PrPanel({ sessionId }: Props) {
         </div>
       )}
 
-      <a className="btn-open-pr" href={pr.url} target="_blank" rel="noopener">
-        Open on GitHub ↗
-      </a>
+      <div className="pr-actions">
+        <a className="btn-open-pr" href={pr.url} target="_blank" rel="noopener">
+          Open on GitHub ↗
+        </a>
+        {pr.state === "OPEN" && !pr.isDraft && (
+          <button
+            className={`btn-merge-pr ${confirmMerge ? "btn-merge-confirm" : ""}`}
+            onClick={handleMerge}
+            disabled={merging}
+            title="Squash and merge this PR into its base branch"
+          >
+            {merging ? "Merging…" : confirmMerge ? "Confirm squash & merge" : "Squash & merge"}
+          </button>
+        )}
+        {onOpenSession && (
+          <button className="btn-open-session" onClick={onOpenSession}>
+            Open session →
+          </button>
+        )}
+      </div>
+      {mergeError && <div className="pr-merge-error">{mergeError}</div>}
 
       {diff?.patch && (
         <div className="pr-diff-section">

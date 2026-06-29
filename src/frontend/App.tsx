@@ -8,6 +8,7 @@ import { Automations } from "./components/Automations";
 import { Wiki } from "./components/Wiki";
 import { Connections } from "./components/Connections";
 import { Archived } from "./components/Archived";
+import { Reviews } from "./components/Reviews";
 import { UserPicker, UserGate } from "./components/UserPicker";
 import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
@@ -25,6 +26,7 @@ type Route =
   | { view: "home" }
   | { view: "new"; prompt?: string }
   | { view: "session"; id: string }
+  | { view: "reviews"; id?: string }
   | { view: "automations" }
   | { view: "wiki"; path: string | null }
   | { view: "connections" }
@@ -37,6 +39,8 @@ function parseRoute(pathname: string): Route {
   if (pathname === "/backstage/automations") return { view: "automations" };
   if (pathname === "/backstage/connections") return { view: "connections" };
   if (pathname === "/backstage/archived") return { view: "archived" };
+  const reviewsMatch = pathname.match(/^\/backstage\/reviews(?:\/(.+))?$/);
+  if (reviewsMatch) return { view: "reviews", id: reviewsMatch[1] ? decodeURIComponent(reviewsMatch[1]) : undefined };
   const wikiMatch = pathname.match(/^\/backstage\/wiki(?:\/(.*))?$/);
   if (wikiMatch) return { view: "wiki", path: wikiMatch[1] ? decodeURIComponent(wikiMatch[1]) : null };
   return { view: "home" };
@@ -56,6 +60,8 @@ function routePath(route: Route): string {
       return "/backstage/connections";
     case "archived":
       return "/backstage/archived";
+    case "reviews":
+      return route.id ? `/backstage/reviews/${encodeURIComponent(route.id)}` : "/backstage/reviews";
     case "wiki":
       return route.path
         ? `/backstage/wiki/${route.path.split("/").map(encodeURIComponent).join("/")}`
@@ -169,7 +175,10 @@ function App() {
     .filter((s): s is UnifiedSession => Boolean(s));
 
   const activeView =
-    route.view === "automations" || route.view === "wiki" || route.view === "connections"
+    route.view === "automations" ||
+    route.view === "wiki" ||
+    route.view === "connections" ||
+    route.view === "reviews"
       ? route.view
       : ("sessions" as const);
 
@@ -257,6 +266,13 @@ function App() {
               <Automations onOpenSession={(id) => navigate({ view: "session", id })} />
             ) : route.view === "connections" ? (
               <Connections />
+            ) : route.view === "reviews" ? (
+              <Reviews
+                sessions={sessions}
+                selectedId={route.id ?? null}
+                onSelect={(id) => navigate({ view: "reviews", id })}
+                onOpenSession={(id) => navigate({ view: "session", id })}
+              />
             ) : route.view === "archived" ? (
               <Archived
                 sessions={sessions}

@@ -18,7 +18,7 @@ const AUTOMATION_COLOR = "#d29922";
 
 const SOURCE_ORDER: SessionSource[] = ["slack", "linear", "backstage", "cli"];
 
-export type NavView = "sessions" | "automations" | "wiki" | "connections";
+export type NavView = "sessions" | "reviews" | "automations" | "wiki" | "connections";
 
 interface Props {
   sessions: UnifiedSession[];
@@ -38,6 +38,19 @@ const NAV_ITEMS: Array<{ view: NavView; label: string; icon: React.ReactNode }> 
     icon: (
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
         <path d="M2.5 4h11M2.5 8h11M2.5 12h7" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    view: "reviews",
+    label: "Reviews",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+        <circle cx="4" cy="4" r="1.6" />
+        <circle cx="4" cy="12" r="1.6" />
+        <circle cx="12" cy="12" r="1.6" />
+        <path d="M4 5.6v4.8M12 10.4V8a2.4 2.4 0 0 0-2.4-2.4H7.2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M8.8 4.2L7.2 5.6l1.6 1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },
@@ -209,6 +222,15 @@ export function Sidebar({
   // While searching, show everything that matched
   const isOpen = (key: string) => search.trim().length > 0 || expanded.has(key);
 
+  // Distinct open PRs (deduped by URL) — shown as a badge on the Reviews tab.
+  const openPrCount = useMemo(() => {
+    const urls = new Set<string>();
+    for (const s of sessions) {
+      if (s.prUrl && s.prState === "OPEN" && !s.archived) urls.add(s.prUrl);
+    }
+    return urls.size;
+  }, [sessions]);
+
   return (
     <div className="sidebar">
       <nav className="sidebar-nav">
@@ -220,6 +242,9 @@ export function Sidebar({
           >
             <span className="sidebar-nav-icon">{item.icon}</span>
             {item.label}
+            {item.view === "reviews" && openPrCount > 0 && (
+              <span className="sidebar-nav-count">{openPrCount}</span>
+            )}
           </button>
         ))}
       </nav>
