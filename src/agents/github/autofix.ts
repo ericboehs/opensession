@@ -71,6 +71,7 @@ export async function runAutoFix(
   requestedBy: string,
   onSessionCreated?: (bksId: string) => void,
   resuming = false,
+  steer?: string,
 ): Promise<void> {
   if (!claimLock("code", pr.number)) {
     console.log(`[github] a code action (fix/simplify) is already running for PR #${pr.number}, skipping auto-fix`);
@@ -103,9 +104,11 @@ export async function runAutoFix(
     statusCommentId = resuming ? prior?.statusCommentId : undefined;
     const startedAt = resuming && prior?.startedAt ? prior.startedAt : new Date().toISOString();
     let iterations = resuming ? prior?.iterations || 0 : 0;
+    // A killed-and-recovered loop re-enters with no steer arg; pull it back from state.
+    const effectiveSteer = steer ?? (resuming ? prior?.steer : undefined);
 
     const s = getOrInitPrState(pr.number, pr.headRef);
-    s.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir: prior?.worktreeDir, lastPushedSha: prior?.lastPushedSha };
+    s.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir: prior?.worktreeDir, lastPushedSha: prior?.lastPushedSha, steer: effectiveSteer };
     writePrState(s);
 
     // Post the first status BEFORE the (slow) worktree checkout so the PR shows it's working ASAP.
@@ -132,7 +135,7 @@ export async function runAutoFix(
       const reviewSummary = await fetchReviewFindings(pr.number);
       await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: working on fixes…`);
 
-      const prompt = buildAutoFixPrompt(details, reviewSummary, ciBefore.failing, iterations);
+      const prompt = buildAutoFixPrompt(details, reviewSummary, ciBefore.failing, iterations, effectiveSteer);
       const result = await runGithubAgent({
         prNumber: pr.number,
         kind: "autofix",
@@ -152,7 +155,7 @@ export async function runAutoFix(
       const remaining = parseRemaining(result.text);
 
       const st = getOrInitPrState(pr.number, pr.headRef);
-      st.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir, lastPushedSha };
+      st.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir, lastPushedSha, steer: effectiveSteer };
       writePrState(st);
 
       if (result.error) { outcome = `⚠️ Stopped — the fix run errored: ${result.error}`; break; }

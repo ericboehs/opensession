@@ -42,11 +42,16 @@ export interface TriggerResult {
 /**
  * Resolve the PR and start the requested behavior. `requestedBy` is the requester
  * (Slack id or GitHub login) — used for commit attribution on fix/simplify/adversarial.
+ * `steer` is the free text of the message that triggered this (PR comment / Slack
+ * message), so a mixed-intent request ("…drop the Update.call change. /simplify")
+ * carries its specific guidance into the run instead of being reduced to just the
+ * verb. Label-triggered paths pass nothing, behaving exactly as before.
  */
 export async function triggerPrAction(
   kind: PrActionKind,
   prNumber: number,
   requestedBy: string,
+  steer?: string,
 ): Promise<TriggerResult> {
   const details = await getPrDetails(String(prNumber));
   if (!details) {
@@ -65,16 +70,16 @@ export async function triggerPrAction(
   switch (kind) {
     case "review":
       // force=true: an explicit request reviews even an already-reviewed SHA.
-      done = runReview(ref, resolveReviewConfig().config, undefined, true).catch(fail);
+      done = runReview(ref, resolveReviewConfig().config, undefined, true, steer).catch(fail);
       break;
     case "autofix":
-      done = runAutoFix(ref, requestedBy).catch(fail);
+      done = runAutoFix(ref, requestedBy, undefined, false, steer).catch(fail);
       break;
     case "simplify":
-      done = runSimplify(ref, requestedBy).catch(fail);
+      done = runSimplify(ref, requestedBy, undefined, steer).catch(fail);
       break;
     case "adversarial":
-      done = runAdversarial(ref, requestedBy).catch(fail);
+      done = runAdversarial(ref, requestedBy, undefined, steer).catch(fail);
       break;
   }
 
