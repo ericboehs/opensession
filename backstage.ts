@@ -610,6 +610,7 @@ async function runSessionPrompt(
   broadcastToSession(sessionId, { type: "session_status", isRunning: true });
 
   let finalSessionId = engineSessionId || "";
+  let endedWithError = false;
 
   for await (const event of runAgent({
     prompt,
@@ -672,6 +673,7 @@ async function runSessionPrompt(
         sessionsCache = null;
         break;
       case "error":
+        endedWithError = true;
         broadcastToSession(sessionId, { type: "error", message: event.content });
         break;
     }
@@ -687,9 +689,12 @@ async function runSessionPrompt(
     );
   }
 
-  // The run is fully done now — any steered messages have already landed in the
-  // transcript, so drop their display-only receipts.
-  clearSteerReceipts(sessionId);
+  // On a clean finish any steered messages already landed in the transcript, so
+  // drop their display-only receipts. But if the run ended in error/abort (e.g.
+  // a restart killed the SDK stream mid-turn), a steered message may NOT have
+  // been delivered yet — keep the receipt so persistQueues/restorePromptQueues
+  // can re-deliver it on the next boot instead of silently dropping it.
+  if (!endedWithError) clearSteerReceipts(sessionId);
 
   broadcastToSession(sessionId, { type: "stream_done" });
   broadcastToSession(sessionId, { type: "session_status", isRunning: false });
