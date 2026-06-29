@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { renderMarkdown } from "../lib/markdown";
+import { parseHumanReply } from "../lib/humanReply";
 import type { UnifiedSession, TranscriptEntry, WSServerMessage, AskQuestion } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { WorkBlock } from "./WorkBlock";
@@ -674,23 +675,39 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               />
             )}
 
-            {visibleSteered.map((s, i) => (
-              <div key={`steered-${i}`} className="msg msg-user msg-queued">
-                <div className="msg-label msg-label-user">
-                  {s.user || "You"} · folded in
+            {visibleSteered.map((s, i) => {
+              const hr = parseHumanReply(s.content);
+              return (
+                <div
+                  key={`steered-${i}`}
+                  className={`msg msg-queued ${hr ? "msg-human" : "msg-user"}`}
+                >
+                  <div className={`msg-label ${hr ? "msg-label-human" : "msg-label-user"}`}>
+                    {hr ? `💬 ${hr.name} · via Slack` : s.user || "You"} · folded in
+                  </div>
+                  <div className={`msg-body ${hr ? "msg-body-human" : "msg-body-user"}`}>
+                    {hr ? hr.body : s.content}
+                  </div>
                 </div>
-                <div className="msg-body msg-body-user">{s.content}</div>
-              </div>
-            ))}
+              );
+            })}
 
-            {queued.map((q, i) => (
-              <div key={`queued-${i}`} className="msg msg-user msg-queued">
-                <div className="msg-label msg-label-user">
-                  {q.user || "You"} · queued
+            {queued.map((q, i) => {
+              const hr = parseHumanReply(q.content);
+              return (
+                <div
+                  key={`queued-${i}`}
+                  className={`msg msg-queued ${hr ? "msg-human" : "msg-user"}`}
+                >
+                  <div className={`msg-label ${hr ? "msg-label-human" : "msg-label-user"}`}>
+                    {hr ? `💬 ${hr.name} · via Slack` : q.user || "You"} · queued
+                  </div>
+                  <div className={`msg-body ${hr ? "msg-body-human" : "msg-body-user"}`}>
+                    {hr ? hr.body : q.content}
+                  </div>
                 </div>
-                <div className="msg-body msg-body-user">{q.content}</div>
-              </div>
-            ))}
+              );
+            })}
 
             {pending.map((p) => (
               <div key={p.id} className="msg msg-user msg-sending">

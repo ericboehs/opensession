@@ -52,6 +52,34 @@ export function slackIdToFirstName(id: string): string | null {
   return name ? name.split(" ")[0] : null;
 }
 
+/**
+ * Resolve a teammate reference — a Slack user id, a first name / alias, a full
+ * name, or a GitHub login — to their Slack id + display name, for the
+ * human-in-the-loop asks (src/server/human-asks.ts). Reuses the same identity
+ * table as commit attribution so "ask Grant" / "grant" / "9ranty" / a raw U-id
+ * all land on the same person. Returns null for unknown references.
+ */
+export function resolveTeammate(ref?: string | null): { slackId: string; name: string } | null {
+  if (!ref) return null;
+  const key = ref.trim().replace(/^@/, "");
+  if (!key) return null;
+
+  // Raw Slack id.
+  if (/^U[A-Z0-9]{6,}$/.test(key)) {
+    const name = SLACK_ID_TO_NAME[key];
+    return name ? { slackId: key, name } : null;
+  }
+  // Name / alias / GitHub login → identity → slackId.
+  const id = gitIdentityFor(key);
+  if (id) {
+    const member = TEAM_GIT_IDENTITY.find((p) => p.name === id.name);
+    if (member?.slackId) {
+      return { slackId: member.slackId, name: SLACK_ID_TO_NAME[member.slackId] || member.name };
+    }
+  }
+  return null;
+}
+
 export function githubUsernameToSlackId(username: string): string | null {
   return GITHUB_TO_SLACK[username] || null;
 }

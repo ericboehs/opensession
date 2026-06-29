@@ -43,6 +43,8 @@ import {
 import { gitIdentityFor } from "./src/server/shared/user-mappings";
 import { createSessionsMcpServer } from "./src/agents/slack/sessions-tools";
 import { createAdminMcpServer } from "./src/agents/slack/admin-tools";
+import { createHumansMcpServer } from "./src/agents/slack/humans-tools";
+import { initHumanAsks, onSessionIdle as onHumanAsksSessionIdle } from "./src/server/human-asks";
 import { getPrDetails, getPrDiff, postPrComment, mergePr } from "./src/server/pr-info";
 import {
   listAutomations,
@@ -136,7 +138,7 @@ function getCachedSessions(): UnifiedSession[] {
 // sessions — untrusted ticket text must not reach session-control / config
 // tools. Backstage is Tailscale- and team-gated and already exposes all of this
 // through its UI, so interactive users are treated as admin.
-function interactiveMcpServers(user?: string): Record<string, unknown> {
+function interactiveMcpServers(user?: string, sessionId?: string): Record<string, unknown> {
   const createdBy = user || "Backstage";
   return {
     "michael-sessions": createSessionsMcpServer({ createdBy, isAdmin: true }),
@@ -148,6 +150,12 @@ function interactiveMcpServers(user?: string): Record<string, unknown> {
       createdBy,
       isAdmin: true,
     }),
+    // Human-in-the-loop: ask a teammate and fold the answer back into this
+    // session. Needs the session id so the answer routes home. Withheld (like
+    // the others) from automation runs — see the runSessionPrompt call site.
+    ...(sessionId
+      ? { "michael-humans": createHumansMcpServer({ sessionId, createdBy, isAdmin: true }) }
+      : {}),
   };
 }
 
@@ -622,7 +630,7 @@ async function runSessionPrompt(
     mcpServers,
     // Self-management tools for normal sessions; withheld from automation
     // sessions (and their interactive resumes) — same gate as deniedTools above.
-    inProcessMcp: isAutomationSession ? undefined : interactiveMcpServers(user),
+    inProcessMcp: isAutomationSession ? undefined : interactiveMcpServers(user, sessionId),
     deniedTools,
     confirmTools: STRIPE_CONFIRM_TOOLS,
     aws: true, // sessions keep AWS read access (via injected creds)
@@ -698,6 +706,10 @@ async function runSessionPrompt(
 
   broadcastToSession(sessionId, { type: "stream_done" });
   broadcastToSession(sessionId, { type: "session_status", isRunning: false });
+
+  // The session just finished a turn; if nothing's queued it's idle now, so fire
+  // any "when_done" / "on_pr" human asks waiting on this session. Idempotent.
+  if (!(promptQueues.get(sessionId)?.length)) onHumanAsksSessionIdle(sessionId);
 }
 
 /**
@@ -1816,7 +1828,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
                     resumeSessionAt: forkFrom?.messageId,
                   }
                 : {}),
-              inProcessMcp: interactiveMcpServers(user),
+              inProcessMcp: interactiveMcpServers(user, bksId),
               confirmTools: STRIPE_CONFIRM_TOOLS,
               aws: true, // interactive sessions keep AWS read access (via injected creds)
               journal: { bksSessionId: bksId, kind: "create" },
@@ -1878,6 +1890,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
             ws.send(JSON.stringify({ type: "stream_done" }));
             broadcastToSession(bksId, { type: "stream_done" }, ws);
             broadcastToSession(bksId, { type: "session_status", isRunning: false });
+            if (!(promptQueues.get(bksId)?.length)) onHumanAsksSessionIdle(bksId);
           } catch (e: any) {
             ws.send(JSON.stringify({ type: "error", message: e.message || String(e) }));
           }
@@ -2032,7 +2045,7 @@ registerSessionControl({
           cwd: wtPath,
           mode: isAsk ? "ask" : "code",
           model,
-          inProcessMcp: interactiveMcpServers(user),
+          inProcessMcp: interactiveMcpServers(user, bksId),
           confirmTools: STRIPE_CONFIRM_TOOLS,
           aws: true,
           journal: { bksSessionId: bksId, kind: "create" },
@@ -2088,6 +2101,7 @@ registerSessionControl({
           );
         broadcastToSession(bksId, { type: "stream_done" });
         broadcastToSession(bksId, { type: "session_status", isRunning: false });
+        if (!(promptQueues.get(bksId)?.length)) onHumanAsksSessionIdle(bksId);
       } catch (e) {
         console.error(`[sessions-mcp] create session ${bksId} failed:`, e);
       }
@@ -2237,6 +2251,9 @@ if (!g.__backstageBooted) {
     resumeDrainedSessions(new Set(resumedIds));
     // Re-deliver messages that were queued/steered when the process went down.
     restorePromptQueues();
+    // Restore human-in-the-loop asks: re-arm scheduled timers, and degrade any
+    // block asks that lost their held turn to async so late replies still land.
+    initHumanAsks();
   }, 3000);
 
   // Ongoing hygiene (every 6h): archive sessions idle for more than a week,

@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
+import { parseHumanReply } from "../lib/humanReply";
 
 interface Props {
   entry: TranscriptEntry;
@@ -24,11 +25,31 @@ function EntryImages({ images }: { images?: string[] }) {
 
 export function MessageBubble({ entry, onFork }: Props) {
   const html = useMemo(() => renderMarkdown(entry.content), [entry.content]);
+  // A routed-back teammate reply (human-in-the-loop): credit the teammate and
+  // render just their words (the header is stripped — the label carries "who").
+  const humanReply = useMemo(() => {
+    if (entry.type !== "user") return null;
+    const parsed = parseHumanReply(entry.content);
+    return parsed ? { name: parsed.name, html: renderMarkdown(parsed.body) } : null;
+  }, [entry.type, entry.content]);
 
   if (entry.type === "system") {
     return (
       <div className="msg msg-system">
         <span className="msg-system-text">{entry.content}</span>
+      </div>
+    );
+  }
+
+  if (entry.type === "user" && humanReply) {
+    return (
+      <div className="msg msg-human">
+        <div className="msg-label msg-label-human">💬 {humanReply.name} · via Slack</div>
+        <div
+          className="msg-body msg-body-human markdown"
+          dangerouslySetInnerHTML={{ __html: humanReply.html || "" }}
+        />
+        <EntryImages images={entry.images} />
       </div>
     );
   }

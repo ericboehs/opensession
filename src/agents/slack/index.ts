@@ -41,7 +41,13 @@ import {
   sendSlackMessage,
   updateSlackBlocks,
   openSlackModal,
+  openHumanAskModal,
 } from "./slack-api";
+import {
+  resolveByOption as resolveHumanAsk,
+  isAwaiting as isHumanAskAwaiting,
+  getAsk as getHumanAsk,
+} from "../../server/human-asks";
 import {
   SESSION_DIR,
   GITHUB_REPO,
@@ -207,6 +213,17 @@ export class SlackAgent implements AgentModule {
 
         // Check if this is an "Other..." button — must open modal BEFORE returning
         if (actionId.endsWith("-other")) {
+          // Human-in-the-loop ask "Other…" — open the free-text modal.
+          const haOther = actionId.match(/^humanask-(.+)-other$/);
+          if (haOther?.[1]) {
+            const askId = haOther[1];
+            const ask = getHumanAsk(askId);
+            if (ask && isHumanAskAwaiting(askId) && payload.trigger_id) {
+              const r = await openHumanAskModal(payload.trigger_id, askId, ask.question);
+              if (!r?.ok) console.error("[slack] human-ask modal open failed:", r);
+            }
+            return new Response("", { status: 200 });
+          }
           // Extract questionId: "askq-{questionId}-other"
           const match = actionId.match(/^askq-(.+)-other$/);
           if (match?.[1]) {
@@ -244,6 +261,25 @@ export class SlackAgent implements AgentModule {
               pending.resolve(selectedLabel);
             }
           });
+          return new Response("", { status: 200 });
+        }
+
+        // Human-in-the-loop ask — option button picked.
+        const haOpt = actionId.match(/^humanask-(.+)-opt-(\d+)$/);
+        if (haOpt?.[1]) {
+          const askId = haOpt[1];
+          const label = action.value;
+          setImmediate(() => resolveHumanAsk(askId, label));
+          const msgChannel = payload.channel?.id;
+          const msgTs = payload.message?.ts;
+          if (msgChannel && msgTs) {
+            const kept = (payload.message?.blocks || []).filter((b: any) => b.type !== "actions");
+            kept.push({
+              type: "context",
+              elements: [{ type: "mrkdwn", text: `:white_check_mark: _You answered: ${label}_` }],
+            });
+            await updateSlackBlocks(msgChannel, msgTs, `Answered: ${label}`, kept);
+          }
           return new Response("", { status: 200 });
         }
 
@@ -399,6 +435,17 @@ Please address this feedback:
       // Handle view_submission (modal submit for "Other...")
       if (payload.type === "view_submission") {
         const callbackId: string = payload.view?.callback_id || "";
+
+        // Human-in-the-loop ask — free-text "Other…" answer.
+        const haModal = callbackId.match(/^humanask-modal-(.+)$/);
+        if (haModal?.[1]) {
+          const askId = haModal[1];
+          const answer: string =
+            payload.view?.state?.values?.answer_block?.answer_input?.value || "";
+          if (answer.trim()) setImmediate(() => resolveHumanAsk(askId, answer.trim()));
+          return new Response("", { status: 200 });
+        }
+
         const match = callbackId.match(/^askq-modal-(.+)$/);
 
         if (match?.[1]) {
