@@ -23,6 +23,12 @@ export function RestartOverlay({ connected, addHandler }: Props) {
   const [backOnline, setBackOnline] = useState(false);
   const bootId = useRef<string | null>(null);
   const sawDown = useRef(false);
+  // Set when the server explicitly told us it's going down. The old instance
+  // stays up and the WebSocket stays open for the whole graceful drain (now up
+  // to 2 min), so "socket connected + health answering" must NOT be mistaken for
+  // a blip and dismiss the overlay — once we have an explicit signal we keep it
+  // up until a *new* instance answers (bootId change).
+  const explicit = useRef(false);
 
   // Learn the current instance's bootId up front.
   useEffect(() => {
@@ -36,7 +42,13 @@ export function RestartOverlay({ connected, addHandler }: Props) {
 
   // Explicit "I'm going down" signal from the server.
   useEffect(
-    () => addHandler((msg) => msg.type === "server_restarting" && setRestarting(true)),
+    () =>
+      addHandler((msg) => {
+        if (msg.type === "server_restarting") {
+          explicit.current = true;
+          setRestarting(true);
+        }
+      }),
     [addHandler]
   );
 
@@ -62,7 +74,11 @@ export function RestartOverlay({ connected, addHandler }: Props) {
           return true;
         }
         // Server alive, same instance, socket healthy again → it was a blip.
-        if (!cancelled && connected && !sawDown.current) {
+        // Only dismiss when the overlay was triggered by a disconnect guess, not
+        // by an explicit server_restarting signal — during a graceful drain the
+        // old instance stays up and connected, which would otherwise look like a
+        // blip and hide the overlay for the whole drain.
+        if (!cancelled && connected && !sawDown.current && !explicit.current) {
           setRestarting(false);
           return true;
         }
