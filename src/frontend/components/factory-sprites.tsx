@@ -107,16 +107,47 @@ export function Drill({ size = 24, color = YEL }: { size?: number; color?: strin
   );
 }
 
-/** Inserter — pivoting arm that swings, carrying a cog. Decorative on belt ends. */
-export function Inserter({ size = 22 }: { size?: number }) {
+/** Inserter — pivoting arm that swings, carrying a cog. armDuration syncs its
+ *  grab cadence to the belt items arriving below it. Decorative on belt ends. */
+export function Inserter({ size = 22, armDuration }: { size?: number; armDuration?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className="spr">
       <rect x="9" y="17" width="6" height="5" fill={STEEL_D} stroke={STEEL_DD} strokeWidth="0.6" />
       <circle cx="12" cy="18" r="2" fill={STEEL_DD} />
-      <g className="spr-arm">
+      <g className="spr-arm" style={armDuration ? { animationDuration: `${armDuration}s` } : undefined}>
         <rect x="11" y="6" width="2" height="12" fill={STEEL} />
         <Cog cx={12} cy={6} r={3} spin="spr-spin" color={COPPER} />
       </g>
+    </svg>
+  );
+}
+
+/** Biter — a small enemy bug that scuttles across the floor as an easter egg. */
+export function Biter({ size = 24 }: { size?: number }) {
+  return (
+    <svg width={size} height={size * 0.66} viewBox="0 0 24 16" className="spr">
+      {/* legs (two alternating banks for a scuttle) */}
+      <g stroke="#3a1a12" strokeWidth="1.5" strokeLinecap="round">
+        <g className="spr-scuttle">
+          <line x1="9" y1="9" x2="6" y2="15" />
+          <line x1="13" y1="9" x2="12" y2="15" />
+          <line x1="17" y1="9" x2="18" y2="15" />
+        </g>
+        <g className="spr-scuttle-alt">
+          <line x1="11" y1="9" x2="9" y2="15" />
+          <line x1="15" y1="9" x2="15" y2="15" />
+          <line x1="19" y1="9" x2="21" y2="15" />
+        </g>
+      </g>
+      {/* abdomen + head */}
+      <ellipse cx="14" cy="8" rx="7" ry="4.4" fill="#9e3f2b" />
+      <ellipse cx="14" cy="7" rx="6" ry="3" fill="#b65238" />
+      <ellipse cx="6.5" cy="8" rx="3.6" ry="3.1" fill="#7e3120" />
+      {/* mandibles */}
+      <path d="M3.5 6.5 L1 5" stroke="#7e3120" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M3.5 9.5 L1 11" stroke="#7e3120" strokeWidth="1.6" strokeLinecap="round" />
+      {/* glowing eye */}
+      <circle cx="5.5" cy="7.2" r="1.1" fill="#ffd24a" className="spr-flash" />
     </svg>
   );
 }

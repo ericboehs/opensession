@@ -4767,8 +4767,32 @@ a {
   50% { transform: translate(34px, -16px); }
 }
 
+/* biter easter egg: scuttles across the floor, then gone for a long while */
+.spr-scuttle, .spr-scuttle-alt { transform-box: fill-box; transform-origin: center; }
+.spr-scuttle { animation: spr-scuttle 0.12s steps(2) infinite; }
+.spr-scuttle-alt { animation: spr-scuttle 0.12s steps(2) infinite reverse; }
+@keyframes spr-scuttle { from { transform: translateY(-1.2px); } to { transform: translateY(1.2px); } }
+.fac-biter {
+  position: fixed;
+  bottom: 10px;
+  left: -48px;
+  z-index: 30;
+  display: flex;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
+  animation: fac-biter-cross 41s linear infinite;
+}
+@keyframes fac-biter-cross {
+  0% { left: -48px; opacity: 0; }
+  1% { opacity: 1; }
+  11% { left: 100%; opacity: 1; }
+  11.4% { opacity: 0; }
+  100% { left: 100%; opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spr-spin, .spr-spin-rev, .spr-bob, .spr-hover, .spr-flap, .spr-arm,
+  .spr-scuttle, .spr-scuttle-alt, .fac-biter,
   .fac-bot-1, .fac-bot-2, .fac-belt-item, .fac-belt-lane,
   .fac-island-water, .fac-drill.is-active .fac-drill-bit { animation: none; }
 }

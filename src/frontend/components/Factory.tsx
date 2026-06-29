@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { relativeTime } from "../lib/api";
-import { Assembler, Drill, Inserter, Chest, Siren, Bot, Cog } from "./factory-sprites";
+import { Assembler, Drill, Inserter, Chest, Siren, Bot, Cog, Biter } from "./factory-sprites";
 
 // A Factorio-flavoured overview of everything moving through Michael: sources
 // "mine" raw work on the left, sessions get "assembled" in the middle (running /
@@ -89,6 +89,10 @@ export function Factory({ sessions, loading, onOpenSession }: Props) {
   return (
     <div className="factory">
       <div className="fac-scene">
+        {/* easter egg: a biter occasionally scuttles across the floor */}
+        <span className="fac-biter" aria-hidden>
+          <Biter size={26} />
+        </span>
         <header className="fac-hud">
           <div className="fac-hud-title">
             <span className="fac-hud-gear">
@@ -134,7 +138,7 @@ export function Factory({ sessions, loading, onOpenSession }: Props) {
             </div>
           </section>
 
-          <Belt />
+          <Belt throughput={running.length + queued.length} />
 
           {/* ── Assemblers ── */}
           <section className="fac-col fac-col-assembly">
@@ -161,7 +165,7 @@ export function Factory({ sessions, loading, onOpenSession }: Props) {
             />
           </section>
 
-          <Belt toIsland />
+          <Belt toIsland throughput={open.length} />
 
           {/* ── GitHub island ── */}
           <section className="fac-col fac-col-island">
@@ -196,26 +200,38 @@ function Stat({ tone, label, value }: { tone: string; label: string; value: numb
   );
 }
 
-const BELT_ITEMS = [
-  { delay: "0s", color: "#b8bcc2" },
-  { delay: "-1.1s", color: "#c8803a" },
-  { delay: "-2.2s", color: "#b8bcc2" },
-];
-
-function Belt({ toIsland }: { toIsland?: boolean }) {
+// The belt carries one cog per unit of throughput: more items, faster tread and
+// a quicker-grabbing inserter when more work is flowing through this junction.
+function Belt({ toIsland, throughput = 0 }: { toIsland?: boolean; throughput?: number }) {
+  const flow = Math.min(throughput, 8);
+  const count = Math.max(3, Math.min(7, 3 + Math.round(flow / 2)));
+  // travel duration shrinks as flow rises (busier belt runs faster)
+  const dur = flow > 0 ? Math.max(1.9, 3.3 - flow * 0.18) : 3.3;
+  const arrival = dur / count; // an item reaches the machine end every `arrival`s
+  const items = Array.from({ length: count }, (_, i) => ({
+    delay: `${(-(i * arrival)).toFixed(2)}s`,
+    color: i % 3 === 1 ? "#c8803a" : "#b8bcc2",
+  }));
   return (
     <div className={`fac-belt${toIsland ? " fac-belt-island" : ""}`} aria-hidden>
-      <div className="fac-belt-lane" />
-      {BELT_ITEMS.map((it, i) => (
-        <span key={i} className="fac-belt-item" style={{ animationDelay: it.delay }}>
+      <div
+        className="fac-belt-lane"
+        style={{ animationDuration: `${(0.55 * (dur / 3.3)).toFixed(2)}s` }}
+      />
+      {items.map((it, i) => (
+        <span
+          key={i}
+          className="fac-belt-item"
+          style={{ animationDelay: it.delay, animationDuration: `${dur}s` }}
+        >
           <svg width="15" height="15" viewBox="0 0 16 16">
             <Cog cx={8} cy={8} r={6.4} spin="spr-spin" color={it.color} />
           </svg>
         </span>
       ))}
-      {/* an inserter plucking items off the belt at the machine end */}
+      {/* an inserter plucking items off the belt, grabbing once per arrival */}
       <span className="fac-belt-inserter">
-        <Inserter size={26} />
+        <Inserter size={26} armDuration={arrival} />
       </span>
     </div>
   );
