@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 
 import { randomUUIDv7 } from "bun";
-import { mkdirSync, existsSync, writeFileSync, readFileSync } from "fs";
+import { mkdirSync, existsSync, writeFileSync, readFileSync, watch } from "fs";
 import homepage from "./src/frontend/index.html";
 import { getAllSessions, deleteSession } from "./src/server/sessions";
 import { parseTranscript } from "./src/server/jsonl-parser";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
 import { listWorktrees, createWorktree, removeWorktree, reviveWorktree, sweepArchivedWorktrees, getProject, projectForPath } from "./src/server/worktree";
-import { STRIPE_CONFIRM_TOOLS } from "./src/server/claude-runner";
+import { STRIPE_CONFIRM_TOOLS, activeRunRecords } from "./src/server/claude-runner";
 import {
   runAgent,
   isAgentSessionBusy,
@@ -15,9 +15,11 @@ import {
   steerAgentRun,
   interruptAndSteerAgentRun,
   resumeInterruptedRuns,
+  RESUME_CONTINUATION_PROMPT,
   activeAgentRunCount,
 } from "./src/server/agent-runner";
 import type { ImageInput } from "./src/server/claude-runner";
+import type { ActiveRunRecord } from "./src/server/claude-runner";
 import {
   KNOWN_MODELS,
   getDefaultModel,
@@ -394,6 +396,70 @@ function restorePromptQueues(): void {
   if (restored > 0) {
     console.log(`[queue] Restored ${restored} queued message(s) from before restart`);
   }
+}
+
+// ── Wake-all-active-sessions on restart ──────────────────────────────────────
+// The run journal (active-runs.json) only retains runs that are STILL executing
+// when the process exits. During a graceful restart the 25s drain lets runs
+// finish their current turn — which clears them from the journal — so a session
+// that stopped at a turn boundary mid-task was silently NOT resumed (the user had
+// to type "continue"). To fix that we snapshot every active session the moment
+// SIGTERM arrives (before the drain) and, on boot, nudge any that the journal
+// resume didn't already cover. Crash (no graceful shutdown) still falls back to
+// the journal, so both paths are covered.
+const RESUME_SNAPSHOT_PATH = `${BACKSTAGE_SESSIONS_DIR}/active-at-shutdown.json`;
+
+/** Capture the sessions with an in-flight run, for boot-time wake-up. Called at
+ *  the very start of graceful shutdown, before the drain empties the journal. */
+function snapshotActiveSessions(): void {
+  try {
+    const records = activeRunRecords();
+    if (records.length === 0) {
+      if (existsSync(RESUME_SNAPSHOT_PATH)) writeFileSync(RESUME_SNAPSHOT_PATH, "[]");
+      return;
+    }
+    writeFileSync(RESUME_SNAPSHOT_PATH, JSON.stringify(records));
+    console.log(`[resume] Snapshotted ${records.length} active session(s) for wake-up on restart`);
+  } catch (e) {
+    console.error("[resume] Failed to snapshot active sessions:", e);
+  }
+}
+
+/** Wake sessions that were active at the last graceful shutdown but finished
+ *  their turn during the drain (so they weren't in the journal to resume).
+ *  `alreadyResumed` are the bksSessionIds the journal resume already handled. */
+function resumeDrainedSessions(alreadyResumed: Set<string>): void {
+  let records: ActiveRunRecord[] = [];
+  try {
+    if (!existsSync(RESUME_SNAPSHOT_PATH)) return;
+    records = JSON.parse(readFileSync(RESUME_SNAPSHOT_PATH, "utf-8"));
+  } catch (e) {
+    console.error("[resume] Failed to read active-session snapshot:", e);
+    return;
+  }
+  // Consume the snapshot so the next (non-graceful) boot doesn't replay it.
+  try {
+    writeFileSync(RESUME_SNAPSHOT_PATH, "[]");
+  } catch {}
+
+  let woken = 0;
+  for (const r of records) {
+    const id = r.bksSessionId;
+    if (!id || alreadyResumed.has(id)) continue; // journal already resumed it
+    if (r.kind?.startsWith("github-")) continue; // github agent owns its recovery
+    const session = findSession(id);
+    // Only interactive backstage sessions — never re-trigger automations/loops,
+    // which are one-shot and would re-run their whole task.
+    if (!session || session.source !== "backstage" || session.automation) continue;
+    if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) continue;
+    if (providerFor(session.model) === "claude" && !session.claudeSessionId) continue;
+    woken++;
+    console.log(`[resume] Waking session ${id} that finished its turn during the drain`);
+    void runSessionPromptAndDrain(id, RESUME_CONTINUATION_PROMPT, "system (restart)").catch((e) =>
+      console.error(`[resume] Wake failed for ${id}:`, e)
+    );
+  }
+  if (woken > 0) console.log(`[resume] Woke ${woken} drained session(s) from before restart`);
 }
 
 // Loaded agents (Plain/Linear/Slack/Stripe/…). Module-scoped because request
@@ -775,12 +841,19 @@ if (!g.__backstageBooted) {
 // hot reload reuses it. Assets are content-hashed → safe to cache forever.
 const IS_DEV = process.env.BACKSTAGE_DEV === "1";
 const FRONTEND_DIST = `${import.meta.dir}/.frontend-dist`;
+const FRONTEND_SRC = `${import.meta.dir}/src/frontend`;
 
-if (!IS_DEV && !g.__backstageFrontend) {
-  console.log("Building frontend (split + minified)…");
-  const srcDir = `${import.meta.dir}/src/frontend`;
+type FrontendBundle = { indexHtml: string; gzip: Map<string, Blob>; version: string };
+
+// Build (or rebuild) the prod SPA bundle in-process. The result object on
+// globalThis is MUTATED in place (never reassigned) so the long-lived `frontend`
+// reference + route closures below pick up a rebuild without a process restart —
+// which is the whole point: a CSS/frontend change no longer needs a `systemctl
+// restart` that would interrupt every in-flight Claude run. `version` changes
+// whenever the entry or CSS hash changes, so clients know to refresh.
+async function buildFrontend(): Promise<string> {
   const result = await Bun.build({
-    entrypoints: [`${srcDir}/App.tsx`],
+    entrypoints: [`${FRONTEND_SRC}/App.tsx`],
     outdir: FRONTEND_DIST,
     minify: true,
     splitting: true,
@@ -797,34 +870,80 @@ if (!IS_DEV && !g.__backstageFrontend) {
   // entry + the extracted CSS.
   const entry = result.outputs.find((o) => o.kind === "entry-point");
   if (!entry) throw new Error("frontend build produced no entry point");
-  const entryName = entry.path.split("/").pop();
+  const entryName = entry.path.split("/").pop()!;
 
   // Bun 1.3.14's CSS minifier strips the space after var(...) and breaks the
   // .panel-overlay / .sidebar-overlay inset (and a few color-mix percentages),
   // which knocks out the mobile overlay layer. Bypass it: write the source CSS
   // unmodified with a content-hashed name and serve it ourselves.
-  const cssSrc = await Bun.file(`${srcDir}/styles/global.css`).text();
+  const cssSrc = await Bun.file(`${FRONTEND_SRC}/styles/global.css`).text();
   const cssHash = Bun.hash(cssSrc).toString(36);
   const cssName = `global-${cssHash}.css`;
   await Bun.write(`${FRONTEND_DIST}/${cssName}`, cssSrc);
 
-  let indexHtml = await Bun.file(`${srcDir}/index.html`).text();
+  let indexHtml = await Bun.file(`${FRONTEND_SRC}/index.html`).text();
   indexHtml = indexHtml.replace(
     '<script type="module" src="./App.tsx"></script>',
     `<script type="module" crossorigin src="/backstage/${entryName}"></script>`
   );
   indexHtml = indexHtml.replace("</head>", `  <link rel="stylesheet" href="/backstage/${cssName}">\n</head>`);
-  g.__backstageFrontend = { indexHtml, gzip: new Map<string, Blob>() };
-  console.log(`Frontend built: ${result.outputs.length} files → ${FRONTEND_DIST}`);
+  const version = `${entryName}|${cssName}`;
+
+  const store: FrontendBundle = (g.__backstageFrontend ??= {
+    indexHtml: "",
+    gzip: new Map<string, Blob>(),
+    version: "",
+  });
+  store.indexHtml = indexHtml;
+  store.gzip.clear(); // stale gzipped blobs were keyed by the old hashed names
+  store.version = version;
+  console.log(`Frontend built: ${result.outputs.length} files → ${FRONTEND_DIST} (v=${version})`);
+  return version;
 }
 
-const frontend: { indexHtml: string; gzip: Map<string, Blob> } | null =
-  IS_DEV ? null : g.__backstageFrontend;
+if (!IS_DEV && !g.__backstageFrontend) {
+  console.log("Building frontend (split + minified)…");
+  await buildFrontend();
+}
 
-// SPA entry: the HMR bundle in dev, the prebuilt index.html in prod.
+const frontend: FrontendBundle | null = IS_DEV ? null : (g.__backstageFrontend as FrontendBundle);
+
+// SPA entry: the HMR bundle in dev, the prebuilt index.html in prod. Reads
+// `frontend.indexHtml` fresh on each request so an in-process rebuild is served
+// immediately (the object is mutated, not replaced).
 const spaEntry = frontend
   ? () => new Response(frontend.indexHtml, { headers: { "Content-Type": "text/html; charset=utf-8" } })
   : homepage;
+
+// Debounced in-process rebuild + client nudge. Triggered by the frontend
+// file-watch, a SIGUSR2 signal, or POST /backstage/api/rebuild-frontend — all of
+// which replace the "systemctl restart to see my CSS change" habit that was
+// interrupting every live Claude run. Clients get a non-intrusive refresh toast;
+// the bundle is served from the mutated `frontend` object with no restart.
+let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
+let rebuildInFlight = false;
+function scheduleFrontendRebuild(reason: string, debounceMs = 300): void {
+  if (IS_DEV || !frontend) return;
+  if (rebuildTimer) clearTimeout(rebuildTimer);
+  rebuildTimer = setTimeout(async () => {
+    rebuildTimer = null;
+    if (rebuildInFlight) return scheduleFrontendRebuild(reason, 300); // coalesce
+    rebuildInFlight = true;
+    const before = frontend.version;
+    try {
+      const version = await buildFrontend();
+      if (version !== before) {
+        console.log(`[frontend] Rebuilt (${reason}); notifying clients (v=${version})`);
+        broadcastToAll({ type: "frontend_updated", version });
+      }
+    } catch (e) {
+      console.error(`[frontend] Rebuild failed (${reason}):`, e);
+      broadcastToAll({ type: "notice", message: `Frontend rebuild failed — see logs. (${e})` });
+    } finally {
+      rebuildInFlight = false;
+    }
+  }, debounceMs);
+}
 
 console.log(`Starting Backstage server on ${HOST}:${PORT}...`);
 
@@ -1046,13 +1165,37 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       return redirect(sessionId ? `/backstage/session/${sessionId}` : "/backstage/");
     }
 
-    // Health check (includes agent health — Tailscale-only, not public)
+    // Health check (includes agent health — Tailscale-only, not public).
+    // frontendVersion lets clients detect a frontend-only rebuild (no bootId
+    // change) and refresh.
     if (path === "/backstage/api/health") {
       const agentHealth: Record<string, unknown> = {};
       for (const a of agents) {
         agentHealth[a.name] = a.health();
       }
-      return Response.json({ ok: true, bootId: BOOT_ID, uptime: process.uptime(), agents: agentHealth });
+      return Response.json({
+        ok: true,
+        bootId: BOOT_ID,
+        frontendVersion: frontend?.version ?? null,
+        uptime: process.uptime(),
+        agents: agentHealth,
+      });
+    }
+
+    // Rebuild the frontend bundle in-process (no restart → live runs untouched).
+    // Drop-in replacement for `systemctl restart backstage` after a frontend/CSS
+    // change. Tailscale + team gated at the network layer like every route here.
+    if (path === "/backstage/api/rebuild-frontend" && req.method === "POST") {
+      if (IS_DEV || !frontend) {
+        return Response.json({ ok: false, error: "not available in dev mode" }, { status: 400 });
+      }
+      try {
+        const version = await buildFrontend();
+        broadcastToAll({ type: "frontend_updated", version });
+        return Response.json({ ok: true, version });
+      } catch (e) {
+        return Response.json({ ok: false, error: String(e) }, { status: 500 });
+      }
     }
 
     // List sessions
@@ -2051,15 +2194,19 @@ if (!g.__backstageBooted) {
   // Poll per-account Claude usage (drives account picking + the Connections UI)
   startUsagePoller();
 
-  // Resume Claude runs a previous process left in-flight (restart/crash)
+  // Resume Claude runs a previous process left in-flight (restart/crash), then
+  // wake any session that finished its turn during the shutdown drain (so the
+  // journal no longer held it). Together these wake every session that was
+  // active before the restart.
   setTimeout(() => {
-    const resumed = resumeInterruptedRuns(() => {
+    const resumedIds = resumeInterruptedRuns(() => {
       sessionsCache = null;
     });
-    if (resumed > 0) {
-      console.log(`[runner] Resumed ${resumed} interrupted run(s) from before restart`);
+    if (resumedIds.length > 0) {
+      console.log(`[runner] Resumed ${resumedIds.length} interrupted run(s) from before restart`);
       sessionsCache = null;
     }
+    resumeDrainedSessions(new Set(resumedIds));
     // Re-deliver messages that were queued/steered when the process went down.
     restorePromptQueues();
   }, 3000);
@@ -2108,6 +2255,10 @@ if (!g.__backstageBooted) {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[shutdown] ${signal} — stopping intake and draining in-flight runs…`);
+    // Snapshot active sessions BEFORE the drain — the drain lets runs finish
+    // their turn and clear themselves from the journal, so this is the only
+    // record of sessions that should be woken on the next boot.
+    snapshotActiveSessions();
     // Tell connected UIs we're going down so they can show a "restarting" modal
     // and auto-refresh once the new instance is up (instead of silently queuing
     // messages that would be lost). Brief pause to let the frames flush.
@@ -2144,6 +2295,27 @@ if (!g.__backstageBooted) {
   };
   process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
   process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
+
+  // Frontend live-reload: rebuild the SPA bundle in-process when its source
+  // changes, so a CSS/frontend tweak no longer needs a `systemctl restart` that
+  // interrupts every running session. `kill -USR2 <pid>` forces it too (drop-in
+  // for restart in a deploy script). Guarded by __backstageBooted so a hot
+  // reload doesn't stack watchers/handlers. recursive watch needs Linux ≥ 6.x
+  // (we're on 6.17) — fine here.
+  if (!IS_DEV && frontend) {
+    try {
+      const watcher = watch(FRONTEND_SRC, { recursive: true }, (_evt, file) => {
+        if (file && /\.(tsx?|css|html)$/.test(file.toString())) {
+          scheduleFrontendRebuild(`watch:${file}`);
+        }
+      });
+      process.on("exit", () => watcher.close());
+      console.log(`[frontend] Watching ${FRONTEND_SRC} for live rebuilds`);
+    } catch (e) {
+      console.error("[frontend] Could not start file-watch (use SIGUSR2/endpoint to rebuild):", e);
+    }
+    process.on("SIGUSR2", () => scheduleFrontendRebuild("SIGUSR2", 0));
+  }
 
   g.__backstageBooted = true;
 }

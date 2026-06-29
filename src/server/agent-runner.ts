@@ -202,9 +202,9 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
  * crash). Each resumable run gets a continuation prompt against its engine
  * session, on whichever backend the journaled model belongs to.
  */
-export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => void): number {
+export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => void): string[] {
   const interrupted = takeInterruptedRuns();
-  let resumed = 0;
+  const resumed: string[] = [];
 
   for (const run of interrupted) {
     // The github agent owns its own recovery (review/simplify re-trigger on the
@@ -219,17 +219,14 @@ export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => voi
       );
       continue;
     }
-    resumed++;
+    if (run.bksSessionId) resumed.push(run.bksSessionId);
     console.log(
       `[runner] Resuming interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} (started ${run.startedAt}, model ${run.model || "default"})`
     );
     void (async () => {
       try {
         for await (const event of runAgent({
-          prompt:
-            "This session was interrupted by a Michael service restart mid-run. " +
-            "Review what you had already done, pick up where you left off, and finish the task. " +
-            "If the work was actually complete, just post the final summary/answer.",
+          prompt: RESUME_CONTINUATION_PROMPT,
           sessionId: run.claudeSessionId,
           cwd: run.cwd,
           mode: run.mode,
@@ -251,3 +248,12 @@ export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => voi
 
   return resumed;
 }
+
+/** Same continuation prompt resumeInterruptedRuns uses — exported so the
+ *  graceful-shutdown snapshot path can wake sessions that finished their turn
+ *  during the drain (and so were cleared from the journal) with one consistent
+ *  message. */
+export const RESUME_CONTINUATION_PROMPT =
+  "This session was interrupted by a Michael service restart mid-run. " +
+  "Review what you had already done, pick up where you left off, and finish the task. " +
+  "If the work was actually complete, just post the final summary/answer.";

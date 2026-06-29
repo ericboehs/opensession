@@ -128,6 +128,7 @@ export type WSServerMessage =
   | { type: "ask_question"; sessionId: string; questionId: string; questions: AskQuestion[] }
   | { type: "ask_resolved"; sessionId: string; questionId: string }
   | { type: "server_restarting" }
+  | { type: "frontend_updated"; version: string }
   | { type: "error"; message: string };
 
 export interface AskQuestion {

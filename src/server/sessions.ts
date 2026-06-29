@@ -24,6 +24,8 @@ const SKIP_FILES = new Set([
   "message-queue.json",
   "active-worktrees.json",
   "prompt-queues.json",
+  "active-at-shutdown.json",
+  "active-runs.json",
 ]);
 
 function resolveSlackUser(userId: string): string {
@@ -204,11 +206,14 @@ function scanBackstageSessions(): UnifiedSession[] {
   const sessions: UnifiedSession[] = [];
 
   for (const file of readdirSync(BACKSTAGE_SESSIONS_DIR)) {
-    if (!file.endsWith(".json")) continue;
+    if (!file.endsWith(".json") || SKIP_FILES.has(file)) continue;
     const data = readJsonSafe<BackstageSessionFile>(
       `${BACKSTAGE_SESSIONS_DIR}/${file}`
     );
-    if (!data) continue;
+    // Skip non-session bookkeeping files in this dir (active-runs.json,
+    // prompt-queues.json, active-at-shutdown.json, …) — a real session always
+    // has an id, these don't, so they'd otherwise become bogus id:undefined rows.
+    if (!data || !data.id) continue;
 
     sessions.push({
       id: data.id,

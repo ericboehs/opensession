@@ -215,6 +215,11 @@ export function journalClear(runKey: string): void {
   }
 }
 
+/** Snapshot of the runs currently journaled as in-flight (does not clear). */
+export function activeRunRecords(): ActiveRunRecord[] {
+  return Object.values(readRunJournal());
+}
+
 /** Drain interrupted runs left by a previous process (clears the journal). */
 export function takeInterruptedRuns(): ActiveRunRecord[] {
   const journal = readRunJournal();

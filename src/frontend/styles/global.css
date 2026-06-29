@@ -1487,6 +1487,56 @@ a {
 }
 
 /* Restart overlay (covers the UI while the server redeploys) */
+.update-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px 10px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  animation: toast-rise 0.22s ease-out;
+}
+@keyframes toast-rise {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.update-toast-text {
+  font-size: 13px;
+  color: var(--text);
+}
+.update-toast-refresh {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.update-toast-refresh:hover { filter: brightness(1.08); }
+.update-toast-dismiss {
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.update-toast-dismiss:hover { color: var(--text); }
+@media (max-width: 520px) {
+  .update-toast { bottom: 14px; }
+}
+
 .restart-overlay {
   position: fixed;
   inset: 0;
