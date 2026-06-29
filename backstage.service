@@ -20,6 +20,16 @@ RestartSec=5
 # Give graceful shutdown time to drain in-flight runs (SHUTDOWN_DRAIN_MS, 25s)
 # before systemd escalates to SIGKILL.
 TimeoutStopSec=40
+# SIGTERM the bun parent ONLY — not the whole cgroup. The default
+# (KillMode=control-group) SIGTERMs every child too, so on restart the Claude
+# subprocesses die (exit 143) the instant shutdown begins — before bun's graceful
+# drain can run, and before the run journal can do its job. Worse, a loop that
+# catches that kill (e.g. github auto-fix) marks itself "done" and defeats its own
+# restart recovery. With `mixed`, only bun gets SIGTERM; it drains in-flight runs
+# (children keep working) and exits, then systemd SIGKILLs any leftovers after
+# TimeoutStopSec. This is what makes the graceful-drain + journal-resume design
+# actually take effect.
+KillMode=mixed
 # Agent runs are driven by untrusted text (customer tickets); none of them
 # should be able to mint EC2 instance-role credentials from the metadata
 # endpoint. eBPF egress filter — covers every child the service spawns.
