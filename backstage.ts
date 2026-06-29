@@ -1646,14 +1646,12 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
               attributed
             )
           ) {
-            // An interrupt aborts the current turn and continues immediately,
-            // so the redirect lands right away — but record a receipt too in
-            // case the page is reloaded before its turn writes to the transcript.
-            recordSteer(sessionId, { content, user });
-            broadcastToSession(sessionId, {
-              type: "notice",
-              message: `${user || "Someone"} interrupted — redirecting Michael now.`,
-            });
+            // Interrupt aborts the current turn and continues immediately, so
+            // the message lands in the transcript almost at once — no steer
+            // receipt ("folded in" would be wrong for an interrupt) and no system
+            // notice. The sender's optimistic bubble reconciles when its real
+            // turn appears; the SDK's "[Request interrupted by user]" marker is
+            // filtered out in jsonl-parser.
             break;
           }
           // Not interruptible (external run, codex, or just finished): treat

@@ -112,6 +112,10 @@ function harnessEntryFor(text: string, ts: string): TranscriptEntry[] | null {
     }];
   }
   if (t.startsWith("<system-reminder>")) return [];
+  // The SDK writes this marker into the jsonl whenever a turn is interrupted.
+  // Interrupt-and-redirect is the default send-while-busy now, so this would
+  // otherwise post on nearly every follow-up message — drop it as noise.
+  if (t.trimEnd() === "[Request interrupted by user]") return [];
   return null;
 }
 

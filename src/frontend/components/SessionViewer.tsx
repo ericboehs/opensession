@@ -695,7 +695,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             {pending.map((p) => (
               <div key={p.id} className="msg msg-user msg-sending">
                 <div className="msg-label msg-label-user">
-                  {p.user || "You"} · {isBusy ? "queueing…" : "sending…"}
+                  {p.user || "You"} · {isBusy ? "redirecting…" : "sending…"}
                 </div>
                 {p.content && <div className="msg-body msg-body-user">{p.content}</div>}
                 {p.images && p.images.length > 0 && (
