@@ -17,7 +17,7 @@ import { githubConfigured } from "./github-rest";
 import { PR_EVENT_KEY, REVIEW_AUTOMATION_NAME } from "./constants";
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
 import { setGithubSessionInvalidate, resolveReviewConfig } from "./webhook";
-import { listPrStates, activeCodeLoops } from "./state";
+import { listPrStates, activeCodeLoops, clearPendingMention } from "./state";
 import type { PrRef } from "./review";
 
 const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "";
@@ -87,6 +87,37 @@ async function recoverMentions(): Promise<void> {
   }
 }
 
+/**
+ * Replay @mentions that were received but dropped before their run could
+ * self-persist — the classic case being a webhook that landed during shutdown
+ * drain (acked 200, so GitHub won't redeliver). PRs already owned by a richer
+ * recovery (activeMention mid-run, or an action's activeRun/autoFix) are handed
+ * off to it and their stale receipt marker cleared, so nothing fires twice.
+ */
+async function recoverPendingMentions(): Promise<void> {
+  const pending = listPrStates().filter((s) => s.pendingMention);
+  if (!pending.length) return;
+  const { dispatchMention } = await import("./mention");
+  for (const s of pending) {
+    if (s.activeMention || s.activeRun || s.autoFix?.active) {
+      clearPendingMention(s.prNumber); // a more specific recovery owns it
+      continue;
+    }
+    const p = s.pendingMention!;
+    console.log(`[github] Recovering dropped mention for PR #${s.prNumber} (from @${p.author})`);
+    void dispatchMention({
+      prNumber: s.prNumber,
+      kind: p.kind,
+      body: p.body,
+      author: p.author,
+      replyToId: p.replyToId,
+      inline: p.inline,
+    })
+      .catch((e) => console.error(`[github] dropped-mention recovery failed for PR #${s.prNumber}:`, e))
+      .finally(() => clearPendingMention(s.prNumber));
+  }
+}
+
 export class GithubAgent implements AgentModule {
   name = "github";
   private readonly onSessionInvalidate?: () => void;
@@ -143,6 +174,7 @@ export class GithubAgent implements AgentModule {
     await recoverFixLoops();
     await recoverOneShots();
     await recoverMentions();
+    await recoverPendingMentions();
     const { autoEnabled } = resolveReviewConfig();
     console.log(`[github] Agent started — review automation ${autoEnabled ? "ENABLED (all non-draft PRs)" : "disabled (label-only)"}`);
   }

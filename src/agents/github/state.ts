@@ -67,6 +67,22 @@ export interface GithubPrState {
     progressCommentId?: number;
     startedAt: string;
   };
+  /**
+   * A just-received @mention, persisted synchronously on receipt — before the run
+   * self-persists (the classify + worktree window, several seconds). If the process
+   * dies in that window — e.g. a webhook that lands during shutdown drain, which we
+   * still ack 200 so GitHub won't redeliver — startup recovery replays it. Cleared
+   * once a run takes ownership (activeMention/activeRun) or the dispatch completes.
+   */
+  pendingMention?: {
+    kind: "issue" | "review";
+    commentId: number;
+    body: string;
+    author: string;
+    replyToId?: number;
+    inline?: { path: string; line?: number; diffHunk?: string };
+    receivedAt: string;
+  };
   updatedAt: string;
 }
 
@@ -111,6 +127,25 @@ export function updatePrState(
   patch(s);
   writePrState(s);
   return s;
+}
+
+/** Persist a just-received mention so a crash/restart before the run self-persists
+ *  can still recover it. headRef may be unknown here; the run backfills the real one. */
+export function setPendingMention(
+  prNumber: number,
+  pending: NonNullable<GithubPrState["pendingMention"]>
+): void {
+  updatePrState(prNumber, `pr-${prNumber}`, (s) => {
+    s.pendingMention = pending;
+  });
+}
+
+/** Clear the pending-mention marker once a run owns the mention or it completes. */
+export function clearPendingMention(prNumber: number): void {
+  const s = readPrState(prNumber);
+  if (!s?.pendingMention) return;
+  s.pendingMention = undefined;
+  writePrState(s);
 }
 
 /** Every PR state file (for the startup recovery sweep). */
