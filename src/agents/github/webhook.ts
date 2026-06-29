@@ -64,11 +64,17 @@ export function resolveReviewConfig(): { autoEnabled: boolean; config: ReviewCon
 export async function handleGithubPrEvent(event: string, payload: any): Promise<void> {
   try {
     if (payload?.repository?.full_name && payload.repository.full_name !== GITHUB_REPO) return;
-    // Ignore our own actions to avoid self-trigger loops.
-    if (payload?.sender?.login && payload.sender.login === BOT_LOGIN) return;
 
-    // @mention replies on PR comments (inline + conversation).
+    // Our bot account shows up as `sender` both when we comment/review AND when we
+    // push (auto-fix/simplify/mention commits land as a `synchronize`). We must not
+    // react to those self-triggers — but we DO want to review PRs the bot *opens*
+    // (e.g. automated security fixes). So apply the guard per-event below, not blanket.
+    const senderIsBot = !!payload?.sender?.login && payload.sender.login === BOT_LOGIN;
+
+    // @mention replies on PR comments (inline + conversation). Never react to our own
+    // comments/reviews (mention.ts also re-checks the author + our hidden markers).
     if (event === "issue_comment" || event === "pull_request_review_comment") {
+      if (senderIsBot) return;
       const { handleMention } = await import("./mention");
       void handleMention(event === "issue_comment" ? "issue" : "review", payload).catch((e) =>
         console.error("[github] handleMention failed:", e),
@@ -83,8 +89,9 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     if (!ref) return;
     const action: string = payload.action || "";
 
-    // ── Label actions ──
+    // ── Label actions ── (ignore labels we applied to ourselves)
     if (action === "labeled") {
+      if (senderIsBot) return;
       const label: string = payload.label?.name || "";
       const requestedBy: string = payload.sender?.login || "";
       if (label === LABEL_REVIEW) {
@@ -111,6 +118,10 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     // ── Open / update actions → review when opted in and non-draft ──
     if (REVIEW_ACTIONS.has(action)) {
       if (pr.draft) return; // skip drafts until ready_for_review
+      // A `synchronize` from the bot is our own push (auto-fix/simplify/mention) —
+      // skip it so we don't review our own work mid-loop. But reviewing a PR the bot
+      // *opened* (opened/reopened/ready_for_review) is fine: read-only, no push, no loop.
+      if (senderIsBot && action === "synchronize") return;
       const labeled = (pr.labels || []).some((l) => l.name === LABEL_REVIEW);
       const { autoEnabled } = resolveReviewConfig();
       if (labeled || autoEnabled) void fireReview(ref, false);
