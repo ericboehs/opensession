@@ -561,19 +561,34 @@ a {
   animation: pulse 1.4s ease-in-out infinite;
 }
 
-.session-tab-close {
+/* Unstar control: removes the tab (a tab IS a starred session). Always shown
+   on touch; reveal-on-hover (or for the active tab) on desktop. */
+.session-tab-unstar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: 11px;
   line-height: 1;
-  color: var(--text-faint);
+  color: var(--yellow);
   flex-shrink: 0;
 }
-.session-tab-close:hover { color: var(--red); background: var(--red-soft); }
+.session-tab-unstar:hover { background: var(--bg-active); color: #e3b341; }
+
+@media (hover: hover) and (pointer: fine) {
+  .session-tab-unstar {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
+  .session-tab:hover .session-tab-unstar,
+  .session-tab-active .session-tab-unstar {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
 
 .detail-empty {
   flex: 1;

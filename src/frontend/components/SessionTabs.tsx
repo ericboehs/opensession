@@ -30,16 +30,16 @@ export function SessionTabs({ tabs, activeId, onSelect, onUnpin }: Props) {
           {s.isRunning && <span className="session-tab-dot" />}
           <span className="session-tab-title">{s.title}</span>
           <span
-            className="session-tab-close"
+            className="session-tab-unstar"
             role="button"
-            aria-label="Unpin tab"
-            title="Unpin"
+            aria-label="Unstar (remove tab)"
+            title="Unstar"
             onClick={(e) => {
               e.stopPropagation();
               onUnpin(s.id);
             }}
           >
-            ×
+            ★
           </span>
         </div>
       ))}
