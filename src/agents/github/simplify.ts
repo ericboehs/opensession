@@ -17,6 +17,7 @@ export async function runSimplify(
   pr: PrRef,
   requestedBy: string,
   onSessionCreated?: (bksId: string) => void,
+  steer?: string,
 ): Promise<void> {
   if (!claimLock("code", pr.number)) {
     console.log(`[github] a code action (fix/simplify) is already running for PR #${pr.number}, skipping simplify`);
@@ -43,7 +44,7 @@ export async function runSimplify(
       `${SIMPLIFY_MARKER}\n✨ **Michael simplify** — working on PR #${pr.number}… · ${link}`,
     );
     s.simplify = { active: true, requestedBy, startedAt };
-    s.activeRun = { kind: "simplify", requestedBy, startedAt, progressCommentId: progressId ?? undefined };
+    s.activeRun = { kind: "simplify", requestedBy, startedAt, progressCommentId: progressId ?? undefined, steer };
     writePrState(s);
 
     const worktreeDir = await createWorktreeForPrBranch(pr.headRef);
@@ -52,7 +53,7 @@ export async function runSimplify(
     const result = await runGithubAgent({
       prNumber: pr.number,
       kind: "simplify",
-      prompt: buildSimplifyPrompt(details),
+      prompt: buildSimplifyPrompt(details, steer),
       cwd: worktreeDir,
       mode: "code",
       branch: pr.headRef,

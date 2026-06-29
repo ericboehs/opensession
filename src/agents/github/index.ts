@@ -52,7 +52,7 @@ async function recoverFixLoops(): Promise<void> {
   for (const s of interrupted) {
     console.log(`[github] Recovering interrupted auto-fix loop for PR #${s.prNumber}`);
     const ref: PrRef = { number: s.prNumber, headRef: s.headRef, headSha: "", title: `PR #${s.prNumber}` };
-    void runAutoFix(ref, s.autoFix?.requestedBy || "", undefined, /*resuming*/ true).catch((e) =>
+    void runAutoFix(ref, s.autoFix?.requestedBy || "", undefined, /*resuming*/ true, s.autoFix?.steer).catch((e) =>
       console.error(`[github] auto-fix recovery failed for PR #${s.prNumber}:`, e),
     );
   }
@@ -66,7 +66,7 @@ async function recoverOneShots(): Promise<void> {
   for (const s of interrupted) {
     const run = s.activeRun!;
     console.log(`[github] Recovering interrupted ${run.kind} for PR #${s.prNumber}`);
-    void triggerPrAction(run.kind, s.prNumber, run.requestedBy).catch((e) =>
+    void triggerPrAction(run.kind, s.prNumber, run.requestedBy, run.steer).catch((e) =>
       console.error(`[github] ${run.kind} recovery failed for PR #${s.prNumber}:`, e),
     );
   }

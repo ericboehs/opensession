@@ -63,6 +63,7 @@ export async function runReview(
   config: ReviewConfig,
   onSessionCreated?: (bksId: string) => void,
   force = false,
+  steer?: string,
 ): Promise<void> {
   if (!claimLock("review", pr.number)) {
     console.log(`[github] review already running for PR #${pr.number}, skipping`);
@@ -79,7 +80,7 @@ export async function runReview(
     // the SHA is recorded only AFTER a successful run (below) so a transient
     // failure can be retried rather than permanently suppressed.
     const isUpdate = state.reviewedShas.length > 0;
-    state.activeRun = { kind: "review", requestedBy: "", startedAt: new Date().toISOString() };
+    state.activeRun = { kind: "review", requestedBy: "", startedAt: new Date().toISOString(), steer };
 
     // Post a fresh "reviewing…" comment immediately (progress ASAP), then collapse
     // the previous review under an "Outdated review" <details>. Each review is its
@@ -104,7 +105,7 @@ export async function runReview(
     }
 
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
-    const prompt = buildReviewPrompt(base, details, isUpdate);
+    const prompt = buildReviewPrompt(base, details, isUpdate, steer);
 
     console.log(`[github] Reviewing PR #${pr.number} @ ${pr.headSha.slice(0, 7)} (${isUpdate ? "update" : "initial"})`);
     const result = await runGithubAgent({

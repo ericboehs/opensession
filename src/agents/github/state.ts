@@ -24,6 +24,7 @@ export interface AutoFixState {
   lastPushedSha?: string;
   statusCommentId?: number;
   requestedBy?: string; // github login that applied the label (for commit attribution)
+  steer?: string; // free-text steer from the triggering message (recovered on restart)
   startedAt: string;
 }
 
@@ -53,6 +54,8 @@ export interface GithubPrState {
     startedAt: string;
     /** The run's progress comment id — reused only on restart recovery, not on a fresh re-trigger. */
     progressCommentId?: number;
+    /** Free-text steer from the triggering message, so a restart can re-pass it. */
+    steer?: string;
   };
   /** An in-flight @mention reply (conversational), persisted so a restart can re-run it. */
   activeMention?: {

@@ -84,7 +84,10 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
   // behavior. Classified before any lock, since triggerPrAction claims the "code" lock.
   const action = await classifyPrActionIntent(body);
   if (action !== "none") {
-    const res = await triggerPrAction(action, prNumber, authorLogin);
+    // Pass the full comment as steer: the classifier reduced it to a verb, but the
+    // body may carry specific guidance ("…the Update.call change wasn't needed.
+    // /simplify") that the run should honor — not just a generic pass.
+    const res = await triggerPrAction(action, prNumber, authorLogin, body);
     const ack = `${REPLY_MARKER}\nOn it — ${res.message}`;
     if (kind === "review" && replyToId) await replyToReviewComment(prNumber, replyToId, ack).catch(() => {});
     else await postIssueComment(prNumber, ack).catch(() => {});

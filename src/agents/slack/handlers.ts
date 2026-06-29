@@ -1407,7 +1407,8 @@ Please help with this request. Start by exploring the codebase to understand wha
   const intent = await classifyMention(cleanText);
 
   if (intent && intent.action !== "none" && intent.prNumber) {
-    const res = await triggerPrAction(intent.action, intent.prNumber, user);
+    // Carry the message text as steer so any specific guidance reaches the run.
+    const res = await triggerPrAction(intent.action, intent.prNumber, user, cleanText);
     if (res.ok && res.bksId) {
       const msg = `On it — ${res.message}`;
       const bksId = res.bksId;

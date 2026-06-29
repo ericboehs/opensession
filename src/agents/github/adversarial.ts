@@ -17,6 +17,7 @@ export async function runAdversarial(
   pr: PrRef,
   requestedBy: string,
   onSessionCreated?: (bksId: string) => void,
+  steer?: string,
 ): Promise<void> {
   if (!claimLock("code", pr.number)) {
     console.log(`[github] a code action is already running for PR #${pr.number}, skipping adversarial`);
@@ -40,7 +41,7 @@ export async function runAdversarial(
       reuseId,
       `${ADVERSARIAL_MARKER}\n🔍 **Michael adversarial review** — running two independent review passes on PR #${pr.number}… · ${link}`,
     );
-    s.activeRun = { kind: "adversarial", requestedBy, startedAt, progressCommentId: progressId ?? undefined };
+    s.activeRun = { kind: "adversarial", requestedBy, startedAt, progressCommentId: progressId ?? undefined, steer };
     writePrState(s);
 
     const worktreeDir = await createWorktreeForPrBranch(details.headRefName);
@@ -49,7 +50,7 @@ export async function runAdversarial(
     const result = await runGithubAgent({
       prNumber: pr.number,
       kind: "adversarial",
-      prompt: buildAdversarialPrompt(details),
+      prompt: buildAdversarialPrompt(details, steer),
       cwd: worktreeDir,
       mode: "code",
       branch: details.headRefName,
