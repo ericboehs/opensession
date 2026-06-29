@@ -121,6 +121,7 @@ export type WSServerMessage =
   | { type: "queue_update"; sessionId: string; queued: Array<{ content: string; user?: string }> }
   | { type: "ask_question"; sessionId: string; questionId: string; questions: AskQuestion[] }
   | { type: "ask_resolved"; sessionId: string; questionId: string }
+  | { type: "server_restarting" }
   | { type: "error"; message: string };
 
 export interface AskQuestion {

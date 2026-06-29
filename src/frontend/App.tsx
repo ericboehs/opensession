@@ -10,6 +10,7 @@ import { Connections } from "./components/Connections";
 import { Archived } from "./components/Archived";
 import { UserPicker, UserGate } from "./components/UserPicker";
 import { SessionTabs } from "./components/SessionTabs";
+import { RestartOverlay } from "./components/RestartOverlay";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSidebarSwipe } from "./hooks/useSidebarSwipe";
@@ -173,6 +174,7 @@ function App() {
 
   return (
     <UserGate>
+      <RestartOverlay connected={connected} addHandler={addHandler} />
       <div className="app">
         <header className="app-header">
           <div className="app-header-left">

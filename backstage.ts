@@ -91,6 +91,22 @@ mkdirSync(BACKSTAGE_SESSIONS_DIR, { recursive: true });
 // each branch once, exactly as before.
 const g = globalThis as any;
 
+// Unique per OS process (survives hot reloads, changes on a real restart) so
+// clients can tell a fresh instance from a draining one and reload at the right
+// moment. Every connected WebSocket is also tracked so we can warn them all
+// before the process goes down for a deploy.
+const BOOT_ID: string = (g.__bootId ??= crypto.randomUUID());
+const allClients: Set<any> = (g.__allClients ??= new Set());
+
+function broadcastToAll(msg: object) {
+  const payload = JSON.stringify(msg);
+  for (const ws of allClients) {
+    try {
+      ws.send(payload);
+    } catch {}
+  }
+}
+
 // Cache sessions with short TTL
 let sessionsCache: { data: UnifiedSession[]; ts: number } | null = null;
 const CACHE_TTL = 2000;
@@ -939,7 +955,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       for (const a of agents) {
         agentHealth[a.name] = a.health();
       }
-      return Response.json({ ok: true, uptime: process.uptime(), agents: agentHealth });
+      return Response.json({ ok: true, bootId: BOOT_ID, uptime: process.uptime(), agents: agentHealth });
     }
 
     // List sessions
@@ -1239,6 +1255,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
 
   websocket: {
     open(ws) {
+      allClients.add(ws);
       console.log("WebSocket client connected");
     },
 
@@ -1596,6 +1613,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
     },
 
     close(ws) {
+      allClients.delete(ws);
       stopAllWatchesForClient(ws);
       leaveSession(ws);
       console.log("WebSocket client disconnected");
@@ -1985,6 +2003,11 @@ if (!g.__backstageBooted) {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[shutdown] ${signal} — stopping intake and draining in-flight runs…`);
+    // Tell connected UIs we're going down so they can show a "restarting" modal
+    // and auto-refresh once the new instance is up (instead of silently queuing
+    // messages that would be lost). Brief pause to let the frames flush.
+    broadcastToAll({ type: "server_restarting" });
+    await new Promise((r) => setTimeout(r, 150));
     // Stop agents from accepting new work (Slack socket, webhook intake, …).
     for (const agent of agents) {
       try {
