@@ -4,45 +4,55 @@ import type { UnifiedSession } from "../lib/types";
 interface Props {
   tabs: UnifiedSession[];
   activeId: string | null;
+  /** IDs of sessions that are pinned; the rest are transient (current route only). */
+  pinnedIds: Set<string>;
   onSelect: (session: UnifiedSession) => void;
-  onUnpin: (id: string) => void;
+  onTogglePin: (id: string) => void;
 }
 
 /**
- * Horizontal strip of pinned sessions, rendered above the session title on
- * every view so you can jump between the sessions you care about. Pin/unpin is
- * the existing pins store (star on Home, or the ★ in the session header).
+ * Horizontal strip of session tabs above the session title, on every view.
+ * Pinned tabs persist (the pins store — star on Home, or the ★ in the session
+ * header). The currently-open session also shows as a *transient* tab even when
+ * unpinned: like Chrome, it closes as soon as you navigate away. Clicking the
+ * ☆ on a transient tab promotes it to a pinned one; the ★ on a pinned tab
+ * unpins (removing the tab).
  */
-export function SessionTabs({ tabs, activeId, onSelect, onUnpin }: Props) {
+export function SessionTabs({ tabs, activeId, pinnedIds, onSelect, onTogglePin }: Props) {
   if (tabs.length === 0) return null;
 
   return (
     <div className="session-tabs" role="tablist">
-      {tabs.map((s) => (
-        <div
-          key={s.id}
-          role="tab"
-          aria-selected={s.id === activeId}
-          className={`session-tab ${s.id === activeId ? "session-tab-active" : ""}`}
-          onClick={() => onSelect(s)}
-          title={s.title}
-        >
-          {s.isRunning && <span className="session-tab-dot" />}
-          <span className="session-tab-title">{s.title}</span>
-          <span
-            className="session-tab-unstar"
-            role="button"
-            aria-label="Unstar (remove tab)"
-            title="Unstar"
-            onClick={(e) => {
-              e.stopPropagation();
-              onUnpin(s.id);
-            }}
+      {tabs.map((s) => {
+        const pinned = pinnedIds.has(s.id);
+        return (
+          <div
+            key={s.id}
+            role="tab"
+            aria-selected={s.id === activeId}
+            className={`session-tab ${s.id === activeId ? "session-tab-active" : ""} ${
+              pinned ? "" : "session-tab-transient"
+            }`}
+            onClick={() => onSelect(s)}
+            title={s.title}
           >
-            ★
-          </span>
-        </div>
-      ))}
+            {s.isRunning && <span className="session-tab-dot" />}
+            <span className="session-tab-title">{s.title}</span>
+            <span
+              className={`session-tab-pin ${pinned ? "session-tab-pin-on" : ""}`}
+              role="button"
+              aria-label={pinned ? "Unpin (remove tab)" : "Pin tab"}
+              title={pinned ? "Unpin" : "Pin tab"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePin(s.id);
+              }}
+            >
+              {pinned ? "★" : "☆"}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

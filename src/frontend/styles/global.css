@@ -561,9 +561,17 @@ a {
   animation: pulse 1.4s ease-in-out infinite;
 }
 
-/* Unstar control: removes the tab (a tab IS a starred session). Always shown
-   on touch; reveal-on-hover (or for the active tab) on desktop. */
-.session-tab-unstar {
+/* A transient tab (the current session when it isn't pinned) reads as
+   provisional: dashed top edge, like a Chrome tab that hasn't been pinned. */
+.session-tab-transient {
+  border-style: dashed;
+}
+
+/* Pin control: ★ on a pinned tab unpins (removes it); ☆ on a transient tab
+   pins it. Always shown on touch; reveal-on-hover (or for the active tab) on
+   desktop. The ☆ stays visible on transient tabs so the pin affordance is
+   discoverable. */
+.session-tab-pin {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -572,19 +580,20 @@ a {
   border-radius: 4px;
   font-size: 11px;
   line-height: 1;
-  color: var(--yellow);
+  color: var(--text-dim);
   flex-shrink: 0;
 }
-.session-tab-unstar:hover { background: var(--bg-active); color: #e3b341; }
+.session-tab-pin-on { color: var(--yellow); }
+.session-tab-pin:hover { background: var(--bg-active); color: #e3b341; }
 
 @media (hover: hover) and (pointer: fine) {
-  .session-tab-unstar {
+  .session-tab-pin {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.12s ease;
   }
-  .session-tab:hover .session-tab-unstar,
-  .session-tab-active .session-tab-unstar {
+  .session-tab:hover .session-tab-pin,
+  .session-tab-active .session-tab-pin {
     opacity: 1;
     pointer-events: auto;
   }

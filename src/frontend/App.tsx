@@ -174,6 +174,16 @@ function App() {
     .map((id) => sessions.find((s) => s.id === id || s.aliasIds?.includes(id)))
     .filter((s): s is UnifiedSession => Boolean(s));
 
+  // The currently-open session always gets a tab, even when it isn't pinned —
+  // like Chrome, this transient tab lives only while its session is the active
+  // route and closes the moment you navigate away. Pinned tabs persist; the ☆
+  // on a transient tab promotes it to a pinned one.
+  const pinnedIds = new Set(pinnedTabs.map((s) => s.id));
+  const tabs =
+    currentSession && !pinnedIds.has(currentSession.id)
+      ? [...pinnedTabs, currentSession]
+      : pinnedTabs;
+
   const activeView =
     route.view === "automations" ||
     route.view === "wiki" ||
@@ -250,10 +260,11 @@ function App() {
 
           <main className="detail-pane">
             <SessionTabs
-              tabs={pinnedTabs}
+              tabs={tabs}
               activeId={currentSession?.id || null}
+              pinnedIds={pinnedIds}
               onSelect={(s) => navigate({ view: "session", id: s.id })}
-              onUnpin={(id) => setPins(togglePin(id))}
+              onTogglePin={(id) => setPins(togglePin(id))}
             />
             {route.view === "new" ? (
               <NewSession
