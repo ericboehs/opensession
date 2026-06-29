@@ -357,6 +357,45 @@ function clearSteerReceipts(sessionId: string): void {
   broadcastQueue(sessionId);
 }
 
+/**
+ * Restore queued + steered messages a previous process left behind (a real
+ * restart/crash — hot reloads keep the in-memory maps). Drainable queue items
+ * are re-armed for delivery; unconfirmed steer receipts are folded back into the
+ * queue too (best-effort: we can't know whether their turn landed before the
+ * crash, and silently dropping the user's message is the worse failure). Call
+ * after resumeInterruptedRuns so a session being resumed reads as busy and the
+ * watcher waits it out instead of starting a colliding run.
+ */
+function restorePromptQueues(): void {
+  if (!existsSync(QUEUE_STORE)) return;
+  let data: { queued?: Record<string, QueueItem[]>; steered?: Record<string, QueueItem[]> };
+  try {
+    data = JSON.parse(readFileSync(QUEUE_STORE, "utf-8"));
+  } catch (e) {
+    console.error("[queue] Failed to read persisted queues:", e);
+    return;
+  }
+  const merged = new Map<string, QueueItem[]>();
+  for (const [id, items] of Object.entries(data.queued || {})) {
+    if (items?.length) merged.set(id, [...items]);
+  }
+  for (const [id, items] of Object.entries(data.steered || {})) {
+    if (items?.length) merged.set(id, [...(merged.get(id) || []), ...items]);
+  }
+  steeredReceipts.clear();
+  let restored = 0;
+  for (const [id, items] of merged) {
+    if (!findSession(id)) continue; // session no longer exists — drop
+    promptQueues.set(id, items);
+    restored += items.length;
+    watchExternalRunAndDrain(id); // drains once idle; waits out a resumed run
+  }
+  persistQueues();
+  if (restored > 0) {
+    console.log(`[queue] Restored ${restored} queued message(s) from before restart`);
+  }
+}
+
 // Loaded agents (Plain/Linear/Slack/Stripe/…). Module-scoped because request
 // handlers (health routes) read it, and globalThis-backed so the set survives a
 // hot reload (loadAgents runs only on a real boot, inside the guard below).
@@ -581,6 +620,10 @@ async function runSessionPrompt(
         : { claudeSessionId: finalSessionId || undefined }
     );
   }
+
+  // The run is fully done now — any steered messages have already landed in the
+  // transcript, so drop their display-only receipts.
+  clearSteerReceipts(sessionId);
 
   broadcastToSession(sessionId, { type: "stream_done" });
   broadcastToSession(sessionId, { type: "session_status", isRunning: false });
@@ -1364,12 +1407,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
             );
           }
 
-          // Current message queue for this session
+          // Current message queue + steer receipts for this session
           ws.send(
             JSON.stringify({
               type: "queue_update",
               sessionId,
               queued: promptQueues.get(sessionId) || [],
+              steered: steeredReceipts.get(sessionId) || [],
             })
           );
 
@@ -1482,9 +1526,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
             if (session) {
               cancelAgentRun(session.claudeSessionId, session.codexThreadId, session.id);
             }
+            clearSteerReceipts(data.watchingSessionId);
             const dropped = promptQueues.get(data.watchingSessionId)?.length || 0;
             if (dropped > 0) {
               promptQueues.delete(data.watchingSessionId);
+              persistQueues();
               broadcastQueue(data.watchingSessionId);
               broadcastToSession(data.watchingSessionId, {
                 type: "notice",
@@ -1727,16 +1773,14 @@ registerSessionControl({
       // Busy + owned here → fold into the running turn (delivered at the next
       // stopping point). Otherwise queue and drain when the external run ends.
       if (steerAgentRun([session.claudeSessionId, session.codexThreadId, session.id], attributed)) {
+        recordSteer(id, { content, user });
         broadcastToSession(id, {
           type: "notice",
           message: `Message from ${user || "Michael"} folded into the run — picked up at the next stopping point.`,
         });
         return { status: "steered" as const, message: "Folded into the running turn." };
       }
-      const queue = promptQueues.get(id) || [];
-      queue.push({ content, user });
-      promptQueues.set(id, queue);
-      broadcastQueue(id);
+      enqueuePrompt(id, { content, user });
       watchExternalRunAndDrain(id);
       return { status: "queued" as const, message: "Queued behind the current run." };
     }
@@ -1757,9 +1801,11 @@ registerSessionControl({
     const session = findSession(id);
     if (!session) return false;
     const cancelled = cancelAgentRun(session.claudeSessionId, session.codexThreadId, session.id);
+    clearSteerReceipts(id);
     const dropped = promptQueues.get(id)?.length || 0;
     if (dropped > 0) {
       promptQueues.delete(id);
+      persistQueues();
       broadcastQueue(id);
     }
     return cancelled;
@@ -2014,6 +2060,8 @@ if (!g.__backstageBooted) {
       console.log(`[runner] Resumed ${resumed} interrupted run(s) from before restart`);
       sessionsCache = null;
     }
+    // Re-deliver messages that were queued/steered when the process went down.
+    restorePromptQueues();
   }, 3000);
 
   // Ongoing hygiene (every 6h): archive sessions idle for more than a week,

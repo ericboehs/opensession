@@ -119,7 +119,12 @@ export type WSServerMessage =
   | { type: "session_created"; id: string }
   | { type: "notice"; message: string }
   | { type: "model_changed"; sessionId: string; model: string; by?: string }
-  | { type: "queue_update"; sessionId: string; queued: Array<{ content: string; user?: string }> }
+  | {
+      type: "queue_update";
+      sessionId: string;
+      queued: Array<{ content: string; user?: string }>;
+      steered?: Array<{ content: string; user?: string }>;
+    }
   | { type: "ask_question"; sessionId: string; questionId: string; questions: AskQuestion[] }
   | { type: "ask_resolved"; sessionId: string; questionId: string }
   | { type: "server_restarting" }

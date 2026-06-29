@@ -23,6 +23,7 @@ const SKIP_FILES = new Set([
   "worktree-channels.json",
   "message-queue.json",
   "active-worktrees.json",
+  "prompt-queues.json",
 ]);
 
 function resolveSlackUser(userId: string): string {

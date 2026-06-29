@@ -262,8 +262,16 @@ export function cancelRun(sessionId: string): boolean {
 // arriving mid-turn is merged into the running turn by the SDK; one arriving
 // at a turn boundary starts a fresh turn in the same run. Keyed by every id a
 // caller might know (run key, engine session id, backstage session id).
-const steerControllers = new Map<string, (text: string) => void>();
-const interrupters = new Map<string, () => void>();
+// Parked on globalThis alongside activeRuns: a `bun --hot` reload re-evaluates
+// this module, and a run started before the reload keeps executing off its old
+// closures. If these maps reset to empty, steerRun/interruptAndSteerRun from the
+// reloaded module can't find the live run's controllers and return false — the
+// caller then falls back to the slow promptQueues poller (drains only when the
+// whole run ends) instead of folding the message in at the next turn boundary.
+const steerControllers: Map<string, (text: string) => void> = ((globalThis as any)
+  .__steerControllers ??= new Map());
+const interrupters: Map<string, () => void> = ((globalThis as any).__interrupters ??=
+  new Map());
 
 /** Deliver a message into a running query. False = no steerable run found. */
 export function steerRun(sessionId: string, text: string): boolean {

@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { renderMarkdown } from "../lib/markdown";
 import type { UnifiedSession, TranscriptEntry, WSServerMessage, AskQuestion } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
@@ -60,6 +60,9 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const [streamBy, setStreamBy] = useState<string | null>(null);
   const [viewers, setViewers] = useState<string[]>([]);
   const [queued, setQueued] = useState<Array<{ content: string; user?: string }>>([]);
+  // Steered messages folded into the live run — shown as a "folded in" receipt
+  // until their turn writes to the transcript (then reconciled away below).
+  const [steered, setSteered] = useState<Array<{ content: string; user?: string }>>([]);
   // Optimistic just-sent messages, shown instantly and reconciled once the real
   // turn lands (transcript) or the server confirms it as queued (busy path).
   const [pending, setPending] = useState<
@@ -186,7 +189,10 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           if (msg.sessionId === session.id) setViewers(msg.viewers);
           break;
         case "queue_update":
-          if (msg.sessionId === session.id) setQueued(msg.queued);
+          if (msg.sessionId === session.id) {
+            setQueued(msg.queued);
+            setSteered(msg.steered || []);
+          }
           break;
         case "ask_question":
           if (msg.sessionId === session.id) {
@@ -278,18 +284,32 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
       const userPool = entries
         .filter((e) => e.type === "user")
         .map((e) => ({ c: e.content.trim(), t: new Date(e.timestamp).getTime() }));
-      const queuedPool = queued.map((q) => q.content.trim());
+      // A just-sent message is confirmed by a queued echo, a steer receipt
+      // (busy/fold-in path), or a real transcript user entry.
+      const echoPool = [...queued, ...steered].map((q) => q.content.trim());
       const remaining = prev.filter((p) => {
         const c = p.content.trim();
-        const qi = queuedPool.indexOf(c);
-        if (qi >= 0) { queuedPool.splice(qi, 1); return false; }
+        const qi = echoPool.indexOf(c);
+        if (qi >= 0) { echoPool.splice(qi, 1); return false; }
         const ui = userPool.findIndex((u) => u.c === c && u.t >= p.sentAt - 30_000);
         if (ui >= 0) { userPool.splice(ui, 1); return false; }
         return Date.now() - p.sentAt < 120_000;
       });
       return remaining.length === prev.length ? prev : remaining;
     });
-  }, [entries, queued]);
+  }, [entries, queued, steered]);
+
+  // A steer receipt is reconciled away once its message lands in the transcript
+  // (its turn started) — until then it's the only visible record of the fold-in.
+  const visibleSteered = useMemo(() => {
+    if (steered.length === 0) return steered;
+    const userPool = entries.filter((e) => e.type === "user").map((e) => e.content.trim());
+    return steered.filter((s) => {
+      const i = userPool.indexOf(s.content.trim());
+      if (i >= 0) { userPool.splice(i, 1); return false; }
+      return true;
+    });
+  }, [steered, entries]);
 
   // Forget optimistic bubbles when switching sessions
   useEffect(() => { setPending([]); }, [session.id]);
@@ -317,7 +337,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   // Layout effect so the adjustment happens before the browser paints — no flicker.
   useLayoutEffect(() => {
     relayout();
-  }, [entries, streamText, queued, pending, relayout]);
+  }, [entries, streamText, queued, visibleSteered, pending, relayout]);
 
   // When a turn finishes, release the spacer so the layout settles back.
   const wasBusyRef = useRef(false);
@@ -638,6 +658,15 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               />
             )}
 
+            {visibleSteered.map((s, i) => (
+              <div key={`steered-${i}`} className="msg msg-user msg-queued">
+                <div className="msg-label msg-label-user">
+                  {s.user || "You"} · folded in
+                </div>
+                <div className="msg-body msg-body-user">{s.content}</div>
+              </div>
+            ))}
+
             {queued.map((q, i) => (
               <div key={`queued-${i}`} className="msg msg-user msg-queued">
                 <div className="msg-label msg-label-user">
@@ -689,9 +718,11 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                   <div className="input-busy">
                     <span className="pulse-dot" />
                     {streamBy && streamBy !== me ? `${streamBy} is driving — Michael is working…` : "Michael is working…"}
-                    {queued.length > 0 && (
+                    {(queued.length > 0 || visibleSteered.length > 0) && (
                       <span className="queue-count">
-                        {queued.length} queued
+                        {visibleSteered.length > 0 && `${visibleSteered.length} folded in`}
+                        {visibleSteered.length > 0 && queued.length > 0 && ", "}
+                        {queued.length > 0 && `${queued.length} queued`}
                       </span>
                     )}
                     <button className="btn-cancel" onClick={handleCancel}>
