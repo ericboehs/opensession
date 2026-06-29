@@ -50,6 +50,14 @@ export interface Automation {
   name: string;
   prompt: string;
   schedule: string; // 5-field cron, UTC; "" = webhook/manual only
+  /**
+   * One-off scheduled run: ISO8601 instant. When set, the scheduler fires this
+   * automation once at/after this time and then deletes it (auto-cleanup).
+   * Mutually exclusive with `schedule` (recurring cron) — setting it forces
+   * `schedule` to "". Used for reminders, "run this again later", and any
+   * one-time scheduled prompt (see schedule_once in admin-tools.ts).
+   */
+  runOnceAt?: string;
   mode: "ask" | "code";
   enabled: boolean;
   createdBy: string;
@@ -101,8 +109,13 @@ export function listAutomations(): AutomationWithNext[] {
       const a = JSON.parse(readFileSync(`${AUTOMATIONS_DIR}/${file}`, "utf-8")) as Automation;
       out.push({
         ...a,
-        nextRunAt:
-          a.enabled && a.schedule ? nextRun(a.schedule)?.toISOString() || null : null,
+        nextRunAt: !a.enabled
+          ? null
+          : a.runOnceAt
+            ? a.runOnceAt
+            : a.schedule
+              ? nextRun(a.schedule)?.toISOString() || null
+              : null,
       });
     } catch {}
   }
@@ -151,6 +164,16 @@ function sanitizeGrafanaPoll(cfg?: unknown): GrafanaPollConfig | { error: string
   return out;
 }
 
+/** Validate + normalize a one-off ISO8601 instant. "" / nullish → undefined
+ *  (no one-off). Past times are allowed (they fire on the next tick). */
+function sanitizeRunOnceAt(v?: unknown): string | { error: string } | undefined {
+  if (v === undefined || v === null || v === "") return undefined;
+  if (typeof v !== "string") return { error: "runOnceAt must be an ISO8601 string" };
+  const t = Date.parse(v.trim());
+  if (Number.isNaN(t)) return { error: `Invalid date/time: "${v}"` };
+  return new Date(t).toISOString();
+}
+
 function generateSecret(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) =>
     b.toString(16).padStart(2, "0")
@@ -169,6 +192,8 @@ export function createAutomation(input: {
   name: string;
   prompt: string;
   schedule: string;
+  /** One-off ISO8601 instant; when set, `schedule` is ignored (forced to ""). */
+  runOnceAt?: string;
   mode: "ask" | "code";
   createdBy: string;
   eventKey?: string;
@@ -179,7 +204,10 @@ export function createAutomation(input: {
 }): Automation | { error: string } {
   if (!input.name.trim()) return { error: "Name is required" };
   if (!input.prompt.trim()) return { error: "Prompt is required" };
-  const schedule = (input.schedule || "").trim();
+  const runOnceAt = sanitizeRunOnceAt(input.runOnceAt);
+  if (runOnceAt && typeof runOnceAt === "object") return runOnceAt;
+  // A one-off and a recurring cron are mutually exclusive — the one-off wins.
+  const schedule = runOnceAt ? "" : (input.schedule || "").trim();
   if (schedule && !parseCron(schedule)) {
     return { error: `Invalid cron expression: "${schedule}"` };
   }
@@ -195,6 +223,7 @@ export function createAutomation(input: {
     name: input.name.trim(),
     prompt: input.prompt.trim(),
     schedule,
+    runOnceAt,
     mode: input.mode === "code" ? "code" : "ask",
     enabled: true,
     createdBy: input.createdBy || "Anonymous",
@@ -212,7 +241,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "grafanaPoll">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "grafanaPoll">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -220,6 +249,12 @@ export function updateAutomation(
     return { error: `Invalid cron expression: "${patch.schedule}"` };
   }
   const next = { ...a, ...patch };
+  if ("runOnceAt" in patch) {
+    const runOnceAt = sanitizeRunOnceAt(patch.runOnceAt);
+    if (runOnceAt && typeof runOnceAt === "object") return runOnceAt;
+    next.runOnceAt = runOnceAt;
+    if (runOnceAt) next.schedule = ""; // one-off and cron are mutually exclusive
+  }
   if ("mcpServers" in patch) next.mcpServers = sanitizeMcpList(patch.mcpServers);
   if ("grafanaPoll" in patch) {
     const grafanaPoll = sanitizeGrafanaPoll(patch.grafanaPoll);
@@ -519,7 +554,23 @@ export function startScheduler(onSessionCreated?: (sessionId: string) => void): 
     lastFiredMinute = minuteKey;
 
     for (const automation of listAutomations()) {
-      if (!automation.enabled || !automation.schedule) continue;
+      if (!automation.enabled) continue;
+
+      // One-off runs (reminders / "do this again later"): fire once at/after the
+      // target instant, then delete. We persist a "consumed" copy (runOnceAt
+      // cleared, disabled) BEFORE firing so a long-running or crashed run can
+      // never double-fire on a later tick; the file is deleted once it settles.
+      if (automation.runOnceAt) {
+        if (Date.parse(automation.runOnceAt) <= now.getTime()) {
+          saveAutomation({ ...automation, runOnceAt: undefined, enabled: false });
+          void runAutomation({ ...automation, runOnceAt: undefined, enabled: false }, onSessionCreated, {
+            trigger: "cron",
+          }).finally(() => deleteAutomation(automation.id));
+        }
+        continue;
+      }
+
+      if (!automation.schedule) continue;
       if (cronMatches(automation.schedule, now)) {
         // Fire and forget — runner guards against overlap per automation
         void runAutomation(automation, onSessionCreated, { trigger: "cron" });

@@ -823,6 +823,7 @@ export async function processMessage(
         ...memCtx,
         createdBy: userName || msg.userId,
         isAdmin,
+        threadTs: msg.threadTs,
       }),
       "michael-github": createGithubMcpServer({
         requestedBy: msg.userId,
@@ -840,9 +841,11 @@ export async function processMessage(
   const ADMIN_TOOLS_PROMPT =
     "\n\n## Self-management\nYou can manage your own setup via the michael-admin MCP tools: " +
     "channel memory (remember / list_memory / forget) and, for trusted users, automations " +
-    "(list/create/update/delete/run_automation — routines on a UTC cron, or event/webhook) and " +
-    "MCP connections (list/add/remove_mcp_server). When a user asks you to remember something, " +
-    "set up a recurring job, or connect a tool, use these tools rather than just describing how." +
+    "(list/create/update/delete/run_automation — routines on a UTC cron, or event/webhook), one-off " +
+    "scheduled runs (schedule_once — 'remind me about this next week', 'run this again in a week', or any " +
+    "one-time task at a future time; it posts back to this thread by default and can DM/act via its MCPs), " +
+    "and MCP connections (list/add/remove_mcp_server). When a user asks you to remember something, " +
+    "set up a recurring job, schedule a reminder or future task, or connect a tool, use these tools rather than just describing how." +
     "\n\n## GitHub PR actions\nWhen asked to review, auto-fix, simplify, or adversarially review a tella-fusion PR " +
     "(e.g. \"review PR 4296\", \"auto-fix PR 4296\", \"adversarial review PR 4296\"), use the michael-github MCP tools " +
     "(review_pr / auto_fix_pr / simplify_pr / adversarial_review_pr) — they run the same actions as the PR labels and " +
