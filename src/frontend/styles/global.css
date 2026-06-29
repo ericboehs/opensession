@@ -2452,6 +2452,8 @@ a {
 .new-session-form textarea {
   resize: vertical;
   line-height: 1.5;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .btn-create {
