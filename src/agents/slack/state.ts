@@ -5,6 +5,8 @@
  * github-reviews, index) can read/write without circular imports.
  */
 
+import { existsSync, readFileSync, writeFileSync } from "fs";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -54,8 +56,57 @@ export const GITHUB_REPO = "tellahq/tella-fusion";
 // ---------------------------------------------------------------------------
 
 export const activeSessions = new Map<string, SlackSession>();
-export const processedEvents = new Set<string>();
 export const pendingAnswers = new Map<string, PendingAnswer>();
+
+// Inbound Slack event dedup, persisted across restarts. Slack retries a delivery
+// when it didn't get a 200 — which, since we ack every event immediately, means
+// we were down/erroring when it first arrived. The old in-memory-only Set meant a
+// retry landing after a restart was either blindly dropped (event lost forever) or
+// reprocessed (duplicate handling). Persisting eventId -> expiry lets us drop only
+// events we truly handled and process the ones we missed. 5-min TTL matches Slack's
+// retry window.
+const PROCESSED_EVENTS_STORE = `${SESSION_DIR}/processed-events.json`;
+const PROCESSED_EVENT_TTL_MS = 5 * 60 * 1000;
+const processedEventExpiry = new Map<string, number>();
+
+function persistProcessedEvents(): void {
+  try {
+    writeFileSync(PROCESSED_EVENTS_STORE, JSON.stringify([...processedEventExpiry]));
+  } catch (e) {
+    console.error("[slack] Failed to persist processed events:", e);
+  }
+}
+
+/** Load the persisted dedup set on boot, dropping any already-expired ids. */
+export function loadProcessedEvents(): void {
+  try {
+    if (!existsSync(PROCESSED_EVENTS_STORE)) return;
+    const entries = JSON.parse(readFileSync(PROCESSED_EVENTS_STORE, "utf-8")) as [string, number][];
+    const now = Date.now();
+    for (const [id, exp] of entries) if (exp > now) processedEventExpiry.set(id, exp);
+  } catch (e) {
+    console.error("[slack] Failed to load processed events:", e);
+  }
+}
+
+/** True if we already handled this event id (and it hasn't aged out). */
+export function isEventProcessed(id: string): boolean {
+  const exp = processedEventExpiry.get(id);
+  if (exp === undefined) return false;
+  if (exp <= Date.now()) {
+    processedEventExpiry.delete(id);
+    return false;
+  }
+  return true;
+}
+
+/** Mark an event id handled, prune expired ids, and persist. */
+export function markEventProcessed(id: string): void {
+  const now = Date.now();
+  processedEventExpiry.set(id, now + PROCESSED_EVENT_TTL_MS);
+  for (const [k, exp] of processedEventExpiry) if (exp <= now) processedEventExpiry.delete(k);
+  persistProcessedEvents();
+}
 
 export let slackTeamId = "";
 export let slackBotUserId = "";

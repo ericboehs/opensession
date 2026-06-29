@@ -214,9 +214,40 @@ export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => voi
       continue;
     }
     if (!run.claudeSessionId) {
-      console.warn(
-        `[runner] Interrupted run ${run.runKey} (${run.kind || "unknown"}) had no engine session yet — cannot resume`
+      // No engine session id means the run died before the model produced its
+      // first turn (e.g. during MCP startup) — so nothing actually ran and no
+      // side effects happened. If we journaled the original prompt we can safely
+      // re-run it from scratch; otherwise it's genuinely unrecoverable.
+      if (!run.prompt) {
+        console.warn(
+          `[runner] Interrupted run ${run.runKey} (${run.kind || "unknown"}) had no engine session and no saved prompt — cannot resume`
+        );
+        continue;
+      }
+      if (run.bksSessionId) resumed.push(run.bksSessionId);
+      console.log(
+        `[runner] Re-running interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} from scratch (never got an engine session)`
       );
+      void (async () => {
+        try {
+          for await (const event of runAgent({
+            prompt: run.prompt!,
+            cwd: run.cwd,
+            mode: run.mode,
+            model: run.model,
+            mcpServers: run.mcpServers,
+            deniedTools: run.deniedTools,
+            aws: run.aws,
+            journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-rerun` },
+          })) {
+            if (event.type === "done" || event.type === "error") {
+              onResumed?.(run.bksSessionId);
+            }
+          }
+        } catch (e) {
+          console.error(`[runner] Re-run failed for ${run.runKey}:`, e);
+        }
+      })();
       continue;
     }
     if (run.bksSessionId) resumed.push(run.bksSessionId);

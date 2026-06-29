@@ -173,6 +173,7 @@ export interface ActiveRunRecord {
   runKey: string;
   bksSessionId?: string;
   claudeSessionId?: string; // claude session id or codex thread id, per model's provider
+  prompt?: string; // original prompt — lets a run interrupted before it got an engine session be re-run from scratch (safe: no session id ⇒ no model output ⇒ no side effects yet)
   cwd: string;
   mode?: "ask" | "code";
   mcpServers?: string[]; // per-run MCP allowlist, preserved across resume
@@ -421,6 +422,7 @@ export async function* runClaude(opts: {
     runKey,
     bksSessionId: journal?.bksSessionId,
     claudeSessionId: sessionId,
+    prompt,
     cwd,
     mode,
     mcpServers,
@@ -764,6 +766,7 @@ export async function* runClaude(opts: {
           runKey,
           bksSessionId: journal?.bksSessionId,
           claudeSessionId: resultSessionId,
+          prompt,
           cwd,
           mode,
           mcpServers,

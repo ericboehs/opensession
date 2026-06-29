@@ -64,7 +64,6 @@ import {
 } from "./worktree-channels";
 import {
   activeSessions,
-  processedEvents,
   pendingAnswers,
   getSessionKey,
   saveSession,

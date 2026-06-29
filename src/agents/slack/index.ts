@@ -46,7 +46,9 @@ import {
   SESSION_DIR,
   GITHUB_REPO,
   activeSessions,
-  processedEvents,
+  isEventProcessed,
+  markEventProcessed,
+  loadProcessedEvents,
   pendingAnswers,
   slackTeamId,
   slackBotUserId,
@@ -76,13 +78,18 @@ export class SlackAgent implements AgentModule {
 
     // ----- POST /slack/events -----
     routes.set("POST /slack/events", async (req) => {
-      // Acknowledge Slack retries immediately — we already have the event
+      // Slack retries a delivery when the original didn't get a 200 — which,
+      // since we ack every event immediately below, means we were down/erroring
+      // when it first arrived (e.g. mid-restart). The old code blindly acked-and-
+      // dropped every retry on the assumption it was already handled, silently
+      // losing any event delivered during a restart window. Instead, let retries
+      // fall through to the persisted dedup check, which drops only events we
+      // actually handled and processes the ones we missed.
       const retryNum = req.headers.get("x-slack-retry-num");
       if (retryNum) {
         console.log(
-          `[slack] Slack retry #${retryNum} (reason: ${req.headers.get("x-slack-retry-reason")}), acking`
+          `[slack] Slack retry #${retryNum} (reason: ${req.headers.get("x-slack-retry-reason")}) — routing through dedup`
         );
-        return Response.json({ ok: true });
       }
 
       const body = await req.text();
@@ -115,12 +122,11 @@ export class SlackAgent implements AgentModule {
         // Handle message.im events (DMs)
         if (event.type === "message" && event.channel_type === "im") {
           const eventId = `${event.channel}-${event.ts}`;
-          if (processedEvents.has(eventId)) {
+          if (isEventProcessed(eventId)) {
             console.log(`[slack] Duplicate event: ${eventId}`);
             return Response.json({ ok: true });
           }
-          processedEvents.add(eventId);
-          setTimeout(() => processedEvents.delete(eventId), 5 * 60 * 1000);
+          markEventProcessed(eventId);
 
           handleMessageEvent(event).catch((e) => {
             console.error("[slack] Error handling message:", e);
@@ -130,12 +136,11 @@ export class SlackAgent implements AgentModule {
         // Handle app_mention events
         if (event.type === "app_mention") {
           const eventId = `${event.channel}-${event.ts}`;
-          if (processedEvents.has(eventId)) {
+          if (isEventProcessed(eventId)) {
             console.log(`[slack] Duplicate mention event: ${eventId}`);
             return Response.json({ ok: true });
           }
-          processedEvents.add(eventId);
-          setTimeout(() => processedEvents.delete(eventId), 5 * 60 * 1000);
+          markEventProcessed(eventId);
 
           handleMentionEvent(event).catch((e) => {
             console.error("[slack] Error handling mention:", e);
@@ -619,6 +624,7 @@ Please address this feedback:
     await loadActiveSessionsOnStartup();
     await loadWorktreeChannels();
     await loadQueueFromDisk();
+    loadProcessedEvents();
 
     // Fetch team ID and bot user ID for streaming APIs
     try {
