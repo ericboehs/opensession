@@ -23,10 +23,11 @@ interface Props {
   /** Extra control rendered in the toolbar, left of the send button. */
   leftExtra?: React.ReactNode;
   /**
-   * When set and busy, renders an extra "interrupt" send button that stops
-   * the current turn and redirects with the typed message immediately.
+   * When set and busy, renders an extra "fold in" send button — the gentle
+   * option that queues the message for Michael's next stopping point instead of
+   * interrupting (the main send button interrupts immediately when busy).
    */
-  onInterruptSend?: () => void;
+  onSteerSend?: () => void;
   hint?: string;
   autoFocus?: boolean;
   /** Exposes the textarea so parents can focus it (e.g. keyboard shortcuts). */
@@ -65,7 +66,7 @@ export function Composer({
   modelDisabled,
   modelTitle,
   leftExtra,
-  onInterruptSend,
+  onSteerSend,
   hint,
   autoFocus,
   textareaRef: externalRef,
@@ -160,23 +161,26 @@ export function Composer({
           </div>
           {leftExtra}
           <div className="composer-spacer" />
-          {busy && onInterruptSend && (
+          {busy && onSteerSend && (
             <button
-              className="composer-send composer-send-interrupt"
-              onClick={onInterruptSend}
+              className="composer-send composer-send-queue"
+              onClick={onSteerSend}
               disabled={disabled || sendDisabled}
-              title="Interrupt — stop the current turn and redirect with this message now"
+              title="Fold in at Michael's next stopping point — don't interrupt the current turn"
             >
-              ⚡
+              +
             </button>
           )}
           <button
-            className={`composer-send ${busy ? "composer-send-queue" : ""}`}
+            className={`composer-send ${busy ? "composer-send-interrupt" : ""}`}
             onClick={onSend}
             disabled={disabled || sendDisabled}
-            title={sendTitle || (busy ? "Send — Michael folds it in at the next stopping point" : "Send (Enter)")}
+            title={
+              sendTitle ||
+              (busy ? "Send now — interrupts the current turn and redirects Michael (Enter)" : "Send (Enter)")
+            }
           >
-            {busy ? "+" : "↑"}
+            {busy ? "⚡" : "↑"}
           </button>
         </div>
       </div>

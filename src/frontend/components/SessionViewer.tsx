@@ -384,32 +384,48 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     }
 
     if (noEngine) return;
-    // While Michael is busy the server queues this and delivers it after the run
-    send({
-      type: "prompt",
-      sessionId: session.id,
-      content: text,
-      user,
-      ...(imgs.length ? { images: imgs } : {}),
-    });
+    // Default while busy: interrupt the current turn and redirect right away, so
+    // the message lands now instead of waiting (possibly many minutes) for the
+    // turn to end. Idle: just run it. (Interrupt/steer follow-ups are text-only,
+    // so images ride the idle "prompt" path; they're dropped while busy either
+    // way.) The gentle "fold in at the next stopping point" option is the +
+    // button → handleSteerSend.
+    send(
+      isBusy
+        ? { type: "interrupt_prompt", sessionId: session.id, content: text, user }
+        : {
+            type: "prompt",
+            sessionId: session.id,
+            content: text,
+            user,
+            ...(imgs.length ? { images: imgs } : {}),
+          }
+    );
     beginTurn(); // pin this new turn near the top so its reply streams in below
     // Show it immediately; reconciled away when the real turn / queue echo lands
     setPending((p) => [
       ...p,
-      { id: `pending-${crypto.randomUUID()}`, content: text, user, sentAt: Date.now(), images: imgs.length ? imgs : undefined },
+      {
+        id: `pending-${crypto.randomUUID()}`,
+        content: text,
+        user,
+        sentAt: Date.now(),
+        images: !isBusy && imgs.length ? imgs : undefined,
+      },
     ]);
     setInput("");
     setImages([]);
   }
 
-  function handleInterruptSend() {
+  // Gentle alternative to handleSend while busy: fold the message into the run at
+  // Michael's next stopping point without interrupting the current turn.
+  function handleSteerSend() {
     const text = input.trim();
     if (!text) return;
     if (!connected || noEngine) return;
 
     const user = getCurrentUser();
-    // Stops the current turn and continues right away with this message
-    send({ type: "interrupt_prompt", sessionId: session.id, content: text, user });
+    send({ type: "prompt", sessionId: session.id, content: text, user });
     beginTurn(); // pin this new turn near the top so its reply streams in below
     setPending((p) => [
       ...p,
@@ -750,13 +766,13 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                       : forkFrom
                         ? "New direction for the forked session…"
                         : isBusy
-                          ? "Message Michael — picked up at the next stopping point…"
+                          ? "Message Michael — interrupts and redirects now (+ folds in instead)…"
                           : "Ask Michael to build, fix, or explain…"
                   }
                   disabled={!connected}
                   sendDisabled={!input.trim() && images.length === 0 && !forkFrom}
                   busy={isBusy && !forkFrom}
-                  onInterruptSend={forkFrom ? undefined : handleInterruptSend}
+                  onSteerSend={forkFrom ? undefined : handleSteerSend}
                   models={models}
                   defaultModel={defaultModel}
                   model={model}
