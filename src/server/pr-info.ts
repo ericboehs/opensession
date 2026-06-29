@@ -3,6 +3,7 @@
  * Cached per branch for 30s to keep the UI snappy without hammering GitHub.
  */
 import { $ } from "bun";
+import { audited } from "./audit";
 
 export interface PrCheck {
   name: string;
@@ -122,6 +123,49 @@ export async function postPrComment(
   } catch (e: any) {
     return { error: e.message || String(e) };
   }
+}
+
+export type MergeMethod = "squash" | "merge" | "rebase";
+
+/**
+ * Merge a branch's PR via the gh CLI — human-triggered from the Reviews view
+ * (Michael never merges on its own; this is a UI affordance for the operator).
+ * Defaults to squash. Audited as `reviews/pr_merge` since it mutates the repo.
+ */
+export async function mergePr(
+  branch: string,
+  opts: { method?: MergeMethod; deleteBranch?: boolean } = {}
+): Promise<{ ok: true; url?: string } | { error: string }> {
+  const pr = await getPrDetails(branch);
+  if (!pr) return { error: "No PR found for this branch" };
+  if (pr.state !== "OPEN") return { error: `PR #${pr.number} is ${pr.state.toLowerCase()}, not open` };
+  if (pr.isDraft) return { error: `PR #${pr.number} is a draft — mark it ready first` };
+
+  const method = opts.method || "squash";
+  const flag = method === "merge" ? "--merge" : method === "rebase" ? "--rebase" : "--squash";
+
+  return audited(
+    {
+      context: "reviews",
+      action: "pr_merge",
+      args: { branch, number: pr.number, method, deleteBranch: !!opts.deleteBranch },
+    },
+    async () => {
+      const args = ["pr", "merge", String(pr.number), "--repo", REPO, flag];
+      if (opts.deleteBranch) args.push("--delete-branch");
+      const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
+      const [, err, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      if (code !== 0) return { error: (err || "gh pr merge failed").slice(0, 300) } as const;
+      // Drop cached PR/diff so the UI reflects the merge on the next poll.
+      cache.delete(branch);
+      diffCache.delete(branch);
+      return { ok: true, url: pr.url } as const;
+    }
+  );
 }
 
 export async function getPrDetails(branch: string): Promise<PrDetails | null> {

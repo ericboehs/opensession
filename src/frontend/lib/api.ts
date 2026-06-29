@@ -71,6 +71,20 @@ export async function postPrCommentApi(
   return body as { ok: true; url?: string };
 }
 
+export async function mergePrApi(
+  sessionId: string,
+  method: "squash" | "merge" | "rebase" = "squash"
+) {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-merge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ method }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+  return body as { ok: true; url?: string };
+}
+
 // ── Automations ──
 
 export interface ModelOption {

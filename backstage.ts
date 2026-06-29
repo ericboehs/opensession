@@ -41,7 +41,7 @@ import {
 import { gitIdentityFor } from "./src/server/shared/user-mappings";
 import { createSessionsMcpServer } from "./src/agents/slack/sessions-tools";
 import { createAdminMcpServer } from "./src/agents/slack/admin-tools";
-import { getPrDetails, getPrDiff, postPrComment } from "./src/server/pr-info";
+import { getPrDetails, getPrDiff, postPrComment, mergePr } from "./src/server/pr-info";
 import {
   listAutomations,
   getAutomation,
@@ -851,6 +851,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
     "/backstage/wiki/*": spaEntry,
     "/backstage/connections": spaEntry,
     "/backstage/archived": spaEntry,
+    "/backstage/reviews": spaEntry,
+    "/backstage/reviews/*": spaEntry,
   },
 
   async fetch(req) {
@@ -1130,6 +1132,25 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       });
       if ("error" in result) return Response.json(result, { status: 502 });
       return Response.json(result);
+    }
+
+    // Squash & merge the session's PR — human-triggered from the Reviews view.
+    if (path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-merge$/) && req.method === "POST") {
+      const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-merge$/)![1]);
+      const session = findSession(sessionId);
+      if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+      if (!session.branch) return Response.json({ error: "Session has no branch" }, { status: 400 });
+
+      const body = await req.json().catch(() => ({}));
+      const method = body.method === "merge" || body.method === "rebase" ? body.method : "squash";
+      try {
+        const result = await mergePr(session.branch, { method, deleteBranch: !!body.deleteBranch });
+        if ("error" in result) return Response.json(result, { status: 502 });
+        sessionsCache = null; // refresh prState in the sessions list
+        return Response.json(result);
+      } catch (e: any) {
+        return Response.json({ error: e.message || String(e) }, { status: 500 });
+      }
     }
 
     // Bulk-archive idle sessions

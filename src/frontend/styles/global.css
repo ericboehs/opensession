@@ -1331,6 +1331,168 @@ a {
 }
 .btn-open-pr:hover { filter: brightness(1.1); }
 
+/* PR action row (Open on GitHub / Squash & merge / Open session) */
+.pr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: stretch;
+}
+.pr-actions .btn-open-pr { flex: 1; min-width: 150px; }
+
+.btn-merge-pr {
+  flex: 1;
+  min-width: 150px;
+  text-align: center;
+  background: #238636;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn-merge-pr:hover:not(:disabled) { background: #2ea043; }
+.btn-merge-pr:disabled { opacity: 0.6; cursor: default; }
+.btn-merge-confirm { background: #cf222e; }
+.btn-merge-confirm:hover:not(:disabled) { background: #e5484d; }
+
+.btn-open-session {
+  background: var(--bg-active);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-open-session:hover { background: var(--bg-hover); }
+
+.pr-merge-error {
+  color: var(--red);
+  font-size: 12.5px;
+  background: var(--red-soft);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+/* ── Reviews view ────────────────────────────────────────── */
+
+.sidebar-nav-count {
+  margin-left: auto;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  border-radius: 99px;
+  padding: 1px 7px;
+  line-height: 1.5;
+}
+
+.reviews {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.reviews-empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.reviews-rail {
+  width: 300px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.reviews-rail-title {
+  padding: 14px 16px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.reviews-rail-count {
+  background: var(--bg-active);
+  color: var(--text-dim);
+  border-radius: 99px;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+.reviews-rail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 11px 16px;
+  cursor: pointer;
+  color: var(--text);
+}
+.reviews-rail-item:hover { background: var(--bg-hover); }
+.reviews-rail-item.active { background: var(--bg-active); }
+.reviews-rail-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.reviews-rail-num {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.reviews-rail-item-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.reviews-rail-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  align-items: center;
+}
+.reviews-rail-branch {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reviews-detail {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 720px) {
+  .reviews { flex-direction: column; }
+  .reviews-rail {
+    width: auto;
+    max-height: 42vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
 /* ── Messages ────────────────────────────────────────────── */
 
 /* Holds the scroll area plus the floating "Jump to latest" pill. */
