@@ -1185,6 +1185,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
         bootId: BOOT_ID,
         frontendVersion: frontend?.version ?? null,
         uptime: process.uptime(),
+        // In-flight runner runs this process is driving — a drain-aware deploy
+        // polls this to restart only when the service is idle (or near it), so a
+        // restart kills as few in-flight runs/background tasks as possible.
+        activeRuns: activeAgentRunCount(),
         agents: agentHealth,
       });
     }
