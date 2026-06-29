@@ -37,12 +37,19 @@ import {
   type MemoryContext,
   type MemoryEntry,
 } from "./memory";
+import { parseWhen } from "./parse-when";
 
 export interface AdminToolContext extends MemoryContext {
   /** Display name credited as the author of memories/automations. */
   createdBy: string;
   /** Trusted user — gates automation + MCP management tools. */
   isAdmin: boolean;
+  /**
+   * Slack thread anchor (thread_ts) of the originating message, when this runs
+   * from a Slack thread. Lets schedule_once post a reminder back into "this"
+   * thread. Absent in Backstage sessions (no Slack thread).
+   */
+  threadTs?: string;
 }
 
 function text(s: string) {
@@ -125,11 +132,13 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           const all = listAutomations();
           if (!all.length) return text("No automations configured.");
           const lines = all.map((a) => {
-            const trig = a.schedule
-              ? `cron \`${a.schedule}\` (UTC)`
-              : a.eventKey
-                ? `event \`${a.eventKey}\``
-                : "manual/webhook";
+            const trig = a.runOnceAt
+              ? `once at ${a.runOnceAt}`
+              : a.schedule
+                ? `cron \`${a.schedule}\` (UTC)`
+                : a.eventKey
+                  ? `event \`${a.eventKey}\``
+                  : "manual/webhook";
             const next = a.nextRunAt ? `, next ${a.nextRunAt}` : "";
             const last = a.lastRunStatus ? `, last ${a.lastRunStatus}` : "";
             return `• *${a.name}* [\`${a.id}\`] — ${trig}, ${a.mode}, ${a.enabled ? "enabled" : "disabled"}${next}${last}`;
@@ -247,6 +256,79 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
             console.error("[admin] run_automation failed:", e)
           );
           return text(`Triggered *${a.name}* [\`${a.id}\`] — running now.`);
+        }
+      ),
+      tool(
+        "schedule_once",
+        "Schedule a ONE-OFF run at a future time, after which it auto-deletes — use for 'remind me about this next week', 'run this again in a week', or any one-time scheduled task. `when` is a natural time expression ('next Tuesday 9am', 'in a week', 'tomorrow morning', 'in 3 hours') — just pass the user's phrasing through; it's resolved to an exact instant for you. `prompt` is what you (Michael) should do when it fires, written to yourself — it runs as a normal Michael session, so it can post to a channel, DM someone via the Slack MCP, or carry out a task. By default, when this is invoked from a Slack thread, the run is told to post its reminder back into that thread; set replyInThread:false to suppress (e.g. when the prompt should DM someone else instead). Omit mcpServers to give the run the full toolset; pass it to restrict (least-privilege).",
+        {
+          when: z
+            .string()
+            .describe("When to fire, in natural language — e.g. 'next Tuesday 9am', 'in a week', 'tomorrow at 14:00', 'in 3 hours'. Pass the user's wording; it's resolved to an exact UTC instant."),
+          prompt: z
+            .string()
+            .describe("What to do when it fires, addressed to yourself (e.g. 'Remind Michiel to review the Q3 deck' or 'DM Johnny the latest MRR figure')."),
+          name: z.string().optional().describe("Short label; defaults to a snippet of the prompt."),
+          mode: z
+            .enum(["ask", "code"])
+            .optional()
+            .describe("'ask' = read-only (default), 'code' = worktree + can open PRs."),
+          mcpServers: z
+            .array(z.string())
+            .optional()
+            .describe("Optional allowlist of MCP servers the run may use. Omit for the full toolset."),
+          replyInThread: z
+            .boolean()
+            .optional()
+            .describe("Post the reminder/result back into the originating Slack thread (default true when in a Slack thread)."),
+        },
+        async (args: {
+          when: string;
+          prompt: string;
+          name?: string;
+          mode?: "ask" | "code";
+          mcpServers?: string[];
+          replyInThread?: boolean;
+        }) => {
+          if (!args.prompt?.trim()) return text("Nothing to schedule (empty prompt).");
+          const iso = await parseWhen(args.when);
+          if (!iso) {
+            return text(
+              `Couldn't read "${args.when}" as a future time. Try something like "next Tuesday 9am", "in a week", or "tomorrow at 14:00".`
+            );
+          }
+
+          // Post back into "this" Slack thread by default — only possible when we
+          // actually have one (Slack runs carry channel+threadTs; Backstage doesn't).
+          const inSlackThread = !!ctx.threadTs && !!ctx.channel && ctx.channel !== "backstage";
+          const replyInThread = args.replyInThread !== false && inSlackThread;
+
+          let prompt = args.prompt.trim();
+          let mcpServers = args.mcpServers;
+          if (replyInThread) {
+            prompt +=
+              `\n\nDeliver this by posting to Slack channel \`${ctx.channel}\` in thread \`${ctx.threadTs}\` ` +
+              "via the Slack MCP `conversations_add_message` (content_type text/markdown). Open with \"⏰ \", " +
+              "say it's you, Michael, and keep it concise.";
+            // Make sure the run can reach Slack even if the caller restricted servers.
+            if (mcpServers) mcpServers = Array.from(new Set([...mcpServers, "slack"]));
+          }
+
+          const res = createAutomation({
+            name: args.name?.trim() || `Reminder: ${args.prompt.trim().slice(0, 48)}`,
+            prompt,
+            schedule: "",
+            runOnceAt: iso,
+            mode: args.mode || "ask",
+            createdBy: ctx.createdBy,
+            mcpServers,
+          });
+          if ("error" in res) return text(`Couldn't schedule it: ${res.error}`);
+          return text(
+            `Scheduled *${res.name}* [\`${res.id}\`] for ${iso} (UTC)` +
+              (replyInThread ? ", posting back to this thread" : "") +
+              ". It runs once, then cleans itself up. Cancel with delete_automation."
+          );
         }
       ),
       // ---------------------------------------------------------------------
