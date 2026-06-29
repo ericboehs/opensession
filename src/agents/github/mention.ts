@@ -10,7 +10,14 @@
 import { getPrDetails } from "../../server/pr-info";
 import { listAutomations } from "../../server/automations";
 import { createWorktreeForPrBranch } from "../../server/worktree";
-import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
+import {
+  claimLock,
+  releaseLock,
+  getOrInitPrState,
+  writePrState,
+  setPendingMention,
+  clearPendingMention,
+} from "./state";
 import { runGithubAgent, authorForLogin, finalSummary, sessionUrl } from "./run";
 import { buildMentionPrompt } from "./prompts";
 import { triggerPrAction } from "./trigger";
@@ -80,6 +87,41 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
   if (!prNumber || !comment?.id) return;
   if (alreadyHandled(`${kind}:${comment.id}`)) return;
 
+  // Persist the mention on receipt, BEFORE the slow classify + worktree window. If
+  // the process dies in that window — e.g. this webhook landed mid-shutdown-drain,
+  // which we still ack 200 so GitHub won't redeliver — startup recovery replays it.
+  // The run self-persists its richer activeMention/activeRun only seconds later.
+  setPendingMention(prNumber, {
+    kind,
+    commentId: comment.id,
+    body,
+    author: authorLogin,
+    replyToId,
+    inline,
+    receivedAt: new Date().toISOString(),
+  });
+  try {
+    await dispatchMention({ prNumber, kind, body, author: authorLogin, replyToId, inline });
+  } finally {
+    clearPendingMention(prNumber);
+  }
+}
+
+/**
+ * Classify the mention and route it: a whole-PR action (review/simplify/etc.) or a
+ * conversational reply. Shared by the live webhook path (handleMention) and startup
+ * recovery of a mention that was dropped before its run could self-persist.
+ */
+export async function dispatchMention(args: {
+  prNumber: number;
+  kind: MentionKind;
+  body: string;
+  author: string;
+  replyToId?: number;
+  inline?: { path: string; line?: number; diffHunk?: string };
+}): Promise<void> {
+  const { prNumber, kind, body, author, replyToId, inline } = args;
+
   // A whole-PR action request ("@michael adversarial review plz") → run the dedicated
   // behavior. Classified before any lock, since triggerPrAction claims the "code" lock.
   const action = await classifyPrActionIntent(body);
@@ -87,7 +129,7 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
     // Pass the full comment as steer: the classifier reduced it to a verb, but the
     // body may carry specific guidance ("…the Update.call change wasn't needed.
     // /simplify") that the run should honor — not just a generic pass.
-    const res = await triggerPrAction(action, prNumber, authorLogin, body);
+    const res = await triggerPrAction(action, prNumber, author, body);
     const ack = `${REPLY_MARKER}\nOn it — ${res.message}`;
     if (kind === "review" && replyToId) await replyToReviewComment(prNumber, replyToId, ack).catch(() => {});
     else await postIssueComment(prNumber, ack).catch(() => {});
@@ -95,7 +137,7 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
   }
 
   // Otherwise it's a conversational request — answer (and act) in a worktree session.
-  await runConversationalMention({ prNumber, author: authorLogin, body, kind, replyToId, inline });
+  await runConversationalMention({ prNumber, author, body, kind, replyToId, inline });
 }
 
 export interface ConversationalMentionArgs {
@@ -142,6 +184,9 @@ export async function runConversationalMention(
       progressCommentId: progressId ?? undefined,
       startedAt: new Date().toISOString(),
     };
+    // This run now owns recovery via activeMention; drop the on-receipt marker in
+    // the same write so recovery never replays it twice.
+    st.pendingMention = undefined;
     writePrState(st);
 
     // Code mode in the PR-branch worktree so Michael can make + push changes if asked.
