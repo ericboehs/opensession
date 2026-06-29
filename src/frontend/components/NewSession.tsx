@@ -17,19 +17,29 @@ interface Worktree {
   path: string;
 }
 
-/** Deep-link prefill: /backstage/new?mode=ask|code&prompt=…&branch=… */
+// Repos a session can run against. tella-fusion is the default.
+const PROJECTS = [
+  { id: "tella-fusion", label: "tella-fusion" },
+  { id: "backstage", label: "backstage (Michael itself)" },
+];
+
+/** Deep-link prefill: /backstage/new?mode=ask|code&prompt=…&branch=…&project= */
 function readPrefill() {
   const params = new URLSearchParams(location.search);
   return {
     mode: params.get("mode") === "ask" ? ("ask" as const) : ("code" as const),
     prompt: params.get("prompt") || "",
     branch: params.get("branch") || "",
+    project: PROJECTS.some((p) => p.id === params.get("project"))
+      ? params.get("project")!
+      : "tella-fusion",
   };
 }
 
 export function NewSession({ onBack, send, addHandler, connected }: Props) {
   const [prefill] = useState(readPrefill);
   const [mode, setMode] = useState<"ask" | "code">(prefill.mode);
+  const [project, setProject] = useState(prefill.project);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [selectedWorktree, setSelectedWorktree] = useState("__new__");
   const [newBranch, setNewBranch] = useState(prefill.branch);
@@ -42,9 +52,6 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
   const [model, setModel] = useState(""); // "" = default
 
   useEffect(() => {
-    fetchWorktrees()
-      .then(setWorktrees)
-      .catch(() => {});
     fetchModels()
       .then((m) => {
         setModels(m.models);
@@ -52,6 +59,14 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
       })
       .catch(() => {});
   }, []);
+
+  // Worktrees are per-project; refetch and reset the selection when it changes.
+  useEffect(() => {
+    setSelectedWorktree("__new__");
+    fetchWorktrees(project)
+      .then(setWorktrees)
+      .catch(() => setWorktrees([]));
+  }, [project]);
 
   useEffect(() => {
     if (!creating) return;
@@ -87,6 +102,7 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
     send({
       type: "create_session",
       mode,
+      project,
       branch: mode === "ask" ? "" : branch,
       prompt: prompt.trim(),
       user: getCurrentUser(),
@@ -112,6 +128,21 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
       </div>
 
       <div className="new-session-form">
+        <label>
+          Project
+          <select
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+            disabled={creating}
+          >
+            {PROJECTS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label>
           Mode
           <select
@@ -187,7 +218,7 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
               placeholder={
                 mode === "ask"
                   ? "Ask anything about the codebase or product — read-only. Paste a screenshot to include it."
-                  : "Describe the task — Michael gets a fresh worktree on tella-fusion and starts right away. Paste a screenshot to include it."
+                  : `Describe the task — Michael gets a fresh worktree on ${project} and starts right away. Paste a screenshot to include it.`
               }
               rows={6}
               disabled={creating}

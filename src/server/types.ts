@@ -15,6 +15,7 @@ export interface UnifiedSession {
   prUrl?: string;
   prState?: "OPEN" | "MERGED" | "CLOSED";
   mode?: "ask" | "code";
+  project?: string;
   automation?: string;
   archived?: boolean;
   plainThreadId?: string;
@@ -87,6 +88,7 @@ export interface BackstageSessionFile {
   lastActivity: string;
   title?: string;
   mode?: "ask" | "code";
+  project?: string; // which repo this session works in (default "tella-fusion")
   automation?: string; // name of the automation that created this session
   plainThreadId?: string; // Plain thread this session is triaging
   model?: string; // model id for this session's runs; unset = default

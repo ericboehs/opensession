@@ -14,8 +14,9 @@ export async function fetchTranscript(sessionId: string) {
   return res.json();
 }
 
-export async function fetchWorktrees() {
-  const res = await fetch(`${BASE}/worktrees`);
+export async function fetchWorktrees(project?: string) {
+  const qs = project ? `?project=${encodeURIComponent(project)}` : "";
+  const res = await fetch(`${BASE}/worktrees${qs}`);
   if (!res.ok) throw new Error(`Failed to fetch worktrees: ${res.status}`);
   return res.json();
 }

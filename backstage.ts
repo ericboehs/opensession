@@ -6,7 +6,7 @@ import homepage from "./src/frontend/index.html";
 import { getAllSessions, deleteSession } from "./src/server/sessions";
 import { parseTranscript } from "./src/server/jsonl-parser";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
-import { listWorktrees, createWorktree, removeWorktree, reviveWorktree, sweepArchivedWorktrees } from "./src/server/worktree";
+import { listWorktrees, createWorktree, removeWorktree, reviveWorktree, sweepArchivedWorktrees, getProject, projectForPath } from "./src/server/worktree";
 import { STRIPE_CONFIRM_TOOLS } from "./src/server/claude-runner";
 import {
   runAgent,
@@ -304,8 +304,58 @@ function makeAskHandler(sessionId: string) {
 
 // Messages sent while a run is in flight queue up and deliver afterwards,
 // the same way Claude Code handles interruptions.
-const promptQueues: Map<string, Array<{ content: string; user?: string }>> = (g.__promptQueues ??=
-  new Map());
+type QueueItem = { content: string; user?: string };
+const promptQueues: Map<string, QueueItem[]> = (g.__promptQueues ??= new Map());
+
+// Steered messages (folded into a live run, delivered at the run's next turn
+// boundary) aren't in promptQueues — the drain would re-deliver them. But until
+// their turn lands they're invisible on reload, so we keep a display-only
+// receipt here: shown as "folded in" in the UI and reconciled away once the real
+// transcript entry appears. Cleared when the run finishes (or is cancelled).
+const steeredReceipts: Map<string, QueueItem[]> = (g.__steeredReceipts ??= new Map());
+
+// Both maps are persisted to disk so a real restart/crash (not just a hot
+// reload, which keeps the globalThis maps) doesn't silently drop queued or
+// just-steered messages. Restored + re-drained on boot (restorePromptQueues).
+const QUEUE_STORE = `${BACKSTAGE_SESSIONS_DIR}/prompt-queues.json`;
+function persistQueues(): void {
+  try {
+    const entries = (m: Map<string, QueueItem[]>) =>
+      Object.fromEntries([...m].filter(([, v]) => v.length > 0));
+    writeFileSync(
+      QUEUE_STORE,
+      JSON.stringify({ queued: entries(promptQueues), steered: entries(steeredReceipts) })
+    );
+  } catch (e) {
+    console.error("[queue] Failed to persist prompt queues:", e);
+  }
+}
+
+/** Append a message to a session's drainable queue and persist + broadcast. */
+function enqueuePrompt(sessionId: string, item: QueueItem): void {
+  const queue = promptQueues.get(sessionId) || [];
+  queue.push(item);
+  promptQueues.set(sessionId, queue);
+  persistQueues();
+  broadcastQueue(sessionId);
+}
+
+/** Record a steered message as a visible receipt until its run finishes. */
+function recordSteer(sessionId: string, item: QueueItem): void {
+  const list = steeredReceipts.get(sessionId) || [];
+  list.push(item);
+  steeredReceipts.set(sessionId, list);
+  persistQueues();
+  broadcastQueue(sessionId);
+}
+
+/** Clear a session's steer receipts once the run that owned them is done. */
+function clearSteerReceipts(sessionId: string): void {
+  if (!steeredReceipts.has(sessionId)) return;
+  steeredReceipts.delete(sessionId);
+  persistQueues();
+  broadcastQueue(sessionId);
+}
 
 // Loaded agents (Plain/Linear/Slack/Stripe/…). Module-scoped because request
 // handlers (health routes) read it, and globalThis-backed so the set survives a
@@ -317,6 +367,7 @@ function broadcastQueue(sessionId: string) {
     type: "queue_update",
     sessionId,
     queued: promptQueues.get(sessionId) || [],
+    steered: steeredReceipts.get(sessionId) || [],
   });
 }
 
@@ -324,6 +375,8 @@ async function drainQueue(sessionId: string): Promise<void> {
   let queue;
   while ((queue = promptQueues.get(sessionId)) && queue.length > 0) {
     const batch = queue.splice(0, queue.length);
+    if (queue.length === 0) promptQueues.delete(sessionId);
+    persistQueues();
     broadcastQueue(sessionId);
     const combined = batch
       .map((m) => (batch.length > 1 && m.user ? `[${m.user}] ${m.content}` : m.content))
@@ -410,26 +463,27 @@ async function runSessionPrompt(
   // before, so resuming the claude session keeps its history.
   let cwd = session.worktreeDir || `${HOME}/projects/tella-fusion`;
   if (session.worktreeDir && !existsSync(session.worktreeDir)) {
+    const project = session.project ? getProject(session.project) : projectForPath(session.worktreeDir);
     if (session.branch) {
       broadcastToSession(sessionId, {
         type: "notice",
         message: `This session's worktree was cleaned up — recreating it from branch ${session.branch}…`,
       });
       try {
-        cwd = await reviveWorktree(session.branch);
+        cwd = await reviveWorktree(session.branch, project.id);
       } catch (e) {
         broadcastToSession(sessionId, {
           type: "notice",
           message: `Couldn't recreate the worktree (${e}); running in the main checkout instead.`,
         });
-        cwd = `${HOME}/projects/tella-fusion`;
+        cwd = project.repo;
       }
     } else {
       broadcastToSession(sessionId, {
         type: "notice",
         message: "This session's worktree is gone; running in the main checkout.",
       });
-      cwd = `${HOME}/projects/tella-fusion`;
+      cwd = project.repo;
     }
   }
   let prompt = content;
@@ -1066,7 +1120,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       try {
         deleteSession(session);
         if (cleanWorktree && session.worktreeDir && session.branch) {
-          await removeWorktree(session.branch);
+          await removeWorktree(session.branch, projectForPath(session.worktreeDir).id);
         }
         sessionsCache = null;
         return Response.json({ ok: true });
@@ -1075,9 +1129,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       }
     }
 
-    // List worktrees
+    // List worktrees (optionally for a specific project)
     if (path === "/backstage/api/worktrees" && req.method === "GET") {
-      return Response.json(await listWorktrees());
+      return Response.json(await listWorktrees(url.searchParams.get("project") || undefined));
     }
 
     // ── Automations ──
@@ -1355,19 +1409,18 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
           if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) {
             const attributed = user ? `[${user}] ${content}` : content;
             if (steerAgentRun([session.claudeSessionId, session.codexThreadId, session.id], attributed)) {
-              // The message itself lands in the transcript when its turn
-              // starts; until then this notice is the visible receipt. Not
-              // mirrored into promptQueues — the drain would re-deliver it.
+              // The message lands in the transcript when its turn starts. Until
+              // then a steer receipt is the durable visible record (survives
+              // reload/leave); kept out of promptQueues so the drain never
+              // re-delivers it, and cleared when the run finishes.
+              recordSteer(sessionId, { content, user });
               broadcastToSession(sessionId, {
                 type: "notice",
                 message: `Message from ${user || "you"} folded into the run — Michael picks it up at the next stopping point.`,
               });
               break;
             }
-            const queue = promptQueues.get(sessionId) || [];
-            queue.push({ content, user });
-            promptQueues.set(sessionId, queue);
-            broadcastQueue(sessionId);
+            enqueuePrompt(sessionId, { content, user });
             watchExternalRunAndDrain(sessionId);
             break;
           }
@@ -1401,6 +1454,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
               attributed
             )
           ) {
+            // An interrupt aborts the current turn and continues immediately,
+            // so the redirect lands right away — but record a receipt too in
+            // case the page is reloaded before its turn writes to the transcript.
+            recordSteer(sessionId, { content, user });
             broadcastToSession(sessionId, {
               type: "notice",
               message: `${user || "Someone"} interrupted — redirecting Michael now.`,
@@ -1410,10 +1467,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
           // Not interruptible (external run, codex, or just finished): treat
           // like a normal send so the message is never lost.
           if (isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)) {
-            const queue = promptQueues.get(sessionId) || [];
-            queue.push({ content, user });
-            promptQueues.set(sessionId, queue);
-            broadcastQueue(sessionId);
+            enqueuePrompt(sessionId, { content, user });
             watchExternalRunAndDrain(sessionId);
             break;
           }
@@ -1481,20 +1535,22 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
               ? resolveModel(String(msg.model))?.id
               : undefined;
           const isCodex = providerFor(model) === "codex";
+          // Which repo this session works in (tella-fusion by default).
+          const project = getProject(typeof msg.project === "string" ? msg.project : undefined);
           try {
             let wtPath: string;
             if (forkSource) {
               // Share the source's cwd so the fork sees the same code state.
-              wtPath = forkSource.worktreeDir || `${HOME}/projects/tella-fusion`;
+              wtPath = forkSource.worktreeDir || project.repo;
             } else if (isAsk) {
               // Ask sessions run read-only on the main checkout — no worktree
-              wtPath = `${HOME}/projects/tella-fusion`;
+              wtPath = project.repo;
             } else {
               // Check if worktree exists, create if needed
-              const worktrees = await listWorktrees();
+              const worktrees = await listWorktrees(project.id);
               wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
               if (!wtPath) {
-                wtPath = await createWorktree(branch);
+                wtPath = await createWorktree(branch, project.id);
               }
             }
 
@@ -1513,6 +1569,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
                 ...(model ? { model } : {}),
                 branch: forkSource ? forkSource.branch || "" : isAsk ? "" : branch,
                 worktreeDir: wtPath,
+                project: projectForPath(wtPath).id,
                 createdBy: user || "Anonymous",
                 createdAt: new Date().toISOString(),
                 lastActivity: new Date().toISOString(),

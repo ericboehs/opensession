@@ -99,6 +99,7 @@ export type WSClientMessage =
       prompt: string;
       user: string;
       mode?: "ask" | "code";
+      project?: string;
       model?: string;
       images?: string[];
       /** Fork an existing session, keeping its real conversation history. */
