@@ -17,9 +17,10 @@ Environment="NODE_ENV=production"
 ExecStart=/home/ubuntu/.bun/bin/bun --hot run backstage.ts
 Restart=always
 RestartSec=5
-# Give graceful shutdown time to drain in-flight runs (SHUTDOWN_DRAIN_MS, 25s)
-# before systemd escalates to SIGKILL.
-TimeoutStopSec=40
+# Give graceful shutdown time to drain in-flight runs (SHUTDOWN_DRAIN_MS, 2 min)
+# before systemd escalates to SIGKILL. Must stay above SHUTDOWN_DRAIN_MS (120s) +
+# a buffer for the rest of shutdown, or systemd kills the process mid-drain.
+TimeoutStopSec=140
 # SIGTERM the bun parent ONLY — not the whole cgroup. The default
 # (KillMode=control-group) SIGTERMs every child too, so on restart the Claude
 # subprocesses die (exit 143) the instant shutdown begins — before bun's graceful

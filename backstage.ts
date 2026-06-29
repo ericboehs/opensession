@@ -408,7 +408,7 @@ function restorePromptQueues(): void {
 
 // ── Wake-all-active-sessions on restart ──────────────────────────────────────
 // The run journal (active-runs.json) only retains runs that are STILL executing
-// when the process exits. During a graceful restart the 25s drain lets runs
+// when the process exits. During a graceful restart the 2-min drain lets runs
 // finish their current turn — which clears them from the journal — so a session
 // that stopped at a turn boundary mid-task was silently NOT resumed (the user had
 // to type "continue"). To fix that we snapshot every active session the moment
@@ -2294,7 +2294,10 @@ if (!g.__backstageBooted) {
   // stopping point (bounded), then exit — instead of killing every run mid-turn.
   // Anything still running after the drain window is picked up by the run
   // journal on the next boot (resumeInterruptedRuns), so nothing is lost.
-  const DRAIN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_DRAIN_MS || "25000");
+  // 2-min default so in-flight runner runs have a real chance to finish their
+  // current turn before exit. Must stay below the unit's TimeoutStopSec (140s),
+  // or systemd SIGKILLs the process mid-drain.
+  const DRAIN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_DRAIN_MS || "120000");
   let shuttingDown = false;
   const gracefulShutdown = async (signal: string) => {
     if (shuttingDown) return;
