@@ -219,6 +219,50 @@ export async function openSlackModal(
   return response.json();
 }
 
+/**
+ * Open the "Other…" free-text modal for a human-in-the-loop ask (mirrors
+ * openSlackModal, but with the humanask callback prefix so the interactivity
+ * endpoint routes the submission to the human-asks registry).
+ */
+export async function openHumanAskModal(
+  triggerId: string,
+  askId: string,
+  questionText: string
+): Promise<any> {
+  const response = await fetchWithTimeout("https://slack.com/api/views.open", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+    },
+    body: JSON.stringify({
+      trigger_id: triggerId,
+      view: {
+        type: "modal",
+        callback_id: `humanask-modal-${askId}`,
+        title: { type: "plain_text", text: "Your answer", emoji: true },
+        submit: { type: "plain_text", text: "Send", emoji: true },
+        close: { type: "plain_text", text: "Cancel", emoji: true },
+        blocks: [
+          { type: "section", text: { type: "mrkdwn", text: questionText } },
+          {
+            type: "input",
+            block_id: "answer_block",
+            element: {
+              type: "plain_text_input",
+              action_id: "answer_input",
+              multiline: true,
+              placeholder: { type: "plain_text", text: "Type your answer…" },
+            },
+            label: { type: "plain_text", text: "Your answer", emoji: true },
+          },
+        ],
+      },
+    }),
+  });
+  return response.json();
+}
+
 // ---------------------------------------------------------------------------
 // Context fetchers
 // ---------------------------------------------------------------------------
@@ -283,6 +327,16 @@ export async function getChannelKind(
 // ---------------------------------------------------------------------------
 // User info
 // ---------------------------------------------------------------------------
+
+/**
+ * Open (or fetch the existing) DM channel with a user and return its channel id,
+ * so we can post a message into a teammate's DM. Used by the human-in-the-loop
+ * asks (src/server/human-asks.ts). Returns null if Slack refuses.
+ */
+export async function openDirectMessage(slackUserId: string): Promise<string | null> {
+  const data = await slackApiCall("conversations.open", { users: slackUserId });
+  return data.ok && data.channel?.id ? data.channel.id : null;
+}
 
 export async function getUserInfo(
   userId: string

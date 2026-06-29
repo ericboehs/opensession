@@ -1619,6 +1619,26 @@ a {
 
 .msg-body-assistant { color: var(--text); }
 
+/* Human-in-the-loop: a teammate's reply routed back into the session. Distinct
+   from the driver's own blue "You" bubbles — a warm teal, to read as someone
+   else stepping in. */
+.msg-human { margin-top: 22px; }
+.msg-label-human { color: #1f9e8a; }
+.msg-label-human::before {
+  border-radius: 50%;
+  background: linear-gradient(135deg, #28d3b4, #0f8f7a);
+}
+.msg-body-human {
+  display: inline-block;
+  max-width: 100%;
+  background: rgba(31, 158, 138, 0.12);
+  border: 1px solid rgba(31, 158, 138, 0.3);
+  border-radius: 12px;
+  border-top-left-radius: 4px;
+  padding: 9px 14px;
+  color: var(--text);
+}
+
 .msg-streaming .msg-body-assistant::after {
   content: "";
   display: inline-block;

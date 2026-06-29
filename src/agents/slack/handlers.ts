@@ -37,6 +37,8 @@ import { SlackProgress } from "./progress";
 import { createAdminMcpServer } from "./admin-tools";
 import { createGithubMcpServer } from "./github-tools";
 import { createSessionsMcpServer } from "./sessions-tools";
+import { createHumansMcpServer } from "./humans-tools";
+import { matchReply as matchHumanAskReply } from "../../server/human-asks";
 import { triggerPrAction } from "../github/trigger";
 import { classifyMention } from "./mention-intent";
 import { renderMemoryForPrompt, type MemoryContext } from "./memory";
@@ -833,6 +835,11 @@ export async function processMessage(
         createdBy: userName || msg.userId,
         isAdmin,
       }),
+      "michael-humans": createHumansMcpServer({
+        sessionId: `slack-${sessionKey}`,
+        createdBy: userName || msg.userId,
+        isAdmin,
+      }),
     };
   } catch (e) {
     console.warn("[slack] failed to build admin tools / memory:", e);
@@ -854,7 +861,12 @@ export async function processMessage(
     "to inspect state and transcripts. For trusted users: answer_session_question unblocks a session paused on a question, " +
     "send_to_session messages/redirects a running or idle session, cancel_session stops a run, and create_session spins up a new " +
     "ask- or code-mode session. When asked things like \"what's still running?\", \"what's waiting on me?\", or \"tell session X to …\", " +
-    "use these tools. Combine with the gh CLI (Bash) for deeper PR status (CI checks, review state) beyond the PR link list_sessions already shows.";
+    "use these tools. Combine with the gh CLI (Bash) for deeper PR status (CI checks, review state) beyond the PR link list_sessions already shows." +
+    "\n\n## Human in the loop\nYou can pull a teammate into the loop via the michael-humans MCP: ask_human DMs them (as you, Michael) and folds their reply back into this session. " +
+    "Use mode 'block' when you can't continue without the answer (your turn pauses until they reply — e.g. \"ask Grant for the copy\"), or 'async' (default) to keep working while you wait. " +
+    "For async, deliver_when controls timing: 'now', 'when_done' (when this session next goes idle), 'on_pr' (once a PR is open — best for \"ask John for a review when done\"), or 'at_time' with a natural-language at_time. " +
+    "Pass `options` for one-tap button choices, and `context` to attach background (the copy slot, a diff, a screen). Use list_pending_asks / cancel_ask to manage outstanding ones. " +
+    "When the user says things like \"ask Grant for X\", \"get John to review when I'm done\", or \"check with Jaap before shipping\", use ask_human rather than just telling them to do it.";
 
   rotation: for (;;) {
   let limitHit = false;
@@ -1154,6 +1166,25 @@ export async function handleMessageEvent(event: any): Promise<void> {
   const text = event.text || "";
 
   if (!text.trim()) return;
+
+  // Human-in-the-loop: is this a teammate replying to a question Michael DM'd
+  // them on behalf of a session? If so, route it back into that session and stop
+  // — do NOT treat it as a new request to Michael. This is the one path that
+  // deliberately accepts a message from someone other than the trusted user
+  // (matchReply only matches the exact person asked, in that ask's DM). Runs
+  // before the allow-list gate below for exactly that reason; it's tightly
+  // scoped and every accepted reply is audited.
+  const matchedAsk = matchHumanAskReply({ channel, user, threadTs: thread_ts, text });
+  if (matchedAsk) {
+    console.log(`[slack] Routed reply from ${user} into session ${matchedAsk.sessionId} (ask ${matchedAsk.id})`);
+    await addReaction(channel, ts, "white_check_mark").catch(() => {});
+    await sendSlackMessage(
+      channel,
+      ":inbox_tray: Got it — passing that straight to the session. Thanks!",
+      thread_ts || ts
+    ).catch(() => {});
+    return;
+  }
 
   const isDM = channel.startsWith("D");
   // For DMs: thread_ts means a reply in an existing thread; no thread_ts means
