@@ -1,22 +1,13 @@
 import React, { useState, useMemo, useEffect } from "react";
-import type { UnifiedSession, SessionSource } from "../lib/types";
+import type { UnifiedSession } from "../lib/types";
 import { relativeTime } from "../lib/api";
-import { useCurrentUser } from "./UserPicker";
+import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 
 const RECENTLY_OPENED_COUNT = 6;
 
-const SOURCE_COLORS: Record<string, string> = {
-  slack: "#a36ba5",
-  linear: "#7b86e8",
-  backstage: "#5eead4",
-  cli: "#6B7280",
-};
-
 const AUTOMATION_COLOR = "#d29922";
-
-const SOURCE_ORDER: SessionSource[] = ["slack", "linear", "backstage", "cli"];
 
 // A palette for per-person group dots. The color is picked deterministically
 // from the (lowercased) person name so each teammate keeps a stable color.
@@ -38,6 +29,13 @@ function personColor(key: string): string {
   }
   return PERSON_COLORS[Math.abs(hash) % PERSON_COLORS.length];
 }
+
+// Only recognized people get their own "people" section. Sessions whose
+// `startedBy` is something other than a real teammate — test labels
+// ("proof-test", "image-test"), action/integration names ("Slack",
+// "Make Michiel editor (action)"), or empty — are hidden rather than shown as
+// stray sections. "Michael" (the assistant) counts as a person here.
+const KNOWN_PEOPLE = new Set([...TEAM, "Michael"].map((n) => n.toLowerCase()));
 
 export type NavView = "sessions" | "reviews" | "automations" | "actions" | "wiki" | "connections";
 
@@ -221,18 +219,16 @@ export function Sidebar({
     // One group per other person: every non-automation session owned by
     // someone other than the current user, grouped by `startedBy`. The current
     // user's own sessions already live in "My sessions" above, so they're not
-    // repeated here (no double-listing). Keyed by lowercased name to merge
-    // casing variants; the first-seen spelling is used as the label.
+    // repeated here (no double-listing). Only recognized teammates get a
+    // section — sessions with an unrecognized or empty `startedBy` are hidden
+    // (see KNOWN_PEOPLE). Keyed by lowercased name to merge casing variants;
+    // the first-seen spelling is used as the label.
     const byPerson = new Map<string, { label: string; items: UnifiedSession[] }>();
-    const ownerless: UnifiedSession[] = [];
     for (const s of filtered) {
-      if (s.automation || pinSet.has(s.id)) continue;
-      if (!s.startedBy) {
-        ownerless.push(s);
-        continue;
-      }
+      if (s.automation || pinSet.has(s.id) || !s.startedBy) continue;
       const key = s.startedBy.toLowerCase();
       if (key === user) continue; // already in "My sessions"
+      if (!KNOWN_PEOPLE.has(key)) continue; // hide non-person owners
       const entry = byPerson.get(key) || { label: s.startedBy, items: [] };
       entry.items.push(s);
       byPerson.set(key, entry);
@@ -246,21 +242,6 @@ export function Sidebar({
         band: "people",
         items,
       });
-    }
-
-    // Sessions with no known owner fall back to per-source groups so nothing
-    // disappears (e.g. some CLI sessions have no `startedBy`).
-    for (const source of SOURCE_ORDER) {
-      const items = ownerless.filter((s) => s.source === source);
-      if (items.length > 0) {
-        out.push({
-          key: source,
-          label: source,
-          dotColor: SOURCE_COLORS[source] || "#6B7280",
-          band: "people",
-          items,
-        });
-      }
     }
 
     // Automations last, each in its own group (band "automations").

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 
-const TEAM = ["Michiel", "Jaap", "Kent", "Grant", "Johnny", "John", "Louise"];
+export const TEAM = ["Michiel", "Jaap", "Kent", "Grant", "Johnny", "John", "Louise"];
 const KEY = "backstage-user";
 const CHANGE_EVENT = "michael-user-changed";
 
