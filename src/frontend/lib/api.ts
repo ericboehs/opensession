@@ -545,6 +545,52 @@ export async function searchWikiApi(q: string) {
 	return res.json();
 }
 
+// ── Notes (shared, collaborative) ──
+
+export interface NoteMeta {
+	id: string;
+	title: string;
+	updatedAt: number;
+}
+
+export async function fetchNotes(): Promise<NoteMeta[]> {
+	const res = await fetch(`${BASE}/notes`);
+	if (!res.ok) throw new Error(`Failed to fetch notes: ${res.status}`);
+	const body = await res.json();
+	return Array.isArray(body?.notes) ? body.notes : [];
+}
+
+export async function createNoteApi(title?: string): Promise<NoteMeta> {
+	const res = await fetch(`${BASE}/notes`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ title }),
+	});
+	if (!res.ok) throw new Error(`Failed to create note: ${res.status}`);
+	const body = await res.json();
+	return body.note;
+}
+
+export async function deleteNoteApi(id: string): Promise<void> {
+	const res = await fetch(`${BASE}/notes/${encodeURIComponent(id)}`, {
+		method: "DELETE",
+	});
+	if (!res.ok) throw new Error(`Failed to delete note: ${res.status}`);
+}
+
+/** Run a Haiku rewrite of the note; the new content arrives live over the WS. */
+export async function promptNoteApi(id: string, prompt: string): Promise<void> {
+	const res = await fetch(`${BASE}/notes/${encodeURIComponent(id)}/prompt`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ prompt }),
+	});
+	if (!res.ok) {
+		const body = await res.json().catch(() => null);
+		throw new Error(body?.error || `Update failed: ${res.status}`);
+	}
+}
+
 export async function archiveSessionApi(sessionId: string, archived: boolean) {
 	const res = await fetch(
 		`${BASE}/sessions/${encodeURIComponent(sessionId)}/archive`,

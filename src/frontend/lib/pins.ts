@@ -15,16 +15,16 @@ let cache: string[] = [];
 let loadedFor: string | null = null;
 
 function emit() {
-  window.dispatchEvent(new Event(CHANGE_EVENT));
+	window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
 function readLegacy(): string[] {
-  try {
-    const v = JSON.parse(localStorage.getItem(LEGACY_KEY) || "[]");
-    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
+	try {
+		const v = JSON.parse(localStorage.getItem(LEGACY_KEY) || "[]");
+		return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+	} catch {
+		return [];
+	}
 }
 
 // Hydrate the cache for `user`. On first run after the server-side switch, fold
@@ -32,53 +32,70 @@ function readLegacy(): string[] {
 // loses their pins. Migration is deferred until a real user is picked (never
 // "Anonymous") so legacy pins land on the right account, and runs at most once.
 async function load(user: string) {
-  loadedFor = user;
-  let pins: string[] = [];
-  try {
-    pins = await fetchPins(user);
-  } catch {
-    pins = [];
-  }
+	loadedFor = user;
+	let pins: string[] = [];
+	try {
+		pins = await fetchPins(user);
+	} catch {
+		pins = [];
+	}
 
-  if (user !== "Anonymous" && !localStorage.getItem(MIGRATED_FLAG)) {
-    const legacy = readLegacy();
-    if (legacy.length) {
-      pins = Array.from(new Set([...pins, ...legacy]));
-      try {
-        pins = await savePinsApi(user, pins);
-      } catch {
-        /* keep the merged list in memory even if the write fails */
-      }
-    }
-    localStorage.setItem(MIGRATED_FLAG, "1");
-  }
+	if (user !== "Anonymous" && !localStorage.getItem(MIGRATED_FLAG)) {
+		const legacy = readLegacy();
+		if (legacy.length) {
+			pins = Array.from(new Set([...pins, ...legacy]));
+			try {
+				pins = await savePinsApi(user, pins);
+			} catch {
+				/* keep the merged list in memory even if the write fails */
+			}
+		}
+		localStorage.setItem(MIGRATED_FLAG, "1");
+	}
 
-  // A newer load() (user switched mid-flight) wins.
-  if (loadedFor !== user) return;
-  cache = pins;
-  emit();
+	// A newer load() (user switched mid-flight) wins.
+	if (loadedFor !== user) return;
+	cache = pins;
+	emit();
 }
 
 void load(getCurrentUser());
 window.addEventListener(USER_CHANGE_EVENT, () => void load(getCurrentUser()));
 
 export function getPins(): string[] {
-  return cache;
+	return cache;
 }
 
 export function isPinned(id: string): boolean {
-  return cache.includes(id);
+	return cache.includes(id);
 }
 
 export function togglePin(id: string): string[] {
-  const next = cache.includes(id) ? cache.filter((p) => p !== id) : [...cache, id];
-  cache = next;
-  emit();
-  void savePinsApi(getCurrentUser(), next).catch(() => {});
-  return next;
+	const next = cache.includes(id)
+		? cache.filter((p) => p !== id)
+		: [...cache, id];
+	cache = next;
+	emit();
+	void savePinsApi(getCurrentUser(), next).catch(() => {});
+	return next;
+}
+
+/**
+ * Replace the pin order with `ids` (drag-to-reorder in the tab bar). Keeps only
+ * ids already pinned, so a stale drag can't resurrect an unpinned tab; appends
+ * any pinned id the caller omitted, so nothing is silently dropped.
+ */
+export function reorderPins(ids: string[]): string[] {
+	const known = new Set(cache);
+	const next = ids.filter((id) => known.has(id));
+	for (const id of cache) if (!next.includes(id)) next.push(id);
+	cache = next;
+	emit();
+	void savePinsApi(getCurrentUser(), next).catch(() => {});
+	return next;
 }
 
 export function onPinsChanged(handler: () => void): () => void {
-  window.addEventListener(CHANGE_EVENT, handler);
-  return () => window.removeEventListener(CHANGE_EVENT, handler);
+	window.addEventListener(CHANGE_EVENT, handler);
+	return () => window.removeEventListener(CHANGE_EVENT, handler);
 }

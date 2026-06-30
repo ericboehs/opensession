@@ -117,6 +117,18 @@ import {
 	ensureSeedActions,
 } from "./src/server/actions";
 import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
+import {
+	listNotes,
+	createNote,
+	deleteNote,
+	getNoteState,
+	applyNoteUpdate,
+	getNoteText,
+	setNoteText,
+	seedIfEmpty,
+	isValidNoteId,
+} from "./src/server/notes";
+import { editNote } from "./src/server/note-edit";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { setArchived, archiveOlderThan } from "./src/server/archive";
 import {
@@ -413,6 +425,7 @@ async function attachRepo(
 // WebSocket client state
 interface WSClientData {
 	watchingSessionId: string | null;
+	watchingNoteId: string | null;
 	user: string | null;
 }
 
@@ -461,6 +474,57 @@ function broadcastPresence(sessionId: string) {
 		: [];
 	broadcastToSession(sessionId, { type: "presence", sessionId, viewers });
 }
+
+// ── Collaborative notes fan-out ───────────────────────────────────────────
+// Parallel to sessionWatchers: noteId → sockets editing that note. Notes are
+// Yjs CRDT docs (src/server/notes.ts); clients relay binary Yjs updates +
+// awareness (cursors) as base64 over this same multiplexed JSON socket.
+const noteWatchers: Map<string, Set<any>> = (g.__noteWatchers ??= new Map());
+
+function joinNote(ws: any, noteId: string) {
+	let set = noteWatchers.get(noteId);
+	if (!set) {
+		set = new Set();
+		noteWatchers.set(noteId, set);
+	}
+	set.add(ws);
+	broadcastNotePresence(noteId);
+}
+
+function leaveNote(ws: any) {
+	const noteId = ws.data?.watchingNoteId;
+	if (!noteId) return;
+	const set = noteWatchers.get(noteId);
+	if (set) {
+		set.delete(ws);
+		if (set.size === 0) noteWatchers.delete(noteId);
+		else broadcastNotePresence(noteId);
+	}
+	ws.data.watchingNoteId = null;
+}
+
+function broadcastToNote(noteId: string, msg: object, except?: any) {
+	const set = noteWatchers.get(noteId);
+	if (!set) return;
+	const payload = JSON.stringify(msg);
+	for (const ws of set) {
+		if (ws === except) continue;
+		try {
+			ws.send(payload);
+		} catch {}
+	}
+}
+
+function broadcastNotePresence(noteId: string) {
+	const set = noteWatchers.get(noteId);
+	const viewers = set
+		? Array.from(set, (ws: any) => ws.data?.user || "Anonymous")
+		: [];
+	broadcastToNote(noteId, { type: "note_presence", noteId, viewers });
+}
+
+const b64encode = (u: Uint8Array) => Buffer.from(u).toString("base64");
+const b64decode = (s: string) => new Uint8Array(Buffer.from(s, "base64"));
 
 // Interactive AskUserQuestion: questions broadcast to session watchers, answered
 // from the UI. If nobody answers in the UI within ASK_UI_TIMEOUT_MS, the question
@@ -1424,6 +1488,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			"/backstage/automations": spaEntry,
 			"/backstage/wiki": spaEntry,
 			"/backstage/wiki/*": spaEntry,
+			"/backstage/notes": spaEntry,
+			"/backstage/notes/*": spaEntry,
+			"/backstage/docs": spaEntry,
+			"/backstage/docs/*": spaEntry,
 			"/backstage/connections": spaEntry,
 			"/backstage/archived": spaEntry,
 			"/backstage/reviews": spaEntry,
@@ -2513,6 +2581,58 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					: Response.json({ error: "Not found" }, { status: 404 });
 			}
 
+			// ── Notes (shared, collaborative; content syncs over WS) ──
+			if (path === "/backstage/api/notes" && req.method === "GET") {
+				seedIfEmpty();
+				return Response.json({ notes: listNotes() });
+			}
+
+			if (path === "/backstage/api/notes" && req.method === "POST") {
+				const body = await req.json().catch(() => null);
+				const note = createNote(
+					typeof body?.title === "string" ? body.title : undefined,
+				);
+				return Response.json({ note });
+			}
+
+			const noteMatch = path.match(/^\/backstage\/api\/notes\/([^/]+)$/);
+			if (noteMatch && req.method === "DELETE") {
+				const id = decodeURIComponent(noteMatch[1]);
+				if (!isValidNoteId(id))
+					return Response.json({ error: "Invalid id" }, { status: 400 });
+				return deleteNote(id)
+					? Response.json({ ok: true })
+					: Response.json({ error: "Not found" }, { status: 404 });
+			}
+
+			const notePromptMatch = path.match(
+				/^\/backstage\/api\/notes\/([^/]+)\/prompt$/,
+			);
+			if (notePromptMatch && req.method === "POST") {
+				const id = decodeURIComponent(notePromptMatch[1]);
+				if (!isValidNoteId(id))
+					return Response.json({ error: "Invalid id" }, { status: 400 });
+				const body = await req.json().catch(() => null);
+				const instruction = typeof body?.prompt === "string" ? body.prompt : "";
+				if (!instruction.trim())
+					return Response.json({ error: "prompt required" }, { status: 400 });
+				const next = await editNote(getNoteText(id), instruction);
+				if (next == null)
+					return Response.json(
+						{ error: "Could not update the note" },
+						{ status: 422 },
+					);
+				// Apply as a minimal diff to the shared doc and broadcast to editors.
+				const update = setNoteText(id, next);
+				if (update.length)
+					broadcastToNote(id, {
+						type: "note_update",
+						noteId: id,
+						update: b64encode(update),
+					});
+				return Response.json({ ok: true });
+			}
+
 			// ── Wiki ──
 			if (path === "/backstage/api/wiki/tree" && req.method === "GET") {
 				return Response.json(getWikiTree());
@@ -2534,7 +2654,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			// WebSocket upgrade
 			if (path === "/backstage/ws") {
 				const upgraded = server.upgrade(req, {
-					data: { watchingSessionId: null, user: null },
+					data: { watchingSessionId: null, watchingNoteId: null, user: null },
 				});
 				if (!upgraded) {
 					return new Response("WebSocket upgrade failed", { status: 400 });
@@ -3056,6 +3176,64 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						}
 						break;
 					}
+					// ── Collaborative notes (Yjs over the shared socket) ──
+					case "watch_note": {
+						const noteId = msg.noteId;
+						if (!isValidNoteId(noteId)) {
+							ws.send(
+								JSON.stringify({ type: "error", message: "Invalid note id" }),
+							);
+							return;
+						}
+						// Leave any previously-watched note first (one note per client).
+						leaveNote(ws);
+						if (msg.user) ws.data.user = msg.user;
+						ws.data.watchingNoteId = noteId;
+						joinNote(ws, noteId);
+						// Send the full current doc state so the client syncs immediately.
+						ws.send(
+							JSON.stringify({
+								type: "note_state",
+								noteId,
+								update: b64encode(getNoteState(noteId)),
+							}),
+						);
+						break;
+					}
+
+					case "leave_note": {
+						leaveNote(ws);
+						break;
+					}
+
+					case "note_update": {
+						const noteId = msg.noteId;
+						if (!isValidNoteId(noteId) || typeof msg.update !== "string")
+							return;
+						try {
+							applyNoteUpdate(noteId, b64decode(msg.update));
+						} catch {}
+						// Relay to the other editors of this note.
+						broadcastToNote(
+							noteId,
+							{ type: "note_update", noteId, update: msg.update },
+							ws,
+						);
+						break;
+					}
+
+					case "note_awareness": {
+						const noteId = msg.noteId;
+						if (!isValidNoteId(noteId) || typeof msg.update !== "string")
+							return;
+						// Cursors/presence are ephemeral — relay only, never persist.
+						broadcastToNote(
+							noteId,
+							{ type: "note_awareness", noteId, update: msg.update },
+							ws,
+						);
+						break;
+					}
 				}
 			},
 
@@ -3063,6 +3241,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				allClients.delete(ws);
 				stopAllWatchesForClient(ws);
 				leaveSession(ws);
+				leaveNote(ws);
 				console.log("WebSocket client disconnected");
 			},
 		},

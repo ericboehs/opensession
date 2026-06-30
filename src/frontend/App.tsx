@@ -6,20 +6,20 @@ import { NewSession } from "./components/NewSession";
 import { Home } from "./components/Home";
 import { Automations } from "./components/Automations";
 import { Actions } from "./components/Actions";
-import { Wiki } from "./components/Wiki";
+import { Notes, type NotesSelection } from "./components/Notes";
 import { Connections } from "./components/Connections";
 import { Archived } from "./components/Archived";
 import { Reviews } from "./components/Reviews";
-import { UserPicker, UserGate } from "./components/UserPicker";
-import { SessionTabs } from "./components/SessionTabs";
+import { UserPicker, UserGate, getCurrentUser } from "./components/UserPicker";
+import { SessionTabs, tabKey, type TabItem } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { UpdateToast } from "./components/UpdateToast";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSidebarSwipe } from "./hooks/useSidebarSwipe";
-import { archiveSessionApi } from "./lib/api";
+import { archiveSessionApi, fetchNotes, type NoteMeta } from "./lib/api";
 import { pushRecent } from "./lib/recents";
-import { getPins, togglePin, onPinsChanged } from "./lib/pins";
+import { getPins, togglePin, reorderPins, onPinsChanged } from "./lib/pins";
 import {
 	getTabColors,
 	setTabColor,
@@ -35,7 +35,7 @@ type Route =
 	| { view: "reviews"; id?: string }
 	| { view: "automations" }
 	| { view: "actions" }
-	| { view: "wiki"; path: string | null }
+	| { view: "notes"; sel: NotesSelection }
 	| { view: "connections" }
 	| { view: "archived" };
 
@@ -54,11 +54,28 @@ function parseRoute(pathname: string): Route {
 			view: "reviews",
 			id: reviewsMatch[1] ? decodeURIComponent(reviewsMatch[1]) : undefined,
 		};
-	const wikiMatch = pathname.match(/^\/backstage\/wiki(?:\/(.*))?$/);
+	const noteMatch = pathname.match(/^\/backstage\/notes(?:\/(.+))?$/);
+	if (noteMatch)
+		return {
+			view: "notes",
+			sel: noteMatch[1]
+				? { kind: "note", id: decodeURIComponent(noteMatch[1]) }
+				: null,
+		};
+	const docMatch = pathname.match(/^\/backstage\/docs\/(.+)$/);
+	if (docMatch)
+		return {
+			view: "notes",
+			sel: { kind: "doc", path: decodeURIComponent(docMatch[1]) },
+		};
+	// Back-compat: the old read-only Wiki lived at /backstage/wiki/<path>.
+	const wikiMatch = pathname.match(/^\/backstage\/wiki(?:\/(.+))?$/);
 	if (wikiMatch)
 		return {
-			view: "wiki",
-			path: wikiMatch[1] ? decodeURIComponent(wikiMatch[1]) : null,
+			view: "notes",
+			sel: wikiMatch[1]
+				? { kind: "doc", path: decodeURIComponent(wikiMatch[1]) }
+				: null,
 		};
 	return { view: "home" };
 }
@@ -83,10 +100,12 @@ function routePath(route: Route): string {
 			return route.id
 				? `/backstage/reviews/${encodeURIComponent(route.id)}`
 				: "/backstage/reviews";
-		case "wiki":
-			return route.path
-				? `/backstage/wiki/${route.path.split("/").map(encodeURIComponent).join("/")}`
-				: "/backstage/wiki";
+		case "notes":
+			if (route.sel?.kind === "note")
+				return `/backstage/notes/${encodeURIComponent(route.sel.id)}`;
+			if (route.sel?.kind === "doc")
+				return `/backstage/docs/${route.sel.path.split("/").map(encodeURIComponent).join("/")}`;
+			return "/backstage/notes";
 		default:
 			return "/backstage/";
 	}
@@ -125,6 +144,19 @@ function App() {
 	const [pins, setPins] = useState<string[]>(getPins);
 	const [tabColors, setTabColors] =
 		useState<Record<string, string>>(getTabColors);
+	// Shared notes list — resolves note-tab titles and the Notes view sidebar.
+	const [notes, setNotes] = useState<NoteMeta[]>([]);
+	const refreshNotes = React.useCallback(() => {
+		fetchNotes()
+			.then(setNotes)
+			.catch(() => {});
+	}, []);
+	useEffect(() => {
+		refreshNotes();
+		const onFocus = () => refreshNotes();
+		window.addEventListener("focus", onFocus);
+		return () => window.removeEventListener("focus", onFocus);
+	}, [refreshNotes]);
 
 	useEffect(() => onPinsChanged(() => setPins(getPins())), []);
 	useEffect(() => onTabColorsChanged(() => setTabColors(getTabColors())), []);
@@ -207,28 +239,59 @@ function App() {
 				) || null
 			: null;
 
-	// Pinned sessions shown as tabs above the title (pin order preserved).
-	const pinnedTabs = pins
-		.map((id) => sessions.find((s) => s.id === id || s.aliasIds?.includes(id)))
-		.filter((s): s is UnifiedSession => Boolean(s));
+	const currentNoteId =
+		route.view === "notes" && route.sel?.kind === "note" ? route.sel.id : null;
 
-	// The currently-open session always gets a tab, even when it isn't pinned —
-	// like Chrome, this transient tab lives only while its session is the active
-	// route and closes the moment you navigate away. Pinned tabs persist; the ☆
-	// on a transient tab promotes it to a pinned one.
-	const pinnedIds = new Set(pinnedTabs.map((s) => s.id));
-	const tabs =
-		currentSession && !pinnedIds.has(currentSession.id)
-			? [...pinnedTabs, currentSession]
-			: pinnedTabs;
+	// Pinned tabs (sessions and notes) above the title, pin order preserved. Each
+	// pin entry is either a bare session id or `note:<id>`.
+	const pinnedTabs: TabItem[] = pins
+		.map((entry): TabItem | null => {
+			if (entry.startsWith("note:")) {
+				const id = entry.slice(5);
+				const note = notes.find((n) => n.id === id);
+				return note ? { kind: "note", id, title: note.title } : null;
+			}
+			const s = sessions.find(
+				(x) => x.id === entry || x.aliasIds?.includes(entry),
+			);
+			return s ? { kind: "session", session: s } : null;
+		})
+		.filter((t): t is TabItem => t !== null);
+
+	// The currently-open session/note also gets a transient tab even when unpinned
+	// (Chrome-style): it closes the moment you navigate away; the ☆ promotes it.
+	const pinnedKeys = new Set(pinnedTabs.map(tabKey));
+	const activeKey = currentSession
+		? currentSession.id
+		: currentNoteId
+			? `note:${currentNoteId}`
+			: null;
+	let tabs = pinnedTabs;
+	if (activeKey && !pinnedKeys.has(activeKey)) {
+		if (currentSession)
+			tabs = [...pinnedTabs, { kind: "session", session: currentSession }];
+		else if (currentNoteId) {
+			const note = notes.find((n) => n.id === currentNoteId);
+			tabs = [
+				...pinnedTabs,
+				{
+					kind: "note",
+					id: currentNoteId,
+					title: note?.title || currentNoteId,
+				},
+			];
+		}
+	}
 
 	const activeView =
 		route.view === "automations" ||
 		route.view === "actions" ||
-		route.view === "wiki" ||
+		route.view === "notes" ||
 		route.view === "connections" ||
 		route.view === "reviews"
-			? route.view
+			? route.view === "notes"
+				? "wiki"
+				: route.view
 			: ("sessions" as const);
 
 	return (
@@ -289,7 +352,7 @@ function App() {
 									view === "sessions"
 										? { view: "home" }
 										: view === "wiki"
-											? { view: "wiki", path: null }
+											? { view: "notes", sel: null }
 											: { view },
 								)
 							}
@@ -310,13 +373,20 @@ function App() {
 					<main className="detail-pane">
 						<SessionTabs
 							tabs={tabs}
-							activeId={currentSession?.id || null}
-							pinnedIds={pinnedIds}
+							activeKey={activeKey}
+							pinnedKeys={pinnedKeys}
 							colors={tabColors}
-							onSelect={(s) => navigate({ view: "session", id: s.id })}
-							onTogglePin={(id) => setPins(togglePin(id))}
-							onSetColor={(id, color) => setTabColors(setTabColor(id, color))}
+							onSelect={(tab) =>
+								navigate(
+									tab.kind === "session"
+										? { view: "session", id: tab.session.id }
+										: { view: "notes", sel: { kind: "note", id: tab.id } },
+								)
+							}
+							onTogglePin={(key) => setPins(togglePin(key))}
+							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
 							onNewSession={() => navigate({ view: "new" })}
+							onReorder={(keys) => setPins(reorderPins(keys))}
 						/>
 						{route.view === "new" ? (
 							<NewSession
@@ -348,10 +418,34 @@ function App() {
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onChanged={refresh}
 							/>
-						) : route.view === "wiki" ? (
-							<Wiki
-								docPath={route.path}
-								onNavigate={(path) => navigate({ view: "wiki", path })}
+						) : route.view === "notes" ? (
+							<Notes
+								sel={route.sel}
+								notes={notes}
+								refreshNotes={refreshNotes}
+								pinnedNoteIds={
+									new Set(
+										pins
+											.filter((p) => p.startsWith("note:"))
+											.map((p) => p.slice(5)),
+									)
+								}
+								onTogglePinNote={(id) => setPins(togglePin(`note:${id}`))}
+								onSelectNote={(id) =>
+									navigate({ view: "notes", sel: { kind: "note", id } })
+								}
+								onSelectDoc={(path) =>
+									navigate({
+										view: "notes",
+										sel: path ? { kind: "doc", path } : null,
+									})
+								}
+								sessions={sessions.map((s) => ({ id: s.id, title: s.title }))}
+								onOpenSession={(id) => navigate({ view: "session", id })}
+								user={getCurrentUser()}
+								connected={connected}
+								send={send}
+								addHandler={addHandler}
 							/>
 						) : route.view === "session" ? (
 							currentSession ? (

@@ -2,50 +2,61 @@ import React, { useEffect, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 
-interface Props {
-	tabs: UnifiedSession[];
-	activeId: string | null;
-	/** IDs of sessions that are pinned; the rest are transient (current route only). */
-	pinnedIds: Set<string>;
-	/** Map of session id → swatch key for tabs the user has colored. */
-	colors: Record<string, string>;
-	onSelect: (session: UnifiedSession) => void;
-	onTogglePin: (id: string) => void;
-	/** Set a tab's color (swatch key), or clear it with `null`. */
-	onSetColor: (id: string, color: string | null) => void;
-	/** Jump to the New Session view (the reveal-on-hover "+" tab). */
-	onNewSession: () => void;
+/**
+ * A tab is either a session or a (collaborative) note. Both ride the same
+ * per-user pins array; their stable key is the pin entry — a bare session id,
+ * or `note:<id>` for a note — used for pinning, coloring, and the active mark.
+ */
+export type TabItem =
+	| { kind: "session"; session: UnifiedSession }
+	| { kind: "note"; id: string; title: string };
+
+export function tabKey(tab: TabItem): string {
+	return tab.kind === "session" ? tab.session.id : `note:${tab.id}`;
+}
+function tabTitle(tab: TabItem): string {
+	return tab.kind === "session" ? tab.session.title : tab.title;
 }
 
-/** Open swatch menu: which session, and where to anchor it (viewport coords). */
-type Menu = { id: string; x: number; y: number };
+interface Props {
+	tabs: TabItem[];
+	/** Pin-key of the active tab. */
+	activeKey: string | null;
+	/** Pin-keys that are pinned; the rest are transient (current route only). */
+	pinnedKeys: Set<string>;
+	/** Map of pin-key → swatch key for colored tabs. */
+	colors: Record<string, string>;
+	onSelect: (tab: TabItem) => void;
+	onTogglePin: (key: string) => void;
+	onSetColor: (key: string, color: string | null) => void;
+	onNewSession: () => void;
+	/** Persist a new pinned-tab order after a drag. */
+	onReorder: (keys: string[]) => void;
+}
+
+type Menu = { key: string; x: number; y: number };
 
 /**
- * Horizontal strip of session tabs above the session title, on every view.
- * Pinned tabs persist (the pins store — star on Home, or the ★ in the session
- * header). The currently-open session also shows as a *transient* tab even when
- * unpinned: like Chrome, it closes as soon as you navigate away. Clicking the
- * ☆ on a transient tab promotes it to a pinned one; the ★ on a pinned tab
- * unpins (removing the tab). Hovering the strip also reveals a trailing "+"
- * tab that jumps straight to the New Session view.
- *
- * Right-clicking a tab opens a swatch menu to color it (a per-user view
- * preference, synced across devices like pins) — handy for telling a row of
- * lookalike tabs apart at a glance.
+ * Horizontal strip of tabs above the title, on every view. Pinned tabs persist
+ * (the pins store — sessions and notes alike); the currently-open session/note
+ * also shows as a *transient* tab even when unpinned (Chrome-style), promotable
+ * with the ☆. Right-click colors a tab; pinned tabs can be dragged to reorder.
  */
 export function SessionTabs({
 	tabs,
-	activeId,
-	pinnedIds,
+	activeKey,
+	pinnedKeys,
 	colors,
 	onSelect,
 	onTogglePin,
 	onSetColor,
 	onNewSession,
+	onReorder,
 }: Props) {
 	const [menu, setMenu] = useState<Menu | null>(null);
+	const [dragKey, setDragKey] = useState<string | null>(null);
+	const [overKey, setOverKey] = useState<string | null>(null);
 
-	// Dismiss the swatch menu on any outside click, scroll, or Escape.
 	useEffect(() => {
 		if (!menu) return;
 		const close = () => setMenu(null);
@@ -62,36 +73,75 @@ export function SessionTabs({
 
 	if (tabs.length === 0) return null;
 
+	function handleDrop(targetKey: string) {
+		if (!dragKey || dragKey === targetKey) {
+			setDragKey(null);
+			setOverKey(null);
+			return;
+		}
+		// Reorder only among pinned tabs (the transient tab can't be dropped onto).
+		const pinned = tabs.map(tabKey).filter((k) => pinnedKeys.has(k));
+		const from = pinned.indexOf(dragKey);
+		const to = pinned.indexOf(targetKey);
+		if (from !== -1 && to !== -1) {
+			pinned.splice(to, 0, pinned.splice(from, 1)[0]);
+			onReorder(pinned);
+		}
+		setDragKey(null);
+		setOverKey(null);
+	}
+
 	return (
 		<div className="session-tabs" role="tablist">
-			{tabs.map((s) => {
-				const pinned = pinnedIds.has(s.id);
-				const waiting = !!s.waitingForInput;
-				const hex = colorHex(colors[s.id]);
+			{tabs.map((tab) => {
+				const key = tabKey(tab);
+				const pinned = pinnedKeys.has(key);
+				const session = tab.kind === "session" ? tab.session : null;
+				const waiting = !!session?.waitingForInput;
+				const hex = colorHex(colors[key]);
 				return (
 					<div
-						key={s.id}
+						key={key}
 						role="tab"
-						aria-selected={s.id === activeId}
-						className={`session-tab ${s.id === activeId ? "session-tab-active" : ""} ${
+						aria-selected={key === activeKey}
+						draggable={pinned}
+						onDragStart={() => pinned && setDragKey(key)}
+						onDragOver={(e) => {
+							if (dragKey && pinned) {
+								e.preventDefault();
+								setOverKey(key);
+							}
+						}}
+						onDrop={() => handleDrop(key)}
+						onDragEnd={() => {
+							setDragKey(null);
+							setOverKey(null);
+						}}
+						className={`session-tab ${key === activeKey ? "session-tab-active" : ""} ${
 							pinned ? "" : "session-tab-transient"
-						} ${waiting ? "session-tab-waiting" : ""} ${hex ? "session-tab-colored" : ""}`}
+						} ${waiting ? "session-tab-waiting" : ""} ${hex ? "session-tab-colored" : ""} ${
+							tab.kind === "note" ? "session-tab-note" : ""
+						} ${dragKey === key ? "session-tab-dragging" : ""} ${
+							overKey === key && dragKey ? "session-tab-dragover" : ""
+						}`}
 						style={
 							hex ? ({ "--tab-color": hex } as React.CSSProperties) : undefined
 						}
-						onClick={() => onSelect(s)}
+						onClick={() => onSelect(tab)}
 						onContextMenu={(e) => {
 							e.preventDefault();
-							setMenu({ id: s.id, x: e.clientX, y: e.clientY });
+							setMenu({ key, x: e.clientX, y: e.clientY });
 						}}
-						title={waiting ? `${s.title} — waiting for your input` : s.title}
+						title={tabTitle(tab)}
 					>
-						{waiting ? (
+						{tab.kind === "note" ? (
+							<span className="session-tab-glyph">📝</span>
+						) : waiting ? (
 							<span className="session-tab-dot session-tab-dot-waiting" />
 						) : (
-							s.isRunning && <span className="session-tab-dot" />
+							session?.isRunning && <span className="session-tab-dot" />
 						)}
-						<span className="session-tab-title">{s.title}</span>
+						<span className="session-tab-title">{tabTitle(tab)}</span>
 						<span
 							className={`session-tab-pin ${pinned ? "session-tab-pin-on" : ""}`}
 							role="button"
@@ -99,7 +149,7 @@ export function SessionTabs({
 							title={pinned ? "Unpin" : "Pin tab"}
 							onClick={(e) => {
 								e.stopPropagation();
-								onTogglePin(s.id);
+								onTogglePin(key);
 							}}
 						>
 							{pinned ? "★" : "☆"}
@@ -121,19 +171,18 @@ export function SessionTabs({
 				<div
 					className="tab-color-menu"
 					style={{ left: menu.x, top: menu.y }}
-					// Keep clicks inside the menu from bubbling to the window-level closer.
 					onClick={(e) => e.stopPropagation()}
 				>
 					{TAB_COLORS.map((c) => (
 						<button
 							key={c.key}
 							type="button"
-							className={`tab-color-swatch ${colors[menu.id] === c.key ? "tab-color-swatch-on" : ""}`}
+							className={`tab-color-swatch ${colors[menu.key] === c.key ? "tab-color-swatch-on" : ""}`}
 							style={{ background: c.hex }}
 							aria-label={c.label}
 							title={c.label}
 							onClick={() => {
-								onSetColor(menu.id, c.key);
+								onSetColor(menu.key, c.key);
 								setMenu(null);
 							}}
 						/>
@@ -144,7 +193,7 @@ export function SessionTabs({
 						aria-label="No color"
 						title="No color"
 						onClick={() => {
-							onSetColor(menu.id, null);
+							onSetColor(menu.key, null);
 							setMenu(null);
 						}}
 					/>
