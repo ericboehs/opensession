@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
-import { fetchWorktrees, fetchModels, type ModelOption } from "../lib/api";
+import React, { useState, useEffect, useRef } from "react";
+import { fetchWorktrees, fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { filesToDataUrls, imageFilesFromPaste } from "../lib/images";
 import { ImageThumbs } from "./ImageThumbs";
+import { useFileMentions } from "./useFileMentions";
 import type { WSServerMessage } from "../lib/types";
 
 interface Props {
@@ -56,6 +57,16 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [model, setModel] = useState(""); // "" = default
+
+  // "@"-mention file autocomplete against the selected project's repo (no
+  // session exists yet, so search by project).
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const mentions = useFileMentions({
+    value: prompt,
+    onChange: setPrompt,
+    textareaRef: promptRef,
+    mentionFetch: (q) => fetchFileMentions(q, undefined, project),
+  });
 
   useEffect(() => {
     fetchModels()
@@ -209,6 +220,7 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
         <label>
           What should Michael do?
           <div
+            className="composer-input-wrap"
             onDrop={(e) => {
               if (e.dataTransfer?.files?.length) {
                 e.preventDefault();
@@ -216,15 +228,26 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
               }
             }}
             onDragOver={(e) => e.preventDefault()}
+            ref={mentions.inputWrapRef}
           >
+            {mentions.popup}
             <textarea
+              ref={promptRef}
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                // Caret has moved to the new value; re-evaluate after React commits.
+                queueMicrotask(mentions.sync);
+              }}
+              onKeyDown={(e) => mentions.handleKeyDown(e)}
+              onKeyUp={mentions.sync}
+              onClick={mentions.sync}
+              onBlur={() => setTimeout(mentions.close, 120)}
               onPaste={handlePaste}
               placeholder={
                 mode === "ask"
-                  ? "Ask anything about the codebase or product — read-only. Paste a screenshot to include it."
-                  : `Describe the task — Michael gets a fresh worktree on ${project} and starts right away. Paste a screenshot to include it.`
+                  ? "Ask anything about the codebase or product — read-only. Type @ to reference a file. Paste a screenshot to include it."
+                  : `Describe the task — Michael gets a fresh worktree on ${project} and starts right away. Type @ to reference a file. Paste a screenshot to include it.`
               }
               rows={6}
               disabled={creating}
