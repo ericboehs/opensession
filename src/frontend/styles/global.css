@@ -555,6 +555,21 @@ a {
 	min-width: 0;
 }
 
+/* Inline rename input in a sidebar row — matches the title's type. */
+.sidebar-item-rename {
+	font-size: 12.5px;
+	font-weight: 450;
+	font-family: inherit;
+	color: inherit;
+	background: var(--bg);
+	border: 1px solid var(--accent, #6b8afd);
+	border-radius: 3px;
+	padding: 0 3px;
+	min-width: 0;
+	flex: 1;
+	outline: none;
+}
+
 .sidebar-item-meta {
 	display: flex;
 	align-items: center;
@@ -639,6 +654,19 @@ a {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	max-width: 150px;
+}
+
+/* Inline rename input in a tab — sized to sit in place of the title. */
+.session-tab-rename {
+	max-width: 150px;
+	font: inherit;
+	color: inherit;
+	background: var(--bg);
+	border: 1px solid var(--accent, #6b8afd);
+	border-radius: 3px;
+	padding: 0 3px;
+	margin: -1px 0;
+	outline: none;
 }
 
 .session-tab-dot {
@@ -5986,6 +6014,13 @@ a {
 }
 
 /* Right pane: presence bar + editor + collapsible prompt */
+/* When a note is open the right pane is the editor, which manages its own
+   scroll + a flush bottom prompt bar — so drop the article padding/scroll that
+   wiki-content adds for read-only docs and let .note-pane fill edge to edge. */
+.notes-editing {
+	padding: 0 !important;
+	overflow: hidden !important;
+}
 .note-pane {
 	display: flex;
 	flex-direction: column;

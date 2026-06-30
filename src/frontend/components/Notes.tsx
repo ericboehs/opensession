@@ -352,7 +352,9 @@ export function Notes({
 				</div>
 			</div>
 
-			<div className="notes-content wiki-content">
+			<div
+				className={`notes-content wiki-content ${selNoteId ? "notes-editing" : ""}`}
+			>
 				<button
 					className="wiki-nav-toggle"
 					onClick={() => setNavOpen(!navOpen)}
