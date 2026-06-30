@@ -47,8 +47,10 @@ export function PreviewButton({ session }: { session: UnifiedSession }) {
 
   if (!session.worktreeDir || !status?.hasPortsConf) return null;
 
-  const running = status.running && status.webappPort != null;
-  const url = status.webappPort != null ? `http://${location.hostname}:${status.webappPort}` : "#";
+  // The webapp is only openable once Caddy has fronted it with an HTTPS origin
+  // (previewUrl). A secure origin is required for the app to load fully.
+  const running = status.running && status.previewUrl != null;
+  const url = status.previewUrl ?? "#";
   const anyRunning = status.services.some((s) => s.running);
 
   async function stop() {
@@ -69,7 +71,7 @@ export function PreviewButton({ session }: { session: UnifiedSession }) {
           href={url}
           target="_blank"
           rel="noopener"
-          title={`Open the webapp (port ${status.webappPort})`}
+          title={`Open the webapp — ${url}`}
         >
           <span className="preview-dot" />
           Preview ↗
@@ -78,7 +80,11 @@ export function PreviewButton({ session }: { session: UnifiedSession }) {
         <button
           className="preview-open"
           disabled
-          title="Webapp isn't running — start it in the session (tella-local)"
+          title={
+            status.running
+              ? "Webapp is up but couldn't be exposed over HTTPS (Caddy)"
+              : "Webapp isn't running — start it in the session (tella-local)"
+          }
         >
           <span className="preview-dot off" />
           Preview

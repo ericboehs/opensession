@@ -8,11 +8,15 @@
  *   INSTANT_PORT=5968
  *   ...
  *
- * `next dev` binds 0.0.0.0, so the webapp is reachable across the tailnet at
- * `http://<this-host>:<WEBAPP_PORT>` — the frontend builds that URL from
- * `location.hostname`. Here we only report which services are actually
- * listening (so the UI can enable the Preview button + show running processes)
- * and stop them on request.
+ * `next dev` binds 0.0.0.0, but the webapp can't just be opened at
+ * `http://<host>:<WEBAPP_PORT>`: it needs a *secure* (HTTPS) origin to be a
+ * trusted context (WebCrypto etc.), and Next dev only hydrates over an origin
+ * it's been told to trust. So for each running webapp we expose a dedicated
+ * HTTPS port on the tailnet host via Caddy (which already holds the ts.net
+ * cert), reverse-proxying to the webapp's port. The session's worktree must
+ * have been started with `ALLOWED_DEV_ORIGINS=<host>` so Next dev hydrates over
+ * that origin (the tella-local ensure-up.sh seeds it). The preview URL is then
+ * `https://<host>:<httpsPort>`.
  */
 import { $ } from "bun";
 import { existsSync, readFileSync, readlinkSync } from "fs";
@@ -34,6 +38,8 @@ export interface PreviewStatus {
   webappPort: number | null;
   /** Whether the webapp itself is currently listening. */
   running: boolean;
+  /** HTTPS preview URL (Caddy-fronted) when the webapp is up, else null. */
+  previewUrl: string | null;
   services: PreviewService[];
 }
 
@@ -85,6 +91,75 @@ async function pgidOf(pid: number): Promise<number | null> {
   return Number.isFinite(n) ? n : null;
 }
 
+// ── HTTPS preview exposure via Caddy ──────────────────────────────────────────
+// Caddy (admin API on localhost:2019) already terminates TLS for this machine's
+// ts.net hostname. We add one reverse-proxy server per running webapp, on a
+// deterministic high port, so each session gets its own secure origin.
+
+const CADDY_ADMIN = "http://localhost:2019";
+const g = globalThis as unknown as {
+  __previewRoutes?: Map<number, number>;
+  __previewHost?: string;
+};
+// httpsPort -> webappPort we've already configured (survives --hot reloads).
+const previewRoutes: Map<number, number> = (g.__previewRoutes ??= new Map());
+
+/** This machine's tailnet hostname (e.g. michael.taila5d766.ts.net). */
+async function previewHost(): Promise<string> {
+  if (g.__previewHost) return g.__previewHost;
+  let host = process.env.PREVIEW_HOST || "";
+  if (!host) {
+    try {
+      const raw = await $`tailscale status --json`.quiet().nothrow().text();
+      host = (JSON.parse(raw)?.Self?.DNSName || "").replace(/\.$/, "");
+    } catch {}
+  }
+  if (!host) host = "michael.taila5d766.ts.net";
+  g.__previewHost = host;
+  return host;
+}
+
+// Webapp dev ports are 3100-3999 and globally unique among running servers, so
+// +6000 gives a unique, stable preview port in 9100-9999.
+function httpsPortFor(webappPort: number): number {
+  return webappPort + 6000;
+}
+
+/** Add/refresh the Caddy server for this webapp (idempotent, cached). */
+async function ensurePreviewRoute(httpsPort: number, webappPort: number, host: string): Promise<boolean> {
+  if (previewRoutes.get(httpsPort) === webappPort) return true;
+  const server = {
+    listen: [`:${httpsPort}`],
+    routes: [
+      {
+        match: [{ host: [host] }],
+        handle: [{ handler: "reverse_proxy", upstreams: [{ dial: `127.0.0.1:${webappPort}` }] }],
+        terminal: true,
+      },
+    ],
+  };
+  try {
+    const res = await fetch(`${CADDY_ADMIN}/config/apps/http/servers/preview_${httpsPort}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(server),
+    });
+    if (!res.ok) return false;
+    previewRoutes.set(httpsPort, webappPort);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function removePreviewRoute(httpsPort: number): Promise<void> {
+  if (!previewRoutes.has(httpsPort)) return;
+  try {
+    await fetch(`${CADDY_ADMIN}/config/apps/http/servers/preview_${httpsPort}`, { method: "DELETE" });
+  } catch {}
+  previewRoutes.delete(httpsPort);
+}
+
 export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStatus> {
   const ports = readPorts(worktreeDir);
   const services: PreviewService[] = await Promise.all(
@@ -94,10 +169,26 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
     }),
   );
   const webapp = services.find((s) => s.key === "WEBAPP_PORT");
+
+  // Keep the Caddy HTTPS exposure in sync with the webapp's state: add the
+  // route while it's up (so the preview URL is live and the button opens it
+  // directly), drop it once it's gone.
+  let previewUrl: string | null = null;
+  if (webapp?.running) {
+    const httpsPort = httpsPortFor(webapp.port);
+    const host = await previewHost();
+    if (await ensurePreviewRoute(httpsPort, webapp.port, host)) {
+      previewUrl = `https://${host}:${httpsPort}`;
+    }
+  } else if (webapp) {
+    await removePreviewRoute(httpsPortFor(webapp.port));
+  }
+
   return {
     hasPortsConf: ports.length > 0,
     webappPort: webapp?.port ?? null,
     running: !!webapp?.running,
+    previewUrl,
     services,
   };
 }

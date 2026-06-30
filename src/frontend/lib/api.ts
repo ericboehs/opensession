@@ -20,6 +20,7 @@ export interface PreviewStatus {
   hasPortsConf: boolean;
   webappPort: number | null;
   running: boolean;
+  previewUrl: string | null;
   services: PreviewService[];
 }
 

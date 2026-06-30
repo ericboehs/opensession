@@ -1431,7 +1431,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
         const session = findSession(decodeURIComponent(m[1]));
         if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
         if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
-          return Response.json({ hasPortsConf: false, webappPort: null, running: false, services: [] });
+          return Response.json({ hasPortsConf: false, webappPort: null, running: false, previewUrl: null, services: [] });
         }
         return Response.json(await getPreviewStatus(session.worktreeDir));
       }
@@ -1444,7 +1444,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
         const session = findSession(decodeURIComponent(m[1]));
         if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
         if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
-          return Response.json({ hasPortsConf: false, webappPort: null, running: false, services: [] });
+          return Response.json({ hasPortsConf: false, webappPort: null, running: false, previewUrl: null, services: [] });
         }
         return Response.json(await stopPreview(session.worktreeDir));
       }
