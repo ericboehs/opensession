@@ -346,28 +346,41 @@ async function refreshPrCache(): Promise<void> {
   if (prRefreshing) return;
   prRefreshing = true;
   try {
-    // GitHub's GraphQL 504s when asked for statusCheckRollup across hundreds of
-    // PRs, so split the work: one cheap bulk call for every PR's metadata, and
-    // a second scoped call that pulls the CI rollup only for the recent open
-    // PRs (the ones a reviewer actually triages). Closed/merged PRs simply show
-    // no checks column.
-    const [bulk, rollups] = await Promise.all([
-      ghJson<Array<{
-        headRefName: string; url: string; state: string; number: number; title: string;
-        isDraft: boolean; additions: number; deletions: number; changedFiles: number;
-        reviewDecision: string; author?: { login?: string; name?: string }; updatedAt: string;
-      }>>([
+    type BulkPr = {
+      headRefName: string; url: string; state: string; number: number; title: string;
+      isDraft: boolean; additions: number; deletions: number; changedFiles: number;
+      reviewDecision: string; author?: { login?: string; name?: string }; updatedAt: string;
+    };
+    const FIELDS =
+      "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,updatedAt";
+
+    // A session's branch is matched against open PRs, so we must see EVERY open
+    // PR — not just the newest N. The repo carries 200+ open PRs at a time, so a
+    // single `--state all --limit 200` window silently drops older open ones
+    // (the bug where a real PR wouldn't show on its session). Split it:
+    //   - `--state open` with a generous limit → all open PRs (the live matches)
+    //   - `--state all` window → recently merged/closed (Reviews "merged" view +
+    //     sessions whose PR just landed)
+    // GitHub's GraphQL also 504s asking for statusCheckRollup across hundreds of
+    // PRs, so the CI rollup stays a small scoped call over the most recent open
+    // PRs (the ones a reviewer actually triages); others show no checks column.
+    const [openPrs, recentAll, rollups] = await Promise.all([
+      ghJson<BulkPr[]>([
+        "pr", "list", "--repo", "tellahq/tella-fusion", "--state", "open", "--limit", "500",
+        "--json", FIELDS,
+      ]),
+      ghJson<BulkPr[]>([
         "pr", "list", "--repo", "tellahq/tella-fusion", "--state", "all", "--limit", "200",
-        "--json", "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,updatedAt",
+        "--json", FIELDS,
       ]),
       ghJson<Array<{ number: number; statusCheckRollup?: RollupCheck[] }>>([
-        "pr", "list", "--repo", "tellahq/tella-fusion", "--state", "open", "--limit", "40",
+        "pr", "list", "--repo", "tellahq/tella-fusion", "--state", "open", "--limit", "60",
         "--json", "number,statusCheckRollup",
       ]),
     ]);
 
-    if (!bulk) {
-      prCache.ts = Date.now(); // back off on failure, keep stale data
+    if (!openPrs && !recentAll) {
+      prCache.ts = Date.now(); // both calls failed — back off, keep stale data
       return;
     }
 
@@ -376,22 +389,30 @@ async function refreshPrCache(): Promise<void> {
       checksByNumber.set(r.number, summarizeChecks(r.statusCheckRollup));
     }
 
+    const toInfo = (pr: BulkPr): PrInfo => ({
+      url: pr.url,
+      state: pr.state as PrInfo["state"],
+      number: pr.number,
+      title: pr.title || "",
+      isDraft: !!pr.isDraft,
+      additions: pr.additions || 0,
+      deletions: pr.deletions || 0,
+      changedFiles: pr.changedFiles || 0,
+      reviewDecision: pr.reviewDecision || "",
+      author: pr.author?.login || pr.author?.name || "",
+      updatedAt: pr.updatedAt || "",
+      checks: checksByNumber.get(pr.number) || { total: 0, passed: 0, failed: 0, pending: 0 },
+    });
+
+    // Seed with recent closed/merged (newest-first → keep the first per branch),
+    // then let open PRs override: an open PR is the authoritative state for a
+    // branch even if an older closed PR reused the same head ref.
     const map = new Map<string, PrInfo>();
-    for (const pr of bulk) {
-      map.set(pr.headRefName, {
-        url: pr.url,
-        state: pr.state as PrInfo["state"],
-        number: pr.number,
-        title: pr.title || "",
-        isDraft: !!pr.isDraft,
-        additions: pr.additions || 0,
-        deletions: pr.deletions || 0,
-        changedFiles: pr.changedFiles || 0,
-        reviewDecision: pr.reviewDecision || "",
-        author: pr.author?.login || pr.author?.name || "",
-        updatedAt: pr.updatedAt || "",
-        checks: checksByNumber.get(pr.number) || { total: 0, passed: 0, failed: 0, pending: 0 },
-      });
+    for (const pr of recentAll || []) {
+      if (!map.has(pr.headRefName)) map.set(pr.headRefName, toInfo(pr));
+    }
+    for (const pr of openPrs || []) {
+      map.set(pr.headRefName, toInfo(pr));
     }
     prCache = { data: map, ts: Date.now() };
   } catch (e) {
