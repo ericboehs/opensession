@@ -109,6 +109,7 @@ export interface PrDetails {
 
 export type WSClientMessage =
   | { type: "watch"; sessionId: string; user?: string }
+  | { type: "load_history"; sessionId: string }
   | { type: "prompt"; sessionId: string; content: string; user?: string; images?: string[] }
   | { type: "interrupt_prompt"; sessionId: string; content: string; user?: string }
   | { type: "cancel" }
@@ -126,7 +127,7 @@ export type WSClientMessage =
     };
 
 export type WSServerMessage =
-  | { type: "transcript_init"; entries: TranscriptEntry[] }
+  | { type: "transcript_init"; entries: TranscriptEntry[]; truncated?: boolean }
   | { type: "transcript_append"; entries: TranscriptEntry[] }
   | { type: "session_status"; isRunning: boolean }
   | { type: "presence"; sessionId: string; viewers: string[] }

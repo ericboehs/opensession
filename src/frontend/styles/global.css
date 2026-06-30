@@ -2178,6 +2178,32 @@ a {
    isn't fought by the anchor as tokens append. */
 .msg-streaming { overflow-anchor: none; }
 
+/* "Load earlier history" — shown when the initial view is only the tail of a
+   large transcript. Excluded from scroll anchoring so the click-to-expand keeps
+   the reader's place via the content below it. */
+.load-history {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 14px;
+  overflow-anchor: none;
+}
+.load-history-btn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.load-history-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.load-history-btn:disabled { opacity: 0.6; cursor: default; }
+
 /* Bottom spacer that lets the latest turn reach the top of the viewport. Height is
    set imperatively by the scroll hook; no transition so it tracks streaming exactly. */
 .turn-spacer {

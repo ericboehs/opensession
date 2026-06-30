@@ -4,7 +4,7 @@ import { randomUUIDv7 } from "bun";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, watch } from "fs";
 import homepage from "./src/frontend/index.html";
 import { getAllSessions, deleteSession } from "./src/server/sessions";
-import { parseTranscript } from "./src/server/jsonl-parser";
+import { parseTranscript, parseTranscriptTail } from "./src/server/jsonl-parser";
 import { getSubagentTranscript } from "./src/server/subagents";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
 import { listWorktrees, createWorktree, removeWorktree, reviveWorktree, sweepArchivedWorktrees, getProject, projectForPath } from "./src/server/worktree";
@@ -1632,11 +1632,14 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
           if (msg.user) data.user = msg.user;
           joinSession(ws, sessionId);
 
-          // Send full transcript
-          const entries = session.transcriptPath
-            ? parseTranscript(session.transcriptPath)
-            : [];
-          ws.send(JSON.stringify({ type: "transcript_init", entries }));
+          // Send the tail of the transcript for a fast initial render. A large
+          // (multi-MB) transcript would otherwise block the open for seconds;
+          // `truncated` tells the client to offer "load earlier history", which
+          // comes back as a `load_history` message below.
+          const { entries, truncated } = session.transcriptPath
+            ? parseTranscriptTail(session.transcriptPath)
+            : { entries: [], truncated: false };
+          ws.send(JSON.stringify({ type: "transcript_init", entries, truncated }));
 
           // Start file watcher
           if (session.transcriptPath) {
@@ -1675,6 +1678,19 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
                 isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id),
             })
           );
+          break;
+        }
+
+        case "load_history": {
+          // "Load earlier history" button: the initial watch only sent the tail,
+          // so re-send the full transcript (cached by mtime in jsonl-parser).
+          const session = findSession(msg.sessionId);
+          if (!session?.transcriptPath) {
+            ws.send(JSON.stringify({ type: "transcript_init", entries: [], truncated: false }));
+            return;
+          }
+          const entries = parseTranscript(session.transcriptPath);
+          ws.send(JSON.stringify({ type: "transcript_init", entries, truncated: false }));
           break;
         }
 

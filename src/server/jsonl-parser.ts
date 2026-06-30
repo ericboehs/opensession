@@ -1,4 +1,5 @@
 import { readFileSync, statSync } from "fs";
+import { openSync, readSync, closeSync, fstatSync } from "fs";
 import { existsSync } from "fs";
 import type { TranscriptEntry } from "./types";
 import { SLACK_ID_TO_NAME } from "./shared/user-mappings";
@@ -410,16 +411,10 @@ function parseCodexLines(lines: string[]): TranscriptEntry[] {
   return entries;
 }
 
-export function parseTranscript(path: string): TranscriptEntry[] {
-  if (!existsSync(path)) return [];
-
-  if (isCodexRolloutPath(path)) {
-    const raw = readFileSync(path, "utf-8");
-    return parseCodexLines(raw.split("\n").filter((l) => l.trim()));
-  }
-
-  const raw = readFileSync(path, "utf-8");
-  const lines = raw.split("\n").filter((l) => l.trim());
+// Parse a set of already-split Claude jsonl lines, deduplicating assistant
+// messages that share a requestId (the SDK rewrites a streamed turn under one
+// requestId; keep the last). Shared by the full parse and the tail parse.
+function parseClaudeLines(lines: string[]): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
   const seenRequestIds = new Map<string, number>(); // requestId → last index in entries
 
@@ -432,20 +427,12 @@ export function parseTranscript(path: string): TranscriptEntry[] {
     }
 
     // Skip non-message types
-    if (
-      parsed.type !== "user" &&
-      parsed.type !== "assistant"
-    ) {
-      continue;
-    }
+    if (parsed.type !== "user" && parsed.type !== "assistant") continue;
 
     const newEntries = parseEntry(parsed);
     for (const entry of newEntries) {
       // Deduplicate assistant messages with same requestId (keep last)
-      if (
-        entry.type === "assistant" &&
-        entry.requestId
-      ) {
+      if (entry.type === "assistant" && entry.requestId) {
         const prevIdx = seenRequestIds.get(entry.requestId);
         if (prevIdx !== undefined) {
           entries[prevIdx] = entry;
@@ -458,6 +445,122 @@ export function parseTranscript(path: string): TranscriptEntry[] {
   }
 
   return entries;
+}
+
+// Cache full parses keyed by (mtimeMs, size): re-opening an unchanged transcript
+// is the common case (every WebSocket re-watch, every "load older history" click,
+// SpinOff, terminal view), and a 31 MB transcript costs ~5 s to read+parse cold.
+// Bounded to a handful of recent transcripts so a few large ones can't blow up
+// the VPS's (swapless) memory. Entries are returned by reference — no current
+// caller mutates the array in place (they spread / slice / JSON-serialize).
+interface ParseCacheEntry {
+  mtimeMs: number;
+  size: number;
+  entries: TranscriptEntry[];
+}
+const parseCache = new Map<string, ParseCacheEntry>();
+const PARSE_CACHE_MAX = 24;
+
+// Read only the last `maxBytes` of a file straight off disk (positional read,
+// not a full readFileSync) so opening a huge transcript doesn't pay to load the
+// whole history. `truncated` is true when earlier bytes were skipped.
+const DEFAULT_TAIL_BYTES = 256 * 1024;
+function readTailBytes(
+  path: string,
+  maxBytes: number
+): { buf: Buffer; truncated: boolean } {
+  const fd = openSync(path, "r");
+  try {
+    const size = fstatSync(fd).size;
+    const start = size > maxBytes ? size - maxBytes : 0;
+    const len = size - start;
+    const buf = Buffer.allocUnsafe(len);
+    if (len > 0) readSync(fd, buf, 0, len, start);
+    return { buf, truncated: start > 0 };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+export function parseTranscript(path: string): TranscriptEntry[] {
+  if (!existsSync(path)) return [];
+
+  let mtimeMs = 0;
+  let size = 0;
+  try {
+    const st = statSync(path);
+    mtimeMs = st.mtimeMs;
+    size = st.size;
+    const hit = parseCache.get(path);
+    if (hit && hit.mtimeMs === mtimeMs && hit.size === size) {
+      // Refresh LRU position
+      parseCache.delete(path);
+      parseCache.set(path, hit);
+      return hit.entries;
+    }
+  } catch {
+    // stat failed — fall through to an uncached parse
+  }
+
+  const raw = readFileSync(path, "utf-8");
+  const lines = raw.split("\n").filter((l) => l.trim());
+  const entries = isCodexRolloutPath(path)
+    ? parseCodexLines(lines)
+    : parseClaudeLines(lines);
+
+  if (mtimeMs) {
+    parseCache.set(path, { mtimeMs, size, entries });
+    if (parseCache.size > PARSE_CACHE_MAX) {
+      const oldest = parseCache.keys().next().value;
+      if (oldest !== undefined) parseCache.delete(oldest);
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * Parse only the tail of a transcript for a fast initial render. Reads at most
+ * `maxBytes` off the end of the file (so even a cold 30 MB transcript opens in
+ * milliseconds) and returns `truncated: true` when earlier history was skipped,
+ * which the UI surfaces as a "load earlier history" affordance that falls back
+ * to the full `parseTranscript`. Codex rollouts parse in full (small, and the
+ * format isn't safe to start mid-stream).
+ */
+export function parseTranscriptTail(
+  path: string,
+  maxBytes: number = DEFAULT_TAIL_BYTES
+): { entries: TranscriptEntry[]; truncated: boolean } {
+  if (!existsSync(path)) return { entries: [], truncated: false };
+  if (isCodexRolloutPath(path)) {
+    return { entries: parseTranscript(path), truncated: false };
+  }
+
+  let buf: Buffer;
+  let truncated: boolean;
+  try {
+    ({ buf, truncated } = readTailBytes(path, maxBytes));
+  } catch {
+    return { entries: parseTranscript(path), truncated: false };
+  }
+
+  // Drop the leading partial line so we never start mid-JSON-object.
+  let chunk = buf;
+  if (truncated) {
+    const nl = buf.indexOf(0x0a);
+    chunk = nl !== -1 ? buf.subarray(nl + 1) : Buffer.alloc(0);
+  }
+  const lines = chunk.toString("utf-8").split("\n").filter((l) => l.trim());
+  const entries = parseClaudeLines(lines);
+
+  // A single line larger than the window (e.g. a huge embedded tool result)
+  // would leave the tail empty — fall back to the full parse so the viewer is
+  // never blank.
+  if (entries.length === 0 && truncated) {
+    return { entries: parseTranscript(path), truncated: false };
+  }
+
+  return { entries, truncated };
 }
 
 export function parseTranscriptFrom(

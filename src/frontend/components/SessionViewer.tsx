@@ -45,6 +45,10 @@ function mergeEntries(prev: TranscriptEntry[], incoming: TranscriptEntry[]): Tra
 export function SessionViewer({ session, onBack, send, addHandler, connected }: Props) {
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  // The initial transcript is the tail only when the file is large; these drive
+  // the "load earlier history" affordance at the top of the conversation.
+  const [historyTruncated, setHistoryTruncated] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [input, setInput] = useState("");
   // Pasted/dropped images (data URLs) staged for the next send.
   const [images, setImages] = useState<string[]>([]);
@@ -170,6 +174,8 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
           );
           setEntries(merged);
+          setHistoryTruncated(!!msg.truncated);
+          setLoadingHistory(false);
           setLoading(false);
           break;
         }
@@ -632,12 +638,28 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             ) : entries.length === 0 ? (
               <div className="empty">Empty transcript</div>
             ) : (
-              <TranscriptBlocks
-                entries={entries}
-                live={isBusy}
-                onFork={isClaudeSession ? handleFork : undefined}
-                onOpenSubagent={openSubagent}
-              />
+              <>
+                {historyTruncated && (
+                  <div className="load-history">
+                    <button
+                      className="load-history-btn"
+                      disabled={loadingHistory}
+                      onClick={() => {
+                        setLoadingHistory(true);
+                        send({ type: "load_history", sessionId: session.id });
+                      }}
+                    >
+                      {loadingHistory ? "Loading earlier history…" : "↑ Load earlier history"}
+                    </button>
+                  </div>
+                )}
+                <TranscriptBlocks
+                  entries={entries}
+                  live={isBusy}
+                  onFork={isClaudeSession ? handleFork : undefined}
+                  onOpenSubagent={openSubagent}
+                />
+              </>
             )}
 
             {streamText && <StreamingMessage text={streamText} />}
