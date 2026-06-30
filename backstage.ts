@@ -37,6 +37,7 @@ import {
   removeCodexAccount,
 } from "./src/server/codex-accounts";
 import { getSessionDiff } from "./src/server/git-diff";
+import { searchRepoFiles } from "./src/server/file-index";
 import { getPreviewStatus, stopPreview } from "./src/server/preview";
 import {
   registerSessionControl,
@@ -1573,6 +1574,26 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
     // List worktrees (optionally for a specific project)
     if (path === "/backstage/api/worktrees" && req.method === "GET") {
       return Response.json(await listWorktrees(url.searchParams.get("project") || undefined));
+    }
+
+    // File-mention autocomplete ("@" in the composer). Resolves the checkout
+    // from the session (its worktree, or the shared checkout) and falls back to
+    // the default project repo for new-session composers that have no session
+    // yet. Returns fuzzy-ranked, capped repo-relative paths.
+    if (path === "/backstage/api/files" && req.method === "GET") {
+      const q = url.searchParams.get("q") || "";
+      const sessionId = url.searchParams.get("session");
+      let dir: string | null = null;
+      if (sessionId) {
+        const session = findSession(sessionId);
+        if (session?.worktreeDir && existsSync(session.worktreeDir)) dir = session.worktreeDir;
+      }
+      if (!dir) dir = getProject(url.searchParams.get("project") || undefined).repo;
+      try {
+        return Response.json({ files: await searchRepoFiles(dir, q, 20) });
+      } catch {
+        return Response.json({ files: [] });
+      }
     }
 
     // ── Automations ──

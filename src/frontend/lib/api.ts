@@ -57,6 +57,22 @@ export async function fetchSubagent(sessionId: string, agentId: string): Promise
   return res.json();
 }
 
+/**
+ * File suggestions for "@"-mention autocomplete in the composer. Sourced from
+ * the session's checkout (or the default project repo when there's no session).
+ */
+export async function fetchFileMentions(
+  query: string,
+  sessionId?: string,
+): Promise<string[]> {
+  const params = new URLSearchParams({ q: query });
+  if (sessionId) params.set("session", sessionId);
+  const res = await fetch(`${BASE}/files?${params.toString()}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.files ?? [];
+}
+
 export async function fetchWorktrees(project?: string) {
   const qs = project ? `?project=${encodeURIComponent(project)}` : "";
   const res = await fetch(`${BASE}/worktrees${qs}`);

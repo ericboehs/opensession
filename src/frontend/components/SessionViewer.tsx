@@ -6,7 +6,7 @@ import { TranscriptBlocks } from "./TranscriptBlocks";
 import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
-import { deleteSessionApi, fetchModels, type ModelOption } from "../lib/api";
+import { deleteSessionApi, fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
 import { Composer } from "./Composer";
 import { DiffPanel } from "./DiffPanel";
 import { AskCard } from "./AskCard";
@@ -841,7 +841,8 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                       ? "Set the model from the owning agent (/model in the Slack thread)"
                       : "Switch the model for this session"
                   }
-                  hint="Enter to send · Shift+Enter for newline · /goal pins a goal · /loop runs on an interval"
+                  mentionFetch={(q) => fetchFileMentions(q, session.id)}
+                  hint="Enter to send · Shift+Enter for newline · @ to mention a file · /goal pins a goal · /loop runs on an interval"
                   textareaRef={composerRef}
                 />
               </>

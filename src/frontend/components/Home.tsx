@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
-import { relativeTime, fetchModels, type ModelOption } from "../lib/api";
+import { relativeTime, fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
 import { sessionStatus } from "../lib/status";
 import { getPins, togglePin } from "../lib/pins";
 import { useCurrentUser } from "./UserPicker";
@@ -130,6 +130,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
             model={askModel}
             onModelChange={setAskModel}
             modelTitle="Model for this Ask session"
+            mentionFetch={(q) => fetchFileMentions(q)}
             autoFocus={
               typeof window === "undefined" || !window.matchMedia("(max-width: 720px)").matches
             }
