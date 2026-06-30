@@ -21,3 +21,23 @@ export function parseHumanReply(content?: string): { name: string; body: string 
   const body = content.replace(HUMAN_REPLY_HEADER, "").trim();
   return { name: m[1].trim(), body };
 }
+
+/**
+ * Detect the plain "[Name] " attribution prefix the server prepends when a
+ * *named* teammate drives someone else's session — a steer, interrupt,
+ * batch-queued prompt, or a cross-session `send_to_session` (backstage.ts).
+ * Unlike a human-in-the-loop ask answer (parseHumanReply), this turn IS the
+ * session driver, so it gets a normal bubble — but credited to whoever sent it,
+ * not the viewer ("You"). Returns the sender + the prefix-stripped message.
+ *
+ * Kept deliberately strict (single-line, brace-free name ≤40 chars) so an
+ * ordinary prompt that opens with "[WIP] …" isn't mistaken for an attribution.
+ */
+const ATTRIBUTION_RE = /^\[([^\]\n{}]{1,40})\]\s+([\s\S]*)$/;
+
+export function parseAttribution(content?: string): { name: string; body: string } | null {
+  if (!content) return null;
+  const m = content.match(ATTRIBUTION_RE);
+  if (!m) return null;
+  return { name: m[1].trim(), body: m[2] };
+}

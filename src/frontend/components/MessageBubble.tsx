@@ -1,7 +1,8 @@
 import React, { useMemo } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
-import { parseHumanReply } from "../lib/humanReply";
+import { parseHumanReply, parseAttribution } from "../lib/humanReply";
+import { useCurrentUser } from "./UserPicker";
 
 interface Props {
   entry: TranscriptEntry;
@@ -24,7 +25,7 @@ function EntryImages({ images }: { images?: string[] }) {
 }
 
 export function MessageBubble({ entry, onFork }: Props) {
-  const html = useMemo(() => renderMarkdown(entry.content), [entry.content]);
+  const me = useCurrentUser();
   // A routed-back teammate reply (human-in-the-loop): credit the teammate and
   // render just their words (the header is stripped — the label carries "who").
   const humanReply = useMemo(() => {
@@ -32,6 +33,16 @@ export function MessageBubble({ entry, onFork }: Props) {
     const parsed = parseHumanReply(entry.content);
     return parsed ? { name: parsed.name, html: renderMarkdown(parsed.body) } : null;
   }, [entry.type, entry.content]);
+  // A "[Name] …" attributed turn: a named teammate steered/sent into this
+  // session. It's the driver, so it keeps a normal user bubble — but credited
+  // to the sender (and the prefix stripped). When the sender is the viewer it
+  // stays "You"; only the body changes (prefix removed).
+  const attribution = useMemo(() => {
+    if (entry.type !== "user" || humanReply) return null;
+    return parseAttribution(entry.content);
+  }, [entry.type, entry.content, humanReply]);
+  const displayContent = attribution ? attribution.body : entry.content;
+  const html = useMemo(() => renderMarkdown(displayContent), [displayContent]);
 
   if (entry.type === "system") {
     return (
@@ -55,10 +66,13 @@ export function MessageBubble({ entry, onFork }: Props) {
   }
 
   if (entry.type === "user") {
+    // Credit a named teammate who drove this session; "You" only when the
+    // sender is the current viewer (or the turn carries no attribution).
+    const fromOther = attribution && attribution.name !== me ? attribution.name : null;
     return (
       <div className="msg msg-user">
-        <div className="msg-label msg-label-user">You</div>
-        {entry.content && (
+        <div className="msg-label msg-label-user">{fromOther || "You"}</div>
+        {displayContent && (
           <div
             className="msg-body msg-body-user markdown"
             dangerouslySetInnerHTML={{ __html: html || "" }}
