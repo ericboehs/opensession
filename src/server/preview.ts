@@ -67,14 +67,16 @@ function readPorts(worktreeDir: string): { key: string; port: number }[] {
   return out;
 }
 
-/** PIDs with a LISTEN socket on a TCP port (empty if nothing is listening). */
+/**
+ * PIDs with a LISTEN socket on a TCP port (empty if nothing is listening).
+ * Uses `ss` rather than `lsof` — on this host lsof can't read the socket→pid
+ * mapping without root, but `ss -p` can.
+ */
 async function listenersOnPort(port: number): Promise<number[]> {
-  const sel = `tcp:${port}`;
-  const raw = await $`lsof -ti ${sel} -sTCP:LISTEN`.quiet().nothrow().text();
-  return raw
-    .split("\n")
-    .map((s) => parseInt(s.trim(), 10))
-    .filter((n) => Number.isFinite(n));
+  const raw = await $`ss -tlnpH sport = :${port}`.quiet().nothrow().text();
+  const pids = new Set<number>();
+  for (const m of raw.matchAll(/pid=(\d+)/g)) pids.add(parseInt(m[1], 10));
+  return [...pids];
 }
 
 async function pgidOf(pid: number): Promise<number | null> {
