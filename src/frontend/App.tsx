@@ -5,6 +5,7 @@ import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
 import { Home } from "./components/Home";
 import { Automations } from "./components/Automations";
+import { Actions } from "./components/Actions";
 import { Wiki } from "./components/Wiki";
 import { Connections } from "./components/Connections";
 import { Archived } from "./components/Archived";
@@ -28,6 +29,7 @@ type Route =
   | { view: "session"; id: string }
   | { view: "reviews"; id?: string }
   | { view: "automations" }
+  | { view: "actions" }
   | { view: "wiki"; path: string | null }
   | { view: "connections" }
   | { view: "archived" };
@@ -37,6 +39,7 @@ function parseRoute(pathname: string): Route {
   if (sessionMatch) return { view: "session", id: decodeURIComponent(sessionMatch[1]) };
   if (pathname === "/backstage/new") return { view: "new" };
   if (pathname === "/backstage/automations") return { view: "automations" };
+  if (pathname === "/backstage/actions") return { view: "actions" };
   if (pathname === "/backstage/connections") return { view: "connections" };
   if (pathname === "/backstage/archived") return { view: "archived" };
   const reviewsMatch = pathname.match(/^\/backstage\/reviews(?:\/(.+))?$/);
@@ -56,6 +59,8 @@ function routePath(route: Route): string {
         : "/backstage/new";
     case "automations":
       return "/backstage/automations";
+    case "actions":
+      return "/backstage/actions";
     case "connections":
       return "/backstage/connections";
     case "archived":
@@ -186,6 +191,7 @@ function App() {
 
   const activeView =
     route.view === "automations" ||
+    route.view === "actions" ||
     route.view === "wiki" ||
     route.view === "connections" ||
     route.view === "reviews"
@@ -275,6 +281,8 @@ function App() {
               />
             ) : route.view === "automations" ? (
               <Automations onOpenSession={(id) => navigate({ view: "session", id })} />
+            ) : route.view === "actions" ? (
+              <Actions onOpenSession={(id) => navigate({ view: "session", id })} />
             ) : route.view === "connections" ? (
               <Connections />
             ) : route.view === "reviews" ? (

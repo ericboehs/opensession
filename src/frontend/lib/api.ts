@@ -298,6 +298,97 @@ export async function runAutomationApi(id: string) {
   if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 }
 
+// ── Actions (run a registered repo script behind a form) ──
+
+export type ActionInputType = "text" | "number" | "select" | "boolean";
+
+export interface ActionInput {
+  name: string;
+  label?: string;
+  type: ActionInputType;
+  required?: boolean;
+  default?: string;
+  options?: string[];
+  hint?: string;
+}
+
+export interface Action {
+  id: string;
+  name: string;
+  description?: string;
+  repo: string;
+  scriptPath: string;
+  inputs: ActionInput[];
+  argMode: "positional" | "env";
+  confirm?: boolean;
+  model?: string;
+  seeded?: boolean;
+  createdBy: string;
+  createdAt: string;
+  lastRunAt?: string;
+  lastRunSessionId?: string;
+}
+
+export async function fetchActions(): Promise<Action[]> {
+  const res = await fetch(`${BASE}/actions`);
+  if (!res.ok) throw new Error(`Failed to fetch actions: ${res.status}`);
+  return res.json();
+}
+
+export async function createActionApi(input: {
+  name: string;
+  description?: string;
+  repo: string;
+  scriptPath: string;
+  inputs: ActionInput[];
+  argMode: "positional" | "env";
+  confirm?: boolean;
+  createdBy: string;
+}): Promise<Action> {
+  const res = await fetch(`${BASE}/actions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+  return body;
+}
+
+export async function deleteActionApi(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/actions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
+}
+
+export async function runActionApi(
+  id: string,
+  values: Record<string, unknown>,
+  user: string
+): Promise<{ sessionId: string }> {
+  const res = await fetch(`${BASE}/actions/${encodeURIComponent(id)}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ values, user }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+  return body;
+}
+
+export async function introspectActionApi(
+  repo: string,
+  scriptPath: string
+): Promise<{ inputs: ActionInput[]; argMode: "positional" | "env" }> {
+  const res = await fetch(`${BASE}/actions/introspect`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo, scriptPath }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+  return body;
+}
+
 // ── Pins (per-user pinned tabs) ──
 
 export async function fetchPins(user: string): Promise<string[]> {

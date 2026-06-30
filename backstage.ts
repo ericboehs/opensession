@@ -71,6 +71,15 @@ import {
   automationDeniedTools,
   automationMcpServersByName,
 } from "./src/server/automations";
+import {
+  listActions,
+  getAction,
+  createAction,
+  deleteAction,
+  runAction,
+  introspectScript,
+  ensureSeedActions,
+} from "./src/server/actions";
 import { getWikiTree, getWikiFile, searchWiki } from "./src/server/wiki";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { setArchived, archiveOlderThan } from "./src/server/archive";
@@ -1824,6 +1833,59 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
         : Response.json({ error: "Not found" }, { status: 404 });
     }
 
+    // ── Actions (run a registered repo script behind a form) ──
+    if (path === "/backstage/api/actions" && req.method === "GET") {
+      return Response.json(listActions());
+    }
+
+    if (path === "/backstage/api/actions" && req.method === "POST") {
+      const body = await req.json().catch(() => null);
+      if (!body) return Response.json({ error: "Invalid JSON" }, { status: 400 });
+      const result = createAction(body);
+      if ("error" in result) return Response.json(result, { status: 400 });
+      return Response.json(result);
+    }
+
+    // Suggest inputs for a script being registered (parses $1..$9 / $VAR).
+    if (path === "/backstage/api/actions/introspect" && req.method === "POST") {
+      const body = (await req.json().catch(() => ({}))) as {
+        repo?: string;
+        scriptPath?: string;
+      };
+      const result = introspectScript(body.repo || "tella-fusion", String(body.scriptPath || ""));
+      if ("error" in result) return Response.json(result, { status: 400 });
+      return Response.json(result);
+    }
+
+    const actionRunMatch = path.match(/^\/backstage\/api\/actions\/([^/]+)\/run$/);
+    if (actionRunMatch && req.method === "POST") {
+      const action = getAction(actionRunMatch[1]);
+      if (!action) return Response.json({ error: "Not found" }, { status: 404 });
+      const body = (await req.json().catch(() => ({}))) as {
+        values?: Record<string, unknown>;
+        user?: string;
+      };
+      const result = runAction(action, body.values || {}, body.user, () => {
+        sessionsCache = null;
+      });
+      if ("error" in result) return Response.json(result, { status: 400 });
+      return Response.json(result);
+    }
+
+    const actionMatch = path.match(/^\/backstage\/api\/actions\/([^/]+)$/);
+    if (actionMatch && req.method === "GET") {
+      const action = getAction(actionMatch[1]);
+      return action
+        ? Response.json(action)
+        : Response.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (actionMatch && req.method === "DELETE") {
+      return deleteAction(actionMatch[1])
+        ? Response.json({ ok: true })
+        : Response.json({ error: "Not found" }, { status: 404 });
+    }
+
     // ── Connections ──
     if (path === "/backstage/api/connections" && req.method === "GET") {
       const force = url.searchParams.get("refresh") === "1";
@@ -2661,6 +2723,13 @@ if (!g.__backstageBooted) {
     })
   );
   void webhookServer;
+
+  // Seed the make_*_editor.sh action family (create-if-absent, UI edits preserved).
+  try {
+    ensureSeedActions();
+  } catch (e) {
+    console.error("[actions] Failed to seed actions:", e);
+  }
 
   // Seed cron-scheduled "sweep" loops (Production Error Sweep, …) as automations
   // before the scheduler starts. Create-if-absent, so UI edits are preserved.
