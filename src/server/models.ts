@@ -20,7 +20,8 @@ export interface ModelInfo {
 export const KNOWN_MODELS: ModelInfo[] = [
   { id: "claude-fable-5", provider: "claude", label: "Claude Fable 5", aliases: ["fable"] },
   { id: "claude-opus-4-8", provider: "claude", label: "Claude Opus 4.8", aliases: ["opus"] },
-  { id: "claude-sonnet-4-6", provider: "claude", label: "Claude Sonnet 4.6", aliases: ["sonnet"] },
+  { id: "claude-sonnet-5", provider: "claude", label: "Claude Sonnet 5", aliases: ["sonnet", "sonnet5"] },
+  { id: "claude-sonnet-4-6", provider: "claude", label: "Claude Sonnet 4.6", aliases: ["sonnet4.6"] },
   { id: "claude-haiku-4-5", provider: "claude", label: "Claude Haiku 4.5", aliases: ["haiku"] },
   { id: "gpt-5.5", provider: "codex", label: "GPT-5.5 (Codex)", aliases: ["codex", "gpt", "gpt5.5"] },
   { id: "gpt-5.4", provider: "codex", label: "GPT-5.4 (Codex)", aliases: ["gpt5.4"] },
