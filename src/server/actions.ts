@@ -53,14 +53,27 @@ export interface Action {
   id: string;
   name: string;
   description?: string;
-  /** Repo the script lives in (key of REPO_PATHS). v1: always "tella-fusion". */
-  repo: string;
-  /** Script path relative to the repo root, e.g. "packages/scripts/make_michiel_editor.sh". */
-  scriptPath: string;
-  /** Form fields, in the order they map to positional args. */
+  /**
+   * How the action executes:
+   *  - "repo": run a script that lives in a repo (positional/env args).
+   *  - "mcp": call a single MCP tool with the form values as its arguments —
+   *    the tool runs on its own server with its own credentials, so privileged
+   *    ops (e.g. the support MCP's grant_story_editor) don't need the agent's
+   *    sandboxed AWS creds. Omitted = "repo" (back-compat).
+   */
+  kind?: "repo" | "mcp";
+  /** repo: the repo the script lives in (key of REPO_PATHS). v1: always "tella-fusion". */
+  repo?: string;
+  /** repo: script path relative to the repo root, e.g. "packages/scripts/make_michiel_editor.sh". */
+  scriptPath?: string;
+  /** repo: how input values reach the script. positional = bash x a b; env = A=a B=b bash x. */
+  argMode?: "positional" | "env";
+  /** mcp: the MCP server to enable for the run, e.g. "TellaInternalSupportMCP". */
+  mcpServer?: string;
+  /** mcp: the tool to call on that server, e.g. "grant_story_editor". */
+  toolName?: string;
+  /** Form fields. For "repo": ordered args. For "mcp": each name = the tool arg name. */
   inputs: ActionInput[];
-  /** How input values reach the script. positional = bash x a b; env = A=a B=b bash x. */
-  argMode: "positional" | "env";
   /**
    * Require an explicit confirm before running. Default true for actions that
    * touch prod (the make_*_editor family writes straight to prod DynamoDB).
@@ -161,6 +174,32 @@ export function createAction(
 ): Action | { error: string } {
   const name = String(body.name || "").trim();
   if (!name) return { error: "name is required" };
+  const inputs = sanitizeInputs(body.inputs ?? []);
+  if ("error" in inputs) return inputs;
+  const model = body.model ? resolveModel(String(body.model))?.id : undefined;
+  const kind = body.kind === "mcp" ? "mcp" : "repo";
+
+  const base = {
+    id: `act-${randomUUIDv7()}`,
+    name,
+    description: body.description ? String(body.description) : undefined,
+    inputs,
+    confirm: body.confirm !== false,
+    model,
+    createdBy: body.createdBy ? String(body.createdBy) : "Anonymous",
+    createdAt: new Date().toISOString(),
+  };
+
+  if (kind === "mcp") {
+    const mcpServer = String(body.mcpServer || "").trim();
+    if (!mcpServer) return { error: "mcpServer is required for an MCP action" };
+    const toolName = String(body.toolName || "").trim();
+    if (!toolName) return { error: "toolName is required for an MCP action" };
+    const action: Action = { ...base, kind: "mcp", mcpServer, toolName };
+    saveAction(action);
+    return action;
+  }
+
   const repo = String(body.repo || "tella-fusion");
   const repoRoot = repoPathFor(repo);
   if (!repoRoot) return { error: `unknown repo "${repo}"` };
@@ -170,24 +209,9 @@ export function createAction(
     return { error: "scriptPath must be relative to the repo root and not contain .." };
   if (!existsSync(`${repoRoot}/${scriptPath}`))
     return { error: `script not found in ${repo}: ${scriptPath}` };
-  const inputs = sanitizeInputs(body.inputs ?? []);
-  if ("error" in inputs) return inputs;
   const argMode = body.argMode === "env" ? "env" : "positional";
-  const model = body.model ? resolveModel(String(body.model))?.id : undefined;
 
-  const action: Action = {
-    id: `act-${randomUUIDv7()}`,
-    name,
-    description: body.description ? String(body.description) : undefined,
-    repo,
-    scriptPath,
-    inputs,
-    argMode,
-    confirm: body.confirm !== false,
-    model,
-    createdBy: body.createdBy ? String(body.createdBy) : "Anonymous",
-    createdAt: new Date().toISOString(),
-  };
+  const action: Action = { ...base, kind: "repo", repo, scriptPath, argMode };
   saveAction(action);
   return action;
 }
@@ -231,13 +255,49 @@ function buildCommand(
   action: Action,
   resolved: Array<{ input: ActionInput; value: string }>
 ): string {
-  const interp = interpreterFor(action.scriptPath);
+  const scriptPath = action.scriptPath || "";
+  const interp = interpreterFor(scriptPath);
   if (action.argMode === "env") {
     const env = resolved.map(({ input, value }) => `${input.name}=${shq(value)}`).join(" ");
-    return `${env ? env + " " : ""}${interp} ${shq(action.scriptPath)}`;
+    return `${env ? env + " " : ""}${interp} ${shq(scriptPath)}`;
   }
   const args = resolved.map(({ value }) => shq(value)).join(" ");
-  return `${interp} ${shq(action.scriptPath)}${args ? " " + args : ""}`.trim();
+  return `${interp} ${shq(scriptPath)}${args ? " " + args : ""}`.trim();
+}
+
+/** Coerce resolved form values to a JSON args object for an MCP tool call. */
+function buildMcpArgs(
+  resolved: Array<{ input: ActionInput; value: string }>
+): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  for (const { input, value } of resolved) {
+    if (value === "" && !input.required) continue;
+    if (input.type === "number") args[input.name] = value === "" ? value : Number(value);
+    else if (input.type === "boolean") args[input.name] = value === "true";
+    else args[input.name] = value;
+  }
+  return args;
+}
+
+function buildMcpPrompt(
+  action: Action,
+  resolved: Array<{ input: ActionInput; value: string }>
+): string {
+  const args = buildMcpArgs(resolved);
+  return [
+    `You are running a saved Action: "${action.name}".`,
+    action.description ? `\n${action.description}` : "",
+    `\nCall the MCP tool \`${action.toolName}\` on the \`${action.mcpServer}\` server ` +
+      `EXACTLY once, with these arguments:`,
+    "\n```json",
+    JSON.stringify(args, null, 2),
+    "```",
+    `\nDo NOT call any other tool and do NOT modify anything else. After it returns, report the ` +
+      `result concisely — whether it performed the change or refused, and the effect. If the tool ` +
+      `is unavailable, say so clearly rather than improvising another approach.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function buildRunPrompt(action: Action, command: string): string {
@@ -273,13 +333,27 @@ export function runAction(
 ): { sessionId: string } | { error: string } {
   const resolved = resolveValues(action, values);
   if ("error" in resolved) return resolved;
-  const repoRoot = repoPathFor(action.repo);
-  if (!repoRoot) return { error: `unknown repo "${action.repo}"` };
-  if (!existsSync(`${repoRoot}/${action.scriptPath}`))
-    return { error: `script no longer exists: ${action.scriptPath}` };
 
-  const command = buildCommand(action, resolved);
-  const prompt = buildRunPrompt(action, command);
+  // Build the run prompt + the cwd + the MCP allowlist per execution kind.
+  let prompt: string;
+  let mcpServers: string[] | undefined;
+  let cwd = TELLA_FUSION;
+  let useAws = false;
+  if (action.kind === "mcp") {
+    if (!action.mcpServer || !action.toolName)
+      return { error: "MCP action is missing mcpServer/toolName" };
+    prompt = buildMcpPrompt(action, resolved);
+    mcpServers = [action.mcpServer]; // least privilege: only the server it needs
+  } else {
+    const repoRoot = repoPathFor(action.repo || "tella-fusion");
+    if (!repoRoot) return { error: `unknown repo "${action.repo}"` };
+    if (!action.scriptPath || !existsSync(`${repoRoot}/${action.scriptPath}`))
+      return { error: `script no longer exists: ${action.scriptPath}` };
+    prompt = buildRunPrompt(action, buildCommand(action, resolved));
+    cwd = repoRoot;
+    useAws = true; // scripts may shell out to aws (limited to the instance role)
+  }
+
   const bksId = `bks-${randomUUIDv7()}`;
   const startedAt = new Date();
   const model = action.model || ACTION_MODEL;
@@ -295,7 +369,7 @@ export function runAction(
         ...(isCodex && engineSessionId ? { codexThreadId: engineSessionId } : {}),
         ...(effectiveModel ? { model: effectiveModel } : {}),
         branch: "",
-        worktreeDir: repoRoot,
+        worktreeDir: cwd,
         createdBy: `${action.name} (action)`,
         createdAt: startedAt.toISOString(),
         lastActivity: new Date().toISOString(),
@@ -309,18 +383,23 @@ export function runAction(
       saveAction({ ...action, lastRunAt: startedAt.toISOString(), lastRunSessionId: bksId });
     } catch {}
 
-    console.log(`[actions] Running "${action.name}" → ${bksId}: ${command}`);
+    console.log(
+      `[actions] Running "${action.name}" → ${bksId} (${
+        action.kind === "mcp" ? `${action.mcpServer}.${action.toolName}` : action.scriptPath
+      })`
+    );
 
     let engineSessionId = "";
     try {
       for await (const event of runAgent({
         prompt,
-        cwd: repoRoot,
+        cwd,
         mode: "code",
         model,
+        ...(mcpServers ? { mcpServers } : {}),
         // Action runs change prod state by design — only Stripe stays gated.
         confirmTools: STRIPE_CONFIRM_TOOLS,
-        aws: true,
+        aws: useAws,
         fallbackModel: DEFAULT_FALLBACK_MODEL,
         journal: { bksSessionId: bksId, kind: "action" },
       })) {
@@ -400,39 +479,71 @@ export function introspectScript(
 // ── Code-seeded actions ──────────────────────────────────────
 
 /**
- * The make_*_editor.sh family: each grants a user EDITOR access to a story
- * across prod/stage/dev DynamoDB. Same form (one Story ID → $1), one action per
- * teammate. Create-if-absent so re-seeding never clobbers UI edits.
+ * Allowlisted grantees, mirroring the support MCP's editor-grant-allowlist.ts.
+ * The support service enforces the real allowlist server-side; this only
+ * populates the dropdown. (Keep in sync, but a stale entry just gets refused.)
  */
-const SEEDED_EDITORS = ["grant", "jaap", "john", "johnny", "kent", "louise", "michiel"];
+const EDITOR_GRANTEES = ["michiel", "john", "johnny", "kent", "jaap", "louise", "grant"];
 
+/**
+ * The make-editor capability now lives in the support MCP as `grant_story_editor`
+ * (its own scoped prod IAM + audit + allowlist) — not the old make_*_editor.sh
+ * scripts, which only worked from a laptop with tella-admin creds. So we seed one
+ * MCP-backed action and delete the obsolete shell seeds. Create-if-absent for the
+ * MCP action so UI edits are preserved.
+ */
 export function ensureSeedActions() {
   ensureDir();
-  const existing = listActions();
-  const byScript = new Set(existing.map((a) => `${a.repo}:${a.scriptPath}`));
 
-  for (const who of SEEDED_EDITORS) {
-    const scriptPath = `packages/scripts/make_${who}_editor.sh`;
-    const key = `tella-fusion:${scriptPath}`;
-    if (byScript.has(key)) continue;
-    if (!existsSync(`${TELLA_FUSION}/${scriptPath}`)) continue;
-    const pretty = who.charAt(0).toUpperCase() + who.slice(1);
+  // Drop the earlier shell-script seeds (wrong layer: sandboxed read-only creds).
+  for (const a of listActions()) {
+    if (a.seeded && a.id.startsWith("act-seed-make-") && a.id.endsWith("-editor")) {
+      deleteAction(a.id);
+      console.log(`[actions] Removed obsolete shell seed "${a.name}"`);
+    }
+  }
+
+  const grantId = "act-seed-grant-story-editor";
+  if (!getAction(grantId)) {
     const action: Action = {
-      id: `act-seed-make-${who}-editor`,
-      name: `Make ${pretty} editor`,
-      description: `Grant ${pretty} EDITOR access to a story across prod/stage/dev.`,
-      repo: "tella-fusion",
-      scriptPath,
+      id: grantId,
+      name: "Grant story editor",
+      description:
+        "Grant an allowlisted Tella teammate EDITOR access to a story (via the support MCP " +
+        "grant_story_editor tool — scoped prod IAM + audit). Grants in prod only.",
+      kind: "mcp",
+      mcpServer: "TellaInternalSupportMCP",
+      toolName: "grant_story_editor",
       inputs: [
         {
-          name: "ID",
+          name: "storyId",
           label: "Story ID",
           type: "text",
           required: true,
-          hint: "The STORY# id (without the STORY# prefix).",
+          hint: "The story id (vid_…), without the STORY# prefix.",
+        },
+        {
+          name: "grantee",
+          label: "Teammate",
+          type: "select",
+          required: true,
+          options: EDITOR_GRANTEES,
+        },
+        {
+          name: "requestedBy",
+          label: "Requested by (your email)",
+          type: "text",
+          required: true,
+          hint: "Recorded verbatim in the audit log — use your real email.",
+        },
+        {
+          name: "reason",
+          label: "Reason",
+          type: "text",
+          required: true,
+          hint: "Ticket link + a one-line justification.",
         },
       ],
-      argMode: "positional",
       confirm: true,
       seeded: true,
       createdBy: "seed",

@@ -113,7 +113,9 @@ export function Actions({ onOpenSession }: Props) {
             <div key={a.id} className="automation-card">
               <div className="automation-top">
                 <span className="automation-name">{a.name}</span>
-                <span className="source-chip source-backstage">{a.repo}</span>
+                <span className="source-chip source-backstage">
+                  {a.kind === "mcp" ? "mcp" : a.repo}
+                </span>
                 {a.confirm && <span className="source-chip">confirm</span>}
                 <div className="automation-actions">
                   <button className="btn-small" onClick={() => setRunning(a)}>
@@ -126,8 +128,11 @@ export function Actions({ onOpenSession }: Props) {
               </div>
               {a.description && <div className="automation-prompt">{a.description}</div>}
               <div className="automation-meta">
-                <span className="automation-cron" title="Script path">
-                  {a.scriptPath}
+                <span
+                  className="automation-cron"
+                  title={a.kind === "mcp" ? "MCP tool" : "Script path"}
+                >
+                  {a.kind === "mcp" ? `${a.mcpServer} · ${a.toolName}` : a.scriptPath}
                 </span>
                 {a.lastRunAt && (
                   <span className="automation-lastrun">
@@ -263,9 +268,12 @@ const INPUT_TYPES: ActionInputType[] = ["text", "number", "select", "boolean"];
 function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [kind, setKind] = useState<"repo" | "mcp">("repo");
   const [repo] = useState("tella-fusion");
   const [scriptPath, setScriptPath] = useState("");
   const [argMode, setArgMode] = useState<"positional" | "env">("positional");
+  const [mcpServer, setMcpServer] = useState("TellaInternalSupportMCP");
+  const [toolName, setToolName] = useState("");
   const [confirmFlag, setConfirmFlag] = useState(true);
   const [inputs, setInputs] = useState<ActionInput[]>([]);
   const [saving, setSaving] = useState(false);
@@ -304,12 +312,13 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
       await createActionApi({
         name: name.trim(),
         description: description.trim() || undefined,
-        repo,
-        scriptPath: scriptPath.trim(),
+        kind,
         inputs: inputs.filter((i) => i.name.trim()),
-        argMode,
         confirm: confirmFlag,
         createdBy: getCurrentUser() || "Anonymous",
+        ...(kind === "repo"
+          ? { repo, scriptPath: scriptPath.trim(), argMode }
+          : { mcpServer: mcpServer.trim(), toolName: toolName.trim() }),
       });
       onCreated();
     } catch (e: any) {
@@ -336,40 +345,80 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
         />
       </label>
 
-      <div className="automation-form-row">
-        <label>
-          Repo
-          <select value={repo} disabled>
-            <option value="tella-fusion">tella-fusion</option>
-          </select>
-        </label>
-        <label style={{ flex: 2 }}>
-          Script path (relative to repo root)
-          <input
-            className="mono-input"
-            value={scriptPath}
-            onChange={(e) => setScriptPath(e.target.value)}
-            placeholder="packages/scripts/make_michiel_editor.sh"
-            onBlur={detect}
-          />
-        </label>
-        <label>
-          Arg mode
-          <select value={argMode} onChange={(e) => setArgMode(e.target.value as "positional" | "env")}>
-            <option value="positional">Positional ($1 $2 …)</option>
-            <option value="env">Env vars (NAME=… )</option>
-          </select>
-        </label>
-      </div>
+      <label>
+        Type
+        <select value={kind} onChange={(e) => setKind(e.target.value as "repo" | "mcp")}>
+          <option value="repo">Repo script — run a script from a repo</option>
+          <option value="mcp">MCP tool — call a tool on an MCP server</option>
+        </select>
+      </label>
 
-      <div className="automation-form-actions" style={{ justifyContent: "flex-start" }}>
-        <button className="btn-small" onClick={detect} disabled={detecting || !scriptPath.trim()}>
-          {detecting ? "Detecting…" : "Detect inputs from script"}
-        </button>
-      </div>
+      {kind === "repo" ? (
+        <div className="automation-form-row">
+          <label>
+            Repo
+            <select value={repo} disabled>
+              <option value="tella-fusion">tella-fusion</option>
+            </select>
+          </label>
+          <label style={{ flex: 2 }}>
+            Script path (relative to repo root)
+            <input
+              className="mono-input"
+              value={scriptPath}
+              onChange={(e) => setScriptPath(e.target.value)}
+              placeholder="packages/scripts/make_michiel_editor.sh"
+              onBlur={detect}
+            />
+          </label>
+          <label>
+            Arg mode
+            <select value={argMode} onChange={(e) => setArgMode(e.target.value as "positional" | "env")}>
+              <option value="positional">Positional ($1 $2 …)</option>
+              <option value="env">Env vars (NAME=… )</option>
+            </select>
+          </label>
+        </div>
+      ) : (
+        <div className="automation-form-row">
+          <label style={{ flex: 2 }}>
+            MCP server
+            <input
+              className="mono-input"
+              value={mcpServer}
+              onChange={(e) => setMcpServer(e.target.value)}
+              placeholder="TellaInternalSupportMCP"
+            />
+          </label>
+          <label style={{ flex: 2 }}>
+            Tool name
+            <input
+              className="mono-input"
+              value={toolName}
+              onChange={(e) => setToolName(e.target.value)}
+              placeholder="grant_story_editor"
+            />
+          </label>
+        </div>
+      )}
+
+      {kind === "mcp" && (
+        <div className="page-sub">
+          Each input's variable name must match the tool's argument name. The tool runs on its own
+          server with its own credentials.
+        </div>
+      )}
+
+      {kind === "repo" && (
+        <div className="automation-form-actions" style={{ justifyContent: "flex-start" }}>
+          <button className="btn-small" onClick={detect} disabled={detecting || !scriptPath.trim()}>
+            {detecting ? "Detecting…" : "Detect inputs from script"}
+          </button>
+        </div>
+      )}
 
       <div className="automation-form-title" style={{ fontSize: 14, marginTop: 8 }}>
-        Inputs {argMode === "positional" ? "(in order →)" : ""}
+        Inputs {kind === "mcp" ? "(arg names)" : argMode === "positional" ? "(in order →)" : ""}
       </div>
       {inputs.length === 0 && <div className="page-sub">No inputs — the script runs with no args.</div>}
       {inputs.map((input, idx) => (
@@ -442,7 +491,11 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
           className="btn-create"
           style={{ padding: "8px 22px" }}
           onClick={handleSave}
-          disabled={saving || !name.trim() || !scriptPath.trim()}
+          disabled={
+            saving ||
+            !name.trim() ||
+            (kind === "repo" ? !scriptPath.trim() : !mcpServer.trim() || !toolName.trim())
+          }
         >
           {saving ? "Saving…" : "Create action"}
         </button>
