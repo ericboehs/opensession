@@ -32,6 +32,8 @@ interface Props {
 	onNewSession: () => void;
 	/** Persist a new pinned-tab order after a drag. */
 	onReorder: (keys: string[]) => void;
+	/** Rename a session tab (double-click the title); empty title resets it. */
+	onRename: (key: string, title: string) => void;
 }
 
 type Menu = { key: string; x: number; y: number };
@@ -52,10 +54,19 @@ export function SessionTabs({
 	onSetColor,
 	onNewSession,
 	onReorder,
+	onRename,
 }: Props) {
 	const [menu, setMenu] = useState<Menu | null>(null);
 	const [dragKey, setDragKey] = useState<string | null>(null);
 	const [overKey, setOverKey] = useState<string | null>(null);
+	// Inline rename: the pin-key being edited and its draft text.
+	const [editKey, setEditKey] = useState<string | null>(null);
+	const [draft, setDraft] = useState("");
+
+	function commitRename() {
+		if (editKey !== null) onRename(editKey, draft.trim());
+		setEditKey(null);
+	}
 
 	useEffect(() => {
 		if (!menu) return;
@@ -141,7 +152,35 @@ export function SessionTabs({
 						) : (
 							session?.isRunning && <span className="session-tab-dot" />
 						)}
-						<span className="session-tab-title">{tabTitle(tab)}</span>
+						{editKey === key ? (
+							<input
+								className="session-tab-rename"
+								value={draft}
+								autoFocus
+								onChange={(e) => setDraft(e.target.value)}
+								onClick={(e) => e.stopPropagation()}
+								onDoubleClick={(e) => e.stopPropagation()}
+								onBlur={commitRename}
+								onKeyDown={(e) => {
+									if (e.key === "Enter") commitRename();
+									else if (e.key === "Escape") setEditKey(null);
+									e.stopPropagation();
+								}}
+							/>
+						) : (
+							<span
+								className="session-tab-title"
+								onDoubleClick={(e) => {
+									// Only sessions are renameable; notes keep their own title.
+									if (tab.kind !== "session") return;
+									e.stopPropagation();
+									setDraft(tabTitle(tab));
+									setEditKey(key);
+								}}
+							>
+								{tabTitle(tab)}
+							</span>
+						)}
 						<span
 							className={`session-tab-pin ${pinned ? "session-tab-pin-on" : ""}`}
 							role="button"

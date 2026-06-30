@@ -17,7 +17,12 @@ import { UpdateToast } from "./components/UpdateToast";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSidebarSwipe } from "./hooks/useSidebarSwipe";
-import { archiveSessionApi, fetchNotes, type NoteMeta } from "./lib/api";
+import {
+	archiveSessionApi,
+	renameSessionApi,
+	fetchNotes,
+	type NoteMeta,
+} from "./lib/api";
 import { pushRecent } from "./lib/recents";
 import { getPins, togglePin, reorderPins, onPinsChanged } from "./lib/pins";
 import {
@@ -158,8 +163,20 @@ function App() {
 		return () => window.removeEventListener("focus", onFocus);
 	}, [refreshNotes]);
 
-	useEffect(() => onPinsChanged(() => setPins(getPins())), []);
-	useEffect(() => onTabColorsChanged(() => setTabColors(getTabColors())), []);
+	// Subscribe to the per-user pin/color stores. Both hydrate async at module
+	// load, and on a fast localhost that load() can resolve (and emit) before
+	// this effect ever subscribes — so re-sync once here, or the initial empty
+	// state sticks and pinned tabs vanish until the next change event.
+	useEffect(() => {
+		const unsub = onPinsChanged(() => setPins(getPins()));
+		setPins(getPins());
+		return unsub;
+	}, []);
+	useEffect(() => {
+		const unsub = onTabColorsChanged(() => setTabColors(getTabColors()));
+		setTabColors(getTabColors());
+		return unsub;
+	}, []);
 
 	useSidebarSwipe({
 		open: sidebarOpen,
@@ -367,6 +384,14 @@ function App() {
 								}
 								refresh();
 							}}
+							onRename={async (s, title) => {
+								try {
+									await renameSessionApi(s.id, title);
+								} catch (e) {
+									console.error("Rename failed:", e);
+								}
+								refresh();
+							}}
 						/>
 					</div>
 
@@ -387,6 +412,14 @@ function App() {
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
 							onNewSession={() => navigate({ view: "new" })}
 							onReorder={(keys) => setPins(reorderPins(keys))}
+							onRename={async (key, title) => {
+								try {
+									await renameSessionApi(key, title);
+								} catch (e) {
+									console.error("Rename failed:", e);
+								}
+								refresh();
+							}}
 						/>
 						{route.view === "new" ? (
 							<NewSession

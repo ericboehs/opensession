@@ -603,6 +603,22 @@ export async function archiveSessionApi(sessionId: string, archived: boolean) {
 	if (!res.ok) throw new Error(`Failed to update archive state: ${res.status}`);
 }
 
+/** Set a manual display title for a session; empty string clears the rename. */
+export async function renameSessionApi(
+	sessionId: string,
+	title: string,
+): Promise<void> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/title`,
+		{
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ title }),
+		},
+	);
+	if (!res.ok) throw new Error(`Failed to rename session: ${res.status}`);
+}
+
 export async function archiveOldApi(
 	days: number,
 ): Promise<{ archived: number }> {

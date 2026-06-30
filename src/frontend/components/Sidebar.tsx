@@ -54,6 +54,8 @@ interface Props {
 	onNewSession: () => void;
 	onOpenArchived: () => void;
 	onArchive: (session: UnifiedSession) => void;
+	/** Rename a session (double-click its title); empty title resets it. */
+	onRename: (session: UnifiedSession, title: string) => void;
 }
 
 const NAV_ITEMS: Array<{
@@ -219,6 +221,7 @@ export function Sidebar({
 	onNewSession,
 	onOpenArchived,
 	onArchive,
+	onRename,
 }: Props) {
 	const [search, setSearch] = useState("");
 	// Groups are collapsed by default; the expanded set persists per browser
@@ -474,6 +477,7 @@ export function Sidebar({
 									selected={s.id === selectedId}
 									onClick={() => onSelect(s)}
 									onArchive={() => onArchive(s)}
+									onRename={(title) => onRename(s, title)}
 								/>
 							))}
 					</div>
@@ -494,15 +498,24 @@ function SidebarItem({
 	selected,
 	onClick,
 	onArchive,
+	onRename,
 }: {
 	session: UnifiedSession;
 	selected: boolean;
 	onClick: () => void;
 	onArchive: () => void;
+	onRename: (title: string) => void;
 }) {
 	const running = session.isRunning;
 	const recent = isRecent(session.lastActivity);
 	const waiting = !!session.waitingForInput;
+	const [editing, setEditing] = useState(false);
+	const [draft, setDraft] = useState("");
+
+	function commitRename() {
+		onRename(draft.trim());
+		setEditing(false);
+	}
 
 	const metaParts: React.ReactNode[] = [];
 	if (session.startedBy && !session.automation) {
@@ -555,7 +568,34 @@ function SidebarItem({
 						}`}
 					/>
 				)}
-				<span className="sidebar-item-title">{session.title}</span>
+				{editing ? (
+					<input
+						className="sidebar-item-rename"
+						value={draft}
+						autoFocus
+						onChange={(e) => setDraft(e.target.value)}
+						onClick={(e) => e.stopPropagation()}
+						onMouseDown={(e) => e.stopPropagation()}
+						onDoubleClick={(e) => e.stopPropagation()}
+						onBlur={commitRename}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") commitRename();
+							else if (e.key === "Escape") setEditing(false);
+							e.stopPropagation();
+						}}
+					/>
+				) : (
+					<span
+						className="sidebar-item-title"
+						onDoubleClick={(e) => {
+							e.stopPropagation();
+							setDraft(session.title);
+							setEditing(true);
+						}}
+					>
+						{session.title}
+					</span>
+				)}
 			</div>
 			<div className="sidebar-item-meta">
 				{metaParts.map((part, i) => (

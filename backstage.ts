@@ -131,6 +131,7 @@ import {
 import { editNote } from "./src/server/note-edit";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { setArchived, archiveOlderThan } from "./src/server/archive";
+import { setTitleOverride } from "./src/server/title-overrides";
 import {
 	getConnections,
 	addMcpServer,
@@ -2143,6 +2144,24 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					return Response.json({ error: "Session not found" }, { status: 404 });
 				const body = await req.json().catch(() => ({}));
 				setArchived(sessionId, body.archived !== false);
+				sessionsCache = null;
+				return Response.json({ ok: true });
+			}
+
+			// Rename a session (manual display title; empty/blank clears it back to
+			// the derived title). Works for any source via the override registry.
+			const titleMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/title$/,
+			);
+			if (titleMatch && req.method === "PUT") {
+				const sessionId = decodeURIComponent(titleMatch[1]);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const body = await req.json().catch(() => ({}));
+				const title =
+					typeof body?.title === "string" ? body.title.trim().slice(0, 80) : "";
+				setTitleOverride(sessionId, title || null);
 				sessionsCache = null;
 				return Response.json({ ok: true });
 			}
