@@ -25,6 +25,12 @@ export interface Project {
 export const PROJECTS: Record<string, Project> = {
   "tella-fusion": { id: "tella-fusion", repo: TELLA_FUSION, wtPrefix: "tella-fusion", defaultBranch: "main" },
   backstage: { id: "backstage", repo: "/home/ubuntu/projects/tella-backstage", wtPrefix: "backstage", defaultBranch: "master", sharedCheckout: true },
+  // Infra / GitOps / media repos — normal worktree + PR flow (none self-host).
+  gitops: { id: "gitops", repo: "/home/ubuntu/projects/gitops", wtPrefix: "gitops", defaultBranch: "main" },
+  infra: { id: "infra", repo: "/home/ubuntu/projects/infra", wtPrefix: "infra", defaultBranch: "main" },
+  "shared-infra": { id: "shared-infra", repo: "/home/ubuntu/projects/shared-infra", wtPrefix: "shared-infra", defaultBranch: "main" },
+  gstreamer: { id: "gstreamer", repo: "/home/ubuntu/projects/gstreamer", wtPrefix: "gstreamer", defaultBranch: "tla_main" },
+  "gst-plugins-rs": { id: "gst-plugins-rs", repo: "/home/ubuntu/projects/gst-plugins-rs", wtPrefix: "gst-plugins-rs", defaultBranch: "tla_main" },
 };
 
 export function getProject(id?: string): Project {

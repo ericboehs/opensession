@@ -18,9 +18,15 @@ interface Worktree {
 }
 
 // Repos a session can run against. tella-fusion is the default.
+// Keep in sync with PROJECTS in src/server/worktree.ts.
 const PROJECTS = [
   { id: "tella-fusion", label: "tella-fusion" },
   { id: "backstage", label: "backstage (Michael itself)" },
+  { id: "gitops", label: "gitops" },
+  { id: "infra", label: "infra" },
+  { id: "shared-infra", label: "shared-infra" },
+  { id: "gstreamer", label: "gstreamer" },
+  { id: "gst-plugins-rs", label: "gst-plugins-rs" },
 ];
 
 /** Deep-link prefill: /backstage/new?mode=ask|code&prompt=…&branch=…&project= */
