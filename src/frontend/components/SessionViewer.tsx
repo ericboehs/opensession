@@ -580,6 +580,24 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           </button>
           <SpinOffMenu session={session} entries={entries} send={send} connected={connected} />
           <PreviewButton session={session} />
+          {hasWorkspace && session.prUrl && (
+            <button
+              className={`btn-panel-toggle btn-pr-header ${
+                panelOpen && subagentStack.length === 0 && panelTab === "pr" ? "active" : ""
+              }`}
+              onClick={() => {
+                // Jump straight to the PR tab in the workspace panel — a PR is
+                // worth surfacing without first hunting through Workspace.
+                setSubagentStack([]);
+                setPanelTab("pr");
+                setPanelOpen(true);
+              }}
+              title={`Open PR #${session.prNumber ?? ""} (${(session.prState || "OPEN").toLowerCase()})`}
+            >
+              <span className={`panel-tab-dot pr-dot-${(session.prState || "OPEN").toLowerCase()}`} />
+              <span className="btn-pr-label">PR{session.prNumber ? ` #${session.prNumber}` : ""}</span>
+            </button>
+          )}
           {hasWorkspace && (
             <button
               className={`btn-panel-toggle btn-workspace ${panelOpen && subagentStack.length === 0 ? "active" : ""}`}

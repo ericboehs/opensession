@@ -832,6 +832,9 @@ a {
   white-space: nowrap;
 }
 .btn-panel-toggle-icon { font-size: 13px; line-height: 1; }
+/* PR button label stays visible everywhere (incl. mobile, where the generic
+   .btn-panel-toggle-label is hidden) — the PR number is the point of it. */
+.btn-pr-label { font-size: 12px; line-height: 1; }
 .btn-panel-toggle.active,
 .btn-panel-toggle:hover {
   color: var(--accent);
