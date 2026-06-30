@@ -87,6 +87,19 @@ export interface SessionDiff {
   truncated?: boolean;
 }
 
+/** One repo's diff within a (possibly multi-repo) session. */
+export interface RepoDiff {
+  project: string;
+  dir: string | null;
+  primary: boolean;
+  diff: SessionDiff;
+}
+
+export interface SessionDiffResponse {
+  repos: RepoDiff[];
+  error?: string;
+}
+
 export interface PrCheck {
   name: string;
   status: string;

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import type { SessionDiff } from "../lib/types";
+import type { RepoDiff } from "../lib/types";
 import { fetchDiff } from "../lib/api";
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
@@ -12,7 +12,8 @@ interface Props {
 }
 
 export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
-  const [diff, setDiff] = useState<SessionDiff | null>(null);
+  const [repos, setRepos] = useState<RepoDiff[] | null>(null);
+  const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -20,7 +21,7 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
     try {
       const data = await fetchDiff(sessionId);
       if (data.error) throw new Error(data.error);
-      setDiff(data);
+      setRepos(data.repos || []);
       setError(null);
     } catch (e: any) {
       setError(e.message);
@@ -36,7 +37,7 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
     return () => clearInterval(interval);
   }, [load, isRunning]);
 
-  async function handleComment(target: CommentTarget, text: string) {
+  async function handleComment(project: string, target: CommentTarget, text: string) {
     if (!canSend) throw new Error("Michael is busy — wait for the current run to finish");
     const lines =
       target.startLine === target.endLine
@@ -48,38 +49,64 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
       user: getCurrentUser(),
       content:
         `Diff feedback from ${getCurrentUser()} on \`${target.path}\` (${lines}` +
-        `${target.side === "deletions" ? ", removed lines" : ""} in the current uncommitted diff):\n\n` +
+        `${target.side === "deletions" ? ", removed lines" : ""}) in the **${project}** repo's current diff:\n\n` +
         `${text}\n\n` +
-        `Please address this feedback on the current branch.`,
+        `Please address this in the ${project} worktree on the current branch.`,
     });
   }
 
   if (loading) return <div className="panel-placeholder">Loading diff…</div>;
   if (error) return <div className="panel-placeholder panel-error">{error}</div>;
-  if (!diff || (!diff.rawPatch?.trim() && diff.files.length === 0)) {
-    return <div className="panel-placeholder">No changes yet</div>;
-  }
+  if (!repos || !repos.length) return <div className="panel-placeholder">No changes yet</div>;
+
+  // Repos that actually have changes; if none, show "No changes yet".
+  const changed = repos.filter((r) => r.diff.rawPatch?.trim() || r.diff.files.length > 0);
+  if (!changed.length) return <div className="panel-placeholder">No changes yet</div>;
+
+  const multi = changed.length > 1;
+  const cur = changed[Math.min(active, changed.length - 1)] || changed[0];
+  const d = cur.diff;
 
   return (
     <div className="diff-panel">
+      {multi && (
+        <div className="diff-repo-tabs">
+          {changed.map((r, i) => {
+            const n = r.diff.totalAdditions + r.diff.totalDeletions;
+            return (
+              <button
+                key={r.project}
+                className={`diff-repo-tab ${i === active ? "diff-repo-tab-active" : ""}`}
+                onClick={() => setActive(i)}
+                title={r.primary ? "Primary repo" : "Attached repo"}
+              >
+                {r.project}
+                <span className="diff-repo-tab-count">{r.diff.files.length}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="diff-summary">
         <span className="diff-summary-files">
-          {diff.files.length} file{diff.files.length === 1 ? "" : "s"} changed
+          {d.files.length} file{d.files.length === 1 ? "" : "s"} changed
         </span>
-        <span className="diff-add">+{diff.totalAdditions}</span>
-        <span className="diff-del">−{diff.totalDeletions}</span>
-        {diff.truncated && <span className="diff-truncated">truncated</span>}
+        <span className="diff-add">+{d.totalAdditions}</span>
+        <span className="diff-del">−{d.totalDeletions}</span>
+        {d.truncated && <span className="diff-truncated">truncated</span>}
         <button className="btn-icon" onClick={load} title="Refresh diff">↻</button>
       </div>
 
       <div className="diff-render">
         <CommentableDiff
-          patch={diff.rawPatch || ""}
+          key={cur.project}
+          patch={d.rawPatch || ""}
           submitLabel="Send to Michael"
-          placeholder="Leave feedback on these lines — Michael picks it up in this session…"
+          placeholder={`Leave feedback on these lines — Michael picks it up in this session…`}
           disabled={!canSend}
           disabledHint="Michael is working — feedback can be sent when the current run finishes."
-          onSubmit={handleComment}
+          onSubmit={(target, text) => handleComment(cur.project, target, text)}
         />
       </div>
     </div>

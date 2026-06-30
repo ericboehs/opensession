@@ -148,7 +148,9 @@ export async function deleteSessionApi(sessionId: string, cleanWorktree: boolean
   }
 }
 
-export async function fetchDiff(sessionId: string) {
+export async function fetchDiff(
+  sessionId: string,
+): Promise<import("./types").SessionDiffResponse> {
   const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/diff`);
   if (!res.ok) throw new Error(`Failed to fetch diff: ${res.status}`);
   return res.json();

@@ -36,7 +36,7 @@ import {
   addCodexAccount,
   removeCodexAccount,
 } from "./src/server/codex-accounts";
-import { getSessionDiff } from "./src/server/git-diff";
+import { getSessionDiff, type SessionDiff } from "./src/server/git-diff";
 import { searchRepoFiles } from "./src/server/file-index";
 import { getPreviewStatus, stopPreview } from "./src/server/preview";
 import {
@@ -1467,21 +1467,34 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/diff$/)![1]);
       const session = findSession(sessionId);
       if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
-      if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
-        return Response.json({
-          branch: session.branch,
-          baseRef: null,
-          files: [],
-          totalAdditions: 0,
-          totalDeletions: 0,
-          rawPatch: "",
-        });
-      }
-      try {
-        return Response.json(await getSessionDiff(session.worktreeDir));
-      } catch (e: any) {
-        return Response.json({ error: e.message || String(e) }, { status: 500 });
-      }
+
+      // One diff per repo in the session: primary worktree + each attached repo.
+      // Each carries its project id so the panel can show a repo switcher and
+      // route per-line feedback to the right checkout.
+      const targets: Array<{ project: string; dir: string | null; primary: boolean }> = [
+        {
+          project: session.project || (session.worktreeDir ? projectForPath(session.worktreeDir).id : "tella-fusion"),
+          dir: session.worktreeDir,
+          primary: true,
+        },
+        ...(session.attachedRepos || []).map((r) => ({ project: r.project, dir: r.dir, primary: false })),
+      ];
+
+      const repos = await Promise.all(
+        targets.map(async (t) => {
+          let diff: SessionDiff = {
+            branch: null, baseRef: null, files: [], totalAdditions: 0, totalDeletions: 0, rawPatch: "",
+          };
+          if (t.dir && existsSync(t.dir)) {
+            try {
+              diff = await getSessionDiff(t.dir, getProject(t.project).defaultBranch);
+            } catch {}
+          }
+          return { project: t.project, dir: t.dir, primary: t.primary, diff };
+        })
+      );
+
+      return Response.json({ repos });
     }
 
     // PR details for a session's branch (PR tab)
