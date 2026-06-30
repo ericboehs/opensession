@@ -398,6 +398,14 @@ a {
 	margin-bottom: 2px;
 }
 
+/* Extra spacing + a hairline divider where one band ends and the next begins
+   (personal → people → automations). */
+.sidebar-group--band-start {
+	margin-top: 16px;
+	padding-top: 14px;
+	border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
 .sidebar-group-header {
 	display: flex;
 	align-items: center;

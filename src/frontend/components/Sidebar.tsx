@@ -18,6 +18,27 @@ const AUTOMATION_COLOR = "#d29922";
 
 const SOURCE_ORDER: SessionSource[] = ["slack", "linear", "backstage", "cli"];
 
+// A palette for per-person group dots. The color is picked deterministically
+// from the (lowercased) person name so each teammate keeps a stable color.
+const PERSON_COLORS = [
+  "#e8836b",
+  "#6ba5e8",
+  "#8ed99c",
+  "#e8c46b",
+  "#c06be8",
+  "#6be8d2",
+  "#e86b9c",
+  "#a3b86b",
+];
+
+function personColor(key: string): string {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  }
+  return PERSON_COLORS[Math.abs(hash) % PERSON_COLORS.length];
+}
+
 export type NavView = "sessions" | "reviews" | "automations" | "actions" | "wiki" | "connections";
 
 interface Props {
@@ -96,10 +117,17 @@ const NAV_ITEMS: Array<{ view: NavView; label: string; icon: React.ReactNode }> 
   },
 ];
 
+// Groups are rendered in three visually separated bands (spacing between each):
+//   "personal"    — Recently opened, Pinned, My sessions
+//   "people"      — one group per other teammate (+ ownerless source groups)
+//   "automations" — one group per automation
+type GroupBand = "personal" | "people" | "automations";
+
 interface Group {
   key: string;
   label: string;
   dotColor: string | null;
+  band: GroupBand;
   items: UnifiedSession[];
 }
 
@@ -163,13 +191,19 @@ export function Sidebar({
         .filter((s): s is UnifiedSession => Boolean(s))
         .slice(0, RECENTLY_OPENED_COUNT);
       if (recentItems.length > 0) {
-        out.push({ key: "recently", label: "Recently opened", dotColor: null, items: recentItems });
+        out.push({
+          key: "recently",
+          label: "Recently opened",
+          dotColor: null,
+          band: "personal",
+          items: recentItems,
+        });
       }
     }
 
     const pinned = filtered.filter((s) => pinSet.has(s.id));
     if (pinned.length > 0) {
-      out.push({ key: "pinned", label: "Pinned", dotColor: null, items: pinned });
+      out.push({ key: "pinned", label: "Pinned", dotColor: null, band: "personal", items: pinned });
     }
 
     // "Mine": sessions started by the current user (automations excluded)
@@ -181,10 +215,55 @@ export function Sidebar({
         s.startedBy.toLowerCase() === user
     );
     if (mine.length > 0) {
-      out.push({ key: "mine", label: "My sessions", dotColor: null, items: mine });
+      out.push({ key: "mine", label: "My sessions", dotColor: null, band: "personal", items: mine });
     }
 
-    // One group per automation
+    // One group per other person: every non-automation session owned by
+    // someone other than the current user, grouped by `startedBy`. The current
+    // user's own sessions already live in "My sessions" above, so they're not
+    // repeated here (no double-listing). Keyed by lowercased name to merge
+    // casing variants; the first-seen spelling is used as the label.
+    const byPerson = new Map<string, { label: string; items: UnifiedSession[] }>();
+    const ownerless: UnifiedSession[] = [];
+    for (const s of filtered) {
+      if (s.automation || pinSet.has(s.id)) continue;
+      if (!s.startedBy) {
+        ownerless.push(s);
+        continue;
+      }
+      const key = s.startedBy.toLowerCase();
+      if (key === user) continue; // already in "My sessions"
+      const entry = byPerson.get(key) || { label: s.startedBy, items: [] };
+      entry.items.push(s);
+      byPerson.set(key, entry);
+    }
+    for (const key of Array.from(byPerson.keys()).sort()) {
+      const { label, items } = byPerson.get(key)!;
+      out.push({
+        key: `person:${key}`,
+        label,
+        dotColor: personColor(key),
+        band: "people",
+        items,
+      });
+    }
+
+    // Sessions with no known owner fall back to per-source groups so nothing
+    // disappears (e.g. some CLI sessions have no `startedBy`).
+    for (const source of SOURCE_ORDER) {
+      const items = ownerless.filter((s) => s.source === source);
+      if (items.length > 0) {
+        out.push({
+          key: source,
+          label: source,
+          dotColor: SOURCE_COLORS[source] || "#6B7280",
+          band: "people",
+          items,
+        });
+      }
+    }
+
+    // Automations last, each in its own group (band "automations").
     const byAutomation = new Map<string, UnifiedSession[]>();
     for (const s of filtered) {
       if (!s.automation || pinSet.has(s.id)) continue;
@@ -197,24 +276,11 @@ export function Sidebar({
         key: `auto:${name}`,
         label: name,
         dotColor: AUTOMATION_COLOR,
+        band: "automations",
         items: byAutomation.get(name)!,
       });
     }
 
-    // Source groups (automation sessions live in their own groups above)
-    for (const source of SOURCE_ORDER) {
-      const items = filtered.filter(
-        (s) => s.source === source && !s.automation && !pinSet.has(s.id)
-      );
-      if (items.length > 0) {
-        out.push({
-          key: source,
-          label: source,
-          dotColor: SOURCE_COLORS[source] || "#6B7280",
-          items,
-        });
-      }
-    }
     return out;
   }, [filtered, currentUser, pins, recents, search]);
 
@@ -281,8 +347,13 @@ export function Sidebar({
 
       <div className="sidebar-list">
         {groups.length === 0 && <div className="sidebar-empty">No sessions</div>}
-        {groups.map((group) => (
-          <div key={group.key} className="sidebar-group">
+        {groups.map((group, i) => (
+          <div
+            key={group.key}
+            className={`sidebar-group${
+              i > 0 && group.band !== groups[i - 1].band ? " sidebar-group--band-start" : ""
+            }`}
+          >
             <button
               className="sidebar-group-header"
               onClick={() => toggleGroup(group.key)}
