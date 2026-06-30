@@ -25,6 +25,7 @@ export function SessionTabs({ tabs, activeId, pinnedIds, onSelect, onTogglePin }
     <div className="session-tabs" role="tablist">
       {tabs.map((s) => {
         const pinned = pinnedIds.has(s.id);
+        const waiting = !!s.waitingForInput;
         return (
           <div
             key={s.id}
@@ -32,11 +33,15 @@ export function SessionTabs({ tabs, activeId, pinnedIds, onSelect, onTogglePin }
             aria-selected={s.id === activeId}
             className={`session-tab ${s.id === activeId ? "session-tab-active" : ""} ${
               pinned ? "" : "session-tab-transient"
-            }`}
+            } ${waiting ? "session-tab-waiting" : ""}`}
             onClick={() => onSelect(s)}
-            title={s.title}
+            title={waiting ? `${s.title} — waiting for your input` : s.title}
           >
-            {s.isRunning && <span className="session-tab-dot" />}
+            {waiting ? (
+              <span className="session-tab-dot session-tab-dot-waiting" />
+            ) : (
+              s.isRunning && <span className="session-tab-dot" />
+            )}
             <span className="session-tab-title">{s.title}</span>
             <span
               className={`session-tab-pin ${pinned ? "session-tab-pin-on" : ""}`}

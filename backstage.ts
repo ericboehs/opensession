@@ -41,11 +41,17 @@ import {
   type SessionState,
   type SessionSummary,
 } from "./src/server/session-control";
-import { gitIdentityFor } from "./src/server/shared/user-mappings";
+import { gitIdentityFor, resolveTeammate } from "./src/server/shared/user-mappings";
 import { createSessionsMcpServer } from "./src/agents/slack/sessions-tools";
 import { createAdminMcpServer } from "./src/agents/slack/admin-tools";
 import { createHumansMcpServer } from "./src/agents/slack/humans-tools";
-import { initHumanAsks, onSessionIdle as onHumanAsksSessionIdle } from "./src/server/human-asks";
+import {
+  initHumanAsks,
+  onSessionIdle as onHumanAsksSessionIdle,
+  registerAsk,
+  awaitBlockingAnswer,
+  cancelAsk,
+} from "./src/server/human-asks";
 import { getPrDetails, getPrDiff, postPrComment, submitPrReview, mergePr } from "./src/server/pr-info";
 import {
   listAutomations,
@@ -261,14 +267,55 @@ function broadcastPresence(sessionId: string) {
   broadcastToSession(sessionId, { type: "presence", sessionId, viewers });
 }
 
-// Interactive AskUserQuestion: questions broadcast to session watchers,
-// answered from the UI, with a 10-minute timeout falling back to deny.
+// Interactive AskUserQuestion: questions broadcast to session watchers, answered
+// from the UI. If nobody answers in the UI within ASK_UI_TIMEOUT_MS, the question
+// is escalated to the session's original prompter over Slack (the michael-humans
+// transport) and we keep blocking on their reply; the UI question stays live the
+// whole time, so whoever answers first (web or Slack) wins.
+const ASK_UI_TIMEOUT_MS = 4 * 60 * 1000;
+
+interface AskQuestionInput {
+  question: string;
+  header?: string;
+  options?: Array<{ label: string; description?: string }>;
+  multiSelect?: boolean;
+}
+
 interface PendingAsk {
   questionId: string;
   questions: unknown[];
   resolve: (answers: Record<string, string> | null) => void;
 }
 const pendingAsks: Map<string, PendingAsk> = (g.__pendingAsks ??= new Map());
+
+// Flatten an AskUserQuestion payload into a single Slack-friendly prompt. Option
+// buttons are only offered when there's exactly one question (the human-asks card
+// carries one option set); multi-question asks fall back to a free-text reply.
+function askToSlackPrompt(questions: AskQuestionInput[]): {
+  question: string;
+  options?: string[];
+} {
+  if (questions.length === 1) {
+    const q = questions[0];
+    const text = q.header ? `*${q.header}* — ${q.question}` : q.question;
+    return { question: text, options: q.options?.map((o) => o.label) };
+  }
+  const text = questions
+    .map((q, i) => `${i + 1}. ${q.header ? `*${q.header}* — ` : ""}${q.question}`)
+    .join("\n");
+  return { question: text };
+}
+
+// A Slack reply is a single string; apply it as the answer to every question so
+// the AskUserQuestion result has a value for each key it expects.
+function slackAnswerToAnswers(
+  questions: AskQuestionInput[],
+  answer: string
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const q of questions) out[q.question] = answer;
+  return out;
+}
 
 function makeAskHandler(sessionId: string) {
   return async (
@@ -277,25 +324,53 @@ function makeAskHandler(sessionId: string) {
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
     | { behavior: "deny"; message: string }
   > => {
-    const questions = input.questions as unknown[] | undefined;
+    const questions = input.questions as AskQuestionInput[] | undefined;
     if (!questions || questions.length === 0) {
       return { behavior: "allow", updatedInput: input };
     }
 
     const questionId = crypto.randomUUID();
+    let settled = false;
+    let escalatedAskId: string | null = null;
+
     const answers = await new Promise<Record<string, string> | null>((resolve) => {
-      const timeoutId = setTimeout(() => {
+      const finish = (a: Record<string, string> | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
         pendingAsks.delete(sessionId);
-        resolve(null);
-      }, 10 * 60 * 1000);
+        // If the web UI answered after we'd already pinged Slack, retract the
+        // Slack ask so the teammate isn't left answering a moot question.
+        if (escalatedAskId) cancelAsk(escalatedAskId);
+        resolve(a);
+      };
+
+      // No UI answer in time → ask the original prompter over Slack and keep
+      // blocking on their reply (the UI question stays live in parallel).
+      const timeoutId = setTimeout(() => {
+        void escalateAskToSlack(sessionId, questions).then((askId) => {
+          if (settled) {
+            // UI answered in the race window — undo the just-created ask.
+            if (askId) cancelAsk(askId);
+            return;
+          }
+          if (!askId) {
+            // No teammate to ask (e.g. automation-owned) — fall back to deny.
+            finish(null);
+            return;
+          }
+          escalatedAskId = askId;
+          void awaitBlockingAnswer(askId).then((slackAnswer) => {
+            if (slackAnswer == null) finish(null);
+            else finish(slackAnswerToAnswers(questions, slackAnswer));
+          });
+        });
+      }, ASK_UI_TIMEOUT_MS);
+
       pendingAsks.set(sessionId, {
         questionId,
         questions,
-        resolve: (a) => {
-          clearTimeout(timeoutId);
-          pendingAsks.delete(sessionId);
-          resolve(a);
-        },
+        resolve: (a) => finish(a),
       });
       broadcastToSession(sessionId, { type: "ask_question", sessionId, questionId, questions });
     });
@@ -306,11 +381,45 @@ function makeAskHandler(sessionId: string) {
       return {
         behavior: "deny",
         message:
-          "Nobody answered within 10 minutes. Proceed with your best judgment and clearly note the open question and the assumption you made.",
+          "Nobody answered in time (web or Slack). Proceed with your best judgment and clearly note the open question and the assumption you made.",
       };
     }
     return { behavior: "allow", updatedInput: { ...input, answers } };
   };
+}
+
+// Escalate an unanswered AskUserQuestion to the session's original prompter over
+// Slack. Returns the human-ask id (await its blocking answer), or null when we
+// can't resolve a teammate to ask. Best-effort: never throws into the handler.
+async function escalateAskToSlack(
+  sessionId: string,
+  questions: AskQuestionInput[]
+): Promise<string | null> {
+  try {
+    const session = findSession(sessionId);
+    const person = resolveTeammate(session?.startedBy ?? null);
+    if (!person) return null;
+
+    const { question, options } = askToSlackPrompt(questions);
+    const ask = registerAsk({
+      sessionId,
+      createdBy: session?.startedBy || "Michael",
+      person,
+      question,
+      context: "_Nobody picked this up in Backstage within 4 minutes, so I'm bringing it to you._",
+      options,
+      mode: "block",
+      deliver: "now",
+    });
+    broadcastToSession(sessionId, {
+      type: "notice",
+      message: `No answer in Backstage — asked ${person.name} over Slack.`,
+    });
+    return ask.id;
+  } catch (e) {
+    console.error("[ask] Slack escalation failed:", e);
+    return null;
+  }
 }
 
 // Messages sent while a run is in flight queue up and deliver afterwards,
@@ -987,7 +1096,6 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
     "/backstage/wiki": spaEntry,
     "/backstage/wiki/*": spaEntry,
     "/backstage/connections": spaEntry,
-    "/backstage/factory": spaEntry,
     "/backstage/archived": spaEntry,
     "/backstage/reviews": spaEntry,
     "/backstage/reviews/*": spaEntry,
@@ -1227,8 +1335,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
     if (path === "/backstage/api/sessions" && req.method === "GET") {
       // Enrich with live, in-process signals that aren't on the cached session
       // objects: whether a run is blocked on a human question (pendingAsks) and
-      // how many prompts are queued behind it. Powers the Factory view's
-      // "waiting" station without a second round-trip.
+      // how many prompts are queued behind it. Drives the sidebar/tab "needs
+      // input" highlight without a second round-trip.
       const enriched = getCachedSessions().map((s) => ({
         ...s,
         waitingForInput: pendingAsks.has(s.id),
