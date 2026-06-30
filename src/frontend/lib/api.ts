@@ -8,6 +8,35 @@ export async function fetchSessions(): Promise<UnifiedSession[]> {
   return res.json();
 }
 
+export interface PreviewService {
+  name: string;
+  key: string;
+  port: number;
+  running: boolean;
+  pids: number[];
+}
+
+export interface PreviewStatus {
+  hasPortsConf: boolean;
+  webappPort: number | null;
+  running: boolean;
+  services: PreviewService[];
+}
+
+export async function fetchPreview(sessionId: string): Promise<PreviewStatus> {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/preview`);
+  if (!res.ok) throw new Error(`Failed to fetch preview: ${res.status}`);
+  return res.json();
+}
+
+export async function stopPreviewApi(sessionId: string): Promise<PreviewStatus> {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/preview/stop`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to stop preview: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchTranscript(sessionId: string) {
   const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/transcript`);
   if (!res.ok) throw new Error(`Failed to fetch transcript: ${res.status}`);

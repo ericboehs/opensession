@@ -36,6 +36,7 @@ import {
   removeCodexAccount,
 } from "./src/server/codex-accounts";
 import { getSessionDiff } from "./src/server/git-diff";
+import { getPreviewStatus, stopPreview } from "./src/server/preview";
 import {
   registerSessionControl,
   type SessionState,
@@ -348,21 +349,32 @@ function makeAskHandler(sessionId: string) {
       // No UI answer in time → ask the original prompter over Slack and keep
       // blocking on their reply (the UI question stays live in parallel).
       const timeoutId = setTimeout(() => {
-        void escalateAskToSlack(sessionId, questions).then((askId) => {
+        void escalateAskToSlack(sessionId, questions).then((esc) => {
           if (settled) {
             // UI answered in the race window — undo the just-created ask.
-            if (askId) cancelAsk(askId);
+            if (esc) cancelAsk(esc.askId);
             return;
           }
-          if (!askId) {
+          if (!esc) {
             // No teammate to ask (e.g. automation-owned) — fall back to deny.
             finish(null);
             return;
           }
-          escalatedAskId = askId;
-          void awaitBlockingAnswer(askId).then((slackAnswer) => {
-            if (slackAnswer == null) finish(null);
-            else finish(slackAnswerToAnswers(questions, slackAnswer));
+          escalatedAskId = esc.askId;
+          void awaitBlockingAnswer(esc.askId).then((slackAnswer) => {
+            if (slackAnswer == null) {
+              finish(null);
+              return;
+            }
+            // The answer folds into the AskUserQuestion tool result (the agent
+            // continues), but that's invisible in the UI — surface it as an
+            // attributed bubble so the human sees their Slack reply land, the
+            // same way the async human-asks path does.
+            broadcastToSession(sessionId, {
+              type: "notice",
+              message: `💬 **${esc.personName}** answered (via Slack): ${slackAnswer}`,
+            });
+            finish(slackAnswerToAnswers(questions, slackAnswer));
           });
         });
       }, ASK_UI_TIMEOUT_MS);
@@ -389,12 +401,12 @@ function makeAskHandler(sessionId: string) {
 }
 
 // Escalate an unanswered AskUserQuestion to the session's original prompter over
-// Slack. Returns the human-ask id (await its blocking answer), or null when we
-// can't resolve a teammate to ask. Best-effort: never throws into the handler.
+// Slack. Returns the human-ask id (await its blocking answer) + who we asked, or
+// null when we can't resolve a teammate. Best-effort: never throws into the handler.
 async function escalateAskToSlack(
   sessionId: string,
   questions: AskQuestionInput[]
-): Promise<string | null> {
+): Promise<{ askId: string; personName: string } | null> {
   try {
     const session = findSession(sessionId);
     const person = resolveTeammate(session?.startedBy ?? null);
@@ -415,7 +427,7 @@ async function escalateAskToSlack(
       type: "notice",
       message: `No answer in Backstage — asked ${person.name} over Slack.`,
     });
-    return ask.id;
+    return { askId: ask.id, personName: person.name };
   } catch (e) {
     console.error("[ask] Slack escalation failed:", e);
     return null;
@@ -1406,6 +1418,34 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
       if (!session.branch) return Response.json(null);
       return Response.json(await getPrDiff(session.branch));
+    }
+
+    // Local dev-server ("Preview") status for a session's worktree — which
+    // services (.ports.conf) are listening, so the header can link to the
+    // webapp and show/stop running processes.
+    {
+      const m = path.match(/^\/backstage\/api\/sessions\/(.+)\/preview$/);
+      if (m && req.method === "GET") {
+        const session = findSession(decodeURIComponent(m[1]));
+        if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+        if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
+          return Response.json({ hasPortsConf: false, webappPort: null, running: false, services: [] });
+        }
+        return Response.json(await getPreviewStatus(session.worktreeDir));
+      }
+    }
+
+    // Stop the session's dev server (scoped to its worktree's process group).
+    {
+      const m = path.match(/^\/backstage\/api\/sessions\/(.+)\/preview\/stop$/);
+      if (m && req.method === "POST") {
+        const session = findSession(decodeURIComponent(m[1]));
+        if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+        if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
+          return Response.json({ hasPortsConf: false, webappPort: null, running: false, services: [] });
+        }
+        return Response.json(await stopPreview(session.worktreeDir));
+      }
     }
 
     // Post a comment on the session's PR (inline when path+line present)

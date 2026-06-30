@@ -11,6 +11,7 @@ import { Composer } from "./Composer";
 import { DiffPanel } from "./DiffPanel";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
+import { PreviewButton } from "./PreviewButton";
 import { SpinOffMenu } from "./SpinOffMenu";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
@@ -578,6 +579,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             {copied ? "Copied ✓" : "Share"}
           </button>
           <SpinOffMenu session={session} entries={entries} send={send} connected={connected} />
+          <PreviewButton session={session} />
           {hasWorkspace && (
             <button
               className={`btn-panel-toggle btn-workspace ${panelOpen && subagentStack.length === 0 ? "active" : ""}`}
