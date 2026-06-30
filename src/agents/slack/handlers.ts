@@ -50,6 +50,7 @@ import { pollForVercelPreview } from "./github-reviews";
 import { runCodex } from "../../server/codex-runner";
 import { gitIdentityFor } from "../../server/shared/user-mappings";
 import { isClaudeUsageLimitError } from "../../server/claude-runner";
+import { getAgentAwsEnv } from "../../server/aws-creds";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";
 import {
   getDefaultModel,
@@ -868,6 +869,13 @@ export async function processMessage(
     "Pass `options` for one-tap button choices, and `context` to attach background (the copy slot, a diff, a screen). Use list_pending_asks / cancel_ask to manage outstanding ones. " +
     "When the user says things like \"ask Grant for X\", \"get John to review when I'm done\", or \"check with Jaap before shipping\", use ask_human rather than just telling them to do it.";
 
+  // Short-lived AWS read creds (instance-role snapshot, minted via the cgroup
+  // escape in aws-creds.ts). The Slack child can't reach IMDS directly, and
+  // process.env carries no AWS creds, so without this an `aws` call in-session
+  // fails with "Unable to locate credentials". Mirrors the backstage runner
+  // (claude-runner.ts childEnv). {} if minting fails — the run still proceeds.
+  const awsEnv = await getAgentAwsEnv();
+
   rotation: for (;;) {
   let limitHit = false;
   let resultWasError = false;
@@ -877,14 +885,11 @@ export async function processMessage(
       options: {
         resume: resultSessionId || session.claudeSessionId || undefined,
         cwd,
-        ...(account
-          ? {
-              env: {
-                ...(process.env as Record<string, string>),
-                CLAUDE_CODE_OAUTH_TOKEN: account.token,
-              },
-            }
-          : {}),
+        env: {
+          ...(process.env as Record<string, string>),
+          ...awsEnv,
+          ...(account ? { CLAUDE_CODE_OAUTH_TOKEN: account.token } : {}),
+        },
         allowedTools: [
           "Bash",
           "Read",
