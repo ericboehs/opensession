@@ -25,7 +25,13 @@ async function loadFiles(dir: string): Promise<string[]> {
   const out = await $`git -C ${dir} ls-files --cached --others --exclude-standard -z`
     .quiet()
     .text();
-  const files = out.split("\0").filter(Boolean);
+  // Drop vendored dependency trees — they're tracked in some repos (backstage
+  // commits node_modules) but are never useful "@"-mention targets and only
+  // crowd out source files in the results.
+  const files = out
+    .split("\0")
+    .filter(Boolean)
+    .filter((f) => !f.startsWith("node_modules/") && !f.includes("/node_modules/"));
   cache.set(dir, { files, at: now() });
   return files;
 }
