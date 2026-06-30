@@ -480,13 +480,17 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteLabel, setDeleteLabel] = useState("");
 
   const me = getCurrentUser();
 
   async function handleDelete(cleanWorktree: boolean) {
+    setDeleteLabel(cleanWorktree ? "Deleting session and worktree…" : "Deleting session…");
     setDeleting(true);
     try {
       await deleteSessionApi(session.id, cleanWorktree);
+      // Leave the overlay up through the navigation so it never flashes back to
+      // the (now-deleted) session view.
       onBack();
     } catch (e: any) {
       alert(`Delete failed: ${e.message}`);
@@ -497,6 +501,14 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
 
   return (
     <div className="session-viewer">
+      {deleting && (
+        <div className="session-delete-overlay" role="status" aria-live="polite">
+          <div className="session-delete-card">
+            <div className="restart-spinner" />
+            <span className="session-delete-label">{deleteLabel}</span>
+          </div>
+        </div>
+      )}
       <div className="viewer-header">
         <div className="viewer-title">
           {isAsk ? (
@@ -603,7 +615,11 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               <button className="btn-delete-only" onClick={() => handleDelete(false)} disabled={deleting}>
                 {deleting ? "…" : "Session"}
               </button>
-              <button className="btn-delete-cancel" onClick={() => setShowDeleteConfirm(false)}>
+              <button
+                className="btn-delete-cancel"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+              >
                 Cancel
               </button>
             </div>

@@ -680,6 +680,7 @@ a {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  position: relative;
 }
 
 .viewer-header {
@@ -2467,6 +2468,35 @@ a {
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Covers the session view while a delete (optionally + worktree) is in flight —
+   worktree cleanup can take a few seconds, so show clear progress instead of a
+   view that looks frozen. Stays up through the redirect to Home. */
+.session-delete-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+.session-delete-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 26px 32px;
+  border-radius: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+.session-delete-label {
+  font-size: 13px;
+  color: var(--text-dim);
 }
 .restart-title {
   font-size: 15px;
