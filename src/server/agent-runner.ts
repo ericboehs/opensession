@@ -197,12 +197,23 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
   return cancelled;
 }
 
+/** Per-session AskUserQuestion handler, mirroring RunAgentOpts.onAskUser. */
+type AskHandler = NonNullable<RunAgentOpts["onAskUser"]>;
+
 /**
  * Resume runs that a previous process left in-flight (service restart or
  * crash). Each resumable run gets a continuation prompt against its engine
  * session, on whichever backend the journaled model belongs to.
+ *
+ * `askHandlerFor` re-attaches an AskUserQuestion handler (the web-UI + Slack
+ * escalation handler) to interactive sessions — without it, a run that was
+ * blocked on an ask comes back headless and dead-ends every question. It
+ * returns undefined for sessions that should stay headless (automations).
  */
-export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => void): string[] {
+export function resumeInterruptedRuns(
+  onResumed?: (bksSessionId?: string) => void,
+  askHandlerFor?: (bksSessionId: string) => AskHandler | undefined,
+): string[] {
   const interrupted = takeInterruptedRuns();
   const resumed: string[] = [];
 
@@ -239,6 +250,7 @@ export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => voi
             deniedTools: run.deniedTools,
             aws: run.aws,
             journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-rerun` },
+            onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
           })) {
             if (event.type === "done" || event.type === "error") {
               onResumed?.(run.bksSessionId);
@@ -266,6 +278,7 @@ export function resumeInterruptedRuns(onResumed?: (bksSessionId?: string) => voi
           deniedTools: run.deniedTools,
           aws: run.aws,
           journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
+          onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
         })) {
           if (event.type === "done" || event.type === "error") {
             onResumed?.(run.bksSessionId);

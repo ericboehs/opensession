@@ -2479,9 +2479,19 @@ if (!g.__backstageBooted) {
   // journal no longer held it). Together these wake every session that was
   // active before the restart.
   setTimeout(() => {
-    const resumedIds = resumeInterruptedRuns(() => {
-      sessionsCache = null;
-    });
+    const resumedIds = resumeInterruptedRuns(
+      () => {
+        sessionsCache = null;
+      },
+      // Re-attach the AskUserQuestion handler so a run that was blocked on an
+      // ask (web UI or Slack escalation) can ask again after the restart instead
+      // of dead-ending headless. Automations stay headless by design.
+      (bksSessionId) => {
+        const session = findSession(bksSessionId);
+        if (!session || session.source !== "backstage" || session.automation) return undefined;
+        return makeAskHandler(bksSessionId);
+      },
+    );
     if (resumedIds.length > 0) {
       console.log(`[runner] Resumed ${resumedIds.length} interrupted run(s) from before restart`);
       sessionsCache = null;
