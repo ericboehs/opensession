@@ -138,12 +138,22 @@ async function ensurePreviewRoute(httpsPort: number, webappPort: number, host: s
       },
     ],
   };
-  try {
-    const res = await fetch(`${CADDY_ADMIN}/config/apps/http/servers/preview_${httpsPort}`, {
+  const path = `${CADDY_ADMIN}/config/apps/http/servers/preview_${httpsPort}`;
+  const put = () =>
+    fetch(path, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(server),
     });
+  try {
+    // PUT creates the key; if it already exists (e.g. Caddy kept the server
+    // across a backstage restart, so our cache is cold) it 409s — drop it and
+    // recreate so the route always ends up pointing at the current webapp port.
+    let res = await put();
+    if (res.status === 409) {
+      await fetch(path, { method: "DELETE" }).catch(() => {});
+      res = await put();
+    }
     if (!res.ok) return false;
     previewRoutes.set(httpsPort, webappPort);
     return true;
