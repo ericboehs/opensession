@@ -28,6 +28,8 @@ export interface UnifiedSession {
   prChecks?: { total: number; passed: number; failed: number; pending: number };
   mode?: "ask" | "code";
   project?: string;
+  /** Secondary repos this session also works in (cross-repo sessions). */
+  attachedRepos?: AttachedRepo[];
   automation?: string;
   archived?: boolean;
   plainThreadId?: string;
@@ -90,11 +92,24 @@ export interface CLISessionFile {
 }
 
 // Backstage session file format
+/**
+ * A secondary repo attached to a session for cross-repo work. Each gets its own
+ * isolated worktree (never the shared main checkout), so the agent can branch,
+ * commit, and open a PR there independently of the primary repo.
+ */
+export interface AttachedRepo {
+  project: string; // project id (key in worktree.ts PROJECTS)
+  branch: string;
+  dir: string; // worktree path
+}
+
 export interface BackstageSessionFile {
   id: string;
   claudeSessionId: string;
   branch: string;
   worktreeDir: string;
+  /** Secondary repos this session also works in (cross-repo sessions). */
+  attachedRepos?: AttachedRepo[];
   createdBy: string;
   createdAt: string;
   lastActivity: string;

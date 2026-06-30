@@ -42,6 +42,12 @@ export interface RunAgentOpts {
    * runner ignores it. See runClaude opts for the full contract.
    */
   inProcessMcp?: Record<string, unknown>;
+  /**
+   * System-prompt note describing the session's repos (primary + attached) and
+   * their worktree paths, so the agent works in the right isolated checkout for
+   * cross-repo sessions. Claude backend only. See runClaude opts.
+   */
+  reposNote?: string;
   /** Images attached to the opening message (vision). Claude only. */
   images?: ImageInput[];
   /** Fork the resumed session into a new id (optionally from `resumeSessionAt`). Claude only. */

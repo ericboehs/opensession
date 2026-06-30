@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { ModelOption } from "../lib/api";
+import type { ModelOption, FileMention } from "../lib/api";
 import { filesToDataUrls, imageFilesFromPaste } from "../lib/images";
 import { ImageThumbs } from "./ImageThumbs";
 
@@ -40,9 +40,10 @@ interface Props {
   onImagesChange?: (images: string[]) => void;
   /**
    * Enables "@"-mention file autocomplete. Given the text typed after the "@",
-   * returns matching repo-relative file paths. When omitted, "@" is inert.
+   * returns matching files (primary repo + any attached repos). When omitted,
+   * "@" is inert.
    */
-  mentionFetch?: (query: string) => Promise<string[]>;
+  mentionFetch?: (query: string) => Promise<FileMention[]>;
 }
 
 function modelShortLabel(id: string, models: ModelOption[]): string {
@@ -110,7 +111,7 @@ export function Composer({
 
   // ── "@"-mention autocomplete state ──
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<FileMention[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   // Caret-target to apply after a programmatic value change (insertion).
   const pendingCaret = useRef<number | null>(null);
@@ -191,13 +192,13 @@ export function Composer({
 
   const mentionOpen = !!mention && suggestions.length > 0;
 
-  function applySuggestion(path: string) {
+  function applySuggestion(item: FileMention) {
     if (!mention) return;
     const el = textareaRef.current;
     const caret = el?.selectionStart ?? value.length;
     const before = value.slice(0, mention.start);
     const after = value.slice(caret);
-    const insert = `@${path} `;
+    const insert = `@${item.insert} `;
     const next = before + insert + after;
     pendingCaret.current = before.length + insert.length;
     setMention(null);
@@ -248,22 +249,24 @@ export function Composer({
         <div className="composer-input-wrap">
           {mentionOpen && (
             <div className="mention-popup" role="listbox">
-              {suggestions.map((path, i) => {
+              {suggestions.map((item, i) => {
+                const path = item.display;
                 const slash = path.lastIndexOf("/");
                 const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
                 const base = slash >= 0 ? path.slice(slash + 1) : path;
                 return (
                   <div
-                    key={path}
+                    key={`${item.insert}-${i}`}
                     role="option"
                     aria-selected={i === activeIdx}
                     className={`mention-item ${i === activeIdx ? "mention-item-active" : ""}`}
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      applySuggestion(path);
+                      applySuggestion(item);
                     }}
                     onMouseEnter={() => setActiveIdx(i)}
                   >
+                    {item.repo && <span className="mention-repo">{item.repo}</span>}
                     <span className="mention-base">{base}</span>
                     {dir && <span className="mention-dir">{dir}</span>}
                   </div>

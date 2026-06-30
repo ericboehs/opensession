@@ -353,6 +353,12 @@ export async function* runClaude(opts: {
    */
   inProcessMcp?: Record<string, unknown>;
   /**
+   * System-prompt note listing the session's repos (primary + attached) and
+   * their worktree paths for cross-repo sessions, so the agent cd's into the
+   * right isolated checkout. Appended to the system prompt; trusted runs only.
+   */
+  reposNote?: string;
+  /**
    * Tools to hard-deny at the permission layer, mapping tool name → message
    * shown to the agent. Enforced in canUseTool, so it holds even if the
    * prompt (e.g. freeform ticket text) tries to talk the agent into it.
@@ -725,6 +731,9 @@ export async function* runClaude(opts: {
                   "files, never commit, never run state-changing commands. Explore with Read/Grep/Glob " +
                   "and read-only git commands, then answer clearly and concisely."
               );
+            }
+            if (opts.reposNote) {
+              parts.push(opts.reposNote);
             }
             if (opts.inProcessMcp && Object.keys(opts.inProcessMcp).length) {
               parts.push(

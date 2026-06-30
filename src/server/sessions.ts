@@ -225,6 +225,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       title: data.title || data.branch || "Ask session",
       mode: data.mode,
       project: data.project,
+      attachedRepos: data.attachedRepos,
       automation:
         data.automation ||
         (data.createdBy?.endsWith(" (automation)")

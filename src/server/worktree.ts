@@ -286,3 +286,23 @@ export async function createWorktree(branch: string, projectId?: string): Promis
 
   return wtPath;
 }
+
+/**
+ * Resolve an isolated worktree for attaching a secondary repo to a session,
+ * reusing an existing worktree for the branch when one is already checked out.
+ * Returns the project id, branch, and worktree dir. Shared-checkout projects
+ * (backstage) can't be attached as an isolated worktree — they'd hand back the
+ * live main checkout, so reject them.
+ */
+export async function prepareAttachedWorktree(
+  projectId: string,
+  branch: string
+): Promise<{ project: string; branch: string; dir: string }> {
+  const project = getProject(projectId);
+  if (project.sharedCheckout) {
+    throw new Error(`${project.id} is a shared-checkout repo and can't be attached as an isolated worktree`);
+  }
+  const existing = (await listWorktrees(project.id)).find((w) => w.branch === branch);
+  const dir = existing?.path || (await createWorktree(branch, project.id));
+  return { project: project.id, branch, dir };
+}

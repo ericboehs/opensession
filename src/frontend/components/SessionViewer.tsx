@@ -9,6 +9,7 @@ import { getCurrentUser } from "./UserPicker";
 import { deleteSessionApi, fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
 import { Composer } from "./Composer";
 import { DiffPanel } from "./DiffPanel";
+import { RepoBar } from "./RepoBar";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { PreviewButton } from "./PreviewButton";
@@ -646,6 +647,15 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
           )}
         </div>
       </div>
+
+      {session.worktreeDir && !isAsk && (
+        <RepoBar
+          sessionId={session.id}
+          primaryProject={session.project || "tella-fusion"}
+          branch={session.branch}
+          initialAttached={session.attachedRepos || []}
+        />
+      )}
 
       {(session.goal || session.loop) && (
         <div className="session-banners">

@@ -58,20 +58,76 @@ export async function fetchSubagent(sessionId: string, agentId: string): Promise
   return res.json();
 }
 
+/** A single "@"-mention suggestion. `insert` is what lands in the textarea. */
+export interface FileMention {
+  /** Repo-relative path, for display. */
+  display: string;
+  /** Text inserted after the "@": bare path (primary repo) or `project:path`. */
+  insert: string;
+  /** Repo label, set only when more than one repo is searched (cross-repo). */
+  repo?: string;
+}
+
 /**
- * File suggestions for "@"-mention autocomplete in the composer. Sourced from
- * the session's checkout (or the default project repo when there's no session).
+ * File suggestions for "@"-mention autocomplete in the composer. Searches the
+ * session's primary checkout plus any attached repos (or the default project
+ * repo when there's no session).
  */
 export async function fetchFileMentions(
   query: string,
   sessionId?: string,
-): Promise<string[]> {
+): Promise<FileMention[]> {
   const params = new URLSearchParams({ q: query });
   if (sessionId) params.set("session", sessionId);
   const res = await fetch(`${BASE}/files?${params.toString()}`);
   if (!res.ok) return [];
   const data = await res.json();
   return data.files ?? [];
+}
+
+export interface ProjectInfo {
+  id: string;
+  defaultBranch: string;
+  sharedCheckout: boolean;
+}
+
+export async function fetchProjects(): Promise<ProjectInfo[]> {
+  const res = await fetch(`${BASE}/projects`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.projects ?? [];
+}
+
+export interface AttachedRepo {
+  project: string;
+  branch: string;
+  dir: string;
+}
+
+export async function attachRepoApi(
+  sessionId: string,
+  project: string,
+  branch?: string,
+): Promise<AttachedRepo[]> {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/attach-repo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project, ...(branch ? { branch } : {}) }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+  return body.attachedRepos as AttachedRepo[];
+}
+
+export async function detachRepoApi(sessionId: string, project: string): Promise<AttachedRepo[]> {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/detach-repo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+  return body.attachedRepos as AttachedRepo[];
 }
 
 export async function fetchWorktrees(project?: string) {

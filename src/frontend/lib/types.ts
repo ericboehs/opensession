@@ -27,6 +27,10 @@ export interface UnifiedSession {
   prUpdatedAt?: string;
   prChecks?: { total: number; passed: number; failed: number; pending: number };
   mode?: "ask" | "code";
+  /** Primary repo this session works in (project id; default "tella-fusion"). */
+  project?: string;
+  /** Secondary repos this session also works in (cross-repo sessions). */
+  attachedRepos?: Array<{ project: string; branch: string; dir: string }>;
   automation?: string;
   archived?: boolean;
   plainThreadId?: string;

@@ -7,7 +7,7 @@ import { getAllSessions, deleteSession } from "./src/server/sessions";
 import { parseTranscript, parseTranscriptTail } from "./src/server/jsonl-parser";
 import { getSubagentTranscript } from "./src/server/subagents";
 import { startWatching, stopAllWatchesForClient } from "./src/server/file-watcher";
-import { listWorktrees, createWorktree, removeWorktree, reviveWorktree, sweepArchivedWorktrees, getProject, projectForPath } from "./src/server/worktree";
+import { listWorktrees, createWorktree, removeWorktree, reviveWorktree, sweepArchivedWorktrees, getProject, projectForPath, prepareAttachedWorktree, PROJECTS } from "./src/server/worktree";
 import { STRIPE_CONFIRM_TOOLS, activeRunRecords } from "./src/server/claude-runner";
 import {
   runAgent,
@@ -48,6 +48,7 @@ import { gitIdentityFor, resolveTeammate } from "./src/server/shared/user-mappin
 import { createSessionsMcpServer } from "./src/agents/slack/sessions-tools";
 import { createAdminMcpServer } from "./src/agents/slack/admin-tools";
 import { createHumansMcpServer } from "./src/agents/slack/humans-tools";
+import { createReposMcpServer } from "./src/agents/slack/repos-tools";
 import {
   initHumanAsks,
   onSessionIdle as onHumanAsksSessionIdle,
@@ -83,7 +84,7 @@ import {
 } from "./src/server/claude-accounts";
 import { startWebhookServer } from "./src/server/webhook-server";
 import type { AgentModule } from "./src/agents/types";
-import type { UnifiedSession, BackstageSessionFile } from "./src/server/types";
+import type { UnifiedSession, BackstageSessionFile, AttachedRepo } from "./src/server/types";
 
 const PORT = parseInt(process.env.PORT || "3850");
 const HOST = process.env.HOST || "127.0.0.1";
@@ -164,9 +165,56 @@ function interactiveMcpServers(user?: string, sessionId?: string): Record<string
     // session. Needs the session id so the answer routes home. Withheld (like
     // the others) from automation runs — see the runSessionPrompt call site.
     ...(sessionId
-      ? { "michael-humans": createHumansMcpServer({ sessionId, createdBy, isAdmin: true }) }
+      ? {
+          "michael-humans": createHumansMcpServer({ sessionId, createdBy, isAdmin: true }),
+          // Cross-repo: attach secondary repos as isolated worktrees.
+          "michael-repos": createReposMcpServer({
+            sessionId,
+            attach: (project, branch) => attachRepo(sessionId, project, branch),
+            snapshot: () => {
+              const s = findSession(sessionId);
+              if (!s) return null;
+              return {
+                primaryProject:
+                  s.project || (s.worktreeDir ? projectForPath(s.worktreeDir).id : "tella-fusion"),
+                branch: s.branch,
+                worktreeDir: s.worktreeDir,
+                attached: s.attachedRepos || [],
+              };
+            },
+            projects: () =>
+              Object.values(PROJECTS).map((p) => ({
+                id: p.id,
+                defaultBranch: p.defaultBranch,
+                sharedCheckout: !!p.sharedCheckout,
+              })),
+          }),
+        }
       : {}),
   };
+}
+
+/**
+ * System-prompt note describing a session's repos when it spans more than one.
+ * Lists the primary worktree + every attached repo with its path/branch and how
+ * `@<project>:path` mentions resolve. Returns undefined for single-repo sessions
+ * so the prompt stays clean.
+ */
+function buildReposNote(session: UnifiedSession): string | undefined {
+  const attached = session.attachedRepos || [];
+  if (!attached.length) return undefined;
+  const primaryProject =
+    session.project || (session.worktreeDir ? projectForPath(session.worktreeDir).id : "tella-fusion");
+  const lines = [
+    "## Repos in this session",
+    "This session spans multiple repos. Each is an isolated git worktree — `cd` into the right one to read or edit its files, and commit/push/open PRs in each repo independently (don't edit another repo's shared main checkout).",
+    `- **${primaryProject}** (primary): ${session.worktreeDir}${session.branch ? ` — branch \`${session.branch}\`` : ""}`,
+  ];
+  for (const r of attached) lines.push(`- **${r.project}**: ${r.dir} — branch \`${r.branch}\``);
+  lines.push(
+    "A file mentioned from an attached repo arrives as `@<project>:<path>` — resolve it under that repo's worktree dir above."
+  );
+  return lines.join("\n");
 }
 
 function findSession(sessionId: string): UnifiedSession | undefined {
@@ -217,6 +265,37 @@ function touchBackstageSession(
   } catch (e) {
     console.error(`Failed to update backstage session ${bksId}:`, e);
   }
+}
+
+/**
+ * Attach a secondary repo to a session: create (or reuse) an isolated worktree
+ * for `projectId` and record it on the session. The attached branch defaults to
+ * the session's primary branch so cross-repo work shares one branch name (and
+ * the PRs line up). Re-attaching the same project just updates its entry. Only
+ * code sessions on a real worktree can attach — Ask/main-checkout sessions and
+ * the primary project itself are rejected.
+ */
+async function attachRepo(
+  sessionId: string,
+  projectId: string,
+  branch?: string
+): Promise<{ attached: AttachedRepo; all: AttachedRepo[] }> {
+  const session = findSession(sessionId);
+  if (!session) throw new Error("Session not found");
+  if (session.mode === "ask") throw new Error("Can't attach a repo to an Ask (read-only) session");
+  if (!PROJECTS[projectId]) throw new Error(`Unknown project "${projectId}"`);
+  if (session.project === projectId) throw new Error(`${projectId} is this session's primary repo`);
+
+  const effectiveBranch = (branch || session.branch || "").trim();
+  if (!effectiveBranch) {
+    throw new Error("No branch to attach on — pass a branch name");
+  }
+
+  const attached = await prepareAttachedWorktree(projectId, effectiveBranch);
+  const existing = (session.attachedRepos || []).filter((r) => r.project !== projectId);
+  const all = [...existing, attached];
+  touchBackstageSession(sessionId, { attachedRepos: all });
+  return { attached, all };
 }
 
 // WebSocket client state
@@ -755,6 +834,7 @@ async function runSessionPrompt(
     // Self-management tools for normal sessions; withheld from automation
     // sessions (and their interactive resumes) — same gate as deniedTools above.
     inProcessMcp: isAutomationSession ? undefined : interactiveMcpServers(user, sessionId),
+    reposNote: isAutomationSession ? undefined : buildReposNote(session),
     deniedTools,
     confirmTools: STRIPE_CONFIRM_TOOLS,
     aws: true, // sessions keep AWS read access (via injected creds)
@@ -1576,24 +1656,86 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       return Response.json(await listWorktrees(url.searchParams.get("project") || undefined));
     }
 
-    // File-mention autocomplete ("@" in the composer). Resolves the checkout
-    // from the session (its worktree, or the shared checkout) and falls back to
-    // the default project repo for new-session composers that have no session
-    // yet. Returns fuzzy-ranked, capped repo-relative paths.
+    // File-mention autocomplete ("@" in the composer). Searches the session's
+    // primary worktree plus any attached repos (cross-repo sessions), falling
+    // back to the default project repo for new-session composers with no session
+    // yet. Each hit carries `insert` (what lands in the textarea: a bare path for
+    // the primary repo, `<project>:path` for an attached one) and a `repo` label
+    // when more than one repo is in play.
     if (path === "/backstage/api/files" && req.method === "GET") {
       const q = url.searchParams.get("q") || "";
       const sessionId = url.searchParams.get("session");
-      let dir: string | null = null;
-      if (sessionId) {
-        const session = findSession(sessionId);
-        if (session?.worktreeDir && existsSync(session.worktreeDir)) dir = session.worktreeDir;
+      const repos: Array<{ project: string; dir: string; primary: boolean }> = [];
+      const session = sessionId ? findSession(sessionId) : undefined;
+      if (session?.worktreeDir && existsSync(session.worktreeDir)) {
+        repos.push({
+          project: session.project || projectForPath(session.worktreeDir).id,
+          dir: session.worktreeDir,
+          primary: true,
+        });
+        for (const r of session.attachedRepos || []) {
+          if (existsSync(r.dir)) repos.push({ project: r.project, dir: r.dir, primary: false });
+        }
       }
-      if (!dir) dir = getProject(url.searchParams.get("project") || undefined).repo;
+      if (!repos.length) {
+        const proj = getProject(url.searchParams.get("project") || undefined);
+        repos.push({ project: proj.id, dir: proj.repo, primary: true });
+      }
+      const multi = repos.length > 1;
+      const perRepo = multi ? Math.max(6, Math.floor(20 / repos.length)) : 20;
+      const out: Array<{ display: string; insert: string; repo?: string }> = [];
+      for (const r of repos) {
+        try {
+          for (const f of await searchRepoFiles(r.dir, q, perRepo)) {
+            out.push({
+              display: f,
+              insert: r.primary ? f : `${r.project}:${f}`,
+              repo: multi ? r.project : undefined,
+            });
+          }
+        } catch {}
+      }
+      return Response.json({ files: out.slice(0, 24) });
+    }
+
+    // Projects available to attach / start a session against.
+    if (path === "/backstage/api/projects" && req.method === "GET") {
+      return Response.json({
+        projects: Object.values(PROJECTS).map((p) => ({
+          id: p.id,
+          defaultBranch: p.defaultBranch,
+          sharedCheckout: !!p.sharedCheckout,
+        })),
+      });
+    }
+
+    // Attach a secondary repo to a session (cross-repo work): creates/reuses an
+    // isolated worktree and records it on the session.
+    const attachMatch = path.match(/^\/backstage\/api\/sessions\/(.+)\/attach-repo$/);
+    if (attachMatch && req.method === "POST") {
+      const sessionId = decodeURIComponent(attachMatch[1]);
+      const body = (await req.json().catch(() => ({}))) as { project?: string; branch?: string };
+      if (!body.project) return Response.json({ error: "project required" }, { status: 400 });
       try {
-        return Response.json({ files: await searchRepoFiles(dir, q, 20) });
-      } catch {
-        return Response.json({ files: [] });
+        const { attached, all } = await attachRepo(sessionId, body.project, body.branch);
+        return Response.json({ ok: true, attached, attachedRepos: all });
+      } catch (e: any) {
+        return Response.json({ error: e.message || String(e) }, { status: 400 });
       }
+    }
+
+    // Detach a secondary repo (drops it from the session; leaves the worktree on
+    // disk so unmerged work isn't lost — clean it up via the worktrees sweep).
+    // POST, not DELETE, so it isn't swallowed by the generic DELETE /sessions/:id.
+    const detachMatch = path.match(/^\/backstage\/api\/sessions\/(.+)\/detach-repo$/);
+    if (detachMatch && req.method === "POST") {
+      const sessionId = decodeURIComponent(detachMatch[1]);
+      const body = (await req.json().catch(() => ({}))) as { project?: string };
+      const session = findSession(sessionId);
+      if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
+      const all = (session.attachedRepos || []).filter((r) => r.project !== body.project);
+      touchBackstageSession(sessionId, { attachedRepos: all });
+      return Response.json({ ok: true, attachedRepos: all });
     }
 
     // ── Automations ──
