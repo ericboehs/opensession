@@ -295,6 +295,26 @@ export interface ModelOption {
 	aliases: string[];
 }
 
+/**
+ * Ask the backend (a quick Haiku call) to suggest a branch name for a task
+ * prompt. Returns null when the prompt is too thin or anything fails — callers
+ * just leave the field for the user to fill.
+ */
+export async function suggestBranch(prompt: string): Promise<string | null> {
+	try {
+		const res = await fetch(`${BASE}/suggest-branch`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ prompt }),
+		});
+		if (!res.ok) return null;
+		const data = await res.json();
+		return typeof data.branch === "string" ? data.branch : null;
+	} catch {
+		return null;
+	}
+}
+
 export async function fetchModels(): Promise<{
 	models: ModelOption[];
 	default: string;

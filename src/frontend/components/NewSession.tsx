@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchWorktrees, fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
+import { fetchWorktrees, fetchModels, fetchFileMentions, suggestBranch, type ModelOption } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { filesToDataUrls, imageFilesFromPaste } from "../lib/images";
 import { ImageThumbs } from "./ImageThumbs";
@@ -51,6 +51,11 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
   const [selectedWorktree, setSelectedWorktree] = useState("__new__");
   const [newBranch, setNewBranch] = useState(prefill.branch);
   const [prompt, setPrompt] = useState(prefill.prompt);
+  // Whether the user has hand-edited the branch field. Once true we stop
+  // auto-suggesting so we never clobber what they typed. A prefilled branch
+  // (deep link) counts as already-owned.
+  const [branchEdited, setBranchEdited] = useState(!!prefill.branch);
+  const [suggestingBranch, setSuggestingBranch] = useState(false);
   const [images, setImages] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +89,28 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
       .then(setWorktrees)
       .catch(() => setWorktrees([]));
   }, [project]);
+
+  // Auto-suggest a branch name from the prompt (debounced Haiku call), but only
+  // while the field is "ours" — once the user types in it (branchEdited) we back
+  // off. The latest-request guard drops a stale response if the user starts
+  // editing the branch while a suggestion is in flight.
+  const branchEditedRef = useRef(branchEdited);
+  branchEditedRef.current = branchEdited;
+  const suggestSeqRef = useRef(0);
+  useEffect(() => {
+    if (mode !== "code" || selectedWorktree !== "__new__" || branchEdited) return;
+    if (prompt.trim().length < 10) return;
+    const seq = ++suggestSeqRef.current;
+    const t = setTimeout(async () => {
+      setSuggestingBranch(true);
+      const branch = await suggestBranch(prompt.trim());
+      setSuggestingBranch(false);
+      // Drop if superseded by a newer prompt or the user grabbed the field.
+      if (seq !== suggestSeqRef.current || branchEditedRef.current) return;
+      if (branch) setNewBranch(branch);
+    }, 700);
+    return () => clearTimeout(t);
+  }, [prompt, mode, selectedWorktree, branchEdited]);
 
   useEffect(() => {
     if (!creating) return;
@@ -192,12 +219,20 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
 
             {selectedWorktree === "__new__" && (
               <label>
-                Branch name
+                <span className="label-row">
+                  Branch name
+                  {suggestingBranch && !branchEdited && (
+                    <span className="branch-suggesting">✨ suggesting…</span>
+                  )}
+                </span>
                 <input
                   type="text"
                   value={newBranch}
-                  onChange={(e) => setNewBranch(e.target.value)}
-                  placeholder="feature-name"
+                  onChange={(e) => {
+                    setBranchEdited(true);
+                    setNewBranch(e.target.value);
+                  }}
+                  placeholder={suggestingBranch ? "naming it…" : "feature-name"}
                   disabled={creating}
                 />
               </label>

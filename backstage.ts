@@ -64,6 +64,7 @@ import {
 } from "./src/server/codex-accounts";
 import { getSessionDiff, type SessionDiff } from "./src/server/git-diff";
 import { searchRepoFiles } from "./src/server/file-index";
+import { suggestBranchName } from "./src/server/suggest-branch";
 import { getPreviewStatus, stopPreview } from "./src/server/preview";
 import {
 	registerSessionControl,
@@ -2400,6 +2401,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					models: KNOWN_MODELS,
 					default: getDefaultModel(),
 				});
+			}
+
+			// Suggest a branch name from a task prompt (one no-tools Haiku call).
+			// Used to auto-fill the New Session "Branch name" field as you type.
+			if (path === "/backstage/api/suggest-branch" && req.method === "POST") {
+				const body = await req.json().catch(() => null);
+				const prompt = typeof body?.prompt === "string" ? body.prompt : "";
+				const branch = await suggestBranchName(prompt);
+				return Response.json({ branch });
 			}
 
 			// Set (or clear, with model:null) the default model new sessions run on.
