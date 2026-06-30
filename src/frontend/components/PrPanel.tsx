@@ -12,6 +12,12 @@ interface Props {
   onOpenSession?: () => void;
   /** Side-by-side info|diff layout for wide containers (the Reviews drawer). */
   split?: boolean;
+  /**
+   * Repos in this session (primary + attached). When more than one, a repo
+   * switcher selects which repo's PR to show. Omit for single-repo callers
+   * (e.g. the Reviews drawer) — they target the primary branch as before.
+   */
+  repos?: Array<{ project: string; primary: boolean }>;
 }
 
 interface PrDiffData {
@@ -20,7 +26,11 @@ interface PrDiffData {
   patch: string;
 }
 
-export function PrPanel({ sessionId, onOpenSession, split }: Props) {
+export function PrPanel({ sessionId, onOpenSession, split, repos }: Props) {
+  const repoList = repos && repos.length > 1 ? repos : null;
+  const [activeRepo, setActiveRepo] = useState<string | undefined>(
+    repoList ? (repoList.find((r) => r.primary)?.project ?? repoList[0].project) : undefined,
+  );
   const [pr, setPr] = useState<PrDetails | null>(null);
   const [diff, setDiff] = useState<PrDiffData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,8 +49,8 @@ export function PrPanel({ sessionId, onOpenSession, split }: Props) {
   const load = useCallback(async () => {
     try {
       const [prData, diffData] = await Promise.all([
-        fetchPr(sessionId),
-        fetchPrDiff(sessionId).catch(() => null),
+        fetchPr(sessionId, activeRepo),
+        fetchPrDiff(sessionId, activeRepo).catch(() => null),
       ]);
       setPr(prData);
       setDiff(diffData);
@@ -49,9 +59,11 @@ export function PrPanel({ sessionId, onOpenSession, split }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, activeRepo]);
 
   useEffect(() => {
+    setLoading(true);
+    setPending([]);
     load();
     const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
@@ -84,6 +96,7 @@ export function PrPanel({ sessionId, onOpenSession, split }: Props) {
         user: getCurrentUser(),
         event: reviewEvent,
         summary: summary.trim() || undefined,
+        repo: activeRepo,
         comments: pending.map((c) => ({
           text: c.text,
           path: c.path,
@@ -118,7 +131,7 @@ export function PrPanel({ sessionId, onOpenSession, split }: Props) {
     setMerging(true);
     setMergeError(null);
     try {
-      await mergePrApi(sessionId, "squash");
+      await mergePrApi(sessionId, "squash", activeRepo);
       await load();
     } catch (e: any) {
       setMergeError(e.message || "Merge failed");
@@ -148,8 +161,35 @@ export function PrPanel({ sessionId, onOpenSession, split }: Props) {
     return { passed, failed, pending, total: checks.length, sorted };
   }, [pr]);
 
-  if (loading) return <div className="panel-placeholder">Loading PR…</div>;
-  if (!pr) return <div className="panel-placeholder">No pull request for this branch yet</div>;
+  const switcher = repoList ? (
+    <div className="pr-repo-tabs">
+      {repoList.map((r) => (
+        <button
+          key={r.project}
+          className={`pr-repo-tab ${r.project === activeRepo ? "pr-repo-tab-active" : ""}`}
+          onClick={() => setActiveRepo(r.project)}
+          title={r.primary ? "Primary repo" : "Attached repo"}
+        >
+          {r.project}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  if (loading)
+    return (
+      <div className="pr-panel">
+        {switcher}
+        <div className="panel-placeholder">Loading PR…</div>
+      </div>
+    );
+  if (!pr)
+    return (
+      <div className="pr-panel">
+        {switcher}
+        <div className="panel-placeholder">No pull request for this branch yet</div>
+      </div>
+    );
 
   const stateClass =
     pr.state === "MERGED" ? "pr-pill-merged" : pr.state === "CLOSED" ? "pr-pill-closed" : pr.isDraft ? "pr-pill-draft" : "pr-pill-open";
@@ -157,6 +197,7 @@ export function PrPanel({ sessionId, onOpenSession, split }: Props) {
 
   return (
     <div className={`pr-panel ${split ? "pr-panel-split" : ""}`}>
+      {switcher}
       <div className="pr-panel-info">
       <div className="pr-head">
         <span className={`pr-pill ${stateClass}`}>{stateLabel}</span>

@@ -156,14 +156,17 @@ export async function fetchDiff(
   return res.json();
 }
 
-export async function fetchPr(sessionId: string) {
-  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr`);
+/** `repo` (a project id) targets an attached repo's PR; omit for the primary. */
+export async function fetchPr(sessionId: string, repo?: string) {
+  const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr${qs}`);
   if (!res.ok) throw new Error(`Failed to fetch PR: ${res.status}`);
   return res.json();
 }
 
-export async function fetchPrDiff(sessionId: string) {
-  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-diff`);
+export async function fetchPrDiff(sessionId: string, repo?: string) {
+  const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-diff${qs}`);
   if (!res.ok) throw new Error(`Failed to fetch PR diff: ${res.status}`);
   return res.json();
 }
@@ -177,6 +180,7 @@ export async function postPrCommentApi(
     line?: number;
     startLine?: number;
     side?: "RIGHT" | "LEFT";
+    repo?: string;
   }
 ) {
   const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-comment`, {
@@ -195,6 +199,7 @@ export async function submitPrReviewApi(
     user: string;
     event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
     summary?: string;
+    repo?: string;
     comments: Array<{
       text: string;
       path: string;
@@ -217,12 +222,13 @@ export async function submitPrReviewApi(
 
 export async function mergePrApi(
   sessionId: string,
-  method: "squash" | "merge" | "rebase" = "squash"
+  method: "squash" | "merge" | "rebase" = "squash",
+  repo?: string,
 ) {
   const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-merge`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ method }),
+    body: JSON.stringify({ method, ...(repo ? { repo } : {}) }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);

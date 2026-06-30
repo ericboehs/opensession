@@ -922,7 +922,13 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
               ) : panelTab === "terminal" ? (
                 <TerminalPanel entries={entries} />
               ) : (
-                <PrPanel sessionId={session.id} />
+                <PrPanel
+                  sessionId={session.id}
+                  repos={[
+                    { project: session.project || "tella-fusion", primary: true },
+                    ...(session.attachedRepos || []).map((r) => ({ project: r.project, primary: false })),
+                  ]}
+                />
               )}
             </div>
           </div>

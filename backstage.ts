@@ -217,6 +217,27 @@ function buildReposNote(session: UnifiedSession): string | undefined {
   return lines.join("\n");
 }
 
+/**
+ * Resolve which GitHub repo + branch a PR operation targets. With no `repo`
+ * query (or the primary project's id) it's the session's primary branch; an
+ * attached project id targets that repo on its attached branch. Returns null
+ * when there's no branch to act on.
+ */
+function resolvePrTarget(
+  session: UnifiedSession,
+  projectId?: string | null
+): { ghRepo: string; branch: string } | null {
+  const primaryProject =
+    session.project || (session.worktreeDir ? projectForPath(session.worktreeDir).id : "tella-fusion");
+  if (!projectId || projectId === primaryProject) {
+    if (!session.branch) return null;
+    return { ghRepo: getProject(primaryProject).ghRepo, branch: session.branch };
+  }
+  const att = (session.attachedRepos || []).find((r) => r.project === projectId);
+  if (!att) return null;
+  return { ghRepo: getProject(att.project).ghRepo, branch: att.branch };
+}
+
 function findSession(sessionId: string): UnifiedSession | undefined {
   return getCachedSessions().find((s) => s.id === sessionId);
 }
@@ -1497,13 +1518,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       return Response.json({ repos });
     }
 
-    // PR details for a session's branch (PR tab)
+    // PR details for a session's branch (PR tab). `?repo=<project>` targets an
+    // attached repo's PR; default/primary targets the session's own branch.
     if (path.match(/^\/backstage\/api\/sessions\/(.+)\/pr$/) && req.method === "GET") {
       const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/pr$/)![1]);
       const session = findSession(sessionId);
       if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
-      if (!session.branch) return Response.json(null);
-      return Response.json(await getPrDetails(session.branch));
+      const target = resolvePrTarget(session, url.searchParams.get("repo"));
+      if (!target) return Response.json(null);
+      return Response.json(await getPrDetails(target.branch, target.ghRepo));
     }
 
     // PR diff for inline review in the PR tab
@@ -1511,8 +1534,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-diff$/)![1]);
       const session = findSession(sessionId);
       if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
-      if (!session.branch) return Response.json(null);
-      return Response.json(await getPrDiff(session.branch));
+      const target = resolvePrTarget(session, url.searchParams.get("repo"));
+      if (!target) return Response.json(null);
+      return Response.json(await getPrDiff(target.branch, target.ghRepo));
     }
 
     // Local dev-server ("Preview") status for a session's worktree — which
@@ -1548,20 +1572,21 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-comment$/)![1]);
       const session = findSession(sessionId);
       if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
-      if (!session.branch) return Response.json({ error: "Session has no branch" }, { status: 400 });
 
       const body = await req.json().catch(() => null);
       if (!body?.text?.trim()) return Response.json({ error: "Empty comment" }, { status: 400 });
+      const target = resolvePrTarget(session, body.repo);
+      if (!target) return Response.json({ error: "No branch/PR for that repo" }, { status: 400 });
 
       const user = body.user || "Someone";
-      const result = await postPrComment(session.branch, {
+      const result = await postPrComment(target.branch, {
         body: `**${user}** via Michael:\n\n${body.text.trim()}`,
         path: body.path,
         line: body.line,
         startLine: body.startLine,
         side: body.side,
         startSide: body.startSide,
-      });
+      }, target.ghRepo);
       if ("error" in result) return Response.json(result, { status: 502 });
       return Response.json(result);
     }
@@ -1571,9 +1596,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-review$/)![1]);
       const session = findSession(sessionId);
       if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
-      if (!session.branch) return Response.json({ error: "Session has no branch" }, { status: 400 });
 
       const body = await req.json().catch(() => null);
+      const target = resolvePrTarget(session, body?.repo);
+      if (!target) return Response.json({ error: "No branch/PR for that repo" }, { status: 400 });
       const event =
         body?.event === "APPROVE" || body?.event === "REQUEST_CHANGES" ? body.event : "COMMENT";
       const comments = Array.isArray(body?.comments) ? body.comments : [];
@@ -1586,7 +1612,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       const reviewBody = summary
         ? `**${user}** via Michael:\n\n${summary}`
         : `Review by **${user}** via Michael.`;
-      const result = await submitPrReview(session.branch, {
+      const result = await submitPrReview(target.branch, {
         event,
         body: reviewBody,
         comments: comments
@@ -1599,7 +1625,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
             startSide: c.startSide,
             body: `**${user}**: ${c.text.trim()}`,
           })),
-      });
+      }, target.ghRepo);
       if ("error" in result) return Response.json(result, { status: 502 });
       sessionsCache = null; // a review can change reviewDecision in the list
       return Response.json(result);
@@ -1610,12 +1636,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??= Bun.
       const sessionId = decodeURIComponent(path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-merge$/)![1]);
       const session = findSession(sessionId);
       if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
-      if (!session.branch) return Response.json({ error: "Session has no branch" }, { status: 400 });
 
       const body = await req.json().catch(() => ({}));
+      const target = resolvePrTarget(session, body.repo);
+      if (!target) return Response.json({ error: "No branch/PR for that repo" }, { status: 400 });
       const method = body.method === "merge" || body.method === "rebase" ? body.method : "squash";
       try {
-        const result = await mergePr(session.branch, { method, deleteBranch: !!body.deleteBranch });
+        const result = await mergePr(target.branch, { method, deleteBranch: !!body.deleteBranch }, target.ghRepo);
         if ("error" in result) return Response.json(result, { status: 502 });
         sessionsCache = null; // refresh prState in the sessions list
         return Response.json(result);

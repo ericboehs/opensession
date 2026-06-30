@@ -1185,6 +1185,31 @@ a {
 
 .diff-summary-files { color: var(--text-dim); }
 
+/* Per-repo tabs in a multi-repo session's PR panel */
+.pr-repo-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.pr-repo-tab {
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.pr-repo-tab:hover { color: var(--text); }
+.pr-repo-tab-active {
+  color: var(--text);
+  background: var(--bg-panel);
+  border-color: var(--border);
+}
+
 /* Per-repo tabs in a multi-repo session's diff */
 .diff-repo-tabs {
   display: flex;
