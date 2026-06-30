@@ -586,7 +586,12 @@ a {
 /* A transient tab (the current session when it isn't pinned) reads as
    provisional: dashed top edge, like a Chrome tab that hasn't been pinned. */
 .session-tab-transient {
-  border-style: dashed;
+  /* Dash only the visible edges — `border-style: dashed` would re-enable the
+     bottom border (reset to the 3px default width by `border-bottom: none`),
+     making transient tabs 3px taller than solid ones and the strip jumpy. */
+  border-top-style: dashed;
+  border-left-style: dashed;
+  border-right-style: dashed;
 }
 
 /* Pin control: ★ on a pinned tab unpins (removes it); ☆ on a transient tab
