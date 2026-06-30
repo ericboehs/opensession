@@ -1,9 +1,11 @@
 /**
  * Behavior 2: `michael-auto-fix`. Checks out the PR head branch in a dedicated
  * worktree, fixes its own review findings + failing CI, pushes to the PR branch,
- * polls CI, and re-fixes until green — bounded so it can never run away. Pushes
- * trigger a fresh review via the normal `synchronize` webhook (review is
- * comment-only, so no loop). Removes the label when it finishes.
+ * polls CI, and re-fixes until green AND a fresh Michael review of the pushed
+ * code finds nothing blocking — bounded so it can never run away. The loop is
+ * gated on that fresh review rather than the fixer's own self-report, so it can't
+ * stop while Michael's review would still flag a P0/P1. Removes the label when it
+ * finishes.
  */
 import { $ } from "bun";
 import { getPrDetails, type PrDetails } from "../../server/pr-info";
@@ -19,7 +21,7 @@ import { runGithubAgent, authorForLogin, sessionUrl } from "./run";
 import { buildAutoFixPrompt } from "./prompts";
 import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, BOT_LOGIN } from "./github-rest";
 import { LABEL_AUTOFIX } from "./constants";
-import type { PrRef } from "./review";
+import type { PrRef, ReviewResult } from "./review";
 
 const MAX_ITERATIONS = 5;
 const WALL_CLOCK_MS = 60 * 60 * 1000; // abandon a loop running longer than an hour
@@ -121,6 +123,23 @@ export async function runAutoFix(
     let lastPushedSha = baseSha;
     let outcome = "";
 
+    // Review helpers (dynamic import keeps the module graph acyclic). A fresh
+    // review of each pushed SHA is what gates the loop; `lastReviewedSha` lets us
+    // skip the post-loop refresh review when the last thing we did was review it.
+    const { runReview } = await import("./review");
+    const { resolveReviewConfig } = await import("./webhook");
+    let lastReviewedSha = "";
+    const reviewGate = async (sha: string): Promise<ReviewResult | null> => {
+      const fresh = await getPrDetails(pr.headRef);
+      const ref: PrRef = { number: pr.number, headRef: pr.headRef, headSha: sha, title: fresh?.title || pr.title };
+      const rr = await runReview(ref, resolveReviewConfig().config, onSessionCreated, /*force*/ true).catch((e) => {
+        console.error(`[github] auto-fix gating review failed for PR #${pr.number}:`, e);
+        return null;
+      });
+      lastReviewedSha = sha;
+      return rr;
+    };
+
     while (iterations < MAX_ITERATIONS) {
       if (Date.now() - Date.parse(startedAt) > WALL_CLOCK_MS) {
         outcome = "⚠️ Stopped — exceeded the 1-hour time budget. Handing back to humans.";
@@ -169,13 +188,37 @@ export async function runAutoFix(
         break;
       }
 
-      await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: pushed \`${lastPushedSha.slice(0, 7)}\`, waiting for CI…`);
+      const sha7 = lastPushedSha.slice(0, 7);
+      await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: pushed \`${sha7}\`, waiting for CI…`);
       const ci = await waitForChecks(pr.headRef);
 
-      if (ci.green && remaining === "none") { outcome = `✅ Auto-fix complete — CI green, findings addressed (\`${lastPushedSha.slice(0, 7)}\`).`; break; }
-      if (!ci.settled) { outcome = `⏳ Pushed \`${lastPushedSha.slice(0, 7)}\` but CI didn't settle within the timeout. Handing back to humans.`; break; }
-      if (ci.failing.length && iterations >= 2) { outcome = `⚠️ CI still failing after ${iterations} attempts (${ci.failing.join(", ")}). Handing back to humans.`; break; }
-      // else: loop again with the new failing checks / findings
+      if (!ci.settled) { outcome = `⏳ Pushed \`${sha7}\` but CI didn't settle within the timeout. Handing back to humans.`; break; }
+      if (ci.failing.length) {
+        if (iterations >= 2) { outcome = `⚠️ CI still failing after ${iterations} attempts (${ci.failing.join(", ")}). Handing back to humans.`; break; }
+        continue; // green CI is a prerequisite for the review gate — fix the checks next round
+      }
+
+      // CI is green — gate on a FRESH review of the pushed code, not the fixer's
+      // own REMAINING_FINDINGS self-report. Stop only when a new review finds
+      // nothing blocking; otherwise loop so the next iteration fixes what it
+      // surfaced (its inline comments are now the freshest, so fetchReviewFindings
+      // picks them up).
+      await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: CI green — reviewing \`${sha7}\`…`);
+      const review = await reviewGate(lastPushedSha);
+
+      if (!review || review.error) {
+        // No verdict (review lock contention / model error) — fall back to the
+        // fixer's self-report so a flaky review can't spin the loop forever.
+        if (remaining === "none") { outcome = `✅ Auto-fix complete — CI green, findings addressed (\`${sha7}\`); fresh review verdict unavailable.`; break; }
+        outcome = `⚠️ CI green but couldn't get a fresh review verdict and the fixer reports remaining work. Handing back to humans.`;
+        break;
+      }
+      if (review.blocking === 0) {
+        outcome = `✅ Auto-fix complete — CI green and the fresh review found nothing blocking (\`${sha7}\`).`;
+        break;
+      }
+      await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: review still flags ${review.blocking} blocking finding(s) — continuing…`);
+      // loop again to address the fresh findings
     }
 
     if (!outcome && iterations >= MAX_ITERATIONS) {
@@ -189,13 +232,10 @@ export async function runAutoFix(
     // Refresh the pinned review against the fixed code. The auto-fix push won't
     // trigger a `synchronize` review on its own (it's authored by the bot account,
     // which the webhook guard skips), so the summary would otherwise show stale
-    // findings. Only when we actually pushed something.
-    if (lastPushedSha && lastPushedSha !== baseSha) {
-      const { runReview } = await import("./review");
-      const { resolveReviewConfig } = await import("./webhook");
-      const fresh = await getPrDetails(pr.headRef);
-      const ref: PrRef = { number: pr.number, headRef: pr.headRef, headSha: lastPushedSha, title: fresh?.title || pr.title };
-      await runReview(ref, resolveReviewConfig().config, onSessionCreated).catch((e) =>
+    // findings. Skip it when the loop already reviewed this exact SHA via the gate
+    // (the common success path) — only break-outs that didn't review need it.
+    if (lastPushedSha && lastPushedSha !== baseSha && lastPushedSha !== lastReviewedSha) {
+      await reviewGate(lastPushedSha).catch((e) =>
         console.error(`[github] post-autofix review failed for PR #${pr.number}:`, e),
       );
     }

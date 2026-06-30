@@ -51,6 +51,26 @@ interface ReviewOutput {
   findings?: Finding[];
 }
 
+/** What a review concluded, so callers (e.g. auto-fix) can gate on it. */
+export interface ReviewResult {
+  verdict?: string;
+  confidence?: number;
+  findings: number;
+  /** Findings that should block merge: P0/P1 severity, or a request_changes verdict. */
+  blocking: number;
+  error?: string;
+}
+
+/** Count merge-blocking findings (P0/P1, with request_changes as a floor of 1). */
+function reviewBlockingCount(parsed: ReviewOutput | null): number {
+  const n = (parsed?.findings || []).filter((f) => {
+    const s = (f.severity || "").toLowerCase();
+    return s === "p0" || s === "p1" || s === "high";
+  }).length;
+  if (n === 0 && parsed?.verdict === "request_changes") return 1;
+  return n;
+}
+
 // P0/P1 are blocking-ish (red), P2 should-fix (orange), P3 minor (white).
 // Legacy high/medium/low kept as aliases in case a prompt variant emits them.
 const SEV_EMOJI: Record<string, string> = {
@@ -64,17 +84,17 @@ export async function runReview(
   onSessionCreated?: (bksId: string) => void,
   force = false,
   steer?: string,
-): Promise<void> {
+): Promise<ReviewResult | null> {
   if (!claimLock("review", pr.number)) {
     console.log(`[github] review already running for PR #${pr.number}, skipping`);
-    return;
+    return null;
   }
   try {
     const state = getOrInitPrState(pr.number, pr.headRef);
     // `force` (manual Slack trigger) reviews even an already-reviewed SHA.
     if (!force && pr.headSha && state.reviewedShas.includes(pr.headSha)) {
       console.log(`[github] PR #${pr.number} @ ${pr.headSha.slice(0, 7)} already reviewed`);
-      return;
+      return null;
     }
     // Concurrent deliveries are coalesced by the in-process "review" lock above;
     // the SHA is recorded only AFTER a successful run (below) so a transient
@@ -101,7 +121,7 @@ export async function runReview(
     const details = await getPrDetails(pr.headRef);
     if (!details) {
       console.warn(`[github] no PR details for ${pr.headRef}; skipping review`);
-      return;
+      return null;
     }
 
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
@@ -132,8 +152,17 @@ export async function runReview(
       s.lastReviewedSha = pr.headSha;
       writePrState(s);
     }
+
+    return {
+      verdict: parsed?.verdict,
+      confidence: parsed?.confidence,
+      findings: parsed?.findings?.length || 0,
+      blocking: reviewBlockingCount(parsed),
+      error: result.error,
+    };
   } catch (e) {
     console.error(`[github] review failed for PR #${pr.number}:`, e);
+    return null;
   } finally {
     // Clear the recovery flag on completion; a killed process leaves it set so the
     // github agent re-runs the review on startup.

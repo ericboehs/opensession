@@ -36,7 +36,7 @@ export interface TriggerResult {
   /** Backstage session id for this run (for an Open-in-Backstage link + Stop button). */
   bksId?: string;
   /** Resolves when the behavior finishes — lets the caller update a control card (drop Stop). */
-  done?: Promise<void>;
+  done?: Promise<unknown>;
 }
 
 /**
@@ -66,7 +66,7 @@ export async function triggerPrAction(
   };
 
   const fail = (e: unknown) => console.error(`[github] ${kind} trigger failed for PR #${prNumber}:`, e);
-  let done: Promise<void>;
+  let done: Promise<unknown>;
   switch (kind) {
     case "review":
       // force=true: an explicit request reviews even an already-reviewed SHA.
