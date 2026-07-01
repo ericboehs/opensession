@@ -1694,15 +1694,19 @@ function SidebarItem({
 		[],
 	);
 
-	// Mobile long-press → action sheet. These are touch handlers, so a mouse
-	// never triggers them — desktop keeps its hover-X / right-click menu. A hold
-	// that stays roughly in place for LONG_PRESS_MS opens the sheet; any real
-	// finger travel (a scroll) cancels it. `longPressed` suppresses the click
-	// that would otherwise fire on lift and navigate into the session.
+	// Mobile long-press → action sheet, and — importantly — the *tap* to open a
+	// session is driven from `touchend`, not the synthesized `click`. `.sidebar-item`
+	// has `:hover` styles (the reveal-on-hover X, the hover background), and iOS
+	// treats the first tap on a hover-styled element as a hover-in, swallowing the
+	// click — so a click-driven open needs a second tap ("first tap doesn't work").
+	// Firing on touchend sidesteps that entirely. A hold that stays roughly in
+	// place for LONG_PRESS_MS opens the sheet instead; any real finger travel (a
+	// scroll) cancels both.
 	const [sheetOpen, setSheetOpen] = useState(false);
 	const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const pressOrigin = useRef<{ x: number; y: number } | null>(null);
 	const longPressed = useRef(false);
+	const moved = useRef(false);
 
 	function clearPress() {
 		if (pressTimer.current) clearTimeout(pressTimer.current);
@@ -1712,9 +1716,11 @@ function SidebarItem({
 	function onTouchStart(e: React.TouchEvent) {
 		if (editing || e.touches.length !== 1) return;
 		const t = e.touches[0];
-		pressOrigin.current = { x: t.clientX, y: t.clientY };
 		longPressed.current = false;
+		moved.current = false;
 		clearPress();
+		// After clearPress (which nulls it) so it survives to onTouchMove/onTouchEnd.
+		pressOrigin.current = { x: t.clientX, y: t.clientY };
 		pressTimer.current = setTimeout(() => {
 			longPressed.current = true;
 			closeHover();
@@ -1730,7 +1736,20 @@ function SidebarItem({
 			Math.abs(t.clientX - o.x) > LONG_PRESS_SLOP ||
 			Math.abs(t.clientY - o.y) > LONG_PRESS_SLOP
 		) {
+			moved.current = true;
 			clearPress();
+		}
+	}
+	function onTouchEnd(e: React.TouchEvent) {
+		const hadOrigin = pressOrigin.current !== null;
+		clearPress();
+		if (editing) return;
+		// A clean tap: it started on this row, never became a long-press, and
+		// never turned into a scroll. Open now and swallow the ghost click iOS
+		// would fire ~300ms later (which the :hover heuristic may drop anyway).
+		if (hadOrigin && !longPressed.current && !moved.current) {
+			e.preventDefault();
+			onClick();
 		}
 	}
 
@@ -1779,8 +1798,9 @@ function SidebarItem({
 			ref={btnRef}
 			className={`sidebar-item ${selected ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""} ${unread ? "sidebar-item-unread" : ""}`}
 			onClick={(e) => {
-				// Swallow the click that ends a long-press so it doesn't
-				// also navigate into the session.
+				// Touch taps are handled on touchend (and their ghost click is
+				// preventDefault'd), so this path is the mouse/desktop one. Still
+				// swallow a click that ends a long-press, as a belt-and-suspenders.
 				if (longPressed.current) {
 					longPressed.current = false;
 					e.preventDefault();
@@ -1793,7 +1813,7 @@ function SidebarItem({
 			onMouseDown={closeHover}
 			onTouchStart={onTouchStart}
 			onTouchMove={onTouchMove}
-			onTouchEnd={clearPress}
+			onTouchEnd={onTouchEnd}
 			onTouchCancel={clearPress}
 			onContextMenu={(e) => {
 				// On touch this is the long-press callout: the action sheet
