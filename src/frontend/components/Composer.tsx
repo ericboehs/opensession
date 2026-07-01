@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from "react";
 import type { ModelOption, FileMention } from "../lib/api";
-import { filesToDataUrls, imageFilesFromPaste } from "../lib/images";
+import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { ImageThumbs } from "./ImageThumbs";
+import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
 
 interface Props {
@@ -39,6 +40,12 @@ interface Props {
    */
   images?: string[];
   onImagesChange?: (images: string[]) => void;
+  /**
+   * Non-image attachments (staged to disk server-side). When `onFilesChange` is
+   * provided, the composer accepts any dropped/picked file, not just images.
+   */
+  files?: FileAttachment[];
+  onFilesChange?: (files: FileAttachment[]) => void;
   /**
    * Enables "@"-mention file autocomplete. Given the text typed after the "@",
    * returns matching files (primary repo + any attached repos). When omitted,
@@ -80,38 +87,52 @@ export function Composer({
   textareaRef: externalRef,
   images,
   onImagesChange,
+  files,
+  onFilesChange,
   mentionFetch,
 }: Props) {
   const internalRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = externalRef ?? internalRef;
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const imgs = images || [];
+  const fls = files || [];
+  // Any attachment affordance (paste/drop/pick + thumbnails) is enabled when the
+  // parent wired up either channel.
+  const canAttach = !!onImagesChange || !!onFilesChange;
 
   // "@"-mention file autocomplete (shared with the New-session prompt field).
   const mentions = useFileMentions({ value, onChange, textareaRef, mentionFetch });
 
-  async function addFiles(files: FileList | File[]) {
-    if (!onImagesChange) return;
-    const urls = await filesToDataUrls(files);
-    if (urls.length) onImagesChange([...imgs, ...urls]);
+  async function addFiles(picked: FileList | File[]) {
+    if (!canAttach) return;
+    const { images: newImgs, files: newFls } = await splitAttachments(picked);
+    // Images ride the vision channel; other files need a dedicated file channel
+    // (if the parent only wired images, non-image files are simply ignored).
+    if (newImgs.length) onImagesChange?.([...imgs, ...newImgs]);
+    if (newFls.length && onFilesChange) onFilesChange([...fls, ...newFls]);
   }
 
   function handlePaste(e: React.ClipboardEvent) {
-    if (!onImagesChange) return;
-    const files = imageFilesFromPaste(e);
-    if (files.length) {
+    if (!canAttach) return;
+    const pasted = imageFilesFromPaste(e);
+    if (pasted.length) {
       e.preventDefault();
-      void addFiles(files);
+      void addFiles(pasted);
     }
   }
 
   function handleDrop(e: React.DragEvent) {
-    if (!onImagesChange || !e.dataTransfer?.files?.length) return;
+    if (!canAttach || !e.dataTransfer?.files?.length) return;
     e.preventDefault();
     void addFiles(e.dataTransfer.files);
   }
 
   function removeImage(i: number) {
     onImagesChange?.(imgs.filter((_, idx) => idx !== i));
+  }
+
+  function removeFile(i: number) {
+    onFilesChange?.(fls.filter((_, idx) => idx !== i));
   }
 
   // Auto-grow up to the CSS max-height
@@ -137,9 +158,10 @@ export function Composer({
       <div
         className={`composer ${disabled ? "composer-disabled" : ""}`}
         onDrop={handleDrop}
-        onDragOver={(e) => onImagesChange && e.preventDefault()}
+        onDragOver={(e) => canAttach && e.preventDefault()}
       >
         <ImageThumbs images={imgs} onRemove={removeImage} disabled={disabled} />
+        <FileChips files={fls} onRemove={removeFile} disabled={disabled} />
         <div className="composer-input-wrap" ref={mentions.inputWrapRef}>
           {mentions.popup}
           <textarea
@@ -185,6 +207,32 @@ export function Composer({
             </select>
             <span className="composer-model-chevron">▾</span>
           </div>
+          {canAttach && (
+            <>
+              <button
+                type="button"
+                className="composer-attach-btn"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={disabled}
+                title={onFilesChange ? "Attach a file" : "Attach an image"}
+                aria-label={onFilesChange ? "Attach a file" : "Attach an image"}
+              >
+                📎
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                {...(onFilesChange ? {} : { accept: "image/*" })}
+                multiple
+                hidden
+                onChange={(e) => {
+                  if (e.target.files?.length) void addFiles(e.target.files);
+                  // Reset so picking the same file again still fires onChange.
+                  e.target.value = "";
+                }}
+              />
+            </>
+          )}
           {leftExtra}
           <div className="composer-spacer" />
           {busy && onSteerSend && (

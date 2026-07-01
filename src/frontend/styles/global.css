@@ -5810,6 +5810,77 @@ a {
 	cursor: default;
 }
 
+/* Round attach button in the in-session composer toolbar */
+.composer-attach-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: none;
+	color: var(--text-dim);
+	font-size: 14px;
+	line-height: 1;
+	cursor: pointer;
+	flex-shrink: 0;
+}
+.composer-attach-btn:hover:not(:disabled) {
+	color: var(--text);
+	border-color: var(--border-strong);
+	background: var(--bg-hover);
+}
+.composer-attach-btn:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* Non-image file attachments: chip row (filename + remove) */
+.composer-files {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+.composer-file-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 220px;
+	padding: 4px 8px;
+	border: 1px solid var(--border-strong);
+	border-radius: 7px;
+	background: var(--bg-hover);
+	font-size: 12px;
+	color: var(--text);
+}
+.composer-file-icon {
+	flex-shrink: 0;
+}
+.composer-file-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.composer-file-remove {
+	flex-shrink: 0;
+	border: none;
+	background: none;
+	color: var(--text-dim);
+	font-size: 15px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0;
+}
+.composer-file-remove:hover:not(:disabled) {
+	color: var(--text);
+}
+.composer-file-remove:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
 /* "Fork from here" affordance on assistant messages */
 .msg-fork-btn {
 	margin-left: 8px;

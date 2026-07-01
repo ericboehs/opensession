@@ -8,6 +8,7 @@ import { TerminalPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
 import { deleteSessionApi, fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
 import { Composer } from "./Composer";
+import type { FileAttachment } from "../lib/images";
 import { DiffPanel } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
 import { AskCard } from "./AskCard";
@@ -54,6 +55,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   const [input, setInput] = useState("");
   // Pasted/dropped images (data URLs) staged for the next send.
   const [images, setImages] = useState<string[]>([]);
+  const [files, setFiles] = useState<FileAttachment[]>([]);
   // When set, the next send forks a new session branching from this message
   // instead of continuing this one.
   const [forkFrom, setForkFrom] = useState<string | null>(null);
@@ -375,10 +377,12 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
   function handleSend() {
     const text = input.trim();
     const imgs = images;
-    if (!text && imgs.length === 0) return;
+    const fls = files;
+    if (!text && imgs.length === 0 && fls.length === 0) return;
     if (!connected) return;
 
     const user = getCurrentUser();
+    const filePayload = fls.map((f) => ({ name: f.name, dataUrl: f.dataUrl }));
 
     // Fork mode: branch a brand-new session from the selected message, keeping
     // the real conversation history. App navigates into it on session_created.
@@ -390,10 +394,12 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
         user,
         forkFrom: { sourceId: session.id, messageId: forkFrom },
         ...(imgs.length ? { images: imgs } : {}),
+        ...(fls.length ? { files: filePayload } : {}),
       });
       setForkFrom(null);
       setInput("");
       setImages([]);
+      setFiles([]);
       return;
     }
 
@@ -413,6 +419,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
             content: text,
             user,
             ...(imgs.length ? { images: imgs } : {}),
+            ...(fls.length ? { files: filePayload } : {}),
           }
     );
     beginTurn(); // pin this new turn near the top so its reply streams in below
@@ -429,6 +436,7 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
     ]);
     setInput("");
     setImages([]);
+    setFiles([]);
   }
 
   // Gentle alternative to handleSend while busy: fold the message into the run at
@@ -828,6 +836,8 @@ export function SessionViewer({ session, onBack, send, addHandler, connected }: 
                   onSend={handleSend}
                   images={images}
                   onImagesChange={setImages}
+                  files={files}
+                  onFilesChange={setFiles}
                   placeholder={
                     !connected
                       ? "Not connected"

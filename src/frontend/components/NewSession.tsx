@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { fetchWorktrees, fetchModels, fetchFileMentions, suggestBranch, type ModelOption } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
-import { filesToDataUrls, imageFilesFromPaste } from "../lib/images";
+import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { ImageThumbs } from "./ImageThumbs";
+import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
 import type { WSServerMessage } from "../lib/types";
 
@@ -57,6 +58,7 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
   const [branchEdited, setBranchEdited] = useState(!!prefill.branch);
   const [suggestingBranch, setSuggestingBranch] = useState(false);
   const [images, setImages] = useState<string[]>([]);
+  const [files, setFiles] = useState<FileAttachment[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -126,23 +128,24 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
     });
   }, [creating, addHandler]);
 
-  async function addImageFiles(files: FileList | File[]) {
-    const urls = await filesToDataUrls(files);
-    if (urls.length) setImages((prev) => [...prev, ...urls]);
+  async function addAttachments(picked: FileList | File[]) {
+    const { images: imgs, files: fls } = await splitAttachments(picked);
+    if (imgs.length) setImages((prev) => [...prev, ...imgs]);
+    if (fls.length) setFiles((prev) => [...prev, ...fls]);
   }
 
   function handlePaste(e: React.ClipboardEvent) {
-    const files = imageFilesFromPaste(e);
-    if (files.length) {
+    const imgs = imageFilesFromPaste(e);
+    if (imgs.length) {
       e.preventDefault();
-      void addImageFiles(files);
+      void addAttachments(imgs);
     }
   }
 
   function handleCreate() {
     const branch = selectedWorktree === "__new__" ? newBranch.trim() : selectedWorktree;
     if (mode === "code" && !branch) return;
-    if (!prompt.trim() && images.length === 0) return;
+    if (!prompt.trim() && images.length === 0 && files.length === 0) return;
 
     setError(null);
     setCreating(true);
@@ -155,13 +158,14 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
       user: getCurrentUser(),
       ...(model ? { model } : {}),
       ...(images.length ? { images } : {}),
+      ...(files.length ? { files: files.map((f) => ({ name: f.name, dataUrl: f.dataUrl })) } : {}),
     });
   }
 
   const canCreate =
     !creating &&
     connected &&
-    (prompt.trim() || images.length > 0) &&
+    (prompt.trim() || images.length > 0 || files.length > 0) &&
     (mode === "ask" ||
       (selectedWorktree && (selectedWorktree !== "__new__" || newBranch.trim())));
 
@@ -262,7 +266,7 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
             onDrop={(e) => {
               if (e.dataTransfer?.files?.length) {
                 e.preventDefault();
-                void addImageFiles(e.dataTransfer.files);
+                void addAttachments(e.dataTransfer.files);
               }
             }}
             onDragOver={(e) => e.preventDefault()}
@@ -284,13 +288,14 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
               onPaste={handlePaste}
               placeholder={
                 mode === "ask"
-                  ? "Ask anything about the codebase or product — read-only. Type @ to reference a file. Paste or add a screenshot to include it."
-                  : `Describe the task — Michael gets a fresh worktree on ${project} and starts right away. Type @ to reference a file. Paste or add a screenshot to include it.`
+                  ? "Ask anything about the codebase or product — read-only. Type @ to reference a file. Paste a screenshot or attach files with 📎."
+                  : `Describe the task — Michael gets a fresh worktree on ${project} and starts right away. Type @ to reference a file. Paste a screenshot or attach files with 📎.`
               }
               rows={6}
               disabled={creating}
             />
             <ImageThumbs images={images} onRemove={(i) => setImages((p) => p.filter((_, idx) => idx !== i))} disabled={creating} />
+            <FileChips files={files} onRemove={(i) => setFiles((p) => p.filter((_, idx) => idx !== i))} disabled={creating} />
           </div>
           <div className="composer-attach-row">
             <button
@@ -299,16 +304,15 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
               onClick={() => fileInputRef.current?.click()}
               disabled={creating}
             >
-              🖼 Add image
+              📎 Add file
             </button>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
               multiple
               hidden
               onChange={(e) => {
-                if (e.target.files?.length) void addImageFiles(e.target.files);
+                if (e.target.files?.length) void addAttachments(e.target.files);
                 // Reset so picking the same file again still fires onChange.
                 e.target.value = "";
               }}

@@ -928,8 +928,9 @@ async function runSessionPromptAndDrain(
 	content: string,
 	user?: string,
 	images?: ImageInput[],
+	rawFiles?: unknown,
 ): Promise<void> {
-	await runSessionPrompt(sessionId, content, user, images);
+	await runSessionPrompt(sessionId, content, user, images, rawFiles);
 	await drainQueue(sessionId);
 }
 
@@ -944,6 +945,97 @@ function parseImageDataUrls(urls?: unknown): ImageInput[] | undefined {
 			out.push({ mediaType: m[1], data: m[2] });
 	}
 	return out.length ? out : undefined;
+}
+
+// Non-image composer attachments are staged to disk (the vision path only takes
+// images), then the agent is handed their absolute paths in the opening prompt.
+const UPLOADS_DIR = `${BACKSTAGE_SESSIONS_DIR}/uploads`;
+// Base64-over-WebSocket is fine for modest files; cap so a huge upload can't OOM
+// the process or blow the message frame. Oversized files are dropped with a note.
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+interface FileUpload {
+	name: string;
+	data: string; // base64 (no data: prefix)
+}
+
+/** Decode composer `{name, dataUrl}` attachments into name + base64 payloads. */
+function parseFileUploads(raw?: unknown): FileUpload[] | undefined {
+	if (!Array.isArray(raw)) return undefined;
+	const out: FileUpload[] = [];
+	for (const f of raw) {
+		if (!f || typeof f !== "object") continue;
+		const name = typeof (f as any).name === "string" ? (f as any).name : "";
+		const url = typeof (f as any).dataUrl === "string" ? (f as any).dataUrl : "";
+		const m = url.match(/^data:[^;]*;base64,(.+)$/s);
+		if (!m) continue;
+		out.push({ name, data: m[1] });
+	}
+	return out.length ? out : undefined;
+}
+
+/** Keep a user-supplied filename to a safe basename (no traversal, no exotic chars). */
+function sanitizeFilename(name: string): string {
+	const base = (name.split(/[\\/]/).pop() || "file").replace(/^\.+/, "");
+	const cleaned = base.replace(/[^A-Za-z0-9._ -]/g, "_").trim().slice(0, 120);
+	return cleaned || "file";
+}
+
+/**
+ * Write uploaded files to a per-session staging dir (outside any repo, so they
+ * never pollute git) and return the absolute paths. Collisions are de-duped and
+ * oversized files skipped.
+ */
+function stageUploads(
+	sessionId: string,
+	uploads: FileUpload[],
+): { name: string; path: string }[] {
+	const dir = `${UPLOADS_DIR}/${sessionId}`;
+	mkdirSync(dir, { recursive: true });
+	const staged: { name: string; path: string }[] = [];
+	const used = new Set<string>();
+	for (const up of uploads) {
+		const buf = Buffer.from(up.data, "base64");
+		if (buf.length === 0 || buf.length > MAX_UPLOAD_BYTES) {
+			console.warn(
+				`[uploads] Skipping ${up.name || "(unnamed)"} for ${sessionId} — ${buf.length} bytes`,
+			);
+			continue;
+		}
+		const wanted = sanitizeFilename(up.name);
+		let fname = wanted;
+		let i = 1;
+		while (used.has(fname) || existsSync(`${dir}/${fname}`)) {
+			const dot = wanted.lastIndexOf(".");
+			fname =
+				dot > 0
+					? `${wanted.slice(0, dot)}-${i}${wanted.slice(dot)}`
+					: `${wanted}-${i}`;
+			i++;
+		}
+		used.add(fname);
+		const p = `${dir}/${fname}`;
+		writeFileSync(p, buf);
+		staged.push({ name: up.name || fname, path: p });
+	}
+	return staged;
+}
+
+/** Append a note listing staged upload paths so the agent knows to read them. */
+function withUploadsNote(prompt: string, staged: { name: string; path: string }[]): string {
+	if (!staged.length) return prompt;
+	const lines = staged.map((s) => `- ${s.name}: ${s.path}`).join("\n");
+	return `${prompt}\n\n[The user attached ${staged.length} file(s), saved to disk — read them with your file tools if relevant:\n${lines}\n]`;
+}
+
+/** Parse + stage composer file attachments in one step; returns the prompt note-augmenter. */
+function stageFileAttachments(
+	sessionId: string,
+	raw?: unknown,
+): { name: string; path: string }[] {
+	const uploads = parseFileUploads(raw);
+	if (!uploads) return [];
+	return stageUploads(sessionId, uploads);
 }
 
 // Messages queued while a run we didn't start is in flight (Slack runs, CLI
@@ -987,6 +1079,7 @@ async function runSessionPrompt(
 	content: string,
 	user?: string,
 	images?: ImageInput[],
+	rawFiles?: unknown,
 ): Promise<void> {
 	const session = findSession(sessionId);
 	if (!session) return;
@@ -1042,6 +1135,8 @@ async function runSessionPrompt(
 		}
 	}
 	let prompt = content;
+	// Non-image attachments: stage to disk and tell the agent where they landed.
+	prompt = withUploadsNote(prompt, stageFileAttachments(sessionId, rawFiles));
 	if (session.goal) {
 		prompt += `\n\n[Pinned session goal — keep working toward it and note how this turn advanced it: ${session.goal}]`;
 	}
@@ -2872,7 +2967,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							return;
 						}
 
-						await runSessionPromptAndDrain(sessionId, content, user, images);
+						await runSessionPromptAndDrain(sessionId, content, user, images, msg.files);
 						break;
 					}
 
@@ -3037,6 +3132,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 
 							const bksId = `bks-${randomUUIDv7()}`;
 							const title = prompt.trim().split("\n")[0].slice(0, 80);
+							// Non-image attachments: stage to disk, hand the agent the paths.
+							const openingPrompt = withUploadsNote(
+								prompt,
+								stageFileAttachments(bksId, msg.files),
+							);
 
 							ws.send(
 								JSON.stringify({ type: "stream_start", sessionId: bksId }),
@@ -3076,7 +3176,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							};
 
 							for await (const event of runAgent({
-								prompt,
+								prompt: openingPrompt,
 								cwd: wtPath,
 								mode: isAsk ? "ask" : "code",
 								model,
