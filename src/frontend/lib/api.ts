@@ -636,6 +636,38 @@ export async function runAutomationApi(id: string) {
 	});
 }
 
+// ── Audit log ──
+
+export interface AuditPage {
+	dates: string[];
+	events?: Array<Record<string, unknown>>;
+	total?: number;
+	types?: string[];
+}
+
+export async function fetchAudit(opts: {
+	date?: string;
+	q?: string;
+	type?: string;
+	session?: string;
+	/** Include the per-turn firehose (tool_use/tool_result/…). */
+	all?: boolean;
+	offset?: number;
+	limit?: number;
+}): Promise<AuditPage> {
+	const params = new URLSearchParams();
+	if (opts.date) params.set("date", opts.date);
+	if (opts.q) params.set("q", opts.q);
+	if (opts.type) params.set("type", opts.type);
+	if (opts.session) params.set("session", opts.session);
+	if (opts.all) params.set("all", "1");
+	if (opts.offset) params.set("offset", String(opts.offset));
+	if (opts.limit) params.set("limit", String(opts.limit));
+	return request(`/audit?${params.toString()}`, {
+		label: "Failed to fetch audit log",
+	});
+}
+
 // ── Session monitor (per-user, opt-in) ──
 
 export interface MonitorConfig {

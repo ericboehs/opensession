@@ -3580,6 +3580,28 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					: Response.json({ error: "Not found" }, { status: 404 });
 			}
 
+			// ── Audit log viewer (Settings → Audit log) ──
+			if (path === "/backstage/api/audit" && req.method === "GET") {
+				const { listAuditDates, readAuditEvents } = await import(
+					"./src/server/audit"
+				);
+				const date = url.searchParams.get("date") || "";
+				const dates = listAuditDates();
+				if (!date) return Response.json({ dates });
+				return Response.json({
+					dates,
+					...readAuditEvents({
+						date,
+						q: url.searchParams.get("q") || undefined,
+						type: url.searchParams.get("type") || undefined,
+						session: url.searchParams.get("session") || undefined,
+						significantOnly: url.searchParams.get("all") !== "1",
+						offset: Number(url.searchParams.get("offset")) || 0,
+						limit: Number(url.searchParams.get("limit")) || 200,
+					}),
+				});
+			}
+
 			// ── Session monitor (per-user, opt-in) ──
 			if (path === "/backstage/api/monitor" && req.method === "GET") {
 				const user = (url.searchParams.get("user") || "").trim();

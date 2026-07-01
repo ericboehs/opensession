@@ -16,7 +16,12 @@ import {
 	type ThemePref,
 } from "../lib/theme";
 import { Connections, DefaultModel } from "./Connections";
-import { fetchMonitorConfig, updateMonitorConfig, type MonitorConfig } from "../lib/api";
+import {
+	fetchMonitorConfig,
+	updateMonitorConfig,
+	fetchAudit,
+	type MonitorConfig,
+} from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
@@ -25,7 +30,13 @@ import { getCurrentUser } from "./UserPicker";
 // holds per-browser preferences (notifications, theme); the "Workspace" group holds
 // shared setup that configures how every session runs (default model, connections).
 
-type SectionKey = "notifications" | "monitor" | "appearance" | "model" | "connections";
+type SectionKey =
+	| "notifications"
+	| "monitor"
+	| "appearance"
+	| "model"
+	| "connections"
+	| "audit";
 
 const SECTIONS: {
 	key: SectionKey;
@@ -135,6 +146,24 @@ const SECTIONS: {
 			</svg>
 		),
 	},
+	{
+		key: "audit",
+		label: "Audit log",
+		group: "Workspace",
+		icon: (
+			<svg
+				width="15"
+				height="15"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path d="M4 2.5h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z" strokeLinejoin="round" />
+				<path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3" strokeLinecap="round" />
+			</svg>
+		),
+	},
 ];
 
 export function Settings({ onBack }: { onBack: () => void }) {
@@ -195,6 +224,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
 				{section === "notifications" && <NotificationsPanel />}
 				{section === "monitor" && <MonitorPanel />}
 				{section === "appearance" && <AppearancePanel />}
+				{section === "audit" && <AuditPanel />}
 				{section === "model" && <DefaultModelPanel />}
 				{section === "connections" && <Connections />}
 			</div>
@@ -556,6 +586,157 @@ function MonitorPanel() {
 					}
 				/>
 			</div>
+		</div>
+	);
+}
+
+/** Summarize one audit event for its row (the details live in the expand). */
+function auditSummary(e: Record<string, unknown>): string {
+	const parts: string[] = [];
+	if (e.tool_name) parts.push(String(e.tool_name));
+	if (e.action) parts.push(`${e.context ? `${e.context}.` : ""}${e.action}`);
+	if (e.decision) parts.push(`decision: ${e.decision}`);
+	if (e.account) parts.push(`account: ${e.account}`);
+	if (e.model) parts.push(String(e.model));
+	if (typeof e.ok === "boolean") parts.push(e.ok ? "ok" : "failed");
+	if (e.error) parts.push(`error: ${String(e.error).slice(0, 80)}`);
+	if (e.text_snippet) parts.push(`“${String(e.text_snippet).slice(0, 100)}”`);
+	return parts.join(" · ");
+}
+
+/** Read-only viewer over ~/.backstage-audit daily JSONL (agent flight recorder). */
+function AuditPanel() {
+	const [dates, setDates] = useState<string[]>([]);
+	const [date, setDate] = useState("");
+	const [type, setType] = useState("");
+	const [types, setTypes] = useState<string[]>([]);
+	const [q, setQ] = useState("");
+	const [all, setAll] = useState(false);
+	const [events, setEvents] = useState<Array<Record<string, unknown>>>([]);
+	const [total, setTotal] = useState(0);
+	const [expanded, setExpanded] = useState<number | null>(null);
+	const [loading, setLoading] = useState(true);
+
+	// Debounced reload on any filter change.
+	useEffect(() => {
+		const t = setTimeout(() => {
+			setLoading(true);
+			fetchAudit({ date: date || undefined, type: type || undefined, q: q || undefined, all })
+				.then((page) => {
+					setDates(page.dates);
+					if (!date && page.dates.length) {
+						setDate(page.dates[0]);
+						return; // effect re-runs with the date set
+					}
+					setEvents(page.events || []);
+					setTotal(page.total || 0);
+					setTypes(page.types || []);
+					setExpanded(null);
+					setLoading(false);
+				})
+				.catch(() => setLoading(false));
+		}, 250);
+		return () => clearTimeout(t);
+	}, [date, type, q, all]);
+
+	async function loadMore() {
+		const page = await fetchAudit({
+			date,
+			type: type || undefined,
+			q: q || undefined,
+			all,
+			offset: events.length,
+		});
+		setEvents([...events, ...(page.events || [])]);
+	}
+
+	return (
+		<div className="settings-panel">
+			<h1 className="settings-title">Audit log</h1>
+			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+				Every agent run's structured events — prompts, tool decisions, account
+				switches, human confirmations. Read-only; files live under
+				~/.backstage-audit (400-day retention).
+			</div>
+
+			<div className="flex flex-wrap items-center gap-2 mb-3">
+				<select className="ui-select" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date">
+					{dates.map((d) => (
+						<option key={d} value={d}>
+							{d}
+						</option>
+					))}
+				</select>
+				<select className="ui-select" value={type} onChange={(e) => setType(e.target.value)} aria-label="Event type">
+					<option value="">{all ? "All events" : "Significant events"}</option>
+					{types.map((t) => (
+						<option key={t} value={t}>
+							{t}
+						</option>
+					))}
+				</select>
+				<label className="flex items-center gap-1.5 text-[12px] text-dim cursor-pointer">
+					<input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
+					include tool firehose
+				</label>
+				<input
+					className="ui-select flex-1 min-w-[140px]"
+					value={q}
+					onChange={(e) => setQ(e.target.value)}
+					placeholder="Search (session id, tool, text…)"
+					aria-label="Search audit log"
+				/>
+			</div>
+
+			<div className="text-faint text-[11.5px] mb-2">
+				{loading ? "Loading…" : `${events.length} of ${total} events (newest first)`}
+			</div>
+
+			<div className="flex flex-col border border-line rounded-panel overflow-hidden bg-surface">
+				{events.map((e, i) => {
+					const time = String(e.time || "").slice(11, 19);
+					const t = String(e.kind || e.msg || "event");
+					const sid = typeof e.bks_session_id === "string" ? e.bks_session_id : "";
+					return (
+						<div key={i} className={`border-b border-line last:border-b-0 ${expanded === i ? "bg-panel" : ""}`}>
+							<button
+								className="w-full text-left flex items-baseline gap-2 px-2.5 py-1.5 text-[12px] cursor-pointer hover:bg-hover min-w-0"
+								onClick={() => setExpanded(expanded === i ? null : i)}
+							>
+								<span className="font-mono text-faint shrink-0">{time}</span>
+								<span className="text-fg font-medium shrink-0">{t}</span>
+								{e.run_kind ? <span className="text-faint shrink-0">{String(e.run_kind)}</span> : null}
+								<span className="text-dim truncate">{auditSummary(e)}</span>
+								{sid && (
+									<a
+										className="text-faint font-mono text-[11px] ml-auto shrink-0 underline"
+										href={`/backstage/session/${sid}`}
+										onClick={(ev) => ev.stopPropagation()}
+									>
+										{sid.slice(0, 18)}…
+									</a>
+								)}
+							</button>
+							{expanded === i && (
+								<pre className="m-0 px-3 py-2 text-[11px] leading-relaxed text-dim overflow-x-auto border-t border-line">
+									{JSON.stringify(e, null, 2)}
+								</pre>
+							)}
+						</div>
+					);
+				})}
+				{!loading && events.length === 0 && (
+					<div className="px-3 py-4 text-faint text-[12.5px]">No events match.</div>
+				)}
+			</div>
+
+			{events.length < total && (
+				<div className="mt-2">
+					<button className="btn-small" onClick={loadMore}>
+						Load more ({total - events.length} left)
+					</button>
+				</div>
+			)}
 		</div>
 	);
 }

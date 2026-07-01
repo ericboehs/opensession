@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  unlinkSync,
+} from "node:fs";
 
 // Structured audit log, modeled on tellahq/incident-agent's src/audit.ts.
 // One JSON line per event into a daily file under ~/.backstage-audit/.
@@ -110,6 +117,96 @@ export function summarizeText(text: string | undefined, snippetBytes = 300): Tex
     text_sha256: createHash("sha256").update(s).digest("hex"),
     text_bytes: Buffer.byteLength(s, "utf8"),
     text_snippet: s.length > snippetBytes ? `${s.slice(0, snippetBytes)}…` : s,
+  };
+}
+
+// ── Read side (the in-app audit viewer, Settings → Audit log) ──
+
+/** Dates (YYYY-MM-DD, newest first) that have an audit file. */
+export function listAuditDates(): string[] {
+  ensureAuditDir();
+  try {
+    return readdirSync(AUDIT_DIR)
+      .map((f) => f.match(/^audit-(\d{4}-\d{2}-\d{2})\.jsonl$/)?.[1])
+      .filter((d): d is string => !!d)
+      .sort()
+      .reverse();
+  } catch {
+    return [];
+  }
+}
+
+/** The per-turn streaming firehose — hidden by the viewer's default
+ *  "significant only" filter so decisions/prompts/confirmations stand out. */
+const NOISY_KINDS = new Set([
+  "tool_use",
+  "tool_result",
+  "assistant_text",
+  "assistant_thinking",
+  "result",
+]);
+
+export interface AuditReadResult {
+  /** Page of events, newest first. */
+  events: Array<Record<string, unknown>>;
+  /** Total matches for the filter (before offset/limit). */
+  total: number;
+  /** Distinct event types seen on this date (for the filter dropdown). */
+  types: string[];
+}
+
+/** One event's display type: the runner events carry `kind`, the audited()
+ *  wrapper and other emitters carry `msg`. */
+function eventType(e: Record<string, unknown>): string {
+  return String(e.kind || e.msg || "event");
+}
+
+export function readAuditEvents(opts: {
+  date: string;
+  /** Case-insensitive substring across the raw line. */
+  q?: string;
+  /** Exact event type (see eventType). */
+  type?: string;
+  /** Substring match on bks_session_id. */
+  session?: string;
+  /** Drop the per-turn firehose kinds (default true). */
+  significantOnly?: boolean;
+  offset?: number;
+  limit?: number;
+}): AuditReadResult {
+  ensureAuditDir();
+  const path = `${AUDIT_DIR}/audit-${opts.date}.jsonl`;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(opts.date) || !existsSync(path)) {
+    return { events: [], total: 0, types: [] };
+  }
+  const q = (opts.q || "").toLowerCase();
+  const significantOnly = opts.significantOnly !== false;
+  const offset = Math.max(0, opts.offset || 0);
+  const limit = Math.min(500, Math.max(1, opts.limit || 200));
+
+  const types = new Set<string>();
+  const matches: Array<Record<string, unknown>> = [];
+  for (const line of readFileSync(path, "utf-8").split("\n")) {
+    if (!line) continue;
+    let e: Record<string, unknown>;
+    try {
+      e = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const t = eventType(e);
+    types.add(t);
+    if (opts.type && t !== opts.type) continue;
+    if (!opts.type && significantOnly && NOISY_KINDS.has(t)) continue;
+    if (opts.session && !String(e.bks_session_id || "").includes(opts.session)) continue;
+    if (q && !line.toLowerCase().includes(q)) continue;
+    matches.push(e);
+  }
+  matches.reverse(); // newest first
+  return {
+    events: matches.slice(offset, offset + limit),
+    total: matches.length,
+    types: [...types].sort(),
   };
 }
 
