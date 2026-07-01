@@ -37,7 +37,7 @@ import { PlainThreadPanel } from "./PlainThreadPanel";
 import { PreviewButton } from "./PreviewButton";
 import { SpinOffMenu } from "./SpinOffMenu";
 import { IconSidebarRight } from "./icons";
-import { Tooltip } from "./Tooltip";
+import { Tooltip } from "../ui/tooltip";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
 

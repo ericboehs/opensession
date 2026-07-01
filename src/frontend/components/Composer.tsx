@@ -14,7 +14,7 @@ import {
   IconCrosshair,
   IconChevronDown,
 } from "./icons";
-import { Tooltip } from "./Tooltip";
+import { Tooltip } from "../ui/tooltip";
 
 interface Props {
   value: string;

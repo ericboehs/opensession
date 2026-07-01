@@ -1,0 +1,102 @@
+import * as React from "react";
+import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
+import { AnimatePresence, motion } from "motion/react";
+import { cn } from "./cn";
+import { popupMotion } from "./motion";
+
+/**
+ * Tooltip on Base UI (Tooltip.Root/Trigger/Positioner/Popup), styled with
+ * Tailwind tokens, animated with Motion. First component of the ui/ layer —
+ * the pattern to copy for new primitives: Base UI parts for behavior
+ * (positioning, collision flip, focus/hover semantics, a11y), our classes via
+ * cn() with className passthrough, Motion presets from ui/motion.ts.
+ *
+ * Keeps the exact API of the old hand-rolled components/Tooltip.tsx
+ * (label/side/offset/shortcut, single-element child, no wrapper DOM) so call
+ * sites didn't change. Open delay + instant group hand-off between adjacent
+ * triggers come from <TooltipProvider> at the app root.
+ */
+
+type Side = "top" | "bottom" | "left" | "right";
+
+/** Mount once at the app root: shared 200ms open delay, and for 300ms after a
+ * tooltip closes, neighbouring triggers open instantly (toolbar sweep). */
+export function TooltipProvider({
+	children,
+}: {
+	children: React.ReactNode;
+}) {
+	return (
+		<BaseTooltip.Provider delay={200} timeout={300}>
+			{children}
+		</BaseTooltip.Provider>
+	);
+}
+
+export function Tooltip({
+	label,
+	side = "top",
+	offset = 8,
+	shortcut,
+	children,
+}: {
+	label: React.ReactNode;
+	side?: Side;
+	offset?: number;
+	/** Optional keyboard-shortcut badges, e.g. ["⌘", "S"]. */
+	shortcut?: string[];
+	children: React.ReactElement;
+}) {
+	// Controlled open state so AnimatePresence can hold the popup in the DOM
+	// through its exit animation (Base UI + Motion pattern: conditional render
+	// inside AnimatePresence, keepMounted on the Portal).
+	const [open, setOpen] = React.useState(false);
+
+	if (!label) return children;
+
+	return (
+		<BaseTooltip.Root open={open} onOpenChange={setOpen}>
+			<BaseTooltip.Trigger render={children} />
+			<AnimatePresence>
+				{open && (
+					<BaseTooltip.Portal keepMounted>
+						<BaseTooltip.Positioner
+							side={side}
+							sideOffset={offset}
+							collisionPadding={6}
+							className="z-[10001]"
+						>
+							<BaseTooltip.Popup
+								render={
+									<motion.div
+										{...popupMotion}
+										style={{ transformOrigin: "var(--transform-origin)" }}
+									/>
+								}
+								className={cn(
+									"pointer-events-none flex max-w-[280px] items-center gap-2",
+									"rounded-panel bg-tooltip px-2 py-1 text-xs font-medium whitespace-nowrap text-tooltip-fg",
+									"shadow-[0_8px_24px_rgba(0,0,0,0.4),0_0_0_1px_var(--tooltip-ring)]",
+								)}
+							>
+								<span className="overflow-hidden text-ellipsis">{label}</span>
+								{shortcut && shortcut.length > 0 && (
+									<span className="inline-flex items-center gap-[3px]">
+										{shortcut.map((k, i) => (
+											<kbd
+												key={i}
+												className="inline-flex h-4 min-w-4 items-center justify-center rounded px-[3px] text-[11px] font-medium [font-family:inherit] bg-white/20 text-white/80"
+											>
+												{k}
+											</kbd>
+										))}
+									</span>
+								)}
+							</BaseTooltip.Popup>
+						</BaseTooltip.Positioner>
+					</BaseTooltip.Portal>
+				)}
+			</AnimatePresence>
+		</BaseTooltip.Root>
+	);
+}

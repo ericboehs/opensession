@@ -3,7 +3,7 @@ import type { RepoDiff } from "../lib/types";
 import { fetchDiff } from "../lib/api";
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
-import { Tooltip } from "./Tooltip";
+import { Tooltip } from "../ui/tooltip";
 
 interface Props {
   sessionId: string;

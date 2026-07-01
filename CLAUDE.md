@@ -30,6 +30,31 @@ it from descending into chaos:
   webhook server, or schedulers, so a naive second instance double-sends. (A real
   isolated dev mode is a future task.)
 
+## Frontend UI system (Base UI + Tailwind + Motion)
+
+New UI goes through this stack; legacy `global.css` classes are migrated
+opportunistically when touched (strangler pattern — never a big-bang rewrite):
+
+- **Tokens**: `src/frontend/styles/tailwind.css` maps the existing `global.css`
+  variables (`--bg`, `--text-dim`, …) into Tailwind's namespace via
+  `@theme inline` — use `bg-panel text-dim border-line text-fg bg-surface` etc.,
+  never raw hex or stock Tailwind grays. Dark/light theming comes for free
+  because the vars re-resolve under `html[data-theme]`.
+- **Compile**: Tailwind is compiled by an `@tailwindcss/cli` subprocess inside
+  `buildFrontend()` (backstage.ts) and linked *after* `global.css`; utilities
+  are imported unlayered so they win source-order ties against legacy rules.
+  Preflight is intentionally NOT imported (global.css assumes browser
+  defaults). Don't import tailwind.css from App.tsx — Bun can't compile it.
+- **Primitives**: wrap Base UI (`@base-ui/react`) per component in
+  `src/frontend/ui/` (see `ui/tooltip.tsx` for the pattern). Rules: always
+  pass `className` through `cn()` (ui/cn.ts); keep Base UI's composable parts
+  shape rather than mega prop APIs; style open/close state via Base UI data
+  attributes; few variants (`variant`/`size`), no boolean prop explosions.
+- **Motion**: use `motion.*` / `AnimatePresence` directly with shared presets
+  from `ui/motion.ts` — don't build wrapper components around Motion. Base UI
+  popups animate via controlled open state + `keepMounted` + `render=` (see
+  ui/tooltip.tsx).
+
 - Use `bun run backstage.ts` to start the server
 - Server binds to Tailscale IP (100.65.135.7:3850) — not publicly accessible
 - Access at `http://michael:3850/backstage/`

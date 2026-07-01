@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Sidebar } from "./components/Sidebar";
-import { Tooltip } from "./components/Tooltip";
+import { Tooltip, TooltipProvider } from "./ui/tooltip";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
 import { SessionSearch } from "./components/SessionSearch";
@@ -1087,4 +1087,8 @@ function App() {
 }
 
 const root = createRoot(document.getElementById("root")!);
-root.render(<App />);
+root.render(
+	<TooltipProvider>
+		<App />
+	</TooltipProvider>,
+);

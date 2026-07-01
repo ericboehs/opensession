@@ -5,7 +5,7 @@ import { CommentableDiff, type CommentTarget, type PendingComment } from "./Comm
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
 import { renderMarkdown } from "../lib/markdown";
-import { Tooltip } from "./Tooltip";
+import { Tooltip } from "../ui/tooltip";
 
 type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 

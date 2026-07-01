@@ -1,0 +1,61 @@
+/* ─────────────────────────────────────────────────────────────
+   Tailwind v4 entry (CSS-first config — there is no tailwind.config.js).
+
+   Compiled by the @tailwindcss/cli step inside buildFrontend() (backstage.ts),
+   NOT by Bun — do not import this file from App.tsx; Bun's bundler would ship
+   the raw directives without running the Tailwind compiler. The compiled sheet
+   is linked AFTER global.css, and utilities are imported *unlayered* below, so
+   a utility class wins a tie against legacy unlayered global.css rules by
+   source order. (Preflight is deliberately not imported: global.css was
+   written against browser defaults and a global reset would reskin the app.)
+
+   BACKSTAGE_DEV=1 (HTML-import dev mode) doesn't run this compile step and
+   gets no utilities — the prod path with in-process rebuilds is the dev loop.
+   ───────────────────────────────────────────────────────────── */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" source(none);
+
+/* Only scan the frontend tree for class names (not agents/server/prompts). */
+@source "../";
+
+/* Design tokens: map the existing global.css variables (which already carry
+   dark/light theming via html[data-theme]) into Tailwind's namespace, so
+   `bg-panel text-dim border-line` and legacy CSS read the same values and
+   re-theme together. `inline` makes utilities emit var(--bg) directly. */
+@theme inline {
+	/* Surfaces */
+	--color-surface: var(--bg);
+	--color-raised: var(--bg-raised);
+	--color-panel: var(--bg-panel);
+	--color-hover: var(--bg-hover);
+	--color-active: var(--bg-active);
+
+	/* Borders (border-border reads terribly, so: line) */
+	--color-line: var(--border);
+	--color-line-strong: var(--border-strong);
+
+	/* Text */
+	--color-fg: var(--text);
+	--color-dim: var(--text-dim);
+	--color-faint: var(--text-faint);
+
+	/* Accent + status */
+	--color-accent: var(--accent);
+	--color-accent-soft: var(--accent-soft);
+	--color-green: var(--green);
+	--color-green-soft: var(--green-soft);
+	--color-yellow: var(--yellow);
+	--color-red: var(--red);
+	--color-red-soft: var(--red-soft);
+	--color-purple: var(--purple);
+
+	/* Tooltip chip (near-black in both themes) */
+	--color-tooltip: var(--tooltip-bg);
+	--color-tooltip-fg: var(--tooltip-fg);
+	--color-tooltip-ring: var(--tooltip-ring);
+
+	/* Type + shape */
+	--font-sans: var(--sans);
+	--font-mono: var(--mono);
+	--radius-panel: var(--radius);
+}

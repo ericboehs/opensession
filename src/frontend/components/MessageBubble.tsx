@@ -3,7 +3,7 @@ import type { TranscriptEntry } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
 import { parseHumanReply, parseAttribution } from "../lib/humanReply";
 import { useCurrentUser } from "./UserPicker";
-import { Tooltip } from "./Tooltip";
+import { Tooltip } from "../ui/tooltip";
 
 /** Very short relative time for the message label ("now", "5m", "3h", "2d",
  * then a date). Hover shows the full local time. */
