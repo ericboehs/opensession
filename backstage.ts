@@ -2874,20 +2874,44 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const src = findSession(sourceId);
 				if (!src)
 					return Response.json({ error: "Session not found" }, { status: 404 });
-				const body = (await req.json().catch(() => ({}))) as { user?: string };
+				const body = (await req.json().catch(() => ({}))) as {
+					user?: string;
+					mode?: "share" | "stack" | "ask";
+				};
+				// share (default): reuse the workspace's worktree/branch (parallel chats,
+				// one branch). stack: a new worktree branched off it (stacked PRs). ask:
+				// no worktree, read-only on main. Empty chat — first prompt starts the run.
+				const chatMode = body.mode || "share";
 				const bksId = `bks-${randomUUIDv7()}`;
+				let branch = src.branch || "";
+				let worktreeDir = src.worktreeDir || "";
+				let mode: "ask" | "code" = src.mode || "code";
+				if (chatMode === "ask") {
+					branch = "";
+					worktreeDir = "";
+					mode = "ask";
+				} else if (chatMode === "stack" && src.branch && src.repo) {
+					const repo = getRepo(src.repo);
+					if (!repo.sharedCheckout) {
+						branch = `${src.branch}-stack-${bksId.slice(4, 10)}`;
+						worktreeDir = await createWorktree(branch, repo.id, {
+							base: src.branch,
+						});
+						mode = "code";
+					}
+				}
 				const data: BackstageSessionFile = {
 					id: bksId,
 					claudeSessionId: "",
-					branch: src.branch || "",
-					worktreeDir: src.worktreeDir || "",
+					branch,
+					worktreeDir,
 					...(src.repo ? { repo: src.repo } : {}),
 					...(src.projectId ? { projectId: src.projectId } : {}),
 					createdBy: body.user || "Anonymous",
 					createdAt: new Date().toISOString(),
 					lastActivity: new Date().toISOString(),
 					title: "New chat",
-					mode: src.mode || "code",
+					mode,
 				};
 				writeFileSync(
 					`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
@@ -4023,6 +4047,30 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						const repo = getRepo(
 							typeof msg.repo === "string" ? msg.repo : undefined,
 						);
+						// Workspace linkage. The New modal creates a Workspace + first Chat
+						// together (createWorkspace); the tab/sidebar + adds a Chat to an
+						// existing workspace (workspaceId) that either shares the workspace's
+						// worktree (default) or stacks a new one branched off it.
+						const chatMode: "share" | "stack" | "ask" = isAsk
+							? "ask"
+							: msg.chatMode === "stack"
+								? "stack"
+								: "share";
+						let workspace =
+							typeof msg.workspaceId === "string" && msg.workspaceId
+								? getWorkspace(msg.workspaceId)
+								: null;
+						if (!workspace && msg.createWorkspace) {
+							workspace = createWorkspace({
+								name:
+									(typeof msg.createWorkspace.name === "string" &&
+										msg.createWorkspace.name) ||
+									prompt.trim().split("\n")[0].slice(0, 80) ||
+									"Workspace",
+								repo: repo.id,
+								createdBy: user || "Anonymous",
+							});
+						}
 						try {
 							let wtPath: string;
 							if (forkSource) {
@@ -4035,13 +4083,40 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								// Backstage: code sessions edit the live main checkout on the
 								// default branch (hot-reloads in the running server). No worktree.
 								wtPath = repo.repo;
+							} else if (workspace?.worktreeDir && chatMode === "share") {
+								// Share the workspace's owned worktree (parallel chats, one branch).
+								wtPath = workspace.worktreeDir;
 							} else {
-								// Check if worktree exists, create if needed
+								// New/stacked worktree. Stack branches off the workspace's branch
+								// so stacked PRs line up; otherwise branch off origin/default.
 								const worktrees = await listWorktrees(repo.id);
 								wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
 								if (!wtPath) {
-									wtPath = await createWorktree(branch, repo.id);
+									const base =
+										chatMode === "stack" && workspace?.branch
+											? workspace.branch
+											: undefined;
+									wtPath = await createWorktree(
+										branch,
+										repo.id,
+										base ? { base } : undefined,
+									);
 								}
+							}
+							// First code chat materializes the workspace's owned worktree so
+							// later share-mode chats inherit it. Stacked chats keep their own.
+							if (
+								workspace &&
+								!workspace.worktreeDir &&
+								!isAsk &&
+								!repo.sharedCheckout &&
+								chatMode !== "stack"
+							) {
+								updateWorkspace(workspace.id, {
+									worktreeDir: wtPath,
+									...(branch ? { branch } : {}),
+								});
+								workspace = { ...workspace, worktreeDir: wtPath, branch };
 							}
 
 							const bksId = `bks-${randomUUIDv7()}`;
@@ -4077,12 +4152,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 											? ""
 											: repo.sharedCheckout
 												? repo.defaultBranch
-												: branch,
+												: workspace?.worktreeDir === wtPath
+													? workspace.branch || branch
+													: branch,
 									worktreeDir: wtPath,
 									repo: repoForPath(wtPath).id,
-									...(typeof msg.projectId === "string" && msg.projectId
-										? { projectId: msg.projectId }
-										: {}),
+									...(workspace
+										? { projectId: workspace.id }
+										: typeof msg.projectId === "string" && msg.projectId
+											? { projectId: msg.projectId }
+											: {}),
 									createdBy: user || "Anonymous",
 									createdAt: new Date().toISOString(),
 									lastActivity: new Date().toISOString(),
