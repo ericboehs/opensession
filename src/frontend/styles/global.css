@@ -4968,6 +4968,16 @@ button.preview-open:not(:disabled):hover {
 	filter: brightness(1.1);
 }
 
+.ask-error {
+	margin-top: 10px;
+	padding: 7px 10px;
+	border-radius: 8px;
+	background: var(--red-soft);
+	color: var(--red);
+	font-size: 12.5px;
+	text-align: center;
+}
+
 .ask-suggestions {
 	display: flex;
 	flex-wrap: wrap;

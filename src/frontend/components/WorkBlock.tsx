@@ -10,7 +10,18 @@ interface Props {
 }
 
 /** Devin-style collapsed segment: "Worked for 12s · 5 steps". */
-export function WorkBlock({ items, toolResults, live, onOpenSubagent }: Props) {
+// Memoized with a custom comparator: TranscriptBlocks rebuilds the `items`
+// arrays and the `toolResults` Map on every render, so plain shallow-prop memo
+// would never bail. The entries themselves keep stable references (mergeEntries
+// reuses objects), so compare element-wise — and only the results this block's
+// items actually read — letting untouched history blocks skip re-rendering on
+// each stream event.
+export const WorkBlock = React.memo(function WorkBlock({
+  items,
+  toolResults,
+  live,
+  onOpenSubagent,
+}: Props) {
   // If any tool in the block returned media (image or video), keep the block
   // open so the screenshot/recording stays visible after the run finishes
   // (otherwise the user has to expand "Worked" then the tool to see what the
@@ -61,6 +72,19 @@ export function WorkBlock({ items, toolResults, live, onOpenSubagent }: Props) {
       )}
     </div>
   );
+}, workBlockPropsEqual);
+
+function workBlockPropsEqual(prev: Props, next: Props): boolean {
+  if (prev.live !== next.live) return false;
+  if (prev.onOpenSubagent !== next.onOpenSubagent) return false;
+  if (prev.items.length !== next.items.length) return false;
+  for (let i = 0; i < next.items.length; i++) {
+    if (prev.items[i] !== next.items[i]) return false;
+    const id = next.items[i].toolUseId;
+    if (id && prev.toolResults.get(id) !== next.toolResults.get(id))
+      return false;
+  }
+  return true;
 }
 
 function blockDuration(

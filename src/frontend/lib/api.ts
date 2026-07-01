@@ -8,10 +8,72 @@ import type {
 
 const BASE = "/backstage/api";
 
-export async function fetchSessions(): Promise<UnifiedSession[]> {
+/** Single error shape for every API failure: HTTP status + the server's
+ * `error` field when it sent one (else a "<label>: <status>" message). */
+export class ApiError extends Error {
+	status: number;
+	constructor(message: string, status: number) {
+		super(message);
+		this.name = "ApiError";
+		this.status = status;
+	}
+}
+
+/**
+ * The one request helper behind every wrapper below. Checks `res.ok` BEFORE
+ * touching the body — so an HTML 502 during a server restart surfaces as a
+ * useful ApiError instead of `SyntaxError: Unexpected token '<'` — and parses
+ * JSON defensively (a bodyless 204/500 just yields null).
+ */
+async function request<T>(
+	path: string,
+	opts: {
+		method?: string;
+		/** JSON-encoded and sent with a Content-Type header when present. */
+		body?: unknown;
+		signal?: AbortSignal;
+		/** Error-message prefix when the server didn't provide an `error` field. */
+		label?: string;
+	} = {},
+): Promise<T> {
+	const res = await fetch(`${BASE}${path}`, {
+		method: opts.method || "GET",
+		signal: opts.signal,
+		...(opts.body !== undefined
+			? {
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(opts.body),
+				}
+			: {}),
+	});
+	if (!res.ok) {
+		const body = (await res.json().catch(() => null)) as {
+			error?: string;
+		} | null;
+		throw new ApiError(
+			body?.error || `${opts.label || "Failed"}: ${res.status}`,
+			res.status,
+		);
+	}
+	return (await res.json().catch(() => null)) as T;
+}
+
+/**
+ * Raw JSON text of the sessions list. useSessions polls this so it can compare
+ * the response text against the previous poll and skip the state update (and
+ * the app-wide re-render) entirely when nothing changed.
+ */
+export async function fetchSessionsText(): Promise<string> {
 	const res = await fetch(`${BASE}/sessions`);
-	if (!res.ok) throw new Error(`Failed to fetch sessions: ${res.status}`);
-	return res.json();
+	if (!res.ok)
+		throw new ApiError(`Failed to fetch sessions: ${res.status}`, res.status);
+	return res.text();
+}
+
+export async function fetchSessions(): Promise<UnifiedSession[]> {
+	return request<UnifiedSession[]>("/sessions", {
+		label: "Failed to fetch sessions",
+	});
 }
 
 export interface TranscriptMatch {
@@ -24,12 +86,11 @@ export async function searchTranscripts(
 	q: string,
 	signal?: AbortSignal,
 ): Promise<TranscriptMatch[]> {
-	const res = await fetch(`${BASE}/sessions/search?q=${encodeURIComponent(q)}`, {
-		signal,
-	});
-	if (!res.ok) throw new Error(`Transcript search failed: ${res.status}`);
-	const data = await res.json();
-	return data.matches ?? [];
+	const data = await request<{ matches?: TranscriptMatch[] }>(
+		`/sessions/search?q=${encodeURIComponent(q)}`,
+		{ signal, label: "Transcript search failed" },
+	);
+	return data?.matches ?? [];
 }
 
 export interface PreviewService {
@@ -50,45 +111,35 @@ export interface PreviewStatus {
 }
 
 export async function fetchPreview(sessionId: string): Promise<PreviewStatus> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/preview`,
+	return request<PreviewStatus>(
+		`/sessions/${encodeURIComponent(sessionId)}/preview`,
+		{ label: "Failed to fetch preview" },
 	);
-	if (!res.ok) throw new Error(`Failed to fetch preview: ${res.status}`);
-	return res.json();
 }
 
 export async function startPreviewApi(
 	sessionId: string,
 ): Promise<PreviewStatus> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/preview/start`,
-		{
-			method: "POST",
-		},
+	return request<PreviewStatus>(
+		`/sessions/${encodeURIComponent(sessionId)}/preview/start`,
+		{ method: "POST", label: "Failed to start preview" },
 	);
-	if (!res.ok) throw new Error(`Failed to start preview: ${res.status}`);
-	return res.json();
 }
 
 export async function stopPreviewApi(
 	sessionId: string,
 ): Promise<PreviewStatus> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/preview/stop`,
-		{
-			method: "POST",
-		},
+	return request<PreviewStatus>(
+		`/sessions/${encodeURIComponent(sessionId)}/preview/stop`,
+		{ method: "POST", label: "Failed to stop preview" },
 	);
-	if (!res.ok) throw new Error(`Failed to stop preview: ${res.status}`);
-	return res.json();
 }
 
 export async function fetchTranscript(sessionId: string) {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/transcript`,
+	return request<any>(
+		`/sessions/${encodeURIComponent(sessionId)}/transcript`,
+		{ label: "Failed to fetch transcript" },
 	);
-	if (!res.ok) throw new Error(`Failed to fetch transcript: ${res.status}`);
-	return res.json();
 }
 
 export interface SubagentTranscript {
@@ -107,11 +158,10 @@ export async function fetchSubagent(
 	sessionId: string,
 	agentId: string,
 ): Promise<SubagentTranscript> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/subagent/${encodeURIComponent(agentId)}`,
+	return request<SubagentTranscript>(
+		`/sessions/${encodeURIComponent(sessionId)}/subagent/${encodeURIComponent(agentId)}`,
+		{ label: "Failed to fetch sub-agent" },
 	);
-	if (!res.ok) throw new Error(`Failed to fetch sub-agent: ${res.status}`);
-	return res.json();
 }
 
 /** A single "@"-mention suggestion. `insert` is what lands in the textarea. */
@@ -138,10 +188,15 @@ export async function fetchFileMentions(
 	const params = new URLSearchParams({ q: query });
 	if (sessionId) params.set("session", sessionId);
 	else if (repo) params.set("repo", repo);
-	const res = await fetch(`${BASE}/files?${params.toString()}`);
-	if (!res.ok) return [];
-	const data = await res.json();
-	return data.files ?? [];
+	try {
+		const data = await request<{ files?: FileMention[] }>(
+			`/files?${params.toString()}`,
+		);
+		return data?.files ?? [];
+	} catch (e) {
+		console.warn("fetchFileMentions failed:", e);
+		return [];
+	}
 }
 
 export interface RepoInfo {
@@ -151,19 +206,25 @@ export interface RepoInfo {
 }
 
 export async function fetchRepos(): Promise<RepoInfo[]> {
-	const res = await fetch(`${BASE}/repos`);
-	if (!res.ok) return [];
-	const data = await res.json();
-	return data.repos ?? [];
+	try {
+		const data = await request<{ repos?: RepoInfo[] }>("/repos");
+		return data?.repos ?? [];
+	} catch (e) {
+		console.warn("fetchRepos failed:", e);
+		return [];
+	}
 }
 
 // ── Projects (folders that group chats) ──
 
 export async function fetchProjects(): Promise<Project[]> {
-	const res = await fetch(`${BASE}/projects`);
-	if (!res.ok) return [];
-	const data = await res.json();
-	return data.projects ?? [];
+	try {
+		const data = await request<{ projects?: Project[] }>("/projects");
+		return data?.projects ?? [];
+	} catch (e) {
+		console.warn("fetchProjects failed:", e);
+		return [];
+	}
 }
 
 export async function createProjectApi(input: {
@@ -172,14 +233,11 @@ export async function createProjectApi(input: {
 	color?: string;
 	user: string;
 }): Promise<Project> {
-	const res = await fetch(`${BASE}/projects`, {
+	const body = await request<{ project: Project }>("/projects", {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
+		body: input,
 	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body.project as Project;
+	return body.project;
 }
 
 export async function updateProjectApi(
@@ -192,21 +250,18 @@ export async function updateProjectApi(
 		order?: number;
 	},
 ): Promise<Project> {
-	const res = await fetch(`${BASE}/projects/${encodeURIComponent(id)}`, {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(patch),
-	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body.project as Project;
+	const body = await request<{ project: Project }>(
+		`/projects/${encodeURIComponent(id)}`,
+		{ method: "PATCH", body: patch },
+	);
+	return body.project;
 }
 
 export async function deleteProjectApi(id: string): Promise<void> {
-	const res = await fetch(`${BASE}/projects/${encodeURIComponent(id)}`, {
+	await request<void>(`/projects/${encodeURIComponent(id)}`, {
 		method: "DELETE",
+		label: "Failed to delete project",
 	});
-	if (!res.ok) throw new Error(`Failed to delete project: ${res.status}`);
 }
 
 /**
@@ -222,20 +277,11 @@ export async function newChatApi(
 	user: string,
 	mode?: "share" | "stack" | "ask",
 ): Promise<{ id: string; session: UnifiedSession | null }> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sourceId)}/new-chat`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ user, ...(mode ? { mode } : {}) }),
-		},
+	const body = await request<{ id: string; session?: UnifiedSession }>(
+		`/sessions/${encodeURIComponent(sourceId)}/new-chat`,
+		{ method: "POST", body: { user, ...(mode ? { mode } : {}) } },
 	);
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return {
-		id: body.id as string,
-		session: (body.session as UnifiedSession) || null,
-	};
+	return { id: body.id, session: body.session || null };
 }
 
 /**
@@ -247,17 +293,10 @@ export async function promoteChatApi(
 	sessionId: string,
 	opts?: { branch?: string; repo?: string },
 ): Promise<{ branch: string; worktreeDir: string }> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/promote`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(opts || {}),
-		},
+	return request<{ branch: string; worktreeDir: string }>(
+		`/sessions/${encodeURIComponent(sessionId)}/promote`,
+		{ method: "POST", body: opts || {} },
 	);
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body as { branch: string; worktreeDir: string };
 }
 
 /** Move a chat into a project (or `null` to make it standalone). */
@@ -265,18 +304,10 @@ export async function setSessionProjectApi(
 	sessionId: string,
 	projectId: string | null,
 ): Promise<void> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/project`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ projectId }),
-		},
-	);
-	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new Error(body.error || `Failed: ${res.status}`);
-	}
+	await request<void>(`/sessions/${encodeURIComponent(sessionId)}/project`, {
+		method: "POST",
+		body: { projectId },
+	});
 }
 
 export interface AttachedRepo {
@@ -290,44 +321,35 @@ export async function attachRepoApi(
 	repo: string,
 	branch?: string,
 ): Promise<AttachedRepo[]> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/attach-repo`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ repo, ...(branch ? { branch } : {}) }),
-		},
+	const body = await request<{ attachedRepos: AttachedRepo[] }>(
+		`/sessions/${encodeURIComponent(sessionId)}/attach-repo`,
+		{ method: "POST", body: { repo, ...(branch ? { branch } : {}) } },
 	);
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body.attachedRepos as AttachedRepo[];
+	return body.attachedRepos;
 }
 
 export async function detachRepoApi(
 	sessionId: string,
 	repo: string,
 ): Promise<AttachedRepo[]> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/detach-repo`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ repo }),
-		},
+	const body = await request<{ attachedRepos: AttachedRepo[] }>(
+		`/sessions/${encodeURIComponent(sessionId)}/detach-repo`,
+		{ method: "POST", body: { repo } },
 	);
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body.attachedRepos as AttachedRepo[];
+	return body.attachedRepos;
 }
 
 // Whether this session is fresh enough to switch its primary repo (clean-only).
 export async function fetchRepoSwitchable(sessionId: string): Promise<boolean> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/repo-switchable`,
-	);
-	if (!res.ok) return false;
-	const body = await res.json();
-	return !!body.switchable;
+	try {
+		const body = await request<{ switchable?: boolean }>(
+			`/sessions/${encodeURIComponent(sessionId)}/repo-switchable`,
+		);
+		return !!body?.switchable;
+	} catch (e) {
+		console.warn("fetchRepoSwitchable failed:", e);
+		return false;
+	}
 }
 
 // Switch the session's PRIMARY repo (wrong repo picked at creation). Returns the
@@ -336,17 +358,10 @@ export async function switchPrimaryRepoApi(
 	sessionId: string,
 	repo: string,
 ): Promise<{ repo: string; branch: string; worktreeDir: string }> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/switch-primary-repo`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ repo }),
-		},
+	return request<{ repo: string; branch: string; worktreeDir: string }>(
+		`/sessions/${encodeURIComponent(sessionId)}/switch-primary-repo`,
+		{ method: "POST", body: { repo } },
 	);
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body as { repo: string; branch: string; worktreeDir: string };
 }
 
 // ── Linked Slack channels ──
@@ -355,53 +370,37 @@ export async function linkChannelApi(
 	sessionId: string,
 	opts: { mode: "create" | "existing"; name?: string; channelId?: string },
 ): Promise<SlackChannelLink> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/link-channel`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(opts),
-		},
+	const body = await request<{ slackChannel: SlackChannelLink }>(
+		`/sessions/${encodeURIComponent(sessionId)}/link-channel`,
+		{ method: "POST", body: opts },
 	);
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body.slackChannel as SlackChannelLink;
+	return body.slackChannel;
 }
 
 export async function unlinkChannelApi(sessionId: string): Promise<void> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/unlink-channel`,
+	await request<void>(
+		`/sessions/${encodeURIComponent(sessionId)}/unlink-channel`,
 		{ method: "POST" },
 	);
-	if (!res.ok) {
-		const body = await res.json().catch(() => null);
-		throw new Error(body?.error || `Failed: ${res.status}`);
-	}
 }
 
 export async function fetchChannelHistoryApi(
 	sessionId: string,
 ): Promise<SlackMessage[]> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/channel/history`,
+	const body = await request<{ messages?: SlackMessage[] }>(
+		`/sessions/${encodeURIComponent(sessionId)}/channel/history`,
+		{ label: "Failed to fetch history" },
 	);
-	if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
-	const body = await res.json();
 	return Array.isArray(body?.messages) ? body.messages : [];
 }
 
 export async function fetchPlainThreadApi(
 	sessionId: string,
 ): Promise<PlainThread | null> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/plain/thread`,
+	const body = await request<{ thread?: PlainThread }>(
+		`/sessions/${encodeURIComponent(sessionId)}/plain/thread`,
 	);
-	if (!res.ok) {
-		const body = await res.json().catch(() => null);
-		throw new Error(body?.error || `Failed: ${res.status}`);
-	}
-	const body = await res.json();
-	return (body?.thread as PlainThread) || null;
+	return body?.thread || null;
 }
 
 export async function postChannelMessageApi(
@@ -409,24 +408,18 @@ export async function postChannelMessageApi(
 	text: string,
 	user: string,
 ): Promise<SlackMessage> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/channel/message`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ text, user }),
-		},
+	const body = await request<{ message: SlackMessage }>(
+		`/sessions/${encodeURIComponent(sessionId)}/channel/message`,
+		{ method: "POST", body: { text, user } },
 	);
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body.message as SlackMessage;
+	return body.message;
 }
 
 export async function fetchWorktrees(repo?: string) {
 	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
-	const res = await fetch(`${BASE}/worktrees${qs}`);
-	if (!res.ok) throw new Error(`Failed to fetch worktrees: ${res.status}`);
-	return res.json();
+	return request<any>(`/worktrees${qs}`, {
+		label: "Failed to fetch worktrees",
+	});
 }
 
 export async function deleteSessionApi(
@@ -434,45 +427,35 @@ export async function deleteSessionApi(
 	cleanWorktree: boolean,
 ): Promise<void> {
 	const params = cleanWorktree ? "?worktree=true" : "";
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}${params}`,
-		{
-			method: "DELETE",
-		},
-	);
-	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new Error(body.error || `Failed to delete: ${res.status}`);
-	}
+	await request<void>(`/sessions/${encodeURIComponent(sessionId)}${params}`, {
+		method: "DELETE",
+		label: "Failed to delete",
+	});
 }
 
 export async function fetchDiff(
 	sessionId: string,
 ): Promise<import("./types").SessionDiffResponse> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/diff`,
+	return request<import("./types").SessionDiffResponse>(
+		`/sessions/${encodeURIComponent(sessionId)}/diff`,
+		{ label: "Failed to fetch diff" },
 	);
-	if (!res.ok) throw new Error(`Failed to fetch diff: ${res.status}`);
-	return res.json();
 }
 
 /** `repo` (a repo id) targets an attached repo's PR; omit for the primary. */
 export async function fetchPr(sessionId: string, repo?: string) {
 	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr${qs}`,
-	);
-	if (!res.ok) throw new Error(`Failed to fetch PR: ${res.status}`);
-	return res.json();
+	return request<any>(`/sessions/${encodeURIComponent(sessionId)}/pr${qs}`, {
+		label: "Failed to fetch PR",
+	});
 }
 
 export async function fetchPrDiff(sessionId: string, repo?: string) {
 	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-diff${qs}`,
+	return request<any>(
+		`/sessions/${encodeURIComponent(sessionId)}/pr-diff${qs}`,
+		{ label: "Failed to fetch PR diff" },
 	);
-	if (!res.ok) throw new Error(`Failed to fetch PR diff: ${res.status}`);
-	return res.json();
 }
 
 export async function postPrCommentApi(
@@ -487,17 +470,10 @@ export async function postPrCommentApi(
 		repo?: string;
 	},
 ) {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-comment`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(payload),
-		},
+	return request<{ ok: true; url?: string }>(
+		`/sessions/${encodeURIComponent(sessionId)}/pr-comment`,
+		{ method: "POST", body: payload },
 	);
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body as { ok: true; url?: string };
 }
 
 export async function submitPrReviewApi(
@@ -517,17 +493,10 @@ export async function submitPrReviewApi(
 		}>;
 	},
 ) {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-review`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(payload),
-		},
+	return request<{ ok: true; url?: string }>(
+		`/sessions/${encodeURIComponent(sessionId)}/pr-review`,
+		{ method: "POST", body: payload },
 	);
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body as { ok: true; url?: string };
 }
 
 export async function mergePrApi(
@@ -535,17 +504,10 @@ export async function mergePrApi(
 	method: "squash" | "merge" | "rebase" = "squash",
 	repo?: string,
 ) {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/pr-merge`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ method, ...(repo ? { repo } : {}) }),
-		},
+	return request<{ ok: true; url?: string }>(
+		`/sessions/${encodeURIComponent(sessionId)}/pr-merge`,
+		{ method: "POST", body: { method, ...(repo ? { repo } : {}) } },
 	);
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body as { ok: true; url?: string };
 }
 
 // ── Automations ──
@@ -564,14 +526,11 @@ export interface ModelOption {
  */
 export async function suggestBranch(prompt: string): Promise<string | null> {
 	try {
-		const res = await fetch(`${BASE}/suggest-branch`, {
+		const data = await request<{ branch?: unknown }>("/suggest-branch", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ prompt }),
+			body: { prompt },
 		});
-		if (!res.ok) return null;
-		const data = await res.json();
-		return typeof data.branch === "string" ? data.branch : null;
+		return typeof data?.branch === "string" ? data.branch : null;
 	} catch {
 		return null;
 	}
@@ -581,15 +540,15 @@ export async function fetchModels(): Promise<{
 	models: ModelOption[];
 	default: string;
 }> {
-	const res = await fetch(`${BASE}/models`);
-	if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);
-	return res.json();
+	return request<{ models: ModelOption[]; default: string }>("/models", {
+		label: "Failed to fetch models",
+	});
 }
 
 export async function fetchAutomations() {
-	const res = await fetch(`${BASE}/automations`);
-	if (!res.ok) throw new Error(`Failed to fetch automations: ${res.status}`);
-	return res.json();
+	return request<any>("/automations", {
+		label: "Failed to fetch automations",
+	});
 }
 
 export interface AutomationTemplate {
@@ -654,55 +613,40 @@ export async function createAutomationApi(input: {
 	mcpServers?: string[];
 	slackWatch?: { channel: string };
 }) {
-	const res = await fetch(`${BASE}/automations`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body;
+	return request<any>("/automations", { method: "POST", body: input });
 }
 
 export async function updateAutomationApi(id: string, patch: object) {
-	const res = await fetch(`${BASE}/automations/${encodeURIComponent(id)}`, {
+	return request<any>(`/automations/${encodeURIComponent(id)}`, {
 		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(patch),
+		body: patch,
 	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body;
 }
 
 export async function deleteAutomationApi(id: string) {
-	const res = await fetch(`${BASE}/automations/${encodeURIComponent(id)}`, {
+	await request<void>(`/automations/${encodeURIComponent(id)}`, {
 		method: "DELETE",
+		label: "Failed to delete",
 	});
-	if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
 }
 
 export async function runAutomationApi(id: string) {
-	const res = await fetch(`${BASE}/automations/${encodeURIComponent(id)}/run`, {
+	await request<void>(`/automations/${encodeURIComponent(id)}/run`, {
 		method: "POST",
 	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 }
 
 // ── Goals (long-running, self-pacing missions) ──
 
 export async function fetchGoals() {
-	const res = await fetch(`${BASE}/goals`);
-	if (!res.ok) throw new Error(`Failed to fetch goals: ${res.status}`);
-	return res.json();
+	return request<any>("/goals", { label: "Failed to fetch goals" });
 }
 
 /** Single goal incl. its ledger text (for the detail view). */
 export async function fetchGoal(id: string) {
-	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}`);
-	if (!res.ok) throw new Error(`Failed to fetch goal: ${res.status}`);
-	return res.json();
+	return request<any>(`/goals/${encodeURIComponent(id)}`, {
+		label: "Failed to fetch goal",
+	});
 }
 
 export async function createGoalApi(input: {
@@ -717,62 +661,41 @@ export async function createGoalApi(input: {
 	maxWakes?: number;
 	createdBy: string;
 }) {
-	const res = await fetch(`${BASE}/goals`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body;
+	return request<any>("/goals", { method: "POST", body: input });
 }
 
 export async function updateGoalApi(id: string, patch: object) {
-	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}`, {
+	return request<any>(`/goals/${encodeURIComponent(id)}`, {
 		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(patch),
+		body: patch,
 	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body;
 }
 
 export async function deleteGoalApi(id: string) {
-	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}`, {
+	await request<void>(`/goals/${encodeURIComponent(id)}`, {
 		method: "DELETE",
+		label: "Failed to delete",
 	});
-	if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
 }
 
 export async function runGoalApi(id: string) {
-	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}/run`, {
+	await request<void>(`/goals/${encodeURIComponent(id)}/run`, {
 		method: "POST",
 	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 }
 
 export async function resumeGoalApi(id: string) {
-	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}/resume`, {
+	return request<any>(`/goals/${encodeURIComponent(id)}/resume`, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: "{}",
+		body: {},
 	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body;
 }
 
 export async function pauseGoalApi(id: string, reason?: string) {
-	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}/pause`, {
+	return request<any>(`/goals/${encodeURIComponent(id)}/pause`, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ reason }),
+		body: { reason },
 	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body;
 }
 
 // ── Actions (run a registered repo script behind a form) ──
@@ -810,9 +733,7 @@ export interface Action {
 }
 
 export async function fetchActions(): Promise<Action[]> {
-	const res = await fetch(`${BASE}/actions`);
-	if (!res.ok) throw new Error(`Failed to fetch actions: ${res.status}`);
-	return res.json();
+	return request<Action[]>("/actions", { label: "Failed to fetch actions" });
 }
 
 export async function createActionApi(input: {
@@ -828,21 +749,14 @@ export async function createActionApi(input: {
 	confirm?: boolean;
 	createdBy: string;
 }): Promise<Action> {
-	const res = await fetch(`${BASE}/actions`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body;
+	return request<Action>("/actions", { method: "POST", body: input });
 }
 
 export async function deleteActionApi(id: string): Promise<void> {
-	const res = await fetch(`${BASE}/actions/${encodeURIComponent(id)}`, {
+	await request<void>(`/actions/${encodeURIComponent(id)}`, {
 		method: "DELETE",
+		label: "Failed to delete",
 	});
-	if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
 }
 
 export async function runActionApi(
@@ -850,36 +764,29 @@ export async function runActionApi(
 	values: Record<string, unknown>,
 	user: string,
 ): Promise<{ sessionId: string }> {
-	const res = await fetch(`${BASE}/actions/${encodeURIComponent(id)}/run`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ values, user }),
-	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body;
+	return request<{ sessionId: string }>(
+		`/actions/${encodeURIComponent(id)}/run`,
+		{ method: "POST", body: { values, user } },
+	);
 }
 
 export async function introspectActionApi(
 	repo: string,
 	scriptPath: string,
 ): Promise<{ inputs: ActionInput[]; argMode: "positional" | "env" }> {
-	const res = await fetch(`${BASE}/actions/introspect`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ repo, scriptPath }),
-	});
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body;
+	return request<{ inputs: ActionInput[]; argMode: "positional" | "env" }>(
+		"/actions/introspect",
+		{ method: "POST", body: { repo, scriptPath } },
+	);
 }
 
 // ── Pins (per-user pinned tabs) ──
 
 export async function fetchPins(user: string): Promise<string[]> {
-	const res = await fetch(`${BASE}/pins?user=${encodeURIComponent(user)}`);
-	if (!res.ok) throw new Error(`Failed to fetch pins: ${res.status}`);
-	const body = await res.json();
+	const body = await request<{ pins?: string[] }>(
+		`/pins?user=${encodeURIComponent(user)}`,
+		{ label: "Failed to fetch pins" },
+	);
 	return Array.isArray(body?.pins) ? body.pins : [];
 }
 
@@ -887,13 +794,11 @@ export async function savePinsApi(
 	user: string,
 	pins: string[],
 ): Promise<string[]> {
-	const res = await fetch(`${BASE}/pins`, {
+	const body = await request<{ pins?: string[] }>("/pins", {
 		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ user, pins }),
+		body: { user, pins },
+		label: "Failed to save pins",
 	});
-	if (!res.ok) throw new Error(`Failed to save pins: ${res.status}`);
-	const body = await res.json();
 	return Array.isArray(body?.pins) ? body.pins : pins;
 }
 
@@ -902,11 +807,10 @@ export async function savePinsApi(
 export async function fetchTabColors(
 	user: string,
 ): Promise<Record<string, string>> {
-	const res = await fetch(
-		`${BASE}/tab-colors?user=${encodeURIComponent(user)}`,
+	const body = await request<{ colors?: Record<string, string> }>(
+		`/tab-colors?user=${encodeURIComponent(user)}`,
+		{ label: "Failed to fetch tab colors" },
 	);
-	if (!res.ok) throw new Error(`Failed to fetch tab colors: ${res.status}`);
-	const body = await res.json();
 	return body?.colors && typeof body.colors === "object" ? body.colors : {};
 }
 
@@ -914,34 +818,29 @@ export async function saveTabColorsApi(
 	user: string,
 	colors: Record<string, string>,
 ): Promise<Record<string, string>> {
-	const res = await fetch(`${BASE}/tab-colors`, {
-		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ user, colors }),
-	});
-	if (!res.ok) throw new Error(`Failed to save tab colors: ${res.status}`);
-	const body = await res.json();
+	const body = await request<{ colors?: Record<string, string> }>(
+		"/tab-colors",
+		{ method: "PUT", body: { user, colors }, label: "Failed to save tab colors" },
+	);
 	return body?.colors && typeof body.colors === "object" ? body.colors : colors;
 }
 
 // ── Wiki ──
 
 export async function fetchWikiTree() {
-	const res = await fetch(`${BASE}/wiki/tree`);
-	if (!res.ok) throw new Error(`Failed to fetch wiki tree: ${res.status}`);
-	return res.json();
+	return request<any>("/wiki/tree", { label: "Failed to fetch wiki tree" });
 }
 
 export async function fetchWikiFile(path: string) {
-	const res = await fetch(`${BASE}/wiki/file?path=${encodeURIComponent(path)}`);
-	if (!res.ok) throw new Error(`Failed to fetch doc: ${res.status}`);
-	return res.json();
+	return request<any>(`/wiki/file?path=${encodeURIComponent(path)}`, {
+		label: "Failed to fetch doc",
+	});
 }
 
 export async function searchWikiApi(q: string) {
-	const res = await fetch(`${BASE}/wiki/search?q=${encodeURIComponent(q)}`);
-	if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-	return res.json();
+	return request<any>(`/wiki/search?q=${encodeURIComponent(q)}`, {
+		label: "Search failed",
+	});
 }
 
 // ── Notes (shared, collaborative) ──
@@ -953,53 +852,43 @@ export interface NoteMeta {
 }
 
 export async function fetchNotes(): Promise<NoteMeta[]> {
-	const res = await fetch(`${BASE}/notes`);
-	if (!res.ok) throw new Error(`Failed to fetch notes: ${res.status}`);
-	const body = await res.json();
+	const body = await request<{ notes?: NoteMeta[] }>("/notes", {
+		label: "Failed to fetch notes",
+	});
 	return Array.isArray(body?.notes) ? body.notes : [];
 }
 
 export async function createNoteApi(title?: string): Promise<NoteMeta> {
-	const res = await fetch(`${BASE}/notes`, {
+	const body = await request<{ note: NoteMeta }>("/notes", {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ title }),
+		body: { title },
+		label: "Failed to create note",
 	});
-	if (!res.ok) throw new Error(`Failed to create note: ${res.status}`);
-	const body = await res.json();
 	return body.note;
 }
 
 export async function deleteNoteApi(id: string): Promise<void> {
-	const res = await fetch(`${BASE}/notes/${encodeURIComponent(id)}`, {
+	await request<void>(`/notes/${encodeURIComponent(id)}`, {
 		method: "DELETE",
+		label: "Failed to delete note",
 	});
-	if (!res.ok) throw new Error(`Failed to delete note: ${res.status}`);
 }
 
 /** Run a Haiku rewrite of the note; the new content arrives live over the WS. */
 export async function promptNoteApi(id: string, prompt: string): Promise<void> {
-	const res = await fetch(`${BASE}/notes/${encodeURIComponent(id)}/prompt`, {
+	await request<void>(`/notes/${encodeURIComponent(id)}/prompt`, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ prompt }),
+		body: { prompt },
+		label: "Update failed",
 	});
-	if (!res.ok) {
-		const body = await res.json().catch(() => null);
-		throw new Error(body?.error || `Update failed: ${res.status}`);
-	}
 }
 
 export async function archiveSessionApi(sessionId: string, archived: boolean) {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/archive`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ archived }),
-		},
-	);
-	if (!res.ok) throw new Error(`Failed to update archive state: ${res.status}`);
+	await request<void>(`/sessions/${encodeURIComponent(sessionId)}/archive`, {
+		method: "POST",
+		body: { archived },
+		label: "Failed to update archive state",
+	});
 }
 
 /** Set a manual display title for a session; empty string clears the rename. */
@@ -1007,27 +896,11 @@ export async function renameSessionApi(
 	sessionId: string,
 	title: string,
 ): Promise<void> {
-	const res = await fetch(
-		`${BASE}/sessions/${encodeURIComponent(sessionId)}/title`,
-		{
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ title }),
-		},
-	);
-	if (!res.ok) throw new Error(`Failed to rename session: ${res.status}`);
-}
-
-export async function archiveOldApi(
-	days: number,
-): Promise<{ archived: number }> {
-	const res = await fetch(`${BASE}/sessions/archive-old`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ days }),
+	await request<void>(`/sessions/${encodeURIComponent(sessionId)}/title`, {
+		method: "PUT",
+		body: { title },
+		label: "Failed to rename session",
 	});
-	if (!res.ok) throw new Error(`Failed to archive: ${res.status}`);
-	return res.json();
 }
 
 export function getWebSocketUrl(): string {

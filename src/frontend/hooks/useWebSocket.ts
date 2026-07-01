@@ -6,10 +6,17 @@ export function useWebSocket() {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const handlersRef = useRef<((msg: WSServerMessage) => void)[]>([]);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  // Set on unmount so a straggling onclose (close() fires it async) can't
+  // schedule a fresh reconnect into a dead component — the zombie-loop trap.
+  const disposedRef = useRef(false);
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    // Already open OR mid-handshake — don't stack a second socket.
+    const state = wsRef.current?.readyState;
+    if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return;
 
     const ws = new WebSocket(getWebSocketUrl());
     wsRef.current = ws;
@@ -27,6 +34,7 @@ export function useWebSocket() {
 
     ws.onclose = () => {
       setConnected(false);
+      if (disposedRef.current) return;
       reconnectTimer.current = setTimeout(connect, 2000);
     };
 
@@ -34,8 +42,10 @@ export function useWebSocket() {
   }, []);
 
   useEffect(() => {
+    disposedRef.current = false;
     connect();
     return () => {
+      disposedRef.current = true;
       clearTimeout(reconnectTimer.current);
       wsRef.current?.close();
     };

@@ -17,12 +17,21 @@ import {
 import { Tooltip } from "../ui/tooltip";
 
 interface Props {
-  value: string;
-  onChange: (value: string) => void;
-  onSend: () => void;
+  /**
+   * Controlled draft text. Omit it (with `onChange`) to let the Composer own
+   * the draft internally — the parent then receives the text via `onSend` and
+   * stops re-rendering on every keystroke (the CommentableDiff draft-text
+   * lesson). In uncontrolled mode the draft clears when `onSend`/`onSteerSend`
+   * returns true (i.e. the message was actually consumed).
+   */
+  value?: string;
+  onChange?: (value: string) => void;
+  onSend: (text: string) => boolean | void;
   placeholder?: string;
   disabled?: boolean;
-  sendDisabled?: boolean;
+  /** Boolean, or a predicate on the current draft (for uncontrolled mode,
+   * where the parent can't read the text). */
+  sendDisabled?: boolean | ((text: string) => boolean);
   /** Shows on the send button tooltip when busy-queueing. */
   sendTitle?: string;
   busy?: boolean;
@@ -54,7 +63,7 @@ interface Props {
    * option that queues the message for Michael's next stopping point instead of
    * interrupting (the main send button interrupts immediately when busy).
    */
-  onSteerSend?: () => void;
+  onSteerSend?: (text: string) => boolean | void;
   hint?: string;
   autoFocus?: boolean;
   /** Exposes the textarea so parents can focus it (e.g. keyboard shortcuts). */
@@ -188,6 +197,20 @@ export function Composer({
   const textareaRef = externalRef ?? internalRef;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  // Uncontrolled mode (no `value` prop): the draft lives here so keystrokes
+  // re-render only the Composer, not the whole parent view.
+  const [innerValue, setInnerValue] = useState("");
+  const isControlled = value !== undefined;
+  const text = isControlled ? value : innerValue;
+  const setText = isControlled ? onChange ?? (() => {}) : setInnerValue;
+  // Fire a send handler with the current draft; in uncontrolled mode a `true`
+  // return means "consumed" — clear the draft (falsy keeps it, e.g. offline).
+  function fireSend(handler: (t: string) => boolean | void) {
+    const consumed = handler(text);
+    if (!isControlled && consumed === true) setInnerValue("");
+  }
+  const isSendDisabled =
+    typeof sendDisabled === "function" ? sendDisabled(text) : sendDisabled;
   const imgs = images || [];
   const fls = files || [];
   // Any attachment affordance (paste/drop/pick + thumbnails) is enabled when the
@@ -207,7 +230,12 @@ export function Composer({
   }, [menu]);
 
   // "@"-mention file autocomplete (shared with the New-session prompt field).
-  const mentions = useFileMentions({ value, onChange, textareaRef, mentionFetch });
+  const mentions = useFileMentions({
+    value: text,
+    onChange: setText,
+    textareaRef,
+    mentionFetch,
+  });
 
   async function addFiles(picked: FileList | File[]) {
     if (!canAttach) return;
@@ -244,9 +272,9 @@ export function Composer({
   // Insert an "@" at the caret and focus the textarea, opening the mention popup.
   function startMention() {
     const el = textareaRef.current;
-    const at = el ? el.selectionStart : value.length;
-    const next = value.slice(0, at) + "@" + value.slice(at);
-    onChange(next);
+    const at = el ? el.selectionStart : text.length;
+    const next = text.slice(0, at) + "@" + text.slice(at);
+    setText(next);
     queueMicrotask(() => {
       const t = textareaRef.current;
       if (t) {
@@ -263,13 +291,13 @@ export function Composer({
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(Math.max(el.scrollHeight, 120), 320)}px`;
-  }, [value]);
+  }, [text]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (mentions.handleKeyDown(e)) return;
     if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) {
       e.preventDefault();
-      onSend();
+      if (!disabled && !isSendDisabled) fireSend(onSend);
     }
   }
 
@@ -291,9 +319,9 @@ export function Composer({
             ref={textareaRef}
             className="composer-textarea"
             placeholder={placeholder}
-            value={value}
+            value={text}
             onChange={(e) => {
-              onChange(e.target.value);
+              setText(e.target.value);
               // Caret has moved to the new value; re-evaluate after React commits.
               queueMicrotask(mentions.sync);
             }}
@@ -458,8 +486,8 @@ export function Composer({
             <Tooltip label="Fold in at Michael's next stopping point — don't interrupt the current turn">
               <button
                 className="composer-send composer-send-queue"
-                onClick={onSteerSend}
-                disabled={disabled || sendDisabled}
+                onClick={() => fireSend(onSteerSend)}
+                disabled={disabled || isSendDisabled}
               >
                 <IconArrowDownRight size={20} />
               </button>
@@ -473,8 +501,8 @@ export function Composer({
           >
             <button
               className={`composer-send ${busy ? "composer-send-interrupt" : ""}`}
-              onClick={onSend}
-              disabled={disabled || sendDisabled}
+              onClick={() => fireSend(onSend)}
+              disabled={disabled || isSendDisabled}
             >
               {busy ? <IconBolt size={20} /> : <IconArrowUp size={20} />}
             </button>

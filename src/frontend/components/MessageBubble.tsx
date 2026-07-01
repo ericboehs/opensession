@@ -62,7 +62,15 @@ function EntryImages({ images }: { images?: string[] }) {
 	);
 }
 
-export function MessageBubble({ entry, onFork, owner }: Props) {
+// Memoized: entries keep stable references across stream events (mergeEntries
+// reuses objects) and onFork/owner are stable upstream, so a tool event
+// appended to the transcript re-renders only the affected blocks — not every
+// bubble's markdown/highlighting.
+export const MessageBubble = React.memo(function MessageBubble({
+	entry,
+	onFork,
+	owner,
+}: Props) {
 	const me = useCurrentUser();
 	// A routed-back teammate reply (human-in-the-loop): credit the teammate and
 	// render just their words (the header is stripped — the label carries "who").
@@ -152,4 +160,4 @@ export function MessageBubble({ entry, onFork, owner }: Props) {
 			<EntryImages images={entry.images} />
 		</div>
 	);
-}
+});

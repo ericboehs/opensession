@@ -118,7 +118,9 @@ export function SessionViewer({
 	// the "load earlier history" affordance at the top of the conversation.
 	const [historyTruncated, setHistoryTruncated] = useState(false);
 	const [loadingHistory, setLoadingHistory] = useState(false);
-	const [input, setInput] = useState("");
+	// The composer draft lives INSIDE Composer (uncontrolled mode) so keystrokes
+	// don't re-render this whole component; the text arrives via handleSend /
+	// handleSteerSend. Same fix as the CommentableDiff draft-text gotcha.
 	// Pasted/dropped images (data URLs) staged for the next send.
 	const [images, setImages] = useState<string[]>([]);
 	const [files, setFiles] = useState<FileAttachment[]>([]);
@@ -297,7 +299,7 @@ export function SessionViewer({
 	useEffect(() => {
 		if (newChatSeq === lastNewChatSeq.current) return;
 		lastNewChatSeq.current = newChatSeq;
-		setInput("");
+		// The composer's text draft resets via its key={newChatSeq} remount.
 		setImages([]);
 		setFiles([]);
 		setForkFrom(null);
@@ -447,7 +449,14 @@ export function SessionViewer({
 			}
 		});
 
-		return unsubscribe;
+		return () => {
+			unsubscribe();
+			// Tell the server we stopped watching, so it can drop the transcript
+			// stream and our presence entry (otherwise we linger as a ghost viewer).
+			// send() is a no-op unless the socket is OPEN, so a dropped connection
+			// (the usual reason this effect re-runs) never throws here.
+			send({ type: "unwatch", sessionId: session.id });
+		};
 		// transcriptPath in deps: new sessions start without a transcript file —
 		// re-watch once it appears so the live tail attaches
 	}, [session.id, connected, session.transcriptPath]);
@@ -574,12 +583,14 @@ export function SessionViewer({
 		setForkFrom(messageId);
 	}, []);
 
-	function handleSend() {
-		const text = input.trim();
+	// Returns true when the message was consumed, so the (uncontrolled)
+	// Composer knows to clear its draft; false keeps it for a retry.
+	function handleSend(raw: string): boolean {
+		const text = raw.trim();
 		const imgs = images;
 		const fls = files;
-		if (!text && imgs.length === 0 && fls.length === 0) return;
-		if (!connected) return;
+		if (!text && imgs.length === 0 && fls.length === 0) return false;
+		if (!connected) return false;
 
 		const user = getCurrentUser();
 		const filePayload = fls.map((f) => ({ name: f.name, dataUrl: f.dataUrl }));
@@ -597,13 +608,12 @@ export function SessionViewer({
 				...(fls.length ? { files: filePayload } : {}),
 			});
 			setForkFrom(null);
-			setInput("");
 			setImages([]);
 			setFiles([]);
-			return;
+			return true;
 		}
 
-		if (noEngine) return;
+		if (noEngine) return false;
 		// Default while busy: interrupt the current turn and redirect right away, so
 		// the message lands now instead of waiting (possibly many minutes) for the
 		// turn to end. Idle: just run it. (Interrupt/steer follow-ups are text-only,
@@ -641,20 +651,20 @@ export function SessionViewer({
 				images: !isBusy && imgs.length ? imgs : undefined,
 			},
 		]);
-		setInput("");
 		setImages([]);
 		setFiles([]);
+		return true;
 	}
 
 	// Gentle alternative to handleSend while busy: fold the message into the run at
 	// Michael's next stopping point without interrupting the current turn.
-	function handleSteerSend() {
-		const text = input.trim();
-		if (!text) return;
-		if (!connected || noEngine) return;
+	function handleSteerSend(raw: string): boolean {
+		const text = raw.trim();
+		if (!text) return false;
+		if (!connected || noEngine) return false;
 
 		const user = getCurrentUser();
-		send({ type: "prompt", sessionId: session.id, content: text, user });
+		send({ type: "prompt", sessionId: session.id, content: text, user, effort });
 		beginTurn(); // pin this new turn near the top so its reply streams in below
 		setPending((p) => [
 			...p,
@@ -665,7 +675,7 @@ export function SessionViewer({
 				sentAt: Date.now(),
 			},
 		]);
-		setInput("");
+		return true;
 	}
 
 	function handleCancel() {
@@ -673,7 +683,12 @@ export function SessionViewer({
 	}
 
 	function handleShare() {
-		const link = `${location.origin}/backstage/session/${encodeURIComponent(session.id)}`;
+		// Match the canonical URL App maintains: workspace-scoped when the chat
+		// belongs to one, legacy /session/<id> only for workspace-less chats.
+		const path = session.projectId
+			? `/backstage/workspace/${encodeURIComponent(session.projectId)}/chat/${encodeURIComponent(session.id)}`
+			: `/backstage/session/${encodeURIComponent(session.id)}`;
+		const link = `${location.origin}${path}`;
 		const flash = () => {
 			setCopied(true);
 			setTimeout(() => setCopied(false), 1600);
@@ -1308,8 +1323,9 @@ export function SessionViewer({
 									</div>
 								)}
 								<Composer
-									value={input}
-									onChange={setInput}
+									// Uncontrolled: the draft lives in the Composer. Remount on
+									// the tab-bar + (newChatSeq) to clear it for the fresh chat.
+									key={newChatSeq ?? 0}
 									onSend={handleSend}
 									images={images}
 									onImagesChange={setImages}
@@ -1325,8 +1341,8 @@ export function SessionViewer({
 													: "Ask Michael to build, fix, or explain…"
 									}
 									disabled={!connected}
-									sendDisabled={
-										!input.trim() && images.length === 0 && !forkFrom
+									sendDisabled={(text) =>
+										!text.trim() && images.length === 0 && !forkFrom
 									}
 									busy={isBusy && !forkFrom}
 									onSteerSend={forkFrom ? undefined : handleSteerSend}

@@ -186,6 +186,7 @@ export interface PrDetails {
 
 export type WSClientMessage =
 	| { type: "watch"; sessionId: string; user?: string }
+	| { type: "unwatch"; sessionId: string }
 	| { type: "load_history"; sessionId: string }
 	| {
 			type: "prompt";

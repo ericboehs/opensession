@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import type { UnifiedSession } from "../lib/types";
+import React, { useEffect, useRef, useState } from "react";
+import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import { fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
 import { Composer } from "./Composer";
@@ -8,6 +8,7 @@ interface Props {
   sessions: UnifiedSession[];
   connected: boolean;
   send: (msg: any) => void;
+  addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
   onSelect: (session: UnifiedSession) => void;
   onNewSession: (prompt?: string) => void;
   onOpenReviews: () => void;
@@ -76,9 +77,16 @@ function timeGreeting(user: string) {
   return user !== "Anonymous" ? `${part}, ${user}` : part;
 }
 
-export function Home({ sessions, connected, send, onSelect, onNewSession, onOpenReviews }: Props) {
+export function Home({ sessions, connected, send, addHandler, onSelect, onNewSession, onOpenReviews }: Props) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
+  // Mirror of `asking` readable from the (stable) WS handler below.
+  const askingRef = useRef(false);
+  useEffect(() => {
+    askingRef.current = asking;
+  }, [asking]);
+  const askTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [askModel, setAskModel] = useState(""); // "" = default
@@ -94,10 +102,31 @@ export function Home({ sessions, connected, send, onSelect, onNewSession, onOpen
       .catch(() => {});
   }, []);
 
+  // Success navigates away on session_created (App handles it), so on failure
+  // the `asking` lock would stick forever: reset it on a server error, and as a
+  // last resort on a timeout (e.g. the socket silently dropped the send).
+  useEffect(() => {
+    return addHandler((msg) => {
+      if (msg.type === "error" && askingRef.current) {
+        clearTimeout(askTimer.current);
+        setAsking(false);
+        setAskError(msg.message || "Failed to start the session.");
+      }
+    });
+  }, [addHandler]);
+  useEffect(() => () => clearTimeout(askTimer.current), []);
+
   function handleAsk() {
     const q = question.trim();
     if (!q || asking || !connected) return;
     setAsking(true);
+    setAskError(null);
+    clearTimeout(askTimer.current);
+    askTimer.current = setTimeout(() => {
+      if (!askingRef.current) return;
+      setAsking(false);
+      setAskError("Michael didn't respond — check the connection and try again.");
+    }, 15_000);
     send({
       type: "create_session",
       mode: "ask",
@@ -154,6 +183,7 @@ export function Home({ sessions, connected, send, onSelect, onNewSession, onOpen
               </button>
             }
           />
+          {askError && <div className="ask-error">{askError}</div>}
 
           <div className="ask-suggestions">
             {suggestions.map((s, i) => (
