@@ -225,6 +225,60 @@ export function getNoteText(id: string): string {
 	return getNoteDoc(id).getText(TEXT_FIELD).toString();
 }
 
+/** A note's text without forcing its Y.Doc into memory: live doc when loaded,
+ *  else the .md snapshot straight from disk (used by search/backlinks, which
+ *  sweep every note). */
+function peekNoteText(id: string): string {
+	const live = noteDocs.get(id);
+	if (live) return live.getText(TEXT_FIELD).toString();
+	try {
+		return readFileSync(mdPath(id), "utf8");
+	} catch {
+		return "";
+	}
+}
+
+export interface NoteSearchHit {
+	id: string;
+	title: string;
+	line: number;
+	snippet: string;
+}
+
+/** Case-insensitive substring search across every note (one hit per note —
+ *  the first matching line). Sits beside searchWiki for the combined box. */
+export function searchNotes(q: string): NoteSearchHit[] {
+	const needle = q.trim().toLowerCase();
+	if (needle.length < 2) return [];
+	const hits: NoteSearchHit[] = [];
+	for (const meta of listNotes()) {
+		const lines = peekNoteText(meta.id).split("\n");
+		const idx = lines.findIndex((l) => l.toLowerCase().includes(needle));
+		if (idx === -1) continue;
+		hits.push({
+			id: meta.id,
+			title: meta.title,
+			line: idx + 1,
+			snippet: lines[idx].trim().slice(0, 160),
+		});
+		if (hits.length >= 20) break;
+	}
+	return hits;
+}
+
+/** Notes whose text links to `id` via a `[label](note:id)` mention chip. */
+export function noteBacklinks(id: string): Array<{ id: string; title: string }> {
+	if (!isValidNoteId(id)) return [];
+	const marker = `(note:${id})`;
+	const out: Array<{ id: string; title: string }> = [];
+	for (const meta of listNotes()) {
+		if (meta.id === id) continue;
+		if (peekNoteText(meta.id).includes(marker))
+			out.push({ id: meta.id, title: meta.title });
+	}
+	return out;
+}
+
 /**
  * Replace a note's text with `next`, applied as a minimal prefix/suffix diff so
  * concurrent human edits outside the changed region survive. Returns the Yjs

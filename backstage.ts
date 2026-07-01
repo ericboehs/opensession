@@ -4340,7 +4340,37 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json({ note });
 			}
 
+			// Full-text search across notes (merged with docs hits client-side).
+			// Must precede the generic /notes/:id matcher ("search" is not an id).
+			if (path === "/backstage/api/notes/search" && req.method === "GET") {
+				const { searchNotes } = await import("./src/server/notes");
+				return Response.json({
+					hits: searchNotes(url.searchParams.get("q") || ""),
+				});
+			}
+
+			const noteBacklinksMatch = path.match(
+				/^\/backstage\/api\/notes\/([^/]+)\/backlinks$/,
+			);
+			if (noteBacklinksMatch && req.method === "GET") {
+				const id = decodeURIComponent(noteBacklinksMatch[1]);
+				if (!isValidNoteId(id))
+					return Response.json({ error: "Invalid id" }, { status: 400 });
+				const { noteBacklinks } = await import("./src/server/notes");
+				return Response.json({ notes: noteBacklinks(id) });
+			}
+
 			const noteMatch = path.match(/^\/backstage\/api\/notes\/([^/]+)$/);
+			if (noteMatch && req.method === "GET") {
+				const id = decodeURIComponent(noteMatch[1]);
+				if (!isValidNoteId(id))
+					return Response.json({ error: "Invalid id" }, { status: 400 });
+				const notes = listNotes();
+				const meta = notes.find((n) => n.id === id);
+				if (!meta) return Response.json({ error: "Not found" }, { status: 404 });
+				return Response.json({ ...meta, text: getNoteText(id) });
+			}
+
 			if (noteMatch && req.method === "DELETE") {
 				const id = decodeURIComponent(noteMatch[1]);
 				if (!isValidNoteId(id))

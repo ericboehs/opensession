@@ -1108,6 +1108,42 @@ export async function deleteNoteApi(id: string): Promise<void> {
 	});
 }
 
+export interface NoteSearchHit {
+	id: string;
+	title: string;
+	line: number;
+	snippet: string;
+}
+
+/** Full-text search across the shared notes (merged with docs hits in the UI). */
+export async function searchNotesApi(q: string): Promise<NoteSearchHit[]> {
+	const body = await request<{ hits?: NoteSearchHit[] }>(
+		`/notes/search?q=${encodeURIComponent(q)}`,
+		{ label: "Note search failed" },
+	);
+	return body?.hits ?? [];
+}
+
+/** One note's meta + current markdown text (preview / discuss-with-Michael). */
+export async function fetchNote(
+	id: string,
+): Promise<NoteMeta & { text: string }> {
+	return request(`/notes/${encodeURIComponent(id)}`, {
+		label: "Failed to fetch note",
+	});
+}
+
+/** Notes that link to this one via [label](note:id) chips. */
+export async function fetchNoteBacklinks(
+	id: string,
+): Promise<Array<{ id: string; title: string }>> {
+	const body = await request<{ notes?: Array<{ id: string; title: string }> }>(
+		`/notes/${encodeURIComponent(id)}/backlinks`,
+		{ label: "Failed to fetch backlinks" },
+	);
+	return body?.notes ?? [];
+}
+
 /** Run a Haiku rewrite of the note; the new content arrives live over the WS. */
 export async function promptNoteApi(id: string, prompt: string): Promise<void> {
 	await request<void>(`/notes/${encodeURIComponent(id)}/prompt`, {

@@ -12,10 +12,14 @@ import {
 	fetchWikiTree,
 	fetchWikiFile,
 	searchWikiApi,
+	searchNotesApi,
+	fetchNote,
+	fetchNoteBacklinks,
 	createNoteApi,
 	deleteNoteApi,
 	promptNoteApi,
 	type NoteMeta,
+	type NoteSearchHit,
 } from "../lib/api";
 import type { WSClientMessage, WSServerMessage } from "../lib/types";
 import type { MentionKind } from "./NoteEditor";
@@ -138,6 +142,7 @@ export function Notes({
 	const [loadingDoc, setLoadingDoc] = useState(false);
 	const [query, setQuery] = useState("");
 	const [hits, setHits] = useState<SearchHit[] | null>(null);
+	const [noteHits, setNoteHits] = useState<NoteSearchHit[]>([]);
 	const [navOpen, setNavOpen] = useState(false);
 	const [creating, setCreating] = useState(false);
 	const [newTitle, setNewTitle] = useState("");
@@ -178,15 +183,19 @@ export function Notes({
 			.finally(() => setLoadingDoc(false));
 	}, [selDocPath]);
 
-	// Debounced doc search.
+	// Debounced search — notes and docs in one box.
 	useEffect(() => {
 		if (query.trim().length < 2) {
 			setHits(null);
+			setNoteHits([]);
 			return;
 		}
 		const t = setTimeout(() => {
 			searchWikiApi(query)
 				.then(setHits)
+				.catch(() => {});
+			searchNotesApi(query)
+				.then(setNoteHits)
 				.catch(() => {});
 		}, 250);
 		return () => clearTimeout(t);
@@ -319,14 +328,30 @@ export function Notes({
 					<div className="wiki-search-wrap">
 						<input
 							className="wiki-search"
-							placeholder="Search docs…"
+							placeholder="Search notes + docs…"
 							value={query}
 							onChange={(e) => setQuery(e.target.value)}
 						/>
 					</div>
 					{hits !== null ? (
 						<div className="wiki-results">
-							{hits.length === 0 ? (
+							{noteHits.map((h) => (
+								<button
+									key={`note-${h.id}`}
+									className="wiki-result"
+									onClick={() => {
+										setQuery("");
+										setHits(null);
+										setNavOpen(false);
+										onSelectNote(h.id);
+									}}
+								>
+									<span className="wiki-result-title">📝 {h.title}</span>
+									<span className="wiki-result-snippet">{h.snippet}</span>
+									<span className="wiki-result-path">note</span>
+								</button>
+							))}
+							{hits.length === 0 && noteHits.length === 0 ? (
 								<div className="wiki-empty">No results</div>
 							) : (
 								hits.map((h, i) => (
@@ -431,6 +456,9 @@ function NotePane({
 	const [prompt, setPrompt] = useState("");
 	const [running, setRunning] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [preview, setPreview] = useState<string | null>(null); // rendered HTML, null = editing
+	const [backlinks, setBacklinks] = useState<Array<{ id: string; title: string }>>([]);
+	const [discussing, setDiscussing] = useState(false);
 
 	// Presence for this note.
 	useEffect(() => {
@@ -440,6 +468,48 @@ function NotePane({
 				setViewers(msg.viewers);
 		});
 	}, [noteId, addHandler]);
+
+	// Who links here — refreshed when the note changes.
+	useEffect(() => {
+		setBacklinks([]);
+		setPreview(null);
+		fetchNoteBacklinks(noteId)
+			.then(setBacklinks)
+			.catch(() => {});
+	}, [noteId]);
+
+	async function togglePreview() {
+		if (preview !== null) {
+			setPreview(null);
+			return;
+		}
+		try {
+			const note = await fetchNote(noteId);
+			setPreview(marked.parse(note.text, { async: false }) as string);
+		} catch {
+			setPreview(null);
+		}
+	}
+
+	// Spin off an Ask session seeded with the note — "discuss this with
+	// Michael". The App navigates into it on session_created.
+	async function discuss() {
+		if (discussing) return;
+		setDiscussing(true);
+		try {
+			const note = await fetchNote(noteId);
+			send({
+				type: "create_session",
+				mode: "ask",
+				branch: "",
+				prompt: `We're discussing the shared note "${note.title}" (open it at /backstage/notes/${noteId}). Read it below, then help me think it through / answer questions about it. If we land on changes, propose the new text — I can paste it into the note or run it through the note's prompt bar.\n\n---\n\n${note.text}`,
+				user,
+				createWorkspace: {},
+			} as any);
+		} catch {
+			setDiscussing(false);
+		}
+	}
 
 	async function runPrompt() {
 		const text = prompt.trim();
@@ -495,6 +565,21 @@ function NotePane({
 				)}
 				<button
 					className="note-share"
+					onClick={togglePreview}
+					title={preview !== null ? "Back to editing" : "Preview the rendered markdown"}
+				>
+					{preview !== null ? "✎ Edit" : "◫ Preview"}
+				</button>
+				<button
+					className="note-share"
+					onClick={discuss}
+					disabled={discussing}
+					title="Start an Ask session seeded with this note"
+				>
+					{discussing ? "Starting…" : "💬 Discuss"}
+				</button>
+				<button
+					className="note-share"
 					onClick={shareNote}
 					title="Copy a link to this note"
 				>
@@ -503,19 +588,42 @@ function NotePane({
 			</div>
 
 			<div className="note-editor-wrap">
-				<Suspense fallback={<div className="loading">Loading editor…</div>}>
-					<NoteEditor
-						noteId={noteId}
-						user={user}
-						connected={connected}
-						send={send}
-						addHandler={addHandler}
-						sessions={sessions}
-						notes={notes}
-						onOpenMention={onOpenMention}
+				{preview !== null ? (
+					<div
+						className="markdown wiki-doc overflow-y-auto px-[18px] py-4"
+						dangerouslySetInnerHTML={{ __html: preview }}
 					/>
-				</Suspense>
+				) : (
+					<Suspense fallback={<div className="loading">Loading editor…</div>}>
+						<NoteEditor
+							noteId={noteId}
+							user={user}
+							connected={connected}
+							send={send}
+							addHandler={addHandler}
+							sessions={sessions}
+							notes={notes}
+							onOpenMention={onOpenMention}
+						/>
+					</Suspense>
+				)}
 			</div>
+
+			{backlinks.length > 0 && (
+				<div className="flex items-baseline gap-1.5 flex-wrap px-[18px] py-1.5 border-t border-line text-[12px]">
+					<span className="text-faint shrink-0">Linked from</span>
+					{backlinks.map((b) => (
+						<button
+							key={b.id}
+							className="note-chip note-chip-note cursor-pointer border-0"
+							onClick={() => onOpenMention("note", b.id)}
+							title={`Open “${b.title}”`}
+						>
+							📝 {b.title}
+						</button>
+					))}
+				</div>
+			)}
 
 			<div
 				className={`note-prompt ${promptOpen ? "" : "note-prompt-collapsed"} ${running ? "note-prompt-running" : ""}`}
