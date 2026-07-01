@@ -167,6 +167,7 @@ import {
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { setArchived, archiveOlderThan } from "./src/server/archive";
 import { setTitleOverride } from "./src/server/title-overrides";
+import { ensureGeneratedTitle } from "./src/server/generated-titles";
 import {
 	getConnections,
 	addMcpServer,
@@ -3707,6 +3708,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 
 							const bksId = `bks-${randomUUIDv7()}`;
 							const title = prompt.trim().split("\n")[0].slice(0, 80);
+							// Replace the raw first-line title with a short summary in the
+							// background; next sessions poll (≤5s) picks it up.
+							void ensureGeneratedTitle(bksId, prompt).then((t) => {
+								if (t) sessionsCache = null;
+							});
 							// Non-image attachments: stage to disk, hand the agent the paths.
 							const openingPrompt = withUploadsNote(
 								prompt,
@@ -4080,6 +4086,11 @@ registerSessionControl({
 
 		const bksId = `bks-${randomUUIDv7()}`;
 		const title = prompt.trim().split("\n")[0].slice(0, 80);
+		// Replace the raw first-line title with a short summary in the background;
+		// the next sessions poll (≤5s) picks it up.
+		void ensureGeneratedTitle(bksId, prompt).then((t) => {
+			if (t) sessionsCache = null;
+		});
 
 		let engineSessionId = "";
 		let persisted = false;

@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { slackIdToFirstName } from "./shared/user-mappings";
 import { isArchivedId } from "./archive";
 import { getTitleOverride } from "./title-overrides";
+import { getGeneratedTitle } from "./generated-titles";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
 import type {
@@ -492,6 +493,16 @@ export function getAllSessions(): UnifiedSession[] {
   // Apply the cross-source archive registry
   for (const session of allSessions) {
     if (!session.archived && isArchivedId(session.id)) session.archived = true;
+  }
+
+  // Apply auto-generated summary titles (the short Conductor-style name),
+  // keyed by unified id or merged alias id. Sits UNDER a manual rename (applied
+  // next) but OVER the derived first-line title.
+  for (const session of allSessions) {
+    const generated =
+      getGeneratedTitle(session.id) ??
+      session.aliasIds?.map((a) => getGeneratedTitle(a)).find(Boolean);
+    if (generated) session.title = generated;
   }
 
   // Apply cross-source manual title overrides (rename). Keyed by the unified id
