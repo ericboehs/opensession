@@ -15,17 +15,105 @@ import {
 	onThemeChanged,
 	type ThemePref,
 } from "../lib/theme";
+import { Connections, DefaultModel } from "./Connections";
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
 // from the "Settings" item in the Michael menu. Designed to grow — each area is
-// just another entry in SECTIONS and a matching panel below. Today it folds in the
-// notification alerts (previously a sidebar bell) and the theme control.
+// just another entry in SECTIONS and a matching panel below. The "Personal" group
+// holds per-browser preferences (notifications, theme); the "Workspace" group holds
+// shared setup that configures how every session runs (default model, connections).
 
-type SectionKey = "notifications" | "appearance";
+type SectionKey = "notifications" | "appearance" | "model" | "connections";
 
-const SECTIONS: { key: SectionKey; label: string; group: string }[] = [
-	{ key: "notifications", label: "Notifications", group: "Personal" },
-	{ key: "appearance", label: "Appearance", group: "Personal" },
+const SECTIONS: {
+	key: SectionKey;
+	label: string;
+	group: string;
+	icon: React.ReactNode;
+}[] = [
+	{
+		key: "notifications",
+		label: "Notifications",
+		group: "Personal",
+		icon: (
+			<svg
+				width="15"
+				height="15"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path
+					d="M8 2.2a3.4 3.4 0 0 0-3.4 3.4c0 2.9-1.1 3.9-1.1 3.9h9A5.4 5.4 0 0 1 11.4 5.6 3.4 3.4 0 0 0 8 2.2z"
+					strokeLinejoin="round"
+				/>
+				<path d="M6.7 12a1.4 1.4 0 0 0 2.6 0" strokeLinecap="round" />
+			</svg>
+		),
+	},
+	{
+		key: "appearance",
+		label: "Appearance",
+		group: "Personal",
+		icon: (
+			<svg
+				width="15"
+				height="15"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<circle cx="8" cy="8" r="5.5" />
+				<path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none" />
+			</svg>
+		),
+	},
+	{
+		key: "model",
+		label: "Default model",
+		group: "Workspace",
+		icon: (
+			<svg
+				width="15"
+				height="15"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path
+					d="M8 2.3l1.2 3.3 3.3 1.2-3.3 1.2L8 11.3 6.8 8 3.5 6.8l3.3-1.2L8 2.3z"
+					strokeLinejoin="round"
+				/>
+				<path
+					d="M12.4 10.4l.4 1.3 1.3.4-1.3.4-.4 1.3-.4-1.3-1.3-.4 1.3-.4.4-1.3z"
+					strokeLinejoin="round"
+				/>
+			</svg>
+		),
+	},
+	{
+		key: "connections",
+		label: "Connections",
+		group: "Workspace",
+		icon: (
+			<svg
+				width="15"
+				height="15"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<circle cx="4.5" cy="8" r="2" />
+				<circle cx="11.5" cy="4" r="2" />
+				<circle cx="11.5" cy="12" r="2" />
+				<path d="M6.3 7.1l3.4-2.2M6.3 8.9l3.4 2.2" strokeLinecap="round" />
+			</svg>
+		),
+	},
 ];
 
 export function Settings({ onBack }: { onBack: () => void }) {
@@ -74,6 +162,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
 								}`}
 								onClick={() => setSection(s.key)}
 							>
+								<span className="settings-sidenav-icon">{s.icon}</span>
 								{s.label}
 							</button>
 						))}
@@ -84,6 +173,8 @@ export function Settings({ onBack }: { onBack: () => void }) {
 			<div className="settings-content">
 				{section === "notifications" && <NotificationsPanel />}
 				{section === "appearance" && <AppearancePanel />}
+				{section === "model" && <DefaultModelPanel />}
+				{section === "connections" && <Connections />}
 			</div>
 		</div>
 	);
@@ -352,6 +443,20 @@ function AppearancePanel() {
 					? "Matches your operating system."
 					: `Always ${pref} mode.`}
 			</div>
+		</div>
+	);
+}
+
+// ── Default model ──────────────────────────────────────────────────────────
+// A thin Settings wrapper around the DefaultModel control (which owns the fetch
+// + save). The panel supplies the heading; the control renders the picker card.
+
+function DefaultModelPanel() {
+	return (
+		<div className="settings-panel">
+			<h1 className="settings-title">Default model</h1>
+			<div className="settings-group-label">What new sessions run on</div>
+			<DefaultModel />
 		</div>
 	);
 }

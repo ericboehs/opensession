@@ -310,7 +310,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             <span className="palette-trigger-label">
               {REPOS.find((p) => p.id === repo)?.label || repo}
             </span>
-            <span className="palette-chevron">▾</span>
+            <IconChevronDown className="palette-chevron" size={16} />
             <select
               className="palette-select-overlay"
               value={repo}
@@ -334,7 +334,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               <path d="M4 5.7v4.6M4 8h4a4 4 0 004-4" stroke="currentColor" strokeWidth="1.3" />
             </svg>
             <span className="palette-trigger-label">{createFromLabel}</span>
-            <span className="palette-chevron">▾</span>
+            <IconChevronDown className="palette-chevron" size={16} />
             <select
               className="palette-select-overlay"
               value={createFromValue}
@@ -402,7 +402,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             <div className="palette-pill" title="Model">
               <span className={`composer-model-dot ${isCodexModel(effectiveModel) ? "dot-codex" : "dot-claude"}`} />
               <span className="palette-pill-label">{modelLabel}</span>
-              <span className="palette-chevron">▾</span>
+              <IconChevronDown className="palette-chevron" size={16} />
               <select
                 className="palette-select-overlay"
                 value={model}
@@ -427,7 +427,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               title={`Fast mode ${fast ? "on" : "off"} (not yet wired server-side)`}
               aria-pressed={fast}
             >
-              <IconBolt size={18} />
+              <IconBolt size={20} />
             </button>
 
             <div className="palette-pill" title="Reasoning effort (not yet wired server-side)">
@@ -435,7 +435,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 <span /><span /><span />
               </span>
               <span className="palette-pill-label">{EFFORTS.find((e) => e.id === effort)?.label}</span>
-              <span className="palette-chevron">▾</span>
+              <IconChevronDown className="palette-chevron" size={16} />
               <select
                 className="palette-select-overlay"
                 value={effort}
@@ -459,7 +459,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               title={`Plan mode ${plan ? "on" : "off"} (not yet wired server-side)`}
               aria-pressed={plan}
             >
-              <IconMap size={18} />
+              <IconMap size={20} />
             </button>
           </div>
 
@@ -472,7 +472,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               title="Attach a file"
               aria-label="Attach a file"
             >
-              <IconPaperclip size={18} />
+              <IconPaperclip size={20} />
             </button>
             <input
               ref={fileInputRef}

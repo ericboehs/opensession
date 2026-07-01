@@ -3,6 +3,7 @@ import type { UnifiedSession } from "../lib/types";
 import { relativeTime, fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
 import { sessionStatus } from "../lib/status";
 import { getPins, togglePin } from "../lib/pins";
+import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 import { useCurrentUser } from "./UserPicker";
 import { Composer } from "./Composer";
 
@@ -67,6 +68,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [pins, setPins] = useState<string[]>(() => getPins());
+  const [reads, setReads] = useState(() => getReads());
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [askModel, setAskModel] = useState(""); // "" = default
@@ -80,6 +82,9 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
       })
       .catch(() => {});
   }, []);
+
+  // Keep the unread dots in sync when a session is opened/marked read elsewhere.
+  useEffect(() => onReadsChanged(() => setReads(getReads())), []);
 
   function handleAsk() {
     const q = question.trim();
@@ -169,7 +174,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
             {running.length > 0 && (
               <Section title="Working now">
                 {running.map((s) => (
-                  <SessionRow key={s.id} session={s} pinned={pins.includes(s.id)} onPin={handlePin} onClick={() => onSelect(s)} />
+                  <SessionRow key={s.id} session={s} pinned={pins.includes(s.id)} unread={isUnread(s.id, s.lastActivity, reads)} onPin={handlePin} onClick={() => onSelect(s)} />
                 ))}
               </Section>
             )}
@@ -177,7 +182,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
             {pinned.length > 0 && (
               <Section title="Pinned">
                 {pinned.map((s) => (
-                  <SessionRow key={s.id} session={s} pinned onPin={handlePin} onClick={() => onSelect(s)} />
+                  <SessionRow key={s.id} session={s} pinned unread={isUnread(s.id, s.lastActivity, reads)} onPin={handlePin} onClick={() => onSelect(s)} />
                 ))}
               </Section>
             )}
@@ -187,7 +192,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
                 <div className="home-empty">No sessions yet — ask a question or start a task.</div>
               ) : (
                 recent.map((s) => (
-                  <SessionRow key={s.id} session={s} pinned={false} onPin={handlePin} onClick={() => onSelect(s)} />
+                  <SessionRow key={s.id} session={s} pinned={false} unread={isUnread(s.id, s.lastActivity, reads)} onPin={handlePin} onClick={() => onSelect(s)} />
                 ))
               )}
             </Section>
@@ -210,11 +215,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function SessionRow({
   session,
   pinned,
+  unread,
   onPin,
   onClick,
 }: {
   session: UnifiedSession;
   pinned: boolean;
+  unread: boolean;
   onPin: (e: React.MouseEvent, id: string) => void;
   onClick: () => void;
 }) {
@@ -222,13 +229,16 @@ function SessionRow({
   const chip = session.mode === "ask" ? "ask" : session.source;
 
   return (
-    <button className="home-row" onClick={onClick}>
+    <button className={`home-row${unread ? " home-row-unread" : ""}`} onClick={onClick}>
       <span className={`status-pill status-${status.tone}`}>
         {status.tone === "green" && <span className="working-dot" />}
         {status.label}
       </span>
       <span className="home-row-main">
-        <span className="home-row-title">{session.title}</span>
+        <span className="home-row-titleline">
+          {unread && <span className="home-row-unread-dot" />}
+          <span className="home-row-title">{session.title}</span>
+        </span>
         <span className="home-row-meta">
           <span className={`source-chip source-${chip}`}>{chip}</span>
           {session.branch && session.branch !== session.title && (

@@ -140,8 +140,6 @@ export function Connections() {
         />
       )}
 
-      <DefaultModel />
-
       {!data ? (
         <div className="loading">Checking connections…</div>
       ) : (
@@ -291,7 +289,7 @@ interface ModelInfo {
   aliases: string[];
 }
 
-function DefaultModel() {
+export function DefaultModel() {
   const [models, setModels] = useState<ModelInfo[] | null>(null);
   const [current, setCurrent] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -336,7 +334,6 @@ function DefaultModel() {
 
   return (
     <>
-      <div className="conn-section-title">Default model — what new sessions run on</div>
       {error && (
         <div className="form-error" onClick={() => setError(null)}>{error}</div>
       )}

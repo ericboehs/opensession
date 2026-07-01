@@ -24,6 +24,8 @@ interface Props {
 	onNewChat: () => void;
 	/** Rename a chat (double-click the title); empty title resets it. */
 	onRename: (id: string, title: string) => void;
+	/** Close (archive) a chat — the × revealed on hover. */
+	onClose: (session: UnifiedSession) => void;
 }
 
 type Menu = { key: string; x: number; y: number };
@@ -36,6 +38,7 @@ export function SessionTabs({
 	onSetColor,
 	onNewChat,
 	onRename,
+	onClose,
 }: Props) {
 	const [menu, setMenu] = useState<Menu | null>(null);
 	const [editKey, setEditKey] = useState<string | null>(null);
@@ -119,6 +122,18 @@ export function SessionTabs({
 								{session.title}
 							</span>
 						)}
+						<button
+							type="button"
+							className="session-tab-close"
+							aria-label="Close chat"
+							title="Close chat"
+							onClick={(e) => {
+								e.stopPropagation();
+								onClose(session);
+							}}
+						>
+							×
+						</button>
 					</div>
 				);
 			})}

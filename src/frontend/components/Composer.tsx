@@ -12,6 +12,7 @@ import {
   IconPaperclip,
   IconAtSign,
   IconCrosshair,
+  IconChevronDown,
 } from "./icons";
 
 interface Props {
@@ -312,7 +313,7 @@ export function Composer({
           <div className="palette-pill" title={modelTitle || "Model for this session"}>
             <span className={`composer-model-dot ${isCodex ? "dot-codex" : "dot-claude"}`} />
             <span className="palette-pill-label">{modelShortLabel(effectiveModel, models)}</span>
-            <span className="palette-chevron">▾</span>
+            <IconChevronDown className="palette-chevron" size={16} />
             <select
               className="palette-select-overlay"
               value={model}
@@ -344,7 +345,7 @@ export function Composer({
               <span className="palette-pill-label">
                 {EFFORTS.find((e) => e.id === effort)?.label ?? "High"}
               </span>
-              <span className="palette-chevron">▾</span>
+              <IconChevronDown className="palette-chevron" size={16} />
               <select
                 className="palette-select-overlay"
                 value={effort ?? "high"}
@@ -371,7 +372,7 @@ export function Composer({
                 title={goal ? `Goal: ${goal}` : "Pin a goal for this session"}
                 aria-pressed={!!goal}
               >
-                <IconCrosshair size={16} />
+                <IconCrosshair size={20} />
                 {goal && <span className="composer-goal-label">Goal</span>}
               </button>
               {menu === "goal" && (
@@ -401,7 +402,7 @@ export function Composer({
                 aria-label="Add"
                 aria-expanded={menu === "add"}
               >
-                <IconPlus size={17} />
+                <IconPlus size={20} />
               </button>
               {menu === "add" && (
                 <div className="composer-menu">
@@ -414,7 +415,7 @@ export function Composer({
                     }}
                   >
                     <span className="composer-menu-icon">
-                      <IconPaperclip size={16} />
+                      <IconPaperclip size={18} />
                     </span>
                     {onFilesChange ? "Attach files" : "Attach an image"}
                   </button>
@@ -428,7 +429,7 @@ export function Composer({
                       }}
                     >
                       <span className="composer-menu-icon">
-                        <IconAtSign size={16} />
+                        <IconAtSign size={18} />
                       </span>
                       Reference a file
                     </button>
@@ -457,7 +458,7 @@ export function Composer({
               disabled={disabled || sendDisabled}
               title="Fold in at Michael's next stopping point — don't interrupt the current turn"
             >
-              <IconArrowDownRight size={16} />
+              <IconArrowDownRight size={20} />
             </button>
           )}
           <button
@@ -469,7 +470,7 @@ export function Composer({
               (busy ? "Send now — interrupts the current turn and redirects Michael (Enter)" : "Send (Enter)")
             }
           >
-            {busy ? <IconBolt size={17} /> : <IconArrowUp size={17} />}
+            {busy ? <IconBolt size={20} /> : <IconArrowUp size={20} />}
           </button>
         </div>
       </div>
