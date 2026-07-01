@@ -1029,8 +1029,8 @@ body.resizing-x {
 	gap: 6px;
 }
 /* The Projects band title doubles as a collapse toggle — a bare button that
-   keeps the band-label's type, with a chevron that (unlike group headers) stays
-   visible so the collapsed/expanded state is always legible. */
+   keeps the band-label's type. Its chevron (like group headers) only appears on
+   hover, so the sidebar stays clean until you reach for it. */
 .sidebar-band-toggle {
 	display: flex;
 	align-items: center;
@@ -1045,10 +1045,15 @@ body.resizing-x {
 .sidebar-band-chevron {
 	color: var(--text-faint);
 	flex-shrink: 0;
-	transition: transform 0.15s ease;
+	opacity: 0;
+	transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.sidebar-band-label:hover .sidebar-band-chevron {
+	opacity: 1;
 }
 .sidebar-band-toggle:hover .sidebar-band-chevron {
 	color: var(--text);
+	opacity: 1;
 }
 
 .sidebar-band-action {
@@ -1090,10 +1095,12 @@ body.resizing-x {
 .sidebar-group-chevron {
 	color: var(--text-faint);
 	flex-shrink: 0;
-	transition: transform 0.15s ease;
+	opacity: 0;
+	transition: transform 0.15s ease, opacity 0.15s ease;
 }
 .sidebar-group-header:hover .sidebar-group-chevron {
 	color: var(--text);
+	opacity: 1;
 }
 
 .sidebar-group-dot {
