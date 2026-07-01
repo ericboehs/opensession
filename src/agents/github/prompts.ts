@@ -101,7 +101,7 @@ export function buildAutoFixPrompt(
 
   return `You are Michael, working on PR #${pr.number} ("${pr.title}") on tella-fusion. You are checked out on the PR's head branch \`${pr.headRefName}\` in a worktree. This is auto-fix iteration ${iteration}.
 
-Your job: address ALL the open review feedback on this PR — from EVERY reviewer (Michael, Greptile, and human reviewers alike), not just Michael's — AND any failing CI, then commit, push, and reply in each thread you addressed.
+Your job: address ALL the open review feedback on this PR — from EVERY reviewer (Michael and human reviewers alike), not just Michael's — AND any failing CI, then commit, push, and reply in each thread you addressed. You are allowed and expected to fix everything actionable, not just blockers — P2 and P3 findings included. Only leave a finding unfixed when you have a clear reason, and record that reason (see the SKIPPED line below).
 ${steerBlock(steer)}
 
 Open review feedback to address (inline comments + review summaries; each tagged with its author and, for inline comments, a \`comment <id>\` — fix every actionable point):
@@ -111,15 +111,19 @@ ${ci}
 
 Instructions:
 1. Run \`gh pr diff ${pr.number}\` and inspect the failing checks (e.g. \`gh pr checks ${pr.number}\`, run the relevant tests/typecheck/lint locally) to understand what needs fixing. Also skim \`gh pr view ${pr.number} --comments\` for any human requests in the conversation not listed above.
-2. Make the smallest correct changes that resolve the findings and the CI failures. Match the surrounding code style. Do NOT make unrelated changes.
+2. Make the smallest correct changes that resolve the findings and the CI failures. Match the surrounding code style. Do NOT make unrelated changes. Fix as many findings as you reasonably can this round (P2 and P3 included) — don't stop at the blockers. If you deliberately leave one, it goes on the SKIPPED line with a reason.
 3. Commit your work with a clear message, then push to the PR branch with: \`git push origin HEAD:${pr.headRefName}\`
-4. **Reply in each review thread you addressed** so reviewers see it was handled — start the reply with the literal text \`Fixed in <short-sha>\` (this exact phrasing is what marks the thread resolved): for an inline comment with id \`<id>\`, run \`gh api repos/tellahq/tella-fusion/pulls/${pr.number}/comments/<id>/replies -f body="<!-- michael-fixed -->
-Fixed in <short-sha> — <what you changed>."\`. If you intentionally did NOT act on a comment, reply with your reasoning but do NOT write "Fixed in" (so it stays open for a human). This applies to Greptile and human comments too, not just Michael's.
+4. **Reply in each review thread you addressed** so reviewers see it was handled. Reply via \`gh api repos/tellahq/tella-fusion/pulls/${pr.number}/comments/<id>/replies -f body="<body>"\`. Attribute honestly — only claim work you actually did:
+   - A finding **you** fixed in a commit you pushed this run: \`<!-- michael-fixed -->\\nFixed in <your-short-sha> — <what you changed>.\`
+   - A finding that was **already resolved by an existing commit** (someone else's work, before your run): \`<!-- michael-fixed -->\\nLooks addressed in <short-sha> — <how it's handled now>.\` Do NOT say you fixed it.
+   - A finding you **deliberately did not act on**: reply with your reasoning, and do NOT include the \`<!-- michael-fixed -->\` marker or the words "Fixed in" — that keeps the thread open for a human.
+   The \`<!-- michael-fixed -->\` marker (or a leading "Fixed in") is what marks a thread resolved, so only put it on threads that are genuinely handled. Never claim you or Michael fixed something a human actually fixed. This applies to human reviewers' comments too, not just Michael's.
 5. NEVER merge the PR (\`gh pr merge\` is forbidden) and never force-push over other people's work.
 
-End your turn with a single line in exactly this format so the loop knows whether to continue:
-\`REMAINING_FINDINGS: none\`  (if you addressed everything and pushed)
-or \`REMAINING_FINDINGS: <short description>\`  (if something couldn't be fixed this round).`;
+End your turn with these three lines (exact keys, one line each) so the loop can report what happened and decide whether to continue. Use "none" where a category is empty:
+\`FIXED: <short list of findings you fixed and pushed, or none>\`
+\`SKIPPED: <findings you deliberately left, each as "finding — reason", or none>\`
+\`UNRESOLVED: <findings you tried but couldn't fix, each as "finding — reason", or none>\``;
 }
 
 export function buildAdversarialPrompt(pr: PrDetails, steer?: string): string {

@@ -85,7 +85,11 @@ export async function runAutoFix(
   const link = `[📺 open session](${sessionUrl(pr.number, "autofix")})`;
 
   const updateStatus = async (text: string) => {
-    const body = `<!-- michael-autofix -->\n🛠️ **Michael auto-fix** — ${text} · ${link}`;
+    // Keep the session link on the header line; any extra lines (disposition
+    // breakdown) render below it rather than getting glued to the link.
+    const [head, ...rest] = text.split("\n");
+    const tail = rest.length ? `\n${rest.join("\n")}` : "";
+    const body = `<!-- michael-autofix -->\n🛠️ **Michael auto-fix** — ${head} · ${link}${tail}`;
     if (statusCommentId) {
       await editIssueComment(statusCommentId, body);
     } else {
@@ -122,6 +126,7 @@ export async function runAutoFix(
     const baseSha = prior?.lastPushedSha || (await headSha(pr.headRef));
     let lastPushedSha = baseSha;
     let outcome = "";
+    let lastDisp: Dispositions | null = null;
 
     // Review helpers (dynamic import keeps the module graph acyclic). A fresh
     // review of each pushed SHA is what gates the loop; `lastReviewedSha` lets us
@@ -171,7 +176,8 @@ export async function runAutoFix(
       const newSha = await headSha(pr.headRef);
       const pushedSomething = !!newSha && newSha !== lastPushedSha;
       lastPushedSha = newSha || lastPushedSha;
-      const remaining = parseRemaining(result.text);
+      lastDisp = parseDispositions(result.text);
+      const remaining = remainingFrom(lastDisp);
 
       const st = getOrInitPrState(pr.number, pr.headRef);
       st.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir, lastPushedSha, steer: effectiveSteer };
@@ -180,11 +186,13 @@ export async function runAutoFix(
       if (result.error) { outcome = `⚠️ Stopped — the fix run errored: ${result.error}`; break; }
 
       if (!pushedSomething) {
-        // Nothing changed this round.
-        if (ciBefore.green && remaining === "none") { outcome = "✅ Nothing left to fix — CI green and findings addressed."; break; }
-        outcome = remaining && remaining !== "none"
-          ? `⚠️ Stopping — no further changes were made. Remaining: ${remaining}`
-          : "⚠️ Stopping — the fixer made no further changes.";
+        // Nothing changed this round. The fixer's dispositions (rendered below the
+        // outcome) explain what it fixed vs deliberately skipped vs couldn't fix —
+        // so a P3-only skip reads as a decision, not an opaque "made no changes".
+        if (ciBefore.green && remaining === "none") { outcome = "✅ Nothing left to fix — CI green and all findings addressed."; break; }
+        outcome = remaining !== "none"
+          ? "☑️ No further changes this round — the remaining items were deliberately skipped or couldn't be auto-fixed:"
+          : "☑️ The fixer made no further changes.";
         break;
       }
 
@@ -199,10 +207,12 @@ export async function runAutoFix(
       }
 
       // CI is green — gate on a FRESH review of the pushed code, not the fixer's
-      // own REMAINING_FINDINGS self-report. Stop only when a new review finds
-      // nothing blocking; otherwise loop so the next iteration fixes what it
-      // surfaced (its inline comments are now the freshest, so fetchReviewFindings
-      // picks them up).
+      // own self-report. Stop only when the review is fully satisfied — no blocking
+      // findings AND either nothing left or a clean 5/5 confidence ("safe to merge").
+      // A 4/5-or-lower review with findings still open loops so the next iteration
+      // fixes them (P2/P3 included — its inline comments are now the freshest, so
+      // fetchReviewFindings picks them up). The loop still terminates naturally when
+      // the fixer stops pushing changes, or at the iteration cap.
       await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: CI green — reviewing \`${sha7}\`…`);
       const review = await reviewGate(lastPushedSha);
 
@@ -210,21 +220,26 @@ export async function runAutoFix(
         // No verdict (review lock contention / model error) — fall back to the
         // fixer's self-report so a flaky review can't spin the loop forever.
         if (remaining === "none") { outcome = `✅ Auto-fix complete — CI green, findings addressed (\`${sha7}\`); fresh review verdict unavailable.`; break; }
-        outcome = `⚠️ CI green but couldn't get a fresh review verdict and the fixer reports remaining work. Handing back to humans.`;
+        outcome = `⚠️ CI green but couldn't get a fresh review verdict and work remains. Handing back to humans.`;
         break;
       }
-      if (review.blocking === 0) {
-        outcome = `✅ Auto-fix complete — CI green and the fresh review found nothing blocking (\`${sha7}\`).`;
+      const conf = typeof review.confidence === "number" ? review.confidence : null;
+      const satisfied = review.blocking === 0 && (review.findings === 0 || (conf != null && conf >= 5));
+      if (satisfied) {
+        const why = conf != null ? `confidence ${conf}/5` : "no blocking findings";
+        outcome = `✅ Auto-fix complete — CI green and the review is satisfied (${why}, \`${sha7}\`).`;
         break;
       }
-      await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: review still flags ${review.blocking} blocking finding(s) — continuing…`);
-      // loop again to address the fresh findings
+      const at = conf != null ? `confidence ${conf}/5` : `${review.blocking} blocking`;
+      await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: review at ${at} with ${review.findings} open finding(s) — continuing to fix…`);
+      // loop again to address the remaining findings (not just blockers)
     }
 
     if (!outcome && iterations >= MAX_ITERATIONS) {
       outcome = `⚠️ Reached the ${MAX_ITERATIONS}-iteration cap. Handing back to humans.`;
     }
-    await updateStatus(outcome || "done.");
+    const dispBlock = lastDisp ? formatDispositions(lastDisp) : "";
+    await updateStatus(dispBlock ? `${outcome || "done."}\n\n${dispBlock}` : outcome || "done.");
 
     const fin = getOrInitPrState(pr.number, pr.headRef);
     if (fin.autoFix) { fin.autoFix.active = false; fin.autoFix.iterations = iterations; fin.autoFix.lastPushedSha = lastPushedSha; writePrState(fin); }
@@ -261,11 +276,47 @@ export async function runAutoFix(
   }
 }
 
-function parseRemaining(text: string): string {
-  const m = (text || "").match(/REMAINING_FINDINGS:\s*(.+)\s*$/im);
-  if (!m) return "";
-  const v = m[1].trim();
-  return v.toLowerCase() === "none" ? "none" : v;
+interface Dispositions {
+  fixed: string;
+  skipped: string;
+  unresolved: string;
+}
+
+/**
+ * Parse the fixer's end-of-turn disposition lines (FIXED / SKIPPED / UNRESOLVED),
+ * falling back to the legacy `REMAINING_FINDINGS:` line for older outputs. Empty
+ * string for a field means "nothing" (the fixer wrote "none" or omitted it).
+ */
+function parseDispositions(text: string): Dispositions {
+  const grab = (key: string): string => {
+    const m = (text || "").match(new RegExp(`^\\s*${key}:\\s*(.+?)\\s*$`, "im"));
+    const v = m ? m[1].trim() : "";
+    return /^none\.?$/i.test(v) ? "" : v;
+  };
+  const d: Dispositions = { fixed: grab("FIXED"), skipped: grab("SKIPPED"), unresolved: grab("UNRESOLVED") };
+  if (!d.fixed && !d.skipped && !d.unresolved) {
+    const m = (text || "").match(/REMAINING_FINDINGS:\s*(.+)\s*$/im);
+    const rem = m ? m[1].trim() : "";
+    if (rem && rem.toLowerCase() !== "none") d.unresolved = rem;
+  }
+  return d;
+}
+
+/** "none" when the fixer left nothing open; otherwise a short description of what remains. */
+function remainingFrom(d: Dispositions): string {
+  const parts = [d.skipped && `skipped: ${d.skipped}`, d.unresolved && `unresolved: ${d.unresolved}`].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "none";
+}
+
+/** Markdown breakdown of what the fixer did this run, for the status comment. */
+function formatDispositions(d: Dispositions): string {
+  return [
+    d.fixed && `**Fixed:** ${d.fixed}`,
+    d.skipped && `**Skipped (deliberate):** ${d.skipped}`,
+    d.unresolved && `**Couldn't fix:** ${d.unresolved}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /**
