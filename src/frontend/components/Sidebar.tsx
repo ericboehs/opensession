@@ -615,26 +615,6 @@ export function Sidebar({
 					</button>
 					<button
 						className="sidebar-new-btn"
-						onClick={onNewProject}
-						title="New project"
-					>
-						<svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-							<path
-								d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
-								stroke="currentColor"
-								strokeWidth="1.3"
-								strokeLinejoin="round"
-							/>
-							<path
-								d="M8 8v3.2M6.4 9.6h3.2"
-								stroke="currentColor"
-								strokeWidth="1.3"
-								strokeLinecap="round"
-							/>
-						</svg>
-					</button>
-					<button
-						className="sidebar-new-btn"
 						onClick={onNewSession}
 						title="New session"
 					>
@@ -715,7 +695,38 @@ export function Sidebar({
 							bandChanged ? " sidebar-group--band-start" : ""
 						}`}
 					>
-						{label && <div className="sidebar-band-label">{label}</div>}
+						{label && (
+							<div className="sidebar-band-label">
+								<span>{label}</span>
+								{group.band === "automations" && (
+									<button
+										className="sidebar-band-action"
+										onClick={onNewProject}
+										title="New project"
+									>
+										<svg
+											width="14"
+											height="14"
+											viewBox="0 0 16 16"
+											fill="none"
+										>
+											<path
+												d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
+												stroke="currentColor"
+												strokeWidth="1.3"
+												strokeLinejoin="round"
+											/>
+											<path
+												d="M8 6.8v3.4M6.3 8.5h3.4"
+												stroke="currentColor"
+												strokeWidth="1.3"
+												strokeLinecap="round"
+											/>
+										</svg>
+									</button>
+								)}
+							</div>
+						)}
 						<button
 							className="sidebar-group-header"
 							onClick={() => toggleGroup(group.key)}
