@@ -25,6 +25,7 @@ import { useInputAlerts } from "./hooks/useInputAlerts";
 import { initAlerts } from "./lib/notify";
 import {
 	archiveSessionApi,
+	deleteSessionApi,
 	renameSessionApi,
 	fetchNotes,
 	fetchProjects,
@@ -510,12 +511,18 @@ function App() {
 	}, [route, currentSession, activeProjectId]);
 	const byCreated = (a: UnifiedSession, b: UnifiedSession) =>
 		(a.createdAt || "").localeCompare(b.createdAt || "");
+	// Archived (closed) chats leave the strip — except the one you're actively
+	// viewing (e.g. opened from Archived), which keeps its tab.
+	const liveTab = (s: UnifiedSession) =>
+		!s.archived || s.id === currentSession?.id;
 	const projectChats: UnifiedSession[] = activeProjectId
-		? sessions.filter((s) => s.projectId === activeProjectId).sort(byCreated)
+		? sessions
+				.filter((s) => liveTab(s) && s.projectId === activeProjectId)
+				.sort(byCreated)
 		: currentSession?.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
 			? sessions
 					.filter(
-						(s) => !s.archived && s.worktreeDir === currentSession.worktreeDir,
+						(s) => liveTab(s) && s.worktreeDir === currentSession.worktreeDir,
 					)
 					.sort(byCreated)
 			: currentSession
@@ -888,10 +895,20 @@ function App() {
 							}}
 							onClose={async (s) => {
 								// Closing a tab archives the chat: it leaves the strip and the
-								// active list, but stays recoverable from Archived. If we just
-								// closed the open session, fall back to a sibling tab.
+								// active list, but stays recoverable from Archived. An empty
+								// chat that never ran has nothing to recover, so it's deleted
+								// outright instead of cluttering Archived. If we just closed
+								// the open session, fall back to a sibling tab.
+								const neverRan =
+									s.source === "backstage" &&
+									!s.claudeSessionId &&
+									!s.codexThreadId &&
+									!s.transcriptPath &&
+									!s.isRunning &&
+									!s.queuedCount;
 								try {
-									await archiveSessionApi(s.id, true);
+									if (neverRan) await deleteSessionApi(s.id, false);
+									else await archiveSessionApi(s.id, true);
 								} catch (e) {
 									console.error("Close failed:", e);
 								}
