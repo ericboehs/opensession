@@ -3580,6 +3580,27 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					: Response.json({ error: "Not found" }, { status: 404 });
 			}
 
+			// ── Session monitor (per-user, opt-in) ──
+			if (path === "/backstage/api/monitor" && req.method === "GET") {
+				const user = (url.searchParams.get("user") || "").trim();
+				if (!user)
+					return Response.json({ error: "user required" }, { status: 400 });
+				const { getMonitorConfig } = await import(
+					"./src/agents/loops/session-monitor"
+				);
+				return Response.json(getMonitorConfig(user));
+			}
+
+			if (path === "/backstage/api/monitor" && req.method === "PUT") {
+				const body = await req.json().catch(() => null);
+				if (!body || typeof body.user !== "string" || !body.user.trim())
+					return Response.json({ error: "user required" }, { status: 400 });
+				const { setMonitorConfig } = await import(
+					"./src/agents/loops/session-monitor"
+				);
+				return Response.json(setMonitorConfig(body.user, body));
+			}
+
 			// ── Security (deepsec scans + profiles) ──
 			if (path === "/backstage/api/security" && req.method === "GET") {
 				return Response.json({
@@ -5246,6 +5267,11 @@ if (!g.__backstageBooted) {
 		ensureStalePrMonitor();
 		const { ensureCronJobs } = await import("./src/agents/loops/cron-jobs");
 		ensureCronJobs();
+		// Autonomous session monitor (per-user, opt-in — Settings → Monitor)
+		const { startSessionMonitor } = await import(
+			"./src/agents/loops/session-monitor"
+		);
+		startSessionMonitor();
 	} catch (e) {
 		console.error(
 			"[loops] Failed to seed sweep/monitor/seo/stale-pr/cron loops:",
