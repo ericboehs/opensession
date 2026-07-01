@@ -60,6 +60,13 @@ interface Props {
 	/** Rename this session (double-click the header title); empty resets it to
 	    the derived title. Same handler the tab strip and sidebar use. */
 	onRename?: (id: string, title: string) => void;
+	/**
+	 * The workspace this chat belongs to. When set, the header titles the
+	 * WORKSPACE (every sibling chat shows the same name — per-chat titles live
+	 * on the tabs) and double-click renames the workspace, not the chat.
+	 */
+	workspaceName?: string;
+	onRenameWorkspace?: (name: string) => void;
 }
 
 type PanelTab = "changes" | "terminal" | "pr" | "slack" | "plain";
@@ -100,6 +107,8 @@ export function SessionViewer({
 	rightPanelEl,
 	newChatSeq,
 	onRename,
+	workspaceName,
+	onRenameWorkspace,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
@@ -680,7 +689,13 @@ export function SessionViewer({
 	}
 
 	function commitRename() {
-		if (renameDraft !== null) onRename?.(session.id, renameDraft.trim());
+		if (renameDraft !== null) {
+			// When the header titles the workspace, renaming edits the workspace —
+			// every sibling chat picks the new name up. Chat titles live on tabs.
+			if (workspaceName && onRenameWorkspace)
+				onRenameWorkspace(renameDraft.trim());
+			else onRename?.(session.id, renameDraft.trim());
+		}
 		setRenameDraft(null);
 	}
 
@@ -900,12 +915,20 @@ export function SessionViewer({
 					) : (
 						<span
 							className={`viewer-branch ${onRename ? "viewer-branch-editable" : ""}`}
-							title={onRename ? "Double-click to rename" : session.title}
+							title={
+								workspaceName
+									? `${session.title} — double-click to rename the workspace`
+									: onRename
+										? "Double-click to rename"
+										: session.title
+							}
 							onDoubleClick={
-								onRename ? () => setRenameDraft(session.title) : undefined
+								onRename
+									? () => setRenameDraft(workspaceName || session.title)
+									: undefined
 							}
 						>
-							{session.title}
+							{workspaceName || session.title}
 						</span>
 					)}
 					{session.startedBy && (

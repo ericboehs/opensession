@@ -60,6 +60,15 @@ type Route =
 	| { view: "archived" };
 
 function parseRoute(pathname: string): Route {
+	// Canonical chat URL: /backstage/workspace/<wsId>/chat/<chatId>. The chat id
+	// alone identifies the session; the workspace segment makes the hierarchy
+	// shareable/readable. Old /backstage/session/<id> links keep working and get
+	// canonicalized once the session (and its workspace) is known.
+	const wsChatMatch = pathname.match(
+		/^\/backstage\/workspace\/[^/]+\/chat\/(.+)$/,
+	);
+	if (wsChatMatch)
+		return { view: "session", id: decodeURIComponent(wsChatMatch[1]) };
 	const sessionMatch = pathname.match(/^\/backstage\/session\/(.+)$/);
 	if (sessionMatch)
 		return { view: "session", id: decodeURIComponent(sessionMatch[1]) };
@@ -487,6 +496,18 @@ function App() {
 	// via + shows up next to its slack source. Failing that, the open chat alone
 	// still gets a strip (one tab + the + button).
 	const activeProjectId = currentSession?.projectId || null;
+
+	// Canonicalize the open chat's URL to /workspace/<wsId>/chat/<chatId> once
+	// its workspace is known (replaceState: same history depth, so Back and the
+	// mobile page-stack are unaffected). Workspace-less chats keep /session/<id>.
+	useEffect(() => {
+		if (route.view !== "session" || !currentSession) return;
+		const canonical = activeProjectId
+			? `/backstage/workspace/${encodeURIComponent(activeProjectId)}/chat/${encodeURIComponent(route.id)}`
+			: `/backstage/session/${encodeURIComponent(route.id)}`;
+		if (location.pathname !== canonical)
+			history.replaceState(null, "", canonical);
+	}, [route, currentSession, activeProjectId]);
 	const byCreated = (a: UnifiedSession, b: UnifiedSession) =>
 		(a.createdAt || "").localeCompare(b.createdAt || "");
 	const projectChats: UnifiedSession[] = activeProjectId
@@ -960,6 +981,23 @@ function App() {
 										}
 										refresh();
 									}}
+									workspaceName={
+										activeProjectId
+											? projects.find((p) => p.id === activeProjectId)?.name
+											: undefined
+									}
+									onRenameWorkspace={
+										activeProjectId
+											? async (name) => {
+													try {
+														await updateProjectApi(activeProjectId, { name });
+													} catch (e) {
+														console.error("Rename workspace failed:", e);
+													}
+													refreshProjects();
+												}
+											: undefined
+									}
 								/>
 							) : (
 								<div className="detail-empty">
