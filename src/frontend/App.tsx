@@ -823,6 +823,14 @@ function App() {
 									topbarEl={topbarEl}
 									rightPanelEl={rightPanelEl}
 									newChatSeq={newChatSeq}
+									onRename={async (id, title) => {
+										try {
+											await renameSessionApi(id, title);
+										} catch (e) {
+											console.error("Rename failed:", e);
+										}
+										refresh();
+									}}
 								/>
 							) : (
 								<div className="detail-empty">

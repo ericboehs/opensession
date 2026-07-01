@@ -54,6 +54,9 @@ interface Props {
 	/** Bumped by the tab-bar + to start a fresh chat in this same session: clears
 	    the composer and jumps to the live edge. A visual reset — same thread. */
 	newChatSeq?: number;
+	/** Rename this session (double-click the header title); empty resets it to
+	    the derived title. Same handler the tab strip and sidebar use. */
+	onRename?: (id: string, title: string) => void;
 }
 
 type PanelTab = "changes" | "terminal" | "pr" | "slack" | "plain";
@@ -93,6 +96,7 @@ export function SessionViewer({
 	topbarEl,
 	rightPanelEl,
 	newChatSeq,
+	onRename,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -136,6 +140,9 @@ export function SessionViewer({
 		questions: AskQuestion[];
 	} | null>(null);
 	const [copied, setCopied] = useState(false);
+	// Inline rename of the header title (double-click), mirroring the tab strip.
+	// `null` = not editing; a string = the working draft.
+	const [renameDraft, setRenameDraft] = useState<string | null>(null);
 	const [pinned, setPinned] = useState(() => isPinned(session.id));
 	// Default to the Plain tab for a Plain-linked session with no code workspace
 	// (an ask-mode triage): the conversation timeline is the only panel it has.
@@ -644,6 +651,15 @@ export function SessionViewer({
 		}
 	}
 
+	function commitRename() {
+		if (renameDraft !== null) onRename?.(session.id, renameDraft.trim());
+		setRenameDraft(null);
+	}
+
+	// Drop an in-progress rename when switching sessions so the draft never bleeds
+	// into the next session's header.
+	useEffect(() => setRenameDraft(null), [session.id]);
+
 	function handleModelChange(next: string) {
 		const target = next || defaultModel;
 		if (!target || target === (model || defaultModel)) return;
@@ -719,9 +735,31 @@ export function SessionViewer({
 							{session.source}
 						</span>
 					)}
-					<span className="viewer-branch" title={session.title}>
-						{session.title}
-					</span>
+					{renameDraft !== null ? (
+						<input
+							className="viewer-branch-rename"
+							value={renameDraft}
+							autoFocus
+							onChange={(e) => setRenameDraft(e.target.value)}
+							onFocus={(e) => e.target.select()}
+							onBlur={commitRename}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") commitRename();
+								else if (e.key === "Escape") setRenameDraft(null);
+								e.stopPropagation();
+							}}
+						/>
+					) : (
+						<span
+							className={`viewer-branch ${onRename ? "viewer-branch-editable" : ""}`}
+							title={onRename ? "Double-click to rename" : session.title}
+							onDoubleClick={
+								onRename ? () => setRenameDraft(session.title) : undefined
+							}
+						>
+							{session.title}
+						</span>
+					)}
 					{session.startedBy && (
 						<span className="viewer-started-by">by {session.startedBy}</span>
 					)}

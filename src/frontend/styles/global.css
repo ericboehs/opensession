@@ -1823,6 +1823,32 @@ body.resizing-x {
 	font-size: 14px;
 }
 
+/* Double-clickable to rename — hint it on hover without shifting layout. */
+.viewer-branch-editable {
+	cursor: text;
+	border-radius: 4px;
+	padding: 0 3px;
+	margin: 0 -3px;
+}
+.viewer-branch-editable:hover {
+	background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+
+/* Inline rename input in the header — sized to sit in place of the title. */
+.viewer-branch-rename {
+	min-width: 0;
+	max-width: 280px;
+	font: inherit;
+	font-size: 14px;
+	color: inherit;
+	background: var(--bg);
+	border: 1px solid var(--accent, #6b8afd);
+	border-radius: 4px;
+	padding: 1px 4px;
+	margin: -2px 0;
+	outline: none;
+}
+
 .viewer-started-by {
 	color: var(--text-faint);
 	font-size: 12.5px;
