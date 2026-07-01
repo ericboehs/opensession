@@ -4237,9 +4237,50 @@ button.preview-open:not(:disabled):hover {
 .update-toast-dismiss:hover {
 	color: var(--text);
 }
-@media (max-width: 520px) {
+/* On phones the centered pill squeezed its text into a cramped column. Make it
+   a full-width snackbar pinned above the composer: text takes the row, the
+   Refresh button and a proper-tap-target dismiss sit at the end. */
+@media (max-width: 720px) {
 	.update-toast {
-		bottom: 14px;
+		left: 12px;
+		right: 12px;
+		bottom: max(14px, env(safe-area-inset-bottom, 0px));
+		transform: none;
+		max-width: none;
+		gap: 10px;
+		padding: 12px 10px 12px 16px;
+		border-radius: 14px;
+		animation: toast-rise-mobile 0.22s ease-out;
+	}
+	.update-toast-text {
+		flex: 1;
+		min-width: 0;
+		font-size: 14px;
+		line-height: 1.35;
+	}
+	.update-toast-refresh {
+		flex-shrink: 0;
+		font-size: 14px;
+		padding: 9px 16px;
+	}
+	.update-toast-dismiss {
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
+		font-size: 15px;
+	}
+}
+@keyframes toast-rise-mobile {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
 	}
 }
 
