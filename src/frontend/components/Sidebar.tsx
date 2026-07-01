@@ -137,7 +137,12 @@ interface Props {
 	onOpenArchived: () => void;
 	/** True while the archived view is open — highlights the Archived row. */
 	archivedActive: boolean;
-	onArchive: (session: UnifiedSession) => void;
+	/**
+	 * Archive a session. `next` is the session that follows it in the sidebar's
+	 * visible order (or the previous one for the last row) — the caller uses it
+	 * to keep a live session open when the active one is archived.
+	 */
+	onArchive: (session: UnifiedSession, next: UnifiedSession | null) => void;
 	/** Rename a session (double-click its title); empty title resets it. */
 	onRename: (session: UnifiedSession, title: string) => void;
 }
@@ -730,6 +735,27 @@ export function Sidebar({
 		return out;
 	}, [sorted, currentUser, pins, recents, search, filter.groupBy]);
 
+	// Sessions in sidebar order (pinned rows first, then each group's items) —
+	// used to hand onArchive the row that should become active when the open
+	// session is archived away.
+	const flatOrder = useMemo(() => {
+		const pinned = pins
+			.filter((e) => !e.startsWith("note:"))
+			.map((id) =>
+				sessions.find((s) => s.id === id || s.aliasIds?.includes(id)),
+			)
+			.filter((s): s is UnifiedSession => !!s);
+		return [...pinned, ...groups.flatMap((g) => g.items)];
+	}, [pins, sessions, groups]);
+
+	function archiveWithNext(s: UnifiedSession) {
+		const idx = flatOrder.findIndex((x) => x.id === s.id);
+		const rest = flatOrder.filter((x) => x.id !== s.id);
+		const next =
+			idx >= 0 ? (rest[Math.min(idx, rest.length - 1)] ?? null) : (rest[0] ?? null);
+		onArchive(s, next);
+	}
+
 	// Repo groups are open by default (grouping by repo is itself the point), so we
 	// track their *collapsed* state under a "collapsed:" key; every other group is
 	// closed by default and tracked directly.
@@ -1264,7 +1290,7 @@ export function Sidebar({
 										s.startedBy.toLowerCase() === currentUser.toLowerCase()
 									}
 									onClick={() => onSelect(s)}
-									onArchive={() => onArchive(s)}
+									onArchive={() => archiveWithNext(s)}
 									onRename={(title) => onRename(s, title)}
 									projects={projects}
 									onMoveToProject={(pid) => onSetSessionProject(s.id, pid)}
@@ -1395,7 +1421,7 @@ export function Sidebar({
 													currentUser.toLowerCase()
 											}
 											onClick={() => onSelect(s)}
-											onArchive={() => onArchive(s)}
+											onArchive={() => archiveWithNext(s)}
 											onRename={(title) => onRename(s, title)}
 											projects={projects}
 											onMoveToProject={(pid) =>

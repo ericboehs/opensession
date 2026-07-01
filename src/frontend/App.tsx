@@ -714,11 +714,17 @@ function App() {
 							onOpenSearch={() => setSearchOpen(true)}
 							onOpenArchived={() => navigate({ view: "archived" })}
 							archivedActive={route.view === "archived"}
-							onArchive={async (s) => {
+							onArchive={async (s, next) => {
 								try {
 									await archiveSessionApi(s.id, true);
 								} catch (e) {
 									console.error("Archive failed:", e);
+								}
+								// Archiving the open session shouldn't strand the viewer on a
+								// dead chat — hop to the sidebar's next row instead.
+								if (route.view === "session" && route.id === s.id) {
+									if (next) navigate({ view: "session", id: next.id });
+									else goBack();
 								}
 								refresh();
 							}}
