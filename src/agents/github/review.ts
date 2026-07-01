@@ -302,12 +302,44 @@ function fallbackSummary(rawText: string, runError?: string): string {
   return trimmed.slice(0, 4000);
 }
 
-/** Pull the last fenced ```json block out of the agent's text and parse it. */
+/**
+ * Extract the first balanced top-level JSON object from `s`, tracking string and
+ * escape state so braces (and ``` fences) inside string values don't cut it short.
+ */
+export function extractBalancedJson(s: string): string | null {
+  const start = s.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Pull the JSON object out of the last fenced ```json block in the agent's text
+ * and parse it. Extraction is brace-balanced rather than fence-delimited: a
+ * finding's markdown `body` can legitimately contain a ``` fence inside the JSON
+ * string (e.g. a suggested shell command), and a naive non-greedy ```…``` regex
+ * cuts the block at that inner fence — that's exactly what dumped raw narration
+ * onto PR #4388.
+ */
 export function parseReviewOutput(text: string): ReviewOutput | null {
   if (!text) return null;
-  const matches = [...text.matchAll(/```json\s*([\s\S]*?)```/g)];
-  const block = matches.length ? matches[matches.length - 1][1] : null;
-  const candidate = block ?? text;
+  const opener = text.lastIndexOf("```json");
+  const candidate = extractBalancedJson(opener === -1 ? text : text.slice(opener)) ?? text;
   try {
     const obj = JSON.parse(candidate.trim());
     if (obj && typeof obj === "object") {
