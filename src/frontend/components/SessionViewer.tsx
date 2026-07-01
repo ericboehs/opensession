@@ -27,6 +27,7 @@ import {
 	type ModelOption,
 } from "../lib/api";
 import { Composer } from "./Composer";
+import { SchedulePromptButton } from "./SchedulePrompt";
 import type { FileAttachment } from "../lib/images";
 import { DiffPanel } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
@@ -1364,6 +1365,11 @@ export function SessionViewer({
 									}
 									mentionFetch={(q) => fetchFileMentions(q, session.id)}
 									textareaRef={composerRef}
+									leftExtra={
+										session.source === "backstage" ? (
+											<SchedulePromptButton sessionId={session.id} />
+										) : undefined
+									}
 								/>
 							</>
 						)}

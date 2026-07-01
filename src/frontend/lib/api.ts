@@ -636,6 +636,44 @@ export async function runAutomationApi(id: string) {
 	});
 }
 
+// ── Scheduled prompts (composer "send later") ──
+
+export interface ScheduledPrompt {
+	id: string;
+	sessionId: string;
+	prompt: string;
+	user: string;
+	at: string;
+	createdAt: string;
+}
+
+export async function fetchScheduledPrompts(
+	sessionId: string,
+): Promise<ScheduledPrompt[]> {
+	const data = await request<{ prompts?: ScheduledPrompt[] }>(
+		`/sessions/${encodeURIComponent(sessionId)}/scheduled-prompts`,
+		{ label: "Failed to fetch scheduled prompts" },
+	);
+	return data?.prompts ?? [];
+}
+
+export async function createScheduledPromptApi(
+	sessionId: string,
+	input: { prompt: string; at: string; user: string },
+): Promise<ScheduledPrompt> {
+	return request(`/sessions/${encodeURIComponent(sessionId)}/scheduled-prompts`, {
+		method: "POST",
+		body: input,
+	});
+}
+
+export async function deleteScheduledPromptApi(id: string): Promise<void> {
+	await request<void>(`/scheduled-prompts/${encodeURIComponent(id)}`, {
+		method: "DELETE",
+		label: "Failed to delete scheduled prompt",
+	});
+}
+
 // ── Human asks (waiting-on-teammates board) ──
 
 export interface HumanAskView {

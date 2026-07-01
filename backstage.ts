@@ -3580,6 +3580,48 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					: Response.json({ error: "Not found" }, { status: 404 });
 			}
 
+			// ── Scheduled prompts (composer "send later") ──
+			const schedListMatch = path.match(
+				/^\/backstage\/api\/sessions\/([^/]+)\/scheduled-prompts$/,
+			);
+			if (schedListMatch && req.method === "GET") {
+				const { listScheduledPrompts } = await import(
+					"./src/server/scheduled-prompts"
+				);
+				return Response.json({
+					prompts: listScheduledPrompts(schedListMatch[1]),
+				});
+			}
+
+			if (schedListMatch && req.method === "POST") {
+				const body = await req.json().catch(() => null);
+				if (!body)
+					return Response.json({ error: "Invalid JSON" }, { status: 400 });
+				const { createScheduledPrompt } = await import(
+					"./src/server/scheduled-prompts"
+				);
+				const result = createScheduledPrompt({
+					sessionId: schedListMatch[1],
+					prompt: body.prompt,
+					at: body.at,
+					user: body.user,
+				});
+				if ("error" in result) return Response.json(result, { status: 400 });
+				return Response.json(result);
+			}
+
+			const schedDelMatch = path.match(
+				/^\/backstage\/api\/scheduled-prompts\/([^/]+)$/,
+			);
+			if (schedDelMatch && req.method === "DELETE") {
+				const { deleteScheduledPrompt } = await import(
+					"./src/server/scheduled-prompts"
+				);
+				return deleteScheduledPrompt(schedDelMatch[1])
+					? Response.json({ ok: true })
+					: Response.json({ error: "Not found" }, { status: 404 });
+			}
+
 			// ── Human asks (waiting-on-teammates board) ──
 			if (path === "/backstage/api/human-asks" && req.method === "GET") {
 				const { listAsks } = await import("./src/server/human-asks");
@@ -5351,6 +5393,30 @@ if (!g.__backstageBooted) {
 	setEventSessionCallback(() => {
 		sessionsCache = null;
 	});
+
+	// Scheduled prompts ("send this to this session at 5pm") — deliver due ones
+	// through the SessionControl registry, exactly like a typed message.
+	setInterval(() => {
+		void (async () => {
+			const { takeDuePrompts } = await import(
+				"./src/server/scheduled-prompts"
+			);
+			for (const p of takeDuePrompts()) {
+				try {
+					const result = await getSessionControl().deliverToSession(
+						p.sessionId,
+						p.prompt,
+						p.user,
+					);
+					console.log(
+						`[scheduled-prompts] ${p.id} → ${p.sessionId}: ${result.status}`,
+					);
+				} catch (e) {
+					console.error(`[scheduled-prompts] ${p.id} delivery failed:`, e);
+				}
+			}
+		})();
+	}, 30_000);
 
 	// Archive triage sessions when their Plain ticket is done
 	startPlainArchiveSweep(() => {
