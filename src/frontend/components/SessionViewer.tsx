@@ -547,8 +547,15 @@ export function SessionViewer({
 	const effectiveModel = model || defaultModel;
 	const isCodexModel =
 		effectiveModel.startsWith("gpt") || effectiveModel.startsWith("codex");
+	// A backstage chat with no engine ids is a *fresh* chat (e.g. a new sibling
+	// from the tab strip's +): the composer stays enabled — its first prompt
+	// starts a new engine conversation server-side (see runSessionPrompt). Only
+	// non-backstage sources with no engine to resume stay read-only.
 	const noEngine =
-		!isCodexModel && !session.claudeSessionId && !session.codexThreadId;
+		!isCodexModel &&
+		!session.claudeSessionId &&
+		!session.codexThreadId &&
+		session.source !== "backstage";
 	// Fork uses the SDK's forkSession, which is Claude-only.
 	const isClaudeSession = !isCodexModel && !!session.claudeSessionId;
 

@@ -2749,13 +2749,25 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const cleanWorktree = url.searchParams.get("worktree") === "true";
 				try {
 					deleteSession(session);
+					sessionsCache = null;
+					// If that was the workspace's last chat, delete the workspace too —
+					// otherwise auto-wrapped 1:1 workspaces linger as undeletable empty
+					// sidebar rows. PR-backed workspaces (`key`) stay: they regroup new
+					// chats for the same PR.
+					if (session.projectId) {
+						const ws = getWorkspace(session.projectId);
+						const members = getAllSessions().filter(
+							(s) => s.projectId === session.projectId,
+						);
+						if (ws && !ws.key && members.length === 0)
+							deleteWorkspace(ws.id);
+					}
 					if (cleanWorktree && session.worktreeDir && session.branch) {
 						await removeWorktree(
 							session.branch,
 							repoForPath(session.worktreeDir).id,
 						);
 					}
-					sessionsCache = null;
 					return Response.json({ ok: true });
 				} catch (e: any) {
 					return Response.json({ error: e.message }, { status: 500 });
@@ -3983,11 +3995,14 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							break;
 						}
 
-						// Codex sessions start a fresh thread on first prompt; Claude needs
-						// a session id to resume.
+						// Codex sessions start a fresh thread on first prompt. Backstage
+						// chats with no engine id are *fresh* chats (a new sibling from the
+						// tab strip's +): runSessionPrompt starts a new conversation. Only
+						// non-backstage sources genuinely need an id to resume.
 						if (
 							providerFor(session.model) === "claude" &&
-							!session.claudeSessionId
+							!session.claudeSessionId &&
+							session.source !== "backstage"
 						) {
 							ws.send(
 								JSON.stringify({
@@ -4550,7 +4565,13 @@ registerSessionControl({
 			};
 		}
 
-		if (providerFor(session.model) === "claude" && !session.claudeSessionId) {
+		// Backstage chats with no engine id are fresh chats — the first prompt
+		// starts a new conversation (see runSessionPrompt).
+		if (
+			providerFor(session.model) === "claude" &&
+			!session.claudeSessionId &&
+			session.source !== "backstage"
+		) {
 			return {
 				status: "error" as const,
 				message: "Session has no Claude session to resume yet.",

@@ -3,6 +3,31 @@ import type { TranscriptEntry } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
 import { parseHumanReply, parseAttribution } from "../lib/humanReply";
 import { useCurrentUser } from "./UserPicker";
+import { Tooltip } from "./Tooltip";
+
+/** Very short relative time for the message label ("now", "5m", "3h", "2d",
+ * then a date). Hover shows the full local time. */
+function shortTime(ts: string): string {
+	const d = new Date(ts);
+	if (Number.isNaN(+d)) return "";
+	const s = (Date.now() - +d) / 1000;
+	if (s < 60) return "now";
+	if (s < 3600) return `${Math.floor(s / 60)}m`;
+	if (s < 86400) return `${Math.floor(s / 3600)}h`;
+	if (s < 7 * 86400) return `${Math.floor(s / 86400)}d`;
+	return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function MsgTime({ ts }: { ts?: string }) {
+	if (!ts) return null;
+	const label = shortTime(ts);
+	if (!label) return null;
+	return (
+		<Tooltip label={new Date(ts).toLocaleString()}>
+			<span className="msg-time">{label}</span>
+		</Tooltip>
+	);
+}
 
 interface Props {
 	entry: TranscriptEntry;
@@ -72,6 +97,7 @@ export function MessageBubble({ entry, onFork, owner }: Props) {
 			<div className="msg msg-human">
 				<div className="msg-label msg-label-human">
 					💬 {humanReply.name} · via Slack
+					<MsgTime ts={entry.timestamp} />
 				</div>
 				<div
 					className="msg-body msg-body-human markdown"
@@ -91,7 +117,7 @@ export function MessageBubble({ entry, onFork, owner }: Props) {
 		const fromOther = sender && sender !== me ? sender : null;
 		return (
 			<div className="msg msg-user">
-				<div className="msg-label msg-label-user">{fromOther || "You"}</div>
+				<div className="msg-label msg-label-user">{fromOther || "You"}<MsgTime ts={entry.timestamp} /></div>
 				{displayContent && (
 					<div
 						className="msg-body msg-body-user markdown"
@@ -108,6 +134,7 @@ export function MessageBubble({ entry, onFork, owner }: Props) {
 		<div className="msg msg-assistant">
 			<div className="msg-label msg-label-assistant">
 				Michael
+				<MsgTime ts={entry.timestamp} />
 				{onFork && (
 					<button
 						className="msg-fork-btn"

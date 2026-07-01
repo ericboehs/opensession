@@ -308,10 +308,10 @@ const MINE_STATUS_META: Array<{
 	dotColor: string;
 }> = [
 	{ key: "needsinput", label: "Needs input", dotColor: "var(--accent)" },
-	{ key: "merged", label: "Merged", dotColor: "var(--purple)" },
-	{ key: "review", label: "Review", dotColor: "var(--green)" },
 	{ key: "inprogress", label: "In progress", dotColor: "var(--yellow)" },
-	{ key: "pending", label: "Pending", dotColor: "var(--text-faint)" },
+	{ key: "review", label: "In review", dotColor: "var(--green)" },
+	{ key: "merged", label: "Done", dotColor: "var(--purple)" },
+	{ key: "pending", label: "Backlog", dotColor: "var(--text-faint)" },
 ];
 
 function mineStatus(s: UnifiedSession): MineStatus {
@@ -618,6 +618,8 @@ export function Sidebar({
 		createdAt: string;
 		unread: boolean;
 		running: boolean;
+		/** Lowercased owner (workspace creator, else the first chat's starter). */
+		owner: string;
 	}
 
 	// Most-urgent-first for the row dot: a blocked question beats everything,
@@ -670,6 +672,7 @@ export function Sidebar({
 					(c) => c.id !== selectedId && isUnread(c.id, c.lastActivity, reads),
 				),
 				running: chats.some((c) => c.isRunning),
+				owner: (workspace?.createdBy || chats[0]?.startedBy || "").toLowerCase(),
 			};
 		};
 		for (const [wsId, chats] of byWs) {
@@ -678,11 +681,15 @@ export function Sidebar({
 				mkRow(`workspace:${wsId}`, ws, ws?.name || chats[0].title, chats),
 			);
 		}
-		// Empty (chatless) workspaces still get a row — clicking opens the scoped
-		// New palette. Hidden while searching or filtered (nothing to match).
-		if (!search && filter.repo === "all" && filter.person === "all") {
+		// Truly chatless workspaces still get a row — clicking opens the scoped New
+		// palette. A workspace whose chats are all *automation* runs is NOT chatless
+		// (those chats render in the Automations band), so it gets no row here.
+		if (!search && filter.repo === "all") {
+			const hasAnyChat = new Set(
+				sessions.filter((s) => !s.archived && s.projectId).map((s) => s.projectId),
+			);
 			for (const p of projects) {
-				if (!byWs.has(p.id))
+				if (!byWs.has(p.id) && !hasAnyChat.has(p.id))
 					rows.push({
 						key: `workspace:${p.id}`,
 						workspace: p,
@@ -693,6 +700,7 @@ export function Sidebar({
 						createdAt: p.createdAt,
 						unread: false,
 						running: false,
+						owner: (p.createdBy || "").toLowerCase(),
 					});
 			}
 		}
@@ -700,7 +708,7 @@ export function Sidebar({
 		const key = filter.sort === "created" ? "createdAt" : "lastActivity";
 		rows.sort((a, b) => (b[key] || "").localeCompare(a[key] || ""));
 		return rows;
-	}, [filtered, projects, selectedId, reads, search, filter]);
+	}, [filtered, sessions, projects, selectedId, reads, search, filter]);
 
 	// Automations keep their own collapsible band, one group per automation —
 	// hundreds of one-shot runs would drown the Workspaces list otherwise.
@@ -1279,28 +1287,17 @@ export function Sidebar({
 				{/* ── Workspaces ── */}
 				<div className="sidebar-group sidebar-group--band-start">
 					<div className="sidebar-band-label">
-						<button
-							className="sidebar-band-toggle"
-							onClick={toggleProjects}
-							title={projectsOpen ? "Collapse workspaces" : "Expand workspaces"}
-						>
-							<span>Workspaces</span>
-							<IconChevronDown
-								className="sidebar-band-chevron"
-								size={16}
-								style={{
-									transform: projectsOpen ? "none" : "rotate(-90deg)",
-								}}
-							/>
-							{!projectsOpen && wsRows.length > 0 && (
-								<span className="sidebar-group-count">{wsRows.length}</span>
-							)}
-						</button>
+						<span className="sidebar-band-toggle" style={{ cursor: "default" }}>
+							<span>
+								{filter.person !== "all"
+									? `${people.find((p) => p.key === filter.person)?.label || filter.person}'s workspaces`
+									: "My workspaces"}
+							</span>
+						</span>
 						<Tooltip label="New workspace">
 							<button
 								className="sidebar-band-action"
 								onClick={() => {
-									openProjects();
 									setNewProjectDraft("");
 									setCreatingProject(true);
 								}}
@@ -1322,51 +1319,131 @@ export function Sidebar({
 							</button>
 						</Tooltip>
 					</div>
-					{projectsOpen && (
-						<>
-							{creatingProject && (
-								<div className="sidebar-group-header sidebar-project-row">
-									<span
-										className="sidebar-group-dot"
-										style={{ backgroundColor: "var(--text-faint)" }}
-									/>
-									<input
-										className="sidebar-item-rename"
-										value={newProjectDraft}
-										autoFocus
-										placeholder="Workspace name"
-										onChange={(e) => setNewProjectDraft(e.target.value)}
-										onBlur={commitProjectCreate}
-										onKeyDown={(e) => {
-											if (e.key === "Enter") commitProjectCreate();
-											else if (e.key === "Escape") {
-												setCreatingProject(false);
-												setNewProjectDraft("");
-											}
-										}}
-									/>
-								</div>
-							)}
-							{wsRows.length === 0 && !creatingProject && (
-								<div className="sidebar-empty">No workspaces yet</div>
-							)}
-							{(() => {
-								const pinSet = new Set(pins);
-								return wsRows
-									.filter(
-										(r) =>
-											!pinSet.has(r.key) &&
-											!r.chats.some((c) => pinSet.has(c.id)),
-									)
-									.map(renderWsRow);
-							})()}
-						</>
+					{creatingProject && (
+						<div className="sidebar-group-header sidebar-project-row">
+							<span
+								className="sidebar-group-dot"
+								style={{ backgroundColor: "var(--text-faint)" }}
+							/>
+							<input
+								className="sidebar-item-rename"
+								value={newProjectDraft}
+								autoFocus
+								placeholder="Workspace name"
+								onChange={(e) => setNewProjectDraft(e.target.value)}
+								onBlur={commitProjectCreate}
+								onKeyDown={(e) => {
+									if (e.key === "Enter") commitProjectCreate();
+									else if (e.key === "Escape") {
+										setCreatingProject(false);
+										setNewProjectDraft("");
+									}
+								}}
+							/>
+						</div>
 					)}
+					{/* Status groups over the focus person's workspaces. The Person
+					    filter defaults to you; picking a teammate shows their groups
+					    instead (and hides the People band below). */}
+					{(() => {
+						const pinSet = new Set(pins);
+						const focus =
+							filter.person !== "all"
+								? filter.person
+								: currentUser.toLowerCase();
+						const focusRows = wsRows.filter(
+							(r) =>
+								r.owner === focus &&
+								!pinSet.has(r.key) &&
+								!r.chats.some((c) => pinSet.has(c.id)),
+						);
+						if (!focusRows.length && !creatingProject)
+							return <div className="sidebar-empty">No workspaces yet</div>;
+						return MINE_STATUS_META.map((meta) => {
+							const items = focusRows.filter((r) => r.status === meta.key);
+							if (!items.length) return null;
+							const gkey = `status:${meta.key}`;
+							const open = isOpen(gkey);
+							return (
+								<React.Fragment key={gkey}>
+									<button
+										className="sidebar-group-header"
+										onClick={() => toggleGroup(gkey)}
+									>
+										<span
+											className="sidebar-group-dot"
+											style={{ backgroundColor: meta.dotColor }}
+										/>
+										<span className="sidebar-group-name">{meta.label}</span>
+										<IconChevronDown
+											className="sidebar-group-chevron"
+											size={14}
+											style={{ transform: open ? "none" : "rotate(-90deg)" }}
+										/>
+										<span className="sidebar-group-count">{items.length}</span>
+									</button>
+									{items
+										.filter(
+											(r) =>
+												open || r.chats.some((c) => c.id === selectedId),
+										)
+										.map(renderWsRow)}
+								</React.Fragment>
+							);
+						});
+					})()}
 				</div>
 
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
+
+				{/* ── People (others' workspaces; hidden while a Person filter is on) ── */}
+				{filter.person === "all" &&
+					(() => {
+						const pinSet = new Set(pins);
+						const me = currentUser.toLowerCase();
+						const others = wsRows.filter(
+							(r) =>
+								r.owner !== me &&
+								KNOWN_PEOPLE.has(r.owner) &&
+								!pinSet.has(r.key) &&
+								!r.chats.some((c) => pinSet.has(c.id)),
+						);
+						if (!others.length) return null;
+						return (
+							<div className="sidebar-group sidebar-group--people sidebar-group--band-start">
+								<div className="sidebar-band-label">
+									<button
+										className="sidebar-band-toggle"
+										onClick={() => toggleBand("people")}
+										title={
+											bandOpen("people")
+												? "Collapse people"
+												: "Expand people"
+										}
+									>
+										<span>People</span>
+										<IconChevronDown
+											className="sidebar-band-chevron"
+											size={16}
+											style={{
+												transform: bandOpen("people")
+													? "none"
+													: "rotate(-90deg)",
+											}}
+										/>
+										{!bandOpen("people") && (
+											<span className="sidebar-group-count">
+												{others.length}
+											</span>
+										)}
+									</button>
+								</div>
+								{bandOpen("people") && others.map(renderWsRow)}
+							</div>
+						);
+					})()}
 				{/* ── Automations (one collapsible band, one group per automation) ── */}
 				{groups.length > 0 && (
 					<div className="sidebar-group sidebar-group--automations sidebar-group--band-start">
