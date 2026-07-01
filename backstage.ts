@@ -613,6 +613,9 @@ function joinSession(ws: any, sessionId: string) {
 		sessionWatchers.set(sessionId, set);
 	}
 	set.add(ws);
+	// Global presence shows each person once, at their most recent join — this
+	// stamp is how a two-tab user resolves to a single row.
+	ws.data.watchJoinedAt = Date.now();
 	broadcastPresence(sessionId);
 }
 
@@ -652,23 +655,26 @@ function broadcastPresence(sessionId: string) {
 }
 
 /**
- * Who's looking at what, app-wide — drives the sidebar presence rail and
- * follow mode. One entry per (user, session); Anonymous viewers are skipped
- * (nothing to follow).
+ * Who's looking at what, app-wide — drives the sidebar People band and follow
+ * mode. One entry per USER (a person with two tabs open would otherwise show
+ * twice): the session they joined most recently wins. Anonymous viewers are
+ * skipped (nothing to follow).
  */
 function broadcastGlobalPresence() {
-	const seen = new Set<string>();
-	const viewing: Array<{ user: string; sessionId: string }> = [];
+	const latest = new Map<string, { sessionId: string; at: number }>();
 	for (const [sessionId, set] of sessionWatchers) {
 		for (const ws of set) {
 			const user = ws.data?.user;
 			if (!user || user === "Anonymous") continue;
-			const key = `${user}:${sessionId}`;
-			if (seen.has(key)) continue;
-			seen.add(key);
-			viewing.push({ user, sessionId });
+			const at = ws.data?.watchJoinedAt || 0;
+			const prev = latest.get(user);
+			if (!prev || at >= prev.at) latest.set(user, { sessionId, at });
 		}
 	}
+	const viewing = [...latest.entries()].map(([user, v]) => ({
+		user,
+		sessionId: v.sessionId,
+	}));
 	broadcastToAll({ type: "global_presence", viewing });
 }
 
