@@ -13,6 +13,7 @@ import { getPins, onPinsChanged } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
+import { IconChevronDown } from "./icons";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -101,8 +102,7 @@ export type NavView =
 	| "automations"
 	| "goals"
 	| "actions"
-	| "wiki"
-	| "connections";
+	| "wiki";
 
 interface Props {
 	sessions: UnifiedSession[];
@@ -151,8 +151,8 @@ const NAV_ITEMS: Array<{
 		label: "Sessions",
 		icon: (
 			<svg
-				width="15"
-				height="15"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -167,8 +167,8 @@ const NAV_ITEMS: Array<{
 		label: "Reviews",
 		icon: (
 			<svg
-				width="15"
-				height="15"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -195,8 +195,8 @@ const NAV_ITEMS: Array<{
 		label: "Automations",
 		icon: (
 			<svg
-				width="15"
-				height="15"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -212,8 +212,8 @@ const NAV_ITEMS: Array<{
 		label: "Goals",
 		icon: (
 			<svg
-				width="15"
-				height="15"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -230,8 +230,8 @@ const NAV_ITEMS: Array<{
 		label: "Actions",
 		icon: (
 			<svg
-				width="15"
-				height="15"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -249,8 +249,8 @@ const NAV_ITEMS: Array<{
 		label: "Notes",
 		icon: (
 			<svg
-				width="15"
-				height="15"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -261,25 +261,6 @@ const NAV_ITEMS: Array<{
 					strokeLinejoin="round"
 					transform="translate(0.5,0)"
 				/>
-			</svg>
-		),
-	},
-	{
-		view: "connections",
-		label: "Connections",
-		icon: (
-			<svg
-				width="15"
-				height="15"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<circle cx="4.5" cy="8" r="2" />
-				<circle cx="11.5" cy="4" r="2" />
-				<circle cx="11.5" cy="12" r="2" />
-				<path d="M6.3 7.1l3.4-2.2M6.3 8.9l3.4 2.2" strokeLinecap="round" />
 			</svg>
 		),
 	},
@@ -322,9 +303,9 @@ const MINE_STATUS_META: Array<{
 }> = [
 	{ key: "needsinput", label: "Needs input", dotColor: "var(--accent)" },
 	{ key: "merged", label: "Merged", dotColor: "var(--purple)" },
-	{ key: "pending", label: "Pending", dotColor: "var(--text-faint)" },
 	{ key: "review", label: "Review", dotColor: "var(--green)" },
 	{ key: "inprogress", label: "In progress", dotColor: "var(--yellow)" },
+	{ key: "pending", label: "Pending", dotColor: "var(--text-faint)" },
 ];
 
 function mineStatus(s: UnifiedSession): MineStatus {
@@ -507,6 +488,16 @@ export function Sidebar({
 			if (name) onRenameProject(editingProjectId, name);
 		}
 		setEditingProjectId(null);
+	}
+	// Inline "new project" input — replaces a browser prompt so creating a project
+	// matches the inline rename UI used for existing ones.
+	const [creatingProject, setCreatingProject] = useState(false);
+	const [newProjectDraft, setNewProjectDraft] = useState("");
+	function commitProjectCreate() {
+		const name = newProjectDraft.trim();
+		if (name) onCreateProject(name);
+		setCreatingProject(false);
+		setNewProjectDraft("");
 	}
 	useEffect(() => {
 		if (!projectMenu) return;
@@ -759,6 +750,46 @@ export function Sidebar({
 		return expanded.has(key);
 	};
 
+	// The Projects band is open by default, so — like repo groups — its *collapsed*
+	// state is what's persisted (under a "collapsed:" key). Searching forces it open.
+	const projectsOpen =
+		search.trim().length > 0 ? true : !expanded.has("collapsed:projects");
+	function toggleProjects() {
+		setExpanded((prev) => {
+			const next = new Set(prev);
+			if (next.has("collapsed:projects")) next.delete("collapsed:projects");
+			else next.add("collapsed:projects");
+			localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
+			return next;
+		});
+	}
+	// Opening the section (used when starting a new project so its row isn't hidden).
+	function openProjects() {
+		setExpanded((prev) => {
+			if (!prev.has("collapsed:projects")) return prev;
+			const next = new Set(prev);
+			next.delete("collapsed:projects");
+			localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
+			return next;
+		});
+	}
+
+	// The People / Automations bands are open by default, so — like Projects and
+	// repo groups — their *collapsed* state is what's persisted. Collapsing one
+	// hides every group within that band. Searching forces them open.
+	const bandOpen = (band: GroupBand) =>
+		search.trim().length > 0 ? true : !expanded.has(`collapsed:band:${band}`);
+	function toggleBand(band: GroupBand) {
+		const key = `collapsed:band:${band}`;
+		setExpanded((prev) => {
+			const next = new Set(prev);
+			if (next.has(key)) next.delete(key);
+			else next.add(key);
+			localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
+			return next;
+		});
+	}
+
 	// Distinct open PRs (deduped by URL) — shown as a badge on the Reviews tab.
 	const openPrCount = useMemo(() => {
 		const urls = new Set<string>();
@@ -783,8 +814,8 @@ export function Sidebar({
 			>
 				<span className="sidebar-archived-icon">
 					<svg
-						width="13"
-						height="13"
+						width="15"
+						height="15"
 						viewBox="0 0 16 16"
 						fill="none"
 						stroke="currentColor"
@@ -806,6 +837,39 @@ export function Sidebar({
 
 	return (
 		<div className="sidebar">
+			<div className="sidebar-search-wrap">
+				<svg
+					className="sidebar-search-icon"
+					width="15"
+					height="15"
+					viewBox="0 0 16 16"
+					fill="none"
+				>
+					<circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
+					<path
+						d="M14 14L10.7 10.7"
+						stroke="currentColor"
+						strokeWidth="1.5"
+						strokeLinecap="round"
+					/>
+				</svg>
+				{/* Acts as a button: clicking (or focusing) it opens the ⌘K
+				    session-search palette rather than filtering inline. */}
+				<input
+					className="sidebar-search"
+					type="text"
+					placeholder="Search sessions"
+					value=""
+					readOnly
+					onMouseDown={(e) => {
+						e.preventDefault();
+						onOpenSearch();
+					}}
+					onFocus={onOpenSearch}
+				/>
+				<kbd className="sidebar-search-kbd">⌘K</kbd>
+			</div>
+
 			<nav className="sidebar-nav">
 				{NAV_ITEMS.map((item) => (
 					<button
@@ -851,7 +915,7 @@ export function Sidebar({
 							onClick={() => setFilterOpen((o) => !o)}
 							title="Group, filter & sort"
 						>
-							<svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+							<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
 								<path
 									d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
 									stroke="currentColor"
@@ -885,45 +949,6 @@ export function Sidebar({
 						/>
 					</div>
 				)}
-
-				<div className="sidebar-search-wrap">
-					<svg
-						className="sidebar-search-icon"
-						width="13"
-						height="13"
-						viewBox="0 0 16 16"
-						fill="none"
-					>
-						<circle
-							cx="7"
-							cy="7"
-							r="5"
-							stroke="currentColor"
-							strokeWidth="1.5"
-						/>
-						<path
-							d="M14 14L10.7 10.7"
-							stroke="currentColor"
-							strokeWidth="1.5"
-							strokeLinecap="round"
-						/>
-					</svg>
-					{/* Acts as a button: clicking (or focusing) it opens the ⌘K
-					    session-search palette rather than filtering inline. */}
-					<input
-						className="sidebar-search"
-						type="text"
-						placeholder="Search sessions"
-						value=""
-						readOnly
-						onMouseDown={(e) => {
-							e.preventDefault();
-							onOpenSearch();
-						}}
-						onFocus={onOpenSearch}
-					/>
-					<kbd className="sidebar-search-kbd">⌘K</kbd>
-				</div>
 			</div>
 
 			{filterOpen && (
@@ -1062,19 +1087,164 @@ export function Sidebar({
 					);
 				})()}
 
-				{/* ── Projects (folders that group chats) ── */}
-				<div className="sidebar-group">
+				{groups.length === 0 && (
+					<div className="sidebar-empty">No sessions</div>
+				)}
+				{groups.map((group, i) => {
+					const bandChanged = i > 0 && group.band !== groups[i - 1].band;
+					const label = bandChanged ? bandLabel(group.band) : null;
+					const open = isOpen(group.key);
+					// People / Automations can be collapsed as a whole band.
+					const collapsibleBand =
+						group.band === "people" || group.band === "automations";
+					const bandCollapsed = collapsibleBand && !bandOpen(group.band);
+					// Once a band is collapsed only its first group carries the band
+					// label (the toggle); the rest render nothing at all.
+					if (bandCollapsed && !label) return null;
+					// The Archived label goes just above the first non-personal band.
+					const isFirstOther =
+						group.band !== "personal" &&
+						(i === 0 || groups[i - 1].band === "personal");
+					return (
+					<React.Fragment key={group.key}>
+					{isFirstOther && archivedBand && (
+						<div className="sidebar-group">{archivedBand}</div>
+					)}
+					<div
+						className={`sidebar-group sidebar-group--${group.band}${
+							bandChanged ? " sidebar-group--band-start" : ""
+						}`}
+					>
+						{label &&
+							(collapsibleBand ? (
+								<div className="sidebar-band-label">
+									<button
+										className="sidebar-band-toggle"
+										onClick={() => toggleBand(group.band)}
+										title={
+											bandOpen(group.band)
+												? `Collapse ${label.toLowerCase()}`
+												: `Expand ${label.toLowerCase()}`
+										}
+									>
+										<span>{label}</span>
+										<IconChevronDown
+											className="sidebar-band-chevron"
+											size={16}
+											style={{
+												transform: bandOpen(group.band)
+													? "none"
+													: "rotate(-90deg)",
+											}}
+										/>
+										{!bandOpen(group.band) && (
+											<span className="sidebar-group-count">
+												{groups
+													.filter((g) => g.band === group.band)
+													.reduce((n, g) => n + g.items.length, 0)}
+											</span>
+										)}
+									</button>
+								</div>
+							) : (
+								<div className="sidebar-band-label">
+									<span>{label}</span>
+								</div>
+							))}
+						{!bandCollapsed && (
+							<>
+								<button
+									className="sidebar-group-header"
+									onClick={() => toggleGroup(group.key)}
+								>
+									{group.dotColor && (
+										<span
+											className="sidebar-group-dot"
+											style={{ backgroundColor: group.dotColor }}
+										/>
+									)}
+									<span className="sidebar-group-name">{group.label}</span>
+									<span className="sidebar-group-count">
+										{group.items.length}
+									</span>
+									<span className="sidebar-group-chevron">
+										{open ? "▾" : "▸"}
+									</span>
+								</button>
+
+								{/* When collapsed, still surface the actively selected session so
+								    it never disappears behind a closed group header. */}
+								{group.items
+									.filter((s) => open || s.id === selectedId)
+									.map((s) => (
+										<SidebarItem
+											key={s.id}
+											session={s}
+											selected={s.id === selectedId}
+											unread={
+												s.id !== selectedId &&
+												isUnread(s.id, s.lastActivity, reads)
+											}
+											mine={
+												!!s.startedBy &&
+												!s.automation &&
+												s.startedBy.toLowerCase() ===
+													currentUser.toLowerCase()
+											}
+											onClick={() => onSelect(s)}
+											onArchive={() => onArchive(s)}
+											onRename={(title) => onRename(s, title)}
+											projects={projects}
+											onMoveToProject={(pid) =>
+												onSetSessionProject(s.id, pid)
+											}
+										/>
+									))}
+							</>
+						)}
+					</div>
+					</React.Fragment>
+					);
+				})}
+
+				{/* If there are no People/Projects bands, the Archived label still
+				    lands below the My-sessions band, at the end of the list. */}
+				{!hasOtherBand && archivedBand && (
+					<div className="sidebar-group">{archivedBand}</div>
+				)}
+
+				{/* ── Projects (folders that group chats) ── Projects are a different
+				    kind of thing from sessions, so they sit at the very bottom, in
+				    their own band. */}
+				<div className="sidebar-group sidebar-group--band-start">
 					<div className="sidebar-band-label">
-						<span>Projects</span>
+						<button
+							className="sidebar-band-toggle"
+							onClick={toggleProjects}
+							title={projectsOpen ? "Collapse projects" : "Expand projects"}
+						>
+							<span>Projects</span>
+							<IconChevronDown
+								className="sidebar-band-chevron"
+								size={16}
+								style={{
+									transform: projectsOpen ? "none" : "rotate(-90deg)",
+								}}
+							/>
+							{!projectsOpen && projects.length > 0 && (
+								<span className="sidebar-group-count">{projects.length}</span>
+							)}
+						</button>
 						<button
 							className="sidebar-band-action"
 							onClick={() => {
-								const name = window.prompt("New project name")?.trim();
-								if (name) onCreateProject(name);
+								openProjects();
+								setNewProjectDraft("");
+								setCreatingProject(true);
 							}}
 							title="New project"
 						>
-							<svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+							<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
 								<path
 									d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
 									stroke="currentColor"
@@ -1090,7 +1260,34 @@ export function Sidebar({
 							</svg>
 						</button>
 					</div>
-					{projects.length === 0 && (
+					{projectsOpen && (
+					<>
+					{/* Inline new-project row: matches the rename input, shown while
+					    creating. */}
+					{creatingProject && (
+						<div className="sidebar-group-header sidebar-project-row">
+							<span
+								className="sidebar-group-dot"
+								style={{ backgroundColor: "var(--text-faint)" }}
+							/>
+							<input
+								className="sidebar-item-rename"
+								value={newProjectDraft}
+								autoFocus
+								placeholder="Project name"
+								onChange={(e) => setNewProjectDraft(e.target.value)}
+								onBlur={commitProjectCreate}
+								onKeyDown={(e) => {
+									if (e.key === "Enter") commitProjectCreate();
+									else if (e.key === "Escape") {
+										setCreatingProject(false);
+										setNewProjectDraft("");
+									}
+								}}
+							/>
+						</div>
+					)}
+					{projects.length === 0 && !creatingProject && (
 						<div className="sidebar-empty">No projects yet</div>
 					)}
 					{projects.map((project) => {
@@ -1159,87 +1356,9 @@ export function Sidebar({
 							</button>
 						);
 					})}
-				</div>
-
-				{groups.length === 0 && (
-					<div className="sidebar-empty">No sessions</div>
-				)}
-				{groups.map((group, i) => {
-					const bandChanged = i > 0 && group.band !== groups[i - 1].band;
-					const label = bandChanged ? bandLabel(group.band) : null;
-					const open = isOpen(group.key);
-					// The Archived label goes just above the first non-personal band.
-					const isFirstOther =
-						group.band !== "personal" &&
-						(i === 0 || groups[i - 1].band === "personal");
-					return (
-					<React.Fragment key={group.key}>
-					{isFirstOther && archivedBand && (
-						<div className="sidebar-group">{archivedBand}</div>
+					</>
 					)}
-					<div
-						className={`sidebar-group${
-							bandChanged ? " sidebar-group--band-start" : ""
-						}`}
-					>
-						{label && (
-							<div className="sidebar-band-label">
-								<span>{label}</span>
-							</div>
-						)}
-						<button
-							className="sidebar-group-header"
-							onClick={() => toggleGroup(group.key)}
-						>
-							{group.dotColor && (
-								<span
-									className="sidebar-group-dot"
-									style={{ backgroundColor: group.dotColor }}
-								/>
-							)}
-							<span className="sidebar-group-name">{group.label}</span>
-							<span className="sidebar-group-count">{group.items.length}</span>
-							<span className="sidebar-group-chevron">
-								{open ? "▾" : "▸"}
-							</span>
-						</button>
-
-						{/* When collapsed, still surface the actively selected session so
-						    it never disappears behind a closed group header. */}
-						{group.items
-							.filter((s) => open || s.id === selectedId)
-							.map((s) => (
-								<SidebarItem
-									key={s.id}
-									session={s}
-									selected={s.id === selectedId}
-									unread={
-										s.id !== selectedId &&
-										isUnread(s.id, s.lastActivity, reads)
-									}
-									mine={
-										!!s.startedBy &&
-										!s.automation &&
-										s.startedBy.toLowerCase() ===
-											currentUser.toLowerCase()
-									}
-									onClick={() => onSelect(s)}
-									onArchive={() => onArchive(s)}
-									onRename={(title) => onRename(s, title)}
-									projects={projects}
-									onMoveToProject={(pid) => onSetSessionProject(s.id, pid)}
-								/>
-							))}
-					</div>
-					</React.Fragment>
-					);
-				})}
-
-				{/* If there are no People/Projects bands, the Archived label still
-				    lands below the My-sessions band, at the end of the list. */}
-				{!hasOtherBand && archivedBand && (
-					<div className="sidebar-group">{archivedBand}</div>
-				)}
+				</div>
 			</div>
 		</div>
 	);
@@ -1745,8 +1864,8 @@ function SidebarItem({
 				}}
 			>
 				<svg
-					width="13"
-					height="13"
+					width="15"
+					height="15"
 					viewBox="0 0 16 16"
 					fill="none"
 					stroke="currentColor"
