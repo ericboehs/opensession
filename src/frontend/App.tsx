@@ -480,15 +480,26 @@ function App() {
 	const currentNoteId =
 		route.view === "notes" && route.sel?.kind === "note" ? route.sel.id : null;
 
-	// The tab strip is scoped to the open chat's Project: it lists that project's
-	// sibling chats (same projectId), oldest first. A standalone chat (no project)
-	// gets no strip. Notes are no longer tabs — they pin in the sidebar instead.
+	// The tab strip is scoped to the open chat's workspace: its sibling chats
+	// (same projectId), oldest first. Chats with no workspace (slack/linear
+	// sources — their files are read-only, so the migration couldn't wrap them)
+	// fall back to grouping by shared isolated worktree, so a bks- sibling made
+	// via + shows up next to its slack source. Failing that, the open chat alone
+	// still gets a strip (one tab + the + button).
 	const activeProjectId = currentSession?.projectId || null;
+	const byCreated = (a: UnifiedSession, b: UnifiedSession) =>
+		(a.createdAt || "").localeCompare(b.createdAt || "");
 	const projectChats: UnifiedSession[] = activeProjectId
-		? sessions
-				.filter((s) => s.projectId === activeProjectId)
-				.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))
-		: [];
+		? sessions.filter((s) => s.projectId === activeProjectId).sort(byCreated)
+		: currentSession?.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
+			? sessions
+					.filter(
+						(s) => !s.archived && s.worktreeDir === currentSession.worktreeDir,
+					)
+					.sort(byCreated)
+			: currentSession
+				? [currentSession]
+				: [];
 
 	// Plain title shown in the top bar for non-session views (session routes let
 	// the SessionViewer portal its own header in instead). Home stays blank so the
@@ -726,6 +737,24 @@ function App() {
 									if (next) navigate({ view: "session", id: next.id });
 									else goBack();
 								}
+								refresh();
+							}}
+							onArchiveWorkspace={async (chats) => {
+								// Archive a whole workspace = archive every member chat (the
+								// archive registry is per-chat; the workspace row disappears
+								// once no live chats remain).
+								try {
+									await Promise.all(
+										chats.map((c) => archiveSessionApi(c.id, true)),
+									);
+								} catch (e) {
+									console.error("Archive workspace failed:", e);
+								}
+								if (
+									route.view === "session" &&
+									chats.some((c) => c.id === route.id)
+								)
+									goBack();
 								refresh();
 							}}
 							onRename={async (s, title) => {

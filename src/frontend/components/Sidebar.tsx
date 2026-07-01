@@ -143,6 +143,8 @@ interface Props {
 	 * to keep a live session open when the active one is archived.
 	 */
 	onArchive: (session: UnifiedSession, next: UnifiedSession | null) => void;
+	/** Archive every chat in a workspace (the row's archive icon). */
+	onArchiveWorkspace: (chats: UnifiedSession[]) => void;
 	/** Rename a session (double-click its title); empty title resets it. */
 	onRename: (session: UnifiedSession, title: string) => void;
 }
@@ -416,6 +418,7 @@ export function Sidebar({
 	onOpenArchived,
 	archivedActive,
 	onArchive,
+	onArchiveWorkspace,
 	onRename,
 }: Props) {
 	const [search, setSearch] = useState("");
@@ -683,10 +686,12 @@ export function Sidebar({
 		}
 		// Truly chatless workspaces still get a row — clicking opens the scoped New
 		// palette. A workspace whose chats are all *automation* runs is NOT chatless
-		// (those chats render in the Automations band), so it gets no row here.
+		// (those render in the Automations band), and neither is one whose chats
+		// are all *archived* (archiving a workspace must not resurrect it as an
+		// empty row) — so both get no row here.
 		if (!search && filter.repo === "all") {
 			const hasAnyChat = new Set(
-				sessions.filter((s) => !s.archived && s.projectId).map((s) => s.projectId),
+				sessions.filter((s) => s.projectId).map((s) => s.projectId),
 			);
 			for (const p of projects) {
 				if (!byWs.has(p.id) && !hasAnyChat.has(p.id))
@@ -946,6 +951,70 @@ export function Sidebar({
 				{row.chats.length > 1 && (
 					<span className="sidebar-group-count">{row.chats.length}</span>
 				)}
+				{/* Hover actions: pin + archive, side by side (replace the count). */}
+				<span className="sidebar-ws-actions">
+					{(() => {
+						const pinKey = row.workspace
+							? `workspace:${row.workspace.id}`
+							: row.key;
+						const pinned = pins.includes(pinKey);
+						return (
+							<span
+								role="button"
+								tabIndex={0}
+								className={`sidebar-ws-action${pinned ? " is-on" : ""}`}
+								title={pinned ? "Unpin workspace" : "Pin workspace"}
+								onClick={(e) => {
+									e.stopPropagation();
+									setPins(togglePin(pinKey));
+								}}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" || e.key === " ") {
+										e.stopPropagation();
+										setPins(togglePin(pinKey));
+									}
+								}}
+							>
+								<svg width="14" height="14" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
+									<path
+										d="M8 1.8l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.5l-3.8 2 .72-4.23-3.07-3 4.25-.62L8 1.8z"
+										stroke="currentColor"
+										strokeWidth="1.3"
+										strokeLinejoin="round"
+									/>
+								</svg>
+							</span>
+						);
+					})()}
+					{row.chats.length > 0 && (
+						<span
+							role="button"
+							tabIndex={0}
+							className="sidebar-ws-action"
+							title={
+								row.chats.length > 1
+									? `Archive workspace (${row.chats.length} chats)`
+									: "Archive"
+							}
+							onClick={(e) => {
+								e.stopPropagation();
+								onArchiveWorkspace(row.chats);
+							}}
+							onKeyDown={(e) => {
+								if (e.key === "Enter" || e.key === " ") {
+									e.stopPropagation();
+									onArchiveWorkspace(row.chats);
+								}
+							}}
+						>
+							<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+								<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
+								<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
+								<path d="M6.5 8.5h3" strokeLinecap="round" />
+							</svg>
+						</span>
+					)}
+				</span>
 			</button>
 		);
 	}
@@ -1350,11 +1419,10 @@ export function Sidebar({
 								!pinSet.has(r.key) &&
 								!r.chats.some((c) => pinSet.has(c.id)),
 						);
-						if (!focusRows.length && !creatingProject)
-							return <div className="sidebar-empty">No workspaces yet</div>;
+						// Every status group always renders (0-count included) so the
+						// board reads as a stable set of lanes, not a shifting list.
 						return MINE_STATUS_META.map((meta) => {
 							const items = focusRows.filter((r) => r.status === meta.key);
-							if (!items.length) return null;
 							const gkey = `status:${meta.key}`;
 							const open = isOpen(gkey);
 							return (

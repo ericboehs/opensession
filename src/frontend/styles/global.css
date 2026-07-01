@@ -9906,3 +9906,37 @@ button.preview-open:not(:disabled):hover {
 .sidebar-ws-row {
 	padding-left: 22px;
 }
+
+/* Workspace row hover actions: pin + archive side by side, replacing the
+   count badge while hovered. */
+.sidebar-ws-actions {
+	display: none;
+	align-items: center;
+	gap: 2px;
+	margin-left: auto;
+	flex: 0 0 auto;
+}
+.sidebar-ws-row:hover .sidebar-ws-actions {
+	display: inline-flex;
+}
+.sidebar-ws-row:hover .sidebar-group-count,
+.sidebar-ws-row:hover .sidebar-ws-unread {
+	display: none;
+}
+.sidebar-ws-action {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 5px;
+	color: var(--text-faint);
+	cursor: pointer;
+}
+.sidebar-ws-action:hover {
+	color: var(--text);
+	background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+}
+.sidebar-ws-action.is-on {
+	color: var(--accent);
+}
