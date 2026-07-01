@@ -1272,7 +1272,7 @@ body.resizing-x {
 	right: 9px;
 	bottom: 0;
 	height: 1px;
-	background: var(--border);
+	background: var(--border-strong);
 	opacity: 0;
 	transition: opacity 0.12s ease;
 	pointer-events: none;
