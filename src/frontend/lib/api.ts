@@ -210,24 +210,49 @@ export async function deleteProjectApi(id: string): Promise<void> {
 }
 
 /**
- * Start a new sibling chat sharing the source chat's worktree + project. Returns
- * the new chat's id. It has no run yet — its first prompt starts fresh.
+ * Start a new sibling chat in the source chat's workspace. Returns the new
+ * chat's id; it has no run yet — its first prompt starts fresh. `mode` picks the
+ * worktree relationship: share the workspace worktree (default), stack a new
+ * worktree branched off it, or ask (no worktree).
  */
 export async function newChatApi(
 	sourceId: string,
 	user: string,
+	mode?: "share" | "stack" | "ask",
 ): Promise<string> {
 	const res = await fetch(
 		`${BASE}/sessions/${encodeURIComponent(sourceId)}/new-chat`,
 		{
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ user }),
+			body: JSON.stringify({ user, ...(mode ? { mode } : {}) }),
 		},
 	);
 	const body = await res.json();
 	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 	return body.id as string;
+}
+
+/**
+ * Promote an ask chat to code: create a worktree and attach it (also
+ * materializes the workspace's worktree if it doesn't own one yet). Returns the
+ * new branch + worktree dir.
+ */
+export async function promoteChatApi(
+	sessionId: string,
+	opts?: { branch?: string; repo?: string },
+): Promise<{ branch: string; worktreeDir: string }> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/promote`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(opts || {}),
+		},
+	);
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body as { branch: string; worktreeDir: string };
 }
 
 /** Move a chat into a project (or `null` to make it standalone). */

@@ -248,11 +248,19 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     // With "Create more" off, App tears down the palette when the
     // session_created event arrives (and drops us into the new session).
     setCreating(true);
+    // Workspace linkage: scoped to an existing workspace (the tab/sidebar +),
+    // the chat joins it — sharing its worktree when reusing the sibling branch,
+    // stacking a fresh worktree off it for a new branch. Unscoped, the default
+    // is a brand-new Workspace + first Chat created together.
+    const chatMode =
+      mode === "ask" ? "ask" : selectedWorktree === "__new__" ? "stack" : "share";
     send({
       type: "create_session",
       mode,
       repo,
-      ...(projectId ? { projectId } : {}),
+      ...(projectId
+        ? { workspaceId: projectId, chatMode }
+        : { createWorkspace: {} }),
       branch: mode === "ask" ? "" : branch,
       prompt: prompt.trim(),
       user: getCurrentUser(),
@@ -342,7 +350,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               disabled={creating}
               aria-label="Create from"
             >
-              <option value="__new__">New branch</option>
+              <option value="__new__">
+                {projectId && forceBranch
+                  ? `New stacked branch (off ${forceBranch})`
+                  : "New branch"}
+              </option>
               {worktrees.map((wt) => (
                 <option key={wt.branch} value={wt.branch}>
                   {wt.branch}

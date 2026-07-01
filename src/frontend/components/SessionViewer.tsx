@@ -23,6 +23,7 @@ import {
 	deleteSessionApi,
 	fetchModels,
 	fetchFileMentions,
+	promoteChatApi,
 	type ModelOption,
 } from "../lib/api";
 import { Composer } from "./Composer";
@@ -233,6 +234,22 @@ export function SessionViewer({
 
 	const isAsk = session.mode === "ask";
 	const hasWorkspace = !isAsk && Boolean(session.worktreeDir || session.branch);
+	// Ask→code promotion: creates a worktree and flips the chat to code mode.
+	// The 5s session poll picks up the mode change and re-renders with the full
+	// code affordances (diff/PR tabs, RepoBar).
+	const [promoting, setPromoting] = useState(false);
+	const [promoteError, setPromoteError] = useState<string | null>(null);
+	async function handlePromote() {
+		if (promoting) return;
+		setPromoteError(null);
+		setPromoting(true);
+		try {
+			await promoteChatApi(session.id);
+		} catch (e) {
+			setPromoteError(e instanceof Error ? e.message : "Promote failed");
+			setPromoting(false);
+		}
+	}
 	// A linked Plain thread gets a read-only conversation sidebar (+ jump-to-Plain),
 	// available even for ask-mode sessions that have no code workspace.
 	const hasPlain = Boolean(session.plainThreadId);
@@ -834,7 +851,24 @@ export function SessionViewer({
 					>
 						<div className="viewer-title">
 					{isAsk ? (
-						<span className="source-chip source-ask">ask</span>
+						<>
+							<span className="source-chip source-ask">ask</span>
+							<Tooltip
+								label={
+									promoteError ||
+									"Create a worktree for this chat and switch it to code mode"
+								}
+							>
+								<button
+									type="button"
+									className="viewer-promote-btn"
+									onClick={handlePromote}
+									disabled={promoting}
+								>
+									{promoting ? "Creating worktree…" : "Create worktree"}
+								</button>
+							</Tooltip>
+						</>
 					) : (
 						<span className={`source-chip source-${session.source}`}>
 							{session.source}

@@ -659,13 +659,13 @@ function App() {
 								}
 							}}
 							onOpenProject={(id) => {
-								// Open the project's most-recently-active chat so its
-								// siblings surface in the tab strip. An empty folder opens
-								// the new-chat palette scoped to it.
+								// Open the workspace's first chat (oldest, matching the tab
+								// strip's order — there's always one post-migration). An empty
+								// workspace opens the new-chat palette scoped to it.
 								const chats = sessions
 									.filter((s) => !s.archived && s.projectId === id)
 									.sort((a, b) =>
-										(b.lastActivity || "").localeCompare(a.lastActivity || ""),
+										(a.createdAt || "").localeCompare(b.createdAt || ""),
 									);
 								if (chats.length)
 									navigate({ view: "session", id: chats[0].id });
@@ -772,17 +772,20 @@ function App() {
 							colors={tabColors}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
-							onNewChat={() => {
-								// + opens the new-session palette with this project (and its
-								// shared repo + worktree) preselected, so the new chat lands
-								// next to its siblings.
-								const sib = projectChats[0];
-								setPalette({
-									open: true,
-									projectId: activeProjectId || undefined,
-									repo: sib?.repo,
-									branch: sib?.branch || undefined,
-								});
+							onNewChat={async (mode) => {
+								// + creates the sibling chat instantly (browser-tab feel): it
+								// shares the workspace worktree by default, or stacks/asks via
+								// the right-click menu. No engine run until the first prompt.
+								const src = currentSession || projectChats[0];
+								if (!src) return;
+								try {
+									const id = await newChatApi(src.id, getCurrentUser(), mode);
+									setPendingSessionId(id);
+									refresh();
+									navigate({ view: "session", id });
+								} catch (e) {
+									console.error("New chat failed:", e);
+								}
 							}}
 							onRename={async (id, title) => {
 								try {
