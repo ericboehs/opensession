@@ -22,6 +22,7 @@ import {
 	fetchAudit,
 	type MonitorConfig,
 } from "../lib/api";
+import { getPushState, enablePush, disablePush, type PushState } from "../lib/push";
 import { getCurrentUser } from "./UserPicker";
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
@@ -305,6 +306,53 @@ function Select<T extends string>({
 
 // ── Notifications ──────────────────────────────────────────────────────────
 
+/** The device-level Web Push toggle inside Notifications. */
+function PushRow() {
+	const [state, setState] = useState<PushState | "loading">("loading");
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		getPushState().then(setState);
+	}, []);
+
+	async function toggle(v: boolean) {
+		if (busy) return;
+		setBusy(true);
+		setError(null);
+		try {
+			if (v) await enablePush(getCurrentUser());
+			else await disablePush();
+			setState(await getPushState());
+		} catch (e: any) {
+			setError(e.message);
+			setState(await getPushState());
+		}
+		setBusy(false);
+	}
+
+	return (
+		<SettingRow
+			title="Push to this device"
+			desc={
+				error ||
+				(state === "unsupported"
+					? "Needs the HTTPS origin (michael.taila5d766.ts.net) — push isn't available on plain http."
+					: state === "denied"
+						? "Notifications are blocked for this site in the browser — allow them to enable push."
+						: "Buzz this device when a session needs your input — works with the app closed. Per device; enable it on your phone too.")
+			}
+			control={
+				<Toggle
+					label="Push to this device"
+					checked={state === "on"}
+					onChange={toggle}
+				/>
+			}
+		/>
+	);
+}
+
 function NotificationsPanel() {
 	const [s, setS] = useState<NotifSettings>(getNotifSettings);
 	useEffect(() => onNotifSettingsChanged(() => setS(getNotifSettings())), []);
@@ -319,6 +367,7 @@ function NotificationsPanel() {
 
 			<div className="settings-group-label">Alerts</div>
 			<div className="setting-card">
+				<PushRow />
 				<SettingRow
 					title="Desktop notifications"
 					desc="Get a banner when one of your sessions needs input or finishes."

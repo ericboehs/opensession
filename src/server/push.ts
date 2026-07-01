@@ -1,0 +1,148 @@
+/**
+ * Web Push: phone/desktop notifications that work with the app closed —
+ * unlike lib/notify.ts's tab-bound Notification API. Requires the app to be
+ * opened over a secure origin (https://michael.taila5d766.ts.net); the plain
+ * http://michael:3850 origin has no service workers, so no push there.
+ *
+ * VAPID keys are generated once and persisted; subscriptions are stored per
+ * user (a person can have several devices). Dead subscriptions (404/410 from
+ * the push service) are pruned on send. Delivery is strictly best-effort —
+ * push failures never affect the flow that triggered them.
+ */
+import { mkdirSync, readFileSync, existsSync } from "fs";
+import webpush from "web-push";
+import { writeJsonAtomic } from "./shared/atomic-write";
+
+const HOME = process.env.HOME || "/home/ubuntu";
+const PUSH_DIR = `${HOME}/.backstage-push`;
+const VAPID_PATH = `${PUSH_DIR}/vapid.json`;
+const SUBS_PATH = `${PUSH_DIR}/subscriptions.json`;
+
+mkdirSync(PUSH_DIR, { recursive: true });
+
+interface VapidKeys {
+  publicKey: string;
+  privateKey: string;
+}
+
+let vapid: VapidKeys | null = null;
+let configured = false;
+
+export function getVapidPublicKey(): string {
+  ensureVapid();
+  return vapid!.publicKey;
+}
+
+function ensureVapid(): void {
+  if (vapid) return;
+  try {
+    if (existsSync(VAPID_PATH)) {
+      vapid = JSON.parse(readFileSync(VAPID_PATH, "utf-8"));
+    }
+  } catch {}
+  if (!vapid?.publicKey || !vapid?.privateKey) {
+    vapid = webpush.generateVAPIDKeys();
+    writeJsonAtomic(VAPID_PATH, vapid);
+    console.log("[push] generated VAPID keypair");
+  }
+  if (!configured) {
+    webpush.setVapidDetails("mailto:michael@tella.dev", vapid!.publicKey, vapid!.privateKey);
+    configured = true;
+  }
+}
+
+export interface PushSubscriptionRecord {
+  user: string;
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  userAgent?: string;
+  createdAt: string;
+}
+
+interface SubsFile {
+  subscriptions: PushSubscriptionRecord[];
+}
+
+function readSubs(): SubsFile {
+  try {
+    if (existsSync(SUBS_PATH)) {
+      const s = JSON.parse(readFileSync(SUBS_PATH, "utf-8"));
+      if (Array.isArray(s.subscriptions)) return s;
+    }
+  } catch {}
+  return { subscriptions: [] };
+}
+
+export function listPushSubscriptions(user?: string): PushSubscriptionRecord[] {
+  const all = readSubs().subscriptions;
+  return user ? all.filter((s) => s.user === user) : all;
+}
+
+export function addPushSubscription(input: {
+  user: string;
+  subscription: { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
+  userAgent?: string;
+}): { ok: true } | { error: string } {
+  const { endpoint, keys } = input.subscription || {};
+  if (!input.user?.trim()) return { error: "user required" };
+  if (!endpoint || !keys?.p256dh || !keys?.auth)
+    return { error: "subscription must carry endpoint + p256dh/auth keys" };
+  const store = readSubs();
+  store.subscriptions = store.subscriptions.filter((s) => s.endpoint !== endpoint);
+  store.subscriptions.push({
+    user: input.user.trim(),
+    endpoint,
+    keys: { p256dh: keys.p256dh, auth: keys.auth },
+    userAgent: input.userAgent?.slice(0, 200),
+    createdAt: new Date().toISOString(),
+  });
+  writeJsonAtomic(SUBS_PATH, store);
+  return { ok: true };
+}
+
+export function removePushSubscription(endpoint: string): boolean {
+  const store = readSubs();
+  const before = store.subscriptions.length;
+  store.subscriptions = store.subscriptions.filter((s) => s.endpoint !== endpoint);
+  if (store.subscriptions.length === before) return false;
+  writeJsonAtomic(SUBS_PATH, store);
+  return true;
+}
+
+export interface PushPayload {
+  title: string;
+  body?: string;
+  /** In-app path to open on tap, e.g. /backstage/session/<id>. */
+  url?: string;
+  tag?: string;
+}
+
+/**
+ * Send a push to every device `user` has registered (matched by exact display
+ * name — the same value UserPicker stores). Fire-and-forget; prunes dead subs.
+ */
+export async function sendPushToUser(user: string, payload: PushPayload): Promise<void> {
+  const subs = listPushSubscriptions(user);
+  if (subs.length === 0) return;
+  ensureVapid();
+  const body = JSON.stringify(payload);
+  await Promise.all(
+    subs.map(async (s) => {
+      try {
+        await webpush.sendNotification(
+          { endpoint: s.endpoint, keys: s.keys },
+          body,
+          { TTL: 60 * 60 },
+        );
+      } catch (e: any) {
+        const code = e?.statusCode;
+        if (code === 404 || code === 410) {
+          removePushSubscription(s.endpoint);
+          console.log(`[push] pruned dead subscription for ${s.user}`);
+        } else {
+          console.error(`[push] send failed for ${s.user}:`, e?.message || e);
+        }
+      }
+    }),
+  );
+}

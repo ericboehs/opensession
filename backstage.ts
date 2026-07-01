@@ -848,6 +848,22 @@ function makeAskHandler(sessionId: string) {
 					questionId,
 					questions,
 				});
+				// Phone buzz: Web Push to the session owner's registered devices
+				// (opt-in per device in Settings → Notifications). Best-effort —
+				// never lets a push hiccup affect the ask flow.
+				void (async () => {
+					try {
+						const s = findSession(sessionId);
+						if (!s?.startedBy) return;
+						const { sendPushToUser } = await import("./src/server/push");
+						await sendPushToUser(s.startedBy, {
+							title: "Michael needs input",
+							body: `${s.title || sessionId} — ${questions[0]?.question || "a question is waiting"}`.slice(0, 180),
+							url: `/backstage/session/${encodeURIComponent(sessionId)}`,
+							tag: `ask-${sessionId}`,
+						});
+					} catch {}
+				})();
 			},
 		);
 
@@ -2294,6 +2310,19 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						},
 					},
 				);
+			}
+
+			// Service worker (Web Push). Must precede the hashed-asset matcher —
+			// sw.js is served from source, never cached hard (the browser refetches
+			// it on its own schedule and applies updates).
+			if (path === "/backstage/sw.js") {
+				return new Response(Bun.file(`${FRONTEND_SRC}/sw.js`), {
+					headers: {
+						"Content-Type": "text/javascript; charset=utf-8",
+						"Cache-Control": "no-cache",
+						"Service-Worker-Allowed": "/backstage/",
+					},
+				});
 			}
 
 			// iOS PWA launch images (apple-touch-startup-image). One PNG per device
@@ -3757,6 +3786,35 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						limit: Number(url.searchParams.get("limit")) || 200,
 					}),
 				});
+			}
+
+			// ── Web Push (phone/desktop notifications, app closed) ──
+			if (path === "/backstage/api/push/vapid-key" && req.method === "GET") {
+				const { getVapidPublicKey } = await import("./src/server/push");
+				return Response.json({ publicKey: getVapidPublicKey() });
+			}
+
+			if (path === "/backstage/api/push/subscribe" && req.method === "POST") {
+				const body = await req.json().catch(() => null);
+				if (!body)
+					return Response.json({ error: "Invalid JSON" }, { status: 400 });
+				const { addPushSubscription } = await import("./src/server/push");
+				const result = addPushSubscription({
+					user: body.user,
+					subscription: body.subscription,
+					userAgent: req.headers.get("user-agent") || undefined,
+				});
+				if ("error" in result) return Response.json(result, { status: 400 });
+				return Response.json(result);
+			}
+
+			if (path === "/backstage/api/push/unsubscribe" && req.method === "POST") {
+				const body = await req.json().catch(() => null);
+				if (!body || typeof body.endpoint !== "string")
+					return Response.json({ error: "endpoint required" }, { status: 400 });
+				const { removePushSubscription } = await import("./src/server/push");
+				removePushSubscription(body.endpoint);
+				return Response.json({ ok: true });
 			}
 
 			// ── Session monitor (per-user, opt-in) ──
