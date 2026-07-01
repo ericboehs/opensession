@@ -5,6 +5,7 @@ import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
 import { Home } from "./components/Home";
 import { Automations } from "./components/Automations";
+import { Goals } from "./components/Goals";
 import { Actions } from "./components/Actions";
 import { Notes, type NotesSelection } from "./components/Notes";
 import { Connections } from "./components/Connections";
@@ -39,6 +40,7 @@ type Route =
 	| { view: "session"; id: string }
 	| { view: "reviews"; id?: string }
 	| { view: "automations" }
+	| { view: "goals" }
 	| { view: "actions" }
 	| { view: "notes"; sel: NotesSelection }
 	| { view: "connections" }
@@ -50,6 +52,7 @@ function parseRoute(pathname: string): Route {
 		return { view: "session", id: decodeURIComponent(sessionMatch[1]) };
 	if (pathname === "/backstage/new") return { view: "new" };
 	if (pathname === "/backstage/automations") return { view: "automations" };
+	if (pathname === "/backstage/goals") return { view: "goals" };
 	if (pathname === "/backstage/actions") return { view: "actions" };
 	if (pathname === "/backstage/connections") return { view: "connections" };
 	if (pathname === "/backstage/archived") return { view: "archived" };
@@ -95,6 +98,8 @@ function routePath(route: Route): string {
 				: "/backstage/new";
 		case "automations":
 			return "/backstage/automations";
+		case "goals":
+			return "/backstage/goals";
 		case "actions":
 			return "/backstage/actions";
 		case "connections":
@@ -302,6 +307,7 @@ function App() {
 
 	const activeView =
 		route.view === "automations" ||
+		route.view === "goals" ||
 		route.view === "actions" ||
 		route.view === "notes" ||
 		route.view === "connections" ||
@@ -430,6 +436,10 @@ function App() {
 							/>
 						) : route.view === "automations" ? (
 							<Automations
+								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
+						) : route.view === "goals" ? (
+							<Goals
 								onOpenSession={(id) => navigate({ view: "session", id })}
 							/>
 						) : route.view === "actions" ? (

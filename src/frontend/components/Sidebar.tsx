@@ -41,6 +41,7 @@ export type NavView =
 	| "sessions"
 	| "reviews"
 	| "automations"
+	| "goals"
 	| "actions"
 	| "wiki"
 	| "connections";
@@ -121,6 +122,24 @@ const NAV_ITEMS: Array<{
 			>
 				<circle cx="8" cy="8" r="5.5" />
 				<path d="M8 5v3l2 1.5" strokeLinecap="round" strokeLinejoin="round" />
+			</svg>
+		),
+	},
+	{
+		view: "goals",
+		label: "Goals",
+		icon: (
+			<svg
+				width="15"
+				height="15"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<circle cx="8" cy="8" r="6" />
+				<circle cx="8" cy="8" r="3" />
+				<circle cx="8" cy="8" r="0.6" fill="currentColor" stroke="none" />
 			</svg>
 		),
 	},

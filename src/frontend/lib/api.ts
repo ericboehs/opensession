@@ -439,6 +439,91 @@ export async function runAutomationApi(id: string) {
 	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 }
 
+// ── Goals (long-running, self-pacing missions) ──
+
+export async function fetchGoals() {
+	const res = await fetch(`${BASE}/goals`);
+	if (!res.ok) throw new Error(`Failed to fetch goals: ${res.status}`);
+	return res.json();
+}
+
+/** Single goal incl. its ledger text (for the detail view). */
+export async function fetchGoal(id: string) {
+	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}`);
+	if (!res.ok) throw new Error(`Failed to fetch goal: ${res.status}`);
+	return res.json();
+}
+
+export async function createGoalApi(input: {
+	name: string;
+	mission: string;
+	mode?: "ask" | "code";
+	repo?: string;
+	model?: string;
+	fallbackModel?: string;
+	mcpServers?: string[];
+	minWakeMinutes?: number;
+	maxWakes?: number;
+	createdBy: string;
+}) {
+	const res = await fetch(`${BASE}/goals`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(input),
+	});
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body;
+}
+
+export async function updateGoalApi(id: string, patch: object) {
+	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}`, {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(patch),
+	});
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body;
+}
+
+export async function deleteGoalApi(id: string) {
+	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}`, {
+		method: "DELETE",
+	});
+	if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
+}
+
+export async function runGoalApi(id: string) {
+	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}/run`, {
+		method: "POST",
+	});
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+}
+
+export async function resumeGoalApi(id: string) {
+	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}/resume`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: "{}",
+	});
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body;
+}
+
+export async function pauseGoalApi(id: string, reason?: string) {
+	const res = await fetch(`${BASE}/goals/${encodeURIComponent(id)}/pause`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ reason }),
+	});
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body;
+}
+
 // ── Actions (run a registered repo script behind a form) ──
 
 export type ActionInputType = "text" | "number" | "select" | "boolean";
