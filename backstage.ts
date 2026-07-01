@@ -1213,9 +1213,17 @@ async function runSessionPrompt(
 		mcpServers,
 		// Self-management tools for normal sessions; withheld from automation
 		// sessions (and their interactive resumes) — same gate as deniedTools above.
+		// A goal-driven session also gets its own michael-goal-self controls, so an
+		// interactive turn (a human steering it in the UI) can set the next wake,
+		// append to the ledger, or pause/finish — the same tools the headless wake has.
 		inProcessMcp: isAutomationSession
 			? undefined
-			: interactiveMcpServers(user, sessionId),
+			: session.goalId
+				? {
+						...interactiveMcpServers(user, sessionId),
+						"michael-goal-self": createGoalSelfMcpServer(session.goalId),
+					}
+				: interactiveMcpServers(user, sessionId),
 		reposNote: isAutomationSession ? undefined : buildReposNote(session),
 		deniedTools,
 		confirmTools: STRIPE_CONFIRM_TOOLS,
@@ -1592,6 +1600,7 @@ async function runGoal(goal: Goal): Promise<void> {
 				lastActivity: new Date().toISOString(),
 				title: `${goal.name} — goal`,
 				mode: goal.mode,
+				goalId: goal.id,
 			};
 			writeFileSync(
 				`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,

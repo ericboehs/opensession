@@ -238,6 +238,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       codexThreadId: data.codexThreadId,
       modelHistory: data.modelHistory,
       goal: data.goal,
+      goalId: data.goalId,
       loop: data.loop,
       slackChannel: data.slackChannel,
       lastActivity: data.lastActivity,

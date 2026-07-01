@@ -46,6 +46,8 @@ export interface UnifiedSession {
   /** /model switches, newest last — rendered as dividers in the conversation. */
   modelHistory?: Array<{ model: string; at: string; by?: string }>;
   goal?: string;
+  /** Goal record id, when this session is driven by a Goal (src/server/goals.ts). */
+  goalId?: string;
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   // Other IDs that resolve to this session. The same Claude session can be
   // tracked by multiple files (e.g. a Slack run writes both <branch>.json and
@@ -132,6 +134,7 @@ export interface BackstageSessionFile {
   archived?: boolean;
   archivedAt?: string;
   goal?: string; // pinned goal, appended to every prompt until cleared
+  goalId?: string; // Goal record this session is driven by (src/server/goals.ts)
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   slackChannel?: SlackChannelLink; // Slack channel linked for in-context discussion
 }
