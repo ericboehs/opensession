@@ -29,6 +29,9 @@ import {
 	fetchNotes,
 	fetchProjects,
 	createProjectApi,
+	updateProjectApi,
+	deleteProjectApi,
+	setSessionProjectApi,
 	type NoteMeta,
 } from "./lib/api";
 import type { Project } from "./lib/types";
@@ -565,6 +568,40 @@ function App() {
 									refreshProjects();
 								} catch (e) {
 									console.error("Create project failed:", e);
+								}
+							}}
+							onRenameProject={async (id, name) => {
+								try {
+									await updateProjectApi(id, { name });
+									refreshProjects();
+								} catch (e) {
+									console.error("Rename project failed:", e);
+								}
+							}}
+							onDeleteProject={async (id) => {
+								try {
+									await deleteProjectApi(id);
+									refreshProjects();
+									refresh();
+								} catch (e) {
+									console.error("Delete project failed:", e);
+								}
+							}}
+							onSetProjectColor={async (id, color) => {
+								try {
+									await updateProjectApi(id, { color });
+									refreshProjects();
+								} catch (e) {
+									console.error("Set project color failed:", e);
+								}
+							}}
+							onSetSessionProject={async (sessionId, projectId) => {
+								try {
+									await setSessionProjectApi(sessionId, projectId);
+									refresh();
+									refreshProjects();
+								} catch (e) {
+									console.error("Move to project failed:", e);
 								}
 							}}
 							onOpenNote={(id) =>

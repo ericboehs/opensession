@@ -26,8 +26,12 @@ const SESSIONS_DIR = `${HOME}/.backstage-sessions`;
 function projectIdForPr(prNumber: number, branch: string, title: string, cwd: string): string | null {
   try {
     const repo = repoForPath(cwd).id;
+    // opts.title is per-kind ("Review · PR #123 <PR title>"). The folder groups
+    // ALL kinds for the PR, so name it PR-level: strip the kind + "PR #n" prefix
+    // down to the bare PR title (fall back to the full title if it doesn't match).
+    const prTitle = title.replace(/^.*?PR #\d+[:\s-]*/i, "").trim() || title;
     const project = findOrCreateProjectByKey(`ghpr-${prNumber}`, {
-      name: `#${prNumber} ${title}`.trim().slice(0, 120),
+      name: `#${prNumber} ${prTitle}`.trim().slice(0, 120),
       repo,
       createdBy: "GitHub (automation)",
       prNumber,

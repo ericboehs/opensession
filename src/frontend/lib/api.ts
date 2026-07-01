@@ -184,7 +184,13 @@ export async function createProjectApi(input: {
 
 export async function updateProjectApi(
 	id: string,
-	patch: Partial<Pick<Project, "name" | "repo" | "color" | "order">>,
+	patch: {
+		name?: string;
+		repo?: string;
+		/** null clears the swatch color. */
+		color?: string | null;
+		order?: number;
+	},
 ): Promise<Project> {
 	const res = await fetch(`${BASE}/projects/${encodeURIComponent(id)}`, {
 		method: "PATCH",

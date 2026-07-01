@@ -12,7 +12,8 @@ import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
-import { colorHex } from "../lib/tab-colors";
+import { colorHex, TAB_COLORS } from "../lib/tab-colors";
+import "../styles/projects.css";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -66,6 +67,14 @@ interface Props {
 	onNewSession: () => void;
 	/** Create a new empty Project folder with the given name. */
 	onCreateProject: (name: string) => void;
+	/** Rename a project folder. */
+	onRenameProject: (id: string, name: string) => void;
+	/** Delete a project folder (its chats become standalone). */
+	onDeleteProject: (id: string) => void;
+	/** Set a project's swatch color (null clears it). */
+	onSetProjectColor: (id: string, color: string | null) => void;
+	/** Move a chat into a project (or null to make it standalone). */
+	onSetSessionProject: (sessionId: string, projectId: string | null) => void;
 	/** Open a note (pinned-note row click). */
 	onOpenNote: (id: string) => void;
 	/** Open the ⌘K session-search palette (from the sidebar search field). */
@@ -355,6 +364,10 @@ export function Sidebar({
 	onSelect,
 	onNewSession,
 	onCreateProject,
+	onRenameProject,
+	onDeleteProject,
+	onSetProjectColor,
+	onSetSessionProject,
 	onOpenNote,
 	onOpenSearch,
 	onOpenArchived,
@@ -422,6 +435,23 @@ export function Sidebar({
 	useEffect(() => onPinsChanged(() => setPins(getPins())), []);
 	useEffect(() => onRecentsChanged(() => setRecents(getRecents())), []);
 	useEffect(() => onReadsChanged(() => setReads(getReads())), []);
+
+	// Right-click menu on a Project header (rename / color / delete).
+	const [projectMenu, setProjectMenu] = useState<{
+		id: string;
+		x: number;
+		y: number;
+	} | null>(null);
+	useEffect(() => {
+		if (!projectMenu) return;
+		const close = () => setProjectMenu(null);
+		window.addEventListener("click", close);
+		window.addEventListener("scroll", close, true);
+		return () => {
+			window.removeEventListener("click", close);
+			window.removeEventListener("scroll", close, true);
+		};
+	}, [projectMenu]);
 
 	// The Archived row counts *my* archived sessions (Michiel's scope), and honors
 	// the active repo filter — same lens as the archived page it opens.
@@ -848,6 +878,72 @@ export function Sidebar({
 				/>
 			)}
 
+			{projectMenu &&
+				createPortal(
+					<div
+						className="sidebar-ctx-menu"
+						style={{ left: projectMenu.x, top: projectMenu.y }}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="sidebar-ctx-swatches">
+							{TAB_COLORS.map((c) => (
+								<button
+									key={c.key}
+									type="button"
+									className="tab-color-swatch"
+									style={{ background: c.hex }}
+									aria-label={c.label}
+									title={c.label}
+									onClick={() => {
+										onSetProjectColor(projectMenu.id, c.key);
+										setProjectMenu(null);
+									}}
+								/>
+							))}
+							<button
+								type="button"
+								className="tab-color-swatch tab-color-swatch-none"
+								aria-label="No color"
+								title="No color"
+								onClick={() => {
+									onSetProjectColor(projectMenu.id, null);
+									setProjectMenu(null);
+								}}
+							/>
+						</div>
+						<div className="sidebar-ctx-sep" />
+						<button
+							className="sidebar-ctx-item"
+							onClick={() => {
+								const cur = projects.find((p) => p.id === projectMenu.id);
+								const name = window
+									.prompt("Rename project", cur?.name || "")
+									?.trim();
+								if (name) onRenameProject(projectMenu.id, name);
+								setProjectMenu(null);
+							}}
+						>
+							Rename
+						</button>
+						<button
+							className="sidebar-ctx-item sidebar-ctx-item-danger"
+							onClick={() => {
+								const cur = projects.find((p) => p.id === projectMenu.id);
+								if (
+									window.confirm(
+										`Delete project "${cur?.name || ""}"? Its chats become standalone.`,
+									)
+								)
+									onDeleteProject(projectMenu.id);
+								setProjectMenu(null);
+							}}
+						>
+							Delete project
+						</button>
+					</div>,
+					document.body,
+				)}
+
 			<div className="sidebar-list">
 				{/* ── Pinned (sessions + notes, mixed) ── */}
 				{(() => {
@@ -886,6 +982,8 @@ export function Sidebar({
 									onClick={() => onSelect(s)}
 									onArchive={() => onArchive(s)}
 									onRename={(title) => onRename(s, title)}
+									projects={projects}
+									onMoveToProject={(pid) => onSetSessionProject(s.id, pid)}
 								/>
 							))}
 							{pinnedNotes.map((n) => (
@@ -947,6 +1045,14 @@ export function Sidebar({
 								<button
 									className="sidebar-group-header"
 									onClick={() => toggleGroup(key)}
+									onContextMenu={(e) => {
+										e.preventDefault();
+										setProjectMenu({
+											id: project.id,
+											x: e.clientX,
+											y: e.clientY,
+										});
+									}}
 								>
 									{project.color && (
 										<span
@@ -980,6 +1086,8 @@ export function Sidebar({
 											onClick={() => onSelect(s)}
 											onArchive={() => onArchive(s)}
 											onRename={(title) => onRename(s, title)}
+											projects={projects}
+											onMoveToProject={(pid) => onSetSessionProject(s.id, pid)}
 										/>
 									))}
 							</React.Fragment>
@@ -1052,6 +1160,8 @@ export function Sidebar({
 									onClick={() => onSelect(s)}
 									onArchive={() => onArchive(s)}
 									onRename={(title) => onRename(s, title)}
+									projects={projects}
+									onMoveToProject={(pid) => onSetSessionProject(s.id, pid)}
 								/>
 							))}
 					</div>
@@ -1317,6 +1427,8 @@ function SidebarItem({
 	onClick,
 	onArchive,
 	onRename,
+	projects,
+	onMoveToProject,
 }: {
 	session: UnifiedSession;
 	selected: boolean;
@@ -1329,11 +1441,26 @@ function SidebarItem({
 	onClick: () => void;
 	onArchive: () => void;
 	onRename: (title: string) => void;
+	/** When provided, right-click offers "Move to project" (projects list + None). */
+	projects?: Project[];
+	onMoveToProject?: (projectId: string | null) => void;
 }) {
 	const running = session.isRunning;
 	const waiting = !!session.waitingForInput;
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState("");
+	// Right-click context menu (move-to-project) anchored at the cursor.
+	const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+	useEffect(() => {
+		if (!ctxMenu) return;
+		const close = () => setCtxMenu(null);
+		window.addEventListener("click", close);
+		window.addEventListener("scroll", close, true);
+		return () => {
+			window.removeEventListener("click", close);
+			window.removeEventListener("scroll", close, true);
+		};
+	}, [ctxMenu]);
 
 	// Hover card: after a short dwell, anchor a detail popover to this row's right
 	// edge. Suppressed while renaming (the input owns the interaction).
@@ -1409,6 +1536,12 @@ function SidebarItem({
 			onMouseEnter={openHover}
 			onMouseLeave={closeHover}
 			onMouseDown={closeHover}
+			onContextMenu={(e) => {
+				if (!onMoveToProject) return;
+				e.preventDefault();
+				closeHover();
+				setCtxMenu({ x: e.clientX, y: e.clientY });
+			}}
 		>
 			<div className="sidebar-item-top">
 				{(waiting || running) && (
@@ -1500,6 +1633,43 @@ function SidebarItem({
 			</span>
 		</button>
 		{anchor && <SessionHoverCard session={session} anchor={anchor} />}
+		{ctxMenu &&
+			onMoveToProject &&
+			createPortal(
+				<div
+					className="sidebar-ctx-menu"
+					style={{ left: ctxMenu.x, top: ctxMenu.y }}
+					onClick={(e) => e.stopPropagation()}
+				>
+					<div className="sidebar-ctx-label">Move to project</div>
+					{(projects || []).map((p) => (
+						<button
+							key={p.id}
+							className={`sidebar-ctx-item ${session.projectId === p.id ? "sidebar-ctx-item-on" : ""}`}
+							onClick={() => {
+								onMoveToProject(p.id);
+								setCtxMenu(null);
+							}}
+						>
+							{p.name}
+						</button>
+					))}
+					{(projects || []).length === 0 && (
+						<div className="sidebar-ctx-empty">No projects yet</div>
+					)}
+					<div className="sidebar-ctx-sep" />
+					<button
+						className={`sidebar-ctx-item ${!session.projectId ? "sidebar-ctx-item-on" : ""}`}
+						onClick={() => {
+							onMoveToProject(null);
+							setCtxMenu(null);
+						}}
+					>
+						None (standalone)
+					</button>
+				</div>,
+				document.body,
+			)}
 		</>
 	);
 }
