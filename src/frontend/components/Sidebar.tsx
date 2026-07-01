@@ -709,7 +709,24 @@ export function Sidebar({
 					});
 			}
 		}
-		for (const s of solo) rows.push(mkRow(s.id, null, s.title, [s]));
+		// Workspace-less chats (slack/linear sources + their bks- siblings) group
+		// by shared isolated worktree — the SAME rule the tab strip uses — so the
+		// sidebar and tabs always agree on what belongs together. Chats with no
+		// isolated worktree stay solo rows.
+		const byWorktree = new Map<string, UnifiedSession[]>();
+		const loose: UnifiedSession[] = [];
+		for (const s of solo) {
+			if (s.worktreeDir?.startsWith("/home/ubuntu/worktrees/")) {
+				const list = byWorktree.get(s.worktreeDir) || [];
+				list.push(s);
+				byWorktree.set(s.worktreeDir, list);
+			} else loose.push(s);
+		}
+		for (const [dir, chats] of byWorktree) {
+			chats.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+			rows.push(mkRow(`wt:${dir}`, null, chats[0].title, chats));
+		}
+		for (const s of loose) rows.push(mkRow(s.id, null, s.title, [s]));
 		const key = filter.sort === "created" ? "createdAt" : "lastActivity";
 		rows.sort((a, b) => (b[key] || "").localeCompare(a[key] || ""));
 		return rows;
