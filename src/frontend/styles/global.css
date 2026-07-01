@@ -424,11 +424,18 @@ a {
 	}
 }
 
+/* The "Tools" band header sits above the top-level nav as a collapse toggle,
+   matching the Projects/People band toggles. The compound selector beats the
+   later `.sidebar-band-label` padding so the indent lands where we want; 16px
+   left matches the band labels (10px list pad + 6px) and the Sessions header. */
+.sidebar-band-label.sidebar-tools-head {
+	padding: 12px 16px 2px;
+}
 .sidebar-nav {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
-	padding: 10px 10px 6px;
+	padding: 4px 10px 6px;
 }
 
 .sidebar-nav-item {
@@ -615,8 +622,7 @@ body.resizing-x {
 /* Workspace header: "My sessions" title row (+ optional repo chip + action
    icons), with the session search bar directly below it. */
 .sidebar-workspace {
-	padding: 12px 14px 8px;
-	border-top: 1px solid var(--border);
+	padding: 12px 14px 2px 16px;
 	/* Transparent by default so toggling the color on scroll never shifts layout;
 	   turns into a visible divider under the header once the list scrolls. */
 	border-bottom: 1px solid transparent;
@@ -630,7 +636,7 @@ body.resizing-x {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	margin-bottom: 8px;
+	margin-bottom: 1px;
 	min-width: 0;
 }
 .sidebar-workspace-title {
@@ -951,7 +957,7 @@ body.resizing-x {
 .sidebar-list {
 	flex: 1;
 	overflow-y: auto;
-	padding: 4px 10px 24px;
+	padding: 1px 10px 24px;
 }
 
 /* "Archived" — an icon-led row styled as a peer of the My-sessions status buckets
@@ -1075,21 +1081,19 @@ body.resizing-x {
 	font-size: 14px;
 	font-weight: 450;
 	letter-spacing: 0;
-	padding: 8px 6px;
+	padding: 4px 6px;
 }
 .sidebar-group-header:hover {
 	color: var(--text);
 }
 
 .sidebar-group-chevron {
-	font-size: 8px;
-	width: 10px;
-	opacity: 0;
-	transition: opacity 0.12s;
-	text-align: right;
+	color: var(--text-faint);
+	flex-shrink: 0;
+	transition: transform 0.15s ease;
 }
 .sidebar-group-header:hover .sidebar-group-chevron {
-	opacity: 1;
+	color: var(--text);
 }
 
 .sidebar-group-dot {
@@ -5416,9 +5420,8 @@ button.preview-open:not(:disabled):hover {
 /* ── Input area ──────────────────────────────────────────── */
 
 .viewer-input {
-	border-top: 1px solid var(--border);
 	padding: 12px 20px 14px;
-	background: var(--bg-raised);
+	background: transparent;
 	flex-shrink: 0;
 }
 
@@ -5476,7 +5479,7 @@ button.preview-open:not(:disabled):hover {
 }
 
 .composer {
-	background: var(--bg-panel);
+	background: transparent;
 	border: 1px solid var(--border-strong);
 	border-radius: 16px;
 	padding: 12px 12px 8px 14px;
@@ -7142,6 +7145,134 @@ button.preview-open:not(:disabled):hover {
 	.composer-send {
 		width: 36px;
 		height: 36px;
+	}
+}
+
+/* ── Phone touch targets: the last mile ──────────────────────────
+   The blocks above already bump the primary chat surface (composer,
+   session list, header actions). This one sweeps up the smaller
+   secondary controls that were still sitting well under the iOS 44pt
+   guideline: the workspace panel/repo tabs, the sidebar header icons,
+   the settings sub-nav, and inline icon buttons. Scoped to phones so
+   desktop keeps its tighter density. */
+@media (max-width: 720px) {
+	/* Workspace tabs (Diff / Terminal / PR / Reviews) — the main way you
+	   move around a session on a phone. Taller rows, bigger labels. */
+	.panel-tab {
+		font-size: 14px;
+		padding: 10px 14px 12px;
+	}
+	.reviews-tab {
+		font-size: 14px;
+		padding: 11px 14px 13px;
+	}
+	/* Per-repo tab pills in multi-repo diff / PR views. */
+	.pr-repo-tab,
+	.diff-repo-tab {
+		font-size: 13px;
+		padding: 8px 12px;
+	}
+
+	/* Sidebar header icons: New chat (+) and the filter/bell. */
+	.sidebar-new-btn {
+		width: 38px;
+		height: 38px;
+		font-size: 22px;
+	}
+	.sidebar-filter-btn {
+		min-width: 38px;
+		min-height: 38px;
+	}
+
+	/* The gear that opens the Michael menu / Settings. */
+	.settings-trigger {
+		width: 38px;
+		height: 38px;
+	}
+
+	/* Inline icon buttons (copy, expand, …) inside diff / message headers. */
+	.btn-icon {
+		padding: 8px 10px;
+		font-size: 15px;
+	}
+	.pin-btn {
+		padding: 8px 10px;
+		font-size: 16px;
+	}
+
+	/* Segmented pickers (Ask/Code mode, sort, …). */
+	.seg-control-btn {
+		padding: 9px 13px;
+		font-size: 14px;
+	}
+
+	/* The "+" new-chat tab keeps a comfortable square hit area. */
+	.session-tab-new {
+		min-height: 36px;
+		padding: 6px 14px;
+	}
+
+	/* Toggle switches read larger and are easier to flick on a phone.
+	   Width/knob/offset move together so the on-state math stays right:
+	   44 − 20(knob) − 2(left) − 2(right) = 20 → knob travels 18px. */
+	.auto-toggle {
+		width: 44px;
+		height: 26px;
+	}
+	.auto-toggle-knob {
+		width: 20px;
+		height: 20px;
+	}
+	.auto-toggle-on .auto-toggle-knob {
+		transform: translateX(18px);
+	}
+
+	/* Settings had no phone layout — the 232px sub-nav ate half the screen.
+	   Fold it into a horizontal, scrollable chip bar above the content. */
+	.settings-page {
+		flex-direction: column;
+	}
+	.settings-sidenav {
+		width: 100%;
+		flex-direction: row;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 10px;
+		border-right: none;
+		border-bottom: 1px solid var(--border);
+		overflow-x: auto;
+	}
+	.settings-back {
+		width: auto;
+		flex-shrink: 0;
+		margin-bottom: 0;
+		padding: 9px 10px;
+	}
+	.settings-sidenav-group {
+		flex-direction: row;
+		gap: 4px;
+		margin-bottom: 0;
+	}
+	.settings-sidenav-label {
+		display: none;
+	}
+	.settings-sidenav-item {
+		width: auto;
+		white-space: nowrap;
+		flex-shrink: 0;
+		font-size: 14px;
+		padding: 9px 12px;
+	}
+}
+
+/* Touch screens can't hover, so the tab's close (×) is always visible
+   there rather than hover-revealed — give it a finger-sized hit area
+   (the glyph stays small, the tappable box grows). */
+@media (hover: none) {
+	.session-tab-close {
+		width: 26px;
+		height: 26px;
+		margin: -2px -4px -2px 0;
 	}
 }
 

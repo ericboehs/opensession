@@ -793,6 +793,20 @@ export function Sidebar({
 		});
 	}
 
+	// The "Tools" nav band (Sessions / Reviews / Automations / … at the top) is
+	// open by default, so — like the Projects/People/Automations bands — its
+	// *collapsed* state is what's persisted, under a "collapsed:" key.
+	const toolsOpen = !expanded.has("collapsed:tools");
+	function toggleTools() {
+		setExpanded((prev) => {
+			const next = new Set(prev);
+			if (next.has("collapsed:tools")) next.delete("collapsed:tools");
+			else next.add("collapsed:tools");
+			localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
+			return next;
+		});
+	}
+
 	// Distinct open PRs (deduped by URL) — shown as a badge on the Reviews tab.
 	const openPrCount = useMemo(() => {
 		const urls = new Set<string>();
@@ -1024,21 +1038,39 @@ export function Sidebar({
 				<kbd className="sidebar-search-kbd">⌘K</kbd>
 			</div>
 
-			<nav className="sidebar-nav">
-				{NAV_ITEMS.map((item) => (
+			<div className="sidebar-tools">
+				<div className="sidebar-band-label sidebar-tools-head">
 					<button
-						key={item.view}
-						className={`sidebar-nav-item ${activeView === item.view ? "active" : ""}`}
-						onClick={() => onNavigate(item.view)}
+						className="sidebar-band-toggle"
+						onClick={toggleTools}
+						title={toolsOpen ? "Collapse tools" : "Expand tools"}
 					>
-						<span className="sidebar-nav-icon">{item.icon}</span>
-						{item.label}
-						{item.view === "reviews" && openPrCount > 0 && (
-							<span className="sidebar-nav-count">{openPrCount}</span>
-						)}
+						<span>Tools</span>
+						<IconChevronDown
+							className="sidebar-band-chevron"
+							size={16}
+							style={{ transform: toolsOpen ? "none" : "rotate(-90deg)" }}
+						/>
 					</button>
-				))}
-			</nav>
+				</div>
+				{toolsOpen && (
+					<nav className="sidebar-nav">
+						{NAV_ITEMS.map((item) => (
+							<button
+								key={item.view}
+								className={`sidebar-nav-item ${activeView === item.view ? "active" : ""}`}
+								onClick={() => onNavigate(item.view)}
+							>
+								<span className="sidebar-nav-icon">{item.icon}</span>
+								{item.label}
+								{item.view === "reviews" && openPrCount > 0 && (
+									<span className="sidebar-nav-count">{openPrCount}</span>
+								)}
+							</button>
+						))}
+					</nav>
+				)}
+			</div>
 
 			<div
 				className={`sidebar-workspace${listScrolled ? " sidebar-workspace--scrolled" : ""}`}
@@ -1327,11 +1359,15 @@ export function Sidebar({
 										/>
 									)}
 									<span className="sidebar-group-name">{group.label}</span>
+									<IconChevronDown
+										className="sidebar-group-chevron"
+										size={14}
+										style={{
+											transform: open ? "none" : "rotate(-90deg)",
+										}}
+									/>
 									<span className="sidebar-group-count">
 										{group.items.length}
-									</span>
-									<span className="sidebar-group-chevron">
-										{open ? "▾" : "▸"}
 									</span>
 								</button>
 
