@@ -225,12 +225,10 @@ export type WSClientMessage =
 			model?: string;
 			images?: string[];
 			/**
-			 * Palette controls — accepted but not yet consumed server-side (see
-			 * NewSession.tsx). Wire these into the runners when ready.
+			 * Reasoning effort — accepted but not yet consumed server-side (see
+			 * NewSession.tsx). Wire into the runners when ready.
 			 */
 			effort?: "low" | "medium" | "high";
-			fast?: boolean;
-			plan?: boolean;
 			/** Fork an existing session, keeping its real conversation history. */
 			forkFrom?: { sourceId: string; messageId?: string };
 	  }

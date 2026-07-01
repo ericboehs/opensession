@@ -5,7 +5,7 @@ import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../l
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
-import { IconBolt, IconMap, IconPaperclip, IconChevronDown, IconCheck } from "./icons";
+import { IconPaperclip, IconChevronDown, IconCheck } from "./icons";
 import type { WSServerMessage } from "../lib/types";
 
 interface Props {
@@ -114,11 +114,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [model, setModel] = useState(""); // "" = default
-  // Footer controls from the palette design. effort/fast/plan are sent through
+  // Footer controls from the palette design. effort is sent through
   // create_session but not yet consumed server-side (forward-compatible).
   const [effort, setEffort] = useState("high");
-  const [fast, setFast] = useState(false);
-  const [plan, setPlan] = useState(false);
   // Keep the palette open after a create to fire off another task. Chosen from
   // the Create split-button's dropdown; the primary button reflects the mode.
   const [createMore, setCreateMore] = useState(false);
@@ -266,8 +264,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       user: getCurrentUser(),
       ...(model ? { model } : {}),
       effort,
-      fast,
-      plan,
       ...(images.length ? { images } : {}),
       ...(files.length ? { files: files.map((f) => ({ name: f.name, dataUrl: f.dataUrl })) } : {}),
     });
@@ -431,17 +427,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               </select>
             </div>
 
-            <button
-              type="button"
-              className={`palette-icon-btn ${fast ? "is-on" : ""}`}
-              onClick={() => setFast((v) => !v)}
-              disabled={creating}
-              title={`Fast mode ${fast ? "on" : "off"} (not yet wired server-side)`}
-              aria-pressed={fast}
-            >
-              <IconBolt size={20} />
-            </button>
-
             <div className="palette-pill" title="Reasoning effort (not yet wired server-side)">
               <span className="palette-effort-icon" aria-hidden="true">
                 <span /><span /><span />
@@ -463,16 +448,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               </select>
             </div>
 
-            <button
-              type="button"
-              className={`palette-icon-btn ${plan ? "is-on" : ""}`}
-              onClick={() => setPlan((v) => !v)}
-              disabled={creating}
-              title={`Plan mode ${plan ? "on" : "off"} (not yet wired server-side)`}
-              aria-pressed={plan}
-            >
-              <IconMap size={20} />
-            </button>
           </div>
 
           <div className="palette-footer-right">

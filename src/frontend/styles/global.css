@@ -9776,18 +9776,25 @@ button.preview-open:not(:disabled):hover {
 }
 
 /* Workspace row hover actions: pin + archive side by side, replacing the
-   count badge while hovered. */
+   count badge while hovered. Absolutely positioned (and the row is the
+   positioning context) so revealing them can never change the row's height. */
+.sidebar-ws-row {
+	position: relative;
+}
 .sidebar-ws-actions {
 	display: none;
 	align-items: center;
 	gap: 2px;
-	margin-left: auto;
-	flex: 0 0 auto;
+	position: absolute;
+	right: 6px;
+	top: 50%;
+	transform: translateY(-50%);
 }
 .sidebar-ws-row:hover .sidebar-ws-actions {
 	display: inline-flex;
 }
-.sidebar-ws-row:hover .sidebar-group-count {
+.sidebar-ws-row:hover .sidebar-group-count,
+.sidebar-ws-row:hover .sidebar-ws-unread {
 	display: none;
 }
 .sidebar-ws-action {
