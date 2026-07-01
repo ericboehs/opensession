@@ -9,7 +9,7 @@ import { runAgent } from "../../server/agent-runner";
 import { providerFor, DEFAULT_FALLBACK_MODEL } from "../../server/models";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/claude-runner";
 import { gitIdentityFor, type GitIdentity } from "../../server/shared/user-mappings";
-import { findOrCreateProjectByKey } from "../../server/projects";
+import { findOrCreateWorkspaceByKey } from "../../server/workspaces";
 import { repoForPath } from "../../server/worktree";
 import type { BackstageSessionFile } from "../../server/types";
 
@@ -30,7 +30,7 @@ function projectIdForPr(prNumber: number, branch: string, title: string, cwd: st
     // ALL kinds for the PR, so name it PR-level: strip the kind + "PR #n" prefix
     // down to the bare PR title (fall back to the full title if it doesn't match).
     const prTitle = title.replace(/^.*?PR #\d+[:\s-]*/i, "").trim() || title;
-    const project = findOrCreateProjectByKey(`ghpr-${prNumber}`, {
+    const project = findOrCreateWorkspaceByKey(`ghpr-${prNumber}`, {
       name: `#${prNumber} ${prTitle}`.trim().slice(0, 120),
       repo,
       createdBy: "GitHub (automation)",

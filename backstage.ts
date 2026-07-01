@@ -47,12 +47,12 @@ import {
 	setPins as setUserPins,
 } from "./src/server/pins";
 import {
-	listProjects,
-	getProject as getProjectFolder,
-	createProject,
-	updateProject,
-	deleteProject,
-} from "./src/server/projects";
+	listWorkspaces,
+	getWorkspace,
+	createWorkspace,
+	updateWorkspace,
+	deleteWorkspace,
+} from "./src/server/workspaces";
 import {
 	getTabColors as getUserTabColors,
 	setTabColors as setUserTabColors,
@@ -2814,7 +2814,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			// ── Projects (folders that group chats) ──
 			// A Project is just metadata; membership lives on each chat's `projectId`.
 			if (path === "/backstage/api/projects" && req.method === "GET") {
-				return Response.json({ projects: listProjects() });
+				return Response.json({ projects: listWorkspaces() });
 			}
 
 			if (path === "/backstage/api/projects" && req.method === "POST") {
@@ -2826,7 +2826,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				};
 				if (!body.name || !body.name.trim())
 					return Response.json({ error: "name required" }, { status: 400 });
-				const project = createProject({
+				const project = createWorkspace({
 					name: body.name,
 					repo: body.repo,
 					color: body.color,
@@ -2844,7 +2844,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					color?: string;
 					order?: number;
 				};
-				const project = updateProject(id, body);
+				const project = updateWorkspace(id, body);
 				if (!project)
 					return Response.json({ error: "Project not found" }, { status: 404 });
 				return Response.json({ project });
@@ -2858,7 +2858,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					if (s.projectId === id)
 						touchBackstageSession(s.id, { projectId: null });
 				}
-				const ok = deleteProject(id);
+				const ok = deleteWorkspace(id);
 				return Response.json({ ok });
 			}
 
@@ -2910,7 +2910,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					projectId?: string | null;
 				};
 				const projectId = body.projectId ?? null;
-				if (projectId && !getProjectFolder(projectId))
+				if (projectId && !getWorkspace(projectId))
 					return Response.json({ error: "Project not found" }, { status: 404 });
 				touchBackstageSession(sessionId, { projectId });
 				return Response.json({ ok: true, projectId });
