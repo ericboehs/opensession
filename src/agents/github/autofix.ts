@@ -207,10 +207,10 @@ export async function runAutoFix(
       }
 
       // CI is green — gate on a FRESH review of the pushed code, not the fixer's
-      // own self-report. Stop only when the review is fully satisfied — no blocking
-      // findings AND either nothing left or a clean 5/5 confidence ("safe to merge").
-      // A 4/5-or-lower review with findings still open loops so the next iteration
-      // fixes them (P2/P3 included — its inline comments are now the freshest, so
+      // own self-report. Stop only when the review is satisfied — no blocking
+      // findings AND either nothing left or confidence >= 4/5 ("safe to merge").
+      // A ≤3/5 review with findings still open loops so the next iteration fixes
+      // them (P2/P3 included — its inline comments are now the freshest, so
       // fetchReviewFindings picks them up). The loop still terminates naturally when
       // the fixer stops pushing changes, or at the iteration cap.
       await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: CI green — reviewing \`${sha7}\`…`);
@@ -224,7 +224,7 @@ export async function runAutoFix(
         break;
       }
       const conf = typeof review.confidence === "number" ? review.confidence : null;
-      const satisfied = review.blocking === 0 && (review.findings === 0 || (conf != null && conf >= 5));
+      const satisfied = review.blocking === 0 && (review.findings === 0 || (conf != null && conf >= 4));
       if (satisfied) {
         const why = conf != null ? `confidence ${conf}/5` : "no blocking findings";
         outcome = `✅ Auto-fix complete — CI green and the review is satisfied (${why}, \`${sha7}\`).`;
