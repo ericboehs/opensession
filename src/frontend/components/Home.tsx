@@ -1,18 +1,11 @@
 import React, { useEffect, useState } from "react";
-import type { UnifiedSession } from "../lib/types";
-import { relativeTime, fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
-import { sessionStatus } from "../lib/status";
-import { getPins, togglePin } from "../lib/pins";
-import { getReads, isUnread, onReadsChanged } from "../lib/reads";
+import { fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
 import { Composer } from "./Composer";
 
 interface Props {
-  sessions: UnifiedSession[];
-  loading: boolean;
   connected: boolean;
   send: (msg: any) => void;
-  onSelect: (session: UnifiedSession) => void;
   onNewSession: (prompt?: string) => void;
 }
 
@@ -64,14 +57,28 @@ const SUGGESTIONS: Array<{ chip: string; color: string; prompt: string }> = [
   },
 ];
 
-export function Home({ sessions, loading, connected, send, onSelect, onNewSession }: Props) {
+// A rotating handful keeps the start screen calm; at most one per source so a
+// single integration (grafana has three prompts) can't dominate the row.
+function sampleSuggestions(count: number) {
+  const shuffled = [...SUGGESTIONS].sort(() => Math.random() - 0.5);
+  const seen = new Set<string>();
+  const picked = shuffled.filter((s) => !seen.has(s.chip) && seen.add(s.chip) !== undefined);
+  return picked.slice(0, count);
+}
+
+function timeGreeting(user: string) {
+  const h = new Date().getHours();
+  const part = h < 6 ? "Up late" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  return user !== "Anonymous" ? `${part}, ${user}` : part;
+}
+
+export function Home({ connected, send, onNewSession }: Props) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
-  const [pins, setPins] = useState<string[]>(() => getPins());
-  const [reads, setReads] = useState(() => getReads());
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [askModel, setAskModel] = useState(""); // "" = default
+  const [suggestions] = useState(() => sampleSuggestions(5));
   const currentUser = useCurrentUser();
 
   useEffect(() => {
@@ -82,9 +89,6 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
       })
       .catch(() => {});
   }, []);
-
-  // Keep the unread dots in sync when a session is opened/marked read elsewhere.
-  useEffect(() => onReadsChanged(() => setReads(getReads())), []);
 
   function handleAsk() {
     const q = question.trim();
@@ -104,27 +108,15 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
     // App navigates into the session on session_created
   }
 
-  function handlePin(e: React.MouseEvent, id: string) {
-    e.stopPropagation();
-    setPins(togglePin(id));
-  }
-
   const isPhone =
     typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
-  const visible = sessions.filter((s) => !s.archived);
-  const running = visible.filter((s) => s.isRunning);
-  const pinned = visible.filter((s) => pins.includes(s.id) && !s.isRunning);
-  const recent = visible
-    .filter((s) => !s.isRunning && !pins.includes(s.id))
-    .slice(0, 12);
 
   return (
     <div className="home">
       <div className="home-inner">
         <div className="home-hero">
-          <div className="home-greeting">
-            What should Michael work on{currentUser !== "Anonymous" ? `, ${currentUser}` : ""}?
-          </div>
+          <div className="home-hello">{timeGreeting(currentUser)}</div>
+          <div className="home-greeting">What should Michael work on?</div>
           <Composer
             value={question}
             onChange={setQuestion}
@@ -139,9 +131,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
             onModelChange={setAskModel}
             modelTitle="Model for this Ask session"
             mentionFetch={(q) => fetchFileMentions(q)}
-            autoFocus={
-              typeof window === "undefined" || !window.matchMedia("(max-width: 720px)").matches
-            }
+            autoFocus={!isPhone}
             leftExtra={
               <button
                 className="btn-task"
@@ -154,7 +144,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
           />
 
           <div className="ask-suggestions">
-            {SUGGESTIONS.map((s, i) => (
+            {suggestions.map((s, i) => (
               <button
                 key={`${s.chip}-${i}`}
                 className="ask-suggestion"
@@ -169,96 +159,7 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
             ))}
           </div>
         </div>
-
-        {loading ? (
-          <div className="loading">Loading sessions…</div>
-        ) : (
-          <>
-            {running.length > 0 && (
-              <Section title="Working now">
-                {running.map((s) => (
-                  <SessionRow key={s.id} session={s} pinned={pins.includes(s.id)} unread={isUnread(s.id, s.lastActivity, reads)} onPin={handlePin} onClick={() => onSelect(s)} />
-                ))}
-              </Section>
-            )}
-
-            {pinned.length > 0 && (
-              <Section title="Pinned">
-                {pinned.map((s) => (
-                  <SessionRow key={s.id} session={s} pinned unread={isUnread(s.id, s.lastActivity, reads)} onPin={handlePin} onClick={() => onSelect(s)} />
-                ))}
-              </Section>
-            )}
-
-            <Section title="Recent">
-              {recent.length === 0 ? (
-                <div className="home-empty">No sessions yet — ask a question or start a task.</div>
-              ) : (
-                recent.map((s) => (
-                  <SessionRow key={s.id} session={s} pinned={false} unread={isUnread(s.id, s.lastActivity, reads)} onPin={handlePin} onClick={() => onSelect(s)} />
-                ))
-              )}
-            </Section>
-          </>
-        )}
       </div>
     </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="home-section">
-      <div className="home-section-title">{title}</div>
-      <div className="home-rows">{children}</div>
-    </div>
-  );
-}
-
-function SessionRow({
-  session,
-  pinned,
-  unread,
-  onPin,
-  onClick,
-}: {
-  session: UnifiedSession;
-  pinned: boolean;
-  unread: boolean;
-  onPin: (e: React.MouseEvent, id: string) => void;
-  onClick: () => void;
-}) {
-  const status = sessionStatus(session);
-  const chip = session.mode === "ask" ? "ask" : session.source;
-
-  return (
-    <button className={`home-row${unread ? " home-row-unread" : ""}`} onClick={onClick}>
-      <span className={`status-pill status-${status.tone}`}>
-        {status.tone === "green" && <span className="working-dot" />}
-        {status.label}
-      </span>
-      <span className="home-row-main">
-        <span className="home-row-titleline">
-          {unread && <span className="home-row-unread-dot" />}
-          <span className="home-row-title">{session.title}</span>
-        </span>
-        <span className="home-row-meta">
-          <span className={`source-chip source-${chip}`}>{chip}</span>
-          {session.branch && session.branch !== session.title && (
-            <span className="home-row-branch">{session.branch}</span>
-          )}
-          {session.startedBy && <span>{session.startedBy}</span>}
-          <span>{relativeTime(session.lastActivity)}</span>
-        </span>
-      </span>
-      <span
-        className={`pin-btn ${pinned ? "pin-active" : ""}`}
-        onClick={(e) => onPin(e, session.id)}
-        title={pinned ? "Unpin" : "Pin"}
-        role="button"
-      >
-        {pinned ? "★" : "☆"}
-      </span>
-    </button>
   );
 }
