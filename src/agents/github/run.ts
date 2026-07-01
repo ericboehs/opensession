@@ -4,15 +4,53 @@
  * PR review/fix/simplify shows up as a Michael session in the web UI, and resumes
  * the engine conversation across rounds via the deterministic per-PR session file.
  */
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { runAgent } from "../../server/agent-runner";
 import { providerFor, DEFAULT_FALLBACK_MODEL } from "../../server/models";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/claude-runner";
 import { gitIdentityFor, type GitIdentity } from "../../server/shared/user-mappings";
+import { findOrCreateProjectByKey } from "../../server/projects";
+import { repoForPath } from "../../server/worktree";
 import type { BackstageSessionFile } from "../../server/types";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const SESSIONS_DIR = `${HOME}/.backstage-sessions`;
+
+/**
+ * All chats for one PR (its review/autofix/simplify/adversarial/mention runs,
+ * plus whatever session originally opened the PR) belong in one Project folder.
+ * Resolve-or-create it by a stable per-PR key, then pull in any existing session
+ * on the same head branch — that catches the originating session, which shares
+ * the branch but was created elsewhere. Best-effort: never block a run on this.
+ */
+function projectIdForPr(prNumber: number, branch: string, title: string, cwd: string): string | null {
+  try {
+    const repo = repoForPath(cwd).id;
+    const project = findOrCreateProjectByKey(`ghpr-${prNumber}`, {
+      name: `#${prNumber} ${title}`.trim().slice(0, 120),
+      repo,
+      createdBy: "GitHub (automation)",
+      prNumber,
+      branch,
+    });
+    // Adopt same-branch siblings that aren't already filed under a project.
+    if (branch) {
+      for (const file of readdirSync(SESSIONS_DIR)) {
+        if (!file.endsWith(".json")) continue;
+        try {
+          const p = `${SESSIONS_DIR}/${file}`;
+          const s = JSON.parse(readFileSync(p, "utf-8")) as BackstageSessionFile;
+          if (s.id && s.branch === branch && !s.projectId) {
+            writeFileSync(p, JSON.stringify({ ...s, projectId: project.id }, null, 2));
+          }
+        } catch {}
+      }
+    }
+    return project.id;
+  } catch {
+    return null;
+  }
+}
 
 export type GithubRunKind = "review" | "autofix" | "simplify" | "mention" | "adversarial";
 
@@ -85,6 +123,9 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
   const bksId = bksIdFor(opts.prNumber, opts.kind);
   const startedAt = new Date();
 
+  // Group this and the PR's other chats under one Project folder.
+  const projectId = projectIdForPr(opts.prNumber, opts.branch, opts.title, opts.cwd);
+
   const resumeFrom = opts.resume ? readEngineSessionId(bksId) : null;
 
   let effectiveModel = opts.model;
@@ -104,6 +145,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
       title: opts.title,
       mode: opts.mode,
       automation: "github-pr-review",
+      ...(projectId ? { projectId } : {}),
     };
     writeFileSync(`${SESSIONS_DIR}/${bksId}.json`, JSON.stringify(data, null, 2));
   };

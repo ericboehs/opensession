@@ -46,6 +46,13 @@ import {
 	setPins as setUserPins,
 } from "./src/server/pins";
 import {
+	listProjects,
+	getProject as getProjectFolder,
+	createProject,
+	updateProject,
+	deleteProject,
+} from "./src/server/projects";
+import {
 	getTabColors as getUserTabColors,
 	setTabColors as setUserTabColors,
 } from "./src/server/tab-colors";
@@ -2749,6 +2756,76 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				});
 			}
 
+			// ── Projects (folders that group chats) ──
+			// A Project is just metadata; membership lives on each chat's `projectId`.
+			if (path === "/backstage/api/projects" && req.method === "GET") {
+				return Response.json({ projects: listProjects() });
+			}
+
+			if (path === "/backstage/api/projects" && req.method === "POST") {
+				const body = (await req.json().catch(() => ({}))) as {
+					name?: string;
+					repo?: string;
+					color?: string;
+					user?: string;
+				};
+				if (!body.name || !body.name.trim())
+					return Response.json({ error: "name required" }, { status: 400 });
+				const project = createProject({
+					name: body.name,
+					repo: body.repo,
+					color: body.color,
+					createdBy: body.user || "Anonymous",
+				});
+				return Response.json({ project });
+			}
+
+			const projectMatch = path.match(/^\/backstage\/api\/projects\/(.+)$/);
+			if (projectMatch && req.method === "PATCH") {
+				const id = decodeURIComponent(projectMatch[1]);
+				const body = (await req.json().catch(() => ({}))) as {
+					name?: string;
+					repo?: string;
+					color?: string;
+					order?: number;
+				};
+				const project = updateProject(id, body);
+				if (!project)
+					return Response.json({ error: "Project not found" }, { status: 404 });
+				return Response.json({ project });
+			}
+
+			if (projectMatch && req.method === "DELETE") {
+				const id = decodeURIComponent(projectMatch[1]);
+				// Membership is derived from each chat's projectId — clear it so member
+				// chats fall back to standalone rather than pointing at a dead folder.
+				for (const s of getAllSessions()) {
+					if (s.projectId === id)
+						touchBackstageSession(s.id, { projectId: null });
+				}
+				const ok = deleteProject(id);
+				return Response.json({ ok });
+			}
+
+			// Move a chat in/out of a Project (folder). `{ projectId: null }` detaches.
+			const setProjectMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/project$/,
+			);
+			if (setProjectMatch && req.method === "POST") {
+				const sessionId = decodeURIComponent(setProjectMatch[1]);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const body = (await req.json().catch(() => ({}))) as {
+					projectId?: string | null;
+				};
+				const projectId = body.projectId ?? null;
+				if (projectId && !getProjectFolder(projectId))
+					return Response.json({ error: "Project not found" }, { status: 404 });
+				touchBackstageSession(sessionId, { projectId });
+				return Response.json({ ok: true, projectId });
+			}
+
 			// Attach a secondary repo to a session (cross-repo work): creates/reuses an
 			// isolated worktree and records it on the session.
 			const attachMatch = path.match(
@@ -3868,6 +3945,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 												: branch,
 									worktreeDir: wtPath,
 									repo: repoForPath(wtPath).id,
+									...(typeof msg.projectId === "string" && msg.projectId
+										? { projectId: msg.projectId }
+										: {}),
 									createdBy: user || "Anonymous",
 									createdAt: new Date().toISOString(),
 									lastActivity: new Date().toISOString(),
