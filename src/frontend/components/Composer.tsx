@@ -1,9 +1,18 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { ModelOption, FileMention } from "../lib/api";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
+import {
+  IconArrowUp,
+  IconBolt,
+  IconArrowDownRight,
+  IconPlus,
+  IconPaperclip,
+  IconAtSign,
+  IconCrosshair,
+} from "./icons";
 
 interface Props {
   value: string;
@@ -22,6 +31,20 @@ interface Props {
   onModelChange: (model: string) => void;
   modelDisabled?: boolean;
   modelTitle?: string;
+  /**
+   * Reasoning-effort control (stowed as a compact pill, mirroring the new-session
+   * palette). Forward-compatible: threaded through but not yet consumed
+   * server-side. When omitted, the effort pill is hidden.
+   */
+  effort?: string;
+  onEffortChange?: (effort: string) => void;
+  /**
+   * Session goal (pinned via /goal, rides along with every prompt). When
+   * `onSetGoal` is wired, a target button lets you set/clear it inline; it lights
+   * up and grows a "Goal" label while a goal is pinned.
+   */
+  goal?: string | null;
+  onSetGoal?: (goal: string | null) => void;
   /** Extra control rendered in the toolbar, left of the send button. */
   leftExtra?: React.ReactNode;
   /**
@@ -54,16 +77,80 @@ interface Props {
   mentionFetch?: (query: string) => Promise<FileMention[]>;
 }
 
+const EFFORTS = [
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+];
+
 function modelShortLabel(id: string, models: ModelOption[]): string {
   const m = models.find((x) => x.id === id);
   return m ? m.label : id;
 }
 
+/** Inline set/clear editor for the session goal. */
+function GoalPopover({
+  initial,
+  onSubmit,
+  onClose,
+}: {
+  initial: string;
+  onSubmit: (goal: string | null) => void;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState(initial);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+  return (
+    <div className="composer-menu composer-goal-pop">
+      <div className="composer-goal-pop-title">Session goal</div>
+      <input
+        ref={inputRef}
+        className="composer-goal-input"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onSubmit(text.trim() || null);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+          }
+        }}
+        placeholder="Pin a goal — rides along with every prompt…"
+      />
+      <div className="composer-goal-pop-actions">
+        {initial && (
+          <button
+            type="button"
+            className="composer-menu-item composer-goal-clear"
+            onClick={() => onSubmit(null)}
+          >
+            Clear goal
+          </button>
+        )}
+        <button
+          type="button"
+          className="composer-goal-set"
+          onClick={() => onSubmit(text.trim() || null)}
+          disabled={text.trim() === initial}
+        >
+          {initial ? "Update" : "Set goal"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Shared chat composer (Claude/Codex-style): rounded container with an
- * auto-growing textarea and a bottom toolbar carrying the model pill and a
- * circular send button. Enter sends, Shift+Enter newlines. With `mentionFetch`,
- * typing "@" opens a file-path autocomplete (arrows to move, Enter/Tab to pick).
+ * auto-growing textarea and a bottom toolbar carrying compact model/effort pills,
+ * a Goal target, a "+" add menu and the send button. Enter sends, Shift+Enter
+ * newlines. With `mentionFetch`, typing "@" opens a file-path autocomplete.
  */
 export function Composer({
   value,
@@ -80,6 +167,10 @@ export function Composer({
   onModelChange,
   modelDisabled,
   modelTitle,
+  effort,
+  onEffortChange,
+  goal,
+  onSetGoal,
   leftExtra,
   onSteerSend,
   hint,
@@ -94,11 +185,24 @@ export function Composer({
   const internalRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = externalRef ?? internalRef;
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const imgs = images || [];
   const fls = files || [];
   // Any attachment affordance (paste/drop/pick + thumbnails) is enabled when the
   // parent wired up either channel.
   const canAttach = !!onImagesChange || !!onFilesChange;
+
+  // Which toolbar popover is open ("add" menu or "goal" editor). Closed on an
+  // outside click or after an action.
+  const [menu, setMenu] = useState<null | "add" | "goal">(null);
+  useEffect(() => {
+    if (!menu) return;
+    function onDown(e: MouseEvent) {
+      if (!(e.target as HTMLElement).closest(".composer-pop-wrap")) setMenu(null);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menu]);
 
   // "@"-mention file autocomplete (shared with the New-session prompt field).
   const mentions = useFileMentions({ value, onChange, textareaRef, mentionFetch });
@@ -135,12 +239,28 @@ export function Composer({
     onFilesChange?.(fls.filter((_, idx) => idx !== i));
   }
 
-  // Auto-grow up to the CSS max-height
+  // Insert an "@" at the caret and focus the textarea, opening the mention popup.
+  function startMention() {
+    const el = textareaRef.current;
+    const at = el ? el.selectionStart : value.length;
+    const next = value.slice(0, at) + "@" + value.slice(at);
+    onChange(next);
+    queueMicrotask(() => {
+      const t = textareaRef.current;
+      if (t) {
+        t.focus();
+        t.selectionStart = t.selectionEnd = at + 1;
+      }
+      mentions.sync();
+    });
+  }
+
+  // Auto-grow between a tall resting floor and the CSS max-height.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 120), 320)}px`;
   }, [value]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -152,6 +272,7 @@ export function Composer({
   }
 
   const effectiveModel = model || defaultModel;
+  const isCodex = effectiveModel.startsWith("gpt") || effectiveModel.startsWith("codex");
 
   return (
     <div className="composer-wrap">
@@ -187,10 +308,13 @@ export function Composer({
             autoFocus={autoFocus}
           />
         </div>
-        <div className="composer-toolbar">
-          <div className="composer-model" title={modelTitle || "Model for this session"}>
-            <span className={`composer-model-dot ${effectiveModel.startsWith("gpt") || effectiveModel.startsWith("codex") ? "dot-codex" : "dot-claude"}`} />
+        <div className="composer-toolbar" ref={toolbarRef}>
+          <div className="palette-pill" title={modelTitle || "Model for this session"}>
+            <span className={`composer-model-dot ${isCodex ? "dot-codex" : "dot-claude"}`} />
+            <span className="palette-pill-label">{modelShortLabel(effectiveModel, models)}</span>
+            <span className="palette-chevron">▾</span>
             <select
+              className="palette-select-overlay"
               value={model}
               onChange={(e) => onModelChange(e.target.value)}
               disabled={disabled || modelDisabled}
@@ -205,20 +329,112 @@ export function Composer({
                   </option>
                 ))}
             </select>
-            <span className="composer-model-chevron">▾</span>
           </div>
-          {canAttach && (
-            <>
+
+          {onEffortChange && (
+            <div
+              className="palette-pill"
+              title="Reasoning effort — applies to new turns (not yet enforced server-side)"
+            >
+              <span className="palette-effort-icon" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <span className="palette-pill-label">
+                {EFFORTS.find((e) => e.id === effort)?.label ?? "High"}
+              </span>
+              <span className="palette-chevron">▾</span>
+              <select
+                className="palette-select-overlay"
+                value={effort ?? "high"}
+                onChange={(e) => onEffortChange(e.target.value)}
+                disabled={disabled}
+                aria-label="Reasoning effort"
+              >
+                {EFFORTS.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {onSetGoal && (
+            <div className="composer-pop-wrap">
               <button
                 type="button"
-                className="composer-attach-btn"
-                onClick={() => fileInputRef.current?.click()}
+                className={`palette-icon-btn composer-goal-btn ${goal ? "is-on" : ""}`}
+                onClick={() => setMenu(menu === "goal" ? null : "goal")}
                 disabled={disabled}
-                title={onFilesChange ? "Attach a file" : "Attach an image"}
-                aria-label={onFilesChange ? "Attach a file" : "Attach an image"}
+                title={goal ? `Goal: ${goal}` : "Pin a goal for this session"}
+                aria-pressed={!!goal}
               >
-                📎
+                <IconCrosshair size={16} />
+                {goal && <span className="composer-goal-label">Goal</span>}
               </button>
+              {menu === "goal" && (
+                <GoalPopover
+                  initial={goal || ""}
+                  onClose={() => setMenu(null)}
+                  onSubmit={(g) => {
+                    onSetGoal(g);
+                    setMenu(null);
+                  }}
+                />
+              )}
+            </div>
+          )}
+
+          {leftExtra}
+          <div className="composer-spacer" />
+
+          {canAttach && (
+            <div className="composer-pop-wrap">
+              <button
+                type="button"
+                className="palette-icon-btn composer-add-btn"
+                onClick={() => setMenu(menu === "add" ? null : "add")}
+                disabled={disabled}
+                title="Add files or a file reference"
+                aria-label="Add"
+                aria-expanded={menu === "add"}
+              >
+                <IconPlus size={17} />
+              </button>
+              {menu === "add" && (
+                <div className="composer-menu">
+                  <button
+                    type="button"
+                    className="composer-menu-item"
+                    onClick={() => {
+                      setMenu(null);
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    <span className="composer-menu-icon">
+                      <IconPaperclip size={16} />
+                    </span>
+                    {onFilesChange ? "Attach files" : "Attach an image"}
+                  </button>
+                  {mentionFetch && (
+                    <button
+                      type="button"
+                      className="composer-menu-item"
+                      onClick={() => {
+                        setMenu(null);
+                        startMention();
+                      }}
+                    >
+                      <span className="composer-menu-icon">
+                        <IconAtSign size={16} />
+                      </span>
+                      Reference a file
+                    </button>
+                  )}
+                </div>
+              )}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -231,10 +447,9 @@ export function Composer({
                   e.target.value = "";
                 }}
               />
-            </>
+            </div>
           )}
-          {leftExtra}
-          <div className="composer-spacer" />
+
           {busy && onSteerSend && (
             <button
               className="composer-send composer-send-queue"
@@ -242,7 +457,7 @@ export function Composer({
               disabled={disabled || sendDisabled}
               title="Fold in at Michael's next stopping point — don't interrupt the current turn"
             >
-              +
+              <IconArrowDownRight size={16} />
             </button>
           )}
           <button
@@ -254,7 +469,7 @@ export function Composer({
               (busy ? "Send now — interrupts the current turn and redirects Michael (Enter)" : "Send (Enter)")
             }
           >
-            {busy ? "⚡" : "↑"}
+            {busy ? <IconBolt size={17} /> : <IconArrowUp size={17} />}
           </button>
         </div>
       </div>

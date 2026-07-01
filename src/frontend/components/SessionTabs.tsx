@@ -29,7 +29,13 @@ interface Props {
 	onSelect: (tab: TabItem) => void;
 	onTogglePin: (key: string) => void;
 	onSetColor: (key: string, color: string | null) => void;
+	/**
+	 * The + button. When `newChatMode` is set (a session is open) it starts a
+	 * fresh chat in the current session (stay put); otherwise it opens the
+	 * new-session palette.
+	 */
 	onNewSession: () => void;
+	newChatMode?: boolean;
 	/** Persist a new pinned-tab order after a drag. */
 	onReorder: (keys: string[]) => void;
 	/** Rename a session tab (double-click the title); empty title resets it. */
@@ -53,6 +59,7 @@ export function SessionTabs({
 	onTogglePin,
 	onSetColor,
 	onNewSession,
+	newChatMode,
 	onReorder,
 	onRename,
 }: Props) {
@@ -199,8 +206,10 @@ export function SessionTabs({
 			<button
 				type="button"
 				className="session-tab session-tab-new"
-				aria-label="New session"
-				title="New session"
+				aria-label={newChatMode ? "New chat in this session" : "New session"}
+				title={
+					newChatMode ? "New chat (stays in this session)" : "New session"
+				}
 				onClick={onNewSession}
 			>
 				+

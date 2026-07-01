@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { relativeTime, archiveSessionApi } from "../lib/api";
+import { useCurrentUser } from "./UserPicker";
 
 interface Props {
   sessions: UnifiedSession[];
@@ -8,9 +9,36 @@ interface Props {
   onChanged: () => void;
 }
 
+const DEFAULT_PROJECT = "tella-fusion";
+// Same key the sidebar persists its group/repo/sort choices under, so the
+// archived page opens with the repo filter the sidebar is already showing.
+const SIDEBAR_FILTER_KEY = "michael-sidebar-filter";
+
+type OwnerFilter = "mine" | "everyone";
+
+function sessionRepo(s: UnifiedSession): string {
+  return s.project || DEFAULT_PROJECT;
+}
+
+// The repo the sidebar is currently filtered to ("all" when unset), read fresh
+// so we inherit it as the archived page's starting repo.
+function sidebarRepo(): string {
+  try {
+    const v = JSON.parse(localStorage.getItem(SIDEBAR_FILTER_KEY) || "{}");
+    return typeof v.repo === "string" ? v.repo : "all";
+  } catch {
+    return "all";
+  }
+}
+
 export function Archived({ sessions, onSelect, onChanged }: Props) {
+  const currentUser = useCurrentUser();
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  // Michiel's scope: default to *my* archived sessions, and inherit the sidebar's
+  // repo filter — both still adjustable here.
+  const [owner, setOwner] = useState<OwnerFilter>("mine");
+  const [repo, setRepo] = useState<string>(sidebarRepo);
 
   useEffect(() => {
     document.title = "Archived — Michael";
@@ -19,18 +47,52 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
     };
   }, []);
 
+  const allArchived = useMemo(
+    () => sessions.filter((s) => s.archived),
+    [sessions],
+  );
+
+  // Repos present in the archived set, most-used first — the repo dropdown options.
+  const repos = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of allArchived) {
+      const p = sessionRepo(s);
+      counts.set(p, (counts.get(p) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([name]) => name);
+  }, [allArchived]);
+
+  // If the inherited repo isn't among the archived sessions, fall back to "all"
+  // so the list isn't mysteriously empty on open.
+  useEffect(() => {
+    if (repo !== "all" && !repos.includes(repo)) setRepo("all");
+  }, [repo, repos]);
+
   const archived = useMemo(() => {
-    const list = sessions.filter((s) => s.archived);
-    if (!search.trim()) return list;
-    const q = search.toLowerCase();
-    return list.filter(
-      (s) =>
-        s.title.toLowerCase().includes(q) ||
-        (s.branch || "").toLowerCase().includes(q) ||
-        (s.startedBy || "").toLowerCase().includes(q) ||
-        (s.automation || "").toLowerCase().includes(q)
-    );
-  }, [sessions, search]);
+    const user = currentUser.toLowerCase();
+    let list = allArchived;
+    if (owner === "mine")
+      list = list.filter(
+        (s) =>
+          !s.automation &&
+          !!s.startedBy &&
+          s.startedBy.toLowerCase() === user,
+      );
+    if (repo !== "all") list = list.filter((s) => sessionRepo(s) === repo);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (s) =>
+          s.title.toLowerCase().includes(q) ||
+          (s.branch || "").toLowerCase().includes(q) ||
+          (s.startedBy || "").toLowerCase().includes(q) ||
+          (s.automation || "").toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [allArchived, owner, repo, search, currentUser]);
 
   async function handleUnarchive(e: React.MouseEvent, id: string) {
     e.stopPropagation();
@@ -49,8 +111,9 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
         <div>
           <h2 className="page-title">Archived</h2>
           <div className="page-sub">
-            {archived.length} archived session{archived.length === 1 ? "" : "s"} — done Plain
-            tickets and anything idle for over a week land here automatically.
+            {archived.length} archived session{archived.length === 1 ? "" : "s"} —
+            done Plain tickets and anything idle for over a week land here
+            automatically.
           </div>
         </div>
         <input
@@ -62,9 +125,45 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
         />
       </div>
 
+      <div className="archived-filters">
+        <div className="seg-control" role="group" aria-label="Owner">
+          <button
+            className={`seg-control-btn${owner === "mine" ? " active" : ""}`}
+            onClick={() => setOwner("mine")}
+          >
+            My archived
+          </button>
+          <button
+            className={`seg-control-btn${owner === "everyone" ? " active" : ""}`}
+            onClick={() => setOwner("everyone")}
+          >
+            Everyone
+          </button>
+        </div>
+        {repos.length > 1 && (
+          <div className="seg-control" role="group" aria-label="Repo">
+            <button
+              className={`seg-control-btn${repo === "all" ? " active" : ""}`}
+              onClick={() => setRepo("all")}
+            >
+              All repos
+            </button>
+            {repos.map((name) => (
+              <button
+                key={name}
+                className={`seg-control-btn${repo === name ? " active" : ""}`}
+                onClick={() => setRepo(name)}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {archived.length === 0 ? (
         <div className="automations-empty">
-          <p>Nothing archived{search ? " matches" : " yet"}.</p>
+          <p>Nothing archived{search || owner === "mine" || repo !== "all" ? " matches" : " yet"}.</p>
         </div>
       ) : (
         <div className="home-rows">

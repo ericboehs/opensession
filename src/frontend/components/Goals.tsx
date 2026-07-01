@@ -171,7 +171,7 @@ export function Goals({ onOpenSession }: Props) {
                   {g.model || defaultModel || "default"}
                 </span>
                 {g.phase && (
-                  <span className="source-chip" title="Current phase">
+                  <span className="source-chip goal-phase-chip" title={g.phase}>
                     {g.phase}
                   </span>
                 )}

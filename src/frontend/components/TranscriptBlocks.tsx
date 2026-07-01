@@ -24,7 +24,13 @@ interface Props {
  * and message bubbles, then renders them. Shared by the main session view and
  * the sub-agent sidebar so both render identically.
  */
-export function TranscriptBlocks({
+// Memoized: the transcript is expensive to render (markdown parsing + code
+// highlighting across every bubble/work block), and unrelated SessionViewer
+// re-renders — most notably toggling the workspace panel on/off — would
+// otherwise re-render the whole thing synchronously and stall the interaction.
+// With stable props (entries reference unchanged, callbacks memoized upstream)
+// this bails out entirely on a panel toggle. See SessionViewer's useCallbacks.
+export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 	entries,
 	live,
 	onFork,
@@ -73,4 +79,4 @@ export function TranscriptBlocks({
 			)}
 		</>
 	);
-}
+});

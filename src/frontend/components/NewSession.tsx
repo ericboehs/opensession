@@ -5,13 +5,17 @@ import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../l
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
+import { IconBolt, IconMap, IconPaperclip } from "./icons";
 import type { WSServerMessage } from "../lib/types";
 
 interface Props {
+  /** Close the palette (Esc, backdrop click, or after a create without "Create more"). */
   onBack: () => void;
   send: (msg: any) => void;
   addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
   connected: boolean;
+  /** Prefill the prompt (e.g. from the Home "New session" box). */
+  prefillPrompt?: string;
 }
 
 interface Worktree {
@@ -31,27 +35,64 @@ const PROJECTS = [
   { id: "gst-plugins-rs", label: "gst-plugins-rs" },
 ];
 
+const EFFORTS = [
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+];
+
+// The repo the sidebar is currently filtered to (persisted by Sidebar.tsx under
+// this key). When set to a real project, a new session should default to it so
+// creating from a repo-filtered view lands on that repo — not always tella-fusion.
+function filteredRepo(): string | null {
+  try {
+    const v = JSON.parse(localStorage.getItem("michael-sidebar-filter") || "{}");
+    return typeof v.repo === "string" && PROJECTS.some((p) => p.id === v.repo)
+      ? v.repo
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Deep-link prefill: /backstage/new?mode=ask|code&prompt=…&branch=…&project= */
 function readPrefill() {
   const params = new URLSearchParams(location.search);
+  // An explicit ?project= wins; otherwise fall back to the sidebar's repo filter,
+  // then to tella-fusion.
+  const project = PROJECTS.some((p) => p.id === params.get("project"))
+    ? params.get("project")!
+    : filteredRepo() || "tella-fusion";
   return {
     mode: params.get("mode") === "ask" ? ("ask" as const) : ("code" as const),
     prompt: params.get("prompt") || "",
     branch: params.get("branch") || "",
-    project: PROJECTS.some((p) => p.id === params.get("project"))
-      ? params.get("project")!
-      : "tella-fusion",
+    project,
   };
 }
 
-export function NewSession({ onBack, send, addHandler, connected }: Props) {
+/** Fallback branch name from the prompt when Haiku's auto-suggest hasn't landed. */
+function slugifyBranch(text: string): string {
+  const slug = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .split("-")
+    .slice(0, 6)
+    .join("-");
+  return slug || "new-session";
+}
+
+const isCodexModel = (m: string) => m.startsWith("gpt") || m.startsWith("codex") || m.startsWith("o");
+
+export function NewSession({ onBack, send, addHandler, connected, prefillPrompt }: Props) {
   const [prefill] = useState(readPrefill);
   const [mode, setMode] = useState<"ask" | "code">(prefill.mode);
   const [project, setProject] = useState(prefill.project);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [selectedWorktree, setSelectedWorktree] = useState("__new__");
   const [newBranch, setNewBranch] = useState(prefill.branch);
-  const [prompt, setPrompt] = useState(prefill.prompt);
+  const [prompt, setPrompt] = useState(prefillPrompt || prefill.prompt);
   // Whether the user has hand-edited the branch field. Once true we stop
   // auto-suggesting so we never clobber what they typed. A prefilled branch
   // (deep link) counts as already-owned.
@@ -64,11 +105,18 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [model, setModel] = useState(""); // "" = default
+  // Footer controls from the palette design. effort/fast/plan are sent through
+  // create_session but not yet consumed server-side (forward-compatible).
+  const [effort, setEffort] = useState("high");
+  const [fast, setFast] = useState(false);
+  const [plan, setPlan] = useState(false);
+  // Keep the palette open after a create to fire off another task.
+  const [createMore, setCreateMore] = useState(false);
 
   // "@"-mention file autocomplete against the selected project's repo (no
   // session exists yet, so search by project).
   const promptRef = useRef<HTMLTextAreaElement>(null);
-  // Hidden <input type="file"> driven by the "Add image" button — the mobile
+  // Hidden <input type="file"> driven by the "Add file" button — the mobile
   // path, since there's no clipboard paste there.
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mentions = useFileMentions({
@@ -77,6 +125,11 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
     textareaRef: promptRef,
     mentionFetch: (q) => fetchFileMentions(q, undefined, project),
   });
+
+  // Focus the prompt as soon as the palette opens.
+  useEffect(() => {
+    promptRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     fetchModels()
@@ -123,10 +176,27 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
       if (msg.type === "error") {
         setError(msg.message);
         setCreating(false);
+      } else if (msg.type === "session_created") {
+        // With "Create more" on, stay in the palette and reset for the next task
+        // (App still navigates into the created session behind the overlay). Off,
+        // close and let App drop us into the new session.
+        if (createMore) {
+          setCreating(false);
+          setPrompt("");
+          setImages([]);
+          setFiles([]);
+          setNewBranch("");
+          setBranchEdited(false);
+          setError(null);
+          promptRef.current?.focus();
+        } else {
+          // Close the palette; App's global session_created handler drops us
+          // into the newly created session behind it.
+          onBack();
+        }
       }
-      // session_created is handled globally in App → navigates into the session
     });
-  }, [creating, addHandler]);
+  }, [creating, addHandler, createMore]);
 
   async function addAttachments(picked: FileList | File[]) {
     const { images: imgs, files: fls } = await splitAttachments(picked);
@@ -143,11 +213,15 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
   }
 
   function handleCreate() {
-    const branch = selectedWorktree === "__new__" ? newBranch.trim() : selectedWorktree;
-    if (mode === "code" && !branch) return;
-    if (!prompt.trim() && images.length === 0 && files.length === 0) return;
+    if (!canCreate) return;
+    const branch =
+      selectedWorktree === "__new__"
+        ? newBranch.trim() || slugifyBranch(prompt)
+        : selectedWorktree;
 
     setError(null);
+    // With "Create more" off, App tears down the palette when the
+    // session_created event arrives (and drops us into the new session).
     setCreating(true);
     send({
       type: "create_session",
@@ -157,6 +231,9 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
       prompt: prompt.trim(),
       user: getCurrentUser(),
       ...(model ? { model } : {}),
+      effort,
+      fast,
+      plan,
       ...(images.length ? { images } : {}),
       ...(files.length ? { files: files.map((f) => ({ name: f.name, dataUrl: f.dataUrl })) } : {}),
     });
@@ -166,145 +243,210 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
     !creating &&
     connected &&
     (prompt.trim() || images.length > 0 || files.length > 0) &&
-    (mode === "ask" ||
-      (selectedWorktree && (selectedWorktree !== "__new__" || newBranch.trim())));
+    (mode === "ask" || selectedWorktree !== "" );
+
+  // "Create from…" combines the mode + base into one control.
+  const createFromValue = mode === "ask" ? "__ask__" : selectedWorktree;
+  function onCreateFromChange(v: string) {
+    if (v === "__ask__") {
+      setMode("ask");
+    } else {
+      setMode("code");
+      setSelectedWorktree(v);
+    }
+  }
+  const createFromLabel =
+    mode === "ask"
+      ? "Ask · read-only"
+      : selectedWorktree === "__new__"
+        ? "New branch"
+        : selectedWorktree;
+
+  const effectiveModel = model || defaultModel;
+  const modelLabel =
+    models.find((m) => m.id === effectiveModel)?.label || effectiveModel || "Default";
 
   return (
-    <div className="new-session">
-      <div className="viewer-header">
-        <button className="btn-back" onClick={onBack}>
-          ← Back
-        </button>
-        <div className="viewer-title">New session</div>
-      </div>
+    <div
+      className="palette-backdrop"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !creating) onBack();
+      }}
+    >
+      <div className="palette-card" role="dialog" aria-label="New session">
+        {/* Header: project (left) · create-from (right) */}
+        <div className="palette-header">
+          <div className="palette-trigger palette-trigger-strong" title="Repository">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M2 6h12" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
+            <span className="palette-trigger-label">
+              {PROJECTS.find((p) => p.id === project)?.label || project}
+            </span>
+            <span className="palette-chevron">▾</span>
+            <select
+              className="palette-select-overlay"
+              value={project}
+              onChange={(e) => setProject(e.target.value)}
+              disabled={creating}
+              aria-label="Repository"
+            >
+              {PROJECTS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
-      <div className="new-session-form">
-        <label>
-          Project
-          <select
-            value={project}
-            onChange={(e) => setProject(e.target.value)}
+          <div className="palette-trigger" title="What to create from">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="4" cy="4" r="1.7" stroke="currentColor" strokeWidth="1.3" />
+              <circle cx="4" cy="12" r="1.7" stroke="currentColor" strokeWidth="1.3" />
+              <circle cx="12" cy="5.5" r="1.7" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M4 5.7v4.6M4 8h4a4 4 0 004-4" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
+            <span className="palette-trigger-label">{createFromLabel}</span>
+            <span className="palette-chevron">▾</span>
+            <select
+              className="palette-select-overlay"
+              value={createFromValue}
+              onChange={(e) => onCreateFromChange(e.target.value)}
+              disabled={creating}
+              aria-label="Create from"
+            >
+              <option value="__new__">New branch</option>
+              {worktrees.map((wt) => (
+                <option key={wt.branch} value={wt.branch}>
+                  {wt.branch}
+                </option>
+              ))}
+              <option value="__ask__">Ask — read-only on main</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Prompt */}
+        <div
+          className="palette-body"
+          onDrop={(e) => {
+            if (e.dataTransfer?.files?.length) {
+              e.preventDefault();
+              void addAttachments(e.dataTransfer.files);
+            }
+          }}
+          onDragOver={(e) => e.preventDefault()}
+          ref={mentions.inputWrapRef}
+        >
+          {mentions.popup}
+          <textarea
+            ref={promptRef}
+            className="palette-textarea"
+            value={prompt}
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              queueMicrotask(mentions.sync);
+            }}
+            onKeyDown={(e) => {
+              // ⌘/Ctrl+Enter creates (unless the mention popup is capturing keys).
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                handleCreate();
+                return;
+              }
+              mentions.handleKeyDown(e);
+            }}
+            onKeyUp={mentions.sync}
+            onClick={mentions.sync}
+            onBlur={() => setTimeout(mentions.close, 120)}
+            onPaste={handlePaste}
+            placeholder="What do you want to work on?"
             disabled={creating}
-          >
-            {PROJECTS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+          <ImageThumbs images={images} onRemove={(i) => setImages((p) => p.filter((_, idx) => idx !== i))} disabled={creating} />
+          <FileChips files={files} onRemove={(i) => setFiles((p) => p.filter((_, idx) => idx !== i))} disabled={creating} />
+        </div>
 
-        <label>
-          Mode
-          <select
-            value={mode}
-            onChange={(e) => setMode(e.target.value as "ask" | "code")}
-            disabled={creating}
-          >
-            <option value="code">Code — fresh worktree, can ship a PR</option>
-            <option value="ask">Ask — read-only Q&A on main</option>
-          </select>
-        </label>
+        {error && <div className="palette-error">{error}</div>}
 
-        {mode === "code" && (
-          <>
-            <label>
-              Branch / worktree
+        {/* Footer toolbar */}
+        <div className="palette-footer">
+          <div className="palette-footer-left">
+            <div className="palette-pill" title="Model">
+              <span className={`composer-model-dot ${isCodexModel(effectiveModel) ? "dot-codex" : "dot-claude"}`} />
+              <span className="palette-pill-label">{modelLabel}</span>
+              <span className="palette-chevron">▾</span>
               <select
-                value={selectedWorktree}
-                onChange={(e) => setSelectedWorktree(e.target.value)}
+                className="palette-select-overlay"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
                 disabled={creating}
+                aria-label="Model"
               >
-                <option value="__new__">+ Create new branch</option>
-                {worktrees.map((wt) => (
-                  <option key={wt.branch} value={wt.branch}>
-                    {wt.branch}
+                <option value="">Default{defaultModel ? ` — ${defaultModel}` : ""}</option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label} ({m.provider === "codex" ? "OpenAI Codex" : "Claude"})
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
 
-            {selectedWorktree === "__new__" && (
-              <label>
-                <span className="label-row">
-                  Branch name
-                  {suggestingBranch && !branchEdited && (
-                    <span className="branch-suggesting">✨ suggesting…</span>
-                  )}
-                </span>
-                <input
-                  type="text"
-                  value={newBranch}
-                  onChange={(e) => {
-                    setBranchEdited(true);
-                    setNewBranch(e.target.value);
-                  }}
-                  placeholder={suggestingBranch ? "naming it…" : "feature-name"}
-                  disabled={creating}
-                />
-              </label>
-            )}
-          </>
-        )}
-
-        <label>
-          Model
-          <select value={model} onChange={(e) => setModel(e.target.value)} disabled={creating}>
-            <option value="">Default{defaultModel ? ` — ${defaultModel}` : ""}</option>
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label} ({m.provider === "codex" ? "OpenAI Codex" : "Claude"})
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          What should Michael do?
-          <div
-            className="composer-input-wrap"
-            onDrop={(e) => {
-              if (e.dataTransfer?.files?.length) {
-                e.preventDefault();
-                void addAttachments(e.dataTransfer.files);
-              }
-            }}
-            onDragOver={(e) => e.preventDefault()}
-            ref={mentions.inputWrapRef}
-          >
-            {mentions.popup}
-            <textarea
-              ref={promptRef}
-              value={prompt}
-              onChange={(e) => {
-                setPrompt(e.target.value);
-                // Caret has moved to the new value; re-evaluate after React commits.
-                queueMicrotask(mentions.sync);
-              }}
-              onKeyDown={(e) => mentions.handleKeyDown(e)}
-              onKeyUp={mentions.sync}
-              onClick={mentions.sync}
-              onBlur={() => setTimeout(mentions.close, 120)}
-              onPaste={handlePaste}
-              placeholder={
-                mode === "ask"
-                  ? "Ask anything about the codebase or product — read-only. Type @ to reference a file. Paste a screenshot or attach files with 📎."
-                  : `Describe the task — Michael gets a fresh worktree on ${project} and starts right away. Type @ to reference a file. Paste a screenshot or attach files with 📎.`
-              }
-              rows={6}
-              disabled={creating}
-            />
-            <ImageThumbs images={images} onRemove={(i) => setImages((p) => p.filter((_, idx) => idx !== i))} disabled={creating} />
-            <FileChips files={files} onRemove={(i) => setFiles((p) => p.filter((_, idx) => idx !== i))} disabled={creating} />
-          </div>
-          <div className="composer-attach-row">
             <button
               type="button"
-              className="btn-attach"
+              className={`palette-icon-btn ${fast ? "is-on" : ""}`}
+              onClick={() => setFast((v) => !v)}
+              disabled={creating}
+              title={`Fast mode ${fast ? "on" : "off"} (not yet wired server-side)`}
+              aria-pressed={fast}
+            >
+              <IconBolt size={17} />
+            </button>
+
+            <div className="palette-pill" title="Reasoning effort (not yet wired server-side)">
+              <span className="palette-effort-icon" aria-hidden="true">
+                <span /><span /><span />
+              </span>
+              <span className="palette-pill-label">{EFFORTS.find((e) => e.id === effort)?.label}</span>
+              <span className="palette-chevron">▾</span>
+              <select
+                className="palette-select-overlay"
+                value={effort}
+                onChange={(e) => setEffort(e.target.value)}
+                disabled={creating}
+                aria-label="Reasoning effort"
+              >
+                {EFFORTS.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              className={`palette-icon-btn ${plan ? "is-on" : ""}`}
+              onClick={() => setPlan((v) => !v)}
+              disabled={creating}
+              title={`Plan mode ${plan ? "on" : "off"} (not yet wired server-side)`}
+              aria-pressed={plan}
+            >
+              <IconMap size={17} />
+            </button>
+          </div>
+
+          <div className="palette-footer-right">
+            <button
+              type="button"
+              className="palette-icon-btn"
               onClick={() => fileInputRef.current?.click()}
               disabled={creating}
+              title="Attach a file"
+              aria-label="Attach a file"
             >
-              📎 Add file
+              <IconPaperclip size={17} />
             </button>
             <input
               ref={fileInputRef}
@@ -313,27 +455,30 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
               hidden
               onChange={(e) => {
                 if (e.target.files?.length) void addAttachments(e.target.files);
-                // Reset so picking the same file again still fires onChange.
                 e.target.value = "";
               }}
             />
-          </div>
-        </label>
 
-        {error && <div className="form-error">{error}</div>}
+            <button
+              type="button"
+              className={`palette-switch ${createMore ? "is-on" : ""}`}
+              onClick={() => setCreateMore((v) => !v)}
+              disabled={creating}
+              title="Keep this open after creating to start another"
+              aria-pressed={createMore}
+            >
+              <span className="palette-switch-track">
+                <span className="palette-switch-knob" />
+              </span>
+              Create more
+            </button>
 
-        <button className="btn-create" onClick={handleCreate} disabled={!canCreate}>
-          {creating
-            ? mode === "ask"
-              ? "Starting Michael…"
-              : "Setting up worktree & starting Michael…"
-            : "Start session"}
-        </button>
-        {creating && (
-          <div className="create-note">
-            Booting the session — you'll be dropped into it as soon as it's live.
+            <button className="palette-create" onClick={handleCreate} disabled={!canCreate}>
+              {creating ? "Creating…" : "Create"}
+              <span className="palette-create-kbd">↵</span>
+            </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

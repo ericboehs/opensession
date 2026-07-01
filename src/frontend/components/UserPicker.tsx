@@ -38,14 +38,23 @@ export function UserPicker() {
   }
 
   return (
-    <select className="user-picker" value={user} onChange={handleChange}>
-      {!TEAM.includes(user) && <option value={user}>{user}</option>}
-      {TEAM.map((name) => (
-        <option key={name} value={name}>
-          {name}
-        </option>
-      ))}
-    </select>
+    <div className="user-picker">
+      <span className="user-picker-val">{user}</span>
+      <span className="user-picker-caret">▾</span>
+      <select
+        className="user-picker-select"
+        value={user}
+        onChange={handleChange}
+        aria-label="Current user"
+      >
+        {!TEAM.includes(user) && <option value={user}>{user}</option>}
+        {TEAM.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 

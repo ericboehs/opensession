@@ -1,60 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-	getThemePref,
-	setThemePref,
-	onThemeChanged,
-	type ThemePref,
-} from "../lib/theme";
 
-// The dropdown behind the "Michael" title in the top bar. Scaffolded to grow:
-// today it holds Appearance (theme), but each new preference is just another
-// .settings-section. Kept deliberately small so it can live in the header.
+// The dropdown behind the "Michael" title in the top bar. It's a small menu whose
+// one entry opens the full Settings page (theme, notifications, …). Appearance and
+// other preferences live in Settings now, not inline here.
 
-function ThemeIcon({ pref }: { pref: ThemePref }) {
-	if (pref === "light")
-		return (
-			<svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-				<circle cx="12" cy="12" r="4.5" stroke="currentColor" strokeWidth="1.7" />
-				<path
-					d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"
-					stroke="currentColor"
-					strokeWidth="1.7"
-					strokeLinecap="round"
-				/>
-			</svg>
-		);
-	if (pref === "dark")
-		return (
-			<svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-				<path
-					d="M20 14.2A8 8 0 1 1 9.8 4 6.3 6.3 0 0 0 20 14.2Z"
-					stroke="currentColor"
-					strokeWidth="1.7"
-					strokeLinejoin="round"
-				/>
-			</svg>
-		);
-	return (
-		<svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-			<rect x="3" y="4.5" width="18" height="12" rx="1.6" stroke="currentColor" strokeWidth="1.7" />
-			<path d="M8.5 20h7M12 16.5V20" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-		</svg>
-	);
-}
-
-const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
-	{ value: "system", label: "System" },
-	{ value: "light", label: "Light" },
-	{ value: "dark", label: "Dark" },
-];
-
-export function SettingsMenu() {
+export function SettingsMenu({ onOpenSettings }: { onOpenSettings?: () => void }) {
 	const [open, setOpen] = useState(false);
-	const [pref, setPref] = useState<ThemePref>(getThemePref);
 	const ref = useRef<HTMLDivElement | null>(null);
-
-	// Reflect theme changes from anywhere (other tabs, OS flips in system mode).
-	useEffect(() => onThemeChanged(() => setPref(getThemePref())), []);
 
 	// Dismiss on outside click / Escape while open.
 	useEffect(() => {
@@ -73,11 +25,6 @@ export function SettingsMenu() {
 			document.removeEventListener("keydown", onKey);
 		};
 	}, [open]);
-
-	function choose(value: ThemePref) {
-		setThemePref(value);
-		setPref(value);
-	}
 
 	return (
 		<div className="settings-menu" ref={ref}>
@@ -101,34 +48,25 @@ export function SettingsMenu() {
 			</button>
 			{open && (
 				<div className="settings-dropdown" role="menu">
-					<div className="settings-section">
-						<div className="settings-section-label">Appearance</div>
-						<div
-							className="settings-segmented"
-							role="radiogroup"
-							aria-label="Theme"
-						>
-							{THEME_OPTIONS.map((opt) => (
-								<button
-									key={opt.value}
-									role="radio"
-									aria-checked={pref === opt.value}
-									className={`settings-seg ${pref === opt.value ? "active" : ""}`}
-									onClick={() => choose(opt.value)}
-								>
-									<span className="settings-seg-icon">
-										<ThemeIcon pref={opt.value} />
-									</span>
-									{opt.label}
-								</button>
-							))}
-						</div>
-						<div className="settings-hint">
-							{pref === "system"
-								? "Matches your operating system."
-								: `Always ${pref} mode.`}
-						</div>
-					</div>
+					<button
+						className="settings-menu-item"
+						role="menuitem"
+						onClick={() => {
+							setOpen(false);
+							onOpenSettings?.();
+						}}
+					>
+						<svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+							<circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4" />
+							<path
+								d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1M12.6 12.6l-1.1-1.1M4.5 4.5L3.4 3.4"
+								stroke="currentColor"
+								strokeWidth="1.4"
+								strokeLinecap="round"
+							/>
+						</svg>
+						Settings
+					</button>
 				</div>
 			)}
 		</div>

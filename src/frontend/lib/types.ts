@@ -6,6 +6,27 @@ export interface SlackChannelLink {
 	name: string;
 }
 
+/** One message in a session's linked Plain thread (customer support). */
+export interface PlainTimelineEntry {
+	id: string;
+	timestamp: string;
+	actorName: string;
+	actorType: "customer" | "support" | "bot" | "system";
+	kind: "email" | "chat" | "note";
+	subject?: string;
+	text: string;
+}
+
+/** A Plain thread's conversation timeline, as shown in the Plain sidebar. */
+export interface PlainThread {
+	id: string;
+	title: string | null;
+	status: string | null;
+	priority: number | null;
+	customer: { name: string | null; email: string | null };
+	entries: PlainTimelineEntry[];
+}
+
 /** One message in a linked Slack channel, as shown in the chat panel. */
 export interface SlackMessage {
 	ts: string;
@@ -156,12 +177,15 @@ export type WSClientMessage =
 			content: string;
 			user?: string;
 			images?: string[];
+			/** Reasoning effort for this turn — forward-compatible, not yet enforced. */
+			effort?: "low" | "medium" | "high" | string;
 	  }
 	| {
 			type: "interrupt_prompt";
 			sessionId: string;
 			content: string;
 			user?: string;
+			effort?: "low" | "medium" | "high" | string;
 	  }
 	| { type: "cancel" }
 	| {
@@ -173,6 +197,13 @@ export type WSClientMessage =
 			project?: string;
 			model?: string;
 			images?: string[];
+			/**
+			 * Palette controls — accepted but not yet consumed server-side (see
+			 * NewSession.tsx). Wire these into the runners when ready.
+			 */
+			effort?: "low" | "medium" | "high";
+			fast?: boolean;
+			plan?: boolean;
 			/** Fork an existing session, keeping its real conversation history. */
 			forkFrom?: { sourceId: string; messageId?: string };
 	  }

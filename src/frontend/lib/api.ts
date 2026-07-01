@@ -2,6 +2,7 @@ import type {
 	UnifiedSession,
 	SlackChannelLink,
 	SlackMessage,
+	PlainThread,
 } from "./types";
 
 const BASE = "/backstage/api";
@@ -10,6 +11,24 @@ export async function fetchSessions(): Promise<UnifiedSession[]> {
 	const res = await fetch(`${BASE}/sessions`);
 	if (!res.ok) throw new Error(`Failed to fetch sessions: ${res.status}`);
 	return res.json();
+}
+
+export interface TranscriptMatch {
+	id: string;
+	snippet: string;
+}
+
+/** Full-text search across session transcripts (⌘K "search in conversations"). */
+export async function searchTranscripts(
+	q: string,
+	signal?: AbortSignal,
+): Promise<TranscriptMatch[]> {
+	const res = await fetch(`${BASE}/sessions/search?q=${encodeURIComponent(q)}`, {
+		signal,
+	});
+	if (!res.ok) throw new Error(`Transcript search failed: ${res.status}`);
+	const data = await res.json();
+	return data.matches ?? [];
 }
 
 export interface PreviewService {
@@ -217,6 +236,20 @@ export async function fetchChannelHistoryApi(
 	if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
 	const body = await res.json();
 	return Array.isArray(body?.messages) ? body.messages : [];
+}
+
+export async function fetchPlainThreadApi(
+	sessionId: string,
+): Promise<PlainThread | null> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/plain/thread`,
+	);
+	if (!res.ok) {
+		const body = await res.json().catch(() => null);
+		throw new Error(body?.error || `Failed: ${res.status}`);
+	}
+	const body = await res.json();
+	return (body?.thread as PlainThread) || null;
 }
 
 export async function postChannelMessageApi(
