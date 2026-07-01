@@ -5,7 +5,7 @@
     "": {
       "name": "tella-backstage",
       "dependencies": {
-        "@anthropic-ai/claude-agent-sdk": "latest",
+        "@anthropic-ai/claude-agent-sdk": "^0.2.104",
         "@base-ui/react": "^1.6.0",
         "@codemirror/autocomplete": "^6.20.3",
         "@codemirror/commands": "^6.10.4",
