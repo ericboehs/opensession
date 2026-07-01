@@ -859,8 +859,8 @@ export function Sidebar({
 			>
 				<span className="sidebar-archived-icon">
 					<svg
-						width="15"
-						height="15"
+						width="18"
+						height="18"
 						viewBox="0 0 16 16"
 						fill="none"
 						stroke="currentColor"
@@ -995,11 +995,11 @@ export function Sidebar({
 									}
 								}}
 							>
-								<svg width="14" height="14" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
+								<svg width="16" height="16" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
 									<path
 										d="M8 1.8l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.5l-3.8 2 .72-4.23-3.07-3 4.25-.62L8 1.8z"
 										stroke="currentColor"
-										strokeWidth="1.3"
+										strokeWidth="1.4"
 										strokeLinejoin="round"
 									/>
 								</svg>
@@ -1027,7 +1027,7 @@ export function Sidebar({
 								}
 							}}
 						>
-							<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+							<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
 								<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
 								<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
 								<path d="M6.5 8.5h3" strokeLinecap="round" />
@@ -1044,8 +1044,8 @@ export function Sidebar({
 			<div className="sidebar-search-wrap">
 				<svg
 					className="sidebar-search-icon"
-					width="15"
-					height="15"
+					width="16"
+					height="16"
 					viewBox="0 0 16 16"
 					fill="none"
 				>
@@ -1141,7 +1141,7 @@ export function Sidebar({
 							}`}
 							onClick={() => setFilterOpen((o) => !o)}
 						>
-							<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+							<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
 								<path
 									d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
 									stroke="currentColor"
@@ -1159,17 +1159,17 @@ export function Sidebar({
 								setCreatingProject(true);
 							}}
 						>
-							<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+							<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
 								<path
 									d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
 									stroke="currentColor"
-									strokeWidth="1.3"
+									strokeWidth="1.4"
 									strokeLinejoin="round"
 								/>
 								<path
 									d="M8 6.8v3.4M6.3 8.5h3.4"
 									stroke="currentColor"
-									strokeWidth="1.3"
+									strokeWidth="1.4"
 									strokeLinecap="round"
 								/>
 							</svg>
@@ -1373,13 +1373,31 @@ export function Sidebar({
 						.filter((n): n is { id: string; title: string } => !!n);
 					if (!pinnedRows.length && !pinnedLoose.length && !pinnedNotes.length)
 						return null;
+					const pinnedOpen = isOpen("pinned");
+					const pinnedCount =
+						pinnedRows.length + pinnedLoose.length + pinnedNotes.length;
 					return (
 						<div className="sidebar-group">
-							<div className="sidebar-band-label">
-								<span>Pinned</span>
-							</div>
-							{pinnedRows.map(renderWsRow)}
-							{pinnedLoose.map((s) => (
+							{/* Same header treatment as the status lanes below. */}
+							<button
+								className="sidebar-group-header"
+								onClick={() => toggleGroup("pinned")}
+							>
+								<span
+									className="sidebar-group-dot"
+									style={{ backgroundColor: "var(--text-faint)" }}
+								/>
+								<span className="sidebar-group-name">Pinned</span>
+								<IconChevronDown
+									className="sidebar-group-chevron"
+									size={14}
+									style={{ transform: pinnedOpen ? "none" : "rotate(-90deg)" }}
+								/>
+								<span className="sidebar-group-count">{pinnedCount}</span>
+							</button>
+							{pinnedOpen && pinnedRows.map(renderWsRow)}
+							{pinnedOpen &&
+								pinnedLoose.map((s) => (
 								<SidebarItem
 									key={`pin-${s.id}`}
 									session={s}
@@ -2102,8 +2120,8 @@ function SidebarItem({
 				}}
 			>
 				<svg
-					width="15"
-					height="15"
+					width="16"
+					height="16"
 					viewBox="0 0 16 16"
 					fill="none"
 					stroke="currentColor"
