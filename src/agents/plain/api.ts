@@ -2,6 +2,7 @@
  * Plain and Linear API helpers for the Plain agent.
  */
 import { PlainClient } from "@team-plain/typescript-sdk";
+import { loadTokens, getValidToken } from "../linear/oauth";
 
 const PLAIN_API_KEY = process.env.PLAIN_API_KEY || "";
 const LINEAR_API_KEY = process.env.LINEAR_API_KEY || "";
@@ -408,23 +409,77 @@ export function formatThreadContext(thread: any, includeAllMessages: boolean = f
   return context;
 }
 
+/**
+ * Resolve a Linear Authorization header. Prefers the Linear agent's OAuth
+ * token store (~/.linear-agent-tokens.json, auto-refreshed) and falls back to
+ * the LINEAR_API_KEY env var (bare for personal lin_api_ keys, Bearer otherwise).
+ */
+async function linearAuthHeader(): Promise<string | null> {
+  const tokens = await loadTokens();
+  for (const orgId of Object.keys(tokens)) {
+    const token = await getValidToken(orgId, tokens);
+    if (token) return `Bearer ${token}`;
+  }
+  if (LINEAR_API_KEY) {
+    return LINEAR_API_KEY.startsWith("lin_api_") ? LINEAR_API_KEY : `Bearer ${LINEAR_API_KEY}`;
+  }
+  return null;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const teamIdCache = new Map<string, string>();
+
+/** Resolve a team key (e.g. "TELLA") to its UUID — issueCreate only accepts UUIDs. */
+async function resolveLinearTeamId(auth: string, team: string): Promise<string | null> {
+  if (UUID_RE.test(team)) return team;
+  const cached = teamIdCache.get(team);
+  if (cached) return cached;
+
+  const response = await fetch("https://api.linear.app/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: auth },
+    body: JSON.stringify({
+      query: `
+        query TeamByKey($key: String!) {
+          teams(filter: { key: { eq: $key } }, first: 1) {
+            nodes { id }
+          }
+        }
+      `,
+      variables: { key: team },
+    }),
+  });
+  const data = await response.json();
+  const id = data.data?.teams?.nodes?.[0]?.id;
+  if (id) {
+    teamIdCache.set(team, id);
+    return id;
+  }
+  console.error(`Linear team not found for key "${team}":`, data.errors || data);
+  return null;
+}
+
 /** Create a Linear issue */
 export async function createLinearIssue(
   title: string,
   description: string,
   teamId?: string
 ): Promise<{ id: string; identifier: string; url: string } | null> {
-  if (!LINEAR_API_KEY) {
-    console.error("LINEAR_API_KEY not configured");
+  const auth = await linearAuthHeader();
+  if (!auth) {
+    console.error("No Linear credentials (OAuth token store empty and LINEAR_API_KEY unset)");
     return null;
   }
 
   try {
+    const resolvedTeamId = await resolveLinearTeamId(auth, teamId || "TELLA");
+    if (!resolvedTeamId) return null;
+
     const response = await fetch("https://api.linear.app/graphql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: LINEAR_API_KEY,
+        Authorization: auth,
       },
       body: JSON.stringify({
         query: `
@@ -443,7 +498,7 @@ export async function createLinearIssue(
           input: {
             title,
             description,
-            teamId: teamId || "TEL",
+            teamId: resolvedTeamId,
           },
         },
       }),
@@ -466,8 +521,9 @@ export async function searchLinearIssues(
   query: string,
   limit: number = 5
 ): Promise<Array<{ id: string; identifier: string; title: string; url: string; state: string }>> {
-  if (!LINEAR_API_KEY) {
-    console.error("LINEAR_API_KEY not configured");
+  const auth = await linearAuthHeader();
+  if (!auth) {
+    console.error("No Linear credentials (OAuth token store empty and LINEAR_API_KEY unset)");
     return [];
   }
 
@@ -476,7 +532,7 @@ export async function searchLinearIssues(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: LINEAR_API_KEY,
+        Authorization: auth,
       },
       body: JSON.stringify({
         query: `
