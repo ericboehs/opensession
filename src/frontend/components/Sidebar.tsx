@@ -12,6 +12,7 @@ import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged, togglePin } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
+import { shortTime } from "../lib/time";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
 import { IconChevronDown } from "./icons";
 import { Tooltip } from "../ui/tooltip";
@@ -953,6 +954,14 @@ export function Sidebar({
 				{row.chats.length > 1 && (
 					<span className="sidebar-group-count">{row.chats.length}</span>
 				)}
+				{row.lastActivity && (
+					<span
+						className="sidebar-ws-time"
+						title={new Date(row.lastActivity).toLocaleString()}
+					>
+						{shortTime(row.lastActivity)}
+					</span>
+				)}
 				{/* Hover actions: pin + archive, side by side (replace the count). */}
 				<span className="sidebar-ws-actions">
 					{(() => {
@@ -1418,17 +1427,18 @@ export function Sidebar({
 									onMoveToProject={(pid) => onSetSessionProject(s.id, pid)}
 								/>
 							))}
-							{pinnedNotes.map((n) => (
-								<button
-									key={`pin-note-${n.id}`}
-									className={`sidebar-item ${n.id === activeNoteId ? "sidebar-item-selected" : ""}`}
-									onClick={() => onOpenNote(n.id)}
-									title={n.title}
-								>
-									<span style={{ marginRight: 6, opacity: 0.9 }}>📝</span>
-									<span className="sidebar-item-title">{n.title}</span>
-								</button>
-							))}
+							{pinnedOpen &&
+								pinnedNotes.map((n) => (
+									<button
+										key={`pin-note-${n.id}`}
+										className={`sidebar-item ${n.id === activeNoteId ? "sidebar-item-selected" : ""}`}
+										onClick={() => onOpenNote(n.id)}
+										title={n.title}
+									>
+										<span style={{ marginRight: 6, opacity: 0.9 }}>📝</span>
+										<span className="sidebar-item-title">{n.title}</span>
+									</button>
+								))}
 						</div>
 					);
 				})()}

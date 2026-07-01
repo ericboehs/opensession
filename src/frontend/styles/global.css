@@ -9814,3 +9814,15 @@ button.preview-open:not(:disabled):hover {
 .sidebar-ws-action.is-on {
 	color: var(--accent);
 }
+
+/* Compact last-activity time on workspace rows (full time in the title
+   tooltip). Yields to the hover actions like the count badge. */
+.sidebar-ws-time {
+	flex: 0 0 auto;
+	margin-left: auto;
+	font-size: 10.5px;
+	color: var(--text-faint);
+}
+.sidebar-ws-row:hover .sidebar-ws-time {
+	display: none;
+}
