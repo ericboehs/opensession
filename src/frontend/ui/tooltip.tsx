@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { cn } from "./cn";
 import { popupMotion } from "./motion";
 
@@ -15,6 +15,10 @@ import { popupMotion } from "./motion";
  * (label/side/offset/shortcut, single-element child, no wrapper DOM) so call
  * sites didn't change. Open delay + instant group hand-off between adjacent
  * triggers come from <TooltipProvider> at the app root.
+ *
+ * Motion animates the enter only; close unmounts instantly (same as the old
+ * CSS tooltip). Don't add AnimatePresence for exit here — it can't track the
+ * popup through Base UI's portal, so it silently does nothing.
  */
 
 type Side = "top" | "bottom" | "left" | "right";
@@ -47,56 +51,52 @@ export function Tooltip({
 	shortcut?: string[];
 	children: React.ReactElement;
 }) {
-	// Controlled open state so AnimatePresence can hold the popup in the DOM
-	// through its exit animation (Base UI + Motion pattern: conditional render
-	// inside AnimatePresence, keepMounted on the Portal).
-	const [open, setOpen] = React.useState(false);
-
 	if (!label) return children;
 
 	return (
-		<BaseTooltip.Root open={open} onOpenChange={setOpen}>
+		<BaseTooltip.Root>
 			<BaseTooltip.Trigger render={children} />
-			<AnimatePresence>
-				{open && (
-					<BaseTooltip.Portal keepMounted>
-						<BaseTooltip.Positioner
-							side={side}
-							sideOffset={offset}
-							collisionPadding={6}
-							className="z-[10001]"
-						>
-							<BaseTooltip.Popup
-								render={
-									<motion.div
-										{...popupMotion}
-										style={{ transformOrigin: "var(--transform-origin)" }}
-									/>
-								}
-								className={cn(
-									"pointer-events-none flex max-w-[280px] items-center gap-2",
-									"rounded-panel bg-tooltip px-2 py-1 text-xs font-medium whitespace-nowrap text-tooltip-fg",
-									"shadow-[0_8px_24px_rgba(0,0,0,0.4),0_0_0_1px_var(--tooltip-ring)]",
-								)}
-							>
-								<span className="overflow-hidden text-ellipsis">{label}</span>
-								{shortcut && shortcut.length > 0 && (
-									<span className="inline-flex items-center gap-[3px]">
-										{shortcut.map((k, i) => (
-											<kbd
-												key={i}
-												className="inline-flex h-4 min-w-4 items-center justify-center rounded px-[3px] text-[11px] font-medium [font-family:inherit] bg-white/20 text-white/80"
-											>
-												{k}
-											</kbd>
-										))}
-									</span>
-								)}
-							</BaseTooltip.Popup>
-						</BaseTooltip.Positioner>
-					</BaseTooltip.Portal>
-				)}
-			</AnimatePresence>
+			<BaseTooltip.Portal>
+				<BaseTooltip.Positioner
+					side={side}
+					sideOffset={offset}
+					collisionPadding={6}
+					className="z-[10001]"
+				>
+					<BaseTooltip.Popup
+						render={
+							<motion.div
+								// The render-prop merge drops Base UI's own role attr,
+								// so restore it (screen readers + our test hooks).
+								role="tooltip"
+								initial={popupMotion.initial}
+								animate={popupMotion.animate}
+								transition={popupMotion.transition}
+								style={{ transformOrigin: "var(--transform-origin)" }}
+							/>
+						}
+						className={cn(
+							"pointer-events-none flex max-w-[280px] items-center gap-2",
+							"rounded-panel bg-tooltip px-2 py-1 text-xs font-medium whitespace-nowrap text-tooltip-fg",
+							"shadow-[0_8px_24px_rgba(0,0,0,0.4),0_0_0_1px_var(--tooltip-ring)]",
+						)}
+					>
+						<span className="overflow-hidden text-ellipsis">{label}</span>
+						{shortcut && shortcut.length > 0 && (
+							<span className="inline-flex items-center gap-[3px]">
+								{shortcut.map((k, i) => (
+									<kbd
+										key={i}
+										className="inline-flex h-4 min-w-4 items-center justify-center rounded px-[3px] text-[11px] font-medium [font-family:inherit] bg-white/20 text-white/80"
+									>
+										{k}
+									</kbd>
+								))}
+							</span>
+						)}
+					</BaseTooltip.Popup>
+				</BaseTooltip.Positioner>
+			</BaseTooltip.Portal>
 		</BaseTooltip.Root>
 	);
 }

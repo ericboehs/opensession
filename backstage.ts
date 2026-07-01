@@ -1916,37 +1916,49 @@ async function buildFrontend(): Promise<string> {
 	// Tailwind pass (see styles/tailwind.css). Bun can't compile Tailwind, so
 	// the real compiler runs as a subprocess (~50ms); its lightningcss minifier
 	// doesn't have the var() bug above. Linked after global.css so utilities win
-	// source-order ties against legacy rules.
-	const twTmp = `${FRONTEND_DIST}/.tailwind-build.css`;
-	const twProc = Bun.spawn(
-		[
-			`${import.meta.dir}/node_modules/.bin/tailwindcss`,
-			"-i",
-			`${FRONTEND_SRC}/styles/tailwind.css`,
-			"-o",
-			twTmp,
-			"--minify",
-		],
-		{ cwd: import.meta.dir, stdout: "pipe", stderr: "pipe" },
-	);
-	if ((await twProc.exited) !== 0) {
-		const err = await new Response(twProc.stderr).text();
-		throw new Error(`tailwind build failed: ${err}`);
+	// source-order ties against legacy rules. Fail-soft: a broken Tailwind
+	// compile ships the bundle without utilities rather than taking down the
+	// whole server (this build also runs at boot, before Bun.serve).
+	let twName: string | null = null;
+	try {
+		const twTmp = `${FRONTEND_DIST}/.tailwind-build.css`;
+		const twProc = Bun.spawn(
+			[
+				`${import.meta.dir}/node_modules/.bin/tailwindcss`,
+				"-i",
+				`${FRONTEND_SRC}/styles/tailwind.css`,
+				"-o",
+				twTmp,
+				"--minify",
+			],
+			{ cwd: import.meta.dir, stdout: "pipe", stderr: "pipe" },
+		);
+		if ((await twProc.exited) !== 0) {
+			throw new Error(await new Response(twProc.stderr).text());
+		}
+		const twCss = await Bun.file(twTmp).text();
+		twName = `tailwind-${Bun.hash(twCss).toString(36)}.css`;
+		await Bun.write(`${FRONTEND_DIST}/${twName}`, twCss);
+	} catch (e) {
+		console.error(
+			"[frontend] Tailwind build FAILED — serving without utilities:",
+			e,
+		);
 	}
-	const twCss = await Bun.file(twTmp).text();
-	const twName = `tailwind-${Bun.hash(twCss).toString(36)}.css`;
-	await Bun.write(`${FRONTEND_DIST}/${twName}`, twCss);
 
 	let indexHtml = await Bun.file(`${FRONTEND_SRC}/index.html`).text();
 	indexHtml = indexHtml.replace(
 		'<script type="module" src="./App.tsx"></script>',
 		`<script type="module" crossorigin src="/backstage/${entryName}"></script>`,
 	);
+	const twLink = twName
+		? `\n  <link rel="stylesheet" href="/backstage/${twName}">`
+		: "";
 	indexHtml = indexHtml.replace(
 		"</head>",
-		`  <link rel="stylesheet" href="/backstage/${cssName}">\n  <link rel="stylesheet" href="/backstage/${twName}">\n</head>`,
+		`  <link rel="stylesheet" href="/backstage/${cssName}">${twLink}\n</head>`,
 	);
-	const version = `${entryName}|${cssName}|${twName}`;
+	const version = `${entryName}|${cssName}|${twName ?? "no-tw"}`;
 
 	const store: FrontendBundle = (g.__backstageFrontend ??= {
 		indexHtml: "",
