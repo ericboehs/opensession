@@ -294,8 +294,11 @@ function GoalLedger({ id }: { id: string }) {
         overflow: "auto",
         margin: "8px 0 2px",
         padding: "10px 12px",
-        background: "var(--bg-inset, #f6f7f9)",
+        background: "var(--bg-raised)",
+        color: "var(--text)",
+        border: "1px solid var(--border)",
         borderRadius: 8,
+        fontFamily: "var(--mono)",
         fontSize: 12,
         lineHeight: 1.5,
       }}
