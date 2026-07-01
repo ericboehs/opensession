@@ -907,15 +907,11 @@ export function Sidebar({
 	function renderWsRow(row: WsRow) {
 		const active = row.chats.some((s) => s.id === selectedId);
 		const editing = row.workspace && editingProjectId === row.workspace.id;
+		const waiting = row.status === "needsinput";
 		return (
 			<button
 				key={row.key}
-				className={`sidebar-group-header sidebar-project-row sidebar-ws-row ${active ? "sidebar-item-selected" : ""}`}
-				style={
-					active
-						? { background: "var(--bg-active, rgba(255,255,255,0.08))" }
-						: undefined
-				}
+				className={`sidebar-item sidebar-ws-row ${active ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""} ${row.unread ? "sidebar-item-unread" : ""}`}
 				onClick={() => {
 					if (editing) return;
 					if (row.workspace) onOpenProject(row.workspace.id);
@@ -931,6 +927,16 @@ export function Sidebar({
 				}}
 				title={row.name}
 			>
+				{(waiting || row.running) && (
+					<span
+						className={`sidebar-item-status ${
+							waiting ? "sidebar-status-waiting" : "sidebar-status-running"
+						}`}
+					/>
+				)}
+				{row.unread && !waiting && !row.running && (
+					<span className="sidebar-item-status sidebar-status-unread" />
+				)}
 				{editing ? (
 					<input
 						className="sidebar-item-rename"
@@ -948,7 +954,7 @@ export function Sidebar({
 					/>
 				) : (
 					<span
-						className="sidebar-group-name"
+						className="sidebar-item-title"
 						onDoubleClick={(e) => {
 							e.stopPropagation();
 							if (row.workspace) {
@@ -967,8 +973,6 @@ export function Sidebar({
 						{row.name}
 					</span>
 				)}
-				{row.running && <span className="working-dot" />}
-				{row.unread && <span className="sidebar-ws-unread" />}
 				{row.chats.length > 1 && (
 					<span className="sidebar-group-count">{row.chats.length}</span>
 				)}
@@ -1403,7 +1407,7 @@ export function Sidebar({
 						</Tooltip>
 					</div>
 					{creatingProject && (
-						<div className="sidebar-group-header sidebar-project-row">
+						<div className="sidebar-item sidebar-ws-row">
 							<span
 								className="sidebar-group-dot"
 								style={{ backgroundColor: "var(--text-faint)" }}

@@ -9830,23 +9830,6 @@ button.preview-open:not(:disabled):hover {
 }
 
 /* ── Workspaces sidebar (Workspaces & Chats overhaul) ── */
-/* Unread indicator on a workspace row: small accent dot after the name. */
-.sidebar-ws-unread {
-	flex: 0 0 auto;
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
-	background: var(--accent);
-	margin-left: 4px;
-}
-/* A running workspace gently pulses its status dot. */
-.sidebar-ws-dot-running {
-	animation: ws-dot-pulse 1.6s ease-in-out infinite;
-}
-@keyframes ws-dot-pulse {
-	0%, 100% { opacity: 1; }
-	50% { opacity: 0.35; }
-}
 /* The + tab's right-click mode menu (share / stacked / ask). */
 .session-tab-new-menu {
 	display: flex;
@@ -9902,9 +9885,14 @@ button.preview-open:not(:disabled):hover {
 	cursor: default;
 }
 
-/* Workspace rows sit nested under their group header (dot+name start ~22px in). */
+/* Workspace rows reuse the session-row look (.sidebar-item base: roomy padding,
+   hover background, selected/waiting/unread states), laid out as a single flex
+   line. The .sidebar-item 22px left padding nests them under their group header
+   (whose dot + name start ~22px in). */
 .sidebar-ws-row {
-	padding-left: 22px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
 }
 
 /* Workspace row hover actions: pin + archive side by side, replacing the
@@ -9919,8 +9907,7 @@ button.preview-open:not(:disabled):hover {
 .sidebar-ws-row:hover .sidebar-ws-actions {
 	display: inline-flex;
 }
-.sidebar-ws-row:hover .sidebar-group-count,
-.sidebar-ws-row:hover .sidebar-ws-unread {
+.sidebar-ws-row:hover .sidebar-group-count {
 	display: none;
 }
 .sidebar-ws-action {
