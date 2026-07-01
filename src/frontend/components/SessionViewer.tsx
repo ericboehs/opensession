@@ -370,8 +370,13 @@ export function SessionViewer({
 					echoPool.splice(qi, 1);
 					return false;
 				}
+				// Interrupt/steer-path sends land in the transcript with a "[user] "
+				// attribution prefix (added server-side), while the optimistic bubble
+				// holds the raw text — accept either form so a redirected message's
+				// bubble reconciles instead of sticking as "redirecting…".
+				const attributed = p.user ? `[${p.user}] ${c}` : c;
 				const ui = userPool.findIndex(
-					(u) => u.c === c && u.t >= p.sentAt - 30_000,
+					(u) => (u.c === c || u.c === attributed) && u.t >= p.sentAt - 30_000,
 				);
 				if (ui >= 0) {
 					userPool.splice(ui, 1);
@@ -391,7 +396,10 @@ export function SessionViewer({
 			.filter((e) => e.type === "user")
 			.map((e) => e.content.trim());
 		return steered.filter((s) => {
-			const i = userPool.indexOf(s.content.trim());
+			const raw = s.content.trim();
+			// Same attribution prefix as the transcript entry — match either form.
+			const attributed = s.user ? `[${s.user}] ${raw}` : raw;
+			const i = userPool.findIndex((u) => u === raw || u === attributed);
 			if (i >= 0) {
 				userPool.splice(i, 1);
 				return false;
