@@ -1996,6 +1996,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			"/backstage/docs": spaEntry,
 			"/backstage/docs/*": spaEntry,
 			"/backstage/connections": spaEntry,
+			"/backstage/settings": spaEntry,
+			"/backstage/actions": spaEntry,
 			"/backstage/archived": spaEntry,
 			"/backstage/reviews": spaEntry,
 			"/backstage/reviews/*": spaEntry,
@@ -3787,6 +3789,22 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					return new Response("WebSocket upgrade failed", { status: 400 });
 				}
 				return undefined;
+			}
+
+			// SPA fallback: any unmatched GET under /backstage/ that isn't an API
+			// path serves the app shell, so client-side routes deep-link correctly
+			// even when they're missing from the explicit `routes` map above (which
+			// has silently 404'd every newly added view — settings, actions — until
+			// someone remembered to register it).
+			if (
+				frontend &&
+				(req.method === "GET" || req.method === "HEAD") &&
+				path.startsWith("/backstage/") &&
+				!path.startsWith("/backstage/api/")
+			) {
+				return new Response(frontend.indexHtml, {
+					headers: { "Content-Type": "text/html; charset=utf-8" },
+				});
 			}
 
 			// 404
