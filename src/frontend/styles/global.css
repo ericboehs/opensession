@@ -2648,26 +2648,6 @@ button.preview-open:not(:disabled):hover {
 
 /* ── Sub-agent sidebar ───────────────────────────────────── */
 
-/* A Task/Agent tool block that can open its sub-agent conversation. */
-.tool-open-subagent {
-	margin-left: auto;
-	background: var(--accent-soft);
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	color: var(--accent);
-	font-size: 11.5px;
-	font-weight: 500;
-	padding: 2px 8px;
-	white-space: nowrap;
-}
-.tool-open-subagent:hover {
-	border-color: var(--accent);
-}
-/* Keep the ✓ tight to the open button rather than pushed to the far edge. */
-.tool-agent .tool-summary {
-	margin-right: 4px;
-}
-
 .subagent-head {
 	padding: 8px 10px 10px;
 	border-bottom: 1px solid var(--border);
@@ -4494,11 +4474,11 @@ button.preview-open:not(:disabled):hover {
 .msg-body-user {
 	display: inline-block;
 	max-width: 100%;
-	background: rgba(91, 124, 250, 0.12);
-	border: 1px solid rgba(91, 124, 250, 0.28);
-	border-radius: 12px;
-	border-top-left-radius: 4px;
-	padding: 9px 14px;
+	background: rgba(91, 124, 250, 0.1);
+	border: 1px solid rgba(91, 124, 250, 0.22);
+	border-radius: 14px;
+	border-top-left-radius: 5px;
+	padding: 10px 14px;
 	color: var(--text);
 }
 
@@ -5198,89 +5178,13 @@ button.home-whisper-link:hover {
 	color: var(--yellow);
 }
 
-/* ── Work blocks (Devin-style "Worked for Xs") ───────────── */
-
-.work-block {
-	max-width: 860px;
-	margin: 0 auto 12px;
-	border: 1px solid var(--border);
-	border-radius: var(--radius);
-	background: var(--bg-raised);
-	overflow: hidden;
-}
-
-.work-block-live {
-	border-color: rgba(63, 185, 80, 0.35);
-}
-
-.work-block-header {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	width: 100%;
-	background: none;
-	border: none;
-	padding: 8px 12px;
-	color: var(--text-dim);
-	font-size: 12.5px;
-	min-width: 0;
-}
-.work-block-header:hover {
-	background: var(--bg-hover);
-}
-
-.work-block-chevron {
-	font-size: 9px;
-	flex-shrink: 0;
-}
-
-.work-block-title {
-	font-weight: 600;
-	color: var(--text-dim);
-	flex-shrink: 0;
-}
-
-.work-block-steps {
-	color: var(--text-faint);
-	flex-shrink: 0;
-}
-
-.work-block-preview {
-	font-family: var(--mono);
-	font-size: 11px;
-	color: var(--text-faint);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	min-width: 0;
-}
-
-.work-block-spinner {
-	width: 10px;
-	height: 10px;
-	margin-left: auto;
-	flex-shrink: 0;
-	border: 2px solid var(--green-soft);
-	border-top-color: var(--green);
-	border-radius: 50%;
-	animation: spin 0.8s linear infinite;
-}
+/* Work blocks + tool calls are Tailwind-styled in WorkBlock.tsx /
+   ToolCallBlock.tsx; only the shared pre/shiki plumbing below remains here. */
 
 @keyframes spin {
 	to {
 		transform: rotate(360deg);
 	}
-}
-
-.work-block-body {
-	border-top: 1px solid var(--border);
-	padding: 8px 10px;
-}
-.work-block-body .tool {
-	margin-bottom: 4px;
-}
-.work-block-body .tool:last-child {
-	margin-bottom: 0;
 }
 
 /* ── Spin-off menu ───────────────────────────────────────── */
@@ -5465,64 +5369,7 @@ button.home-whisper-link:hover {
 	animation: pulse 1.4s infinite;
 }
 
-/* ── Tool calls ──────────────────────────────────────────── */
-
-.tool {
-	max-width: 860px;
-	margin-bottom: 6px;
-	border: 1px solid var(--border);
-	border-radius: 7px;
-	background: var(--bg-panel);
-	overflow: hidden;
-}
-
-.tool-header {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 6px 10px;
-	cursor: pointer;
-	font-size: 12.5px;
-	min-width: 0;
-}
-.tool-header:hover {
-	background: var(--bg-hover);
-}
-
-.tool-icon {
-	color: var(--text-faint);
-	font-size: 9px;
-	flex-shrink: 0;
-}
-
-.tool-name {
-	font-weight: 600;
-	color: var(--purple);
-	font-size: 12px;
-	flex-shrink: 0;
-}
-
-.tool-summary {
-	color: var(--text-dim);
-	font-family: var(--mono);
-	font-size: 11.5px;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	min-width: 0;
-	flex: 1;
-}
-
-.tool-ok {
-	color: var(--green);
-	font-size: 11px;
-	flex-shrink: 0;
-}
-
-.tool-detail {
-	border-top: 1px solid var(--border);
-	padding: 10px;
-}
+/* ── Tool calls (rows styled in ToolCallBlock.tsx) ───────── */
 
 .tool-pre {
 	margin: 0;
@@ -5554,15 +5401,6 @@ button.home-whisper-link:hover {
 .shiki-gutter {
 	color: var(--text-faint);
 	user-select: none;
-}
-
-.tool-result-divider {
-	margin: 10px 0 6px;
-	font-size: 10.5px;
-	font-weight: 700;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	color: var(--text-faint);
 }
 
 /* ── Input area ──────────────────────────────────────────── */
@@ -6576,19 +6414,6 @@ button.home-whisper-link:hover {
 	border: 1px solid var(--border);
 	border-radius: 4px;
 	padding: 1px 5px;
-}
-
-/* MCP tool chip in transcripts */
-.tool-mcp-chip {
-	font-size: 10px;
-	font-weight: 700;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	background: rgba(163, 113, 247, 0.16);
-	color: var(--purple);
-	border-radius: 4px;
-	padding: 1px 6px;
-	flex-shrink: 0;
 }
 
 /* ── Wiki ────────────────────────────────────────────────── */

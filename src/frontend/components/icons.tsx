@@ -140,3 +140,142 @@ export function IconMap(p: IconProps) {
     </Svg>
   );
 }
+
+/* ── Tool icons (transcript work blocks) ─────────────────── */
+
+export function IconTerminal(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M6.75 8.75L10.25 12L6.75 15.25" />
+      <path {...stroke} d="M12.75 15.25H17.25" />
+    </Svg>
+  );
+}
+
+export function IconFile(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M7.75 19.25H16.25C17.3546 19.25 18.25 18.3546 18.25 17.25V9L14 4.75H7.75C6.64543 4.75 5.75 5.64543 5.75 6.75V17.25C5.75 18.3546 6.64543 19.25 7.75 19.25Z"
+      />
+      <path {...stroke} d="M18 9.25H13.75V5" />
+    </Svg>
+  );
+}
+
+export function IconPencil(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M4.75 19.25L9 18.25L18.2929 8.95711C18.6834 8.56658 18.6834 7.93342 18.2929 7.54289L16.4571 5.70711C16.0666 5.31658 15.4334 5.31658 15.0429 5.70711L5.75 15L4.75 19.25Z"
+      />
+      <path {...stroke} d="M14.0234 7.03906L17.0234 10.0391" />
+    </Svg>
+  );
+}
+
+export function IconSearch(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="11" cy="11" r="4.25" />
+      <path {...stroke} d="M14.5 14.5L19.25 19.25" />
+    </Svg>
+  );
+}
+
+export function IconGlobe(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="12" cy="12" r="7.25" />
+      <path {...stroke} d="M4.75 12H19.25" />
+      <path
+        {...stroke}
+        d="M12 4.75C13.6569 4.75 15 7.99594 15 12C15 16.0041 13.6569 19.25 12 19.25C10.3431 19.25 9 16.0041 9 12C9 7.99594 10.3431 4.75 12 4.75Z"
+      />
+    </Svg>
+  );
+}
+
+export function IconSparkle(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M12 4.75C12.75 8.5 15.5 11.25 19.25 12C15.5 12.75 12.75 15.5 12 19.25C11.25 15.5 8.5 12.75 4.75 12C8.5 11.25 11.25 8.5 12 4.75Z"
+      />
+    </Svg>
+  );
+}
+
+export function IconPlug(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M7.75 10.75H16.25V12.25C16.25 14.5972 14.3472 16.5 12 16.5C9.65279 16.5 7.75 14.5972 7.75 12.25V10.75Z"
+      />
+      <path {...stroke} d="M9.75 10.5V7.75" />
+      <path {...stroke} d="M14.25 10.5V7.75" />
+      <path {...stroke} d="M12 16.5V19.25" />
+    </Svg>
+  );
+}
+
+export function IconBook(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M5.75 19.25V6.75C5.75 5.64543 6.64543 4.75 7.75 4.75H18.25V16.25H7.5C6.5335 16.25 5.75 17.0335 5.75 18V19.25Z"
+      />
+      <path {...stroke} d="M5.75 19.25H18.25" />
+    </Svg>
+  );
+}
+
+export function IconBranches(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="7" cy="7" r="1.75" />
+      <circle {...stroke} cx="7" cy="17" r="1.75" />
+      <circle {...stroke} cx="17" cy="7" r="1.75" />
+      <path {...stroke} d="M7 9V15.25" />
+      <path {...stroke} d="M17 9C17 12 14 12.75 12 13C10 13.25 8.5 14 7.75 15" />
+    </Svg>
+  );
+}
+
+export function IconListChecks(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M11.75 7.25H19.25" />
+      <path {...stroke} d="M11.75 12H19.25" />
+      <path {...stroke} d="M11.75 16.75H19.25" />
+      <path {...stroke} d="M4.75 7.25L5.75 8.25L7.75 6.25" />
+      <path {...stroke} d="M4.75 12L5.75 13L7.75 11" />
+      <path {...stroke} d="M4.75 16.75L5.75 17.75L7.75 15.75" />
+    </Svg>
+  );
+}
+
+export function IconWrench(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M13.5 6.5C14.5 5.5 16.5 5 17.5 5.5L14.75 8.25L15.75 9.25L18.5 6.5C19 7.5 18.5 9.5 17.5 10.5C16.6 11.4 15.1 11.7 14 11.25L7.75 17.5C7.19772 18.0523 6.30228 18.0523 5.75 17.5C5.19772 16.9477 5.19772 16.0523 5.75 15.5L12 9.25C11.8 8.15 12.6 7.4 13.5 6.5Z"
+      />
+    </Svg>
+  );
+}
+
+export function IconX(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M17.25 6.75L6.75 17.25" />
+      <path {...stroke} d="M6.75 6.75L17.25 17.25" />
+    </Svg>
+  );
+}

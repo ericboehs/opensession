@@ -1,6 +1,22 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { langForFile, langForGrep } from "../lib/lang";
+import { cn } from "../ui/cn";
+import {
+  IconTerminal,
+  IconFile,
+  IconPencil,
+  IconSearch,
+  IconGlobe,
+  IconSparkle,
+  IconPlug,
+  IconBook,
+  IconBranches,
+  IconListChecks,
+  IconWrench,
+  IconCheck,
+  IconX,
+} from "./icons";
 
 // Shiki (the syntax highlighter) is multi-MB; keep it out of the initial
 // bundle and load it only when a tool call is actually expanded. Until the
@@ -25,6 +41,8 @@ function CodeHighlight(props: {
 interface Props {
   entry: TranscriptEntry;
   result?: TranscriptEntry;
+  /** The run is live and this call hasn't returned yet — show a spinner. */
+  pending?: boolean;
   /** For Task/Agent calls with a known sub-agent id: open its conversation. */
   onOpenSubagent?: (agentId: string, label: string) => void;
 }
@@ -36,102 +54,29 @@ export function parseMcpTool(name: string): { server: string; tool: string } | n
   return { server: parts[1], tool: parts.slice(2).join("__") };
 }
 
-export function ToolCallBlock({ entry, result, onOpenSubagent }: Props) {
-  const hasMedia = Boolean(result?.images?.length || result?.videos?.length);
-  // Default closed for text-only output, but auto-open when media arrives
-  // (covers both initial render and the live tool_result streaming in later).
-  const [expanded, setExpanded] = useState(hasMedia);
-  useEffect(() => {
-    if (hasMedia) setExpanded(true);
-  }, [hasMedia]);
-  const toolName = entry.toolName || "Tool";
-  const mcp = parseMcpTool(toolName);
-  const summary = getSummary(toolName, entry.toolInput, entry.content);
-
-  // A Task/Agent call whose sub-agent transcript we can open in the sidebar.
-  const isAgent = toolName === "Task" || toolName === "Agent";
-  const agentId = result?.agentId;
-  const canOpenSubagent = isAgent && agentId && onOpenSubagent;
-
-  return (
-    <div className={`tool ${canOpenSubagent ? "tool-agent" : ""}`}>
-      <div className="tool-header" onClick={() => setExpanded(!expanded)}>
-        <span className="tool-icon">{expanded ? "▾" : "▸"}</span>
-        {mcp ? (
-          <>
-            <span className="tool-mcp-chip">{mcp.server}</span>
-            <span className="tool-name">{mcp.tool}</span>
-          </>
-        ) : (
-          <span className="tool-name">{toolName}</span>
-        )}
-        <span className="tool-summary">{summary}</span>
-        {canOpenSubagent && (
-          <button
-            className="tool-open-subagent"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenSubagent!(agentId!, summary);
-            }}
-            title="Open this sub-agent's conversation"
-          >
-            Open ↗
-          </button>
-        )}
-        {result && <span className="tool-ok">✓</span>}
-      </div>
-      {expanded && (
-        <div className="tool-detail">
-          {toolName === "Bash" && bashCommand(entry.toolInput) ? (
-            <CodeHighlight code={bashCommand(entry.toolInput)!} lang="bash" />
-          ) : (
-            <pre className="tool-pre">{formatInput(entry.toolInput)}</pre>
-          )}
-          {result && (result.content || result.images?.length || result.videos?.length) && (
-            <>
-              <div className="tool-result-divider">Output</div>
-              {result.content && renderResultContent(toolName, entry.toolInput, result.content)}
-              {result.images && result.images.length > 0 && (
-                <div className="tool-result-images">
-                  {result.images.map((src, i) => (
-                    <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="md-image-link">
-                      <img className="md-image" src={src} alt="" loading="lazy" />
-                    </a>
-                  ))}
-                </div>
-              )}
-              {result.videos && result.videos.length > 0 && (
-                <div className="tool-result-videos">
-                  {result.videos.map((src, i) => (
-                    <video key={i} className="md-video" src={src} controls playsInline preload="metadata" />
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
+/** "mcp__linear__list_issues" → "linear · list_issues", else the tool name. */
+export function toolDisplayName(name?: string): string {
+  if (!name) return "Tool";
+  const mcp = parseMcpTool(name);
+  return mcp ? `${mcp.server} · ${mcp.tool}` : name;
 }
 
-function getSummary(toolName: string, input: unknown, fallback: string): string {
+/** One-line human summary of a tool call (also used for collapsed previews). */
+export function toolSummary(toolName: string, input: unknown, fallback: string): string {
   if (!input || typeof input !== "object") return fallback;
   const inp = input as Record<string, unknown>;
 
   switch (toolName) {
     case "Read":
-      return (inp.file_path as string) || fallback;
     case "Edit":
-      return (inp.file_path as string) || fallback;
     case "Write":
-      return (inp.file_path as string) || fallback;
+      return tidyPath((inp.file_path as string) || fallback);
     case "Bash":
-      return truncate((inp.command as string) || fallback, 120);
+      return truncate(((inp.command as string) || fallback).replace(/\s*\n\s*/g, " ⏎ "), 160);
     case "Grep":
-      return `/${inp.pattern || ""}/ ${inp.path || ""}`;
+      return `/${inp.pattern || ""}/ ${tidyPath((inp.path as string) || "")}`;
     case "Glob":
-      return `${inp.pattern || ""} ${inp.path || ""}`;
+      return `${inp.pattern || ""} ${tidyPath((inp.path as string) || "")}`;
     case "Task":
     case "Agent":
       return [inp.subagent_type, inp.description].filter(Boolean).join(": ") || fallback;
@@ -142,9 +87,282 @@ function getSummary(toolName: string, input: unknown, fallback: string): string 
     case "WebFetch":
     case "WebSearch":
       return (inp.url as string) || (inp.query as string) || fallback;
+    case "TaskCreate":
+      return (inp.subject as string) || (inp.title as string) || fallback;
     default:
-      return fallback;
+      // MCP and other tools: a compact "key: value" render of the input reads
+      // better than the generic "Using <tool>" content fallback.
+      return compactInput(inp) || fallback;
   }
+}
+
+function compactInput(inp: Record<string, unknown>): string {
+  const parts = Object.entries(inp)
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .slice(0, 4)
+    .map(([k, v]) => {
+      const s = typeof v === "string" ? v : JSON.stringify(v);
+      return `${k}: ${truncate(String(s).replace(/\s+/g, " "), 48)}`;
+    });
+  return parts.join("  ·  ");
+}
+
+function ToolGlyph({ toolName }: { toolName: string }) {
+  const size = 13;
+  if (parseMcpTool(toolName)) return <IconPlug size={size} />;
+  switch (toolName) {
+    case "Bash":
+    case "BashOutput":
+      return <IconTerminal size={size} />;
+    case "Read":
+    case "NotebookEdit":
+      return <IconFile size={size} />;
+    case "Edit":
+    case "Write":
+      return <IconPencil size={size} />;
+    case "Grep":
+    case "Glob":
+    case "LSP":
+    case "ToolSearch":
+      return <IconSearch size={size} />;
+    case "WebFetch":
+    case "WebSearch":
+      return <IconGlobe size={size} />;
+    case "Task":
+    case "Agent":
+    case "Workflow":
+      return <IconSparkle size={size} />;
+    case "Skill":
+      return <IconBook size={size} />;
+    case "EnterWorktree":
+    case "ExitWorktree":
+      return <IconBranches size={size} />;
+    case "TaskCreate":
+    case "TaskUpdate":
+    case "TaskList":
+    case "TaskGet":
+    case "TodoWrite":
+      return <IconListChecks size={size} />;
+    default:
+      return <IconWrench size={size} />;
+  }
+}
+
+/** Shorten absolute paths for display: $HOME prefix → "~". */
+function tidyPath(p: string): string {
+  return p.replace(/^\/home\/[^/]+\//, "~/");
+}
+
+/** Path summary with the directory dimmed and the basename readable. */
+function PathSummary({ path }: { path: string }) {
+  const idx = path.lastIndexOf("/");
+  if (idx < 0) return <>{path}</>;
+  return (
+    <>
+      <span className="opacity-55">{path.slice(0, idx + 1)}</span>
+      {path.slice(idx + 1)}
+    </>
+  );
+}
+
+function stepDuration(entry: TranscriptEntry, result?: TranscriptEntry): string | null {
+  if (!result) return null;
+  const secs = Math.round(
+    (new Date(result.timestamp).getTime() - new Date(entry.timestamp).getTime()) / 1000
+  );
+  if (!isFinite(secs) || secs < 2) return null;
+  if (secs < 60) return `${secs}s`;
+  return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
+
+export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props) {
+  const hasMedia = Boolean(result?.images?.length || result?.videos?.length);
+  // Default closed for text-only output, but auto-open when media arrives
+  // (covers both initial render and the live tool_result streaming in later).
+  const [expanded, setExpanded] = useState(hasMedia);
+  useEffect(() => {
+    if (hasMedia) setExpanded(true);
+  }, [hasMedia]);
+  const toolName = entry.toolName || "Tool";
+  const mcp = parseMcpTool(toolName);
+  const summary = toolSummary(toolName, entry.toolInput, entry.content);
+  const isFileTool = toolName === "Read" || toolName === "Edit" || toolName === "Write";
+  const duration = stepDuration(entry, result);
+  const failed = Boolean(result?.isError);
+
+  // A Task/Agent call whose sub-agent transcript we can open in the sidebar.
+  const isAgent = toolName === "Task" || toolName === "Agent";
+  const agentId = result?.agentId;
+  const canOpenSubagent = isAgent && agentId && onOpenSubagent;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className={cn(
+          "group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-[3px] text-left font-sans",
+          "hover:bg-hover"
+        )}
+      >
+        <span
+          className={cn(
+            "relative z-[1] flex size-[22px] flex-shrink-0 items-center justify-center rounded-md",
+            "border bg-raised",
+            failed ? "border-red/40 text-red" : "border-line text-dim"
+          )}
+        >
+          <ToolGlyph toolName={toolName} />
+        </span>
+
+        {mcp ? (
+          <span className="flex min-w-0 flex-shrink-0 items-baseline gap-1.5 text-[12px]">
+            <span className="rounded bg-purple/15 px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.04em] text-purple">
+              {mcp.server}
+            </span>
+            <span className="font-medium text-fg">{mcp.tool}</span>
+          </span>
+        ) : (
+          <span className="flex-shrink-0 text-[12px] font-medium text-fg">{toolName}</span>
+        )}
+
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate font-mono text-[11.5px]",
+            failed ? "text-red/80" : "text-dim"
+          )}
+        >
+          {isFileTool ? <PathSummary path={summary} /> : summary}
+        </span>
+
+        {canOpenSubagent && (
+          <span
+            role="button"
+            tabIndex={0}
+            className="flex-shrink-0 rounded border border-line px-1.5 py-px text-[10.5px] text-dim opacity-0 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100 group-hover:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSubagent!(agentId!, summary);
+            }}
+            title="Open this sub-agent's conversation"
+          >
+            Open ↗
+          </span>
+        )}
+
+        {duration && (
+          <span className="flex-shrink-0 text-[10.5px] tabular-nums text-faint">{duration}</span>
+        )}
+
+        {pending ? (
+          <span className="size-[10px] flex-shrink-0 animate-spin rounded-full border-2 border-green-soft border-t-green" />
+        ) : failed ? (
+          <span className="flex-shrink-0 text-red">
+            <IconX size={11} />
+          </span>
+        ) : result ? (
+          <span className="flex-shrink-0 text-green opacity-70">
+            <IconCheck size={12} />
+          </span>
+        ) : (
+          <span className="flex-shrink-0 text-[10.5px] text-faint">—</span>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="relative z-[1] mb-1.5 ml-[30px] mt-0.5 overflow-hidden rounded-lg border border-line bg-panel">
+          <ToolInput toolName={toolName} input={entry.toolInput} />
+          {result && (result.content || result.images?.length || result.videos?.length) && (
+            <>
+              <div
+                className={cn(
+                  "border-t border-line px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-[0.05em]",
+                  failed ? "text-red" : "text-faint"
+                )}
+              >
+                {failed ? "Error" : "Output"}
+              </div>
+              <div className={cn("px-2.5 pb-2", failed && "[&_.tool-pre]:text-red/80")}>
+                {result.content && renderResultContent(toolName, entry.toolInput, result.content)}
+                {result.images && result.images.length > 0 && (
+                  <div className="tool-result-images">
+                    {result.images.map((src, i) => (
+                      <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="md-image-link">
+                        <img className="md-image" src={src} alt="" loading="lazy" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {result.videos && result.videos.length > 0 && (
+                  <div className="tool-result-videos">
+                    {result.videos.map((src, i) => (
+                      <video key={i} className="md-video" src={src} controls playsInline preload="metadata" />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The call's input, rendered by what it is rather than as raw JSON where we
+ * can: Bash as a highlighted script, Edit as a unified diff, Write as the file
+ * content in the file's language. Everything else falls back to pretty JSON.
+ */
+function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
+  const inp = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+
+  if (toolName === "Bash" && bashCommand(input)) {
+    return (
+      <div className="px-2.5 py-2">
+        <CodeHighlight code={bashCommand(input)!} lang="bash" />
+      </div>
+    );
+  }
+
+  if (toolName === "Edit" && typeof inp.old_string === "string" && typeof inp.new_string === "string") {
+    const diff = [
+      ...(inp.old_string as string).split("\n").map((l) => `-${l}`),
+      ...(inp.new_string as string).split("\n").map((l) => `+${l}`),
+    ].join("\n");
+    return (
+      <div className="px-2.5 py-2">
+        <CodeHighlight code={truncate(diff, 4000)} lang="diff" />
+      </div>
+    );
+  }
+
+  if (toolName === "Write" && typeof inp.content === "string") {
+    return (
+      <div className="px-2.5 py-2">
+        <CodeHighlight
+          code={truncate(inp.content, 4000)}
+          lang={langForFile(inp.file_path as string) || "markdown"}
+        />
+      </div>
+    );
+  }
+
+  // Read's input is fully covered by the row summary (plus offset/limit when
+  // present — only show those).
+  if (toolName === "Read") {
+    const extras = Object.entries(inp).filter(([k]) => k !== "file_path");
+    if (extras.length === 0) return null;
+    return (
+      <pre className="tool-pre px-2.5 py-2">
+        {extras.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")}
+      </pre>
+    );
+  }
+
+  const text = formatInput(input);
+  if (!text) return null;
+  return <pre className="tool-pre px-2.5 py-2">{truncate(text, 4000)}</pre>;
 }
 
 /**

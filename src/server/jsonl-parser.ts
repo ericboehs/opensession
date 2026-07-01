@@ -159,6 +159,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
             content: resultText,
             timestamp: ts,
             toolUseId: block.tool_use_id,
+            ...(block.is_error ? { isError: true } : {}),
             ...(agentId ? { agentId } : {}),
             ...(images.length > 0 ? { images } : {}),
             ...(videos.length > 0 ? { videos } : {}),

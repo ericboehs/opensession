@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import type { TranscriptEntry } from "../lib/types";
-import { ToolCallBlock, parseMcpTool } from "./ToolCallBlock";
+import { ToolCallBlock, toolDisplayName, toolSummary } from "./ToolCallBlock";
+import { IconChevronDown } from "./icons";
+import { cn } from "../ui/cn";
 
 interface Props {
   items: TranscriptEntry[]; // tool_use entries, in order
@@ -9,7 +11,11 @@ interface Props {
   onOpenSubagent?: (agentId: string, label: string) => void;
 }
 
-/** Devin-style collapsed segment: "Worked for 12s · 5 steps". */
+/**
+ * Devin-style work segment: a light "Worked for 12s · 5 steps" disclosure line
+ * with the tool calls on a vertical timeline rail underneath — no box-in-box
+ * chrome, the steps read as one grouped run of activity.
+ */
 // Memoized with a custom comparator: TranscriptBlocks rebuilds the `items`
 // arrays and the `toolResults` Map on every render, so plain shallow-prop memo
 // would never bail. The entries themselves keep stable references (mergeEntries
@@ -38,33 +44,62 @@ export const WorkBlock = React.memo(function WorkBlock({
 
   const duration = blockDuration(items, toolResults);
   const last = items[items.length - 1];
+  const failures = items.filter(
+    (it) => it.toolUseId && toolResults.get(it.toolUseId)?.isError
+  ).length;
 
   return (
-    <div className={`work-block ${live ? "work-block-live" : ""}`}>
-      <button className="work-block-header" onClick={() => setExpanded(!expanded)}>
-        <span className="work-block-chevron">{expanded ? "▾" : "▸"}</span>
-        <span className="work-block-title">
+    <div className="mx-auto mb-3 max-w-[860px]">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[12.5px] text-dim hover:bg-hover"
+      >
+        <span
+          className={cn(
+            "flex-shrink-0 text-faint transition-transform duration-150",
+            !expanded && "-rotate-90"
+          )}
+        >
+          <IconChevronDown size={12} />
+        </span>
+        <span className="flex-shrink-0 font-medium">
           {live ? "Working" : "Worked"}
           {duration ? ` for ${duration}` : ""}
         </span>
-        <span className="work-block-steps">
-          {items.length} step{items.length === 1 ? "" : "s"}
+        <span className="flex-shrink-0 text-faint">
+          · {items.length} step{items.length === 1 ? "" : "s"}
         </span>
+        {failures > 0 && !live && (
+          <span className="flex-shrink-0 text-[11.5px] text-red/80">· {failures} failed</span>
+        )}
         {!expanded && last && (
-          <span className="work-block-preview">
-            {displayToolName(last.toolName)}: {previewOf(last)}
+          <span className="min-w-0 truncate font-mono text-[11px] text-faint">
+            {toolDisplayName(last.toolName)}:{" "}
+            {toolSummary(last.toolName || "Tool", last.toolInput, last.content)}
           </span>
         )}
-        {live && <span className="work-block-spinner" />}
+        {live && (
+          <span className="ml-auto size-[10px] flex-shrink-0 animate-spin rounded-full border-2 border-green-soft border-t-green" />
+        )}
       </button>
 
       {expanded && (
-        <div className="work-block-body">
-          {items.map((entry) => (
+        <div className="relative mt-0.5 pl-1">
+          {/* Timeline rail drawn behind the (opaque) tool icons */}
+          {/* pl-1 (4px) + row px-1 (4px) + half the 22px icon = 19px to the icon centerline */}
+          <span aria-hidden className="absolute bottom-2 left-[19px] top-2 w-px bg-line" />
+          {items.map((entry, i) => (
             <ToolCallBlock
               key={entry.id}
               entry={entry}
               result={entry.toolUseId ? toolResults.get(entry.toolUseId) : undefined}
+              pending={
+                live &&
+                i === items.length - 1 &&
+                !!entry.toolUseId &&
+                !toolResults.has(entry.toolUseId)
+              }
               onOpenSubagent={onOpenSubagent}
             />
           ))}
@@ -101,15 +136,4 @@ function blockDuration(
   if (secs < 60) return `${secs}s`;
   const mins = Math.floor(secs / 60);
   return `${mins}m ${secs % 60}s`;
-}
-
-function displayToolName(name?: string): string {
-  if (!name) return "Tool";
-  const mcp = parseMcpTool(name);
-  return mcp ? `${mcp.server}:${mcp.tool}` : name;
-}
-
-function previewOf(entry: TranscriptEntry): string {
-  const text = entry.content || "";
-  return text.length > 70 ? text.slice(0, 70) + "…" : text;
 }

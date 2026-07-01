@@ -154,6 +154,9 @@ export interface TranscriptEntry {
   toolInput?: unknown;
   toolUseId?: string;
   requestId?: string;
+  // Set on a tool_result whose block carried is_error — the UI shows the step
+  // with an error state instead of a success check.
+  isError?: boolean;
   // Set on a Task/Agent tool_result: the spawned sub-agent's id. The SDK writes
   // the sub-agent's own transcript to <transcript>/subagents/agent-<agentId>.jsonl,
   // so this links a tool call to its sub-agent conversation (see subagents.ts).

@@ -117,6 +117,8 @@ export interface TranscriptEntry {
 	toolInput?: unknown;
 	toolUseId?: string;
 	requestId?: string;
+	// Set on a tool_result whose block carried is_error — shown as a failed step.
+	isError?: boolean;
 	// Set on a Task/Agent tool_result: the spawned sub-agent's id. Lets the UI
 	// open that sub-agent's conversation in the right sidebar.
 	agentId?: string;
