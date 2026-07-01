@@ -1050,6 +1050,7 @@ function App() {
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onNewSession={(prompt) => openPalette(prompt)}
 								onOpenReviews={() => navigate({ view: "reviews" })}
+								onOpenSessionId={(id) => navigate({ view: "session", id })}
 							/>
 						)}
 					</main>

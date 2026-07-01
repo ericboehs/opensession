@@ -3580,6 +3580,49 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					: Response.json({ error: "Not found" }, { status: 404 });
 			}
 
+			// ── Human asks (waiting-on-teammates board) ──
+			if (path === "/backstage/api/human-asks" && req.method === "GET") {
+				const { listAsks } = await import("./src/server/human-asks");
+				return Response.json({
+					asks: listAsks({
+						includeAnswered: url.searchParams.get("all") === "1",
+					}),
+				});
+			}
+
+			const askNudgeMatch = path.match(
+				/^\/backstage\/api\/human-asks\/([^/]+)\/nudge$/,
+			);
+			if (askNudgeMatch && req.method === "POST") {
+				const { getAsk } = await import("./src/server/human-asks");
+				const ask = getAsk(askNudgeMatch[1]);
+				if (!ask) return Response.json({ error: "Not found" }, { status: 404 });
+				if (ask.state !== "delivered" || !ask.slack)
+					return Response.json(
+						{ error: "Ask isn't awaiting an answer on Slack" },
+						{ status: 400 },
+					);
+				const { sendSlackMessage } = await import(
+					"./src/agents/slack/slack-api"
+				);
+				await sendSlackMessage(
+					ask.slack.channel,
+					`It's Michael — friendly nudge, still waiting on this one 🙏`,
+					ask.slack.rootTs,
+				);
+				return Response.json({ ok: true });
+			}
+
+			const askCancelMatch = path.match(
+				/^\/backstage\/api\/human-asks\/([^/]+)$/,
+			);
+			if (askCancelMatch && req.method === "DELETE") {
+				const { cancelAsk } = await import("./src/server/human-asks");
+				return cancelAsk(askCancelMatch[1])
+					? Response.json({ ok: true })
+					: Response.json({ error: "Not found" }, { status: 404 });
+			}
+
 			// ── Audit log viewer (Settings → Audit log) ──
 			if (path === "/backstage/api/audit" && req.method === "GET") {
 				const { listAuditDates, readAuditEvents } = await import(

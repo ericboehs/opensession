@@ -1,6 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { UnifiedSession, WSServerMessage } from "../lib/types";
-import { fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
+import {
+  fetchModels,
+  fetchFileMentions,
+  fetchHumanAsks,
+  nudgeHumanAsk,
+  cancelHumanAsk,
+  relativeTime,
+  type ModelOption,
+  type HumanAskView,
+} from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
 import { Composer } from "./Composer";
 
@@ -12,6 +21,7 @@ interface Props {
   onSelect: (session: UnifiedSession) => void;
   onNewSession: (prompt?: string) => void;
   onOpenReviews: () => void;
+  onOpenSessionId?: (id: string) => void;
 }
 
 const SUGGESTIONS: Array<{ chip: string; color: string; prompt: string }> = [
@@ -77,7 +87,94 @@ function timeGreeting(user: string) {
   return user !== "Anonymous" ? `${part}, ${user}` : part;
 }
 
-export function Home({ sessions, connected, send, addHandler, onSelect, onNewSession, onOpenReviews }: Props) {
+/**
+ * "Waiting on teammates" — open human asks (questions Michael sent to people
+ * over Slack and is still waiting on). Renders nothing when there are none,
+ * keeping the home hero calm.
+ */
+function HumanAsksCard({ onOpenSessionId }: { onOpenSessionId?: (id: string) => void }) {
+  const [asks, setAsks] = useState<HumanAskView[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetchHumanAsks()
+        .then((a) => alive && setAsks(a))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 15000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (asks.length === 0) return null;
+
+  return (
+    <div className="w-full max-w-[640px] mx-auto mt-6 text-left bg-panel border border-line rounded-panel px-4 py-3">
+      <div className="text-dim text-[12px] font-medium uppercase tracking-wide mb-2">
+        Waiting on teammates
+      </div>
+      <div className="flex flex-col gap-2">
+        {asks.map((a) => (
+          <div key={a.id} className="flex items-baseline gap-2 min-w-0 text-[13px]">
+            <span className="text-fg shrink-0 font-medium">{a.person.name}</span>
+            <span className="text-dim truncate" title={a.question}>
+              {a.question}
+            </span>
+            <span className="text-faint text-[11.5px] shrink-0 ml-auto" title={a.createdAt}>
+              {a.state === "scheduled" ? "queued" : relativeTime(a.deliveredAt || a.createdAt)}
+            </span>
+            {a.state === "delivered" && (
+              <button
+                className="btn-small shrink-0"
+                disabled={busy === a.id}
+                onClick={async () => {
+                  setBusy(a.id);
+                  try {
+                    await nudgeHumanAsk(a.id);
+                  } catch {}
+                  setBusy(null);
+                }}
+                title="Send a friendly reminder in the Slack thread"
+              >
+                Nudge
+              </button>
+            )}
+            <button
+              className="btn-small shrink-0"
+              disabled={busy === a.id}
+              onClick={async () => {
+                setBusy(a.id);
+                try {
+                  await cancelHumanAsk(a.id);
+                  setAsks(asks.filter((x) => x.id !== a.id));
+                } catch {}
+                setBusy(null);
+              }}
+              title="Cancel the ask (the session stops waiting)"
+            >
+              ✕
+            </button>
+            {onOpenSessionId && (
+              <button
+                className="btn-small shrink-0"
+                onClick={() => onOpenSessionId(a.sessionId)}
+                title="Open the session that asked"
+              >
+                →
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function Home({ sessions, connected, send, addHandler, onSelect, onNewSession, onOpenReviews, onOpenSessionId }: Props) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
@@ -225,6 +322,8 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
               )}
             </div>
           )}
+
+          <HumanAsksCard onOpenSessionId={onOpenSessionId} />
         </div>
       </div>
     </div>

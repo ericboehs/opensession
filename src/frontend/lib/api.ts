@@ -636,6 +636,45 @@ export async function runAutomationApi(id: string) {
 	});
 }
 
+// ── Human asks (waiting-on-teammates board) ──
+
+export interface HumanAskView {
+	id: string;
+	sessionId: string;
+	createdBy: string;
+	person: { slackId: string; name: string };
+	question: string;
+	options?: string[];
+	mode: "block" | "async";
+	state: "scheduled" | "delivered" | "answered" | "timeout" | "cancelled";
+	answer?: string;
+	answeredBy?: string;
+	createdAt: string;
+	deliveredAt?: string;
+	answeredAt?: string;
+}
+
+export async function fetchHumanAsks(all = false): Promise<HumanAskView[]> {
+	const data = await request<{ asks?: HumanAskView[] }>(
+		`/human-asks${all ? "?all=1" : ""}`,
+		{ label: "Failed to fetch asks" },
+	);
+	return data?.asks ?? [];
+}
+
+export async function nudgeHumanAsk(id: string): Promise<void> {
+	await request<void>(`/human-asks/${encodeURIComponent(id)}/nudge`, {
+		method: "POST",
+	});
+}
+
+export async function cancelHumanAsk(id: string): Promise<void> {
+	await request<void>(`/human-asks/${encodeURIComponent(id)}`, {
+		method: "DELETE",
+		label: "Failed to cancel ask",
+	});
+}
+
 // ── Audit log ──
 
 export interface AuditPage {
