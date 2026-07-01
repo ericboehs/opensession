@@ -6335,10 +6335,12 @@ button.preview-open:not(:disabled):hover {
 		transform: translateX(100%);
 		transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 		background: var(--bg);
-		box-shadow: -10px 0 28px rgba(0, 0, 0, 0.35);
 	}
+	/* Shadow only while the pane is pushed on top — otherwise its left-side shadow
+	   (the pane rests just off the right edge) bleeds back onto the sidebar. */
 	.app-body.mobile-detail .detail-pane {
 		transform: translateX(0);
+		box-shadow: -10px 0 28px rgba(0, 0, 0, 0.35);
 	}
 
 	/* The drawer affordances are gone in the page model. */
