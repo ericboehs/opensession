@@ -144,6 +144,14 @@ function App() {
 	});
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const sidebarRef = useRef<HTMLDivElement | null>(null);
+	// The top bar above the tab strip. The session viewer portals its header
+	// (session name + actions, incl. the workspace-panel toggle) into this slot so
+	// the layout reads name-on-top / tabs-below; other views render a plain title.
+	const [topbarEl, setTopbarEl] = useState<HTMLDivElement | null>(null);
+	// Right-column slot (sibling of the left sidebar). The session viewer portals
+	// its workspace/sub-agent panel here so it opens as a full-height column from
+	// the very top, at the same level as the left sidebar (Conductor-style).
+	const [rightPanelEl, setRightPanelEl] = useState<HTMLDivElement | null>(null);
 	// Desktop sidebar width (px), drag-resizable and persisted per browser. The
 	// mobile drawer keeps its own fixed width (CSS media query wins there), so
 	// this only takes effect on the static desktop column.
@@ -226,11 +234,45 @@ function App() {
 		setSidebarOpen(false);
 	}
 
+	// The "new session" ⌘K palette. It's an overlay driven by its own state (not a
+	// route), so it can open over any view; the /backstage/new route still opens it
+	// so old links keep working.
+	const [palette, setPalette] = useState<{ open: boolean; prompt?: string }>(() =>
+		route.view === "new" ? { open: true, prompt: route.prompt } : { open: false },
+	);
+	const paletteOpenRef = useRef(palette.open);
+	paletteOpenRef.current = palette.open;
+	const openPalette = React.useCallback((prompt?: string) => {
+		setPalette({ open: true, prompt });
+		setSidebarOpen(false);
+	}, []);
+	const closePalette = React.useCallback(() => {
+		setPalette({ open: false });
+		// A deep link left the URL on /backstage/new — return home on close.
+		if (location.pathname === "/backstage/new")
+			navigate({ view: "home" });
+	}, []);
+
 	useEffect(() => {
 		const onPop = () => setRoute(parseRoute(location.pathname));
 		window.addEventListener("popstate", onPop);
 		return () => window.removeEventListener("popstate", onPop);
 	}, []);
+
+	// ⌘K / ⌘N toggles the palette; Esc closes it.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			const k = e.key.toLowerCase();
+			if ((e.metaKey || e.ctrlKey) && (k === "k" || k === "n")) {
+				e.preventDefault();
+				paletteOpenRef.current ? closePalette() : openPalette();
+				return;
+			}
+			if (e.key === "Escape" && paletteOpenRef.current) closePalette();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [openPalette, closePalette]);
 
 	// Remember the last session so a cold relaunch can restore it (see above);
 	// clear it when the user deliberately goes home so we don't force them back in.
@@ -336,6 +378,28 @@ function App() {
 		}
 	}
 
+	// Plain title shown in the top bar for non-session views (session routes let
+	// the SessionViewer portal its own header in instead). Home stays blank so the
+	// bar collapses (`.detail-topbar:empty`).
+	const topbarTitle: string =
+		route.view === "reviews"
+			? "Reviews"
+			: route.view === "automations"
+				? "Automations"
+				: route.view === "goals"
+					? "Goals"
+					: route.view === "actions"
+						? "Actions"
+						: route.view === "connections"
+							? "Connections"
+							: route.view === "archived"
+								? "Archived"
+								: route.view === "notes"
+									? "Notes"
+									: route.view === "new"
+										? "New session"
+										: "";
+
 	const activeView =
 		route.view === "automations" ||
 		route.view === "goals" ||
@@ -436,7 +500,8 @@ function App() {
 								)
 							}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
-							onNewSession={() => navigate({ view: "new" })}
+							onNewSession={() => openPalette()}
+							onNewProject={() => openPalette()}
 							onOpenArchived={() => navigate({ view: "archived" })}
 							onArchive={async (s) => {
 								try {
@@ -464,6 +529,14 @@ function App() {
 					</div>
 
 					<main className="detail-pane">
+						{/* Top bar: session name + actions (portaled in by SessionViewer)
+						    on session routes, a plain title otherwise. Sits above the tab
+						    strip so the session identity reads first, tabs below it. */}
+						<div className="detail-topbar" ref={setTopbarEl}>
+							{route.view !== "session" && topbarTitle && (
+								<span className="detail-topbar-title">{topbarTitle}</span>
+							)}
+						</div>
 						<SessionTabs
 							tabs={tabs}
 							activeKey={activeKey}
@@ -478,7 +551,7 @@ function App() {
 							}
 							onTogglePin={(key) => setPins(togglePin(key))}
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
-							onNewSession={() => navigate({ view: "new" })}
+							onNewSession={() => openPalette()}
 							onReorder={(keys) => setPins(reorderPins(keys))}
 							onRename={async (key, title) => {
 								try {
@@ -489,14 +562,7 @@ function App() {
 								refresh();
 							}}
 						/>
-						{route.view === "new" ? (
-							<NewSession
-								onBack={() => navigate({ view: "home" })}
-								send={send}
-								addHandler={addHandler}
-								connected={connected}
-							/>
-						) : route.view === "automations" ? (
+						{route.view === "automations" ? (
 							<Automations
 								onOpenSession={(id) => navigate({ view: "session", id })}
 							/>
@@ -565,6 +631,8 @@ function App() {
 									send={send}
 									addHandler={addHandler}
 									connected={connected}
+									topbarEl={topbarEl}
+									rightPanelEl={rightPanelEl}
 								/>
 							) : (
 								<div className="detail-empty">
@@ -595,11 +663,26 @@ function App() {
 								connected={connected}
 								send={send}
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
-								onNewSession={(prompt) => navigate({ view: "new", prompt })}
+								onNewSession={(prompt) => openPalette(prompt)}
 							/>
 						)}
 					</main>
+
+					{/* Full-height right column beside the detail pane. The active
+					    session's workspace/sub-agent panel portals in here. */}
+					<div className="right-panel-slot" ref={setRightPanelEl} />
 				</div>
+
+				{/* ⌘K new-session palette — overlays every view. */}
+				{palette.open && (
+					<NewSession
+						onBack={closePalette}
+						send={send}
+						addHandler={addHandler}
+						connected={connected}
+						prefillPrompt={palette.prompt}
+					/>
+				)}
 			</div>
 		</UserGate>
 	);
