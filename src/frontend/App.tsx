@@ -570,6 +570,23 @@ function App() {
 									console.error("Create project failed:", e);
 								}
 							}}
+							onOpenProject={(id) => {
+								// Open the project's most-recently-active chat so its
+								// siblings surface in the tab strip. An empty folder opens
+								// the new-chat palette scoped to it.
+								const chats = sessions
+									.filter((s) => !s.archived && s.projectId === id)
+									.sort((a, b) =>
+										(b.lastActivity || "").localeCompare(a.lastActivity || ""),
+									);
+								if (chats.length)
+									navigate({ view: "session", id: chats[0].id });
+								else {
+									const p = projects.find((x) => x.id === id);
+									setPalette({ open: true, projectId: id, repo: p?.repo });
+									setSidebarOpen(false);
+								}
+							}}
 							onRenameProject={async (id, name) => {
 								try {
 									await updateProjectApi(id, { name });

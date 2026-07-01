@@ -67,6 +67,8 @@ interface Props {
 	onNewSession: () => void;
 	/** Create a new empty Project folder with the given name. */
 	onCreateProject: (name: string) => void;
+	/** Open a project — its chats surface in the top tab strip. */
+	onOpenProject: (id: string) => void;
 	/** Rename a project folder. */
 	onRenameProject: (id: string, name: string) => void;
 	/** Delete a project folder (its chats become standalone). */
@@ -364,6 +366,7 @@ export function Sidebar({
 	onSelect,
 	onNewSession,
 	onCreateProject,
+	onOpenProject,
 	onRenameProject,
 	onDeleteProject,
 	onSetProjectColor,
@@ -1033,64 +1036,37 @@ export function Sidebar({
 						<div className="sidebar-empty">No projects yet</div>
 					)}
 					{projects.map((project) => {
-						const key = `project:${project.id}`;
-						const open = isOpen(key);
-						const chats = sessions
-							.filter((s) => !s.archived && s.projectId === project.id)
-							.sort((a, b) =>
-								(a.createdAt || "").localeCompare(b.createdAt || ""),
-							);
+						// A project is a single row — clicking it opens the project (its
+						// chats show in the top tab strip), never an inline chat list.
+						const chats = sessions.filter(
+							(s) => !s.archived && s.projectId === project.id,
+						);
+						const active = chats.some((s) => s.id === selectedId);
 						return (
-							<React.Fragment key={key}>
-								<button
-									className="sidebar-group-header"
-									onClick={() => toggleGroup(key)}
-									onContextMenu={(e) => {
-										e.preventDefault();
-										setProjectMenu({
-											id: project.id,
-											x: e.clientX,
-											y: e.clientY,
-										});
+							<button
+								key={project.id}
+								className={`sidebar-group-header sidebar-project-row ${active ? "sidebar-project-row-active" : ""}`}
+								onClick={() => onOpenProject(project.id)}
+								onContextMenu={(e) => {
+									e.preventDefault();
+									setProjectMenu({
+										id: project.id,
+										x: e.clientX,
+										y: e.clientY,
+									});
+								}}
+							>
+								<span
+									className="sidebar-group-dot"
+									style={{
+										backgroundColor: project.color
+											? colorHex(project.color) || "var(--text-faint)"
+											: "var(--text-faint)",
 									}}
-								>
-									{project.color && (
-										<span
-											className="sidebar-group-dot"
-											style={{ backgroundColor: colorHex(project.color) || undefined }}
-										/>
-									)}
-									<span className="sidebar-group-name">{project.name}</span>
-									<span className="sidebar-group-count">{chats.length}</span>
-									<span className="sidebar-group-chevron">
-										{open ? "▾" : "▸"}
-									</span>
-								</button>
-								{chats
-									.filter((s) => open || s.id === selectedId)
-									.map((s) => (
-										<SidebarItem
-											key={`prj-${s.id}`}
-											session={s}
-											selected={s.id === selectedId}
-											unread={
-												s.id !== selectedId &&
-												isUnread(s.id, s.lastActivity, reads)
-											}
-											mine={
-												!!s.startedBy &&
-												!s.automation &&
-												s.startedBy.toLowerCase() ===
-													currentUser.toLowerCase()
-											}
-											onClick={() => onSelect(s)}
-											onArchive={() => onArchive(s)}
-											onRename={(title) => onRename(s, title)}
-											projects={projects}
-											onMoveToProject={(pid) => onSetSessionProject(s.id, pid)}
-										/>
-									))}
-							</React.Fragment>
+								/>
+								<span className="sidebar-group-name">{project.name}</span>
+								<span className="sidebar-group-count">{chats.length}</span>
+							</button>
 						);
 					})}
 				</div>
