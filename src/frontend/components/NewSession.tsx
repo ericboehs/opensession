@@ -5,7 +5,7 @@ import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../l
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
-import { IconBolt, IconMap, IconPaperclip } from "./icons";
+import { IconBolt, IconMap, IconPaperclip, IconChevronDown, IconCheck } from "./icons";
 import type { WSServerMessage } from "../lib/types";
 
 interface Props {
@@ -119,8 +119,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const [effort, setEffort] = useState("high");
   const [fast, setFast] = useState(false);
   const [plan, setPlan] = useState(false);
-  // Keep the palette open after a create to fire off another task.
+  // Keep the palette open after a create to fire off another task. Chosen from
+  // the Create split-button's dropdown; the primary button reflects the mode.
   const [createMore, setCreateMore] = useState(false);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const createSplitRef = useRef<HTMLDivElement>(null);
 
   // "@"-mention file autocomplete against the selected repo's repo (no
   // session exists yet, so search by repo).
@@ -139,6 +142,18 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   useEffect(() => {
     promptRef.current?.focus();
   }, []);
+
+  // Close the Create dropdown on an outside click.
+  useEffect(() => {
+    if (!createMenuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (createSplitRef.current && !createSplitRef.current.contains(e.target as Node)) {
+        setCreateMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [createMenuOpen]);
 
   useEffect(() => {
     fetchModels()
@@ -470,24 +485,57 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               }}
             />
 
-            <button
-              type="button"
-              className={`palette-switch ${createMore ? "is-on" : ""}`}
-              onClick={() => setCreateMore((v) => !v)}
-              disabled={creating}
-              title="Keep this open after creating to start another"
-              aria-pressed={createMore}
-            >
-              <span className="palette-switch-track">
-                <span className="palette-switch-knob" />
-              </span>
-              Create more
-            </button>
-
-            <button className="palette-create" onClick={handleCreate} disabled={!canCreate}>
-              {creating ? "Creating…" : "Create"}
-              <span className="palette-create-kbd">↵</span>
-            </button>
+            <div className="palette-create-split" ref={createSplitRef}>
+              <button
+                className="palette-create palette-create-main"
+                onClick={handleCreate}
+                disabled={!canCreate}
+              >
+                {creating ? "Creating…" : createMore ? "Create more" : "Create"}
+                <span className="palette-create-kbd">↵</span>
+              </button>
+              <button
+                type="button"
+                className={`palette-create palette-create-caret ${createMenuOpen ? "is-open" : ""}`}
+                onClick={() => setCreateMenuOpen((v) => !v)}
+                disabled={creating}
+                aria-haspopup="menu"
+                aria-expanded={createMenuOpen}
+                aria-label="Create options"
+              >
+                <IconChevronDown size={16} />
+              </button>
+              {createMenuOpen && (
+                <div className="palette-create-menu" role="menu">
+                  {[
+                    { more: false, title: "Create", desc: "Open the new session" },
+                    { more: true, title: "Create more", desc: "Stay here to start another" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.title}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={createMore === opt.more}
+                      className={`palette-create-menu-item ${createMore === opt.more ? "is-active" : ""}`}
+                      onClick={() => {
+                        setCreateMore(opt.more);
+                        setCreateMenuOpen(false);
+                      }}
+                    >
+                      <IconCheck
+                        className="palette-create-menu-check"
+                        size={15}
+                        style={{ visibility: createMore === opt.more ? "visible" : "hidden" }}
+                      />
+                      <span className="palette-create-menu-text">
+                        <span className="palette-create-menu-title">{opt.title}</span>
+                        <span className="palette-create-menu-desc">{opt.desc}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

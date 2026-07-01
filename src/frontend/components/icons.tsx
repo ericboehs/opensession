@@ -39,6 +39,34 @@ export function IconArrowUp(p: IconProps) {
   );
 }
 
+export function IconSidebarRight(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M6.75 4.75H17.25C18.3546 4.75 19.25 5.64543 19.25 6.75V17.25C19.25 18.3546 18.3546 19.25 17.25 19.25H6.75C5.64543 19.25 4.75 18.3546 4.75 17.25V6.75C4.75 5.64543 5.64543 4.75 6.75 4.75Z"
+      />
+      <path {...stroke} d="M14.75 4.75V19.25" />
+    </Svg>
+  );
+}
+
+export function IconChevronDown(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M6.75 10.25L12 15.25L17.25 10.25" />
+    </Svg>
+  );
+}
+
+export function IconCheck(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M5.75 12.75L9.5 16.25L18.25 7.75" />
+    </Svg>
+  );
+}
+
 export function IconBolt(p: IconProps) {
   return (
     <Svg {...p}>

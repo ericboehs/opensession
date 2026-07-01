@@ -8630,8 +8630,8 @@ button.preview-open:not(:disabled):hover {
 	border: none;
 	border-radius: 9px;
 	padding: 7px 14px;
-	background: var(--text);
-	color: var(--bg);
+	background: var(--text-dim);
+	color: #fff;
 	font-size: 13px;
 	font-weight: 600;
 	cursor: pointer;
@@ -8657,7 +8657,7 @@ button.preview-open:not(:disabled):hover {
 	border-top-left-radius: 0;
 	border-bottom-left-radius: 0;
 	/* Hairline seam between the two segments. */
-	box-shadow: inset 1px 0 0 color-mix(in srgb, var(--bg) 22%, transparent);
+	box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.14);
 }
 .palette-create-caret.is-open,
 .palette-create-main:disabled + .palette-create-caret {
