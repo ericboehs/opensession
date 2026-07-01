@@ -290,6 +290,35 @@ export async function detachRepoApi(
 	return body.attachedRepos as AttachedRepo[];
 }
 
+// Whether this session is fresh enough to switch its primary repo (clean-only).
+export async function fetchRepoSwitchable(sessionId: string): Promise<boolean> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/repo-switchable`,
+	);
+	if (!res.ok) return false;
+	const body = await res.json();
+	return !!body.switchable;
+}
+
+// Switch the session's PRIMARY repo (wrong repo picked at creation). Returns the
+// new primary repo + branch; the next prompt runs from the new worktree.
+export async function switchPrimaryRepoApi(
+	sessionId: string,
+	repo: string,
+): Promise<{ repo: string; branch: string; worktreeDir: string }> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/switch-primary-repo`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ repo }),
+		},
+	);
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body as { repo: string; branch: string; worktreeDir: string };
+}
+
 // ── Linked Slack channels ──
 
 export async function linkChannelApi(

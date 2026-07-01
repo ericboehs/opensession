@@ -23,6 +23,7 @@ import {
 	getRepo,
 	repoForPath,
 	prepareAttachedWorktree,
+	worktreeHasWork,
 	REPOS,
 } from "./src/server/worktree";
 import {
@@ -496,6 +497,64 @@ async function attachRepo(
 	const all = [...existing, attached];
 	touchBackstageSession(sessionId, { attachedRepos: all });
 	return { attached, all };
+}
+
+/**
+ * Switch a session's PRIMARY repo — for when the wrong repo was picked at
+ * creation. Clean-only by design: allowed only while the session's worktree has
+ * no uncommitted changes and no commits beyond its base, so no work is ever
+ * silently stranded (a session that already committed keeps its old repo). The
+ * session's branch name is reused in the target repo (keeping any cross-repo
+ * PRs aligned); the next prompt runs from the new worktree because
+ * runSessionPrompt re-reads `cwd` from `worktreeDir` each turn.
+ */
+async function switchPrimaryRepo(
+	sessionId: string,
+	repoId: string,
+): Promise<{ repo: string; branch: string; worktreeDir: string }> {
+	const session = findSession(sessionId);
+	if (!session) throw new Error("Session not found");
+	if (session.mode === "ask")
+		throw new Error("Ask sessions read the main checkout — nothing to switch");
+	if (!REPOS[repoId]) throw new Error(`Unknown repo "${repoId}"`);
+	if (session.repo === repoId)
+		throw new Error(`${repoId} is already this session's primary repo`);
+	if (
+		session.worktreeDir &&
+		session.branch &&
+		(await worktreeHasWork(session.worktreeDir, session.branch, session.repo))
+	)
+		throw new Error(
+			"This session already has work — switching repos is only allowed on a fresh session",
+		);
+
+	const target = getRepo(repoId);
+	let wtPath: string;
+	let branch: string;
+	if (target.sharedCheckout) {
+		// Backstage: sessions edit the live main checkout on its default branch.
+		wtPath = target.repo;
+		branch = target.defaultBranch;
+	} else {
+		branch = (session.branch || "").trim();
+		if (!branch) throw new Error("Session has no branch to carry over");
+		const worktrees = await listWorktrees(target.id);
+		wtPath =
+			worktrees.find((w) => w.branch === branch)?.path ||
+			(await createWorktree(branch, target.id));
+	}
+
+	// Drop the target from attached repos if it was attached — it's the primary now.
+	const attachedRepos = (session.attachedRepos || []).filter(
+		(r) => r.repo !== repoId,
+	);
+	touchBackstageSession(sessionId, {
+		repo: target.id,
+		worktreeDir: wtPath,
+		branch,
+		attachedRepos,
+	});
+	return { repo: target.id, branch, worktreeDir: wtPath };
 }
 
 // WebSocket client state
@@ -2877,6 +2936,51 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						body.branch,
 					);
 					return Response.json({ ok: true, attached, attachedRepos: all });
+				} catch (e: any) {
+					return Response.json(
+						{ error: e.message || String(e) },
+						{ status: 400 },
+					);
+				}
+			}
+
+			// Is this session fresh enough to switch its primary repo? Drives the
+			// clean-only, silent switcher in the RepoBar — no work means no footgun.
+			const switchableMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/repo-switchable$/,
+			);
+			if (switchableMatch && req.method === "GET") {
+				const sessionId = decodeURIComponent(switchableMatch[1]);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const switchable =
+					session.mode !== "ask" &&
+					!(
+						session.worktreeDir &&
+						session.branch &&
+						(await worktreeHasWork(
+							session.worktreeDir,
+							session.branch,
+							session.repo,
+						))
+					);
+				return Response.json({ switchable });
+			}
+
+			// Switch the session's PRIMARY repo (wrong repo picked at creation).
+			// Clean-only — rejects with 400 if the session already has work.
+			const switchMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/switch-primary-repo$/,
+			);
+			if (switchMatch && req.method === "POST") {
+				const sessionId = decodeURIComponent(switchMatch[1]);
+				const body = (await req.json().catch(() => ({}))) as { repo?: string };
+				if (!body.repo)
+					return Response.json({ error: "repo required" }, { status: 400 });
+				try {
+					const result = await switchPrimaryRepo(sessionId, body.repo);
+					return Response.json({ ok: true, ...result });
 				} catch (e: any) {
 					return Response.json(
 						{ error: e.message || String(e) },

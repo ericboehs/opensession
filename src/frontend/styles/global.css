@@ -5536,6 +5536,27 @@ button.preview-open:not(:disabled):hover {
 	color: var(--accent);
 	border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
+/* Primary chip as a switcher — for fixing a wrong repo pick on a fresh session. */
+.repobar-chip-switch {
+	cursor: pointer;
+	font-family: inherit;
+}
+.repobar-chip-switch:hover {
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel));
+}
+.repobar-caret {
+	font-size: 9px;
+	opacity: 0.7;
+}
+.repobar-menu-head {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-faint);
+	padding: 4px 8px 2px;
+}
 .repobar-detach {
 	background: none;
 	border: none;

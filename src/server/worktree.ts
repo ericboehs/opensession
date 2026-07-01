@@ -149,6 +149,27 @@ async function isWorktreeClean(wtPath: string, branch: string): Promise<boolean>
   return unpushed.trim() === "0";
 }
 
+// True if the worktree has uncommitted changes or commits beyond its base
+// branch — i.e. real work that switching the session's primary repo would
+// strand. Errs toward "has work" on any git failure so a switch never silently
+// throws work away. Used to gate the clean-only primary-repo switch.
+export async function worktreeHasWork(
+  wtPath: string,
+  branch: string,
+  repoId?: string
+): Promise<boolean> {
+  const repo = getRepo(repoId);
+  try {
+    const status = await $`git -C ${wtPath} status --porcelain`.text();
+    if (status.trim() !== "") return true;
+    const ahead =
+      await $`git -C ${wtPath} rev-list ${branch} --not origin/${repo.defaultBranch} --count`.text();
+    return ahead.trim() !== "" && ahead.trim() !== "0";
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Remove worktrees of archived sessions idle for more than `days` days.
  * A worktree survives the sweep if any session sharing its branch is still
