@@ -445,6 +445,9 @@ export function Sidebar({
 	const titleRef = useRef<HTMLSpanElement>(null);
 	const actionsRef = useRef<HTMLDivElement>(null);
 	const probeRef = useRef<HTMLSpanElement>(null);
+	// Divider under the Sessions header, shown only once the list is scrolled off
+	// the top — a scroll-shadow cue that there's content tucked under the header.
+	const [listScrolled, setListScrolled] = useState(false);
 	useLayoutEffect(() => {
 		if (filter.repo === "all") return;
 		const measure = () => {
@@ -1037,7 +1040,9 @@ export function Sidebar({
 				))}
 			</nav>
 
-			<div className="sidebar-workspace">
+			<div
+				className={`sidebar-workspace${listScrolled ? " sidebar-workspace--scrolled" : ""}`}
+			>
 				<div className="sidebar-workspace-head" ref={headRef}>
 					<span className="sidebar-workspace-title" ref={titleRef}>
 						Sessions
@@ -1181,7 +1186,13 @@ export function Sidebar({
 					document.body,
 				)}
 
-			<div className="sidebar-list">
+			<div
+				className="sidebar-list"
+				onScroll={(e) => {
+					const scrolled = e.currentTarget.scrollTop > 0;
+					setListScrolled((prev) => (prev === scrolled ? prev : scrolled));
+				}}
+			>
 				{/* ── Pinned (sessions + notes, mixed) ── */}
 				{(() => {
 					const pinnedSessions = pins

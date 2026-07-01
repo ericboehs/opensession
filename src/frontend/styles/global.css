@@ -617,7 +617,14 @@ body.resizing-x {
 .sidebar-workspace {
 	padding: 12px 14px 8px;
 	border-top: 1px solid var(--border);
+	/* Transparent by default so toggling the color on scroll never shifts layout;
+	   turns into a visible divider under the header once the list scrolls. */
+	border-bottom: 1px solid transparent;
 	margin-top: 4px;
+	transition: border-bottom-color 0.15s ease;
+}
+.sidebar-workspace--scrolled {
+	border-bottom-color: var(--border-strong);
 }
 .sidebar-workspace-head {
 	display: flex;
@@ -1263,30 +1270,9 @@ body.resizing-x {
 .sidebar-item:hover {
 	background: var(--bg-hover);
 }
-/* A thin divider line slides in at the bottom of the hovered row, inset to match
-   the row's rounded corners. Absolutely positioned so it never shifts layout. */
-.sidebar-item::after {
-	content: "";
-	position: absolute;
-	left: 9px;
-	right: 9px;
-	bottom: 0;
-	height: 1px;
-	background: var(--border-strong);
-	opacity: 0;
-	transition: opacity 0.12s ease;
-	pointer-events: none;
-}
-.sidebar-item:hover::after {
-	opacity: 1;
-}
 .sidebar-item-selected,
 .sidebar-item-selected:hover {
 	background: var(--bg-active);
-}
-/* The selected row owns the eye already; no divider needed under it. */
-.sidebar-item-selected::after {
-	display: none;
 }
 
 .sidebar-item-top {
