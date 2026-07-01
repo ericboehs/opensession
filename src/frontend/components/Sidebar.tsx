@@ -6,12 +6,13 @@ import React, {
 	useRef,
 } from "react";
 import { createPortal } from "react-dom";
-import type { UnifiedSession } from "../lib/types";
+import type { UnifiedSession, Project } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
+import { colorHex } from "../lib/tab-colors";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -54,13 +55,19 @@ export type NavView =
 
 interface Props {
 	sessions: UnifiedSession[];
+	/** Project folders that group chats. */
+	projects: Project[];
+	/** Notes (id + title), to render pinned-note rows. */
+	notes: Array<{ id: string; title: string }>;
 	selectedId: string | null;
 	activeView: NavView;
 	onNavigate: (view: NavView) => void;
 	onSelect: (session: UnifiedSession) => void;
 	onNewSession: () => void;
-	/** Start a new project (folder-plus icon) — opens the new-session palette. */
-	onNewProject: () => void;
+	/** Create a new empty Project folder with the given name. */
+	onCreateProject: (name: string) => void;
+	/** Open a note (pinned-note row click). */
+	onOpenNote: (id: string) => void;
 	/** Open the ⌘K session-search palette (from the sidebar search field). */
 	onOpenSearch: () => void;
 	onOpenArchived: () => void;
@@ -224,7 +231,7 @@ type GroupBand = "personal" | "people" | "automations";
 // The bands below the personal one get a text header ("People" / "Projects").
 function bandLabel(band: GroupBand): string | null {
 	if (band === "people") return "People";
-	if (band === "automations") return "Projects";
+	if (band === "automations") return "Automations";
 	return null;
 }
 
@@ -296,8 +303,9 @@ function readExpanded(): Set<string> {
 
 // ── Grouping / filtering controls (the filter popover) ─────────────────────
 // The sidebar can be organized three ways ("Group by": Status, Repo, or Recently
-// opened), narrowed to a single repo ("Repo"), and ordered by recency of activity
-// or creation ("Sort by"). The three choices persist together per browser.
+// opened), narrowed to a single repo ("Repo") or a single person ("Person"), and
+// ordered by recency of activity or creation ("Sort by"). The choices persist
+// together per browser.
 type GroupBy = "status" | "repo" | "recently";
 type SortBy = "updated" | "created";
 const DEFAULT_PROJECT = "tella-fusion";
@@ -306,6 +314,7 @@ const FILTER_KEY = "michael-sidebar-filter";
 interface FilterState {
 	groupBy: GroupBy;
 	repo: string; // a repo id, or "all"
+	person: string; // a lowercased person key, or "all"
 	sort: SortBy;
 }
 
@@ -318,10 +327,11 @@ function readFilter(): FilterState {
 					? v.groupBy
 					: "status",
 			repo: typeof v.repo === "string" ? v.repo : "all",
+			person: typeof v.person === "string" ? v.person : "all",
 			sort: v.sort === "created" ? "created" : "updated",
 		};
 	} catch {
-		return { groupBy: "status", repo: "all", sort: "updated" };
+		return { groupBy: "status", repo: "all", person: "all", sort: "updated" };
 	}
 }
 
@@ -337,12 +347,15 @@ function repoColor(key: string): string {
 
 export function Sidebar({
 	sessions,
+	projects,
+	notes,
 	selectedId,
 	activeView,
 	onNavigate,
 	onSelect,
 	onNewSession,
-	onNewProject,
+	onCreateProject,
+	onOpenNote,
 	onOpenSearch,
 	onOpenArchived,
 	archivedActive,
@@ -439,10 +452,38 @@ export function Sidebar({
 			.map(([name]) => name);
 	}, [sessions]);
 
+	// Distinct people who started sessions, most-active first, for the Person
+	// filter dropdown. Only recognized teammates (see KNOWN_PEOPLE) are offered;
+	// keyed by lowercased name to merge casing, with the first-seen spelling as
+	// the display label. Built off every session so options don't churn on search.
+	const people = useMemo(() => {
+		const entries = new Map<string, { label: string; count: number }>();
+		for (const s of sessions) {
+			if (s.archived || s.automation || !s.startedBy) continue;
+			const key = s.startedBy.toLowerCase();
+			if (!KNOWN_PEOPLE.has(key)) continue;
+			const e = entries.get(key) || { label: s.startedBy, count: 0 };
+			e.count++;
+			entries.set(key, e);
+		}
+		return Array.from(entries.entries())
+			.sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
+			.map(([key, { label }]) => ({ key, label }));
+	}, [sessions]);
+
+	// Chats that belong to a Project folder render under that folder (below), not
+	// in the flat Status/Repo groups — so exclude them here to avoid duplication.
 	const filtered = useMemo(() => {
-		let visible = sessions.filter((s) => !s.archived);
+		let visible = sessions.filter((s) => !s.archived && !s.projectId);
 		if (filter.repo !== "all")
 			visible = visible.filter((s) => sessionRepo(s) === filter.repo);
+		if (filter.person !== "all")
+			visible = visible.filter(
+				(s) =>
+					!s.automation &&
+					!!s.startedBy &&
+					s.startedBy.toLowerCase() === filter.person,
+			);
 		if (!search) return visible;
 		const q = search.toLowerCase();
 		return visible.filter(
@@ -452,7 +493,7 @@ export function Sidebar({
 				(s.startedBy || "").toLowerCase().includes(q) ||
 				(s.automation || "").toLowerCase().includes(q),
 		);
-	}, [sessions, search, filter.repo]);
+	}, [sessions, search, filter.repo, filter.person]);
 
 	// Sort order applied to every group's items: newest activity or newest
 	// creation first. Groups read from this pre-sorted list so ordering is uniform.
@@ -695,7 +736,7 @@ export function Sidebar({
 			<div className="sidebar-workspace">
 				<div className="sidebar-workspace-head" ref={headRef}>
 					<span className="sidebar-workspace-title" ref={titleRef}>
-						My sessions
+						Sessions
 					</span>
 					{/* Repo filter chip, inline behind the title when it fits. */}
 					{filter.repo !== "all" && repoInline && (
@@ -712,7 +753,9 @@ export function Sidebar({
 							className={`sidebar-new-btn sidebar-filter-btn${
 								filterOpen ? " active" : ""
 							}${
-								filter.groupBy !== "status" || filter.repo !== "all"
+								filter.groupBy !== "status" ||
+								filter.repo !== "all" ||
+								filter.person !== "all"
 									? " has-filter"
 									: ""
 							}`}
@@ -799,12 +842,151 @@ export function Sidebar({
 					anchor={filterBtnRef.current}
 					filter={filter}
 					repos={repos}
+					people={people}
 					onChange={setFilter}
 					onClose={() => setFilterOpen(false)}
 				/>
 			)}
 
 			<div className="sidebar-list">
+				{/* ── Pinned (sessions + notes, mixed) ── */}
+				{(() => {
+					const pinnedSessions = pins
+						.filter((e) => !e.startsWith("note:"))
+						.map((id) =>
+							sessions.find(
+								(s) => s.id === id || s.aliasIds?.includes(id),
+							),
+						)
+						.filter((s): s is UnifiedSession => !!s);
+					const pinnedNotes = pins
+						.filter((e) => e.startsWith("note:"))
+						.map((e) => notes.find((n) => n.id === e.slice(5)))
+						.filter((n): n is { id: string; title: string } => !!n);
+					if (!pinnedSessions.length && !pinnedNotes.length) return null;
+					return (
+						<div className="sidebar-group">
+							<div className="sidebar-band-label">
+								<span>Pinned</span>
+							</div>
+							{pinnedSessions.map((s) => (
+								<SidebarItem
+									key={`pin-${s.id}`}
+									session={s}
+									selected={s.id === selectedId}
+									unread={
+										s.id !== selectedId &&
+										isUnread(s.id, s.lastActivity, reads)
+									}
+									mine={
+										!!s.startedBy &&
+										!s.automation &&
+										s.startedBy.toLowerCase() === currentUser.toLowerCase()
+									}
+									onClick={() => onSelect(s)}
+									onArchive={() => onArchive(s)}
+									onRename={(title) => onRename(s, title)}
+								/>
+							))}
+							{pinnedNotes.map((n) => (
+								<button
+									key={`pin-note-${n.id}`}
+									className="sidebar-item"
+									onClick={() => onOpenNote(n.id)}
+									title={n.title}
+								>
+									<span className="sidebar-item-glyph">📝</span>
+									<span className="sidebar-item-title">{n.title}</span>
+								</button>
+							))}
+						</div>
+					);
+				})()}
+
+				{/* ── Projects (folders that group chats) ── */}
+				<div className="sidebar-group">
+					<div className="sidebar-band-label">
+						<span>Projects</span>
+						<button
+							className="sidebar-band-action"
+							onClick={() => {
+								const name = window.prompt("New project name")?.trim();
+								if (name) onCreateProject(name);
+							}}
+							title="New project"
+						>
+							<svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+								<path
+									d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
+									stroke="currentColor"
+									strokeWidth="1.3"
+									strokeLinejoin="round"
+								/>
+								<path
+									d="M8 6.8v3.4M6.3 8.5h3.4"
+									stroke="currentColor"
+									strokeWidth="1.3"
+									strokeLinecap="round"
+								/>
+							</svg>
+						</button>
+					</div>
+					{projects.length === 0 && (
+						<div className="sidebar-empty">No projects yet</div>
+					)}
+					{projects.map((project) => {
+						const key = `project:${project.id}`;
+						const open = isOpen(key);
+						const chats = sessions
+							.filter((s) => !s.archived && s.projectId === project.id)
+							.sort((a, b) =>
+								(a.createdAt || "").localeCompare(b.createdAt || ""),
+							);
+						return (
+							<React.Fragment key={key}>
+								<button
+									className="sidebar-group-header"
+									onClick={() => toggleGroup(key)}
+								>
+									{project.color && (
+										<span
+											className="sidebar-group-dot"
+											style={{ backgroundColor: colorHex(project.color) || undefined }}
+										/>
+									)}
+									<span className="sidebar-group-name">{project.name}</span>
+									<span className="sidebar-group-count">{chats.length}</span>
+									<span className="sidebar-group-chevron">
+										{open ? "▾" : "▸"}
+									</span>
+								</button>
+								{chats
+									.filter((s) => open || s.id === selectedId)
+									.map((s) => (
+										<SidebarItem
+											key={`prj-${s.id}`}
+											session={s}
+											selected={s.id === selectedId}
+											unread={
+												s.id !== selectedId &&
+												isUnread(s.id, s.lastActivity, reads)
+											}
+											mine={
+												!!s.startedBy &&
+												!s.automation &&
+												s.startedBy.toLowerCase() ===
+													currentUser.toLowerCase()
+											}
+											onClick={() => onSelect(s)}
+											onArchive={() => onArchive(s)}
+											onRename={(title) => onRename(s, title)}
+										/>
+									))}
+							</React.Fragment>
+						);
+					})}
+				</div>
+
 				{groups.length === 0 && (
 					<div className="sidebar-empty">No sessions</div>
 				)}
@@ -829,33 +1011,6 @@ export function Sidebar({
 						{label && (
 							<div className="sidebar-band-label">
 								<span>{label}</span>
-								{group.band === "automations" && (
-									<button
-										className="sidebar-band-action"
-										onClick={onNewProject}
-										title="New project"
-									>
-										<svg
-											width="15"
-											height="15"
-											viewBox="0 0 16 16"
-											fill="none"
-										>
-											<path
-												d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
-												stroke="currentColor"
-												strokeWidth="1.3"
-												strokeLinejoin="round"
-											/>
-											<path
-												d="M8 6.8v3.4M6.3 8.5h3.4"
-												stroke="currentColor"
-												strokeWidth="1.3"
-												strokeLinecap="round"
-											/>
-										</svg>
-									</button>
-								)}
 							</div>
 						)}
 						<button
@@ -929,12 +1084,14 @@ function FilterPopover({
 	anchor,
 	filter,
 	repos,
+	people,
 	onChange,
 	onClose,
 }: {
 	anchor: HTMLElement | null;
 	filter: FilterState;
 	repos: string[];
+	people: Array<{ key: string; label: string }>;
 	onChange: (patch: Partial<FilterState>) => void;
 	onClose: () => void;
 }) {
@@ -950,6 +1107,20 @@ function FilterPopover({
 			value: name,
 			label: name,
 			icon: <RepoTile name={name} />,
+		})),
+	];
+
+	const personOptions: SelectOption[] = [
+		{ value: "all", label: "All people" },
+		...people.map(({ key, label }) => ({
+			value: key,
+			label,
+			icon: (
+				<span
+					className="sidebar-group-dot"
+					style={{ backgroundColor: personColor(key) }}
+				/>
+			),
 		})),
 	];
 
@@ -975,6 +1146,14 @@ function FilterPopover({
 						value={filter.repo}
 						options={repoOptions}
 						onSelect={(v) => onChange({ repo: v })}
+					/>
+				</div>
+				<div className="filter-row">
+					<span className="filter-row-label">Person</span>
+					<MiniSelect
+						value={filter.person}
+						options={personOptions}
+						onSelect={(v) => onChange({ person: v })}
 					/>
 				</div>
 				<div className="filter-row">

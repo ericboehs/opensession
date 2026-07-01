@@ -28,6 +28,7 @@ import {
 	renameSessionApi,
 	fetchNotes,
 	fetchProjects,
+	createProjectApi,
 	type NoteMeta,
 } from "./lib/api";
 import type { Project } from "./lib/types";
@@ -543,6 +544,8 @@ function App() {
 						</div>
 						<Sidebar
 							sessions={sessions}
+							projects={projects}
+							notes={notes.map((n) => ({ id: n.id, title: n.title }))}
 							selectedId={currentSession?.id || null}
 							activeView={activeView}
 							onNavigate={(view) =>
@@ -556,7 +559,17 @@ function App() {
 							}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onNewSession={() => openPalette()}
-							onNewProject={() => openPalette()}
+							onCreateProject={async (name) => {
+								try {
+									await createProjectApi({ name, user: getCurrentUser() });
+									refreshProjects();
+								} catch (e) {
+									console.error("Create project failed:", e);
+								}
+							}}
+							onOpenNote={(id) =>
+								navigate({ view: "notes", sel: { kind: "note", id } })
+							}
 							onOpenSearch={() => setSearchOpen(true)}
 							onOpenArchived={() => navigate({ view: "archived" })}
 							archivedActive={route.view === "archived"}
