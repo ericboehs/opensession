@@ -2944,7 +2944,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					JSON.stringify(data, null, 2),
 				);
 				sessionsCache = null;
-				return Response.json({ id: bksId });
+				// Also return the full unified session so the client can drop it into
+				// its session list and render the new chat instantly, instead of
+				// flashing a loading screen until the next sessions poll lands.
+				return Response.json({ id: bksId, session: findSession(bksId) ?? null });
 			}
 
 			// Promote an ask chat to code: create a worktree and attach it. Preserves
@@ -4230,9 +4233,25 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							const bksId = `bks-${randomUUIDv7()}`;
 							const title = prompt.trim().split("\n")[0].slice(0, 80);
 							// Replace the raw first-line title with a short summary in the
-							// background; next sessions poll (≤5s) picks it up.
+							// background; next sessions poll (≤5s) picks it up. An
+							// auto-created workspace is named ONCE from the same generated
+							// summary (it provisionally wore the raw first line) and keeps
+							// that name for life — later chats never rename it.
+							const wsAutoNamed =
+								!!workspace &&
+								!!msg.createWorkspace &&
+								!msg.createWorkspace.name;
+							const wsToName = workspace;
 							void ensureGeneratedTitle(bksId, prompt).then((t) => {
-								if (t) sessionsCache = null;
+								if (!t) return;
+								sessionsCache = null;
+								if (wsAutoNamed && wsToName) {
+									const cur = getWorkspace(wsToName.id);
+									// Only while it still wears the provisional name — a manual
+									// rename in the meantime wins.
+									if (cur && cur.name === wsToName.name)
+										updateWorkspace(wsToName.id, { name: t });
+								}
 							});
 							// Non-image attachments: stage to disk, hand the agent the paths.
 							const openingPrompt = withUploadsNote(

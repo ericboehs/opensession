@@ -724,7 +724,11 @@ export function Sidebar({
 		}
 		for (const [dir, chats] of byWorktree) {
 			chats.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
-			rows.push(mkRow(`wt:${dir}`, null, chats[0].title, chats));
+			// The branch is the row's stable name (chat titles drift as generated
+			// titles land; the branch names the shared piece of work).
+			rows.push(
+				mkRow(`wt:${dir}`, null, chats[0].branch || chats[0].title, chats),
+			);
 		}
 		for (const s of loose) rows.push(mkRow(s.id, null, s.title, [s]));
 		const key = filter.sort === "created" ? "createdAt" : "lastActivity";
