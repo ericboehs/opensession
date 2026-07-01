@@ -878,8 +878,8 @@ body.resizing-x {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 22px;
-	height: 22px;
+	width: 24px;
+	height: 24px;
 	background: none;
 	border: none;
 	border-radius: 6px;
@@ -6647,38 +6647,63 @@ button.preview-open:not(:disabled):hover {
 	cursor: default;
 }
 
-/* Non-image file attachments: chip row (filename + remove) */
+/* Non-image file attachments: preview cards (type badge + name + remove) */
 .composer-files {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: 8px;
 	margin-bottom: 8px;
 }
-.composer-file-chip {
+.composer-file-card {
+	position: relative;
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
-	max-width: 220px;
-	padding: 4px 8px;
+	gap: 9px;
+	max-width: 240px;
+	padding: 6px 26px 6px 6px;
 	border: 1px solid var(--border-strong);
-	border-radius: 7px;
+	border-radius: 10px;
 	background: var(--bg-hover);
-	font-size: 12px;
-	color: var(--text);
 }
-.composer-file-icon {
+.composer-file-thumb {
 	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 34px;
+	height: 34px;
+	border-radius: 7px;
+	background: color-mix(in srgb, var(--accent) 16%, transparent);
+	color: var(--accent);
+	font-size: 9.5px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+}
+.composer-file-meta {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	gap: 1px;
 }
 .composer-file-name {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	font-size: 12.5px;
+	color: var(--text);
+}
+.composer-file-sub {
+	font-size: 10.5px;
+	color: var(--text-faint);
 }
 .composer-file-remove {
+	position: absolute;
+	top: 4px;
+	right: 5px;
 	flex-shrink: 0;
 	border: none;
 	background: none;
-	color: var(--text-dim);
+	color: var(--text-faint);
 	font-size: 15px;
 	line-height: 1;
 	cursor: pointer;
@@ -6689,6 +6714,120 @@ button.preview-open:not(:disabled):hover {
 }
 .composer-file-remove:disabled {
 	opacity: 0.5;
+	cursor: default;
+}
+
+/* Toolbar popovers (+ add menu, goal editor) */
+.composer-pop-wrap {
+	position: relative;
+	display: inline-flex;
+}
+.composer-goal-btn.is-on {
+	width: auto;
+	gap: 5px;
+	padding: 0 9px;
+	border-color: var(--accent);
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+.composer-goal-label {
+	font-size: 12px;
+	font-weight: 500;
+}
+.composer-menu {
+	position: absolute;
+	bottom: calc(100% + 6px);
+	right: 0;
+	min-width: 172px;
+	background: var(--bg-panel);
+	border: 1px solid var(--border-strong);
+	border-radius: 10px;
+	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+	padding: 4px;
+	z-index: 40;
+}
+.composer-menu-item {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	width: 100%;
+	text-align: left;
+	font-size: 12.5px;
+	color: var(--text);
+	background: none;
+	border: none;
+	border-radius: 7px;
+	padding: 7px 9px;
+	cursor: pointer;
+}
+.composer-menu-item:hover {
+	background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.composer-menu-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	color: var(--text-dim);
+	font-size: 13px;
+}
+
+/* Goal set/clear editor — left-anchored (its button sits in the left group) */
+.composer-goal-pop {
+	left: 0;
+	right: auto;
+	min-width: 244px;
+	padding: 10px;
+}
+.composer-goal-pop-title {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-faint);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	margin-bottom: 7px;
+}
+.composer-goal-input {
+	width: 100%;
+	border: 1px solid var(--border-strong);
+	border-radius: 8px;
+	background: var(--bg);
+	color: var(--text);
+	font-family: inherit;
+	font-size: 12.5px;
+	padding: 7px 9px;
+	outline: none;
+}
+.composer-goal-input:focus {
+	border-color: var(--accent);
+}
+.composer-goal-pop-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	margin-top: 8px;
+}
+.composer-goal-clear {
+	width: auto;
+	color: var(--red);
+	padding: 6px 8px;
+}
+.composer-goal-clear:hover {
+	background: var(--red-soft);
+}
+.composer-goal-set {
+	border: none;
+	border-radius: 8px;
+	padding: 6px 12px;
+	background: var(--text);
+	color: var(--bg);
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.composer-goal-set:disabled {
+	opacity: 0.4;
 	cursor: default;
 }
 

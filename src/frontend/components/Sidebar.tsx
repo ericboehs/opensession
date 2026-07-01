@@ -6,8 +6,6 @@ import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 
-const RECENTLY_OPENED_COUNT = 6;
-
 const AUTOMATION_COLOR = "#d29922";
 
 // A palette for per-person group dots. The color is picked deterministically
@@ -207,7 +205,7 @@ const NAV_ITEMS: Array<{
 ];
 
 // Groups are rendered in three visually separated bands (spacing between each):
-//   "personal"    — My sessions (split by status), Recently opened, Pinned
+//   "personal"    — My sessions (split by status), Pinned
 //   "people"      — one group per other teammate (+ ownerless source groups)
 //   "automations" — one group per automation ("projects")
 type GroupBand = "personal" | "people" | "automations";
@@ -278,10 +276,10 @@ function readExpanded(): Set<string> {
 }
 
 // ── Grouping / filtering controls (the filter popover) ─────────────────────
-// The sidebar can be organized two ways ("Group by"), narrowed to a single repo
-// ("Repo"), and ordered by recency of activity or creation ("Sort by"). The three
-// choices persist together per browser.
-type GroupBy = "status" | "repo";
+// The sidebar can be organized three ways ("Group by": Status, Repo, or Recently
+// opened), narrowed to a single repo ("Repo"), and ordered by recency of activity
+// or creation ("Sort by"). The three choices persist together per browser.
+type GroupBy = "status" | "repo" | "recently";
 type SortBy = "updated" | "created";
 const DEFAULT_PROJECT = "tella-fusion";
 const FILTER_KEY = "michael-sidebar-filter";
@@ -296,7 +294,10 @@ function readFilter(): FilterState {
 	try {
 		const v = JSON.parse(localStorage.getItem(FILTER_KEY) || "{}");
 		return {
-			groupBy: v.groupBy === "repo" ? "repo" : "status",
+			groupBy:
+				v.groupBy === "repo" || v.groupBy === "recently"
+					? v.groupBy
+					: "status",
 			repo: typeof v.repo === "string" ? v.repo : "all",
 			sort: v.sort === "created" ? "created" : "updated",
 		};
@@ -423,6 +424,24 @@ export function Sidebar({
 			return out;
 		}
 
+		// "Group by: Recently opened" — a single flat list ordered by when you last
+		// opened each session (most recent first), with never-opened sessions after,
+		// keeping the status split out of the way.
+		if (filter.groupBy === "recently") {
+			const rank = new Map(recents.map((id, i) => [id, i] as const));
+			const items = [...sorted].sort(
+				(a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity),
+			);
+			out.push({
+				key: "recently",
+				label: "Recently opened",
+				dotColor: null,
+				band: "personal",
+				items,
+			});
+			return out;
+		}
+
 		const pinned = sorted.filter((s) => pinSet.has(s.id));
 		if (pinned.length > 0) {
 			out.push({
@@ -461,26 +480,6 @@ export function Sidebar({
 					dotColor: meta.dotColor,
 					band: "personal",
 					items,
-				});
-			}
-		}
-
-		// "Recently opened": a quick-access shortcut to the sessions you last opened
-		// (newest first). Hidden while searching; items still appear in their normal
-		// groups above/below. Only the freshest few are shown.
-		if (!search.trim()) {
-			const byId = new Map(sorted.map((s) => [s.id, s] as const));
-			const recentItems = recents
-				.map((id) => byId.get(id))
-				.filter((s): s is UnifiedSession => Boolean(s))
-				.slice(0, RECENTLY_OPENED_COUNT);
-			if (recentItems.length > 0) {
-				out.push({
-					key: "recently",
-					label: "Recently opened",
-					dotColor: null,
-					band: "personal",
-					items: recentItems,
 				});
 			}
 		}
@@ -705,8 +704,8 @@ export function Sidebar({
 										title="New project"
 									>
 										<svg
-											width="14"
-											height="14"
+											width="15"
+											height="15"
 											viewBox="0 0 16 16"
 											fill="none"
 										>
@@ -822,6 +821,7 @@ function FilterPopover({
 						options={[
 							{ value: "status", label: "Status" },
 							{ value: "repo", label: "Repo" },
+							{ value: "recently", label: "Recently opened" },
 						]}
 						onSelect={(v) => onChange({ groupBy: v as GroupBy })}
 					/>
