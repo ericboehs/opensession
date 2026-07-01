@@ -250,6 +250,8 @@ export type WSServerMessage =
 			type: "global_presence";
 			viewing: Array<{ user: string; sessionId: string }>;
 	  }
+	| { type: "term_data"; data: string }
+	| { type: "term_exit"; code?: number }
 	| { type: "stream_start"; sessionId: string; by?: string }
 	| { type: "stream_text"; text: string }
 	| { type: "stream_tool_use"; entry: TranscriptEntry }

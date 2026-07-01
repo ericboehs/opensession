@@ -101,6 +101,12 @@ import {
 	type SessionSummary,
 } from "./src/server/session-control";
 import {
+	startTerminal,
+	writeTerminal,
+	resizeTerminal,
+	stopTerminal,
+} from "./src/server/terminals";
+import {
 	listScans,
 	deleteScan,
 	listProfiles,
@@ -2031,7 +2037,15 @@ async function buildFrontend(): Promise<string> {
 	// .panel-overlay / .sidebar-overlay inset (and a few color-mix percentages),
 	// which knocks out the mobile overlay layer. Bypass it: write the source CSS
 	// unmodified with a content-hashed name and serve it ourselves.
-	const cssSrc = await Bun.file(`${FRONTEND_SRC}/styles/global.css`).text();
+	let cssSrc = await Bun.file(`${FRONTEND_SRC}/styles/global.css`).text();
+	// xterm stylesheet (the Shell tab) rides along in the same file, vendored
+	// straight from the installed package so it can't drift from the JS.
+	try {
+		const xtermCss = await Bun.file(
+			`${import.meta.dir}/node_modules/@xterm/xterm/css/xterm.css`,
+		).text();
+		cssSrc += `\n\n/* ── vendored @xterm/xterm/css/xterm.css (Shell tab) ── */\n${xtermCss}`;
+	} catch {}
 	const cssHash = Bun.hash(cssSrc).toString(36);
 	const cssName = `global-${cssHash}.css`;
 	// Atomic: a mid-write bundle file has shipped corrupt before ("useState is
@@ -4647,6 +4661,38 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						break;
 					}
 
+					// ── Interactive shell (Shell tab) — one PTY per socket ──
+					case "term_start": {
+						const session = findSession(msg.sessionId);
+						const cwd =
+							session?.worktreeDir && existsSync(session.worktreeDir)
+								? session.worktreeDir
+								: HOME;
+						startTerminal(ws, {
+							cwd,
+							cols: Number(msg.cols) || undefined,
+							rows: Number(msg.rows) || undefined,
+							send: (m) => {
+								try {
+									ws.send(JSON.stringify(m));
+								} catch {}
+							},
+						});
+						break;
+					}
+					case "term_input": {
+						if (typeof msg.data === "string") writeTerminal(ws, msg.data);
+						break;
+					}
+					case "term_resize": {
+						resizeTerminal(ws, Number(msg.cols), Number(msg.rows));
+						break;
+					}
+					case "term_stop": {
+						stopTerminal(ws);
+						break;
+					}
+
 					case "create_session": {
 						const { branch, prompt, user, mode } = msg;
 						const images = parseImageDataUrls(msg.images);
@@ -5033,6 +5079,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				stopAllWatchesForClient(ws);
 				leaveSession(ws);
 				leaveNote(ws);
+				stopTerminal(ws); // the Shell tab's PTY dies with its socket
 				console.log("WebSocket client disconnected");
 			},
 		},

@@ -1479,7 +1479,12 @@ export function SessionViewer({
 									send={send}
 								/>
 							) : panelTab === "terminal" ? (
-								<TerminalPanel entries={entries} />
+								<TerminalPanel
+									entries={entries}
+									sessionId={session.id}
+									send={send}
+									addHandler={addHandler}
+								/>
 							) : panelTab === "slack" ? (
 								<SlackChatPanel
 									sessionId={session.id}
