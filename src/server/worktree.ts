@@ -278,7 +278,36 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
   return wtPath;
 }
 
-export async function createWorktree(branch: string, repoId?: string): Promise<string> {
+/**
+ * Resolve a start-point ref for a new worktree branch: prefer a local ref
+ * matching `base`, then `origin/<base>`, then `origin/<defaultBranch>`. Used for
+ * stacked worktrees that branch off a workspace's existing branch.
+ */
+async function resolveStartPoint(
+  repoDir: string,
+  base: string,
+  defaultBranch: string,
+): Promise<string> {
+  if ((await $`git -C ${repoDir} rev-parse --verify --quiet ${base}`.nothrow()).exitCode === 0)
+    return base;
+  if (
+    (await $`git -C ${repoDir} rev-parse --verify --quiet origin/${base}`.nothrow()).exitCode === 0
+  )
+    return `origin/${base}`;
+  return `origin/${defaultBranch}`;
+}
+
+/**
+ * Create a worktree for `branch`. By default it branches from
+ * `origin/<defaultBranch>`. Pass `opts.base` (e.g. a workspace's branch) to
+ * create a *stacked* worktree branched off that ref instead — this is what lets
+ * chats in a workspace stack PRs on top of the workspace's branch.
+ */
+export async function createWorktree(
+  branch: string,
+  repoId?: string,
+  opts?: { base?: string },
+): Promise<string> {
   const repo = getRepo(repoId);
 
   // Shared-checkout repos (backstage) don't get a per-session worktree: the
@@ -288,10 +317,18 @@ export async function createWorktree(branch: string, repoId?: string): Promise<s
   if (repo.sharedCheckout) return repo.repo;
 
   const wtPath = `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
+  const base = opts?.base;
 
   await withGitLock(async () => {
-    await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`;
-    await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} origin/${repo.defaultBranch}`;
+    await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`.nothrow();
+    if (base) {
+      // Stacked worktree: fetch the base (it may be remote-only), then branch off it.
+      await $`git -C ${repo.repo} fetch origin ${base} --quiet`.nothrow();
+      const startPoint = await resolveStartPoint(repo.repo, base, repo.defaultBranch);
+      await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} ${startPoint}`;
+    } else {
+      await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} origin/${repo.defaultBranch}`;
+    }
   });
 
   // Best-effort dep install — sessions can always run `bun install` themselves.

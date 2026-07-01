@@ -4,10 +4,11 @@
  * sweep as a safety net in case the webhook subscription misses them.
  */
 import { readdirSync, readFileSync, writeFileSync, existsSync } from "fs";
+import { BACKSTAGE_CHATS_DIR } from "./paths";
 import type { BackstageSessionFile } from "./types";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const SESSIONS_DIR = `${HOME}/.backstage-sessions`;
+const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 const PLAIN_API = "https://core-api.uk.plain.com/graphql/v1";
 
 function activePlainSessions(): Array<{ path: string; data: BackstageSessionFile }> {

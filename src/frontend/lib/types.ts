@@ -211,8 +211,17 @@ export type WSClientMessage =
 			user: string;
 			mode?: "ask" | "code";
 			repo?: string;
-			/** Project (folder) to add this new chat to; omit for a standalone chat. */
+			/** Existing workspace (folder) to add this new chat to. */
 			projectId?: string;
+			/** Existing workspace to add this chat to (alias of projectId, preferred). */
+			workspaceId?: string;
+			/** Create a new workspace for this chat (New modal default). */
+			createWorkspace?: { name?: string };
+			/**
+			 * How the chat relates to its workspace's worktree: share it (default),
+			 * stack a new worktree off it, or ask (no worktree).
+			 */
+			chatMode?: "share" | "stack" | "ask";
 			model?: string;
 			images?: string[];
 			/**

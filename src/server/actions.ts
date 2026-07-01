@@ -14,6 +14,7 @@
  * and UI edits are preserved.
  */
 import { randomUUIDv7 } from "bun";
+import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from "fs";
 import { runAgent } from "./agent-runner";
 import { STRIPE_CONFIRM_TOOLS } from "./claude-runner";
@@ -22,7 +23,7 @@ import type { BackstageSessionFile } from "./types";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const ACTIONS_DIR = `${HOME}/.backstage-actions`;
-const SESSIONS_DIR = `${HOME}/.backstage-sessions`;
+const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 const TELLA_FUSION = `${HOME}/projects/tella-fusion`;
 
 /** Fast/cheap model for action runs (the LLM only orchestrates one Bash call). */

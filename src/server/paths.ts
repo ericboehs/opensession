@@ -1,0 +1,23 @@
+/**
+ * Shared on-disk paths for the chat store, with a dual-read fallback.
+ *
+ * The store dir was renamed `~/.backstage-sessions` → `~/.backstage-chats` (see
+ * scripts/migrate-workspaces.ts). This resolves the active dir once at load:
+ * prefer the new name, fall back to the legacy name until the migration renames
+ * it. Resolving once keeps every module (and reads/writes) on the same dir
+ * whether or not the migration has run. The `bks-` id prefix stays opaque.
+ *
+ * Run the migration during a restart window (it renames the dir on disk); a
+ * long-running process resolves this constant at boot and won't see a mid-flight
+ * rename.
+ */
+
+import { existsSync } from "fs";
+
+const HOME = process.env.HOME || "/home/ubuntu";
+const CHATS_NEW = `${HOME}/.backstage-chats`;
+const CHATS_LEGACY = `${HOME}/.backstage-sessions`;
+
+/** The active chat-store dir: new name if present, else the legacy name. */
+export const BACKSTAGE_CHATS_DIR =
+  existsSync(CHATS_NEW) || !existsSync(CHATS_LEGACY) ? CHATS_NEW : CHATS_LEGACY;

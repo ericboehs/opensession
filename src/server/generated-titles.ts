@@ -9,10 +9,11 @@
  * background at session creation so it never blocks the create path.
  */
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const REGISTRY_PATH = `${HOME}/.backstage-sessions/generated-titles.json`;
+const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/generated-titles.json`;
 
 let cache: Record<string, string> | null = null;
 
