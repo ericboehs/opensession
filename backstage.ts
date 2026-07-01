@@ -1521,9 +1521,19 @@ function buildGoalWakePrompt(goal: Goal, wake: number, cwd: string): string {
 	];
 	if (goal.mode === "code") {
 		const project = getProject(goal.repo);
-		parts.push(
-			`Shipping code: you are in a persistent worktree at ${cwd} (kept stable across wakes so your session resumes cleanly). For each change, start clean from the default branch (\`git fetch origin && git checkout -B <feature-branch> origin/${project.defaultBranch}\`), make edits, follow the repo's AGENTS.md and run its checks/format, then open a PR with \`gh pr create --base ${project.defaultBranch}\`. NEVER merge — a PR is the human gate.`,
-		);
+		if (project.sharedCheckout) {
+			// Shared-checkout repos (backstage) have NO isolated worktree — `cwd` is
+			// the live main checkout the running server and every other session share.
+			// A `git checkout -B`/`reset`/`pull` here yanks the working tree out from
+			// under everyone and orphans their un-pushed commits, so forbid it.
+			parts.push(
+				`Shipping code: you are in the SHARED, live main checkout at ${cwd} on \`${project.defaultBranch}\` — the running server and other sessions use this exact working tree at the same time. NEVER create or switch branches, \`reset\`, \`pull\`, \`stash\`, or \`checkout\` (that rips the tree out from under everyone and orphans their commits). Just edit files, then \`git add <your specific files>\` → \`git commit\` → \`git push\` on \`${project.defaultBranch}\`. Commit + push frequently. No feature branch and no PR — this repo ships directly from \`${project.defaultBranch}\`.`,
+			);
+		} else {
+			parts.push(
+				`Shipping code: you are in a persistent worktree at ${cwd} (kept stable across wakes so your session resumes cleanly). For each change, start clean from the default branch (\`git fetch origin && git checkout -B <feature-branch> origin/${project.defaultBranch}\`), make edits, follow the repo's AGENTS.md and run its checks/format, then open a PR with \`gh pr create --base ${project.defaultBranch}\`. NEVER merge — a PR is the human gate.`,
+			);
+		}
 	}
 	return parts.join("\n\n");
 }

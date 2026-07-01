@@ -32,6 +32,12 @@ if ! run_as_ubuntu git -C "$REPO_DIR" merge --ff-only "$TARGET_SHA"; then
   exit 1
 fi
 
+# (Re)install the shared-checkout tripwire hook: warns loudly if this live
+# checkout ever gets switched off master (branch work must use a worktree).
+if [ -f "$REPO_DIR/deploy/git-hooks/post-checkout" ]; then
+  run_as_ubuntu install -m 755 "$REPO_DIR/deploy/git-hooks/post-checkout" "$REPO_DIR/.git/hooks/post-checkout"
+fi
+
 # Install deps only when the lockfile/manifest actually changed (fast path otherwise).
 if ! run_as_ubuntu git -C "$REPO_DIR" diff --quiet 'HEAD@{1}' HEAD -- bun.lock package.json 2>/dev/null; then
   echo "[deploy] deps changed — bun install --frozen-lockfile"

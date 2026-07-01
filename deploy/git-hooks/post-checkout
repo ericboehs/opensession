@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Tripwire for the SHARED backstage checkout (~/projects/tella-backstage): it is
+# live + hot-reloading and every session commits on `master` here. A branch
+# SWITCH (git checkout <other>) yanks the working tree out from under the running
+# server and other sessions and orphans their un-pushed commits — the "sessions
+# undoing each other's work" trap. Git has no pre-checkout veto, so this warns
+# loudly (non-destructive) the instant HEAD leaves master. Branch work must use a
+# separate `git worktree`, never a switch in this checkout.
+# Args: $1=prev_head $2=new_head $3=branch_flag (1 = branch checkout)
+[ "$3" = "1" ] || exit 0
+gitdir=$(git rev-parse --git-dir 2>/dev/null)
+case "$gitdir" in */worktrees/*) exit 0 ;; esac   # ignore linked worktrees
+branch=$(git symbolic-ref --short -q HEAD || echo "DETACHED")
+if [ "$branch" != "master" ]; then
+  printf '\n\033[41m\033[97m  SHARED CHECKOUT SWITCHED OFF master (now on: %s)  \033[0m\n' "$branch" >&2
+  printf '  ~/projects/tella-backstage is the live, shared checkout. Switch back NOW:\n' >&2
+  printf '      git checkout master\n' >&2
+  printf '  Branch work must use a separate `git worktree` — never a switch here.\n\n' >&2
+fi
+exit 0
