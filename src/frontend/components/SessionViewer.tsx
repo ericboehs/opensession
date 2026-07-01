@@ -1006,7 +1006,10 @@ export function SessionViewer({
 							Plain ↗
 						</a>
 					)}
-					<PreviewButton session={session} />
+					<PreviewButton
+						session={session}
+						onAttachImage={(img) => setImages((prev) => [...prev, img])}
+					/>
 					{hasWorkspace && session.prUrl && (
 						<button
 							className={`btn-panel-toggle btn-pr-header ${

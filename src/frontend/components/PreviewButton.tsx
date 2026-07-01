@@ -3,6 +3,7 @@ import {
   fetchPreview,
   startPreviewApi,
   stopPreviewApi,
+  capturePreviewShot,
   type PreviewStatus,
 } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
@@ -22,11 +23,22 @@ function isPreviewable(session: UnifiedSession): boolean {
  * "Starting…" state until the server is listening. A caret popover lists the
  * dev services and can stop them. Renders only for tella-fusion worktrees.
  */
-export function PreviewButton({ session }: { session: UnifiedSession }) {
+export function PreviewButton({
+  session,
+  onAttachImage,
+}: {
+  session: UnifiedSession;
+  /** When set, the snapshot modal offers "Attach to chat" (stages the PNG as a
+   *  composer image, like a paste). */
+  onAttachImage?: (dataUrl: string) => void;
+}) {
   const [status, setStatus] = useState<PreviewStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [snapping, setSnapping] = useState(false);
+  const [shot, setShot] = useState<string | null>(null);
+  const [shotError, setShotError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const previewable = isPreviewable(session);
@@ -131,6 +143,34 @@ export function PreviewButton({ session }: { session: UnifiedSession }) {
           Preview
         </button>
       )}
+      {running && (
+        <button
+          className="preview-caret"
+          onClick={async () => {
+            if (snapping) return;
+            setSnapping(true);
+            setShotError(null);
+            try {
+              setShot(await capturePreviewShot(session.id));
+            } catch (e: any) {
+              setShotError(e.message);
+              setShot(null);
+            }
+            setSnapping(false);
+          }}
+          disabled={snapping}
+          title="Snapshot the preview (headless Chrome screenshot)"
+        >
+          {snapping ? (
+            <span className="preview-spinner" />
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+              <path d="M2.5 5.5h2l1.2-1.8h4.6L11.5 5.5h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" strokeLinejoin="round" />
+              <circle cx="8" cy="9" r="2.4" />
+            </svg>
+          )}
+        </button>
+      )}
       <button
         className={`preview-caret ${open ? "active" : ""}`}
         onClick={() => setOpen((v) => !v)}
@@ -139,6 +179,58 @@ export function PreviewButton({ session }: { session: UnifiedSession }) {
       >
         ▾
       </button>
+
+      {(shot || shotError) && (
+        <div
+          className="fixed inset-0 z-[300] bg-black/60 flex items-center justify-center p-6"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setShot(null);
+              setShotError(null);
+            }
+          }}
+        >
+          <div className="bg-raised border border-line rounded-panel shadow-2xl p-3 max-w-[90vw] max-h-[90vh] flex flex-col gap-2.5">
+            {shotError ? (
+              <div className="text-red text-[13px] px-2 py-4">{shotError}</div>
+            ) : (
+              <img
+                src={shot!}
+                alt="Preview screenshot"
+                className="max-w-full max-h-[75vh] object-contain rounded-md border border-line"
+              />
+            )}
+            <div className="flex items-center gap-2 justify-end">
+              {shot && onAttachImage && (
+                <button
+                  className="btn-create"
+                  style={{ padding: "6px 14px" }}
+                  onClick={() => {
+                    onAttachImage(shot);
+                    setShot(null);
+                  }}
+                >
+                  Attach to chat
+                </button>
+              )}
+              {shot && (
+                <a className="btn-small" href={shot} download={`preview-${session.id}.png`}>
+                  Download
+                </a>
+              )}
+              <button
+                className="btn-small"
+                onClick={() => {
+                  setShot(null);
+                  setShotError(null);
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div className="preview-popover">

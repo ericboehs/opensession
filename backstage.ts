@@ -2660,6 +2660,40 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				}
 			}
 
+			// Screenshot the running preview (headless Chrome → PNG).
+			{
+				const m = path.match(
+					/^\/backstage\/api\/sessions\/(.+)\/preview\/screenshot$/,
+				);
+				if (m && req.method === "POST") {
+					const session = findSession(decodeURIComponent(m[1]));
+					if (!session)
+						return Response.json(
+							{ error: "Session not found" },
+							{ status: 404 },
+						);
+					if (!session.worktreeDir || !existsSync(session.worktreeDir))
+						return Response.json(
+							{ error: "Session has no worktree" },
+							{ status: 400 },
+						);
+					try {
+						const { capturePreviewScreenshot } = await import(
+							"./src/server/preview"
+						);
+						const png = await capturePreviewScreenshot(session.worktreeDir);
+						return new Response(new Uint8Array(png), {
+							headers: { "Content-Type": "image/png" },
+						});
+					} catch (e: any) {
+						return Response.json(
+							{ error: e?.message || "Screenshot failed" },
+							{ status: 500 },
+						);
+					}
+				}
+			}
+
 			// Start the session's dev server (Tella Local) if it isn't up yet.
 			{
 				const m = path.match(

@@ -19,7 +19,7 @@
  * `https://<host>:<httpsPort>`.
  */
 import { $ } from "bun";
-import { closeSync, existsSync, openSync, readFileSync, readlinkSync } from "fs";
+import { closeSync, existsSync, openSync, readFileSync, readlinkSync, unlinkSync } from "fs";
 import { basename, join } from "path";
 
 export interface PreviewService {
@@ -232,6 +232,36 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
     previewUrl,
     services,
   };
+}
+
+/**
+ * Screenshot the running preview with headless Chrome (PNG bytes). The preview
+ * origin is Caddy's tailnet cert, but Chrome runs before trust is guaranteed —
+ * hence --ignore-certificate-errors; --virtual-time-budget lets the SPA settle
+ * before the shot, and the whole thing is bounded by `timeout` so a wedged
+ * renderer can't hold the request open.
+ */
+export async function capturePreviewScreenshot(
+  worktreeDir: string,
+  opts?: { width?: number; height?: number },
+): Promise<Buffer> {
+  const status = await getPreviewStatus(worktreeDir);
+  if (!status.running || !status.previewUrl) {
+    throw new Error("Preview isn't running — start it first");
+  }
+  const out = `/tmp/backstage-preview-shot-${process.pid}-${Date.now()}.png`;
+  const w = opts?.width || 1440;
+  const h = opts?.height || 900;
+  try {
+    await $`timeout 45 google-chrome --headless=new --disable-gpu --no-sandbox --hide-scrollbars --ignore-certificate-errors --window-size=${w},${h} --virtual-time-budget=12000 --screenshot=${out} ${status.previewUrl}`.quiet();
+    const buf = Buffer.from(await Bun.file(out).arrayBuffer());
+    if (!buf.length) throw new Error("Screenshot came back empty");
+    return buf;
+  } finally {
+    try {
+      unlinkSync(out);
+    } catch {}
+  }
 }
 
 /**

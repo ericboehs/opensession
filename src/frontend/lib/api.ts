@@ -135,6 +135,25 @@ export async function stopPreviewApi(
 	);
 }
 
+/** Screenshot the session's running preview; resolves to a data: URL (PNG). */
+export async function capturePreviewShot(sessionId: string): Promise<string> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/preview/screenshot`,
+		{ method: "POST" },
+	);
+	if (!res.ok) {
+		const body = (await res.json().catch(() => null)) as { error?: string } | null;
+		throw new ApiError(body?.error || `Screenshot failed: ${res.status}`, res.status);
+	}
+	const blob = await res.blob();
+	return await new Promise<string>((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => resolve(String(reader.result));
+		reader.onerror = () => reject(new Error("Failed to read screenshot"));
+		reader.readAsDataURL(blob);
+	});
+}
+
 export async function fetchTranscript(sessionId: string) {
 	return request<any>(
 		`/sessions/${encodeURIComponent(sessionId)}/transcript`,
