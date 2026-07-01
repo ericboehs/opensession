@@ -373,7 +373,7 @@ a {
 	border: none;
 	border-radius: 6px;
 	color: var(--text-dim);
-	font-size: 13px;
+	font-size: 13.5px;
 	font-weight: 500;
 	padding: 6px 8px;
 }
@@ -424,12 +424,41 @@ a {
 }
 
 .user-picker {
-	background: var(--bg-panel);
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 4px 9px;
+	border: 1px solid var(--border-strong);
+	border-radius: 999px;
+	background: var(--bg-raised);
+	color: var(--text-dim);
+	font-size: 12.5px;
+	cursor: pointer;
+	transition: border-color 0.12s, color 0.12s;
+}
+.user-picker:hover {
 	color: var(--text);
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	padding: 5px 8px;
-	font-size: 13px;
+	border-color: var(--text-faint);
+}
+.user-picker-val {
+	font-weight: 500;
+	color: var(--text);
+}
+.user-picker-caret {
+	font-size: 8px;
+	color: var(--text-faint);
+}
+.user-picker-select {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	opacity: 0;
+	cursor: pointer;
+	appearance: none;
+	-webkit-appearance: none;
+	border: none;
 }
 
 .app-body {
@@ -548,9 +577,18 @@ body.resizing-x {
 	flex: 1;
 	min-width: 0;
 }
+/* The filter + new-session buttons, grouped so their combined width can be
+   measured when deciding whether the repo chip fits inline. */
+.sidebar-workspace-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+}
 
-/* The active repo filter, shown as a removable chip on its own row directly
-   under "My sessions". */
+/* The active repo filter, shown as a removable chip. It prefers to sit inline in
+   the header (--inline); it falls back to its own row (--row) when the sidebar is
+   too narrow. --probe is an off-layout measuring copy. */
 .sidebar-repo-row {
 	display: flex;
 	margin: -2px 0 8px;
@@ -567,6 +605,21 @@ body.resizing-x {
 	border-radius: 999px;
 	padding: 2px 3px 2px 5px;
 	font-size: 12px;
+}
+/* Inline in the header: never let the spacer squeeze it (it's only shown when
+   measured to fit). */
+.sidebar-repo-chip--inline {
+	flex-shrink: 0;
+	max-width: none;
+}
+/* Off-layout probe: measured, never seen. */
+.sidebar-repo-chip--probe {
+	position: absolute;
+	left: -9999px;
+	top: 0;
+	visibility: hidden;
+	pointer-events: none;
+	max-width: none;
 }
 .sidebar-repo-chip .repo-tile {
 	width: 15px;
@@ -634,9 +687,20 @@ body.resizing-x {
 	font-size: 12.5px;
 	outline: none;
 	min-width: 0;
+	cursor: pointer;
 }
 .sidebar-search::placeholder {
 	color: var(--text-faint);
+}
+.sidebar-search-kbd {
+	flex-shrink: 0;
+	font-family: var(--sans);
+	font-size: 10px;
+	color: var(--text-faint);
+	border: 1px solid var(--border-strong);
+	border-radius: 4px;
+	padding: 1px 4px;
+	line-height: 1.3;
 }
 
 .sidebar-new-btn {
@@ -666,6 +730,11 @@ body.resizing-x {
 	color: var(--text);
 	border-color: var(--border-strong);
 	background: var(--bg-hover);
+}
+/* Needs-input alert bell, muted state: dimmed so "on" reads as the norm. */
+.sidebar-filter-btn.muted {
+	color: var(--text-faint);
+	opacity: 0.65;
 }
 /* A dot on the icon when a non-default group/repo filter is applied. */
 .sidebar-filter-btn.has-filter {
@@ -820,20 +889,26 @@ body.resizing-x {
 	padding: 4px 10px 24px;
 }
 
-.sidebar-archived-link {
-	display: block;
-	width: 100%;
-	text-align: left;
-	background: none;
-	border: none;
-	border-top: 1px solid var(--border);
-	color: var(--text-faint);
-	font-size: 12px;
-	padding: 10px 8px;
-	margin-top: 8px;
+/* "Archived" — an icon-led row styled as a peer of the My-sessions status buckets
+   (it reuses .sidebar-group-header). Unlike those it navigates to the archived
+   page rather than expanding, and highlights (.active) while that page is open. */
+.sidebar-archived-row {
+	cursor: pointer;
+	margin-top: 2px;
 }
-.sidebar-archived-link:hover {
+.sidebar-archived-row.active {
 	color: var(--text);
+	background: var(--bg-active);
+}
+.sidebar-archived-icon {
+	display: inline-flex;
+	align-items: center;
+	color: var(--text-faint);
+	flex-shrink: 0;
+}
+.sidebar-archived-row:hover .sidebar-archived-icon,
+.sidebar-archived-row.active .sidebar-archived-icon {
+	color: var(--text-dim);
 }
 
 .sidebar-empty {
@@ -844,7 +919,7 @@ body.resizing-x {
 }
 
 .sidebar-group {
-	margin-bottom: 2px;
+	margin-bottom: 12px;
 }
 
 /* Extra spacing + a hairline divider where one band ends and the next begins
@@ -894,15 +969,15 @@ body.resizing-x {
 .sidebar-group-header {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 7px;
 	width: 100%;
 	background: none;
 	border: none;
 	border-radius: 5px;
 	color: var(--text-faint);
-	font-size: 11px;
+	font-size: 12.5px;
 	font-weight: 600;
-	letter-spacing: 0.02em;
+	letter-spacing: 0.01em;
 	padding: 7px 6px 5px;
 }
 .sidebar-group-header:hover {
@@ -921,8 +996,8 @@ body.resizing-x {
 }
 
 .sidebar-group-dot {
-	width: 6px;
-	height: 6px;
+	width: 8px;
+	height: 8px;
 	border-radius: 50%;
 	flex-shrink: 0;
 }
@@ -949,20 +1024,24 @@ body.resizing-x {
 	background: none;
 	border: none;
 	border-radius: 6px;
-	padding: 5px 8px 6px;
+	/* Roomier rows: a taller hit target that's easier to click/tap. */
+	padding: 9px 8px;
 	color: var(--text);
 	position: relative;
 }
 
-/* Archive × — hover-revealed on desktop, always visible on touch screens */
+/* Archive button — hover-revealed on desktop, always visible on touch screens.
+   On hover it takes the timestamp's place at the far right (the meta fades out)
+   so it lines up flush with the row edge instead of crowding in front of the
+   time. */
 .sidebar-item-x {
 	display: none;
 	position: absolute;
-	right: 6px;
+	right: 8px;
 	top: 50%;
 	transform: translateY(-50%);
-	width: 20px;
-	height: 20px;
+	width: 22px;
+	height: 22px;
 	align-items: center;
 	justify-content: center;
 	border-radius: 5px;
@@ -972,6 +1051,12 @@ body.resizing-x {
 }
 .sidebar-item:hover .sidebar-item-x {
 	display: flex;
+}
+/* Step the time/meta aside on hover so the button can sit where it was without
+   overlapping it. */
+.sidebar-item:hover .sidebar-item-inline-meta,
+.sidebar-item:hover .sidebar-item-meta {
+	opacity: 0;
 }
 .sidebar-item-x:hover {
 	color: var(--text);
@@ -1001,8 +1086,8 @@ body.resizing-x {
 }
 
 .sidebar-item-status {
-	width: 6px;
-	height: 6px;
+	width: 8px;
+	height: 8px;
 	border-radius: 50%;
 	flex-shrink: 0;
 }
@@ -1014,6 +1099,11 @@ body.resizing-x {
 	background: var(--accent);
 	box-shadow: 0 0 6px var(--accent);
 	animation: pulse 1.2s ease-in-out infinite;
+}
+/* Unread activity since you last opened the session — a solid iMessage-style
+   blue dot (no pulse; it's a marker, not a live-status indicator). */
+.sidebar-status-unread {
+	background: var(--accent);
 }
 
 /* A session blocked on an AskUserQuestion — draw the eye so it gets answered. */
@@ -1027,8 +1117,19 @@ body.resizing-x {
 	font-weight: 550;
 }
 
+/* Unread: brighten + embolden the title so it reads as "new", the way an
+   unread chat does in iMessage/WhatsApp. */
+.sidebar-item-unread .sidebar-item-title {
+	font-weight: 600;
+	color: var(--text);
+}
+.sidebar-item-unread .sidebar-item-inline-meta,
+.sidebar-item-unread .sidebar-item-meta {
+	color: var(--text-dim);
+}
+
 .sidebar-item-title {
-	font-size: 12.5px;
+	font-size: 13.5px;
 	font-weight: 450;
 	white-space: nowrap;
 	overflow: hidden;
@@ -1038,7 +1139,7 @@ body.resizing-x {
 
 /* Inline rename input in a sidebar row — matches the title's type. */
 .sidebar-item-rename {
-	font-size: 12.5px;
+	font-size: 13.5px;
 	font-weight: 450;
 	font-family: inherit;
 	color: inherit;
@@ -1055,11 +1156,26 @@ body.resizing-x {
 	display: flex;
 	align-items: center;
 	gap: 4px;
-	margin-top: 1px;
-	font-size: 11px;
+	margin-top: 2px;
+	font-size: 11.5px;
 	color: var(--text-faint);
 	white-space: nowrap;
 	overflow: hidden;
+}
+
+/* Own sessions collapse to one line: the timestamp (+ any PR/Linear badge) rides
+   to the right of the title, flush with the row edge. On hover it fades and the
+   archive button takes its place (see .sidebar-item-x). */
+.sidebar-item-inline-meta {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin-left: auto;
+	padding-left: 8px;
+	font-size: 11.5px;
+	color: var(--text-faint);
+	white-space: nowrap;
+	flex-shrink: 0;
 }
 
 .sidebar-meta-sep {
@@ -1596,6 +1712,16 @@ body.resizing-x {
 	padding: 2px 8px;
 	border-radius: 99px;
 	flex-shrink: 0;
+}
+.goal-phase-chip {
+	max-width: 340px;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	text-transform: none;
+	letter-spacing: 0;
+	flex-shrink: 1;
 }
 .source-slack {
 	background: rgba(74, 21, 75, 0.55);
@@ -4960,8 +5086,8 @@ button.preview-open:not(:disabled):hover {
 	color: var(--text);
 	font-size: 13.5px;
 	line-height: 1.55;
-	min-height: 22px;
-	max-height: 220px;
+	min-height: 120px;
+	max-height: 320px;
 	padding: 0;
 	font-family: inherit;
 }
@@ -5465,6 +5591,40 @@ button.preview-open:not(:disabled):hover {
 	color: var(--text-faint);
 	font-size: 12.5px;
 	margin-top: 4px;
+}
+
+/* Archived-page filter bar: segmented owner (Mine / Everyone) + repo controls. */
+.archived-filters {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	margin: -6px 0 18px;
+}
+.seg-control {
+	display: inline-flex;
+	background: var(--bg-hover);
+	border-radius: 7px;
+	padding: 2px;
+	gap: 2px;
+}
+.seg-control-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	border-radius: 5px;
+	padding: 4px 10px;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: var(--text-faint);
+	white-space: nowrap;
+}
+.seg-control-btn:hover {
+	color: var(--text-dim);
+}
+.seg-control-btn.active {
+	background: var(--bg-active);
+	color: var(--text);
 }
 
 .automations-empty {
@@ -7582,6 +7742,177 @@ button.preview-open:not(:disabled):hover {
 	color: var(--text);
 }
 
+/* ── Plain conversation sidebar ──────────────────────────────────
+   Read-only timeline of a session's linked Plain support thread, shown
+   as the session viewer's "Plain" workspace tab. See PlainThreadPanel.tsx. */
+.plain-panel {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	height: 100%;
+	background: var(--bg-raised);
+}
+.plain-panel-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--border);
+	flex-shrink: 0;
+}
+.plain-head-info {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+.plain-customer {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.plain-status {
+	font-size: 10.5px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	padding: 2px 7px;
+	border-radius: 999px;
+	flex-shrink: 0;
+	background: var(--bg-active);
+	color: var(--text-faint);
+}
+.plain-status-todo {
+	background: color-mix(in srgb, var(--accent) 18%, transparent);
+	color: var(--accent);
+}
+.plain-status-done {
+	background: color-mix(in srgb, var(--green, #3fb950) 18%, transparent);
+	color: var(--green, #3fb950);
+}
+.plain-status-snoozed {
+	background: color-mix(in srgb, var(--amber, #d29922) 20%, transparent);
+	color: var(--amber, #d29922);
+}
+.plain-open {
+	font-size: 11.5px;
+	font-weight: 600;
+	color: var(--accent);
+	text-decoration: none;
+	white-space: nowrap;
+	flex-shrink: 0;
+}
+.plain-open:hover {
+	text-decoration: underline;
+}
+.plain-title {
+	padding: 8px 12px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text);
+	border-bottom: 1px solid var(--border);
+	flex-shrink: 0;
+}
+.plain-timeline {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+.plain-loading {
+	color: var(--text-faint);
+	font-size: 13px;
+	text-align: center;
+	margin-top: 20px;
+}
+.plain-entry {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-width: 88%;
+	padding: 8px 11px;
+	border-radius: 10px;
+	border: 1px solid var(--border);
+	background: var(--bg-panel);
+}
+/* Customer messages on the left, our replies on the right — like a chat. */
+.plain-entry-in {
+	align-self: flex-start;
+	border-bottom-left-radius: 3px;
+}
+.plain-entry-out {
+	align-self: flex-end;
+	background: color-mix(in srgb, var(--accent) 9%, var(--bg-panel));
+	border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+	border-bottom-right-radius: 3px;
+}
+.plain-entry-note {
+	align-self: stretch;
+	max-width: 100%;
+	background: color-mix(in srgb, var(--amber, #d29922) 8%, var(--bg-panel));
+	border-color: color-mix(in srgb, var(--amber, #d29922) 24%, var(--border));
+}
+.plain-entry-head {
+	display: flex;
+	align-items: baseline;
+	gap: 7px;
+	flex-wrap: wrap;
+}
+.plain-actor {
+	font-weight: 700;
+	font-size: 12.5px;
+	color: var(--text);
+}
+.plain-time {
+	font-size: 10.5px;
+	color: var(--text-faint);
+}
+.plain-kind-badge {
+	font-size: 9.5px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-faint);
+	border: 1px solid var(--border-strong);
+	border-radius: 4px;
+	padding: 0 4px;
+}
+.plain-kind-note {
+	color: var(--amber, #d29922);
+	border-color: color-mix(in srgb, var(--amber, #d29922) 40%, var(--border));
+}
+.plain-subject {
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--text);
+}
+.plain-entry-text {
+	font-size: 13px;
+	line-height: 1.45;
+	color: var(--text);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+.plain-note-body {
+	font-size: 13px;
+	line-height: 1.45;
+	color: var(--text);
+	word-break: break-word;
+}
+.plain-note-body > :first-child {
+	margin-top: 0;
+}
+.plain-note-body > :last-child {
+	margin-bottom: 0;
+}
+
 /* ── New-session ⌘K palette ──────────────────────────────────────
    Centered command-palette overlay that replaces the old full-page
    new-session view. See src/frontend/components/NewSession.tsx. */
@@ -7888,6 +8219,21 @@ button.preview-open:not(:disabled):hover {
 .ss-search-input::placeholder {
 	color: var(--text-faint);
 }
+/* Small spinner shown while the debounced transcript search is in flight. */
+.ss-searching {
+	width: 13px;
+	height: 13px;
+	flex-shrink: 0;
+	border: 2px solid var(--border-strong);
+	border-top-color: var(--accent);
+	border-radius: 50%;
+	animation: ss-spin 0.7s linear infinite;
+}
+@keyframes ss-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
 
 .ss-filters {
 	display: flex;
@@ -8013,6 +8359,16 @@ button.preview-open:not(:disabled):hover {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+/* Transcript snippet shown under the title for a conversation-only match. */
+.ss-item-snippet {
+	font-size: 11.5px;
+	line-height: 1.35;
+	color: var(--text-dim);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 100%;
+}
 .ss-item-meta {
 	display: flex;
 	align-items: center;
@@ -8080,4 +8436,336 @@ button.preview-open:not(:disabled):hover {
 @media (max-width: 560px) {
 	.ss-item-branch { display: none; }
 	.ss-item-status { display: none; }
+}
+
+/* ── Settings page (full-window: sub-nav + scrolling body) ──────────────── */
+.settings-page {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	background: var(--bg);
+}
+.settings-sidenav {
+	width: 232px;
+	flex-shrink: 0;
+	border-right: 1px solid var(--border);
+	background: var(--bg-raised);
+	padding: 16px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	overflow-y: auto;
+}
+.settings-back {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	text-align: left;
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: var(--text-dim);
+	font-size: 13px;
+	font-weight: 500;
+	padding: 6px 8px;
+	border-radius: 6px;
+	margin-bottom: 12px;
+}
+.settings-back:hover {
+	color: var(--text);
+	background: var(--bg-hover);
+}
+.settings-sidenav-group {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	margin-bottom: 12px;
+}
+.settings-sidenav-label {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	color: var(--text-faint);
+	padding: 6px 8px 4px;
+}
+.settings-sidenav-item {
+	background: none;
+	border: none;
+	cursor: pointer;
+	text-align: left;
+	width: 100%;
+	color: var(--text-dim);
+	font-size: 13px;
+	padding: 7px 8px;
+	border-radius: 6px;
+}
+.settings-sidenav-item:hover {
+	color: var(--text);
+	background: var(--bg-hover);
+}
+.settings-sidenav-item.active {
+	color: var(--text);
+	background: var(--bg-active);
+	font-weight: 500;
+}
+
+.settings-content {
+	flex: 1;
+	min-width: 0;
+	overflow-y: auto;
+	display: flex;
+	justify-content: center;
+	padding: 44px 32px 88px;
+}
+.settings-panel {
+	width: 100%;
+	max-width: 640px;
+}
+.settings-title {
+	font-size: 24px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	color: var(--text);
+	margin: 0 0 20px;
+}
+.settings-group-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-faint);
+	margin: 22px 0 8px;
+}
+
+.setting-card {
+	background: var(--bg-panel);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	overflow: hidden;
+}
+.setting-row {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 14px 16px;
+}
+.setting-row + .setting-row {
+	border-top: 1px solid var(--border);
+}
+.setting-row-text {
+	flex: 1;
+	min-width: 0;
+}
+.setting-row-title {
+	font-size: 14px;
+	font-weight: 550;
+	color: var(--text);
+}
+.setting-row-desc {
+	font-size: 12.5px;
+	color: var(--text-dim);
+	margin-top: 2px;
+}
+.setting-row-control {
+	flex-shrink: 0;
+}
+.setting-inline {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+/* Toggle switch */
+.ui-switch {
+	width: 38px;
+	height: 22px;
+	flex-shrink: 0;
+	padding: 0;
+	border: none;
+	border-radius: 11px;
+	background: var(--bg-active);
+	position: relative;
+	cursor: pointer;
+	transition: background 0.15s ease;
+}
+.ui-switch.on {
+	background: var(--accent);
+}
+.ui-switch-knob {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+	transition: transform 0.15s ease;
+}
+.ui-switch.on .ui-switch-knob {
+	transform: translateX(16px);
+}
+
+/* Native-ish select + Test button */
+.ui-select {
+	background: var(--bg-raised);
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: 7px;
+	padding: 6px 10px;
+	font-size: 13px;
+	font-family: inherit;
+	cursor: pointer;
+}
+.ui-testbtn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: var(--text-dim);
+	font-size: 13px;
+	font-family: inherit;
+	padding: 6px;
+	border-radius: 6px;
+}
+.ui-testbtn:hover:not(:disabled) {
+	color: var(--text);
+	background: var(--bg-hover);
+}
+.ui-testbtn:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+/* "Settings" entry in the Michael-menu dropdown */
+.settings-menu-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	text-align: left;
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: var(--text);
+	font-size: 13px;
+	font-family: inherit;
+	padding: 8px 10px;
+	border-radius: 6px;
+	margin-bottom: 4px;
+}
+.settings-menu-item:hover {
+	background: var(--bg-hover);
+}
+
+/* Theme picker — three preview cards (System / Light / Dark) */
+.theme-cards {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 14px;
+}
+.theme-card {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: pointer;
+}
+.theme-swatch {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 16 / 10;
+	border-radius: 12px;
+	overflow: hidden;
+	border: 2px solid var(--border);
+	transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.theme-card:hover .theme-swatch {
+	border-color: var(--text-faint);
+}
+.theme-card.active .theme-swatch {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 1px var(--accent);
+}
+/* Dark half of the System swatch, clipped over the right side of the light base. */
+.theme-swatch-split {
+	position: absolute;
+	inset: 0;
+	clip-path: inset(0 0 0 50%);
+}
+.theme-card-label {
+	font-size: 13px;
+	color: var(--text-dim);
+}
+.theme-card.active .theme-card-label {
+	color: var(--text);
+	font-weight: 600;
+}
+
+/* The miniature app mockup rendered inside a swatch. Fixed palettes (not theme
+   vars) so each swatch always shows its own tone regardless of the active theme. */
+.mk-light {
+	--mk-bg: #e9e9e9;
+	--mk-panel: #ffffff;
+	--mk-line: #d5d5d5;
+	--mk-pill: #cbcbcb;
+}
+.mk-dark {
+	--mk-bg: #565656;
+	--mk-panel: #3e3e3e;
+	--mk-line: #c4c4c4;
+	--mk-pill: #8a8a8a;
+}
+.theme-mock {
+	position: absolute;
+	inset: 0;
+	background: var(--mk-bg);
+	padding-top: 15%;
+}
+.theme-mock-head {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 5px;
+	margin-bottom: 9px;
+}
+.theme-mock-bar {
+	height: 6px;
+	border-radius: 4px;
+	background: var(--mk-pill);
+}
+.theme-mock-bar.w1 {
+	width: 56%;
+}
+.theme-mock-bar.w2 {
+	width: 42%;
+	opacity: 0.65;
+}
+.theme-mock-card {
+	margin: 0 9% 0 14%;
+	height: 56%;
+	background: var(--mk-panel);
+	border-radius: 8px 8px 0 0;
+	padding: 11px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.theme-mock-row {
+	height: 6px;
+	border-radius: 3px;
+	background: var(--mk-line);
+}
+.theme-mock-row:nth-child(1) {
+	width: 68%;
+}
+.theme-mock-row:nth-child(2) {
+	width: 84%;
+}
+.theme-mock-row:nth-child(3) {
+	width: 56%;
 }

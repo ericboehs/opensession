@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Sidebar } from "./components/Sidebar";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
+import { SessionSearch } from "./components/SessionSearch";
 import { Home } from "./components/Home";
 import { Automations } from "./components/Automations";
 import { Goals } from "./components/Goals";
@@ -13,12 +14,15 @@ import { Archived } from "./components/Archived";
 import { Reviews } from "./components/Reviews";
 import { UserPicker, UserGate, getCurrentUser } from "./components/UserPicker";
 import { SettingsMenu } from "./components/SettingsMenu";
+import { Settings } from "./components/Settings";
 import { SessionTabs, tabKey, type TabItem } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { UpdateToast } from "./components/UpdateToast";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSidebarSwipe } from "./hooks/useSidebarSwipe";
+import { useInputAlerts } from "./hooks/useInputAlerts";
+import { initAlerts } from "./lib/notify";
 import {
 	archiveSessionApi,
 	renameSessionApi,
@@ -26,6 +30,7 @@ import {
 	type NoteMeta,
 } from "./lib/api";
 import { pushRecent } from "./lib/recents";
+import { markRead } from "./lib/reads";
 import { getPins, togglePin, reorderPins, onPinsChanged } from "./lib/pins";
 import {
 	getTabColors,
@@ -45,6 +50,7 @@ type Route =
 	| { view: "actions" }
 	| { view: "notes"; sel: NotesSelection }
 	| { view: "connections" }
+	| { view: "settings" }
 	| { view: "archived" };
 
 function parseRoute(pathname: string): Route {
@@ -56,6 +62,7 @@ function parseRoute(pathname: string): Route {
 	if (pathname === "/backstage/goals") return { view: "goals" };
 	if (pathname === "/backstage/actions") return { view: "actions" };
 	if (pathname === "/backstage/connections") return { view: "connections" };
+	if (pathname === "/backstage/settings") return { view: "settings" };
 	if (pathname === "/backstage/archived") return { view: "archived" };
 	const reviewsMatch = pathname.match(/^\/backstage\/reviews(?:\/(.+))?$/);
 	if (reviewsMatch)
@@ -105,6 +112,8 @@ function routePath(route: Route): string {
 			return "/backstage/actions";
 		case "connections":
 			return "/backstage/connections";
+		case "settings":
+			return "/backstage/settings";
 		case "archived":
 			return "/backstage/archived";
 		case "reviews":
@@ -234,6 +243,22 @@ function App() {
 		setSidebarOpen(false);
 	}
 
+	// Arm audio + request notification permission on the first user gesture.
+	useEffect(() => initAlerts(), []);
+
+	// Sound + desktop notification whenever one of *my* sessions newly flips into
+	// "needs input" (blocked on a question). Scoped to the current user's own
+	// non-automation sessions — the same set as the sidebar's "Needs input" bucket.
+	useInputAlerts(sessions, {
+		isMine: (s) => {
+			const me = getCurrentUser().toLowerCase();
+			return (
+				!s.automation && !!s.startedBy && s.startedBy.toLowerCase() === me
+			);
+		},
+		onOpen: (id) => navigate({ view: "session", id }),
+	});
+
 	// The "new session" ⌘K palette. It's an overlay driven by its own state (not a
 	// route), so it can open over any view; the /backstage/new route still opens it
 	// so old links keep working.
@@ -246,6 +271,19 @@ function App() {
 		setPalette({ open: true, prompt });
 		setSidebarOpen(false);
 	}, []);
+
+	// A "new tab" while a session is open is a *new chat in that same session*, not
+	// a whole new session — so it must NOT pop the new-session palette. It's a
+	// visual fresh-start (one thread under the hood): bumping this counter tells the
+	// open SessionViewer to clear its composer and scroll to the live edge. With no
+	// session open there's nothing to stay in, so it falls back to the palette.
+	const [newChatSeq, setNewChatSeq] = useState(0);
+
+	// The ⌘K session-search command palette. Like the new-session palette it's an
+	// overlay driven by its own state so it can open over any view.
+	const [searchOpen, setSearchOpen] = useState(false);
+	const searchOpenRef = useRef(searchOpen);
+	searchOpenRef.current = searchOpen;
 	const closePalette = React.useCallback(() => {
 		setPalette({ open: false });
 		// A deep link left the URL on /backstage/new — return home on close.
@@ -259,16 +297,26 @@ function App() {
 		return () => window.removeEventListener("popstate", onPop);
 	}, []);
 
-	// ⌘K / ⌘N toggles the palette; Esc closes it.
+	// ⌘K toggles the session-search palette; ⌘N the new-session palette. Esc
+	// closes whichever is open (search's own input also handles Esc, but this
+	// covers the case where focus has left it).
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			const k = e.key.toLowerCase();
-			if ((e.metaKey || e.ctrlKey) && (k === "k" || k === "n")) {
+			if ((e.metaKey || e.ctrlKey) && k === "k") {
+				e.preventDefault();
+				setSearchOpen((o) => !o);
+				return;
+			}
+			if ((e.metaKey || e.ctrlKey) && k === "n") {
 				e.preventDefault();
 				paletteOpenRef.current ? closePalette() : openPalette();
 				return;
 			}
-			if (e.key === "Escape" && paletteOpenRef.current) closePalette();
+			if (e.key === "Escape") {
+				if (searchOpenRef.current) setSearchOpen(false);
+				else if (paletteOpenRef.current) closePalette();
+			}
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
@@ -333,6 +381,14 @@ function App() {
 					(s) => s.id === route.id || s.aliasIds?.includes(route.id),
 				) || null
 			: null;
+
+	// Mark the open session read up to its latest activity — both when it's first
+	// opened and as new activity streams in while it stays open — so the sidebar's
+	// unread flag clears for whatever you're currently looking at.
+	useEffect(() => {
+		if (currentSession)
+			markRead(currentSession.id, currentSession.lastActivity);
+	}, [currentSession?.id, currentSession?.lastActivity]);
 
 	const currentNoteId =
 		route.view === "notes" && route.sel?.kind === "note" ? route.sel.id : null;
@@ -428,7 +484,7 @@ function App() {
 				<span className="app-logo">M</span>
 				<span className="app-title-text">Michael</span>
 			</a>
-			<SettingsMenu />
+			<SettingsMenu onOpenSettings={() => navigate({ view: "settings" })} />
 		</div>
 	);
 	const userControls = (
@@ -464,6 +520,9 @@ function App() {
 					{userControls}
 				</header>
 
+				{route.view === "settings" ? (
+					<Settings onBack={() => navigate({ view: "home" })} />
+				) : (
 				<div className="app-body">
 					{/* Overlay to close sidebar on mobile */}
 					{sidebarOpen && (
@@ -502,7 +561,9 @@ function App() {
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onNewSession={() => openPalette()}
 							onNewProject={() => openPalette()}
+							onOpenSearch={() => setSearchOpen(true)}
 							onOpenArchived={() => navigate({ view: "archived" })}
+							archivedActive={route.view === "archived"}
 							onArchive={async (s) => {
 								try {
 									await archiveSessionApi(s.id, true);
@@ -551,7 +612,13 @@ function App() {
 							}
 							onTogglePin={(key) => setPins(togglePin(key))}
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
-							onNewSession={() => openPalette()}
+							onNewSession={() => {
+								// In a session, + opens a fresh chat in that same session
+								// (stay put); otherwise it opens the new-session palette.
+								if (currentSession) setNewChatSeq((n) => n + 1);
+								else openPalette();
+							}}
+							newChatMode={!!currentSession}
 							onReorder={(keys) => setPins(reorderPins(keys))}
 							onRename={async (key, title) => {
 								try {
@@ -633,6 +700,7 @@ function App() {
 									connected={connected}
 									topbarEl={topbarEl}
 									rightPanelEl={rightPanelEl}
+									newChatSeq={newChatSeq}
 								/>
 							) : (
 								<div className="detail-empty">
@@ -672,8 +740,21 @@ function App() {
 					    session's workspace/sub-agent panel portals in here. */}
 					<div className="right-panel-slot" ref={setRightPanelEl} />
 				</div>
+				)}
 
-				{/* ⌘K new-session palette — overlays every view. */}
+				{/* ⌘K session-search palette — overlays every view. */}
+				{searchOpen && (
+					<SessionSearch
+						sessions={sessions}
+						onSelect={(id) => {
+							setSearchOpen(false);
+							navigate({ view: "session", id });
+						}}
+						onClose={() => setSearchOpen(false)}
+					/>
+				)}
+
+				{/* ⌘N new-session palette — overlays every view. */}
 				{palette.open && (
 					<NewSession
 						onBack={closePalette}

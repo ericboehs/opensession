@@ -105,6 +105,104 @@ export async function getThreadWithMessages(threadId: string): Promise<any> {
   return (result.data as any).thread;
 }
 
+/** A single, UI-ready message in a Plain thread's timeline. */
+export interface NormalizedPlainEntry {
+  id: string;
+  timestamp: string;
+  actorName: string;
+  actorType: "customer" | "support" | "bot" | "system";
+  kind: "email" | "chat" | "note";
+  subject?: string;
+  text: string;
+}
+
+/** A Plain thread flattened to the shape the backstage sidebar renders. */
+export interface NormalizedPlainThread {
+  id: string;
+  title: string | null;
+  status: string | null;
+  priority: number | null;
+  customer: { name: string | null; email: string | null };
+  entries: NormalizedPlainEntry[];
+}
+
+/**
+ * Flatten the raw `getThreadWithMessages` payload into the message list the
+ * session viewer's Plain sidebar renders: customer/support/bot emails & chats
+ * plus internal notes, sorted oldest-first. Status-change and other non-message
+ * timeline entries are dropped.
+ */
+export function normalizePlainThread(thread: any): NormalizedPlainThread {
+  const entries: NormalizedPlainEntry[] = [];
+  for (const edge of thread?.timelineEntries?.edges || []) {
+    const node = edge?.node;
+    const actor = node?.actor;
+    const entry = node?.entry;
+    if (!entry) continue;
+
+    let actorName = "Unknown";
+    let actorType: NormalizedPlainEntry["actorType"] = "system";
+    if (actor?.__typename === "CustomerActor") {
+      actorName =
+        actor.customer?.fullName || actor.customer?.email?.email || "Customer";
+      actorType = "customer";
+    } else if (actor?.__typename === "UserActor") {
+      actorName = actor.user?.fullName || actor.user?.email || "Support";
+      actorType = "support";
+    } else if (actor?.__typename === "MachineUserActor") {
+      actorName = actor.machineUser?.fullName || "Bot";
+      actorType = "bot";
+    } else if (actor?.__typename === "SystemActor") {
+      actorName = "System";
+      actorType = "system";
+    }
+
+    let kind: NormalizedPlainEntry["kind"];
+    let text = "";
+    let subject: string | undefined;
+    if (entry.__typename === "EmailEntry") {
+      kind = "email";
+      subject = entry.subject || undefined;
+      text = entry.textContent || "";
+    } else if (entry.__typename === "ChatEntry") {
+      kind = "chat";
+      text = entry.text || "";
+    } else if (entry.__typename === "NoteEntry") {
+      kind = "note";
+      text = entry.markdown || entry.noteText || "";
+    } else {
+      continue; // status changes, assignments, etc. — not part of the conversation
+    }
+    if (!text.trim()) continue;
+
+    entries.push({
+      id: node.id,
+      timestamp: node.timestamp?.iso8601 || "",
+      actorName,
+      actorType,
+      kind,
+      subject,
+      text,
+    });
+  }
+
+  entries.sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+  );
+
+  return {
+    id: thread?.id,
+    title: thread?.title || null,
+    status: thread?.status || null,
+    priority: thread?.priority ?? null,
+    customer: {
+      name: thread?.customer?.fullName || null,
+      email: thread?.customer?.email?.email || null,
+    },
+    entries,
+  };
+}
+
 /** Search for threads */
 export async function searchThreads(query: string, limit: number = 10): Promise<any[]> {
   const gqlQuery = `

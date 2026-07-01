@@ -1,10 +1,12 @@
 import React, {
+	useCallback,
 	useEffect,
 	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { renderMarkdown } from "../lib/markdown";
 import { parseHumanReply } from "../lib/humanReply";
 import type {
@@ -30,6 +32,7 @@ import { RepoBar } from "./RepoBar";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { SlackChatPanel } from "./SlackChatPanel";
+import { PlainThreadPanel } from "./PlainThreadPanel";
 import { PreviewButton } from "./PreviewButton";
 import { SpinOffMenu } from "./SpinOffMenu";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
@@ -41,9 +44,25 @@ interface Props {
 	send: (msg: any) => void;
 	addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
 	connected: boolean;
+	/** App-level top-bar node above the tab strip; when present the header renders
+	    there (name-on-top layout) instead of inline. */
+	topbarEl?: HTMLElement | null;
+	/** App-level right-column node (sibling of the left sidebar); when present the
+	    workspace/sub-agent panel portals here so it spans the full height from the
+	    top, instead of opening only below the chat. */
+	rightPanelEl?: HTMLElement | null;
+	/** Bumped by the tab-bar + to start a fresh chat in this same session: clears
+	    the composer and jumps to the live edge. A visual reset — same thread. */
+	newChatSeq?: number;
 }
 
-type PanelTab = "changes" | "terminal" | "pr" | "slack";
+type PanelTab = "changes" | "terminal" | "pr" | "slack" | "plain";
+
+/** Workspace of the Plain app the tickets live in (for the "jump into Plain" link). */
+const PLAIN_WORKSPACE_ID = "w_01J7WXJG68TFDV9RD1C4JE3W6F";
+function plainThreadUrl(threadId: string): string {
+	return `https://app.plain.com/workspace/${PLAIN_WORKSPACE_ID}/thread/${threadId}/`;
+}
 
 /** Upsert incoming entries by id so stream events and the file watcher never duplicate. */
 function mergeEntries(
@@ -71,6 +90,9 @@ export function SessionViewer({
 	send,
 	addHandler,
 	connected,
+	topbarEl,
+	rightPanelEl,
+	newChatSeq,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -115,18 +137,28 @@ export function SessionViewer({
 	} | null>(null);
 	const [copied, setCopied] = useState(false);
 	const [pinned, setPinned] = useState(() => isPinned(session.id));
-	const [panelTab, setPanelTab] = useState<PanelTab>("changes");
+	// Default to the Plain tab for a Plain-linked session with no code workspace
+	// (an ask-mode triage): the conversation timeline is the only panel it has.
+	const [panelTab, setPanelTab] = useState<PanelTab>(() => {
+		const workspace =
+			session.mode !== "ask" &&
+			Boolean(session.worktreeDir || session.branch);
+		return !workspace && session.plainThreadId ? "plain" : "changes";
+	});
 	// Sub-agent sidebar: a breadcrumb stack of opened sub-agents (clicking a Task
 	// call pushes; nested Task calls push further). Non-empty → the right region
 	// shows the sub-agent conversation instead of the Workspace panel.
 	const [subagentStack, setSubagentStack] = useState<SubagentRef[]>([]);
-	function openSubagent(agentId: string, label: string) {
+	// Stable identity so the memoized TranscriptBlocks bails out on unrelated
+	// re-renders (e.g. toggling the workspace panel) instead of re-rendering the
+	// whole transcript.
+	const openSubagent = useCallback((agentId: string, label: string) => {
 		setSubagentStack((prev) =>
 			prev.some((s) => s.agentId === agentId)
 				? prev
 				: [...prev, { agentId, label }],
 		);
-	}
+	}, []);
 	// Remembered per browser; on phones the panel overlays the chat, so default closed there
 	const [panelOpen, setPanelOpenState] = useState(() => {
 		const stored = localStorage.getItem("michael-panel-open");
@@ -157,6 +189,19 @@ export function SessionViewer({
 	const [model, setModel] = useState(session.model || "");
 	const [models, setModels] = useState<ModelOption[]>([]);
 	const [defaultModel, setDefaultModel] = useState("");
+	// Reasoning effort — a composer control mirroring the new-session palette.
+	// Threaded through to the runner (forward-compatible; not yet enforced).
+	const [effort, setEffort] = useState("high");
+	// Optimistic goal: reflects a just-set/cleared goal instantly (the /goal
+	// command persists server-side but doesn't broadcast a live session update).
+	// `undefined` = defer to session.goal; a string/null = the pending override.
+	const [goalOverride, setGoalOverride] = useState<string | null | undefined>(
+		undefined,
+	);
+	// Drop the override once the server-side session catches up (or we switch).
+	useEffect(() => setGoalOverride(undefined), [session.id, session.goal]);
+	const currentGoal =
+		goalOverride !== undefined ? goalOverride : session.goal ?? null;
 	useEffect(() => {
 		fetchModels()
 			.then((m) => {
@@ -179,6 +224,13 @@ export function SessionViewer({
 
 	const isAsk = session.mode === "ask";
 	const hasWorkspace = !isAsk && Boolean(session.worktreeDir || session.branch);
+	// A linked Plain thread gets a read-only conversation sidebar (+ jump-to-Plain),
+	// available even for ask-mode sessions that have no code workspace.
+	const hasPlain = Boolean(session.plainThreadId);
+	const plainUrl = session.plainThreadId
+		? plainThreadUrl(session.plainThreadId)
+		: "";
+	const panelAvailable = hasWorkspace || hasPlain;
 	const isBusy = isRunningLive || isStreaming;
 
 	// Ctrl+R focuses the composer (overrides browser reload while in a session)
@@ -199,6 +251,22 @@ export function SessionViewer({
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, []);
+
+	// A "new tab" while this session is open is a fresh chat *in this session*:
+	// clear the composer and jump to the live edge. We skip the first run (and
+	// session switches, which remount this with whatever the counter's at) and
+	// only react to real bumps from the tab-bar +.
+	const lastNewChatSeq = useRef(newChatSeq);
+	useEffect(() => {
+		if (newChatSeq === lastNewChatSeq.current) return;
+		lastNewChatSeq.current = newChatSeq;
+		setInput("");
+		setImages([]);
+		setFiles([]);
+		setForkFrom(null);
+		scrollToLatest("smooth");
+		composerRef.current?.focus();
+	}, [newChatSeq, scrollToLatest]);
 
 	// Browser tab title follows the session
 	useEffect(() => {
@@ -458,9 +526,9 @@ export function SessionViewer({
 	// Fork uses the SDK's forkSession, which is Claude-only.
 	const isClaudeSession = !isCodexModel && !!session.claudeSessionId;
 
-	function handleFork(messageId: string) {
+	const handleFork = useCallback((messageId: string) => {
 		setForkFrom(messageId);
-	}
+	}, []);
 
 	function handleSend() {
 		const text = input.trim();
@@ -505,12 +573,14 @@ export function SessionViewer({
 						sessionId: session.id,
 						content: text,
 						user,
+						effort,
 					}
 				: {
 						type: "prompt",
 						sessionId: session.id,
 						content: text,
 						user,
+						effort,
 						...(imgs.length ? { images: imgs } : {}),
 						...(fls.length ? { files: filePayload } : {}),
 					},
@@ -588,6 +658,19 @@ export function SessionViewer({
 		});
 	}
 
+	// Pin or clear the session goal from the composer's Goal button. Routed
+	// through the /goal slash command (handled backstage-side, not a real turn);
+	// optimistically reflected via goalOverride until the session file catches up.
+	function handleSetGoal(goal: string | null) {
+		setGoalOverride(goal);
+		send({
+			type: "prompt",
+			sessionId: session.id,
+			content: goal ? `/goal ${goal}` : "/goal clear",
+			user: getCurrentUser(),
+		});
+	}
+
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [deleteLabel, setDeleteLabel] = useState("");
@@ -625,8 +708,10 @@ export function SessionViewer({
 					</div>
 				</div>
 			)}
-			<div className="viewer-header">
-				<div className="viewer-title">
+			{(() => {
+				const header = (
+					<div className="viewer-header">
+						<div className="viewer-title">
 					{isAsk ? (
 						<span className="source-chip source-ask">ask</span>
 					) : (
@@ -684,9 +769,9 @@ export function SessionViewer({
 							{session.linearIssue.identifier}
 						</a>
 					)}
-					{session.plainThreadId && (
+					{hasPlain && (
 						<a
-							href={`https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/thread/${session.plainThreadId}/`}
+							href={plainUrl}
 							target="_blank"
 							rel="noopener"
 							className="session-link session-link-plain"
@@ -740,25 +825,8 @@ export function SessionViewer({
 							</span>
 						</button>
 					)}
-					{hasWorkspace && (
-						<button
-							className={`btn-panel-toggle btn-workspace ${panelOpen && subagentStack.length === 0 ? "active" : ""}`}
-							onClick={() => {
-								// The sub-agent panel and Workspace share the right slot; opening
-								// Workspace closes the sub-agent view.
-								if (subagentStack.length > 0) {
-									setSubagentStack([]);
-									setPanelOpen(true);
-								} else {
-									setPanelOpen(!panelOpen);
-								}
-							}}
-							title="Toggle workspace panel (changes, terminal, PR)"
-						>
-							<span className="btn-panel-toggle-icon">◨</span>
-							<span className="btn-panel-toggle-label">Workspace</span>
-						</button>
-					)}
+					{/* Delete sits before Workspace so the Workspace toggle is always the
+					    rightmost action (it opens the far-right panel). */}
 					{!showDeleteConfirm ? (
 						<button
 							className="btn-viewer-delete"
@@ -794,8 +862,34 @@ export function SessionViewer({
 							</button>
 						</div>
 					)}
+					{panelAvailable && (
+						<button
+							className={`btn-panel-toggle btn-workspace ${panelOpen && subagentStack.length === 0 ? "active" : ""}`}
+							onClick={() => {
+								// The sub-agent panel and Workspace share the right slot; opening
+								// Workspace closes the sub-agent view.
+								if (subagentStack.length > 0) {
+									setSubagentStack([]);
+									setPanelOpen(true);
+								} else {
+									setPanelOpen(!panelOpen);
+								}
+							}}
+							title={
+								hasWorkspace
+									? "Toggle side panel (changes, terminal, PR, Plain)"
+									: "Toggle Plain conversation panel"
+							}
+							aria-label="Toggle side panel"
+						>
+							<span className="btn-panel-toggle-icon">◨</span>
+						</button>
+					)}
 				</div>
 			</div>
+				);
+				return topbarEl ? createPortal(header, topbarEl) : header;
+			})()}
 
 			{session.worktreeDir && !isAsk && (
 				<RepoBar
@@ -1052,8 +1146,13 @@ export function SessionViewer({
 											? "Set the model from the owning agent (/model in the Slack thread)"
 											: "Switch the model for this session"
 									}
+									effort={effort}
+									onEffortChange={setEffort}
+									goal={currentGoal}
+									onSetGoal={
+										session.source === "backstage" ? handleSetGoal : undefined
+									}
 									mentionFetch={(q) => fetchFileMentions(q, session.id)}
-									hint="Enter to send · Shift+Enter for newline · @ to mention a file · /goal pins a goal · /loop runs on an interval"
 									textareaRef={composerRef}
 								/>
 							</>
@@ -1062,8 +1161,13 @@ export function SessionViewer({
 				</div>
 
 				{/* Right region: a sub-agent conversation takes precedence over the
-            Workspace panel when one is open. */}
-				{(subagentStack.length > 0 || (hasWorkspace && panelOpen)) && (
+            Workspace panel when one is open. Portaled to an app-level slot so it
+            opens as a full-height column beside the left sidebar (not just below
+            the chat header). */}
+				{(() => {
+				const rightRegion = (
+					<>
+				{(subagentStack.length > 0 || (panelAvailable && panelOpen)) && (
 					<div
 						className="panel-overlay"
 						onClick={() =>
@@ -1081,39 +1185,52 @@ export function SessionViewer({
 						onBack={() => setSubagentStack((prev) => prev.slice(0, -1))}
 						onClose={() => setSubagentStack([])}
 					/>
-				) : hasWorkspace && panelOpen ? (
+				) : panelAvailable && panelOpen ? (
 					<div className="viewer-panel">
 						<div className="panel-tabs">
-							<button
-								className={`panel-tab ${panelTab === "changes" ? "active" : ""}`}
-								onClick={() => setPanelTab("changes")}
-							>
-								Changes
-							</button>
-							<button
-								className={`panel-tab ${panelTab === "terminal" ? "active" : ""}`}
-								onClick={() => setPanelTab("terminal")}
-							>
-								Terminal
-							</button>
-							<button
-								className={`panel-tab ${panelTab === "pr" ? "active" : ""}`}
-								onClick={() => setPanelTab("pr")}
-							>
-								PR
-								{session.prState && (
-									<span
-										className={`panel-tab-dot pr-dot-${session.prState.toLowerCase()}`}
-									/>
-								)}
-							</button>
-							<button
-								className={`panel-tab ${panelTab === "slack" ? "active" : ""}`}
-								onClick={() => setPanelTab("slack")}
-							>
-								Slack
-								{session.slackChannel && <span className="panel-tab-dot" />}
-							</button>
+							{hasWorkspace && (
+								<>
+									<button
+										className={`panel-tab ${panelTab === "changes" ? "active" : ""}`}
+										onClick={() => setPanelTab("changes")}
+									>
+										Changes
+									</button>
+									<button
+										className={`panel-tab ${panelTab === "terminal" ? "active" : ""}`}
+										onClick={() => setPanelTab("terminal")}
+									>
+										Terminal
+									</button>
+									<button
+										className={`panel-tab ${panelTab === "pr" ? "active" : ""}`}
+										onClick={() => setPanelTab("pr")}
+									>
+										PR
+										{session.prState && (
+											<span
+												className={`panel-tab-dot pr-dot-${session.prState.toLowerCase()}`}
+											/>
+										)}
+									</button>
+									<button
+										className={`panel-tab ${panelTab === "slack" ? "active" : ""}`}
+										onClick={() => setPanelTab("slack")}
+									>
+										Slack
+										{session.slackChannel && <span className="panel-tab-dot" />}
+									</button>
+								</>
+							)}
+							{hasPlain && (
+								<button
+									className={`panel-tab ${panelTab === "plain" ? "active" : ""}`}
+									onClick={() => setPanelTab("plain")}
+								>
+									Plain
+									<span className="panel-tab-dot" />
+								</button>
+							)}
 							{session.branch && (
 								<span className="panel-branch" title={session.branch}>
 									{session.branch}
@@ -1128,7 +1245,14 @@ export function SessionViewer({
 							</button>
 						</div>
 						<div className="panel-body">
-							{panelTab === "changes" ? (
+							{/* Plain-only sessions (no code workspace) show just the timeline. */}
+							{(panelTab === "plain" || !hasWorkspace) && hasPlain ? (
+								<PlainThreadPanel
+									sessionId={session.id}
+									threadId={session.plainThreadId!}
+									plainUrl={plainUrl}
+								/>
+							) : panelTab === "changes" ? (
 								<DiffPanel
 									sessionId={session.id}
 									isRunning={isBusy}
@@ -1163,6 +1287,10 @@ export function SessionViewer({
 						</div>
 					</div>
 				) : null}
+					</>
+				);
+				return rightPanelEl ? createPortal(rightRegion, rightPanelEl) : rightRegion;
+				})()}
 			</div>
 		</div>
 	);

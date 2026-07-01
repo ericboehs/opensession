@@ -7,6 +7,7 @@ import { getAllSessions, deleteSession } from "./src/server/sessions";
 import {
 	parseTranscript,
 	parseTranscriptTail,
+	transcriptMatchSnippet,
 } from "./src/server/jsonl-parser";
 import { getSubagentTranscript } from "./src/server/subagents";
 import {
@@ -370,6 +371,34 @@ function resolvePrTarget(
 
 function findSession(sessionId: string): UnifiedSession | undefined {
 	return getCachedSessions().find((s) => s.id === sessionId);
+}
+
+/**
+ * List which of `files` contain `query` (case-insensitive, literal) via
+ * ripgrep — the cheap first stage of transcript full-text search. rg exits 1
+ * when nothing matches, which we treat as "no hits", not an error. Chunked so a
+ * very long file list can't overflow the argv limit.
+ */
+async function ripgrepFiles(
+	query: string,
+	files: string[],
+): Promise<string[]> {
+	const hits = new Set<string>();
+	const CHUNK = 1000;
+	for (let i = 0; i < files.length; i += CHUNK) {
+		const chunk = files.slice(i, i + CHUNK);
+		const proc = Bun.spawn(
+			["rg", "-l", "-i", "-F", "--no-messages", "--", query, ...chunk],
+			{ stdout: "pipe", stderr: "ignore" },
+		);
+		const out = await new Response(proc.stdout).text();
+		await proc.exited;
+		for (const line of out.split("\n")) {
+			const p = line.trim();
+			if (p) hits.add(p);
+		}
+	}
+	return [...hits];
 }
 
 /** Derive the at-a-glance state + control surface for a session (for the MCP). */
@@ -2213,6 +2242,36 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json(parseTranscript(session.transcriptPath));
 			}
 
+			// Full-text search across session transcripts (the ⌘K palette's
+			// "search in conversations"). Two-stage: a cheap ripgrep pass narrows
+			// hundreds of transcripts to the few that contain the query, then we
+			// parse only those (cached) to pull a clean snippet — which also drops
+			// matches that only occur in transcript metadata (base64, JSON keys).
+			if (path === "/backstage/api/sessions/search" && req.method === "GET") {
+				const q = (url.searchParams.get("q") || "").trim();
+				if (q.length < 2) return Response.json({ matches: [] });
+				const byPath = new Map<string, string>(); // transcriptPath → sessionId
+				for (const s of getCachedSessions()) {
+					if (
+						s.transcriptPath &&
+						!byPath.has(s.transcriptPath) &&
+						existsSync(s.transcriptPath)
+					)
+						byPath.set(s.transcriptPath, s.id);
+				}
+				const files = [...byPath.keys()];
+				if (!files.length) return Response.json({ matches: [] });
+				const matches: Array<{ id: string; snippet: string }> = [];
+				for (const f of await ripgrepFiles(q, files)) {
+					const id = byPath.get(f);
+					if (!id) continue;
+					const snippet = transcriptMatchSnippet(f, q);
+					if (snippet) matches.push({ id, snippet });
+					if (matches.length >= 50) break;
+				}
+				return Response.json({ matches });
+			}
+
 			// Sub-agent (Task/Agent) conversation for a session. The agentId comes from
 			// a Task tool_result's `agentId` field in the parent transcript.
 			{
@@ -2903,6 +2962,39 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				// Our bot post is dropped by /slack/events, so echo it to every client.
 				broadcastToAll({ type: "slack_message", channelId, message });
 				return Response.json({ ok: true, message });
+			}
+
+			// The conversation timeline for a session's linked Plain thread,
+			// flattened for the session viewer's read-only Plain sidebar.
+			const plainThreadMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/plain\/thread$/,
+			);
+			if (plainThreadMatch && req.method === "GET") {
+				const sessionId = decodeURIComponent(plainThreadMatch[1]);
+				const session = findSession(sessionId);
+				const threadId = session?.plainThreadId;
+				if (!threadId)
+					return Response.json(
+						{ error: "No linked Plain thread" },
+						{ status: 400 },
+					);
+				try {
+					const { getThreadWithMessages, normalizePlainThread } =
+						await import("./src/agents/plain/api");
+					const thread = await getThreadWithMessages(threadId);
+					if (!thread)
+						return Response.json(
+							{ error: "Thread not found" },
+							{ status: 404 },
+						);
+					return Response.json({ thread: normalizePlainThread(thread) });
+				} catch (e: any) {
+					console.error(`[plain-thread] Lookup failed for ${threadId}:`, e);
+					return Response.json(
+						{ error: e?.message || "Plain lookup failed" },
+						{ status: 502 },
+					);
+				}
 			}
 
 			// ── Automations ──

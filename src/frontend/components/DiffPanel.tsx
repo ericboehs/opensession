@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, startTransition } from "react";
 import type { RepoDiff } from "../lib/types";
 import { fetchDiff } from "../lib/api";
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
@@ -21,11 +21,19 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
     try {
       const data = await fetchDiff(sessionId);
       if (data.error) throw new Error(data.error);
-      setRepos(data.repos || []);
-      setError(null);
+      // @pierre/diffs renders on the main thread (disableWorkerPool) and
+      // parsePatchFiles runs during render, so committing a large diff is a long,
+      // uninterruptible task. Commit it as a transition so an urgent interaction —
+      // e.g. clicking the panel toggle to close — preempts it instead of waiting
+      // for the whole diff to parse and paint. If the user closes the panel before
+      // this render commits, React discards it and the panel closes instantly.
+      startTransition(() => {
+        setRepos(data.repos || []);
+        setError(null);
+        setLoading(false);
+      });
     } catch (e: any) {
       setError(e.message);
-    } finally {
       setLoading(false);
     }
   }, [sessionId]);

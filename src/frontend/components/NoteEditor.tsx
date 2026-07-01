@@ -136,42 +136,52 @@ function chipPlugin(navRef: React.MutableRefObject<Props["onOpenMention"]>) {
 	);
 }
 
-const noteTheme = EditorView.theme(
-	{
-		"&": { color: "#e6edf3", backgroundColor: "transparent", height: "100%" },
-		".cm-content": {
-			fontFamily: "Menlo, Monaco, 'Courier New', monospace",
-			fontSize: "14px",
-			lineHeight: "1.6",
-			padding: "16px 18px",
-			caretColor: "#e6edf3",
-		},
-		".cm-scroller": { overflow: "auto" },
-		"&.cm-focused": { outline: "none" },
-		".cm-cursor": { borderLeftColor: "#e6edf3" },
-		".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-			backgroundColor: "#264f78aa",
-		},
-		".cm-line": { padding: "0" },
+// Colors are driven off the app's CSS variables (set on html[data-theme]) so the
+// editor follows Light/Dark instead of being locked to the old dark palette —
+// hardcoded light-on-dark text was invisible on the light surface.
+const noteTheme = EditorView.theme({
+	"&": { color: "var(--text)", backgroundColor: "transparent", height: "100%" },
+	".cm-content": {
+		fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+		fontSize: "14px",
+		lineHeight: "1.6",
+		padding: "16px 18px",
+		caretColor: "var(--text)",
 	},
-	{ dark: true },
-);
+	".cm-scroller": { overflow: "auto" },
+	"&.cm-focused": { outline: "none" },
+	".cm-cursor": { borderLeftColor: "var(--text)" },
+	".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+		backgroundColor: "var(--bg-active)",
+	},
+	".cm-line": { padding: "0" },
+});
 
 const noteHighlight = HighlightStyle.define([
-	{ tag: t.heading1, color: "#fff", fontWeight: "700", fontSize: "1.25em" },
-	{ tag: t.heading2, color: "#fff", fontWeight: "700", fontSize: "1.12em" },
+	{
+		tag: t.heading1,
+		color: "var(--text)",
+		fontWeight: "700",
+		fontSize: "1.25em",
+	},
+	{
+		tag: t.heading2,
+		color: "var(--text)",
+		fontWeight: "700",
+		fontSize: "1.12em",
+	},
 	{
 		tag: [t.heading3, t.heading4, t.heading5, t.heading6],
-		color: "#fff",
+		color: "var(--text)",
 		fontWeight: "700",
 	},
-	{ tag: t.strong, color: "#fff", fontWeight: "700" },
+	{ tag: t.strong, color: "var(--text)", fontWeight: "700" },
 	{ tag: t.emphasis, fontStyle: "italic" },
-	{ tag: t.link, color: "#6a9fb5" },
-	{ tag: t.url, color: "#6a9fb5" },
-	{ tag: t.list, color: "#8b949e" },
-	{ tag: t.quote, color: "#8b949e" },
-	{ tag: t.monospace, color: "#79c0ff" },
+	{ tag: t.link, color: "var(--accent)" },
+	{ tag: t.url, color: "var(--accent)" },
+	{ tag: t.list, color: "var(--text-dim)" },
+	{ tag: t.quote, color: "var(--text-dim)" },
+	{ tag: t.monospace, color: "var(--purple)" },
 	{ tag: t.strikethrough, textDecoration: "line-through" },
 ]);
 

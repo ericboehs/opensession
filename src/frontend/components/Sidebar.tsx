@@ -1,10 +1,17 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, {
+	useState,
+	useMemo,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+} from "react";
 import { createPortal } from "react-dom";
 import type { UnifiedSession } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
+import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -54,7 +61,11 @@ interface Props {
 	onNewSession: () => void;
 	/** Start a new project (folder-plus icon) — opens the new-session palette. */
 	onNewProject: () => void;
+	/** Open the ⌘K session-search palette (from the sidebar search field). */
+	onOpenSearch: () => void;
 	onOpenArchived: () => void;
+	/** True while the archived view is open — highlights the Archived row. */
+	archivedActive: boolean;
 	onArchive: (session: UnifiedSession) => void;
 	/** Rename a session (double-click its title); empty title resets it. */
 	onRename: (session: UnifiedSession, title: string) => void;
@@ -227,7 +238,12 @@ interface Group {
 
 // "My sessions" is split, Conductor-style, into status buckets. Order + labels +
 // dot color are defined here; a session is bucketed by the first rule it matches.
-type MineStatus = "needsinput" | "merged" | "done" | "review" | "inprogress";
+type MineStatus =
+	| "needsinput"
+	| "merged"
+	| "pending"
+	| "review"
+	| "inprogress";
 
 const MINE_STATUS_META: Array<{
 	key: MineStatus;
@@ -236,7 +252,7 @@ const MINE_STATUS_META: Array<{
 }> = [
 	{ key: "needsinput", label: "Needs input", dotColor: "var(--accent)" },
 	{ key: "merged", label: "Merged", dotColor: "var(--purple)" },
-	{ key: "done", label: "Done", dotColor: "var(--text-faint)" },
+	{ key: "pending", label: "Pending", dotColor: "var(--text-faint)" },
 	{ key: "review", label: "Review", dotColor: "var(--green)" },
 	{ key: "inprogress", label: "In progress", dotColor: "var(--yellow)" },
 ];
@@ -248,7 +264,10 @@ function mineStatus(s: UnifiedSession): MineStatus {
 	if (s.prState === "MERGED") return "merged";
 	if (s.prState === "OPEN") return "review";
 	if (s.isRunning) return "inprogress";
-	return "done";
+	// Everything else is idle-but-unfinished: no open/merged PR, not running,
+	// not blocked. That's "Pending", not "Done" — finishing a session is an
+	// explicit act (Archive), never inferred from a moment of inactivity.
+	return "pending";
 }
 
 const EXPANDED_KEY = "michael-sidebar-expanded";
@@ -258,7 +277,7 @@ const DEFAULT_EXPANDED = [
 	"pinned",
 	"status:needsinput",
 	"status:merged",
-	"status:done",
+	"status:pending",
 	"status:review",
 	"status:inprogress",
 ];
@@ -324,7 +343,9 @@ export function Sidebar({
 	onSelect,
 	onNewSession,
 	onNewProject,
+	onOpenSearch,
 	onOpenArchived,
+	archivedActive,
 	onArchive,
 	onRename,
 }: Props) {
@@ -333,6 +354,9 @@ export function Sidebar({
 	const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
 	const [pins, setPins] = useState<string[]>(getPins);
 	const [recents, setRecents] = useState<string[]>(getRecents);
+	// Per-session last-read marks, driving the unread dot. Kept in sync via the
+	// same event the viewer fires when it marks a session read.
+	const [reads, setReads] = useState(getReads);
 	const currentUser = useCurrentUser();
 
 	// Filter popover (group by / repo / sort) — its choices persist together.
@@ -347,13 +371,58 @@ export function Sidebar({
 		});
 	}
 
+	// The active repo-filter chip prefers to sit inline in the "My sessions"
+	// header (right after the title); it drops to its own row only when the
+	// sidebar is too narrow to fit it there. `repoInline` is decided by measuring
+	// the header against an off-layout probe copy of the chip, so toggling it can't
+	// feed back into the measurement (title/actions/probe widths don't depend on
+	// where the real chip lands).
+	const [repoInline, setRepoInline] = useState(true);
+	const headRef = useRef<HTMLDivElement>(null);
+	const titleRef = useRef<HTMLSpanElement>(null);
+	const actionsRef = useRef<HTMLDivElement>(null);
+	const probeRef = useRef<HTMLSpanElement>(null);
+	useLayoutEffect(() => {
+		if (filter.repo === "all") return;
+		const measure = () => {
+			const head = headRef.current;
+			const title = titleRef.current;
+			const actions = actionsRef.current;
+			const probe = probeRef.current;
+			if (!head || !title || !actions || !probe) return;
+			const GAP = 6; // .sidebar-workspace-head gap
+			const MARGIN = 8; // breathing room so it never crowds the buttons
+			const avail =
+				head.clientWidth -
+				title.offsetWidth -
+				actions.offsetWidth -
+				GAP * 2 -
+				MARGIN;
+			setRepoInline(probe.offsetWidth <= avail);
+		};
+		measure();
+		const ro = new ResizeObserver(measure);
+		if (headRef.current) ro.observe(headRef.current);
+		return () => ro.disconnect();
+	}, [filter.repo]);
+
 	useEffect(() => onPinsChanged(() => setPins(getPins())), []);
 	useEffect(() => onRecentsChanged(() => setRecents(getRecents())), []);
+	useEffect(() => onReadsChanged(() => setReads(getReads())), []);
 
-	const archivedCount = useMemo(
-		() => sessions.filter((s) => s.archived).length,
-		[sessions],
-	);
+	// The Archived row counts *my* archived sessions (Michiel's scope), and honors
+	// the active repo filter — same lens as the archived page it opens.
+	const archivedCount = useMemo(() => {
+		const user = currentUser.toLowerCase();
+		return sessions.filter(
+			(s) =>
+				s.archived &&
+				!s.automation &&
+				s.startedBy &&
+				s.startedBy.toLowerCase() === user &&
+				(filter.repo === "all" || sessionRepo(s) === filter.repo),
+		).length;
+	}, [sessions, currentUser, filter.repo]);
 
 	// Distinct repos across the (non-archived) sessions, most-used first, for the
 	// Repo filter dropdown. Built off every session (not the search-filtered set)
@@ -569,6 +638,42 @@ export function Sidebar({
 		return urls.size;
 	}, [sessions]);
 
+	// "Archived" reads as a peer of the My-sessions status buckets (Needs input /
+	// Done …): an icon-led row that sits flush under them. Unlike those, it doesn't
+	// expand inline — it navigates to the archived page, and highlights while that
+	// page is open.
+	const archivedBand =
+		archivedCount > 0 ? (
+			<button
+				className={`sidebar-group-header sidebar-archived-row${
+					archivedActive ? " active" : ""
+				}`}
+				onClick={onOpenArchived}
+				title="View archived sessions"
+			>
+				<span className="sidebar-archived-icon">
+					<svg
+						width="13"
+						height="13"
+						viewBox="0 0 16 16"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="1.4"
+					>
+						<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
+						<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
+						<path d="M6.5 8.5h3" strokeLinecap="round" />
+					</svg>
+				</span>
+				<span className="sidebar-group-name">Archived</span>
+				<span className="sidebar-group-count">{archivedCount}</span>
+			</button>
+		) : null;
+
+	// Whether any non-personal (People / Projects) band exists — decides where the
+	// Archived label lands: just above the first other band, or at the very end.
+	const hasOtherBand = groups.some((g) => g.band !== "personal");
+
 	return (
 		<div className="sidebar">
 			<nav className="sidebar-nav">
@@ -588,52 +693,64 @@ export function Sidebar({
 			</nav>
 
 			<div className="sidebar-workspace">
-				<div className="sidebar-workspace-head">
-					<span className="sidebar-workspace-title">My sessions</span>
+				<div className="sidebar-workspace-head" ref={headRef}>
+					<span className="sidebar-workspace-title" ref={titleRef}>
+						My sessions
+					</span>
+					{/* Repo filter chip, inline behind the title when it fits. */}
+					{filter.repo !== "all" && repoInline && (
+						<RepoFilterChip
+							repo={filter.repo}
+							onClear={() => setFilter({ repo: "all" })}
+							variant="inline"
+						/>
+					)}
 					<div className="sidebar-workspace-spacer" />
-					<button
-						ref={filterBtnRef}
-						className={`sidebar-new-btn sidebar-filter-btn${
-							filterOpen ? " active" : ""
-						}${
-							filter.groupBy !== "status" || filter.repo !== "all"
-								? " has-filter"
-								: ""
-						}`}
-						onClick={() => setFilterOpen((o) => !o)}
-						title="Group, filter & sort"
-					>
-						<svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-							<path
-								d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
-								stroke="currentColor"
-								strokeWidth="1.5"
-								strokeLinecap="round"
-							/>
-						</svg>
-					</button>
-					<button
-						className="sidebar-new-btn"
-						onClick={onNewSession}
-						title="New session"
-					>
-						+
-					</button>
+					<div className="sidebar-workspace-actions" ref={actionsRef}>
+						<button
+							ref={filterBtnRef}
+							className={`sidebar-new-btn sidebar-filter-btn${
+								filterOpen ? " active" : ""
+							}${
+								filter.groupBy !== "status" || filter.repo !== "all"
+									? " has-filter"
+									: ""
+							}`}
+							onClick={() => setFilterOpen((o) => !o)}
+							title="Group, filter & sort"
+						>
+							<svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+								<path
+									d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
+									stroke="currentColor"
+									strokeWidth="1.5"
+									strokeLinecap="round"
+								/>
+							</svg>
+						</button>
+						<button
+							className="sidebar-new-btn"
+							onClick={onNewSession}
+							title="New session"
+						>
+							+
+						</button>
+					</div>
+					{/* Off-layout probe: measures the chip's natural width so the effect
+					    above can decide whether it fits inline (never rendered visibly). */}
+					{filter.repo !== "all" && (
+						<RepoFilterChip repo={filter.repo} variant="probe" ref={probeRef} />
+					)}
 				</div>
 
-				{filter.repo !== "all" && (
+				{/* Fallback row: only when the chip doesn't fit inline. */}
+				{filter.repo !== "all" && !repoInline && (
 					<div className="sidebar-repo-row">
-						<span className="sidebar-repo-chip">
-							<RepoTile name={filter.repo} />
-							<span className="sidebar-repo-chip-name">{filter.repo}</span>
-							<button
-								className="sidebar-repo-chip-x"
-								title="Clear repo filter"
-								onClick={() => setFilter({ repo: "all" })}
-							>
-								×
-							</button>
-						</span>
+						<RepoFilterChip
+							repo={filter.repo}
+							onClear={() => setFilter({ repo: "all" })}
+							variant="row"
+						/>
 					</div>
 				)}
 
@@ -659,13 +776,21 @@ export function Sidebar({
 							strokeLinecap="round"
 						/>
 					</svg>
+					{/* Acts as a button: clicking (or focusing) it opens the ⌘K
+					    session-search palette rather than filtering inline. */}
 					<input
 						className="sidebar-search"
 						type="text"
 						placeholder="Search sessions"
-						value={search}
-						onChange={(e) => setSearch(e.target.value)}
+						value=""
+						readOnly
+						onMouseDown={(e) => {
+							e.preventDefault();
+							onOpenSearch();
+						}}
+						onFocus={onOpenSearch}
 					/>
+					<kbd className="sidebar-search-kbd">⌘K</kbd>
 				</div>
 			</div>
 
@@ -687,9 +812,16 @@ export function Sidebar({
 					const bandChanged = i > 0 && group.band !== groups[i - 1].band;
 					const label = bandChanged ? bandLabel(group.band) : null;
 					const open = isOpen(group.key);
+					// The Archived label goes just above the first non-personal band.
+					const isFirstOther =
+						group.band !== "personal" &&
+						(i === 0 || groups[i - 1].band === "personal");
 					return (
+					<React.Fragment key={group.key}>
+					{isFirstOther && archivedBand && (
+						<div className="sidebar-group">{archivedBand}</div>
+					)}
 					<div
-						key={group.key}
 						className={`sidebar-group${
 							bandChanged ? " sidebar-group--band-start" : ""
 						}`}
@@ -752,19 +884,30 @@ export function Sidebar({
 									key={s.id}
 									session={s}
 									selected={s.id === selectedId}
+									unread={
+										s.id !== selectedId &&
+										isUnread(s.id, s.lastActivity, reads)
+									}
+									mine={
+										!!s.startedBy &&
+										!s.automation &&
+										s.startedBy.toLowerCase() ===
+											currentUser.toLowerCase()
+									}
 									onClick={() => onSelect(s)}
 									onArchive={() => onArchive(s)}
 									onRename={(title) => onRename(s, title)}
 								/>
 							))}
 					</div>
+					</React.Fragment>
 					);
 				})}
 
-				{archivedCount > 0 && (
-					<button className="sidebar-archived-link" onClick={onOpenArchived}>
-						Archived ({archivedCount}) →
-					</button>
+				{/* If there are no People/Projects bands, the Archived label still
+				    lands below the My-sessions band, at the end of the list. */}
+				{!hasOtherBand && archivedBand && (
+					<div className="sidebar-group">{archivedBand}</div>
 				)}
 			</div>
 		</div>
@@ -958,15 +1101,52 @@ function RepoTile({ name }: { name: string }) {
 	);
 }
 
+// The removable "active repo filter" chip. Rendered in three variants:
+// "inline" (in the header, behind the title), "row" (its own line under the
+// header) and "probe" (an off-layout copy used only to measure natural width —
+// non-interactive and hidden from a11y).
+const RepoFilterChip = React.forwardRef<
+	HTMLSpanElement,
+	{ repo: string; onClear?: () => void; variant: "inline" | "row" | "probe" }
+>(function RepoFilterChip({ repo, onClear, variant }, ref) {
+	const probe = variant === "probe";
+	return (
+		<span
+			ref={ref}
+			className={`sidebar-repo-chip sidebar-repo-chip--${variant}`}
+			aria-hidden={probe || undefined}
+		>
+			<RepoTile name={repo} />
+			<span className="sidebar-repo-chip-name">{repo}</span>
+			<button
+				className="sidebar-repo-chip-x"
+				title="Clear repo filter"
+				tabIndex={probe ? -1 : undefined}
+				onClick={probe ? undefined : onClear}
+			>
+				×
+			</button>
+		</span>
+	);
+});
+
 function SidebarItem({
 	session,
 	selected,
+	unread,
+	mine,
 	onClick,
 	onArchive,
 	onRename,
 }: {
 	session: UnifiedSession;
 	selected: boolean;
+	/** New activity since this session was last opened — draws an iMessage-style
+	    unread dot and bolds the title. */
+	unread: boolean;
+	/** The current user's own session — the owner name is redundant, so it's
+	    dropped and the timestamp moves up onto the title line. */
+	mine: boolean;
 	onClick: () => void;
 	onArchive: () => void;
 	onRename: (title: string) => void;
@@ -1008,7 +1188,8 @@ function SidebarItem({
 	}
 
 	const metaParts: React.ReactNode[] = [];
-	if (session.startedBy && !session.automation) {
+	// In "My sessions" the owner is always the current user, so hide it.
+	if (!mine && session.startedBy && !session.automation) {
 		metaParts.push(<span key="u">{session.startedBy}</span>);
 	}
 	metaParts.push(<span key="t">{relativeTime(session.lastActivity)}</span>);
@@ -1044,7 +1225,7 @@ function SidebarItem({
 		<>
 		<button
 			ref={btnRef}
-			className={`sidebar-item ${selected ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""}`}
+			className={`sidebar-item ${selected ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""} ${unread ? "sidebar-item-unread" : ""}`}
 			onClick={onClick}
 			onMouseEnter={openHover}
 			onMouseLeave={closeHover}
@@ -1059,6 +1240,12 @@ function SidebarItem({
 								: "sidebar-status-running"
 						}`}
 					/>
+				)}
+				{/* Unread dot — only when there's no live status dot already drawing
+				    the eye (a running/waiting session isn't "unread" in the same
+				    sense). */}
+				{unread && !waiting && !running && (
+					<span className="sidebar-item-status sidebar-status-unread" />
 				)}
 				{editing ? (
 					<input
@@ -1088,15 +1275,27 @@ function SidebarItem({
 						{session.title}
 					</span>
 				)}
+				{mine && !editing && (
+					<span className="sidebar-item-inline-meta">
+						{metaParts.map((part, i) => (
+							<React.Fragment key={i}>
+								{i > 0 && <span className="sidebar-meta-sep">·</span>}
+								{part}
+							</React.Fragment>
+						))}
+					</span>
+				)}
 			</div>
-			<div className="sidebar-item-meta">
-				{metaParts.map((part, i) => (
-					<React.Fragment key={i}>
-						{i > 0 && <span className="sidebar-meta-sep">·</span>}
-						{part}
-					</React.Fragment>
-				))}
-			</div>
+			{!mine && (
+				<div className="sidebar-item-meta">
+					{metaParts.map((part, i) => (
+						<React.Fragment key={i}>
+							{i > 0 && <span className="sidebar-meta-sep">·</span>}
+							{part}
+						</React.Fragment>
+					))}
+				</div>
+			)}
 			<span
 				className="sidebar-item-x"
 				role="button"
@@ -1107,7 +1306,18 @@ function SidebarItem({
 					onArchive();
 				}}
 			>
-				×
+				<svg
+					width="13"
+					height="13"
+					viewBox="0 0 16 16"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="1.4"
+				>
+					<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
+					<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
+					<path d="M6.5 8.5h3" strokeLinecap="round" />
+				</svg>
 			</span>
 		</button>
 		{anchor && <SessionHoverCard session={session} anchor={anchor} />}
