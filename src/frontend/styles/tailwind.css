@@ -49,6 +49,16 @@
 	--color-red-soft: var(--red-soft);
 	--color-purple: var(--purple);
 
+	/* Tool-family hues (transcript timeline) */
+	--color-tool-run: var(--tool-run);
+	--color-tool-file: var(--tool-file);
+	--color-tool-edit: var(--tool-edit);
+	--color-tool-find: var(--tool-find);
+	--color-tool-web: var(--tool-web);
+	--color-tool-agent: var(--tool-agent);
+	--color-tool-mcp: var(--tool-mcp);
+	--color-tool-skill: var(--tool-skill);
+
 	/* Tooltip chip (near-black in both themes) */
 	--color-tooltip: var(--tooltip-bg);
 	--color-tooltip-fg: var(--tooltip-fg);

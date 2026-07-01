@@ -107,44 +107,91 @@ function compactInput(inp: Record<string, unknown>): string {
   return parts.join("  ·  ");
 }
 
-function ToolGlyph({ toolName }: { toolName: string }) {
-  const size = 13;
-  if (parseMcpTool(toolName)) return <IconPlug size={size} />;
+/**
+ * Tool families: each gets an icon and an accent hue (via the --tool-* palette
+ * vars, theme-aware). Class strings are literal so the Tailwind scanner sees
+ * them. `chip` styles the timeline icon; `edge` tints the expanded detail's
+ * left border to visually tie it back to the row.
+ */
+type FamilyKey =
+  | "run" | "file" | "edit" | "find" | "web" | "agent" | "mcp" | "skill" | "plain";
+
+const FAMILY_STYLES: Record<FamilyKey, { chip: string; edge: string }> = {
+  run: { chip: "text-tool-run", edge: "border-l-tool-run/45" },
+  file: { chip: "text-tool-file", edge: "border-l-tool-file/45" },
+  edit: { chip: "text-tool-edit", edge: "border-l-tool-edit/45" },
+  find: { chip: "text-tool-find", edge: "border-l-tool-find/45" },
+  web: { chip: "text-tool-web", edge: "border-l-tool-web/45" },
+  agent: { chip: "text-tool-agent", edge: "border-l-tool-agent/45" },
+  mcp: { chip: "text-tool-mcp", edge: "border-l-tool-mcp/45" },
+  skill: { chip: "text-tool-skill", edge: "border-l-tool-skill/45" },
+  plain: { chip: "text-dim", edge: "border-l-line-strong" },
+};
+
+function toolFamily(toolName: string): FamilyKey {
+  if (parseMcpTool(toolName)) return "mcp";
   switch (toolName) {
     case "Bash":
     case "BashOutput":
-      return <IconTerminal size={size} />;
+      return "run";
     case "Read":
     case "NotebookEdit":
-      return <IconFile size={size} />;
+      return "file";
     case "Edit":
     case "Write":
-      return <IconPencil size={size} />;
+      return "edit";
     case "Grep":
     case "Glob":
     case "LSP":
     case "ToolSearch":
-      return <IconSearch size={size} />;
+      return "find";
     case "WebFetch":
     case "WebSearch":
-      return <IconGlobe size={size} />;
+      return "web";
     case "Task":
     case "Agent":
     case "Workflow":
-      return <IconSparkle size={size} />;
+      return "agent";
     case "Skill":
-      return <IconBook size={size} />;
-    case "EnterWorktree":
-    case "ExitWorktree":
-      return <IconBranches size={size} />;
-    case "TaskCreate":
-    case "TaskUpdate":
-    case "TaskList":
-    case "TaskGet":
-    case "TodoWrite":
-      return <IconListChecks size={size} />;
+      return "skill";
     default:
-      return <IconWrench size={size} />;
+      return "plain";
+  }
+}
+
+function ToolGlyph({ toolName }: { toolName: string }) {
+  const size = 13;
+  switch (toolFamily(toolName)) {
+    case "run":
+      return <IconTerminal size={size} />;
+    case "file":
+      return <IconFile size={size} />;
+    case "edit":
+      return <IconPencil size={size} />;
+    case "find":
+      return <IconSearch size={size} />;
+    case "web":
+      return <IconGlobe size={size} />;
+    case "agent":
+      return <IconSparkle size={size} />;
+    case "mcp":
+      return <IconPlug size={size} />;
+    case "skill":
+      return <IconBook size={size} />;
+    default:
+      switch (toolName) {
+        case "EnterWorktree":
+        case "ExitWorktree":
+          return <IconBranches size={size} />;
+        case "TaskCreate":
+        case "TaskUpdate":
+        case "TaskList":
+        case "TaskGet":
+        case "TodoWrite":
+          return <IconListChecks size={size} />;
+        default:
+          return <IconWrench size={size} />;
+      }
   }
 }
 
@@ -189,6 +236,8 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
   const isFileTool = toolName === "Read" || toolName === "Edit" || toolName === "Write";
   const duration = stepDuration(entry, result);
   const failed = Boolean(result?.isError);
+  const family = FAMILY_STYLES[toolFamily(toolName)];
+  const inputNode = expanded ? toolInputNode(toolName, entry.toolInput) : null;
 
   // A Task/Agent call whose sub-agent transcript we can open in the sidebar.
   const isAgent = toolName === "Task" || toolName === "Agent";
@@ -207,9 +256,8 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
       >
         <span
           className={cn(
-            "relative z-[1] flex size-[22px] flex-shrink-0 items-center justify-center rounded-md",
-            "border bg-raised",
-            failed ? "border-red/40 text-red" : "border-line text-dim"
+            "tool-chip relative z-[1] flex size-[22px] flex-shrink-0 items-center justify-center rounded-md border border-current/25",
+            failed ? "text-red" : family.chip
           )}
         >
           <ToolGlyph toolName={toolName} />
@@ -270,20 +318,30 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
       </button>
 
       {expanded && (
-        <div className="relative z-[1] mb-1.5 ml-[30px] mt-0.5 overflow-hidden rounded-lg border border-line bg-panel">
-          <ToolInput toolName={toolName} input={entry.toolInput} />
+        <div
+          className={cn(
+            "relative z-[1] mb-1.5 ml-[30px] mt-0.5 overflow-hidden rounded-lg border border-line border-l-2 bg-panel",
+            failed ? "border-l-red/50" : family.edge
+          )}
+        >
+          {inputNode && <div className="p-1.5">{inputNode}</div>}
           {result && (result.content || result.images?.length || result.videos?.length) && (
             <>
               <div
                 className={cn(
-                  "border-t border-line px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-[0.05em]",
+                  "px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-[0.05em]",
+                  inputNode && "border-t border-line",
                   failed ? "text-red" : "text-faint"
                 )}
               >
                 {failed ? "Error" : "Output"}
               </div>
-              <div className={cn("px-2.5 pb-2", failed && "[&_.tool-pre]:text-red/80")}>
-                {result.content && renderResultContent(toolName, entry.toolInput, result.content)}
+              <div className={cn("px-1.5 pb-1.5", failed && "[&_.tool-pre]:text-red/75")}>
+                {result.content && (
+                  <div className="tool-code-surface">
+                    {renderResultContent(toolName, entry.toolInput, result.content)}
+                  </div>
+                )}
                 {result.images && result.images.length > 0 && (
                   <div className="tool-result-images">
                     {result.images.map((src, i) => (
@@ -313,13 +371,14 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
  * The call's input, rendered by what it is rather than as raw JSON where we
  * can: Bash as a highlighted script, Edit as a unified diff, Write as the file
  * content in the file's language. Everything else falls back to pretty JSON.
+ * All variants sit on a .tool-code-surface (dark in both themes).
  */
-function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
+function toolInputNode(toolName: string, input: unknown): React.ReactNode | null {
   const inp = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
 
   if (toolName === "Bash" && bashCommand(input)) {
     return (
-      <div className="px-2.5 py-2">
+      <div className="tool-code-surface">
         <CodeHighlight code={bashCommand(input)!} lang="bash" />
       </div>
     );
@@ -331,7 +390,7 @@ function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
       ...(inp.new_string as string).split("\n").map((l) => `+${l}`),
     ].join("\n");
     return (
-      <div className="px-2.5 py-2">
+      <div className="tool-code-surface">
         <CodeHighlight code={truncate(diff, 4000)} lang="diff" />
       </div>
     );
@@ -339,7 +398,7 @@ function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
 
   if (toolName === "Write" && typeof inp.content === "string") {
     return (
-      <div className="px-2.5 py-2">
+      <div className="tool-code-surface">
         <CodeHighlight
           code={truncate(inp.content, 4000)}
           lang={langForFile(inp.file_path as string) || "markdown"}
@@ -354,7 +413,7 @@ function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
     const extras = Object.entries(inp).filter(([k]) => k !== "file_path");
     if (extras.length === 0) return null;
     return (
-      <pre className="tool-pre px-2.5 py-2">
+      <pre className="tool-pre tool-code-surface">
         {extras.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")}
       </pre>
     );
@@ -362,7 +421,7 @@ function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
 
   const text = formatInput(input);
   if (!text) return null;
-  return <pre className="tool-pre px-2.5 py-2">{truncate(text, 4000)}</pre>;
+  return <pre className="tool-pre tool-code-surface">{truncate(text, 4000)}</pre>;
 }
 
 /**

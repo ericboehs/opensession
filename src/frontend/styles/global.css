@@ -25,6 +25,15 @@
 	--red: #f85149;
 	--red-soft: rgba(248, 81, 73, 0.12);
 	--purple: #a371f7;
+	/* Tool-family hues (transcript timeline icons + detail accents) */
+	--tool-run: #3fb950;
+	--tool-file: #58a6ff;
+	--tool-edit: #e3b341;
+	--tool-find: #f0883e;
+	--tool-web: #39c5cf;
+	--tool-agent: #f778ba;
+	--tool-mcp: #a371f7;
+	--tool-skill: #2dd4bf;
 	--mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
 	--sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
 	--radius: 8px;
@@ -61,6 +70,14 @@ html[data-theme="light"] {
 	--red: #cf222e;
 	--red-soft: rgba(207, 34, 46, 0.1);
 	--purple: #8250df;
+	--tool-run: #1a7f37;
+	--tool-file: #0969da;
+	--tool-edit: #9a6700;
+	--tool-find: #bc4c00;
+	--tool-web: #1b7c83;
+	--tool-agent: #bf3989;
+	--tool-mcp: #8250df;
+	--tool-skill: #0f766e;
 }
 
 /* Spots that hardcode light-on-dark colors and would break on a light surface.
@@ -5381,6 +5398,32 @@ button.home-whisper-link:hover {
 	color: var(--text-dim);
 	max-height: 320px;
 	overflow-y: auto;
+}
+
+/* Timeline icon chip: solid tint of the tool family's hue (currentColor) mixed
+   into the page bg — solid so the timeline rail doesn't show through it. */
+.tool-chip {
+	background: color-mix(in oklab, currentColor 13%, var(--bg));
+}
+
+/* Code surface inside an expanded tool call: stays dark in BOTH themes (same
+   convention as .markdown pre / .terminal) — shiki highlights with a dark
+   token theme, which would be unreadable on the light panel otherwise. */
+.tool-code-surface {
+	background: #0d0f13;
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	border-radius: 7px;
+	padding: 8px 10px;
+}
+.tool-code-surface .tool-pre,
+.tool-pre.tool-code-surface {
+	color: #b6bcc8;
+}
+.tool-code-surface .shiki-gutter {
+	color: #565d6b;
+}
+html[data-theme="light"] .tool-code-surface {
+	border-color: rgba(0, 0, 0, 0.25);
 }
 
 /* Shiki-highlighted variant: keep .tool-pre's box, strip shiki's own chrome */
