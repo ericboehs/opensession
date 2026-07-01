@@ -147,6 +147,12 @@ interface Props {
 	onArchiveWorkspace: (chats: UnifiedSession[]) => void;
 	/** Rename a session (double-click its title); empty title resets it. */
 	onRename: (session: UnifiedSession, title: string) => void;
+	/** Who's viewing what right now (global presence), for the follow rail. */
+	teamViewing?: Array<{ user: string; sessionId: string }>;
+	/** Teammate currently being followed (navigation shadows them). */
+	followUser?: string | null;
+	/** Toggle following a teammate. */
+	onToggleFollow?: (user: string) => void;
 }
 
 const NAV_ITEMS: Array<{
@@ -439,6 +445,9 @@ export function Sidebar({
 	onArchive,
 	onArchiveWorkspace,
 	onRename,
+	teamViewing = [],
+	followUser = null,
+	onToggleFollow,
 }: Props) {
 	const [search, setSearch] = useState("");
 	// Groups are collapsed by default; the expanded set persists per browser
@@ -1090,6 +1099,47 @@ export function Sidebar({
 				/>
 				<kbd className="sidebar-search-kbd">⌘K</kbd>
 			</div>
+
+			{(() => {
+				// Follow rail: teammates (not me) currently viewing a session. Click
+				// = follow them (navigation shadows theirs); click again = unfollow.
+				const others = teamViewing.filter((v) => v.user !== currentUser);
+				if (others.length === 0) return null;
+				const titleFor = (id: string) =>
+					sessions.find((s) => s.id === id)?.title || id;
+				return (
+					<div className="px-3 py-1.5 flex flex-col gap-1 border-b border-line">
+						{others.map((v) => (
+							<button
+								key={v.user}
+								className={`flex items-center gap-2 min-w-0 text-left text-[12px] bg-transparent border-0 cursor-pointer rounded-md px-1.5 py-1 hover:bg-hover ${
+									followUser === v.user ? "bg-active" : ""
+								}`}
+								onClick={() => onToggleFollow?.(v.user)}
+								title={
+									followUser === v.user
+										? `Following ${v.user} — click to stop`
+										: `${v.user} is viewing “${titleFor(v.sessionId)}” — click to follow along`
+								}
+							>
+								<span
+									className="w-[7px] h-[7px] rounded-full shrink-0"
+									style={{ backgroundColor: personColor(v.user) }}
+								/>
+								<span className="text-fg shrink-0">{v.user}</span>
+								<span className="text-faint truncate">
+									{titleFor(v.sessionId)}
+								</span>
+								{followUser === v.user && (
+									<span className="text-accent text-[10px] uppercase tracking-wide ml-auto shrink-0">
+										following
+									</span>
+								)}
+							</button>
+						))}
+					</div>
+				);
+			})()}
 
 			<div className="sidebar-tools">
 				<div className="sidebar-band-label sidebar-tools-head">

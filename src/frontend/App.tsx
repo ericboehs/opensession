@@ -231,6 +231,12 @@ function App() {
 	// once the run's `init` lands). While pending, the detail pane shows
 	// "Loading…" instead of flashing "Session not found".
 	const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+	// Who's viewing what, app-wide (from global_presence), + follow mode: when
+	// following a teammate, we navigate wherever they go.
+	const [teamViewing, setTeamViewing] = useState<
+		Array<{ user: string; sessionId: string }>
+	>([]);
+	const [followUser, setFollowUser] = useState<string | null>(null);
 	const pendingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
 		undefined,
 	);
@@ -446,6 +452,10 @@ function App() {
 	// When a session is created from the New Session form or Ask box, jump straight into it
 	useEffect(() => {
 		return addHandler((msg) => {
+			if (msg.type === "global_presence") {
+				setTeamViewing(msg.viewing);
+				return;
+			}
 			if (msg.type === "session_created") {
 				// Mark it pending so the viewer shows "Loading…" until the poll catches
 				// up; a fallback timeout clears it so a failed create can't stick.
@@ -461,6 +471,17 @@ function App() {
 			}
 		});
 	}, [addHandler, refresh, refreshProjects]);
+
+	// Follow mode: whenever the followed teammate's session changes, go along.
+	// Dropping out is explicit (click again) or automatic when they disconnect.
+	useEffect(() => {
+		if (!followUser) return;
+		const target = teamViewing.find((v) => v.user === followUser);
+		if (!target) return;
+		if (route.view === "session" && route.id === target.sessionId) return;
+		navigate({ view: "session", id: target.sessionId });
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [followUser, teamViewing]);
 
 	// Clear the pending flag once the session shows up in the polled list.
 	useEffect(() => {
@@ -682,6 +703,11 @@ function App() {
 							sessions={sessions}
 							projects={projects}
 							notes={notes.map((n) => ({ id: n.id, title: n.title }))}
+							teamViewing={teamViewing}
+							followUser={followUser}
+							onToggleFollow={(user) =>
+								setFollowUser(followUser === user ? null : user)
+							}
 							selectedId={currentSession?.id || null}
 							activeNoteId={currentNoteId}
 							activeView={activeView}

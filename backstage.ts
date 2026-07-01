@@ -616,8 +616,10 @@ function leaveSession(ws: any) {
 	const set = sessionWatchers.get(sessionId);
 	if (set) {
 		set.delete(ws);
-		if (set.size === 0) sessionWatchers.delete(sessionId);
-		else broadcastPresence(sessionId);
+		if (set.size === 0) {
+			sessionWatchers.delete(sessionId);
+			broadcastGlobalPresence();
+		} else broadcastPresence(sessionId);
 	}
 	ws.data.watchingSessionId = null;
 }
@@ -640,6 +642,28 @@ function broadcastPresence(sessionId: string) {
 		? Array.from(set, (ws: any) => ws.data?.user || "Anonymous")
 		: [];
 	broadcastToSession(sessionId, { type: "presence", sessionId, viewers });
+	broadcastGlobalPresence();
+}
+
+/**
+ * Who's looking at what, app-wide — drives the sidebar presence rail and
+ * follow mode. One entry per (user, session); Anonymous viewers are skipped
+ * (nothing to follow).
+ */
+function broadcastGlobalPresence() {
+	const seen = new Set<string>();
+	const viewing: Array<{ user: string; sessionId: string }> = [];
+	for (const [sessionId, set] of sessionWatchers) {
+		for (const ws of set) {
+			const user = ws.data?.user;
+			if (!user || user === "Anonymous") continue;
+			const key = `${user}:${sessionId}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			viewing.push({ user, sessionId });
+		}
+	}
+	broadcastToAll({ type: "global_presence", viewing });
 }
 
 // ── Collaborative notes fan-out ───────────────────────────────────────────

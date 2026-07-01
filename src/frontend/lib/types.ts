@@ -246,6 +246,10 @@ export type WSServerMessage =
 	| { type: "transcript_append"; entries: TranscriptEntry[] }
 	| { type: "session_status"; isRunning: boolean }
 	| { type: "presence"; sessionId: string; viewers: string[] }
+	| {
+			type: "global_presence";
+			viewing: Array<{ user: string; sessionId: string }>;
+	  }
 	| { type: "stream_start"; sessionId: string; by?: string }
 	| { type: "stream_text"; text: string }
 	| { type: "stream_tool_use"; entry: TranscriptEntry }
