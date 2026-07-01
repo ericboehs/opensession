@@ -980,6 +980,15 @@ body.resizing-x {
 	margin-bottom: 14px;
 }
 
+/* People and Automations render one collapsed row per group, so the 14px
+   inter-group margin leaves them floating far apart. Drop it so consecutive
+   people/automation rows stack flush, like the session items above them. The
+   band-start divider still separates the sections. */
+.sidebar-group--people,
+.sidebar-group--automations {
+	margin-bottom: 0;
+}
+
 /* Extra spacing + a hairline divider where one band ends and the next begins
    (personal → people → automations). */
 .sidebar-group--band-start {
@@ -1151,6 +1160,106 @@ body.resizing-x {
 /* On touch there's no hover to reveal the archive X, so it stays hidden and the
    full action set (Rename / Move / Archive) is reached by long-pressing a row,
    which opens the mobile action sheet (see .mobile-action-sheet). */
+
+/* Mobile action sheet — a bottom sheet raised by long-pressing a session row.
+   Slides up over a dimmed backdrop; holds the per-session actions that live in
+   the desktop hover-X / right-click menu. */
+.mobile-action-sheet-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 4000;
+	background: rgba(0, 0, 0, 0.4);
+	animation: sheet-fade 160ms ease;
+}
+.mobile-action-sheet {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 4001;
+	background: var(--bg-panel);
+	border-top-left-radius: 16px;
+	border-top-right-radius: 16px;
+	padding: 6px 10px calc(14px + env(safe-area-inset-bottom));
+	box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.4);
+	animation: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes sheet-fade {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+@keyframes sheet-up {
+	from {
+		transform: translateY(100%);
+	}
+	to {
+		transform: translateY(0);
+	}
+}
+.mobile-sheet-grip {
+	width: 36px;
+	height: 4px;
+	border-radius: 2px;
+	background: var(--border-strong);
+	margin: 8px auto 6px;
+}
+.mobile-sheet-title {
+	font-size: 13px;
+	color: var(--text-faint);
+	padding: 6px 12px 8px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.mobile-sheet-item {
+	display: flex;
+	align-items: center;
+	gap: 13px;
+	width: 100%;
+	padding: 15px 14px;
+	font-size: 16px;
+	background: none;
+	border: none;
+	border-radius: 11px;
+	color: var(--text);
+	text-align: left;
+	cursor: pointer;
+}
+.mobile-sheet-item:active {
+	background: var(--bg-active);
+}
+.mobile-sheet-item svg {
+	flex: 0 0 auto;
+	color: var(--text-faint);
+}
+.mobile-sheet-item-chevron {
+	margin-left: auto;
+	color: var(--text-faint);
+}
+.mobile-sheet-item-check {
+	margin-left: auto;
+	color: var(--accent);
+}
+.mobile-sheet-item--danger {
+	color: #e5484d;
+}
+.mobile-sheet-item--danger svg {
+	color: #e5484d;
+}
+.mobile-sheet-sep {
+	height: 1px;
+	background: var(--border);
+	margin: 6px 10px;
+}
+.mobile-sheet-empty {
+	font-size: 14px;
+	color: var(--text-faint);
+	padding: 12px 14px;
+}
 .sidebar-item:hover {
 	background: var(--bg-hover);
 }
@@ -6925,14 +7034,6 @@ button.preview-open:not(:disabled):hover {
 	.sidebar-item-inline-meta {
 		font-size: 12.5px;
 	}
-	/* Archive/close affordance is always visible on touch — give it a real
-	   tap target. */
-	.sidebar-item-x {
-		width: 30px;
-		height: 30px;
-		font-size: 17px;
-	}
-
 	/* Pinned session tabs. */
 	.session-tab {
 		padding: 6px 10px;

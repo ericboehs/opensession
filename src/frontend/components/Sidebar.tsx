@@ -16,6 +16,10 @@ import { colorHex, TAB_COLORS } from "../lib/tab-colors";
 
 const AUTOMATION_COLOR = "#d29922";
 
+// Long-press (touch) tuning for the mobile action sheet.
+const LONG_PRESS_MS = 450; // hold before the sheet opens
+const LONG_PRESS_SLOP = 10; // px of finger travel that cancels it (a scroll)
+
 // Inline styles for the right-click menus. Kept inline (not in a CSS file)
 // because component-imported CSS isn't linked into the served bundle — only
 // global.css is — so a separate stylesheet silently doesn't apply.
@@ -1550,6 +1554,46 @@ function SidebarItem({
 		[],
 	);
 
+	// Mobile long-press → action sheet. These are touch handlers, so a mouse
+	// never triggers them — desktop keeps its hover-X / right-click menu. A hold
+	// that stays roughly in place for LONG_PRESS_MS opens the sheet; any real
+	// finger travel (a scroll) cancels it. `longPressed` suppresses the click
+	// that would otherwise fire on lift and navigate into the session.
+	const [sheetOpen, setSheetOpen] = useState(false);
+	const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const pressOrigin = useRef<{ x: number; y: number } | null>(null);
+	const longPressed = useRef(false);
+
+	function clearPress() {
+		if (pressTimer.current) clearTimeout(pressTimer.current);
+		pressTimer.current = null;
+		pressOrigin.current = null;
+	}
+	function onTouchStart(e: React.TouchEvent) {
+		if (editing || e.touches.length !== 1) return;
+		const t = e.touches[0];
+		pressOrigin.current = { x: t.clientX, y: t.clientY };
+		longPressed.current = false;
+		clearPress();
+		pressTimer.current = setTimeout(() => {
+			longPressed.current = true;
+			closeHover();
+			navigator.vibrate?.(10);
+			setSheetOpen(true);
+		}, LONG_PRESS_MS);
+	}
+	function onTouchMove(e: React.TouchEvent) {
+		const o = pressOrigin.current;
+		if (!o || e.touches.length !== 1) return;
+		const t = e.touches[0];
+		if (
+			Math.abs(t.clientX - o.x) > LONG_PRESS_SLOP ||
+			Math.abs(t.clientY - o.y) > LONG_PRESS_SLOP
+		) {
+			clearPress();
+		}
+	}
+
 	function commitRename() {
 		onRename(draft.trim());
 		setEditing(false);
@@ -1594,11 +1638,31 @@ function SidebarItem({
 		<button
 			ref={btnRef}
 			className={`sidebar-item ${selected ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""} ${unread ? "sidebar-item-unread" : ""}`}
-			onClick={onClick}
+			onClick={(e) => {
+				// Swallow the click that ends a long-press so it doesn't
+				// also navigate into the session.
+				if (longPressed.current) {
+					longPressed.current = false;
+					e.preventDefault();
+					return;
+				}
+				onClick();
+			}}
 			onMouseEnter={openHover}
 			onMouseLeave={closeHover}
 			onMouseDown={closeHover}
+			onTouchStart={onTouchStart}
+			onTouchMove={onTouchMove}
+			onTouchEnd={clearPress}
+			onTouchCancel={clearPress}
 			onContextMenu={(e) => {
+				// On touch this is the long-press callout: the action sheet
+				// owns that gesture, so suppress the desktop menu (and the
+				// native text-selection callout) rather than stacking both.
+				if (longPressed.current || pressOrigin.current) {
+					e.preventDefault();
+					return;
+				}
 				if (!onMoveToProject) return;
 				e.preventDefault();
 				closeHover();
@@ -1743,7 +1807,159 @@ function SidebarItem({
 				</div>,
 				document.body,
 			)}
+			{sheetOpen && (
+				<MobileActionSheet
+					session={session}
+					projects={projects}
+					onMoveToProject={onMoveToProject}
+					onRename={() => {
+						setDraft(session.title);
+						setEditing(true);
+					}}
+					onArchive={onArchive}
+					onClose={() => setSheetOpen(false)}
+				/>
+			)}
 		</>
+	);
+}
+
+// The bottom sheet raised by long-pressing a session row on touch. It gathers
+// the per-session actions that live behind hover/right-click on desktop
+// (rename, move-to-project, archive) into thumb-sized rows. "Move to project"
+// swaps the sheet to a second step listing the projects rather than nesting a
+// menu. Rendered in a portal over a dimmed, tap-to-dismiss backdrop.
+function MobileActionSheet({
+	session,
+	projects,
+	onMoveToProject,
+	onRename,
+	onArchive,
+	onClose,
+}: {
+	session: UnifiedSession;
+	projects?: Project[];
+	onMoveToProject?: (projectId: string | null) => void;
+	onRename: () => void;
+	onArchive: () => void;
+	onClose: () => void;
+}) {
+	const [step, setStep] = useState<"main" | "project">("main");
+	// Lock the page behind the sheet so a scroll drags the list, not the page.
+	useEffect(() => {
+		const prev = document.body.style.overflow;
+		document.body.style.overflow = "hidden";
+		return () => {
+			document.body.style.overflow = prev;
+		};
+	}, []);
+	const check = <span className="mobile-sheet-item-check">✓</span>;
+	return createPortal(
+		<div className="mobile-action-sheet-backdrop" onClick={onClose}>
+			<div
+				className="mobile-action-sheet"
+				onClick={(e) => e.stopPropagation()}
+			>
+				<div className="mobile-sheet-grip" />
+				{step === "main" ? (
+					<>
+						<div className="mobile-sheet-title">{session.title}</div>
+						<button
+							className="mobile-sheet-item"
+							onClick={() => {
+								onRename();
+								onClose();
+							}}
+						>
+							<svg
+								width="18"
+								height="18"
+								viewBox="0 0 16 16"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="1.4"
+							>
+								<path d="M10.5 2.5l3 3L6 13l-3.5.5L3 10z" />
+							</svg>
+							Rename
+						</button>
+						{onMoveToProject && (
+							<button
+								className="mobile-sheet-item"
+								onClick={() => setStep("project")}
+							>
+								<svg
+									width="18"
+									height="18"
+									viewBox="0 0 16 16"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="1.4"
+								>
+									<path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.2l1.3 1.5h5.5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" />
+								</svg>
+								Move to project
+								<span className="mobile-sheet-item-chevron">›</span>
+							</button>
+						)}
+						<div className="mobile-sheet-sep" />
+						<button
+							className="mobile-sheet-item mobile-sheet-item--danger"
+							onClick={() => {
+								onArchive();
+								onClose();
+							}}
+						>
+							<svg
+								width="18"
+								height="18"
+								viewBox="0 0 16 16"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="1.4"
+							>
+								<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
+								<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
+								<path d="M6.5 8.5h3" strokeLinecap="round" />
+							</svg>
+							Archive
+						</button>
+					</>
+				) : (
+					<>
+						<div className="mobile-sheet-title">Move to project</div>
+						{(projects || []).map((p) => (
+							<button
+								key={p.id}
+								className="mobile-sheet-item"
+								onClick={() => {
+									onMoveToProject?.(p.id);
+									onClose();
+								}}
+							>
+								{p.name}
+								{session.projectId === p.id && check}
+							</button>
+						))}
+						{(projects || []).length === 0 && (
+							<div className="mobile-sheet-empty">No projects yet</div>
+						)}
+						<div className="mobile-sheet-sep" />
+						<button
+							className="mobile-sheet-item"
+							onClick={() => {
+								onMoveToProject?.(null);
+								onClose();
+							}}
+						>
+							None (standalone)
+							{!session.projectId && check}
+						</button>
+					</>
+				)}
+			</div>
+		</div>,
+		document.body,
 	);
 }
 
