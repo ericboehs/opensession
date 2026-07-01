@@ -1,9 +1,20 @@
 #!/usr/bin/env bun
 
 import { randomUUIDv7 } from "bun";
-import { mkdirSync, existsSync, writeFileSync, readFileSync, watch } from "fs";
+import {
+	mkdirSync,
+	existsSync,
+	writeFileSync,
+	readFileSync,
+	copyFileSync,
+	watch,
+} from "fs";
 import homepage from "./src/frontend/index.html";
-import { getAllSessions, deleteSession } from "./src/server/sessions";
+import {
+	getAllSessions,
+	deleteSession,
+	getTranscriptPath,
+} from "./src/server/sessions";
 import {
 	parseTranscript,
 	parseTranscriptTail,
@@ -2919,6 +2930,69 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				);
 				sessionsCache = null;
 				return Response.json({ id: bksId });
+			}
+
+			// Promote an ask chat to code: create a worktree and attach it. Preserves
+			// engine memory by copying the ask transcript into the new cwd's project
+			// dir so the SDK resume keeps working after the cwd changes (ask chats run
+			// in the main checkout; a code worktree has a different cwd-hash dir).
+			const promoteMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/promote$/,
+			);
+			if (promoteMatch && req.method === "POST") {
+				const sessionId = decodeURIComponent(promoteMatch[1]);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				if (session.source !== "backstage")
+					return Response.json(
+						{ error: "Only backstage chats can be promoted" },
+						{ status: 400 },
+					);
+				const body = (await req.json().catch(() => ({}))) as {
+					branch?: string;
+					repo?: string;
+				};
+				const repo = getRepo(body.repo || session.repo);
+				if (repo.sharedCheckout)
+					return Response.json(
+						{ error: "Shared-checkout repos have no worktree to create" },
+						{ status: 400 },
+					);
+				const branch = (
+					body.branch ||
+					(await suggestBranchName(session.title || "chat")) ||
+					`chat-${sessionId.slice(4, 10)}`
+				).trim();
+				const oldCwd = session.worktreeDir || repo.repo;
+				const worktreeDir = await createWorktree(branch, repo.id);
+				// Best-effort: copy the ask rollout into the new worktree's hash dir so
+				// SDK resume (keyed by cwd) finds the prior conversation.
+				try {
+					if (session.claudeSessionId) {
+						const from = getTranscriptPath(oldCwd, session.claudeSessionId);
+						const to = getTranscriptPath(worktreeDir, session.claudeSessionId);
+						if (existsSync(from) && !existsSync(to)) {
+							mkdirSync(to.slice(0, to.lastIndexOf("/")), { recursive: true });
+							copyFileSync(from, to);
+						}
+					}
+				} catch (e) {
+					console.warn(`[promote] transcript copy failed for ${sessionId}:`, e);
+				}
+				touchBackstageSession(sessionId, {
+					mode: "code",
+					branch,
+					worktreeDir,
+					repo: repo.id,
+				});
+				// Materialize the workspace's worktree if it doesn't own one yet.
+				if (session.projectId) {
+					const ws = getWorkspace(session.projectId);
+					if (ws && !ws.worktreeDir)
+						updateWorkspace(ws.id, { worktreeDir, branch });
+				}
+				return Response.json({ ok: true, branch, worktreeDir });
 			}
 
 			// Move a chat in/out of a Project (folder). `{ projectId: null }` detaches.
