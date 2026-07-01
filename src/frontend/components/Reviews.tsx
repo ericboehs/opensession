@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { PrPanel } from "./PrPanel";
@@ -157,6 +157,9 @@ export function Reviews({
 }: Props) {
   const [filter, setFilter] = useState<FilterKey>("review");
   const [query, setQuery] = useState("");
+  // Slack rail visibility: null = default (open only when a channel is linked),
+  // true/false = explicit user toggle for the currently selected PR.
+  const [slackOverride, setSlackOverride] = useState<boolean | null>(null);
 
   // One row per PR (deduped by URL across the sessions on a branch), newest
   // session wins for metadata.
@@ -218,6 +221,32 @@ export function Reviews({
     (selectedId && prSessions.find((s) => s.id === selectedId)) ||
     null;
 
+  const slackVisible = !!selected && (slackOverride ?? !!selected.slackChannel);
+
+  // Switching PRs resets the Slack toggle to its default for that PR.
+  useEffect(() => {
+    setSlackOverride(null);
+  }, [selected?.id]);
+
+  // Escape backs out of the detail drawer (unless typing in a field).
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      onSelect("");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [!!selected, onSelect]);
+
+  // Only label rows with their repo when the list actually spans repos.
+  const multiRepo = useMemo(
+    () => new Set(prSessions.map((s) => s.repo || "tella-fusion")).size > 1,
+    [prSessions],
+  );
+
   const TABS: Array<{ key: FilterKey; label: string; count: number }> = [
     { key: "review", label: "Needs review", count: counts.review },
     { key: "open", label: "Open", count: counts.open },
@@ -267,7 +296,9 @@ export function Reviews({
               <div className="detail-empty-sub">
                 {prSessions.length === 0
                   ? "PRs opened by Michael sessions show up here for review."
-                  : "No PRs match this filter."}
+                  : filter === "review"
+                    ? "All caught up — nothing needs review."
+                    : "No PRs match this filter."}
               </div>
             </div>
           </div>
@@ -300,8 +331,25 @@ export function Reviews({
                     <span className="rv-title-line">
                       <span className="rv-title-text">{cleanTitle(s)}</span>
                       {prNum(s) && <span className="rv-num">{prNum(s)}</span>}
+                      {s.prUrl && (
+                        <span
+                          className="rv-open-gh"
+                          title="Open on GitHub"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(s.prUrl, "_blank", "noopener");
+                          }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                            <path d="M3.75 2h3.5a.75.75 0 0 1 0 1.5h-3.5a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-3.5a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25v-8.5C2 2.784 2.784 2 3.75 2Zm6.854-1h4.146a.25.25 0 0 1 .25.25v4.146a.25.25 0 0 1-.427.177L13.03 4.03 9.28 7.78a.751.751 0 0 1-1.06-1.06l3.75-3.75-1.543-1.543A.25.25 0 0 1 10.604 1Z" />
+                          </svg>
+                        </span>
+                      )}
                     </span>
                     <span className="rv-sub-line">
+                      {multiRepo && (
+                        <span className="rv-repo">{s.repo || "tella-fusion"}</span>
+                      )}
                       {s.branch && (
                         <span className="rv-branch">
                           <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
@@ -373,6 +421,22 @@ export function Reviews({
               </svg>
             </button>
             <span className="reviews-drawer-title">{cleanTitle(selected)}</span>
+            <button
+              className={`rv-slack-toggle ${slackVisible ? "active" : ""}`}
+              onClick={() => setSlackOverride(!slackVisible)}
+              title={
+                selected.slackChannel
+                  ? slackVisible
+                    ? `Hide #${selected.slackChannel.name}`
+                    : `Show #${selected.slackChannel.name}`
+                  : "Link a Slack channel to discuss this PR"
+              }
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                <path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" />
+              </svg>
+              {selected.slackChannel ? `#${selected.slackChannel.name}` : "Slack"}
+            </button>
           </div>
           <div className="reviews-drawer-body">
             <PrPanel
@@ -386,7 +450,7 @@ export function Reviews({
         </aside>
       )}
 
-      {selected && (
+      {selected && slackVisible && (
         <aside className="reviews-chat">
           <SlackChatPanel
             key={selected.id}

@@ -3857,6 +3857,26 @@ button.preview-open:not(:disabled):hover {
 	flex-shrink: 0;
 	font-variant-numeric: tabular-nums;
 }
+/* Hover-only shortcut straight to the PR on GitHub (a span, not an <a> — rows
+   are <button>s and anchors can't nest inside them). */
+.rv-open-gh {
+	display: inline-flex;
+	align-items: center;
+	align-self: center;
+	flex-shrink: 0;
+	padding: 2px;
+	border-radius: 4px;
+	color: var(--text-faint);
+	opacity: 0;
+	transition: opacity 0.12s;
+}
+.reviews-row:hover .rv-open-gh,
+.rv-open-gh:focus-visible {
+	opacity: 1;
+}
+.rv-open-gh:hover {
+	color: var(--accent);
+}
 .rv-sub-line {
 	display: flex;
 	align-items: center;
@@ -3886,6 +3906,17 @@ button.preview-open:not(:disabled):hover {
 	font-size: 11px;
 	font-weight: 600;
 	letter-spacing: 0.02em;
+	color: var(--text-dim);
+	background: var(--bg-active);
+	border-radius: 5px;
+	padding: 1px 6px;
+}
+/* Repo chip — only rendered when the list spans more than one repo. */
+.rv-repo {
+	flex-shrink: 0;
+	font-size: 11px;
+	font-weight: 600;
+	font-family: var(--mono);
 	color: var(--text-dim);
 	background: var(--bg-active);
 	border-radius: 5px;
@@ -4110,11 +4141,51 @@ button.preview-open:not(:disabled):hover {
 	color: var(--text-dim);
 }
 .reviews-drawer-title {
+	flex: 1;
+	min-width: 0;
 	font-size: 13.5px;
 	font-weight: 600;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+/* Slack toggle in the drawer head: reveals the (optional) chat rail — shows the
+   linked channel name, or a plain "Slack" affordance when nothing is linked. */
+.rv-slack-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: auto;
+	background: none;
+	border: 1px solid var(--border-strong);
+	border-radius: 6px;
+	padding: 4px 10px;
+	font: inherit;
+	font-size: 12px;
+	font-weight: 550;
+	color: var(--text-dim);
+	cursor: pointer;
+	flex-shrink: 0;
+	max-width: 200px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	transition:
+		color 0.12s,
+		background 0.12s,
+		border-color 0.12s;
+}
+.rv-slack-toggle:hover {
+	color: var(--text);
+	background: var(--bg-hover);
+}
+.rv-slack-toggle.active {
+	color: var(--accent);
+	border-color: var(--accent);
+	background: var(--accent-soft);
+}
+.rv-slack-toggle svg {
+	flex-shrink: 0;
 }
 .reviews-drawer-body {
 	flex: 1;
@@ -8424,9 +8495,11 @@ button.preview-open:not(:disabled):hover {
 	opacity: 0.6;
 }
 
-/* Reviews: the Slack chat as an additional right sidebar */
+/* Reviews: the Slack chat as an optional right rail (toggled from the drawer
+   head; auto-open only when a channel is already linked). Kept narrow — the
+   diff is the hero. */
 .reviews-chat {
-	width: 720px;
+	width: 420px;
 	flex-shrink: 0;
 	border-left: 1px solid var(--border);
 	background: var(--bg-raised);
@@ -8437,7 +8510,9 @@ button.preview-open:not(:disabled):hover {
 	flex: 1;
 }
 @media (max-width: 1400px) {
-	.reviews-chat {
+	/* No room for the rail — hide its toggle too, so it never no-ops. */
+	.reviews-chat,
+	.rv-slack-toggle {
 		display: none;
 	}
 }
