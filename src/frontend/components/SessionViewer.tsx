@@ -691,6 +691,43 @@ export function SessionViewer({
 	const [deleting, setDeleting] = useState(false);
 	const [deleteLabel, setDeleteLabel] = useState("");
 
+	// Responsive header: when the top bar gets narrow (small window, sidebar +
+	// workspace panel both open), the title truncates first (CSS), then the
+	// secondary actions (pin, Share, Spin off, Delete) collapse into a ⋯ menu so
+	// they never overlap the title. Measured on the header element itself so it
+	// tracks the real available width regardless of the surrounding chrome.
+	const headerRef = useRef<HTMLDivElement>(null);
+	const [headerW, setHeaderW] = useState(0);
+	useLayoutEffect(() => {
+		const el = headerRef.current;
+		if (!el) return;
+		const ro = new ResizeObserver((entries) => {
+			for (const e of entries) setHeaderW(e.contentRect.width);
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, [topbarEl]);
+	// Collapse before the inline row can overrun: the title's non-shrinkable
+	// floor (source chip + model pill + Working pill) plus all six action buttons
+	// needs ~820px, so below that the secondary actions move into the ⋯ menu.
+	const compactHeader = headerW > 0 && headerW < 820;
+
+	const [overflowOpen, setOverflowOpen] = useState(false);
+	const overflowRef = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		if (!overflowOpen) return;
+		const onDoc = (e: MouseEvent) => {
+			if (!overflowRef.current?.contains(e.target as Node))
+				setOverflowOpen(false);
+		};
+		document.addEventListener("mousedown", onDoc);
+		return () => document.removeEventListener("mousedown", onDoc);
+	}, [overflowOpen]);
+	// A wider header no longer needs the menu — don't leave it stuck open.
+	useEffect(() => {
+		if (!compactHeader) setOverflowOpen(false);
+	}, [compactHeader]);
+
 	const me = getCurrentUser();
 
 	async function handleDelete(cleanWorktree: boolean) {
@@ -725,8 +762,73 @@ export function SessionViewer({
 				</div>
 			)}
 			{(() => {
+				// Secondary actions that ride inline on a wide header but tuck into
+				// the ⋯ overflow menu when it gets narrow.
+				const collapsibleActions = (
+					<>
+						<button
+							className={`btn-viewer-pin ${pinned ? "active" : ""}`}
+							onClick={() => togglePin(session.id)}
+							title={pinned ? "Unpin tab" : "Pin as tab"}
+							aria-pressed={pinned}
+						>
+							{pinned ? "★" : "☆"}
+						</button>
+						<button
+							className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
+							onClick={handleShare}
+							title="Copy a link to this session"
+						>
+							{copied ? "Copied ✓" : "Share"}
+						</button>
+						<SpinOffMenu
+							session={session}
+							entries={entries}
+							send={send}
+							connected={connected}
+						/>
+						{!showDeleteConfirm ? (
+							<button
+								className="btn-viewer-delete"
+								onClick={() => setShowDeleteConfirm(true)}
+								title="Delete session"
+							>
+								Delete
+							</button>
+						) : (
+							<div className="viewer-delete-confirm">
+								{session.worktreeDir && !isAsk && (
+									<button
+										className="btn-delete-wt"
+										onClick={() => handleDelete(true)}
+										disabled={deleting}
+									>
+										{deleting ? "…" : "+ Worktree"}
+									</button>
+								)}
+								<button
+									className="btn-delete-only"
+									onClick={() => handleDelete(false)}
+									disabled={deleting}
+								>
+									{deleting ? "…" : "Session"}
+								</button>
+								<button
+									className="btn-delete-cancel"
+									onClick={() => setShowDeleteConfirm(false)}
+									disabled={deleting}
+								>
+									Cancel
+								</button>
+							</div>
+						)}
+					</>
+				);
 				const header = (
-					<div className="viewer-header">
+					<div
+						className={`viewer-header ${compactHeader ? "viewer-header-compact" : ""}`}
+						ref={headerRef}
+					>
 						<div className="viewer-title">
 					{isAsk ? (
 						<span className="source-chip source-ask">ask</span>
@@ -777,7 +879,9 @@ export function SessionViewer({
 					{isBusy && (
 						<span className="working-pill">
 							<span className="working-dot" />
-							{streamBy ? `Working for ${streamBy}` : "Working"}
+							<span className="working-label">
+								{streamBy ? `Working for ${streamBy}` : "Working"}
+							</span>
 						</span>
 					)}
 				</div>
@@ -817,27 +921,6 @@ export function SessionViewer({
 							Plain ↗
 						</a>
 					)}
-					<button
-						className={`btn-viewer-pin ${pinned ? "active" : ""}`}
-						onClick={() => togglePin(session.id)}
-						title={pinned ? "Unpin tab" : "Pin as tab"}
-						aria-pressed={pinned}
-					>
-						{pinned ? "★" : "☆"}
-					</button>
-					<button
-						className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
-						onClick={handleShare}
-						title="Copy a link to this session"
-					>
-						{copied ? "Copied ✓" : "Share"}
-					</button>
-					<SpinOffMenu
-						session={session}
-						entries={entries}
-						send={send}
-						connected={connected}
-					/>
 					<PreviewButton session={session} />
 					{hasWorkspace && session.prUrl && (
 						<button
@@ -863,42 +946,28 @@ export function SessionViewer({
 							</span>
 						</button>
 					)}
-					{/* Delete sits before Workspace so the Workspace toggle is always the
-					    rightmost action (it opens the far-right panel). */}
-					{!showDeleteConfirm ? (
-						<button
-							className="btn-viewer-delete"
-							onClick={() => setShowDeleteConfirm(true)}
-							title="Delete session"
-						>
-							Delete
-						</button>
-					) : (
-						<div className="viewer-delete-confirm">
-							{session.worktreeDir && !isAsk && (
-								<button
-									className="btn-delete-wt"
-									onClick={() => handleDelete(true)}
-									disabled={deleting}
-								>
-									{deleting ? "…" : "+ Worktree"}
-								</button>
+					{/* Pin / Share / Spin off / Delete ride inline when there's room,
+					    else collapse behind ⋯ so they never crowd the title. They sit
+					    before Workspace so the Workspace toggle stays rightmost. */}
+					{compactHeader ? (
+						<div className="viewer-overflow" ref={overflowRef}>
+							<button
+								className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
+								onClick={() => setOverflowOpen((o) => !o)}
+								title="More actions"
+								aria-label="More actions"
+								aria-expanded={overflowOpen}
+							>
+								⋯
+							</button>
+							{overflowOpen && (
+								<div className="viewer-overflow-menu">
+									{collapsibleActions}
+								</div>
 							)}
-							<button
-								className="btn-delete-only"
-								onClick={() => handleDelete(false)}
-								disabled={deleting}
-							>
-								{deleting ? "…" : "Session"}
-							</button>
-							<button
-								className="btn-delete-cancel"
-								onClick={() => setShowDeleteConfirm(false)}
-								disabled={deleting}
-							>
-								Cancel
-							</button>
 						</div>
+					) : (
+						collapsibleActions
 					)}
 					{panelAvailable && (
 						<button
