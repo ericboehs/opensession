@@ -12,6 +12,7 @@ import { Connections } from "./components/Connections";
 import { Archived } from "./components/Archived";
 import { Reviews } from "./components/Reviews";
 import { UserPicker, UserGate, getCurrentUser } from "./components/UserPicker";
+import { SettingsMenu } from "./components/SettingsMenu";
 import { SessionTabs, tabKey, type TabItem } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { UpdateToast } from "./components/UpdateToast";
@@ -344,6 +345,7 @@ function App() {
 							<span className="app-logo">M</span>
 							<span className="app-title-text">Michael</span>
 						</a>
+						<SettingsMenu />
 					</div>
 					<div className="app-header-right">
 						<span
