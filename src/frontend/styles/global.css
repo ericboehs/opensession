@@ -5789,6 +5789,27 @@ a {
 	padding: 0;
 }
 
+.composer-attach-row {
+	margin-top: 8px;
+}
+.btn-attach {
+	background: none;
+	border: 1px solid var(--border-strong);
+	color: var(--text-dim);
+	font-size: 13px;
+	padding: 6px 12px;
+	border-radius: 7px;
+	cursor: pointer;
+}
+.btn-attach:hover:not(:disabled) {
+	color: var(--text);
+	background: var(--bg-hover);
+}
+.btn-attach:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
 /* "Fork from here" affordance on assistant messages */
 .msg-fork-btn {
 	margin-left: 8px;

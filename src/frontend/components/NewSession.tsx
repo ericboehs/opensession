@@ -66,6 +66,9 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
   // "@"-mention file autocomplete against the selected project's repo (no
   // session exists yet, so search by project).
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  // Hidden <input type="file"> driven by the "Add image" button — the mobile
+  // path, since there's no clipboard paste there.
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const mentions = useFileMentions({
     value: prompt,
     onChange: setPrompt,
@@ -281,13 +284,35 @@ export function NewSession({ onBack, send, addHandler, connected }: Props) {
               onPaste={handlePaste}
               placeholder={
                 mode === "ask"
-                  ? "Ask anything about the codebase or product — read-only. Type @ to reference a file. Paste a screenshot to include it."
-                  : `Describe the task — Michael gets a fresh worktree on ${project} and starts right away. Type @ to reference a file. Paste a screenshot to include it.`
+                  ? "Ask anything about the codebase or product — read-only. Type @ to reference a file. Paste or add a screenshot to include it."
+                  : `Describe the task — Michael gets a fresh worktree on ${project} and starts right away. Type @ to reference a file. Paste or add a screenshot to include it.`
               }
               rows={6}
               disabled={creating}
             />
             <ImageThumbs images={images} onRemove={(i) => setImages((p) => p.filter((_, idx) => idx !== i))} disabled={creating} />
+          </div>
+          <div className="composer-attach-row">
+            <button
+              type="button"
+              className="btn-attach"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={creating}
+            >
+              🖼 Add image
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files?.length) void addImageFiles(e.target.files);
+                // Reset so picking the same file again still fires onChange.
+                e.target.value = "";
+              }}
+            />
           </div>
         </label>
 
