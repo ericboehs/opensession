@@ -558,6 +558,7 @@ function App() {
 							projects={projects}
 							notes={notes.map((n) => ({ id: n.id, title: n.title }))}
 							selectedId={currentSession?.id || null}
+							activeNoteId={currentNoteId}
 							activeView={activeView}
 							onNavigate={(view) =>
 								navigate(
@@ -674,27 +675,17 @@ function App() {
 							colors={tabColors}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
-							onNewChat={async () => {
-								// + opens a new chat (new tab) in this session's project,
-								// sharing its worktree — no palette. It's empty until you
-								// send the first message, which starts the run.
-								if (!currentSession) return;
-								try {
-									const id = await newChatApi(
-										currentSession.id,
-										getCurrentUser(),
-									);
-									setPendingSessionId(id);
-									clearTimeout(pendingTimer.current);
-									pendingTimer.current = setTimeout(
-										() => setPendingSessionId(null),
-										30000,
-									);
-									refresh();
-									navigate({ view: "session", id });
-								} catch (e) {
-									console.error("New chat failed:", e);
-								}
+							onNewChat={() => {
+								// + opens the new-session palette with this project (and its
+								// shared repo + worktree) preselected, so the new chat lands
+								// next to its siblings.
+								const sib = projectChats[0];
+								setPalette({
+									open: true,
+									projectId: activeProjectId || undefined,
+									repo: sib?.repo,
+									branch: sib?.branch || undefined,
+								});
 							}}
 							onRename={async (id, title) => {
 								try {

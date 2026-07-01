@@ -13,9 +13,55 @@ import { getPins, onPinsChanged } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
-import "../styles/projects.css";
 
 const AUTOMATION_COLOR = "#d29922";
+
+// Inline styles for the right-click menus. Kept inline (not in a CSS file)
+// because component-imported CSS isn't linked into the served bundle — only
+// global.css is — so a separate stylesheet silently doesn't apply.
+const CTX_MENU_STYLE: React.CSSProperties = {
+	position: "fixed",
+	zIndex: 3000,
+	minWidth: 180,
+	maxWidth: 280,
+	maxHeight: "60vh",
+	overflowY: "auto",
+	padding: 5,
+	background: "var(--bg-panel)",
+	border: "1px solid var(--border-strong)",
+	borderRadius: 8,
+	boxShadow: "0 6px 20px rgba(0, 0, 0, 0.4)",
+	display: "flex",
+	flexDirection: "column",
+	gap: 1,
+};
+const CTX_ITEM_STYLE: React.CSSProperties = {
+	display: "block",
+	width: "100%",
+	textAlign: "left",
+	background: "none",
+	border: "none",
+	color: "var(--text)",
+	fontSize: 13,
+	padding: "6px 8px",
+	borderRadius: 5,
+	cursor: "pointer",
+	whiteSpace: "nowrap",
+	overflow: "hidden",
+	textOverflow: "ellipsis",
+};
+const CTX_LABEL_STYLE: React.CSSProperties = {
+	fontSize: 11,
+	color: "var(--text-faint)",
+	padding: "4px 8px 2px",
+	textTransform: "uppercase",
+	letterSpacing: "0.04em",
+};
+const CTX_SEP_STYLE: React.CSSProperties = {
+	height: 1,
+	background: "var(--border-strong)",
+	margin: "4px 2px",
+};
 
 // A palette for per-person group dots. The color is picked deterministically
 // from the (lowercased) person name so each teammate keeps a stable color.
@@ -61,6 +107,8 @@ interface Props {
 	/** Notes (id + title), to render pinned-note rows. */
 	notes: Array<{ id: string; title: string }>;
 	selectedId: string | null;
+	/** The note currently open (highlights its pinned row), or null. */
+	activeNoteId: string | null;
 	activeView: NavView;
 	onNavigate: (view: NavView) => void;
 	onSelect: (session: UnifiedSession) => void;
@@ -361,6 +409,7 @@ export function Sidebar({
 	projects,
 	notes,
 	selectedId,
+	activeNoteId,
 	activeView,
 	onNavigate,
 	onSelect,
@@ -439,12 +488,22 @@ export function Sidebar({
 	useEffect(() => onRecentsChanged(() => setRecents(getRecents())), []);
 	useEffect(() => onReadsChanged(() => setReads(getReads())), []);
 
-	// Right-click menu on a Project header (rename / color / delete).
+	// Right-click menu on a Project header (rename / color / delete), and inline
+	// rename (double-click the project name).
 	const [projectMenu, setProjectMenu] = useState<{
 		id: string;
 		x: number;
 		y: number;
 	} | null>(null);
+	const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+	const [projectDraft, setProjectDraft] = useState("");
+	function commitProjectRename() {
+		if (editingProjectId) {
+			const name = projectDraft.trim();
+			if (name) onRenameProject(editingProjectId, name);
+		}
+		setEditingProjectId(null);
+	}
 	useEffect(() => {
 		if (!projectMenu) return;
 		const close = () => setProjectMenu(null);
@@ -585,16 +644,9 @@ export function Sidebar({
 			return out;
 		}
 
-		const pinned = sorted.filter((s) => pinSet.has(s.id));
-		if (pinned.length > 0) {
-			out.push({
-				key: "pinned",
-				label: "Pinned",
-				dotColor: null,
-				band: "personal",
-				items: pinned,
-			});
-		}
+		// Pinned sessions render in the dedicated Pinned section at the top of the
+		// list (with pinned notes) — not as a group here — so they're only excluded
+		// from "My sessions" below, never re-listed as their own group.
 
 		// "My sessions": sessions started by the current user (automations
 		// excluded), split into status buckets (Merged / Done / Review / In
@@ -885,10 +937,12 @@ export function Sidebar({
 				createPortal(
 					<div
 						className="sidebar-ctx-menu"
-						style={{ left: projectMenu.x, top: projectMenu.y }}
+						style={{ ...CTX_MENU_STYLE, left: projectMenu.x, top: projectMenu.y }}
 						onClick={(e) => e.stopPropagation()}
 					>
-						<div className="sidebar-ctx-swatches">
+						<div
+							style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "4px 6px 2px" }}
+						>
 							{TAB_COLORS.map((c) => (
 								<button
 									key={c.key}
@@ -914,9 +968,9 @@ export function Sidebar({
 								}}
 							/>
 						</div>
-						<div className="sidebar-ctx-sep" />
+						<div style={CTX_SEP_STYLE} />
 						<button
-							className="sidebar-ctx-item"
+							style={CTX_ITEM_STYLE}
 							onClick={() => {
 								const cur = projects.find((p) => p.id === projectMenu.id);
 								const name = window
@@ -929,7 +983,7 @@ export function Sidebar({
 							Rename
 						</button>
 						<button
-							className="sidebar-ctx-item sidebar-ctx-item-danger"
+							style={{ ...CTX_ITEM_STYLE, color: "var(--red, #e5534b)" }}
 							onClick={() => {
 								const cur = projects.find((p) => p.id === projectMenu.id);
 								if (
@@ -992,11 +1046,11 @@ export function Sidebar({
 							{pinnedNotes.map((n) => (
 								<button
 									key={`pin-note-${n.id}`}
-									className="sidebar-item"
+									className={`sidebar-item ${n.id === activeNoteId ? "sidebar-item-selected" : ""}`}
 									onClick={() => onOpenNote(n.id)}
 									title={n.title}
 								>
-									<span className="sidebar-item-glyph">📝</span>
+									<span style={{ marginRight: 6, opacity: 0.9 }}>📝</span>
 									<span className="sidebar-item-title">{n.title}</span>
 								</button>
 							))}
@@ -1042,11 +1096,17 @@ export function Sidebar({
 							(s) => !s.archived && s.projectId === project.id,
 						);
 						const active = chats.some((s) => s.id === selectedId);
+						const editing = editingProjectId === project.id;
 						return (
 							<button
 								key={project.id}
-								className={`sidebar-group-header sidebar-project-row ${active ? "sidebar-project-row-active" : ""}`}
-								onClick={() => onOpenProject(project.id)}
+								className={`sidebar-group-header sidebar-project-row ${active ? "sidebar-item-selected" : ""}`}
+								style={
+									active
+										? { background: "var(--bg-active, rgba(255,255,255,0.08))" }
+										: undefined
+								}
+								onClick={() => !editing && onOpenProject(project.id)}
 								onContextMenu={(e) => {
 									e.preventDefault();
 									setProjectMenu({
@@ -1064,7 +1124,33 @@ export function Sidebar({
 											: "var(--text-faint)",
 									}}
 								/>
-								<span className="sidebar-group-name">{project.name}</span>
+								{editing ? (
+									<input
+										className="sidebar-item-rename"
+										value={projectDraft}
+										autoFocus
+										onChange={(e) => setProjectDraft(e.target.value)}
+										onClick={(e) => e.stopPropagation()}
+										onDoubleClick={(e) => e.stopPropagation()}
+										onBlur={commitProjectRename}
+										onKeyDown={(e) => {
+											if (e.key === "Enter") commitProjectRename();
+											else if (e.key === "Escape") setEditingProjectId(null);
+											e.stopPropagation();
+										}}
+									/>
+								) : (
+									<span
+										className="sidebar-group-name"
+										onDoubleClick={(e) => {
+											e.stopPropagation();
+											setProjectDraft(project.name);
+											setEditingProjectId(project.id);
+										}}
+									>
+										{project.name}
+									</span>
+								)}
 								<span className="sidebar-group-count">{chats.length}</span>
 							</button>
 						);
@@ -1613,15 +1699,19 @@ function SidebarItem({
 			onMoveToProject &&
 			createPortal(
 				<div
-					className="sidebar-ctx-menu"
-					style={{ left: ctxMenu.x, top: ctxMenu.y }}
+					style={{ ...CTX_MENU_STYLE, left: ctxMenu.x, top: ctxMenu.y }}
 					onClick={(e) => e.stopPropagation()}
 				>
-					<div className="sidebar-ctx-label">Move to project</div>
+					<div style={CTX_LABEL_STYLE}>Move to project</div>
 					{(projects || []).map((p) => (
 						<button
 							key={p.id}
-							className={`sidebar-ctx-item ${session.projectId === p.id ? "sidebar-ctx-item-on" : ""}`}
+							style={{
+								...CTX_ITEM_STYLE,
+								...(session.projectId === p.id
+									? { color: "var(--accent)", fontWeight: 600 }
+									: {}),
+							}}
 							onClick={() => {
 								onMoveToProject(p.id);
 								setCtxMenu(null);
@@ -1631,11 +1721,18 @@ function SidebarItem({
 						</button>
 					))}
 					{(projects || []).length === 0 && (
-						<div className="sidebar-ctx-empty">No projects yet</div>
+						<div style={{ ...CTX_LABEL_STYLE, textTransform: "none" }}>
+							No projects yet
+						</div>
 					)}
-					<div className="sidebar-ctx-sep" />
+					<div style={CTX_SEP_STYLE} />
 					<button
-						className={`sidebar-ctx-item ${!session.projectId ? "sidebar-ctx-item-on" : ""}`}
+						style={{
+							...CTX_ITEM_STYLE,
+							...(!session.projectId
+								? { color: "var(--accent)", fontWeight: 600 }
+								: {}),
+						}}
 						onClick={() => {
 							onMoveToProject(null);
 							setCtxMenu(null);
