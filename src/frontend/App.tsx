@@ -1031,9 +1031,12 @@ function App() {
 							)
 						) : (
 							<Home
+								sessions={sessions}
 								connected={connected}
 								send={send}
+								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onNewSession={(prompt) => openPalette(prompt)}
+								onOpenReviews={() => navigate({ view: "reviews" })}
 							/>
 						)}
 					</main>

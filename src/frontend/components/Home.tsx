@@ -1,12 +1,16 @@
 import React, { useEffect, useState } from "react";
+import type { UnifiedSession } from "../lib/types";
 import { fetchModels, fetchFileMentions, type ModelOption } from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
 import { Composer } from "./Composer";
 
 interface Props {
+  sessions: UnifiedSession[];
   connected: boolean;
   send: (msg: any) => void;
+  onSelect: (session: UnifiedSession) => void;
   onNewSession: (prompt?: string) => void;
+  onOpenReviews: () => void;
 }
 
 const SUGGESTIONS: Array<{ chip: string; color: string; prompt: string }> = [
@@ -72,7 +76,7 @@ function timeGreeting(user: string) {
   return user !== "Anonymous" ? `${part}, ${user}` : part;
 }
 
-export function Home({ connected, send, onNewSession }: Props) {
+export function Home({ sessions, connected, send, onSelect, onNewSession, onOpenReviews }: Props) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -110,6 +114,14 @@ export function Home({ connected, send, onNewSession }: Props) {
 
   const isPhone =
     typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
+
+  // Ambient status whisper — counts only, no lists; the sidebar has the lists.
+  const active = sessions.filter((s) => !s.archived);
+  const running = active.filter((s) => s.isRunning);
+  const waiting = active.filter((s) => s.waitingForInput && !s.isRunning);
+  const openPrs = new Set(
+    active.filter((s) => s.prUrl && s.prState === "OPEN").map((s) => s.prUrl),
+  ).size;
 
   return (
     <div className="home">
@@ -158,6 +170,31 @@ export function Home({ connected, send, onNewSession }: Props) {
               </button>
             ))}
           </div>
+
+          {(running.length > 0 || waiting.length > 0 || openPrs > 0) && (
+            <div className="home-whisper">
+              {running.length > 0 && (
+                <span className="home-whisper-part">
+                  <span className="working-dot" />
+                  {running.length} running
+                </span>
+              )}
+              {waiting.length > 0 && (
+                <button
+                  className="home-whisper-part home-whisper-link"
+                  onClick={() => onSelect(waiting[0])}
+                  title={waiting[0].title}
+                >
+                  {waiting.length} waiting for input
+                </button>
+              )}
+              {openPrs > 0 && (
+                <button className="home-whisper-part home-whisper-link" onClick={onOpenReviews}>
+                  {openPrs} PR{openPrs === 1 ? "" : "s"} to review
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

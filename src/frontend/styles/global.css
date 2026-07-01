@@ -5004,6 +5004,42 @@ button.preview-open:not(:disabled):hover {
 	flex-shrink: 0;
 }
 
+/* Ambient status line under the start-screen suggestions. */
+.home-whisper {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	gap: 8px;
+	margin-top: 28px;
+	font-size: 12.5px;
+	color: var(--text-faint);
+}
+.home-whisper-part {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: inherit;
+	font-size: inherit;
+}
+.home-whisper-part + .home-whisper-part::before {
+	content: "·";
+	margin-right: 8px;
+	color: var(--text-faint);
+}
+.home-whisper-part .working-dot {
+	width: 6px;
+	height: 6px;
+}
+button.home-whisper-link {
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: pointer;
+}
+button.home-whisper-link:hover {
+	color: var(--text);
+}
+
 .home-section {
 	margin-bottom: 26px;
 }
