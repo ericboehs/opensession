@@ -187,7 +187,7 @@ import {
 } from "./src/agents/slack/worktree-channels";
 import { startPlainArchiveSweep, clearSessionFileArchive } from "./src/server/plain-archive";
 import { setArchived, archiveOlderThan } from "./src/server/archive";
-import { setTitleOverride } from "./src/server/title-overrides";
+import { setTitleOverride, getTitleOverride } from "./src/server/title-overrides";
 import { ensureGeneratedTitle } from "./src/server/generated-titles";
 import {
 	getConnections,
@@ -1292,6 +1292,32 @@ async function runSessionPrompt(
 		: undefined;
 	const deniedTools = isAutomationSession ? automationDeniedTools() : undefined;
 
+	// Sidebar name: make sure this chat has a short generated summary title.
+	// Covers tab-strip "New chat" chats (never named at creation — this is
+	// their first prompt) and retries chats whose creation-time Haiku call
+	// failed (e.g. account exhaustion), which otherwise wear the raw first
+	// line of the prompt forever. Retries summarize the stored provisional
+	// title (the opening prompt's first line), not this turn's message, so a
+	// mid-conversation "yes, do it" never becomes the title source. Automation
+	// and goal sessions carry deliberate titles; a manual rename wins anyway.
+	if (
+		session.source === "backstage" &&
+		!isAutomationSession &&
+		!session.goalId &&
+		!getTitleOverride(session.id)
+	) {
+		const provisional = !session.title || session.title === "New chat";
+		const firstLine = content.trim().split("\n")[0].slice(0, 80);
+		if (provisional && firstLine)
+			touchBackstageSession(session.id, { title: firstLine });
+		void ensureGeneratedTitle(
+			session.id,
+			provisional ? content : session.title,
+		).then((t) => {
+			if (t) sessionsCache = null;
+		});
+	}
+
 	// Everyone viewing this session sees the prompt and the live run
 	broadcastToSession(sessionId, {
 		type: "stream_start",
@@ -1887,6 +1913,30 @@ async function buildFrontend(): Promise<string> {
 	const cssName = `global-${cssHash}.css`;
 	await Bun.write(`${FRONTEND_DIST}/${cssName}`, cssSrc);
 
+	// Tailwind pass (see styles/tailwind.css). Bun can't compile Tailwind, so
+	// the real compiler runs as a subprocess (~50ms); its lightningcss minifier
+	// doesn't have the var() bug above. Linked after global.css so utilities win
+	// source-order ties against legacy rules.
+	const twTmp = `${FRONTEND_DIST}/.tailwind-build.css`;
+	const twProc = Bun.spawn(
+		[
+			`${import.meta.dir}/node_modules/.bin/tailwindcss`,
+			"-i",
+			`${FRONTEND_SRC}/styles/tailwind.css`,
+			"-o",
+			twTmp,
+			"--minify",
+		],
+		{ cwd: import.meta.dir, stdout: "pipe", stderr: "pipe" },
+	);
+	if ((await twProc.exited) !== 0) {
+		const err = await new Response(twProc.stderr).text();
+		throw new Error(`tailwind build failed: ${err}`);
+	}
+	const twCss = await Bun.file(twTmp).text();
+	const twName = `tailwind-${Bun.hash(twCss).toString(36)}.css`;
+	await Bun.write(`${FRONTEND_DIST}/${twName}`, twCss);
+
 	let indexHtml = await Bun.file(`${FRONTEND_SRC}/index.html`).text();
 	indexHtml = indexHtml.replace(
 		'<script type="module" src="./App.tsx"></script>',
@@ -1894,9 +1944,9 @@ async function buildFrontend(): Promise<string> {
 	);
 	indexHtml = indexHtml.replace(
 		"</head>",
-		`  <link rel="stylesheet" href="/backstage/${cssName}">\n</head>`,
+		`  <link rel="stylesheet" href="/backstage/${cssName}">\n  <link rel="stylesheet" href="/backstage/${twName}">\n</head>`,
 	);
-	const version = `${entryName}|${cssName}`;
+	const version = `${entryName}|${cssName}|${twName}`;
 
 	const store: FrontendBundle = (g.__backstageFrontend ??= {
 		indexHtml: "",
