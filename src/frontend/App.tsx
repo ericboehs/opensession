@@ -32,6 +32,7 @@ import {
 	updateProjectApi,
 	deleteProjectApi,
 	setSessionProjectApi,
+	newChatApi,
 	type NoteMeta,
 } from "./lib/api";
 import type { Project } from "./lib/types";
@@ -667,17 +668,27 @@ function App() {
 							colors={tabColors}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
-							onNewChat={() => {
-								// + starts a new chat in this project, defaulting to the
-								// siblings' shared repo + worktree (branch).
-								const sib = projectChats[0];
-								setPalette({
-									open: true,
-									projectId: activeProjectId || undefined,
-									repo: sib?.repo,
-									branch: sib?.branch || undefined,
-								});
-								setSidebarOpen(false);
+							onNewChat={async () => {
+								// + opens a new chat (new tab) in this session's project,
+								// sharing its worktree — no palette. It's empty until you
+								// send the first message, which starts the run.
+								if (!currentSession) return;
+								try {
+									const id = await newChatApi(
+										currentSession.id,
+										getCurrentUser(),
+									);
+									setPendingSessionId(id);
+									clearTimeout(pendingTimer.current);
+									pendingTimer.current = setTimeout(
+										() => setPendingSessionId(null),
+										30000,
+									);
+									refresh();
+									navigate({ view: "session", id });
+								} catch (e) {
+									console.error("New chat failed:", e);
+								}
 							}}
 							onRename={async (id, title) => {
 								try {

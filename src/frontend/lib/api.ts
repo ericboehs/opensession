@@ -209,6 +209,27 @@ export async function deleteProjectApi(id: string): Promise<void> {
 	if (!res.ok) throw new Error(`Failed to delete project: ${res.status}`);
 }
 
+/**
+ * Start a new sibling chat sharing the source chat's worktree + project. Returns
+ * the new chat's id. It has no run yet — its first prompt starts fresh.
+ */
+export async function newChatApi(
+	sourceId: string,
+	user: string,
+): Promise<string> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sourceId)}/new-chat`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ user }),
+		},
+	);
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body.id as string;
+}
+
 /** Move a chat into a project (or `null` to make it standalone). */
 export async function setSessionProjectApi(
 	sessionId: string,

@@ -1165,17 +1165,13 @@ async function runSessionPrompt(
 	const provider = providerFor(session.model);
 	const engineSessionId =
 		provider === "codex" ? session.codexThreadId : session.claudeSessionId;
+	// A claude session with no engine id yet is a *fresh* chat (e.g. a new sibling
+	// chat opened from the tab strip's +): its first prompt starts a new claude
+	// conversation, and finalSessionId is persisted below — same as codex, which
+	// already runs fresh with no thread id. (Previously this hard-errored, which
+	// blocked never-run sessions from ever receiving their first message.)
 	if (provider === "claude" && !engineSessionId) {
-		// Never swallow a message silently (queued ones land here on drain)
-		console.error(
-			`[queue] Can't deliver prompt for ${sessionId} — no claude session id`,
-		);
-		broadcastToSession(sessionId, {
-			type: "notice",
-			message:
-				"Couldn't deliver your message — the session has no Claude session id yet. Try again in a moment.",
-		});
-		return;
+		console.log(`[prompt] ${sessionId}: first claude run (no engine id yet)`);
 	}
 
 	// A cleaned-up worktree makes the SDK spawn fail with a misleading "binary
@@ -2805,6 +2801,41 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				}
 				const ok = deleteProject(id);
 				return Response.json({ ok });
+			}
+
+			// Start a new sibling chat: an empty chat that shares the source chat's
+			// worktree, branch, repo, and project. It has no engine session yet — its
+			// first prompt starts a fresh run (see runSessionPrompt). Powers the tab
+			// strip's + button ("new chat in this project").
+			const newChatMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/new-chat$/,
+			);
+			if (newChatMatch && req.method === "POST") {
+				const sourceId = decodeURIComponent(newChatMatch[1]);
+				const src = findSession(sourceId);
+				if (!src)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const body = (await req.json().catch(() => ({}))) as { user?: string };
+				const bksId = `bks-${randomUUIDv7()}`;
+				const data: BackstageSessionFile = {
+					id: bksId,
+					claudeSessionId: "",
+					branch: src.branch || "",
+					worktreeDir: src.worktreeDir || "",
+					...(src.repo ? { repo: src.repo } : {}),
+					...(src.projectId ? { projectId: src.projectId } : {}),
+					createdBy: body.user || "Anonymous",
+					createdAt: new Date().toISOString(),
+					lastActivity: new Date().toISOString(),
+					title: "New chat",
+					mode: src.mode || "code",
+				};
+				writeFileSync(
+					`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
+					JSON.stringify(data, null, 2),
+				);
+				sessionsCache = null;
+				return Response.json({ id: bksId });
 			}
 
 			// Move a chat in/out of a Project (folder). `{ projectId: null }` detaches.
