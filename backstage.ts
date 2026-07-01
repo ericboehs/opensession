@@ -2976,13 +2976,31 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						mode = "code";
 					}
 				}
+				// A workspace-less backstage source (e.g. an ask chat from before the
+				// Home box created workspaces) gets healed here: wrap the SOURCE in a
+				// fresh workspace and put the sibling in it too, so the pair actually
+				// links up in the tab strip and sidebar. Read-only sources
+				// (slack/linear files) can't be stamped — they keep grouping by
+				// shared worktree instead.
+				let workspaceId = src.projectId || null;
+				if (!workspaceId && src.source === "backstage") {
+					const ws = createWorkspace({
+						name: src.title || src.branch || "Workspace",
+						repo: src.repo,
+						createdBy: body.user || src.startedBy || "Anonymous",
+						...(src.branch ? { branch: src.branch } : {}),
+						...(src.worktreeDir ? { worktreeDir: src.worktreeDir } : {}),
+					});
+					touchBackstageSession(src.id, { projectId: ws.id });
+					workspaceId = ws.id;
+				}
 				const data: BackstageSessionFile = {
 					id: bksId,
 					claudeSessionId: "",
 					branch,
 					worktreeDir,
 					...(src.repo ? { repo: src.repo } : {}),
-					...(src.projectId ? { projectId: src.projectId } : {}),
+					...(workspaceId ? { projectId: workspaceId } : {}),
 					createdBy: body.user || "Anonymous",
 					createdAt: new Date().toISOString(),
 					lastActivity: new Date().toISOString(),

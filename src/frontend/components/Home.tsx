@@ -96,6 +96,9 @@ export function Home({ sessions, loading, connected, send, onSelect, onNewSessio
       branch: "",
       prompt: q,
       user: currentUser,
+      // Every chat lives in a workspace from birth — the ask box creates one
+      // too, so later sibling chats (+ in the tab strip) link up properly.
+      createWorkspace: {},
       ...(askModel ? { model: askModel } : {}),
     });
     // App navigates into the session on session_created

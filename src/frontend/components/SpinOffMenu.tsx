@@ -53,6 +53,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
         mode: "ask",
         branch: "",
         user: me,
+        createWorkspace: {},
         prompt:
           `Analyze this finished Michael session ("${session.title}") and report:\n` +
           `1. What was asked and what was delivered.\n` +
@@ -71,6 +72,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
         mode: "code",
         branch,
         user: me,
+        createWorkspace: {},
         prompt:
           `Feed the durable learnings from a Michael session back into this repo's documentation.\n\n` +
           `## Conversation (session "${session.title}")\n\n${context}\n\n## Task\n\n` +
