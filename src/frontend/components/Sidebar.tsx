@@ -14,7 +14,7 @@ import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
 import { IconChevronDown } from "./icons";
-import { Tooltip } from "./Tooltip";
+import { Tooltip } from "../ui/tooltip";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -479,7 +479,8 @@ export function Sidebar({
 		const ro = new ResizeObserver(measure);
 		if (headRef.current) ro.observe(headRef.current);
 		return () => ro.disconnect();
-	}, [filter.repo]);
+		// filter.person changes the title text ("X's workspaces"), so re-measure.
+	}, [filter.repo, filter.person]);
 
 	useEffect(() => onPinsChanged(() => setPins(getPins())), []);
 	useEffect(() => onRecentsChanged(() => setRecents(getRecents())), []);
@@ -804,31 +805,7 @@ export function Sidebar({
 		return expanded.has(key);
 	};
 
-	// The Projects band is open by default, so — like repo groups — its *collapsed*
-	// state is what's persisted (under a "collapsed:" key). Searching forces it open.
-	const projectsOpen =
-		search.trim().length > 0 ? true : !expanded.has("collapsed:projects");
-	function toggleProjects() {
-		setExpanded((prev) => {
-			const next = new Set(prev);
-			if (next.has("collapsed:projects")) next.delete("collapsed:projects");
-			else next.add("collapsed:projects");
-			localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
-			return next;
-		});
-	}
-	// Opening the section (used when starting a new project so its row isn't hidden).
-	function openProjects() {
-		setExpanded((prev) => {
-			if (!prev.has("collapsed:projects")) return prev;
-			const next = new Set(prev);
-			next.delete("collapsed:projects");
-			localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
-			return next;
-		});
-	}
-
-	// The People / Automations bands are open by default, so — like Projects and
+	// The People / Automations bands are open by default, so — like
 	// repo groups — their *collapsed* state is what's persisted. Collapsing one
 	// hides every group within that band. Searching forces them open.
 	const bandOpen = (band: GroupBand) =>
@@ -982,7 +959,25 @@ export function Sidebar({
 						const pinKey = row.workspace
 							? `workspace:${row.workspace.id}`
 							: row.key;
-						const pinned = pins.includes(pinKey);
+						// A row can be surfaced in Pinned by its own key OR by a legacy
+						// pin on any member chat (incl. alias ids — e.g. a slack chat
+						// pinned from its header ☆ long ago). Unpin must clear ALL of
+						// them, or the row sticks in Pinned no matter what you click.
+						const pinnedKeys = [
+							pinKey,
+							row.key,
+							...row.chats.flatMap((c) => [c.id, ...(c.aliasIds || [])]),
+						].filter((k, i, a) => pins.includes(k) && a.indexOf(k) === i);
+						const pinned = pinnedKeys.length > 0;
+						const toggle = () => {
+							if (pinned) {
+								let next = pins;
+								for (const k of pinnedKeys) next = togglePin(k);
+								setPins(next);
+							} else {
+								setPins(togglePin(pinKey));
+							}
+						};
 						return (
 							<span
 								role="button"
@@ -991,12 +986,12 @@ export function Sidebar({
 								title={pinned ? "Unpin workspace" : "Pin workspace"}
 								onClick={(e) => {
 									e.stopPropagation();
-									setPins(togglePin(pinKey));
+									toggle();
 								}}
 								onKeyDown={(e) => {
 									if (e.key === "Enter" || e.key === " ") {
 										e.stopPropagation();
-										setPins(togglePin(pinKey));
+										toggle();
 									}
 								}}
 							>
@@ -1118,7 +1113,9 @@ export function Sidebar({
 			>
 				<div className="sidebar-workspace-head" ref={headRef}>
 					<span className="sidebar-workspace-title" ref={titleRef}>
-						Workspaces
+						{filter.person !== "all"
+							? `${people.find((p) => p.key === filter.person)?.label || filter.person}'s workspaces`
+							: "Workspaces"}
 					</span>
 					{/* Repo filter chip, inline behind the title when it fits. */}
 					{filter.repo !== "all" && repoInline && (
@@ -1149,6 +1146,30 @@ export function Sidebar({
 									d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
 									stroke="currentColor"
 									strokeWidth="1.5"
+									strokeLinecap="round"
+								/>
+							</svg>
+						</button>
+						</Tooltip>
+						<Tooltip label="New workspace">
+						<button
+							className="sidebar-new-btn"
+							onClick={() => {
+								setNewProjectDraft("");
+								setCreatingProject(true);
+							}}
+						>
+							<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+								<path
+									d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
+									stroke="currentColor"
+									strokeWidth="1.3"
+									strokeLinejoin="round"
+								/>
+								<path
+									d="M8 6.8v3.4M6.3 8.5h3.4"
+									stroke="currentColor"
+									strokeWidth="1.3"
 									strokeLinecap="round"
 								/>
 							</svg>
@@ -1371,41 +1392,10 @@ export function Sidebar({
 					);
 				})()}
 
-				{/* ── Workspaces ── */}
-				<div className="sidebar-group sidebar-group--band-start">
-					<div className="sidebar-band-label">
-						<span className="sidebar-band-toggle" style={{ cursor: "default" }}>
-							<span>
-								{filter.person !== "all"
-									? `${people.find((p) => p.key === filter.person)?.label || filter.person}'s workspaces`
-									: "Workspaces"}
-							</span>
-						</span>
-						<Tooltip label="New workspace">
-							<button
-								className="sidebar-band-action"
-								onClick={() => {
-									setNewProjectDraft("");
-									setCreatingProject(true);
-								}}
-							>
-								<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
-									<path
-										d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
-										stroke="currentColor"
-										strokeWidth="1.3"
-										strokeLinejoin="round"
-									/>
-									<path
-										d="M8 6.8v3.4M6.3 8.5h3.4"
-										stroke="currentColor"
-										strokeWidth="1.3"
-										strokeLinecap="round"
-									/>
-								</svg>
-							</button>
-						</Tooltip>
-					</div>
+				{/* ── Workspaces: status lanes live directly under the Workspaces
+				    header above (which carries the filter, new-workspace and
+				    new-session actions) — no second in-list heading. ── */}
+				<div className="sidebar-group">
 					{creatingProject && (
 						<div className="sidebar-item sidebar-ws-row">
 							<span
@@ -1444,10 +1434,10 @@ export function Sidebar({
 								!pinSet.has(r.key) &&
 								!r.chats.some((c) => pinSet.has(c.id)),
 						);
-						// Every status group always renders (0-count included) so the
-						// board reads as a stable set of lanes, not a shifting list.
+						// Empty status groups are hidden — only lanes with sessions render.
 						return MINE_STATUS_META.map((meta) => {
 							const items = focusRows.filter((r) => r.status === meta.key);
+							if (items.length === 0) return null;
 							const gkey = `status:${meta.key}`;
 							const open = isOpen(gkey);
 							return (
