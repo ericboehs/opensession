@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import type { UnifiedSession, Project } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { useCurrentUser, TEAM } from "./UserPicker";
-import { getPins, onPinsChanged } from "../lib/pins";
+import { getPins, onPinsChanged, togglePin } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
@@ -567,10 +567,11 @@ export function Sidebar({
 			.map(([key, { label }]) => ({ key, label }));
 	}, [sessions]);
 
-	// Chats that belong to a Project folder render under that folder (below), not
-	// in the flat Status/Repo groups — so exclude them here to avoid duplication.
+	// Every non-archived chat, narrowed by the repo/person filters and search.
+	// Rows are built per-workspace below; a chat matching the filter surfaces its
+	// whole workspace row.
 	const filtered = useMemo(() => {
-		let visible = sessions.filter((s) => !s.archived && !s.projectId);
+		let visible = sessions.filter((s) => !s.archived);
 		if (filter.repo !== "all")
 			visible = visible.filter((s) => sessionRepo(s) === filter.repo);
 		if (filter.person !== "all")
@@ -600,124 +601,114 @@ export function Sidebar({
 		);
 	}, [filtered, filter.sort]);
 
+	// ── Workspace rows ──────────────────────────────────────────────────────
+	// The sidebar's main list is Workspaces (not individual chats): one row per
+	// workspace, plus one implicit row per not-yet-wrapped standalone chat (the
+	// pre-migration case — the data migration wraps those 1:1). A row's status
+	// dot is derived from its most urgent chat; clicking opens the first chat.
+	interface WsRow {
+		/** Pin/menu key: `workspace:<id>` for real workspaces, the chat id solo. */
+		key: string;
+		/** Real workspace record, or null for an implicit single-chat row. */
+		workspace: Project | null;
+		name: string;
+		chats: UnifiedSession[]; // createdAt asc — chats[0] is "the first chat"
+		status: MineStatus;
+		lastActivity: string;
+		createdAt: string;
+		unread: boolean;
+		running: boolean;
+	}
+
+	// Most-urgent-first for the row dot: a blocked question beats everything,
+	// active review beats work-in-progress, merged/pending are quiet states.
+	const STATUS_PRIORITY: MineStatus[] = [
+		"needsinput",
+		"review",
+		"inprogress",
+		"merged",
+		"pending",
+	];
+	const STATUS_DOT: Record<MineStatus, string> = Object.fromEntries(
+		MINE_STATUS_META.map((m) => [m.key, m.dotColor]),
+	) as Record<MineStatus, string>;
+
+	const wsRows = useMemo(() => {
+		const rows: WsRow[] = [];
+		const byWs = new Map<string, UnifiedSession[]>();
+		const solo: UnifiedSession[] = [];
+		for (const s of filtered) {
+			if (s.automation) continue; // automations render in their own band
+			if (s.projectId) {
+				const list = byWs.get(s.projectId) || [];
+				list.push(s);
+				byWs.set(s.projectId, list);
+			} else solo.push(s);
+		}
+		const mkRow = (
+			key: string,
+			workspace: Project | null,
+			name: string,
+			chats: UnifiedSession[],
+		): WsRow => {
+			chats.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+			const status =
+				STATUS_PRIORITY.find((st) => chats.some((c) => mineStatus(c) === st)) ||
+				"pending";
+			return {
+				key,
+				workspace,
+				name,
+				chats,
+				status,
+				lastActivity: chats.reduce(
+					(m, c) => (c.lastActivity > m ? c.lastActivity : m),
+					"",
+				),
+				createdAt: chats[0]?.createdAt || "",
+				unread: chats.some(
+					(c) => c.id !== selectedId && isUnread(c.id, c.lastActivity, reads),
+				),
+				running: chats.some((c) => c.isRunning),
+			};
+		};
+		for (const [wsId, chats] of byWs) {
+			const ws = projects.find((p) => p.id === wsId) || null;
+			rows.push(
+				mkRow(`workspace:${wsId}`, ws, ws?.name || chats[0].title, chats),
+			);
+		}
+		// Empty (chatless) workspaces still get a row — clicking opens the scoped
+		// New palette. Hidden while searching or filtered (nothing to match).
+		if (!search && filter.repo === "all" && filter.person === "all") {
+			for (const p of projects) {
+				if (!byWs.has(p.id))
+					rows.push({
+						key: `workspace:${p.id}`,
+						workspace: p,
+						name: p.name,
+						chats: [],
+						status: "pending",
+						lastActivity: p.createdAt,
+						createdAt: p.createdAt,
+						unread: false,
+						running: false,
+					});
+			}
+		}
+		for (const s of solo) rows.push(mkRow(s.id, null, s.title, [s]));
+		const key = filter.sort === "created" ? "createdAt" : "lastActivity";
+		rows.sort((a, b) => (b[key] || "").localeCompare(a[key] || ""));
+		return rows;
+	}, [filtered, projects, selectedId, reads, search, filter]);
+
+	// Automations keep their own collapsible band, one group per automation —
+	// hundreds of one-shot runs would drown the Workspaces list otherwise.
 	const groups = useMemo(() => {
 		const out: Group[] = [];
-		const user = currentUser.toLowerCase();
-		const pinSet = new Set(pins);
-
-		// "Group by: Repo" — a flat list of one group per repo, ordered most-used
-		// first, ignoring the personal/people/automations split entirely.
-		if (filter.groupBy === "repo") {
-			const byRepo = new Map<string, UnifiedSession[]>();
-			for (const s of sorted) {
-				const p = sessionRepo(s);
-				const list = byRepo.get(p) || [];
-				list.push(s);
-				byRepo.set(p, list);
-			}
-			const keys = Array.from(byRepo.keys()).sort(
-				(a, b) => byRepo.get(b)!.length - byRepo.get(a)!.length || a.localeCompare(b),
-			);
-			for (const p of keys) {
-				out.push({
-					key: `repo:${p}`,
-					label: p,
-					dotColor: repoColor(p),
-					band: "personal",
-					items: byRepo.get(p)!,
-				});
-			}
-			return out;
-		}
-
-		// "Group by: Recently opened" — a single flat list ordered by when you last
-		// opened each session (most recent first), with never-opened sessions after,
-		// keeping the status split out of the way.
-		if (filter.groupBy === "recently") {
-			const rank = new Map(recents.map((id, i) => [id, i] as const));
-			const items = [...sorted].sort(
-				(a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity),
-			);
-			out.push({
-				key: "recently",
-				label: "Recently opened",
-				dotColor: null,
-				band: "personal",
-				items,
-			});
-			return out;
-		}
-
-		// Pinned sessions render in the dedicated Pinned section at the top of the
-		// list (with pinned notes) — not as a group here — so they're only excluded
-		// from "My sessions" below, never re-listed as their own group.
-
-		// "My sessions": sessions started by the current user (automations
-		// excluded), split into status buckets (Merged / Done / Review / In
-		// progress) and rendered above Recently opened.
-		const mine = sorted.filter(
-			(s) =>
-				!s.automation &&
-				!pinSet.has(s.id) &&
-				s.startedBy &&
-				s.startedBy.toLowerCase() === user,
-		);
-		if (mine.length > 0) {
-			const byStatus = new Map<MineStatus, UnifiedSession[]>();
-			for (const s of mine) {
-				const st = mineStatus(s);
-				const list = byStatus.get(st) || [];
-				list.push(s);
-				byStatus.set(st, list);
-			}
-			for (const meta of MINE_STATUS_META) {
-				const items = byStatus.get(meta.key);
-				if (!items || items.length === 0) continue;
-				out.push({
-					key: `status:${meta.key}`,
-					label: meta.label,
-					dotColor: meta.dotColor,
-					band: "personal",
-					items,
-				});
-			}
-		}
-
-		// One group per other person: every non-automation session owned by
-		// someone other than the current user, grouped by `startedBy`. The current
-		// user's own sessions already live in "My sessions" above, so they're not
-		// repeated here (no double-listing). Only recognized teammates get a
-		// section — sessions with an unrecognized or empty `startedBy` are hidden
-		// (see KNOWN_PEOPLE). Keyed by lowercased name to merge casing variants;
-		// the first-seen spelling is used as the label.
-		const byPerson = new Map<
-			string,
-			{ label: string; items: UnifiedSession[] }
-		>();
-		for (const s of sorted) {
-			if (s.automation || pinSet.has(s.id) || !s.startedBy) continue;
-			const key = s.startedBy.toLowerCase();
-			if (key === user) continue; // already in "My sessions"
-			if (!KNOWN_PEOPLE.has(key)) continue; // hide non-person owners
-			const entry = byPerson.get(key) || { label: s.startedBy, items: [] };
-			entry.items.push(s);
-			byPerson.set(key, entry);
-		}
-		for (const key of Array.from(byPerson.keys()).sort()) {
-			const { label, items } = byPerson.get(key)!;
-			out.push({
-				key: `person:${key}`,
-				label,
-				dotColor: personColor(key),
-				band: "people",
-				items,
-			});
-		}
-
-		// Automations last, each in its own group (band "automations").
 		const byAutomation = new Map<string, UnifiedSession[]>();
 		for (const s of sorted) {
-			if (!s.automation || pinSet.has(s.id)) continue;
+			if (!s.automation) continue;
 			const list = byAutomation.get(s.automation) || [];
 			list.push(s);
 			byAutomation.set(s.automation, list);
@@ -731,9 +722,8 @@ export function Sidebar({
 				items: byAutomation.get(name)!,
 			});
 		}
-
 		return out;
-	}, [sorted, currentUser, pins, recents, search, filter.groupBy]);
+	}, [sorted]);
 
 	// Sessions in sidebar order (pinned rows first, then each group's items) —
 	// used to hand onArchive the row that should become active when the open
@@ -875,161 +865,89 @@ export function Sidebar({
 			</button>
 		) : null;
 
-	// Whether any non-personal (People / Projects) band exists — decides where the
-	// Archived label lands: just above the first other band, or at the very end.
-	const hasOtherBand = groups.some((g) => g.band !== "personal");
-
-	// Projects render as their own band above Automations (below People / My
-	// sessions). `firstAutoIdx` marks where the automations bands begin so the
-	// Projects band can slot in just before them; when there are no automations it
-	// falls through to render after the map (still below People).
-	const firstAutoIdx = groups.findIndex((g) => g.band === "automations");
-	const projectsBand = (
-		<div className="sidebar-group sidebar-group--band-start">
-			<div className="sidebar-band-label">
-				<button
-					className="sidebar-band-toggle"
-					onClick={toggleProjects}
-					title={projectsOpen ? "Collapse projects" : "Expand projects"}
-				>
-					<span>Projects</span>
-					<IconChevronDown
-						className="sidebar-band-chevron"
-						size={16}
-						style={{
-							transform: projectsOpen ? "none" : "rotate(-90deg)",
-						}}
-					/>
-					{!projectsOpen && projects.length > 0 && (
-						<span className="sidebar-group-count">{projects.length}</span>
-					)}
-				</button>
-				<Tooltip label="New project">
-				<button
-					className="sidebar-band-action"
-					onClick={() => {
-						openProjects();
-						setNewProjectDraft("");
-						setCreatingProject(true);
-					}}
-				>
-					<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
-						<path
-							d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
-							stroke="currentColor"
-							strokeWidth="1.3"
-							strokeLinejoin="round"
-						/>
-						<path
-							d="M8 6.8v3.4M6.3 8.5h3.4"
-							stroke="currentColor"
-							strokeWidth="1.3"
-							strokeLinecap="round"
-						/>
-					</svg>
-				</button>
-				</Tooltip>
-			</div>
-			{projectsOpen && (
-			<>
-			{/* Inline new-project row: matches the rename input, shown while
-			    creating. */}
-			{creatingProject && (
-				<div className="sidebar-group-header sidebar-project-row">
-					<span
-						className="sidebar-group-dot"
-						style={{ backgroundColor: "var(--text-faint)" }}
-					/>
+	// One sidebar row per workspace: status dot (most urgent chat), name, chat
+	// count, unread dot. Click opens the first chat (or the workspace itself for
+	// real workspaces — App resolves that to its first chat / scoped New palette).
+	// Right-click opens the workspace menu (pin / color / rename / delete);
+	// double-click renames inline.
+	function renderWsRow(row: WsRow) {
+		const active = row.chats.some((s) => s.id === selectedId);
+		const editing = row.workspace && editingProjectId === row.workspace.id;
+		const dot =
+			row.status === "pending" && row.workspace?.color
+				? colorHex(row.workspace.color) || "var(--text-faint)"
+				: STATUS_DOT[row.status];
+		return (
+			<button
+				key={row.key}
+				className={`sidebar-group-header sidebar-project-row ${active ? "sidebar-item-selected" : ""}`}
+				style={
+					active
+						? { background: "var(--bg-active, rgba(255,255,255,0.08))" }
+						: undefined
+				}
+				onClick={() => {
+					if (editing) return;
+					if (row.workspace) onOpenProject(row.workspace.id);
+					else if (row.chats[0]) onSelect(row.chats[0]);
+				}}
+				onContextMenu={(e) => {
+					e.preventDefault();
+					setProjectMenu({
+						id: row.workspace ? row.workspace.id : row.key,
+						x: e.clientX,
+						y: e.clientY,
+					});
+				}}
+				title={row.name}
+			>
+				<span
+					className={`sidebar-group-dot${row.running ? " sidebar-ws-dot-running" : ""}`}
+					style={{ backgroundColor: dot }}
+				/>
+				{editing ? (
 					<input
 						className="sidebar-item-rename"
-						value={newProjectDraft}
+						value={projectDraft}
 						autoFocus
-						placeholder="Project name"
-						onChange={(e) => setNewProjectDraft(e.target.value)}
-						onBlur={commitProjectCreate}
+						onChange={(e) => setProjectDraft(e.target.value)}
+						onClick={(e) => e.stopPropagation()}
+						onDoubleClick={(e) => e.stopPropagation()}
+						onBlur={commitProjectRename}
 						onKeyDown={(e) => {
-							if (e.key === "Enter") commitProjectCreate();
-							else if (e.key === "Escape") {
-								setCreatingProject(false);
-								setNewProjectDraft("");
-							}
+							if (e.key === "Enter") commitProjectRename();
+							else if (e.key === "Escape") setEditingProjectId(null);
+							e.stopPropagation();
 						}}
 					/>
-				</div>
-			)}
-			{projects.length === 0 && !creatingProject && (
-				<div className="sidebar-empty">No projects yet</div>
-			)}
-			{projects.map((project) => {
-				// A project is a single row — clicking it opens the project (its
-				// chats show in the top tab strip), never an inline chat list.
-				const chats = sessions.filter(
-					(s) => !s.archived && s.projectId === project.id,
-				);
-				const active = chats.some((s) => s.id === selectedId);
-				const editing = editingProjectId === project.id;
-				return (
-					<button
-						key={project.id}
-						className={`sidebar-group-header sidebar-project-row ${active ? "sidebar-item-selected" : ""}`}
-						style={
-							active
-								? { background: "var(--bg-active, rgba(255,255,255,0.08))" }
-								: undefined
-						}
-						onClick={() => !editing && onOpenProject(project.id)}
-						onContextMenu={(e) => {
-							e.preventDefault();
-							setProjectMenu({
-								id: project.id,
-								x: e.clientX,
-								y: e.clientY,
-							});
+				) : (
+					<span
+						className="sidebar-group-name"
+						onDoubleClick={(e) => {
+							e.stopPropagation();
+							if (row.workspace) {
+								setProjectDraft(row.workspace.name);
+								setEditingProjectId(row.workspace.id);
+							} else if (row.chats[0]) {
+								// Solo chat rows rename the chat itself.
+								const title = window
+									.prompt("Rename chat", row.chats[0].title)
+									?.trim();
+								if (title !== undefined && title !== null)
+									onRename(row.chats[0], title);
+							}
 						}}
 					>
-						<span
-							className="sidebar-group-dot"
-							style={{
-								backgroundColor: project.color
-									? colorHex(project.color) || "var(--text-faint)"
-									: "var(--text-faint)",
-							}}
-						/>
-						{editing ? (
-							<input
-								className="sidebar-item-rename"
-								value={projectDraft}
-								autoFocus
-								onChange={(e) => setProjectDraft(e.target.value)}
-								onClick={(e) => e.stopPropagation()}
-								onDoubleClick={(e) => e.stopPropagation()}
-								onBlur={commitProjectRename}
-								onKeyDown={(e) => {
-									if (e.key === "Enter") commitProjectRename();
-									else if (e.key === "Escape") setEditingProjectId(null);
-									e.stopPropagation();
-								}}
-							/>
-						) : (
-							<span
-								className="sidebar-group-name"
-								onDoubleClick={(e) => {
-									e.stopPropagation();
-									setProjectDraft(project.name);
-									setEditingProjectId(project.id);
-								}}
-							>
-								{project.name}
-							</span>
-						)}
-						<span className="sidebar-group-count">{chats.length}</span>
-					</button>
-				);
-			})}
-			</>
-			)}
-		</div>
-	);
+						{row.name}
+					</span>
+				)}
+				{row.unread && <span className="sidebar-ws-unread" />}
+				{row.chats.length > 1 && (
+					<span className="sidebar-group-count">{row.chats.length}</span>
+				)}
+			</button>
+		);
+	}
 
 	return (
 		<div className="sidebar">
@@ -1105,7 +1023,7 @@ export function Sidebar({
 			>
 				<div className="sidebar-workspace-head" ref={headRef}>
 					<span className="sidebar-workspace-title" ref={titleRef}>
-						Sessions
+						Workspaces
 					</span>
 					{/* Repo filter chip, inline behind the title when it fits. */}
 					{filter.repo !== "all" && repoInline && (
@@ -1182,69 +1100,102 @@ export function Sidebar({
 
 			{projectMenu &&
 				createPortal(
-					<div
-						className="sidebar-ctx-menu"
-						style={{ ...CTX_MENU_STYLE, left: projectMenu.x, top: projectMenu.y }}
-						onClick={(e) => e.stopPropagation()}
-					>
-						<div
-							style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "4px 6px 2px" }}
-						>
-							{TAB_COLORS.map((c) => (
+					(() => {
+						// The menu id is a real workspace id, or a solo chat's session id
+						// (pre-migration standalone rows). Solo rows get pin/archive only.
+						const ws = projects.find((p) => p.id === projectMenu.id);
+						const soloChat = ws
+							? null
+							: sessions.find((s) => s.id === projectMenu.id);
+						const pinKey = ws ? `workspace:${ws.id}` : projectMenu.id;
+						const pinned = pins.includes(pinKey);
+						return (
+							<div
+								className="sidebar-ctx-menu"
+								style={{ ...CTX_MENU_STYLE, left: projectMenu.x, top: projectMenu.y }}
+								onClick={(e) => e.stopPropagation()}
+							>
 								<button
-									key={c.key}
-									type="button"
-									className="tab-color-swatch"
-									style={{ background: c.hex }}
-									aria-label={c.label}
-									title={c.label}
+									style={CTX_ITEM_STYLE}
 									onClick={() => {
-										onSetProjectColor(projectMenu.id, c.key);
+										setPins(togglePin(pinKey));
 										setProjectMenu(null);
 									}}
-								/>
-							))}
-							<button
-								type="button"
-								className="tab-color-swatch tab-color-swatch-none"
-								aria-label="No color"
-								title="No color"
-								onClick={() => {
-									onSetProjectColor(projectMenu.id, null);
-									setProjectMenu(null);
-								}}
-							/>
-						</div>
-						<div style={CTX_SEP_STYLE} />
-						<button
-							style={CTX_ITEM_STYLE}
-							onClick={() => {
-								const cur = projects.find((p) => p.id === projectMenu.id);
-								const name = window
-									.prompt("Rename project", cur?.name || "")
-									?.trim();
-								if (name) onRenameProject(projectMenu.id, name);
-								setProjectMenu(null);
-							}}
-						>
-							Rename
-						</button>
-						<button
-							style={{ ...CTX_ITEM_STYLE, color: "var(--red, #e5534b)" }}
-							onClick={() => {
-								const cur = projects.find((p) => p.id === projectMenu.id);
-								if (
-									window.confirm(
-										`Delete project "${cur?.name || ""}"? Its chats become standalone.`,
-									)
-								)
-									onDeleteProject(projectMenu.id);
-								setProjectMenu(null);
-							}}
-						>
-							Delete project
-						</button>
-					</div>,
+								>
+									{pinned ? "Unpin" : "Pin"}
+								</button>
+								<div style={CTX_SEP_STYLE} />
+								{ws && (
+									<>
+										<div
+											style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "4px 6px 2px" }}
+										>
+											{TAB_COLORS.map((c) => (
+												<button
+													key={c.key}
+													type="button"
+													className="tab-color-swatch"
+													style={{ background: c.hex }}
+													aria-label={c.label}
+													title={c.label}
+													onClick={() => {
+														onSetProjectColor(projectMenu.id, c.key);
+														setProjectMenu(null);
+													}}
+												/>
+											))}
+											<button
+												type="button"
+												className="tab-color-swatch tab-color-swatch-none"
+												aria-label="No color"
+												title="No color"
+												onClick={() => {
+													onSetProjectColor(projectMenu.id, null);
+													setProjectMenu(null);
+												}}
+											/>
+										</div>
+										<div style={CTX_SEP_STYLE} />
+										<button
+											style={CTX_ITEM_STYLE}
+											onClick={() => {
+												setProjectDraft(ws.name);
+												setEditingProjectId(ws.id);
+												setProjectMenu(null);
+											}}
+										>
+											Rename
+										</button>
+										<button
+											style={{ ...CTX_ITEM_STYLE, color: "var(--red, #e5534b)" }}
+											onClick={() => {
+												if (
+													window.confirm(
+														`Delete workspace "${ws.name}"? Its chats become standalone.`,
+													)
+												)
+													onDeleteProject(projectMenu.id);
+												setProjectMenu(null);
+											}}
+										>
+											Delete workspace
+										</button>
+									</>
+								)}
+								{soloChat && (
+									<button
+										style={CTX_ITEM_STYLE}
+										onClick={() => {
+											onArchive(soloChat, null);
+											setProjectMenu(null);
+										}}
+									>
+										Archive
+									</button>
+								)}
+							</div>
+						);
+					})(),
 					document.body,
 				)}
 
@@ -1255,10 +1206,22 @@ export function Sidebar({
 					setListScrolled((prev) => (prev === scrolled ? prev : scrolled));
 				}}
 			>
-				{/* ── Pinned (sessions + notes, mixed) ── */}
+				{/* ── Pinned (workspaces + notes, mixed) ── */}
 				{(() => {
-					const pinnedSessions = pins
-						.filter((e) => !e.startsWith("note:"))
+					const pinSet = new Set(pins);
+					// A row is pinned via its own key (`workspace:<id>` or a solo chat
+					// id) or via a legacy pin of any member chat.
+					const pinnedRows = wsRows.filter(
+						(r) =>
+							pinSet.has(r.key) || r.chats.some((c) => pinSet.has(c.id)),
+					);
+					// Pinned chats that don't map to a workspace row (automation runs).
+					const rowChatIds = new Set(
+						wsRows.flatMap((r) => r.chats.map((c) => c.id)),
+					);
+					const pinnedLoose = pins
+						.filter((e) => !e.startsWith("note:") && !e.startsWith("workspace:"))
+						.filter((id) => !rowChatIds.has(id))
 						.map((id) =>
 							sessions.find(
 								(s) => s.id === id || s.aliasIds?.includes(id),
@@ -1269,13 +1232,15 @@ export function Sidebar({
 						.filter((e) => e.startsWith("note:"))
 						.map((e) => notes.find((n) => n.id === e.slice(5)))
 						.filter((n): n is { id: string; title: string } => !!n);
-					if (!pinnedSessions.length && !pinnedNotes.length) return null;
+					if (!pinnedRows.length && !pinnedLoose.length && !pinnedNotes.length)
+						return null;
 					return (
 						<div className="sidebar-group">
 							<div className="sidebar-band-label">
 								<span>Pinned</span>
 							</div>
-							{pinnedSessions.map((s) => (
+							{pinnedRows.map(renderWsRow)}
+							{pinnedLoose.map((s) => (
 								<SidebarItem
 									key={`pin-${s.id}`}
 									session={s}
@@ -1311,141 +1276,187 @@ export function Sidebar({
 					);
 				})()}
 
-				{groups.length === 0 && (
-					<div className="sidebar-empty">No sessions</div>
-				)}
-				{groups.map((group, i) => {
-					const bandChanged = i > 0 && group.band !== groups[i - 1].band;
-					const label = bandChanged ? bandLabel(group.band) : null;
-					const open = isOpen(group.key);
-					// People / Automations can be collapsed as a whole band.
-					const collapsibleBand =
-						group.band === "people" || group.band === "automations";
-					const bandCollapsed = collapsibleBand && !bandOpen(group.band);
-					// Once a band is collapsed only its first group carries the band
-					// label (the toggle); the rest render nothing at all.
-					if (bandCollapsed && !label) return null;
-					// The Archived label goes just above the first non-personal band.
-					const isFirstOther =
-						group.band !== "personal" &&
-						(i === 0 || groups[i - 1].band === "personal");
-					return (
-					<React.Fragment key={group.key}>
-					{isFirstOther && archivedBand && (
-						<div className="sidebar-group">{archivedBand}</div>
-					)}
-					{i === firstAutoIdx && projectsBand}
-					<div
-						className={`sidebar-group sidebar-group--${group.band}${
-							bandChanged ? " sidebar-group--band-start" : ""
-						}`}
-					>
-						{label &&
-							(collapsibleBand ? (
-								<div className="sidebar-band-label">
-									<button
-										className="sidebar-band-toggle"
-										onClick={() => toggleBand(group.band)}
-										title={
-											bandOpen(group.band)
-												? `Collapse ${label.toLowerCase()}`
-												: `Expand ${label.toLowerCase()}`
-										}
-									>
-										<span>{label}</span>
-										<IconChevronDown
-											className="sidebar-band-chevron"
-											size={16}
-											style={{
-												transform: bandOpen(group.band)
-													? "none"
-													: "rotate(-90deg)",
-											}}
-										/>
-										{!bandOpen(group.band) && (
-											<span className="sidebar-group-count">
-												{groups
-													.filter((g) => g.band === group.band)
-													.reduce((n, g) => n + g.items.length, 0)}
-											</span>
-										)}
-									</button>
-								</div>
-							) : (
-								<div className="sidebar-band-label">
-									<span>{label}</span>
-								</div>
-							))}
-						{!bandCollapsed && (
-							<>
-								<button
-									className="sidebar-group-header"
-									onClick={() => toggleGroup(group.key)}
-								>
-									{group.dotColor && (
-										<span
-											className="sidebar-group-dot"
-											style={{ backgroundColor: group.dotColor }}
-										/>
-									)}
-									<span className="sidebar-group-name">{group.label}</span>
-									<IconChevronDown
-										className="sidebar-group-chevron"
-										size={14}
-										style={{
-											transform: open ? "none" : "rotate(-90deg)",
+				{/* ── Workspaces ── */}
+				<div className="sidebar-group sidebar-group--band-start">
+					<div className="sidebar-band-label">
+						<button
+							className="sidebar-band-toggle"
+							onClick={toggleProjects}
+							title={projectsOpen ? "Collapse workspaces" : "Expand workspaces"}
+						>
+							<span>Workspaces</span>
+							<IconChevronDown
+								className="sidebar-band-chevron"
+								size={16}
+								style={{
+									transform: projectsOpen ? "none" : "rotate(-90deg)",
+								}}
+							/>
+							{!projectsOpen && wsRows.length > 0 && (
+								<span className="sidebar-group-count">{wsRows.length}</span>
+							)}
+						</button>
+						<Tooltip label="New workspace">
+							<button
+								className="sidebar-band-action"
+								onClick={() => {
+									openProjects();
+									setNewProjectDraft("");
+									setCreatingProject(true);
+								}}
+							>
+								<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+									<path
+										d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
+										stroke="currentColor"
+										strokeWidth="1.3"
+										strokeLinejoin="round"
+									/>
+									<path
+										d="M8 6.8v3.4M6.3 8.5h3.4"
+										stroke="currentColor"
+										strokeWidth="1.3"
+										strokeLinecap="round"
+									/>
+								</svg>
+							</button>
+						</Tooltip>
+					</div>
+					{projectsOpen && (
+						<>
+							{creatingProject && (
+								<div className="sidebar-group-header sidebar-project-row">
+									<span
+										className="sidebar-group-dot"
+										style={{ backgroundColor: "var(--text-faint)" }}
+									/>
+									<input
+										className="sidebar-item-rename"
+										value={newProjectDraft}
+										autoFocus
+										placeholder="Workspace name"
+										onChange={(e) => setNewProjectDraft(e.target.value)}
+										onBlur={commitProjectCreate}
+										onKeyDown={(e) => {
+											if (e.key === "Enter") commitProjectCreate();
+											else if (e.key === "Escape") {
+												setCreatingProject(false);
+												setNewProjectDraft("");
+											}
 										}}
 									/>
-									<span className="sidebar-group-count">
-										{group.items.length}
-									</span>
-								</button>
+								</div>
+							)}
+							{wsRows.length === 0 && !creatingProject && (
+								<div className="sidebar-empty">No workspaces yet</div>
+							)}
+							{(() => {
+								const pinSet = new Set(pins);
+								return wsRows
+									.filter(
+										(r) =>
+											!pinSet.has(r.key) &&
+											!r.chats.some((c) => pinSet.has(c.id)),
+									)
+									.map(renderWsRow);
+							})()}
+						</>
+					)}
+				</div>
 
-								{/* When collapsed, still surface the actively selected session so
-								    it never disappears behind a closed group header. */}
-								{group.items
-									.filter((s) => open || s.id === selectedId)
-									.map((s) => (
-										<SidebarItem
-											key={s.id}
-											session={s}
-											selected={s.id === selectedId}
-											unread={
-												s.id !== selectedId &&
-												isUnread(s.id, s.lastActivity, reads)
-											}
-											mine={
-												!!s.startedBy &&
-												!s.automation &&
-												s.startedBy.toLowerCase() ===
-													currentUser.toLowerCase()
-											}
-											onClick={() => onSelect(s)}
-											onArchive={() => archiveWithNext(s)}
-											onRename={(title) => onRename(s, title)}
-											projects={projects}
-											onMoveToProject={(pid) =>
-												onSetSessionProject(s.id, pid)
-											}
-										/>
-									))}
-							</>
-						)}
-					</div>
-					</React.Fragment>
-					);
-				})}
-
-				{/* If there are no People/Projects bands, the Archived label still
-				    lands below the My-sessions band, at the end of the list. */}
-				{!hasOtherBand && archivedBand && (
+				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
-
-				{/* Projects render above the Automations band (see `projectsBand` /
-				    `firstAutoIdx` above); only when there are no automations to anchor
-				    to do they fall through and render here, at the end of the list. */}
-				{firstAutoIdx === -1 && projectsBand}
+				{/* ── Automations (one collapsible band, one group per automation) ── */}
+				{groups.length > 0 && (
+					<div className="sidebar-group sidebar-group--automations sidebar-group--band-start">
+						<div className="sidebar-band-label">
+							<button
+								className="sidebar-band-toggle"
+								onClick={() => toggleBand("automations")}
+								title={
+									bandOpen("automations")
+										? "Collapse automations"
+										: "Expand automations"
+								}
+							>
+								<span>Automations</span>
+								<IconChevronDown
+									className="sidebar-band-chevron"
+									size={16}
+									style={{
+										transform: bandOpen("automations")
+											? "none"
+											: "rotate(-90deg)",
+									}}
+								/>
+								{!bandOpen("automations") && (
+									<span className="sidebar-group-count">
+										{groups.reduce((n, g) => n + g.items.length, 0)}
+									</span>
+								)}
+							</button>
+						</div>
+						{bandOpen("automations") &&
+							groups.map((group) => {
+								const open = isOpen(group.key);
+								return (
+									<React.Fragment key={group.key}>
+										<button
+											className="sidebar-group-header"
+											onClick={() => toggleGroup(group.key)}
+										>
+											{group.dotColor && (
+												<span
+													className="sidebar-group-dot"
+													style={{ backgroundColor: group.dotColor }}
+												/>
+											)}
+											<span className="sidebar-group-name">{group.label}</span>
+											<IconChevronDown
+												className="sidebar-group-chevron"
+												size={14}
+												style={{
+													transform: open ? "none" : "rotate(-90deg)",
+												}}
+											/>
+											<span className="sidebar-group-count">
+												{group.items.length}
+											</span>
+										</button>
+										{/* When collapsed, still surface the actively selected
+										    session so it never disappears behind a closed header. */}
+										{group.items
+											.filter((s) => open || s.id === selectedId)
+											.map((s) => (
+												<SidebarItem
+													key={s.id}
+													session={s}
+													selected={s.id === selectedId}
+													unread={
+														s.id !== selectedId &&
+														isUnread(s.id, s.lastActivity, reads)
+													}
+													mine={
+														!!s.startedBy &&
+														!s.automation &&
+														s.startedBy.toLowerCase() ===
+															currentUser.toLowerCase()
+													}
+													onClick={() => onSelect(s)}
+													onArchive={() => archiveWithNext(s)}
+													onRename={(title) => onRename(s, title)}
+													projects={projects}
+													onMoveToProject={(pid) =>
+														onSetSessionProject(s.id, pid)
+													}
+												/>
+											))}
+									</React.Fragment>
+								);
+							})}
+					</div>
+				)}
 			</div>
 		</div>
 	);
@@ -1510,18 +1521,6 @@ function FilterPopover({
 		<>
 			<div className="menu-backdrop" onClick={onClose} />
 			<div className="filter-popover" style={{ left, top, width }}>
-				<div className="filter-row">
-					<span className="filter-row-label">Group by</span>
-					<MiniSelect
-						value={filter.groupBy}
-						options={[
-							{ value: "status", label: "Status" },
-							{ value: "repo", label: "Repo" },
-							{ value: "recently", label: "Recently opened" },
-						]}
-						onSelect={(v) => onChange({ groupBy: v as GroupBy })}
-					/>
-				</div>
 				<div className="filter-row">
 					<span className="filter-row-label">Repo</span>
 					<MiniSelect

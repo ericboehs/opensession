@@ -4252,9 +4252,12 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									repo: repoForPath(wtPath).id,
 									...(workspace
 										? { projectId: workspace.id }
-										: typeof msg.projectId === "string" && msg.projectId
-											? { projectId: msg.projectId }
-											: {}),
+										: forkSource?.projectId
+											? // A fork lands next to its source in the same workspace.
+												{ projectId: forkSource.projectId }
+											: typeof msg.projectId === "string" && msg.projectId
+												? { projectId: msg.projectId }
+												: {}),
 									createdBy: user || "Anonymous",
 									createdAt: new Date().toISOString(),
 									lastActivity: new Date().toISOString(),

@@ -3,16 +3,19 @@ import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 
 /**
- * The tab strip is scoped to ONE Project: it shows the sibling chats of the
- * currently-open chat (every session sharing its `projectId`). Standalone chats
- * (no project) render no tab strip at all — the parent passes an empty list.
+ * The tab strip is scoped to ONE Workspace: it shows the sibling chats of the
+ * currently-open chat (every session sharing its `projectId`/workspace). A
+ * pre-migration standalone chat renders no strip — the parent passes an empty
+ * list; post-migration every chat has a workspace, so the strip always shows
+ * (a single tab plus the + button).
  *
- * There is no pinning here anymore (pinning moved to the sidebar, where sessions
- * and notes can be pinned and mixed). Right-click colors a tab; double-click the
- * title renames the chat; the + button starts a new chat in this project.
+ * There is no pinning here anymore (pinning moved to the sidebar). Right-click
+ * colors a tab; double-click the title renames the chat. The + button starts a
+ * new chat in this workspace sharing its worktree; right-clicking + offers the
+ * other modes (stacked worktree / ask).
  */
 interface Props {
-	/** Sibling chats in the current project, in display order. */
+	/** Sibling chats in the current workspace, in display order. */
 	tabs: UnifiedSession[];
 	/** Session id of the active tab. */
 	activeId: string | null;
@@ -20,8 +23,12 @@ interface Props {
 	colors: Record<string, string>;
 	onSelect: (session: UnifiedSession) => void;
 	onSetColor: (key: string, color: string | null) => void;
-	/** Start a new chat in this project (defaults to the shared worktree). */
-	onNewChat: () => void;
+	/**
+	 * Start a new chat in this workspace. share = reuse the workspace worktree
+	 * (the + button's plain-click default), stack = new worktree branched off it,
+	 * ask = no worktree.
+	 */
+	onNewChat: (mode: "share" | "stack" | "ask") => void;
 	/** Rename a chat (double-click the title); empty title resets it. */
 	onRename: (id: string, title: string) => void;
 	/** Close (archive) a chat — the × revealed on hover. */
@@ -29,6 +36,7 @@ interface Props {
 }
 
 type Menu = { key: string; x: number; y: number };
+type NewMenu = { x: number; y: number };
 
 export function SessionTabs({
 	tabs,
@@ -41,6 +49,7 @@ export function SessionTabs({
 	onClose,
 }: Props) {
 	const [menu, setMenu] = useState<Menu | null>(null);
+	const [newMenu, setNewMenu] = useState<NewMenu | null>(null);
 	const [editKey, setEditKey] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
 
@@ -50,9 +59,12 @@ export function SessionTabs({
 	}
 
 	useEffect(() => {
-		if (!menu) return;
-		const close = () => setMenu(null);
-		const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(null);
+		if (!menu && !newMenu) return;
+		const close = () => {
+			setMenu(null);
+			setNewMenu(null);
+		};
+		const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
 		window.addEventListener("click", close);
 		window.addEventListener("scroll", close, true);
 		window.addEventListener("keydown", onKey);
@@ -61,7 +73,7 @@ export function SessionTabs({
 			window.removeEventListener("scroll", close, true);
 			window.removeEventListener("keydown", onKey);
 		};
-	}, [menu]);
+	}, [menu, newMenu]);
 
 	// No project (standalone chat) → no tab strip.
 	if (tabs.length === 0) return null;
@@ -140,12 +152,55 @@ export function SessionTabs({
 			<button
 				type="button"
 				className="session-tab session-tab-new"
-				aria-label="New chat in this project"
-				title="New chat in this project"
-				onClick={onNewChat}
+				aria-label="New chat in this workspace"
+				title="New chat — shares this workspace's worktree (right-click for options)"
+				onClick={() => onNewChat("share")}
+				onContextMenu={(e) => {
+					e.preventDefault();
+					setNewMenu({ x: e.clientX, y: e.clientY });
+				}}
 			>
 				+
 			</button>
+
+			{newMenu && (
+				<div
+					className="tab-color-menu session-tab-new-menu"
+					style={{ left: newMenu.x, top: newMenu.y }}
+					onClick={(e) => e.stopPropagation()}
+				>
+					<button
+						type="button"
+						className="session-tab-new-menu-item"
+						onClick={() => {
+							setNewMenu(null);
+							onNewChat("share");
+						}}
+					>
+						New chat — share worktree
+					</button>
+					<button
+						type="button"
+						className="session-tab-new-menu-item"
+						onClick={() => {
+							setNewMenu(null);
+							onNewChat("stack");
+						}}
+					>
+						New chat — stacked worktree
+					</button>
+					<button
+						type="button"
+						className="session-tab-new-menu-item"
+						onClick={() => {
+							setNewMenu(null);
+							onNewChat("ask");
+						}}
+					>
+						New chat — ask (no worktree)
+					</button>
+				</div>
+			)}
 
 			{menu && (
 				<div
