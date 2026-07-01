@@ -29,6 +29,7 @@ import {
   readMcpConfig,
   addMcpServer,
   removeMcpServer,
+  setMcpAllowedUsers,
 } from "../../server/connections";
 import {
   addMemory,
@@ -347,14 +348,18 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
             const where = s.url
               ? `http ${s.url}`
               : `stdio ${[s.command, ...(s.args || [])].join(" ")}`;
-            return `• *${n}* — ${where}`;
+            const restricted =
+              Array.isArray(s.allowedUsers) && s.allowedUsers.length
+                ? ` — 🔒 only ${s.allowedUsers.join(", ")}`
+                : "";
+            return `• *${n}* — ${where}${restricted}`;
           });
           return text(lines.join("\n"));
         }
       ),
       tool(
         "add_mcp_server",
-        "Install/configure a new MCP server. For 'http' provide url; for 'stdio' provide command (and optional args/env). Picked up on the next message — no restart. Secrets go in env/headers and aren't echoed back.",
+        "Install/configure a new MCP server. For 'http' provide url; for 'stdio' provide command (and optional args/env). Picked up on the next message — no restart. Secrets go in env/headers and aren't echoed back. Pass allowedUsers to restrict the server to specific people (least-privilege); omit for a server everyone can use.",
         {
           name: z
             .string()
@@ -364,6 +369,12 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           command: z.string().optional().describe("Required for stdio transport."),
           args: z.array(z.string()).optional(),
           env: z.record(z.string(), z.string()).optional(),
+          allowedUsers: z
+            .array(z.string())
+            .optional()
+            .describe(
+              "Optional per-user allowlist — only these people's sessions get this server's tools. Names/first-names/emails/GitHub logins/Slack ids all resolve. Omit for a server available to everyone."
+            ),
         },
         async (args: {
           name: string;
@@ -372,11 +383,35 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           command?: string;
           args?: string[];
           env?: Record<string, string>;
+          allowedUsers?: string[];
         }) => {
           const res = addMcpServer(args);
           if ("error" in res) return text(`Couldn't add it: ${res.error}`);
+          const restricted = args.allowedUsers?.length
+            ? ` Restricted to ${args.allowedUsers.join(", ")}.`
+            : "";
           return text(
-            `Added MCP server *${args.name}* (${args.transport}). It'll be available on the next message.`
+            `Added MCP server *${args.name}* (${args.transport}). It'll be available on the next message.${restricted}`
+          );
+        }
+      ),
+      tool(
+        "set_mcp_allowed_users",
+        "Restrict an existing MCP server to specific people, or lift the restriction. Pass allowedUsers to lock it down (only their sessions get its tools); pass an empty list (or omit) to make it available to everyone again. Names/first-names/emails/GitHub logins/Slack ids all resolve.",
+        {
+          name: z.string().describe("The MCP server to restrict."),
+          allowedUsers: z
+            .array(z.string())
+            .optional()
+            .describe("People allowed to use it. Empty/omitted = available to everyone."),
+        },
+        async (args: { name: string; allowedUsers?: string[] }) => {
+          const res = setMcpAllowedUsers(args.name, args.allowedUsers);
+          if ("error" in res) return text(`Couldn't update it: ${res.error}`);
+          return text(
+            res.allowedUsers?.length
+              ? `*${args.name}* is now restricted to ${res.allowedUsers.join(", ")}. Applies on the next message.`
+              : `*${args.name}* is now available to everyone. Applies on the next message.`
           );
         }
       ),

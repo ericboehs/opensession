@@ -28,7 +28,7 @@ import {
   type CodexAccount,
 } from "./codex-accounts";
 import { journalSet, journalClear, type StreamEvent } from "./claude-runner";
-import { gitIdentityEnv, type GitIdentity } from "./shared/user-mappings";
+import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
@@ -77,7 +77,8 @@ function isCodexUsageLimitError(message: string): boolean {
  */
 function buildCodexMcpConfig(
   allowlist: string[] | undefined,
-  disabledToolNames: string[]
+  disabledToolNames: string[],
+  user?: string
 ): Record<string, Record<string, unknown>> {
   const all = withDynamicCredentials(readMcpConfig().mcpServers) as Record<string, any>;
   const names = allowlist ?? Object.keys(all);
@@ -97,6 +98,14 @@ function buildCodexMcpConfig(
     const server = all[name];
     if (!server) {
       if (allowlist) console.warn(`[codex-runner] MCP allowlist names unknown server "${name}" — skipping`);
+      continue;
+    }
+    if (
+      Array.isArray(server.allowedUsers) &&
+      server.allowedUsers.length &&
+      !userMatchesAny(user, server.allowedUsers)
+    ) {
+      // User-restricted server this run's user isn't cleared for — hide it.
       continue;
     }
     const entry: Record<string, unknown> = {};
@@ -200,8 +209,10 @@ export async function* runCodex(opts: {
   busyKeys?: string[];
   /** Git identity for commits this run makes (attributes them to the prompt's author). */
   author?: GitIdentity | null;
+  /** Run's user; gates per-user MCP servers (mcp-config.json `allowedUsers`). */
+  user?: string;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, model, mcpServers, deniedTools, confirmTools, journal, busyKeys, author } = opts;
+  const { prompt, sessionId, cwd, mode, model, mcpServers, deniedTools, confirmTools, journal, busyKeys, author, user } = opts;
   const isAsk = mode === "ask";
 
   const runKey = sessionId || journal?.bksSessionId || busyKeys?.[0] || crypto.randomUUID();
@@ -297,7 +308,7 @@ export async function* runCodex(opts: {
         env: codexEnv(account, author),
         ...(account?.kind === "api_key" ? { apiKey: account.value } : {}),
         config: {
-          mcp_servers: buildCodexMcpConfig(mcpServers, disabledToolNames) as any,
+          mcp_servers: buildCodexMcpConfig(mcpServers, disabledToolNames, user) as any,
         },
       });
 

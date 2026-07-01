@@ -59,6 +59,12 @@ export interface RunAgentOpts {
   /** Git identity for commits this run makes, attributing them to the prompt's author. */
   author?: GitIdentity | null;
   /**
+   * The run's user (prompt author / UI user). Gates per-user MCP servers
+   * (mcp-config.json `allowedUsers`) — e.g. `brex` is limited to Michiel + Grant.
+   * Omitted = anonymous, which sees only unrestricted servers.
+   */
+  user?: string;
+  /**
    * Model to switch to when the primary model dies on usage limits with no
    * account left in its pool (claude-runner/codex-runner rotate their own
    * account pools first — this fires only once a whole pool is exhausted).
@@ -86,6 +92,7 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerat
       confirmTools: opts.confirmTools,
       journal: opts.journal,
       author: opts.author,
+      user: opts.user,
     });
   }
   return runClaude({ ...opts, model });
@@ -253,6 +260,7 @@ export function resumeInterruptedRuns(
             mode: run.mode,
             model: run.model,
             mcpServers: run.mcpServers,
+            user: run.user,
             deniedTools: run.deniedTools,
             aws: run.aws,
             journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-rerun` },
@@ -281,6 +289,7 @@ export function resumeInterruptedRuns(
           mode: run.mode,
           model: run.model,
           mcpServers: run.mcpServers,
+          user: run.user,
           deniedTools: run.deniedTools,
           aws: run.aws,
           journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },

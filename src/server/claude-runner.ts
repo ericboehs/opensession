@@ -5,7 +5,7 @@ import { getAgentAwsEnv } from "./aws-creds";
 import { audit, summarizeText } from "./audit";
 import { pickAccount, markExhausted, type ClaudeAccount } from "./claude-accounts";
 import { cleanPlainToolInput } from "./shared/note-style";
-import { gitIdentityEnv, type GitIdentity } from "./shared/user-mappings";
+import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { getDefaultModel } from "./models";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -151,14 +151,31 @@ function switchClaudeAccountAfterLimit(): string | undefined {
   return next;
 }
 
-/** Resolve the MCP servers for a run: all configured, or just the allowlist. */
-function filterMcpServers(allowlist?: string[]): Record<string, unknown> {
+/**
+ * Resolve the MCP servers for a run: all configured, or just the allowlist,
+ * minus any server whose per-user `allowedUsers` list excludes `user`. The
+ * `allowedUsers` field is stripped from every entry before it reaches the SDK
+ * (it's our metadata, not MCP config).
+ */
+function filterMcpServers(
+  allowlist?: string[],
+  user?: string
+): Record<string, unknown> {
   const all = withDynamicCredentials(readMcpConfig().mcpServers);
-  if (!allowlist) return all;
   const out: Record<string, unknown> = {};
-  for (const name of allowlist) {
-    if (all[name]) out[name] = all[name];
-    else console.warn(`[runner] MCP allowlist names unknown server "${name}" — skipping`);
+  const names = allowlist ?? Object.keys(all);
+  for (const name of names) {
+    const cfg = all[name] as any;
+    if (!cfg) {
+      if (allowlist) console.warn(`[runner] MCP allowlist names unknown server "${name}" — skipping`);
+      continue;
+    }
+    const { allowedUsers, ...entry } = cfg;
+    if (Array.isArray(allowedUsers) && allowedUsers.length && !userMatchesAny(user, allowedUsers)) {
+      // User-restricted server this run's user isn't cleared for — hide it.
+      continue;
+    }
+    out[name] = entry;
   }
   return out;
 }
@@ -177,6 +194,7 @@ export interface ActiveRunRecord {
   cwd: string;
   mode?: "ask" | "code";
   mcpServers?: string[]; // per-run MCP allowlist, preserved across resume
+  user?: string; // per-run user, preserved across resume (gates per-user MCP servers)
   deniedTools?: Record<string, string>; // per-run tool denials, preserved across resume
   aws?: boolean; // whether to inject AWS creds, preserved across resume
   model?: string; // per-session model, preserved across resume (decides the provider)
@@ -383,13 +401,19 @@ export async function* runClaude(opts: {
    * in separate worktrees never race. Omitted = the machine's default identity.
    */
   author?: GitIdentity | null;
+  /**
+   * The run's user (prompt author / UI user), used to gate per-user MCP servers
+   * (mcp-config.json `allowedUsers`). Journaled so a resume keeps the same
+   * visibility. Omitted = anonymous, which sees only unrestricted servers.
+   */
+  user?: string;
   journal?: { bksSessionId?: string; kind?: string };
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
     | { behavior: "deny"; message: string }
   >;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, confirmTools, aws, author, journal, onAskUser } = opts;
+  const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, confirmTools, aws, author, user, journal, onAskUser } = opts;
   const model = opts.model || getDefaultModel();
   const isAsk = mode === "ask";
 
@@ -432,6 +456,7 @@ export async function* runClaude(opts: {
     cwd,
     mode,
     mcpServers,
+    user,
     deniedTools,
     aws,
     model: opts.model,
@@ -713,7 +738,7 @@ export async function* runClaude(opts: {
         },
         // Read per run so MCP servers added/removed in the UI apply immediately;
         // merge any in-process SDK servers (michael-sessions/-admin) on top.
-        mcpServers: { ...filterMcpServers(mcpServers), ...(opts.inProcessMcp || {}) } as any,
+        mcpServers: { ...filterMcpServers(mcpServers, user), ...(opts.inProcessMcp || {}) } as any,
         strictMcpConfig: true,
         env: childEnv(awsEnv, account?.token, author),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
@@ -779,6 +804,7 @@ export async function* runClaude(opts: {
           cwd,
           mode,
           mcpServers,
+          user,
           deniedTools,
           aws,
           model: opts.model,

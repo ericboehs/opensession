@@ -62,6 +62,23 @@ export interface AddMcpInput {
   command?: string;
   args?: string[];
   env?: Record<string, string>;
+  /**
+   * Optional per-user allowlist. When set (non-empty), only sessions whose user
+   * resolves (via user-mappings) to one of these people get this server's tools;
+   * everyone else's runs never see it. Omitted/empty = available to every
+   * session (the default). Entries can be first names, full names, emails,
+   * GitHub logins, or Slack ids — matched by userMatchesAny.
+   */
+  allowedUsers?: string[];
+}
+
+/** Normalize an allowedUsers list: trim, drop blanks, dedupe. */
+function cleanAllowedUsers(users?: string[]): string[] | undefined {
+  if (!Array.isArray(users)) return undefined;
+  const out = Array.from(
+    new Set(users.map((u) => (u || "").trim()).filter(Boolean))
+  );
+  return out.length ? out : undefined;
 }
 
 export function addMcpServer(input: AddMcpInput): { ok: true } | { error: string } {
@@ -97,9 +114,31 @@ export function addMcpServer(input: AddMcpInput): { ok: true } | { error: string
     if (Object.keys(env).length > 0) entry.env = env;
   }
 
+  const allowedUsers = cleanAllowedUsers(input.allowedUsers);
+  if (allowedUsers) entry.allowedUsers = allowedUsers;
+
   config.mcpServers[name] = entry;
   writeMcpConfig(config);
   return { ok: true };
+}
+
+/**
+ * Set (or clear, with an empty/undefined list) the per-user allowlist on an
+ * existing MCP server. Lets you restrict a server after it's been added — e.g.
+ * lock `brex` down to Michiel + Grant — without re-entering its secrets.
+ */
+export function setMcpAllowedUsers(
+  name: string,
+  allowedUsers?: string[]
+): { ok: true; allowedUsers?: string[] } | { error: string } {
+  const config = readMcpConfig();
+  const entry = config.mcpServers[name];
+  if (!entry) return { error: `Server "${name}" not found` };
+  const cleaned = cleanAllowedUsers(allowedUsers);
+  if (cleaned) entry.allowedUsers = cleaned;
+  else delete entry.allowedUsers;
+  writeMcpConfig(config);
+  return { ok: true, allowedUsers: cleaned };
 }
 
 export function removeMcpServer(name: string): { ok: true } | { error: string } {
@@ -117,6 +156,8 @@ export interface McpConnection {
   envKeys: string[];
   status: "connected" | "ready" | "needs-env" | "unreachable" | "missing";
   detail?: string;
+  /** Per-user allowlist, if this server is restricted (empty/absent = everyone). */
+  allowedUsers?: string[];
 }
 
 let cache: { data: McpConnection[]; ts: number } | null = null;
@@ -127,7 +168,12 @@ export async function getConnections(force = false): Promise<McpConnection[]> {
 
   const servers = readMcpConfig().mcpServers;
   const results = await Promise.all(
-    Object.entries(servers).map(([name, cfg]) => checkServer(name, cfg))
+    Object.entries(servers).map(async ([name, cfg]) => {
+      const conn = await checkServer(name, cfg);
+      const allowedUsers = cleanAllowedUsers(cfg?.allowedUsers);
+      if (allowedUsers) conn.allowedUsers = allowedUsers;
+      return conn;
+    })
   );
 
   cache = { data: results, ts: Date.now() };

@@ -163,6 +163,32 @@ export function gitIdentityFor(user?: string | null): GitIdentity | null {
 }
 
 /**
+ * Does `user` resolve to one of the identities in `allowed`? Used to gate
+ * per-user MCP servers (mcp-config.json `allowedUsers`): both sides are run
+ * through the same identity table as commit attribution, so a config listing
+ * "Grant" matches a run whose user is "grant" / "9ranty" / "grant@tella.com" /
+ * their Slack id. Falls back to a case-insensitive raw-string match so an
+ * arbitrary label that doesn't map to a known teammate still works if it's an
+ * exact match. Returns false for an anonymous/unknown user against a non-empty
+ * list (fail-closed: unidentified callers don't get restricted servers).
+ */
+export function userMatchesAny(
+  user: string | null | undefined,
+  allowed: string[]
+): boolean {
+  if (!allowed?.length) return true; // no restriction
+  if (!user) return false;
+  const userId = gitIdentityFor(user);
+  const userNorm = user.trim().toLowerCase();
+  return allowed.some((a) => {
+    if (!a) return false;
+    if (a.trim().toLowerCase() === userNorm) return true;
+    const allowedId = gitIdentityFor(a);
+    return !!(allowedId && userId && allowedId.email === userId.email);
+  });
+}
+
+/**
  * Build the git author/committer env vars for an agent's child process. Setting
  * these on the process attributes every commit it makes during the run, without
  * mutating repo config (so parallel runs in different worktrees never race).

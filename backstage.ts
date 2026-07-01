@@ -171,6 +171,7 @@ import {
 	getConnections,
 	addMcpServer,
 	removeMcpServer,
+	setMcpAllowedUsers,
 } from "./src/server/connections";
 import {
 	listAccountsPublic,
@@ -1230,6 +1231,9 @@ async function runSessionPrompt(
 		aws: true, // sessions keep AWS read access (via injected creds)
 		// Attribute any commits this turn makes to whoever sent the prompt.
 		author: gitIdentityFor(user),
+		// Gate per-user MCP servers (allowedUsers) to the prompt's author. Automation
+		// sessions pass no user, so they never see a user-restricted server.
+		user: isAutomationSession ? undefined : user,
 		journal: { bksSessionId: session.id, kind: "prompt" },
 		onAskUser: makeAskHandler(sessionId),
 	})) {
@@ -1624,6 +1628,8 @@ async function runGoal(goal: Goal): Promise<void> {
 			confirmTools: STRIPE_CONFIRM_TOOLS,
 			aws: true,
 			author: gitIdentityFor(goal.name),
+			// A goal runs on behalf of its creator; gate per-user MCP servers to them.
+			user: createdBy,
 			fallbackModel:
 				goal.fallbackModel === "none"
 					? undefined
@@ -3096,6 +3102,21 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json(result);
 			}
 
+			// Restrict an existing MCP server to specific users (or clear the
+			// restriction with an empty/absent list).
+			if (mcpDelMatch && req.method === "PUT") {
+				const body = await req.json().catch(() => null);
+				const allowedUsers = Array.isArray(body?.allowedUsers)
+					? body.allowedUsers
+					: undefined;
+				const result = setMcpAllowedUsers(
+					decodeURIComponent(mcpDelMatch[1]),
+					allowedUsers,
+				);
+				if ("error" in result) return Response.json(result, { status: 404 });
+				return Response.json(result);
+			}
+
 			// ── Claude account pool (tokens are never sent back, only masked) ──
 			if (path === "/backstage/api/claude-accounts" && req.method === "GET") {
 				return Response.json({ accounts: listAccountsPublic() });
@@ -3747,6 +3768,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								inProcessMcp: interactiveMcpServers(user, bksId),
 								confirmTools: STRIPE_CONFIRM_TOOLS,
 								aws: true, // interactive sessions keep AWS read access (via injected creds)
+								user, // gate per-user MCP servers (allowedUsers) to the creator
 								journal: { bksSessionId: bksId, kind: "create" },
 								onAskUser: makeAskHandler(bksId),
 							})) {
@@ -4097,6 +4119,7 @@ registerSessionControl({
 					inProcessMcp: interactiveMcpServers(user, bksId),
 					confirmTools: STRIPE_CONFIRM_TOOLS,
 					aws: true,
+					user, // gate per-user MCP servers (allowedUsers) to the creator
 					journal: { bksSessionId: bksId, kind: "create" },
 					onAskUser: makeAskHandler(bksId),
 				})) {

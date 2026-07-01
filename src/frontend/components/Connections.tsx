@@ -7,6 +7,8 @@ interface McpConnection {
   envKeys: string[];
   status: "connected" | "ready" | "needs-env" | "unreachable" | "missing";
   detail?: string;
+  /** Per-user allowlist, if this server is restricted (absent = everyone). */
+  allowedUsers?: string[];
 }
 
 interface AgentHealth {
@@ -70,6 +72,32 @@ export function Connections() {
     try {
       const res = await fetch(`/backstage/api/connections/mcp/${encodeURIComponent(name)}`, {
         method: "DELETE",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      load(true);
+    } catch (e: any) {
+      setRemoveError(e.message);
+    }
+  }
+
+  async function handleRestrict(s: McpConnection) {
+    const current = (s.allowedUsers || []).join(", ");
+    const answer = prompt(
+      `Restrict "${s.name}" to these people (comma-separated names, e.g. "Michiel, Grant").\n` +
+        `Leave blank to make it available to everyone.`,
+      current,
+    );
+    if (answer === null) return; // cancelled
+    const allowedUsers = answer
+      .split(",")
+      .map((u) => u.trim())
+      .filter(Boolean);
+    try {
+      const res = await fetch(`/backstage/api/connections/mcp/${encodeURIComponent(s.name)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedUsers }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
@@ -158,16 +186,37 @@ export function Connections() {
                     <span className="conn-transport">{s.transport}</span>
                     <span className="conn-target" title={s.target}>{s.target}</span>
                   </div>
+                  <div className="conn-detail">
+                    {s.allowedUsers?.length ? (
+                      <span
+                        className="conn-transport"
+                        title={`Only these people's sessions get this server: ${s.allowedUsers.join(", ")}`}
+                      >
+                        🔒 {s.allowedUsers.join(", ")}
+                      </span>
+                    ) : (
+                      <span className="conn-target">Available to everyone</span>
+                    )}
+                  </div>
                   {s.status !== "connected" && s.status !== "ready" && s.detail && (
                     <div className="conn-error">{s.detail}</div>
                   )}
-                  <button
-                    className="conn-remove"
-                    onClick={() => handleRemove(s.name)}
-                    title="Remove this MCP server"
-                  >
-                    Remove
-                  </button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      className="conn-remove"
+                      onClick={() => handleRestrict(s)}
+                      title="Restrict this MCP server to specific users"
+                    >
+                      {s.allowedUsers?.length ? "Edit access" : "Restrict"}
+                    </button>
+                    <button
+                      className="conn-remove"
+                      onClick={() => handleRemove(s.name)}
+                      title="Remove this MCP server"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -706,6 +755,7 @@ function AddMcpForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => 
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [env, setEnv] = useState("");
+  const [allowedUsers, setAllowedUsers] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -722,6 +772,8 @@ function AddMcpForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => 
         envObj[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
       }
 
+      const allowed = allowedUsers.split(",").map((u) => u.trim()).filter(Boolean);
+
       const res = await fetch("/backstage/api/connections/mcp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -732,6 +784,7 @@ function AddMcpForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => 
           command: transport === "stdio" ? command.trim() : undefined,
           args: transport === "stdio" ? args.split(/\s+/).filter(Boolean) : undefined,
           env: transport === "stdio" ? envObj : undefined,
+          allowedUsers: allowed.length ? allowed : undefined,
         }),
       });
       const body = await res.json();
@@ -808,6 +861,15 @@ function AddMcpForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => 
           </label>
         </>
       )}
+
+      <label>
+        Allowed users (optional, comma-separated — leave blank for everyone)
+        <input
+          value={allowedUsers}
+          onChange={(e) => setAllowedUsers(e.target.value)}
+          placeholder="Michiel, Grant"
+        />
+      </label>
 
       {error && <div className="form-error">{error}</div>}
 
