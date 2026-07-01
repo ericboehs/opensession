@@ -19,7 +19,7 @@ interface Props {
    * switcher selects which repo's PR to show. Omit for single-repo callers
    * (e.g. the Reviews drawer) — they target the primary branch as before.
    */
-  repos?: Array<{ project: string; primary: boolean }>;
+  repos?: Array<{ repo: string; primary: boolean }>;
   /**
    * WebSocket sender. When provided, selecting text in the PR info column shows a
    * "Send to session" popover that delivers the selection + a message to this PR's
@@ -37,7 +37,7 @@ interface PrDiffData {
 export function PrPanel({ sessionId, onOpenSession, split, repos, send }: Props) {
   const repoList = repos && repos.length > 1 ? repos : null;
   const [activeRepo, setActiveRepo] = useState<string | undefined>(
-    repoList ? (repoList.find((r) => r.primary)?.project ?? repoList[0].project) : undefined,
+    repoList ? (repoList.find((r) => r.primary)?.repo ?? repoList[0].repo) : undefined,
   );
   const [pr, setPr] = useState<PrDetails | null>(null);
   const [diff, setDiff] = useState<PrDiffData | null>(null);
@@ -175,12 +175,12 @@ export function PrPanel({ sessionId, onOpenSession, split, repos, send }: Props)
     <div className="pr-repo-tabs">
       {repoList.map((r) => (
         <button
-          key={r.project}
-          className={`pr-repo-tab ${r.project === activeRepo ? "pr-repo-tab-active" : ""}`}
-          onClick={() => setActiveRepo(r.project)}
+          key={r.repo}
+          className={`pr-repo-tab ${r.repo === activeRepo ? "pr-repo-tab-active" : ""}`}
+          onClick={() => setActiveRepo(r.repo)}
           title={r.primary ? "Primary repo" : "Attached repo"}
         >
-          {r.project}
+          {r.repo}
         </button>
       ))}
     </div>

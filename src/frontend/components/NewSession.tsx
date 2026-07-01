@@ -24,8 +24,8 @@ interface Worktree {
 }
 
 // Repos a session can run against. tella-fusion is the default.
-// Keep in sync with PROJECTS in src/server/worktree.ts.
-const PROJECTS = [
+// Keep in sync with REPOS in src/server/worktree.ts.
+const REPOS = [
   { id: "tella-fusion", label: "tella-fusion" },
   { id: "backstage", label: "backstage (Michael itself)" },
   { id: "gitops", label: "gitops" },
@@ -42,12 +42,12 @@ const EFFORTS = [
 ];
 
 // The repo the sidebar is currently filtered to (persisted by Sidebar.tsx under
-// this key). When set to a real project, a new session should default to it so
+// this key). When set to a real repo, a new session should default to it so
 // creating from a repo-filtered view lands on that repo — not always tella-fusion.
 function filteredRepo(): string | null {
   try {
     const v = JSON.parse(localStorage.getItem("michael-sidebar-filter") || "{}");
-    return typeof v.repo === "string" && PROJECTS.some((p) => p.id === v.repo)
+    return typeof v.repo === "string" && REPOS.some((p) => p.id === v.repo)
       ? v.repo
       : null;
   } catch {
@@ -55,19 +55,20 @@ function filteredRepo(): string | null {
   }
 }
 
-/** Deep-link prefill: /backstage/new?mode=ask|code&prompt=…&branch=…&project= */
+/** Deep-link prefill: /backstage/new?mode=ask|code&prompt=…&branch=…&repo= */
 function readPrefill() {
   const params = new URLSearchParams(location.search);
-  // An explicit ?project= wins; otherwise fall back to the sidebar's repo filter,
-  // then to tella-fusion.
-  const project = PROJECTS.some((p) => p.id === params.get("project"))
-    ? params.get("project")!
+  // An explicit ?repo= wins (legacy ?project= still honored); otherwise fall
+  // back to the sidebar's repo filter, then to tella-fusion.
+  const repoParam = params.get("repo") ?? params.get("project");
+  const repo = REPOS.some((p) => p.id === repoParam)
+    ? repoParam!
     : filteredRepo() || "tella-fusion";
   return {
     mode: params.get("mode") === "ask" ? ("ask" as const) : ("code" as const),
     prompt: params.get("prompt") || "",
     branch: params.get("branch") || "",
-    project,
+    repo,
   };
 }
 
@@ -88,7 +89,7 @@ const isCodexModel = (m: string) => m.startsWith("gpt") || m.startsWith("codex")
 export function NewSession({ onBack, send, addHandler, connected, prefillPrompt }: Props) {
   const [prefill] = useState(readPrefill);
   const [mode, setMode] = useState<"ask" | "code">(prefill.mode);
-  const [project, setProject] = useState(prefill.project);
+  const [repo, setRepo] = useState(prefill.repo);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [selectedWorktree, setSelectedWorktree] = useState("__new__");
   const [newBranch, setNewBranch] = useState(prefill.branch);
@@ -113,8 +114,8 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
   // Keep the palette open after a create to fire off another task.
   const [createMore, setCreateMore] = useState(false);
 
-  // "@"-mention file autocomplete against the selected project's repo (no
-  // session exists yet, so search by project).
+  // "@"-mention file autocomplete against the selected repo's repo (no
+  // session exists yet, so search by repo).
   const promptRef = useRef<HTMLTextAreaElement>(null);
   // Hidden <input type="file"> driven by the "Add file" button — the mobile
   // path, since there's no clipboard paste there.
@@ -123,7 +124,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
     value: prompt,
     onChange: setPrompt,
     textareaRef: promptRef,
-    mentionFetch: (q) => fetchFileMentions(q, undefined, project),
+    mentionFetch: (q) => fetchFileMentions(q, undefined, repo),
   });
 
   // Focus the prompt as soon as the palette opens.
@@ -140,13 +141,13 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
       .catch(() => {});
   }, []);
 
-  // Worktrees are per-project; refetch and reset the selection when it changes.
+  // Worktrees are per-repo; refetch and reset the selection when it changes.
   useEffect(() => {
     setSelectedWorktree("__new__");
-    fetchWorktrees(project)
+    fetchWorktrees(repo)
       .then(setWorktrees)
       .catch(() => setWorktrees([]));
-  }, [project]);
+  }, [repo]);
 
   // Auto-suggest a branch name from the prompt (debounced Haiku call), but only
   // while the field is "ours" — once the user types in it (branchEdited) we back
@@ -226,7 +227,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
     send({
       type: "create_session",
       mode,
-      project,
+      repo,
       branch: mode === "ask" ? "" : branch,
       prompt: prompt.trim(),
       user: getCurrentUser(),
@@ -274,7 +275,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
       }}
     >
       <div className="palette-card" role="dialog" aria-label="New session">
-        {/* Header: project (left) · create-from (right) */}
+        {/* Header: repo (left) · create-from (right) */}
         <div className="palette-header">
           <div className="palette-trigger palette-trigger-strong" title="Repository">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -282,17 +283,17 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
               <path d="M2 6h12" stroke="currentColor" strokeWidth="1.3" />
             </svg>
             <span className="palette-trigger-label">
-              {PROJECTS.find((p) => p.id === project)?.label || project}
+              {REPOS.find((p) => p.id === repo)?.label || repo}
             </span>
             <span className="palette-chevron">▾</span>
             <select
               className="palette-select-overlay"
-              value={project}
-              onChange={(e) => setProject(e.target.value)}
+              value={repo}
+              onChange={(e) => setRepo(e.target.value)}
               disabled={creating}
               aria-label="Repository"
             >
-              {PROJECTS.map((p) => (
+              {REPOS.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
                 </option>

@@ -33,7 +33,10 @@ export interface UnifiedSession {
   prUpdatedAt?: string;
   prChecks?: { total: number; passed: number; failed: number; pending: number };
   mode?: "ask" | "code";
-  project?: string;
+  /** Primary repo this chat works in (repo id; default "tella-fusion"). */
+  repo?: string;
+  /** Optional Project (folder) this chat belongs to; null/undefined = standalone. */
+  projectId?: string | null;
   /** Secondary repos this session also works in (cross-repo sessions). */
   attachedRepos?: AttachedRepo[];
   automation?: string;
@@ -108,7 +111,7 @@ export interface CLISessionFile {
  * commit, and open a PR there independently of the primary repo.
  */
 export interface AttachedRepo {
-  project: string; // project id (key in worktree.ts PROJECTS)
+  repo: string; // repo id (key in worktree.ts REPOS)
   branch: string;
   dir: string; // worktree path
 }
@@ -125,7 +128,8 @@ export interface BackstageSessionFile {
   lastActivity: string;
   title?: string;
   mode?: "ask" | "code";
-  project?: string; // which repo this session works in (default "tella-fusion")
+  repo?: string; // which repo this chat works in (default "tella-fusion")
+  projectId?: string | null; // Project (folder) this chat belongs to; null = standalone
   automation?: string; // name of the automation that created this session
   plainThreadId?: string; // Plain thread this session is triaging
   model?: string; // model id for this session's runs; unset = default

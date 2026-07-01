@@ -894,7 +894,7 @@ export function SessionViewer({
 			{session.worktreeDir && !isAsk && (
 				<RepoBar
 					sessionId={session.id}
-					primaryProject={session.project || "tella-fusion"}
+					primaryRepo={session.repo || "tella-fusion"}
 					branch={session.branch}
 					initialAttached={session.attachedRepos || []}
 				/>
@@ -1274,11 +1274,11 @@ export function SessionViewer({
 									send={send}
 									repos={[
 										{
-											project: session.project || "tella-fusion",
+											repo: session.repo || "tella-fusion",
 											primary: true,
 										},
 										...(session.attachedRepos || []).map((r) => ({
-											project: r.project,
+											repo: r.repo,
 											primary: false,
 										})),
 									]}

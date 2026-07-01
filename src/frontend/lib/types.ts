@@ -64,10 +64,12 @@ export interface UnifiedSession {
 	prUpdatedAt?: string;
 	prChecks?: { total: number; passed: number; failed: number; pending: number };
 	mode?: "ask" | "code";
-	/** Primary repo this session works in (project id; default "tella-fusion"). */
-	project?: string;
+	/** Primary repo this chat works in (repo id; default "tella-fusion"). */
+	repo?: string;
+	/** Optional Project (folder) this chat belongs to; null/undefined = standalone. */
+	projectId?: string | null;
 	/** Secondary repos this session also works in (cross-repo sessions). */
-	attachedRepos?: Array<{ project: string; branch: string; dir: string }>;
+	attachedRepos?: Array<{ repo: string; branch: string; dir: string }>;
 	automation?: string;
 	archived?: boolean;
 	plainThreadId?: string;
@@ -133,7 +135,7 @@ export interface SessionDiff {
 
 /** One repo's diff within a (possibly multi-repo) session. */
 export interface RepoDiff {
-	project: string;
+	repo: string;
 	dir: string | null;
 	primary: boolean;
 	diff: SessionDiff;
@@ -194,7 +196,9 @@ export type WSClientMessage =
 			prompt: string;
 			user: string;
 			mode?: "ask" | "code";
-			project?: string;
+			repo?: string;
+			/** Project (folder) to add this new chat to; omit for a standalone chat. */
+			projectId?: string;
 			model?: string;
 			images?: string[];
 			/**

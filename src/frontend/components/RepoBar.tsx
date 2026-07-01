@@ -1,15 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  fetchProjects,
+  fetchRepos,
   attachRepoApi,
   detachRepoApi,
-  type ProjectInfo,
+  type RepoInfo,
   type AttachedRepo,
 } from "../lib/api";
 
 interface Props {
   sessionId: string;
-  primaryProject: string;
+  primaryRepo: string;
   branch: string | null;
   initialAttached: AttachedRepo[];
 }
@@ -20,9 +20,9 @@ interface Props {
  * dropdown. Mirrors the agent's michael-repos attach_repo tool — both go through
  * POST /api/sessions/:id/attach-repo.
  */
-export function RepoBar({ sessionId, primaryProject, branch, initialAttached }: Props) {
+export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Props) {
   const [attached, setAttached] = useState<AttachedRepo[]>(initialAttached);
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export function RepoBar({ sessionId, primaryProject, branch, initialAttached }: 
   useEffect(() => setAttached(initialAttached), [JSON.stringify(initialAttached)]);
 
   useEffect(() => {
-    if (open && !projects.length) fetchProjects().then(setProjects).catch(() => {});
+    if (open && !repos.length) fetchRepos().then(setRepos).catch(() => {});
   }, [open]);
 
   useEffect(() => {
@@ -44,16 +44,16 @@ export function RepoBar({ sessionId, primaryProject, branch, initialAttached }: 
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
-  const attachedIds = new Set(attached.map((r) => r.project));
-  const attachable = projects.filter(
-    (p) => !p.sharedCheckout && p.id !== primaryProject && !attachedIds.has(p.id),
+  const attachedIds = new Set(attached.map((r) => r.repo));
+  const attachable = repos.filter(
+    (p) => !p.sharedCheckout && p.id !== primaryRepo && !attachedIds.has(p.id),
   );
 
-  async function attach(project: string) {
-    setBusy(project);
+  async function attach(repo: string) {
+    setBusy(repo);
     setError(null);
     try {
-      setAttached(await attachRepoApi(sessionId, project, branch || undefined));
+      setAttached(await attachRepoApi(sessionId, repo, branch || undefined));
       setOpen(false);
     } catch (e: any) {
       setError(e.message || String(e));
@@ -62,11 +62,11 @@ export function RepoBar({ sessionId, primaryProject, branch, initialAttached }: 
     }
   }
 
-  async function detach(project: string) {
-    setBusy(project);
+  async function detach(repo: string) {
+    setBusy(repo);
     setError(null);
     try {
-      setAttached(await detachRepoApi(sessionId, project));
+      setAttached(await detachRepoApi(sessionId, repo));
     } catch (e: any) {
       setError(e.message || String(e));
     } finally {
@@ -77,15 +77,15 @@ export function RepoBar({ sessionId, primaryProject, branch, initialAttached }: 
   return (
     <div className="repobar">
       <span className="repobar-chip repobar-chip-primary" title="Primary repo">
-        {primaryProject}
+        {primaryRepo}
       </span>
       {attached.map((r) => (
-        <span key={r.project} className="repobar-chip" title={`${r.dir} — branch ${r.branch}`}>
-          {r.project}
+        <span key={r.repo} className="repobar-chip" title={`${r.dir} — branch ${r.branch}`}>
+          {r.repo}
           <button
             className="repobar-detach"
-            onClick={() => detach(r.project)}
-            disabled={busy === r.project}
+            onClick={() => detach(r.repo)}
+            disabled={busy === r.repo}
             title="Detach (leaves the worktree on disk)"
           >
             ×
@@ -102,7 +102,7 @@ export function RepoBar({ sessionId, primaryProject, branch, initialAttached }: 
         </button>
         {open && (
           <div className="repobar-menu">
-            {!projects.length ? (
+            {!repos.length ? (
               <div className="repobar-menu-empty">Loading…</div>
             ) : attachable.length ? (
               attachable.map((p) => (

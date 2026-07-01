@@ -305,7 +305,7 @@ const FILTER_KEY = "michael-sidebar-filter";
 
 interface FilterState {
 	groupBy: GroupBy;
-	repo: string; // a project id, or "all"
+	repo: string; // a repo id, or "all"
 	sort: SortBy;
 }
 
@@ -326,7 +326,7 @@ function readFilter(): FilterState {
 }
 
 function sessionRepo(s: UnifiedSession): string {
-	return s.project || DEFAULT_PROJECT;
+	return s.repo || DEFAULT_PROJECT;
 }
 
 // Stable per-repo swatch color, reusing the person palette hashing so a repo
@@ -1367,7 +1367,7 @@ function SessionHoverCard({
 	if (s.model) rows.push(["Model", s.model]);
 	if (s.mode) rows.push(["Mode", s.mode]);
 
-	const repoLabel = s.project || "tella-fusion";
+	const repoLabel = s.repo || "tella-fusion";
 	const extra = s.attachedRepos?.length || 0;
 	rows.push(["Repo", extra ? `${repoLabel} +${extra} more` : repoLabel]);
 	if (s.branch)

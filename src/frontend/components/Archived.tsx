@@ -17,7 +17,7 @@ const SIDEBAR_FILTER_KEY = "michael-sidebar-filter";
 type OwnerFilter = "mine" | "everyone";
 
 function sessionRepo(s: UnifiedSession): string {
-  return s.project || DEFAULT_PROJECT;
+  return s.repo || DEFAULT_PROJECT;
 }
 
 // The repo the sidebar is currently filtered to ("all" when unset), read fresh

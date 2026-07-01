@@ -5,10 +5,14 @@ import type { UnifiedSession } from "./types";
 const TELLA_FUSION = "/home/ubuntu/projects/tella-fusion";
 const WORKTREES_DIR = "/home/ubuntu/worktrees";
 
-// Projects a session can run against. Worktrees live at
+// Repos a chat can run against. Worktrees live at
 // <WORKTREES_DIR>/<wtPrefix>-<branch>; defaultBranch is the base they branch
 // from. tella-fusion is the default for every existing caller.
-export interface Project {
+//
+// NOTE: this is the *repo* concept. A "Project" in the UI is a separate thing —
+// an optional folder that groups chats (see src/server/projects.ts). A chat's
+// worktree lives on the chat and belongs to one of these repos.
+export interface Repo {
   id: string;
   repo: string;
   wtPrefix: string;
@@ -24,7 +28,7 @@ export interface Project {
   sharedCheckout?: boolean;
 }
 
-export const PROJECTS: Record<string, Project> = {
+export const REPOS: Record<string, Repo> = {
   "tella-fusion": { id: "tella-fusion", repo: TELLA_FUSION, wtPrefix: "tella-fusion", defaultBranch: "main", ghRepo: "tellahq/tella-fusion" },
   backstage: { id: "backstage", repo: "/home/ubuntu/projects/tella-backstage", wtPrefix: "backstage", defaultBranch: "master", ghRepo: "tellahq/backstage", sharedCheckout: true },
   // Infra / GitOps / media repos — normal worktree + PR flow (none self-host).
@@ -35,16 +39,16 @@ export const PROJECTS: Record<string, Project> = {
   "gst-plugins-rs": { id: "gst-plugins-rs", repo: "/home/ubuntu/projects/gst-plugins-rs", wtPrefix: "gst-plugins-rs", defaultBranch: "tla_main", ghRepo: "tellahq/gst-plugins-rs" },
 };
 
-export function getProject(id?: string): Project {
-  return (id && PROJECTS[id]) || PROJECTS["tella-fusion"];
+export function getRepo(id?: string): Repo {
+  return (id && REPOS[id]) || REPOS["tella-fusion"];
 }
 
-/** Infer the project that owns a checkout/worktree path. */
-export function projectForPath(p: string): Project {
-  for (const proj of Object.values(PROJECTS)) {
-    if (p === proj.repo || p.startsWith(`${WORKTREES_DIR}/${proj.wtPrefix}-`)) return proj;
+/** Infer the repo that owns a checkout/worktree path. */
+export function repoForPath(p: string): Repo {
+  for (const r of Object.values(REPOS)) {
+    if (p === r.repo || p.startsWith(`${WORKTREES_DIR}/${r.wtPrefix}-`)) return r;
   }
-  return PROJECTS["tella-fusion"];
+  return REPOS["tella-fusion"];
 }
 
 // Serialize git operations that mutate the shared repo's worktrees. Concurrent
@@ -87,11 +91,11 @@ async function seedWebappEnv(webappDir: string): Promise<void> {
   }
 }
 
-export async function listWorktrees(projectId?: string): Promise<WorktreeInfo[]> {
-  const project = getProject(projectId);
-  const prefix = `${WORKTREES_DIR}/${project.wtPrefix}-`;
+export async function listWorktrees(repoId?: string): Promise<WorktreeInfo[]> {
+  const repo = getRepo(repoId);
+  const prefix = `${WORKTREES_DIR}/${repo.wtPrefix}-`;
   try {
-    const result = await $`git -C ${project.repo} worktree list --porcelain`.text();
+    const result = await $`git -C ${repo.repo} worktree list --porcelain`.text();
     const worktrees: WorktreeInfo[] = [];
     let currentPath = "";
     let currentBranch = "";
@@ -117,16 +121,16 @@ export async function listWorktrees(projectId?: string): Promise<WorktreeInfo[]>
   }
 }
 
-export async function removeWorktree(branch: string, projectId?: string): Promise<void> {
-  const project = getProject(projectId);
+export async function removeWorktree(branch: string, repoId?: string): Promise<void> {
+  const repo = getRepo(repoId);
   try {
-    const wtPath = `${WORKTREES_DIR}/${project.wtPrefix}-${branch}`;
+    const wtPath = `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
     // Use the wt delete script for tella-fusion when available, otherwise plain
     // git worktree remove (the wt script is tella-fusion-specific).
-    if (project.id === "tella-fusion" && (await Bun.file("/home/ubuntu/bin/wt").exists())) {
+    if (repo.id === "tella-fusion" && (await Bun.file("/home/ubuntu/bin/wt").exists())) {
       await $`/home/ubuntu/bin/wt delete ${branch}`.quiet();
     } else {
-      await $`git -C ${project.repo} worktree remove ${wtPath} --force`.quiet();
+      await $`git -C ${repo.repo} worktree remove ${wtPath} --force`.quiet();
     }
   } catch (e) {
     console.error(`Failed to remove worktree for ${branch}:`, e);
@@ -196,20 +200,20 @@ export async function sweepArchivedWorktrees(
  * path is identical to the original, so claude session resume keeps working
  * (transcripts are keyed by cwd).
  */
-export async function reviveWorktree(branch: string, projectId?: string): Promise<string> {
-  const project = getProject(projectId);
-  const wtPath = `${WORKTREES_DIR}/${project.wtPrefix}-${branch}`;
+export async function reviveWorktree(branch: string, repoId?: string): Promise<string> {
+  const repo = getRepo(repoId);
+  const wtPath = `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
   if (existsSync(wtPath)) return wtPath;
 
   return withGitLock(async () => {
-    await $`git -C ${project.repo} worktree prune`.quiet();
+    await $`git -C ${repo.repo} worktree prune`.quiet();
     const hasBranch =
-      (await $`git -C ${project.repo} show-ref --verify --quiet refs/heads/${branch}`.nothrow()).exitCode === 0;
+      (await $`git -C ${repo.repo} show-ref --verify --quiet refs/heads/${branch}`.nothrow()).exitCode === 0;
     if (hasBranch) {
-      await $`git -C ${project.repo} worktree add ${wtPath} ${branch}`;
+      await $`git -C ${repo.repo} worktree add ${wtPath} ${branch}`;
     } else {
-      await $`git -C ${project.repo} fetch origin ${project.defaultBranch} --quiet`;
-      await $`git -C ${project.repo} worktree add -b ${branch} ${wtPath} origin/${project.defaultBranch}`;
+      await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`;
+      await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} origin/${repo.defaultBranch}`;
     }
     return wtPath;
   });
@@ -253,27 +257,27 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
   return wtPath;
 }
 
-export async function createWorktree(branch: string, projectId?: string): Promise<string> {
-  const project = getProject(projectId);
+export async function createWorktree(branch: string, repoId?: string): Promise<string> {
+  const repo = getRepo(repoId);
 
-  // Shared-checkout projects (backstage) don't get a per-session worktree: the
+  // Shared-checkout repos (backstage) don't get a per-session worktree: the
   // session works in the live main checkout on the default branch so its edits
   // hot-reload in the running server. No branch is created or switched — every
   // session stays on the default branch and commits there.
-  if (project.sharedCheckout) return project.repo;
+  if (repo.sharedCheckout) return repo.repo;
 
-  const wtPath = `${WORKTREES_DIR}/${project.wtPrefix}-${branch}`;
+  const wtPath = `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
 
   await withGitLock(async () => {
-    await $`git -C ${project.repo} fetch origin ${project.defaultBranch} --quiet`;
-    await $`git -C ${project.repo} worktree add -b ${branch} ${wtPath} origin/${project.defaultBranch}`;
+    await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`;
+    await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} origin/${repo.defaultBranch}`;
   });
 
   // Best-effort dep install — sessions can always run `bun install` themselves.
-  // tella-fusion's deps + dev-auth env live under the webapp; other projects
+  // tella-fusion's deps + dev-auth env live under the webapp; other repos
   // (e.g. backstage) install from the repo root.
   try {
-    if (project.id === "tella-fusion") {
+    if (repo.id === "tella-fusion") {
       const webappDir = `${wtPath}/packages/core/webapp`;
       await seedWebappEnv(webappDir);
       if (await Bun.file(`${webappDir}/package.json`).exists()) {
@@ -292,19 +296,19 @@ export async function createWorktree(branch: string, projectId?: string): Promis
 /**
  * Resolve an isolated worktree for attaching a secondary repo to a session,
  * reusing an existing worktree for the branch when one is already checked out.
- * Returns the project id, branch, and worktree dir. Shared-checkout projects
+ * Returns the repo id, branch, and worktree dir. Shared-checkout repos
  * (backstage) can't be attached as an isolated worktree — they'd hand back the
  * live main checkout, so reject them.
  */
 export async function prepareAttachedWorktree(
-  projectId: string,
+  repoId: string,
   branch: string
-): Promise<{ project: string; branch: string; dir: string }> {
-  const project = getProject(projectId);
-  if (project.sharedCheckout) {
-    throw new Error(`${project.id} is a shared-checkout repo and can't be attached as an isolated worktree`);
+): Promise<{ repo: string; branch: string; dir: string }> {
+  const repo = getRepo(repoId);
+  if (repo.sharedCheckout) {
+    throw new Error(`${repo.id} is a shared-checkout repo and can't be attached as an isolated worktree`);
   }
-  const existing = (await listWorktrees(project.id)).find((w) => w.branch === branch);
-  const dir = existing?.path || (await createWorktree(branch, project.id));
-  return { project: project.id, branch, dir };
+  const existing = (await listWorktrees(repo.id)).find((w) => w.branch === branch);
+  const dir = existing?.path || (await createWorktree(branch, repo.id));
+  return { repo: repo.id, branch, dir };
 }

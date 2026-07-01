@@ -12,7 +12,7 @@ interface Props {
 const DEFAULT_PROJECT = "tella-fusion";
 
 function sessionRepo(s: UnifiedSession): string {
-	return s.project || DEFAULT_PROJECT;
+	return s.repo || DEFAULT_PROJECT;
 }
 
 // The status buckets a session can fall into, mirroring the sidebar's triage

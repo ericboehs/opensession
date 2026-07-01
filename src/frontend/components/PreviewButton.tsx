@@ -11,7 +11,7 @@ import type { UnifiedSession } from "../lib/types";
 // (tella-local ensure-up.sh) seeds a tella-fusion webapp specifically.
 function isPreviewable(session: UnifiedSession): boolean {
   if (!session.worktreeDir) return false;
-  return (session.project ?? "tella-fusion") === "tella-fusion";
+  return (session.repo ?? "tella-fusion") === "tella-fusion";
 }
 
 /**

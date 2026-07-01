@@ -226,7 +226,9 @@ function scanBackstageSessions(): UnifiedSession[] {
       startedBy: data.createdBy,
       title: data.title || data.branch || "Ask session",
       mode: data.mode,
-      project: data.project,
+      // Back-compat: older session files stored the repo under `project`.
+      repo: data.repo ?? (data as { project?: string }).project,
+      projectId: data.projectId ?? null,
       attachedRepos: data.attachedRepos,
       automation:
         data.automation ||

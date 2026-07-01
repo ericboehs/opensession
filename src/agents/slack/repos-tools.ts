@@ -20,16 +20,16 @@ export interface ReposToolContext {
   /** The session these tools act on. */
   sessionId: string;
   /** Attach (or re-attach) a repo; throws with a human message on bad input. */
-  attach: (project: string, branch?: string) => Promise<{ attached: AttachedRepo; all: AttachedRepo[] }>;
+  attach: (repo: string, branch?: string) => Promise<{ attached: AttachedRepo; all: AttachedRepo[] }>;
   /** Current repo layout for the session, or null if it can't be resolved. */
   snapshot: () => {
-    primaryProject: string;
+    primaryRepo: string;
     branch: string | null;
     worktreeDir: string | null;
     attached: AttachedRepo[];
   } | null;
-  /** All registered projects (id + default branch + whether shared-checkout). */
-  projects: () => Array<{ id: string; defaultBranch: string; sharedCheckout: boolean }>;
+  /** All registered repos (id + default branch + whether shared-checkout). */
+  repos: () => Array<{ id: string; defaultBranch: string; sharedCheckout: boolean }>;
 }
 
 function text(s: string) {
@@ -40,26 +40,26 @@ export function createReposMcpServer(ctx: ReposToolContext) {
   const tools = [
     tool(
       "list_repos",
-      "List the repos available to this session: which one is primary, which are already attached (with their worktree paths and branches), and which other projects you could attach. Use before attach_repo to see what's possible.",
+      "List the repos available to this session: which one is primary, which are already attached (with their worktree paths and branches), and which other repos you could attach. Use before attach_repo to see what's possible.",
       {},
       async () => {
         const snap = ctx.snapshot();
-        const projects = ctx.projects();
+        const repos = ctx.repos();
         const lines: string[] = [];
         if (snap) {
-          lines.push(`Primary: ${snap.primaryProject}${snap.branch ? ` (branch ${snap.branch})` : ""} → ${snap.worktreeDir}`);
+          lines.push(`Primary: ${snap.primaryRepo}${snap.branch ? ` (branch ${snap.branch})` : ""} → ${snap.worktreeDir}`);
           if (snap.attached.length) {
             lines.push("Attached:");
-            for (const r of snap.attached) lines.push(`  • ${r.project} (branch ${r.branch}) → ${r.dir}`);
+            for (const r of snap.attached) lines.push(`  • ${r.repo} (branch ${r.branch}) → ${r.dir}`);
           } else {
             lines.push("Attached: none yet");
           }
         }
-        const attachable = projects.filter(
-          (p) => !p.sharedCheckout && p.id !== snap?.primaryProject
+        const attachable = repos.filter(
+          (p) => !p.sharedCheckout && p.id !== snap?.primaryRepo
         );
         lines.push("");
-        lines.push("Attachable projects: " + attachable.map((p) => p.id).join(", "));
+        lines.push("Attachable repos: " + attachable.map((p) => p.id).join(", "));
         return text(lines.join("\n"));
       }
     ),
@@ -67,26 +67,26 @@ export function createReposMcpServer(ctx: ReposToolContext) {
       "attach_repo",
       "Attach a secondary repo to this session so you can work in it cross-repo. Creates (or reuses) an ISOLATED git worktree for that repo and returns its path — work there, then commit/push and open a PR in that repo independently. Prefer this over cd-ing into a repo's main checkout. Branch defaults to this session's branch.",
       {
-        project: z
+        repo: z
           .string()
-          .describe("Project id to attach (e.g. 'gitops', 'infra', 'shared-infra', 'gstreamer', 'gst-plugins-rs'). See list_repos."),
+          .describe("Repo id to attach (e.g. 'gitops', 'infra', 'shared-infra', 'gstreamer', 'gst-plugins-rs'). See list_repos."),
         branch: z
           .string()
           .optional()
           .describe("Branch to check out in the worktree. Defaults to this session's primary branch."),
       },
-      async (args: { project: string; branch?: string }) => {
+      async (args: { repo: string; branch?: string }) => {
         try {
-          const { attached, all } = await ctx.attach(args.project, args.branch);
-          const others = all.filter((r) => r.project !== attached.project);
+          const { attached, all } = await ctx.attach(args.repo, args.branch);
+          const others = all.filter((r) => r.repo !== attached.repo);
           return text(
-            `Attached ${attached.project} on branch ${attached.branch}.\n` +
+            `Attached ${attached.repo} on branch ${attached.branch}.\n` +
               `Worktree: ${attached.dir}\n` +
               `cd there to work in it; commit/push and open a PR in this repo independently of the primary repo.` +
-              (others.length ? `\n(Also attached: ${others.map((r) => r.project).join(", ")}.)` : "")
+              (others.length ? `\n(Also attached: ${others.map((r) => r.repo).join(", ")}.)` : "")
           );
         } catch (e: any) {
-          return text(`Couldn't attach ${args.project}: ${e?.message || String(e)}`);
+          return text(`Couldn't attach ${args.repo}: ${e?.message || String(e)}`);
         }
       }
     ),

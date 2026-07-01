@@ -39,7 +39,7 @@ export interface Goal {
   status: GoalStatus;
   /** "ask" = read-only research/measure; "code" = persistent worktree + can open PRs. */
   mode: "ask" | "code";
-  /** Project id for code-mode worktrees (key in worktree.ts PROJECTS). Default tella-fusion. */
+  /** Repo id for code-mode worktrees (key in worktree.ts REPOS). Default tella-fusion. */
   repo?: string;
   /** Backstage session this goal drives (context continuity). Set on first wake. */
   bksSessionId?: string;

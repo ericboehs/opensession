@@ -20,10 +20,10 @@ import {
 	removeWorktree,
 	reviveWorktree,
 	sweepArchivedWorktrees,
-	getProject,
-	projectForPath,
+	getRepo,
+	repoForPath,
 	prepareAttachedWorktree,
-	PROJECTS,
+	REPOS,
 } from "./src/server/worktree";
 import {
 	STRIPE_CONFIRM_TOOLS,
@@ -286,23 +286,23 @@ function interactiveMcpServers(
 					// Cross-repo: attach secondary repos as isolated worktrees.
 					"michael-repos": createReposMcpServer({
 						sessionId,
-						attach: (project, branch) => attachRepo(sessionId, project, branch),
+						attach: (repo, branch) => attachRepo(sessionId, repo, branch),
 						snapshot: () => {
 							const s = findSession(sessionId);
 							if (!s) return null;
 							return {
-								primaryProject:
-									s.project ||
+								primaryRepo:
+									s.repo ||
 									(s.worktreeDir
-										? projectForPath(s.worktreeDir).id
+										? repoForPath(s.worktreeDir).id
 										: "tella-fusion"),
 								branch: s.branch,
 								worktreeDir: s.worktreeDir,
 								attached: s.attachedRepos || [],
 							};
 						},
-						projects: () =>
-							Object.values(PROJECTS).map((p) => ({
+						repos: () =>
+							Object.values(REPOS).map((p) => ({
 								id: p.id,
 								defaultBranch: p.defaultBranch,
 								sharedCheckout: !!p.sharedCheckout,
@@ -322,18 +322,18 @@ function interactiveMcpServers(
 function buildReposNote(session: UnifiedSession): string | undefined {
 	const attached = session.attachedRepos || [];
 	if (!attached.length) return undefined;
-	const primaryProject =
-		session.project ||
+	const primaryRepo =
+		session.repo ||
 		(session.worktreeDir
-			? projectForPath(session.worktreeDir).id
+			? repoForPath(session.worktreeDir).id
 			: "tella-fusion");
 	const lines = [
 		"## Repos in this session",
 		"This session spans multiple repos. Each is an isolated git worktree — `cd` into the right one to read or edit its files, and commit/push/open PRs in each repo independently (don't edit another repo's shared main checkout).",
-		`- **${primaryProject}** (primary): ${session.worktreeDir}${session.branch ? ` — branch \`${session.branch}\`` : ""}`,
+		`- **${primaryRepo}** (primary): ${session.worktreeDir}${session.branch ? ` — branch \`${session.branch}\`` : ""}`,
 	];
 	for (const r of attached)
-		lines.push(`- **${r.project}**: ${r.dir} — branch \`${r.branch}\``);
+		lines.push(`- **${r.repo}**: ${r.dir} — branch \`${r.branch}\``);
 	lines.push(
 		"A file mentioned from an attached repo arrives as `@<project>:<path>` — resolve it under that repo's worktree dir above.",
 	);
@@ -348,25 +348,25 @@ function buildReposNote(session: UnifiedSession): string | undefined {
  */
 function resolvePrTarget(
 	session: UnifiedSession,
-	projectId?: string | null,
+	repoId?: string | null,
 ): { ghRepo: string; branch: string } | null {
-	const primaryProject =
-		session.project ||
+	const primaryRepo =
+		session.repo ||
 		(session.worktreeDir
-			? projectForPath(session.worktreeDir).id
+			? repoForPath(session.worktreeDir).id
 			: "tella-fusion");
-	if (!projectId || projectId === primaryProject) {
+	if (!repoId || repoId === primaryRepo) {
 		if (!session.branch) return null;
 		return {
-			ghRepo: getProject(primaryProject).ghRepo,
+			ghRepo: getRepo(primaryRepo).ghRepo,
 			branch: session.branch,
 		};
 	}
 	const att = (session.attachedRepos || []).find(
-		(r) => r.project === projectId,
+		(r) => r.repo === repoId,
 	);
 	if (!att) return null;
-	return { ghRepo: getProject(att.project).ghRepo, branch: att.branch };
+	return { ghRepo: getRepo(att.repo).ghRepo, branch: att.branch };
 }
 
 function findSession(sessionId: string): UnifiedSession | undefined {
@@ -458,7 +458,7 @@ function touchBackstageSession(
 
 /**
  * Attach a secondary repo to a session: create (or reuse) an isolated worktree
- * for `projectId` and record it on the session. The attached branch defaults to
+ * for `repoId` and record it on the session. The attached branch defaults to
  * the session's primary branch so cross-repo work shares one branch name (and
  * the PRs line up). Re-attaching the same project just updates its entry. Only
  * code sessions on a real worktree can attach — Ask/main-checkout sessions and
@@ -466,25 +466,25 @@ function touchBackstageSession(
  */
 async function attachRepo(
 	sessionId: string,
-	projectId: string,
+	repoId: string,
 	branch?: string,
 ): Promise<{ attached: AttachedRepo; all: AttachedRepo[] }> {
 	const session = findSession(sessionId);
 	if (!session) throw new Error("Session not found");
 	if (session.mode === "ask")
 		throw new Error("Can't attach a repo to an Ask (read-only) session");
-	if (!PROJECTS[projectId]) throw new Error(`Unknown project "${projectId}"`);
-	if (session.project === projectId)
-		throw new Error(`${projectId} is this session's primary repo`);
+	if (!REPOS[repoId]) throw new Error(`Unknown repo "${repoId}"`);
+	if (session.repo === repoId)
+		throw new Error(`${repoId} is this session's primary repo`);
 
 	const effectiveBranch = (branch || session.branch || "").trim();
 	if (!effectiveBranch) {
 		throw new Error("No branch to attach on — pass a branch name");
 	}
 
-	const attached = await prepareAttachedWorktree(projectId, effectiveBranch);
+	const attached = await prepareAttachedWorktree(repoId, effectiveBranch);
 	const existing = (session.attachedRepos || []).filter(
-		(r) => r.project !== projectId,
+		(r) => r.repo !== repoId,
 	);
 	const all = [...existing, attached];
 	touchBackstageSession(sessionId, { attachedRepos: all });
@@ -1176,22 +1176,22 @@ async function runSessionPrompt(
 	// before, so resuming the claude session keeps its history.
 	let cwd = session.worktreeDir || `${HOME}/projects/tella-fusion`;
 	if (session.worktreeDir && !existsSync(session.worktreeDir)) {
-		const project = session.project
-			? getProject(session.project)
-			: projectForPath(session.worktreeDir);
+		const repo = session.repo
+			? getRepo(session.repo)
+			: repoForPath(session.worktreeDir);
 		if (session.branch) {
 			broadcastToSession(sessionId, {
 				type: "notice",
 				message: `This session's worktree was cleaned up — recreating it from branch ${session.branch}…`,
 			});
 			try {
-				cwd = await reviveWorktree(session.branch, project.id);
+				cwd = await reviveWorktree(session.branch, repo.id);
 			} catch (e) {
 				broadcastToSession(sessionId, {
 					type: "notice",
 					message: `Couldn't recreate the worktree (${e}); running in the main checkout instead.`,
 				});
-				cwd = project.repo;
+				cwd = repo.repo;
 			}
 		} else {
 			broadcastToSession(sessionId, {
@@ -1199,7 +1199,7 @@ async function runSessionPrompt(
 				message:
 					"This session's worktree is gone; running in the main checkout.",
 			});
-			cwd = project.repo;
+			cwd = repo.repo;
 		}
 	}
 	let prompt = content;
@@ -1562,18 +1562,18 @@ function buildGoalWakePrompt(goal: Goal, wake: number, cwd: string): string {
 		`Human gates: to get sign-off or a decision from a teammate, use the michael-humans \`ask_human\` tool — it DMs them as Michael and folds their reply back into this session. Do NOT email or impersonate anyone.`,
 	];
 	if (goal.mode === "code") {
-		const project = getProject(goal.repo);
-		if (project.sharedCheckout) {
+		const repo = getRepo(goal.repo);
+		if (repo.sharedCheckout) {
 			// Shared-checkout repos (backstage) have NO isolated worktree — `cwd` is
 			// the live main checkout the running server and every other session share.
 			// A `git checkout -B`/`reset`/`pull` here yanks the working tree out from
 			// under everyone and orphans their un-pushed commits, so forbid it.
 			parts.push(
-				`Shipping code: you are in the SHARED, live main checkout at ${cwd} on \`${project.defaultBranch}\` — the running server and other sessions use this exact working tree at the same time. NEVER create or switch branches, \`reset\`, \`pull\`, \`stash\`, or \`checkout\` (that rips the tree out from under everyone and orphans their commits). Just edit files, then \`git add <your specific files>\` → \`git commit\` → \`git push\` on \`${project.defaultBranch}\`. Commit + push frequently. No feature branch and no PR — this repo ships directly from \`${project.defaultBranch}\`.`,
+				`Shipping code: you are in the SHARED, live main checkout at ${cwd} on \`${repo.defaultBranch}\` — the running server and other sessions use this exact working tree at the same time. NEVER create or switch branches, \`reset\`, \`pull\`, \`stash\`, or \`checkout\` (that rips the tree out from under everyone and orphans their commits). Just edit files, then \`git add <your specific files>\` → \`git commit\` → \`git push\` on \`${repo.defaultBranch}\`. Commit + push frequently. No feature branch and no PR — this repo ships directly from \`${repo.defaultBranch}\`.`,
 			);
 		} else {
 			parts.push(
-				`Shipping code: you are in a persistent worktree at ${cwd} (kept stable across wakes so your session resumes cleanly). For each change, start clean from the default branch (\`git fetch origin && git checkout -B <feature-branch> origin/${project.defaultBranch}\`), make edits, follow the repo's AGENTS.md and run its checks/format, then open a PR with \`gh pr create --base ${project.defaultBranch}\`. NEVER merge — a PR is the human gate.`,
+				`Shipping code: you are in a persistent worktree at ${cwd} (kept stable across wakes so your session resumes cleanly). For each change, start clean from the default branch (\`git fetch origin && git checkout -B <feature-branch> origin/${repo.defaultBranch}\`), make edits, follow the repo's AGENTS.md and run its checks/format, then open a PR with \`gh pr create --base ${repo.defaultBranch}\`. NEVER merge — a PR is the human gate.`,
 			);
 		}
 	}
@@ -1594,15 +1594,15 @@ async function runGoal(goal: Goal): Promise<void> {
 		let cwd = `${HOME}/projects/tella-fusion`;
 		let branch = goal.branch || "";
 		if (goal.mode === "code") {
-			const project = getProject(goal.repo);
+			const repo = getRepo(goal.repo);
 			branch = goal.branch || `goal-${goal.id.slice(-8)}`;
 			if (goal.worktreePath && existsSync(goal.worktreePath)) {
 				cwd = goal.worktreePath;
 			} else {
 				try {
-					cwd = await reviveWorktree(branch, project.id);
+					cwd = await reviveWorktree(branch, repo.id);
 				} catch {
-					cwd = await createWorktree(branch, project.id);
+					cwd = await createWorktree(branch, repo.id);
 				}
 			}
 		}
@@ -1628,7 +1628,7 @@ async function runGoal(goal: Goal): Promise<void> {
 				...(effectiveModel ? { model: effectiveModel } : {}),
 				branch: goal.mode === "code" ? branch : "",
 				worktreeDir: cwd,
-				...(goal.mode === "code" ? { project: getProject(goal.repo).id } : {}),
+				...(goal.mode === "code" ? { repo: getRepo(goal.repo).id } : {}),
 				createdBy,
 				createdAt: goal.createdAt,
 				lastActivity: new Date().toISOString(),
@@ -2313,24 +2313,24 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					return Response.json({ error: "Session not found" }, { status: 404 });
 
 				// One diff per repo in the session: primary worktree + each attached repo.
-				// Each carries its project id so the panel can show a repo switcher and
+				// Each carries its repo id so the panel can show a repo switcher and
 				// route per-line feedback to the right checkout.
 				const targets: Array<{
-					project: string;
+					repo: string;
 					dir: string | null;
 					primary: boolean;
 				}> = [
 					{
-						project:
-							session.project ||
+						repo:
+							session.repo ||
 							(session.worktreeDir
-								? projectForPath(session.worktreeDir).id
+								? repoForPath(session.worktreeDir).id
 								: "tella-fusion"),
 						dir: session.worktreeDir,
 						primary: true,
 					},
 					...(session.attachedRepos || []).map((r) => ({
-						project: r.project,
+						repo: r.repo,
 						dir: r.dir,
 						primary: false,
 					})),
@@ -2350,11 +2350,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							try {
 								diff = await getSessionDiff(
 									t.dir,
-									getProject(t.project).defaultBranch,
+									getRepo(t.repo).defaultBranch,
 								);
 							} catch {}
 						}
-						return { project: t.project, dir: t.dir, primary: t.primary, diff };
+						return { repo: t.repo, dir: t.dir, primary: t.primary, diff };
 					}),
 				);
 
@@ -2676,7 +2676,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					if (cleanWorktree && session.worktreeDir && session.branch) {
 						await removeWorktree(
 							session.branch,
-							projectForPath(session.worktreeDir).id,
+							repoForPath(session.worktreeDir).id,
 						);
 					}
 					sessionsCache = null;
@@ -2686,39 +2686,39 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				}
 			}
 
-			// List worktrees (optionally for a specific project)
+			// List worktrees (optionally for a specific repo)
 			if (path === "/backstage/api/worktrees" && req.method === "GET") {
 				return Response.json(
-					await listWorktrees(url.searchParams.get("project") || undefined),
+					await listWorktrees(url.searchParams.get("repo") || undefined),
 				);
 			}
 
 			// File-mention autocomplete ("@" in the composer). Searches the session's
 			// primary worktree plus any attached repos (cross-repo sessions), falling
-			// back to the default project repo for new-session composers with no session
+			// back to the default repo for new-session composers with no session
 			// yet. Each hit carries `insert` (what lands in the textarea: a bare path for
-			// the primary repo, `<project>:path` for an attached one) and a `repo` label
+			// the primary repo, `<repo>:path` for an attached one) and a `repo` label
 			// when more than one repo is in play.
 			if (path === "/backstage/api/files" && req.method === "GET") {
 				const q = url.searchParams.get("q") || "";
 				const sessionId = url.searchParams.get("session");
-				const repos: Array<{ project: string; dir: string; primary: boolean }> =
+				const repos: Array<{ repo: string; dir: string; primary: boolean }> =
 					[];
 				const session = sessionId ? findSession(sessionId) : undefined;
 				if (session?.worktreeDir && existsSync(session.worktreeDir)) {
 					repos.push({
-						project: session.project || projectForPath(session.worktreeDir).id,
+						repo: session.repo || repoForPath(session.worktreeDir).id,
 						dir: session.worktreeDir,
 						primary: true,
 					});
 					for (const r of session.attachedRepos || []) {
 						if (existsSync(r.dir))
-							repos.push({ project: r.project, dir: r.dir, primary: false });
+							repos.push({ repo: r.repo, dir: r.dir, primary: false });
 					}
 				}
 				if (!repos.length) {
-					const proj = getProject(url.searchParams.get("project") || undefined);
-					repos.push({ project: proj.id, dir: proj.repo, primary: true });
+					const proj = getRepo(url.searchParams.get("repo") || undefined);
+					repos.push({ repo: proj.id, dir: proj.repo, primary: true });
 				}
 				const multi = repos.length > 1;
 				const perRepo = multi ? Math.max(6, Math.floor(20 / repos.length)) : 20;
@@ -2729,8 +2729,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						for (const f of await searchRepoFiles(r.dir, q, perRepo)) {
 							out.push({
 								display: f,
-								insert: r.primary ? f : `${r.project}:${f}`,
-								repo: multi ? r.project : undefined,
+								insert: r.primary ? f : `${r.repo}:${f}`,
+								repo: multi ? r.repo : undefined,
 							});
 						}
 					} catch {}
@@ -2738,10 +2738,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json({ files: out.slice(0, 24) });
 			}
 
-			// Projects available to attach / start a session against.
-			if (path === "/backstage/api/projects" && req.method === "GET") {
+			// Repos available to attach / start a chat against.
+			if (path === "/backstage/api/repos" && req.method === "GET") {
 				return Response.json({
-					projects: Object.values(PROJECTS).map((p) => ({
+					repos: Object.values(REPOS).map((p) => ({
 						id: p.id,
 						defaultBranch: p.defaultBranch,
 						sharedCheckout: !!p.sharedCheckout,
@@ -2757,15 +2757,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			if (attachMatch && req.method === "POST") {
 				const sessionId = decodeURIComponent(attachMatch[1]);
 				const body = (await req.json().catch(() => ({}))) as {
-					project?: string;
+					repo?: string;
 					branch?: string;
 				};
-				if (!body.project)
-					return Response.json({ error: "project required" }, { status: 400 });
+				if (!body.repo)
+					return Response.json({ error: "repo required" }, { status: 400 });
 				try {
 					const { attached, all } = await attachRepo(
 						sessionId,
-						body.project,
+						body.repo,
 						body.branch,
 					);
 					return Response.json({ ok: true, attached, attachedRepos: all });
@@ -2786,13 +2786,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			if (detachMatch && req.method === "POST") {
 				const sessionId = decodeURIComponent(detachMatch[1]);
 				const body = (await req.json().catch(() => ({}))) as {
-					project?: string;
+					repo?: string;
 				};
 				const session = findSession(sessionId);
 				if (!session)
 					return Response.json({ error: "Session not found" }, { status: 404 });
 				const all = (session.attachedRepos || []).filter(
-					(r) => r.project !== body.project,
+					(r) => r.repo !== body.repo,
 				);
 				touchBackstageSession(sessionId, { attachedRepos: all });
 				return Response.json({ ok: true, attachedRepos: all });
@@ -3808,27 +3808,27 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								: undefined;
 						const isCodex = providerFor(model) === "codex";
 						// Which repo this session works in (tella-fusion by default).
-						const project = getProject(
-							typeof msg.project === "string" ? msg.project : undefined,
+						const repo = getRepo(
+							typeof msg.repo === "string" ? msg.repo : undefined,
 						);
 						try {
 							let wtPath: string;
 							if (forkSource) {
 								// Share the source's cwd so the fork sees the same code state.
-								wtPath = forkSource.worktreeDir || project.repo;
+								wtPath = forkSource.worktreeDir || repo.repo;
 							} else if (isAsk) {
 								// Ask sessions run read-only on the main checkout — no worktree
-								wtPath = project.repo;
-							} else if (project.sharedCheckout) {
+								wtPath = repo.repo;
+							} else if (repo.sharedCheckout) {
 								// Backstage: code sessions edit the live main checkout on the
 								// default branch (hot-reloads in the running server). No worktree.
-								wtPath = project.repo;
+								wtPath = repo.repo;
 							} else {
 								// Check if worktree exists, create if needed
-								const worktrees = await listWorktrees(project.id);
+								const worktrees = await listWorktrees(repo.id);
 								wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
 								if (!wtPath) {
-									wtPath = await createWorktree(branch, project.id);
+									wtPath = await createWorktree(branch, repo.id);
 								}
 							}
 
@@ -3863,11 +3863,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										? forkSource.branch || ""
 										: isAsk
 											? ""
-											: project.sharedCheckout
-												? project.defaultBranch
+											: repo.sharedCheckout
+												? repo.defaultBranch
 												: branch,
 									worktreeDir: wtPath,
-									project: projectForPath(wtPath).id,
+									repo: repoForPath(wtPath).id,
 									createdBy: user || "Anonymous",
 									createdAt: new Date().toISOString(),
 									lastActivity: new Date().toISOString(),

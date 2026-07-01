@@ -45,7 +45,7 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
     return () => clearInterval(interval);
   }, [load, isRunning]);
 
-  async function handleComment(project: string, target: CommentTarget, text: string) {
+  async function handleComment(repo: string, target: CommentTarget, text: string) {
     if (!canSend) throw new Error("Michael is busy — wait for the current run to finish");
     const lines =
       target.startLine === target.endLine
@@ -57,9 +57,9 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
       user: getCurrentUser(),
       content:
         `Diff feedback from ${getCurrentUser()} on \`${target.path}\` (${lines}` +
-        `${target.side === "deletions" ? ", removed lines" : ""}) in the **${project}** repo's current diff:\n\n` +
+        `${target.side === "deletions" ? ", removed lines" : ""}) in the **${repo}** repo's current diff:\n\n` +
         `${text}\n\n` +
-        `Please address this in the ${project} worktree on the current branch.`,
+        `Please address this in the ${repo} worktree on the current branch.`,
     });
   }
 
@@ -83,12 +83,12 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
             const n = r.diff.totalAdditions + r.diff.totalDeletions;
             return (
               <button
-                key={r.project}
+                key={r.repo}
                 className={`diff-repo-tab ${i === active ? "diff-repo-tab-active" : ""}`}
                 onClick={() => setActive(i)}
                 title={r.primary ? "Primary repo" : "Attached repo"}
               >
-                {r.project}
+                {r.repo}
                 <span className="diff-repo-tab-count">{r.diff.files.length}</span>
               </button>
             );
@@ -108,13 +108,13 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
 
       <div className="diff-render">
         <CommentableDiff
-          key={cur.project}
+          key={cur.repo}
           patch={d.rawPatch || ""}
           submitLabel="Send to Michael"
           placeholder={`Leave feedback on these lines — Michael picks it up in this session…`}
           disabled={!canSend}
           disabledHint="Michael is working — feedback can be sent when the current run finishes."
-          onSubmit={(target, text) => handleComment(cur.project, target, text)}
+          onSubmit={(target, text) => handleComment(cur.repo, target, text)}
         />
       </div>
     </div>

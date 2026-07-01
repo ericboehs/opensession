@@ -117,7 +117,7 @@ export async function fetchSubagent(
 export interface FileMention {
 	/** Repo-relative path, for display. */
 	display: string;
-	/** Text inserted after the "@": bare path (primary repo) or `project:path`. */
+	/** Text inserted after the "@": bare path (primary repo) or `repo:path`. */
 	insert: string;
 	/** Repo label, set only when more than one repo is searched (cross-repo). */
 	repo?: string;
@@ -126,45 +126,45 @@ export interface FileMention {
 /**
  * File suggestions for "@"-mention autocomplete in the composer. Searches the
  * session's primary checkout plus any attached repos when `sessionId` is given;
- * otherwise the given `project`'s repo (used by the New-session prompt, which
- * has no session yet), falling back to the default project.
+ * otherwise the given `repo`'s checkout (used by the New-session prompt, which
+ * has no session yet), falling back to the default repo.
  */
 export async function fetchFileMentions(
 	query: string,
 	sessionId?: string,
-	project?: string,
+	repo?: string,
 ): Promise<FileMention[]> {
 	const params = new URLSearchParams({ q: query });
 	if (sessionId) params.set("session", sessionId);
-	else if (project) params.set("project", project);
+	else if (repo) params.set("repo", repo);
 	const res = await fetch(`${BASE}/files?${params.toString()}`);
 	if (!res.ok) return [];
 	const data = await res.json();
 	return data.files ?? [];
 }
 
-export interface ProjectInfo {
+export interface RepoInfo {
 	id: string;
 	defaultBranch: string;
 	sharedCheckout: boolean;
 }
 
-export async function fetchProjects(): Promise<ProjectInfo[]> {
-	const res = await fetch(`${BASE}/projects`);
+export async function fetchRepos(): Promise<RepoInfo[]> {
+	const res = await fetch(`${BASE}/repos`);
 	if (!res.ok) return [];
 	const data = await res.json();
-	return data.projects ?? [];
+	return data.repos ?? [];
 }
 
 export interface AttachedRepo {
-	project: string;
+	repo: string;
 	branch: string;
 	dir: string;
 }
 
 export async function attachRepoApi(
 	sessionId: string,
-	project: string,
+	repo: string,
 	branch?: string,
 ): Promise<AttachedRepo[]> {
 	const res = await fetch(
@@ -172,7 +172,7 @@ export async function attachRepoApi(
 		{
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ project, ...(branch ? { branch } : {}) }),
+			body: JSON.stringify({ repo, ...(branch ? { branch } : {}) }),
 		},
 	);
 	const body = await res.json();
@@ -182,14 +182,14 @@ export async function attachRepoApi(
 
 export async function detachRepoApi(
 	sessionId: string,
-	project: string,
+	repo: string,
 ): Promise<AttachedRepo[]> {
 	const res = await fetch(
 		`${BASE}/sessions/${encodeURIComponent(sessionId)}/detach-repo`,
 		{
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ project }),
+			body: JSON.stringify({ repo }),
 		},
 	);
 	const body = await res.json();
@@ -270,8 +270,8 @@ export async function postChannelMessageApi(
 	return body.message as SlackMessage;
 }
 
-export async function fetchWorktrees(project?: string) {
-	const qs = project ? `?project=${encodeURIComponent(project)}` : "";
+export async function fetchWorktrees(repo?: string) {
+	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
 	const res = await fetch(`${BASE}/worktrees${qs}`);
 	if (!res.ok) throw new Error(`Failed to fetch worktrees: ${res.status}`);
 	return res.json();
@@ -304,7 +304,7 @@ export async function fetchDiff(
 	return res.json();
 }
 
-/** `repo` (a project id) targets an attached repo's PR; omit for the primary. */
+/** `repo` (a repo id) targets an attached repo's PR; omit for the primary. */
 export async function fetchPr(sessionId: string, repo?: string) {
 	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
 	const res = await fetch(
