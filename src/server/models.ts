@@ -29,12 +29,8 @@ export const KNOWN_MODELS: ModelInfo[] = [
   { id: "gpt-5.3-codex-spark", provider: "codex", label: "GPT-5.3 Codex Spark", aliases: ["spark"] },
 ];
 
-/**
- * Per-provider defaults: claude-opus-4-8 for Anthropic, gpt-5.5 for OpenAI.
- * NOTE: temporarily on Opus while claude-fable-5 is unavailable — revert to
- * "claude-fable-5" once Fable is back.
- */
-export const DEFAULT_CLAUDE_MODEL = "claude-opus-4-8";
+/** Per-provider defaults: claude-fable-5 for Anthropic, gpt-5.5 for OpenAI. */
+export const DEFAULT_CLAUDE_MODEL = "claude-fable-5";
 export const DEFAULT_CODEX_MODEL = "gpt-5.5";
 
 /**

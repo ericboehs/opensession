@@ -166,7 +166,6 @@ export function ensureSeoLoops(): void {
       createdBy: "Michael (loops)",
       eventKey: loop.eventKey,
       mcpServers: loop.mcpServers,
-      model: "claude-opus-4-8",
     });
     if ("error" in created) {
       console.error(`[loops] Failed to seed SEO loop "${loop.name}":`, created.error);

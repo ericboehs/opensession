@@ -28,7 +28,6 @@ export function ensureTriageAutomation(): void {
       "grafana",
       "slack",
     ],
-    model: "claude-opus-4-8",
     fallbackModel: "gpt-5.5",
   });
   if ("error" in created) {

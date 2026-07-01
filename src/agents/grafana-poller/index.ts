@@ -113,7 +113,6 @@ function ensureSeeds(): void {
       createdBy: "Michael (grafana poller)",
       eventKey: seed.eventKey,
       mcpServers: ["TellaInternalSupportMCP", "slack", "grafana"],
-      model: "claude-opus-4-8",
       grafanaPoll: seed.grafanaPoll,
     });
     if ("error" in created) {

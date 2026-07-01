@@ -21,7 +21,7 @@ interface CronJobSeed {
   schedule: string; // 5-field UTC cron
   mode: "ask" | "code";
   mcpServers: string[];
-  model: string;
+  model?: string;
   prompt: string;
 }
 
@@ -57,7 +57,6 @@ If Tinybird returns no rows, post nothing.`,
     schedule: "0 15 * * 5",
     mode: "code",
     mcpServers: ["slack"],
-    model: "claude-opus-4-8",
     prompt: `You are Michael, drafting Tella's weekly changelog. Work in your worktree (a fresh checkout of ${REPO} main). The changelog lives at \`packages/core/webapp/docs/changelog.mdx\`.
 
 1. DEDUP: \`gh pr list --repo ${REPO} --state open --json url,headRefName --limit 50\` — if any open PR's branch starts with \`weekly-changelog-\`, STOP (a draft is already awaiting review).

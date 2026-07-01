@@ -25,7 +25,7 @@ export interface SweepConfig {
   /** 5-field UTC cron (server is UTC). */
   schedule: string;
   mcpServers: string[];
-  model: string;
+  model?: string;
   /** The task: what to look for, what to protect, and how to approach it. */
   task: string;
 }
@@ -75,7 +75,6 @@ export const SWEEP_LOOPS: SweepConfig[] = [
     titlePrefix: "Production Error Sweep",
     schedule: "0 16 * * 1-5", // ~9am PT, weekday mornings (server is UTC)
     mcpServers: ["grafana", "sentry"],
-    model: "claude-opus-4-8",
     task:
       "Use the Grafana MCP to review production logs for errors — the high-volume targets first (`vercel` especially), plus `instant` and `temporal`. The Sentry MCP is also available for error context. Focus on real, recurring, actionable errors — not one-offs, known-flaky noise, or things outside our control; prioritize by impact and frequency, and trace each to its root cause before fixing.",
   },
@@ -86,7 +85,6 @@ export const SWEEP_LOOPS: SweepConfig[] = [
     titlePrefix: "Code Cleanup Sweep",
     schedule: "0 17 * * 1", // ~10am PT, Mondays (weekly; cleanup is low-urgency)
     mcpServers: [],
-    model: "claude-opus-4-8",
     task:
       "Review the tella-fusion codebase for cleanup opportunities: dead code (unreachable or unused), stale files or comments, unused dependencies, duplication, broken links, inconsistent names, and confusing structure.\n\n" +
       "Protect active and uncertain work: do NOT touch unrelated changes, uncommitted/work-in-progress, generated files, or anything you're not confident is safe to remove — when in doubt, leave it and defer it.\n\n" +

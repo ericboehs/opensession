@@ -38,7 +38,6 @@ function ensureReviewAutomation(): void {
     mode: "ask",
     createdBy: "Michael (github agent)",
     eventKey: PR_EVENT_KEY,
-    model: "claude-opus-4-8",
   });
   if ("error" in created) {
     console.error(`[github] Failed to seed review automation:`, created.error);
@@ -66,7 +65,6 @@ function ensureDocsSyncAutomation(): void {
     mode: "code",
     createdBy: "Michael (github agent)",
     eventKey: PR_MERGED_EVENT_KEY,
-    model: "claude-opus-4-8",
   });
   if ("error" in created) {
     console.error(`[github] Failed to seed docs-sync automation:`, created.error);
