@@ -143,6 +143,8 @@ import {
 	automationDeniedTools,
 	automationMcpServersByName,
 } from "./src/server/automations";
+import { AUTOMATION_TEMPLATES } from "./src/server/automation-templates";
+import { draftAutomation } from "./src/server/draft-automation";
 import {
 	listActions,
 	getAction,
@@ -3412,6 +3414,25 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			}
 
 			// ── Automations ──
+			if (path === "/backstage/api/automation-templates" && req.method === "GET") {
+				return Response.json(AUTOMATION_TEMPLATES);
+			}
+
+			// Draft an automation config from a free-text description (one-shot
+			// Haiku; the draft only pre-fills the form, it's never saved directly).
+			if (path === "/backstage/api/automations/draft" && req.method === "POST") {
+				const body = await req.json().catch(() => null);
+				if (!body || typeof body.description !== "string")
+					return Response.json({ error: "description required" }, { status: 400 });
+				const draft = await draftAutomation(body.description);
+				if (!draft)
+					return Response.json(
+						{ error: "Couldn't draft an automation from that — add more detail or fill the form manually" },
+						{ status: 422 },
+					);
+				return Response.json(draft);
+			}
+
 			if (path === "/backstage/api/automations" && req.method === "GET") {
 				const list = listAutomations().map((a) => ({
 					...a,

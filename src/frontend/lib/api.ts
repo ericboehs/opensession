@@ -592,6 +592,56 @@ export async function fetchAutomations() {
 	return res.json();
 }
 
+export interface AutomationTemplate {
+	id: string;
+	name: string;
+	description: string;
+	category: "sweep" | "digest" | "investigator" | "triage" | "hygiene";
+	prompt: string;
+	schedule: string;
+	mode: "ask" | "code";
+	mcpServers?: string[];
+	eventKey?: string;
+}
+
+export async function fetchAutomationTemplates(): Promise<AutomationTemplate[]> {
+	const res = await fetch(`${BASE}/automation-templates`);
+	if (!res.ok) throw new Error(`Failed to fetch templates: ${res.status}`);
+	return res.json();
+}
+
+export interface AutomationDraft {
+	name: string;
+	prompt: string;
+	schedule: string;
+	mode: "ask" | "code";
+	mcpServers?: string[];
+	eventKey?: string;
+}
+
+/** Draft an automation config from a free-text description (backend Haiku
+ *  call). Throws with a friendly message when the draft fails. */
+export async function draftAutomationApi(description: string): Promise<AutomationDraft> {
+	const res = await fetch(`${BASE}/automations/draft`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ description }),
+	});
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body;
+}
+
+/** MCP server list + agent health, for pickers (Automations) and Settings. */
+export async function fetchConnections(): Promise<{
+	mcpServers: Array<{ name: string; status: string; allowedUsers?: string[] }>;
+	agents: Record<string, unknown>;
+}> {
+	const res = await fetch(`${BASE}/connections`);
+	if (!res.ok) throw new Error(`Failed to fetch connections: ${res.status}`);
+	return res.json();
+}
+
 export async function createAutomationApi(input: {
 	name: string;
 	prompt: string;
@@ -601,6 +651,8 @@ export async function createAutomationApi(input: {
 	eventKey?: string;
 	model?: string;
 	fallbackModel?: string;
+	mcpServers?: string[];
+	slackWatch?: { channel: string };
 }) {
 	const res = await fetch(`${BASE}/automations`, {
 		method: "POST",

@@ -50,6 +50,10 @@ import {
   emitLinkedChannelMessage,
 } from "../../server/slack-links";
 import {
+  isChannelWatched,
+  fireAutomationsForSlackChannel,
+} from "../../server/automations";
+import {
   resolveByOption as resolveHumanAsk,
   isAwaiting as isHumanAskAwaiting,
   getAsk as getHumanAsk,
@@ -169,6 +173,41 @@ export class SlackAgent implements AgentModule {
               text: prettifyMentions(event.text || ""),
               isBot: false,
             });
+          }
+        }
+
+        // Channel-watch automations: one run per top-level message in a
+        // watched channel (thread replies and @michael mentions don't
+        // re-trigger — mentions go through the interactive path below).
+        if (
+          event.type === "message" &&
+          event.channel_type !== "im" &&
+          !event.subtype &&
+          !event.thread_ts &&
+          !(event.text || "").includes(`<@${slackBotUserId}>`) &&
+          isChannelWatched(event.channel)
+        ) {
+          const watchId = `watch-${event.channel}-${event.ts}`;
+          if (!isEventProcessed(watchId)) {
+            markEventProcessed(watchId);
+            const u = event.user
+              ? await resolveSlackUser(event.user)
+              : { name: "Unknown", avatarUrl: undefined };
+            fireAutomationsForSlackChannel(
+              event.channel,
+              JSON.stringify(
+                {
+                  channel: event.channel,
+                  ts: event.ts,
+                  userId: event.user || null,
+                  userName: u.name,
+                  text: event.text || "",
+                  permalink: `thread ts ${event.ts} — reply in-thread via the slack MCP if your instructions say to respond`,
+                },
+                null,
+                2,
+              ),
+            );
           }
         }
 

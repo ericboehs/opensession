@@ -46,6 +46,28 @@ export interface GrafanaPollConfig {
   namespace?: string;
 }
 
+/**
+ * Config for a channel-watch automation: the Slack agent fires one run per
+ * top-level message posted in `channel` (thread replies don't re-trigger).
+ * The bot must be a member of the channel to receive its messages — invite
+ * @michael first. Runs get the channel's memory (read-only) appended to the
+ * prompt, so "remember ..." facts taught interactively steer the triage.
+ */
+export interface SlackWatchConfig {
+  /** Slack channel id (C…/G…). */
+  channel: string;
+}
+
+/** One entry in an automation's run ledger (newest first, capped). */
+export interface AutomationRun {
+  at: string; // start time, ISO
+  sessionId: string;
+  trigger: "cron" | "webhook" | "manual" | "event";
+  status: "running" | "ok" | "error";
+  error?: string;
+  durationMs?: number;
+}
+
 export interface Automation {
   id: string;
   name: string;
@@ -77,6 +99,11 @@ export interface Automation {
    */
   grafanaPoll?: GrafanaPollConfig;
   /**
+   * If set, this automation watches a Slack channel: one run per top-level
+   * message (see SlackWatchConfig). Fired from the Slack agent's event intake.
+   */
+  slackWatch?: SlackWatchConfig;
+  /**
    * Model id for new runs (claude-* or gpt-*; see models.ts). Omitted =
    * default model. Codex models enforce tool denials as per-server
    * disabled_tools instead of canUseTool — see codex-runner.ts.
@@ -92,6 +119,8 @@ export interface Automation {
   lastRunStatus?: "running" | "ok" | "error";
   lastRunError?: string;
   lastTrigger?: "cron" | "webhook" | "manual" | "event";
+  /** Run history ledger, newest first, capped at RUNS_CAP entries. */
+  runs?: AutomationRun[];
 }
 
 export interface AutomationWithNext extends Automation {
@@ -165,6 +194,17 @@ function sanitizeGrafanaPoll(cfg?: unknown): GrafanaPollConfig | { error: string
   return out;
 }
 
+function sanitizeSlackWatch(cfg?: unknown): SlackWatchConfig | { error: string } | undefined {
+  if (cfg === undefined || cfg === null) return undefined;
+  if (typeof cfg !== "object") return { error: "slackWatch must be an object" };
+  const channel = typeof (cfg as any).channel === "string" ? (cfg as any).channel.trim() : "";
+  if (!channel) return undefined; // {channel: ""} = clear the watch
+  if (!/^[CG][A-Z0-9]{6,}$/i.test(channel)) {
+    return { error: `slackWatch.channel must be a Slack channel id (C…), got "${channel}"` };
+  }
+  return { channel: channel.toUpperCase() };
+}
+
 /** Validate + normalize a one-off ISO8601 instant. "" / nullish → undefined
  *  (no one-off). Past times are allowed (they fire on the next tick). */
 function sanitizeRunOnceAt(v?: unknown): string | { error: string } | undefined {
@@ -202,6 +242,7 @@ export function createAutomation(input: {
   model?: string;
   fallbackModel?: string;
   grafanaPoll?: GrafanaPollConfig;
+  slackWatch?: SlackWatchConfig;
 }): Automation | { error: string } {
   if (!input.name.trim()) return { error: "Name is required" };
   if (!input.prompt.trim()) return { error: "Prompt is required" };
@@ -218,6 +259,8 @@ export function createAutomation(input: {
   if (fallbackModel && typeof fallbackModel === "object") return fallbackModel;
   const grafanaPoll = sanitizeGrafanaPoll(input.grafanaPoll);
   if (grafanaPoll && "error" in grafanaPoll) return grafanaPoll;
+  const slackWatch = sanitizeSlackWatch(input.slackWatch);
+  if (slackWatch && "error" in slackWatch) return slackWatch;
 
   const a: Automation = {
     id: `auto-${randomUUIDv7()}`,
@@ -235,6 +278,7 @@ export function createAutomation(input: {
     model,
     fallbackModel,
     grafanaPoll,
+    slackWatch,
   };
   saveAutomation(a);
   return a;
@@ -242,7 +286,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "grafanaPoll">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "grafanaPoll" | "slackWatch">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -261,6 +305,11 @@ export function updateAutomation(
     const grafanaPoll = sanitizeGrafanaPoll(patch.grafanaPoll);
     if (grafanaPoll && "error" in grafanaPoll) return grafanaPoll;
     next.grafanaPoll = grafanaPoll;
+  }
+  if ("slackWatch" in patch) {
+    const slackWatch = sanitizeSlackWatch(patch.slackWatch);
+    if (slackWatch && "error" in slackWatch) return slackWatch;
+    next.slackWatch = slackWatch;
   }
   if ("model" in patch) {
     const model = sanitizeModel(patch.model);
@@ -288,6 +337,39 @@ export function deleteAutomation(id: string): boolean {
 // ── Runner ───────────────────────────────────────────────────
 
 const runningCounts = new Map<string, number>();
+
+const RUNS_CAP = 50;
+
+/** Prepend a run-ledger entry (plus the legacy lastRun* mirror fields) on a
+ *  fresh read of the automation — event/webhook runs can overlap, so never
+ *  write ledger updates from a stale copy. */
+function recordRunStart(id: string, run: AutomationRun): void {
+  const fresh = getAutomation(id);
+  if (!fresh) return;
+  saveAutomation({
+    ...fresh,
+    lastRunAt: run.at,
+    lastRunSessionId: run.sessionId,
+    lastRunStatus: "running",
+    lastRunError: undefined,
+    lastTrigger: run.trigger,
+    runs: [run, ...(fresh.runs || [])].slice(0, RUNS_CAP),
+  });
+}
+
+/** Settle the ledger entry for `sessionId` (matched by id, not position, so
+ *  overlapping runs settle independently). */
+function settleRun(id: string, sessionId: string, patch: Pick<AutomationRun, "status" | "error" | "durationMs">): void {
+  const fresh = getAutomation(id);
+  if (!fresh) return;
+  saveAutomation({
+    ...fresh,
+    ...(fresh.lastRunSessionId === sessionId
+      ? { lastRunStatus: patch.status, lastRunError: patch.error }
+      : {}),
+    runs: (fresh.runs || []).map((r) => (r.sessionId === sessionId ? { ...r, ...patch } : r)),
+  });
+}
 
 // Automation runs are headless and often driven by untrusted text (e.g.
 // customer ticket content), so they must stay read-only toward the customer:
@@ -389,18 +471,37 @@ export async function runAutomation(
       cwd = worktrees.find((w) => w.branch === branch)?.path || (await createWorktree(branch));
     }
 
-    saveAutomation({
-      ...automation,
-      lastRunAt: startedAt.toISOString(),
-      lastRunSessionId: bksId,
-      lastRunStatus: "running",
-      lastRunError: undefined,
-      lastTrigger: trigger,
+    recordRunStart(automation.id, {
+      at: startedAt.toISOString(),
+      sessionId: bksId,
+      trigger,
+      status: "running",
     });
 
     let prompt = automation.prompt;
     if (options?.eventContext) {
-      prompt += `\n\n## Triggering event\n\nThis run was triggered by ${trigger === "event" ? `an internal event (${automation.eventKey})` : "a webhook"}. Event payload:\n\n\`\`\`\n${options.eventContext.slice(0, 10_000)}\n\`\`\``;
+      const source =
+        trigger !== "event"
+          ? "a webhook"
+          : automation.slackWatch
+            ? `a new message in the Slack channel this automation watches (<#${automation.slackWatch.channel}>)`
+            : `an internal event (${automation.eventKey})`;
+      prompt += `\n\n## Triggering event\n\nThis run was triggered by ${source}. Event payload:\n\n\`\`\`\n${options.eventContext.slice(0, 10_000)}\n\`\`\``;
+    }
+
+    // Channel-watch runs get the channel's memory (facts taught via
+    // remember/forget in interactive Slack sessions) as standing context.
+    // Read-only here — automation runs don't get the memory tools.
+    if (automation.slackWatch) {
+      try {
+        const { renderMemoryForPrompt } = await import("../agents/slack/memory");
+        prompt += await renderMemoryForPrompt({
+          channel: automation.slackWatch.channel,
+          userId: "",
+          isDM: false,
+          isPrivate: true, // per-channel scope + read-only workspace view
+        });
+      } catch {}
     }
 
     // Tie the session to its Plain thread (if the event carries one) so it
@@ -484,31 +585,21 @@ export async function runAutomation(
 
     persistSession(engineSessionId);
 
-    const fresh = getAutomation(automation.id);
-    if (fresh) {
-      saveAutomation({
-        ...fresh,
-        lastRunAt: startedAt.toISOString(),
-        lastRunSessionId: bksId,
-        lastRunStatus: errorMsg ? "error" : "ok",
-        lastRunError: errorMsg || undefined,
-      });
-    }
+    settleRun(automation.id, bksId, {
+      status: errorMsg ? "error" : "ok",
+      error: errorMsg || undefined,
+      durationMs: Date.now() - startedAt.getTime(),
+    });
     console.log(
       `[automations] "${automation.name}" finished ${errorMsg ? `with error: ${errorMsg}` : "ok"}`
     );
   } catch (e: any) {
     console.error(`[automations] "${automation.name}" failed:`, e);
-    const fresh = getAutomation(automation.id);
-    if (fresh) {
-      saveAutomation({
-        ...fresh,
-        lastRunAt: startedAt.toISOString(),
-        lastRunSessionId: bksId,
-        lastRunStatus: "error",
-        lastRunError: e.message || String(e),
-      });
-    }
+    settleRun(automation.id, bksId, {
+      status: "error",
+      error: e.message || String(e),
+      durationMs: Date.now() - startedAt.getTime(),
+    });
   } finally {
     const left = (runningCounts.get(automation.id) || 1) - 1;
     if (left <= 0) runningCounts.delete(automation.id);
@@ -524,6 +615,28 @@ let eventSessionCallback: ((sessionId: string) => void) | undefined;
 
 export function setEventSessionCallback(cb: (sessionId: string) => void): void {
   eventSessionCallback = cb;
+}
+
+/** True when at least one enabled automation watches this Slack channel —
+ *  cheap pre-check so the Slack intake doesn't build payloads for nothing. */
+export function isChannelWatched(channelId: string): boolean {
+  return listAutomations().some((a) => a.enabled && a.slackWatch?.channel === channelId);
+}
+
+/** Fire every enabled automation watching `channelId` (one run per message —
+ *  these may overlap, like event runs). Returns how many fired. */
+export function fireAutomationsForSlackChannel(channelId: string, payload: string): number {
+  let fired = 0;
+  for (const automation of listAutomations()) {
+    if (!automation.enabled || automation.slackWatch?.channel !== channelId) continue;
+    console.log(`[automations] Watched channel ${channelId} → "${automation.name}"`);
+    void runAutomation(automation, eventSessionCallback, {
+      trigger: "event",
+      eventContext: payload,
+    });
+    fired++;
+  }
+  return fired;
 }
 
 export function fireAutomationsForEvent(eventKey: string, payload: string): number {
