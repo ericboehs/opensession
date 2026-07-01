@@ -211,15 +211,17 @@ export async function deleteProjectApi(id: string): Promise<void> {
 
 /**
  * Start a new sibling chat in the source chat's workspace. Returns the new
- * chat's id; it has no run yet — its first prompt starts fresh. `mode` picks the
- * worktree relationship: share the workspace worktree (default), stack a new
- * worktree branched off it, or ask (no worktree).
+ * chat's id plus its full session object (so the caller can render it
+ * immediately, without waiting for the next sessions poll); it has no run yet —
+ * its first prompt starts fresh. `mode` picks the worktree relationship: share
+ * the workspace worktree (default), stack a new worktree branched off it, or
+ * ask (no worktree).
  */
 export async function newChatApi(
 	sourceId: string,
 	user: string,
 	mode?: "share" | "stack" | "ask",
-): Promise<string> {
+): Promise<{ id: string; session: UnifiedSession | null }> {
 	const res = await fetch(
 		`${BASE}/sessions/${encodeURIComponent(sourceId)}/new-chat`,
 		{
@@ -230,7 +232,10 @@ export async function newChatApi(
 	);
 	const body = await res.json();
 	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-	return body.id as string;
+	return {
+		id: body.id as string,
+		session: (body.session as UnifiedSession) || null,
+	};
 }
 
 /**

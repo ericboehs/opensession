@@ -102,7 +102,9 @@ export function SessionViewer({
 	onRename,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-	const [loading, setLoading] = useState(true);
+	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
+	// render the empty chat immediately instead of a "Loading transcript…" flash.
+	const [loading, setLoading] = useState(!!session.transcriptPath);
 	// The initial transcript is the tail only when the file is large; these drive
 	// the "load earlier history" affordance at the top of the conversation.
 	const [historyTruncated, setHistoryTruncated] = useState(false);
@@ -1086,9 +1088,14 @@ export function SessionViewer({
 							{loading ? (
 								<div className="loading">Loading transcript…</div>
 							) : entries.length === 0 && !session.transcriptPath ? (
-								<div className="empty">
-									No transcript available for this session
-								</div>
+								// A fresh chat with no run yet is just an empty conversation —
+								// blank canvas, the composer below is the UI. Only a session
+								// that *ran* but has no transcript file gets the notice.
+								session.claudeSessionId || session.codexThreadId ? (
+									<div className="empty">
+										No transcript available for this session
+									</div>
+								) : null
 							) : entries.length === 0 ? (
 								<div className="empty">Empty transcript</div>
 							) : (

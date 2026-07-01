@@ -37,5 +37,17 @@ export function useSessions(pollInterval = 5000) {
   // Expose manual refresh for after deletes
   const refresh = useCallback(() => { poll(); }, [poll]);
 
-  return { sessions, loading, error, refresh };
+  // Drop a just-created session straight into the list so the UI can render it
+  // immediately (e.g. the tab-strip + creating a new chat) instead of showing a
+  // loading state until the next poll. The next poll replaces it with the
+  // server's copy.
+  const inject = useCallback((session: UnifiedSession) => {
+    setSessions((prev) =>
+      prev.some((s) => s.id === session.id)
+        ? prev.map((s) => (s.id === session.id ? session : s))
+        : [...prev, session],
+    );
+  }, []);
+
+  return { sessions, loading, error, refresh, inject };
 }

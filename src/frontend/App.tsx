@@ -137,7 +137,7 @@ function routePath(route: Route): string {
 }
 
 function App() {
-	const { sessions, loading, refresh } = useSessions();
+	const { sessions, loading, refresh, inject } = useSessions();
 	const { connected, send, addHandler } = useWebSocket();
 	// iOS evicts standalone PWAs from memory and relaunches them at the manifest
 	// start_url (/backstage/) — losing the session you had open. On a cold load
@@ -808,7 +808,48 @@ function App() {
 								const src = currentSession || projectChats[0];
 								if (!src) return;
 								try {
-									const id = await newChatApi(src.id, getCurrentUser(), mode);
+									const { id, session } = await newChatApi(
+										src.id,
+										getCurrentUser(),
+										mode,
+									);
+									// Inject the created session so the viewer renders the new
+									// chat immediately — no "Loading session…" flash while the
+									// sessions poll catches up. If the server didn't return it,
+									// synthesize a close-enough copy from the source chat; the
+									// next poll replaces it with the real one either way.
+									const now = new Date().toISOString();
+									inject(
+										session ?? {
+											...src,
+											id,
+											source: "backstage",
+											claudeSessionId: null,
+											codexThreadId: undefined,
+											title: "New chat",
+											createdAt: now,
+											lastActivity: now,
+											isRunning: false,
+											transcriptPath: null,
+											startedBy: getCurrentUser(),
+											archived: false,
+											waitingForInput: false,
+											queuedCount: 0,
+											prUrl: undefined,
+											prState: undefined,
+											automation: undefined,
+											plainThreadId: undefined,
+											goal: undefined,
+											loop: undefined,
+											...(mode === "ask"
+												? {
+														branch: null,
+														worktreeDir: null,
+														mode: "ask" as const,
+													}
+												: {}),
+										},
+									);
 									setPendingSessionId(id);
 									refresh();
 									navigate({ view: "session", id });
