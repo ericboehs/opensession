@@ -186,6 +186,10 @@ function filterMcpServers(
 
 const ACTIVE_RUNS_PATH = `${HOME}/.backstage-sessions/active-runs.json`;
 
+/** Backstage web UI base — used to give a session a link back to itself. */
+const UI_BASE =
+  process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+
 export interface ActiveRunRecord {
   runKey: string;
   bksSessionId?: string;
@@ -759,6 +763,16 @@ export async function* runClaude(opts: {
             }
             if (opts.reposNote) {
               parts.push(opts.reposNote);
+            }
+            if (!isAsk && journal?.bksSessionId) {
+              const link = `${UI_BASE}/session/${journal.bksSessionId}`;
+              parts.push(
+                "## Session link in PRs\nWhenever you open a pull request (any repo, via `gh pr " +
+                  "create` or otherwise), always include a link back to this Michael session in the " +
+                  "PR body so a human can open it to see how the change was made. Add a line like:\n\n" +
+                  `🤖 Created by [this Michael session](${link})\n\n` +
+                  "Put it at the end of the PR body. Use exactly this session URL."
+              );
             }
             if (opts.inProcessMcp && Object.keys(opts.inProcessMcp).length) {
               parts.push(
