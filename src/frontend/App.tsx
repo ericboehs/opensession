@@ -15,7 +15,7 @@ import { Reviews } from "./components/Reviews";
 import { UserPicker, UserGate, getCurrentUser } from "./components/UserPicker";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { Settings } from "./components/Settings";
-import { SessionTabs, tabKey, type TabItem } from "./components/SessionTabs";
+import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { UpdateToast } from "./components/UpdateToast";
 import { useSessions } from "./hooks/useSessions";
@@ -27,8 +27,10 @@ import {
 	archiveSessionApi,
 	renameSessionApi,
 	fetchNotes,
+	fetchProjects,
 	type NoteMeta,
 } from "./lib/api";
+import type { Project } from "./lib/types";
 import { pushRecent } from "./lib/recents";
 import { markRead } from "./lib/reads";
 import { getPins, togglePin, reorderPins, onPinsChanged } from "./lib/pins";
@@ -216,6 +218,22 @@ function App() {
 		return () => window.removeEventListener("focus", onFocus);
 	}, [refreshNotes]);
 
+	// Projects (folders that group chats) — powers the sidebar's Projects section
+	// and the project-scoped tab strip. Refetched on focus and when sessions change
+	// (a new PR chat can auto-create a folder server-side).
+	const [projects, setProjects] = useState<Project[]>([]);
+	const refreshProjects = React.useCallback(() => {
+		fetchProjects()
+			.then(setProjects)
+			.catch(() => {});
+	}, []);
+	useEffect(() => {
+		refreshProjects();
+		const onFocus = () => refreshProjects();
+		window.addEventListener("focus", onFocus);
+		return () => window.removeEventListener("focus", onFocus);
+	}, [refreshProjects]);
+
 	// Subscribe to the per-user pin/color stores. Both hydrate async at module
 	// load, and on a fast localhost that load() can resolve (and emit) before
 	// this effect ever subscribes — so re-sync once here, or the initial empty
@@ -262,7 +280,15 @@ function App() {
 	// The "new session" ⌘K palette. It's an overlay driven by its own state (not a
 	// route), so it can open over any view; the /backstage/new route still opens it
 	// so old links keep working.
-	const [palette, setPalette] = useState<{ open: boolean; prompt?: string }>(() =>
+	const [palette, setPalette] = useState<{
+		open: boolean;
+		prompt?: string;
+		// When starting a chat inside a project, prefill the folder + its shared repo
+		// and worktree so the new chat lands next to its siblings by default.
+		projectId?: string;
+		repo?: string;
+		branch?: string;
+	}>(() =>
 		route.view === "new" ? { open: true, prompt: route.prompt } : { open: false },
 	);
 	const paletteOpenRef = useRef(palette.open);
@@ -356,10 +382,11 @@ function App() {
 					30000,
 				);
 				refresh();
+				refreshProjects();
 				navigate({ view: "session", id: msg.id });
 			}
 		});
-	}, [addHandler, refresh]);
+	}, [addHandler, refresh, refreshProjects]);
 
 	// Clear the pending flag once the session shows up in the polled list.
 	useEffect(() => {
@@ -393,46 +420,15 @@ function App() {
 	const currentNoteId =
 		route.view === "notes" && route.sel?.kind === "note" ? route.sel.id : null;
 
-	// Pinned tabs (sessions and notes) above the title, pin order preserved. Each
-	// pin entry is either a bare session id or `note:<id>`.
-	const pinnedTabs: TabItem[] = pins
-		.map((entry): TabItem | null => {
-			if (entry.startsWith("note:")) {
-				const id = entry.slice(5);
-				const note = notes.find((n) => n.id === id);
-				return note ? { kind: "note", id, title: note.title } : null;
-			}
-			const s = sessions.find(
-				(x) => x.id === entry || x.aliasIds?.includes(entry),
-			);
-			return s ? { kind: "session", session: s } : null;
-		})
-		.filter((t): t is TabItem => t !== null);
-
-	// The currently-open session/note also gets a transient tab even when unpinned
-	// (Chrome-style): it closes the moment you navigate away; the ☆ promotes it.
-	const pinnedKeys = new Set(pinnedTabs.map(tabKey));
-	const activeKey = currentSession
-		? currentSession.id
-		: currentNoteId
-			? `note:${currentNoteId}`
-			: null;
-	let tabs = pinnedTabs;
-	if (activeKey && !pinnedKeys.has(activeKey)) {
-		if (currentSession)
-			tabs = [...pinnedTabs, { kind: "session", session: currentSession }];
-		else if (currentNoteId) {
-			const note = notes.find((n) => n.id === currentNoteId);
-			tabs = [
-				...pinnedTabs,
-				{
-					kind: "note",
-					id: currentNoteId,
-					title: note?.title || currentNoteId,
-				},
-			];
-		}
-	}
+	// The tab strip is scoped to the open chat's Project: it lists that project's
+	// sibling chats (same projectId), oldest first. A standalone chat (no project)
+	// gets no strip. Notes are no longer tabs — they pin in the sidebar instead.
+	const activeProjectId = currentSession?.projectId || null;
+	const projectChats: UnifiedSession[] = activeProjectId
+		? sessions
+				.filter((s) => s.projectId === activeProjectId)
+				.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))
+		: [];
 
 	// Plain title shown in the top bar for non-session views (session routes let
 	// the SessionViewer portal its own header in instead). Home stays blank so the
@@ -599,30 +595,26 @@ function App() {
 							)}
 						</div>
 						<SessionTabs
-							tabs={tabs}
-							activeKey={activeKey}
-							pinnedKeys={pinnedKeys}
+							tabs={projectChats}
+							activeId={currentSession?.id || null}
 							colors={tabColors}
-							onSelect={(tab) =>
-								navigate(
-									tab.kind === "session"
-										? { view: "session", id: tab.session.id }
-										: { view: "notes", sel: { kind: "note", id: tab.id } },
-								)
-							}
-							onTogglePin={(key) => setPins(togglePin(key))}
+							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
-							onNewSession={() => {
-								// In a session, + opens a fresh chat in that same session
-								// (stay put); otherwise it opens the new-session palette.
-								if (currentSession) setNewChatSeq((n) => n + 1);
-								else openPalette();
+							onNewChat={() => {
+								// + starts a new chat in this project, defaulting to the
+								// siblings' shared repo + worktree (branch).
+								const sib = projectChats[0];
+								setPalette({
+									open: true,
+									projectId: activeProjectId || undefined,
+									repo: sib?.repo,
+									branch: sib?.branch || undefined,
+								});
+								setSidebarOpen(false);
 							}}
-							newChatMode={!!currentSession}
-							onReorder={(keys) => setPins(reorderPins(keys))}
-							onRename={async (key, title) => {
+							onRename={async (id, title) => {
 								try {
-									await renameSessionApi(key, title);
+									await renameSessionApi(id, title);
 								} catch (e) {
 									console.error("Rename failed:", e);
 								}
@@ -762,6 +754,9 @@ function App() {
 						addHandler={addHandler}
 						connected={connected}
 						prefillPrompt={palette.prompt}
+						projectId={palette.projectId}
+						forceRepo={palette.repo}
+						forceBranch={palette.branch}
 					/>
 				)}
 			</div>

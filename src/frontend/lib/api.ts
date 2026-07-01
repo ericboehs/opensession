@@ -3,6 +3,7 @@ import type {
 	SlackChannelLink,
 	SlackMessage,
 	PlainThread,
+	Project,
 } from "./types";
 
 const BASE = "/backstage/api";
@@ -154,6 +155,71 @@ export async function fetchRepos(): Promise<RepoInfo[]> {
 	if (!res.ok) return [];
 	const data = await res.json();
 	return data.repos ?? [];
+}
+
+// ── Projects (folders that group chats) ──
+
+export async function fetchProjects(): Promise<Project[]> {
+	const res = await fetch(`${BASE}/projects`);
+	if (!res.ok) return [];
+	const data = await res.json();
+	return data.projects ?? [];
+}
+
+export async function createProjectApi(input: {
+	name: string;
+	repo?: string;
+	color?: string;
+	user: string;
+}): Promise<Project> {
+	const res = await fetch(`${BASE}/projects`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(input),
+	});
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body.project as Project;
+}
+
+export async function updateProjectApi(
+	id: string,
+	patch: Partial<Pick<Project, "name" | "repo" | "color" | "order">>,
+): Promise<Project> {
+	const res = await fetch(`${BASE}/projects/${encodeURIComponent(id)}`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(patch),
+	});
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body.project as Project;
+}
+
+export async function deleteProjectApi(id: string): Promise<void> {
+	const res = await fetch(`${BASE}/projects/${encodeURIComponent(id)}`, {
+		method: "DELETE",
+	});
+	if (!res.ok) throw new Error(`Failed to delete project: ${res.status}`);
+}
+
+/** Move a chat into a project (or `null` to make it standalone). */
+export async function setSessionProjectApi(
+	sessionId: string,
+	projectId: string | null,
+): Promise<void> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/project`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ projectId }),
+		},
+	);
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({}));
+		throw new Error(body.error || `Failed: ${res.status}`);
+	}
 }
 
 export interface AttachedRepo {

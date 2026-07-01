@@ -3,70 +3,41 @@ import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 
 /**
- * A tab is either a session or a (collaborative) note. Both ride the same
- * per-user pins array; their stable key is the pin entry — a bare session id,
- * or `note:<id>` for a note — used for pinning, coloring, and the active mark.
+ * The tab strip is scoped to ONE Project: it shows the sibling chats of the
+ * currently-open chat (every session sharing its `projectId`). Standalone chats
+ * (no project) render no tab strip at all — the parent passes an empty list.
+ *
+ * There is no pinning here anymore (pinning moved to the sidebar, where sessions
+ * and notes can be pinned and mixed). Right-click colors a tab; double-click the
+ * title renames the chat; the + button starts a new chat in this project.
  */
-export type TabItem =
-	| { kind: "session"; session: UnifiedSession }
-	| { kind: "note"; id: string; title: string };
-
-export function tabKey(tab: TabItem): string {
-	return tab.kind === "session" ? tab.session.id : `note:${tab.id}`;
-}
-function tabTitle(tab: TabItem): string {
-	return tab.kind === "session" ? tab.session.title : tab.title;
-}
-
 interface Props {
-	tabs: TabItem[];
-	/** Pin-key of the active tab. */
-	activeKey: string | null;
-	/** Pin-keys that are pinned; the rest are transient (current route only). */
-	pinnedKeys: Set<string>;
-	/** Map of pin-key → swatch key for colored tabs. */
+	/** Sibling chats in the current project, in display order. */
+	tabs: UnifiedSession[];
+	/** Session id of the active tab. */
+	activeId: string | null;
+	/** Map of session id → swatch key for colored tabs. */
 	colors: Record<string, string>;
-	onSelect: (tab: TabItem) => void;
-	onTogglePin: (key: string) => void;
+	onSelect: (session: UnifiedSession) => void;
 	onSetColor: (key: string, color: string | null) => void;
-	/**
-	 * The + button. When `newChatMode` is set (a session is open) it starts a
-	 * fresh chat in the current session (stay put); otherwise it opens the
-	 * new-session palette.
-	 */
-	onNewSession: () => void;
-	newChatMode?: boolean;
-	/** Persist a new pinned-tab order after a drag. */
-	onReorder: (keys: string[]) => void;
-	/** Rename a session tab (double-click the title); empty title resets it. */
-	onRename: (key: string, title: string) => void;
+	/** Start a new chat in this project (defaults to the shared worktree). */
+	onNewChat: () => void;
+	/** Rename a chat (double-click the title); empty title resets it. */
+	onRename: (id: string, title: string) => void;
 }
 
 type Menu = { key: string; x: number; y: number };
 
-/**
- * Horizontal strip of tabs above the title, on every view. Pinned tabs persist
- * (the pins store — sessions and notes alike); the currently-open session/note
- * also shows as a *transient* tab even when unpinned (Chrome-style), promotable
- * with the ☆. Right-click colors a tab; pinned tabs can be dragged to reorder.
- */
 export function SessionTabs({
 	tabs,
-	activeKey,
-	pinnedKeys,
+	activeId,
 	colors,
 	onSelect,
-	onTogglePin,
 	onSetColor,
-	onNewSession,
-	newChatMode,
-	onReorder,
+	onNewChat,
 	onRename,
 }: Props) {
 	const [menu, setMenu] = useState<Menu | null>(null);
-	const [dragKey, setDragKey] = useState<string | null>(null);
-	const [overKey, setOverKey] = useState<string | null>(null);
-	// Inline rename: the pin-key being edited and its draft text.
 	const [editKey, setEditKey] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
 
@@ -89,75 +60,37 @@ export function SessionTabs({
 		};
 	}, [menu]);
 
+	// No project (standalone chat) → no tab strip.
 	if (tabs.length === 0) return null;
-
-	function handleDrop(targetKey: string) {
-		if (!dragKey || dragKey === targetKey) {
-			setDragKey(null);
-			setOverKey(null);
-			return;
-		}
-		// Reorder only among pinned tabs (the transient tab can't be dropped onto).
-		const pinned = tabs.map(tabKey).filter((k) => pinnedKeys.has(k));
-		const from = pinned.indexOf(dragKey);
-		const to = pinned.indexOf(targetKey);
-		if (from !== -1 && to !== -1) {
-			pinned.splice(to, 0, pinned.splice(from, 1)[0]);
-			onReorder(pinned);
-		}
-		setDragKey(null);
-		setOverKey(null);
-	}
 
 	return (
 		<div className="session-tabs" role="tablist">
-			{tabs.map((tab) => {
-				const key = tabKey(tab);
-				const pinned = pinnedKeys.has(key);
-				const session = tab.kind === "session" ? tab.session : null;
-				const waiting = !!session?.waitingForInput;
+			{tabs.map((session) => {
+				const key = session.id;
+				const waiting = !!session.waitingForInput;
 				const hex = colorHex(colors[key]);
 				return (
 					<div
 						key={key}
 						role="tab"
-						aria-selected={key === activeKey}
-						draggable={pinned}
-						onDragStart={() => pinned && setDragKey(key)}
-						onDragOver={(e) => {
-							if (dragKey && pinned) {
-								e.preventDefault();
-								setOverKey(key);
-							}
-						}}
-						onDrop={() => handleDrop(key)}
-						onDragEnd={() => {
-							setDragKey(null);
-							setOverKey(null);
-						}}
-						className={`session-tab ${key === activeKey ? "session-tab-active" : ""} ${
-							pinned ? "" : "session-tab-transient"
-						} ${waiting ? "session-tab-waiting" : ""} ${hex ? "session-tab-colored" : ""} ${
-							tab.kind === "note" ? "session-tab-note" : ""
-						} ${dragKey === key ? "session-tab-dragging" : ""} ${
-							overKey === key && dragKey ? "session-tab-dragover" : ""
-						}`}
+						aria-selected={key === activeId}
+						className={`session-tab ${key === activeId ? "session-tab-active" : ""} ${
+							waiting ? "session-tab-waiting" : ""
+						} ${hex ? "session-tab-colored" : ""}`}
 						style={
 							hex ? ({ "--tab-color": hex } as React.CSSProperties) : undefined
 						}
-						onClick={() => onSelect(tab)}
+						onClick={() => onSelect(session)}
 						onContextMenu={(e) => {
 							e.preventDefault();
 							setMenu({ key, x: e.clientX, y: e.clientY });
 						}}
-						title={tabTitle(tab)}
+						title={session.title}
 					>
-						{tab.kind === "note" ? (
-							<span className="session-tab-glyph">📝</span>
-						) : waiting ? (
+						{waiting ? (
 							<span className="session-tab-dot session-tab-dot-waiting" />
 						) : (
-							session?.isRunning && <span className="session-tab-dot" />
+							session.isRunning && <span className="session-tab-dot" />
 						)}
 						{editKey === key ? (
 							<input
@@ -178,39 +111,23 @@ export function SessionTabs({
 							<span
 								className="session-tab-title"
 								onDoubleClick={(e) => {
-									// Only sessions are renameable; notes keep their own title.
-									if (tab.kind !== "session") return;
 									e.stopPropagation();
-									setDraft(tabTitle(tab));
+									setDraft(session.title);
 									setEditKey(key);
 								}}
 							>
-								{tabTitle(tab)}
+								{session.title}
 							</span>
 						)}
-						<span
-							className={`session-tab-pin ${pinned ? "session-tab-pin-on" : ""}`}
-							role="button"
-							aria-label={pinned ? "Unpin (remove tab)" : "Pin tab"}
-							title={pinned ? "Unpin" : "Pin tab"}
-							onClick={(e) => {
-								e.stopPropagation();
-								onTogglePin(key);
-							}}
-						>
-							{pinned ? "★" : "☆"}
-						</span>
 					</div>
 				);
 			})}
 			<button
 				type="button"
 				className="session-tab session-tab-new"
-				aria-label={newChatMode ? "New chat in this session" : "New session"}
-				title={
-					newChatMode ? "New chat (stays in this session)" : "New session"
-				}
-				onClick={onNewSession}
+				aria-label="New chat in this project"
+				title="New chat in this project"
+				onClick={onNewChat}
 			>
 				+
 			</button>

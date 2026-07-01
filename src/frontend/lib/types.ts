@@ -94,6 +94,20 @@ export interface UnifiedSession {
 	queuedCount?: number;
 }
 
+/** A Project — an optional folder that groups chats (sessions). */
+export interface Project {
+	id: string;
+	name: string;
+	repo?: string;
+	color?: string;
+	createdBy: string;
+	createdAt: string;
+	order?: number;
+	/** Present on auto-created PR folders. */
+	prNumber?: number;
+	branch?: string;
+}
+
 export interface TranscriptEntry {
 	id: string;
 	type: "user" | "assistant" | "tool_use" | "tool_result" | "system";

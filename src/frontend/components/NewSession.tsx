@@ -16,6 +16,11 @@ interface Props {
   connected: boolean;
   /** Prefill the prompt (e.g. from the Home "New session" box). */
   prefillPrompt?: string;
+  /** When starting a chat inside a Project (folder), the chat joins this project… */
+  projectId?: string;
+  /** …and defaults to the project's shared repo + worktree (a sibling's branch). */
+  forceRepo?: string;
+  forceBranch?: string;
 }
 
 interface Worktree {
@@ -86,12 +91,15 @@ function slugifyBranch(text: string): string {
 
 const isCodexModel = (m: string) => m.startsWith("gpt") || m.startsWith("codex") || m.startsWith("o");
 
-export function NewSession({ onBack, send, addHandler, connected, prefillPrompt }: Props) {
+export function NewSession({ onBack, send, addHandler, connected, prefillPrompt, projectId, forceRepo, forceBranch }: Props) {
   const [prefill] = useState(readPrefill);
   const [mode, setMode] = useState<"ask" | "code">(prefill.mode);
-  const [repo, setRepo] = useState(prefill.repo);
+  // In a Project, default to the folder's shared repo; else the prefill/filter repo.
+  const [repo, setRepo] = useState(forceRepo || prefill.repo);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
-  const [selectedWorktree, setSelectedWorktree] = useState("__new__");
+  // In a Project, default to a sibling's branch so the new chat reuses its
+  // worktree; the user can still switch to "New branch" to fork a fresh one.
+  const [selectedWorktree, setSelectedWorktree] = useState(forceBranch || "__new__");
   const [newBranch, setNewBranch] = useState(prefill.branch);
   const [prompt, setPrompt] = useState(prefillPrompt || prefill.prompt);
   // Whether the user has hand-edited the branch field. Once true we stop
@@ -142,12 +150,13 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
   }, []);
 
   // Worktrees are per-repo; refetch and reset the selection when it changes.
+  // Inside a Project, snap back to the shared sibling branch, not "New branch".
   useEffect(() => {
-    setSelectedWorktree("__new__");
+    setSelectedWorktree(forceBranch || "__new__");
     fetchWorktrees(repo)
       .then(setWorktrees)
       .catch(() => setWorktrees([]));
-  }, [repo]);
+  }, [repo, forceBranch]);
 
   // Auto-suggest a branch name from the prompt (debounced Haiku call), but only
   // while the field is "ours" — once the user types in it (branchEdited) we back
@@ -228,6 +237,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
       type: "create_session",
       mode,
       repo,
+      ...(projectId ? { projectId } : {}),
       branch: mode === "ask" ? "" : branch,
       prompt: prompt.trim(),
       user: getCurrentUser(),
@@ -402,7 +412,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
               title={`Fast mode ${fast ? "on" : "off"} (not yet wired server-side)`}
               aria-pressed={fast}
             >
-              <IconBolt size={17} />
+              <IconBolt size={18} />
             </button>
 
             <div className="palette-pill" title="Reasoning effort (not yet wired server-side)">
@@ -434,7 +444,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
               title={`Plan mode ${plan ? "on" : "off"} (not yet wired server-side)`}
               aria-pressed={plan}
             >
-              <IconMap size={17} />
+              <IconMap size={18} />
             </button>
           </div>
 
@@ -447,7 +457,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt 
               title="Attach a file"
               aria-label="Attach a file"
             >
-              <IconPaperclip size={17} />
+              <IconPaperclip size={18} />
             </button>
             <input
               ref={fileInputRef}
