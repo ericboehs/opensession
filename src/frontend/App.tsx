@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Sidebar } from "./components/Sidebar";
+import { Tooltip } from "./components/Tooltip";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
 import { SessionSearch } from "./components/SessionSearch";
@@ -621,14 +622,15 @@ function App() {
 						    brand instead). */}
 						<div className="sidebar-brand">
 							{brand}
-							<button
-								className="sidebar-toggle-btn"
-								onClick={toggleSidebarCollapsed}
-								aria-label="Hide sidebar"
-								title="Toggle left sidebar"
-							>
-								{panelIcon}
-							</button>
+							<Tooltip label="Hide sidebar" side="bottom">
+								<button
+									className="sidebar-toggle-btn"
+									onClick={toggleSidebarCollapsed}
+									aria-label="Hide sidebar"
+								>
+									{panelIcon}
+								</button>
+							</Tooltip>
 						</div>
 						<Sidebar
 							sessions={sessions}
@@ -741,14 +743,15 @@ function App() {
 						{/* Floating re-open control, shown only while the desktop sidebar
 						    is collapsed (CSS-gated). Mirrors the brand-row toggle so the
 						    sidebar can always be brought back. */}
-						<button
-							className="sidebar-reopen"
-							onClick={toggleSidebarCollapsed}
-							aria-label="Show sidebar"
-							title="Toggle left sidebar"
-						>
-							{panelIcon}
-						</button>
+						<Tooltip label="Show sidebar" side="right">
+							<button
+								className="sidebar-reopen"
+								onClick={toggleSidebarCollapsed}
+								aria-label="Show sidebar"
+							>
+								{panelIcon}
+							</button>
+						</Tooltip>
 						{/* Top bar: session name + actions (portaled in by SessionViewer)
 						    on session routes, a plain title otherwise. Sits above the tab
 						    strip so the session identity reads first, tabs below it. */}
