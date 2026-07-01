@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0809" />
+  <meta name="theme-color" content="#111111" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Michael" />
@@ -22,7 +22,7 @@
         h.setAttribute("data-theme", eff);
         h.style.colorScheme = eff;
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute("content", eff === "light" ? "#ffffff" : "#0b0809");
+        if (m) m.setAttribute("content", eff === "light" ? "#ffffff" : "#111111");
       } catch (e) {}
     })();
   </script>
@@ -67,7 +67,7 @@
     })();
   </script>
   <style>
-    body { background: #0b0809; color: #ece7e8; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background: #111111; color: #e8e8e8; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
     html[data-theme="light"] body { background: #ffffff; color: #1c1a18; }
     html[data-theme="light"] #splash { background: radial-gradient(120% 90% at 50% 35%, #ffffff 0%, #f3f1ee 70%); }
 
@@ -83,7 +83,7 @@
       align-items: center;
       justify-content: center;
       gap: 18px;
-      background: radial-gradient(120% 90% at 50% 35%, #140a0c 0%, #0b0809 70%);
+      background: radial-gradient(120% 90% at 50% 35%, #1a1a1a 0%, #111111 70%);
       opacity: 1;
       transition: opacity 0.35s ease;
     }

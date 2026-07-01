@@ -4,20 +4,20 @@
    ───────────────────────────────────────────────────────────── */
 
 :root {
-	--bg: #0b0809;
-	--bg-raised: #130f11;
-	--bg-panel: #171215;
-	--bg-hover: #1f171a;
-	--bg-active: #271b1f;
-	--border: #2b2126;
-	--border-strong: #392b30;
-	--text: #ece7e8;
-	--text-dim: #a89ba0;
-	--text-faint: #6f6166;
+	--bg: #111111;
+	--bg-raised: #161616;
+	--bg-panel: #1a1a1a;
+	--bg-hover: #222222;
+	--bg-active: #292929;
+	--border: #272727;
+	--border-strong: #383838;
+	--text: #e8e8e8;
+	--text-dim: #9a9a9a;
+	--text-faint: #6b6b6b;
 	--accent: #ff3b3b;
 	--accent-soft: rgba(255, 59, 59, 0.13);
-	--tooltip-bg: #211c22;
-	--tooltip-fg: #f4eff1;
+	--tooltip-bg: #252525;
+	--tooltip-fg: #f2f2f2;
 	--tooltip-ring: rgba(255, 255, 255, 0.1);
 	--green: #3fb950;
 	--green-soft: rgba(63, 185, 80, 0.14);
