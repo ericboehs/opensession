@@ -444,6 +444,10 @@ function App() {
 								selectedId={route.id ?? null}
 								onSelect={(id) => navigate({ view: "reviews", id })}
 								onOpenSession={(id) => navigate({ view: "session", id })}
+								user={getCurrentUser()}
+								addHandler={addHandler}
+								onRefresh={refresh}
+								send={send}
 							/>
 						) : route.view === "archived" ? (
 							<Archived

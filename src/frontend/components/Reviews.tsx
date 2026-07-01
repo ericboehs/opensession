@@ -1,13 +1,18 @@
 import React, { useMemo, useState } from "react";
-import type { UnifiedSession } from "../lib/types";
+import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { PrPanel } from "./PrPanel";
+import { SlackChatPanel } from "./SlackChatPanel";
 
 interface Props {
   sessions: UnifiedSession[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onOpenSession: (id: string) => void;
+  user: string;
+  addHandler: (h: (msg: WSServerMessage) => void) => () => void;
+  onRefresh?: () => void;
+  send?: (msg: any) => void;
 }
 
 type FilterKey = "review" | "open" | "merged" | "closed" | "all";
@@ -140,7 +145,16 @@ function ChangesCell({ s }: { s: UnifiedSession }) {
   );
 }
 
-export function Reviews({ sessions, selectedId, onSelect, onOpenSession }: Props) {
+export function Reviews({
+  sessions,
+  selectedId,
+  onSelect,
+  onOpenSession,
+  user,
+  addHandler,
+  onRefresh,
+  send,
+}: Props) {
   const [filter, setFilter] = useState<FilterKey>("review");
   const [query, setQuery] = useState("");
 
@@ -366,8 +380,22 @@ export function Reviews({ sessions, selectedId, onSelect, onOpenSession }: Props
               sessionId={selected.id}
               onOpenSession={() => onOpenSession(selected.id)}
               split
+              send={send}
             />
           </div>
+        </aside>
+      )}
+
+      {selected && (
+        <aside className="reviews-chat">
+          <SlackChatPanel
+            key={selected.id}
+            sessionId={selected.id}
+            slackChannel={selected.slackChannel}
+            user={user}
+            addHandler={addHandler}
+            onLinkChange={onRefresh}
+          />
         </aside>
       )}
     </div>

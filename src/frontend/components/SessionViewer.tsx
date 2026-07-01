@@ -1139,6 +1139,7 @@ export function SessionViewer({
 							) : (
 								<PrPanel
 									sessionId={session.id}
+									send={send}
 									repos={[
 										{
 											project: session.project || "tella-fusion",

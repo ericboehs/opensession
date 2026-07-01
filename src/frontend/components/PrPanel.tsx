@@ -2,7 +2,9 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import type { PrDetails } from "../lib/types";
 import { fetchPr, fetchPrDiff, submitPrReviewApi, mergePrApi } from "../lib/api";
 import { CommentableDiff, type CommentTarget, type PendingComment } from "./CommentableDiff";
+import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
+import { renderMarkdown } from "../lib/markdown";
 
 type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
@@ -18,6 +20,12 @@ interface Props {
    * (e.g. the Reviews drawer) — they target the primary branch as before.
    */
   repos?: Array<{ project: string; primary: boolean }>;
+  /**
+   * WebSocket sender. When provided, selecting text in the PR info column shows a
+   * "Send to session" popover that delivers the selection + a message to this PR's
+   * session (via a `prompt` message — the server steers/queues if it's busy).
+   */
+  send?: (msg: any) => void;
 }
 
 interface PrDiffData {
@@ -26,7 +34,7 @@ interface PrDiffData {
   patch: string;
 }
 
-export function PrPanel({ sessionId, onOpenSession, split, repos }: Props) {
+export function PrPanel({ sessionId, onOpenSession, split, repos, send }: Props) {
   const repoList = repos && repos.length > 1 ? repos : null;
   const [activeRepo, setActiveRepo] = useState<string | undefined>(
     repoList ? (repoList.find((r) => r.primary)?.project ?? repoList[0].project) : undefined,
@@ -161,6 +169,8 @@ export function PrPanel({ sessionId, onOpenSession, split, repos }: Props) {
     return { passed, failed, pending, total: checks.length, sorted };
   }, [pr]);
 
+  const bodyHtml = useMemo(() => (pr?.body ? renderMarkdown(pr.body) : ""), [pr?.body]);
+
   const switcher = repoList ? (
     <div className="pr-repo-tabs">
       {repoList.map((r) => (
@@ -198,6 +208,7 @@ export function PrPanel({ sessionId, onOpenSession, split, repos }: Props) {
   return (
     <div className={`pr-panel ${split ? "pr-panel-split" : ""}`}>
       {switcher}
+      <SelectionToSession sessionId={sessionId} label={`PR #${pr.number}`} send={send}>
       <div className="pr-panel-info">
       <div className="pr-head">
         <span className={`pr-pill ${stateClass}`}>{stateLabel}</span>
@@ -284,7 +295,7 @@ export function PrPanel({ sessionId, onOpenSession, split, repos }: Props) {
       {pr.body && (
         <div className="pr-body">
           <div className="pr-checks-title">Description</div>
-          <pre className="pr-body-text">{pr.body.slice(0, 3000)}</pre>
+          <div className="pr-body-md markdown" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
         </div>
       )}
 
@@ -310,6 +321,7 @@ export function PrPanel({ sessionId, onOpenSession, split, repos }: Props) {
       </div>
       {mergeError && <div className="pr-merge-error">{mergeError}</div>}
       </div>
+      </SelectionToSession>
 
       {diff?.patch && (
         <div className="pr-panel-diff">

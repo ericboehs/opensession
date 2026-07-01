@@ -48,11 +48,20 @@ const BASE_OPTIONS = {
   enableLineSelection: true,
 };
 
+// Stable empty-annotations reference so files with no comments keep prop identity
+// across re-renders (lets the memoized row bail out instead of re-parsing).
+const NO_ANNOTATIONS: DiffLineAnnotation<Meta>[] = [];
+
 /**
  * Renders a multi-file patch with @pierre/diffs, one FileDiff per file so
  * line selections carry their file context. Selecting lines opens an inline
  * comment form (the diffs annotation framework); submit is delegated to the
  * parent (session feedback or GitHub PR comment).
+ *
+ * Perf: the comment-draft text lives in the inline `CommentForm` (local state),
+ * NOT here — so typing re-renders only the open form, not every FileDiff. Each
+ * row is memoized with stable props (annotations, onSelect, renderAnnotation),
+ * so a selection change re-renders at most the two files it touches.
  */
 export function CommentableDiff({
   patch,
@@ -74,33 +83,29 @@ export function CommentableDiff({
   }, [patch]);
 
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const draftRef = useRef<Draft | null>(null);
   draftRef.current = draft;
+  // Draft text is held in a ref so it survives the form remounting when the
+  // selection range is adjusted, without re-rendering the diff on each keystroke.
+  const draftTextRef = useRef("");
 
   const handleSelect = useCallback((fileIndex: number, path: string, range: SelectedLineRange | null) => {
     if (!range) return; // keep the draft on stray deselects; Cancel closes it
-    const prev = draftRef.current;
-    if (prev && (prev.fileIndex !== fileIndex || prev.range.start !== range.start || prev.range.end !== range.end)) {
-      setText((t) => t); // keep typed text when adjusting the same comment
-    }
     setConfirmation(null);
-    setError(null);
     setDraft({ fileIndex, path, range });
   }, []);
 
-  async function handleSubmit() {
-    const d = draftRef.current;
-    const body = text.trim();
-    if (!d || !body || sending) return;
+  const closeDraft = useCallback(() => {
+    draftTextRef.current = "";
+    setDraft(null);
+  }, []);
 
-    const side: "additions" | "deletions" = d.range.side === "deletions" ? "deletions" : "additions";
-    setSending(true);
-    setError(null);
-    try {
+  const submitDraft = useCallback(
+    async (body: string) => {
+      const d = draftRef.current;
+      if (!d) return;
+      const side: "additions" | "deletions" = d.range.side === "deletions" ? "deletions" : "additions";
       await onSubmit(
         {
           path: d.path,
@@ -108,106 +113,94 @@ export function CommentableDiff({
           endLine: Math.max(d.range.start, d.range.end),
           side,
         },
-        body
+        body,
       );
+      draftTextRef.current = "";
       setDraft(null);
-      setText("");
       // In review mode the pending card is the confirmation; skip the toast.
       if (!reviewMode) {
         setConfirmation(`${submitLabel} ✓`);
         setTimeout(() => setConfirmation(null), 4000);
       }
-    } catch (e: any) {
-      setError(e.message || "Failed to submit");
-    } finally {
-      setSending(false);
-    }
-  }
+    },
+    [onSubmit, reviewMode, submitLabel],
+  );
 
-  function renderPending(comment: PendingComment): React.ReactNode {
-    const lineLabel =
-      comment.startLine === comment.endLine
-        ? `line ${comment.startLine}`
-        : `lines ${comment.startLine}–${comment.endLine}`;
-    return (
-      <div className="diff-pending-comment" onClick={(e) => e.stopPropagation()}>
-        <div className="diff-pending-head">
-          <span className="diff-comment-target">
-            {comment.path} · {lineLabel}
-            {comment.side === "deletions" ? " (removed)" : ""}
-          </span>
-          {onRemovePending && (
-            <button
-              className="diff-pending-remove"
-              onClick={() => onRemovePending(comment.id)}
-              title="Remove this pending comment"
-            >
-              Remove
-            </button>
-          )}
-        </div>
-        <div className="diff-pending-text">{comment.text}</div>
-      </div>
-    );
-  }
-
-  function renderAnnotation(annotation: DiffLineAnnotation<Meta>): React.ReactNode {
-    if (annotation.metadata?.kind === "pending") {
-      return renderPending(annotation.metadata.comment);
-    }
-    const d = draftRef.current;
-    if (!d) return null;
-    const lineLabel =
-      d.range.start === d.range.end
-        ? `line ${d.range.start}`
-        : `lines ${Math.min(d.range.start, d.range.end)}–${Math.max(d.range.start, d.range.end)}`;
-
-    return (
-      <div className="diff-comment-form" onClick={(e) => e.stopPropagation()}>
-        <div className="diff-comment-target">
-          {d.path} · {lineLabel}
-          {d.range.side === "deletions" ? " (removed)" : ""}
-        </div>
-        {disabled ? (
-          <div className="diff-comment-disabled">{disabledHint || "Unavailable right now"}</div>
-        ) : (
-          <>
-            <textarea
-              className="diff-comment-input"
-              autoFocus
-              rows={3}
-              placeholder={placeholder}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                  e.preventDefault();
-                  handleSubmit();
-                }
-              }}
-            />
-            {error && <div className="diff-comment-error">{error}</div>}
-            <div className="diff-comment-actions">
+  const renderPending = useCallback(
+    (comment: PendingComment): React.ReactNode => {
+      const lineLabel =
+        comment.startLine === comment.endLine
+          ? `line ${comment.startLine}`
+          : `lines ${comment.startLine}–${comment.endLine}`;
+      return (
+        <div className="diff-pending-comment" onClick={(e) => e.stopPropagation()}>
+          <div className="diff-pending-head">
+            <span className="diff-comment-target">
+              {comment.path} · {lineLabel}
+              {comment.side === "deletions" ? " (removed)" : ""}
+            </span>
+            {onRemovePending && (
               <button
-                className="btn-delete-cancel"
-                onClick={() => {
-                  setDraft(null);
-                  setText("");
-                  setError(null);
-                }}
-                disabled={sending}
+                className="diff-pending-remove"
+                onClick={() => onRemovePending(comment.id)}
+                title="Remove this pending comment"
               >
-                Cancel
+                Remove
               </button>
-              <button className="btn-send" onClick={handleSubmit} disabled={sending || !text.trim()}>
-                {sending ? "Sending…" : submitLabel}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
+            )}
+          </div>
+          <div className="diff-pending-text">{comment.text}</div>
+        </div>
+      );
+    },
+    [onRemovePending],
+  );
+
+  // Stable across draft/text changes (reads the current draft from the ref), so
+  // memoized rows keep their prop identity while the user selects and types.
+  const renderAnnotation = useCallback(
+    (annotation: DiffLineAnnotation<Meta>): React.ReactNode => {
+      if (annotation.metadata?.kind === "pending") {
+        return renderPending(annotation.metadata.comment);
+      }
+      const d = draftRef.current;
+      if (!d) return null;
+      const lineLabel =
+        d.range.start === d.range.end
+          ? `line ${d.range.start}`
+          : `lines ${Math.min(d.range.start, d.range.end)}–${Math.max(d.range.start, d.range.end)}`;
+      const targetLabel = `${d.path} · ${lineLabel}${d.range.side === "deletions" ? " (removed)" : ""}`;
+      return (
+        <CommentForm
+          targetLabel={targetLabel}
+          disabled={disabled}
+          disabledHint={disabledHint}
+          placeholder={placeholder}
+          submitLabel={submitLabel}
+          textRef={draftTextRef}
+          onCancel={closeDraft}
+          onSubmit={submitDraft}
+        />
+      );
+    },
+    [renderPending, disabled, disabledHint, placeholder, submitLabel, closeDraft, submitDraft],
+  );
+
+  // Group pending comments by file once per change, so unaffected files reuse a
+  // stable annotations array reference (and their memoized row bails out).
+  const pendingByFile = useMemo(() => {
+    const m = new Map<string, DiffLineAnnotation<Meta>[]>();
+    for (const c of pendingComments || []) {
+      const arr = m.get(c.path) || [];
+      arr.push({
+        side: c.side === "deletions" ? "deletions" : "additions",
+        lineNumber: c.endLine,
+        metadata: { kind: "pending", comment: c },
+      });
+      m.set(c.path, arr);
+    }
+    return m;
+  }, [pendingComments]);
 
   if (files.length === 0) {
     return <div className="panel-placeholder">Nothing to display</div>;
@@ -217,30 +210,26 @@ export function CommentableDiff({
     <div className="commentable-diff">
       {confirmation && <div className="diff-comment-confirmation">{confirmation}</div>}
       {files.map((file, i) => {
-        const annotations: DiffLineAnnotation<Meta>[] = [];
-        for (const c of pendingComments || []) {
-          if (c.path !== file.name) continue;
-          annotations.push({
-            side: c.side === "deletions" ? "deletions" : "additions",
-            lineNumber: c.endLine,
-            metadata: { kind: "pending", comment: c },
-          });
-        }
-        if (draft && draft.fileIndex === i) {
-          annotations.push({
-            side: draft.range.side === "deletions" ? "deletions" : "additions",
-            lineNumber: Math.max(draft.range.start, draft.range.end),
-            metadata: { kind: "draft" },
-          });
-        }
+        const pend = pendingByFile.get(file.name) || NO_ANNOTATIONS;
+        const isDraftFile = draft?.fileIndex === i;
+        const annotations = isDraftFile
+          ? [
+              ...pend,
+              {
+                side: (draft!.range.side === "deletions" ? "deletions" : "additions") as "additions" | "deletions",
+                lineNumber: Math.max(draft!.range.start, draft!.range.end),
+                metadata: { kind: "draft" as const },
+              },
+            ]
+          : pend;
 
         return (
-          <FileDiffWithSelection
+          <FileDiffRow
             key={`${file.name}-${i}`}
             file={file}
             fileIndex={i}
             annotations={annotations}
-            selectedLines={draft && draft.fileIndex === i ? draft.range : null}
+            selectedLines={isDraftFile ? draft!.range : null}
             onSelect={handleSelect}
             renderAnnotation={renderAnnotation}
           />
@@ -255,7 +244,92 @@ export function CommentableDiff({
   );
 }
 
-function FileDiffWithSelection({
+/**
+ * Inline comment form with its OWN text/sending/error state, so keystrokes
+ * re-render just this form — not the parent diff. Seeds from `textRef` (which
+ * the parent keeps) so text survives the form remounting on range changes.
+ */
+const CommentForm = React.memo(function CommentForm({
+  targetLabel,
+  disabled,
+  disabledHint,
+  placeholder,
+  submitLabel,
+  textRef,
+  onCancel,
+  onSubmit,
+}: {
+  targetLabel: string;
+  disabled?: boolean;
+  disabledHint?: string;
+  placeholder: string;
+  submitLabel: string;
+  textRef: React.MutableRefObject<string>;
+  onCancel: () => void;
+  onSubmit: (body: string) => Promise<void>;
+}) {
+  const [text, setText] = useState(textRef.current);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    const body = text.trim();
+    if (!body || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await onSubmit(body);
+      // Success unmounts this form (parent clears the draft) — don't touch state.
+    } catch (e: any) {
+      setError(e.message || "Failed to submit");
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="diff-comment-form" onClick={(e) => e.stopPropagation()}>
+      <div className="diff-comment-target">{targetLabel}</div>
+      {disabled ? (
+        <div className="diff-comment-disabled">{disabledHint || "Unavailable right now"}</div>
+      ) : (
+        <>
+          <textarea
+            className="diff-comment-input"
+            autoFocus
+            rows={3}
+            placeholder={placeholder}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              textRef.current = e.target.value;
+            }}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              }
+            }}
+          />
+          {error && <div className="diff-comment-error">{error}</div>}
+          <div className="diff-comment-actions">
+            <button className="btn-delete-cancel" onClick={onCancel} disabled={sending}>
+              Cancel
+            </button>
+            <button className="btn-send" onClick={submit} disabled={sending || !text.trim()}>
+              {sending ? "Sending…" : submitLabel}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+});
+
+/**
+ * One file's diff. Memoized so an unrelated re-render (another file's selection,
+ * typing in the comment form) doesn't re-parse/re-render this file.
+ */
+const FileDiffRow = React.memo(function FileDiffRow({
   file,
   fileIndex,
   annotations,
@@ -275,7 +349,7 @@ function FileDiffWithSelection({
       ...BASE_OPTIONS,
       onLineSelected: (range: SelectedLineRange | null) => onSelect(fileIndex, file.name, range),
     }),
-    [fileIndex, file.name, onSelect]
+    [fileIndex, file.name, onSelect],
   );
 
   return (
@@ -288,4 +362,4 @@ function FileDiffWithSelection({
       disableWorkerPool
     />
   );
-}
+});
