@@ -526,41 +526,57 @@ export function parseTranscript(path: string): TranscriptEntry[] {
  * which the UI surfaces as a "load earlier history" affordance that falls back
  * to the full `parseTranscript`. Codex rollouts parse in full (small, and the
  * format isn't safe to start mid-stream).
+ *
+ * Bytes are a poor proxy for messages: a couple of fat tool results can fill
+ * the window while contributing two visible entries, hiding the opening prompt
+ * behind "load earlier" even on a small transcript. So the window grows
+ * (4× per pass, up to `MAX_TAIL_BYTES`) until it yields at least `minEntries`
+ * parsed entries or spans the whole file; only genuinely huge transcripts stay
+ * truncated.
  */
+const MAX_TAIL_BYTES = 16 * 1024 * 1024;
 export function parseTranscriptTail(
   path: string,
-  maxBytes: number = DEFAULT_TAIL_BYTES
+  maxBytes: number = DEFAULT_TAIL_BYTES,
+  minEntries = 40
 ): { entries: TranscriptEntry[]; truncated: boolean } {
   if (!existsSync(path)) return { entries: [], truncated: false };
   if (isCodexRolloutPath(path)) {
     return { entries: parseTranscript(path), truncated: false };
   }
 
-  let buf: Buffer;
-  let truncated: boolean;
-  try {
-    ({ buf, truncated } = readTailBytes(path, maxBytes));
-  } catch {
-    return { entries: parseTranscript(path), truncated: false };
-  }
+  let win = maxBytes;
+  for (;;) {
+    let buf: Buffer;
+    let truncated: boolean;
+    try {
+      ({ buf, truncated } = readTailBytes(path, win));
+    } catch {
+      return { entries: parseTranscript(path), truncated: false };
+    }
 
-  // Drop the leading partial line so we never start mid-JSON-object.
-  let chunk = buf;
-  if (truncated) {
-    const nl = buf.indexOf(0x0a);
-    chunk = nl !== -1 ? buf.subarray(nl + 1) : Buffer.alloc(0);
-  }
-  const lines = chunk.toString("utf-8").split("\n").filter((l) => l.trim());
-  const entries = parseClaudeLines(lines);
+    // Drop the leading partial line so we never start mid-JSON-object.
+    let chunk = buf;
+    if (truncated) {
+      const nl = buf.indexOf(0x0a);
+      chunk = nl !== -1 ? buf.subarray(nl + 1) : Buffer.alloc(0);
+    }
+    const lines = chunk.toString("utf-8").split("\n").filter((l) => l.trim());
+    const entries = parseClaudeLines(lines);
 
-  // A single line larger than the window (e.g. a huge embedded tool result)
-  // would leave the tail empty — fall back to the full parse so the viewer is
-  // never blank.
-  if (entries.length === 0 && truncated) {
-    return { entries: parseTranscript(path), truncated: false };
+    if (!truncated || entries.length >= minEntries)
+      return { entries, truncated };
+    if (win >= MAX_TAIL_BYTES) {
+      // A single line larger than the cap (e.g. a huge embedded tool result)
+      // would leave the tail empty — fall back to the full parse so the viewer
+      // is never blank.
+      if (entries.length === 0) {
+        return { entries: parseTranscript(path), truncated: false };
+      }
+      return { entries, truncated };
+    }
+    win = Math.min(win * 4, MAX_TAIL_BYTES);
   }
-
-  return { entries, truncated };
 }
 
 function safeStringify(v: unknown): string {
