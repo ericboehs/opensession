@@ -6309,29 +6309,61 @@ button.preview-open:not(:disabled):hover {
 }
 
 @media (max-width: 720px) {
-	.hamburger {
-		display: flex;
+	/* iOS-style page stack. The sidebar is the root page (full screen); any
+	   non-home route is a page pushed over it, sliding in from the right. The
+	   `.mobile-detail` / `.mobile-root` class on `.app-body` toggles which is on
+	   top. No overlay drawer or hamburger — you drill a layer deeper and swipe /
+	   tap Back to return. */
+	.app-body {
+		position: relative;
+		overflow: hidden;
 	}
 
 	.sidebar-container {
-		position: fixed;
-		top: var(--header-h);
-		left: 0;
-		bottom: 0;
-		z-index: 40;
-		transform: translateX(-100%);
-		transition: transform 0.18s ease;
-		width: min(300px, 85vw);
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		z-index: 1;
+		border-right: none;
+		transform: none;
 	}
-	.sidebar-container.sidebar-open {
+
+	.detail-pane {
+		position: absolute;
+		inset: 0;
+		z-index: 10;
+		transform: translateX(100%);
+		transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+		background: var(--bg);
+		box-shadow: -10px 0 28px rgba(0, 0, 0, 0.35);
+	}
+	.app-body.mobile-detail .detail-pane {
 		transform: translateX(0);
 	}
 
+	/* The drawer affordances are gone in the page model. */
+	.hamburger,
 	.sidebar-overlay {
-		position: fixed;
-		inset: var(--header-h) 0 0 0;
-		background: rgba(0, 0, 0, 0.55);
-		z-index: 35;
+		display: none;
+	}
+
+	/* Back chevron that replaces the brand on a pushed page. */
+	.mobile-back {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		background: none;
+		border: none;
+		padding: 6px 6px 6px 2px;
+		margin: 0;
+		color: var(--accent);
+		font-size: 15px;
+		font-weight: 500;
+		letter-spacing: -0.01em;
+		cursor: pointer;
+	}
+	.mobile-back svg {
+		flex-shrink: 0;
 	}
 
 	/* Mobile puts the brand + user back in the top bar; the sidebar's own brand

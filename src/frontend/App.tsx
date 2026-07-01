@@ -20,7 +20,7 @@ import { RestartOverlay } from "./components/RestartOverlay";
 import { UpdateToast } from "./components/UpdateToast";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
-import { useSidebarSwipe } from "./hooks/useSidebarSwipe";
+import { useBackSwipe } from "./hooks/useBackSwipe";
 import { useInputAlerts } from "./hooks/useInputAlerts";
 import { initAlerts } from "./lib/notify";
 import {
@@ -158,8 +158,11 @@ function App() {
 		}
 		return parsed;
 	});
-	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const sidebarRef = useRef<HTMLDivElement | null>(null);
+	// On phones the layout is an iOS-style page stack: the sidebar is the root
+	// page and any non-home route is a page pushed over it. `mobileDetail` drives
+	// that (see the `.mobile-detail` CSS and the back button below). It's inert on
+	// desktop, where the sidebar + detail are a static split.
+	const detailPaneRef = useRef<HTMLElement | null>(null);
 	// The top bar above the tab strip. The session viewer portals its header
 	// (session name + actions, incl. the workspace-panel toggle) into this slot so
 	// the layout reads name-on-top / tabs-below; other views render a plain title.
@@ -254,17 +257,20 @@ function App() {
 		return unsub;
 	}, []);
 
-	useSidebarSwipe({
-		open: sidebarOpen,
-		setOpen: setSidebarOpen,
-		panelRef: sidebarRef,
-	});
+	// A pushed detail page is showing (anything but the sidebar-root home view).
+	const mobileDetail = route.view !== "home";
 
 	function navigate(route: Route) {
 		history.pushState(null, "", routePath(route));
 		setRoute(route);
-		setSidebarOpen(false);
 	}
+
+	// Edge-swipe-from-left pops the pushed page back to the sidebar on phones.
+	useBackSwipe({
+		active: mobileDetail,
+		onBack: () => navigate({ view: "home" }),
+		paneRef: detailPaneRef,
+	});
 
 	// Arm audio + request notification permission on the first user gesture.
 	useEffect(() => initAlerts(), []);
@@ -300,7 +306,6 @@ function App() {
 	paletteOpenRef.current = palette.open;
 	const openPalette = React.useCallback((prompt?: string) => {
 		setPalette({ open: true, prompt });
-		setSidebarOpen(false);
 	}, []);
 
 	// A "new tab" while a session is open is a *new chat in that same session*, not
@@ -502,21 +507,32 @@ function App() {
 			<RestartOverlay connected={connected} addHandler={addHandler} />
 			<UpdateToast addHandler={addHandler} />
 			<div className="app">
-				{/* Mobile-only top bar: the hamburger to open the drawer, brand + user.
-				    On desktop the brand/user move into the sidebar (below) and this is
-				    hidden. */}
+				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
+				    on a pushed page (a session or other view) the brand is replaced by
+				    a Back chevron that pops back to the root, iOS-style. On desktop the
+				    brand/user live in the sidebar and this bar is hidden. */}
 				<header className="app-header">
 					<div className="app-header-left">
-						<button
-							className="hamburger"
-							onClick={() => setSidebarOpen(!sidebarOpen)}
-							aria-label="Toggle sidebar"
-						>
-							<span />
-							<span />
-							<span />
-						</button>
-						{brand}
+						{mobileDetail ? (
+							<button
+								className="mobile-back"
+								onClick={() => navigate({ view: "home" })}
+								aria-label="Back to sidebar"
+							>
+								<svg width="11" height="18" viewBox="0 0 11 18" fill="none">
+									<path
+										d="M9 1.5L2 9l7 7.5"
+										stroke="currentColor"
+										strokeWidth="2"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+									/>
+								</svg>
+								<span>Back</span>
+							</button>
+						) : (
+							brand
+						)}
 					</div>
 					{userControls}
 				</header>
@@ -524,18 +540,9 @@ function App() {
 				{route.view === "settings" ? (
 					<Settings onBack={() => navigate({ view: "home" })} />
 				) : (
-				<div className="app-body">
-					{/* Overlay to close sidebar on mobile */}
-					{sidebarOpen && (
-						<div
-							className="sidebar-overlay"
-							onClick={() => setSidebarOpen(false)}
-						/>
-					)}
-
+				<div className={`app-body ${mobileDetail ? "mobile-detail" : "mobile-root"}`}>
 					<div
-						ref={sidebarRef}
-						className={`sidebar-container ${sidebarOpen ? "sidebar-open" : ""}`}
+						className="sidebar-container"
 						style={
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
 						}
@@ -585,7 +592,6 @@ function App() {
 								else {
 									const p = projects.find((x) => x.id === id);
 									setPalette({ open: true, projectId: id, repo: p?.repo });
-									setSidebarOpen(false);
 								}
 							}}
 							onRenameProject={async (id, name) => {
@@ -653,7 +659,7 @@ function App() {
 						/>
 					</div>
 
-					<main className="detail-pane">
+					<main className="detail-pane" ref={detailPaneRef}>
 						{/* Top bar: session name + actions (portaled in by SessionViewer)
 						    on session routes, a plain title otherwise. Sits above the tab
 						    strip so the session identity reads first, tabs below it. */}

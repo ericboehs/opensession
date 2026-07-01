@@ -1,50 +1,55 @@
 import { useEffect } from "react";
 
 /**
- * iOS-style edge swipe for the mobile sidebar. Drags the `.sidebar-container`
- * panel under the finger and snaps open/closed on release.
+ * iOS-style edge-swipe-to-go-back for the mobile page stack. On phones the
+ * sidebar is the root page and a session/view is pushed over it (see the
+ * `.mobile-detail` rules in global.css). A drag that STARTS near the left edge
+ * pulls the pushed detail pane to the right under the finger and, past the
+ * halfway point, pops back to the root (calls `onBack`).
  *
- * - Closed: a drag must START within EDGE px of the left edge (so it doesn't
- *   hijack horizontal scrolling inside diffs/code).
- * - Open: a drag anywhere can pull it back closed.
- * - Vertical-dominant moves abort immediately, leaving normal scrolling alone.
- *
- * Only active at mobile widths (the panel is statically visible above that).
+ * - Only active while a detail page is showing (`active`) and at mobile widths.
+ * - Must start within EDGE px of the left edge, so it doesn't hijack horizontal
+ *   scrolling inside diffs/code.
+ * - Vertical-dominant (or leftward) moves abort immediately, leaving normal
+ *   scrolling alone.
  */
 interface Opts {
-  open: boolean;
-  setOpen: (v: boolean) => void;
-  panelRef: React.RefObject<HTMLDivElement | null>;
+  /** A detail page is currently pushed over the root (sidebar). */
+  active: boolean;
+  /** Pop back to the root — navigate home. */
+  onBack: () => void;
+  paneRef: React.RefObject<HTMLElement | null>;
 }
 
 const MOBILE = "(max-width: 720px)";
-const EDGE = 28; // px from the left that may begin an opening drag
+const EDGE = 28; // px from the left that may begin a back drag
 const SLOP = 8; // px of movement before committing to an axis
-const SNAP_MS = 180; // matches the CSS transition
+const SNAP_MS = 260; // matches the CSS page transition
 
-export function useSidebarSwipe({ open, setOpen, panelRef }: Opts) {
+export function useBackSwipe({ active, onBack, paneRef }: Opts) {
   useEffect(() => {
+    if (!active) return;
     const mq = window.matchMedia(MOBILE);
 
     let startX = 0;
     let startY = 0;
-    let width = 300;
-    let candidate = false; // touch began in a zone that can drive the panel
+    let width = 0;
+    let candidate = false; // touch began in the left-edge zone
     let dragging = false; // committed to a horizontal drag
 
     const setTransform = (px: number) => {
-      const el = panelRef.current;
+      const el = paneRef.current;
       if (!el) return;
       el.style.transition = "none";
       el.style.transform = `translateX(${px}px)`;
     };
 
-    // Animate to the target edge, then hand control back to the CSS class so
-    // the inline styles don't linger and fight future layout.
-    const settle = (toOpen: boolean) => {
-      const el = panelRef.current;
+    // Animate the pane to its resting edge, then hand control back to the CSS
+    // class so the inline styles don't linger and fight future layout.
+    const settle = (toBack: boolean) => {
+      const el = paneRef.current;
       if (!el) {
-        setOpen(toOpen);
+        if (toBack) onBack();
         return;
       }
       let finished = false;
@@ -54,10 +59,10 @@ export function useSidebarSwipe({ open, setOpen, panelRef }: Opts) {
         el.style.transition = "";
         el.style.transform = "";
         el.removeEventListener("transitionend", done);
-        setOpen(toOpen);
+        if (toBack) onBack();
       };
       el.style.transition = `transform ${SNAP_MS}ms ease`;
-      el.style.transform = `translateX(${toOpen ? 0 : -width}px)`;
+      el.style.transform = `translateX(${toBack ? width : 0}px)`;
       el.addEventListener("transitionend", done);
       setTimeout(done, SNAP_MS + 60);
     };
@@ -68,9 +73,11 @@ export function useSidebarSwipe({ open, setOpen, panelRef }: Opts) {
       startX = t.clientX;
       startY = t.clientY;
       dragging = false;
-      candidate = open ? true : startX <= EDGE;
-      const el = panelRef.current;
-      width = el ? el.getBoundingClientRect().width || 300 : 300;
+      candidate = startX <= EDGE;
+      const el = paneRef.current;
+      width = el
+        ? el.getBoundingClientRect().width || window.innerWidth
+        : window.innerWidth;
     };
 
     const onMove = (e: TouchEvent) => {
@@ -80,15 +87,15 @@ export function useSidebarSwipe({ open, setOpen, panelRef }: Opts) {
       const dy = t.clientY - startY;
       if (!dragging) {
         if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
-        if (Math.abs(dy) > Math.abs(dx)) {
-          candidate = false; // vertical scroll — let it be
+        // Only a rightward, horizontal-dominant move drives the back gesture.
+        if (Math.abs(dy) > Math.abs(dx) || dx < 0) {
+          candidate = false;
           return;
         }
         dragging = true;
       }
       e.preventDefault(); // we own this gesture now; stop scrolling
-      const base = open ? 0 : -width;
-      const px = Math.max(-width, Math.min(0, base + dx));
+      const px = Math.max(0, Math.min(width, dx));
       setTransform(px);
     };
 
@@ -97,7 +104,7 @@ export function useSidebarSwipe({ open, setOpen, panelRef }: Opts) {
       const wasDragging = dragging;
       candidate = false;
       dragging = false;
-      const el = panelRef.current;
+      const el = paneRef.current;
       if (!wasDragging || !el) {
         if (el) {
           el.style.transition = "";
@@ -106,8 +113,8 @@ export function useSidebarSwipe({ open, setOpen, panelRef }: Opts) {
         return;
       }
       const m = /translateX\(([-0-9.]+)px\)/.exec(el.style.transform);
-      const px = m ? parseFloat(m[1]) : open ? 0 : -width;
-      settle(px > -width / 2);
+      const px = m ? parseFloat(m[1]) : 0;
+      settle(px > width / 2);
     };
 
     document.addEventListener("touchstart", onStart, { passive: true });
@@ -120,5 +127,5 @@ export function useSidebarSwipe({ open, setOpen, panelRef }: Opts) {
       document.removeEventListener("touchend", onEnd);
       document.removeEventListener("touchcancel", onEnd);
     };
-  }, [open, setOpen, panelRef]);
+  }, [active, onBack, paneRef]);
 }
