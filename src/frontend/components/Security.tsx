@@ -1,0 +1,611 @@
+import React, { useEffect, useState, useCallback } from "react";
+import {
+  fetchSecurity,
+  startScanApi,
+  deleteScanApi,
+  createScanProfileApi,
+  updateScanProfileApi,
+  deleteScanProfileApi,
+  fetchAutomations,
+  relativeTime,
+  type SecurityScan,
+  type ScanProfile,
+} from "../lib/api";
+import { getCurrentUser } from "./UserPicker";
+
+interface Props {
+  onOpenSession: (sessionId: string) => void;
+}
+
+interface RecurringScan {
+  id: string;
+  name: string;
+  schedule: string;
+  enabled: boolean;
+  lastRunAt?: string;
+  lastRunStatus?: string;
+  lastRunSessionId?: string;
+}
+
+type Tab = "scans" | "profiles";
+
+export function Security({ onOpenSession }: Props) {
+  const [scans, setScans] = useState<SecurityScan[]>([]);
+  const [profiles, setProfiles] = useState<ScanProfile[]>([]);
+  const [repos, setRepos] = useState<Array<{ id: string }>>([]);
+  const [recurring, setRecurring] = useState<RecurringScan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>("scans");
+  const [showNewScan, setShowNewScan] = useState(false);
+  const [editProfile, setEditProfile] = useState<ScanProfile | "new" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchSecurity();
+      setScans(data.scans);
+      setProfiles(data.profiles);
+      setRepos(data.repos);
+      setLoading(false);
+    } catch {}
+    try {
+      const autos = await fetchAutomations();
+      setRecurring(
+        (autos as RecurringScan[]).filter((a) =>
+          /deepsec|security scan/i.test(a.name),
+        ),
+      );
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    document.title = "Security — Michael";
+    load();
+    const id = setInterval(load, 10000);
+    return () => {
+      clearInterval(id);
+      document.title = "Michael — Tella";
+    };
+  }, [load]);
+
+  async function handleDeleteScan(s: SecurityScan) {
+    if (!confirm("Remove this scan record? Its sessions are left as-is.")) return;
+    try {
+      await deleteScanApi(s.id);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <div className="automations">
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Security</h2>
+          <div className="page-sub">
+            deepsec scans across the registered repos — findings land as PRs, one per confirmed issue.
+          </div>
+        </div>
+        <button
+          className="btn-new-session"
+          style={{ marginTop: 0 }}
+          onClick={() => setShowNewScan(true)}
+        >
+          + New scan
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1.5 mb-4">
+        {(
+          [
+            ["scans", `Scans ${scans.length}`],
+            ["profiles", `Profiles ${profiles.length}`],
+          ] as Array<[Tab, string]>
+        ).map(([t, label]) => (
+          <button
+            key={t}
+            className={`btn-small ${tab === t ? "!bg-active !text-fg" : ""}`}
+            onClick={() => setTab(t)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="form-error" onClick={() => setError(null)}>
+          {error}
+        </div>
+      )}
+
+      {showNewScan && (
+        <NewScanModal
+          repos={repos.map((r) => r.id)}
+          profiles={profiles}
+          onClose={() => setShowNewScan(false)}
+          onStarted={(sessionId) => {
+            setShowNewScan(false);
+            load();
+            if (sessionId) onOpenSession(sessionId);
+          }}
+        />
+      )}
+
+      {editProfile && (
+        <ProfileModal
+          initial={editProfile === "new" ? null : editProfile}
+          onClose={() => setEditProfile(null)}
+          onSaved={() => {
+            setEditProfile(null);
+            load();
+          }}
+        />
+      )}
+
+      {loading ? (
+        <div className="loading">Loading…</div>
+      ) : tab === "profiles" ? (
+        <div className="automation-list">
+          <div>
+            <button className="btn-small" onClick={() => setEditProfile("new")}>
+              + Create a profile
+            </button>
+          </div>
+          {profiles.length === 0 ? (
+            <div className="automations-empty">
+              <p>No scan profiles yet</p>
+              <p className="automations-empty-sub">
+                Profiles customize how scans analyze your code — threat model
+                focus, known false positives, severity bar.
+              </p>
+            </div>
+          ) : (
+            profiles.map((p) => (
+              <div key={p.id} className="automation-card">
+                <div className="automation-top">
+                  <span className="automation-name">{p.name}</span>
+                  <div className="automation-actions">
+                    <button className="btn-small" onClick={() => setEditProfile(p)}>
+                      Edit
+                    </button>
+                    <button
+                      className="btn-small btn-small-danger"
+                      onClick={async () => {
+                        if (!confirm(`Delete profile "${p.name}"?`)) return;
+                        try {
+                          await deleteScanProfileApi(p.id);
+                          load();
+                        } catch (e: any) {
+                          setError(e.message);
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                <div className="automation-prompt">{p.prompt}</div>
+                <div className="automation-meta">
+                  <span className="automation-by">by {p.createdBy}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="automation-list">
+          {recurring.length > 0 && (
+            <div className="bg-panel border border-line rounded-panel px-3.5 py-3">
+              <div className="text-fg text-[13px] font-medium mb-1.5">Recurring</div>
+              <div className="flex flex-col gap-1">
+                {recurring.map((r) => (
+                  <div key={r.id} className="flex items-baseline gap-2 text-[12.5px] text-dim min-w-0">
+                    <span className={r.enabled ? "text-green" : "text-faint"}>●</span>
+                    <span className="text-fg truncate">{r.name}</span>
+                    <span className="font-mono text-faint shrink-0">{r.schedule}</span>
+                    {r.lastRunAt && (
+                      <span className="shrink-0">
+                        last {relativeTime(r.lastRunAt)}
+                        {r.lastRunStatus === "ok" ? " ✓" : r.lastRunStatus === "error" ? " ✗" : ""}
+                      </span>
+                    )}
+                    <a className="automation-session-link ml-auto shrink-0" href="/backstage/automations">
+                      manage
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {scans.length === 0 ? (
+            <div className="automations-empty">
+              <p>No scans yet</p>
+              <p className="automations-empty-sub">
+                Start a scan to search for findings across your repositories.
+              </p>
+            </div>
+          ) : (
+            scans.map((s) => (
+              <div key={s.id} className="automation-card">
+                <div className="automation-top">
+                  <StatusPill status={s.status} />
+                  <span className="automation-name">
+                    {s.interactive ? "Interactive scan" : "Scan"} —{" "}
+                    {s.repos.join(", ")}
+                  </span>
+                  {s.profileName && (
+                    <span className="source-chip" title="Scan profile">
+                      {s.profileName}
+                    </span>
+                  )}
+                  <div className="automation-actions">
+                    <button
+                      className="btn-small btn-small-danger"
+                      onClick={() => handleDeleteScan(s)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                {s.instructions && (
+                  <div className="automation-prompt">{s.instructions}</div>
+                )}
+
+                <div className="mt-1.5 flex flex-col gap-1">
+                  {s.sessions.map((ref) => (
+                    <div
+                      key={ref.repo + ref.sessionId}
+                      className="flex items-baseline gap-2 text-[12px] text-dim min-w-0"
+                    >
+                      {ref.status === "running" ? (
+                        <span className="text-yellow shrink-0">●</span>
+                      ) : ref.status === "ok" ? (
+                        <span className="text-green shrink-0">✓</span>
+                      ) : (
+                        <span className="text-red shrink-0" title={ref.error}>✗</span>
+                      )}
+                      <span className="text-fg shrink-0">{ref.repo}</span>
+                      {ref.error && (
+                        <span className="text-red truncate" title={ref.error}>
+                          {ref.error}
+                        </span>
+                      )}
+                      {ref.sessionId && (
+                        <a
+                          className="automation-session-link ml-auto shrink-0"
+                          href={`/backstage/session/${ref.sessionId}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            onOpenSession(ref.sessionId);
+                          }}
+                        >
+                          view session
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="automation-meta">
+                  <span>started {relativeTime(s.createdAt)}</span>
+                  {s.finishedAt && <span>finished {relativeTime(s.finishedAt)}</span>}
+                  <span className="automation-by">by {s.createdBy}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: SecurityScan["status"] }) {
+  const cls =
+    status === "running"
+      ? "text-yellow"
+      : status === "done"
+        ? "text-green"
+        : status === "interactive"
+          ? "text-accent"
+          : "text-red";
+  const label =
+    status === "running"
+      ? "Running"
+      : status === "done"
+        ? "Done"
+        : status === "interactive"
+          ? "Interactive"
+          : "Error";
+  return (
+    <span className={`text-[12px] font-medium shrink-0 ${cls}`}>
+      ● {label}
+    </span>
+  );
+}
+
+// ── New scan modal ───────────────────────────────────────────
+
+function NewScanModal({
+  repos,
+  profiles,
+  onClose,
+  onStarted,
+}: {
+  repos: string[];
+  profiles: ScanProfile[];
+  onClose: () => void;
+  onStarted: (sessionId?: string) => void;
+}) {
+  const [scope, setScope] = useState<"single" | "all">("single");
+  const [repo, setRepo] = useState(repos.includes("tella-fusion") ? "tella-fusion" : repos[0] || "");
+  const [profileId, setProfileId] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
+  const [interactive, setInteractive] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const singleFusion = scope === "single" && repo === "tella-fusion";
+  const canRecur = singleFusion && !interactive;
+  const canInteractive = singleFusion && recurrence === "none";
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function handleStart() {
+    setStarting(true);
+    setError(null);
+    try {
+      const res = await startScanApi({
+        repos: scope === "all" ? "all" : [repo],
+        profileId: profileId || undefined,
+        instructions: instructions.trim() || undefined,
+        interactive: canInteractive && interactive,
+        recurrence: canRecur ? recurrence : "none",
+        createdBy: getCurrentUser(),
+      });
+      onStarted(res.sessionId);
+    } catch (e: any) {
+      setError(e.message);
+      setStarting(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[300] bg-black/45 flex items-start justify-center overflow-y-auto p-4 sm:p-8"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="automation-form w-full max-w-[560px] my-auto shadow-2xl">
+        <div>
+          <div className="automation-form-title">New scan</div>
+          <div className="text-dim text-[13px] mt-0.5">
+            Start a search for findings across your repositories.
+          </div>
+        </div>
+
+        <div className="flex gap-1.5">
+          <button
+            className={`btn-small ${scope === "single" ? "!bg-active !text-fg" : ""}`}
+            onClick={() => setScope("single")}
+          >
+            Single repo
+          </button>
+          <button
+            className={`btn-small ${scope === "all" ? "!bg-active !text-fg" : ""}`}
+            onClick={() => {
+              setScope("all");
+              setInteractive(false);
+              setRecurrence("none");
+            }}
+          >
+            All repos
+          </button>
+        </div>
+
+        {scope === "single" && (
+          <label>
+            Select repository
+            <select value={repo} onChange={(e) => setRepo(e.target.value)}>
+              {repos.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <label>
+          Scan profile
+          <select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+            <option value="">None — default threat model</option>
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          {profiles.length === 0 && (
+            <span className="text-faint text-[11.5px] mt-1">
+              No scan profiles yet — profiles customize how scans analyze your
+              code. Create one under Security → Profiles.
+            </span>
+          )}
+        </label>
+
+        <label>
+          Instructions for this scan (optional)
+          <textarea
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            rows={3}
+            placeholder="Focus or constrain the scan — “only the upload pipeline and its S3 handling”, “report only, no fix PRs”…"
+          />
+        </label>
+
+        <label>
+          Repeats
+          <select
+            value={canRecur ? recurrence : "none"}
+            onChange={(e) => setRecurrence(e.target.value as any)}
+            disabled={!canRecur}
+          >
+            <option value="none">Does not repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+          {!singleFusion && (
+            <span className="text-faint text-[11.5px] mt-1">
+              Recurring and interactive scans support single-repo tella-fusion for now.
+            </span>
+          )}
+        </label>
+
+        <label
+          className={`flex items-start gap-2.5 ${canInteractive ? "cursor-pointer" : "opacity-50"}`}
+          style={{ flexDirection: "row" }}
+        >
+          <input
+            type="checkbox"
+            checked={canInteractive && interactive}
+            disabled={!canInteractive}
+            onChange={(e) => setInteractive(e.target.checked)}
+            style={{ width: "auto", marginTop: 3 }}
+          />
+          <span>
+            Interactive mode
+            <span className="block text-dim text-[12px] font-normal mt-0.5">
+              Instead of scanning end to end, Michael collaborates with you in a
+              session to tailor the threat model to your preferences before
+              running the scan.
+            </span>
+          </span>
+        </label>
+
+        {error && <div className="form-error">{error}</div>}
+
+        <div className="automation-form-actions">
+          <button className="btn-delete-cancel" onClick={onClose} disabled={starting}>
+            Cancel
+          </button>
+          <button
+            className="btn-create"
+            style={{ padding: "8px 22px" }}
+            onClick={handleStart}
+            disabled={starting || (scope === "single" && !repo)}
+          >
+            {starting
+              ? "Starting…"
+              : recurrence !== "none" && canRecur
+                ? "Create recurring scan"
+                : interactive && canInteractive
+                  ? "Start interactive session"
+                  : "Start scan"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Profile modal ────────────────────────────────────────────
+
+function ProfileModal({
+  initial,
+  onClose,
+  onSaved,
+}: {
+  initial: ScanProfile | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(initial?.name || "");
+  const [prompt, setPrompt] = useState(initial?.prompt || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      if (initial) await updateScanProfileApi(initial.id, { name, prompt });
+      else await createScanProfileApi({ name, prompt, createdBy: getCurrentUser() });
+      onSaved();
+    } catch (e: any) {
+      setError(e.message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[300] bg-black/45 flex items-start justify-center overflow-y-auto p-4 sm:p-8"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="automation-form w-full max-w-[560px] my-auto shadow-2xl">
+        <div className="automation-form-title">
+          {initial ? `Edit "${initial.name}"` : "New scan profile"}
+        </div>
+
+        <label>
+          Name
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Payments-focused, strict"
+          />
+        </label>
+
+        <label>
+          Threat model — how should scans analyze the code?
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            rows={8}
+            placeholder={
+              "What to prioritize (auth, payments, uploads…), what's intentionally public, known accepted risks / false positives to skip, severity bar, PR-per-finding vs report-only…"
+            }
+          />
+        </label>
+
+        {error && <div className="form-error">{error}</div>}
+
+        <div className="automation-form-actions">
+          <button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button
+            className="btn-create"
+            style={{ padding: "8px 22px" }}
+            onClick={handleSave}
+            disabled={saving || !name.trim() || !prompt.trim()}
+          >
+            {saving ? "Saving…" : initial ? "Save changes" : "Create profile"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

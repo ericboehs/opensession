@@ -102,6 +102,7 @@ export type NavView =
 	| "sessions"
 	| "reviews"
 	| "automations"
+	| "security"
 	| "goals"
 	| "actions"
 	| "wiki";
@@ -211,6 +212,26 @@ const NAV_ITEMS: Array<{
 			>
 				<circle cx="8" cy="8" r="5.5" />
 				<path d="M8 5v3l2 1.5" strokeLinecap="round" strokeLinejoin="round" />
+			</svg>
+		),
+	},
+	{
+		view: "security",
+		label: "Security",
+		icon: (
+			<svg
+				width="18"
+				height="18"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path
+					d="M8 1.8l4.6 1.7v3.8c0 3-1.9 5.2-4.6 6.5-2.7-1.3-4.6-3.5-4.6-6.5V3.5L8 1.8z"
+					strokeLinejoin="round"
+				/>
+				<path d="M6.1 8l1.3 1.3 2.5-2.6" strokeLinecap="round" strokeLinejoin="round" />
 			</svg>
 		),
 	},

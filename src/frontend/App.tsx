@@ -7,6 +7,7 @@ import { NewSession } from "./components/NewSession";
 import { SessionSearch } from "./components/SessionSearch";
 import { Home } from "./components/Home";
 import { Automations } from "./components/Automations";
+import { Security } from "./components/Security";
 import { Goals } from "./components/Goals";
 import { Actions } from "./components/Actions";
 import { Notes, type NotesSelection } from "./components/Notes";
@@ -53,6 +54,7 @@ type Route =
 	| { view: "session"; id: string }
 	| { view: "reviews"; id?: string }
 	| { view: "automations" }
+	| { view: "security" }
 	| { view: "goals" }
 	| { view: "actions" }
 	| { view: "notes"; sel: NotesSelection }
@@ -74,6 +76,7 @@ function parseRoute(pathname: string): Route {
 		return { view: "session", id: decodeURIComponent(sessionMatch[1]) };
 	if (pathname === "/backstage/new") return { view: "new" };
 	if (pathname === "/backstage/automations") return { view: "automations" };
+	if (pathname === "/backstage/security") return { view: "security" };
 	if (pathname === "/backstage/goals") return { view: "goals" };
 	if (pathname === "/backstage/actions") return { view: "actions" };
 	// Back-compat: Connections moved into Settings (a Workspace section).
@@ -122,6 +125,8 @@ function routePath(route: Route): string {
 				: "/backstage/new";
 		case "automations":
 			return "/backstage/automations";
+		case "security":
+			return "/backstage/security";
 		case "goals":
 			return "/backstage/goals";
 		case "actions":
@@ -536,6 +541,8 @@ function App() {
 			? "Reviews"
 			: route.view === "automations"
 				? "Automations"
+				: route.view === "security"
+					? "Security"
 				: route.view === "goals"
 					? "Goals"
 					: route.view === "actions"
@@ -550,6 +557,7 @@ function App() {
 
 	const activeView =
 		route.view === "automations" ||
+		route.view === "security" ||
 		route.view === "goals" ||
 		route.view === "actions" ||
 		route.view === "notes" ||
@@ -913,6 +921,10 @@ function App() {
 						/>
 						{route.view === "automations" ? (
 							<Automations
+								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
+						) : route.view === "security" ? (
+							<Security
 								onOpenSession={(id) => navigate({ view: "session", id })}
 							/>
 						) : route.view === "goals" ? (
