@@ -835,6 +835,157 @@ export function Sidebar({
 	// Archived label lands: just above the first other band, or at the very end.
 	const hasOtherBand = groups.some((g) => g.band !== "personal");
 
+	// Projects render as their own band above Automations (below People / My
+	// sessions). `firstAutoIdx` marks where the automations bands begin so the
+	// Projects band can slot in just before them; when there are no automations it
+	// falls through to render after the map (still below People).
+	const firstAutoIdx = groups.findIndex((g) => g.band === "automations");
+	const projectsBand = (
+		<div className="sidebar-group sidebar-group--band-start">
+			<div className="sidebar-band-label">
+				<button
+					className="sidebar-band-toggle"
+					onClick={toggleProjects}
+					title={projectsOpen ? "Collapse projects" : "Expand projects"}
+				>
+					<span>Projects</span>
+					<IconChevronDown
+						className="sidebar-band-chevron"
+						size={16}
+						style={{
+							transform: projectsOpen ? "none" : "rotate(-90deg)",
+						}}
+					/>
+					{!projectsOpen && projects.length > 0 && (
+						<span className="sidebar-group-count">{projects.length}</span>
+					)}
+				</button>
+				<button
+					className="sidebar-band-action"
+					onClick={() => {
+						openProjects();
+						setNewProjectDraft("");
+						setCreatingProject(true);
+					}}
+					title="New project"
+				>
+					<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+						<path
+							d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
+							stroke="currentColor"
+							strokeWidth="1.3"
+							strokeLinejoin="round"
+						/>
+						<path
+							d="M8 6.8v3.4M6.3 8.5h3.4"
+							stroke="currentColor"
+							strokeWidth="1.3"
+							strokeLinecap="round"
+						/>
+					</svg>
+				</button>
+			</div>
+			{projectsOpen && (
+			<>
+			{/* Inline new-project row: matches the rename input, shown while
+			    creating. */}
+			{creatingProject && (
+				<div className="sidebar-group-header sidebar-project-row">
+					<span
+						className="sidebar-group-dot"
+						style={{ backgroundColor: "var(--text-faint)" }}
+					/>
+					<input
+						className="sidebar-item-rename"
+						value={newProjectDraft}
+						autoFocus
+						placeholder="Project name"
+						onChange={(e) => setNewProjectDraft(e.target.value)}
+						onBlur={commitProjectCreate}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") commitProjectCreate();
+							else if (e.key === "Escape") {
+								setCreatingProject(false);
+								setNewProjectDraft("");
+							}
+						}}
+					/>
+				</div>
+			)}
+			{projects.length === 0 && !creatingProject && (
+				<div className="sidebar-empty">No projects yet</div>
+			)}
+			{projects.map((project) => {
+				// A project is a single row — clicking it opens the project (its
+				// chats show in the top tab strip), never an inline chat list.
+				const chats = sessions.filter(
+					(s) => !s.archived && s.projectId === project.id,
+				);
+				const active = chats.some((s) => s.id === selectedId);
+				const editing = editingProjectId === project.id;
+				return (
+					<button
+						key={project.id}
+						className={`sidebar-group-header sidebar-project-row ${active ? "sidebar-item-selected" : ""}`}
+						style={
+							active
+								? { background: "var(--bg-active, rgba(255,255,255,0.08))" }
+								: undefined
+						}
+						onClick={() => !editing && onOpenProject(project.id)}
+						onContextMenu={(e) => {
+							e.preventDefault();
+							setProjectMenu({
+								id: project.id,
+								x: e.clientX,
+								y: e.clientY,
+							});
+						}}
+					>
+						<span
+							className="sidebar-group-dot"
+							style={{
+								backgroundColor: project.color
+									? colorHex(project.color) || "var(--text-faint)"
+									: "var(--text-faint)",
+							}}
+						/>
+						{editing ? (
+							<input
+								className="sidebar-item-rename"
+								value={projectDraft}
+								autoFocus
+								onChange={(e) => setProjectDraft(e.target.value)}
+								onClick={(e) => e.stopPropagation()}
+								onDoubleClick={(e) => e.stopPropagation()}
+								onBlur={commitProjectRename}
+								onKeyDown={(e) => {
+									if (e.key === "Enter") commitProjectRename();
+									else if (e.key === "Escape") setEditingProjectId(null);
+									e.stopPropagation();
+								}}
+							/>
+						) : (
+							<span
+								className="sidebar-group-name"
+								onDoubleClick={(e) => {
+									e.stopPropagation();
+									setProjectDraft(project.name);
+									setEditingProjectId(project.id);
+								}}
+							>
+								{project.name}
+							</span>
+						)}
+						<span className="sidebar-group-count">{chats.length}</span>
+					</button>
+				);
+			})}
+			</>
+			)}
+		</div>
+	);
+
 	return (
 		<div className="sidebar">
 			<div className="sidebar-search-wrap">
@@ -1110,6 +1261,7 @@ export function Sidebar({
 					{isFirstOther && archivedBand && (
 						<div className="sidebar-group">{archivedBand}</div>
 					)}
+					{i === firstAutoIdx && projectsBand}
 					<div
 						className={`sidebar-group sidebar-group--${group.band}${
 							bandChanged ? " sidebar-group--band-start" : ""
@@ -1213,152 +1365,10 @@ export function Sidebar({
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
 
-				{/* ── Projects (folders that group chats) ── Projects are a different
-				    kind of thing from sessions, so they sit at the very bottom, in
-				    their own band. */}
-				<div className="sidebar-group sidebar-group--band-start">
-					<div className="sidebar-band-label">
-						<button
-							className="sidebar-band-toggle"
-							onClick={toggleProjects}
-							title={projectsOpen ? "Collapse projects" : "Expand projects"}
-						>
-							<span>Projects</span>
-							<IconChevronDown
-								className="sidebar-band-chevron"
-								size={16}
-								style={{
-									transform: projectsOpen ? "none" : "rotate(-90deg)",
-								}}
-							/>
-							{!projectsOpen && projects.length > 0 && (
-								<span className="sidebar-group-count">{projects.length}</span>
-							)}
-						</button>
-						<button
-							className="sidebar-band-action"
-							onClick={() => {
-								openProjects();
-								setNewProjectDraft("");
-								setCreatingProject(true);
-							}}
-							title="New project"
-						>
-							<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
-								<path
-									d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
-									stroke="currentColor"
-									strokeWidth="1.3"
-									strokeLinejoin="round"
-								/>
-								<path
-									d="M8 6.8v3.4M6.3 8.5h3.4"
-									stroke="currentColor"
-									strokeWidth="1.3"
-									strokeLinecap="round"
-								/>
-							</svg>
-						</button>
-					</div>
-					{projectsOpen && (
-					<>
-					{/* Inline new-project row: matches the rename input, shown while
-					    creating. */}
-					{creatingProject && (
-						<div className="sidebar-group-header sidebar-project-row">
-							<span
-								className="sidebar-group-dot"
-								style={{ backgroundColor: "var(--text-faint)" }}
-							/>
-							<input
-								className="sidebar-item-rename"
-								value={newProjectDraft}
-								autoFocus
-								placeholder="Project name"
-								onChange={(e) => setNewProjectDraft(e.target.value)}
-								onBlur={commitProjectCreate}
-								onKeyDown={(e) => {
-									if (e.key === "Enter") commitProjectCreate();
-									else if (e.key === "Escape") {
-										setCreatingProject(false);
-										setNewProjectDraft("");
-									}
-								}}
-							/>
-						</div>
-					)}
-					{projects.length === 0 && !creatingProject && (
-						<div className="sidebar-empty">No projects yet</div>
-					)}
-					{projects.map((project) => {
-						// A project is a single row — clicking it opens the project (its
-						// chats show in the top tab strip), never an inline chat list.
-						const chats = sessions.filter(
-							(s) => !s.archived && s.projectId === project.id,
-						);
-						const active = chats.some((s) => s.id === selectedId);
-						const editing = editingProjectId === project.id;
-						return (
-							<button
-								key={project.id}
-								className={`sidebar-group-header sidebar-project-row ${active ? "sidebar-item-selected" : ""}`}
-								style={
-									active
-										? { background: "var(--bg-active, rgba(255,255,255,0.08))" }
-										: undefined
-								}
-								onClick={() => !editing && onOpenProject(project.id)}
-								onContextMenu={(e) => {
-									e.preventDefault();
-									setProjectMenu({
-										id: project.id,
-										x: e.clientX,
-										y: e.clientY,
-									});
-								}}
-							>
-								<span
-									className="sidebar-group-dot"
-									style={{
-										backgroundColor: project.color
-											? colorHex(project.color) || "var(--text-faint)"
-											: "var(--text-faint)",
-									}}
-								/>
-								{editing ? (
-									<input
-										className="sidebar-item-rename"
-										value={projectDraft}
-										autoFocus
-										onChange={(e) => setProjectDraft(e.target.value)}
-										onClick={(e) => e.stopPropagation()}
-										onDoubleClick={(e) => e.stopPropagation()}
-										onBlur={commitProjectRename}
-										onKeyDown={(e) => {
-											if (e.key === "Enter") commitProjectRename();
-											else if (e.key === "Escape") setEditingProjectId(null);
-											e.stopPropagation();
-										}}
-									/>
-								) : (
-									<span
-										className="sidebar-group-name"
-										onDoubleClick={(e) => {
-											e.stopPropagation();
-											setProjectDraft(project.name);
-											setEditingProjectId(project.id);
-										}}
-									>
-										{project.name}
-									</span>
-								)}
-								<span className="sidebar-group-count">{chats.length}</span>
-							</button>
-						);
-					})}
-					</>
-					)}
-				</div>
+				{/* Projects render above the Automations band (see `projectsBand` /
+				    `firstAutoIdx` above); only when there are no automations to anchor
+				    to do they fall through and render here, at the end of the list. */}
+				{firstAutoIdx === -1 && projectsBand}
 			</div>
 		</div>
 	);
