@@ -1224,7 +1224,24 @@ export function Sidebar({
 							? null
 							: sessions.find((s) => s.id === projectMenu.id);
 						const pinKey = ws ? `workspace:${ws.id}` : projectMenu.id;
-						const pinned = pins.includes(pinKey);
+						// Match the row pin icon: a row can be pinned via its own key or a
+						// legacy pin on any member chat (incl. alias ids) — unpin clears all.
+						const menuRow = wsRows.find((r) =>
+							ws ? r.workspace?.id === ws.id : r.key === projectMenu.id,
+						);
+						const pinnedKeys = [
+							pinKey,
+							...(menuRow
+								? [
+										menuRow.key,
+										...menuRow.chats.flatMap((c) => [
+											c.id,
+											...(c.aliasIds || []),
+										]),
+									]
+								: []),
+						].filter((k, i, a) => pins.includes(k) && a.indexOf(k) === i);
+						const pinned = pinnedKeys.length > 0;
 						return (
 							<div
 								className="sidebar-ctx-menu"
@@ -1234,7 +1251,13 @@ export function Sidebar({
 								<button
 									style={CTX_ITEM_STYLE}
 									onClick={() => {
-										setPins(togglePin(pinKey));
+										if (pinned) {
+											let next = pins;
+											for (const k of pinnedKeys) next = togglePin(k);
+											setPins(next);
+										} else {
+											setPins(togglePin(pinKey));
+										}
 										setProjectMenu(null);
 									}}
 								>
