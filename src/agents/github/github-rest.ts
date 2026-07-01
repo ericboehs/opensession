@@ -293,6 +293,10 @@ export interface ReviewThread {
   id: string;
   isResolved: boolean;
   isOutdated: boolean;
+  /** File the thread is anchored to (null for a file-level/detached thread). */
+  path: string | null;
+  /** Current head-side line the thread anchors to (null once outdated). */
+  line: number | null;
   /** login of the thread's first (root) comment author. */
   rootAuthor: string;
   /** Every comment in the thread, oldest first (root + replies). */
@@ -311,7 +315,7 @@ export async function listReviewThreads(prNumber: number): Promise<ReviewThread[
         pullRequest(number:$number){
           reviewThreads(first:100){
             nodes{
-              id isResolved isOutdated
+              id isResolved isOutdated path line
               comments(first:100){ nodes{ author{login} body } }
             }
           }
@@ -331,6 +335,8 @@ export async function listReviewThreads(prNumber: number): Promise<ReviewThread[
       id: t.id,
       isResolved: !!t.isResolved,
       isOutdated: !!t.isOutdated,
+      path: typeof t.path === "string" ? t.path : null,
+      line: typeof t.line === "number" ? t.line : null,
       rootAuthor: comments[0]?.login || "",
       comments,
     };

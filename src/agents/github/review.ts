@@ -15,7 +15,10 @@ import {
   supersedeReviewComment,
   findActiveReviewComment,
   submitReview,
+  listReviewThreads,
+  resolveReviewThread,
   REVIEW_MARKER,
+  BOT_LOGIN,
   type ReviewInlineComment,
 } from "./github-rest";
 
@@ -142,7 +145,7 @@ export async function runReview(
     });
 
     const parsed = parseReviewOutput(result.text);
-    await postReview(pr, details, parsed, result.text, result.error);
+    await postReview(pr, details, parsed, result.text, result.error, force);
 
     // Record the SHA as reviewed only on a successful run, so a transient failure
     // (model error/timeout) leaves it eligible for retry on the next delivery.
@@ -193,6 +196,7 @@ async function postReview(
   parsed: ReviewOutput | null,
   rawText: string,
   runError?: string,
+  force = false,
 ): Promise<void> {
   const state = getOrInitPrState(pr.number, pr.headRef);
   const shortSha = (pr.headSha || "").slice(0, 7);
@@ -233,24 +237,59 @@ async function postReview(
     writePrState(state);
   }
 
+  // Existing inline threads on the PR: used to (a) resolve our own threads GitHub
+  // has marked outdated (their code moved with this push) so they collapse instead
+  // of piling up, and (b) dedup — a re-review after a push must NOT re-post a
+  // finding we already have an open comment on. GitHub only auto-outdates an inline
+  // comment when its anchored line changes, so a finding on an unchanged line
+  // (e.g. Dockerfile:96) would otherwise get a fresh duplicate every single push.
+  const existingThreads = await listReviewThreads(pr.number).catch(() => []);
+
+  // Anchors (path:line) where we already have an open, still-current bot comment.
+  // Skip re-posting these — the existing comment already covers the same spot.
+  // `force` (manual "review again") bypasses dedup so an explicit re-review is fresh.
+  const openBotAnchors = new Set<string>();
+  if (!force) {
+    for (const t of existingThreads) {
+      if (t.rootAuthor === BOT_LOGIN && !t.isResolved && !t.isOutdated && t.path && t.line != null) {
+        openBotAnchors.add(`${t.path}:${t.line}`);
+      }
+    }
+  }
+
   // Formal review with inline comments, anchored to the diff.
   const findings = parsed?.findings || [];
   if (findings.length && pr.headSha) {
     const diff = await getPrDiff(pr.headRef);
     const commitId = diff?.headRefOid || pr.headSha;
-    const valid = diff ? filterToDiff(findings, diff.patch) : findings;
-    const inline: ReviewInlineComment[] = valid.map((f) => ({
+    const onDiff = diff ? filterToDiff(findings, diff.patch) : findings;
+    const fresh = onDiff.filter((f) => !openBotAnchors.has(`${f.path}:${f.line}`));
+    const inline: ReviewInlineComment[] = fresh.map((f) => ({
       path: f.path,
       line: f.line,
       side: f.side === "LEFT" ? "LEFT" : "RIGHT",
       body: composeInlineBody(f),
     }));
+    const deduped = onDiff.length - fresh.length;
+    if (deduped > 0) {
+      console.log(`[github] skipped ${deduped} finding(s) already commented on PR #${pr.number}`);
+    }
     if (inline.length) {
       const ok = await submitReview(pr.number, commitId, `Michael review · \`${shortSha}\``, inline);
       if (!ok) console.warn(`[github] submitReview failed for PR #${pr.number}`);
-      if (inline.length < findings.length) {
-        console.log(`[github] dropped ${findings.length - inline.length} off-diff finding(s) for PR #${pr.number}`);
+      if (inline.length < onDiff.length - deduped) {
+        console.log(`[github] dropped ${onDiff.length - deduped - inline.length} off-diff finding(s) for PR #${pr.number}`);
       }
+    }
+  }
+
+  // Auto-resolve our own inline threads GitHub has marked outdated — their code
+  // moved or vanished with this push, so the finding no longer anchors anywhere
+  // useful. Collapsing them keeps the PR clean without a human resolving by hand.
+  // Only ever touches bot-rooted threads; human threads are never resolved here.
+  for (const t of existingThreads) {
+    if (!t.isResolved && t.isOutdated && t.rootAuthor === BOT_LOGIN) {
+      await resolveReviewThread(t.id).catch(() => {});
     }
   }
 }
