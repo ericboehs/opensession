@@ -881,14 +881,10 @@ export function Sidebar({
 	function renderWsRow(row: WsRow) {
 		const active = row.chats.some((s) => s.id === selectedId);
 		const editing = row.workspace && editingProjectId === row.workspace.id;
-		const dot =
-			row.status === "pending" && row.workspace?.color
-				? colorHex(row.workspace.color) || "var(--text-faint)"
-				: STATUS_DOT[row.status];
 		return (
 			<button
 				key={row.key}
-				className={`sidebar-group-header sidebar-project-row ${active ? "sidebar-item-selected" : ""}`}
+				className={`sidebar-group-header sidebar-project-row sidebar-ws-row ${active ? "sidebar-item-selected" : ""}`}
 				style={
 					active
 						? { background: "var(--bg-active, rgba(255,255,255,0.08))" }
@@ -909,10 +905,6 @@ export function Sidebar({
 				}}
 				title={row.name}
 			>
-				<span
-					className={`sidebar-group-dot${row.running ? " sidebar-ws-dot-running" : ""}`}
-					style={{ backgroundColor: dot }}
-				/>
 				{editing ? (
 					<input
 						className="sidebar-item-rename"
@@ -949,6 +941,7 @@ export function Sidebar({
 						{row.name}
 					</span>
 				)}
+				{row.running && <span className="working-dot" />}
 				{row.unread && <span className="sidebar-ws-unread" />}
 				{row.chats.length > 1 && (
 					<span className="sidebar-group-count">{row.chats.length}</span>
@@ -1291,7 +1284,7 @@ export function Sidebar({
 							<span>
 								{filter.person !== "all"
 									? `${people.find((p) => p.key === filter.person)?.label || filter.person}'s workspaces`
-									: "My workspaces"}
+									: "Workspaces"}
 							</span>
 						</span>
 						<Tooltip label="New workspace">
@@ -1398,19 +1391,28 @@ export function Sidebar({
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
 
-				{/* ── People (others' workspaces; hidden while a Person filter is on) ── */}
+				{/* ── People: every teammate, each a collapsible group of their
+				    workspaces. Hidden while a Person filter narrows the view above. ── */}
 				{filter.person === "all" &&
 					(() => {
 						const pinSet = new Set(pins);
-						const me = currentUser.toLowerCase();
-						const others = wsRows.filter(
-							(r) =>
-								r.owner !== me &&
-								KNOWN_PEOPLE.has(r.owner) &&
-								!pinSet.has(r.key) &&
-								!r.chats.some((c) => pinSet.has(c.id)),
+						const byOwner = new Map<string, WsRow[]>();
+						for (const r of wsRows) {
+							if (!KNOWN_PEOPLE.has(r.owner)) continue;
+							if (pinSet.has(r.key) || r.chats.some((c) => pinSet.has(c.id)))
+								continue;
+							const list = byOwner.get(r.owner) || [];
+							list.push(r);
+							byOwner.set(r.owner, list);
+						}
+						const persons = [...TEAM, "Michael"]
+							.map((name) => ({ name, key: name.toLowerCase() }))
+							.filter(({ key }) => byOwner.get(key)?.length);
+						if (!persons.length) return null;
+						const total = persons.reduce(
+							(n, p) => n + (byOwner.get(p.key)?.length || 0),
+							0,
 						);
-						if (!others.length) return null;
 						return (
 							<div className="sidebar-group sidebar-group--people sidebar-group--band-start">
 								<div className="sidebar-band-label">
@@ -1434,13 +1436,47 @@ export function Sidebar({
 											}}
 										/>
 										{!bandOpen("people") && (
-											<span className="sidebar-group-count">
-												{others.length}
-											</span>
+											<span className="sidebar-group-count">{total}</span>
 										)}
 									</button>
 								</div>
-								{bandOpen("people") && others.map(renderWsRow)}
+								{bandOpen("people") &&
+									persons.map(({ name, key }) => {
+										const rows = byOwner.get(key)!;
+										const gkey = `person:${key}`;
+										const open = isOpen(gkey);
+										return (
+											<React.Fragment key={gkey}>
+												<button
+													className="sidebar-group-header"
+													onClick={() => toggleGroup(gkey)}
+												>
+													<span
+														className="sidebar-group-dot"
+														style={{ backgroundColor: personColor(key) }}
+													/>
+													<span className="sidebar-group-name">{name}</span>
+													<IconChevronDown
+														className="sidebar-group-chevron"
+														size={14}
+														style={{
+															transform: open ? "none" : "rotate(-90deg)",
+														}}
+													/>
+													<span className="sidebar-group-count">
+														{rows.length}
+													</span>
+												</button>
+												{rows
+													.filter(
+														(r) =>
+															open ||
+															r.chats.some((c) => c.id === selectedId),
+													)
+													.map(renderWsRow)}
+											</React.Fragment>
+										);
+									})}
 							</div>
 						);
 					})()}

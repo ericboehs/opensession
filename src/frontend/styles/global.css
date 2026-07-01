@@ -9901,3 +9901,8 @@ button.preview-open:not(:disabled):hover {
 	letter-spacing: 0;
 	cursor: default;
 }
+
+/* Workspace rows sit nested under their group header (dot+name start ~22px in). */
+.sidebar-ws-row {
+	padding-left: 22px;
+}
