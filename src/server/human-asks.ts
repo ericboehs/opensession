@@ -23,6 +23,7 @@
  * ticket text must not be able to DM the team as Michael.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { audit } from "./audit";
 import { tryGetSessionControl } from "./session-control";
 import {
@@ -32,7 +33,7 @@ import {
 } from "../agents/slack/slack-api";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const STORE = `${HOME}/.backstage-sessions/human-asks.json`;
+const STORE = `${BACKSTAGE_CHATS_DIR}/human-asks.json`;
 const UI_BASE =
   process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
 

@@ -129,8 +129,10 @@ export interface BackstageSessionFile {
   title?: string;
   mode?: "ask" | "code";
   repo?: string; // which repo this chat works in (default "tella-fusion")
-  projectId?: string | null; // Project (folder) this chat belongs to; null = standalone
+  workspaceId?: string | null; // Workspace this chat belongs to (canonical key)
+  projectId?: string | null; // legacy alias of workspaceId (dual-read during migration)
   automation?: string; // name of the automation that created this session
+
   plainThreadId?: string; // Plain thread this session is triaging
   model?: string; // model id for this session's runs; unset = default
   codexThreadId?: string; // codex thread id once the session has run on a codex model

@@ -1,4 +1,5 @@
 import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { readMcpConfig, withDynamicCredentials } from "./connections";
 import { getAgentAwsEnv } from "./aws-creds";
@@ -184,7 +185,7 @@ function filterMcpServers(
 // Every in-flight run is recorded on disk; entries that survive a process
 // restart are interrupted runs, which backstage resumes on boot.
 
-const ACTIVE_RUNS_PATH = `${HOME}/.backstage-sessions/active-runs.json`;
+const ACTIVE_RUNS_PATH = `${BACKSTAGE_CHATS_DIR}/active-runs.json`;
 
 /** Backstage web UI base — used to give a session a link back to itself. */
 const UI_BASE =

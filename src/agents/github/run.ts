@@ -5,6 +5,7 @@
  * the engine conversation across rounds via the deterministic per-PR session file.
  */
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { BACKSTAGE_CHATS_DIR } from "../../server/paths";
 import { runAgent } from "../../server/agent-runner";
 import { providerFor, DEFAULT_FALLBACK_MODEL } from "../../server/models";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/claude-runner";
@@ -14,7 +15,7 @@ import { repoForPath } from "../../server/worktree";
 import type { BackstageSessionFile } from "../../server/types";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const SESSIONS_DIR = `${HOME}/.backstage-sessions`;
+const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 
 /**
  * All chats for one PR (its review/autofix/simplify/adversarial/mention runs,

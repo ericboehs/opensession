@@ -6,9 +6,10 @@
  * the derived title in getAllSessions — exactly like the archive registry.
  */
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import { BACKSTAGE_CHATS_DIR } from "./paths";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const REGISTRY_PATH = `${HOME}/.backstage-sessions/title-overrides.json`;
+const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/title-overrides.json`;
 
 let cache: Record<string, string> | null = null;
 

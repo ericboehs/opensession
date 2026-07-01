@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { randomUUIDv7 } from "bun";
+import { BACKSTAGE_CHATS_DIR } from "./src/server/paths";
 import {
 	mkdirSync,
 	existsSync,
@@ -212,7 +213,7 @@ import type {
 const PORT = parseInt(process.env.PORT || "3850");
 const HOST = process.env.HOST || "127.0.0.1";
 const HOME = process.env.HOME || "/home/ubuntu";
-const BACKSTAGE_SESSIONS_DIR = `${HOME}/.backstage-sessions`;
+const BACKSTAGE_SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 
 mkdirSync(BACKSTAGE_SESSIONS_DIR, { recursive: true });
 

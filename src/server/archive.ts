@@ -4,10 +4,11 @@
  * a backstage-owned registry keyed by unified session id.
  */
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import { BACKSTAGE_CHATS_DIR } from "./paths";
 import type { UnifiedSession } from "./types";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const REGISTRY_PATH = `${HOME}/.backstage-sessions/archive-registry.json`;
+const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/archive-registry.json`;
 
 let cache: Record<string, string> | null = null;
 

@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync, unlinkSync } from "fs";
+import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { existsSync } from "fs";
 import { slackIdToFirstName } from "./shared/user-mappings";
 import { isArchivedId } from "./archive";
@@ -18,7 +19,7 @@ const HOME = process.env.HOME || "/home/ubuntu";
 const SLACK_SESSIONS_DIR = `${HOME}/.slack-sessions`;
 const LINEAR_SESSIONS_DIR = `${HOME}/.linear-sessions`;
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
-const BACKSTAGE_SESSIONS_DIR = `${HOME}/.backstage-sessions`;
+const BACKSTAGE_SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 const CLAUDE_PROJECTS_DIR = `${HOME}/.claude/projects`;
 
 const SKIP_FILES = new Set([
@@ -228,7 +229,11 @@ function scanBackstageSessions(): UnifiedSession[] {
       mode: data.mode,
       // Back-compat: older session files stored the repo under `project`.
       repo: data.repo ?? (data as { project?: string }).project,
-      projectId: data.projectId ?? null,
+      // Dual-read: the migration mirrors projectId→workspaceId; prefer the new key.
+      projectId:
+        (data as { workspaceId?: string | null }).workspaceId ??
+        data.projectId ??
+        null,
       attachedRepos: data.attachedRepos,
       automation:
         data.automation ||
