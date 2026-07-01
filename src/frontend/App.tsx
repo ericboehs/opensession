@@ -9,7 +9,6 @@ import { Automations } from "./components/Automations";
 import { Goals } from "./components/Goals";
 import { Actions } from "./components/Actions";
 import { Notes, type NotesSelection } from "./components/Notes";
-import { Connections } from "./components/Connections";
 import { Archived } from "./components/Archived";
 import { Reviews } from "./components/Reviews";
 import { UserGate, getCurrentUser } from "./components/UserPicker";
@@ -56,7 +55,6 @@ type Route =
 	| { view: "goals" }
 	| { view: "actions" }
 	| { view: "notes"; sel: NotesSelection }
-	| { view: "connections" }
 	| { view: "settings" }
 	| { view: "archived" };
 
@@ -68,7 +66,8 @@ function parseRoute(pathname: string): Route {
 	if (pathname === "/backstage/automations") return { view: "automations" };
 	if (pathname === "/backstage/goals") return { view: "goals" };
 	if (pathname === "/backstage/actions") return { view: "actions" };
-	if (pathname === "/backstage/connections") return { view: "connections" };
+	// Back-compat: Connections moved into Settings (a Workspace section).
+	if (pathname === "/backstage/connections") return { view: "settings" };
 	if (pathname === "/backstage/settings") return { view: "settings" };
 	if (pathname === "/backstage/archived") return { view: "archived" };
 	const reviewsMatch = pathname.match(/^\/backstage\/reviews(?:\/(.+))?$/);
@@ -117,8 +116,6 @@ function routePath(route: Route): string {
 			return "/backstage/goals";
 		case "actions":
 			return "/backstage/actions";
-		case "connections":
-			return "/backstage/connections";
 		case "settings":
 			return "/backstage/settings";
 		case "archived":
@@ -273,15 +270,50 @@ function App() {
 	// A pushed detail page is showing (anything but the sidebar-root home view).
 	const mobileDetail = route.view !== "home";
 
-	function navigate(route: Route) {
-		history.pushState(null, "", routePath(route));
-		setRoute(route);
+	// Keep the latest route readable from stable callbacks — `navigate` is
+	// recreated each render, but effects/handlers can capture an older copy.
+	const routeRef = useRef(route);
+	routeRef.current = route;
+	// The mobile layout is an iOS-style navigation stack: the sidebar is the root
+	// (depth 0) and every non-home route is a *single* panel pushed over it
+	// (depth 1). `rootBehind` tracks whether that root sits beneath us in history
+	// so Back can pop (`history.back()`, keeping the browser/OS back button in
+	// sync) instead of pushing yet another entry — the "pages within pages" trap.
+	// Cold-loading straight into a panel (deep link / restored session) has no
+	// root beneath it, so there Back synthesizes a home navigation instead.
+	const rootBehind = useRef(false);
+
+	// Navigate the single detail panel. Root→panel pushes one history entry;
+	// panel→panel *replaces* (stays at the same depth, so the stack never nests);
+	// re-navigating to the current URL replaces (no duplicate entries). Going to
+	// the root is done by `goBack` (a pop), not here.
+	function navigate(next: Route, opts?: { replace?: boolean }) {
+		const path = routePath(next);
+		const cur = routeRef.current;
+		const toRoot = next.view === "home";
+		const fromRoot = cur.view === "home";
+		const samePath = path === location.pathname;
+		const replace = opts?.replace ?? (samePath || (!toRoot && !fromRoot));
+		if (replace) history.replaceState(null, "", path);
+		else history.pushState(null, "", path);
+		if (!toRoot && fromRoot && !samePath) rootBehind.current = true;
+		if (toRoot) rootBehind.current = false;
+		setRoute(next);
+	}
+
+	// Pop the pushed panel back to the sidebar root. If the root is beneath us in
+	// history, a real `history.back()` keeps the browser/OS back button and the
+	// app in lockstep; otherwise (cold-launched into a panel) replace to home so
+	// we never grow the stack.
+	function goBack() {
+		if (rootBehind.current) history.back();
+		else navigate({ view: "home" }, { replace: true });
 	}
 
 	// Edge-swipe-from-left pops the pushed page back to the sidebar on phones.
 	useBackSwipe({
 		active: mobileDetail,
-		onBack: () => navigate({ view: "home" }),
+		onBack: goBack,
 		paneRef: detailPaneRef,
 	});
 
@@ -336,12 +368,16 @@ function App() {
 	const closePalette = React.useCallback(() => {
 		setPalette({ open: false });
 		// A deep link left the URL on /backstage/new — return home on close.
-		if (location.pathname === "/backstage/new")
-			navigate({ view: "home" });
+		if (location.pathname === "/backstage/new") goBack();
 	}, []);
 
 	useEffect(() => {
-		const onPop = () => setRoute(parseRoute(location.pathname));
+		const onPop = () => {
+			const r = parseRoute(location.pathname);
+			// Landing back on the root means nothing is pushed over it anymore.
+			if (r.view === "home") rootBehind.current = false;
+			setRoute(r);
+		};
 		window.addEventListener("popstate", onPop);
 		return () => window.removeEventListener("popstate", onPop);
 	}, []);
@@ -465,22 +501,19 @@ function App() {
 					? "Goals"
 					: route.view === "actions"
 						? "Actions"
-						: route.view === "connections"
-							? "Connections"
-							: route.view === "archived"
-								? "Archived"
-								: route.view === "notes"
-									? "Notes"
-									: route.view === "new"
-										? "New session"
-										: "";
+						: route.view === "archived"
+							? "Archived"
+							: route.view === "notes"
+								? "Notes"
+								: route.view === "new"
+									? "New session"
+									: "";
 
 	const activeView =
 		route.view === "automations" ||
 		route.view === "goals" ||
 		route.view === "actions" ||
 		route.view === "notes" ||
-		route.view === "connections" ||
 		route.view === "reviews"
 			? route.view === "notes"
 				? "wiki"
@@ -549,7 +582,7 @@ function App() {
 						{mobileDetail ? (
 							<button
 								className="mobile-back"
-								onClick={() => navigate({ view: "home" })}
+								onClick={goBack}
 								aria-label="Back to sidebar"
 							>
 								<svg width="11" height="18" viewBox="0 0 11 18" fill="none">
@@ -570,7 +603,7 @@ function App() {
 				</header>
 
 				{route.view === "settings" ? (
-					<Settings onBack={() => navigate({ view: "home" })} />
+					<Settings onBack={goBack} />
 				) : (
 				<div
 					className={`app-body ${mobileDetail ? "mobile-detail" : "mobile-root"}${
@@ -750,6 +783,22 @@ function App() {
 								}
 								refresh();
 							}}
+							onClose={async (s) => {
+								// Closing a tab archives the chat: it leaves the strip and the
+								// active list, but stays recoverable from Archived. If we just
+								// closed the open session, fall back to a sibling tab.
+								try {
+									await archiveSessionApi(s.id, true);
+								} catch (e) {
+									console.error("Close failed:", e);
+								}
+								if (currentSession?.id === s.id) {
+									const next = projectChats.find((c) => c.id !== s.id);
+									if (next) navigate({ view: "session", id: next.id });
+									else goBack();
+								}
+								refresh();
+							}}
 						/>
 						{route.view === "automations" ? (
 							<Automations
@@ -763,8 +812,6 @@ function App() {
 							<Actions
 								onOpenSession={(id) => navigate({ view: "session", id })}
 							/>
-						) : route.view === "connections" ? (
-							<Connections />
 						) : route.view === "reviews" ? (
 							<Reviews
 								sessions={sessions}
@@ -816,7 +863,7 @@ function App() {
 								<SessionViewer
 									key={currentSession.id}
 									session={currentSession}
-									onBack={() => navigate({ view: "home" })}
+									onBack={goBack}
 									send={send}
 									addHandler={addHandler}
 									connected={connected}
