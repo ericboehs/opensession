@@ -163,8 +163,11 @@ a {
 	height: 100%;
 }
 
+/* The top bar is mobile-only: on desktop the brand + user controls live in the
+   sidebar's brand row instead (cleaner, single column of chrome). Shown again in
+   the ≤720px media query where the drawer needs the hamburger. */
 .app-header {
-	display: flex;
+	display: none;
 	align-items: center;
 	justify-content: space-between;
 	padding: env(safe-area-inset-top, 0px) 16px 0;
@@ -177,7 +180,23 @@ a {
 .app-header-left {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: 8px;
+}
+
+/* Michael title + settings chevron, kept tight together. */
+.app-brand {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-width: 0;
+}
+
+/* Above the mobile breakpoint the top bar is hidden, so nothing is offset by the
+   header — the ≤920px panel/wiki drawer overlays anchor to the true top. */
+@media (min-width: 721px) {
+	:root {
+		--header-h: 0px;
+	}
 }
 
 .app-title {
@@ -438,18 +457,63 @@ a {
 /* ── Sidebar ─────────────────────────────────────────────── */
 
 .sidebar-container {
-	width: 252px;
+	position: relative;
+	width: var(--sidebar-w, 252px);
 	flex-shrink: 0;
 	border-right: 1px solid var(--border);
 	background: var(--bg-raised);
 	display: flex;
+	flex-direction: column;
 	min-height: 0;
+}
+
+/* Brand row at the top of the desktop sidebar: Michael left, user right. */
+.sidebar-brand {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--border);
+	flex-shrink: 0;
+	min-width: 0;
+}
+
+/* Drag handle on the sidebar's right edge — a hover/active hairline over a
+   wider invisible grab strip. Hidden on mobile (the drawer is a fixed width). */
+.sidebar-resize {
+	position: absolute;
+	top: 0;
+	right: -3px;
+	width: 7px;
+	height: 100%;
+	cursor: col-resize;
+	z-index: 6;
+}
+.sidebar-resize::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	right: 3px;
+	width: 2px;
+	height: 100%;
+	background: transparent;
+	transition: background 0.14s ease;
+}
+.sidebar-resize:hover::after,
+body.resizing-x .sidebar-resize::after {
+	background: var(--accent);
+}
+body.resizing-x {
+	cursor: col-resize;
+	user-select: none;
 }
 
 .sidebar {
 	display: flex;
 	flex-direction: column;
 	width: 100%;
+	flex: 1;
 	min-height: 0;
 }
 
@@ -5616,8 +5680,17 @@ a {
 		z-index: 35;
 	}
 
+	/* Mobile puts the brand + user back in the top bar; the sidebar's own brand
+	   row and the drag-resize handle are desktop-only. */
 	.app-header {
+		display: flex;
 		padding: env(safe-area-inset-top, 0px) 10px 0;
+	}
+	.sidebar-brand {
+		display: none;
+	}
+	.sidebar-resize {
+		display: none;
 	}
 
 	/* Two-line header on phones: title row first (single line, so it always

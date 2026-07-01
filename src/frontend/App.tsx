@@ -144,6 +144,36 @@ function App() {
 	});
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const sidebarRef = useRef<HTMLDivElement | null>(null);
+	// Desktop sidebar width (px), drag-resizable and persisted per browser. The
+	// mobile drawer keeps its own fixed width (CSS media query wins there), so
+	// this only takes effect on the static desktop column.
+	const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+		const v = Number(localStorage.getItem("michael-sidebar-w"));
+		return v >= 200 && v <= 480 ? v : 252;
+	});
+	const sidebarWidthRef = useRef(sidebarWidth);
+	sidebarWidthRef.current = sidebarWidth;
+	function startSidebarResize(e: React.MouseEvent) {
+		e.preventDefault();
+		document.body.classList.add("resizing-x");
+		const onMove = (ev: MouseEvent) => {
+			// The sidebar is the leftmost element, so the pointer's x is its width.
+			const w = Math.min(480, Math.max(200, ev.clientX));
+			sidebarWidthRef.current = w;
+			setSidebarWidth(w);
+		};
+		const onUp = () => {
+			document.body.classList.remove("resizing-x");
+			window.removeEventListener("mousemove", onMove);
+			window.removeEventListener("mouseup", onUp);
+			localStorage.setItem(
+				"michael-sidebar-w",
+				String(Math.round(sidebarWidthRef.current)),
+			);
+		};
+		window.addEventListener("mousemove", onMove);
+		window.addEventListener("mouseup", onUp);
+	}
 	// A session we've just navigated to that may not be in the polled list yet
 	// (create → navigate races the async refresh, and the file is only written
 	// once the run's `init` lands). While pending, the detail pane shows
@@ -318,11 +348,42 @@ function App() {
 				: route.view
 			: ("sessions" as const);
 
+	// Brand (Michael + settings chevron) and the connection/user controls. Shared
+	// between the mobile top bar and the desktop sidebar's brand row, so they read
+	// identically in both layouts.
+	const brand = (
+		<div className="app-brand">
+			<a
+				className="app-title"
+				href="/backstage/"
+				onClick={(e) => {
+					e.preventDefault();
+					navigate({ view: "home" });
+				}}
+			>
+				<span className="app-logo">M</span>
+				<span className="app-title-text">Michael</span>
+			</a>
+			<SettingsMenu />
+		</div>
+	);
+	const userControls = (
+		<div className="app-header-right">
+			<span
+				className={`connection-dot ${connected ? "connected" : "disconnected"}`}
+			/>
+			<UserPicker />
+		</div>
+	);
+
 	return (
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
 			<UpdateToast addHandler={addHandler} />
 			<div className="app">
+				{/* Mobile-only top bar: the hamburger to open the drawer, brand + user.
+				    On desktop the brand/user move into the sidebar (below) and this is
+				    hidden. */}
 				<header className="app-header">
 					<div className="app-header-left">
 						<button
@@ -334,25 +395,9 @@ function App() {
 							<span />
 							<span />
 						</button>
-						<a
-							className="app-title"
-							href="/backstage/"
-							onClick={(e) => {
-								e.preventDefault();
-								navigate({ view: "home" });
-							}}
-						>
-							<span className="app-logo">M</span>
-							<span className="app-title-text">Michael</span>
-						</a>
-						<SettingsMenu />
+						{brand}
 					</div>
-					<div className="app-header-right">
-						<span
-							className={`connection-dot ${connected ? "connected" : "disconnected"}`}
-						/>
-						<UserPicker />
-					</div>
+					{userControls}
 				</header>
 
 				<div className="app-body">
@@ -367,7 +412,16 @@ function App() {
 					<div
 						ref={sidebarRef}
 						className={`sidebar-container ${sidebarOpen ? "sidebar-open" : ""}`}
+						style={
+							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
+						}
 					>
+						{/* Desktop brand row: Michael left, user right (hidden on mobile,
+						    where the top bar carries these instead). */}
+						<div className="sidebar-brand">
+							{brand}
+							{userControls}
+						</div>
 						<Sidebar
 							sessions={sessions}
 							selectedId={currentSession?.id || null}
@@ -400,6 +454,12 @@ function App() {
 								}
 								refresh();
 							}}
+						/>
+						{/* Drag the right edge to resize (desktop only; hidden on mobile). */}
+						<div
+							className="sidebar-resize"
+							onMouseDown={startSidebarResize}
+							aria-hidden="true"
 						/>
 					</div>
 
