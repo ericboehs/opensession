@@ -11,7 +11,11 @@ interface WatchState {
   interval: ReturnType<typeof setInterval> | null;
 }
 
-const watches = new Map<string, WatchState>();
+// Parked on globalThis so a `bun --hot` reload keeps the live watch map: the
+// old module's map would otherwise be unreachable from the new module's stop
+// functions, orphaning every 1s polling interval forever.
+const watches: Map<string, WatchState> = ((globalThis as any).__transcriptWatches ??=
+  new Map());
 
 function getMtime(path: string): number {
   try {
@@ -67,7 +71,10 @@ export function startWatching(
 
   state = {
     path,
-    lastMtime: getMtime(path),
+    // With a caller-supplied offset, start with lastMtime 0 so the first poll
+    // flushes bytes appended between the caller's parse and this watch (the
+    // file's current mtime already covers them and would skip the tick).
+    lastMtime: initialOffset ? 0 : getMtime(path),
     lastByteOffset: initialOffset || getFileSize(path),
     viewers: new Set([ws]),
     interval: null,

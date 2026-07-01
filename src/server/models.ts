@@ -6,7 +6,8 @@
  * canonical id, never an alias.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
 
 export type Provider = "claude" | "codex";
 
@@ -79,14 +80,14 @@ export function setDefaultModel(input: string | null): string {
   if (input === null || input.trim() === "") {
     overrideCache = null;
     try {
-      writeFileSync(DEFAULT_MODEL_STORE, JSON.stringify({ model: null }, null, 2));
+      writeJsonAtomic(DEFAULT_MODEL_STORE, { model: null });
     } catch {}
     return getDefaultModel();
   }
   const m = resolveModel(input);
   if (!m) throw new Error(`Unknown model: ${input}`);
   overrideCache = m.id;
-  writeFileSync(DEFAULT_MODEL_STORE, JSON.stringify({ model: m.id }, null, 2));
+  writeJsonAtomic(DEFAULT_MODEL_STORE, { model: m.id });
   return m.id;
 }
 

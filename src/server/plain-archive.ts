@@ -3,7 +3,8 @@
  * Two paths: the Plain webhook (status transition events) and a periodic
  * sweep as a safety net in case the webhook subscription misses them.
  */
-import { readdirSync, readFileSync, writeFileSync, existsSync } from "fs";
+import { readdirSync, readFileSync, existsSync } from "fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import type { BackstageSessionFile } from "./types";
 
@@ -39,7 +40,7 @@ export function clearSessionFileArchive(id: string): boolean {
     const data = JSON.parse(readFileSync(path, "utf-8")) as BackstageSessionFile;
     if (!data.archived && !data.archivedAt) return false;
     const { archived, archivedAt, ...rest } = data;
-    writeFileSync(path, JSON.stringify(rest, null, 2));
+    writeJsonAtomic(path, rest);
     return true;
   } catch {
     return false;
@@ -51,14 +52,11 @@ export function archiveSessionsForThread(threadId: string): number {
   let archived = 0;
   for (const { path, data } of activePlainSessions()) {
     if (data.plainThreadId !== threadId) continue;
-    writeFileSync(
-      path,
-      JSON.stringify(
-        { ...data, archived: true, archivedAt: new Date().toISOString() },
-        null,
-        2
-      )
-    );
+    writeJsonAtomic(path, {
+      ...data,
+      archived: true,
+      archivedAt: new Date().toISOString(),
+    });
     archived++;
   }
   return archived;

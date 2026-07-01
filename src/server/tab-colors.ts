@@ -7,7 +7,8 @@
  * a per-user view preference, so they live next to pins and sync across devices.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const COLORS_DIR = `${HOME}/.backstage-tab-colors`;
@@ -73,7 +74,7 @@ export function setTabColors(user: string, colors: unknown): TabColors {
 	const cleaned = clean(colors);
 	try {
 		if (!existsSync(COLORS_DIR)) mkdirSync(COLORS_DIR, { recursive: true });
-		writeFileSync(fileFor(user), JSON.stringify({ colors: cleaned }, null, 2));
+		writeJsonAtomic(fileFor(user), { colors: cleaned });
 	} catch {}
 	return cleaned;
 }

@@ -45,6 +45,8 @@ import {
 import {
 	runAgent,
 	isAgentSessionBusy,
+	markSessionStarting,
+	unmarkSessionStarting,
 	cancelAgentRun,
 	steerAgentRun,
 	interruptAndSteerAgentRun,
@@ -52,6 +54,10 @@ import {
 	RESUME_CONTINUATION_PROMPT,
 	activeAgentRunCount,
 } from "./src/server/agent-runner";
+import {
+	writeFileAtomic,
+	writeJsonAtomic,
+} from "./src/server/shared/atomic-write";
 import type { ImageInput } from "./src/server/claude-runner";
 import type { ActiveRunRecord } from "./src/server/claude-runner";
 import {
@@ -464,14 +470,11 @@ function touchBackstageSession(
 		const data: BackstageSessionFile = existsSync(path)
 			? JSON.parse(readFileSync(path, "utf-8"))
 			: ({} as BackstageSessionFile);
-		writeFileSync(
-			path,
-			JSON.stringify(
-				{ ...data, ...patch, lastActivity: new Date().toISOString() },
-				null,
-				2,
-			),
-		);
+		writeJsonAtomic(path, {
+			...data,
+			...patch,
+			lastActivity: new Date().toISOString(),
+		});
 		sessionsCache = null;
 	} catch (e) {
 		console.error(`Failed to update backstage session ${bksId}:`, e);
@@ -876,12 +879,21 @@ function persistQueues(): void {
 	try {
 		const entries = (m: Map<string, QueueItem[]>) =>
 			Object.fromEntries([...m].filter(([, v]) => v.length > 0));
-		writeFileSync(
+		// Keep the previous copy as .bak before overwriting: if the store on disk
+		// ever ends up unparsable, restorePromptQueues falls back to it instead of
+		// silently dropping every queued message.
+		if (existsSync(QUEUE_STORE)) {
+			try {
+				copyFileSync(QUEUE_STORE, `${QUEUE_STORE}.bak`);
+			} catch {}
+		}
+		writeJsonAtomic(
 			QUEUE_STORE,
-			JSON.stringify({
+			{
 				queued: entries(promptQueues),
 				steered: entries(steeredReceipts),
-			}),
+			},
+			false,
 		);
 	} catch (e) {
 		console.error("[queue] Failed to persist prompt queues:", e);
@@ -932,8 +944,19 @@ function restorePromptQueues(): void {
 	try {
 		data = JSON.parse(readFileSync(QUEUE_STORE, "utf-8"));
 	} catch (e) {
+		// Corrupt store — these are the user's queued messages, so don't just
+		// drop them: fall back to the .bak persistQueues keeps of the last copy.
 		console.error("[queue] Failed to read persisted queues:", e);
-		return;
+		try {
+			data = JSON.parse(readFileSync(`${QUEUE_STORE}.bak`, "utf-8"));
+			console.warn("[queue] Recovered persisted queues from .bak");
+		} catch (e2) {
+			console.error(
+				"[queue] Backup queue store unreadable too — queued messages lost:",
+				e2,
+			);
+			return;
+		}
 	}
 	const merged = new Map<string, QueueItem[]>();
 	for (const [id, items] of Object.entries(data.queued || {})) {
@@ -976,10 +999,10 @@ function snapshotActiveSessions(): void {
 		const records = activeRunRecords();
 		if (records.length === 0) {
 			if (existsSync(RESUME_SNAPSHOT_PATH))
-				writeFileSync(RESUME_SNAPSHOT_PATH, "[]");
+				writeFileAtomic(RESUME_SNAPSHOT_PATH, "[]");
 			return;
 		}
-		writeFileSync(RESUME_SNAPSHOT_PATH, JSON.stringify(records));
+		writeJsonAtomic(RESUME_SNAPSHOT_PATH, records, false);
 		console.log(
 			`[resume] Snapshotted ${records.length} active session(s) for wake-up on restart`,
 		);
@@ -1002,7 +1025,7 @@ function resumeDrainedSessions(alreadyResumed: Set<string>): void {
 	}
 	// Consume the snapshot so the next (non-graceful) boot doesn't replay it.
 	try {
-		writeFileSync(RESUME_SNAPSHOT_PATH, "[]");
+		writeFileAtomic(RESUME_SNAPSHOT_PATH, "[]");
 	} catch {}
 
 	let woken = 0;
@@ -1058,6 +1081,21 @@ function broadcastQueue(sessionId: string) {
 async function drainQueue(sessionId: string): Promise<void> {
 	let queue;
 	while ((queue = promptQueues.get(sessionId)) && queue.length > 0) {
+		// A racing run can own the session by the time we loop again (e.g. our
+		// last batch lost the start race and got re-queued) — hand off to the
+		// idle-watcher instead of busy-spinning runs that immediately bounce.
+		const session = findSession(sessionId);
+		if (
+			session &&
+			isAgentSessionBusy(
+				session.claudeSessionId,
+				session.codexThreadId,
+				session.id,
+			)
+		) {
+			watchExternalRunAndDrain(sessionId);
+			return;
+		}
 		const batch = queue.splice(0, queue.length);
 		if (queue.length === 0) promptQueues.delete(sessionId);
 		persistQueues();
@@ -1067,7 +1105,17 @@ async function drainQueue(sessionId: string): Promise<void> {
 				batch.length > 1 && m.user ? `[${m.user}] ${m.content}` : m.content,
 			)
 			.join("\n\n");
-		await runSessionPrompt(sessionId, combined, batch[0].user);
+		try {
+			await runSessionPrompt(sessionId, combined, batch[0].user);
+		} catch (e) {
+			// The batch was already spliced out and persisted away — put it back at
+			// the front of the queue so a throw doesn't lose the messages.
+			const current = promptQueues.get(sessionId) || [];
+			promptQueues.set(sessionId, [...batch, ...current]);
+			persistQueues();
+			broadcastQueue(sessionId);
+			throw e;
+		}
 	}
 }
 
@@ -1223,6 +1271,25 @@ function watchExternalRunAndDrain(sessionId: string): void {
 
 /** Run a prompt against an existing session, broadcasting to all watchers. */
 async function runSessionPrompt(
+	sessionId: string,
+	content: string,
+	user?: string,
+	images?: ImageInput[],
+	rawFiles?: unknown,
+): Promise<void> {
+	// Synchronously reserve the session BEFORE the awaits below (worktree revive,
+	// title gen, upload staging) register the run with the runner — otherwise two
+	// racing prompts both pass isAgentSessionBusy and the loser's message is
+	// dropped as a "Session is busy" error toast.
+	markSessionStarting(sessionId);
+	try {
+		await runSessionPromptInner(sessionId, content, user, images, rawFiles);
+	} finally {
+		unmarkSessionStarting(sessionId);
+	}
+}
+
+async function runSessionPromptInner(
 	sessionId: string,
 	content: string,
 	user?: string,
@@ -1419,6 +1486,22 @@ async function runSessionPrompt(
 				sessionsCache = null;
 				break;
 			case "error":
+				// "Session is busy" = we lost the start race to a concurrent run (the
+				// pendingStarts guard closes most of that window; the runner's own
+				// check is the last line). Queue the message for delivery after the
+				// winning run instead of dropping it as an error toast. Return early:
+				// the tail below (steer-receipt clearing, stream_done) belongs to the
+				// run that actually owns the session.
+				if (event.content === "Session is busy") {
+					enqueuePrompt(sessionId, { content, user });
+					watchExternalRunAndDrain(sessionId);
+					broadcastToSession(sessionId, {
+						type: "notice",
+						message:
+							"Session was busy — message queued; it sends when the current run finishes.",
+					});
+					return;
+				}
 				endedWithError = true;
 				broadcastToSession(sessionId, {
 					type: "error",
@@ -1617,6 +1700,8 @@ if (!g.__backstageBooted) {
 				session.id,
 				loop.prompt,
 				loop.setBy ? `${loop.setBy} (loop)` : "loop",
+			).catch((e) =>
+				console.error(`[loop] Loop prompt failed for ${session.id}:`, e),
 			);
 		}
 	}, 60_000);
@@ -1738,10 +1823,7 @@ async function runGoal(goal: Goal): Promise<void> {
 				mode: goal.mode,
 				goalId: goal.id,
 			};
-			writeFileSync(
-				`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
-				JSON.stringify(data, null, 2),
-			);
+			writeJsonAtomic(`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`, data);
 			sessionsCache = null;
 		};
 
@@ -1913,7 +1995,9 @@ async function buildFrontend(): Promise<string> {
 	const cssSrc = await Bun.file(`${FRONTEND_SRC}/styles/global.css`).text();
 	const cssHash = Bun.hash(cssSrc).toString(36);
 	const cssName = `global-${cssHash}.css`;
-	await Bun.write(`${FRONTEND_DIST}/${cssName}`, cssSrc);
+	// Atomic: a mid-write bundle file has shipped corrupt before ("useState is
+	// not defined") — never serve a torn asset.
+	writeFileAtomic(`${FRONTEND_DIST}/${cssName}`, cssSrc);
 
 	// Tailwind pass (see styles/tailwind.css). Bun can't compile Tailwind, so
 	// the real compiler runs as a subprocess (~50ms); its lightningcss minifier
@@ -1940,7 +2024,7 @@ async function buildFrontend(): Promise<string> {
 		}
 		const twCss = await Bun.file(twTmp).text();
 		twName = `tailwind-${Bun.hash(twCss).toString(36)}.css`;
-		await Bun.write(`${FRONTEND_DIST}/${twName}`, twCss);
+		writeFileAtomic(`${FRONTEND_DIST}/${twName}`, twCss);
 	} catch (e) {
 		console.error(
 			"[frontend] Tailwind build FAILED — serving without utilities:",
@@ -3021,10 +3105,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					title: "New chat",
 					mode,
 				};
-				writeFileSync(
-					`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
-					JSON.stringify(data, null, 2),
-				);
+				writeJsonAtomic(`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`, data);
 				sessionsCache = null;
 				// Also return the full unified session so the client can drop it into
 				// its session list and render the new chat instantly, instead of
@@ -3966,16 +4047,17 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						// (multi-MB) transcript would otherwise block the open for seconds;
 						// `truncated` tells the client to offer "load earlier history", which
 						// comes back as a `load_history` message below.
-						const { entries, truncated } = session.transcriptPath
+						const { entries, truncated, endOffset } = session.transcriptPath
 							? parseTranscriptTail(session.transcriptPath)
-							: { entries: [], truncated: false };
+							: { entries: [], truncated: false, endOffset: 0 };
 						ws.send(
 							JSON.stringify({ type: "transcript_init", entries, truncated }),
 						);
 
-						// Start file watcher
+						// Start file watcher from where the tail parse left off — bytes
+						// appended between the parse and the watch would otherwise be lost.
 						if (session.transcriptPath) {
-							startWatching(session.transcriptPath, ws);
+							startWatching(session.transcriptPath, ws, endOffset);
 						}
 
 						// Pending interactive question, if any
@@ -4014,6 +4096,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									),
 							}),
 						);
+						break;
+					}
+
+					case "unwatch": {
+						// Viewer navigated away from the session (not just to another one):
+						// stop streaming transcript events and clear their ghost presence.
+						// Mirrors the disconnect/close cleanup; leaveSession broadcasts
+						// presence to the viewers who remain.
+						stopAllWatchesForClient(ws);
+						leaveSession(ws);
 						break;
 					}
 
@@ -4399,9 +4491,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									title,
 									mode: isAsk ? "ask" : "code",
 								};
-								writeFileSync(
+								writeJsonAtomic(
 									`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
-									JSON.stringify(sessionData, null, 2),
+									sessionData,
 								);
 								sessionsCache = null;
 								persisted = true;
@@ -4767,10 +4859,7 @@ registerSessionControl({
 				title,
 				mode: isAsk ? "ask" : "code",
 			};
-			writeFileSync(
-				`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
-				JSON.stringify(sessionData, null, 2),
-			);
+			writeJsonAtomic(`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`, sessionData);
 			sessionsCache = null;
 			persisted = true;
 		};

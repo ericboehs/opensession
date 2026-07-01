@@ -87,7 +87,11 @@ function resolveTranscriptPath(
 function readJsonSafe<T>(path: string): T | null {
   try {
     return JSON.parse(readFileSync(path, "utf-8"));
-  } catch {
+  } catch (e) {
+    // A missing file is normal; a corrupt one makes the session silently
+    // vanish from the UI, so leave a trace.
+    if ((e as NodeJS.ErrnoException)?.code !== "ENOENT")
+      console.warn(`[sessions] Failed to parse ${path}:`, e);
     return null;
   }
 }

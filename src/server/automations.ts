@@ -5,7 +5,8 @@
  */
 import { randomUUIDv7 } from "bun";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from "fs";
+import { mkdirSync, readdirSync, readFileSync, unlinkSync, existsSync } from "fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
 import { parseCron, cronMatches, nextRun } from "./cron";
 import { STRIPE_CONFIRM_TOOLS } from "./claude-runner";
 import { runAgent } from "./agent-runner";
@@ -164,7 +165,7 @@ export function getAutomation(id: string): Automation | null {
 }
 
 export function saveAutomation(a: Automation): void {
-  writeFileSync(`${AUTOMATIONS_DIR}/${a.id}.json`, JSON.stringify(a, null, 2));
+  writeJsonAtomic(`${AUTOMATIONS_DIR}/${a.id}.json`, a);
 }
 
 function sanitizeMcpList(list?: unknown): string[] | undefined {
@@ -540,7 +541,7 @@ export async function runAutomation(
         automation: automation.name,
         plainThreadId,
       };
-      writeFileSync(`${SESSIONS_DIR}/${bksId}.json`, JSON.stringify(data, null, 2));
+      writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
     };
 
     console.log(

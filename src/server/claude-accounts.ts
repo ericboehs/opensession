@@ -12,7 +12,8 @@
  * kept in memory; the UI reads it via the /api/claude-accounts routes.
  */
 
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, readFileSync } from "fs";
+import { writeFileAtomic } from "./shared/atomic-write";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const STORE_PATH = `${HOME}/.backstage-claude-accounts.json`;
@@ -100,7 +101,7 @@ function readStore(): ClaudeAccount[] {
 }
 
 function writeStore(accounts: ClaudeAccount[]): void {
-  writeFileSync(STORE_PATH, JSON.stringify({ accounts }, null, 2) + "\n");
+  writeFileAtomic(STORE_PATH, JSON.stringify({ accounts }, null, 2) + "\n");
   chmodSync(STORE_PATH, 0o600);
 }
 

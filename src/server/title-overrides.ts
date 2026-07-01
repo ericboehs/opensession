@@ -5,7 +5,8 @@
  * lives in a backstage-owned registry keyed by unified session id, applied over
  * the derived title in getAllSessions — exactly like the archive registry.
  */
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, existsSync } from "fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -27,7 +28,7 @@ function load(): Record<string, string> {
 
 function save(registry: Record<string, string>): void {
 	cache = registry;
-	writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2));
+	writeJsonAtomic(REGISTRY_PATH, registry);
 }
 
 export function getTitleOverride(id: string): string | undefined {

@@ -16,6 +16,7 @@
  * ~/.backstage-goals/<id>.json, mirroring the automation store.
  */
 import { randomUUIDv7 } from "bun";
+import { writeJsonAtomic } from "./shared/atomic-write";
 import {
   mkdirSync,
   readdirSync,
@@ -101,7 +102,7 @@ export function getGoal(id: string): Goal | null {
 }
 
 export function saveGoal(g: Goal): void {
-  writeFileSync(`${GOALS_DIR}/${g.id}.json`, JSON.stringify(g, null, 2));
+  writeJsonAtomic(`${GOALS_DIR}/${g.id}.json`, g);
 }
 
 export function deleteGoal(id: string): boolean {

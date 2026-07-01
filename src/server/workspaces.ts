@@ -21,8 +21,8 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
-  writeFileSync,
 } from "fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
 import { randomUUID } from "crypto";
 import type { AttachedRepo } from "./types";
 
@@ -145,7 +145,7 @@ export function createWorkspace(input: {
       ? { attachedRepos: input.attachedRepos }
       : {}),
   };
-  writeFileSync(fileFor(workspace.id), JSON.stringify(workspace, null, 2));
+  writeJsonAtomic(fileFor(workspace.id), workspace);
   return workspace;
 }
 
@@ -186,7 +186,7 @@ export function updateWorkspace(
     ...(patch.worktreeDir !== undefined ? { worktreeDir: patch.worktreeDir } : {}),
     ...(patch.attachedRepos !== undefined ? { attachedRepos: patch.attachedRepos } : {}),
   };
-  writeFileSync(fileFor(id), JSON.stringify(next, null, 2));
+  writeJsonAtomic(fileFor(id), next);
   return next;
 }
 

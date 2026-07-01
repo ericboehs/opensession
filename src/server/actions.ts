@@ -15,7 +15,8 @@
  */
 import { randomUUIDv7 } from "bun";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from "fs";
+import { mkdirSync, readdirSync, readFileSync, unlinkSync, existsSync } from "fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
 import { runAgent } from "./agent-runner";
 import { STRIPE_CONFIRM_TOOLS } from "./claude-runner";
 import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL } from "./models";
@@ -123,7 +124,7 @@ export function getAction(id: string): Action | null {
 
 function saveAction(action: Action) {
   ensureDir();
-  writeFileSync(`${ACTIONS_DIR}/${action.id}.json`, JSON.stringify(action, null, 2));
+  writeJsonAtomic(`${ACTIONS_DIR}/${action.id}.json`, action);
 }
 
 export function deleteAction(id: string): boolean {
@@ -377,7 +378,7 @@ export function runAction(
         title: `${action.name} — ${startedAt.toISOString().slice(0, 16).replace("T", " ")}`,
         mode: "code",
       };
-      writeFileSync(`${SESSIONS_DIR}/${bksId}.json`, JSON.stringify(data, null, 2));
+      writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
     };
 
     try {

@@ -3,7 +3,8 @@
  * run with (mcp-config.json). Targets are sanitized — never expose URL
  * query strings (they can embed tokens) or env values.
  */
-import { existsSync, readFileSync, writeFileSync, copyFileSync } from "fs";
+import { existsSync, readFileSync, copyFileSync } from "fs";
+import { writeFileAtomic } from "./shared/atomic-write";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CONFIG_PATH = `${HOME}/projects/tella-backstage/mcp-config.json`;
@@ -51,7 +52,7 @@ function writeMcpConfig(config: { mcpServers: Record<string, any> }): void {
   try {
     copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.bak`);
   } catch {}
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
+  writeFileAtomic(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
   cache = null;
 }
 

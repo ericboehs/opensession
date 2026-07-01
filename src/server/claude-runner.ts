@@ -6,6 +6,7 @@ import { getAgentAwsEnv } from "./aws-creds";
 import { audit, summarizeText } from "./audit";
 import { pickAccount, markExhausted, type ClaudeAccount } from "./claude-accounts";
 import { cleanPlainToolInput } from "./shared/note-style";
+import { writeJsonAtomic } from "./shared/atomic-write";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { getDefaultModel } from "./models";
 
@@ -158,7 +159,7 @@ function switchClaudeAccountAfterLimit(): string | undefined {
  * `allowedUsers` field is stripped from every entry before it reaches the SDK
  * (it's our metadata, not MCP config).
  */
-function filterMcpServers(
+export function filterMcpServers(
   allowlist?: string[],
   user?: string
 ): Record<string, unknown> {
@@ -219,7 +220,7 @@ function readRunJournal(): Record<string, ActiveRunRecord> {
 
 function writeRunJournal(journal: Record<string, ActiveRunRecord>): void {
   try {
-    require("fs").writeFileSync(ACTIVE_RUNS_PATH, JSON.stringify(journal, null, 2));
+    writeJsonAtomic(ACTIVE_RUNS_PATH, journal);
   } catch (e) {
     console.error("[runner] Failed to write run journal:", e);
   }
@@ -1017,7 +1018,10 @@ export async function* runClaude(opts: {
     }
     stopAcceptingSteers();
     inputDone = true;
-    steerWake?.();
+    // Wake the input stream so it sees inputDone and closes. (A direct
+    // `steerWake?.()` here trips TS narrowing: it's only ever assigned inside
+    // the generator closure, so CFA still thinks it's null at this point.)
+    releaseSteers();
     for (const key of activeKeys) activeRuns.delete(key);
     journalClear(runKey);
   }

@@ -8,7 +8,8 @@
  * that browser); moving them here makes them per-user and synced across devices.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const PINS_DIR = `${HOME}/.backstage-pins`;
@@ -41,7 +42,7 @@ export function setPins(user: string, pins: unknown): string[] {
   );
   try {
     if (!existsSync(PINS_DIR)) mkdirSync(PINS_DIR, { recursive: true });
-    writeFileSync(fileFor(user), JSON.stringify({ pins: clean }, null, 2));
+    writeJsonAtomic(fileFor(user), { pins: clean });
   } catch {}
   return clean;
 }

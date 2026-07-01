@@ -460,6 +460,25 @@ interface ParseCacheEntry {
 }
 const parseCache = new Map<string, ParseCacheEntry>();
 const PARSE_CACHE_MAX = 24;
+// Entry count alone is a poor bound — parsed entries keep base64 screenshot
+// data-URLs, so 24 fat transcripts could pin hundreds of MB on a swapless box.
+// Also cap cumulative bytes (estimated via the source file size at parse time),
+// evicting oldest-first.
+const PARSE_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+
+function pruneParseCache(): void {
+  let totalBytes = 0;
+  for (const e of parseCache.values()) totalBytes += e.size;
+  while (
+    (parseCache.size > PARSE_CACHE_MAX || totalBytes > PARSE_CACHE_MAX_BYTES) &&
+    parseCache.size > 1 // always keep the entry just inserted
+  ) {
+    const oldest = parseCache.keys().next().value;
+    if (oldest === undefined) break;
+    totalBytes -= parseCache.get(oldest)?.size ?? 0;
+    parseCache.delete(oldest);
+  }
+}
 
 // Read only the last `maxBytes` of a file straight off disk (positional read,
 // not a full readFileSync) so opening a huge transcript doesn't pay to load the
@@ -468,7 +487,7 @@ const DEFAULT_TAIL_BYTES = 256 * 1024;
 function readTailBytes(
   path: string,
   maxBytes: number
-): { buf: Buffer; truncated: boolean } {
+): { buf: Buffer; truncated: boolean; size: number } {
   const fd = openSync(path, "r");
   try {
     const size = fstatSync(fd).size;
@@ -476,9 +495,18 @@ function readTailBytes(
     const len = size - start;
     const buf = Buffer.allocUnsafe(len);
     if (len > 0) readSync(fd, buf, 0, len, start);
-    return { buf, truncated: start > 0 };
+    return { buf, truncated: start > 0, size };
   } finally {
     closeSync(fd);
+  }
+}
+
+/** File size right now, 0 when it can't be stat'd. */
+function fileSizeSafe(path: string): number {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
   }
 }
 
@@ -510,10 +538,7 @@ export function parseTranscript(path: string): TranscriptEntry[] {
 
   if (mtimeMs) {
     parseCache.set(path, { mtimeMs, size, entries });
-    if (parseCache.size > PARSE_CACHE_MAX) {
-      const oldest = parseCache.keys().next().value;
-      if (oldest !== undefined) parseCache.delete(oldest);
-    }
+    pruneParseCache();
   }
 
   return entries;
@@ -533,26 +558,34 @@ export function parseTranscript(path: string): TranscriptEntry[] {
  * (4× per pass, up to `MAX_TAIL_BYTES`) until it yields at least `minEntries`
  * parsed entries or spans the whole file; only genuinely huge transcripts stay
  * truncated.
+ *
+ * `endOffset` is the file size the returned entries cover, for handing to
+ * `startWatching` as its initial offset — otherwise bytes appended between
+ * this parse and the watch starting are never sent. Taken before/at the read,
+ * so at worst the watcher re-sends an overlap, never skips.
  */
 const MAX_TAIL_BYTES = 16 * 1024 * 1024;
 export function parseTranscriptTail(
   path: string,
   maxBytes: number = DEFAULT_TAIL_BYTES,
   minEntries = 40
-): { entries: TranscriptEntry[]; truncated: boolean } {
-  if (!existsSync(path)) return { entries: [], truncated: false };
+): { entries: TranscriptEntry[]; truncated: boolean; endOffset: number } {
+  if (!existsSync(path)) return { entries: [], truncated: false, endOffset: 0 };
   if (isCodexRolloutPath(path)) {
-    return { entries: parseTranscript(path), truncated: false };
+    const endOffset = fileSizeSafe(path);
+    return { entries: parseTranscript(path), truncated: false, endOffset };
   }
 
   let win = maxBytes;
   for (;;) {
     let buf: Buffer;
     let truncated: boolean;
+    let size: number;
     try {
-      ({ buf, truncated } = readTailBytes(path, win));
+      ({ buf, truncated, size } = readTailBytes(path, win));
     } catch {
-      return { entries: parseTranscript(path), truncated: false };
+      const endOffset = fileSizeSafe(path);
+      return { entries: parseTranscript(path), truncated: false, endOffset };
     }
 
     // Drop the leading partial line so we never start mid-JSON-object.
@@ -565,15 +598,15 @@ export function parseTranscriptTail(
     const entries = parseClaudeLines(lines);
 
     if (!truncated || entries.length >= minEntries)
-      return { entries, truncated };
+      return { entries, truncated, endOffset: size };
     if (win >= MAX_TAIL_BYTES) {
       // A single line larger than the cap (e.g. a huge embedded tool result)
       // would leave the tail empty — fall back to the full parse so the viewer
       // is never blank.
       if (entries.length === 0) {
-        return { entries: parseTranscript(path), truncated: false };
+        return { entries: parseTranscript(path), truncated: false, endOffset: size };
       }
-      return { entries, truncated };
+      return { entries, truncated, endOffset: size };
     }
     win = Math.min(win * 4, MAX_TAIL_BYTES);
   }
@@ -639,12 +672,26 @@ export function parseTranscriptFrom(
 ): { entries: TranscriptEntry[]; newOffset: number } {
   if (!existsSync(path)) return { entries: [], newOffset: byteOffset };
 
-  const file = Bun.file(path);
-  const size = file.size;
-  if (size <= byteOffset) return { entries: [], newOffset: byteOffset };
-
-  const buf = readFileSync(path);
-  const chunk = buf.subarray(byteOffset).toString("utf-8");
+  // Positional read of just [byteOffset, EOF) — this runs every second per
+  // watched session (file-watcher poll), and a full readFileSync of a 30 MB
+  // transcript per tick is exactly the kind of load the swapless VPS can't eat.
+  let buf: Buffer;
+  let size: number;
+  try {
+    const fd = openSync(path, "r");
+    try {
+      size = fstatSync(fd).size;
+      if (size <= byteOffset) return { entries: [], newOffset: byteOffset };
+      const len = size - byteOffset;
+      buf = Buffer.allocUnsafe(len);
+      readSync(fd, buf, 0, len, byteOffset);
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return { entries: [], newOffset: byteOffset };
+  }
+  const chunk = buf.toString("utf-8");
   const lines = chunk.split("\n").filter((l) => l.trim());
 
   if (isCodexRolloutPath(path)) {

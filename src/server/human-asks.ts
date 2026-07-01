@@ -22,7 +22,8 @@
  * runs — same privilege boundary as michael-sessions/michael-admin: untrusted
  * ticket text must not be able to DM the team as Michael.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { audit } from "./audit";
 import { tryGetSessionControl } from "./session-control";
@@ -97,7 +98,7 @@ const atTimers: Map<string, ReturnType<typeof setTimeout>> = (g.__humanAskTimers
 function persist(): void {
   try {
     const data: Stored = { asks: [...asks.values()] };
-    writeFileSync(STORE, JSON.stringify(data));
+    writeJsonAtomic(STORE, data, false);
   } catch (e) {
     console.error("[human-asks] persist failed:", e);
   }

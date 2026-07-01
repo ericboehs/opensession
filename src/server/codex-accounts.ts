@@ -16,7 +16,8 @@
  * accounts sidelined for a cool-off when a run hits a rate/usage limit.
  */
 
-import { chmodSync, existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, readFileSync, readdirSync } from "fs";
+import { writeFileAtomic } from "./shared/atomic-write";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const STORE_PATH = `${HOME}/.backstage-codex-accounts.json`;
@@ -56,7 +57,7 @@ function readStore(): CodexAccount[] {
 }
 
 function writeStore(accounts: CodexAccount[]): void {
-  writeFileSync(STORE_PATH, JSON.stringify({ accounts }, null, 2) + "\n");
+  writeFileAtomic(STORE_PATH, JSON.stringify({ accounts }, null, 2) + "\n");
   chmodSync(STORE_PATH, 0o600);
 }
 

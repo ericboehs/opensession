@@ -151,11 +151,30 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
   }
 }
 
+// Sessions whose prompt run has started but isn't registered in the runner's
+// activeRuns yet — runSessionPrompt awaits (worktree revive, title gen, upload
+// staging) before the generator is first pulled, so two racing prompts could
+// both pass the busy check and the loser's message got dropped as a "Session
+// is busy" error. Marked synchronously before any await; parked on globalThis
+// so a hot reload keeps it.
+const pendingStarts: Set<string> = ((globalThis as any).__pendingSessionStarts ??=
+  new Set());
+
+/** Mark a session as starting a run (call synchronously, before any await). */
+export function markSessionStarting(id: string): void {
+  pendingStarts.add(id);
+}
+
+/** Clear a starting mark (call in a `finally` once the run has ended). */
+export function unmarkSessionStarting(id: string): void {
+  pendingStarts.delete(id);
+}
+
 /** Busy check across both backends (pass any engine/backstage session id). */
 export function isAgentSessionBusy(...ids: Array<string | null | undefined>): boolean {
   for (const id of ids) {
     if (!id) continue;
-    if (isSessionBusy(id) || isCodexSessionBusy(id)) return true;
+    if (pendingStarts.has(id) || isSessionBusy(id) || isCodexSessionBusy(id)) return true;
   }
   return false;
 }

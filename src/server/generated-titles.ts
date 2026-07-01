@@ -8,7 +8,8 @@
  * Generation is a one-shot Haiku call (see generateSessionTitle), fired in the
  * background at session creation so it never blocks the create path.
  */
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, existsSync } from "fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 
@@ -31,7 +32,7 @@ function load(): Record<string, string> {
 
 function save(registry: Record<string, string>): void {
 	cache = registry;
-	writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2));
+	writeJsonAtomic(REGISTRY_PATH, registry);
 }
 
 export function getGeneratedTitle(id: string): string | undefined {
