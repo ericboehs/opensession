@@ -1139,8 +1139,10 @@ body.resizing-x {
 	background: none;
 	border: none;
 	border-radius: 6px;
-	/* Roomier rows: a taller hit target that's easier to click/tap. */
-	padding: 11px 9px;
+	/* Roomier rows: a taller hit target that's easier to click/tap. The extra
+	   left padding indents rows under their group header (whose dot + name start
+	   ~22px in), so the list reads as nested groups rather than one flat column. */
+	padding: 11px 9px 11px 22px;
 	color: var(--text);
 	position: relative;
 }
@@ -7053,9 +7055,10 @@ button.preview-open:not(:disabled):hover {
 	   interactive controls approach the 44pt minimum tap target. Everything
 	   here is scoped to phones; desktop keeps its tighter density. */
 
-	/* Session list (the primary nav) — larger titles + meta. */
+	/* Session list (the primary nav) — larger titles + meta. Keep the left
+	   indent (see the base rule) so rows stay nested under their group header. */
 	.sidebar-item {
-		padding: 12px 11px;
+		padding: 12px 11px 12px 22px;
 	}
 	.sidebar-item-title,
 	.sidebar-item-rename {
