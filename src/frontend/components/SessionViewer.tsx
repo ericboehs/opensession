@@ -959,7 +959,16 @@ export function SessionViewer({
 										live={isBusy}
 										onFork={isClaudeSession ? handleFork : undefined}
 										onOpenSubagent={openSubagent}
-										owner={session.startedBy || undefined}
+										// For automation-owned sessions (e.g. a GitHub PR run), the
+										// automation never *types* a user turn — humans steer them.
+										// So don't credit un-attributed turns to the automation
+										// ("GitHub (automation)"); leave the owner unset so they read
+										// as "You" (explicit [Name] steers still show the teammate).
+										owner={
+											session.automation
+												? undefined
+												: session.startedBy || undefined
+										}
 									/>
 								</>
 							)}
