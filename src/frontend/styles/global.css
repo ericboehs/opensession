@@ -5500,7 +5500,7 @@ button.preview-open:not(:disabled):hover {
 }
 
 .composer {
-	background: transparent;
+	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
 	border-radius: 16px;
 	padding: 12px 12px 8px 14px;
