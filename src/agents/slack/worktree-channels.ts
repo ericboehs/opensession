@@ -88,7 +88,7 @@ export function getWorktreeDirForChannel(channelId: string): string | null {
 // Find an existing Slack channel by name
 // ---------------------------------------------------------------------------
 
-async function findSlackChannel(name: string): Promise<string | null> {
+export async function findSlackChannel(name: string): Promise<string | null> {
   let cursor = "";
   do {
     const params = new URLSearchParams({

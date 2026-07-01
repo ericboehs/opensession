@@ -354,3 +354,175 @@ export async function getUserInfo(
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Linked-channel chat (backstage Slack panel)
+// ---------------------------------------------------------------------------
+
+import { SLACK_ID_TO_NAME } from "../../server/shared/user-mappings";
+
+export interface SlackHistoryMessage {
+  ts: string;
+  userId: string | null;
+  userName: string;
+  avatarUrl?: string;
+  text: string;
+  isBot: boolean;
+}
+
+/** Turn raw Slack mention tokens `<@U…>` into readable `@First` for display. */
+export function prettifyMentions(text: string): string {
+  return text.replace(/<@(U[A-Z0-9]+)>/g, (_m, id) => {
+    const name = SLACK_ID_TO_NAME[id];
+    return name ? `@${name.split(" ")[0]}` : "@someone";
+  });
+}
+
+/**
+ * Channel name via a GET (conversations.info). The generic slackApiCall posts a
+ * JSON body, which conversations.info doesn't read reliably — so use a query
+ * param here, mirroring getUserInfo.
+ */
+export async function getChannelName(channelId: string): Promise<string | null> {
+  try {
+    const resp = await fetchWithTimeout(
+      `https://slack.com/api/conversations.info?channel=${channelId}`,
+      { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
+    );
+    const data = (await resp.json()) as any;
+    return data.ok && data.channel?.name ? data.channel.name : null;
+  } catch {
+    return null;
+  }
+}
+
+// Cache resolved user name + avatar for an hour (history renders many messages).
+const userProfileCache = new Map<
+  string,
+  { name: string; avatarUrl?: string; at: number }
+>();
+const USER_PROFILE_TTL_MS = 60 * 60 * 1000;
+
+/** Resolve a Slack user id → display name + avatar (cached). */
+export async function resolveSlackUser(
+  userId: string
+): Promise<{ name: string; avatarUrl?: string }> {
+  const cached = userProfileCache.get(userId);
+  if (cached && Date.now() - cached.at < USER_PROFILE_TTL_MS) {
+    return { name: cached.name, avatarUrl: cached.avatarUrl };
+  }
+  let name = SLACK_ID_TO_NAME[userId];
+  let avatarUrl: string | undefined;
+  try {
+    const resp = await fetchWithTimeout(
+      `https://slack.com/api/users.info?user=${userId}`,
+      { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
+    );
+    const data = (await resp.json()) as any;
+    if (data.ok && data.user) {
+      name = name || data.user.real_name || data.user.name;
+      avatarUrl = data.user.profile?.image_72 || data.user.profile?.image_48;
+    }
+  } catch {}
+  name = name || userId;
+  userProfileCache.set(userId, { name, avatarUrl, at: Date.now() });
+  return { name, avatarUrl };
+}
+
+/**
+ * Read recent messages from a channel (chronological). Includes human messages
+ * and bot posts (our own "post as you" + Michael replies); skips join/leave/topic
+ * system subtypes. Needs `channels:history` + the bot in the channel.
+ */
+export async function fetchChannelHistory(
+  channelId: string,
+  limit = 50
+): Promise<SlackHistoryMessage[]> {
+  const data = await slackApiCall("conversations.history", {
+    channel: channelId,
+    limit,
+  });
+  if (!data.ok || !Array.isArray(data.messages)) return [];
+  const chronological = [...data.messages].reverse();
+  const out: SlackHistoryMessage[] = [];
+  for (const m of chronological) {
+    if (m.type !== "message") continue;
+    if (m.subtype && m.subtype !== "bot_message") continue;
+    if (!m.text) continue;
+    // A bot post (our "post as you" override or a Michael reply) carries bot_id
+    // and the bot's own user id — so check bot-ness first and use the override
+    // username, otherwise a real human message resolves via the user id.
+    if (m.bot_id || m.subtype === "bot_message") {
+      out.push({
+        ts: m.ts,
+        userId: null,
+        userName: m.username || "Michael",
+        avatarUrl: m.icons?.image_72 || m.icons?.image_48,
+        text: prettifyMentions(m.text),
+        isBot: true,
+      });
+    } else if (m.user) {
+      const u = await resolveSlackUser(m.user);
+      out.push({
+        ts: m.ts,
+        userId: m.user,
+        userName: u.name,
+        avatarUrl: u.avatarUrl,
+        text: prettifyMentions(m.text),
+        isBot: false,
+      });
+    }
+  }
+  return out;
+}
+
+// Whether the bot token has `chat:write.customize` (lets us post under a
+// person's name + avatar). Slack *silently ignores* username/icon overrides when
+// the scope is missing (it doesn't error), so we must check the granted scopes
+// up front rather than infer from the post response. Cached for the process.
+let customizeScope: boolean | null = null;
+export async function slackCanCustomize(): Promise<boolean> {
+  if (customizeScope !== null) return customizeScope;
+  try {
+    const resp = await fetchWithTimeout("https://slack.com/api/auth.test", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
+    });
+    const scopes = (resp.headers.get("x-oauth-scopes") || "")
+      .split(",")
+      .map((s) => s.trim());
+    customizeScope = scopes.includes("chat:write.customize");
+  } catch {
+    customizeScope = false;
+  }
+  return customizeScope;
+}
+
+/**
+ * Post to a channel as a specific person. With `chat:write.customize` this posts
+ * under their name + avatar; without the scope Slack would silently drop the
+ * override, so we fall back to a plain Michael post prefixed with the name (so
+ * it's still clear who wrote it). Auto-upgrades once the scope is granted.
+ */
+export async function postChannelMessageAs(
+  channelId: string,
+  text: string,
+  opts: { username?: string; iconUrl?: string }
+): Promise<{ ok: boolean; ts?: string; overridden: boolean }> {
+  if (opts.username && (await slackCanCustomize())) {
+    const r = await slackApiCall("chat.postMessage", {
+      channel: channelId,
+      text,
+      mrkdwn: true,
+      username: opts.username,
+      icon_url: opts.iconUrl,
+    });
+    if (r.ok) return { ok: true, ts: r.ts, overridden: true };
+  }
+  const r = await slackApiCall("chat.postMessage", {
+    channel: channelId,
+    text: opts.username ? `*${opts.username}:* ${text}` : text,
+    mrkdwn: true,
+  });
+  return { ok: !!r.ok, ts: r.ts, overridden: false };
+}

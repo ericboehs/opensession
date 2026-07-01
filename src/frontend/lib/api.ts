@@ -1,4 +1,8 @@
-import type { UnifiedSession } from "./types";
+import type {
+	UnifiedSession,
+	SlackChannelLink,
+	SlackMessage,
+} from "./types";
 
 const BASE = "/backstage/api";
 
@@ -158,6 +162,65 @@ export async function detachRepoApi(
 	const body = await res.json();
 	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 	return body.attachedRepos as AttachedRepo[];
+}
+
+// ── Linked Slack channels ──
+
+export async function linkChannelApi(
+	sessionId: string,
+	opts: { mode: "create" | "existing"; name?: string; channelId?: string },
+): Promise<SlackChannelLink> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/link-channel`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(opts),
+		},
+	);
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body.slackChannel as SlackChannelLink;
+}
+
+export async function unlinkChannelApi(sessionId: string): Promise<void> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/unlink-channel`,
+		{ method: "POST" },
+	);
+	if (!res.ok) {
+		const body = await res.json().catch(() => null);
+		throw new Error(body?.error || `Failed: ${res.status}`);
+	}
+}
+
+export async function fetchChannelHistoryApi(
+	sessionId: string,
+): Promise<SlackMessage[]> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/channel/history`,
+	);
+	if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
+	const body = await res.json();
+	return Array.isArray(body?.messages) ? body.messages : [];
+}
+
+export async function postChannelMessageApi(
+	sessionId: string,
+	text: string,
+	user: string,
+): Promise<SlackMessage> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/channel/message`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ text, user }),
+		},
+	);
+	const body = await res.json();
+	if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+	return body.message as SlackMessage;
 }
 
 export async function fetchWorktrees(project?: string) {

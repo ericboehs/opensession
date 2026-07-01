@@ -1,5 +1,21 @@
 export type SessionSource = "slack" | "linear" | "backstage" | "cli";
 
+/** A Slack channel linked to a backstage session (strictly one-to-one). */
+export interface SlackChannelLink {
+	channelId: string;
+	name: string;
+}
+
+/** One message in a linked Slack channel, as shown in the chat panel. */
+export interface SlackMessage {
+	ts: string;
+	userId: string | null;
+	userName: string;
+	avatarUrl?: string;
+	text: string;
+	isBot: boolean;
+}
+
 export interface UnifiedSession {
 	id: string;
 	claudeSessionId: string | null;
@@ -47,6 +63,8 @@ export interface UnifiedSession {
 	modelHistory?: Array<{ model: string; at: string; by?: string }>;
 	linearIssue?: { identifier: string; title: string; url?: string };
 	slackThread?: { channel: string; threadTs: string };
+	/** A Slack channel linked to this session for in-context discussion. */
+	slackChannel?: SlackChannelLink;
 	/** Blocked on an AskUserQuestion — a human needs to answer. Set by /api/sessions. */
 	waitingForInput?: boolean;
 	/** Number of prompts queued behind the current run. Set by /api/sessions. */
@@ -197,6 +215,13 @@ export type WSServerMessage =
 	| { type: "note_update"; noteId: string; update: string }
 	| { type: "note_awareness"; noteId: string; update: string }
 	| { type: "note_presence"; noteId: string; viewers: string[] }
+	// Linked Slack channel: a message arrived (inbound event or our own echo).
+	| { type: "slack_message"; channelId: string; message: SlackMessage }
+	| {
+			type: "channel_linked";
+			sessionId: string;
+			slackChannel: SlackChannelLink | null;
+	  }
 	| { type: "error"; message: string };
 
 export interface AskQuestion {

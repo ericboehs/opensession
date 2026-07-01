@@ -1,5 +1,11 @@
 export type SessionSource = "slack" | "linear" | "backstage" | "cli";
 
+/** A Slack channel linked to a backstage session (strictly one-to-one). */
+export interface SlackChannelLink {
+  channelId: string;
+  name: string;
+}
+
 export interface UnifiedSession {
   id: string;
   claudeSessionId: string | null;
@@ -45,6 +51,8 @@ export interface UnifiedSession {
   // tracked by multiple files (e.g. a Slack run writes both <branch>.json and
   // <channel>-<threadTs>.json) and external deep links may use any of them.
   aliasIds?: string[];
+  /** A Slack channel linked to this session for in-context discussion. */
+  slackChannel?: SlackChannelLink;
   // Source-specific
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
@@ -125,6 +133,7 @@ export interface BackstageSessionFile {
   archivedAt?: string;
   goal?: string; // pinned goal, appended to every prompt until cleared
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
+  slackChannel?: SlackChannelLink; // Slack channel linked for in-context discussion
 }
 
 export interface TranscriptEntry {

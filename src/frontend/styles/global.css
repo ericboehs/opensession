@@ -6534,16 +6534,16 @@ a {
 .slack-compose-input {
 	flex: 1;
 	resize: none;
-	min-height: 34px;
-	max-height: 120px;
-	padding: 8px 10px;
+	min-height: 72px;
+	max-height: 200px;
+	padding: 10px 12px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
 	border-radius: 8px;
 	color: var(--text);
 	font-family: var(--sans);
-	font-size: 13px;
-	line-height: 1.4;
+	font-size: 14px;
+	line-height: 1.45;
 	outline: none;
 	field-sizing: content;
 }
@@ -6667,4 +6667,35 @@ a {
 	.reviews-chat {
 		display: none;
 	}
+}
+
+/* People @-mention autocomplete in the Slack composer */
+.slack-compose-wrap {
+	flex: 1;
+	position: relative;
+	display: flex;
+}
+.slack-mention-pop {
+	position: absolute;
+	bottom: calc(100% + 4px);
+	left: 0;
+	min-width: 160px;
+	background: var(--bg-panel);
+	border: 1px solid var(--border-strong);
+	border-radius: 8px;
+	padding: 4px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+	z-index: 20;
+}
+.slack-mention-item {
+	padding: 6px 10px;
+	border-radius: 6px;
+	font-size: 13px;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+.slack-mention-item.active,
+.slack-mention-item:hover {
+	background: var(--bg-active);
+	color: var(--text);
 }

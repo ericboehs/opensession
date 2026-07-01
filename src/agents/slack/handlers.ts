@@ -49,6 +49,8 @@ import { isStopMessage, cancelSession } from "./cancel";
 import { pollForVercelPreview } from "./github-reviews";
 import { runCodex } from "../../server/codex-runner";
 import { gitIdentityFor } from "../../server/shared/user-mappings";
+import { sessionForChannel } from "../../server/slack-links";
+import { tryGetSessionControl } from "../../server/session-control";
 import { isClaudeUsageLimitError } from "../../server/claude-runner";
 import { getAgentAwsEnv } from "../../server/aws-creds";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";
@@ -1348,12 +1350,37 @@ export async function handleMentionEvent(event: any): Promise<void> {
     `[slack] Mention from ${user} in ${channel}: ${cleanText?.substring(0, 50)}...`
   );
 
-  // Worktree channels bypass the ALLOWED_USER_ID check — anyone can interact
+  // Worktree channels — and channels linked to a backstage session — bypass the
+  // ALLOWED_USER_ID check so the whole team can drive the work from the channel.
   const inWorktreeChannel = isWorktreeChannel(channel);
+  const linkedSessionId = sessionForChannel(channel);
 
-  if (!inWorktreeChannel && ALLOWED_USER_ID && user !== ALLOWED_USER_ID) {
+  if (
+    !inWorktreeChannel &&
+    !linkedSessionId &&
+    ALLOWED_USER_ID &&
+    user !== ALLOWED_USER_ID
+  ) {
     console.log(`[slack] Ignoring mention from non-allowed user: ${user}`);
     return;
+  }
+
+  // Linked channel: @Michael drives the linked backstage session in its own
+  // context (its worktree + claude session). The reply is mirrored back to this
+  // channel by runSessionPrompt. This "channel drives the session" path takes
+  // precedence over the worktree/intent routing below.
+  if (linkedSessionId) {
+    const control = tryGetSessionControl();
+    if (control) {
+      await addReaction(channel, ts, "eyes");
+      const info = await getUserInfo(user);
+      await control.deliverToSession(
+        linkedSessionId,
+        cleanText,
+        info?.real_name || user,
+      );
+      return;
+    }
   }
 
   // For worktree channels, use channel ID as session key (one session per worktree)

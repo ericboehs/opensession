@@ -140,6 +140,26 @@ import {
 	isValidNoteId,
 } from "./src/server/notes";
 import { editNote } from "./src/server/note-edit";
+import {
+	sessionForChannel,
+	linkInIndex,
+	unlinkInIndex,
+	rebuildIndex,
+	registerLinkedChannelSink,
+} from "./src/server/slack-links";
+import {
+	fetchChannelHistory,
+	postChannelMessageAs,
+	resolveSlackUser,
+	getChannelName,
+	sendSlackMessage,
+} from "./src/agents/slack/slack-api";
+import {
+	createSlackChannel,
+	inviteBotToChannel,
+	setChannelTopic,
+	findSlackChannel,
+} from "./src/agents/slack/worktree-channels";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { setArchived, archiveOlderThan } from "./src/server/archive";
 import { setTitleOverride } from "./src/server/title-overrides";
@@ -1173,6 +1193,11 @@ async function runSessionPrompt(
 
 	let finalSessionId = engineSessionId || "";
 	let endedWithError = false;
+	// Accumulate the assistant reply so we can mirror it to a linked Slack channel
+	// (this path — queue drain / deliverToSession / loops — is where a channel
+	// @mention lands; web-typed prompts stream through the WS handler instead, so
+	// they don't spam the channel).
+	let assistantText = "";
 
 	for await (const event of runAgent({
 		prompt,
@@ -1201,6 +1226,7 @@ async function runSessionPrompt(
 				finalSessionId = event.sessionId || finalSessionId;
 				break;
 			case "text_chunk":
+				assistantText += event.text;
 				broadcastToSession(sessionId, {
 					type: "stream_text",
 					text: event.text,
@@ -1273,6 +1299,15 @@ async function runSessionPrompt(
 
 	broadcastToSession(sessionId, { type: "stream_done" });
 	broadcastToSession(sessionId, { type: "session_status", isRunning: false });
+
+	// Mirror Michael's reply into the session's linked Slack channel, so a channel
+	// @mention (which routes here via deliverToSession) gets answered in-channel.
+	if (session.slackChannel?.channelId && !endedWithError && assistantText.trim()) {
+		void sendSlackMessage(
+			session.slackChannel.channelId,
+			assistantText.trim().slice(0, 38000),
+		).catch(() => {});
+	}
 
 	// The session just finished a turn; if nothing's queued it's idle now, so fire
 	// any "when_done" / "on_pr" human asks waiting on this session. Idempotent.
@@ -2639,6 +2674,178 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json({ ok: true, attachedRepos: all });
 			}
 
+			// ── Linked Slack channels ──
+			// Link (or create) a Slack channel for a session so the team can discuss it
+			// in context; strictly one channel ↔ one session.
+			const linkChanMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/link-channel$/,
+			);
+			if (linkChanMatch && req.method === "POST") {
+				const sessionId = decodeURIComponent(linkChanMatch[1]);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const body = (await req.json().catch(() => ({}))) as {
+					mode?: "create" | "existing";
+					name?: string;
+					channelId?: string;
+				};
+				try {
+					let channelId: string | undefined;
+					let name: string | undefined;
+					if (body.mode === "create") {
+						const slug =
+							(body.name || session.title || "session")
+								.toLowerCase()
+								.replace(/[^a-z0-9]+/g, "-")
+								.replace(/^-+|-+$/g, "")
+								.slice(0, 60) || "session";
+						const chanName = `michael-${slug}`.slice(0, 80);
+						const res = await createSlackChannel(chanName);
+						if (!res.ok || !res.channelId)
+							return Response.json(
+								{ error: res.error || "Could not create channel" },
+								{ status: 400 },
+							);
+						channelId = res.channelId;
+						await inviteBotToChannel(channelId);
+						await setChannelTopic(channelId, session.title || "Michael session");
+						name = (await getChannelName(channelId)) || chanName;
+					} else {
+						const ref = (body.channelId || body.name || "")
+							.trim()
+							.replace(/^#/, "");
+						if (!ref)
+							return Response.json(
+								{ error: "channelId or name required" },
+								{ status: 400 },
+							);
+						channelId = /^C[A-Z0-9]+$/i.test(ref)
+							? ref
+							: (await findSlackChannel(ref)) || undefined;
+						if (!channelId)
+							return Response.json(
+								{ error: "Channel not found" },
+								{ status: 404 },
+							);
+						await inviteBotToChannel(channelId);
+						name = (await getChannelName(channelId)) || ref;
+					}
+					if (!channelId)
+						return Response.json(
+							{ error: "Could not resolve channel" },
+							{ status: 400 },
+						);
+					// Enforce strictly one-to-one.
+					const owner = sessionForChannel(channelId);
+					if (owner && owner !== sessionId)
+						return Response.json(
+							{ error: "That channel is already linked to another session" },
+							{ status: 409 },
+						);
+					const slackChannel = { channelId, name };
+					touchBackstageSession(sessionId, { slackChannel });
+					linkInIndex(sessionId, channelId);
+					broadcastToSession(sessionId, {
+						type: "channel_linked",
+						sessionId,
+						slackChannel,
+					});
+					return Response.json({ ok: true, slackChannel });
+				} catch (e: any) {
+					return Response.json(
+						{ error: e.message || String(e) },
+						{ status: 400 },
+					);
+				}
+			}
+
+			const unlinkChanMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/unlink-channel$/,
+			);
+			if (unlinkChanMatch && req.method === "POST") {
+				const sessionId = decodeURIComponent(unlinkChanMatch[1]);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				touchBackstageSession(sessionId, { slackChannel: undefined });
+				unlinkInIndex(sessionId);
+				broadcastToSession(sessionId, {
+					type: "channel_linked",
+					sessionId,
+					slackChannel: null,
+				});
+				return Response.json({ ok: true });
+			}
+
+			const chanHistMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/channel\/history$/,
+			);
+			if (chanHistMatch && req.method === "GET") {
+				const sessionId = decodeURIComponent(chanHistMatch[1]);
+				const session = findSession(sessionId);
+				const channelId = session?.slackChannel?.channelId;
+				if (!channelId) return Response.json({ messages: [] });
+				const messages = await fetchChannelHistory(channelId, 60);
+				return Response.json({ messages });
+			}
+
+			const chanMsgMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/channel\/message$/,
+			);
+			if (chanMsgMatch && req.method === "POST") {
+				const sessionId = decodeURIComponent(chanMsgMatch[1]);
+				const session = findSession(sessionId);
+				const channelId = session?.slackChannel?.channelId;
+				if (!channelId)
+					return Response.json(
+						{ error: "No linked channel" },
+						{ status: 400 },
+					);
+				const body = (await req.json().catch(() => ({}))) as {
+					text?: string;
+					user?: string;
+				};
+				const rawText = (body.text || "").trim();
+				if (!rawText)
+					return Response.json({ error: "text required" }, { status: 400 });
+				// Tag people: turn "@Name" tokens into real Slack <@id> mentions so the
+				// person is pinged. Unknown names are left as plain text.
+				const text = rawText.replace(/@([A-Za-z][\w-]*)/g, (whole, nm) => {
+					const t = resolveTeammate(nm);
+					return t ? `<@${t.slackId}>` : whole;
+				});
+				// Post as the sender (name + avatar) when we can resolve them.
+				const teammate = resolveTeammate(body.user);
+				let username = teammate?.name || body.user || "Anonymous";
+				let avatarUrl: string | undefined;
+				if (teammate) {
+					const u = await resolveSlackUser(teammate.slackId);
+					username = u.name;
+					avatarUrl = u.avatarUrl;
+				}
+				const res = await postChannelMessageAs(channelId, text, {
+					username,
+					iconUrl: avatarUrl,
+				});
+				if (!res.ok)
+					return Response.json(
+						{ error: "Slack post failed" },
+						{ status: 502 },
+					);
+				const message = {
+					ts: res.ts || String(Date.now() / 1000),
+					userId: teammate?.slackId || null,
+					userName: username,
+					avatarUrl,
+					text: rawText,
+					isBot: !res.overridden,
+				};
+				// Our bot post is dropped by /slack/events, so echo it to every client.
+				broadcastToAll({ type: "slack_message", channelId, message });
+				return Response.json({ ok: true, message });
+			}
+
 			// ── Automations ──
 			if (path === "/backstage/api/automations" && req.method === "GET") {
 				const list = listAutomations().map((a) => ({
@@ -3618,6 +3825,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 console.log(`Backstage running at http://${HOST}:${PORT}/backstage/`);
 
 // --- Session control surface (powers the michael-sessions MCP) ---
+// Wire the Slack-channel link index + the inbound-message bridge. Re-run on every
+// hot reload (cheap) so the index stays fresh and the sink closure is current.
+rebuildIndex(getAllSessions());
+registerLinkedChannelSink((channelId, message) => {
+	broadcastToAll({ type: "slack_message", channelId, message });
+});
+
 // Wires the MCP's tools into the same in-process state and helpers the
 // WebSocket handlers use, so a management session steers/answers/creates the
 // exact same way a human does in the web UI. See src/server/session-control.ts.

@@ -42,7 +42,13 @@ import {
   updateSlackBlocks,
   openSlackModal,
   openHumanAskModal,
+  resolveSlackUser,
+  prettifyMentions,
 } from "./slack-api";
+import {
+  sessionForChannel,
+  emitLinkedChannelMessage,
+} from "../../server/slack-links";
 import {
   resolveByOption as resolveHumanAsk,
   isAwaiting as isHumanAskAwaiting,
@@ -137,6 +143,33 @@ export class SlackAgent implements AgentModule {
           handleMessageEvent(event).catch((e) => {
             console.error("[slack] Error handling message:", e);
           });
+        }
+
+        // Mirror plain messages in a linked channel to the backstage chat panel
+        // (live). Own bot posts are already dropped above. A message that also
+        // @mentions Michael still fires app_mention below (separate dedup key), so
+        // the mention drives the session while the mirror shows the message.
+        if (
+          event.type === "message" &&
+          event.channel_type !== "im" &&
+          !event.subtype &&
+          sessionForChannel(event.channel)
+        ) {
+          const mirrorId = `mirror-${event.channel}-${event.ts}`;
+          if (!isEventProcessed(mirrorId)) {
+            markEventProcessed(mirrorId);
+            const u = event.user
+              ? await resolveSlackUser(event.user)
+              : { name: "Unknown", avatarUrl: undefined };
+            emitLinkedChannelMessage(event.channel, {
+              ts: event.ts,
+              userId: event.user || null,
+              userName: u.name,
+              avatarUrl: u.avatarUrl,
+              text: prettifyMentions(event.text || ""),
+              isBot: false,
+            });
+          }
         }
 
         // Handle app_mention events
