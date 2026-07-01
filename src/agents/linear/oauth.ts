@@ -1,6 +1,8 @@
 /**
  * Linear OAuth flow and token management.
  */
+import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
 
 const LINEAR_CLIENT_ID = process.env.LINEAR_CLIENT_ID || "";
 const LINEAR_CLIENT_SECRET = process.env.LINEAR_CLIENT_SECRET || "";
@@ -27,7 +29,7 @@ export async function loadTokens(): Promise<LinearTokens> {
 }
 
 export async function saveTokens(tokens: LinearTokens): Promise<void> {
-  await Bun.write(TOKENS_FILE, JSON.stringify(tokens, null, 2));
+  writeJsonAtomic(TOKENS_FILE, tokens);
 }
 
 export async function refreshToken(orgId: string, tokens: LinearTokens): Promise<boolean> {
@@ -40,7 +42,7 @@ export async function refreshToken(orgId: string, tokens: LinearTokens): Promise
   console.log(`[linear] Refreshing token for org: ${orgId}`);
 
   try {
-    const response = await fetch("https://api.linear.app/oauth/token", {
+    const response = await fetchWithTimeout("https://api.linear.app/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -101,7 +103,7 @@ export async function handleCallback(url: URL, tokens: LinearTokens): Promise<Re
     return new Response("Missing code", { status: 400 });
   }
 
-  const response = await fetch("https://api.linear.app/oauth/token", {
+  const response = await fetchWithTimeout("https://api.linear.app/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -115,7 +117,7 @@ export async function handleCallback(url: URL, tokens: LinearTokens): Promise<Re
 
   const data = await response.json();
   if (data.access_token) {
-    const orgResponse = await fetch("https://api.linear.app/graphql", {
+    const orgResponse = await fetchWithTimeout("https://api.linear.app/graphql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

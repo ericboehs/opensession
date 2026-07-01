@@ -60,7 +60,14 @@ export function verifyLinearSignature(
 ): boolean {
   if (!secret) return false;
   const computed = createHmac("sha256", secret).update(body).digest("hex");
-  return computed === signature;
+  const computedBuf = Buffer.from(computed);
+  const signatureBuf = Buffer.from(signature);
+  if (computedBuf.length !== signatureBuf.length) return false;
+  try {
+    return timingSafeEqual(computedBuf, signatureBuf);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -74,7 +81,14 @@ export function verifyPlainSignature(
 ): boolean {
   if (!secret) return false;
   const computed = createHmac("sha256", secret).update(body).digest("hex");
-  return computed === signature;
+  const computedBuf = Buffer.from(computed);
+  const signatureBuf = Buffer.from(signature);
+  if (computedBuf.length !== signatureBuf.length) return false;
+  try {
+    return timingSafeEqual(computedBuf, signatureBuf);
+  } catch {
+    return false;
+  }
 }
 
 /**

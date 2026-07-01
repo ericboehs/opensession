@@ -88,6 +88,13 @@ export interface IssueWebhook {
   };
 }
 
+// In-flight guard for `prompted` webhooks, keyed by issue id. A redelivered or
+// concurrent prompt would otherwise spawn a second query() resuming the SAME
+// claudeSessionId in the same worktree — corrupting the turn. Parked on
+// globalThis so a hot reload doesn't lose in-flight state.
+const inFlightPrompts: Set<string> = ((globalThis as any).__linearInFlightPrompts ??=
+  new Set<string>());
+
 // --- Issue status change → auto-implement ---
 
 export async function handleIssueUpdate(webhook: IssueWebhook, tokens: LinearTokens): Promise<Response> {
@@ -480,8 +487,22 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
             .replaceAll("$LATEST_RESPONSE", prompt);
         }
 
-        // Run Claude in background
+        // Run Claude in background — at most one run per issue. Check-and-set
+        // is synchronous, so two concurrent/redelivered prompts can't both
+        // start a query() resuming the same claudeSessionId in this worktree.
         const s = session;
+        const issueId = agentSession.issue.id;
+        if (inFlightPrompts.has(issueId)) {
+          console.log(
+            `[linear] Refusing concurrent prompt for ${s.issueIdentifier} — a run is already in flight`
+          );
+          await createAgentActivity(accessToken, agentSession.id, {
+            type: "response",
+            body: "I'm still working on the previous message for this issue — I can only run one turn at a time. Please wait for it to finish (or send a stop signal), then prompt me again.",
+          }).catch(() => {});
+          return Response.json({ ok: true, busy: true });
+        }
+        inFlightPrompts.add(issueId);
         (async () => {
           try {
             const { result, claudeSessionId } = await runClaudeHeadless(
@@ -586,6 +607,8 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
               type: "error",
               body: `${e}`,
             });
+          } finally {
+            inFlightPrompts.delete(issueId);
           }
         })();
       }

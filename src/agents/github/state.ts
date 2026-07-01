@@ -7,7 +7,8 @@
  * In-process locks coalesce rapid webhook bursts (force-push, stacked commits)
  * within one process; the on-disk state guards across restarts.
  */
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
+import { mkdirSync, readFileSync, existsSync, readdirSync } from "fs";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const STATE_DIR = `${HOME}/.backstage-github`;
@@ -115,7 +116,7 @@ export function writePrState(state: GithubPrState): void {
   state.updatedAt = new Date().toISOString();
   // Keep the reviewed-SHA list bounded.
   if (state.reviewedShas.length > 20) state.reviewedShas = state.reviewedShas.slice(-20);
-  writeFileSync(statePath(state.prNumber), JSON.stringify(state, null, 2));
+  writeJsonAtomic(statePath(state.prNumber), state);
 }
 
 export function updatePrState(

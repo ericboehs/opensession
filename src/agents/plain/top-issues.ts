@@ -10,6 +10,7 @@
  */
 import { readFileSync } from "fs";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 
 const PLAIN_API_URL = process.env.PLAIN_API_URL || "https://core-api.uk.plain.com/graphql/v1";
 const CHAT_CHANNEL = "C01ED50A2KG"; // #chat
@@ -30,7 +31,7 @@ function plainKey(): string {
 const PLAIN_API_KEY = plainKey();
 
 async function gql(query: string, variables: Record<string, unknown> = {}): Promise<any> {
-  const res = await fetch(PLAIN_API_URL, {
+  const res = await fetchWithTimeout(PLAIN_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${PLAIN_API_KEY}` },
     body: JSON.stringify({ query, variables }),
@@ -286,7 +287,7 @@ function slackToken(): string {
 
 /** Post to Slack with link unfurling OFF so the many Linear links stay compact. */
 async function postToSlack(channel: string, text: string): Promise<void> {
-  const res = await fetch("https://slack.com/api/chat.postMessage", {
+  const res = await fetchWithTimeout("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${slackToken()}` },
     body: JSON.stringify({ channel, text, mrkdwn: true, unfurl_links: false, unfurl_media: false }),

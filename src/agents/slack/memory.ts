@@ -15,6 +15,7 @@
  */
 
 import { randomUUID } from "crypto";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
 
 export const MEMORY_DIR = `${process.env.HOME}/.michael-memory`;
 
@@ -66,7 +67,7 @@ async function loadScope(scope: string): Promise<MemoryEntry[]> {
 }
 
 async function saveScope(scope: string, entries: MemoryEntry[]): Promise<void> {
-  await Bun.write(scopeFile(scope), JSON.stringify({ entries }, null, 2));
+  writeJsonAtomic(scopeFile(scope), { entries });
 }
 
 /** Save a new fact to the writable store for this context. */

@@ -6,6 +6,7 @@
  *
  * Auth: the same `GITHUB_API_TOKEN` PAT the Slack agent uses (Bearer).
  */
+import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 
 const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 export const GITHUB_REPO = "tellahq/tella-fusion";
@@ -46,7 +47,9 @@ export async function githubRequest<T = any>(
 ): Promise<GithubResult<T>> {
   if (!GITHUB_TOKEN) return { ok: false, status: 0, data: null, error: "GITHUB_API_TOKEN unset" };
   try {
-    const resp = await fetch(`https://api.github.com${path}`, {
+    // Timeout matters here: these calls run while holding a per-PR lock with
+    // no TTL — a hung fetch would block that PR until the next restart.
+    const resp = await fetchWithTimeout(`https://api.github.com${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${GITHUB_TOKEN}`,
@@ -87,7 +90,7 @@ export async function githubGraphQL<T = any>(
 ): Promise<T | null> {
   if (!GITHUB_TOKEN) return null;
   try {
-    const resp = await fetch("https://api.github.com/graphql", {
+    const resp = await fetchWithTimeout("https://api.github.com/graphql", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${GITHUB_TOKEN}`,

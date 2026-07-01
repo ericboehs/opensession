@@ -3,6 +3,7 @@
  */
 import { PlainClient } from "@team-plain/typescript-sdk";
 import { loadTokens, getValidToken } from "../linear/oauth";
+import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 
 const PLAIN_API_KEY = process.env.PLAIN_API_KEY || "";
 const LINEAR_API_KEY = process.env.LINEAR_API_KEY || "";
@@ -435,7 +436,7 @@ async function resolveLinearTeamId(auth: string, team: string): Promise<string |
   const cached = teamIdCache.get(team);
   if (cached) return cached;
 
-  const response = await fetch("https://api.linear.app/graphql", {
+  const response = await fetchWithTimeout("https://api.linear.app/graphql", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: auth },
     body: JSON.stringify({
@@ -475,7 +476,7 @@ export async function createLinearIssue(
     const resolvedTeamId = await resolveLinearTeamId(auth, teamId || "TELLA");
     if (!resolvedTeamId) return null;
 
-    const response = await fetch("https://api.linear.app/graphql", {
+    const response = await fetchWithTimeout("https://api.linear.app/graphql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -528,7 +529,7 @@ export async function searchLinearIssues(
   }
 
   try {
-    const response = await fetch("https://api.linear.app/graphql", {
+    const response = await fetchWithTimeout("https://api.linear.app/graphql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

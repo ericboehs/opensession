@@ -5,28 +5,9 @@
  * using fetch() + SLACK_BOT_TOKEN from process.env.
  */
 
+import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
+
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
-
-/**
- * Slack's API should respond in a couple seconds; if we don't hear back in 30s
- * something is wrong (network, Slack side, auth). Without this, a wedged fetch
- * can stall the entire message queue indefinitely.
- */
-const SLACK_FETCH_TIMEOUT_MS = 30_000;
-
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs = SLACK_FETCH_TIMEOUT_MS
-): Promise<Response> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Status messages

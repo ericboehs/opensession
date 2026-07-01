@@ -2,14 +2,18 @@
  * Linear agent session lifecycle, Claude runner, polling, and Ralph mode.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { isClaudeUsageLimitError } from "../../server/claude-runner";
+import {
+  isClaudeUsageLimitError,
+  filterMcpServers,
+  STRIPE_CONFIRM_TOOLS,
+} from "../../server/claude-runner";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";
 import { runCodex } from "../../server/codex-runner";
 import { DEFAULT_FALLBACK_MODEL, resolveModel, getDefaultModel } from "../../server/models";
 import { cleanPlainToolInput } from "../../server/shared/note-style";
-import { spawn, execSync } from "child_process";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import { spawn, spawnSync, execSync } from "child_process";
 import { unlinkSync } from "fs";
-import mcpConfig from "../../../mcp-config.json";
 import { linearEmailToGithubUsername, gitIdentityFor, gitIdentityEnv } from "../../server/shared/user-mappings";
 import {
   createAgentActivity,
@@ -242,7 +246,7 @@ export async function saveSessionInfo(
     model: existing.model || undefined,
     updatedAt: new Date().toISOString(),
   };
-  await Bun.write(sessionFile, JSON.stringify(data, null, 2));
+  writeJsonAtomic(sessionFile, data);
 }
 
 export async function loadSessionInfo(branch: string): Promise<{
@@ -464,12 +468,27 @@ export async function runClaudeHeadless(
           "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
         ],
         canUseTool: async (toolName: string, input: unknown) => {
+          // Money-moving Stripe tools need the per-call human confirmation the
+          // backstage runner provides; this path has no approval card, so deny.
+          if (toolName in STRIPE_CONFIRM_TOOLS) {
+            return {
+              behavior: "deny" as const,
+              message:
+                "This Stripe action requires human confirmation — open this session in Backstage and retry there; the approval card will appear in that UI.",
+            };
+          }
           return {
             behavior: "allow" as const,
             updatedInput: cleanPlainToolInput(toolName, input as Record<string, unknown>),
           };
         },
-        mcpServers: mcpConfig.mcpServers as any,
+        // Runner-layer MCP gate: enforce per-user `allowedUsers` for the issue
+        // actor (last prompting user, else the issue creator) and strip that
+        // field before the SDK sees the config.
+        mcpServers: filterMcpServers(
+          undefined,
+          session?.lastActiveUser?.email || session?.issueCreator?.email || undefined
+        ) as any,
         strictMcpConfig: true,
         model: session?.model || getDefaultModel(),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
@@ -795,11 +814,20 @@ export async function startRalphLoop(
 
   const fullPath = `/home/ubuntu/.nvm/versions/node/v20.20.0/bin:${process.env.PATH}`;
   try {
-    execSync(`just ralph import ${planFile}`, {
+    // args array, not a shell string — planFile embeds the issue identifier,
+    // which must never be interpolated into a shell command.
+    const importResult = spawnSync("just", ["ralph", "import", planFile], {
       cwd: session.worktreeDir,
       encoding: "utf-8",
       env: { ...process.env, PATH: fullPath },
     });
+    if (importResult.status !== 0) {
+      throw new Error(
+        importResult.stderr?.trim() ||
+          importResult.stdout?.trim() ||
+          `just ralph import exited with code ${importResult.status}`
+      );
+    }
   } catch (e) {
     console.error(`[linear] Ralph import failed:`, e);
     await createAgentActivity(accessToken, linearSessionId, {

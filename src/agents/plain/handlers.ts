@@ -2,8 +2,8 @@
  * Plain agent webhook and mention handlers.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { SnoozeStatusDetail } from "@team-plain/typescript-sdk";
 import { cleanPlainToolInput } from "../../server/shared/note-style";
-import mcpConfig from "../../../mcp-config.json";
 import {
   getThreadWithMessages,
   postNote,
@@ -15,7 +15,7 @@ import {
 } from "./api";
 import { buildMentionPrompt, buildWorkPrompt, buildRefundExecutionPrompt } from "./prompts";
 import { getDefaultModel } from "../../server/models";
-import { STRIPE_CONFIRM_TOOLS } from "../../server/claude-runner";
+import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "../../server/claude-runner";
 import { classifyRefundApproval } from "./refund-intent";
 
 const TELLA_FUSION_DIR = "/home/ubuntu/projects/tella-fusion";
@@ -110,6 +110,15 @@ async function runClaude(
       options: {
         resume: resumeSessionId || undefined,
         cwd,
+        // Untrusted customer ticket text goes into this child — same minimal
+        // env as the Haiku classifier calls (spam-check.ts), no tokens from
+        // ~/.backstage.env. MCP servers carry their own credentials.
+        env: {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          LANG: process.env.LANG,
+          ...(process.env.MICHAEL_MODEL ? { MICHAEL_MODEL: process.env.MICHAEL_MODEL } : {}),
+        },
         allowedTools: [
           "Bash", "Read", "Edit", "Write", "Grep", "Glob",
           "Task", "TaskOutput", "WebFetch", "WebSearch",
@@ -131,7 +140,10 @@ async function runClaude(
             updatedInput: cleanPlainToolInput(toolName, input as Record<string, unknown>),
           };
         },
-        mcpServers: mcpConfig.mcpServers as any,
+        // Runner-layer MCP gate with NO user: Plain runs are automation-like
+        // (they process untrusted ticket text), so any `allowedUsers`-restricted
+        // server is fail-closed invisible here.
+        mcpServers: filterMcpServers(undefined, undefined) as any,
         strictMcpConfig: true,
         model: getDefaultModel(),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
@@ -222,7 +234,7 @@ async function handleMichaelMention(
         try {
           await plain.snoozeThread({
             threadId,
-            statusDetail: "WAITING_FOR_CUSTOMER",
+            statusDetail: SnoozeStatusDetail.WaitingForCustomer,
           });
           await postNote(threadId, customerId, "✓ Reply sent to customer. Thread set to Waiting for Customer.");
         } catch (e) {

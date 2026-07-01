@@ -5,7 +5,8 @@
  * github-reviews, index) can read/write without circular imports.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,7 +72,7 @@ const processedEventExpiry = new Map<string, number>();
 
 function persistProcessedEvents(): void {
   try {
-    writeFileSync(PROCESSED_EVENTS_STORE, JSON.stringify([...processedEventExpiry]));
+    writeJsonAtomic(PROCESSED_EVENTS_STORE, [...processedEventExpiry], false);
   } catch (e) {
     console.error("[slack] Failed to persist processed events:", e);
   }
@@ -150,7 +151,7 @@ export async function saveSession(session: SlackSession): Promise<void> {
     createdAt: session.createdAt,
     lastActivity: new Date().toISOString(),
   };
-  await Bun.write(sessionFile, JSON.stringify(data, null, 2));
+  writeJsonAtomic(sessionFile, data);
 }
 
 export async function loadSession(

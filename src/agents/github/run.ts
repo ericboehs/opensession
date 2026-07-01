@@ -4,8 +4,9 @@
  * PR review/fix/simplify shows up as a Michael session in the web UI, and resumes
  * the engine conversation across rounds via the deterministic per-PR session file.
  */
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { BACKSTAGE_CHATS_DIR } from "../../server/paths";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { runAgent } from "../../server/agent-runner";
 import { providerFor, DEFAULT_FALLBACK_MODEL } from "../../server/models";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/claude-runner";
@@ -46,7 +47,7 @@ function projectIdForPr(prNumber: number, branch: string, title: string, cwd: st
           const p = `${SESSIONS_DIR}/${file}`;
           const s = JSON.parse(readFileSync(p, "utf-8")) as BackstageSessionFile;
           if (s.id && s.branch === branch && !s.projectId) {
-            writeFileSync(p, JSON.stringify({ ...s, projectId: project.id }, null, 2));
+            writeJsonAtomic(p, { ...s, projectId: project.id });
           }
         } catch {}
       }
@@ -152,7 +153,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
       automation: "github-pr-review",
       ...(projectId ? { projectId } : {}),
     };
-    writeFileSync(`${SESSIONS_DIR}/${bksId}.json`, JSON.stringify(data, null, 2));
+    writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
   };
 
   let text = "";

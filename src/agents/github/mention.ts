@@ -52,7 +52,13 @@ const handled = new Set<string>();
 function alreadyHandled(key: string): boolean {
   if (handled.has(key)) return true;
   handled.add(key);
-  if (handled.size > 500) handled.clear();
+  // Evict oldest-first (Sets iterate in insertion order) — a wholesale clear()
+  // would forget the most recent keys and re-handle a prompt redelivery.
+  while (handled.size > 500) {
+    const oldest = handled.values().next().value;
+    if (oldest === undefined) break;
+    handled.delete(oldest);
+  }
   return false;
 }
 

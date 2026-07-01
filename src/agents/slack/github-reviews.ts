@@ -11,6 +11,7 @@ import {
   githubUsernameToSlackId,
 } from "../../server/shared/user-mappings";
 import { sendSlackMessage, postSlackBlocks } from "./slack-api";
+import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { GITHUB_REPO } from "./state";
 
 const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
@@ -23,7 +24,7 @@ const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 export async function githubApi(path: string): Promise<any> {
   if (!GITHUB_TOKEN) return null;
   try {
-    const resp = await fetch(`https://api.github.com${path}`, {
+    const resp = await fetchWithTimeout(`https://api.github.com${path}`, {
       headers: {
         Authorization: `Bearer ${GITHUB_TOKEN}`,
         Accept: "application/vnd.github+json",
@@ -173,7 +174,7 @@ export async function inviteRelevantUsersToChannel(
   console.log(
     `[slack] Inviting ${slackUserIds.length} user(s) to channel ${channelId}: ${slackUserIds.join(", ")}`
   );
-  const resp = await fetch("https://slack.com/api/conversations.invite", {
+  const resp = await fetchWithTimeout("https://slack.com/api/conversations.invite", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

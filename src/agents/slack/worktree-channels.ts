@@ -6,6 +6,8 @@
  */
 
 import { sendSlackMessage } from "./slack-api";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import {
   githubApi,
   findGitHubUsersForBranch,
@@ -37,7 +39,7 @@ export async function saveWorktreeChannels(): Promise<void> {
   for (const [channelId, branch] of worktreeChannels) {
     data[channelId] = branch;
   }
-  await Bun.write(WORKTREE_CHANNELS_FILE, JSON.stringify(data, null, 2));
+  writeJsonAtomic(WORKTREE_CHANNELS_FILE, data);
 }
 
 export async function loadWorktreeChannels(): Promise<void> {
@@ -98,7 +100,7 @@ export async function findSlackChannel(name: string): Promise<string | null> {
     });
     if (cursor) params.set("cursor", cursor);
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://slack.com/api/conversations.list?${params}`,
       { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
     );
@@ -126,7 +128,7 @@ export async function findSlackChannel(name: string): Promise<string | null> {
 export async function createSlackChannel(
   name: string
 ): Promise<{ ok: boolean; channelId?: string; error?: string }> {
-  const response = await fetch("https://slack.com/api/conversations.create", {
+  const response = await fetchWithTimeout("https://slack.com/api/conversations.create", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -146,7 +148,7 @@ export async function createSlackChannel(
     if (existing) {
       // Check if it's archived — if so, we can't reuse it (bot can't unarchive)
       // Create with a numeric suffix instead
-      const infoResp = await fetch(
+      const infoResp = await fetchWithTimeout(
         `https://slack.com/api/conversations.info?channel=${existing}`,
         { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
       );
@@ -172,7 +174,7 @@ export async function createSlackChannel(
 export async function archiveSlackChannel(
   channelId: string
 ): Promise<boolean> {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     "https://slack.com/api/conversations.archive",
     {
       method: "POST",
@@ -199,7 +201,7 @@ export async function setChannelTopic(
   channelId: string,
   topic: string
 ): Promise<void> {
-  await fetch("https://slack.com/api/conversations.setTopic", {
+  await fetchWithTimeout("https://slack.com/api/conversations.setTopic", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -214,7 +216,7 @@ export async function setChannelTopic(
 // ---------------------------------------------------------------------------
 
 export async function inviteBotToChannel(channelId: string): Promise<void> {
-  const joinResp = await fetch("https://slack.com/api/conversations.join", {
+  const joinResp = await fetchWithTimeout("https://slack.com/api/conversations.join", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

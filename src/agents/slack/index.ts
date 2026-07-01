@@ -6,7 +6,9 @@
  */
 
 import { mkdirSync, existsSync, unlinkSync } from "fs";
+import { timingSafeEqual } from "crypto";
 import type { AgentModule } from "../types";
+import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import {
   verifySlackSignature,
   verifyGitHubSignature,
@@ -83,6 +85,45 @@ const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "";
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
 
+/**
+ * Shared-secret gate for the /worktree/* hooks. Caddy proxies all of the
+ * public michael.tella.dev origin to this port, so these routes are reachable
+ * from the open internet — without this check anyone could create Slack
+ * channels or archive worktree channels. Callers (the `wt` CLI) send
+ * `x-worktree-secret` matching WORKTREE_HOOK_SECRET. Fail closed: no secret
+ * configured means every request is rejected.
+ */
+function verifyWorktreeSecret(req: Request): boolean {
+  const secret = process.env.WORKTREE_HOOK_SECRET || "";
+  if (!secret) return false;
+  const given = req.headers.get("x-worktree-secret") || "";
+  const secretBuf = Buffer.from(secret);
+  const givenBuf = Buffer.from(given);
+  if (secretBuf.length !== givenBuf.length) return false;
+  try {
+    return timingSafeEqual(secretBuf, givenBuf);
+  } catch {
+    return false;
+  }
+}
+
+// Bounded dedup of GitHub webhook delivery ids (x-github-delivery) — GitHub
+// redeliveries (manual or automatic) would otherwise re-trigger reviews and
+// PR-event automations. In-memory ring of the last ~500 ids, parked on
+// globalThis so a hot reload doesn't forget recent deliveries.
+const seenGithubDeliveries: Set<string> = ((globalThis as any).__githubDeliveryIds ??=
+  new Set<string>());
+
+function markGithubDelivery(id: string): void {
+  seenGithubDeliveries.add(id);
+  // Oldest-first eviction — Sets iterate in insertion order.
+  while (seenGithubDeliveries.size > 500) {
+    const oldest = seenGithubDeliveries.values().next().value;
+    if (oldest === undefined) break;
+    seenGithubDeliveries.delete(oldest);
+  }
+}
+
 export class SlackAgent implements AgentModule {
   name = "slack";
 
@@ -142,11 +183,15 @@ export class SlackAgent implements AgentModule {
             console.log(`[slack] Duplicate event: ${eventId}`);
             return Response.json({ ok: true });
           }
-          markEventProcessed(eventId);
 
-          handleMessageEvent(event).catch((e) => {
-            console.error("[slack] Error handling message:", e);
-          });
+          // Mark processed only AFTER the handler has enqueued the message —
+          // marking first meant a handler throw made Slack's retry look like a
+          // duplicate and the message was silently dropped.
+          handleMessageEvent(event)
+            .then(() => markEventProcessed(eventId))
+            .catch((e) => {
+              console.error("[slack] Error handling message:", e);
+            });
         }
 
         // Mirror plain messages in a linked channel to the backstage chat panel
@@ -161,7 +206,6 @@ export class SlackAgent implements AgentModule {
         ) {
           const mirrorId = `mirror-${event.channel}-${event.ts}`;
           if (!isEventProcessed(mirrorId)) {
-            markEventProcessed(mirrorId);
             const u = event.user
               ? await resolveSlackUser(event.user)
               : { name: "Unknown", avatarUrl: undefined };
@@ -173,6 +217,9 @@ export class SlackAgent implements AgentModule {
               text: prettifyMentions(event.text || ""),
               isBot: false,
             });
+            // Mark only after the mirror actually emitted (same ordering fix
+            // as the DM/mention handlers).
+            markEventProcessed(mirrorId);
           }
         }
 
@@ -218,11 +265,14 @@ export class SlackAgent implements AgentModule {
             console.log(`[slack] Duplicate mention event: ${eventId}`);
             return Response.json({ ok: true });
           }
-          markEventProcessed(eventId);
 
-          handleMentionEvent(event).catch((e) => {
-            console.error("[slack] Error handling mention:", e);
-          });
+          // Same as DMs above: only mark processed once the handler succeeded,
+          // so a throw leaves the retry eligible instead of dropping the event.
+          handleMentionEvent(event)
+            .then(() => markEventProcessed(eventId))
+            .catch((e) => {
+              console.error("[slack] Error handling mention:", e);
+            });
         }
 
         // Handle assistant_thread_started events (DM thread opened)
@@ -553,6 +603,16 @@ Please address this feedback:
         return Response.json({ error: "Invalid signature" }, { status: 401 });
       }
 
+      // Reject replayed/redelivered webhooks by delivery id.
+      const deliveryId = req.headers.get("x-github-delivery");
+      if (deliveryId) {
+        if (seenGithubDeliveries.has(deliveryId)) {
+          console.log(`[slack] Duplicate GitHub delivery ${deliveryId} — skipping`);
+          return Response.json({ ok: true, duplicate: true });
+        }
+        markGithubDelivery(deliveryId);
+      }
+
       incrementGithubWebhooks();
       const event = req.headers.get("x-github-event") || "";
       const payload = JSON.parse(body);
@@ -586,6 +646,10 @@ Please address this feedback:
 
     // ----- POST /worktree/create-channel -----
     routes.set("POST /worktree/create-channel", async (req) => {
+      if (!verifyWorktreeSecret(req)) {
+        console.error("[slack] Rejected /worktree/create-channel: bad or missing x-worktree-secret");
+        return Response.json({ error: "Forbidden" }, { status: 403 });
+      }
       try {
         const body = (await req.json()) as { branch: string };
         const { branch } = body;
@@ -636,7 +700,7 @@ Please address this feedback:
         );
 
         // Post intro message
-        const authResp = await fetch("https://slack.com/api/auth.test", {
+        const authResp = await fetchWithTimeout("https://slack.com/api/auth.test", {
           headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
         });
         const botId = ((await authResp.json()) as any).user_id;
@@ -671,6 +735,10 @@ Please address this feedback:
 
     // ----- POST /worktree/archive-channel -----
     routes.set("POST /worktree/archive-channel", async (req) => {
+      if (!verifyWorktreeSecret(req)) {
+        console.error("[slack] Rejected /worktree/archive-channel: bad or missing x-worktree-secret");
+        return Response.json({ error: "Forbidden" }, { status: 403 });
+      }
       try {
         const body = (await req.json()) as { branch: string };
         const { branch } = body;
@@ -747,7 +815,7 @@ Please address this feedback:
 
     // Fetch team ID and bot user ID for streaming APIs
     try {
-      const authResp = await fetch("https://slack.com/api/auth.test", {
+      const authResp = await fetchWithTimeout("https://slack.com/api/auth.test", {
         headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
       });
       const authData = (await authResp.json()) as any;

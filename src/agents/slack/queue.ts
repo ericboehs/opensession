@@ -11,6 +11,7 @@ import {
   removeReaction,
   MESSAGES,
 } from "./slack-api";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
 
 const SESSION_DIR = `${process.env.HOME}/.slack-sessions`;
 const QUEUE_FILE = `${SESSION_DIR}/message-queue.json`;
@@ -67,7 +68,7 @@ export async function saveQueueToDisk(): Promise<void> {
       data[key] = sq.queue;
     }
   }
-  await Bun.write(QUEUE_FILE, JSON.stringify(data, null, 2));
+  writeJsonAtomic(QUEUE_FILE, data);
 }
 
 export async function loadQueueFromDisk(): Promise<void> {
@@ -141,7 +142,13 @@ export async function processQueue(sessionKey: string): Promise<void> {
       await processMessage(sessionKey, msg);
     } catch (e) {
       console.error(`[slack] Error processing message for ${sessionKey}:`, e);
-      await sendSlackMessage(msg.channel, `${MESSAGES.error} ${e}`, msg.threadTs);
+      // Guard the error report itself — if THIS send throws, processQueue
+      // aborts and the whole queue stalls until the next inbound message.
+      try {
+        await sendSlackMessage(msg.channel, `${MESSAGES.error} ${e}`, msg.threadTs);
+      } catch (e2) {
+        console.error(`[slack] Failed to report processing error for ${sessionKey}:`, e2);
+      }
     }
     // Remove the message we just processed BY IDENTITY, not a blind shift().
     // A Stop/cancel clears the queue (sq.queue.length = 0); if a new message

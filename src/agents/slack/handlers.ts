@@ -51,7 +51,12 @@ import { runCodex } from "../../server/codex-runner";
 import { gitIdentityFor } from "../../server/shared/user-mappings";
 import { sessionForChannel } from "../../server/slack-links";
 import { tryGetSessionControl } from "../../server/session-control";
-import { isClaudeUsageLimitError } from "../../server/claude-runner";
+import {
+  isClaudeUsageLimitError,
+  filterMcpServers,
+  STRIPE_CONFIRM_TOOLS,
+} from "../../server/claude-runner";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { getAgentAwsEnv } from "../../server/aws-creds";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";
 import {
@@ -74,7 +79,6 @@ import {
   saveSession,
   loadSession,
   DEFAULT_CWD,
-  MCP_CONFIG_PATH,
   SESSION_DIR,
   GITHUB_REPO,
   slackBotUserId,
@@ -97,7 +101,7 @@ async function persistSession(session: SlackSession): Promise<void> {
       const branchData = JSON.parse(await bf.text());
       branchData.claudeSessionId = session.claudeSessionId;
       branchData.lastActivity = session.lastActivity;
-      await Bun.write(branchFile, JSON.stringify(branchData, null, 2));
+      writeJsonAtomic(branchFile, branchData);
     }
   } catch {}
 }
@@ -594,13 +598,15 @@ export async function processMessage(
   const sq = getOrCreateQueue(sessionKey);
   sq.abortController = abortController;
 
-  // Read MCP config
-  let mcpConfig: { mcpServers: Record<string, any> } = { mcpServers: {} };
+  // MCP servers for this run, through the same runner-layer gate as backstage
+  // sessions: filterMcpServers enforces per-user `allowedUsers` (keyed on the
+  // requesting Slack user) and strips that field before the SDK sees it. The
+  // old raw-config spread meant worktree/linked channels — which bypass
+  // ALLOWED_USER_ID so the whole team can drive them — handed every teammate
+  // user-restricted servers like brex.
+  let mcpServers: Record<string, unknown> = {};
   try {
-    const file = Bun.file(MCP_CONFIG_PATH);
-    if (await file.exists()) {
-      mcpConfig = JSON.parse(await file.text());
-    }
+    mcpServers = filterMcpServers(undefined, msg.userId);
   } catch (e) {
     console.warn("[slack] Failed to load MCP config:", e);
   }
@@ -924,10 +930,19 @@ export async function processMessage(
               threadTs
             );
           }
+          // Money-moving Stripe tools need the per-call human confirmation the
+          // backstage runner provides; this path has no approval card, so deny.
+          if (toolName in STRIPE_CONFIRM_TOOLS) {
+            return {
+              behavior: "deny",
+              message:
+                "This Stripe action requires human confirmation — open this session in Backstage and retry there; the approval card will appear in that UI.",
+            };
+          }
           // Allow everything else that isn't in allowedTools (e.g. MCP tools)
           return { behavior: "allow", updatedInput: cleanPlainToolInput(toolName, input) };
         },
-        mcpServers: { ...mcpConfig.mcpServers, ...adminMcpServers },
+        mcpServers: { ...mcpServers, ...adminMcpServers },
         strictMcpConfig: true,
         model: session.model || getDefaultModel(),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",

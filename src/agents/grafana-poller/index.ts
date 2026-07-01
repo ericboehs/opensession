@@ -23,7 +23,8 @@
  * highly confident, else discuss in the card thread.
  */
 import { randomUUIDv7 } from "bun";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
+import { mkdirSync, readFileSync, existsSync, unlinkSync } from "fs";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import type { AgentModule } from "../types";
 import {
   listAutomations,
@@ -243,7 +244,7 @@ function recentlyInvestigated(automationId: string, dedupValue: string, dedupDay
 }
 
 function writeDedup(automationId: string, rec: DedupRecord): void {
-  writeFileSync(dedupPath(automationId, rec.dedupValue), JSON.stringify(rec, null, 2));
+  writeJsonAtomic(dedupPath(automationId, rec.dedupValue), rec);
 }
 
 // ── Slack control card ───────────────────────────────────────
@@ -352,9 +353,18 @@ async function investigate(
     bksSessionId: bksId,
     eventContext,
   })
-    .catch((e) =>
-      console.error(`[grafana-poller] runAutomation failed for ${failure.dedupValue}:`, e)
-    )
+    .catch((e) => {
+      console.error(`[grafana-poller] runAutomation failed for ${failure.dedupValue}:`, e);
+      // The dedup slot was stamped before launch (to stop an overlapping poll
+      // from double-firing) — but a crashed launch must not mute this alert
+      // for dedupDays. Roll the stamp back so the next poll retries.
+      try {
+        if (prior) writeDedup(automation.id, prior);
+        else unlinkSync(dedupPath(automation.id, failure.dedupValue));
+      } catch (e2) {
+        console.error(`[grafana-poller] Failed to roll back dedup stamp for ${failure.dedupValue}:`, e2);
+      }
+    })
     .finally(() => {
       if (!slackTs) return;
       void updateSlackBlocks(
