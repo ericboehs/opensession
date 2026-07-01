@@ -24,6 +24,27 @@ function activePlainSessions(): Array<{ path: string; data: BackstageSessionFile
   return out;
 }
 
+/**
+ * Clear the file-level `archived` flag on a backstage session (set by the Plain
+ * done-ticket path above). Manual unarchive only clears the archive registry, so
+ * without this a Plain-archived session would stay archived and never return to
+ * "My sessions". No-op for non-backstage sessions (no session file). Returns true
+ * if a flag was cleared.
+ */
+export function clearSessionFileArchive(id: string): boolean {
+  const path = `${SESSIONS_DIR}/${id}.json`;
+  if (!existsSync(path)) return false;
+  try {
+    const data = JSON.parse(readFileSync(path, "utf-8")) as BackstageSessionFile;
+    if (!data.archived && !data.archivedAt) return false;
+    const { archived, archivedAt, ...rest } = data;
+    writeFileSync(path, JSON.stringify(rest, null, 2));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Mark every session tied to this thread as archived. Returns count. */
 export function archiveSessionsForThread(threadId: string): number {
   let archived = 0;

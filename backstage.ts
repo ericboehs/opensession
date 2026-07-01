@@ -165,7 +165,7 @@ import {
 	setChannelTopic,
 	findSlackChannel,
 } from "./src/agents/slack/worktree-channels";
-import { startPlainArchiveSweep } from "./src/server/plain-archive";
+import { startPlainArchiveSweep, clearSessionFileArchive } from "./src/server/plain-archive";
 import { setArchived, archiveOlderThan } from "./src/server/archive";
 import { setTitleOverride } from "./src/server/title-overrides";
 import { ensureGeneratedTitle } from "./src/server/generated-titles";
@@ -2629,7 +2629,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				if (!session)
 					return Response.json({ error: "Session not found" }, { status: 404 });
 				const body = await req.json().catch(() => ({}));
-				setArchived(sessionId, body.archived !== false);
+				const archived = body.archived !== false;
+				setArchived(sessionId, archived);
+				// Plain done-tickets are archived via a file-level flag, not the
+				// registry; clearing only the registry would leave them archived. On
+				// unarchive, also clear the file flag so the session returns to "My
+				// sessions".
+				if (!archived) clearSessionFileArchive(sessionId);
 				sessionsCache = null;
 				return Response.json({ ok: true });
 			}
