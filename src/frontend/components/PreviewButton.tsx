@@ -1,24 +1,42 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchPreview, stopPreviewApi, type PreviewStatus } from "../lib/api";
+import {
+  fetchPreview,
+  startPreviewApi,
+  stopPreviewApi,
+  type PreviewStatus,
+} from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
 
+// Only tella-fusion worktrees are previewable — the bring-up script
+// (tella-local ensure-up.sh) seeds a tella-fusion webapp specifically.
+function isPreviewable(session: UnifiedSession): boolean {
+  if (!session.worktreeDir) return false;
+  return (session.project ?? "tella-fusion") === "tella-fusion";
+}
+
 /**
- * Header control for a session's local dev server. Links to the running webapp
- * (`http://<this-host>:<WEBAPP_PORT>` — reachable over the tailnet because
- * `next dev` binds 0.0.0.0) and, via a popover, shows which dev services are
- * running and lets you stop them. Renders nothing until the worktree has a
- * `.ports.conf` (i.e. `just dev` has run at least once).
+ * Header control for a session's local dev server ("Tella Local"). When the
+ * webapp is up it links to it (`https://<host>:<httpsPort>` — a Caddy-fronted
+ * secure origin over the tailnet); when it's off, a ▶ play button starts it
+ * (runs `just dev` in the worktree via the tella-local script), showing a
+ * "Starting…" state until the server is listening. A caret popover lists the
+ * dev services and can stop them. Renders only for tella-fusion worktrees.
  */
 export function PreviewButton({ session }: { session: UnifiedSession }) {
   const [status, setStatus] = useState<PreviewStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [starting, setStarting] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Poll the dev-server status while this session is open. lsof is cheap and
-  // only the active SessionViewer is mounted, so an 8s cadence is plenty.
+  const previewable = isPreviewable(session);
+
+  // Poll the dev-server status while this session is open. Poll faster while a
+  // bring-up is in flight so the button flips to the live link promptly; `ss`
+  // is cheap and only the active SessionViewer is mounted.
+  const busy = starting || (status?.starting ?? false);
   useEffect(() => {
-    if (!session.worktreeDir) {
+    if (!previewable) {
       setStatus(null);
       return;
     }
@@ -28,12 +46,17 @@ export function PreviewButton({ session }: { session: UnifiedSession }) {
         .then((s) => alive && setStatus(s))
         .catch(() => {});
     load();
-    const t = setInterval(load, 8000);
+    const t = setInterval(load, busy ? 3000 : 8000);
     return () => {
       alive = false;
       clearInterval(t);
     };
-  }, [session.id, session.worktreeDir]);
+  }, [session.id, previewable, busy]);
+
+  // Once the webapp is actually up, drop the optimistic "starting" flag.
+  useEffect(() => {
+    if (status?.running) setStarting(false);
+  }, [status?.running]);
 
   // Close the popover on outside click.
   useEffect(() => {
@@ -45,18 +68,29 @@ export function PreviewButton({ session }: { session: UnifiedSession }) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  if (!session.worktreeDir || !status?.hasPortsConf) return null;
+  if (!previewable || !status) return null;
 
   // The webapp is only openable once Caddy has fronted it with an HTTPS origin
   // (previewUrl). A secure origin is required for the app to load fully.
   const running = status.running && status.previewUrl != null;
   const url = status.previewUrl ?? "#";
   const anyRunning = status.services.some((s) => s.running);
+  const isStarting = busy && !running;
+
+  async function start() {
+    setStarting(true);
+    try {
+      setStatus(await startPreviewApi(session.id));
+    } catch {
+      setStarting(false);
+    }
+  }
 
   async function stop() {
     setStopping(true);
     try {
       setStatus(await stopPreviewApi(session.id));
+      setStarting(false);
     } catch {
     } finally {
       setStopping(false);
@@ -76,17 +110,24 @@ export function PreviewButton({ session }: { session: UnifiedSession }) {
           <span className="preview-dot" />
           Preview ↗
         </a>
+      ) : isStarting ? (
+        <button
+          className="preview-open starting"
+          disabled
+          title="Starting Tella Local — this can take a minute on first build"
+        >
+          <span className="preview-spinner" />
+          Starting…
+        </button>
       ) : (
         <button
           className="preview-open"
-          disabled
-          title={
-            status.running
-              ? "Webapp is up but couldn't be exposed over HTTPS (Caddy)"
-              : "Webapp isn't running — start it in the session (tella-local)"
-          }
+          onClick={start}
+          title="Start Tella Local and preview this session"
         >
-          <span className="preview-dot off" />
+          <span className="preview-play" aria-hidden="true">
+            ▶
+          </span>
           Preview
         </button>
       )}
@@ -103,7 +144,9 @@ export function PreviewButton({ session }: { session: UnifiedSession }) {
         <div className="preview-popover">
           <div className="preview-popover-title">Dev services</div>
           {status.services.length === 0 ? (
-            <div className="preview-empty">No ports configured</div>
+            <div className="preview-empty">
+              {isStarting ? "Starting up…" : "Not started yet"}
+            </div>
           ) : (
             <ul className="preview-services">
               {status.services.map((s) => (
@@ -118,10 +161,20 @@ export function PreviewButton({ session }: { session: UnifiedSession }) {
               ))}
             </ul>
           )}
-          <button className="preview-stop" onClick={stop} disabled={!anyRunning || stopping}>
-            {stopping ? "Stopping…" : "Stop dev server"}
-          </button>
-          <div className="preview-hint">Stops this worktree's dev process group only.</div>
+          {running || anyRunning ? (
+            <button className="preview-stop" onClick={stop} disabled={!anyRunning || stopping}>
+              {stopping ? "Stopping…" : "Stop dev server"}
+            </button>
+          ) : (
+            <button className="preview-stop" onClick={start} disabled={isStarting}>
+              {isStarting ? "Starting…" : "Start dev server"}
+            </button>
+          )}
+          <div className="preview-hint">
+            {running || anyRunning
+              ? "Stops this worktree's dev process group only."
+              : "Runs just dev in this worktree (first build ~1 min)."}
+          </div>
         </div>
       )}
     </div>

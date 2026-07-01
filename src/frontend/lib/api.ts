@@ -24,6 +24,7 @@ export interface PreviewStatus {
 	hasPortsConf: boolean;
 	webappPort: number | null;
 	running: boolean;
+	starting: boolean;
 	previewUrl: string | null;
 	services: PreviewService[];
 }
@@ -33,6 +34,19 @@ export async function fetchPreview(sessionId: string): Promise<PreviewStatus> {
 		`${BASE}/sessions/${encodeURIComponent(sessionId)}/preview`,
 	);
 	if (!res.ok) throw new Error(`Failed to fetch preview: ${res.status}`);
+	return res.json();
+}
+
+export async function startPreviewApi(
+	sessionId: string,
+): Promise<PreviewStatus> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/preview/start`,
+		{
+			method: "POST",
+		},
+	);
+	if (!res.ok) throw new Error(`Failed to start preview: ${res.status}`);
 	return res.json();
 }
 

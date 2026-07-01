@@ -19,8 +19,8 @@
  * `https://<host>:<httpsPort>`.
  */
 import { $ } from "bun";
-import { existsSync, readFileSync, readlinkSync } from "fs";
-import { join } from "path";
+import { closeSync, existsSync, openSync, readFileSync, readlinkSync } from "fs";
+import { basename, join } from "path";
 
 export interface PreviewService {
   /** Friendly label, e.g. "Webapp". */
@@ -38,9 +38,36 @@ export interface PreviewStatus {
   webappPort: number | null;
   /** Whether the webapp itself is currently listening. */
   running: boolean;
+  /** True while `startPreview` is bringing the dev server up (not yet listening). */
+  starting: boolean;
   /** HTTPS preview URL (Caddy-fronted) when the webapp is up, else null. */
   previewUrl: string | null;
   services: PreviewService[];
+}
+
+// The tella-local skill's idempotent bring-up script. Overridable for testing.
+const ENSURE_UP =
+  process.env.TELLA_LOCAL_ENSURE_UP ||
+  "/home/ubuntu/.claude/skills/tella-local/ensure-up.sh";
+
+// Worktrees with an in-flight `startPreview` (worktreeDir -> started-at ms).
+// Parked on globalThis so it survives --hot reloads. Entries are cleared when
+// the webapp comes up, when the bring-up process exits, or after a TTL (so a
+// crashed/never-finished start eventually stops reporting "starting").
+const gStart = globalThis as unknown as {
+  __previewStarting?: Map<string, number>;
+};
+const starting: Map<string, number> = (gStart.__previewStarting ??= new Map());
+const START_TTL_MS = 5 * 60_000;
+
+function isStarting(worktreeDir: string): boolean {
+  const t = starting.get(worktreeDir);
+  if (t == null) return false;
+  if (Date.now() - t > START_TTL_MS) {
+    starting.delete(worktreeDir);
+    return false;
+  }
+  return true;
 }
 
 const SERVICE_NAMES: Record<string, string> = {
@@ -194,13 +221,56 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
     await removePreviewRoute(httpsPortFor(webapp.port));
   }
 
+  // Once the webapp is listening, the bring-up is done — clear any "starting".
+  if (webapp?.running) starting.delete(worktreeDir);
+
   return {
     hasPortsConf: ports.length > 0,
     webappPort: webapp?.port ?? null,
     running: !!webapp?.running,
+    starting: !webapp?.running && isStarting(worktreeDir),
     previewUrl,
     services,
   };
+}
+
+/**
+ * Bring the session's local dev server up (Tella Local) if it isn't already,
+ * by running the tella-local `ensure-up.sh` against this worktree. The script
+ * is idempotent and self-detaches `just dev` (nohup), but its first-build wait
+ * can take minutes — so we spawn it in the background and return immediately
+ * with `starting: true`. Callers poll `getPreviewStatus` to see it flip to
+ * `running` once the webapp is listening.
+ */
+export async function startPreview(worktreeDir: string): Promise<PreviewStatus> {
+  const status = await getPreviewStatus(worktreeDir);
+  if (status.running || status.starting) return status;
+  if (!existsSync(ENSURE_UP)) return status; // nothing to run
+
+  starting.set(worktreeDir, Date.now());
+  try {
+    const log = openSync(
+      `/tmp/backstage-preview-${basename(worktreeDir)}.log`,
+      "a",
+    );
+    const proc = Bun.spawn(["bash", ENSURE_UP, worktreeDir], {
+      stdout: log,
+      stderr: log,
+      stdin: "ignore",
+    });
+    // Don't hold the event loop open on it, and clear the flag when it exits
+    // (success flips to running via polling; failure/exit stops "starting").
+    proc.unref();
+    proc.exited.then(() => {
+      starting.delete(worktreeDir);
+      try {
+        closeSync(log);
+      } catch {}
+    });
+  } catch {
+    starting.delete(worktreeDir);
+  }
+  return { ...status, starting: true };
 }
 
 /**
@@ -214,6 +284,7 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
  * backstage server (and unrelated worktrees) can never be a target.
  */
 export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
+  starting.delete(worktreeDir); // a stop cancels any in-flight "starting" state
   const ports = readPorts(worktreeDir);
   const pgids = new Set<number>();
   for (const { port } of ports) {

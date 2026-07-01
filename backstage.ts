@@ -66,7 +66,7 @@ import {
 import { getSessionDiff, type SessionDiff } from "./src/server/git-diff";
 import { searchRepoFiles } from "./src/server/file-index";
 import { suggestBranchName } from "./src/server/suggest-branch";
-import { getPreviewStatus, stopPreview } from "./src/server/preview";
+import { getPreviewStatus, startPreview, stopPreview } from "./src/server/preview";
 import {
 	registerSessionControl,
 	type SessionState,
@@ -2352,11 +2352,38 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							hasPortsConf: false,
 							webappPort: null,
 							running: false,
+							starting: false,
 							previewUrl: null,
 							services: [],
 						});
 					}
 					return Response.json(await getPreviewStatus(session.worktreeDir));
+				}
+			}
+
+			// Start the session's dev server (Tella Local) if it isn't up yet.
+			{
+				const m = path.match(
+					/^\/backstage\/api\/sessions\/(.+)\/preview\/start$/,
+				);
+				if (m && req.method === "POST") {
+					const session = findSession(decodeURIComponent(m[1]));
+					if (!session)
+						return Response.json(
+							{ error: "Session not found" },
+							{ status: 404 },
+						);
+					if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
+						return Response.json({
+							hasPortsConf: false,
+							webappPort: null,
+							running: false,
+							starting: false,
+							previewUrl: null,
+							services: [],
+						});
+					}
+					return Response.json(await startPreview(session.worktreeDir));
 				}
 			}
 
@@ -2377,6 +2404,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							hasPortsConf: false,
 							webappPort: null,
 							running: false,
+							starting: false,
 							previewUrl: null,
 							services: [],
 						});
