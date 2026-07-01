@@ -1021,10 +1021,9 @@ body.resizing-x {
 	cursor: pointer;
 }
 .sidebar-band-chevron {
-	font-size: 8px;
-	width: 10px;
-	text-align: center;
 	color: var(--text-faint);
+	flex-shrink: 0;
+	transition: transform 0.15s ease;
 }
 .sidebar-band-toggle:hover .sidebar-band-chevron {
 	color: var(--text);
@@ -1149,22 +1148,36 @@ body.resizing-x {
 	color: var(--text);
 	background: var(--bg-active);
 }
-@media (hover: none) {
-	.sidebar-item-x {
-		display: flex;
-	}
-	/* Reserve room for the always-visible archive button so it clears the inline
-	   timestamp (kept in sync with the button's size in the ≤720px block). */
-	.sidebar-item {
-		padding-right: 42px;
-	}
-}
+/* On touch there's no hover to reveal the archive X, so it stays hidden and the
+   full action set (Rename / Move / Archive) is reached by long-pressing a row,
+   which opens the mobile action sheet (see .mobile-action-sheet). */
 .sidebar-item:hover {
 	background: var(--bg-hover);
+}
+/* A thin divider line slides in at the bottom of the hovered row, inset to match
+   the row's rounded corners. Absolutely positioned so it never shifts layout. */
+.sidebar-item::after {
+	content: "";
+	position: absolute;
+	left: 9px;
+	right: 9px;
+	bottom: 0;
+	height: 1px;
+	background: var(--border);
+	opacity: 0;
+	transition: opacity 0.12s ease;
+	pointer-events: none;
+}
+.sidebar-item:hover::after {
+	opacity: 1;
 }
 .sidebar-item-selected,
 .sidebar-item-selected:hover {
 	background: var(--bg-active);
+}
+/* The selected row owns the eye already; no divider needed under it. */
+.sidebar-item-selected::after {
+	display: none;
 }
 
 .sidebar-item-top {
@@ -1971,6 +1984,75 @@ body.resizing-x {
 	align-items: center;
 	gap: 8px;
 	flex-shrink: 0;
+}
+
+/* Narrow (non-phone) top bar: give the title room first. Drop the "by X" line
+   and shrink the Working pill to just its dot before any action is hidden. */
+.viewer-header-compact .viewer-started-by {
+	display: none;
+}
+.viewer-header-compact .working-label {
+	display: none;
+}
+.viewer-header-compact .working-pill {
+	padding: 4px;
+}
+
+/* ⋯ overflow: the secondary actions collapse in here when they'd otherwise
+   crowd the title. */
+.viewer-overflow {
+	position: relative;
+	display: inline-flex;
+}
+.btn-viewer-overflow {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: none;
+	border: 1px solid var(--border-strong);
+	border-radius: 5px;
+	color: var(--text-dim);
+	padding: 2px 9px;
+	font-size: 16px;
+	line-height: 1;
+}
+.btn-viewer-overflow.active,
+.btn-viewer-overflow:hover {
+	color: var(--accent);
+	border-color: var(--accent);
+	background: var(--accent-soft);
+}
+.viewer-overflow-menu {
+	position: absolute;
+	top: calc(100% + 6px);
+	right: 0;
+	z-index: 50;
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 6px;
+	padding: 8px;
+	background: var(--bg-panel);
+	border: 1px solid var(--border-strong);
+	border-radius: 10px;
+	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+/* Stack the collapsed actions as a tidy full-width list. */
+.viewer-overflow-menu > button,
+.viewer-overflow-menu > .spinoff,
+.viewer-overflow-menu > .spinoff > .btn-panel-toggle,
+.viewer-overflow-menu > .viewer-delete-confirm {
+	width: 100%;
+}
+.viewer-overflow-menu > button,
+.viewer-overflow-menu > .spinoff > .btn-panel-toggle {
+	justify-content: flex-start;
+	text-align: left;
+}
+.viewer-overflow-menu > .viewer-delete-confirm {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
 }
 
 /* presence avatars */
@@ -8535,41 +8617,12 @@ button.preview-open:not(:disabled):hover {
 	cursor: default;
 }
 
-.palette-switch {
-	display: inline-flex;
-	align-items: center;
-	gap: 7px;
-	border: none;
-	background: none;
-	color: var(--text-dim);
-	font-size: 12.5px;
-	font-weight: 500;
-	cursor: pointer;
-	padding: 3px 4px;
-}
-.palette-switch-track {
-	width: 30px;
-	height: 17px;
-	border-radius: 999px;
-	background: var(--border-strong);
+/* Split button: primary Create action + a caret that opens a mode dropdown. */
+.palette-create-split {
 	position: relative;
-	transition: background 0.15s;
-	flex-shrink: 0;
+	display: inline-flex;
+	align-items: stretch;
 }
-.palette-switch-knob {
-	position: absolute;
-	top: 2px;
-	left: 2px;
-	width: 13px;
-	height: 13px;
-	border-radius: 50%;
-	background: #fff;
-	transition: transform 0.15s;
-}
-.palette-switch.is-on { color: var(--text); }
-.palette-switch.is-on .palette-switch-track { background: var(--accent); }
-.palette-switch.is-on .palette-switch-knob { transform: translateX(13px); }
-
 .palette-create {
 	display: inline-flex;
 	align-items: center;
@@ -8595,11 +8648,82 @@ button.preview-open:not(:disabled):hover {
 	font-size: 12px;
 	opacity: 0.65;
 }
+.palette-create-main {
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
+}
+.palette-create-caret {
+	padding: 7px 7px;
+	border-top-left-radius: 0;
+	border-bottom-left-radius: 0;
+	/* Hairline seam between the two segments. */
+	box-shadow: inset 1px 0 0 color-mix(in srgb, var(--bg) 22%, transparent);
+}
+.palette-create-caret.is-open,
+.palette-create-main:disabled + .palette-create-caret {
+	/* Keep the caret usable (to preview modes) even before a prompt is typed. */
+	opacity: 1;
+	cursor: pointer;
+}
+.palette-create-caret svg {
+	transition: transform 0.15s;
+}
+.palette-create-caret.is-open svg {
+	transform: rotate(180deg);
+}
+
+.palette-create-menu {
+	position: absolute;
+	bottom: calc(100% + 6px);
+	right: 0;
+	z-index: 20;
+	min-width: 208px;
+	padding: 5px;
+	background: var(--bg-raised);
+	border: 1px solid var(--border);
+	border-radius: 11px;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+.palette-create-menu-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 9px;
+	width: 100%;
+	padding: 7px 9px;
+	border: none;
+	border-radius: 8px;
+	background: none;
+	color: var(--text);
+	text-align: left;
+	cursor: pointer;
+	transition: background 0.1s;
+}
+.palette-create-menu-item:hover {
+	background: var(--bg);
+}
+.palette-create-menu-check {
+	flex-shrink: 0;
+	margin-top: 1px;
+	color: var(--accent);
+}
+.palette-create-menu-text {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+}
+.palette-create-menu-title {
+	font-size: 13px;
+	font-weight: 600;
+}
+.palette-create-menu-desc {
+	font-size: 11.5px;
+	color: var(--text-dim);
+}
 
 @media (max-width: 560px) {
 	.palette-backdrop { padding-top: 7vh; }
 	.palette-footer { flex-wrap: wrap; }
-	.palette-switch { order: 2; }
 }
 
 /* ── ⌘K session search palette ─────────────────────────────────────────── */
