@@ -54,6 +54,89 @@ const TEAM = [
 	"Thibault",
 ];
 
+/** Undo Slack's HTML-entity escaping of literal &, <, > in user text. */
+function unescapeSlack(s: string): string {
+	return s
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">");
+}
+
+/** Render a plain (non-link) segment: @tags plus bold/italic/code mrkdwn. */
+function renderPlain(seg: string, keyBase: string): React.ReactNode[] {
+	const parts = seg.split(/(@[\w][\w.-]*|\*[^*\n]+\*|_[^_\n]+_|`[^`\n]+`)/g);
+	return parts.map((p, i) => {
+		const key = `${keyBase}-${i}`;
+		if (/^@[\w][\w.-]*$/.test(p))
+			return (
+				<span key={key} className="slack-tag">
+					{p}
+				</span>
+			);
+		if (/^\*[^*\n]+\*$/.test(p)) return <strong key={key}>{p.slice(1, -1)}</strong>;
+		if (/^_[^_\n]+_$/.test(p)) return <em key={key}>{p.slice(1, -1)}</em>;
+		if (/^`[^`\n]+`$/.test(p))
+			return (
+				<code key={key} className="slack-code">
+					{p.slice(1, -1)}
+				</code>
+			);
+		return <React.Fragment key={key}>{unescapeSlack(p)}</React.Fragment>;
+	});
+}
+
+/**
+ * Render Slack message text as React nodes: `<url|label>`/`<url>` become
+ * clickable links, `<#C|name>`/`<!here>` and `@name` become styled tags, and
+ * basic `*bold*`/`_italic_`/`code` mrkdwn is applied. (Server already resolved
+ * `<@id>` → `@First`.)
+ */
+function renderSlackText(text: string): React.ReactNode[] {
+	const out: React.ReactNode[] = [];
+	const re = /<([^>\n]+)>/g;
+	let last = 0;
+	let m: RegExpExecArray | null;
+	let k = 0;
+	while ((m = re.exec(text))) {
+		if (m.index > last) out.push(...renderPlain(text.slice(last, m.index), `p${k}`));
+		const inner = m[1];
+		if (inner.startsWith("#")) {
+			const name = inner.split("|")[1] || inner.slice(1);
+			out.push(
+				<span key={`t${k}`} className="slack-tag">
+					#{name}
+				</span>,
+			);
+		} else if (inner.startsWith("@") || inner.startsWith("!")) {
+			const name = inner.split("|")[1] || inner.slice(1);
+			out.push(
+				<span key={`t${k}`} className="slack-tag">
+					@{name}
+				</span>,
+			);
+		} else {
+			const pipe = inner.indexOf("|");
+			const url = pipe >= 0 ? inner.slice(0, pipe) : inner;
+			const label = pipe >= 0 ? inner.slice(pipe + 1) : inner;
+			out.push(
+				<a
+					key={`l${k}`}
+					className="slack-link"
+					href={url}
+					target="_blank"
+					rel="noreferrer"
+				>
+					{label}
+				</a>,
+			);
+		}
+		last = re.lastIndex;
+		k++;
+	}
+	if (last < text.length) out.push(...renderPlain(text.slice(last), `p${k}`));
+	return out;
+}
+
 /** The active `@`-mention token at the caret, or null. */
 function mentionAt(
 	value: string,
@@ -344,7 +427,9 @@ export function SlackChatPanel({
 									<span className="slack-msg-name">{m.userName}</span>
 									<span className="slack-msg-time">{timeOf(m.ts)}</span>
 								</div>
-								<div className="slack-msg-text">{m.text}</div>
+								<div className="slack-msg-text">
+									{renderSlackText(m.text)}
+								</div>
 							</div>
 						</div>
 					))

@@ -6653,7 +6653,7 @@ a {
 
 /* Reviews: the Slack chat as an additional right sidebar */
 .reviews-chat {
-	width: 360px;
+	width: 720px;
 	flex-shrink: 0;
 	border-left: 1px solid var(--border);
 	background: var(--bg-raised);
@@ -6663,10 +6663,35 @@ a {
 .reviews-chat .slack-panel {
 	flex: 1;
 }
-@media (max-width: 1100px) {
+@media (max-width: 1400px) {
 	.reviews-chat {
 		display: none;
 	}
+}
+
+/* Slack message rich text: links, @/# tags, inline code */
+.slack-link {
+	color: #6a9fb5;
+	text-decoration: none;
+	word-break: break-all;
+}
+.slack-link:hover {
+	text-decoration: underline;
+}
+.slack-tag {
+	color: #6a9fb5;
+	background: rgba(106, 159, 181, 0.14);
+	border-radius: 4px;
+	padding: 0 3px;
+	font-weight: 600;
+}
+.slack-code {
+	font-family: var(--mono);
+	font-size: 12px;
+	background: var(--bg-panel);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 0 4px;
 }
 
 /* People @-mention autocomplete in the Slack composer */
