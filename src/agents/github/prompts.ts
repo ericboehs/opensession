@@ -113,7 +113,8 @@ Instructions:
 1. Run \`gh pr diff ${pr.number}\` and inspect the failing checks (e.g. \`gh pr checks ${pr.number}\`, run the relevant tests/typecheck/lint locally) to understand what needs fixing. Also skim \`gh pr view ${pr.number} --comments\` for any human requests in the conversation not listed above.
 2. Make the smallest correct changes that resolve the findings and the CI failures. Match the surrounding code style. Do NOT make unrelated changes.
 3. Commit your work with a clear message, then push to the PR branch with: \`git push origin HEAD:${pr.headRefName}\`
-4. **Reply in each review thread you addressed** so reviewers see it was handled: for an inline comment with id \`<id>\`, run \`gh api repos/tellahq/tella-fusion/pulls/${pr.number}/comments/<id>/replies -f body="Fixed in <short-sha> — <what you changed>."\` (and a short note if you intentionally didn't act on something). This applies to Greptile and human comments too, not just Michael's.
+4. **Reply in each review thread you addressed** so reviewers see it was handled — start the reply with the literal text \`Fixed in <short-sha>\` (this exact phrasing is what marks the thread resolved): for an inline comment with id \`<id>\`, run \`gh api repos/tellahq/tella-fusion/pulls/${pr.number}/comments/<id>/replies -f body="<!-- michael-fixed -->
+Fixed in <short-sha> — <what you changed>."\`. If you intentionally did NOT act on a comment, reply with your reasoning but do NOT write "Fixed in" (so it stays open for a human). This applies to Greptile and human comments too, not just Michael's.
 5. NEVER merge the PR (\`gh pr merge\` is forbidden) and never force-push over other people's work.
 
 End your turn with a single line in exactly this format so the loop knows whether to continue:

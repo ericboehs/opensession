@@ -77,6 +77,37 @@ export async function githubRequest<T = any>(
   }
 }
 
+/**
+ * GraphQL request (the REST API can't resolve review threads). Same PAT/auth as
+ * the REST helper. Returns the `data` object, or null on any error.
+ */
+export async function githubGraphQL<T = any>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T | null> {
+  if (!GITHUB_TOKEN) return null;
+  try {
+    const resp = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query, variables: variables || {} }),
+    });
+    const json: any = await resp.json().catch(() => null);
+    if (!resp.ok || !json || json.errors) {
+      const msg = json?.errors?.map((e: any) => e.message).join("; ") || `GitHub GraphQL ${resp.status}`;
+      console.warn(`[github] graphql → ${resp.status}: ${msg}`);
+      return null;
+    }
+    return json.data as T;
+  } catch (e: any) {
+    console.warn(`[github] graphql error:`, e);
+    return null;
+  }
+}
+
 // ── Single updating summary comment ──────────────────────────
 
 interface IssueComment {
@@ -245,6 +276,107 @@ export async function submitReview(
     return r2.ok;
   }
   return false;
+}
+
+// ── Review thread resolution (GraphQL) ───────────────────────
+
+/** Hidden marker the auto-fixer stamps on its "Fixed in <sha>" thread replies. */
+export const FIXED_REPLY_MARKER = "<!-- michael-fixed -->";
+
+export interface ReviewThreadComment {
+  login: string;
+  body: string;
+}
+
+export interface ReviewThread {
+  /** GraphQL node id — the handle `resolveReviewThread` needs. */
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  /** login of the thread's first (root) comment author. */
+  rootAuthor: string;
+  /** Every comment in the thread, oldest first (root + replies). */
+  comments: ReviewThreadComment[];
+}
+
+/**
+ * List a PR's review threads with their resolve/outdated state and comments — the
+ * bridge REST doesn't expose. Used to find threads the fixer replied "Fixed in
+ * <sha>" to (so we can resolve them) and to sweep stale outdated bot threads.
+ */
+export async function listReviewThreads(prNumber: number): Promise<ReviewThread[]> {
+  const data = await githubGraphQL<any>(
+    `query($owner:String!,$name:String!,$number:Int!){
+      repository(owner:$owner,name:$name){
+        pullRequest(number:$number){
+          reviewThreads(first:100){
+            nodes{
+              id isResolved isOutdated
+              comments(first:100){ nodes{ author{login} body } }
+            }
+          }
+        }
+      }
+    }`,
+    { owner: "tellahq", name: GITHUB_REPO.split("/")[1], number: prNumber },
+  );
+  const nodes = data?.repository?.pullRequest?.reviewThreads?.nodes;
+  if (!Array.isArray(nodes)) return [];
+  return nodes.map((t: any) => {
+    const comments = (t.comments?.nodes || []).map((c: any) => ({
+      login: c.author?.login || "",
+      body: typeof c.body === "string" ? c.body : "",
+    }));
+    return {
+      id: t.id,
+      isResolved: !!t.isResolved,
+      isOutdated: !!t.isOutdated,
+      rootAuthor: comments[0]?.login || "",
+      comments,
+    };
+  });
+}
+
+/** Mark a single review thread resolved by its node id. */
+export async function resolveReviewThread(threadId: string): Promise<boolean> {
+  const data = await githubGraphQL<any>(
+    `mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ isResolved } } }`,
+    { id: threadId },
+  );
+  return !!data?.resolveReviewThread?.thread?.isResolved;
+}
+
+/** A thread the auto-fixer addressed: it left a "Fixed in <sha>" reply (not the root). */
+function threadWasFixed(t: ReviewThread): boolean {
+  return t.comments.slice(1).some(
+    (c) => c.login === BOT_LOGIN && (c.body.includes(FIXED_REPLY_MARKER) || /(^|\s)fixed in\b/i.test(c.body)),
+  );
+}
+
+/**
+ * Resolve the review threads the auto-fixer addressed — detected by its own "Fixed
+ * in <sha>" reply left in the thread (which the fix prompt instructs it to post).
+ * This ties resolution to a genuine fix reply, so "I intentionally didn't act" notes
+ * (which don't say "Fixed in") are left open for a human. When `alsoOutdatedBotThreads`
+ * is set, also resolves any still-open thread rooted by our own bot account that GitHub
+ * already marked outdated (its finding moved/vanished with the diff) — safe cleanup
+ * that never touches human threads. Idempotent: already-resolved threads are skipped.
+ * Returns the number of threads resolved.
+ */
+export async function resolveAddressedThreads(
+  prNumber: number,
+  alsoOutdatedBotThreads = false,
+): Promise<number> {
+  const threads = await listReviewThreads(prNumber);
+  if (!threads.length) return 0;
+  let resolved = 0;
+  for (const t of threads) {
+    if (t.isResolved) continue;
+    const staleBot = alsoOutdatedBotThreads && t.isOutdated && t.rootAuthor === BOT_LOGIN;
+    if (!threadWasFixed(t) && !staleBot) continue;
+    if (await resolveReviewThread(t.id)) resolved++;
+  }
+  return resolved;
 }
 
 // ── Labels ───────────────────────────────────────────────────

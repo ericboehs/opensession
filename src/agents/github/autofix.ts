@@ -19,7 +19,7 @@ import {
 } from "./state";
 import { runGithubAgent, authorForLogin, sessionUrl } from "./run";
 import { buildAutoFixPrompt } from "./prompts";
-import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, BOT_LOGIN } from "./github-rest";
+import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, resolveAddressedThreads, BOT_LOGIN } from "./github-rest";
 import { LABEL_AUTOFIX } from "./constants";
 import type { PrRef, ReviewResult } from "./review";
 
@@ -238,6 +238,17 @@ export async function runAutoFix(
       await reviewGate(lastPushedSha).catch((e) =>
         console.error(`[github] post-autofix review failed for PR #${pr.number}:`, e),
       );
+    }
+
+    // Mark the review threads the fixer addressed (left a "Fixed in <sha>" reply on)
+    // as resolved, and sweep any of our own now-outdated review threads. Only runs
+    // when the fixer actually pushed — a no-op loop resolves nothing.
+    if (lastPushedSha && lastPushedSha !== baseSha) {
+      const n = await resolveAddressedThreads(pr.number, /*alsoOutdatedBotThreads*/ true).catch((e) => {
+        console.error(`[github] resolving addressed threads failed for PR #${pr.number}:`, e);
+        return 0;
+      });
+      if (n) console.log(`[github] resolved ${n} review thread(s) on PR #${pr.number} after auto-fix`);
     }
   } catch (e) {
     console.error(`[github] auto-fix error for PR #${pr.number}:`, e);
