@@ -882,7 +882,29 @@ export function SessionViewer({
 							}
 							aria-label="Toggle side panel"
 						>
-							<span className="btn-panel-toggle-icon">◨</span>
+							{/* App frame with the right pane filled — reads as "right side panel". */}
+							<svg
+								className="btn-panel-toggle-icon"
+								width="15"
+								height="15"
+								viewBox="0 0 16 16"
+								fill="none"
+								aria-hidden="true"
+							>
+								<rect
+									x="2"
+									y="3"
+									width="12"
+									height="10"
+									rx="1.6"
+									stroke="currentColor"
+									strokeWidth="1.4"
+								/>
+								<path
+									d="M10 3h2.4A1.6 1.6 0 0 1 14 4.6v6.8a1.6 1.6 0 0 1-1.6 1.6H10z"
+									fill="currentColor"
+								/>
+							</svg>
 						</button>
 					)}
 				</div>
