@@ -119,8 +119,6 @@ interface Props {
 	onNavigate: (view: NavView) => void;
 	onSelect: (session: UnifiedSession) => void;
 	onNewSession: () => void;
-	/** Create a new empty Project folder with the given name. */
-	onCreateProject: (name: string) => void;
 	/** Open a project — its chats surface in the top tab strip. */
 	onOpenProject: (id: string) => void;
 	/** Rename a project folder. */
@@ -408,7 +406,6 @@ export function Sidebar({
 	onNavigate,
 	onSelect,
 	onNewSession,
-	onCreateProject,
 	onOpenProject,
 	onRenameProject,
 	onDeleteProject,
@@ -502,16 +499,6 @@ export function Sidebar({
 			if (name) onRenameProject(editingProjectId, name);
 		}
 		setEditingProjectId(null);
-	}
-	// Inline "new project" input — replaces a browser prompt so creating a project
-	// matches the inline rename UI used for existing ones.
-	const [creatingProject, setCreatingProject] = useState(false);
-	const [newProjectDraft, setNewProjectDraft] = useState("");
-	function commitProjectCreate() {
-		const name = newProjectDraft.trim();
-		if (name) onCreateProject(name);
-		setCreatingProject(false);
-		setNewProjectDraft("");
 	}
 	useEffect(() => {
 		if (!projectMenu) return;
@@ -1163,10 +1150,7 @@ export function Sidebar({
 						<Tooltip label="New workspace">
 						<button
 							className="sidebar-new-btn"
-							onClick={() => {
-								setNewProjectDraft("");
-								setCreatingProject(true);
-							}}
+							onClick={onNewSession}
 						>
 							<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
 								<path
@@ -1447,29 +1431,6 @@ export function Sidebar({
 				    header above (which carries the filter, new-workspace and
 				    new-session actions) — no second in-list heading. ── */}
 				<div className="sidebar-group">
-					{creatingProject && (
-						<div className="sidebar-item sidebar-ws-row">
-							<span
-								className="sidebar-group-dot"
-								style={{ backgroundColor: "var(--text-faint)" }}
-							/>
-							<input
-								className="sidebar-item-rename"
-								value={newProjectDraft}
-								autoFocus
-								placeholder="Workspace name"
-								onChange={(e) => setNewProjectDraft(e.target.value)}
-								onBlur={commitProjectCreate}
-								onKeyDown={(e) => {
-									if (e.key === "Enter") commitProjectCreate();
-									else if (e.key === "Escape") {
-										setCreatingProject(false);
-										setNewProjectDraft("");
-									}
-								}}
-							/>
-						</div>
-					)}
 					{/* Status groups over the focus person's workspaces. The Person
 					    filter defaults to you; picking a teammate shows their groups
 					    instead (and hides the People band below). */}

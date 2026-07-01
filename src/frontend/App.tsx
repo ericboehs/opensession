@@ -29,7 +29,6 @@ import {
 	renameSessionApi,
 	fetchNotes,
 	fetchProjects,
-	createProjectApi,
 	updateProjectApi,
 	deleteProjectApi,
 	setSessionProjectApi,
@@ -689,14 +688,6 @@ function App() {
 							}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onNewSession={() => openPalette()}
-							onCreateProject={async (name) => {
-								try {
-									await createProjectApi({ name, user: getCurrentUser() });
-									refreshProjects();
-								} catch (e) {
-									console.error("Create project failed:", e);
-								}
-							}}
 							onOpenProject={(id) => {
 								// Open the workspace's first chat (oldest, matching the tab
 								// strip's order — there's always one post-migration). An empty
