@@ -85,6 +85,24 @@ html[data-theme="light"] .note-chip-note {
 html[data-theme="light"] .note-chip-doc {
 	color: #6f42c1;
 }
+/* Source chips (.source-slack/.linear/.backstage/.ask) use light-on-dark
+   colors for the dark theme; re-tone them to dark-on-light so they stay legible. */
+html[data-theme="light"] .source-slack {
+	background: rgba(122, 43, 124, 0.12);
+	color: #8a2b8c;
+}
+html[data-theme="light"] .source-linear {
+	background: rgba(94, 106, 210, 0.14);
+	color: #4650c0;
+}
+html[data-theme="light"] .source-backstage {
+	background: rgba(13, 148, 136, 0.14);
+	color: #0f766e;
+}
+html[data-theme="light"] .source-ask {
+	background: rgba(210, 153, 34, 0.16);
+	color: #9a6700;
+}
 
 * {
 	box-sizing: border-box;
@@ -409,23 +427,23 @@ a {
 .sidebar-nav {
 	display: flex;
 	flex-direction: column;
-	gap: 1px;
-	padding: 10px 8px 6px;
+	gap: 2px;
+	padding: 10px 10px 6px;
 }
 
 .sidebar-nav-item {
 	display: flex;
 	align-items: center;
-	gap: 9px;
+	gap: 11px;
 	width: 100%;
 	text-align: left;
 	background: none;
 	border: none;
-	border-radius: 6px;
+	border-radius: 8px;
 	color: var(--text-dim);
-	font-size: 13.5px;
-	font-weight: 500;
-	padding: 6px 8px;
+	font-size: 14px;
+	font-weight: 450;
+	padding: 8px 10px;
 }
 .sidebar-nav-item:hover {
 	color: var(--text);
@@ -609,7 +627,7 @@ body.resizing-x {
 	min-width: 0;
 }
 .sidebar-workspace-title {
-	font-size: 13px;
+	font-size: 13.5px;
 	font-weight: 700;
 	letter-spacing: -0.01em;
 	color: var(--text);
@@ -697,10 +715,10 @@ body.resizing-x {
 }
 
 .sidebar-search-wrap {
-	flex: 1;
 	display: flex;
 	align-items: center;
 	gap: 6px;
+	margin: 10px 8px 4px;
 	background: var(--bg-panel);
 	border: 1px solid transparent;
 	border-radius: 7px;
@@ -726,7 +744,7 @@ body.resizing-x {
 	border: none;
 	color: var(--text);
 	padding: 6px 0;
-	font-size: 12.5px;
+	font-size: 14px;
 	outline: none;
 	min-width: 0;
 	cursor: pointer;
@@ -739,27 +757,25 @@ body.resizing-x {
 	font-family: var(--sans);
 	font-size: 10px;
 	color: var(--text-faint);
-	border: 1px solid var(--border-strong);
 	border-radius: 4px;
 	padding: 1px 4px;
 	line-height: 1.3;
 }
 
 .sidebar-new-btn {
-	width: 26px;
-	height: 26px;
-	background: var(--bg-panel);
+	width: 28px;
+	height: 28px;
+	background: none;
 	color: var(--text-dim);
-	border: 1px solid var(--border);
+	border: none;
 	border-radius: 7px;
-	font-size: 15px;
+	font-size: 18px;
 	line-height: 1;
 	font-weight: 500;
 	flex-shrink: 0;
 }
 .sidebar-new-btn:hover {
 	color: var(--text);
-	border-color: var(--border-strong);
 	background: var(--bg-hover);
 }
 
@@ -961,7 +977,7 @@ body.resizing-x {
 }
 
 .sidebar-group {
-	margin-bottom: 12px;
+	margin-bottom: 14px;
 }
 
 /* Extra spacing + a hairline divider where one band ends and the next begins
@@ -976,11 +992,11 @@ body.resizing-x {
    weight, and color so they read as one consistent hierarchy level. */
 .sidebar-band-label,
 .sidebar-mine-label {
-	font-size: 13px;
-	font-weight: 600;
+	font-size: 13.5px;
+	font-weight: 700;
 	letter-spacing: -0.01em;
 	color: var(--text);
-	padding: 2px 6px 6px;
+	padding: 4px 6px 8px;
 }
 
 /* The "Projects" band header carries a trailing New-project (folder-plus)
@@ -990,13 +1006,37 @@ body.resizing-x {
 	align-items: center;
 	gap: 6px;
 }
+/* The Projects band title doubles as a collapse toggle — a bare button that
+   keeps the band-label's type, with a chevron that (unlike group headers) stays
+   visible so the collapsed/expanded state is always legible. */
+.sidebar-band-toggle {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	background: none;
+	border: none;
+	padding: 0;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+.sidebar-band-chevron {
+	font-size: 8px;
+	width: 10px;
+	text-align: center;
+	color: var(--text-faint);
+}
+.sidebar-band-toggle:hover .sidebar-band-chevron {
+	color: var(--text);
+}
+
 .sidebar-band-action {
 	margin-left: auto;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 24px;
-	height: 24px;
+	width: 28px;
+	height: 28px;
 	background: none;
 	border: none;
 	border-radius: 6px;
@@ -1011,19 +1051,19 @@ body.resizing-x {
 .sidebar-group-header {
 	display: flex;
 	align-items: center;
-	gap: 7px;
+	gap: 9px;
 	width: 100%;
 	background: none;
 	border: none;
-	border-radius: 5px;
-	color: var(--text-faint);
-	font-size: 12.5px;
-	font-weight: 600;
-	letter-spacing: 0.01em;
-	padding: 7px 6px 5px;
+	border-radius: 6px;
+	color: var(--text-dim);
+	font-size: 14px;
+	font-weight: 450;
+	letter-spacing: 0;
+	padding: 8px 6px;
 }
 .sidebar-group-header:hover {
-	color: var(--text-dim);
+	color: var(--text);
 }
 
 .sidebar-group-chevron {
@@ -1038,10 +1078,11 @@ body.resizing-x {
 }
 
 .sidebar-group-dot {
-	width: 8px;
-	height: 8px;
+	width: 7px;
+	height: 7px;
 	border-radius: 50%;
 	flex-shrink: 0;
+	opacity: 0.85;
 }
 
 .sidebar-group-name {
@@ -1055,8 +1096,8 @@ body.resizing-x {
 .sidebar-group-count {
 	margin-left: auto;
 	color: var(--text-faint);
-	font-weight: 500;
-	opacity: 0.7;
+	font-size: 12px;
+	font-weight: 450;
 }
 
 .sidebar-item {
@@ -1162,7 +1203,7 @@ body.resizing-x {
 	background: var(--accent-soft);
 }
 .sidebar-item-waiting .sidebar-item-title {
-	font-weight: 550;
+	font-weight: 600;
 }
 
 /* Unread: brighten + embolden the title so it reads as "new", the way an
@@ -1177,8 +1218,9 @@ body.resizing-x {
 }
 
 .sidebar-item-title {
-	font-size: 13.5px;
+	font-size: 14px;
 	font-weight: 450;
+	line-height: 1.35;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1187,7 +1229,7 @@ body.resizing-x {
 
 /* Inline rename input in a sidebar row — matches the title's type. */
 .sidebar-item-rename {
-	font-size: 13.5px;
+	font-size: 14px;
 	font-weight: 450;
 	font-family: inherit;
 	color: inherit;
@@ -1204,8 +1246,8 @@ body.resizing-x {
 	display: flex;
 	align-items: center;
 	gap: 4px;
-	margin-top: 2px;
-	font-size: 11.5px;
+	margin-top: 3px;
+	font-size: 12px;
 	color: var(--text-faint);
 	white-space: nowrap;
 	overflow: hidden;
@@ -1220,7 +1262,7 @@ body.resizing-x {
 	gap: 4px;
 	margin-left: auto;
 	padding-left: 8px;
-	font-size: 11.5px;
+	font-size: 12px;
 	color: var(--text-faint);
 	white-space: nowrap;
 	flex-shrink: 0;
@@ -1657,6 +1699,44 @@ body.resizing-x {
 	}
 	.session-tab:hover .session-tab-pin,
 	.session-tab-active .session-tab-pin {
+		opacity: 1;
+		pointer-events: auto;
+	}
+}
+
+/* Per-tab close (×) — reset the <button> chrome, sit at the tab's trailing
+   edge, and reveal on hover like the pin. Clicking archives the chat. */
+.session-tab-close {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	margin: -2px -3px -2px 0;
+	padding: 0;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--text-dim);
+	font-size: 15px;
+	line-height: 1;
+	font-family: inherit;
+	cursor: pointer;
+	flex-shrink: 0;
+}
+.session-tab-close:hover {
+	background: var(--bg-active);
+	color: var(--text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.session-tab-close {
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.12s ease;
+	}
+	.session-tab:hover .session-tab-close,
+	.session-tab-active .session-tab-close {
 		opacity: 1;
 		pointer-events: auto;
 	}
@@ -8264,7 +8344,7 @@ button.preview-open:not(:disabled):hover {
 	to { opacity: 1; }
 }
 .palette-card {
-	width: min(680px, 100%);
+	width: min(740px, 100%);
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
 	border-radius: 16px;
@@ -8318,9 +8398,9 @@ button.preview-open:not(:disabled):hover {
 	white-space: nowrap;
 }
 .palette-chevron {
-	font-size: 9px;
 	color: var(--text-faint);
 	flex-shrink: 0;
+	margin-left: -2px;
 }
 /* Invisible native <select> stacked over a styled trigger/pill so we get a real
    OS menu without hand-rolling a popover. */
@@ -8416,24 +8496,24 @@ button.preview-open:not(:disabled):hover {
 .palette-effort-icon {
 	display: inline-flex;
 	align-items: flex-end;
-	gap: 1.5px;
-	height: 13px;
+	gap: 2px;
+	height: 15px;
 }
 .palette-effort-icon span {
-	width: 3px;
+	width: 3.5px;
 	background: currentColor;
 	border-radius: 1px;
 }
-.palette-effort-icon span:nth-child(1) { height: 5px; }
-.palette-effort-icon span:nth-child(2) { height: 9px; }
-.palette-effort-icon span:nth-child(3) { height: 13px; }
+.palette-effort-icon span:nth-child(1) { height: 6px; }
+.palette-effort-icon span:nth-child(2) { height: 10px; }
+.palette-effort-icon span:nth-child(3) { height: 15px; }
 
 .palette-icon-btn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 32px;
-	height: 32px;
+	width: 36px;
+	height: 36px;
 	border-radius: 8px;
 	border: 1px solid transparent;
 	background: none;
@@ -8822,6 +8902,9 @@ button.preview-open:not(:disabled):hover {
 	padding: 6px 8px 4px;
 }
 .settings-sidenav-item {
+	display: flex;
+	align-items: center;
+	gap: 9px;
 	background: none;
 	border: none;
 	cursor: pointer;
@@ -8832,9 +8915,22 @@ button.preview-open:not(:disabled):hover {
 	padding: 7px 8px;
 	border-radius: 6px;
 }
+.settings-sidenav-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: 16px;
+	height: 16px;
+	color: var(--text-faint);
+}
 .settings-sidenav-item:hover {
 	color: var(--text);
 	background: var(--bg-hover);
+}
+.settings-sidenav-item:hover .settings-sidenav-icon,
+.settings-sidenav-item.active .settings-sidenav-icon {
+	color: var(--text);
 }
 .settings-sidenav-item.active {
 	color: var(--text);
@@ -9044,6 +9140,63 @@ button.preview-open:not(:disabled):hover {
 .settings-user-check {
 	color: var(--accent);
 	flex-shrink: 0;
+}
+
+/* Account switcher collapsed into a submenu: one trigger row showing who you're
+   acting as, with a flyout list of teammates. */
+.settings-submenu-wrap {
+	position: relative;
+}
+.settings-submenu-trigger {
+	gap: 9px;
+}
+.settings-submenu-trigger.active {
+	background: var(--bg-hover);
+}
+.settings-submenu-trigger-text {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	line-height: 1.2;
+}
+.settings-submenu-label {
+	font-size: 10.5px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--text-faint);
+}
+.settings-submenu-trigger-text .settings-user-name {
+	flex: none;
+	font-size: 13px;
+}
+.settings-submenu-chevron {
+	color: var(--text-faint);
+	flex-shrink: 0;
+}
+.settings-submenu {
+	position: absolute;
+	top: -8px;
+	left: calc(100% + 10px);
+	z-index: 210;
+	min-width: 200px;
+	background: var(--bg-panel);
+	border: 1px solid var(--border-strong);
+	border-radius: 10px;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+	padding: 8px;
+}
+@media (max-width: 640px) {
+	/* No room for a right-side flyout on narrow screens — drop it below the row. */
+	.settings-submenu {
+		position: static;
+		margin-top: 6px;
+		min-width: 0;
+		box-shadow: none;
+		padding: 6px;
+	}
 }
 
 /* Connection status line in the Michael menu (the dot that used to sit inline

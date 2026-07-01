@@ -14,8 +14,14 @@ export function SettingsMenu({
 	connected?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
+	const [userMenuOpen, setUserMenuOpen] = useState(false);
 	const ref = useRef<HTMLDivElement | null>(null);
 	const currentUser = useCurrentUser();
+
+	// Collapse the account-switcher submenu whenever the menu itself closes.
+	useEffect(() => {
+		if (!open) setUserMenuOpen(false);
+	}, [open]);
 
 	// Dismiss on outside click / Escape while open.
 	useEffect(() => {
@@ -25,7 +31,10 @@ export function SettingsMenu({
 				setOpen(false);
 		};
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setOpen(false);
+			if (e.key === "Escape") {
+				if (userMenuOpen) setUserMenuOpen(false);
+				else setOpen(false);
+			}
 		};
 		document.addEventListener("mousedown", onDown);
 		document.addEventListener("keydown", onKey);
@@ -33,7 +42,7 @@ export function SettingsMenu({
 			document.removeEventListener("mousedown", onDown);
 			document.removeEventListener("keydown", onKey);
 		};
-	}, [open]);
+	}, [open, userMenuOpen]);
 
 	return (
 		<div className="settings-menu" ref={ref}>
@@ -58,44 +67,83 @@ export function SettingsMenu({
 			{open && (
 				<div className="settings-dropdown" role="menu">
 					<div className="settings-section">
-						<div className="settings-section-label">Acting as</div>
-						<div className="settings-user-list">
-							{TEAM.map((name) => (
-								<button
-									key={name}
-									className={`settings-user-item${
-										name === currentUser ? " active" : ""
-									}`}
-									role="menuitemradio"
-									aria-checked={name === currentUser}
-									onClick={() => {
-									setCurrentUser(name);
-									setOpen(false);
-								}}
+						<div className="settings-submenu-wrap">
+							<button
+								className={`settings-user-item settings-submenu-trigger${
+									userMenuOpen ? " active" : ""
+								}`}
+								role="menuitem"
+								aria-haspopup="menu"
+								aria-expanded={userMenuOpen}
+								onClick={() => setUserMenuOpen((v) => !v)}
+							>
+								<span className="settings-user-avatar">
+									{currentUser.charAt(0).toUpperCase()}
+								</span>
+								<span className="settings-submenu-trigger-text">
+									<span className="settings-submenu-label">Acting as</span>
+									<span className="settings-user-name">{currentUser}</span>
+								</span>
+								<svg
+									className="settings-submenu-chevron"
+									width="10"
+									height="10"
+									viewBox="0 0 10 10"
+									aria-hidden="true"
 								>
-									<span className="settings-user-avatar">
-										{name.charAt(0).toUpperCase()}
-									</span>
-									<span className="settings-user-name">{name}</span>
-									{name === currentUser && (
-										<svg
-											className="settings-user-check"
-											width="13"
-											height="13"
-											viewBox="0 0 16 16"
-											fill="none"
-										>
-											<path
-												d="M3.5 8.5l3 3 6-7"
-												stroke="currentColor"
-												strokeWidth="1.6"
-												strokeLinecap="round"
-												strokeLinejoin="round"
-											/>
-										</svg>
-									)}
-								</button>
-							))}
+									<path
+										d="M3.5 2L6.5 5L3.5 8"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.5"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+									/>
+								</svg>
+							</button>
+							{userMenuOpen && (
+								<div className="settings-submenu" role="menu">
+									<div className="settings-user-list">
+										{TEAM.map((name) => (
+											<button
+												key={name}
+												className={`settings-user-item${
+													name === currentUser ? " active" : ""
+												}`}
+												role="menuitemradio"
+												aria-checked={name === currentUser}
+												onClick={() => {
+													setCurrentUser(name);
+													setUserMenuOpen(false);
+													setOpen(false);
+												}}
+											>
+												<span className="settings-user-avatar">
+													{name.charAt(0).toUpperCase()}
+												</span>
+												<span className="settings-user-name">{name}</span>
+												{name === currentUser && (
+													<svg
+														className="settings-user-check"
+														width="13"
+														height="13"
+														viewBox="0 0 16 16"
+														fill="none"
+													>
+														<path
+															d="M3.5 8.5l3 3 6-7"
+															stroke="currentColor"
+															strokeWidth="1.6"
+															strokeLinecap="round"
+															strokeLinejoin="round"
+														/>
+													</svg>
+												)}
+											</button>
+										))}
+									</div>
+								</div>
+							)}
 						</div>
 					</div>
 
