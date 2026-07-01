@@ -1316,7 +1316,8 @@ body.resizing-x {
 	flex-shrink: 0;
 }
 .sidebar-status-running {
-	background: var(--green);
+	/* Yellow to match the "In progress" lane — green means "In review". */
+	background: var(--yellow);
 	animation: pulse 1.4s ease-in-out infinite;
 }
 .sidebar-status-waiting {
@@ -9816,12 +9817,18 @@ button.preview-open:not(:disabled):hover {
 }
 
 /* Compact last-activity time on workspace rows (full time in the title
-   tooltip). Yields to the hover actions like the count badge. */
+   tooltip). Yields to the hover actions like the count badge. When a chat
+   count precedes it, the count's own margin-left:auto already pushes the pair
+   to the right edge — the time then keeps just a small fixed gap, otherwise
+   BOTH auto margins would split the free space and strand the count mid-row. */
 .sidebar-ws-time {
 	flex: 0 0 auto;
 	margin-left: auto;
 	font-size: 10.5px;
 	color: var(--text-faint);
+}
+.sidebar-group-count + .sidebar-ws-time {
+	margin-left: 6px;
 }
 .sidebar-ws-row:hover .sidebar-ws-time {
 	display: none;
