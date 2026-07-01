@@ -5,6 +5,7 @@ import { CommentableDiff, type CommentTarget, type PendingComment } from "./Comm
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
 import { renderMarkdown } from "../lib/markdown";
+import { Tooltip } from "./Tooltip";
 
 type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
@@ -215,7 +216,9 @@ export function PrPanel({ sessionId, onOpenSession, split, repos, send }: Props)
         <a className="pr-number" href={pr.url} target="_blank" rel="noopener">
           #{pr.number}
         </a>
-        <button className="btn-icon" onClick={load} title="Refresh">↻</button>
+        <Tooltip label="Refresh PR">
+          <button className="btn-icon" onClick={load}>↻</button>
+        </Tooltip>
       </div>
 
       <a className="pr-title" href={pr.url} target="_blank" rel="noopener">

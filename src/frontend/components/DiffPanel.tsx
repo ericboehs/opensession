@@ -3,6 +3,7 @@ import type { RepoDiff } from "../lib/types";
 import { fetchDiff } from "../lib/api";
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   sessionId: string;
@@ -103,7 +104,9 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
         <span className="diff-add">+{d.totalAdditions}</span>
         <span className="diff-del">−{d.totalDeletions}</span>
         {d.truncated && <span className="diff-truncated">truncated</span>}
-        <button className="btn-icon" onClick={load} title="Refresh diff">↻</button>
+        <Tooltip label="Refresh diff">
+          <button className="btn-icon" onClick={load}>↻</button>
+        </Tooltip>
       </div>
 
       <div className="diff-render">

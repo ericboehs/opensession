@@ -14,6 +14,7 @@ import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
 import { IconChevronDown } from "./icons";
+import { Tooltip } from "./Tooltip";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -877,6 +878,7 @@ export function Sidebar({
 						<span className="sidebar-group-count">{projects.length}</span>
 					)}
 				</button>
+				<Tooltip label="New project">
 				<button
 					className="sidebar-band-action"
 					onClick={() => {
@@ -884,7 +886,6 @@ export function Sidebar({
 						setNewProjectDraft("");
 						setCreatingProject(true);
 					}}
-					title="New project"
 				>
 					<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
 						<path
@@ -901,6 +902,7 @@ export function Sidebar({
 						/>
 					</svg>
 				</button>
+				</Tooltip>
 			</div>
 			{projectsOpen && (
 			<>
@@ -1089,6 +1091,7 @@ export function Sidebar({
 					)}
 					<div className="sidebar-workspace-spacer" />
 					<div className="sidebar-workspace-actions" ref={actionsRef}>
+						<Tooltip label="Group, filter & sort">
 						<button
 							ref={filterBtnRef}
 							className={`sidebar-new-btn sidebar-filter-btn${
@@ -1101,7 +1104,6 @@ export function Sidebar({
 									: ""
 							}`}
 							onClick={() => setFilterOpen((o) => !o)}
-							title="Group, filter & sort"
 						>
 							<svg width="19" height="19" viewBox="0 0 16 16" fill="none">
 								<path
@@ -1112,13 +1114,15 @@ export function Sidebar({
 								/>
 							</svg>
 						</button>
+						</Tooltip>
+						<Tooltip label="New session">
 						<button
 							className="sidebar-new-btn"
 							onClick={onNewSession}
-							title="New session"
 						>
 							+
 						</button>
+						</Tooltip>
 					</div>
 					{/* Off-layout probe: measures the chip's natural width so the effect
 					    above can decide whether it fits inline (never rendered visibly). */}
@@ -1832,7 +1836,7 @@ function SidebarItem({
 		<>
 		<button
 			ref={btnRef}
-			className={`sidebar-item ${selected ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""} ${unread ? "sidebar-item-unread" : ""}`}
+			className={`sidebar-item ${!mine ? "sidebar-item--twoline" : ""} ${selected ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""} ${unread ? "sidebar-item-unread" : ""}`}
 			onClick={(e) => {
 				// Touch taps are handled on touchend (and their ghost click is
 				// preventDefault'd), so this path is the mouse/desktop one. Still

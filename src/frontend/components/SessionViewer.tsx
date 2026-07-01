@@ -36,6 +36,7 @@ import { PlainThreadPanel } from "./PlainThreadPanel";
 import { PreviewButton } from "./PreviewButton";
 import { SpinOffMenu } from "./SpinOffMenu";
 import { IconSidebarRight } from "./icons";
+import { Tooltip } from "./Tooltip";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
 
@@ -767,14 +768,15 @@ export function SessionViewer({
 				// the ⋯ overflow menu when it gets narrow.
 				const collapsibleActions = (
 					<>
-						<button
-							className={`btn-viewer-pin ${pinned ? "active" : ""}`}
-							onClick={() => togglePin(session.id)}
-							title={pinned ? "Unpin tab" : "Pin as tab"}
-							aria-pressed={pinned}
-						>
-							{pinned ? "★" : "☆"}
-						</button>
+						<Tooltip label={pinned ? "Unpin tab" : "Pin as tab"}>
+							<button
+								className={`btn-viewer-pin ${pinned ? "active" : ""}`}
+								onClick={() => togglePin(session.id)}
+								aria-pressed={pinned}
+							>
+								{pinned ? "★" : "☆"}
+							</button>
+						</Tooltip>
 						<button
 							className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
 							onClick={handleShare}
@@ -971,28 +973,31 @@ export function SessionViewer({
 						collapsibleActions
 					)}
 					{panelAvailable && (
-						<button
-							className={`btn-panel-toggle btn-workspace ${panelOpen && subagentStack.length === 0 ? "active" : ""}`}
-							onClick={() => {
-								// The sub-agent panel and Workspace share the right slot; opening
-								// Workspace closes the sub-agent view.
-								if (subagentStack.length > 0) {
-									setSubagentStack([]);
-									setPanelOpen(true);
-								} else {
-									setPanelOpen(!panelOpen);
-								}
-							}}
-							title={
+						<Tooltip
+							label={
 								hasWorkspace
 									? "Toggle side panel (changes, terminal, PR, Plain)"
 									: "Toggle Plain conversation panel"
 							}
-							aria-label="Toggle side panel"
 						>
-							{/* Iconic sidebar-right glyph — reads as "right side panel". */}
-							<IconSidebarRight className="btn-panel-toggle-icon" size={19} />
-						</button>
+							<button
+								className={`btn-panel-toggle btn-workspace ${panelOpen && subagentStack.length === 0 ? "active" : ""}`}
+								onClick={() => {
+									// The sub-agent panel and Workspace share the right slot; opening
+									// Workspace closes the sub-agent view.
+									if (subagentStack.length > 0) {
+										setSubagentStack([]);
+										setPanelOpen(true);
+									} else {
+										setPanelOpen(!panelOpen);
+									}
+								}}
+								aria-label="Toggle side panel"
+							>
+								{/* Iconic sidebar-right glyph — reads as "right side panel". */}
+								<IconSidebarRight className="btn-panel-toggle-icon" size={19} />
+							</button>
+						</Tooltip>
 					)}
 				</div>
 			</div>

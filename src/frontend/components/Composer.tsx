@@ -14,6 +14,7 @@ import {
   IconCrosshair,
   IconChevronDown,
 } from "./icons";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   value: string;
@@ -364,17 +365,18 @@ export function Composer({
 
           {onSetGoal && (
             <div className="composer-pop-wrap">
-              <button
-                type="button"
-                className={`palette-icon-btn composer-goal-btn ${goal ? "is-on" : ""}`}
-                onClick={() => setMenu(menu === "goal" ? null : "goal")}
-                disabled={disabled}
-                title={goal ? `Goal: ${goal}` : "Pin a goal for this session"}
-                aria-pressed={!!goal}
-              >
-                <IconCrosshair size={20} />
-                {goal && <span className="composer-goal-label">Goal</span>}
-              </button>
+              <Tooltip label={goal ? `Goal: ${goal}` : "Pin a goal for this session"}>
+                <button
+                  type="button"
+                  className={`palette-icon-btn composer-goal-btn ${goal ? "is-on" : ""}`}
+                  onClick={() => setMenu(menu === "goal" ? null : "goal")}
+                  disabled={disabled}
+                  aria-pressed={!!goal}
+                >
+                  <IconCrosshair size={20} />
+                  {goal && <span className="composer-goal-label">Goal</span>}
+                </button>
+              </Tooltip>
               {menu === "goal" && (
                 <GoalPopover
                   initial={goal || ""}
@@ -393,17 +395,18 @@ export function Composer({
 
           {canAttach && (
             <div className="composer-pop-wrap">
-              <button
-                type="button"
-                className="palette-icon-btn composer-add-btn"
-                onClick={() => setMenu(menu === "add" ? null : "add")}
-                disabled={disabled}
-                title="Add files or a file reference"
-                aria-label="Add"
-                aria-expanded={menu === "add"}
-              >
-                <IconPlus size={20} />
-              </button>
+              <Tooltip label="Add files or a file reference">
+                <button
+                  type="button"
+                  className="palette-icon-btn composer-add-btn"
+                  onClick={() => setMenu(menu === "add" ? null : "add")}
+                  disabled={disabled}
+                  aria-label="Add"
+                  aria-expanded={menu === "add"}
+                >
+                  <IconPlus size={20} />
+                </button>
+              </Tooltip>
               {menu === "add" && (
                 <div className="composer-menu">
                   <button
@@ -452,26 +455,30 @@ export function Composer({
           )}
 
           {busy && onSteerSend && (
-            <button
-              className="composer-send composer-send-queue"
-              onClick={onSteerSend}
-              disabled={disabled || sendDisabled}
-              title="Fold in at Michael's next stopping point — don't interrupt the current turn"
-            >
-              <IconArrowDownRight size={20} />
-            </button>
+            <Tooltip label="Fold in at Michael's next stopping point — don't interrupt the current turn">
+              <button
+                className="composer-send composer-send-queue"
+                onClick={onSteerSend}
+                disabled={disabled || sendDisabled}
+              >
+                <IconArrowDownRight size={20} />
+              </button>
+            </Tooltip>
           )}
-          <button
-            className={`composer-send ${busy ? "composer-send-interrupt" : ""}`}
-            onClick={onSend}
-            disabled={disabled || sendDisabled}
-            title={
+          <Tooltip
+            label={
               sendTitle ||
               (busy ? "Send now — interrupts the current turn and redirects Michael (Enter)" : "Send (Enter)")
             }
           >
-            {busy ? <IconBolt size={20} /> : <IconArrowUp size={20} />}
-          </button>
+            <button
+              className={`composer-send ${busy ? "composer-send-interrupt" : ""}`}
+              onClick={onSend}
+              disabled={disabled || sendDisabled}
+            >
+              {busy ? <IconBolt size={20} /> : <IconArrowUp size={20} />}
+            </button>
+          </Tooltip>
         </div>
       </div>
       {hint && <div className="composer-hint">{hint}</div>}
