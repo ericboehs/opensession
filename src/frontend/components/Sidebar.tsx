@@ -143,8 +143,16 @@ interface Props {
 	 * to keep a live session open when the active one is archived.
 	 */
 	onArchive: (session: UnifiedSession, next: UnifiedSession | null) => void;
-	/** Archive every chat in a workspace (the row's archive icon). */
-	onArchiveWorkspace: (chats: UnifiedSession[]) => void;
+	/**
+	 * Archive every chat in a workspace (the row's archive icon). `next` is the
+	 * first chat of the workspace row that follows it in the sidebar's visible
+	 * order (or the previous one for the last row) — the caller opens it when
+	 * the active workspace is archived away.
+	 */
+	onArchiveWorkspace: (
+		chats: UnifiedSession[],
+		next: UnifiedSession | null,
+	) => void;
 	/** Rename a session (double-click its title); empty title resets it. */
 	onRename: (session: UnifiedSession, title: string) => void;
 	/** Who's viewing what right now (global presence), for the follow rail. */
@@ -799,6 +807,50 @@ export function Sidebar({
 		onArchive(s, next);
 	}
 
+	// Pinned rows (pinned via their own key or a legacy pin on a member chat)
+	// and the focus person's rows — shared by the list rendering below and by
+	// archive-next, so both always agree on what's actually in the sidebar.
+	const pinnedWsRows = useMemo(() => {
+		const pinSet = new Set(pins);
+		return wsRows.filter(
+			(r) => pinSet.has(r.key) || r.chats.some((c) => pinSet.has(c.id)),
+		);
+	}, [wsRows, pins]);
+	const focusWsRows = useMemo(() => {
+		const pinSet = new Set(pins);
+		const focus =
+			filter.person !== "all" ? filter.person : currentUser.toLowerCase();
+		return wsRows.filter(
+			(r) =>
+				r.owner === focus &&
+				!pinSet.has(r.key) &&
+				!r.chats.some((c) => pinSet.has(c.id)),
+		);
+	}, [wsRows, pins, filter.person, currentUser]);
+
+	// Workspace rows in the sidebar's visual order (Pinned band first, then the
+	// status lanes) — archiveWorkspaceWithNext walks this to pick the row that
+	// should open when the active workspace is archived away.
+	const wsRowOrder = useMemo(
+		() => [
+			...pinnedWsRows,
+			...MINE_STATUS_META.flatMap((meta) =>
+				focusWsRows.filter((r) => r.status === meta.key),
+			),
+		],
+		[pinnedWsRows, focusWsRows],
+	);
+
+	function archiveWorkspaceWithNext(row: WsRow) {
+		// Chatless rows can't be opened, so they're not "next" candidates.
+		const candidates = wsRowOrder.filter((r) => r.chats.length > 0);
+		const idx = candidates.findIndex((r) => r.key === row.key);
+		const rest = candidates.filter((r) => r.key !== row.key);
+		const next =
+			idx >= 0 ? (rest[Math.min(idx, rest.length - 1)] ?? null) : (rest[0] ?? null);
+		onArchiveWorkspace(row.chats, next?.chats[0] ?? null);
+	}
+
 	// Repo groups are open by default (grouping by repo is itself the point), so we
 	// track their *collapsed* state under a "collapsed:" key; every other group is
 	// closed by default and tracked directly.
@@ -1044,12 +1096,12 @@ export function Sidebar({
 							}
 							onClick={(e) => {
 								e.stopPropagation();
-								onArchiveWorkspace(row.chats);
+								archiveWorkspaceWithNext(row);
 							}}
 							onKeyDown={(e) => {
 								if (e.key === "Enter" || e.key === " ") {
 									e.stopPropagation();
-									onArchiveWorkspace(row.chats);
+									archiveWorkspaceWithNext(row);
 								}
 							}}
 						>
@@ -1349,13 +1401,7 @@ export function Sidebar({
 			>
 				{/* ── Pinned (workspaces + notes, mixed) ── */}
 				{(() => {
-					const pinSet = new Set(pins);
-					// A row is pinned via its own key (`workspace:<id>` or a solo chat
-					// id) or via a legacy pin of any member chat.
-					const pinnedRows = wsRows.filter(
-						(r) =>
-							pinSet.has(r.key) || r.chats.some((c) => pinSet.has(c.id)),
-					);
+					const pinnedRows = pinnedWsRows;
 					// Pinned chats that don't map to a workspace row (automation runs).
 					const rowChatIds = new Set(
 						wsRows.flatMap((r) => r.chats.map((c) => c.id)),
@@ -1444,17 +1490,7 @@ export function Sidebar({
 					    filter defaults to you; picking a teammate shows their groups
 					    instead (and hides the People band below). */}
 					{(() => {
-						const pinSet = new Set(pins);
-						const focus =
-							filter.person !== "all"
-								? filter.person
-								: currentUser.toLowerCase();
-						const focusRows = wsRows.filter(
-							(r) =>
-								r.owner === focus &&
-								!pinSet.has(r.key) &&
-								!r.chats.some((c) => pinSet.has(c.id)),
-						);
+						const focusRows = focusWsRows;
 						// Empty status groups are hidden — only lanes with sessions render.
 						return MINE_STATUS_META.map((meta) => {
 							const items = focusRows.filter((r) => r.status === meta.key);

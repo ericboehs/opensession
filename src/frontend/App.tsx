@@ -797,7 +797,7 @@ function App() {
 								}
 								refresh();
 							}}
-							onArchiveWorkspace={async (chats) => {
+							onArchiveWorkspace={async (chats, next) => {
 								// Archive a whole workspace = archive every member chat (the
 								// archive registry is per-chat; the workspace row disappears
 								// once no live chats remain).
@@ -808,11 +808,15 @@ function App() {
 								} catch (e) {
 									console.error("Archive workspace failed:", e);
 								}
+								// Archiving the open workspace shouldn't strand the viewer on
+								// a dead chat — hop to the next workspace in the sidebar.
 								if (
 									route.view === "session" &&
 									chats.some((c) => c.id === route.id)
-								)
-									goBack();
+								) {
+									if (next) navigate({ view: "session", id: next.id });
+									else goBack();
+								}
 								refresh();
 							}}
 							onRename={async (s, title) => {
