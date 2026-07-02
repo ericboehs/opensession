@@ -12,6 +12,7 @@ beforeAll(() => {
 	home = join(tmpdir(), `backstage-sessions-test-${crypto.randomUUID()}`);
 	process.env.HOME = home;
 	mkdirSync(join(home, ".backstage-chats"), { recursive: true });
+	mkdirSync(join(home, ".slack-sessions"), { recursive: true });
 });
 
 afterAll(() => {
@@ -39,6 +40,13 @@ function writeSession(id: string, data: Record<string, unknown>): void {
 			null,
 			2,
 		),
+	);
+}
+
+function writeSlackSession(id: string, data: Record<string, unknown>): void {
+	writeFileSync(
+		join(home, ".slack-sessions", `${id}.json`),
+		JSON.stringify(data, null, 2),
 	);
 }
 
@@ -84,6 +92,40 @@ describe("getAllSessions", () => {
 			repo: "backstage",
 			model: "claude-fable-5",
 			projectId: "prj-demo",
+		});
+	});
+
+	it("deduplicates Codex sessions by thread id and keeps dropped ids as aliases", async () => {
+		writeSession("bks-codex-shared-thread", {
+			title: "Backstage Codex thread",
+			repo: "backstage",
+			model: "gpt-5.5",
+			codexThreadId: "codex-thread-shared",
+		});
+		writeSlackSession("C123-1719860000.000000", {
+			branch: "codex-thread-branch",
+			userId: "Michael",
+			worktreeDir: "/home/ubuntu/projects/tella-backstage",
+			claudeSessionId: null,
+			codexThreadId: "codex-thread-shared",
+			model: "gpt-5.5",
+			channel: "C123",
+			threadTs: "1719860000.000000",
+			createdAt: "2026-07-02T18:01:00.000Z",
+			lastActivity: "2026-07-02T18:01:00.000Z",
+		});
+
+		const { getAllSessions } = await import(`./sessions.ts?test=${crypto.randomUUID()}`);
+		const sessions = getAllSessions();
+		const matches = sessions.filter(
+			(s: UnifiedSession) => s.codexThreadId === "codex-thread-shared",
+		);
+
+		expect(matches).toHaveLength(1);
+		expect(matches[0]).toMatchObject({
+			id: "bks-codex-shared-thread",
+			source: "backstage",
+			aliasIds: ["slack-C123-1719860000.000000"],
 		});
 	});
 

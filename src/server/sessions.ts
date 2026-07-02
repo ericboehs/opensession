@@ -71,6 +71,13 @@ export function engineSessionPatch(
     : { claudeSessionId: engineSessionId || undefined };
 }
 
+function sessionEngineKeys(session: UnifiedSession): string[] {
+  return [
+    session.claudeSessionId ? `claude:${session.claudeSessionId}` : null,
+    session.codexThreadId ? `codex:${session.codexThreadId}` : null,
+  ].filter((key): key is string => !!key);
+}
+
 function findTranscriptPath(
   worktreeDir: string | null,
   sessionId: string | null
@@ -548,8 +555,10 @@ export function getAllSessions(): UnifiedSession[] {
   const backstageSessions = scanBackstageSessions();
   const runningPids = getRunningPids();
 
-  // Merge all sessions, deduplicating by claudeSessionId
-  const byClaudeId = new Map<string, UnifiedSession>();
+  // Merge all sessions, deduplicating by engine id (Claude session or Codex
+  // thread). Keep the one with richer data (backstage > linear > slack), and
+  // preserve dropped ids as aliases for deep links.
+  const byEngineId = new Map<string, UnifiedSession>();
   const allSessions: UnifiedSession[] = [];
 
   for (const session of [
@@ -557,21 +566,22 @@ export function getAllSessions(): UnifiedSession[] {
     ...linearSessions,
     ...slackSessions,
   ]) {
-    if (session.claudeSessionId) {
-      const existing = byClaudeId.get(session.claudeSessionId);
-      if (existing) {
-        // Keep the one with richer data (linear > backstage > slack)
-        // but mark running status from either
-        if (runningPids.has(session.claudeSessionId)) {
-          existing.isRunning = true;
-        }
-        // Keep the dropped ID as an alias so deep links to it (e.g. the
-        // Slack "Open in Backstage" button, which uses slack-<channel>-<ts>)
-        // still resolve to the surviving session.
-        existing.aliasIds = [...(existing.aliasIds || []), session.id];
-        continue;
+    const engineKeys = sessionEngineKeys(session);
+    let existing: UnifiedSession | undefined;
+    for (const key of engineKeys) {
+      existing = byEngineId.get(key);
+      if (existing) break;
+    }
+    if (existing) {
+      if (session.claudeSessionId && runningPids.has(session.claudeSessionId)) {
+        existing.isRunning = true;
       }
-      byClaudeId.set(session.claudeSessionId, session);
+      // Keep the dropped ID as an alias so deep links to it (e.g. the
+      // Slack "Open in Backstage" button, which uses slack-<channel>-<ts>)
+      // still resolve to the surviving session.
+      existing.aliasIds = [...(existing.aliasIds || []), session.id];
+      for (const aliasKey of engineKeys) byEngineId.set(aliasKey, existing);
+      continue;
     }
 
     // Mark running status
@@ -580,6 +590,7 @@ export function getAllSessions(): UnifiedSession[] {
     }
 
     allSessions.push(session);
+    for (const key of engineKeys) byEngineId.set(key, session);
   }
 
   // Enrich with PR URLs and state, matched within the session's own repo so a
