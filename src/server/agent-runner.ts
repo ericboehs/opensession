@@ -264,10 +264,15 @@ type AskHandler = NonNullable<RunAgentOpts["onAskUser"]>;
  * escalation handler) to interactive sessions — without it, a run that was
  * blocked on an ask comes back headless and dead-ends every question. It
  * returns undefined for sessions that should stay headless (automations).
+ *
+ * `inProcessMcpFor` and `reposNoteFor` rebuild trusted interactive context
+ * that is deliberately not serialized into the restart journal.
  */
 export function resumeInterruptedRuns(
   onResumed?: (bksSessionId?: string) => void,
   askHandlerFor?: (bksSessionId: string) => AskHandler | undefined,
+  inProcessMcpFor?: (bksSessionId: string, user?: string) => Record<string, unknown> | undefined,
+  reposNoteFor?: (bksSessionId: string) => string | undefined,
 ): string[] {
   const interrupted = takeInterruptedRuns();
   const resumed: string[] = [];
@@ -302,8 +307,13 @@ export function resumeInterruptedRuns(
             mode: run.mode,
             model: run.model,
             mcpServers: run.mcpServers,
+            inProcessMcp: run.bksSessionId
+              ? inProcessMcpFor?.(run.bksSessionId, run.user)
+              : undefined,
+            reposNote: run.bksSessionId ? reposNoteFor?.(run.bksSessionId) : undefined,
             user: run.user,
             deniedTools: run.deniedTools,
+            confirmTools: run.confirmTools,
             aws: run.aws,
             journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-rerun` },
             onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
@@ -331,8 +341,13 @@ export function resumeInterruptedRuns(
           mode: run.mode,
           model: run.model,
           mcpServers: run.mcpServers,
+          inProcessMcp: run.bksSessionId
+            ? inProcessMcpFor?.(run.bksSessionId, run.user)
+            : undefined,
+          reposNote: run.bksSessionId ? reposNoteFor?.(run.bksSessionId) : undefined,
           user: run.user,
           deniedTools: run.deniedTools,
+          confirmTools: run.confirmTools,
           aws: run.aws,
           journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
           onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,

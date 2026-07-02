@@ -223,6 +223,7 @@ export interface ActiveRunRecord {
   mcpServers?: string[]; // per-run MCP allowlist, preserved across resume
   user?: string; // per-run user, preserved across resume (gates per-user MCP servers)
   deniedTools?: Record<string, string>; // per-run tool denials, preserved across resume
+  confirmTools?: Record<string, string>; // per-run human-confirmed tools, preserved across resume
   aws?: boolean; // whether to inject AWS creds, preserved across resume
   model?: string; // per-session model, preserved across resume (decides the provider)
   kind?: string;
@@ -485,6 +486,7 @@ export async function* runClaude(opts: {
     mcpServers,
     user,
     deniedTools,
+    confirmTools,
     aws,
     model: opts.model,
     kind: journal?.kind,
@@ -974,6 +976,7 @@ export async function* runClaude(opts: {
           mcpServers,
           user,
           deniedTools,
+          confirmTools,
           aws,
           model: opts.model,
           kind: journal?.kind,

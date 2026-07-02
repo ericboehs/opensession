@@ -6333,6 +6333,23 @@ if (!g.__backstageBooted) {
 					return undefined;
 				return makeAskHandler(bksSessionId);
 			},
+			(bksSessionId, user) => {
+				const session = findSession(bksSessionId);
+				if (!session || session.source !== "backstage" || session.automation)
+					return undefined;
+				return session.goalId
+					? {
+							...interactiveMcpServers(user, bksSessionId),
+							"michael-goal-self": createGoalSelfMcpServer(session.goalId),
+						}
+					: interactiveMcpServers(user, bksSessionId);
+			},
+			(bksSessionId) => {
+				const session = findSession(bksSessionId);
+				if (!session || session.source !== "backstage" || session.automation)
+					return undefined;
+				return buildReposNote(session);
+			},
 		);
 		if (resumedIds.length > 0) {
 			console.log(
