@@ -7153,8 +7153,9 @@ html[data-theme="light"] .tool-code-surface {
 	}
 
 	/* The search palette's keyboard chrome (esc badge, ↑↓/↵ hints) is
-	   meaningless on touch — keep only the result count in the footer. */
-	.ss-kbd {
+	   meaningless on touch — keep only the result count in the footer.
+	   (.ss-card qualifier outranks the base .ss-kbd rule further down.) */
+	.ss-card .ss-kbd {
 		display: none;
 	}
 	.ss-hint span:not(.ss-hint-count) {
