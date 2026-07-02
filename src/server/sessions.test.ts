@@ -113,5 +113,12 @@ describe("getAllSessions", () => {
 		expect(engineSessionPatch("codex", threadId)).toEqual({
 			codexThreadId: threadId,
 		});
+		expect({
+			claudeSessionId: "claude-session-1",
+			...engineSessionPatch("codex", threadId),
+		}).toEqual({
+			claudeSessionId: "claude-session-1",
+			codexThreadId: threadId,
+		});
 	});
 });

@@ -2135,12 +2135,14 @@ async function runGoal(goal: Goal): Promise<void> {
 
 		const createdBy = `${goal.name} (goal)`;
 		let effectiveModel = goal.model;
+		let effectiveProvider = providerFor(effectiveModel);
 		const persistSession = (engineSessionId: string) => {
-			const isCodex = providerFor(effectiveModel) === "codex";
 			const data: BackstageSessionFile = {
 				id: bksId,
-				claudeSessionId: isCodex ? "" : engineSessionId,
-				...(isCodex && engineSessionId ? { codexThreadId: engineSessionId } : {}),
+				claudeSessionId: "",
+				...(engineSessionId
+					? engineSessionPatch(effectiveProvider, engineSessionId)
+					: {}),
 				...(effectiveModel ? { model: effectiveModel } : {}),
 				branch: goal.mode === "code" ? branch : "",
 				worktreeDir: cwd,
@@ -2183,6 +2185,7 @@ async function runGoal(goal: Goal): Promise<void> {
 		})) {
 			if (event.type === "init") {
 				engineSessionId = event.sessionId || engineSessionId;
+				if (event.provider) effectiveProvider = event.provider;
 				if (event.model) effectiveModel = event.model;
 				persistSession(engineSessionId);
 				// A goal wake's transcript file is new each wake — attach anyone
@@ -2190,14 +2193,22 @@ async function runGoal(goal: Goal): Promise<void> {
 				if (engineSessionId) {
 					attachSessionWatchersToEngineTranscript(
 						bksId,
-						providerFor(effectiveModel),
+						effectiveProvider,
 						cwd,
 						engineSessionId,
 					);
 				}
 			}
+			if (event.type === "model_switch") {
+				const to = event.toModel || "";
+				if (to) {
+					effectiveModel = to;
+					effectiveProvider = providerFor(to);
+				}
+			}
 			if (event.type === "done") {
 				engineSessionId = event.sessionId || engineSessionId;
+				if (event.provider) effectiveProvider = event.provider;
 				if (event.model) effectiveModel = event.model;
 			}
 			if (event.type === "error") errorMsg = event.content || "Unknown error";
@@ -5394,7 +5405,6 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						const createMcpServers = Array.isArray(msg.mcpServers)
 							? msg.mcpServers.map(String)
 							: undefined;
-						const isCodex = providerFor(model) === "codex";
 						// Which repo this session works in (tella-fusion by default).
 						const repo = getRepo(
 							typeof msg.repo === "string" ? msg.repo : undefined,
@@ -5560,6 +5570,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							}
 
 							let engineSessionId = "";
+							let effectiveModel = model;
+							let effectiveProvider = providerFor(effectiveModel);
+							const modelHistory: NonNullable<
+								BackstageSessionFile["modelHistory"]
+							> = [];
 							let persisted = false;
 							// Terminal failure the opening run died on — recorded after the
 							// loop so the fresh session surfaces as "Needs input".
@@ -5567,11 +5582,12 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							const persist = () => {
 								const sessionData: BackstageSessionFile = {
 									id: bksId,
-									claudeSessionId: isCodex ? "" : engineSessionId,
-									...(isCodex && engineSessionId
-										? { codexThreadId: engineSessionId }
+									claudeSessionId: "",
+									...(engineSessionId
+										? engineSessionPatch(effectiveProvider, engineSessionId)
 										: {}),
-									...(model ? { model } : {}),
+									...(effectiveModel ? { model: effectiveModel } : {}),
+									...(modelHistory.length ? { modelHistory } : {}),
 									branch: forkSource
 										? forkSource.branch || ""
 										: fromPr
@@ -5670,13 +5686,19 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							})) {
 								if (event.type === "init") {
 									engineSessionId = event.sessionId || "";
+									if (event.provider) effectiveProvider = event.provider;
+									if (event.model) effectiveModel = event.model;
 									// Session was persisted/announced before setup — just record
 									// the engine id so the run is resumable while it streams.
 									touchBackstageSession(
 										bksId,
-										isCodex
-											? { codexThreadId: engineSessionId }
-											: { claudeSessionId: engineSessionId },
+										{
+											...engineSessionPatch(
+												effectiveProvider,
+												engineSessionId,
+											),
+											...(effectiveModel ? { model: effectiveModel } : {}),
+										},
 									);
 									// The transcript file didn't exist when viewers sent their
 									// watch (fresh chat) — attach them now so this first turn
@@ -5684,10 +5706,32 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									if (engineSessionId) {
 										attachSessionWatchersToEngineTranscript(
 											bksId,
-											isCodex ? "codex" : "claude",
+											effectiveProvider,
 											wtPath,
 											engineSessionId,
 										);
+									}
+								}
+								if (event.type === "model_switch") {
+									const to = event.toModel || "";
+									const reason = `auto-switch — ${modelLabel(event.fromModel)} out of credits`;
+									if (to) {
+										effectiveModel = to;
+										effectiveProvider = providerFor(to);
+										modelHistory.push({
+											model: to,
+											at: new Date().toISOString(),
+											by: reason,
+										});
+										touchBackstageSession(bksId, {
+											model: to,
+											modelHistory,
+										});
+										emit({
+											type: "model_changed",
+											model: to,
+											by: reason,
+										});
 									}
 								}
 								if (event.type === "text_chunk") {
@@ -5725,6 +5769,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								}
 								if (event.type === "done") {
 									engineSessionId = event.sessionId || engineSessionId;
+									if (event.provider) effectiveProvider = event.provider;
+									if (event.model) effectiveModel = event.model;
 									if (event.usageLimitExhausted)
 										runFailure =
 											event.result || "Usage limit reached on every account";
@@ -5739,9 +5785,14 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							else
 								touchBackstageSession(
 									bksId,
-									isCodex
-										? { codexThreadId: engineSessionId }
-										: { claudeSessionId: engineSessionId },
+									{
+										...engineSessionPatch(
+											effectiveProvider,
+											engineSessionId,
+										),
+										...(effectiveModel ? { model: effectiveModel } : {}),
+										...(modelHistory.length ? { modelHistory } : {}),
+									},
 								);
 							recordRunOutcome(bksId, runFailure);
 							} finally {
@@ -5993,7 +6044,6 @@ registerSessionControl({
 	createSession: async ({ prompt, branch, repo: repoInput, mode, model: modelInput, mcpServers, user }) => {
 		const isAsk = mode !== "code";
 		const model = modelInput ? resolveModel(String(modelInput))?.id : undefined;
-		const isCodex = providerFor(model) === "codex";
 		const repo = getRepo(repoInput);
 
 		let wtPath: string;
@@ -6014,6 +6064,9 @@ registerSessionControl({
 		});
 
 		let engineSessionId = "";
+		let effectiveModel = model;
+		let effectiveProvider = providerFor(effectiveModel);
+		const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
 		let persisted = false;
 		// Terminal failure the opening run died on — recorded after the loop so
 		// the fresh session surfaces as "Needs input".
@@ -6021,11 +6074,12 @@ registerSessionControl({
 		const persist = () => {
 			const sessionData: BackstageSessionFile = {
 				id: bksId,
-				claudeSessionId: isCodex ? "" : engineSessionId,
-				...(isCodex && engineSessionId
-					? { codexThreadId: engineSessionId }
+				claudeSessionId: "",
+				...(engineSessionId
+					? engineSessionPatch(effectiveProvider, engineSessionId)
 					: {}),
-				...(model ? { model } : {}),
+				...(effectiveModel ? { model: effectiveModel } : {}),
+				...(modelHistory.length ? { modelHistory } : {}),
 				branch: isAsk ? "" : branch || "",
 				worktreeDir: wtPath,
 				repo: repo.id,
@@ -6069,6 +6123,8 @@ registerSessionControl({
 				})) {
 					if (event.type === "init") {
 						engineSessionId = event.sessionId || "";
+						if (event.provider) effectiveProvider = event.provider;
+						if (event.model) effectiveModel = event.model;
 						persist();
 						// Attach anyone already viewing this fresh chat to its brand-new
 						// transcript file so the first turn streams live (see
@@ -6076,10 +6132,33 @@ registerSessionControl({
 						if (engineSessionId) {
 							attachSessionWatchersToEngineTranscript(
 								bksId,
-								isCodex ? "codex" : "claude",
+								effectiveProvider,
 								wtPath,
 								engineSessionId,
 							);
+						}
+					}
+					if (event.type === "model_switch") {
+						const to = event.toModel || "";
+						const reason = `auto-switch — ${modelLabel(event.fromModel)} out of credits`;
+						if (to) {
+							effectiveModel = to;
+							effectiveProvider = providerFor(to);
+							modelHistory.push({
+								model: to,
+								at: new Date().toISOString(),
+								by: reason,
+							});
+							touchBackstageSession(bksId, {
+								model: to,
+								modelHistory,
+							});
+							broadcastToSession(bksId, {
+								type: "model_changed",
+								sessionId: bksId,
+								model: to,
+								by: reason,
+							});
 						}
 					}
 					if (event.type === "text_chunk") {
@@ -6127,6 +6206,8 @@ registerSessionControl({
 					}
 					if (event.type === "done") {
 						engineSessionId = event.sessionId || engineSessionId;
+						if (event.provider) effectiveProvider = event.provider;
+						if (event.model) effectiveModel = event.model;
 						if (event.usageLimitExhausted)
 							runFailure =
 								event.result || "Usage limit reached on every account";
@@ -6143,9 +6224,11 @@ registerSessionControl({
 				else
 					touchBackstageSession(
 						bksId,
-						isCodex
-							? { codexThreadId: engineSessionId }
-							: { claudeSessionId: engineSessionId },
+						{
+							...engineSessionPatch(effectiveProvider, engineSessionId),
+							...(effectiveModel ? { model: effectiveModel } : {}),
+							...(modelHistory.length ? { modelHistory } : {}),
+						},
 					);
 				recordRunOutcome(bksId, runFailure);
 				broadcastToSession(bksId, { type: "stream_done", sessionId: bksId });
