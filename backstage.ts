@@ -24,7 +24,10 @@ import {
 	parseTranscriptTail,
 	transcriptMatchSnippet,
 } from "./src/server/jsonl-parser";
-import { buildForkHandoffNote } from "./src/server/fork-handoff";
+import {
+	buildForkHandoffNote,
+	buildEngineSwitchHandoffNote,
+} from "./src/server/fork-handoff";
 import {
 	buildWorkspaceOverview,
 	resolveTranscriptImage,
@@ -1558,6 +1561,51 @@ async function runSessionPromptInner(
 		console.log(`[prompt] ${sessionId}: first claude run (no engine id yet)`);
 	}
 
+	// Cross-provider handoff: the session's model was switched to the other engine
+	// (Fable orchestrator → gpt-5.5 executor, or back) since the last run. The
+	// incoming engine has no memory of the conversation — its thread either never
+	// existed or is stale — so bridge it with the recent transcript from whichever
+	// engine last drove the session. Without this, a mid-session /model switch
+	// across providers drops the agent into a blank continuation. (Same-provider
+	// switches — opus↔sonnet, gpt-5.5↔codex — resume their own thread and need no
+	// bridge.) Recorded provider is set after every run below.
+	const lastProvider = session.lastEngineProvider;
+	let switchHandoff: string | null = null;
+	if (lastProvider && lastProvider !== provider) {
+		const prevEngineId =
+			lastProvider === "codex" ? session.codexThreadId : session.claudeSessionId;
+		const prevTranscriptPath = prevEngineId
+			? getEngineTranscriptPath(
+					session.worktreeDir || `${HOME}/projects/tella-fusion`,
+					prevEngineId,
+					lastProvider,
+				)
+			: null;
+		const prevEntries = prevTranscriptPath
+			? parseTranscript(prevTranscriptPath)
+			: [];
+		if (prevEntries.length) {
+			// Claude coming back to a thread it already ran (engineSessionId set)
+			// remembers everything up to the switch and only needs the interim
+			// turns; a fresh target treats the transcript as the whole conversation.
+			switchHandoff = buildEngineSwitchHandoffNote({
+				// The model that last drove the session is the second-to-last
+				// modelHistory entry (the last is the switch into the current model).
+				fromModel:
+					session.modelHistory && session.modelHistory.length >= 2
+						? session.modelHistory[session.modelHistory.length - 2].model
+						: undefined,
+				fromProvider: lastProvider,
+				toProvider: provider,
+				targetResuming: !!engineSessionId,
+				entries: prevEntries,
+			});
+			console.log(
+				`[prompt] ${sessionId}: cross-provider switch ${lastProvider}→${provider}; bridging ${prevEntries.length} transcript entries`,
+			);
+		}
+	}
+
 	// A cleaned-up worktree makes the SDK spawn fail with a misleading "binary
 	// not found" (ENOENT on the missing cwd) — revive it first. Same path as
 	// before, so resuming the claude session keeps its history.
@@ -1590,6 +1638,9 @@ async function runSessionPromptInner(
 		}
 	}
 	let prompt = content;
+	// Bridge a cross-provider engine switch (computed above) so the incoming
+	// engine continues the conversation instead of starting blank.
+	if (switchHandoff) prompt = `${switchHandoff}\n\n---\n\n${prompt}`;
 	// Non-image attachments: stage to disk and tell the agent where they landed.
 	prompt = withUploadsNote(prompt, stageFileAttachments(sessionId, rawFiles));
 	if (session.goal) {
@@ -1712,6 +1763,7 @@ async function runSessionPromptInner(
 					if (session.source === "backstage") {
 						touchBackstageSession(session.id, {
 							...engineSessionPatch(effectiveProvider, finalSessionId),
+							lastEngineProvider: effectiveProvider,
 							...(effectiveModel ? { model: effectiveModel } : {}),
 						});
 						sessionsCache = null; // new watchers must see the new transcriptPath
@@ -1845,6 +1897,7 @@ async function runSessionPromptInner(
 			session.id,
 			{
 				...engineSessionPatch(effectiveProvider, finalSessionId),
+				lastEngineProvider: effectiveProvider,
 				...(effectiveModel ? { model: effectiveModel } : {}),
 			},
 		);
@@ -2185,6 +2238,9 @@ async function runGoal(goal: Goal): Promise<void> {
 				claudeSessionId: "",
 				...(engineSessionId
 					? engineSessionPatch(effectiveProvider, engineSessionId)
+					: {}),
+				...(engineSessionId
+					? { lastEngineProvider: effectiveProvider }
 					: {}),
 				...(effectiveModel ? { model: effectiveModel } : {}),
 				branch: goal.mode === "code" ? branch : "",
@@ -5628,6 +5684,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									claudeSessionId: "",
 									...(engineSessionId
 										? engineSessionPatch(effectiveProvider, engineSessionId)
+										: {}),
+									// Record the engine that ran so the first later cross-provider
+									// switch bridges context (see runSessionPromptInner handoff).
+									...(engineSessionId
+										? { lastEngineProvider: effectiveProvider }
 										: {}),
 									...(effectiveModel ? { model: effectiveModel } : {}),
 									...(modelHistory.length ? { modelHistory } : {}),

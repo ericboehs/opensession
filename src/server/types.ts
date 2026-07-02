@@ -59,6 +59,9 @@ export interface UnifiedSession {
   model?: string;
   /** Codex thread id, when this session has run on a codex-provider model. */
   codexThreadId?: string;
+  /** Provider whose engine last drove a run — lets the next run detect an
+   *  in-place cross-provider switch and bridge context. */
+  lastEngineProvider?: "claude" | "codex";
   /** /model switches, newest last — rendered as dividers in the conversation. */
   modelHistory?: Array<{ model: string; at: string; by?: string }>;
   goal?: string;
@@ -158,6 +161,10 @@ export interface BackstageSessionFile {
   plainThreadId?: string; // Plain thread this session is triaging
   model?: string; // model id for this session's runs; unset = default
   codexThreadId?: string; // codex thread id once the session has run on a codex model
+  /** Provider whose engine last actually drove a run in this session. Lets the
+   *  next run detect an in-place cross-provider switch (Claude↔Codex) and hand
+   *  the incoming engine a transcript bridge so context carries over. */
+  lastEngineProvider?: "claude" | "codex";
   modelHistory?: Array<{ model: string; at: string; by?: string }>;
   archived?: boolean;
   archivedAt?: string;

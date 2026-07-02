@@ -1265,6 +1265,27 @@ function App() {
 									rightPanelEl={rightPanelEl}
 									newChatSeq={newChatSeq}
 									workspaceChats={projectChats}
+									parentSession={
+										currentSession.parentSessionId
+											? (() => {
+													const p = sessions.find(
+														(s) => s.id === currentSession.parentSessionId,
+													);
+													return p
+														? { id: p.id, title: p.title, model: p.model }
+														: null;
+												})()
+											: null
+									}
+									workerSessions={sessions
+										.filter((s) => s.parentSessionId === currentSession.id)
+										.map((s) => ({
+											id: s.id,
+											title: s.title,
+											model: s.model,
+											isRunning: s.isRunning,
+										}))}
+									onOpenSession={(id) => navigate({ view: "session", id })}
 									onRename={async (id, title) => {
 										try {
 											await renameSessionApi(id, title);

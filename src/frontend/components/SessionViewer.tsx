@@ -45,6 +45,7 @@ import { StagingLink } from "./StagingLink";
 import { WorkspaceInfo } from "./WorkspaceInfo";
 import { SpinOffMenu } from "./SpinOffMenu";
 import { IconSidebarRight, IconTrash, IconArchive } from "./icons";
+import { SessionRelations, type RelatedSession } from "./SessionRelations";
 import { Tooltip } from "../ui/tooltip";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
@@ -82,6 +83,13 @@ interface Props {
 	/** Sibling chats in this chat's workspace (the tab strip's list, oldest
 	    first) — feeds the floating overview panel's cross-chat media. */
 	workspaceChats?: UnifiedSession[];
+	/** Orchestrator this session was delegated from (when it's a worker
+	    sub-session), and the worker sessions it in turn spawned. Powers the
+	    header relationship chips. */
+	parentSession?: RelatedSession | null;
+	workerSessions?: RelatedSession[];
+	/** Navigate to another session (used by the relationship chips). */
+	onOpenSession?: (id: string) => void;
 }
 
 type PanelTab = "changes" | "terminal" | "pr" | "slack" | "plain";
@@ -132,6 +140,9 @@ export function SessionViewer({
 	workspaceName,
 	onRenameWorkspace,
 	workspaceChats,
+	parentSession,
+	workerSessions,
+	onOpenSession,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
@@ -1259,6 +1270,14 @@ export function SessionViewer({
 						>
 							{workspaceName || session.title}
 						</span>
+					)}
+					{onOpenSession && (parentSession || (workerSessions && workerSessions.length > 0)) && (
+						<SessionRelations
+							parent={parentSession}
+							workers={workerSessions}
+							models={models}
+							onOpen={onOpenSession}
+						/>
 					)}
 					{session.archived && (
 						<span className="source-chip source-cli">archived</span>

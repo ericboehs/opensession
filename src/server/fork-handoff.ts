@@ -57,3 +57,49 @@ export function buildForkHandoffNote(input: {
 		.filter(Boolean)
 		.join("\n\n");
 }
+
+/**
+ * Context bridge for an *in-place* engine switch: the same Backstage session
+ * flipped its model from one provider to another (e.g. a Fable orchestrator
+ * handing the wheel to a gpt-5.5 executor, or vice versa). The new engine has
+ * no memory of the conversation so far — its provider's thread/session either
+ * doesn't exist or is stale — so we hand it the recent transcript as a note.
+ *
+ * Unlike buildForkHandoffNote this is not a new session; it is the *continuation*
+ * of an existing one, so the wording tells the new engine to pick up seamlessly
+ * rather than treating it as a branch.
+ */
+export function buildEngineSwitchHandoffNote(input: {
+	fromModel?: string | null;
+	fromProvider: "claude" | "codex";
+	toProvider: "claude" | "codex";
+	/** True when the target engine is resuming its own earlier thread (Claude
+	 *  coming back to a session it ran before) — then it already remembers the
+	 *  turns up to the switch and only needs the other engine's turns since. */
+	targetResuming?: boolean;
+	entries: TranscriptEntry[];
+	maxEntries?: number;
+}): string {
+	const maxEntries = input.maxEntries ?? 14;
+	const useful = input.entries
+		.filter((e) => ["user", "assistant", "system"].includes(e.type))
+		.slice(-maxEntries);
+	const lines = useful.map((e) => `- ${roleLabel(e.type)}: ${clip(e.content)}`);
+
+	const fromLabel = input.fromModel
+		? `${input.fromModel} (${input.fromProvider})`
+		: input.fromProvider;
+
+	return [
+		"## Engine handoff",
+		`This Backstage session was just switched mid-conversation from ${fromLabel} to you. You are continuing the *same* session, not starting a new task.`,
+		input.targetResuming
+			? "You resumed your own earlier thread in this session, so you remember the conversation up to the switch — the transcript below covers the turns the other engine ran in between, which you were not part of."
+			: "The previous engine cannot transfer its internal conversation state to you, so treat the transcript below as the conversation so far and continue seamlessly.",
+		lines.length
+			? `Recent transcript:\n${lines.join("\n")}`
+			: "No prior transcript entries were available.",
+	]
+		.filter(Boolean)
+		.join("\n\n");
+}
