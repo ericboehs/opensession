@@ -271,6 +271,7 @@ function scanBackstageSessions(): UnifiedSession[] {
         (data as { workspaceId?: string | null }).workspaceId ??
         data.projectId ??
         null,
+      parentSessionId: data.parentSessionId,
       attachedRepos: data.attachedRepos,
       automation:
         data.automation ||

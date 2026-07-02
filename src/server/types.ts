@@ -46,6 +46,8 @@ export interface UnifiedSession {
   repo?: string;
   /** Optional Project (folder) this chat belongs to; null/undefined = standalone. */
   projectId?: string | null;
+  /** Parent/orchestrator session when spawned as a worker sub-session. */
+  parentSessionId?: string;
   /** Secondary repos this session also works in (cross-repo sessions). */
   attachedRepos?: AttachedRepo[];
   automation?: string;
@@ -149,6 +151,8 @@ export interface BackstageSessionFile {
   repo?: string; // which repo this chat works in (default "tella-fusion")
   workspaceId?: string | null; // Workspace this chat belongs to (canonical key)
   projectId?: string | null; // legacy alias of workspaceId (dual-read during migration)
+  /** Parent/orchestrator session when this chat was spawned as a visible worker sub-session. */
+  parentSessionId?: string;
   automation?: string; // name of the automation that created this session
 
   plainThreadId?: string; // Plain thread this session is triaging

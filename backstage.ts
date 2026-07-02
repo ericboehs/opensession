@@ -355,7 +355,11 @@ function interactiveMcpServers(
 ): Record<string, unknown> {
 	const createdBy = user || "Backstage";
 	return {
-		"michael-sessions": createSessionsMcpServer({ createdBy, isAdmin: true }),
+		"michael-sessions": createSessionsMcpServer({
+			createdBy,
+			isAdmin: true,
+			currentSessionId: sessionId,
+		}),
 		"michael-admin": createAdminMcpServer({
 			channel: "backstage",
 			userId: user || "backstage",
@@ -6080,10 +6084,20 @@ registerSessionControl({
 		return cancelled;
 	},
 
-	createSession: async ({ prompt, branch, repo: repoInput, mode, model: modelInput, mcpServers, user }) => {
+	createSession: async ({
+		prompt,
+		branch,
+		repo: repoInput,
+		mode,
+		model: modelInput,
+		mcpServers,
+		parentSessionId,
+		user,
+	}) => {
 		const isAsk = mode !== "code";
 		const model = modelInput ? resolveModel(String(modelInput))?.id : undefined;
 		const repo = getRepo(repoInput);
+		const parentSession = parentSessionId ? findSession(parentSessionId) : null;
 
 		let wtPath: string;
 		if (isAsk) {
@@ -6096,6 +6110,20 @@ registerSessionControl({
 
 		const bksId = `bks-${randomUUIDv7()}`;
 		const title = prompt.trim().split("\n")[0].slice(0, 80);
+		let projectId = parentSession?.projectId || null;
+		if (!projectId && parentSession?.source === "backstage") {
+			const ws = createWorkspace({
+				name: parentSession.title || parentSession.branch || "Workspace",
+				repo: parentSession.repo,
+				createdBy: user || parentSession.startedBy || "Anonymous",
+				...(parentSession.branch ? { branch: parentSession.branch } : {}),
+				...(parentSession.worktreeDir
+					? { worktreeDir: parentSession.worktreeDir }
+					: {}),
+			});
+			touchBackstageSession(parentSession.id, { projectId: ws.id });
+			projectId = ws.id;
+		}
 		// Replace the raw first-line title with a short summary in the background;
 		// the next sessions poll (≤5s) picks it up.
 		void ensureGeneratedTitle(bksId, prompt).then((t) => {
@@ -6122,6 +6150,8 @@ registerSessionControl({
 				branch: isAsk ? "" : branch || "",
 				worktreeDir: wtPath,
 				repo: repo.id,
+				...(projectId ? { projectId } : {}),
+				...(parentSessionId ? { parentSessionId } : {}),
 				createdBy: user || "Michael",
 				createdAt: new Date().toISOString(),
 				lastActivity: new Date().toISOString(),

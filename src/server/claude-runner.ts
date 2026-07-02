@@ -889,9 +889,12 @@ export async function* runClaude(opts: {
                   "planning, judgment, review, and user-facing decisions. Do not burn Fable tokens on bulk " +
                   "mechanical work when a cheaper worker can do it well. For clear-spec implementation, broad " +
                   "read-only codebase analysis, migrations, test-log analysis, data crunching, or computer-use " +
-                  "style chores, create a separate Backstage worker session with michael-sessions `create_session` " +
-                  "and set `model` to `gpt-5.5` or `codex`. For workers that only need filesystem/code access, pass " +
-                  "`mcpServers: []` so unrelated external MCP startup does not slow or block them. Set `repo` to the " +
+                  "style chores, use michael-sessions `create_session` to create a visible worker sub-session. " +
+                  "Use a Codex/GPT model for mechanical work, or a Claude model when the worker needs stronger " +
+                  "taste/review/judgment; Codex sessions can likewise create Claude workers. When called from this " +
+                  "session, the worker is linked in the same Backstage workspace and instructed to report back here. " +
+                  "For workers that only need filesystem/code access, keep `mcpServers: []` so " +
+                  "unrelated external MCP startup does not slow or block them. Set `repo` to the " +
                   "registered repo id the worker should inspect or edit, such as `backstage` or `tella-fusion`. Use ask mode for " +
                   "read-only investigation and code mode with a branch for implementation. Give the worker a self-contained prompt with scope, repo/path, " +
                   "acceptance criteria, and what to report back. Keep the final judgment with this orchestrator: " +

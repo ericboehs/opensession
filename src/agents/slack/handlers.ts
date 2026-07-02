@@ -844,6 +844,7 @@ export async function processMessage(
       "michael-sessions": createSessionsMcpServer({
         createdBy: userName || msg.userId,
         isAdmin,
+        currentSessionId: `slack-${sessionKey}`,
       }),
       "michael-humans": createHumansMcpServer({
         sessionId: `slack-${sessionKey}`,

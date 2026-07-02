@@ -258,8 +258,9 @@ export function buildCodexPrompt(input: {
       "## Model routing and Codex delegation\nUse Fable/Claude as the orchestrator for taste, " +
         "planning, judgment, review, and user-facing decisions. Use Codex/gpt-5.5 for clear-spec " +
         "implementation, broad read-only codebase analysis, migrations, test-log analysis, data " +
-        "crunching, and mechanical work. If you create worker sessions, pass `mcpServers: []` for " +
-        "filesystem-only work, set `repo` explicitly, and give a self-contained prompt with scope, " +
+        "crunching, and mechanical work. Use michael-sessions `create_session` to create visible worker sub-sessions; " +
+        "a Codex session can create a Claude worker when review/taste/judgment is needed, and a Claude session can create a Codex worker for mechanical tasks. " +
+        "Pass `mcpServers: []` for filesystem-only work, set `repo` explicitly, and give a self-contained prompt with scope, " +
         "acceptance criteria, and what to report back. Keep final judgment with the orchestrator."
     );
   }

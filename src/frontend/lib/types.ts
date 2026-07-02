@@ -77,6 +77,8 @@ export interface UnifiedSession {
 	repo?: string;
 	/** Optional Project (folder) this chat belongs to; null/undefined = standalone. */
 	projectId?: string | null;
+	/** Parent/orchestrator session when spawned as a worker sub-session. */
+	parentSessionId?: string;
 	/** Secondary repos this session also works in (cross-repo sessions). */
 	attachedRepos?: Array<{ repo: string; branch: string; dir: string }>;
 	automation?: string;

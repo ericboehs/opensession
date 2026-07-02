@@ -29,6 +29,8 @@ export interface SessionsToolContext {
   createdBy: string;
   /** Trusted user — gates the control tools (answer/send/cancel/create). */
   isAdmin: boolean;
+  /** The session using these tools, so worker sessions can report back to it. */
+  currentSessionId?: string;
 }
 
 function text(s: string) {
@@ -74,6 +76,7 @@ function oneLine(s: SessionSummary): string {
   if (s.mode) meta.push(s.mode);
   if (s.model) meta.push(s.model);
   if (s.branch) meta.push(`branch ${s.branch}`);
+  if (s.parentSessionId) meta.push(`child of ${s.parentSessionId}`);
   if (s.startedBy) meta.push(`by ${s.startedBy}`);
   meta.push(relTime(s.lastActivity));
   if (!s.controllable) meta.push("observe-only");
@@ -102,6 +105,23 @@ function fmtTranscriptTail(entries: TranscriptEntry[]): string {
       return `• ${who}: ${body}`;
     })
     .join("\n");
+}
+
+export function buildChildSessionPrompt(input: {
+  prompt: string;
+  parentSessionId?: string;
+  reportBack?: boolean;
+}): string {
+  const parts = [
+    input.prompt.trim(),
+    "You are a worker session delegated by another Michael session. Keep the work narrow: execute the requested investigation/implementation, run relevant checks when practical, and produce a concise result with files changed, commands run, findings, and any blockers. Do not broaden scope or make product/taste decisions unless explicitly asked.",
+  ];
+  if (input.reportBack && input.parentSessionId) {
+    parts.push(
+      `When finished, report back to the parent/orchestrator session \`${input.parentSessionId}\` using the michael-sessions send_to_session tool. Send a concise handoff with: outcome, important files/links, tests/checks run, and any follow-up needed.`
+    );
+  }
+  return parts.join("\n\n");
 }
 
 export function createSessionsMcpServer(ctx: SessionsToolContext) {
@@ -221,7 +241,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
       ),
       tool(
         "create_session",
-        "Spin up a new Backstage session and start it on a prompt. mode 'ask' (default) runs read-only on the selected repo checkout — good for questions/investigations; mode 'code' creates or reuses a worktree on `branch` and can edit files / open PRs (never merges). Pass repo when the worker should run outside the default tella-fusion repo, for example repo: 'backstage'. Pass model 'gpt-5.5' or 'codex' for a Codex worker session when delegating clear implementation, bulk analysis, migrations, logs, or other token-hungry mechanical work from a Fable/Claude orchestrator. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. The run starts in the background; the new session then shows up in list_sessions.",
+        "Spin up a visible Backstage session and start it on a prompt. Use this as the sub-session primitive: Claude/Fable can create Codex workers, Codex can create Claude workers, and either can report back to this parent session. mode 'ask' (default) runs read-only on the selected repo checkout; mode 'code' creates or reuses a worktree on `branch` and can edit files / open PRs (never merges). Pass repo when the worker should run outside the default tella-fusion repo, for example repo: 'backstage'. Pass model 'gpt-5.5'/'codex' for a Codex worker or a Claude model id for a Claude worker. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. When called from a session, the worker defaults to the same workspace and is instructed to report back here; set standalone true or reportBack false to opt out.",
         {
           prompt: z.string().describe("The task/prompt to start the session on."),
           repo: z
@@ -241,6 +261,18 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
             .array(z.string())
             .optional()
             .describe("Optional MCP server allowlist for the opening run. Use [] for no MCP servers."),
+          parentSessionId: z
+            .string()
+            .optional()
+            .describe("Session id this worker should report back to. Defaults to the current session when available."),
+          reportBack: z
+            .boolean()
+            .optional()
+            .describe("Whether to append report-back instructions to the worker prompt. Defaults true when a parent session id is available."),
+          standalone: z
+            .boolean()
+            .optional()
+            .describe("Create an unrelated standalone session instead of a child of the current session."),
         },
         async (args: {
           prompt: string;
@@ -249,22 +281,43 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           branch?: string;
           model?: string;
           mcpServers?: string[];
+          parentSessionId?: string;
+          reportBack?: boolean;
+          standalone?: boolean;
         }) => {
           if (!args.prompt?.trim()) return text("Need a prompt to start a session.");
           if (args.mode === "code" && !args.branch?.trim()) {
             return text("Code mode needs a `branch` for the worktree.");
           }
+          const parentSessionId = args.standalone
+            ? undefined
+            : args.parentSessionId || ctx.currentSessionId;
+          const shouldReportBack = args.reportBack ?? Boolean(parentSessionId);
+          const prompt = parentSessionId
+            ? buildChildSessionPrompt({
+                prompt: args.prompt,
+                parentSessionId,
+                reportBack: shouldReportBack,
+              })
+            : args.prompt;
           const { id } = await getSessionControl().createSession({
-            prompt: args.prompt,
+            prompt,
             repo: args.repo,
             mode: args.mode,
             branch: args.branch,
             model: args.model,
             mcpServers: args.mcpServers,
+            parentSessionId,
+            reportBack: shouldReportBack,
             user: ctx.createdBy,
           });
           return text(
-            `Started session \`${id}\` (${args.mode === "code" ? `code on ${args.branch}` : "ask"}). It'll appear in list_sessions as it boots.`
+            [
+              `Started session \`${id}\` (${args.mode === "code" ? `code on ${args.branch}` : "ask"}). It'll appear in list_sessions as it boots.`,
+              parentSessionId && shouldReportBack
+                ? `It is linked to \`${parentSessionId}\` and has instructions to report back there.`
+                : "",
+            ].filter(Boolean).join(" ")
           );
         }
       )

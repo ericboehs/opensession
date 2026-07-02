@@ -61,6 +61,10 @@ export interface CreateSessionOpts {
   model?: string;
   /** Optional MCP allowlist for the opening run. Empty array means no MCP servers. */
   mcpServers?: string[];
+  /** Parent/orchestrator session id when this is a worker sub-session. */
+  parentSessionId?: string;
+  /** Whether the opening prompt was augmented with parent report-back instructions. */
+  reportBack?: boolean;
   /** Display name credited as the creator. */
   user?: string;
 }
