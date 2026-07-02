@@ -1244,9 +1244,6 @@ export function SessionViewer({
 							{workspaceName || session.title}
 						</span>
 					)}
-					{session.startedBy && (
-						<span className="viewer-started-by">by {session.startedBy}</span>
-					)}
 					{session.archived && (
 						<span className="source-chip source-cli">archived</span>
 					)}
