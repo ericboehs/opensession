@@ -17,6 +17,7 @@ import {
 	deleteSession,
 	getTranscriptPath,
 	getEngineTranscriptPath,
+	engineSessionPatch,
 } from "./src/server/sessions";
 import {
 	parseTranscript,
@@ -1501,6 +1502,8 @@ async function runSessionPromptInner(
 	// the codex thread, claude models the claude session. A missing engine id
 	// just means "first run on this provider" — a fresh thread/session starts.
 	const provider = providerFor(session.model);
+	let effectiveProvider = provider;
+	let effectiveModel = session.model;
 	const engineSessionId =
 		provider === "codex" ? session.codexThreadId : session.claudeSessionId;
 	// A claude session with no engine id yet is a *fresh* chat (e.g. a new sibling
@@ -1655,24 +1658,27 @@ async function runSessionPromptInner(
 	})) {
 		switch (event.type) {
 			case "init":
+				if (event.provider) effectiveProvider = event.provider;
+				if (event.model) effectiveModel = event.model;
 				if (event.sessionId && event.sessionId !== finalSessionId) {
 					finalSessionId = event.sessionId;
 					// The engine session id just changed (first run of a fresh chat, or
 					// a rotation fork): the run writes to a transcript file nobody is
 					// watching yet. Persist + attach NOW — waiting for the run to end
 					// (the old behavior) left the entire turn invisible to viewers.
-					if (provider === "claude") {
-						if (session.source === "backstage") {
-							touchBackstageSession(session.id, {
-								claudeSessionId: finalSessionId,
-							});
-							sessionsCache = null; // new watchers must see the new transcriptPath
-						}
-						attachSessionWatchersToTranscript(
-							sessionId,
-							getTranscriptPath(cwd, finalSessionId),
-						);
+					if (session.source === "backstage") {
+						touchBackstageSession(session.id, {
+							...engineSessionPatch(effectiveProvider, finalSessionId),
+							...(effectiveModel ? { model: effectiveModel } : {}),
+						});
+						sessionsCache = null; // new watchers must see the new transcriptPath
 					}
+					attachSessionWatchersToEngineTranscript(
+						sessionId,
+						effectiveProvider,
+						cwd,
+						finalSessionId,
+					);
 				}
 				break;
 			case "text_chunk":
@@ -1692,6 +1698,10 @@ async function runSessionPromptInner(
 				// onto the fallback so later prompts don't re-hit the exhausted model.
 				const to = event.toModel || "";
 				const reason = `auto-switch — ${modelLabel(event.fromModel)} out of credits`;
+				if (to) {
+					effectiveModel = to;
+					effectiveProvider = providerFor(to);
+				}
 				if (to && session.source === "backstage") {
 					touchBackstageSession(session.id, {
 						model: to,
@@ -1749,6 +1759,8 @@ async function runSessionPromptInner(
 				break;
 			case "done":
 				finalSessionId = event.sessionId || finalSessionId;
+				if (event.provider) effectiveProvider = event.provider;
+				if (event.model) effectiveModel = event.model;
 				// Dying on usage limits with no account left reports as a `done`
 				// whose result is the limit notice (not an `error` event) — but it
 				// still needs a human, so treat it as a failure.
@@ -1788,9 +1800,10 @@ async function runSessionPromptInner(
 	if (session.source === "backstage") {
 		touchBackstageSession(
 			session.id,
-			provider === "codex"
-				? { codexThreadId: finalSessionId || undefined }
-				: { claudeSessionId: finalSessionId || undefined },
+			{
+				...engineSessionPatch(effectiveProvider, finalSessionId),
+				...(effectiveModel ? { model: effectiveModel } : {}),
+			},
 		);
 	}
 

@@ -62,6 +62,15 @@ export function getEngineTranscriptPath(
   return getTranscriptPath(worktreeDir, engineSessionId);
 }
 
+export function engineSessionPatch(
+  provider: "claude" | "codex",
+  engineSessionId: string
+): Partial<BackstageSessionFile> {
+  return provider === "codex"
+    ? { codexThreadId: engineSessionId || undefined }
+    : { claudeSessionId: engineSessionId || undefined };
+}
+
 function findTranscriptPath(
   worktreeDir: string | null,
   sessionId: string | null

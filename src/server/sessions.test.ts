@@ -88,7 +88,7 @@ describe("getAllSessions", () => {
 	});
 
 	it("resolves engine transcript paths for Claude and Codex sessions", async () => {
-		const { getEngineTranscriptPath, getTranscriptPath } = await import(
+		const { getEngineTranscriptPath, getTranscriptPath, engineSessionPatch } = await import(
 			`./sessions.ts?test=${crypto.randomUUID()}`
 		);
 
@@ -96,6 +96,9 @@ describe("getAllSessions", () => {
 		expect(getEngineTranscriptPath(cwd, "claude-session-1", "claude")).toBe(
 			getTranscriptPath(cwd, "claude-session-1"),
 		);
+		expect(engineSessionPatch("claude", "claude-session-1")).toEqual({
+			claudeSessionId: "claude-session-1",
+		});
 
 		const threadId = uuidV7ForDate("2026-07-02T18:30:00.000Z");
 		const rolloutDir = join(home, ".codex", "sessions", "2026", "07", "02");
@@ -107,5 +110,8 @@ describe("getAllSessions", () => {
 		writeFileSync(rolloutPath, "");
 
 		expect(getEngineTranscriptPath(cwd, threadId, "codex")).toBe(rolloutPath);
+		expect(engineSessionPatch("codex", threadId)).toEqual({
+			codexThreadId: threadId,
+		});
 	});
 });
