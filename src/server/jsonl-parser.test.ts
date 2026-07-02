@@ -275,6 +275,38 @@ describe("parseTranscriptFrom", () => {
 });
 
 describe("Codex rollout parsing", () => {
+  it("keeps Codex entry ids stable between full and incremental parses", () => {
+    const lines = [
+      JSON.stringify({
+        timestamp: TS,
+        type: "event_msg",
+        payload: { type: "user_message", message: "Search for docs" },
+      }),
+      JSON.stringify({
+        timestamp: "2026-07-01T10:00:01.000Z",
+        type: "response_item",
+        payload: {
+          type: "web_search_call",
+          action: { query: "Backstage Codex support" },
+        },
+      }),
+      JSON.stringify({
+        timestamp: "2026-07-01T10:00:02.000Z",
+        type: "event_msg",
+        payload: { type: "agent_message", message: "Found the relevant notes." },
+      }),
+    ];
+    const path = writeCodexFixture(lines);
+
+    const full = parseTranscript(path);
+    const incremental = parseTranscriptFrom(path, 0).entries;
+
+    expect(incremental.map((e) => e.id)).toEqual(full.map((e) => e.id));
+    expect(full.map((e) => e.type)).toEqual(["user", "tool_use", "assistant"]);
+    expect(full[1].toolName).toBe("WebSearch");
+    expect(full[1].id).toStartWith("codex-web-");
+  });
+
   it("extracts videos from Codex shell tool output markers", () => {
     const path = writeCodexFixture([
       JSON.stringify({

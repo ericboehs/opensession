@@ -294,6 +294,22 @@ function isCodexRolloutPath(path: string): boolean {
   return path.includes("/rollout-") || path.includes("\\rollout-");
 }
 
+function stableCodexId(prefix: string, raw: any, p: any, extra?: unknown): string {
+  const source = JSON.stringify({
+    ts: raw?.timestamp || "",
+    rawType: raw?.type || "",
+    payloadType: p?.type || "",
+    payloadId: p?.id || p?.call_id || "",
+    extra,
+  });
+  let hash = 2166136261;
+  for (let i = 0; i < source.length; i++) {
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${prefix}-${(hash >>> 0).toString(36)}`;
+}
+
 function parseCodexEntry(raw: any): TranscriptEntry[] {
   const ts = raw.timestamp || new Date().toISOString();
   const p = raw.payload;
@@ -306,7 +322,7 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
         .split("\n\n[Run policy:")[0]
         .split("\n\n[Note: a previous attempt")[0];
       return [{
-        id: crypto.randomUUID(),
+        id: p.id || stableCodexId("codex-user", raw, p, message),
         type: "user",
         content: resolveSlackIds(message),
         timestamp: ts,
@@ -314,7 +330,7 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
     }
     if (p.type === "agent_message" && typeof p.message === "string" && p.message.trim()) {
       return [{
-        id: crypto.randomUUID(),
+        id: p.id || stableCodexId("codex-assistant", raw, p, p.message),
         type: "assistant",
         content: p.message,
         timestamp: ts,
@@ -355,7 +371,7 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
       const content = outputText(p.output);
       const videos = extractBackstageVideos(content);
       return [{
-        id: p.call_id ? `tr-${p.call_id}` : crypto.randomUUID(),
+        id: p.call_id ? `tr-${p.call_id}` : stableCodexId("tr-codex", raw, p, content),
         type: "tool_result",
         content,
         timestamp: ts,
@@ -382,7 +398,7 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
       const content = outputText(p.output);
       const videos = extractBackstageVideos(content);
       return [{
-        id: p.call_id ? `tr-${p.call_id}` : crypto.randomUUID(),
+        id: p.call_id ? `tr-${p.call_id}` : stableCodexId("tr-codex", raw, p, content),
         type: "tool_result",
         content,
         timestamp: ts,
@@ -391,13 +407,15 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
       }];
     }
     if (p.type === "web_search_call") {
+      const toolUseId = p.call_id || p.id;
       return [{
-        id: crypto.randomUUID(),
+        id: toolUseId || stableCodexId("codex-web", raw, p, p.action),
         type: "tool_use",
         content: `Search: ${p.action?.query || ""}`,
         timestamp: ts,
         toolName: "WebSearch",
         toolInput: p.action,
+        ...(toolUseId ? { toolUseId } : {}),
       }];
     }
     return [];
