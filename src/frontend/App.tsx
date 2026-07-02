@@ -478,15 +478,35 @@ function App() {
 	}, [addHandler, refresh, refreshProjects]);
 
 	// Follow mode: whenever the followed teammate's session changes, go along.
-	// Dropping out is explicit (click again) or automatic when they disconnect.
+	// Dropping out is explicit (click again) or implicit — navigating anywhere
+	// else yourself (sidebar click, back button) unfollows, so presence updates
+	// can't keep yanking you back to their session. followNavRef marks route
+	// changes made *by* the follow effect so they don't count as leaving.
+	const followNavRef = useRef(false);
 	useEffect(() => {
 		if (!followUser) return;
 		const target = teamViewing.find((v) => v.user === followUser);
 		if (!target) return;
 		if (route.view === "session" && route.id === target.sessionId) return;
+		followNavRef.current = true;
 		navigate({ view: "session", id: target.sessionId });
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [followUser, teamViewing]);
+
+	// Any route change the follow effect didn't make means the user went
+	// somewhere on their own — stop following.
+	useEffect(() => {
+		if (followNavRef.current) {
+			followNavRef.current = false;
+			return;
+		}
+		if (!followUser) return;
+		const target = teamViewing.find((v) => v.user === followUser);
+		if (target && route.view === "session" && route.id === target.sessionId)
+			return;
+		setFollowUser(null);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [route]);
 
 	// Clear the pending flag once the session shows up in the polled list.
 	useEffect(() => {
