@@ -227,10 +227,13 @@ function App() {
 		window.addEventListener("mouseup", onUp);
 	}
 	// A session we've just navigated to that may not be in the polled list yet
-	// (create → navigate races the async refresh, and the file is only written
-	// once the run's `init` lands). While pending, the detail pane shows
-	// "Loading…" instead of flashing "Session not found".
+	// (create → navigate races the async refresh; the server persists the file
+	// before session_created, so this window is just one list fetch). While
+	// pending, the detail pane shows a "Starting…" state instead of flashing
+	// "Session not found". pendingNewWorkspace words it for a brand-new
+	// workspace vs. a chat added to an existing one.
 	const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+	const [pendingNewWorkspace, setPendingNewWorkspace] = useState(false);
 	// Who's viewing what, app-wide (from global_presence), + follow mode: when
 	// following a teammate, we navigate wherever they go.
 	const [teamViewing, setTeamViewing] = useState<
@@ -457,9 +460,11 @@ function App() {
 				return;
 			}
 			if (msg.type === "session_created") {
-				// Mark it pending so the viewer shows "Loading…" until the poll catches
-				// up; a fallback timeout clears it so a failed create can't stick.
+				// Mark it pending so the viewer shows "Starting…" until the poll
+				// catches up; a fallback timeout clears it so a failed create can't
+				// stick.
 				setPendingSessionId(msg.id);
+				setPendingNewWorkspace(!!msg.newWorkspace);
 				clearTimeout(pendingTimer.current);
 				pendingTimer.current = setTimeout(
 					() => setPendingSessionId(null),
@@ -1054,9 +1059,13 @@ function App() {
 											return (
 												<>
 													<div className="detail-empty-title">
-														{isLoading
-															? "Loading session…"
-															: "Session not found"}
+														{!isLoading
+															? "Session not found"
+															: route.id === pendingSessionId
+																? pendingNewWorkspace
+																	? "Starting a new workspace…"
+																	: "Starting a new chat…"
+																: "Loading session…"}
 													</div>
 													<div className="detail-empty-sub">
 														{isLoading ? "" : "It may have been deleted."}

@@ -298,6 +298,16 @@ async function resolveStartPoint(
 }
 
 /**
+ * The path `createWorktree(branch, repoId)` will produce, without doing any
+ * git work. Lets the create-session flow announce a session (and drop the UI
+ * into its empty chat) before the slow worktree setup actually runs.
+ */
+export function worktreePathFor(branch: string, repoId?: string): string {
+  const repo = getRepo(repoId);
+  return repo.sharedCheckout ? repo.repo : `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
+}
+
+/**
  * Create a worktree for `branch`. By default it branches from
  * `origin/<defaultBranch>`. Pass `opts.base` (e.g. a workspace's branch) to
  * create a *stacked* worktree branched off that ref instead — this is what lets

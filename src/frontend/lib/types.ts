@@ -257,7 +257,13 @@ export type WSServerMessage =
 	| { type: "stream_tool_use"; entry: TranscriptEntry }
 	| { type: "stream_tool_result"; entry: TranscriptEntry }
 	| { type: "stream_done" }
-	| { type: "session_created"; id: string }
+	| {
+			type: "session_created";
+			id: string;
+			workspaceId?: string;
+			/** True when this create made a brand-new workspace (vs. adding a chat). */
+			newWorkspace?: boolean;
+	  }
 	| { type: "notice"; message: string }
 	| { type: "model_changed"; sessionId: string; model: string; by?: string }
 	| {

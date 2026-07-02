@@ -29,6 +29,7 @@ import {
 import {
 	listWorktrees,
 	createWorktree,
+	worktreePathFor,
 	removeWorktree,
 	reviveWorktree,
 	sweepArchivedWorktrees,
@@ -4956,7 +4957,12 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							typeof msg.workspaceId === "string" && msg.workspaceId
 								? getWorkspace(msg.workspaceId)
 								: null;
+						// Whether this create made a brand-new workspace (vs. adding a chat
+						// to an existing one) — echoed on session_created so the client can
+						// word its brief pending state accordingly.
+						let createdWorkspaceNow = false;
 						if (!workspace && msg.createWorkspace) {
+							createdWorkspaceNow = true;
 							workspace = createWorkspace({
 								name:
 									(typeof msg.createWorkspace.name === "string" &&
@@ -4967,8 +4973,17 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								createdBy: user || "Anonymous",
 							});
 						}
+						// Set once the session has been announced to the client (early
+						// session_created) — a later failure must then close out the
+						// stream instead of leaving the just-opened viewer spinning.
+						let announcedId: string | null = null;
 						try {
 							let wtPath: string;
+							// Deferred worktree setup: the git fetch + worktree add +
+							// bun install can take tens of seconds, so the session is
+							// announced on the deterministic path first and the worktree
+							// is created after session_created goes out (below).
+							let needsWorktree = false;
 							if (forkSource) {
 								// Share the source's cwd so the fork sees the same code state.
 								wtPath = forkSource.worktreeDir || repo.repo;
@@ -4988,15 +5003,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								const worktrees = await listWorktrees(repo.id);
 								wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
 								if (!wtPath) {
-									const base =
-										chatMode === "stack" && workspace?.branch
-											? workspace.branch
-											: undefined;
-									wtPath = await createWorktree(
-										branch,
-										repo.id,
-										base ? { base } : undefined,
-									);
+									wtPath = worktreePathFor(branch, repo.id);
+									needsWorktree = true;
 								}
 							}
 							// First code chat materializes the workspace's owned worktree so
@@ -5051,10 +5059,6 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								if (mentionsNote) openingPrompt += `\n\n${mentionsNote}`;
 							}
 
-							ws.send(
-								JSON.stringify({ type: "stream_start", sessionId: bksId }),
-							);
-
 							let engineSessionId = "";
 							let persisted = false;
 							const persist = () => {
@@ -5098,6 +5102,41 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								persisted = true;
 							};
 
+							// Persist + announce BEFORE the slow parts (worktree git work,
+							// engine boot with its MCP connects) so the client drops into
+							// the empty chat immediately — the title fills in from the
+							// background summary and the opening turn streams in when the
+							// engine is up. The starting mark keeps a prompt typed in that
+							// window from double-starting a run (same race as
+							// runSessionPrompt).
+							markSessionStarting(bksId);
+							try {
+								persist();
+								ws.send(
+									JSON.stringify({
+										type: "session_created",
+										id: bksId,
+										...(workspace ? { workspaceId: workspace.id } : {}),
+										...(createdWorkspaceNow ? { newWorkspace: true } : {}),
+									}),
+								);
+								announcedId = bksId;
+								ws.send(
+									JSON.stringify({ type: "stream_start", sessionId: bksId }),
+								);
+
+								if (needsWorktree) {
+									const base =
+										chatMode === "stack" && workspace?.branch
+											? workspace.branch
+											: undefined;
+									await createWorktree(
+										branch,
+										repo.id,
+										base ? { base } : undefined,
+									);
+								}
+
 							for await (const event of runAgent({
 								prompt: openingPrompt,
 								cwd: wtPath,
@@ -5122,10 +5161,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							})) {
 								if (event.type === "init") {
 									engineSessionId = event.sessionId || "";
-									// Persist immediately so the session is visible/shareable while running
-									persist();
-									ws.send(
-										JSON.stringify({ type: "session_created", id: bksId }),
+									// Session was persisted/announced before setup — just record
+									// the engine id so the run is resumable while it streams.
+									touchBackstageSession(
+										bksId,
+										isCodex
+											? { codexThreadId: engineSessionId }
+											: { claudeSessionId: engineSessionId },
 									);
 								}
 								if (event.type === "text_chunk") {
@@ -5200,6 +5242,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										? { codexThreadId: engineSessionId }
 										: { claudeSessionId: engineSessionId },
 								);
+							} finally {
+								unmarkSessionStarting(bksId);
+							}
 
 							ws.send(JSON.stringify({ type: "stream_done" }));
 							broadcastToSession(bksId, { type: "stream_done" }, ws);
@@ -5216,6 +5261,22 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									message: e.message || String(e),
 								}),
 							);
+							// Failure after the early session_created: the client is already
+							// in the session — close out the stream and surface the failure
+							// there instead of leaving the viewer spinning.
+							if (announcedId) {
+								ws.send(JSON.stringify({ type: "stream_done" }));
+								const failNotice = {
+									type: "notice" as const,
+									message: `Session setup failed: ${e.message || String(e)}`,
+								};
+								ws.send(JSON.stringify(failNotice));
+								broadcastToSession(announcedId, failNotice, ws);
+								broadcastToSession(announcedId, {
+									type: "session_status",
+									isRunning: false,
+								});
+							}
 						}
 						break;
 					}
