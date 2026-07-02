@@ -1,18 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import { transcribeClip } from "../lib/api";
-import { IconArrowUp, IconMic, IconX } from "./icons";
+import { IconCheck, IconMic, IconPlus, IconX } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 
 type Phase = "idle" | "recording" | "transcribing";
 
 /** Dictation is capped — this is a chat input, not a memo recorder. */
 const MAX_SECONDS = 120;
-const BAR_COUNT = 44;
+const BAR_COUNT = 72;
 
 /**
  * Wispr-Flow-style dictation control shared by the chat Composer and the
  * New-session palette. Idle it's just a mic button; tapping it swaps the whole
- * input surface for a recording bar (cancel ×, live waveform, elapsed time,
+ * input surface for a compact recording bar (+ lead, live waveform, cancel ×,
  * accept ↑), then a "Transcribing…" bar while the clip runs through
  * /api/transcribe, and finally hands the text to `onText`.
  *
@@ -29,7 +29,6 @@ export function VoiceInput({
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<number[]>([]);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
@@ -124,13 +123,10 @@ export function VoiceInput({
     }
 
     const startedAt = Date.now();
-    setElapsed(0);
     setLevels([]);
     timersRef.current.push(
       window.setInterval(() => {
-        const secs = Math.floor((Date.now() - startedAt) / 1000);
-        setElapsed(secs);
-        if (secs >= MAX_SECONDS) stop(true);
+        if (Date.now() - startedAt >= MAX_SECONDS * 1000) stop(true);
       }, 1000),
     );
     rec.start(250);
@@ -157,9 +153,6 @@ export function VoiceInput({
     }
   }
 
-  const fmt = (s: number) =>
-    `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-
   return (
     <>
       <Tooltip label="Dictate">
@@ -176,37 +169,52 @@ export function VoiceInput({
       {error && phase === "idle" && <div className="voice-error">{error}</div>}
       {phase !== "idle" && (
         <div className="voice-overlay">
-          <button
-            type="button"
-            className="voice-cancel"
-            onClick={() => stop(false)}
-            disabled={phase === "transcribing"}
-            aria-label="Cancel dictation"
-          >
-            <IconX size={22} />
-          </button>
+          <span className="voice-lead" aria-hidden="true">
+            <IconPlus size={22} />
+          </span>
           {phase === "recording" ? (
             <>
+              {/* Full-width track: baseline dots on the quiet/older left, live
+                  bars accumulating on the right by the accept button. */}
               <div className="voice-wave" aria-hidden="true">
                 {Array.from({ length: BAR_COUNT }, (_, i) => {
-                  const l = levels[levels.length - BAR_COUNT + i] ?? 0;
-                  return <span key={i} style={{ height: `${8 + l * 92}%` }} />;
+                  const l = levels[levels.length - BAR_COUNT + i];
+                  const active = l !== undefined;
+                  return (
+                    <span
+                      key={i}
+                      className={active ? "is-live" : ""}
+                      style={{ height: active ? `${16 + l * 84}%` : undefined }}
+                    />
+                  );
                 })}
               </div>
-              <span className="voice-time">{fmt(elapsed)}</span>
-              <button
-                type="button"
-                className="voice-accept"
-                onClick={() => stop(true)}
-                aria-label="Stop and transcribe"
-              >
-                <IconArrowUp size={24} />
-              </button>
+              <Tooltip label="Cancel">
+                <button
+                  type="button"
+                  className="voice-glyph voice-cancel"
+                  onClick={() => stop(false)}
+                  aria-label="Cancel dictation"
+                >
+                  <IconX size={22} />
+                </button>
+              </Tooltip>
+              <Tooltip label="Stop and transcribe">
+                <button
+                  type="button"
+                  className="voice-glyph voice-accept"
+                  onClick={() => stop(true)}
+                  aria-label="Stop and transcribe"
+                >
+                  <IconCheck size={22} />
+                </button>
+              </Tooltip>
             </>
           ) : (
             <>
               <span className="voice-spinner" aria-hidden="true" />
               <span className="voice-status">Transcribing…</span>
+              <span className="voice-wave-spacer" />
             </>
           )}
         </div>

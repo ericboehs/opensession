@@ -10120,87 +10120,91 @@ html[data-theme="light"] .tool-code-surface {
 }
 
 /* ── Voice dictation (VoiceInput: Composer mic + New-session palette mic) ──
-   The mic button sits with the other toolbar icons; while recording /
-   transcribing an overlay bar fills the whole host container (.composer /
-   .palette-card — both position:relative) with cancel ×, live waveform,
-   elapsed time and the accept ↑ button. */
+   While recording / transcribing, a compact bar overlays the host container
+   (.composer / .palette-card — both position:relative): a leading + glyph, a
+   full-width waveform (baseline dots on the quiet left, live bars accruing on
+   the right) and plain × / ✓ glyph buttons. No chunky circles — it reads as
+   one light pill, matching the ChatGPT/Wispr recording row. */
 .voice-overlay {
 	position: absolute;
-	inset: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 54px;
 	z-index: 6;
 	display: flex;
 	align-items: center;
-	gap: 12px;
-	padding: 0 12px 0 10px;
+	gap: 10px;
+	padding: 0 14px 0 12px;
 	background: var(--bg-raised);
-	border-radius: inherit;
+	border-top: 1px solid var(--border);
+	border-radius: 0 0 16px 16px;
 }
-.voice-cancel {
-	width: 38px;
-	height: 38px;
-	border-radius: 50%;
-	background: var(--bg-panel);
-	border: 1px solid var(--border-strong);
-	color: var(--text);
+.voice-lead {
 	display: inline-flex;
 	align-items: center;
-	justify-content: center;
+	color: var(--text-faint);
 	flex-shrink: 0;
-	cursor: pointer;
 }
-.voice-cancel:not(:disabled):hover {
-	border-color: var(--text-faint);
-}
-.voice-cancel:disabled {
-	opacity: 0.4;
-	cursor: default;
-}
+/* Waveform track: a row of thin bars spanning the whole width. Bars without a
+   sample yet render as a 2px baseline dot (the dotted left run); live bars grow
+   from the vertical center. */
 .voice-wave {
 	flex: 1;
 	min-width: 0;
-	height: 38px;
+	height: 100%;
 	display: flex;
 	align-items: center;
-	justify-content: center;
-	gap: 3px;
+	gap: 2px;
 	overflow: hidden;
 }
 .voice-wave span {
-	width: 3px;
-	min-height: 3px;
+	flex: 1 1 0;
+	min-width: 0;
+	width: 2px;
+	max-width: 2px;
+	margin: 0 auto;
+	height: 2px;
 	border-radius: 2px;
+	background: var(--text-faint);
+}
+.voice-wave span.is-live {
 	background: var(--text-dim);
 	transition: height 90ms linear;
 }
-.voice-time {
-	font-size: 12.5px;
-	font-weight: 500;
-	color: var(--text-dim);
-	font-variant-numeric: tabular-nums;
-	flex-shrink: 0;
-}
-.voice-accept {
-	width: 38px;
-	height: 38px;
-	border-radius: 50%;
-	background: var(--accent);
-	color: #fff;
-	border: none;
+/* Plain glyph buttons — no fill, no border; the ✓ picks up the accent. */
+.voice-glyph {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	width: 34px;
+	height: 34px;
+	border: none;
+	background: none;
+	border-radius: 8px;
+	color: var(--text-dim);
 	flex-shrink: 0;
 	cursor: pointer;
-	transition: filter 0.15s, transform 0.1s;
+	transition: color 0.12s, background 0.12s;
+}
+.voice-glyph:hover {
+	background: var(--bg-panel);
+	color: var(--text);
+}
+.voice-accept {
+	color: var(--text);
 }
 .voice-accept:hover {
-	filter: brightness(1.12);
-	transform: scale(1.05);
+	color: var(--accent);
 }
 .voice-status {
 	font-size: 13.5px;
 	font-weight: 500;
 	color: var(--text-dim);
+	flex-shrink: 0;
+}
+.voice-wave-spacer {
+	flex: 1;
 }
 .voice-spinner {
 	width: 16px;
