@@ -101,6 +101,7 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerat
       inProcessMcp: opts.inProcessMcp,
       deniedTools: opts.deniedTools,
       confirmTools: opts.confirmTools,
+      fallbackModel: opts.fallbackModel,
       journal: opts.journal,
       author: opts.author,
       user: opts.user,
@@ -315,6 +316,7 @@ export function resumeInterruptedRuns(
             deniedTools: run.deniedTools,
             confirmTools: run.confirmTools,
             aws: run.aws,
+            fallbackModel: run.fallbackModel,
             journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-rerun` },
             onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
           })) {
@@ -349,6 +351,7 @@ export function resumeInterruptedRuns(
           deniedTools: run.deniedTools,
           confirmTools: run.confirmTools,
           aws: run.aws,
+          fallbackModel: run.fallbackModel,
           journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
           onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
         })) {

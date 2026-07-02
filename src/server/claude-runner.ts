@@ -226,6 +226,7 @@ export interface ActiveRunRecord {
   confirmTools?: Record<string, string>; // per-run human-confirmed tools, preserved across resume
   aws?: boolean; // whether to inject AWS creds, preserved across resume
   model?: string; // per-session model, preserved across resume (decides the provider)
+  fallbackModel?: string; // usage-limit fallback policy, preserved across resume
   kind?: string;
   startedAt: string;
 }
@@ -435,6 +436,8 @@ export async function* runClaude(opts: {
    * visibility. Omitted = anonymous, which sees only unrestricted servers.
    */
   user?: string;
+  /** Usage-limit fallback model chosen by the dispatcher; journaled for resume. */
+  fallbackModel?: string;
   journal?: { bksSessionId?: string; kind?: string };
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
@@ -489,6 +492,7 @@ export async function* runClaude(opts: {
     confirmTools,
     aws,
     model: opts.model,
+    fallbackModel: opts.fallbackModel,
     kind: journal?.kind,
     startedAt: new Date().toISOString(),
   });

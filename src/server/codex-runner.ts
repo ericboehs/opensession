@@ -331,6 +331,8 @@ export async function* runCodex(opts: {
   deniedTools?: Record<string, string>;
   /** No approval bridge on Codex: treated like deniedTools. */
   confirmTools?: Record<string, string>;
+  /** Usage-limit fallback model chosen by the dispatcher; journaled for resume. */
+  fallbackModel?: string;
   /**
    * Crash/restart journal entry. Omit for callers with their own replay
    * mechanism (the Slack queue re-delivers interrupted messages itself).
@@ -345,7 +347,7 @@ export async function* runCodex(opts: {
   /** Trusted interactive michael-* SDK MCP servers; exposed to Codex through stdio proxies. */
   inProcessMcp?: Record<string, unknown>;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, model, mcpServers, images, reposNote, deniedTools, confirmTools, journal, busyKeys, author, user, inProcessMcp } = opts;
+  const { prompt, sessionId, cwd, mode, model, mcpServers, images, reposNote, deniedTools, confirmTools, fallbackModel, journal, busyKeys, author, user, inProcessMcp } = opts;
   const isAsk = mode === "ask";
 
   const runKey = sessionId || journal?.bksSessionId || busyKeys?.[0] || crypto.randomUUID();
@@ -381,6 +383,7 @@ export async function* runCodex(opts: {
       confirmTools,
       aws: false,
       model,
+      fallbackModel,
       kind: journal.kind,
       startedAt: new Date().toISOString(),
     });
@@ -516,6 +519,7 @@ export async function* runCodex(opts: {
                 confirmTools,
                 aws: false,
                 model,
+                fallbackModel,
                 kind: journal.kind,
                 startedAt: new Date().toISOString(),
               });

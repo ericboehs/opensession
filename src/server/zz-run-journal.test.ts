@@ -30,6 +30,8 @@ describe("run journal", () => {
 			mcpServers: [],
 			deniedTools: { mcp__danger__delete: "No deletes" },
 			confirmTools: { mcp__stripe__create_refund: "Create a refund" },
+			model: "claude-fable-5",
+			fallbackModel: "gpt-5.5",
 			startedAt: "2026-07-02T00:00:00.000Z",
 		});
 
@@ -38,6 +40,7 @@ describe("run journal", () => {
 			mcp__stripe__create_refund: "Create a refund",
 		});
 		expect(run.deniedTools).toEqual({ mcp__danger__delete: "No deletes" });
+		expect(run.fallbackModel).toBe("gpt-5.5");
 		expect(mod.activeRunRecords()).toEqual([]);
 	});
 });
