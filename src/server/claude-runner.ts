@@ -18,9 +18,19 @@ const CLAUDE_ACCOUNTS_DIR = `${CLAUDE_DIR}/accounts`;
 const CLAUDE_ACTIVE_ACCOUNT_PATH = `${CLAUDE_ACCOUNTS_DIR}/.active`;
 
 export interface StreamEvent {
-  type: "init" | "text_chunk" | "tool_use" | "tool_result" | "done" | "error";
+  type:
+    | "init"
+    | "text_chunk"
+    | "tool_use"
+    | "tool_result"
+    | "done"
+    | "error"
+    | "model_switch";
   sessionId?: string;
   text?: string;
+  /** On a model_switch: the exhausted model and the fallback it switched to. */
+  fromModel?: string;
+  toModel?: string;
   toolName?: string;
   toolInput?: unknown;
   toolUseId?: string;

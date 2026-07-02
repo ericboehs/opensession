@@ -42,6 +42,7 @@ export const DEFAULT_CODEX_MODEL = "gpt-5.5";
  */
 const HOME = process.env.HOME || "/home/ubuntu";
 const DEFAULT_MODEL_STORE = `${HOME}/.backstage-default-model.json`;
+const FALLBACK_AUTO_STORE = `${HOME}/.backstage-model-fallback.json`;
 
 // undefined = not yet loaded from disk; null = no override set.
 let overrideCache: string | null | undefined;
@@ -103,7 +104,44 @@ export const DEFAULT_FALLBACK_MODEL: string | undefined = (() => {
 })();
 
 /**
- * Fallback model for an *interactive* session running on `primaryModel`.
+ * Whether interactive sessions auto-switch to a fallback model when the primary
+ * runs out of usage credits pool-wide. On (the default) = the session drops to
+ * another model and keeps going; off ("manual") = the run stops on the limit
+ * notice and the human picks the next model. Persisted so the choice survives a
+ * restart; read fresh per run so a UI toggle takes effect without one.
+ *
+ * Stored as { auto: boolean } in FALLBACK_AUTO_STORE. Independent of
+ * MICHAEL_FALLBACK_MODEL=none, which hard-disables fallback everywhere (incl.
+ * agents/automations); this toggle only governs interactive sessions.
+ */
+let fallbackAutoCache: boolean | undefined;
+
+export function getModelFallbackAuto(): boolean {
+  if (fallbackAutoCache !== undefined) return fallbackAutoCache;
+  try {
+    if (existsSync(FALLBACK_AUTO_STORE)) {
+      const raw = JSON.parse(readFileSync(FALLBACK_AUTO_STORE, "utf8"));
+      fallbackAutoCache = raw?.auto !== false; // default on for anything but explicit false
+    } else {
+      fallbackAutoCache = true;
+    }
+  } catch {
+    fallbackAutoCache = true;
+  }
+  return fallbackAutoCache;
+}
+
+export function setModelFallbackAuto(auto: boolean): boolean {
+  fallbackAutoCache = auto;
+  try {
+    writeJsonAtomic(FALLBACK_AUTO_STORE, { auto });
+  } catch {}
+  return auto;
+}
+
+/**
+ * Fallback model for an *interactive* session running on `primaryModel`, or
+ * undefined when auto-switch is off (manual) or fallback is hard-disabled.
  *
  * Fable has its own (small) weekly cap that's separate from the account's
  * general 5-hour / 7-day capacity — so a Fable session can exhaust Fable
@@ -115,6 +153,7 @@ export const DEFAULT_FALLBACK_MODEL: string | undefined = (() => {
  */
 export function interactiveFallbackModel(primaryModel?: string): string | undefined {
   if (DEFAULT_FALLBACK_MODEL === undefined) return undefined;
+  if (!getModelFallbackAuto()) return undefined;
   const primary = resolveModel(primaryModel || getDefaultModel());
   if (primary?.id === "claude-fable-5") return "claude-sonnet-5";
   return DEFAULT_FALLBACK_MODEL;

@@ -92,6 +92,8 @@ import {
 	formatModelList,
 	DEFAULT_FALLBACK_MODEL,
 	interactiveFallbackModel,
+	getModelFallbackAuto,
+	setModelFallbackAuto,
 } from "./src/server/models";
 import {
 	listCodexAccountsPublic,
@@ -1617,6 +1619,34 @@ async function runSessionPromptInner(
 					text: event.text,
 				});
 				break;
+			case "model_switch": {
+				// The primary model ran out of credits pool-wide and the runner
+				// switched this session to a fallback (auto-switch is on). Record it
+				// the same way a manual /model switch is recorded — a persisted
+				// modelHistory entry (durable inline divider on reload) plus a live
+				// model_changed broadcast (pill + divider now) — and move the session
+				// onto the fallback so later prompts don't re-hit the exhausted model.
+				const to = event.toModel || "";
+				const reason = `auto-switch — ${modelLabel(event.fromModel)} out of credits`;
+				if (to && session.source === "backstage") {
+					touchBackstageSession(session.id, {
+						model: to,
+						modelHistory: [
+							...(session.modelHistory || []),
+							{ model: to, at: new Date().toISOString(), by: reason },
+						],
+					});
+					sessionsCache = null;
+				}
+				if (to)
+					broadcastToSession(sessionId, {
+						type: "model_changed",
+						sessionId,
+						model: to,
+						by: reason,
+					});
+				break;
+			}
 			case "tool_use":
 				broadcastToSession(sessionId, {
 					type: "stream_tool_use",
@@ -4598,7 +4628,21 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json({
 					models: KNOWN_MODELS,
 					default: getDefaultModel(),
+					autoFallback: getModelFallbackAuto(),
 				});
+			}
+
+			// Toggle interactive auto model-switch (manual vs auto) on running out
+			// of credits. { auto: boolean }.
+			if (path === "/backstage/api/models/auto-fallback" && req.method === "PUT") {
+				const body = await req.json().catch(() => null);
+				if (!body || typeof body.auto !== "boolean") {
+					return Response.json(
+						{ error: "auto (boolean) is required" },
+						{ status: 400 },
+					);
+				}
+				return Response.json({ autoFallback: setModelFallbackAuto(body.auto) });
 			}
 
 			// Suggest a branch name from a task prompt (one no-tools Haiku call).

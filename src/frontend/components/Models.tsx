@@ -56,6 +56,7 @@ export function ModelsPanel() {
 			<div className="settings-group-label">Default model</div>
 			<div className="setting-card">
 				<DefaultModelRow />
+				<AutoFallbackRow />
 			</div>
 
 			<ClaudeAccountsSection />
@@ -146,6 +147,74 @@ function DefaultModelRow() {
 						</optgroup>
 					)}
 				</select>
+			</div>
+		</div>
+	);
+}
+
+// ── Auto model-switch on out-of-credits ─────────────────────────────────────
+
+/**
+ * Manual vs auto: when a session's model runs out of usage credits pool-wide,
+ * either drop it to a fallback model and keep going (auto, the default) or stop
+ * on the limit notice and let the human pick the next model (manual). Global,
+ * read fresh per run. The switch is always announced in the chat as a divider.
+ */
+function AutoFallbackRow() {
+	const [auto, setAuto] = useState<boolean | null>(null);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		fetch("/backstage/api/models")
+			.then((r) => (r.ok ? r.json() : null))
+			.then((body) => body && setAuto(body.autoFallback !== false))
+			.catch(() => {});
+	}, []);
+
+	async function toggle(next: boolean) {
+		if (saving) return;
+		setSaving(true);
+		setError(null);
+		const prev = auto;
+		setAuto(next); // optimistic
+		try {
+			const res = await fetch("/backstage/api/models/auto-fallback", {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ auto: next }),
+			});
+			const body = await res.json();
+			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+			setAuto(body.autoFallback);
+		} catch (e: any) {
+			setError(e.message);
+			setAuto(prev ?? null);
+		}
+		setSaving(false);
+	}
+
+	const on = auto ?? true;
+	return (
+		<div className="setting-row">
+			<div className="setting-row-text">
+				<div className="setting-row-title">Auto-switch when out of credits</div>
+				<div className="setting-row-desc">
+					{error ||
+						"When a model runs out of usage credits, keep the session going on another model (Fable → Sonnet, otherwise the cross-provider fallback) instead of stopping. Off = the run halts and you pick the next model. Either way the switch shows in the chat."}
+				</div>
+			</div>
+			<div className="setting-row-control">
+				<button
+					role="switch"
+					aria-checked={on}
+					aria-label="Auto-switch model when out of credits"
+					className={`ui-switch ${on ? "on" : ""}`}
+					disabled={auto === null || saving}
+					onClick={() => toggle(!on)}
+				>
+					<span className="ui-switch-knob" />
+				</button>
 			</div>
 		</div>
 	);

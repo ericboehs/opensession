@@ -123,6 +123,10 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     const crossProvider = providerFor(opts.model) !== fallback.provider;
     const primaryName = opts.model || getDefaultModel();
     console.warn(`[runner] ${primaryName} exhausted on all accounts; falling back to ${fallback.id}`);
+    // Structured cue: interactive sessions turn this into a durable model-switch
+    // divider + model pill update (backstage.ts run loop). Other consumers ignore
+    // it and rely on the human-readable text line below.
+    yield { type: "model_switch", fromModel: primaryName, toModel: fallback.id };
     yield {
       type: "text_chunk",
       text: `\n\n[runner] ${primaryName} usage exhausted on all accounts; falling back to ${fallback.id}.\n\n`,
