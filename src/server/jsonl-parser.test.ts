@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  extractBackstageVideos,
   parseTranscript,
   parseTranscriptFrom,
   parseTranscriptTail,
@@ -23,6 +24,12 @@ afterAll(() => {
  *  the module's mtime/size parse cache from ever colliding between tests). */
 function writeFixture(lines: string[]): string {
   const path = join(dir, `transcript-${++fileCounter}.jsonl`);
+  writeFileSync(path, lines.map((l) => l + "\n").join(""));
+  return path;
+}
+
+function writeCodexFixture(lines: string[]): string {
+  const path = join(dir, `rollout-${++fileCounter}-thread.jsonl`);
   writeFileSync(path, lines.map((l) => l + "\n").join(""));
   return path;
 }
@@ -264,5 +271,62 @@ describe("parseTranscriptFrom", () => {
     const { entries } = parseTranscriptFrom(path, offset);
     const tail = entries.slice(-2).map((e) => e.type);
     expect(tail).toEqual(["tool_result", "assistant"]);
+  });
+});
+
+describe("Codex rollout parsing", () => {
+  it("extracts videos from Codex shell tool output markers", () => {
+    const path = writeCodexFixture([
+      JSON.stringify({
+        timestamp: TS,
+        type: "response_item",
+        payload: {
+          type: "local_shell_call_output",
+          call_id: "call_shell_1",
+          output: "recorded\nBACKSTAGE_VIDEO: /tmp/backstage-demo.mp4\n",
+        },
+      }),
+    ]);
+
+    const entries = parseTranscript(path);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe("tool_result");
+    expect(entries[0].toolUseId).toBe("call_shell_1");
+    expect(entries[0].videos).toEqual([
+      "/backstage/media?path=%2Ftmp%2Fbackstage-demo.mp4",
+    ]);
+  });
+
+  it("extracts videos from Codex MCP tool output markers", () => {
+    const path = writeCodexFixture([
+      JSON.stringify({
+        timestamp: TS,
+        type: "response_item",
+        payload: {
+          type: "function_call_output",
+          call_id: "call_mcp_1",
+          output: { output: "ok\nBACKSTAGE_VIDEO: /var/tmp/mcp-recording.webm\n" },
+        },
+      }),
+    ]);
+
+    const entries = parseTranscript(path);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe("tool_result");
+    expect(entries[0].toolUseId).toBe("call_mcp_1");
+    expect(entries[0].videos).toEqual([
+      "/backstage/media?path=%2Fvar%2Ftmp%2Fmcp-recording.webm",
+    ]);
+  });
+});
+
+describe("extractBackstageVideos", () => {
+  it("returns media URLs for absolute BACKSTAGE_VIDEO markers", () => {
+    expect(
+      extractBackstageVideos("before\nBACKSTAGE_VIDEO: /tmp/capture-one.mp4\nBACKSTAGE_VIDEO: /tmp/second.webm")
+    ).toEqual([
+      "/backstage/media?path=%2Ftmp%2Fcapture-one.mp4",
+      "/backstage/media?path=%2Ftmp%2Fsecond.webm",
+    ]);
   });
 });

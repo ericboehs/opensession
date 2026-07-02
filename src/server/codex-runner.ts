@@ -37,6 +37,7 @@ import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
+import { extractBackstageVideos } from "./jsonl-parser";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
@@ -556,6 +557,7 @@ export async function* runCodex(opts: {
             }
             const result = describeToolResult(item);
             if (result !== null) {
+              const videos = extractBackstageVideos(result);
               turnEvent({
                 direction: "in",
                 kind: "tool_result",
@@ -566,6 +568,7 @@ export async function* runCodex(opts: {
                 type: "tool_result",
                 toolUseId: item.id,
                 content: result.length > 500 ? result.slice(0, 500) + "..." : result,
+                ...(videos.length > 0 ? { videos } : {}),
               };
             }
           }

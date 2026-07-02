@@ -88,7 +88,7 @@ function extractImages(content: any): string[] {
 // into a /backstage/media URL the frontend streams. Used by tella-local rec.mjs.
 const VIDEO_MARKER = /^\s*BACKSTAGE_VIDEO:\s*(\/\S+)\s*$/gm;
 
-function extractVideos(text: string): string[] {
+export function extractBackstageVideos(text: string): string[] {
   if (!text) return [];
   const out: string[] = [];
   for (const m of text.matchAll(VIDEO_MARKER)) {
@@ -146,7 +146,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
                     .join("\n")
                 : "";
           const images = extractImages(block.content);
-          const videos = extractVideos(resultText);
+          const videos = extractBackstageVideos(resultText);
           // A Task/Agent result carries the spawned sub-agent's id on the line's
           // toolUseResult; attach it so the UI can open the sub-agent transcript.
           const agentId = raw.toolUseResult?.agentId;
@@ -352,12 +352,15 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
       }];
     }
     if (p.type === "function_call_output" || p.type === "custom_tool_call_output") {
+      const content = outputText(p.output);
+      const videos = extractBackstageVideos(content);
       return [{
         id: crypto.randomUUID(),
         type: "tool_result",
-        content: outputText(p.output),
+        content,
         timestamp: ts,
         toolUseId: p.call_id,
+        ...(videos.length > 0 ? { videos } : {}),
       }];
     }
     // Shell commands
@@ -376,12 +379,15 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
       }];
     }
     if (p.type === "local_shell_call_output") {
+      const content = outputText(p.output);
+      const videos = extractBackstageVideos(content);
       return [{
         id: crypto.randomUUID(),
         type: "tool_result",
-        content: outputText(p.output),
+        content,
         timestamp: ts,
         toolUseId: p.call_id,
+        ...(videos.length > 0 ? { videos } : {}),
       }];
     }
     if (p.type === "web_search_call") {
