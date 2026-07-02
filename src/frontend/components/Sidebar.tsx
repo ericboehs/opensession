@@ -1120,6 +1120,11 @@ export function Sidebar({
 			e.preventDefault();
 			if (row.workspace) onOpenProject(row.workspace.id);
 			else if (row.chats[0]) onSelect(row.chats[0]);
+		} else if (wsLongPressed.current) {
+			// Release after a long-press: the workspace menu is already open at
+			// the touch point — swallow any ghost click so it can't land on the
+			// menu (or a document close listener) and immediately dismiss it.
+			e.preventDefault();
 		}
 	}
 
