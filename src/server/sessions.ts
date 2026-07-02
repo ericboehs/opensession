@@ -313,7 +313,18 @@ interface PrInfo {
   updatedAt: string;
   checks: PrChecksSummary;
 }
-let prCache: { data: Map<string, PrInfo>; ts: number } = { data: new Map(), ts: 0 };
+// Repos the bulk PR cache covers — the active dev repos whose PRs the sidebar
+// Open PRs section and Reviews table surface. Fusion carries 200+ open PRs and
+// GitHub's GraphQL 504s on wide statusCheckRollup queries there, so limits are
+// per-repo. Repos not listed here fall back to session-derived PR info only.
+const PR_REPOS = [
+	{ id: "tella-fusion", ghRepo: "tellahq/tella-fusion", openLimit: 500, recentLimit: 200, rollupLimit: 60 },
+	{ id: "backstage", ghRepo: "tellahq/backstage", openLimit: 100, recentLimit: 100, rollupLimit: 30 },
+] as const;
+
+// repo id → branch → PR info. Keyed per repo so the same branch name in two
+// repos (multi-repo sessions share branch names) never collides.
+let prCache: { data: Map<string, Map<string, PrInfo>>; ts: number } = { data: new Map(), ts: 0 };
 const PR_CACHE_TTL = 60_000;
 let prRefreshing = false;
 
@@ -344,8 +355,8 @@ function summarizeChecks(rollup: RollupCheck[] | undefined): PrChecksSummary {
 }
 
 // Stale-while-revalidate: never block the event loop on gh (it takes ~10s on
-// this repo, which used to freeze every agent in the process).
-function getPrsByBranch(): Map<string, PrInfo> {
+// fusion, which used to freeze every agent in the process).
+function getPrsByRepo(): Map<string, Map<string, PrInfo>> {
   if (Date.now() - prCache.ts >= PR_CACHE_TTL) void refreshPrCache();
   return prCache.data;
 }
@@ -374,7 +385,7 @@ async function refreshPrCache(): Promise<void> {
       "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,updatedAt";
 
     // A session's branch is matched against open PRs, so we must see EVERY open
-    // PR — not just the newest N. The repo carries 200+ open PRs at a time, so a
+    // PR — not just the newest N. Fusion carries 200+ open PRs at a time, so a
     // single `--state all --limit 200` window silently drops older open ones
     // (the bug where a real PR wouldn't show on its session). Split it:
     //   - `--state open` with a generous limit → all open PRs (the live matches)
@@ -383,57 +394,63 @@ async function refreshPrCache(): Promise<void> {
     // GitHub's GraphQL also 504s asking for statusCheckRollup across hundreds of
     // PRs, so the CI rollup stays a small scoped call over the most recent open
     // PRs (the ones a reviewer actually triages); others show no checks column.
-    const [openPrs, recentAll, rollups] = await Promise.all([
-      ghJson<BulkPr[]>([
-        "pr", "list", "--repo", "tellahq/tella-fusion", "--state", "open", "--limit", "500",
-        "--json", FIELDS,
-      ]),
-      ghJson<BulkPr[]>([
-        "pr", "list", "--repo", "tellahq/tella-fusion", "--state", "all", "--limit", "200",
-        "--json", FIELDS,
-      ]),
-      ghJson<Array<{ number: number; statusCheckRollup?: RollupCheck[] }>>([
-        "pr", "list", "--repo", "tellahq/tella-fusion", "--state", "open", "--limit", "60",
-        "--json", "number,statusCheckRollup",
-      ]),
-    ]);
+    const next = new Map<string, Map<string, PrInfo>>();
+    await Promise.all(PR_REPOS.map(async (repo) => {
+      const [openPrs, recentAll, rollups] = await Promise.all([
+        ghJson<BulkPr[]>([
+          "pr", "list", "--repo", repo.ghRepo, "--state", "open",
+          "--limit", String(repo.openLimit), "--json", FIELDS,
+        ]),
+        ghJson<BulkPr[]>([
+          "pr", "list", "--repo", repo.ghRepo, "--state", "all",
+          "--limit", String(repo.recentLimit), "--json", FIELDS,
+        ]),
+        ghJson<Array<{ number: number; statusCheckRollup?: RollupCheck[] }>>([
+          "pr", "list", "--repo", repo.ghRepo, "--state", "open",
+          "--limit", String(repo.rollupLimit), "--json", "number,statusCheckRollup",
+        ]),
+      ]);
 
-    if (!openPrs && !recentAll) {
-      prCache.ts = Date.now(); // both calls failed — back off, keep stale data
-      return;
-    }
+      if (!openPrs && !recentAll) {
+        // Both calls failed for this repo — keep its stale data.
+        const stale = prCache.data.get(repo.id);
+        if (stale) next.set(repo.id, stale);
+        return;
+      }
 
-    const checksByNumber = new Map<number, PrChecksSummary>();
-    for (const r of rollups || []) {
-      checksByNumber.set(r.number, summarizeChecks(r.statusCheckRollup));
-    }
+      const checksByNumber = new Map<number, PrChecksSummary>();
+      for (const r of rollups || []) {
+        checksByNumber.set(r.number, summarizeChecks(r.statusCheckRollup));
+      }
 
-    const toInfo = (pr: BulkPr): PrInfo => ({
-      url: pr.url,
-      state: pr.state as PrInfo["state"],
-      number: pr.number,
-      title: pr.title || "",
-      isDraft: !!pr.isDraft,
-      additions: pr.additions || 0,
-      deletions: pr.deletions || 0,
-      changedFiles: pr.changedFiles || 0,
-      reviewDecision: pr.reviewDecision || "",
-      author: pr.author?.login || pr.author?.name || "",
-      updatedAt: pr.updatedAt || "",
-      checks: checksByNumber.get(pr.number) || { total: 0, passed: 0, failed: 0, pending: 0 },
-    });
+      const toInfo = (pr: BulkPr): PrInfo => ({
+        url: pr.url,
+        state: pr.state as PrInfo["state"],
+        number: pr.number,
+        title: pr.title || "",
+        isDraft: !!pr.isDraft,
+        additions: pr.additions || 0,
+        deletions: pr.deletions || 0,
+        changedFiles: pr.changedFiles || 0,
+        reviewDecision: pr.reviewDecision || "",
+        author: pr.author?.login || pr.author?.name || "",
+        updatedAt: pr.updatedAt || "",
+        checks: checksByNumber.get(pr.number) || { total: 0, passed: 0, failed: 0, pending: 0 },
+      });
 
-    // Seed with recent closed/merged (newest-first → keep the first per branch),
-    // then let open PRs override: an open PR is the authoritative state for a
-    // branch even if an older closed PR reused the same head ref.
-    const map = new Map<string, PrInfo>();
-    for (const pr of recentAll || []) {
-      if (!map.has(pr.headRefName)) map.set(pr.headRefName, toInfo(pr));
-    }
-    for (const pr of openPrs || []) {
-      map.set(pr.headRefName, toInfo(pr));
-    }
-    prCache = { data: map, ts: Date.now() };
+      // Seed with recent closed/merged (newest-first → keep the first per branch),
+      // then let open PRs override: an open PR is the authoritative state for a
+      // branch even if an older closed PR reused the same head ref.
+      const map = new Map<string, PrInfo>();
+      for (const pr of recentAll || []) {
+        if (!map.has(pr.headRefName)) map.set(pr.headRefName, toInfo(pr));
+      }
+      for (const pr of openPrs || []) {
+        map.set(pr.headRefName, toInfo(pr));
+      }
+      next.set(repo.id, map);
+    }));
+    prCache = { data: next, ts: Date.now() };
   } catch (e) {
     console.error("Failed to fetch PRs:", e);
     prCache.ts = Date.now(); // back off on failure too
@@ -443,13 +460,14 @@ async function refreshPrCache(): Promise<void> {
 }
 
 /**
- * Every open PR in the repo (from the same batched cache the session
- * enrichment uses), each attributed to a teammate when its GitHub author maps
- * to one via the identity table. Bot-authored PRs (tella-butler — the ones
- * Michael opens from sessions) come back with `person: null`; the frontend
- * attributes those through the session that opened them. Powers the sidebar's
- * Open PRs section, which must show a person's PRs even when no Backstage
- * session exists for them.
+ * Every open PR across the covered repos (PR_REPOS — from the same batched
+ * cache the session enrichment uses), each attributed to a teammate when its
+ * GitHub author maps to one via the identity table. Bot-authored PRs
+ * (tella-butler — the ones Michael opens from sessions) come back with
+ * `person: null`; the frontend attributes those through the session that
+ * opened them. Powers the sidebar's Open PRs section, which must show a
+ * person's PRs even when no Backstage session exists for them — e.g. PRs
+ * opened from another tool (Conductor, local CLI) under their own account.
  */
 export interface OpenPrEntry {
 	repo: string;
@@ -467,20 +485,22 @@ export interface OpenPrEntry {
 
 export function getOpenPrs(): OpenPrEntry[] {
 	const out: OpenPrEntry[] = [];
-	for (const [branch, pr] of getPrsByBranch()) {
-		if (pr.state !== "OPEN") continue;
-		out.push({
-			repo: "tella-fusion",
-			branch,
-			url: pr.url,
-			number: pr.number,
-			title: pr.title,
-			isDraft: pr.isDraft,
-			reviewDecision: pr.reviewDecision,
-			author: pr.author,
-			person: githubLoginToPersonKey(pr.author),
-			updatedAt: pr.updatedAt,
-		});
+	for (const [repoId, byBranch] of getPrsByRepo()) {
+		for (const [branch, pr] of byBranch) {
+			if (pr.state !== "OPEN") continue;
+			out.push({
+				repo: repoId,
+				branch,
+				url: pr.url,
+				number: pr.number,
+				title: pr.title,
+				isDraft: pr.isDraft,
+				reviewDecision: pr.reviewDecision,
+				author: pr.author,
+				person: githubLoginToPersonKey(pr.author),
+				updatedAt: pr.updatedAt,
+			});
+		}
 	}
 	return out.sort((a, b) =>
 		(b.updatedAt || "").localeCompare(a.updatedAt || ""),
@@ -527,11 +547,12 @@ export function getAllSessions(): UnifiedSession[] {
     allSessions.push(session);
   }
 
-  // Enrich with PR URLs and state
-  const prs = getPrsByBranch();
+  // Enrich with PR URLs and state, matched within the session's own repo so a
+  // branch name reused across repos never picks up the wrong PR.
+  const prsByRepo = getPrsByRepo();
   for (const session of allSessions) {
     if (session.branch) {
-      const pr = prs.get(session.branch);
+      const pr = prsByRepo.get(session.repo || "tella-fusion")?.get(session.branch);
       if (pr) {
         session.prUrl = pr.url;
         session.prState = pr.state;
