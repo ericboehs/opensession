@@ -19,6 +19,7 @@ import { SettingsMenu } from "./components/SettingsMenu";
 import { Settings } from "./components/Settings";
 import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
+import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdateToast } from "./components/UpdateToast";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -686,6 +687,7 @@ function App() {
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
 			<UpdateToast addHandler={addHandler} />
+			<MediaLightboxHost />
 			<div className="app">
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
 				    on a pushed page (a session or other view) the brand is replaced by

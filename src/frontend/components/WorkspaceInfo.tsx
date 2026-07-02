@@ -6,6 +6,7 @@ import {
 	type OverviewChatRef,
 } from "../lib/workspace-overview";
 import { IconChevronDown } from "./icons";
+import { openLightbox } from "./MediaLightbox";
 
 /**
  * Workspace info block at the top of the right side panel (above the
@@ -159,12 +160,11 @@ export function WorkspaceInfo({
 					{data.media.length > 0 && (
 						<div className="mt-2 grid max-h-44 grid-cols-4 gap-1.5 overflow-y-auto">
 							{data.media.map((m, i) => (
-								<a
+								<button
 									key={`${m.sessionId}:${m.at}:${i}`}
-									href={m.src}
-									target="_blank"
-									rel="noopener noreferrer"
-									className="relative block aspect-square overflow-hidden rounded-sm border border-line bg-surface"
+									type="button"
+									onClick={() => openLightbox(data.media, i)}
+									className="relative block aspect-square overflow-hidden rounded-sm border border-line bg-surface p-0"
 									title={[m.chatTitle, new Date(m.at).toLocaleString()]
 										.filter(Boolean)
 										.join(" · ")}
@@ -190,7 +190,7 @@ export function WorkspaceInfo({
 											</span>
 										</>
 									)}
-								</a>
+								</button>
 							))}
 						</div>
 					)}
