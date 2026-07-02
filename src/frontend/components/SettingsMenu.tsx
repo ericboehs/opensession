@@ -35,7 +35,7 @@ export function SettingsMenu({
 		<Menu.Root>
 			<Menu.Trigger
 				aria-label="Settings"
-				className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-md border-none bg-transparent p-0 text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg max-[720px]:h-[38px] max-[720px]:w-[38px]"
+				className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border-none bg-transparent p-0 text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg max-[720px]:h-[38px] max-[720px]:w-[38px]"
 			>
 				<svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true">
 					<path

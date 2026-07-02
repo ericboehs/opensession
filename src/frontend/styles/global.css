@@ -1086,8 +1086,8 @@ body.resizing-x {
 	right: 8px;
 	top: 50%;
 	transform: translateY(-50%);
-	width: 22px;
-	height: 22px;
+	width: 26px;
+	height: 26px;
 	align-items: center;
 	justify-content: center;
 	border-radius: 5px;
@@ -1114,7 +1114,7 @@ body.resizing-x {
 	opacity: 0;
 }
 .sidebar-item:hover .sidebar-item-meta {
-	padding-right: 26px;
+	padding-right: 30px;
 }
 .sidebar-item-x:hover {
 	color: var(--text);
@@ -9532,8 +9532,8 @@ html[data-theme="light"] .tool-code-surface {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 22px;
-	height: 22px;
+	width: 26px;
+	height: 26px;
 	border-radius: 5px;
 	color: var(--text-faint);
 	cursor: pointer;
