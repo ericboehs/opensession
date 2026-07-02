@@ -486,7 +486,7 @@ function NewScanModal({
           />
           <span>
             Interactive mode
-            <span className="block text-dim text-[12px] font-normal mt-0.5">
+            <span className="block text-dim text-[12px] font-medium mt-0.5">
               Instead of scanning end to end, Michael collaborates with you in a
               session to tailor the threat model to your preferences before
               running the scan.

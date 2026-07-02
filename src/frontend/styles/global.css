@@ -149,6 +149,9 @@ body {
 	color: var(--text);
 	font-family: var(--sans);
 	font-size: 14px;
+	/* Medium is the app's regular: 400 reads washed-out at these sizes (Kent).
+	   Nothing below this should set 400/450 — bold accents stay 600/700. */
+	font-weight: 500;
 	-webkit-font-smoothing: antialiased;
 }
 
@@ -388,7 +391,7 @@ a {
 	border-radius: 8px;
 	color: var(--text-dim);
 	font-size: 14px;
-	font-weight: 450;
+	font-weight: 500;
 	padding: 8px 10px;
 }
 .sidebar-nav-item:hover {
@@ -1011,7 +1014,7 @@ body.resizing-x {
 	border-radius: 6px;
 	color: var(--text-dim);
 	font-size: 14px;
-	font-weight: 450;
+	font-weight: 500;
 	letter-spacing: 0;
 	padding: 4px 6px;
 }
@@ -1050,7 +1053,7 @@ body.resizing-x {
 	margin-left: auto;
 	color: var(--text-faint);
 	font-size: 12px;
-	font-weight: 450;
+	font-weight: 500;
 }
 
 .sidebar-item {
@@ -1284,7 +1287,7 @@ body.resizing-x {
 
 .sidebar-item-title {
 	font-size: 14px;
-	font-weight: 450;
+	font-weight: 500;
 	line-height: 1.35;
 	white-space: nowrap;
 	overflow: hidden;
@@ -1295,7 +1298,7 @@ body.resizing-x {
 /* Inline rename input in a sidebar row — matches the title's type. */
 .sidebar-item-rename {
 	font-size: 14px;
-	font-weight: 450;
+	font-weight: 500;
 	font-family: inherit;
 	color: inherit;
 	background: var(--bg);
@@ -4503,6 +4506,10 @@ body.resizing-x .panel-resize::after {
 .viewer-messages {
 	flex: 1;
 	overflow-y: auto;
+	/* Never a sideways-pannable chat: anything internally wide (code, tables)
+	   scrolls inside its own pane; a stray wide element clips instead of
+	   dragging the whole transcript off-screen. */
+	overflow-x: hidden;
 	overscroll-behavior: contain;
 	padding: 18px 20px 10px;
 	min-height: 0;
@@ -4520,6 +4527,12 @@ body.resizing-x .panel-resize::after {
    viewport instead of scrolling. */
 .viewer-messages > * {
 	flex-shrink: 0;
+	/* Messages/work blocks center with auto side margins, and in a flex
+	   container auto cross-axis margins DISABLE align-items:stretch — the
+	   children would size to their content (up to their 860px max-width) and
+	   overflow sideways on phones. Explicit width restores the stretch; the
+	   max-width + auto margins still cap and center them. */
+	width: 100%;
 }
 
 /* The streaming tail is excluded from anchoring so a glued-to-bottom follow
@@ -5558,6 +5571,10 @@ button.home-whisper-link:hover {
 	line-height: 1.5;
 	white-space: pre-wrap;
 	word-break: break-word;
+	/* Code output is full of tab indentation (cat -n / rg -n); at the default
+	   8-column tabs a deeply indented line out-runs a phone-width pane and the
+	   run of tabs hangs past the edge instead of wrapping. */
+	tab-size: 2;
 	color: var(--text-dim);
 	max-height: 320px;
 	overflow-y: auto;
@@ -5577,6 +5594,11 @@ button.home-whisper-link:hover {
 	border: 1px solid rgba(255, 255, 255, 0.06);
 	border-radius: 7px;
 	padding: 8px 10px;
+	/* Content wraps (.tool-pre / pre.shiki are pre-wrap), but anything that
+	   still measures wider — hanging whitespace, an unbreakable run — scrolls
+	   inside the pane rather than being clipped or widening the chat. */
+	overflow-x: auto;
+	tab-size: 2;
 }
 .tool-code-surface .tool-pre,
 .tool-pre.tool-code-surface {
@@ -6152,7 +6174,7 @@ html[data-theme="light"] .tool-code-surface {
 	gap: 8px;
 }
 .new-session-form .branch-suggesting {
-	font-weight: 400;
+	font-weight: 500;
 	font-size: 12px;
 	color: var(--text-dim);
 	opacity: 0.8;
@@ -9821,7 +9843,7 @@ html[data-theme="light"] .tool-code-surface {
 .msg-time {
 	margin-left: 6px;
 	font-size: 10.5px;
-	font-weight: 400;
+	font-weight: 500;
 	color: var(--text-faint);
 	letter-spacing: 0;
 	cursor: default;
