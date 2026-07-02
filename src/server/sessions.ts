@@ -1,7 +1,10 @@
 import { readdirSync, readFileSync, statSync, unlinkSync } from "fs";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { existsSync } from "fs";
-import { slackIdToFirstName } from "./shared/user-mappings";
+import {
+	slackIdToFirstName,
+	githubLoginToPersonKey,
+} from "./shared/user-mappings";
 import { isArchivedId } from "./archive";
 import { getTitleOverride } from "./title-overrides";
 import { getGeneratedTitle } from "./generated-titles";
@@ -437,6 +440,51 @@ async function refreshPrCache(): Promise<void> {
   } finally {
     prRefreshing = false;
   }
+}
+
+/**
+ * Every open PR in the repo (from the same batched cache the session
+ * enrichment uses), each attributed to a teammate when its GitHub author maps
+ * to one via the identity table. Bot-authored PRs (tella-butler — the ones
+ * Michael opens from sessions) come back with `person: null`; the frontend
+ * attributes those through the session that opened them. Powers the sidebar's
+ * Open PRs section, which must show a person's PRs even when no Backstage
+ * session exists for them.
+ */
+export interface OpenPrEntry {
+	repo: string;
+	branch: string;
+	url: string;
+	number: number;
+	title: string;
+	isDraft: boolean;
+	reviewDecision: string;
+	author: string;
+	/** Web user-picker key ("kent"), or null when the author isn't a teammate. */
+	person: string | null;
+	updatedAt: string;
+}
+
+export function getOpenPrs(): OpenPrEntry[] {
+	const out: OpenPrEntry[] = [];
+	for (const [branch, pr] of getPrsByBranch()) {
+		if (pr.state !== "OPEN") continue;
+		out.push({
+			repo: "tella-fusion",
+			branch,
+			url: pr.url,
+			number: pr.number,
+			title: pr.title,
+			isDraft: pr.isDraft,
+			reviewDecision: pr.reviewDecision,
+			author: pr.author,
+			person: githubLoginToPersonKey(pr.author),
+			updatedAt: pr.updatedAt,
+		});
+	}
+	return out.sort((a, b) =>
+		(b.updatedAt || "").localeCompare(a.updatedAt || ""),
+	);
 }
 
 export function getAllSessions(): UnifiedSession[] {

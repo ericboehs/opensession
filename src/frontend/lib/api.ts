@@ -76,6 +76,29 @@ export async function fetchSessions(): Promise<UnifiedSession[]> {
 	});
 }
 
+/** One open PR from the batched repo-wide list (session or not). */
+export interface OpenPr {
+	repo: string;
+	branch: string;
+	url: string;
+	number: number;
+	title: string;
+	isDraft: boolean;
+	reviewDecision: string;
+	author: string;
+	/** Web user-picker key ("kent"), or null when the author isn't a teammate. */
+	person: string | null;
+	updatedAt: string;
+}
+
+/** Every open PR in the repo, attributed to teammates by GitHub author. */
+export async function fetchOpenPrs(): Promise<OpenPr[]> {
+	const data = await request<{ prs: OpenPr[] }>("/open-prs", {
+		label: "Failed to fetch open PRs",
+	});
+	return data?.prs || [];
+}
+
 export interface TranscriptMatch {
 	id: string;
 	snippet: string;

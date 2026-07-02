@@ -84,6 +84,19 @@ export function githubUsernameToSlackId(username: string): string | null {
   return GITHUB_TO_SLACK[username] || null;
 }
 
+/**
+ * GitHub login → the web user-picker key (the lowercased first name, e.g.
+ * "kentdebruin" → "kent"). Lets the UI attribute a PR to a teammate: the
+ * sidebar's Open PRs section shows a person's PRs whether they authored them
+ * from their own account or Michael opened them from a session they started.
+ */
+export function githubLoginToPersonKey(login?: string | null): string | null {
+  if (!login) return null;
+  const lower = login.toLowerCase();
+  const p = TEAM_GIT_IDENTITY.find((x) => x.github?.toLowerCase() === lower);
+  return p ? p.aliases[0] : null;
+}
+
 export function linearEmailToGithubUsername(email: string | null): string | null {
   if (!email) return null;
   return LINEAR_EMAIL_TO_GITHUB[email] || null;

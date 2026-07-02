@@ -13,6 +13,7 @@ import {
 import homepage from "./src/frontend/index.html";
 import {
 	getAllSessions,
+	getOpenPrs,
 	deleteSession,
 	getTranscriptPath,
 } from "./src/server/sessions";
@@ -2585,6 +2586,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					queuedCount: promptQueues.get(s.id)?.length || 0,
 				}));
 				return Response.json(enriched);
+			}
+
+			// Every open PR in the repo, attributed to teammates via the GitHub
+			// identity table — the sidebar's Open PRs section (which must include
+			// PRs that have no Backstage session).
+			if (path === "/backstage/api/open-prs" && req.method === "GET") {
+				return Response.json({ prs: getOpenPrs() });
 			}
 
 			// Get transcript for a session
