@@ -38,7 +38,9 @@ import {
 	deleteProjectApi,
 	setSessionProjectApi,
 	newChatApi,
+	fetchModels,
 	type NoteMeta,
+	type ModelOption,
 } from "./lib/api";
 import type { Project } from "./lib/types";
 import { pushRecent } from "./lib/recents";
@@ -91,6 +93,13 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"connections",
 	"audit",
 ]);
+
+// Friendly label for a model id (falls back to the raw id). Mirrors the
+// composer's short-label lookup so the top-bar model line reads the same way.
+function modelLabel(id: string, models: ModelOption[]): string {
+	if (!id) return "";
+	return models.find((m) => m.id === id)?.label || id;
+}
 
 function parseRoute(pathname: string): Route {
 	// Canonical chat URL: /backstage/workspace/<wsId>/chat/<chatId>. The chat id
@@ -247,6 +256,19 @@ function App() {
 	// (session name + actions, incl. the workspace-panel toggle) into this slot so
 	// the layout reads name-on-top / tabs-below; other views render a plain title.
 	const [topbarEl, setTopbarEl] = useState<HTMLDivElement | null>(null);
+	// Model catalog, fetched once — used to resolve a friendly label for the model
+	// shown under the mobile top-bar title (the composer's model pill is hidden on
+	// phones, so this is the only place a session's model is visible there).
+	const [models, setModels] = useState<ModelOption[]>([]);
+	const [defaultModel, setDefaultModel] = useState("");
+	useEffect(() => {
+		fetchModels()
+			.then((m) => {
+				setModels(m.models);
+				setDefaultModel(m.default);
+			})
+			.catch(() => {});
+	}, []);
 	// Right slot of the mobile top bar. On phones the session viewer portals its
 	// header actions here (single iOS-style nav bar); desktop hides the bar and
 	// the actions render in the topbar slot above instead.
@@ -761,18 +783,28 @@ function App() {
 					    title. Desktop hides the whole bar. */}
 					{mobileDetail && (
 						<span className="app-header-title">
-							{route.view === "session" && currentSession?.isRunning && (
-								<span className="working-dot" />
-							)}
-							<span className="app-header-title-text">
-								{route.view === "session"
-									? (activeProjectId
-											? projects.find((p) => p.id === activeProjectId)?.name
-											: undefined) ||
-										currentSession?.title ||
-										""
-									: topbarTitle}
+							<span className="app-header-title-row">
+								{route.view === "session" && currentSession?.isRunning && (
+									<span className="working-dot" />
+								)}
+								<span className="app-header-title-text">
+									{route.view === "session"
+										? (activeProjectId
+												? projects.find((p) => p.id === activeProjectId)?.name
+												: undefined) ||
+											currentSession?.title ||
+											""
+										: topbarTitle}
+								</span>
 							</span>
+							{route.view === "session" && currentSession && (
+								<span className="app-header-model">
+									{modelLabel(
+										currentSession.model || defaultModel,
+										models,
+									)}
+								</span>
+							)}
 						</span>
 					)}
 					<div className="app-header-actions" ref={setHeaderActionsEl}>

@@ -7132,14 +7132,23 @@ html[data-theme="light"] .tool-code-surface {
 		top: env(safe-area-inset-top, 0px);
 		bottom: 0;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
-		gap: 7px;
-		max-width: 48%;
+		justify-content: center;
+		gap: 1px;
+		max-width: 60%;
 		min-width: 0;
-		font-size: 16px;
-		font-weight: 600;
 		color: var(--text);
 		pointer-events: none;
+	}
+	.app-header-title-row {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		min-width: 0;
+		max-width: 100%;
+		font-size: 16px;
+		font-weight: 600;
 	}
 	.app-header-title .working-dot {
 		flex-shrink: 0;
@@ -7148,6 +7157,18 @@ html[data-theme="light"] .tool-code-surface {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	/* Small centered model line under the title — the composer's model pill is
+	   hidden on phones, so this is where a session's model surfaces. */
+	.app-header-model {
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 1.1;
+		color: var(--text-dim);
 	}
 	/* The title now lives in the top bar — the in-page copy under it is
 	   duplicate chrome. */
