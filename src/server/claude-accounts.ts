@@ -72,6 +72,11 @@ export interface AccountUsage {
   fetchedAt: string;
   fiveHour: UsageWindow | null;
   sevenDay: UsageWindow | null;
+  // Per-model weekly caps (e.g. Fable) that are separate from the general
+  // 5h/7-day windows — an account can be 100% on one of these while its overall
+  // capacity is barely touched, which is exactly what makes it look "fine" in
+  // the UI while runs on that model get turned away. `label` is the model name.
+  scopedLimits?: { label: string; utilization: number | null; resetsAt: string | null }[];
   extraUsage?: { enabled: boolean; usedCredits: number; monthlyLimit: number } | null;
   error?: string;
   errorStatus?: number;
@@ -166,10 +171,22 @@ async function fetchUsage(token: string): Promise<AccountUsage> {
     const body: any = await res.json();
     const window = (w: any): UsageWindow | null =>
       w ? { utilization: w.utilization ?? null, resetsAt: w.resets_at ?? null } : null;
+    // The `limits` array carries per-model weekly caps (kind "weekly_scoped",
+    // e.g. Fable) that the top-level five_hour/seven_day fields don't expose.
+    const scopedLimits = Array.isArray(body.limits)
+      ? body.limits
+          .filter((l: any) => l?.kind === "weekly_scoped")
+          .map((l: any) => ({
+            label: l?.scope?.model?.display_name || l?.scope?.surface || "scoped",
+            utilization: typeof l?.percent === "number" ? l.percent : null,
+            resetsAt: l?.resets_at ?? null,
+          }))
+      : [];
     return {
       fetchedAt: new Date().toISOString(),
       fiveHour: window(body.five_hour),
       sevenDay: window(body.seven_day),
+      scopedLimits: scopedLimits.length ? scopedLimits : undefined,
       extraUsage: body.extra_usage
         ? {
             enabled: !!body.extra_usage.is_enabled,

@@ -29,6 +29,7 @@ interface ClaudeAccountInfo {
 		fetchedAt: string;
 		fiveHour: UsageWindow | null;
 		sevenDay: UsageWindow | null;
+		scopedLimits?: { label: string; utilization: number | null; resetsAt: string | null }[];
 		error?: string;
 		errorStatus?: number;
 	} | null;
@@ -341,6 +342,9 @@ function ClaudeAccountsSection() {
 									<>
 										<UsageBar label="5h" window={a.usage?.fiveHour ?? null} />
 										<UsageBar label="7d" window={a.usage?.sevenDay ?? null} />
+										{(a.usage?.scopedLimits ?? []).map((s) => (
+											<UsageBar key={s.label} label={s.label} window={s} />
+										))}
 										{a.usage?.error && (
 											<div className="text-red text-[11.5px] mt-1.5">{a.usage.error}</div>
 										)}
