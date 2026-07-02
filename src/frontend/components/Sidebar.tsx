@@ -20,6 +20,7 @@ import { getPins, onPinsChanged, togglePin } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
+import { UserAvatar } from "./UserAvatar";
 import { shortTime } from "../lib/time";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
 import {
@@ -1872,9 +1873,11 @@ export function Sidebar({
 												: `${v.user} is viewing “${titleFor(v.sessionId)}” — click to follow along`
 										}
 									>
-										<span
-											className="w-[7px] h-[7px] rounded-full shrink-0"
-											style={{ backgroundColor: personColor(v.user) }}
+										<UserAvatar
+											name={v.user}
+											size={20}
+											className="shrink-0 ring-2"
+											style={{ "--tw-ring-color": personColor(v.user) } as React.CSSProperties}
 										/>
 										<span className="text-fg shrink-0">{v.user}</span>
 										<span className="text-faint truncate">
