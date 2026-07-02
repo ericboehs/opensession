@@ -176,12 +176,24 @@ export function SessionViewer({
 	const [pinned, setPinned] = useState(() => isPinned(session.id));
 	// Default to the Plain tab for a Plain-linked session with no code workspace
 	// (an ask-mode triage): the conversation timeline is the only panel it has.
+	// Otherwise restore the last tab picked in any workspace (remembered per
+	// browser), so switching workspaces keeps you on e.g. PR instead of
+	// resetting to Changes — but only if this session actually has that tab.
 	const [panelTab, setPanelTab] = useState<PanelTab>(() => {
 		const workspace =
 			session.mode !== "ask" &&
 			Boolean(session.worktreeDir || session.branch);
+		const stored = localStorage.getItem("michael-panel-tab") as PanelTab | null;
+		if (stored) {
+			const available = stored === "plain" ? Boolean(session.plainThreadId) : workspace;
+			if (available) return stored;
+		}
 		return !workspace && session.plainThreadId ? "plain" : "changes";
 	});
+	function selectPanelTab(tab: PanelTab) {
+		setPanelTab(tab);
+		localStorage.setItem("michael-panel-tab", tab);
+	}
 	// Sub-agent sidebar: a breadcrumb stack of opened sub-agents (clicking a Task
 	// call pushes; nested Task calls push further). Non-empty → the right region
 	// shows the sub-agent conversation instead of the Workspace panel.
@@ -1108,7 +1120,7 @@ export function SessionViewer({
 								// Jump straight to the PR tab in the workspace panel — a PR is
 								// worth surfacing without first hunting through Workspace.
 								setSubagentStack([]);
-								setPanelTab("pr");
+								selectPanelTab("pr");
 								setPanelOpen(true);
 							}}
 							title={`Open PR #${session.prNumber ?? ""} (${(session.prState || "OPEN").toLowerCase()})`}
@@ -1510,19 +1522,19 @@ export function SessionViewer({
 								<>
 									<button
 										className={`panel-tab ${panelTab === "changes" ? "active" : ""}`}
-										onClick={() => setPanelTab("changes")}
+										onClick={() => selectPanelTab("changes")}
 									>
 										Changes
 									</button>
 									<button
 										className={`panel-tab ${panelTab === "terminal" ? "active" : ""}`}
-										onClick={() => setPanelTab("terminal")}
+										onClick={() => selectPanelTab("terminal")}
 									>
 										Terminal
 									</button>
 									<button
 										className={`panel-tab ${panelTab === "pr" ? "active" : ""}`}
-										onClick={() => setPanelTab("pr")}
+										onClick={() => selectPanelTab("pr")}
 									>
 										PR
 										{session.prState && (
@@ -1533,7 +1545,7 @@ export function SessionViewer({
 									</button>
 									<button
 										className={`panel-tab ${panelTab === "slack" ? "active" : ""}`}
-										onClick={() => setPanelTab("slack")}
+										onClick={() => selectPanelTab("slack")}
 									>
 										Slack
 										{session.slackChannel && <span className="panel-tab-dot" />}
@@ -1543,7 +1555,7 @@ export function SessionViewer({
 							{hasPlain && (
 								<button
 									className={`panel-tab ${panelTab === "plain" ? "active" : ""}`}
-									onClick={() => setPanelTab("plain")}
+									onClick={() => selectPanelTab("plain")}
 								>
 									Plain
 									<span className="panel-tab-dot" />
