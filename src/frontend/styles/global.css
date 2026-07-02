@@ -4105,13 +4105,19 @@ body.resizing-x .panel-resize::after {
 	font-size: 11.5px;
 	color: var(--text-dim);
 	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	min-width: 0;
 	max-width: 100%;
 }
 .rv-branch svg {
 	flex-shrink: 0;
 	opacity: 0.7;
+}
+/* text-overflow needs a block-ish box — on the flex container itself long
+   branch names just clip hard with no ellipsis. */
+.rv-branch-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 .rv-linear {
 	flex-shrink: 0;
@@ -4457,6 +4463,27 @@ body.resizing-x .panel-resize::after {
    author · time), and opening a PR pushes a full-screen detail view with a
    back affordance — a nested master→detail flow instead of a squished split. */
 @media (max-width: 720px) {
+	/* Anything internally wide (tab strip, long branch names) must scroll or
+	   clip inside its own box — never pan the whole list sideways. */
+	.reviews-main {
+		overflow-x: hidden;
+	}
+	/* Five tabs + counts don't fit a phone: keep each tab on one line and let
+	   the strip itself scroll edge-to-edge (scrollbar hidden). */
+	.reviews-tabs {
+		overflow-x: auto;
+		scrollbar-width: none;
+		margin: 0 -22px;
+		padding: 0 22px;
+	}
+	.reviews-tabs::-webkit-scrollbar {
+		display: none;
+	}
+	.reviews-tab {
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
+
 	.reviews-table .reviews-row.reviews-row-head {
 		display: none;
 	}
