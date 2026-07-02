@@ -14,6 +14,7 @@ import {
 	type WorkspaceOverview,
 } from "../lib/api";
 import { loadOverview, overviewCache } from "../lib/workspace-overview";
+import { openLightbox } from "./MediaLightbox";
 import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged, togglePin } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
@@ -3354,12 +3355,11 @@ function WsOverviewInfo({
 			{media.length > 0 && (
 				<div className="mt-2 flex gap-1.5">
 					{media.slice(0, 4).map((m, i) => (
-						<a
+						<button
 							key={`${m.sessionId}:${m.at}:${i}`}
-							href={m.src}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="relative block h-[58px] w-[62px] shrink-0 overflow-hidden rounded-sm border border-line bg-surface"
+							type="button"
+							onClick={() => openLightbox(media, i)}
+							className="relative block h-[58px] w-[62px] shrink-0 overflow-hidden rounded-sm border border-line bg-surface p-0"
 							title={[m.chatTitle, new Date(m.at).toLocaleString()]
 								.filter(Boolean)
 								.join(" · ")}
@@ -3390,7 +3390,7 @@ function WsOverviewInfo({
 									+{media.length - 4}
 								</span>
 							)}
-						</a>
+						</button>
 					))}
 				</div>
 			)}
