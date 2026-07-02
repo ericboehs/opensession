@@ -5120,6 +5120,33 @@ body.resizing-x .panel-resize::after {
 	color: inherit;
 }
 
+/* A session id rendered by markdown.ts as a clickable link into that session
+   (e.g. an orchestrator jumping into the worker it spawned). Reads as a
+   monospace accent chip with an open-in affordance. */
+.session-link {
+	font-family: var(--mono);
+	font-size: 0.9em;
+	background: var(--accent-soft);
+	border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+	color: var(--accent);
+	border-radius: 5px;
+	padding: 0.5px 6px;
+	cursor: pointer;
+	text-decoration: none;
+	white-space: nowrap;
+	transition:
+		background 0.12s ease,
+		border-color 0.12s ease;
+}
+.session-link::after {
+	content: " ↗";
+	opacity: 0.55;
+}
+.session-link:hover {
+	background: color-mix(in srgb, var(--accent) 18%, transparent);
+	border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
 .markdown ul,
 .markdown ol {
 	margin: 0 0 6px;

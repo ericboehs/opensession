@@ -15,6 +15,25 @@ function attr(v: string | null | undefined): string {
     .replace(/>/g, "&gt;");
 }
 
+// Backstage session ids (`bks-<uuidv7>` and legacy `bks-<slug>`), as they appear
+// in agent output — usually in a codespan, e.g. a create_session result or an
+// orchestrator saying "delegated to `bks-…`". Rendered as a clickable link so you
+// can jump from an orchestrator into the worker it spawned (and back). A
+// container-level click handler (SessionViewer) navigates on data-session-id,
+// since dangerouslySetInnerHTML can't carry React handlers.
+const SESSION_ID_EXACT = /^bks-[a-z0-9][a-z0-9-]{5,}$/i;
+// Bare (non-code) uuidv7-shaped ids in prose — strict so it can't misfire on
+// ordinary text.
+const SESSION_ID_BARE =
+  /bks-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+function sessionLink(id: string): string {
+  return (
+    `<a class="session-link" data-session-id="${attr(id)}" role="button" ` +
+    `tabindex="0" title="Open session ${attr(id)}">${attr(id)}</a>`
+  );
+}
+
 md.use({
   renderer: {
     // Session content is untrusted (assistant output, tool results, pasted
@@ -32,6 +51,12 @@ md.use({
       const title = token.title ? ` title="${attr(token.title)}"` : "";
       return `<a href="${attr(token.href)}"${title} target="_blank" rel="noopener noreferrer">${text}</a>`;
     },
+    codespan(token: any) {
+      const t = token.text ?? "";
+      // A codespan that is exactly a session id becomes a link into that session.
+      if (SESSION_ID_EXACT.test(t)) return sessionLink(t);
+      return `<code>${attr(t)}</code>`;
+    },
     image(token: any) {
       const title = token.title ? ` title="${attr(token.title)}"` : "";
       // Video files pasted with image syntax would render as a broken <img>
@@ -48,6 +73,27 @@ md.use({
       );
     },
   },
+  // Bare session ids in prose (not wrapped in backticks) also link. Strict
+  // uuidv7 shape so it only fires on real ids.
+  extensions: [
+    {
+      name: "sessionId",
+      level: "inline",
+      start(src: string) {
+        const m = SESSION_ID_BARE.exec(src);
+        return m ? m.index : undefined;
+      },
+      tokenizer(src: string) {
+        const m = /^bks-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(
+          src,
+        );
+        if (m) return { type: "sessionId", raw: m[0], id: m[0] };
+      },
+      renderer(token: any) {
+        return sessionLink(token.id);
+      },
+    },
+  ],
 });
 
 /** Render session markdown to HTML (links open in a new tab, images inline). */

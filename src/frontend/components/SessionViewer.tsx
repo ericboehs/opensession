@@ -779,6 +779,22 @@ export function SessionViewer({
 		setForkFrom(messageId);
 	}, []);
 
+	// Session-id links (rendered by markdown.ts into message/tool HTML via
+	// dangerouslySetInnerHTML, so they can't carry React handlers) navigate on a
+	// delegated click — e.g. jump from an orchestrator into the worker it spawned.
+	const handleMessagesClick = useCallback(
+		(e: React.MouseEvent) => {
+			const el = (e.target as HTMLElement).closest?.(
+				".session-link",
+			) as HTMLElement | null;
+			const id = el?.dataset.sessionId;
+			if (!id || !onOpenSession) return;
+			e.preventDefault();
+			onOpenSession(id);
+		},
+		[onOpenSession],
+	);
+
 	// Returns true when the message was consumed, so the (uncontrolled)
 	// Composer knows to clear its draft; false keeps it for a retry.
 	function handleSend(raw: string): boolean {
@@ -1443,6 +1459,7 @@ export function SessionViewer({
 							className="viewer-messages"
 							ref={messagesRef}
 							onScroll={onScroll}
+							onClick={handleMessagesClick}
 						>
 							{loading ? (
 								<div className="loading">Loading transcript…</div>
