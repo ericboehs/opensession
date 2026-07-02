@@ -645,6 +645,20 @@ function App() {
 			: currentSession
 				? [currentSession]
 				: [];
+	// The strip's history menu: archived (closed) chats of the same workspace,
+	// newest activity first. The open chat is excluded — if it's archived it
+	// already holds a live tab via liveTab().
+	const archivedChats: UnifiedSession[] = (
+		activeProjectId
+			? sessions.filter((s) => s.archived && s.projectId === activeProjectId)
+			: currentSession?.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
+				? sessions.filter(
+						(s) => s.archived && s.worktreeDir === currentSession.worktreeDir,
+					)
+				: []
+	)
+		.filter((s) => s.id !== currentSession?.id)
+		.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
 
 	// Plain title shown in the top bar for non-session views (session routes let
 	// the SessionViewer portal its own header in instead). Home stays blank so the
@@ -1029,6 +1043,7 @@ function App() {
 						</div>
 						<SessionTabs
 							tabs={projectChats}
+							archived={archivedChats}
 							activeId={currentSession?.id || null}
 							colors={tabColors}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
@@ -1120,6 +1135,14 @@ function App() {
 									const next = projectChats.find((c) => c.id !== s.id);
 									if (next) navigate({ view: "session", id: next.id });
 									else goBack();
+								}
+								refresh();
+							}}
+							onRestore={async (s) => {
+								try {
+									await archiveSessionApi(s.id, false);
+								} catch (e) {
+									console.error("Restore failed:", e);
 								}
 								refresh();
 							}}

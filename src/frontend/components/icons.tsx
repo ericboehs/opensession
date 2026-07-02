@@ -364,6 +364,31 @@ export function IconPullRequest(p: IconProps) {
   );
 }
 
+// iconic-pro rotate-anti-clockwise — the ⟲ "restore" glyph.
+export function IconRestore(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M13 18.25A6.25 6.25 0 1 0 6.75 12v2.385m2.5-1.635L7 15.25l-2.25-2.5"
+      />
+    </Svg>
+  );
+}
+
+// The restore arc plus clock hands: chat history.
+export function IconHistory(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M13 18.25A6.25 6.25 0 1 0 6.75 12v2.385m2.5-1.635L7 15.25l-2.25-2.5"
+      />
+      <path {...stroke} d="M12 9.25V12l2 1.5" />
+    </Svg>
+  );
+}
+
 // Octicon-style git-merge: branch line curving into the merge target.
 export function IconGitMerge(p: IconProps) {
   return (

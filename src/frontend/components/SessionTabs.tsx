@@ -2,7 +2,9 @@ import React, { useEffect, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
-import { IconPencil } from "./icons";
+import { relativeTime } from "../lib/api";
+import { Menu } from "../ui/menu";
+import { IconHistory, IconPencil, IconRestore } from "./icons";
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling chats of the
@@ -19,6 +21,8 @@ import { IconPencil } from "./icons";
 interface Props {
 	/** Sibling chats in the current workspace, in display order. */
 	tabs: UnifiedSession[];
+	/** Archived (closed) chats of this workspace, newest activity first. */
+	archived: UnifiedSession[];
 	/** Session id of the active tab. */
 	activeId: string | null;
 	/** Map of session id → swatch key for colored tabs. */
@@ -35,6 +39,8 @@ interface Props {
 	onRename: (id: string, title: string) => void;
 	/** Close (archive) a chat — the × revealed on hover. */
 	onClose: (session: UnifiedSession) => void;
+	/** Un-archive a chat from the history menu, back into the strip. */
+	onRestore: (session: UnifiedSession) => void;
 }
 
 type Menu = { key: string; x: number; y: number };
@@ -42,6 +48,7 @@ type NewMenu = { x: number; y: number };
 
 export function SessionTabs({
 	tabs,
+	archived,
 	activeId,
 	colors,
 	onSelect,
@@ -49,6 +56,7 @@ export function SessionTabs({
 	onNewChat,
 	onRename,
 	onClose,
+	onRestore,
 }: Props) {
 	const [menu, setMenu] = useState<Menu | null>(null);
 	const [newMenu, setNewMenu] = useState<NewMenu | null>(null);
@@ -175,6 +183,43 @@ export function SessionTabs({
 			>
 				+
 			</button>
+
+			{/* History: every archived (closed) chat of this workspace, in one
+			    list. Clicking a row opens the chat read-only-ish (it gets a tab
+			    while viewed); the ⟲ restores it into the strip for good. */}
+			{archived.length > 0 && (
+				<Menu.Root>
+					<Menu.Trigger
+						className="session-tab session-tab-history"
+						aria-label="Archived chats"
+						title="Archived chats"
+					>
+						<IconHistory size={16} />
+					</Menu.Trigger>
+					<Menu.Popup align="start" sideOffset={4} className="min-w-[240px] max-w-[320px]">
+						{archived.map((s) => (
+							<Menu.Item key={s.id} onClick={() => onSelect(s)}>
+								<span className="min-w-0 flex-1 truncate">{s.title}</span>
+								<span className="shrink-0 text-[11.5px] text-faint">
+									{relativeTime(s.lastActivity)}
+								</span>
+								<button
+									type="button"
+									className="flex shrink-0 cursor-pointer items-center rounded-sm border-0 bg-transparent p-0.5 text-dim hover:text-fg"
+									aria-label="Restore chat"
+									title="Restore to tabs"
+									onClick={(e) => {
+										e.stopPropagation();
+										onRestore(s);
+									}}
+								>
+									<IconRestore size={15} />
+								</button>
+							</Menu.Item>
+						))}
+					</Menu.Popup>
+				</Menu.Root>
+			)}
 
 			{newMenu && (
 				<div
