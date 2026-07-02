@@ -52,10 +52,11 @@ export interface RunAgentOpts {
   /**
    * System-prompt note describing the session's repos (primary + attached) and
    * their worktree paths, so the agent works in the right isolated checkout for
-   * cross-repo sessions. Claude backend only. See runClaude opts.
+   * cross-repo sessions. Claude receives it as system context; Codex receives it
+   * prepended to the prompt because the SDK has no system-prompt hook.
    */
   reposNote?: string;
-  /** Images attached to the opening message (vision). Claude only. */
+  /** Images attached to the opening message. */
   images?: ImageInput[];
   /** Fork the resumed session into a new id (optionally from `resumeSessionAt`). Claude only. */
   forkSession?: boolean;

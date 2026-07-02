@@ -22,6 +22,7 @@ import {
 	parseTranscriptTail,
 	transcriptMatchSnippet,
 } from "./src/server/jsonl-parser";
+import { buildForkHandoffNote } from "./src/server/fork-handoff";
 import {
 	buildWorkspaceOverview,
 	resolveTranscriptImage,
@@ -5313,9 +5314,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						const fromPr =
 							msg.fromPr === true && typeof branch === "string" && !!branch;
 
-						// Fork: branch a new session off an existing one, keeping the REAL
-						// engine conversation (via SDK forkSession), optionally from a chosen
-						// message. Inherits the source's mode/model/cwd. Claude-only.
+						// Fork: branch a new session off an existing one. Claude can clone the
+						// real engine conversation via SDK forkSession; backends without clone
+						// support get a transcript handoff in the opening prompt instead.
 						const forkFrom = msg.forkFrom as
 							| { sourceId?: string; messageId?: string }
 							| undefined;
@@ -5335,15 +5336,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							!!forkSource &&
 							providerFor(forkSource.model) === "claude" &&
 							!!forkSource.claudeSessionId;
-						if (forkSource && !canFork) {
-							ws.send(
-								JSON.stringify({
-									type: "error",
-									message: "Fork is only supported for Claude sessions",
-								}),
-							);
-							return;
-						}
+						const needsForkHandoff = !!forkSource && !canFork;
 
 						const isAsk = forkSource
 							? forkSource.mode !== "code"
@@ -5509,6 +5502,18 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							{
 								const mentionsNote = sessionMentionsNote(openingPrompt);
 								if (mentionsNote) openingPrompt += `\n\n${mentionsNote}`;
+							}
+							if (needsForkHandoff && forkSource) {
+								const entries = forkSource.transcriptPath
+									? parseTranscript(forkSource.transcriptPath)
+									: [];
+								openingPrompt += `\n\n${buildForkHandoffNote({
+									sourceId: forkSource.id,
+									sourceTitle: forkSource.title,
+									sourceModel: forkSource.model,
+									messageId: forkFrom?.messageId,
+									entries,
+								})}`;
 							}
 
 							let engineSessionId = "";

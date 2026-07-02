@@ -728,8 +728,11 @@ export function SessionViewer({
 		!session.claudeSessionId &&
 		!session.codexThreadId &&
 		session.source !== "backstage";
-	// Fork uses the SDK's forkSession, which is Claude-only.
-	const isClaudeSession = !isCodexModel && !!session.claudeSessionId;
+	// Exact engine-state forks use Claude's SDK forkSession. Other backends can
+	// still fork as a new sibling with a transcript handoff.
+	const canForkSession =
+		session.source === "backstage" &&
+		!!(session.claudeSessionId || session.codexThreadId || session.transcriptPath);
 
 	const handleFork = useCallback((messageId: string) => {
 		setForkFrom(messageId);
@@ -1426,7 +1429,7 @@ export function SessionViewer({
 									<TranscriptBlocks
 										entries={entries}
 										live={isBusy}
-										onFork={isClaudeSession ? handleFork : undefined}
+										onFork={canForkSession ? handleFork : undefined}
 										onOpenSubagent={openSubagent}
 										// For automation-owned sessions (e.g. a GitHub PR run), the
 										// automation never *types* a user turn — humans steer them.
