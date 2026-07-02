@@ -1030,6 +1030,8 @@ export function Sidebar({
 	const [wsHover, setWsHover] = useState<{ row: WsRow; anchor: DOMRect } | null>(
 		null,
 	);
+	// Mobile long-press sheet (the touch stand-in for the hover card).
+	const [wsSheet, setWsSheet] = useState<WsRow | null>(null);
 
 	function cancelWsHoverTimers() {
 		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
@@ -1095,11 +1097,9 @@ export function Sidebar({
 			wsLongPressed.current = true;
 			closeWsHover();
 			navigator.vibrate?.(10);
-			setProjectMenu({
-				id: row.workspace ? row.workspace.id : row.key,
-				x: t.clientX,
-				y: t.clientY,
-			});
+			// The touch stand-in for both the hover card AND right-click: a
+			// bottom sheet with the overview block plus every workspace action.
+			setWsSheet(row);
 		}, LONG_PRESS_MS);
 	}
 	function wsRowTouchMove(e: React.TouchEvent) {
@@ -1126,9 +1126,9 @@ export function Sidebar({
 			if (row.workspace) onOpenProject(row.workspace.id);
 			else if (row.chats[0]) onSelect(row.chats[0]);
 		} else if (wsLongPressed.current) {
-			// Release after a long-press: the workspace menu is already open at
-			// the touch point — swallow any ghost click so it can't land on the
-			// menu (or a document close listener) and immediately dismiss it.
+			// Release after a long-press: the workspace sheet is already up —
+			// swallow any ghost click so it can't land on the sheet (or its
+			// backdrop's close handler) and immediately dismiss it.
 			e.preventDefault();
 		}
 	}
@@ -2126,6 +2126,67 @@ export function Sidebar({
 					}}
 				/>
 			)}
+			{wsSheet &&
+				(() => {
+					const row = wsSheet;
+					const ws = row.workspace;
+					// Same pin resolution as the row's ☆ and the right-click menu: a
+					// row can be pinned via its own key or a legacy pin on any member
+					// chat (incl. alias ids) — unpin must clear all of them.
+					const pinKey = ws ? `workspace:${ws.id}` : row.key;
+					const pinnedKeys = [
+						pinKey,
+						row.key,
+						...row.chats.flatMap((c) => [c.id, ...(c.aliasIds || [])]),
+					].filter((k, i, a) => pins.includes(k) && a.indexOf(k) === i);
+					const pinned = pinnedKeys.length > 0;
+					return (
+						<WsMobileSheet
+							row={row}
+							pinned={pinned}
+							onTogglePin={() => {
+								if (pinned) {
+									let next = pins;
+									for (const k of pinnedKeys) next = togglePin(k);
+									setPins(next);
+								} else {
+									setPins(togglePin(pinKey));
+								}
+							}}
+							onClose={() => setWsSheet(null)}
+							onArchive={() => archiveWorkspaceWithNext(row)}
+							onOpen={(chat) => onSelect(chat)}
+							onRename={() => {
+								if (ws) {
+									setProjectDraft(ws.name);
+									setEditingProjectId(ws.id);
+								} else if (row.chats[0]) {
+									// Solo chat rows rename the chat itself.
+									const title = window
+										.prompt("Rename chat", row.chats[0].title)
+										?.trim();
+									if (title !== undefined && title !== null)
+										onRename(row.chats[0], title);
+								}
+							}}
+							onSetColor={
+								ws ? (color) => onSetProjectColor(ws.id, color) : null
+							}
+							onDelete={
+								ws
+									? () => {
+											if (
+												window.confirm(
+													`Delete workspace "${ws.name}"? Its chats become standalone.`,
+												)
+											)
+												onDeleteProject(ws.id);
+										}
+									: null
+							}
+						/>
+					);
+				})()}
 		</div>
 	);
 }
@@ -3120,36 +3181,11 @@ function WsStatusMark({
 const WS_ACTION =
 	"flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium no-underline";
 
-// The workspace counterpart of SessionHoverCard: branch + diff stats + status
-// at a glance, the latest assistant message as a "where things stand" line,
-// screenshot thumbnails from the workspace's chats, and quick actions
-// (Archive, PR link). Interactive — the parent keeps it open while the
-// pointer is over it (onEnter/onLeave), unlike the info-only session card.
-function WsHoverCard({
-	row,
-	anchor,
-	onEnter,
-	onLeave,
-	onArchive,
-	onOpen,
-}: {
-	row: WsCardRow;
-	anchor: DOMRect;
-	onEnter: () => void;
-	onLeave: () => void;
-	onArchive: () => void;
-	/** Open a chat (the "Answer" action jumps to the blocked one). */
-	onOpen: (chat: UnifiedSession) => void;
-}) {
-	const cardRef = useRef<HTMLDivElement>(null);
-	const [pos, setPos] = useState<{ left: number; top: number }>(() => ({
-		left: anchor.right + 8,
-		top: anchor.top,
-	}));
-
-	// Description + thumbnails come from the workspace overview. Same cache
-	// (and key) as the right panel's WorkspaceInfo block, so a workspace
-	// that's been opened paints its card instantly and vice versa.
+// Overview (description + thumbnails) for a workspace row. Same cache (and
+// key) as the right panel's WorkspaceInfo block, so a workspace that's been
+// opened paints instantly and vice versa. Shared by the hover card (desktop)
+// and the long-press sheet (mobile).
+function useWsOverview(row: WsCardRow): WorkspaceOverview | null {
 	const cacheKey =
 		row.workspace?.id || `chats:${row.chats.map((c) => c.id).join(",")}`;
 	const [ov, setOv] = useState<WorkspaceOverview | null>(
@@ -3175,42 +3211,25 @@ function WsHoverCard({
 				if (alive) setOv(d);
 			})
 			.catch(() => {
-				// Card just stays without a description/thumbnails.
+				// The view just stays without a description/thumbnails.
 			});
 		return () => {
 			alive = false;
 		};
 	}, [cacheKey]);
+	return ov;
+}
 
-	// Clamp into the viewport once the rendered height is known; re-clamp when
-	// the overview lands (description/thumbnails change the height). Prefer the
-	// right of the row; flip to the left if it would overflow the right edge.
-	useEffect(() => {
-		const el = cardRef.current;
-		const h = el ? el.offsetHeight : 200;
-		const vw = window.innerWidth;
-		const vh = window.innerHeight;
-		let left = anchor.right + 8;
-		if (left + CARD_W > vw - 8) left = anchor.left - CARD_W - 8;
-		left = Math.max(8, left);
-		const top = Math.min(Math.max(8, anchor.top), vh - h - 8);
-		setPos({ left, top });
-	}, [anchor, ov]);
-
-	// The chat whose PR fronts the workspace: the newest one that has a PR.
+// The PR that fronts the workspace (the newest chat that has one) and how to
+// present it: "basically ready to be merged" (open, not draft, checks green,
+// no changes requested) turns the main action green; the status bits spell
+// out draft/merged/closed, the review decision, and a checks summary.
+function wsPrInfo(row: WsCardRow) {
 	const newestFirst = [...row.chats].sort((a, b) =>
 		(b.lastActivity || "").localeCompare(a.lastActivity || ""),
 	);
 	const prChat = newestFirst.find((c) => c.prUrl);
 	const branch = prChat?.branch || newestFirst.find((c) => c.branch)?.branch;
-	const meta = MINE_STATUS_META.find((m) => m.key === row.status);
-	const desc = (ov?.lastMessage?.content || ov?.prompt?.content || "")
-		.replace(/\s+/g, " ")
-		.trim();
-	const media = ov?.media || [];
-
-	// "Basically ready to be merged": an open, non-draft PR with green checks
-	// and no changes requested — that's when the action goes green.
 	const prReady =
 		!!prChat &&
 		prChat.prState === "OPEN" &&
@@ -3234,17 +3253,29 @@ function WsHoverCard({
 							? `${prChat.prChecks.pending} pending`
 							: "checks pass"
 					: null,
-			].filter(Boolean)
+			].filter((b): b is string => !!b)
 		: [];
+	return { prChat, branch, prReady, prStatusBits };
+}
 
-	const card = (
-		<div
-			ref={cardRef}
-			className="sidebar-hovercard pointer-events-auto"
-			style={{ left: pos.left, top: pos.top, width: CARD_W }}
-			onMouseEnter={onEnter}
-			onMouseLeave={onLeave}
-		>
+// The info half of the workspace card: branch + diff + status mark, title,
+// blocked-question callout, latest-message description, media thumbnails.
+// Rendered inside the hover card (desktop) and the long-press sheet (mobile).
+function WsOverviewInfo({
+	row,
+	ov,
+}: {
+	row: WsCardRow;
+	ov: WorkspaceOverview | null;
+}) {
+	const { prChat, branch } = wsPrInfo(row);
+	const meta = MINE_STATUS_META.find((m) => m.key === row.status);
+	const desc = (ov?.lastMessage?.content || ov?.prompt?.content || "")
+		.replace(/\s+/g, " ")
+		.trim();
+	const media = ov?.media || [];
+	return (
+		<>
 			<div className="hovercard-head">
 				<span className="hovercard-branch">
 					{branch || row.chats[0]?.repo || "tella-fusion"}
@@ -3321,6 +3352,65 @@ function WsHoverCard({
 					))}
 				</div>
 			)}
+		</>
+	);
+}
+
+// The workspace counterpart of SessionHoverCard: branch + diff stats + status
+// at a glance, the latest assistant message as a "where things stand" line,
+// screenshot thumbnails from the workspace's chats, and quick actions
+// (Archive, PR link). Interactive — the parent keeps it open while the
+// pointer is over it (onEnter/onLeave), unlike the info-only session card.
+function WsHoverCard({
+	row,
+	anchor,
+	onEnter,
+	onLeave,
+	onArchive,
+	onOpen,
+}: {
+	row: WsCardRow;
+	anchor: DOMRect;
+	onEnter: () => void;
+	onLeave: () => void;
+	onArchive: () => void;
+	/** Open a chat (the "Answer" action jumps to the blocked one). */
+	onOpen: (chat: UnifiedSession) => void;
+}) {
+	const cardRef = useRef<HTMLDivElement>(null);
+	const [pos, setPos] = useState<{ left: number; top: number }>(() => ({
+		left: anchor.right + 8,
+		top: anchor.top,
+	}));
+
+	const ov = useWsOverview(row);
+
+	// Clamp into the viewport once the rendered height is known; re-clamp when
+	// the overview lands (description/thumbnails change the height). Prefer the
+	// right of the row; flip to the left if it would overflow the right edge.
+	useEffect(() => {
+		const el = cardRef.current;
+		const h = el ? el.offsetHeight : 200;
+		const vw = window.innerWidth;
+		const vh = window.innerHeight;
+		let left = anchor.right + 8;
+		if (left + CARD_W > vw - 8) left = anchor.left - CARD_W - 8;
+		left = Math.max(8, left);
+		const top = Math.min(Math.max(8, anchor.top), vh - h - 8);
+		setPos({ left, top });
+	}, [anchor, ov]);
+
+	const { prChat, prReady, prStatusBits } = wsPrInfo(row);
+
+	const card = (
+		<div
+			ref={cardRef}
+			className="sidebar-hovercard pointer-events-auto"
+			style={{ left: pos.left, top: pos.top, width: CARD_W }}
+			onMouseEnter={onEnter}
+			onMouseLeave={onLeave}
+		>
+			<WsOverviewInfo row={row} ov={ov} />
 
 			<div className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-line pt-2">
 				{/* The single main action, colored by what the workspace needs next:
@@ -3396,4 +3486,227 @@ function WsHoverCard({
 	);
 
 	return createPortal(card, document.body);
+}
+
+// The touch counterpart of WsHoverCard: long-pressing a workspace row raises
+// a bottom sheet with the same overview block (branch + diff + status, title,
+// latest message, thumbnails) followed by thumb-sized action rows — the
+// status-colored main action first (answer / merge / review / archive), then
+// the workspace chores that live behind right-click on desktop (pin, rename,
+// color, archive, delete). Replaces the old long-press → context-menu path.
+function WsMobileSheet({
+	row,
+	pinned,
+	onTogglePin,
+	onClose,
+	onArchive,
+	onOpen,
+	onRename,
+	onSetColor,
+	onDelete,
+}: {
+	row: WsCardRow;
+	pinned: boolean;
+	onTogglePin: () => void;
+	onClose: () => void;
+	onArchive: () => void;
+	onOpen: (chat: UnifiedSession) => void;
+	onRename: () => void;
+	/** Real workspaces only — solo rows have no color/delete. */
+	onSetColor: ((color: string | null) => void) | null;
+	onDelete: (() => void) | null;
+}) {
+	const ov = useWsOverview(row);
+	const { prChat, prReady, prStatusBits } = wsPrInfo(row);
+	// Lock the page behind the sheet so a scroll drags the list, not the page.
+	useEffect(() => {
+		const prev = document.body.style.overflow;
+		document.body.style.overflow = "hidden";
+		return () => {
+			document.body.style.overflow = prev;
+		};
+	}, []);
+	const closing = (fn: () => void) => () => {
+		fn();
+		onClose();
+	};
+	const archiveGlyph = (
+		<svg
+			width="18"
+			height="18"
+			viewBox="0 0 16 16"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="1.4"
+		>
+			<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
+			<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
+			<path d="M6.5 8.5h3" strokeLinecap="round" />
+		</svg>
+	);
+	return createPortal(
+		<div className="mobile-action-sheet-backdrop" onClick={onClose}>
+			<div
+				className="mobile-action-sheet"
+				onClick={(e) => e.stopPropagation()}
+			>
+				<div className="mobile-sheet-grip" />
+				<div className="px-2 pb-2.5 pt-1">
+					<WsOverviewInfo row={row} ov={ov} />
+					{(prStatusBits.length > 0 || row.lastActivity) && (
+						<div className="mt-2 flex min-w-0 items-center gap-2 text-[11px] text-faint">
+							{prChat?.prNumber != null && (
+								<span
+									className={`hovercard-mono shrink-0 hovercard-pr-${prTone(prChat)}`}
+								>
+									#{prChat.prNumber}
+								</span>
+							)}
+							{prStatusBits.length > 0 && (
+								<span className="min-w-0 truncate">
+									{prStatusBits.join(" · ")}
+								</span>
+							)}
+							{row.lastActivity && (
+								<span className="ml-auto shrink-0">
+									{relativeTime(row.lastActivity)}
+								</span>
+							)}
+						</div>
+					)}
+				</div>
+				<div className="mobile-sheet-sep" />
+				{/* Main action, colored by what the workspace needs next. */}
+				{row.status === "needsinput" && row.chats.length > 0 && (
+					<button
+						className="mobile-sheet-item"
+						style={{ color: "var(--accent)", fontWeight: 600 }}
+						onClick={closing(() =>
+							onOpen(
+								row.chats.find((c) => c.waitingForInput) || row.chats[0],
+							),
+						)}
+					>
+						<WsStatusMark row={row} size={18} />
+						Answer question
+					</button>
+				)}
+				{row.status === "review" && prChat?.prUrl && (
+					<button
+						className="mobile-sheet-item"
+						style={
+							prReady ? { color: "var(--green)", fontWeight: 600 } : undefined
+						}
+						onClick={closing(() =>
+							window.open(prChat.prUrl, "_blank", "noopener"),
+						)}
+					>
+						<IconPullRequest size={18} />
+						{prReady ? "Merge on GitHub" : "Review PR"}
+						{prChat.prNumber != null && ` #${prChat.prNumber}`}
+					</button>
+				)}
+				{row.status === "merged" && row.chats.length > 0 && (
+					<button
+						className="mobile-sheet-item"
+						style={{ color: "var(--purple)", fontWeight: 600 }}
+						onClick={closing(onArchive)}
+					>
+						{archiveGlyph}
+						Archive workspace
+					</button>
+				)}
+				{prChat?.prUrl && row.status !== "review" && (
+					<button
+						className="mobile-sheet-item"
+						onClick={closing(() =>
+							window.open(prChat.prUrl, "_blank", "noopener"),
+						)}
+					>
+						<IconPullRequest size={18} />
+						Open PR{prChat.prNumber != null ? ` #${prChat.prNumber}` : ""}
+					</button>
+				)}
+				<button className="mobile-sheet-item" onClick={closing(onTogglePin)}>
+					<svg width="18" height="18" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
+						<path
+							d="M8 1.8l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.5l-3.8 2 .72-4.23-3.07-3 4.25-.62L8 1.8z"
+							stroke="currentColor"
+							strokeWidth="1.4"
+							strokeLinejoin="round"
+						/>
+					</svg>
+					{pinned ? "Unpin" : "Pin"}
+				</button>
+				<button className="mobile-sheet-item" onClick={closing(onRename)}>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 16 16"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="1.4"
+					>
+						<path d="M10.5 2.5l3 3L6 13l-3.5.5L3 10z" />
+					</svg>
+					Rename
+				</button>
+				{onSetColor && (
+					<div className="flex flex-wrap items-center gap-2 px-4 py-2">
+						{TAB_COLORS.map((c) => (
+							<button
+								key={c.key}
+								type="button"
+								className="tab-color-swatch"
+								style={{ background: c.hex }}
+								aria-label={c.label}
+								title={c.label}
+								onClick={closing(() => onSetColor(c.key))}
+							/>
+						))}
+						<button
+							type="button"
+							className="tab-color-swatch tab-color-swatch-none"
+							aria-label="No color"
+							title="No color"
+							onClick={closing(() => onSetColor(null))}
+						/>
+					</div>
+				)}
+				{((row.status !== "merged" && row.chats.length > 0) || onDelete) && (
+					<div className="mobile-sheet-sep" />
+				)}
+				{/* Archiving stays reachable pre-merge from the explicit menu — the
+				    status coloring only governs which action gets top billing. */}
+				{row.status !== "merged" && row.chats.length > 0 && (
+					<button
+						className="mobile-sheet-item mobile-sheet-item--danger"
+						onClick={closing(onArchive)}
+					>
+						{archiveGlyph}
+						Archive
+					</button>
+				)}
+				{onDelete && (
+					<button
+						className="mobile-sheet-item mobile-sheet-item--danger"
+						onClick={closing(onDelete)}
+					>
+						<svg
+							width="18"
+							height="18"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.4"
+						>
+							<path d="M3 4.5h10M6.5 4.5V3.25a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1V4.5M4.25 4.5l.6 8.25a1 1 0 0 0 1 .93h4.3a1 1 0 0 0 1-.93l.6-8.25" />
+						</svg>
+						Delete workspace
+					</button>
+				)}
+			</div>
+		</div>,
+		document.body,
+	);
 }
