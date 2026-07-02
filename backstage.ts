@@ -63,6 +63,7 @@ import {
 	resumeInterruptedRuns,
 	RESUME_CONTINUATION_PROMPT,
 	activeAgentRunCount,
+	type StreamEvent,
 } from "./src/server/agent-runner";
 import {
 	writeFileAtomic,
@@ -1215,6 +1216,44 @@ function resumeDrainedSessions(alreadyResumed: Set<string>): void {
 		console.log(
 			`[resume] Woke ${woken} drained session(s) from before restart`,
 		);
+}
+
+function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent): void {
+	const session = findSession(bksSessionId);
+	if (!session || session.source !== "backstage") return;
+
+	if (event.type === "model_switch") {
+		const to = event.toModel || "";
+		if (!to) return;
+		const reason = `auto-switch — ${modelLabel(event.fromModel)} out of credits`;
+		touchBackstageSession(bksSessionId, {
+			model: to,
+			modelHistory: [
+				...(session.modelHistory || []),
+				{ model: to, at: new Date().toISOString(), by: reason },
+			],
+		});
+		sessionsCache = null;
+		return;
+	}
+
+	if (event.type !== "init" && event.type !== "done") return;
+	const engineSessionId = event.sessionId || "";
+	const model = event.model || session.model;
+	const provider = event.provider || providerFor(model);
+	touchBackstageSession(bksSessionId, {
+		...(engineSessionId ? engineSessionPatch(provider, engineSessionId) : {}),
+		...(model ? { model } : {}),
+	});
+	if (engineSessionId && session.worktreeDir) {
+		attachSessionWatchersToEngineTranscript(
+			bksSessionId,
+			provider,
+			session.worktreeDir,
+			engineSessionId,
+		);
+	}
+	sessionsCache = null;
 }
 
 // Loaded agents (Plain/Linear/Slack/Stripe/…). Module-scoped because request
@@ -6480,6 +6519,7 @@ if (!g.__backstageBooted) {
 					return undefined;
 				return buildReposNote(session);
 			},
+			recordRecoveredRunEvent,
 		);
 		if (resumedIds.length > 0) {
 			console.log(

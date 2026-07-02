@@ -274,6 +274,7 @@ export function resumeInterruptedRuns(
   askHandlerFor?: (bksSessionId: string) => AskHandler | undefined,
   inProcessMcpFor?: (bksSessionId: string, user?: string) => Record<string, unknown> | undefined,
   reposNoteFor?: (bksSessionId: string) => string | undefined,
+  onEvent?: (bksSessionId: string, event: StreamEvent) => void,
 ): string[] {
   const interrupted = takeInterruptedRuns();
   const resumed: string[] = [];
@@ -320,6 +321,7 @@ export function resumeInterruptedRuns(
             journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-rerun` },
             onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
           })) {
+            if (run.bksSessionId) onEvent?.(run.bksSessionId, event);
             if (event.type === "done" || event.type === "error") {
               onResumed?.(run.bksSessionId);
             }
@@ -355,6 +357,7 @@ export function resumeInterruptedRuns(
           journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
           onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
         })) {
+          if (run.bksSessionId) onEvent?.(run.bksSessionId, event);
           if (event.type === "done" || event.type === "error") {
             onResumed?.(run.bksSessionId);
           }
