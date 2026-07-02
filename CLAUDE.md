@@ -16,7 +16,12 @@ it from descending into chaos:
   every other session — that's the "sessions undoing each other's work" trap. If
   something looks wrong, inspect and fix forward; don't roll back the shared tree.
 - **`git add <specific files>`, not `git add -A`** — multiple sessions may have
-  uncommitted edits in this tree; only commit your own.
+  uncommitted edits in this tree; only commit your own. High-traffic files
+  (`global.css`, `backstage.ts`, `App.tsx`) are sweep magnets: even a specific
+  `git add` on one of them can pick up another session's uncommitted hunks
+  (it's happened three times: 2c89f14, 5a372890, and Kent's title commit). For
+  those files use `git add -p` to stage only your hunks, and check
+  `git diff --cached` before committing.
 - **Commit + push frequently.** Un-pushed work is the only thing a sync can't
   protect (the deploy is now `merge --ff-only`, never `reset --hard`, so it aborts
   loudly instead of wiping — but push anyway).
