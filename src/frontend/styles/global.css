@@ -155,6 +155,17 @@ body {
 	-webkit-font-smoothing: antialiased;
 }
 
+/* Form controls don't inherit font-weight — the UA stylesheet pins them to
+   regular, and we deliberately don't ship Tailwind preflight to undo that. A
+   huge share of the UI is <button>-based (sidebar rows, step rows, tabs), so
+   without this the body's medium never reaches it. */
+button,
+input,
+textarea,
+select {
+	font-weight: inherit;
+}
+
 /* Lock the outer document to the viewport so only inner containers scroll.
    position: fixed stops iOS rubber-band/elastic overscroll of the whole page
    (header included); overscroll-behavior stops scroll-chaining to the body. */
