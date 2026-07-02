@@ -21,6 +21,7 @@ import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdateToast } from "./components/UpdateToast";
+import { IconSearch } from "./components/icons";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useBackSwipe } from "./hooks/useBackSwipe";
@@ -736,7 +737,20 @@ function App() {
 							</span>
 						</span>
 					)}
-					<div className="app-header-actions" ref={setHeaderActionsEl} />
+					<div className="app-header-actions" ref={setHeaderActionsEl}>
+						{/* On the root page the actions slot is otherwise empty (session
+						    actions only portal in on pushed pages) — it carries Search,
+						    which lives in the top bar on phones instead of the sidebar. */}
+						{!mobileDetail && (
+							<button
+								className="mobile-search-btn"
+								onClick={() => setSearchOpen(true)}
+								aria-label="Search sessions"
+							>
+								<IconSearch size={22} />
+							</button>
+						)}
+					</div>
 				</header>
 
 				{route.view === "settings" ? (

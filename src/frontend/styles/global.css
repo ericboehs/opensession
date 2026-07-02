@@ -7128,6 +7128,39 @@ html[data-theme="light"] .tool-code-surface {
 		gap: 6px;
 	}
 
+	/* Search moves from the sidebar into the top bar on phones: an icon-only
+	   button on the right of the root page's nav bar that opens the ⌘K
+	   session-search palette. iOS-ish 44pt-leaning touch target. */
+	.sidebar-search-wrap {
+		display: none;
+	}
+	.mobile-search-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		padding: 0;
+		margin-right: -8px;
+		border: none;
+		background: none;
+		color: var(--text);
+		cursor: pointer;
+		border-radius: 10px;
+	}
+	.mobile-search-btn:active {
+		background: var(--bg-raised);
+	}
+
+	/* The search palette's keyboard chrome (esc badge, ↑↓/↵ hints) is
+	   meaningless on touch — keep only the result count in the footer. */
+	.ss-kbd {
+		display: none;
+	}
+	.ss-hint span:not(.ss-hint-count) {
+		display: none;
+	}
+
 	.viewer-header-actions {
 		justify-content: flex-end;
 		align-items: center;
