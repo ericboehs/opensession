@@ -27,6 +27,7 @@ import {
 	IconGitMerge,
 	IconPencil,
 	IconPullRequest,
+	IconSearch,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 
@@ -1528,21 +1529,7 @@ export function Sidebar({
 	return (
 		<div className="sidebar">
 			<div className="sidebar-search-wrap">
-				<svg
-					className="sidebar-search-icon"
-					width="18"
-					height="18"
-					viewBox="0 0 16 16"
-					fill="none"
-				>
-					<circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
-					<path
-						d="M14 14L10.7 10.7"
-						stroke="currentColor"
-						strokeWidth="1.5"
-						strokeLinecap="round"
-					/>
-				</svg>
+				<IconSearch className="sidebar-search-icon" size={18} />
 				{/* Acts as a button: clicking (or focusing) it opens the ⌘K
 				    session-search palette rather than filtering inline. */}
 				<input

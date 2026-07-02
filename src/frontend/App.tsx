@@ -747,7 +747,7 @@ function App() {
 								onClick={() => setSearchOpen(true)}
 								aria-label="Search sessions"
 							>
-								<IconSearch size={22} />
+								<IconSearch size={24} />
 							</button>
 						)}
 					</div>

@@ -7138,18 +7138,27 @@ html[data-theme="light"] .tool-code-surface {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 40px;
-		height: 40px;
+		/* True iOS 44pt touch target; the negative margin lets the oversized
+		   hit area bleed into the header's 10px edge padding so the glyph
+		   itself stays optically aligned with the content column. */
+		width: 44px;
+		height: 44px;
 		padding: 0;
-		margin-right: -8px;
+		margin-right: -10px;
 		border: none;
 		background: none;
-		color: var(--text);
+		/* Nav-bar controls share the app tint, like the Back chevron. */
+		color: var(--accent);
 		cursor: pointer;
-		border-radius: 10px;
+		border-radius: 50%;
+		-webkit-tap-highlight-color: transparent;
+		touch-action: manipulation;
+		/* iOS press feel: dim instantly on touch-down, ease back on release. */
+		transition: opacity 0.18s ease;
 	}
 	.mobile-search-btn:active {
-		background: var(--bg-raised);
+		opacity: 0.35;
+		transition-duration: 0s;
 	}
 
 	/* The search palette's keyboard chrome (esc badge, ↑↓/↵ hints) is
