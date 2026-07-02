@@ -7235,6 +7235,12 @@ html[data-theme="light"] .tool-code-surface {
 		/* iOS press feel: dim instantly on touch-down, ease back on release. */
 		transition: opacity 0.18s ease;
 	}
+	/* iOS nav-bar glyphs are bold — thicken the iconic icon's thin 1.5 stroke
+	   (CSS wins over the path's presentation attribute) so it reads at full
+	   weight, not spindly, at this size. */
+	.mobile-search-btn svg {
+		stroke-width: 2;
+	}
 	.mobile-search-btn:active {
 		opacity: 0.35;
 		transition-duration: 0s;
