@@ -235,6 +235,7 @@ import {
 	listAccountsPublic,
 	addAccount,
 	removeAccount,
+	setAccountOwner,
 	refreshAllUsage,
 	startUsagePoller,
 } from "./src/server/claude-accounts";
@@ -4479,7 +4480,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						{ status: 400 },
 					);
 				}
-				const result = await addAccount(body.name, body.token);
+				const result = await addAccount(
+					body.name,
+					body.token,
+					typeof body.owner === "string" ? body.owner : undefined,
+				);
 				if ("error" in result) return Response.json(result, { status: 400 });
 				return Response.json(result);
 			}
@@ -4498,6 +4503,17 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			if (accountDelMatch && req.method === "DELETE") {
 				return removeAccount(decodeURIComponent(accountDelMatch[1]))
 					? Response.json({ ok: true })
+					: Response.json({ error: "Not found" }, { status: 404 });
+			}
+			// Set/clear an account's personal owner ({"owner": "Michiel"} or "").
+			if (accountDelMatch && req.method === "PUT") {
+				const body = await req.json().catch(() => null);
+				const updated = setAccountOwner(
+					decodeURIComponent(accountDelMatch[1]),
+					typeof body?.owner === "string" ? body.owner : undefined,
+				);
+				return updated
+					? Response.json(updated)
 					: Response.json({ error: "Not found" }, { status: 404 });
 			}
 

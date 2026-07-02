@@ -803,12 +803,13 @@ export async function processMessage(
   let resultText = "";
   let resultSessionId = session.claudeSessionId || "";
 
-  // Account rotation (same pool as the backstage runner): pick the
-  // least-recently-used token; when a turn dies on usage limits, sideline the
-  // account and retry on the next one. With the pool empty, fall back to the
-  // codex model (DEFAULT_FALLBACK_MODEL) as the last resort.
+  // Account rotation (same pool as the backstage runner): the sender's
+  // personal sub first (matched via the identity table), shared pool as
+  // backup; when a turn dies on usage limits, sideline the account and retry
+  // on the next one. With everything exhausted, fall back to the codex model
+  // (DEFAULT_FALLBACK_MODEL) as the last resort.
   const triedAccountIds = new Set<string>();
-  let account = pickAccount(triedAccountIds);
+  let account = pickAccount(triedAccountIds, msg.userId);
   let limitExhausted = false;
 
   // --- Channel memory + self-management tools (interactive Slack only) -------
@@ -1122,7 +1123,7 @@ export async function processMessage(
     triedAccountIds.add(account.id);
     markExhausted(account.id);
   }
-  const next = pickAccount(triedAccountIds);
+  const next = pickAccount(triedAccountIds, msg.userId);
   if (next && next.id !== account?.id) {
     account = next;
     console.warn(`[slack] Usage limit hit for ${sessionKey}; retrying on account ${next.name}`);

@@ -440,10 +440,14 @@ export async function runClaudeHeadless(
   const THOUGHT_THROTTLE_MS = 5000;
   const actions = makeActionStreamer(accessToken, linearSessionId);
 
-  // Account rotation (same pool as the backstage runner); when every account
-  // is exhausted, fall back to the codex model as the last resort.
+  // Account rotation (same pool as the backstage runner): the issue actor's
+  // personal sub first, shared pool as backup; when everything is exhausted,
+  // fall back to the codex model as the last resort. Same actor resolution as
+  // the per-user MCP gate below.
+  const accountUser =
+    session?.lastActiveUser?.email || session?.issueCreator?.email || undefined;
   const triedAccountIds = new Set<string>();
-  let account = pickAccount(triedAccountIds);
+  let account = pickAccount(triedAccountIds, accountUser);
   let limitExhausted = false;
 
   rotation: for (;;) {
@@ -569,7 +573,7 @@ export async function runClaudeHeadless(
     triedAccountIds.add(account.id);
     markExhausted(account.id);
   }
-  const next = pickAccount(triedAccountIds);
+  const next = pickAccount(triedAccountIds, accountUser);
   if (next && next.id !== account?.id) {
     account = next;
     console.warn(`[linear] Usage limit hit; retrying on account ${next.name}`);

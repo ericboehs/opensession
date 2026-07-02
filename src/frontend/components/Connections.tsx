@@ -247,6 +247,8 @@ interface ClaudeAccountInfo {
   tokenMasked: string;
   email?: string;
   plan?: string;
+  /** Personal sub of this person; unset = shared pool account. */
+  owner?: string;
   usage: {
     fetchedAt: string;
     fiveHour: UsageWindow | null;
@@ -533,6 +535,26 @@ function ClaudeAccounts() {
     }
   }
 
+  async function handleEditOwner(a: ClaudeAccountInfo) {
+    const next = prompt(
+      `Personal owner for "${a.name}" — their runs use it first, the shared pool is their backup. Leave empty for a shared pool account (used by everyone + automations).`,
+      a.owner || "",
+    );
+    if (next === null || next.trim() === (a.owner || "")) return;
+    try {
+      const res = await fetch(`/backstage/api/claude-accounts/${encodeURIComponent(a.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner: next.trim() }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
   return (
     <>
       <div className="conn-section-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -600,6 +622,17 @@ function ClaudeAccounts() {
               </div>
               <div className="conn-detail">
                 <span className="conn-target">{a.tokenMasked}</span>
+                <button
+                  className="btn-small"
+                  onClick={() => handleEditOwner(a)}
+                  title={
+                    a.owner
+                      ? `${a.owner}'s personal sub — their runs use it first, everyone else never does. Click to change.`
+                      : "Shared pool account — used by everyone and by automations. Click to make it someone's personal sub."
+                  }
+                >
+                  {a.owner ? `👤 ${a.owner}` : "Shared pool"}
+                </button>
               </div>
               {!a.noUsageScope && (
                 <>
@@ -803,6 +836,7 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 function AddAccountForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
   const [name, setName] = useState("");
   const [token, setToken] = useState("");
+  const [owner, setOwner] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -813,7 +847,11 @@ function AddAccountForm({ onClose, onAdded }: { onClose: () => void; onAdded: ()
       const res = await fetch("/backstage/api/claude-accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), token: token.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          token: token.trim(),
+          ...(owner.trim() ? { owner: owner.trim() } : {}),
+        }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);

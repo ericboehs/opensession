@@ -14,6 +14,7 @@
 
 import { chmodSync, existsSync, readFileSync } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
+import { userMatchesAny } from "./shared/user-mappings";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const STORE_PATH = `${HOME}/.backstage-claude-accounts.json`;
@@ -35,6 +36,14 @@ export interface ClaudeAccount {
   email?: string;
   plan?: string;
   createdAt: string;
+  /**
+   * Personal subscription: when set, only runs whose user resolves to this
+   * person (same identity table as commit attribution / MCP allowedUsers) use
+   * the account — and their runs prefer it over the shared pool, falling back
+   * to the pool when it's exhausted. Unset = shared pool account, used by
+   * everyone and by automations (which run with no user).
+   */
+  owner?: string;
   // "missing" once the usage endpoint has returned 403 for this token
   // (`claude setup-token` tokens lack the user:profile scope). Persisted so
   // we never poll such accounts again, across restarts.
@@ -62,6 +71,7 @@ export interface ClaudeAccountPublic {
   email?: string;
   plan?: string;
   createdAt: string;
+  owner?: string;
   usage: AccountUsage | null;
   noUsageScope: boolean;
   exhaustedUntil: string | null;
@@ -258,6 +268,7 @@ function toPublic(a: ClaudeAccount): ClaudeAccountPublic {
     email: a.email,
     plan: a.plan,
     createdAt: a.createdAt,
+    owner: a.owner,
     usage,
     noUsageScope: a.usageScope === "missing",
     exhaustedUntil: until !== undefined && until > Date.now() ? new Date(until).toISOString() : null,
@@ -277,10 +288,12 @@ export function hasAccounts(): boolean {
 
 export async function addAccount(
   name: string,
-  token: string
+  token: string,
+  owner?: string
 ): Promise<ClaudeAccountPublic | { error: string }> {
   const trimmedName = name.trim();
   const trimmedToken = token.trim();
+  const trimmedOwner = owner?.trim() || undefined;
   if (!trimmedName) return { error: "Name is required" };
   if (!/^sk-ant-/.test(trimmedToken)) {
     return { error: "Token doesn't look like a Claude OAuth token (expected sk-ant-…). Generate one with `claude setup-token`." };
@@ -313,12 +326,35 @@ export async function addAccount(
     email: profile.email,
     plan: profile.plan,
     createdAt: new Date().toISOString(),
+    ...(trimmedOwner ? { owner: trimmedOwner } : {}),
     ...(usage.errorStatus === 403 ? { usageScope: "missing" as const } : {}),
   };
   writeStore([...accounts, account]);
   if (!usage.error) usageCache.set(account.id, usage);
-  console.log(`[claude-accounts] Added account ${trimmedName} (${profile.email || "unknown email"})`);
+  console.log(
+    `[claude-accounts] Added account ${trimmedName} (${profile.email || "unknown email"})${trimmedOwner ? ` — personal sub of ${trimmedOwner}` : " — shared pool"}`
+  );
   return toPublic(account);
+}
+
+/** Set or clear (empty/undefined) an account's personal owner. */
+export function setAccountOwner(
+  id: string,
+  owner: string | undefined
+): ClaudeAccountPublic | null {
+  const accounts = readStore();
+  const idx = accounts.findIndex((a) => a.id === id);
+  if (idx === -1) return null;
+  const trimmed = owner?.trim() || undefined;
+  const next = { ...accounts[idx] };
+  if (trimmed) next.owner = trimmed;
+  else delete next.owner;
+  accounts[idx] = next;
+  writeStore(accounts);
+  console.log(
+    `[claude-accounts] ${next.name} is now ${trimmed ? `the personal sub of ${trimmed}` : "a shared pool account"}`
+  );
+  return toPublic(next);
 }
 
 export function removeAccount(id: string): boolean {
@@ -332,24 +368,41 @@ export function removeAccount(id: string): boolean {
 }
 
 /**
- * Pick the best account for a new run, spreading load across the pool:
- * lowest cached 5-hour utilization wins, but accounts within the same
- * 10%-utilization bucket round-robin on least-recently-picked. (The usage
- * cache refreshes every poll interval, so without the tiebreak concurrent
- * runs between polls would all pile onto one account.) Returns undefined
- * when no token accounts are configured or all are sidelined.
+ * Pick the best account for a new run.
+ *
+ * Personal subs first: when `user` is set and owns accounts (matched through
+ * the same identity table as commit attribution), the least-used of those
+ * wins — the shared pool is their backup once the personal sub is exhausted
+ * or sidelined. Runs with no `user` (automations) and users with no personal
+ * sub draw from the pool (owner-less accounts) only; another user's personal
+ * account is never eligible.
+ *
+ * Within each group: lowest cached 5-hour utilization wins, but accounts in
+ * the same 10%-utilization bucket round-robin on least-recently-picked. (The
+ * usage cache refreshes every poll interval, so without the tiebreak
+ * concurrent runs between polls would all pile onto one account.) Returns
+ * undefined when nothing eligible is configured or all of it is sidelined.
  */
-export function pickAccount(exclude?: Set<string>): ClaudeAccount | undefined {
-  const candidates = readStore().filter((a) => !exclude?.has(a.id) && !isExhausted(a.id));
-  if (candidates.length === 0) return undefined;
-  const picked = candidates
-    .map((a) => ({
-      a,
-      bucket: Math.floor((usageCache.get(a.id)?.fiveHour?.utilization ?? 0) / 10),
-      picked: lastPickedAt.get(a.id) ?? 0,
-    }))
-    .filter(({ bucket }) => bucket * 10 < EXHAUSTED_UTILIZATION)
-    .sort((x, y) => x.bucket - y.bucket || x.picked - y.picked)[0]?.a;
+export function pickAccount(
+  exclude?: Set<string>,
+  user?: string
+): ClaudeAccount | undefined {
+  const eligible = readStore().filter(
+    (a) => !exclude?.has(a.id) && !isExhausted(a.id)
+  );
+  const best = (list: ClaudeAccount[]): ClaudeAccount | undefined =>
+    list
+      .map((a) => ({
+        a,
+        bucket: Math.floor((usageCache.get(a.id)?.fiveHour?.utilization ?? 0) / 10),
+        picked: lastPickedAt.get(a.id) ?? 0,
+      }))
+      .filter(({ bucket }) => bucket * 10 < EXHAUSTED_UTILIZATION)
+      .sort((x, y) => x.bucket - y.bucket || x.picked - y.picked)[0]?.a;
+  const personal = user
+    ? best(eligible.filter((a) => a.owner && userMatchesAny(user, [a.owner])))
+    : undefined;
+  const picked = personal ?? best(eligible.filter((a) => !a.owner));
   if (picked) lastPickedAt.set(picked.id, Date.now());
   return picked;
 }

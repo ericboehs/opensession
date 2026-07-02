@@ -643,19 +643,21 @@ export async function* runClaude(opts: {
     })();
 
   try {
-    // Account rotation: prefer the token pool (claude-accounts.ts); when a
-    // run exhausts an account's usage, sideline it and retry on the next one
-    // until the pool is empty. With no pool configured, fall back to the
-    // legacy one-shot credentials-file switch (~/.claude/accounts).
+    // Account rotation: prefer the token pool (claude-accounts.ts) — the
+    // run's user gets their personal sub first, the shared pool as backup
+    // (automations have no user, so they only ever draw from the pool). When
+    // a run exhausts an account's usage, sideline it and retry on the next
+    // one until nothing eligible is left. With no pool configured, fall back
+    // to the legacy one-shot credentials-file switch (~/.claude/accounts).
     const triedAccountIds = new Set<string>();
-    let account: ClaudeAccount | undefined = pickAccount(triedAccountIds);
+    let account: ClaudeAccount | undefined = pickAccount(triedAccountIds, user);
     let legacySwitched = false;
 
     const rotateAfterLimit = (): string | undefined => {
       if (account) {
         triedAccountIds.add(account.id);
         markExhausted(account.id);
-        const next = pickAccount(triedAccountIds);
+        const next = pickAccount(triedAccountIds, user);
         if (!next) return undefined;
         account = next;
         return next.name;
