@@ -6144,9 +6144,11 @@ html[data-theme="light"] .tool-code-surface {
 	border: 1px solid var(--red);
 }
 
-/* Slack-style split send button: the round send fuses with a caret that opens
-   the "send later" scheduler. Without a menu (`.has-menu`) the wrapper is inert
-   and the send button keeps its plain circular shape (Home / PR-preview). */
+/* Slack-style split send button: the send fuses with a caret that opens the
+   "send later" scheduler into a single rounded-rectangle (squircle) button,
+   the two halves parted by a thin light divider. Without a menu (`.has-menu`)
+   the wrapper is inert and the send button keeps its plain circular shape
+   (Home / PR-preview). */
 .composer-send-split {
 	position: relative;
 	display: inline-flex;
@@ -6155,7 +6157,7 @@ html[data-theme="light"] .tool-code-surface {
 }
 .composer-send-split.has-menu .composer-send {
 	width: 34px;
-	border-radius: 999px 0 0 999px;
+	border-radius: 10px 0 0 10px;
 }
 .composer-send-split.has-menu .composer-send:not(:disabled):hover {
 	/* No scale on a fused half — it would tear the seam open. */
@@ -6167,18 +6169,29 @@ html[data-theme="light"] .tool-code-surface {
 	align-items: stretch;
 }
 .composer-send-caret {
+	position: relative;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 24px;
+	width: 30px;
 	border: none;
-	border-radius: 0 999px 999px 0;
+	border-radius: 0 10px 10px 0;
 	background: var(--accent);
 	color: #fff;
 	cursor: pointer;
-	/* Hairline seam between the two halves. */
-	box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.18);
 	transition: filter 0.15s;
+}
+/* Thin inset divider between the two halves (short of the top/bottom edges,
+   Slack-style) rather than a full-height seam. */
+.composer-send-caret::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 1px;
+	height: 16px;
+	background: rgba(255, 255, 255, 0.45);
 }
 .composer-send-caret:not(:disabled):hover {
 	filter: brightness(1.12);
@@ -6197,7 +6210,9 @@ html[data-theme="light"] .tool-code-surface {
 .composer-send-split.is-interrupt .composer-send-caret {
 	background: var(--red-soft);
 	color: var(--red);
-	box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.12);
+}
+.composer-send-split.is-interrupt .composer-send-caret::before {
+	background: rgba(248, 81, 73, 0.4);
 }
 .composer-schedule-badge {
 	position: absolute;
