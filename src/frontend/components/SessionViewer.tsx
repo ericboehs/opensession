@@ -435,6 +435,18 @@ export function SessionViewer({
 		send({ type: "watch", sessionId: session.id, user: getCurrentUser() });
 
 		const unsubscribe = addHandler((msg) => {
+			// Session-scoped messages carry the session id — drop anything meant
+			// for a different chat. Without this, a socket race (or a lingering
+			// creator-side direct send from a chat you navigated away from) bleeds
+			// another session's stream into this view. Messages without a
+			// sessionId (direct replies like slash-command notices) pass through.
+			if (
+				"sessionId" in msg &&
+				msg.sessionId &&
+				msg.sessionId !== session.id
+			) {
+				return;
+			}
 			switch (msg.type) {
 				case "transcript_init": {
 					// Weave persisted model switches into the conversation as dividers

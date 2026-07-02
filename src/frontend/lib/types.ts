@@ -264,9 +264,18 @@ export type WSClientMessage =
 	| { type: "note_awareness"; noteId: string; update: string };
 
 export type WSServerMessage =
-	| { type: "transcript_init"; entries: TranscriptEntry[]; truncated?: boolean }
-	| { type: "transcript_append"; entries: TranscriptEntry[] }
-	| { type: "session_status"; isRunning: boolean }
+	// sessionId on the session-scoped messages lets viewers drop events meant
+	// for a different chat (socket races, creator-side direct sends). Optional
+	// because a few direct replies (slash-command notices, pre-create errors)
+	// legitimately have no session.
+	| {
+			type: "transcript_init";
+			sessionId?: string;
+			entries: TranscriptEntry[];
+			truncated?: boolean;
+	  }
+	| { type: "transcript_append"; sessionId?: string; entries: TranscriptEntry[] }
+	| { type: "session_status"; sessionId?: string; isRunning: boolean }
 	| { type: "presence"; sessionId: string; viewers: string[] }
 	| {
 			type: "global_presence";
@@ -275,10 +284,10 @@ export type WSServerMessage =
 	| { type: "term_data"; data: string }
 	| { type: "term_exit"; code?: number }
 	| { type: "stream_start"; sessionId: string; by?: string }
-	| { type: "stream_text"; text: string }
-	| { type: "stream_tool_use"; entry: TranscriptEntry }
-	| { type: "stream_tool_result"; entry: TranscriptEntry }
-	| { type: "stream_done" }
+	| { type: "stream_text"; sessionId?: string; text: string }
+	| { type: "stream_tool_use"; sessionId?: string; entry: TranscriptEntry }
+	| { type: "stream_tool_result"; sessionId?: string; entry: TranscriptEntry }
+	| { type: "stream_done"; sessionId?: string }
 	| {
 			type: "session_created";
 			id: string;
@@ -286,7 +295,7 @@ export type WSServerMessage =
 			/** True when this create made a brand-new workspace (vs. adding a chat). */
 			newWorkspace?: boolean;
 	  }
-	| { type: "notice"; message: string }
+	| { type: "notice"; sessionId?: string; message: string }
 	| { type: "model_changed"; sessionId: string; model: string; by?: string }
 	| {
 			type: "queue_update";
@@ -316,7 +325,7 @@ export type WSServerMessage =
 			slackChannel: SlackChannelLink | null;
 	  }
 	| { type: "pong" }
-	| { type: "error"; message: string };
+	| { type: "error"; sessionId?: string; message: string };
 
 export interface AskQuestion {
 	question: string;

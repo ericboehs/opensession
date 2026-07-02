@@ -1160,7 +1160,7 @@ function attachSessionWatchersToTranscript(
 ): void {
 	const set = sessionWatchers.get(sessionId);
 	if (!set) return;
-	for (const ws of set) startWatching(path, ws, 0);
+	for (const ws of set) startWatching(path, ws, 0, sessionId);
 }
 
 function broadcastQueue(sessionId: string) {
@@ -1494,7 +1494,11 @@ async function runSessionPromptInner(
 		sessionId,
 		by: user || "Anonymous",
 	});
-	broadcastToSession(sessionId, { type: "session_status", isRunning: true });
+	broadcastToSession(sessionId, {
+		type: "session_status",
+		sessionId,
+		isRunning: true,
+	});
 
 	let finalSessionId = engineSessionId || "";
 	let endedWithError = false;
@@ -1563,12 +1567,14 @@ async function runSessionPromptInner(
 				assistantText += event.text;
 				broadcastToSession(sessionId, {
 					type: "stream_text",
+					sessionId,
 					text: event.text,
 				});
 				break;
 			case "tool_use":
 				broadcastToSession(sessionId, {
 					type: "stream_tool_use",
+					sessionId,
 					entry: {
 						id: event.toolUseId || crypto.randomUUID(),
 						type: "tool_use",
@@ -1583,6 +1589,7 @@ async function runSessionPromptInner(
 			case "tool_result":
 				broadcastToSession(sessionId, {
 					type: "stream_tool_result",
+					sessionId,
 					entry: {
 						// Same id scheme as the jsonl tail so the full (untruncated)
 						// transcript entry upserts over this streamed copy
@@ -1624,6 +1631,7 @@ async function runSessionPromptInner(
 				endedWithError = true;
 				broadcastToSession(sessionId, {
 					type: "error",
+					sessionId,
 					message: event.content,
 				});
 				break;
@@ -1647,8 +1655,12 @@ async function runSessionPromptInner(
 	// can re-deliver it on the next boot instead of silently dropping it.
 	if (!endedWithError) clearSteerReceipts(sessionId);
 
-	broadcastToSession(sessionId, { type: "stream_done" });
-	broadcastToSession(sessionId, { type: "session_status", isRunning: false });
+	broadcastToSession(sessionId, { type: "stream_done", sessionId });
+	broadcastToSession(sessionId, {
+		type: "session_status",
+		sessionId,
+		isRunning: false,
+	});
 
 	// Mirror Michael's reply into the session's linked Slack channel, so a channel
 	// @mention (which routes here via deliverToSession) gets answered in-channel.
@@ -4789,13 +4801,18 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							? parseTranscriptTail(session.transcriptPath)
 							: { entries: [], truncated: false, endOffset: 0 };
 						ws.send(
-							JSON.stringify({ type: "transcript_init", entries, truncated }),
+							JSON.stringify({
+								type: "transcript_init",
+								sessionId,
+								entries,
+								truncated,
+							}),
 						);
 
 						// Start file watcher from where the tail parse left off — bytes
 						// appended between the parse and the watch would otherwise be lost.
 						if (session.transcriptPath) {
-							startWatching(session.transcriptPath, ws, endOffset);
+							startWatching(session.transcriptPath, ws, endOffset, sessionId);
 						}
 
 						// Pending interactive question, if any
@@ -4825,6 +4842,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						ws.send(
 							JSON.stringify({
 								type: "session_status",
+								sessionId,
 								isRunning:
 									session.isRunning ||
 									isAgentSessionBusy(
@@ -4855,6 +4873,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							ws.send(
 								JSON.stringify({
 									type: "transcript_init",
+									sessionId: msg.sessionId,
 									entries: [],
 									truncated: false,
 								}),
@@ -4865,6 +4884,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						ws.send(
 							JSON.stringify({
 								type: "transcript_init",
+								sessionId: msg.sessionId,
 								entries,
 								truncated: false,
 							}),
@@ -5154,6 +5174,27 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						// session_created) — a later failure must then close out the
 						// stream instead of leaving the just-opened viewer spinning.
 						let announcedId: string | null = null;
+
+						// One outlet for this run's stream events (usable only after the
+						// announce sets announcedId). Everything is stamped with sessionId
+						// so clients can filter, and the creator's direct send is GATED on
+						// what their socket currently watches: it only covers the gap
+						// between session_created and their watch landing. Once they watch
+						// this session, the room broadcast reaches them; once they've
+						// navigated to a DIFFERENT session, they get nothing — the old
+						// unconditional ws.send kept streaming this run into whatever chat
+						// that socket had open (until a refresh replaced the socket).
+						const emit = (m: Record<string, unknown>) => {
+							if (!announcedId) return;
+							const scoped = { ...m, sessionId: announcedId };
+							const watching = ws.data?.watchingSessionId;
+							if (!watching) {
+								try {
+									ws.send(JSON.stringify(scoped));
+								} catch {}
+							}
+							broadcastToSession(announcedId, scoped, watching ? undefined : ws);
+						};
 						try {
 							let wtPath: string;
 							// Deferred worktree setup: the git fetch + worktree add +
@@ -5298,9 +5339,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									}),
 								);
 								announcedId = bksId;
-								ws.send(
-									JSON.stringify({ type: "stream_start", sessionId: bksId }),
-								);
+								emit({ type: "stream_start" });
 
 								if (needsWorktree) {
 									const base =
@@ -5357,16 +5396,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									}
 								}
 								if (event.type === "text_chunk") {
-									// Direct send for the creator (not in the room until they watch),
-									// room broadcast for everyone else — never both to the same socket
-									ws.send(
-										JSON.stringify({ type: "stream_text", text: event.text }),
-									);
-									broadcastToSession(
-										bksId,
-										{ type: "stream_text", text: event.text },
-										ws,
-									);
+									emit({ type: "stream_text", text: event.text });
 								}
 								if (event.type === "tool_use") {
 									const entry = {
@@ -5378,12 +5408,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										toolInput: event.toolInput,
 										toolUseId: event.toolUseId,
 									};
-									ws.send(JSON.stringify({ type: "stream_tool_use", entry }));
-									broadcastToSession(
-										bksId,
-										{ type: "stream_tool_use", entry },
-										ws,
-									);
+									emit({ type: "stream_tool_use", entry });
 								}
 								if (event.type === "tool_result") {
 									const entry = {
@@ -5401,22 +5426,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 											? { videos: event.videos }
 											: {}),
 									};
-									ws.send(
-										JSON.stringify({ type: "stream_tool_result", entry }),
-									);
-									broadcastToSession(
-										bksId,
-										{ type: "stream_tool_result", entry },
-										ws,
-									);
+									emit({ type: "stream_tool_result", entry });
 								}
 								if (event.type === "done") {
 									engineSessionId = event.sessionId || engineSessionId;
 								}
 								if (event.type === "error") {
-									ws.send(
-										JSON.stringify({ type: "error", message: event.content }),
-									);
+									emit({ type: "error", message: event.content });
 								}
 							}
 
@@ -5432,36 +5448,31 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								unmarkSessionStarting(bksId);
 							}
 
-							ws.send(JSON.stringify({ type: "stream_done" }));
-							broadcastToSession(bksId, { type: "stream_done" }, ws);
-							broadcastToSession(bksId, {
-								type: "session_status",
-								isRunning: false,
-							});
+							emit({ type: "stream_done" });
+							emit({ type: "session_status", isRunning: false });
 							if (!promptQueues.get(bksId)?.length)
 								onHumanAsksSessionIdle(bksId);
 						} catch (e: any) {
-							ws.send(
-								JSON.stringify({
-									type: "error",
-									message: e.message || String(e),
-								}),
-							);
 							// Failure after the early session_created: the client is already
 							// in the session — close out the stream and surface the failure
-							// there instead of leaving the viewer spinning.
+							// there instead of leaving the viewer spinning. Before the
+							// announce there's no session to scope to, so the raw error goes
+							// straight back to the sender.
 							if (announcedId) {
-								ws.send(JSON.stringify({ type: "stream_done" }));
-								const failNotice = {
-									type: "notice" as const,
+								emit({ type: "error", message: e.message || String(e) });
+								emit({ type: "stream_done" });
+								emit({
+									type: "notice",
 									message: `Session setup failed: ${e.message || String(e)}`,
-								};
-								ws.send(JSON.stringify(failNotice));
-								broadcastToSession(announcedId, failNotice, ws);
-								broadcastToSession(announcedId, {
-									type: "session_status",
-									isRunning: false,
 								});
+								emit({ type: "session_status", isRunning: false });
+							} else {
+								ws.send(
+									JSON.stringify({
+										type: "error",
+										message: e.message || String(e),
+									}),
+								);
 							}
 						}
 						break;
@@ -5765,12 +5776,14 @@ registerSessionControl({
 					if (event.type === "text_chunk") {
 						broadcastToSession(bksId, {
 							type: "stream_text",
+							sessionId: bksId,
 							text: event.text,
 						});
 					}
 					if (event.type === "tool_use") {
 						broadcastToSession(bksId, {
 							type: "stream_tool_use",
+							sessionId: bksId,
 							entry: {
 								id: event.toolUseId || crypto.randomUUID(),
 								type: "tool_use",
@@ -5785,6 +5798,7 @@ registerSessionControl({
 					if (event.type === "tool_result") {
 						broadcastToSession(bksId, {
 							type: "stream_tool_result",
+							sessionId: bksId,
 							entry: {
 								id: event.toolUseId
 									? `tr-${event.toolUseId}`
@@ -5820,8 +5834,12 @@ registerSessionControl({
 							? { codexThreadId: engineSessionId }
 							: { claudeSessionId: engineSessionId },
 					);
-				broadcastToSession(bksId, { type: "stream_done" });
-				broadcastToSession(bksId, { type: "session_status", isRunning: false });
+				broadcastToSession(bksId, { type: "stream_done", sessionId: bksId });
+				broadcastToSession(bksId, {
+					type: "session_status",
+					sessionId: bksId,
+					isRunning: false,
+				});
 				if (!promptQueues.get(bksId)?.length) onHumanAsksSessionIdle(bksId);
 			} catch (e) {
 				console.error(`[sessions-mcp] create session ${bksId} failed:`, e);

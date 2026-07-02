@@ -5,6 +5,9 @@ import type { TranscriptEntry } from "./types";
 
 interface WatchState {
   path: string;
+  /** Session this transcript belongs to — stamped on transcript_append so
+      clients can drop events that aren't for the session they're viewing. */
+  sessionId?: string;
   lastMtime: number;
   lastByteOffset: number;
   viewers: Set<any>; // WebSocket connections
@@ -48,7 +51,11 @@ function pollFile(state: WatchState) {
 
   if (entries.length === 0) return;
 
-  const msg = JSON.stringify({ type: "transcript_append", entries });
+  const msg = JSON.stringify({
+    type: "transcript_append",
+    ...(state.sessionId ? { sessionId: state.sessionId } : {}),
+    entries,
+  });
   for (const ws of state.viewers) {
     try {
       ws.send(msg);
@@ -61,16 +68,19 @@ function pollFile(state: WatchState) {
 export function startWatching(
   path: string,
   ws: any,
-  initialOffset?: number
+  initialOffset?: number,
+  sessionId?: string
 ): void {
   let state = watches.get(path);
   if (state) {
     state.viewers.add(ws);
+    if (sessionId && !state.sessionId) state.sessionId = sessionId;
     return;
   }
 
   state = {
     path,
+    sessionId,
     // With a caller-supplied offset (including an explicit 0 — "stream this
     // file from the beginning", used when a run starts writing a brand-new
     // transcript), start with lastMtime 0 so the first poll flushes bytes
