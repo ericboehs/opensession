@@ -6003,6 +6003,12 @@ html[data-theme="light"] .tool-code-surface {
 	animation: pulse 1.4s infinite;
 }
 
+.busy-elapsed {
+	color: var(--text-faint);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
 .btn-cancel {
 	margin-left: auto;
 	display: inline-flex;

@@ -344,6 +344,39 @@ export function SessionViewer({
 	const panelAvailable = hasWorkspace || hasPlain;
 	const isBusy = isRunningLive || isStreaming;
 
+	// Anchor for the "Michael is working…" elapsed timer. A run that starts
+	// while we're watching anchors to now; opening a session mid-run anchors to
+	// the user prompt that started the turn (from the transcript) so the timer
+	// shows the run's real age, not time-since-I-opened-the-tab. The ref tracks
+	// which case we're in: it stays true until we've observed the session idle.
+	const [busySince, setBusySince] = useState<number | null>(null);
+	const anchorFromTranscript = useRef(session.isRunning);
+	useEffect(() => {
+		anchorFromTranscript.current = true;
+		setBusySince(null);
+	}, [session.id]);
+	useEffect(() => {
+		if (!isBusy) {
+			anchorFromTranscript.current = false;
+			setBusySince(null);
+			return;
+		}
+		// Mid-run open: wait for the transcript so we can find the turn's prompt.
+		if (anchorFromTranscript.current && loading) return;
+		setBusySince((prev) => {
+			if (prev != null) return prev;
+			if (anchorFromTranscript.current) {
+				for (let i = entries.length - 1; i >= 0; i--) {
+					if (entries[i].type !== "user") continue;
+					const t = new Date(entries[i].timestamp).getTime();
+					if (Number.isFinite(t)) return t;
+					break;
+				}
+			}
+			return Date.now();
+		});
+	}, [isBusy, loading, entries]);
+
 	// Ctrl+R focuses the composer (overrides browser reload while in a session)
 	const composerRef = useRef<HTMLTextAreaElement | null>(null);
 	useEffect(() => {
@@ -1385,6 +1418,7 @@ export function SessionViewer({
 										{streamBy && streamBy !== me
 											? `${streamBy} is driving — Michael is working…`
 											: "Michael is working…"}
+										{busySince != null && <BusyElapsed since={busySince} />}
 										{(queued.length > 0 || visibleSteered.length > 0) && (
 											<span className="queue-count">
 												{visibleSteered.length > 0 &&
@@ -1639,6 +1673,23 @@ export function SessionViewer({
 			</div>
 		</div>
 	);
+}
+
+// Ticking elapsed-time label for the "Michael is working…" line. Self-ticking
+// so the 10Hz re-render stays inside this tiny span, not the whole viewer.
+function BusyElapsed({ since }: { since: number }) {
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		const t = setInterval(() => setNow(Date.now()), 100);
+		return () => clearInterval(t);
+	}, []);
+	const s = Math.max(0, now - since) / 1000;
+	let label: string;
+	if (s < 60) label = `${s.toFixed(1)}s`;
+	else if (s < 3600)
+		label = `${Math.floor(s / 60)}m, ${(s % 60).toFixed(1)}s`;
+	else label = `${Math.floor(s / 3600)}h, ${Math.floor((s % 3600) / 60)}m`;
+	return <span className="busy-elapsed">{label}</span>;
 }
 
 function StreamingMessage({ text }: { text: string }) {
