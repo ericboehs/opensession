@@ -21,6 +21,9 @@
  */
 
 import { Codex, type ThreadEvent, type ThreadItem } from "@openai/codex-sdk";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { readMcpConfig, withDynamicCredentials } from "./connections";
 import { audit, summarizeText } from "./audit";
 import {
@@ -29,13 +32,15 @@ import {
   findCodexRollout,
   type CodexAccount,
 } from "./codex-accounts";
-import { journalSet, journalClear, type StreamEvent } from "./claude-runner";
+import { journalSet, journalClear, type StreamEvent, type ImageInput } from "./claude-runner";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 
 const HOME = process.env.HOME || "/home/ubuntu";
+const UI_BASE =
+  process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
 
 // Active runs, keyed by codex thread id AND the backstage session id (both
 // resolve for busy checks / cancellation, since a brand-new thread has no
@@ -172,6 +177,102 @@ function proxyMcpConfigs(
   return out;
 }
 
+function codexImageExt(mediaType: string): string {
+  switch (mediaType.toLowerCase()) {
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+    case "image/jpg":
+      return ".jpg";
+    case "image/gif":
+      return ".gif";
+    case "image/webp":
+      return ".webp";
+    default:
+      return ".img";
+  }
+}
+
+export function writeCodexImages(images: ImageInput[] | undefined): {
+  paths: string[];
+  cleanup: () => void;
+} {
+  if (!images?.length) return { paths: [], cleanup: () => {} };
+  const dir = mkdtempSync(join(tmpdir(), "backstage-codex-images-"));
+  const paths: string[] = [];
+  try {
+    images.forEach((image, idx) => {
+      const path = join(dir, `image-${idx + 1}${codexImageExt(image.mediaType)}`);
+      writeFileSync(path, Buffer.from(image.data, "base64"));
+      paths.push(path);
+    });
+    return {
+      paths,
+      cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    };
+  } catch (e) {
+    rmSync(dir, { recursive: true, force: true });
+    throw e;
+  }
+}
+
+export function buildCodexPrompt(input: {
+  prompt: string;
+  isAsk: boolean;
+  reposNote?: string;
+  inProcessMcp?: Record<string, unknown>;
+  bksSessionId?: string;
+  confirmTools?: Record<string, string>;
+}): string {
+  const parts: string[] = [];
+  if (input.isAsk) {
+    parts.push(
+      "You are Michael in Ask mode: answer questions about the current checkout. " +
+        "This is a READ-ONLY session on the main checkout — never modify, create, or delete " +
+        "files, never commit, never run state-changing commands. Explore with read-only shell " +
+        "and git commands, then answer clearly and concisely."
+    );
+  }
+  if (input.reposNote) parts.push(input.reposNote);
+  if (!input.isAsk && input.bksSessionId) {
+    const link = `${UI_BASE}/session/${input.bksSessionId}`;
+    parts.push(
+      "## Session link in PRs\nWhenever you open a pull request (any repo, via `gh pr " +
+        "create` or otherwise), always include a link back to this Michael session in the " +
+        "PR body so a human can open it to see how the change was made. Add a line like:\n\n" +
+        `Created by [this Michael session](${link})\n\n` +
+        "Put it at the end of the PR body. Use exactly this session URL."
+    );
+  }
+  if (input.inProcessMcp && Object.keys(input.inProcessMcp).length) {
+    parts.push(
+      "## Managing Michael\nYou can see and steer your other Backstage sessions via the " +
+        "michael-sessions MCP tools (list_sessions, get_session, send_to_session, " +
+        "answer_session_question, cancel_session, create_session), manage setup via " +
+        "michael-admin, ask teammates via michael-humans, and attach/switch repos via " +
+        "michael-repos when those servers are available. Use these tools when asked to " +
+        "inspect, steer, or coordinate sessions rather than only describing how."
+    );
+    parts.push(
+      "## Model routing and Codex delegation\nUse Fable/Claude as the orchestrator for taste, " +
+        "planning, judgment, review, and user-facing decisions. Use Codex/gpt-5.5 for clear-spec " +
+        "implementation, broad read-only codebase analysis, migrations, test-log analysis, data " +
+        "crunching, and mechanical work. If you create worker sessions, pass `mcpServers: []` for " +
+        "filesystem-only work, set `repo` explicitly, and give a self-contained prompt with scope, " +
+        "acceptance criteria, and what to report back. Keep final judgment with the orchestrator."
+    );
+  }
+  if (Object.keys(input.confirmTools || {}).length > 0) {
+    parts.push(
+      "## Run policy\nMoney-moving tools (refunds, subscription changes) are not available in this " +
+        "Codex run. If such an action is needed, describe the exact action and parameters in your " +
+        "output for a human to execute."
+    );
+  }
+  parts.push(input.prompt);
+  return parts.join("\n\n");
+}
+
 function describeToolUse(item: ThreadItem): { toolName: string; toolInput: unknown } | null {
   switch (item.type) {
     case "command_execution":
@@ -221,6 +322,10 @@ export async function* runCodex(opts: {
   model: string;
   /** MCP server allowlist (same semantics as the Claude runner). */
   mcpServers?: string[];
+  /** Images to attach to the opening message. */
+  images?: ImageInput[];
+  /** Repo context note; prepended to the Codex prompt because Codex has no systemPrompt hook. */
+  reposNote?: string;
   /** Enforced as per-server disabled_tools — the agent never sees them. */
   deniedTools?: Record<string, string>;
   /** No approval bridge on Codex: treated like deniedTools. */
@@ -239,7 +344,7 @@ export async function* runCodex(opts: {
   /** Trusted interactive michael-* SDK MCP servers; exposed to Codex through stdio proxies. */
   inProcessMcp?: Record<string, unknown>;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, model, mcpServers, deniedTools, confirmTools, journal, busyKeys, author, user, inProcessMcp } = opts;
+  const { prompt, sessionId, cwd, mode, model, mcpServers, images, reposNote, deniedTools, confirmTools, journal, busyKeys, author, user, inProcessMcp } = opts;
   const isAsk = mode === "ask";
 
   const runKey = sessionId || journal?.bksSessionId || busyKeys?.[0] || crypto.randomUUID();
@@ -298,12 +403,15 @@ export async function* runCodex(opts: {
     ...Object.keys(confirmTools || {}),
   ];
 
-  let effectivePrompt = prompt;
-  if (Object.keys(confirmTools || {}).length > 0) {
-    effectivePrompt +=
-      "\n\n[Run policy: money-moving tools (refunds, subscription changes) are not available in this run. " +
-      "If such an action is needed, describe the exact action and parameters in your output for a human to execute.]";
-  }
+  const effectivePrompt = buildCodexPrompt({
+    prompt,
+    isAsk,
+    reposNote,
+    inProcessMcp,
+    bksSessionId: journal?.bksSessionId,
+    confirmTools,
+  });
+  const codexImages = writeCodexImages(images);
 
   turnEvent({
     direction: "in",
@@ -370,7 +478,14 @@ export async function* runCodex(opts: {
       let finalResponse = "";
 
       try {
-        const { events } = await thread.runStreamed(effectivePrompt, {
+        const input =
+          codexImages.paths.length > 0
+            ? [
+                { type: "text" as const, text: effectivePrompt },
+                ...codexImages.paths.map((path) => ({ type: "local_image" as const, path })),
+              ]
+            : effectivePrompt;
+        const { events } = await thread.runStreamed(input, {
           signal: abortController.signal,
         });
 
@@ -532,6 +647,7 @@ export async function* runCodex(opts: {
       };
     }
   } finally {
+    codexImages.cleanup();
     if (abortController.signal.aborted) {
       turnEvent({ direction: "out", kind: "cancelled" });
     }

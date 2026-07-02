@@ -95,6 +95,8 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerat
       mode: opts.mode,
       model: model || DEFAULT_CODEX_MODEL,
       mcpServers: opts.mcpServers,
+      images: opts.images,
+      reposNote: opts.reposNote,
       inProcessMcp: opts.inProcessMcp,
       deniedTools: opts.deniedTools,
       confirmTools: opts.confirmTools,
