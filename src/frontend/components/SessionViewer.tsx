@@ -36,6 +36,7 @@ import { RepoBar } from "./RepoBar";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
+import { PixelSpinner } from "./PixelSpinner";
 import { SlackChatPanel } from "./SlackChatPanel";
 import { PlainThreadPanel } from "./PlainThreadPanel";
 import { PreviewButton } from "./PreviewButton";
@@ -1249,7 +1250,7 @@ export function SessionViewer({
 					)}
 					{isBusy && (
 						<span className="working-pill">
-							<span className="working-dot" />
+							<PixelSpinner className="working-spinner" />
 							<span className="working-label">
 								{streamBy ? `Working for ${streamBy}` : "Working"}
 							</span>

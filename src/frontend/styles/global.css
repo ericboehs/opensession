@@ -2052,6 +2052,14 @@ body.resizing-x {
 	animation: pulse 1.4s ease-in-out infinite;
 }
 
+/* Pixel spinner standing in for the pulsing dot inside the Working pill. It
+   inherits the pill's green via currentColor; nudge it down to the text size. */
+.working-spinner {
+	flex-shrink: 0;
+	transform: scale(0.85);
+	transform-origin: center;
+}
+
 @keyframes pulse {
 	0%,
 	100% {
@@ -10531,4 +10539,1123 @@ html[data-theme="light"] .tool-code-surface {
 	.palette-create-main {
 		border-radius: 999px;
 	}
+}
+
+/* ===== PIXEL SPINNER ===== */
+
+.pixel-spinner {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+}
+
+.pixel-spinner .pixel {
+  width: 4px;
+  height: 4px;
+  border-radius: 1px;
+  background: rgba(148, 163, 184, 0.15);
+  transition:
+    background 0.15s,
+    box-shadow 0.15s,
+    opacity 0.15s;
+  animation-duration: 1.2s;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-out;
+}
+
+/* Backstage is dark by default; lighten the idle pixels under the light theme. */
+html[data-theme="light"] .pixel-spinner .pixel {
+  background: rgba(148, 163, 184, 0.2);
+}
+
+/* Shape variants */
+.pixel-spinner .pixel.circle {
+  border-radius: 50%;
+}
+
+.pixel-spinner .pixel.triangle {
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+}
+
+/* Pixel Spinner Color - inherits from surrounding text color */
+.pixel-spinner {
+  --glow-color: currentColor;
+  --glow-dim: currentColor;
+}
+
+/* ===== PIXEL SPINNER ANIMATIONS ===== */
+
+/* Wave Trail Animations */
+@keyframes pixel-wave-trail-1 {
+  0%,
+  5% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  15% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.8;
+  }
+  25% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.5;
+  }
+  35% {
+    background: color-mix(in srgb, var(--glow-color) 30%, transparent);
+    box-shadow: none;
+    opacity: 0.3;
+  }
+  45%,
+  90% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.15;
+  }
+  100% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+}
+
+@keyframes pixel-wave-trail-2 {
+  0%,
+  15% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.15;
+  }
+  25%,
+  30% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  40% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.8;
+  }
+  50% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.5;
+  }
+  60% {
+    background: color-mix(in srgb, var(--glow-color) 30%, transparent);
+    box-shadow: none;
+    opacity: 0.3;
+  }
+  70%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.15;
+  }
+}
+
+@keyframes pixel-wave-trail-3 {
+  0%,
+  40% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.15;
+  }
+  50%,
+  55% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  65% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.8;
+  }
+  75% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.5;
+  }
+  85% {
+    background: color-mix(in srgb, var(--glow-color) 30%, transparent);
+    box-shadow: none;
+    opacity: 0.3;
+  }
+  95%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.15;
+  }
+}
+
+/* Snake Trail Animation */
+@keyframes pixel-snake-trail {
+  0% {
+    background: var(--glow-color);
+    box-shadow:
+      none,
+      0 0 1px color-mix(in srgb, var(--glow-color) 50%, transparent);
+    opacity: 1;
+  }
+  10% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.85;
+  }
+  20% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.6;
+  }
+  30% {
+    background: color-mix(in srgb, var(--glow-color) 50%, transparent);
+    box-shadow: none;
+    opacity: 0.4;
+  }
+  40% {
+    background: color-mix(in srgb, var(--glow-color) 25%, transparent);
+    box-shadow: none;
+    opacity: 0.25;
+  }
+  50%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+}
+
+/* Ripple Animations */
+@keyframes pixel-ripple-out-center {
+  0%,
+  5% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  15% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.7;
+  }
+  25% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.4;
+  }
+  35% {
+    background: color-mix(in srgb, var(--glow-color) 20%, transparent);
+    box-shadow: none;
+    opacity: 0.2;
+  }
+  45%,
+  85% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+  100% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+}
+
+@keyframes pixel-ripple-out-mid {
+  0%,
+  20% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+  30%,
+  35% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  45% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.7;
+  }
+  55% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.4;
+  }
+  65% {
+    background: color-mix(in srgb, var(--glow-color) 20%, transparent);
+    box-shadow: none;
+    opacity: 0.2;
+  }
+  75%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+}
+
+@keyframes pixel-ripple-out-outer {
+  0%,
+  50% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+  60%,
+  65% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  75% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.7;
+  }
+  85% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.4;
+  }
+  92% {
+    background: color-mix(in srgb, var(--glow-color) 20%, transparent);
+    box-shadow: none;
+    opacity: 0.2;
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+}
+
+/* Pulse Trail Animation */
+@keyframes pixel-pulse-trail {
+  0%,
+  10% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  25% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.7;
+  }
+  40% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.4;
+  }
+  55%,
+  85% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.15;
+  }
+  100% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+}
+
+/* Corner Trail Animation */
+@keyframes pixel-corner-trail {
+  0%,
+  5% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  15% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.7;
+  }
+  25% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.4;
+  }
+  35%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.15;
+  }
+}
+
+/* Checkerboard Animations */
+@keyframes pixel-checker-a-trail {
+  0%,
+  10% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  25% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.6;
+  }
+  40% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.3;
+  }
+  50%,
+  55% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+  65% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.3;
+  }
+  80% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.6;
+  }
+  100% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+}
+
+@keyframes pixel-checker-b-trail {
+  0%,
+  10% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+  25% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.3;
+  }
+  40% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.6;
+  }
+  50%,
+  60% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  75% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.6;
+  }
+  90% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.3;
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+}
+
+/* Breathe Animation */
+@keyframes pixel-breathe-trail {
+  0%,
+  15% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  35% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.7;
+  }
+  50% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.4;
+  }
+  65% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.7;
+  }
+  85%,
+  100% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+}
+
+/* Scan Line Animation */
+@keyframes pixel-scan-line {
+  0%,
+  5% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  20% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.5;
+  }
+  35%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+}
+
+/* Loading Bar Animation */
+@keyframes pixel-bar-fill {
+  0%,
+  10% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  40% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.8;
+  }
+  70%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+}
+
+/* Heartbeat Animations */
+@keyframes pixel-heartbeat-center {
+  0%,
+  5% {
+    background: var(--glow-color);
+    box-shadow:
+      0 0 1px var(--glow-color),
+      0 0 32px var(--glow-color);
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  15% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  25%,
+  30% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  45%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+    transform: scale(1);
+  }
+}
+
+@keyframes pixel-heartbeat-cross {
+  0%,
+  10% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.8;
+  }
+  20% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.4;
+  }
+  30%,
+  35% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 0.7;
+  }
+  50%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+}
+
+/* Dot Bounce Animation */
+@keyframes pixel-dot-bounce {
+  0%,
+  20% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  40% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.5;
+  }
+  60%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+}
+
+/* Bounce Pixel Animation */
+@keyframes pixel-bounce-pixel {
+  0%,
+  10% {
+    background: var(--glow-color);
+    box-shadow: none;
+    opacity: 1;
+  }
+  30% {
+    background: var(--glow-dim);
+    box-shadow: none;
+    opacity: 0.4;
+  }
+  50%,
+  100% {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0.12;
+  }
+}
+
+/* ===== PIXEL SPINNER PATTERNS ===== */
+
+/* Wave Left-Right */
+.pixel-spinner.wave-lr .pixel:nth-child(1),
+.pixel-spinner.wave-lr .pixel:nth-child(4),
+.pixel-spinner.wave-lr .pixel:nth-child(7) {
+  animation-name: pixel-wave-trail-1;
+}
+.pixel-spinner.wave-lr .pixel:nth-child(2),
+.pixel-spinner.wave-lr .pixel:nth-child(5),
+.pixel-spinner.wave-lr .pixel:nth-child(8) {
+  animation-name: pixel-wave-trail-2;
+}
+.pixel-spinner.wave-lr .pixel:nth-child(3),
+.pixel-spinner.wave-lr .pixel:nth-child(6),
+.pixel-spinner.wave-lr .pixel:nth-child(9) {
+  animation-name: pixel-wave-trail-3;
+}
+
+/* Wave Top-Bottom */
+.pixel-spinner.wave-tb .pixel:nth-child(1),
+.pixel-spinner.wave-tb .pixel:nth-child(2),
+.pixel-spinner.wave-tb .pixel:nth-child(3) {
+  animation-name: pixel-wave-trail-1;
+}
+.pixel-spinner.wave-tb .pixel:nth-child(4),
+.pixel-spinner.wave-tb .pixel:nth-child(5),
+.pixel-spinner.wave-tb .pixel:nth-child(6) {
+  animation-name: pixel-wave-trail-2;
+}
+.pixel-spinner.wave-tb .pixel:nth-child(7),
+.pixel-spinner.wave-tb .pixel:nth-child(8),
+.pixel-spinner.wave-tb .pixel:nth-child(9) {
+  animation-name: pixel-wave-trail-3;
+}
+
+/* Ripple Out */
+.pixel-spinner.ripple-out .pixel:nth-child(5) {
+  animation-name: pixel-ripple-out-center;
+}
+.pixel-spinner.ripple-out .pixel:nth-child(2),
+.pixel-spinner.ripple-out .pixel:nth-child(4),
+.pixel-spinner.ripple-out .pixel:nth-child(6),
+.pixel-spinner.ripple-out .pixel:nth-child(8) {
+  animation-name: pixel-ripple-out-mid;
+}
+.pixel-spinner.ripple-out .pixel:nth-child(1),
+.pixel-spinner.ripple-out .pixel:nth-child(3),
+.pixel-spinner.ripple-out .pixel:nth-child(7),
+.pixel-spinner.ripple-out .pixel:nth-child(9) {
+  animation-name: pixel-ripple-out-outer;
+}
+
+/* Snake */
+.pixel-spinner.snake .pixel:nth-child(1) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 0ms;
+}
+.pixel-spinner.snake .pixel:nth-child(2) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 133ms;
+}
+.pixel-spinner.snake .pixel:nth-child(3) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 266ms;
+}
+.pixel-spinner.snake .pixel:nth-child(6) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 400ms;
+}
+.pixel-spinner.snake .pixel:nth-child(5) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 533ms;
+}
+.pixel-spinner.snake .pixel:nth-child(4) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 666ms;
+}
+.pixel-spinner.snake .pixel:nth-child(7) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 800ms;
+}
+.pixel-spinner.snake .pixel:nth-child(8) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 933ms;
+}
+.pixel-spinner.snake .pixel:nth-child(9) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 1066ms;
+}
+
+/* Spiral Clockwise */
+.pixel-spinner.spiral-cw .pixel:nth-child(1) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 0ms;
+}
+.pixel-spinner.spiral-cw .pixel:nth-child(2) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 133ms;
+}
+.pixel-spinner.spiral-cw .pixel:nth-child(3) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 266ms;
+}
+.pixel-spinner.spiral-cw .pixel:nth-child(6) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 400ms;
+}
+.pixel-spinner.spiral-cw .pixel:nth-child(9) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 533ms;
+}
+.pixel-spinner.spiral-cw .pixel:nth-child(8) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 666ms;
+}
+.pixel-spinner.spiral-cw .pixel:nth-child(7) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 800ms;
+}
+.pixel-spinner.spiral-cw .pixel:nth-child(4) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 933ms;
+}
+.pixel-spinner.spiral-cw .pixel:nth-child(5) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 1066ms;
+}
+
+/* Cross */
+.pixel-spinner.cross .pixel:nth-child(2),
+.pixel-spinner.cross .pixel:nth-child(4),
+.pixel-spinner.cross .pixel:nth-child(5),
+.pixel-spinner.cross .pixel:nth-child(6),
+.pixel-spinner.cross .pixel:nth-child(8) {
+  animation-name: pixel-pulse-trail;
+}
+
+/* X-Shape */
+.pixel-spinner.x-shape .pixel:nth-child(1),
+.pixel-spinner.x-shape .pixel:nth-child(3),
+.pixel-spinner.x-shape .pixel:nth-child(5),
+.pixel-spinner.x-shape .pixel:nth-child(7),
+.pixel-spinner.x-shape .pixel:nth-child(9) {
+  animation-name: pixel-pulse-trail;
+}
+
+/* Corners */
+.pixel-spinner.corners .pixel:nth-child(1) {
+  animation-name: pixel-corner-trail;
+  animation-delay: 0ms;
+}
+.pixel-spinner.corners .pixel:nth-child(3) {
+  animation-name: pixel-corner-trail;
+  animation-delay: 300ms;
+}
+.pixel-spinner.corners .pixel:nth-child(9) {
+  animation-name: pixel-corner-trail;
+  animation-delay: 600ms;
+}
+.pixel-spinner.corners .pixel:nth-child(7) {
+  animation-name: pixel-corner-trail;
+  animation-delay: 900ms;
+}
+
+/* Diamond */
+.pixel-spinner.diamond .pixel:nth-child(2) {
+  animation-name: pixel-corner-trail;
+  animation-delay: 0ms;
+}
+.pixel-spinner.diamond .pixel:nth-child(6) {
+  animation-name: pixel-corner-trail;
+  animation-delay: 300ms;
+}
+.pixel-spinner.diamond .pixel:nth-child(8) {
+  animation-name: pixel-corner-trail;
+  animation-delay: 600ms;
+}
+.pixel-spinner.diamond .pixel:nth-child(4) {
+  animation-name: pixel-corner-trail;
+  animation-delay: 900ms;
+}
+
+/* Checkerboard */
+.pixel-spinner.checkerboard .pixel:nth-child(1),
+.pixel-spinner.checkerboard .pixel:nth-child(3),
+.pixel-spinner.checkerboard .pixel:nth-child(5),
+.pixel-spinner.checkerboard .pixel:nth-child(7),
+.pixel-spinner.checkerboard .pixel:nth-child(9) {
+  animation-name: pixel-checker-a-trail;
+}
+.pixel-spinner.checkerboard .pixel:nth-child(2),
+.pixel-spinner.checkerboard .pixel:nth-child(4),
+.pixel-spinner.checkerboard .pixel:nth-child(6),
+.pixel-spinner.checkerboard .pixel:nth-child(8) {
+  animation-name: pixel-checker-b-trail;
+}
+
+/* Stripes Horizontal */
+.pixel-spinner.stripes-h .pixel:nth-child(1),
+.pixel-spinner.stripes-h .pixel:nth-child(2),
+.pixel-spinner.stripes-h .pixel:nth-child(3) {
+  animation-name: pixel-wave-trail-1;
+}
+.pixel-spinner.stripes-h .pixel:nth-child(4),
+.pixel-spinner.stripes-h .pixel:nth-child(5),
+.pixel-spinner.stripes-h .pixel:nth-child(6) {
+  animation-name: pixel-wave-trail-2;
+}
+.pixel-spinner.stripes-h .pixel:nth-child(7),
+.pixel-spinner.stripes-h .pixel:nth-child(8),
+.pixel-spinner.stripes-h .pixel:nth-child(9) {
+  animation-name: pixel-wave-trail-3;
+}
+
+/* Stripes Vertical */
+.pixel-spinner.stripes-v .pixel:nth-child(1),
+.pixel-spinner.stripes-v .pixel:nth-child(4),
+.pixel-spinner.stripes-v .pixel:nth-child(7) {
+  animation-name: pixel-wave-trail-1;
+}
+.pixel-spinner.stripes-v .pixel:nth-child(2),
+.pixel-spinner.stripes-v .pixel:nth-child(5),
+.pixel-spinner.stripes-v .pixel:nth-child(8) {
+  animation-name: pixel-wave-trail-2;
+}
+.pixel-spinner.stripes-v .pixel:nth-child(3),
+.pixel-spinner.stripes-v .pixel:nth-child(6),
+.pixel-spinner.stripes-v .pixel:nth-child(9) {
+  animation-name: pixel-wave-trail-3;
+}
+
+/* Rain */
+.pixel-spinner.rain .pixel:nth-child(1) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 0ms;
+}
+.pixel-spinner.rain .pixel:nth-child(4) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 133ms;
+}
+.pixel-spinner.rain .pixel:nth-child(7) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 266ms;
+}
+.pixel-spinner.rain .pixel:nth-child(2) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 400ms;
+}
+.pixel-spinner.rain .pixel:nth-child(5) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 533ms;
+}
+.pixel-spinner.rain .pixel:nth-child(8) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 666ms;
+}
+.pixel-spinner.rain .pixel:nth-child(3) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 800ms;
+}
+.pixel-spinner.rain .pixel:nth-child(6) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 933ms;
+}
+.pixel-spinner.rain .pixel:nth-child(9) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 1066ms;
+}
+
+/* Diagonal */
+.pixel-spinner.diagonal-br .pixel:nth-child(1) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 0ms;
+}
+.pixel-spinner.diagonal-br .pixel:nth-child(2),
+.pixel-spinner.diagonal-br .pixel:nth-child(4) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 200ms;
+}
+.pixel-spinner.diagonal-br .pixel:nth-child(3),
+.pixel-spinner.diagonal-br .pixel:nth-child(5),
+.pixel-spinner.diagonal-br .pixel:nth-child(7) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 400ms;
+}
+.pixel-spinner.diagonal-br .pixel:nth-child(6),
+.pixel-spinner.diagonal-br .pixel:nth-child(8) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 600ms;
+}
+.pixel-spinner.diagonal-br .pixel:nth-child(9) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 800ms;
+}
+
+/* Frame */
+.pixel-spinner.frame .pixel:nth-child(1) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 0ms;
+}
+.pixel-spinner.frame .pixel:nth-child(2) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 100ms;
+}
+.pixel-spinner.frame .pixel:nth-child(3) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 200ms;
+}
+.pixel-spinner.frame .pixel:nth-child(6) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 300ms;
+}
+.pixel-spinner.frame .pixel:nth-child(9) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 400ms;
+}
+.pixel-spinner.frame .pixel:nth-child(8) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 500ms;
+}
+.pixel-spinner.frame .pixel:nth-child(7) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 600ms;
+}
+.pixel-spinner.frame .pixel:nth-child(4) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 700ms;
+}
+
+/* Breathe */
+.pixel-spinner.breathe .pixel {
+  animation-name: pixel-breathe-trail;
+}
+
+/* Orbit */
+.pixel-spinner.orbit .pixel:nth-child(1) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 0ms;
+}
+.pixel-spinner.orbit .pixel:nth-child(2) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 150ms;
+}
+.pixel-spinner.orbit .pixel:nth-child(3) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 300ms;
+}
+.pixel-spinner.orbit .pixel:nth-child(6) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 450ms;
+}
+.pixel-spinner.orbit .pixel:nth-child(9) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 600ms;
+}
+.pixel-spinner.orbit .pixel:nth-child(8) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 750ms;
+}
+.pixel-spinner.orbit .pixel:nth-child(7) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 900ms;
+}
+.pixel-spinner.orbit .pixel:nth-child(4) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 1050ms;
+}
+
+/* Scan Horizontal */
+.pixel-spinner.scan-h .pixel:nth-child(1),
+.pixel-spinner.scan-h .pixel:nth-child(2),
+.pixel-spinner.scan-h .pixel:nth-child(3) {
+  animation-name: pixel-scan-line;
+  animation-delay: 0ms;
+}
+.pixel-spinner.scan-h .pixel:nth-child(4),
+.pixel-spinner.scan-h .pixel:nth-child(5),
+.pixel-spinner.scan-h .pixel:nth-child(6) {
+  animation-name: pixel-scan-line;
+  animation-delay: 400ms;
+}
+.pixel-spinner.scan-h .pixel:nth-child(7),
+.pixel-spinner.scan-h .pixel:nth-child(8),
+.pixel-spinner.scan-h .pixel:nth-child(9) {
+  animation-name: pixel-scan-line;
+  animation-delay: 800ms;
+}
+
+/* Scan Vertical */
+.pixel-spinner.scan-v .pixel:nth-child(1),
+.pixel-spinner.scan-v .pixel:nth-child(4),
+.pixel-spinner.scan-v .pixel:nth-child(7) {
+  animation-name: pixel-scan-line;
+  animation-delay: 0ms;
+}
+.pixel-spinner.scan-v .pixel:nth-child(2),
+.pixel-spinner.scan-v .pixel:nth-child(5),
+.pixel-spinner.scan-v .pixel:nth-child(8) {
+  animation-name: pixel-scan-line;
+  animation-delay: 400ms;
+}
+.pixel-spinner.scan-v .pixel:nth-child(3),
+.pixel-spinner.scan-v .pixel:nth-child(6),
+.pixel-spinner.scan-v .pixel:nth-child(9) {
+  animation-name: pixel-scan-line;
+  animation-delay: 800ms;
+}
+
+/* Loading Bar */
+.pixel-spinner.loading-bar .pixel:nth-child(1),
+.pixel-spinner.loading-bar .pixel:nth-child(4),
+.pixel-spinner.loading-bar .pixel:nth-child(7) {
+  animation-name: pixel-bar-fill;
+  animation-delay: 0ms;
+}
+.pixel-spinner.loading-bar .pixel:nth-child(2),
+.pixel-spinner.loading-bar .pixel:nth-child(5),
+.pixel-spinner.loading-bar .pixel:nth-child(8) {
+  animation-name: pixel-bar-fill;
+  animation-delay: 200ms;
+}
+.pixel-spinner.loading-bar .pixel:nth-child(3),
+.pixel-spinner.loading-bar .pixel:nth-child(6),
+.pixel-spinner.loading-bar .pixel:nth-child(9) {
+  animation-name: pixel-bar-fill;
+  animation-delay: 400ms;
+}
+
+/* Heartbeat */
+.pixel-spinner.heartbeat .pixel:nth-child(5) {
+  animation-name: pixel-heartbeat-center;
+}
+.pixel-spinner.heartbeat .pixel:nth-child(2),
+.pixel-spinner.heartbeat .pixel:nth-child(4),
+.pixel-spinner.heartbeat .pixel:nth-child(6),
+.pixel-spinner.heartbeat .pixel:nth-child(8) {
+  animation-name: pixel-heartbeat-cross;
+}
+
+/* Dots */
+.pixel-spinner.dots .pixel:nth-child(4) {
+  animation-name: pixel-dot-bounce;
+  animation-delay: 0ms;
+}
+.pixel-spinner.dots .pixel:nth-child(5) {
+  animation-name: pixel-dot-bounce;
+  animation-delay: 150ms;
+}
+.pixel-spinner.dots .pixel:nth-child(6) {
+  animation-name: pixel-dot-bounce;
+  animation-delay: 300ms;
+}
+
+/* Bounce */
+.pixel-spinner.bounce .pixel:nth-child(1) {
+  animation-name: pixel-bounce-pixel;
+  animation-delay: 0ms;
+}
+.pixel-spinner.bounce .pixel:nth-child(3) {
+  animation-name: pixel-bounce-pixel;
+  animation-delay: 300ms;
+}
+.pixel-spinner.bounce .pixel:nth-child(9) {
+  animation-name: pixel-bounce-pixel;
+  animation-delay: 600ms;
+}
+.pixel-spinner.bounce .pixel:nth-child(7) {
+  animation-name: pixel-bounce-pixel;
+  animation-delay: 900ms;
+}
+
+/* Shuffle */
+.pixel-spinner.shuffle .pixel:nth-child(1) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 0ms;
+}
+.pixel-spinner.shuffle .pixel:nth-child(5) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 133ms;
+}
+.pixel-spinner.shuffle .pixel:nth-child(9) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 266ms;
+}
+.pixel-spinner.shuffle .pixel:nth-child(3) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 400ms;
+}
+.pixel-spinner.shuffle .pixel:nth-child(7) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 533ms;
+}
+.pixel-spinner.shuffle .pixel:nth-child(2) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 666ms;
+}
+.pixel-spinner.shuffle .pixel:nth-child(8) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 800ms;
+}
+.pixel-spinner.shuffle .pixel:nth-child(4) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 933ms;
+}
+.pixel-spinner.shuffle .pixel:nth-child(6) {
+  animation-name: pixel-snake-trail;
+  animation-delay: 1066ms;
 }
