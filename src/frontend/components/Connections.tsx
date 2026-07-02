@@ -855,7 +855,8 @@ function AddAccountForm({ onClose, onAdded }: { onClose: () => void; onAdded: ()
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          token: token.trim(),
+          // Strip all whitespace — CLI copies often carry line-wrap newlines.
+          token: token.replace(/\s+/g, ""),
           ...(owner.trim() ? { owner: owner.trim() } : {}),
         }),
       });

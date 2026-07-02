@@ -396,7 +396,10 @@ export async function addAccount(
   owner?: string
 ): Promise<ClaudeAccountPublic | { error: string }> {
   const trimmedName = name.trim();
-  const trimmedToken = token.trim();
+  // Strip ALL whitespace, not just the ends — a token copied from the
+  // `claude setup-token` terminal output often arrives with line-wrap
+  // newlines in the middle.
+  const trimmedToken = token.replace(/\s+/g, "");
   const trimmedOwner = owner?.trim() || undefined;
   if (!trimmedName) return { error: "Name is required" };
   if (!/^sk-ant-/.test(trimmedToken)) {
