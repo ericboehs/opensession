@@ -8586,7 +8586,7 @@ html[data-theme="light"] .tool-code-surface {
 	to { opacity: 1; }
 }
 .palette-card {
-	width: min(740px, 100%);
+	width: min(820px, 100%);
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
 	border-radius: 16px;
@@ -8754,8 +8754,8 @@ html[data-theme="light"] .tool-code-surface {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
-	height: 36px;
+	width: 40px;
+	height: 40px;
 	border-radius: 8px;
 	border: 1px solid transparent;
 	background: none;
