@@ -103,6 +103,24 @@ export const DEFAULT_FALLBACK_MODEL: string | undefined = (() => {
 })();
 
 /**
+ * Fallback model for an *interactive* session running on `primaryModel`.
+ *
+ * Fable has its own (small) weekly cap that's separate from the account's
+ * general 5-hour / 7-day capacity — so a Fable session can exhaust Fable
+ * pool-wide ("You're out of usage credits") while every account still has
+ * plenty of general capacity left. In that case Sonnet on the *same* provider
+ * is the right fallback: it resumes the session in-place (no cross-provider
+ * fresh start) and draws on that still-available general capacity. Any other
+ * primary uses the global cross-provider default. Honors MICHAEL_FALLBACK_MODEL=none.
+ */
+export function interactiveFallbackModel(primaryModel?: string): string | undefined {
+  if (DEFAULT_FALLBACK_MODEL === undefined) return undefined;
+  const primary = resolveModel(primaryModel || getDefaultModel());
+  if (primary?.id === "claude-fable-5") return "claude-sonnet-5";
+  return DEFAULT_FALLBACK_MODEL;
+}
+
+/**
  * Resolve user input (alias or id, any case) to a model. Unknown ids that
  * carry a clear provider prefix pass through so new models work without a
  * registry bump; anything else is rejected.

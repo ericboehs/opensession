@@ -91,6 +91,7 @@ import {
 	modelLabel,
 	formatModelList,
 	DEFAULT_FALLBACK_MODEL,
+	interactiveFallbackModel,
 } from "./src/server/models";
 import {
 	listCodexAccountsPublic,
@@ -1555,6 +1556,10 @@ async function runSessionPromptInner(
 		cwd,
 		mode: session.mode,
 		model: session.model,
+		// When the pool is exhausted on the primary model, drop to a fallback
+		// rather than dead-ending. Fable's weekly cap is separate from general
+		// capacity, so a spent-Fable session resumes on Sonnet in-place.
+		fallbackModel: interactiveFallbackModel(session.model),
 		images,
 		mcpServers,
 		// Self-management tools for normal sessions; withheld from automation
@@ -5495,6 +5500,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								cwd: wtPath,
 								mode: isAsk ? "ask" : "code",
 								model,
+								fallbackModel: interactiveFallbackModel(model),
 								images,
 								// Fork: resume the source engine session into a new branch,
 								// optionally from a specific past message.
@@ -5898,6 +5904,7 @@ registerSessionControl({
 					cwd: wtPath,
 					mode: isAsk ? "ask" : "code",
 					model,
+					fallbackModel: interactiveFallbackModel(model),
 					inProcessMcp: interactiveMcpServers(user, bksId),
 					confirmTools: STRIPE_CONFIRM_TOOLS,
 					aws: true,
