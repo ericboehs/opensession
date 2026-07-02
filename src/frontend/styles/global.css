@@ -6232,6 +6232,181 @@ html[data-theme="light"] .tool-code-surface {
 	pointer-events: none;
 }
 
+/* Send-later dropdown (Slack-style): a header, contextual quick picks, a
+   divider, then "Custom time". Reuses .composer-menu / .composer-menu-item. */
+.composer-schedule-menu {
+	min-width: 236px;
+}
+.composer-schedule-menu .composer-menu-item {
+	font-size: 13px;
+}
+.composer-schedule-head {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-faint);
+	padding: 6px 9px 4px;
+}
+.composer-schedule-sep {
+	height: 1px;
+	margin: 4px 6px;
+	background: var(--border);
+}
+.composer-schedule-err {
+	color: var(--red);
+	font-size: 12px;
+	padding: 4px 9px 2px;
+}
+/* Pending scheduled messages, listed above the picks with a cancel affordance. */
+.composer-schedule-pending {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	padding-bottom: 4px;
+	margin-bottom: 2px;
+	border-bottom: 1px solid var(--border);
+}
+.composer-schedule-perow {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	padding: 5px 9px;
+	font-size: 12px;
+	min-width: 0;
+}
+.composer-schedule-pin {
+	flex-shrink: 0;
+	font-weight: 600;
+	color: var(--yellow);
+}
+.composer-schedule-ptext {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-dim);
+}
+.composer-schedule-pcancel {
+	margin-left: auto;
+	flex-shrink: 0;
+	border: none;
+	background: none;
+	color: var(--text-faint);
+	font-size: 12px;
+	cursor: pointer;
+}
+.composer-schedule-pcancel:hover {
+	color: var(--red);
+}
+
+/* Custom-time dialog — centered modal with date + time fields, mirroring
+   Slack's "Schedule message" sheet. */
+.composer-schedule-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 300;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.4);
+	padding: 20px;
+}
+.composer-schedule-modal {
+	width: 420px;
+	max-width: 92vw;
+	background: var(--bg-raised);
+	border: 1px solid var(--border-strong);
+	border-radius: 14px;
+	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+	padding: 20px;
+}
+.composer-schedule-modal-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+}
+.composer-schedule-modal-title {
+	font-size: 17px;
+	font-weight: 600;
+	color: var(--text);
+}
+.composer-schedule-modal-tz {
+	margin-top: 3px;
+	font-size: 12.5px;
+	color: var(--text-dim);
+}
+.composer-schedule-modal-close {
+	border: none;
+	background: none;
+	color: var(--text-faint);
+	font-size: 15px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 2px 4px;
+}
+.composer-schedule-modal-close:hover {
+	color: var(--text);
+}
+.composer-schedule-modal-fields {
+	display: flex;
+	gap: 8px;
+	margin-top: 16px;
+}
+.composer-schedule-input {
+	flex: 1;
+	min-width: 0;
+	background: var(--bg-surface);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 9px 12px;
+	color: var(--text);
+	font-size: 14px;
+	font-weight: 500;
+	outline: none;
+}
+.composer-schedule-input-time {
+	flex: 0 0 130px;
+}
+.composer-schedule-input:focus {
+	border-color: var(--border-strong);
+}
+.composer-schedule-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 20px;
+}
+.composer-schedule-cancel {
+	padding: 9px 16px;
+	border: 1px solid var(--border-strong);
+	border-radius: 8px;
+	background: none;
+	color: var(--text);
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.composer-schedule-cancel:hover {
+	background: var(--bg-surface);
+}
+.composer-schedule-submit {
+	padding: 9px 16px;
+	border: none;
+	border-radius: 8px;
+	background: var(--accent);
+	color: #fff;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: filter 0.12s;
+}
+.composer-schedule-submit:not(:disabled):hover {
+	filter: brightness(1.1);
+}
+.composer-schedule-submit:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
 .composer-hint {
 	color: var(--text-faint);
 	font-size: 11px;

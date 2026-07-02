@@ -72,8 +72,15 @@ interface Props {
    * Optional caret control fused onto the right of the send button as a Slack-style
    * split button (e.g. "send later"). Rendered inside `.composer-send-split`; it
    * should style its trigger with `composer-send-caret` and anchor its own popover.
+   * Given the current draft `text`, the shared `disabled` state (same as the send
+   * button — so the whole split greys out on an empty draft), and `onScheduled` to
+   * clear the draft once the message has been handed off.
    */
-  sendMenu?: React.ReactNode;
+  sendMenu?: (ctx: {
+    text: string;
+    disabled: boolean;
+    onScheduled: () => void;
+  }) => React.ReactNode;
   /**
    * When set and busy, renders an extra "fold in" send button — the gentle
    * option that queues the message for Michael's next stopping point instead of
@@ -555,7 +562,13 @@ export function Composer({
                 {busy ? <IconBolt size={24} /> : <IconArrowUp size={24} />}
               </button>
             </Tooltip>
-            {sendMenu}
+            {sendMenu?.({
+              text,
+              disabled: !!(disabled || isSendDisabled),
+              onScheduled: () => {
+                if (!isControlled) setInnerValue("");
+              },
+            })}
           </div>
         </div>
       </div>
