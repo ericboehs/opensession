@@ -43,6 +43,8 @@ export interface UnifiedSession {
   attachedRepos?: AttachedRepo[];
   automation?: string;
   archived?: boolean;
+  /** Why this session is archived — powers the "Auto-archived" filter. */
+  archivedReason?: "manual" | "idle" | "auto" | "plain";
   plainThreadId?: string;
   /** Model id for runs in this session; unset = default (MICHAEL_MODEL). */
   model?: string;
@@ -148,6 +150,7 @@ export interface BackstageSessionFile {
   modelHistory?: Array<{ model: string; at: string; by?: string }>;
   archived?: boolean;
   archivedAt?: string;
+  archivedReason?: "manual" | "idle" | "auto" | "plain";
   goal?: string; // pinned goal, appended to every prompt until cleared
   goalId?: string; // Goal record this session is driven by (src/server/goals.ts)
   lastRunError?: { message: string; at: string }; // last run died on a terminal error; cleared on the next clean run

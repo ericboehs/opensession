@@ -5,7 +5,7 @@ import {
 	slackIdToFirstName,
 	githubLoginToPersonKey,
 } from "./shared/user-mappings";
-import { isArchivedId } from "./archive";
+import { isArchivedId, getArchiveReason } from "./archive";
 import { getTitleOverride } from "./title-overrides";
 import { getGeneratedTitle } from "./generated-titles";
 import { findCodexRollout } from "./codex-accounts";
@@ -248,6 +248,7 @@ function scanBackstageSessions(): UnifiedSession[] {
           ? data.createdBy.slice(0, -" (automation)".length)
           : undefined),
       archived: data.archived || undefined,
+      archivedReason: data.archivedReason,
       plainThreadId: data.plainThreadId,
       model: data.model,
       codexThreadId: data.codexThreadId,
@@ -587,7 +588,10 @@ export function getAllSessions(): UnifiedSession[] {
 
   // Apply the cross-source archive registry
   for (const session of allSessions) {
-    if (!session.archived && isArchivedId(session.id)) session.archived = true;
+    if (!session.archived && isArchivedId(session.id)) {
+      session.archived = true;
+      session.archivedReason = getArchiveReason(session.id) || "manual";
+    }
   }
 
   // Apply auto-generated summary titles (the short Conductor-style name),

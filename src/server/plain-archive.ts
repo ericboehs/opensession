@@ -39,7 +39,7 @@ export function clearSessionFileArchive(id: string): boolean {
   try {
     const data = JSON.parse(readFileSync(path, "utf-8")) as BackstageSessionFile;
     if (!data.archived && !data.archivedAt) return false;
-    const { archived, archivedAt, ...rest } = data;
+    const { archived, archivedAt, archivedReason, ...rest } = data;
     writeJsonAtomic(path, rest);
     return true;
   } catch {
@@ -56,6 +56,7 @@ export function archiveSessionsForThread(threadId: string): number {
       ...data,
       archived: true,
       archivedAt: new Date().toISOString(),
+      archivedReason: "plain",
     });
     archived++;
   }

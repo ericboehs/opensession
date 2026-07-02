@@ -20,8 +20,11 @@ import { ModelsPanel } from "./Models";
 import {
 	fetchMonitorConfig,
 	updateMonitorConfig,
+	fetchAutoArchiveConfig,
+	updateAutoArchiveConfig,
 	fetchAudit,
 	type MonitorConfig,
+	type AutoArchiveConfig,
 } from "../lib/api";
 import { getPushState, enablePush, disablePush, type PushState } from "../lib/push";
 import { getCurrentUser } from "./UserPicker";
@@ -50,6 +53,7 @@ export type ToolSectionKey =
 export type SettingsSectionKey =
 	| "notifications"
 	| "monitor"
+	| "autoArchive"
 	| "appearance"
 	| "model"
 	| "connections"
@@ -210,6 +214,25 @@ const SECTIONS: {
 		),
 	},
 	{
+		key: "autoArchive",
+		label: "Auto-archive",
+		group: "Personal",
+		icon: (
+			<svg
+				width="18"
+				height="18"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
+				<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
+				<path d="M6.5 8.5h3" strokeLinecap="round" />
+			</svg>
+		),
+	},
+	{
 		key: "appearance",
 		label: "Appearance",
 		group: "Personal",
@@ -305,6 +328,7 @@ function SectionPanel({
 			{TOOL_SECTIONS.has(section) && children}
 			{section === "notifications" && <NotificationsPanel />}
 			{section === "monitor" && <MonitorPanel />}
+			{section === "autoArchive" && <AutoArchivePanel />}
 			{section === "appearance" && <AppearancePanel />}
 			{section === "audit" && <AuditPanel />}
 			{section === "model" && <ModelsPanel />}
@@ -943,6 +967,102 @@ function MonitorPanel() {
 						/>
 					}
 				/>
+			</div>
+		</div>
+	);
+}
+
+/**
+ * Auto-archive sessions that look done — per user, opt-in by repo. Off
+ * everywhere by default except "backstage" itself, since fast self-hosting
+ * iteration there means constant manual tidy-up otherwise.
+ */
+function AutoArchivePanel() {
+	const user = getCurrentUser();
+	const [cfg, setCfg] = useState<AutoArchiveConfig | null>(null);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		fetchAutoArchiveConfig(user)
+			.then(setCfg)
+			.catch((e) => setError(e.message));
+	}, [user]);
+
+	function patch(p: Partial<Pick<AutoArchiveConfig, "repos" | "onChecksGreen">>) {
+		if (!cfg) return;
+		const optimistic = { ...cfg, ...p };
+		setCfg(optimistic);
+		updateAutoArchiveConfig(user, p)
+			.then((next) => setCfg({ ...next, availableRepos: cfg.availableRepos }))
+			.catch((e) => setError(e.message));
+	}
+
+	function toggleRepo(repo: string, on: boolean) {
+		if (!cfg) return;
+		const repos = on
+			? [...cfg.repos, repo]
+			: cfg.repos.filter((r) => r !== repo);
+		patch({ repos });
+	}
+
+	if (!cfg)
+		return (
+			<div className="settings-panel">
+				<h1 className="settings-title">Auto-archive</h1>
+				<div className="setting-row-desc">{error || "Loading…"}</div>
+			</div>
+		);
+
+	return (
+		<div className="settings-panel">
+			<h1 className="settings-title">Auto-archive</h1>
+			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+				When a session looks done — its PR merged, or (below) its checks all
+				pass — Michael archives it for you, sorted under "Auto-archived" in{" "}
+				<b>{user}</b>'s Archived list instead of sitting in My sessions. Off
+				by default; on for <b>backstage</b> out of the box since that repo
+				moves fast and doesn't need manual tidy-up.
+			</div>
+
+			{error && (
+				<div className="form-error" onClick={() => setError(null)}>
+					{error}
+				</div>
+			)}
+
+			<div className="setting-card">
+				<SettingRow
+					title="Archive once checks are green"
+					desc="Also archive an open (unmerged) PR once every check passes, not just after merge — for repos that iterate fast and don't need the PR to stick around once it builds."
+					control={
+						<Toggle
+							label="Archive once checks are green"
+							checked={cfg.onChecksGreen}
+							onChange={(v) => patch({ onChecksGreen: v })}
+						/>
+					}
+				/>
+			</div>
+
+			<div className="setting-card" style={{ marginTop: 14 }}>
+				{cfg.availableRepos.map((repo) => (
+					<SettingRow
+						key={repo}
+						title={repo}
+						desc={
+							repo === "backstage"
+								? "Backstage self-hosts — sessions here finish fast and pile up otherwise."
+								: `Auto-archive done sessions in ${repo}.`
+						}
+						control={
+							<Toggle
+								label={`Auto-archive ${repo}`}
+								checked={cfg.repos.includes(repo)}
+								onChange={(v) => toggleRepo(repo, v)}
+							/>
+						}
+					/>
+				))}
 			</div>
 		</div>
 	);

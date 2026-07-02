@@ -228,6 +228,11 @@ import {
 } from "./src/agents/slack/worktree-channels";
 import { startPlainArchiveSweep, clearSessionFileArchive } from "./src/server/plain-archive";
 import { setArchived, archiveOlderThan } from "./src/server/archive";
+import {
+	getAutoArchiveConfig,
+	setAutoArchiveConfig,
+	startAutoArchiveSweep,
+} from "./src/server/auto-archive";
 import { setTitleOverride, getTitleOverride } from "./src/server/title-overrides";
 import { ensureGeneratedTitle } from "./src/server/generated-titles";
 import {
@@ -4205,6 +4210,24 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json(setMonitorConfig(body.user, body));
 			}
 
+			// ── Auto-archive (per-user, opt-in by repo) ──
+			if (path === "/backstage/api/auto-archive" && req.method === "GET") {
+				const user = (url.searchParams.get("user") || "").trim();
+				if (!user)
+					return Response.json({ error: "user required" }, { status: 400 });
+				return Response.json({
+					...getAutoArchiveConfig(user),
+					availableRepos: Object.keys(REPOS),
+				});
+			}
+
+			if (path === "/backstage/api/auto-archive" && req.method === "PUT") {
+				const body = await req.json().catch(() => null);
+				if (!body || typeof body.user !== "string" || !body.user.trim())
+					return Response.json({ error: "user required" }, { status: 400 });
+				return Response.json(setAutoArchiveConfig(body.user, body));
+			}
+
 			// ── Security (deepsec scans + profiles) ──
 			if (path === "/backstage/api/security" && req.method === "GET") {
 				return Response.json({
@@ -6231,6 +6254,21 @@ if (!g.__backstageBooted) {
 	startPlainArchiveSweep(() => {
 		sessionsCache = null;
 	});
+
+	// Auto-archive sessions that look done (merged PR, or opt-in green checks) —
+	// per-user, opt-in by repo (Settings → Auto-archive), on by default only for
+	// the backstage repo itself.
+	startAutoArchiveSweep(
+		() =>
+			getAllSessions().map((s) => ({
+				...s,
+				waitingForInput: pendingAsks.has(s.id),
+				lastRunError: runErrors.get(s.id) || s.lastRunError,
+			})),
+		() => {
+			sessionsCache = null;
+		},
+	);
 
 	// Poll per-account Claude usage (drives account picking + the Connections UI)
 	startUsagePoller();

@@ -74,6 +74,8 @@ export interface UnifiedSession {
 	attachedRepos?: Array<{ repo: string; branch: string; dir: string }>;
 	automation?: string;
 	archived?: boolean;
+	/** Why this session is archived — powers the "Auto-archived" filter. */
+	archivedReason?: "manual" | "idle" | "auto" | "plain";
 	plainThreadId?: string;
 	goal?: string;
 	loop?: {

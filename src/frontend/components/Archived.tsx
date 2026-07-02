@@ -15,6 +15,13 @@ const DEFAULT_PROJECT = "tella-fusion";
 const SIDEBAR_FILTER_KEY = "michael-sidebar-filter";
 
 type OwnerFilter = "mine" | "everyone";
+type ReasonFilter = "all" | "manual" | "auto";
+
+// Manual archiving is the only reason an old registry/file entry can be
+// missing `archivedReason` (it predates the field) — treat unset as manual.
+function isAutoReason(s: UnifiedSession): boolean {
+  return !!s.archivedReason && s.archivedReason !== "manual";
+}
 
 function sessionRepo(s: UnifiedSession): string {
   return s.repo || DEFAULT_PROJECT;
@@ -39,6 +46,7 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
   // repo filter — both still adjustable here.
   const [owner, setOwner] = useState<OwnerFilter>("mine");
   const [repo, setRepo] = useState<string>(sidebarRepo);
+  const [reason, setReason] = useState<ReasonFilter>("all");
 
   useEffect(() => {
     document.title = "Archived — Michael";
@@ -81,6 +89,10 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
           s.startedBy.toLowerCase() === user,
       );
     if (repo !== "all") list = list.filter((s) => sessionRepo(s) === repo);
+    if (reason !== "all")
+      list = list.filter((s) =>
+        reason === "auto" ? isAutoReason(s) : !isAutoReason(s),
+      );
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -92,7 +104,7 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
       );
     }
     return list;
-  }, [allArchived, owner, repo, search, currentUser]);
+  }, [allArchived, owner, repo, reason, search, currentUser]);
 
   async function handleUnarchive(e: React.MouseEvent, id: string) {
     e.stopPropagation();
@@ -159,6 +171,26 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
             ))}
           </div>
         )}
+        <div className="seg-control" role="group" aria-label="Reason">
+          <button
+            className={`seg-control-btn${reason === "all" ? " active" : ""}`}
+            onClick={() => setReason("all")}
+          >
+            All
+          </button>
+          <button
+            className={`seg-control-btn${reason === "auto" ? " active" : ""}`}
+            onClick={() => setReason("auto")}
+          >
+            Auto-archived
+          </button>
+          <button
+            className={`seg-control-btn${reason === "manual" ? " active" : ""}`}
+            onClick={() => setReason("manual")}
+          >
+            Manual
+          </button>
+        </div>
       </div>
 
       {archived.length === 0 ? (
@@ -177,6 +209,11 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
                   </span>
                   {s.startedBy && <span>{s.startedBy}</span>}
                   <span>{relativeTime(s.lastActivity)}</span>
+                  {isAutoReason(s) && (
+                    <span className="source-chip" title={`Auto-archived (${s.archivedReason})`}>
+                      auto
+                    </span>
+                  )}
                 </span>
               </span>
               <span

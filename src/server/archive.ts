@@ -8,12 +8,24 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import type { UnifiedSession } from "./types";
 
-const HOME = process.env.HOME || "/home/ubuntu";
 const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/archive-registry.json`;
 
-let cache: Record<string, string> | null = null;
+/** Why a session ended up archived — drives the "Auto-archived" filter. */
+export type ArchiveReason = "manual" | "idle" | "auto";
 
-function load(): Record<string, string> {
+interface Entry {
+  at: string;
+  reason: ArchiveReason;
+}
+
+// Registry entries were originally a bare ISO timestamp (implicitly manual).
+// Old entries are upgraded to the object shape lazily on next write; reads
+// treat a bare string as `{ reason: "manual" }` so existing data keeps working.
+type RawEntry = string | Entry;
+
+let cache: Record<string, RawEntry> | null = null;
+
+function load(): Record<string, RawEntry> {
   if (cache) return cache;
   try {
     cache = existsSync(REGISTRY_PATH)
@@ -25,18 +37,31 @@ function load(): Record<string, string> {
   return cache!;
 }
 
-function save(registry: Record<string, string>): void {
+function save(registry: Record<string, RawEntry>): void {
   cache = registry;
   writeJsonAtomic(REGISTRY_PATH, registry);
+}
+
+function toEntry(raw: RawEntry): Entry {
+  return typeof raw === "string" ? { at: raw, reason: "manual" } : raw;
 }
 
 export function isArchivedId(id: string): boolean {
   return id in load();
 }
 
-export function setArchived(id: string, archived: boolean): void {
+export function getArchiveReason(id: string): ArchiveReason | null {
+  const raw = load()[id];
+  return raw ? toEntry(raw).reason : null;
+}
+
+export function setArchived(
+  id: string,
+  archived: boolean,
+  reason: ArchiveReason = "manual",
+): void {
   const registry = { ...load() };
-  if (archived) registry[id] = new Date().toISOString();
+  if (archived) registry[id] = { at: new Date().toISOString(), reason };
   else delete registry[id];
   save(registry);
 }
@@ -52,7 +77,7 @@ export function archiveOlderThan(sessions: UnifiedSession[], days: number): numb
     if (s.archived || s.isRunning) continue;
     if (registry[s.id]) continue;
     if (new Date(s.lastActivity).getTime() >= cutoff) continue;
-    registry[s.id] = now;
+    registry[s.id] = { at: now, reason: "idle" };
     archived++;
   }
 
