@@ -16,6 +16,7 @@ import {
 	getOpenPrs,
 	deleteSession,
 	getTranscriptPath,
+	getEngineTranscriptPath,
 } from "./src/server/sessions";
 import {
 	parseTranscript,
@@ -1239,6 +1240,33 @@ function attachSessionWatchersToTranscript(
 	for (const ws of set) startWatching(path, ws, 0, sessionId);
 }
 
+function attachSessionWatchersToEngineTranscript(
+	sessionId: string,
+	provider: "claude" | "codex",
+	cwd: string,
+	engineSessionId: string,
+	attempt = 0,
+): void {
+	const path = getEngineTranscriptPath(cwd, engineSessionId, provider);
+	if (path) {
+		attachSessionWatchersToTranscript(sessionId, path);
+		return;
+	}
+	if (provider === "codex" && attempt < 5) {
+		setTimeout(
+			() =>
+				attachSessionWatchersToEngineTranscript(
+					sessionId,
+					provider,
+					cwd,
+					engineSessionId,
+					attempt + 1,
+				),
+			250,
+		);
+	}
+}
+
 function broadcastQueue(sessionId: string) {
 	broadcastToSession(sessionId, {
 		type: "queue_update",
@@ -2146,10 +2174,12 @@ async function runGoal(goal: Goal): Promise<void> {
 				persistSession(engineSessionId);
 				// A goal wake's transcript file is new each wake — attach anyone
 				// already viewing the goal session so the turn streams live.
-				if (providerFor(effectiveModel) === "claude" && engineSessionId) {
-					attachSessionWatchersToTranscript(
+				if (engineSessionId) {
+					attachSessionWatchersToEngineTranscript(
 						bksId,
-						getTranscriptPath(cwd, engineSessionId),
+						providerFor(effectiveModel),
+						cwd,
+						engineSessionId,
 					);
 				}
 			}
@@ -5638,10 +5668,12 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									// The transcript file didn't exist when viewers sent their
 									// watch (fresh chat) — attach them now so this first turn
 									// streams live instead of only appearing after a re-watch.
-									if (!isCodex && engineSessionId) {
-										attachSessionWatchersToTranscript(
+									if (engineSessionId) {
+										attachSessionWatchersToEngineTranscript(
 											bksId,
-											getTranscriptPath(wtPath, engineSessionId),
+											isCodex ? "codex" : "claude",
+											wtPath,
+											engineSessionId,
 										);
 									}
 								}
@@ -6028,10 +6060,12 @@ registerSessionControl({
 						// Attach anyone already viewing this fresh chat to its brand-new
 						// transcript file so the first turn streams live (see
 						// attachSessionWatchersToTranscript).
-						if (!isCodex && engineSessionId) {
-							attachSessionWatchersToTranscript(
+						if (engineSessionId) {
+							attachSessionWatchersToEngineTranscript(
 								bksId,
-								getTranscriptPath(wtPath, engineSessionId),
+								isCodex ? "codex" : "claude",
+								wtPath,
+								engineSessionId,
 							);
 						}
 					}

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,14 +7,14 @@ import type { UnifiedSession } from "./types";
 let home: string;
 let priorHome: string | undefined;
 
-beforeEach(() => {
+beforeAll(() => {
 	priorHome = process.env.HOME;
 	home = join(tmpdir(), `backstage-sessions-test-${crypto.randomUUID()}`);
 	process.env.HOME = home;
 	mkdirSync(join(home, ".backstage-chats"), { recursive: true });
 });
 
-afterEach(() => {
+afterAll(() => {
 	if (priorHome === undefined) delete process.env.HOME;
 	else process.env.HOME = priorHome;
 	rmSync(home, { recursive: true, force: true });
@@ -40,6 +40,11 @@ function writeSession(id: string, data: Record<string, unknown>): void {
 			2,
 		),
 	);
+}
+
+function uuidV7ForDate(iso: string): string {
+	const hex = Date.parse(iso).toString(16).padStart(12, "0");
+	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-7000-8000-000000000000`;
 }
 
 describe("getAllSessions", () => {
@@ -80,5 +85,27 @@ describe("getAllSessions", () => {
 			model: "claude-fable-5",
 			projectId: "prj-demo",
 		});
+	});
+
+	it("resolves engine transcript paths for Claude and Codex sessions", async () => {
+		const { getEngineTranscriptPath, getTranscriptPath } = await import(
+			`./sessions.ts?test=${crypto.randomUUID()}`
+		);
+
+		const cwd = "/home/ubuntu/projects/tella-backstage";
+		expect(getEngineTranscriptPath(cwd, "claude-session-1", "claude")).toBe(
+			getTranscriptPath(cwd, "claude-session-1"),
+		);
+
+		const threadId = uuidV7ForDate("2026-07-02T18:30:00.000Z");
+		const rolloutDir = join(home, ".codex", "sessions", "2026", "07", "02");
+		mkdirSync(rolloutDir, { recursive: true });
+		const rolloutPath = join(
+			rolloutDir,
+			`rollout-2026-07-02T18-30-00-${threadId}.jsonl`,
+		);
+		writeFileSync(rolloutPath, "");
+
+		expect(getEngineTranscriptPath(cwd, threadId, "codex")).toBe(rolloutPath);
 	});
 });

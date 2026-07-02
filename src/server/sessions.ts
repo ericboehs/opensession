@@ -51,6 +51,17 @@ export function getTranscriptPath(
   return `${CLAUDE_PROJECTS_DIR}/-${hash}/${sessionId}.jsonl`;
 }
 
+export function getEngineTranscriptPath(
+  worktreeDir: string,
+  engineSessionId: string,
+  provider: "claude" | "codex"
+): string | null {
+  if (provider === "codex") {
+    return findCodexRollout(engineSessionId)?.path || null;
+  }
+  return getTranscriptPath(worktreeDir, engineSessionId);
+}
+
 function findTranscriptPath(
   worktreeDir: string | null,
   sessionId: string | null
