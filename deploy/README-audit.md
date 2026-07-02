@@ -17,6 +17,12 @@ Every `runClaude` invocation emits `claude_turn_event` JSON lines to
   AskUserQuestion) and AskUserQuestion outcomes.
 - `result` — subtype, duration, turns, token usage, cost.
 - `error` / `cancelled` / `account_switch`.
+- `bg_task_started` / `bg_task_done` (direction `in`) — background task
+  (Agent/Bash `run_in_background`) lifecycle: task id, description, final
+  status. `bg_task_hold` / `bg_task_hold_expired` (direction `out`) — the run
+  reached a turn boundary with tasks still in flight and held the query open
+  (finishing would kill them with the CLI process), or gave up after
+  `BACKSTAGE_BG_HOLD_MAX_MS` (default 20 min) without task activity.
 
 Bodies are stored as sha256 + bounded snippet (300 bytes; 500 for tool
 inputs), like incident-agent: small logs, but every entry can be reconciled

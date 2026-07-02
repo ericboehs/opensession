@@ -542,6 +542,71 @@ export async function* runClaude(opts: {
   const pushSteer = (text: string) => {
     turnEvent({ direction: "in", kind: "steered_prompt", ...summarizeText(text) });
     steerPending.push(text);
+    // Parked at a held turn boundary (background tasks pending, no turn
+    // running): there is no upcoming result to release this, so deliver now.
+    if (atBoundaryHold) {
+      atBoundaryHold = false;
+      releaseSteers();
+    }
+  };
+
+  // Background task (Task/Agent/Bash run_in_background) tracking. The CLI
+  // process OWNS its background tasks: if the run finishes at a turn boundary
+  // while tasks are in flight, the process exit kills them mid-work (their
+  // transcripts get "[Request interrupted]"; the next resume reports
+  // "Background task stopped: no completion record…"). So a `result` with
+  // pending tasks HOLDS the query open — the same machinery steering uses —
+  // instead of finishing. While held, the CLI delivers each task's
+  // notification and starts the follow-up turn itself (nudged by a synthetic
+  // steer if it doesn't within 10s). The run finishes on the first result
+  // with nothing pending and nothing steered — or once the hold deadline
+  // expires: a background dev server never "completes", so without a deadline
+  // the run would never end. Task events reset the deadline; expiry gives the
+  // model one wrap-up turn (TaskOutput/TaskStop), then the next result
+  // finishes even with tasks pending.
+  const pendingBgTasks = new Map<string, string>(); // task_id → description
+  let atBoundaryHold = false; // parked at a turn boundary waiting on bg tasks
+  let holdExpired = false; // deadline passed → next result finishes anyway
+  let holdNudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  let holdDeadlineTimer: ReturnType<typeof setTimeout> | null = null;
+  const BG_HOLD_MAX_MS = Number(process.env.BACKSTAGE_BG_HOLD_MAX_MS || 20 * 60_000);
+  const clearHoldTimers = () => {
+    if (holdNudgeTimer) clearTimeout(holdNudgeTimer);
+    if (holdDeadlineTimer) clearTimeout(holdDeadlineTimer);
+    holdNudgeTimer = holdDeadlineTimer = null;
+  };
+  // The CLI is expected to start the follow-up turn itself after a task
+  // notification lands at a held boundary; if it hasn't within 10s, force one
+  // so the run can't wedge. (pushSteer releases immediately while held.)
+  const nudgeHeldBoundary = () => {
+    if (holdNudgeTimer) return;
+    holdNudgeTimer = setTimeout(() => {
+      holdNudgeTimer = null;
+      if (!atBoundaryHold || abortController.signal.aborted) return;
+      pushSteer(
+        "A background task finished while you were idle. Review its result " +
+          "(the task notification above, or TaskOutput) and continue the work; " +
+          "if everything is done, wrap up and end your turn."
+      );
+    }, 10_000);
+  };
+  const armHoldDeadline = () => {
+    if (holdDeadlineTimer) clearTimeout(holdDeadlineTimer);
+    holdDeadlineTimer = setTimeout(() => {
+      holdDeadlineTimer = null;
+      if (abortController.signal.aborted || holdExpired) return;
+      holdExpired = true;
+      turnEvent({ direction: "out", kind: "bg_task_hold_expired", pending: pendingBgTasks.size });
+      if (atBoundaryHold) {
+        pushSteer(
+          `Background task(s) have reported nothing for ${Math.round(BG_HOLD_MAX_MS / 60_000)} minutes: ` +
+            [...pendingBgTasks.values()].join("; ").slice(0, 300) +
+            ". Stop waiting. Check them with TaskOutput, TaskStop anything that shouldn't keep running " +
+            "(a long-lived dev server is fine to leave), summarize where the work stands, and end your " +
+            "turn. When this session closes, still-running background tasks are killed."
+        );
+      }
+    }, BG_HOLD_MAX_MS);
   };
   // Points at the live Query of the current rotation attempt; lets
   // interruptAndSteerRun stop the in-flight turn without killing the run.
@@ -607,6 +672,11 @@ export async function* runClaude(opts: {
 
     for (;;) {
       let shouldRetryAfterSwitch = false;
+      // Background tasks belong to one CLI process — a rotation retry starts a
+      // fresh process, so tracked tasks from the previous attempt are dead.
+      pendingBgTasks.clear();
+      atBoundaryHold = false;
+      clearHoldTimers();
       const q = query({
         prompt: mkInputStream(prompt),
         options: {
@@ -802,6 +872,49 @@ export async function* runClaude(opts: {
       for await (const msg of q) {
         if (abortController.signal.aborted) break;
 
+      // A held boundary ends the moment a new turn actually starts (the CLI
+      // delivering a task notification as a user turn, or our nudge steer).
+      if (atBoundaryHold && (msg.type === "assistant" || msg.type === "user")) {
+        atBoundaryHold = false;
+        if (holdNudgeTimer) {
+          clearTimeout(holdNudgeTimer);
+          holdNudgeTimer = null;
+        }
+      }
+
+      // Background task lifecycle — feeds the boundary-hold machinery above.
+      if (msg.type === "system") {
+        const sm = msg as any;
+        if (sm.subtype === "task_started" && sm.task_id) {
+          pendingBgTasks.set(sm.task_id, sm.description || sm.task_type || "background task");
+          turnEvent({
+            direction: "in",
+            kind: "bg_task_started",
+            task_id: sm.task_id,
+            ...summarizeText(sm.description || ""),
+          });
+        } else if (sm.subtype === "task_notification" && sm.task_id) {
+          pendingBgTasks.delete(sm.task_id);
+          turnEvent({
+            direction: "in",
+            kind: "bg_task_done",
+            task_id: sm.task_id,
+            task_status: sm.status,
+          });
+          if (atBoundaryHold) {
+            armHoldDeadline(); // activity — push the deadline out
+            nudgeHeldBoundary();
+          }
+        } else if (sm.subtype === "task_updated" && sm.task_id) {
+          const st = sm.patch?.status;
+          if (st === "completed" || st === "failed" || st === "killed") {
+            pendingBgTasks.delete(sm.task_id);
+          }
+        } else if (sm.subtype === "task_progress" && sm.task_id) {
+          if (atBoundaryHold) armHoldDeadline(); // still alive — keep holding
+        }
+      }
+
       if (msg.type === "system" && (msg as any).subtype === "init") {
         resultSessionId = (msg as any).session_id;
         forkConsumed = true; // we now have the forked id; don't re-fork on retry
@@ -959,6 +1072,24 @@ export async function* runClaude(opts: {
           continue;
         }
 
+        // Background tasks still in flight? Hold the boundary open instead of
+        // finishing — the process exit would kill them. The CLI (or our nudge)
+        // starts the follow-up turn when a task reports back. Skipped once the
+        // hold deadline has expired, and when dying on usage limits.
+        if (!limitExhausted && !holdExpired && pendingBgTasks.size > 0) {
+          atBoundaryHold = true;
+          turnEvent({ direction: "out", kind: "bg_task_hold", pending: pendingBgTasks.size });
+          yield {
+            type: "text_chunk",
+            text:
+              `\n\n[runner] Holding the session open — ${pendingBgTasks.size} background task(s) ` +
+              `still running (${[...pendingBgTasks.values()].join("; ").slice(0, 200)}). ` +
+              `Their results land back in this session.\n\n`,
+          };
+          armHoldDeadline();
+          continue;
+        }
+
         // Finishing: stop accepting steers first, then re-check — a message
         // that raced in between gets one more turn rather than being dropped.
         stopAcceptingSteers();
@@ -1017,6 +1148,7 @@ export async function* runClaude(opts: {
       turnEvent({ direction: "out", kind: "cancelled" });
     }
     stopAcceptingSteers();
+    clearHoldTimers();
     inputDone = true;
     // Wake the input stream so it sees inputDone and closes. (A direct
     // `steerWake?.()` here trips TS narrowing: it's only ever assigned inside
