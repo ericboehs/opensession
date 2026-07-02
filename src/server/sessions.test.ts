@@ -163,4 +163,49 @@ describe("getAllSessions", () => {
 			codexThreadId: threadId,
 		});
 	});
+
+	it("falls back to the other engine transcript when the active provider has none", async () => {
+		const codexThreadId = uuidV7ForDate("2026-07-02T18:45:00.000Z");
+		const rolloutDir = join(home, ".codex", "sessions", "2026", "07", "02");
+		mkdirSync(rolloutDir, { recursive: true });
+		const rolloutPath = join(
+			rolloutDir,
+			`rollout-2026-07-02T18-45-00-${codexThreadId}.jsonl`,
+		);
+		writeFileSync(rolloutPath, "");
+		writeSession("bks-switched-back-to-claude", {
+			title: "Switched back to Claude before Claude transcript exists",
+			model: "claude-fable-5",
+			claudeSessionId: "missing-claude-transcript",
+			codexThreadId,
+		});
+
+		const claudeDir = join(
+			home,
+			".claude",
+			"projects",
+			"-home-ubuntu-projects-tella-backstage",
+		);
+		mkdirSync(claudeDir, { recursive: true });
+		const claudePath = join(claudeDir, "claude-only-transcript.jsonl");
+		writeFileSync(claudePath, "");
+		writeSession("bks-switched-to-codex", {
+			title: "Switched to Codex before Codex transcript exists",
+			model: "gpt-5.5",
+			claudeSessionId: "claude-only-transcript",
+			codexThreadId: "missing-codex-rollout",
+		});
+
+		const { getAllSessions } = await import(`./sessions.ts?test=${crypto.randomUUID()}`);
+		const sessions = getAllSessions();
+
+		expect(
+			sessions.find((s: UnifiedSession) => s.id === "bks-switched-back-to-claude")
+				?.transcriptPath,
+		).toBe(rolloutPath);
+		expect(
+			sessions.find((s: UnifiedSession) => s.id === "bks-switched-to-codex")
+				?.transcriptPath,
+		).toBe(claudePath);
+	});
 });

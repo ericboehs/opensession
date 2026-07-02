@@ -100,18 +100,21 @@ function findTranscriptPath(
 
 /**
  * Transcript for a session that may have run on either engine: codex-model
- * sessions render their rollout jsonl; everything else the claude transcript.
+ * sessions prefer their rollout jsonl; Claude-model sessions prefer their
+ * Claude jsonl. If the preferred provider has not produced a transcript yet,
+ * fall back to the other engine so mixed sessions don't appear blank after a
+ * provider switch.
  */
 function resolveTranscriptPath(
   claudePath: string | null,
   codexThreadId: string | null | undefined,
   model: string | null | undefined
 ): string | null {
+  const codexPath = codexThreadId ? findCodexRollout(codexThreadId)?.path || null : null;
   if (codexThreadId && providerFor(model) === "codex") {
-    const rollout = findCodexRollout(codexThreadId);
-    if (rollout) return rollout.path;
+    return codexPath || claudePath;
   }
-  return claudePath;
+  return claudePath || codexPath;
 }
 
 function readJsonSafe<T>(path: string): T | null {
