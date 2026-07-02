@@ -11,7 +11,7 @@ import { IconImage } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 
 /**
- * Floating overview panel on the top-left of the conversation: the workspace's
+ * Floating overview panel on the top-right of the conversation: the workspace's
  * opening prompt + every screenshot/video from its chats, so switching
  * workspaces gives instant "what is this about" context. Collapsible to a
  * small pill (persisted per browser); hidden entirely when there's nothing to
@@ -149,9 +149,9 @@ export function WorkspacePreview({
 
 	if (!open) {
 		return (
-			<Tooltip label="Show workspace overview" side="right">
+			<Tooltip label="Show workspace overview" side="left">
 				<button
-					className="absolute left-3 top-3 z-30 flex items-center gap-1.5 rounded-full border border-line bg-panel/95 px-2.5 py-1.5 text-xs text-dim shadow-md backdrop-blur-sm hover:text-fg"
+					className="absolute right-3 top-3 z-30 flex items-center gap-1.5 rounded-full border border-line bg-panel/95 px-2.5 py-1.5 text-xs text-dim shadow-xs backdrop-blur-sm hover:text-fg"
 					onClick={() => setOpen(true)}
 					aria-label="Show workspace overview"
 				>
@@ -163,7 +163,7 @@ export function WorkspacePreview({
 	}
 
 	return (
-		<div className="absolute left-3 top-3 z-30 flex max-h-[46%] w-[300px] max-w-[calc(100%-24px)] flex-col overflow-hidden rounded-lg border border-line bg-panel/95 shadow-lg backdrop-blur-sm">
+		<div className="absolute right-3 top-3 z-30 flex max-h-[46%] w-[300px] max-w-[calc(100%-24px)] flex-col overflow-hidden rounded-lg border border-line bg-panel/95 shadow-sm backdrop-blur-sm">
 			<div className="flex items-center gap-2 px-3 pb-1.5 pt-2.5">
 				<IconImage size={14} className="shrink-0 text-faint" />
 				<span className="min-w-0 flex-1 truncate text-xs font-semibold text-dim">
