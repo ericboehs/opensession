@@ -5892,6 +5892,19 @@ html[data-theme="light"] .tool-code-surface {
 .composer-spacer {
 	flex: 1;
 }
+/* When the toolbar runs out of room, the model/effort pills give way (their
+   labels ellipsize) — never the icon buttons or the send button, which would
+   otherwise get pushed past the composer edge on phones. */
+.composer-toolbar > * {
+	flex-shrink: 0;
+}
+.composer-toolbar .palette-pill {
+	flex-shrink: 1;
+	min-width: 34px;
+}
+.composer-toolbar .palette-effort-icon {
+	flex-shrink: 0;
+}
 
 .composer-model {
 	display: inline-flex;
@@ -7349,6 +7362,20 @@ html[data-theme="light"] .tool-code-surface {
 	.composer-send {
 		width: 36px;
 		height: 36px;
+	}
+	/* Fit the whole toolbar at phone widths so the send button never clips:
+	   drop the pill chevrons (the pill is obviously tappable), collapse the
+	   effort pill to its bars icon, and tighten pill padding. The shrink rules
+	   at the base .composer-toolbar block handle the rest via ellipsis. */
+	.composer-toolbar .palette-pill {
+		padding: 5px 9px;
+		max-width: 136px;
+	}
+	.composer-toolbar .palette-chevron {
+		display: none;
+	}
+	.composer-toolbar .palette-pill:has(.palette-effort-icon) .palette-pill-label {
+		display: none;
 	}
 }
 
