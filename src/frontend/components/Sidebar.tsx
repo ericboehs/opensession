@@ -1899,17 +1899,17 @@ export function Sidebar({
 											}${r.session ? "" : " (no session — opens on GitHub)"}`}
 										>
 											{filter.repo === "all" && <RepoTile name={r.repo} />}
-											<span className="text-faint text-[11px] tabular-nums shrink-0">
+											<span className="text-faint text-[11px] max-[720px]:text-[13px] tabular-nums shrink-0">
 												{r.number ? `#${r.number}` : "PR"}
 											</span>
 											<span className="sidebar-item-title">{r.title}</span>
 											{r.isDraft && (
-												<span className="text-faint text-[10.5px] uppercase tracking-wide shrink-0">
+												<span className="text-faint text-[10.5px] max-[720px]:text-[12px] uppercase tracking-wide shrink-0">
 													draft
 												</span>
 											)}
 											<span
-												className="ml-auto shrink-0 text-[10.5px] text-faint group-hover:hidden"
+												className="ml-auto shrink-0 text-[10.5px] max-[720px]:text-[12px] text-faint group-hover:hidden"
 												title={new Date(r.updatedAt).toLocaleString()}
 											>
 												{shortTime(r.updatedAt)}
@@ -1988,7 +1988,7 @@ export function Sidebar({
 								others.map((v) => (
 									<button
 										key={v.user}
-										className={`flex items-center gap-2 w-full min-w-0 text-left text-[12.5px] bg-transparent border-0 cursor-pointer rounded-md px-2 py-1.5 hover:bg-hover ${
+										className={`flex items-center gap-2 w-full min-w-0 text-left text-[12.5px] max-[720px]:text-[16px] bg-transparent border-0 cursor-pointer rounded-md px-2 py-1.5 max-[720px]:py-2.5 hover:bg-hover ${
 											followUser === v.user ? "bg-active" : ""
 										}`}
 										onClick={() => onToggleFollow?.(v.user)}
@@ -2007,7 +2007,7 @@ export function Sidebar({
 											{titleFor(v.sessionId)}
 										</span>
 										{followUser === v.user && (
-											<span className="text-accent text-[10px] uppercase tracking-wide ml-auto shrink-0">
+											<span className="text-accent text-[10px] max-[720px]:text-[12px] uppercase tracking-wide ml-auto shrink-0">
 												following
 											</span>
 										)}

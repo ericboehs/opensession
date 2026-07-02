@@ -7270,17 +7270,26 @@ html[data-theme="light"] .tool-code-surface {
      fully inside. */
 @media (max-width: 720px) {
 	.sidebar-nav-item {
-		font-size: 15px;
-		padding: 8px 8px;
+		font-size: 16px;
+		padding: 10px 8px;
 	}
 	.sidebar-workspace-title {
-		font-size: 14px;
+		font-size: 15px;
 	}
 	.sidebar-band-label {
-		font-size: 14px;
+		font-size: 15px;
 	}
+	/* Group rows (automations, status lanes, Pinned/Archived/Open PRs) are tap
+	   targets just like workspace rows — same 16px text, taller rows. */
 	.sidebar-group-header {
-		font-size: 14.5px;
+		font-size: 16px;
+		padding: 9px 6px;
+	}
+	.sidebar-group-count {
+		font-size: 13px;
+	}
+	.sidebar-ws-time {
+		font-size: 12px;
 	}
 	.sidebar-item-title,
 	.sidebar-item-rename {
