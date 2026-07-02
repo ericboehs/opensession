@@ -15,7 +15,8 @@ import {
 	onThemeChanged,
 	type ThemePref,
 } from "../lib/theme";
-import { Connections, DefaultModel } from "./Connections";
+import { Connections } from "./Connections";
+import { ModelsPanel } from "./Models";
 import {
 	fetchMonitorConfig,
 	updateMonitorConfig,
@@ -105,7 +106,7 @@ const SECTIONS: {
 	},
 	{
 		key: "model",
-		label: "Default model",
+		label: "Models",
 		group: "Workspace",
 		icon: (
 			<svg
@@ -226,7 +227,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
 				{section === "monitor" && <MonitorPanel />}
 				{section === "appearance" && <AppearancePanel />}
 				{section === "audit" && <AuditPanel />}
-				{section === "model" && <DefaultModelPanel />}
+				{section === "model" && <ModelsPanel />}
 				{section === "connections" && <Connections />}
 			</div>
 		</div>
@@ -816,20 +817,6 @@ function AppearancePanel() {
 					? "Matches your operating system."
 					: `Always ${pref} mode.`}
 			</div>
-		</div>
-	);
-}
-
-// ── Default model ──────────────────────────────────────────────────────────
-// A thin Settings wrapper around the DefaultModel control (which owns the fetch
-// + save). The panel supplies the heading; the control renders the picker card.
-
-function DefaultModelPanel() {
-	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Default model</h1>
-			<div className="settings-group-label">What new sessions run on</div>
-			<DefaultModel />
 		</div>
 	);
 }
