@@ -351,6 +351,18 @@ export function IconX(p: IconProps) {
   );
 }
 
+// Archive box (lidded crate with a pull slot), redrawn to this set's 24×24
+// grammar — the reversible sibling of IconTrash.
+export function IconArchive(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="4" y="4.75" width="16" height="4" rx="1" />
+      <path {...stroke} d="M5.5 8.75V17.25C5.5 18.3546 6.39543 19.25 7.5 19.25H16.5C17.6046 19.25 18.5 18.3546 18.5 17.25V8.75" />
+      <path {...stroke} d="M10 12.25H14" />
+    </Svg>
+  );
+}
+
 // Octicon-style git-pull-request, redrawn to this set's 24×24 stroke grammar.
 export function IconPullRequest(p: IconProps) {
   return (

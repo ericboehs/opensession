@@ -21,6 +21,7 @@ import { TerminalPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
 import {
 	deleteSessionApi,
+	archiveSessionApi,
 	fetchModels,
 	fetchFileMentions,
 	promoteChatApi,
@@ -41,7 +42,7 @@ import { PreviewButton } from "./PreviewButton";
 import { StagingLink } from "./StagingLink";
 import { WorkspaceInfo } from "./WorkspaceInfo";
 import { SpinOffMenu } from "./SpinOffMenu";
-import { IconSidebarRight, IconTrash } from "./icons";
+import { IconSidebarRight, IconTrash, IconArchive } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
@@ -896,6 +897,7 @@ export function SessionViewer({
 
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 	const [deleting, setDeleting] = useState(false);
+	const [archiving, setArchiving] = useState(false);
 	const [deleteLabel, setDeleteLabel] = useState("");
 
 	// Responsive header: when the top bar gets narrow (small window, sidebar +
@@ -985,6 +987,23 @@ export function SessionViewer({
 		}
 	}
 
+	// Archive is the reversible "I'm done with this" — unlike delete it keeps the
+	// session (and worktree) and just tucks it into the Archived view, so no
+	// confirm step. Unarchiving from here (viewing an already-archived session)
+	// brings it back. Either way we hop out to the list the same way delete does.
+	async function handleArchive() {
+		const next = !session.archived;
+		setArchiving(true);
+		setOverflowOpen(false);
+		try {
+			await archiveSessionApi(session.id, next);
+			onBack();
+		} catch (e: any) {
+			alert(`${next ? "Archive" : "Unarchive"} failed: ${e.message}`);
+			setArchiving(false);
+		}
+	}
+
 	return (
 		<div className="session-viewer">
 			{deleting && (
@@ -1027,6 +1046,26 @@ export function SessionViewer({
 							connected={connected}
 						/>
 					</>
+				);
+				// Archive is the reversible primary "done with this" action — it sits
+				// above Delete in the menu so the safe choice reads first. When the
+				// session is already archived this becomes Unarchive.
+				const archiveAction = (
+					<button
+						className="btn-viewer-archive"
+						onClick={handleArchive}
+						disabled={archiving}
+						title={session.archived ? "Unarchive session" : "Archive session"}
+					>
+						<IconArchive size={17} />
+						{archiving
+							? session.archived
+								? "Unarchiving…"
+								: "Archiving…"
+							: session.archived
+								? "Unarchive session"
+								: "Archive session"}
+					</button>
 				);
 				// Delete is destructive, so it never rides in the visible action bar —
 				// it always lives inside the ⋯ menu, one deliberate hop away.
@@ -1250,6 +1289,7 @@ export function SessionViewer({
 							<div className="viewer-overflow-menu">
 								{isPhone && secondaryActions}
 								{(compactHeader || isPhone) && collapsibleActions}
+								{archiveAction}
 								{deleteAction}
 							</div>
 						)}

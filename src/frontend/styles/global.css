@@ -2256,7 +2256,8 @@ body.resizing-x {
 	background: var(--accent-soft);
 }
 
-.btn-viewer-delete {
+.btn-viewer-delete,
+.btn-viewer-archive {
 	display: inline-flex;
 	align-items: center;
 	gap: 7px;
@@ -2267,6 +2268,17 @@ body.resizing-x {
 	color: var(--text-faint);
 	padding: 5px 12px;
 	font-size: 13px;
+}
+/* Archive is the safe, reversible action — it leans toward the text color on
+   hover (not red), keeping Delete as the only alarming item in the menu. */
+.btn-viewer-archive:hover:not(:disabled) {
+	color: var(--text);
+	border-color: var(--border-strong);
+	background: var(--bg-hover);
+}
+.btn-viewer-archive:disabled {
+	opacity: 0.6;
+	cursor: default;
 }
 
 /* Preview (local dev server) control */
