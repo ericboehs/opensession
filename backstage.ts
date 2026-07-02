@@ -1428,6 +1428,13 @@ async function runSessionPromptInner(
 		: undefined;
 	const deniedTools = isAutomationSession ? automationDeniedTools() : undefined;
 
+	// @session:<id> mentions → footer resolving them for the agent's
+	// michael-sessions tools. Interactive sessions only (same gate as the tools).
+	if (!isAutomationSession) {
+		const mentionsNote = sessionMentionsNote(prompt);
+		if (mentionsNote) prompt += `\n\n${mentionsNote}`;
+	}
+
 	// Sidebar name: make sure this chat has a short generated summary title.
 	// Covers tab-strip "New chat" chats (never named at creation — this is
 	// their first prompt) and retries chats whose creation-time Haiku call
@@ -1616,6 +1623,41 @@ async function runSessionPromptInner(
  * Backstage-native slash commands. Returns a notice string when the message
  * was consumed as a command, or null to send it to Claude as a normal prompt.
  */
+/**
+ * Expand `@session:bks-…` mentions in a prompt into a footer the agent can act
+ * on with its michael-sessions tools. The mention token itself stays in place
+ * (it carries the id); the footer resolves each id to a title/state and points
+ * at the tools — including slash commands over send_to_session (e.g. "/loop").
+ * Interactive sessions only: automations don't get michael-sessions.
+ */
+function sessionMentionsNote(content: string): string | null {
+	const ids = [
+		...new Set(
+			[...content.matchAll(/@session:(bks-[0-9a-f-]+)/g)].map((m) => m[1]),
+		),
+	];
+	if (!ids.length) return null;
+	const lines = ids.map((id) => {
+		const s = findSession(id);
+		if (!s) return `- @session:${id} — (no session with this id)`;
+		const busy = isAgentSessionBusy(s.claudeSessionId, s.codexThreadId, s.id);
+		const bits = [
+			s.title || "Untitled",
+			s.branch ? `branch ${s.branch}` : null,
+			busy ? "running" : "idle",
+		].filter(Boolean);
+		return `- @session:${id} — ${bits.join(" · ")}`;
+	});
+	return (
+		`[The @session mentions above refer to other Backstage sessions:\n${lines.join("\n")}\n` +
+		`Use the michael-sessions MCP tools with these ids: get_session (state, pending question, ` +
+		`transcript tail), send_to_session (a message — or a slash command handled by backstage ` +
+		`itself, e.g. "/loop 15m <prompt>" to set a recurring self-prompt on the target that fires ` +
+		`only while it is idle, "/loop stop" to clear it; this works on your own session id too), ` +
+		`answer_session_question, cancel_session.]`
+	);
+}
+
 function handleSlashCommand(
 	session: UnifiedSession,
 	text: string,
@@ -3094,7 +3136,36 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						}
 					} catch {}
 				}
-				return Response.json({ files: out.slice(0, 24) });
+				// "@"-mentions also surface other sessions (inserted as
+				// @session:<id>) so a prompt can reference them by name — e.g.
+				// "keep monitoring @session:… and @session:…". Matched on
+				// title/branch/id once 2+ chars are typed (a bare "@" stays
+				// files-only), newest activity first, after file hits.
+				const ql = q.toLowerCase();
+				const sessionHits =
+					ql.length >= 2
+						? getCachedSessions()
+								.filter((s) => !s.archived && s.id !== sessionId)
+								.filter(
+									(s) =>
+										(s.title || "").toLowerCase().includes(ql) ||
+										(s.branch || "").toLowerCase().includes(ql) ||
+										s.id.toLowerCase().includes(ql),
+								)
+								.sort((a, b) =>
+									(b.lastActivity || "").localeCompare(a.lastActivity || ""),
+								)
+								.slice(0, 5)
+								.map((s) => ({
+									display: s.title || s.branch || s.id,
+									insert: `session:${s.id}`,
+									kind: "session" as const,
+									sub: s.branch || s.source,
+								}))
+						: [];
+				return Response.json({
+					files: [...out.slice(0, 24 - sessionHits.length), ...sessionHits],
+				});
 			}
 
 			// Repos available to attach / start a chat against.
@@ -5230,6 +5301,19 @@ registerSessionControl({
 		const session = findSession(id);
 		if (!session)
 			return { status: "error" as const, message: "No session with that id." };
+
+		// Slash commands (/loop, /goal, /model, /help) are handled by backstage
+		// itself, exactly like the WebSocket prompt path — checked BEFORE the
+		// busy branch so "/loop stop" configures the session instead of being
+		// steered into its running turn as literal prompt text. This is what
+		// lets a monitor session manage loops (its own and others') via the
+		// michael-sessions send_to_session tool.
+		const notice = handleSlashCommand(session, String(content || "").trim(), user);
+		if (notice !== null) {
+			sessionsCache = null;
+			return { status: "handled" as const, message: notice };
+		}
+
 		const attributed = user ? `[${user}] ${content}` : content;
 
 		if (

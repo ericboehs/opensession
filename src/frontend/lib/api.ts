@@ -185,12 +185,16 @@ export async function fetchSubagent(
 
 /** A single "@"-mention suggestion. `insert` is what lands in the textarea. */
 export interface FileMention {
-	/** Repo-relative path, for display. */
+	/** Repo-relative path (files) or session title (sessions), for display. */
 	display: string;
-	/** Text inserted after the "@": bare path (primary repo) or `repo:path`. */
+	/** Text inserted after the "@": path, `repo:path`, or `session:<id>`. */
 	insert: string;
 	/** Repo label, set only when more than one repo is searched (cross-repo). */
 	repo?: string;
+	/** Entry type; absent means a file. */
+	kind?: "session";
+	/** Subtitle for non-file entries (e.g. a session's branch). */
+	sub?: string;
 }
 
 /**

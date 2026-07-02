@@ -45,7 +45,7 @@ export interface SessionSummary extends UnifiedSession {
 }
 
 export interface DeliverResult {
-  status: "steered" | "queued" | "started" | "error";
+  status: "steered" | "queued" | "started" | "handled" | "error";
   message: string;
 }
 

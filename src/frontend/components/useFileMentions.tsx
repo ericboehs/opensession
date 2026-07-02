@@ -174,8 +174,9 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch }: 
   const popup = open ? (
     <div className={`mention-popup ${dropDown ? "mention-popup-down" : ""}`} role="listbox">
       {suggestions.map((item, i) => {
+        const isSession = item.kind === "session";
         const path = item.display;
-        const slash = path.lastIndexOf("/");
+        const slash = isSession ? -1 : path.lastIndexOf("/");
         const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
         const base = slash >= 0 ? path.slice(slash + 1) : path;
         return (
@@ -190,9 +191,12 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch }: 
             }}
             onMouseEnter={() => setActiveIdx(i)}
           >
-            {item.repo && <span className="mention-repo">{item.repo}</span>}
+            {isSession && <span className="mention-repo">session</span>}
+            {!isSession && item.repo && <span className="mention-repo">{item.repo}</span>}
             <span className="mention-base">{base}</span>
-            {dir && <span className="mention-dir">{dir}</span>}
+            {isSession
+              ? item.sub && <span className="mention-dir">{item.sub}</span>
+              : dir && <span className="mention-dir">{dir}</span>}
           </div>
         );
       })}
