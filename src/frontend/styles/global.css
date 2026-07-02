@@ -4509,6 +4509,17 @@ body.resizing-x .panel-resize::after {
 	/* Keep the reader's place when content loads/expands above them (principle 12):
      the browser anchors scroll to on-screen content instead of jumping. */
 	overflow-anchor: auto;
+	/* Flex column, not block flow: WebKit paints cross-block selection as
+	   full-width "gap" bands across a block container (Safari/iOS PWA — the
+	   edge-to-edge blue rows when selecting across messages). It skips flex
+	   containers, so selection hugs the text. Chrome is unaffected. */
+	display: flex;
+	flex-direction: column;
+}
+/* Column flex + overflow-y would otherwise shrink children to fit the
+   viewport instead of scrolling. */
+.viewer-messages > * {
+	flex-shrink: 0;
 }
 
 /* The streaming tail is excluded from anchoring so a glued-to-bottom follow
@@ -4611,10 +4622,16 @@ body.resizing-x .panel-resize::after {
 	max-width: 860px;
 	margin-left: auto;
 	margin-right: auto;
+	/* Flex for the same WebKit selection-gap reason as .viewer-messages:
+	   block gaps between the label and body paint as full-width bands. */
+	display: flex;
+	flex-direction: column;
 }
 
 .msg-user {
-	margin-top: 22px;
+	/* Flex margins don't collapse: the old 22px collapsed with the previous
+	   sibling's 18px bottom margin; 4px keeps the same ~22px visual gap. */
+	margin-top: 4px;
 }
 
 .msg-label {
@@ -4648,11 +4665,32 @@ body.resizing-x .panel-resize::after {
 	line-height: 1.65;
 	font-size: 14px;
 	word-break: break-word;
+	/* Flex column so WebKit doesn't band-paint the gaps between paragraphs
+	   to the full column width (same reason as .viewer-messages / .msg). */
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+}
+/* Keep the streaming caret on the text's line: as a flex child the ::after
+   would wrap onto its own row. Streaming bodies briefly fall back to block
+   flow; the selection-paint nicety doesn't matter mid-stream. */
+.msg-streaming .msg-body-assistant {
+	display: block;
+}
+/* WebKit paints a highlight over unselectable label text sitting inside a
+   selection range (Chrome doesn't); mask it so only real content looks
+   selected. Not `transparent` — WebKit ignores a fully transparent
+   ::selection and falls back to the default blue; 1% alpha sticks. */
+.msg-label::selection,
+.msg-label *::selection {
+	background: rgba(0, 0, 0, 0.01);
 }
 
 .msg-body-user {
 	display: inline-block;
 	max-width: 100%;
+	/* Shrink-wrap the bubble as a flex item (inline-block blockifies there). */
+	align-self: flex-start;
 	background: rgba(91, 124, 250, 0.1);
 	border: 1px solid rgba(91, 124, 250, 0.22);
 	border-radius: 14px;
@@ -4669,7 +4707,8 @@ body.resizing-x .panel-resize::after {
    from the driver's own blue "You" bubbles — a warm teal, to read as someone
    else stepping in. */
 .msg-human {
-	margin-top: 22px;
+	/* 4px, not 22px: flex margins don't collapse (see .msg-user). */
+	margin-top: 4px;
 }
 .msg-label-human {
 	color: #1f9e8a;
@@ -4681,6 +4720,7 @@ body.resizing-x .panel-resize::after {
 .msg-body-human {
 	display: inline-block;
 	max-width: 100%;
+	align-self: flex-start;
 	background: rgba(31, 158, 138, 0.12);
 	border: 1px solid rgba(31, 158, 138, 0.3);
 	border-radius: 12px;
@@ -4705,12 +4745,15 @@ body.resizing-x .panel-resize::after {
 	text-align: center;
 	/* `auto` left/right keeps this in the same centered column as user/assistant
      bubbles — a bare `0` here pins it to the left edge and the pill reads
-     off-center against the conversation. */
-	margin: 12px auto;
+     off-center against the conversation. Top margin 0: flex margins don't
+     collapse, the previous sibling's bottom margin already provides the gap. */
+	margin: 0 auto 12px;
 }
 .msg-system-text {
 	display: inline-block;
 	max-width: min(560px, 100%);
+	/* Center the pill as a flex item in the .msg flex column. */
+	align-self: center;
 	color: var(--text-faint);
 	font-size: 11.5px;
 	line-height: 1.45;
