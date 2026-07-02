@@ -302,90 +302,6 @@ a {
 }
 
 /* ── Settings dropdown (chevron behind the Michael title) ── */
-.settings-menu {
-	position: relative;
-	display: flex;
-	align-items: center;
-}
-.settings-trigger {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 22px;
-	height: 22px;
-	padding: 0;
-	background: none;
-	border: none;
-	border-radius: 6px;
-	color: var(--text-faint);
-}
-.settings-trigger:hover,
-.settings-trigger.active {
-	color: var(--text);
-	background: var(--bg-hover);
-}
-.settings-dropdown {
-	position: absolute;
-	top: calc(100% + 8px);
-	left: 0;
-	z-index: 200;
-	min-width: 244px;
-	background: var(--bg-panel);
-	border: 1px solid var(--border-strong);
-	border-radius: 10px;
-	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
-	padding: 12px;
-}
-.settings-section + .settings-section {
-	margin-top: 14px;
-	padding-top: 14px;
-	border-top: 1px solid var(--border);
-}
-.settings-section-label {
-	font-size: 10.5px;
-	font-weight: 700;
-	text-transform: uppercase;
-	letter-spacing: 0.06em;
-	color: var(--text-faint);
-	margin-bottom: 8px;
-}
-.settings-segmented {
-	display: flex;
-	gap: 4px;
-	background: var(--bg-raised);
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	padding: 3px;
-}
-.settings-seg {
-	flex: 1;
-	display: inline-flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 4px;
-	background: none;
-	border: none;
-	border-radius: 6px;
-	color: var(--text-dim);
-	font-size: 11.5px;
-	font-weight: 500;
-	padding: 7px 6px;
-}
-.settings-seg:hover {
-	color: var(--text);
-}
-.settings-seg.active {
-	background: var(--bg-active);
-	color: var(--text);
-}
-.settings-seg-icon {
-	display: inline-flex;
-	color: var(--text-faint);
-}
-.settings-seg.active .settings-seg-icon {
-	color: var(--accent);
-}
 .settings-hint {
 	margin-top: 8px;
 	font-size: 11px;
@@ -501,18 +417,6 @@ a {
 	padding: 12px 16px 0;
 	border-top: 1px solid var(--border);
 	margin-top: 4px;
-}
-
-.connection-dot {
-	width: 8px;
-	height: 8px;
-	border-radius: 50%;
-}
-.connection-dot.connected {
-	background: var(--green);
-}
-.connection-dot.disconnected {
-	background: var(--red);
 }
 
 .app-body {
@@ -1190,6 +1094,14 @@ body.resizing-x {
 	font-size: 15px;
 	line-height: 1;
 	color: var(--text-faint);
+	/* Long titles run under this spot — opaque row-hover bg with a soft left
+	   feather so the icon never sits on top of text. */
+	background: var(--bg-hover);
+	box-shadow: -6px 0 5px -2px var(--bg-hover);
+}
+.sidebar-item-selected .sidebar-item-x {
+	background: var(--bg-active);
+	box-shadow: -6px 0 5px -2px var(--bg-active);
 }
 .sidebar-item:hover .sidebar-item-x {
 	display: flex;
@@ -5210,48 +5122,6 @@ button.home-whisper-link:hover {
 	position: relative;
 }
 
-.spinoff-menu {
-	position: absolute;
-	top: calc(100% + 6px);
-	right: 0;
-	z-index: 50;
-	width: 320px;
-	background: var(--bg-panel);
-	border: 1px solid var(--border-strong);
-	border-radius: 10px;
-	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
-	overflow: hidden;
-}
-
-.spinoff-item {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-	width: 100%;
-	text-align: left;
-	background: none;
-	border: none;
-	border-bottom: 1px solid var(--border);
-	padding: 10px 14px;
-}
-.spinoff-item:last-child {
-	border-bottom: none;
-}
-.spinoff-item:hover {
-	background: var(--bg-hover);
-}
-
-.spinoff-item-title {
-	color: var(--text);
-	font-size: 13px;
-	font-weight: 600;
-}
-.spinoff-item-sub {
-	color: var(--text-faint);
-	font-size: 11.5px;
-	line-height: 1.4;
-}
-
 .spinoff-form {
 	position: absolute;
 	top: calc(100% + 6px);
@@ -7073,10 +6943,6 @@ html[data-theme="light"] .tool-code-surface {
 	.app-title {
 		font-size: 16px;
 	}
-	.settings-trigger {
-		width: 30px;
-		height: 30px;
-	}
 
 	/* Hamburger: bigger bars and a 44px tap target. */
 	.hamburger {
@@ -7199,12 +7065,6 @@ html[data-theme="light"] .tool-code-surface {
 	.sidebar-filter-btn {
 		min-width: 38px;
 		min-height: 38px;
-	}
-
-	/* The gear that opens the Michael menu / Settings. */
-	.settings-trigger {
-		width: 38px;
-		height: 38px;
 	}
 
 	/* Inline icon buttons (copy, expand, …) inside diff / message headers. */
@@ -9451,149 +9311,6 @@ html[data-theme="light"] .tool-code-surface {
 }
 
 /* "Settings" entry in the Michael-menu dropdown */
-.settings-menu-item {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	width: 100%;
-	text-align: left;
-	background: none;
-	border: none;
-	cursor: pointer;
-	color: var(--text);
-	font-size: 13px;
-	font-family: inherit;
-	padding: 8px 10px;
-	border-radius: 6px;
-	margin-bottom: 4px;
-}
-.settings-menu-item:hover {
-	background: var(--bg-hover);
-}
-
-/* Account switcher inside the Michael menu — one row per teammate, the active
-   one checked. Replaces the old header user-picker chip. */
-.settings-user-list {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-}
-.settings-user-item {
-	display: flex;
-	align-items: center;
-	gap: 9px;
-	width: 100%;
-	text-align: left;
-	background: none;
-	border: none;
-	cursor: pointer;
-	color: var(--text);
-	font-size: 13px;
-	font-family: inherit;
-	padding: 6px 8px;
-	border-radius: 7px;
-}
-.settings-user-item:hover {
-	background: var(--bg-hover);
-}
-.settings-user-item.active {
-	color: var(--text);
-}
-.settings-user-avatar {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 22px;
-	height: 22px;
-	flex-shrink: 0;
-	border-radius: 50%;
-	background: var(--bg-active);
-	color: var(--text-dim);
-	font-size: 11px;
-	font-weight: 600;
-}
-.settings-user-item.active .settings-user-avatar {
-	background: var(--accent);
-	color: #fff;
-}
-.settings-user-name {
-	flex: 1;
-	min-width: 0;
-	font-weight: 500;
-}
-.settings-user-check {
-	color: var(--accent);
-	flex-shrink: 0;
-}
-
-/* Account switcher collapsed into a submenu: one trigger row showing who you're
-   acting as, with a flyout list of teammates. */
-.settings-submenu-wrap {
-	position: relative;
-}
-.settings-submenu-trigger {
-	gap: 9px;
-}
-.settings-submenu-trigger.active {
-	background: var(--bg-hover);
-}
-.settings-submenu-trigger-text {
-	flex: 1;
-	min-width: 0;
-	display: flex;
-	flex-direction: column;
-	gap: 1px;
-	line-height: 1.2;
-}
-.settings-submenu-label {
-	font-size: 10.5px;
-	font-weight: 700;
-	text-transform: uppercase;
-	letter-spacing: 0.06em;
-	color: var(--text-faint);
-}
-.settings-submenu-trigger-text .settings-user-name {
-	flex: none;
-	font-size: 13px;
-}
-.settings-submenu-chevron {
-	color: var(--text-faint);
-	flex-shrink: 0;
-}
-.settings-submenu {
-	position: absolute;
-	top: -8px;
-	left: calc(100% + 10px);
-	z-index: 210;
-	min-width: 200px;
-	background: var(--bg-panel);
-	border: 1px solid var(--border-strong);
-	border-radius: 10px;
-	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
-	padding: 8px;
-}
-@media (max-width: 640px) {
-	/* No room for a right-side flyout on narrow screens — drop it below the row. */
-	.settings-submenu {
-		position: static;
-		margin-top: 6px;
-		min-width: 0;
-		box-shadow: none;
-		padding: 6px;
-	}
-}
-
-/* Connection status line in the Michael menu (the dot that used to sit inline
-   in the header, now labelled). */
-.settings-status-row {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 2px 8px;
-	font-size: 12px;
-	color: var(--text-dim);
-}
-
 /* Theme picker — three preview cards (System / Light / Dark) */
 .theme-cards {
 	display: grid;
@@ -9786,6 +9503,15 @@ html[data-theme="light"] .tool-code-surface {
 	right: 6px;
 	top: 50%;
 	transform: translateY(-50%);
+	/* Long row names run under these icons — opaque row-hover bg with a soft
+	   left feather so the title text doesn't blend through them. */
+	background: var(--bg-hover);
+	box-shadow: -6px 0 5px -2px var(--bg-hover);
+	border-radius: 5px;
+}
+.sidebar-item-selected .sidebar-ws-actions {
+	background: var(--bg-active);
+	box-shadow: -6px 0 5px -2px var(--bg-active);
 }
 .sidebar-ws-row:hover .sidebar-ws-actions {
 	display: inline-flex;
