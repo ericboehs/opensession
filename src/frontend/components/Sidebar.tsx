@@ -7,7 +7,12 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import type { UnifiedSession, Project } from "../lib/types";
-import { relativeTime, type WorkspaceOverview } from "../lib/api";
+import {
+	relativeTime,
+	fetchOpenPrs,
+	type OpenPr,
+	type WorkspaceOverview,
+} from "../lib/api";
 import { loadOverview, overviewCache } from "../lib/workspace-overview";
 import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged, togglePin } from "../lib/pins";
@@ -576,40 +581,137 @@ export function Sidebar({
 		).length;
 	}, [sessions, currentUser, filter.repo]);
 
+	// The repo-wide open-PR list (every open PR, session or not), from the
+	// server's batched cache. Null until the first fetch lands — the rows memo
+	// falls back to session-derived PRs so the section still renders if the
+	// endpoint is unreachable.
+	const [openPrs, setOpenPrs] = useState<OpenPr[] | null>(null);
+	useEffect(() => {
+		let alive = true;
+		const load = () =>
+			fetchOpenPrs()
+				.then((prs) => {
+					if (alive) setOpenPrs(prs);
+				})
+				.catch(() => {});
+		load();
+		const t = setInterval(load, 120_000);
+		return () => {
+			alive = false;
+			clearInterval(t);
+		};
+	}, []);
+
+	// One sidebar row per open PR of the focus person. `session` is the most
+	// recently active session on that PR (the click target); a sessionless PR
+	// opens on GitHub instead.
+	interface PrRow {
+		url: string;
+		number?: number;
+		title: string;
+		isDraft: boolean;
+		updatedAt: string;
+		repo: string;
+		session: UnifiedSession | null;
+	}
+
 	// Open PRs for the focus person (the Person filter, defaulting to you;
-	// "everyone" lifts the person lens), honoring the repo filter and search —
-	// the same lens as the workspace lanes. One row per distinct PR: sessions
-	// sharing a PR URL dedupe to the most recently active one, which is the
-	// row's click target.
+	// "everyone" lifts the person lens), honoring the repo filter and search.
+	// A PR is a person's when their GitHub account authored it (identity table,
+	// resolved server-side), or — for bot-authored PRs, which Michael opens as
+	// tella-butler — when they started the session that opened it. The fetched
+	// repo-wide list means a person's PRs show even with no Backstage session.
 	const openPrRows = useMemo(() => {
 		const focus =
 			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
 		const q = search.toLowerCase();
-		const byUrl = new Map<string, UnifiedSession>();
+
+		// Most recently active session per PR URL — the row's click target, and
+		// the owner of bot-authored PRs.
+		const sessionByUrl = new Map<string, UnifiedSession>();
+		for (const s of sessions) {
+			if (s.archived || s.prState !== "OPEN" || !s.prUrl) continue;
+			const prev = sessionByUrl.get(s.prUrl);
+			if (!prev || s.lastActivity > prev.lastActivity)
+				sessionByUrl.set(s.prUrl, s);
+		}
+
+		const rows: PrRow[] = [];
+		const seen = new Set<string>();
+		const push = (row: PrRow) => {
+			if (seen.has(row.url)) return;
+			seen.add(row.url);
+			rows.push(row);
+		};
+
+		// The repo-wide list is authoritative for the repos it covers…
+		const fetchedUrls = new Set((openPrs || []).map((p) => p.url));
+		for (const pr of openPrs || []) {
+			const session = sessionByUrl.get(pr.url) || null;
+			const person =
+				pr.person ||
+				(session && !session.automation && session.startedBy
+					? session.startedBy.toLowerCase()
+					: null);
+			if (focus !== "everyone" && person !== focus) continue;
+			push({
+				url: pr.url,
+				number: pr.number,
+				title: pr.title,
+				isDraft: pr.isDraft,
+				updatedAt: pr.updatedAt,
+				repo: pr.repo,
+				session,
+			});
+		}
+
+		// …session-derived PRs cover what it can't see (other repos, or the
+		// fetch not landed yet).
 		for (const s of sessions) {
 			if (s.archived || s.automation || s.prState !== "OPEN" || !s.prUrl)
 				continue;
+			if (fetchedUrls.has(s.prUrl)) continue;
 			if (
 				focus !== "everyone" &&
 				(!s.startedBy || s.startedBy.toLowerCase() !== focus)
 			)
 				continue;
-			if (filter.repo !== "all" && sessionRepo(s) !== filter.repo) continue;
-			if (
-				q &&
-				!(s.prTitle || "").toLowerCase().includes(q) &&
-				!s.title.toLowerCase().includes(q) &&
-				!(s.branch || "").toLowerCase().includes(q)
-			)
-				continue;
-			const prev = byUrl.get(s.prUrl);
-			if (!prev || s.lastActivity > prev.lastActivity) byUrl.set(s.prUrl, s);
+			push({
+				url: s.prUrl,
+				number: s.prNumber,
+				title: s.prTitle || s.title,
+				isDraft: !!s.prIsDraft,
+				updatedAt: s.prUpdatedAt || s.lastActivity,
+				repo: sessionRepo(s),
+				session: s,
+			});
 		}
-		const key = filter.sort === "created" ? "createdAt" : "lastActivity";
-		return Array.from(byUrl.values()).sort((a, b) =>
-			(b[key] || "").localeCompare(a[key] || ""),
+
+		let visible = rows;
+		if (filter.repo !== "all")
+			visible = visible.filter((r) => r.repo === filter.repo);
+		if (q)
+			visible = visible.filter(
+				(r) =>
+					r.title.toLowerCase().includes(q) ||
+					(r.session?.branch || "").toLowerCase().includes(q) ||
+					String(r.number || "").includes(q.replace(/^#/, "")),
+			);
+		// "Created" sorts by PR number (creation order); "Updated" by activity.
+		return visible.sort((a, b) =>
+			filter.sort === "created"
+				? (b.number || 0) - (a.number || 0)
+				: (b.updatedAt || "").localeCompare(a.updatedAt || ""),
 		);
-	}, [sessions, currentUser, search, filter.person, filter.repo, filter.sort]);
+	}, [
+		sessions,
+		openPrs,
+		currentUser,
+		search,
+		filter.person,
+		filter.repo,
+		filter.sort,
+	]);
 
 	// Distinct repos across the (non-archived) sessions, most-used first, for the
 	// Repo filter dropdown. Built off every session (not the search-filtered set)
@@ -640,10 +742,19 @@ export function Sidebar({
 			e.count++;
 			entries.set(key, e);
 		}
+		// Teammates whose GitHub account has open PRs get an option too, even
+		// with no sessions — the Open PRs section can still show their work.
+		for (const pr of openPrs || []) {
+			if (!pr.person || entries.has(pr.person)) continue;
+			const label = [...TEAM, "Michael"].find(
+				(n) => n.toLowerCase() === pr.person,
+			);
+			if (label) entries.set(pr.person, { label, count: 0 });
+		}
 		return Array.from(entries.entries())
 			.sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
 			.map(([key, { label }]) => ({ key, label }));
-	}, [sessions]);
+	}, [sessions, openPrs]);
 
 	// Every non-archived chat, narrowed by the repo/person filters and search.
 	// Rows are built per-workspace below; a chat matching the filter surfaces its
@@ -1639,8 +1750,10 @@ export function Sidebar({
 
 				{/* ── Open PRs: the focus person's open pull requests (defaults to
 				    yours; the Person/Repo filters narrow it — all repos when
-				    unfiltered). A peer of the Archived row below, but it folds open
-				    inline like the status lanes; a row jumps to the PR's session. ── */}
+				    unfiltered), whether authored from their GitHub account or
+				    opened by Michael from their session. A peer of the Archived
+				    row below, but it folds open inline like the status lanes; a
+				    row jumps to the PR's session, or to GitHub when none. ── */}
 				{openPrRows.length > 0 &&
 					(() => {
 						const open = isOpen("openprs");
@@ -1680,38 +1793,37 @@ export function Sidebar({
 									</span>
 								</button>
 								{open &&
-									openPrRows.map((s) => (
+									openPrRows.map((r) => (
 										<button
-											key={s.prUrl}
+											key={r.url}
 											className={`sidebar-item group flex items-center gap-2 min-w-0 ${
-												s.id === selectedId ? "sidebar-item-selected" : ""
+												r.session?.id === selectedId
+													? "sidebar-item-selected"
+													: ""
 											}`}
-											onClick={() => onSelect(s)}
-											title={`${s.prNumber ? `#${s.prNumber} ` : ""}${
-												s.prTitle || s.title
-											} — ${sessionRepo(s)}`}
+											onClick={() => {
+												if (r.session) onSelect(r.session);
+												else window.open(r.url, "_blank", "noopener");
+											}}
+											title={`${r.number ? `#${r.number} ` : ""}${r.title} — ${
+												r.repo
+											}${r.session ? "" : " (no session — opens on GitHub)"}`}
 										>
-											{filter.repo === "all" && (
-												<RepoTile name={sessionRepo(s)} />
-											)}
+											{filter.repo === "all" && <RepoTile name={r.repo} />}
 											<span className="text-faint text-[11px] tabular-nums shrink-0">
-												{s.prNumber ? `#${s.prNumber}` : "PR"}
+												{r.number ? `#${r.number}` : "PR"}
 											</span>
-											<span className="sidebar-item-title">
-												{s.prTitle || s.title}
-											</span>
-											{s.prIsDraft && (
+											<span className="sidebar-item-title">{r.title}</span>
+											{r.isDraft && (
 												<span className="text-faint text-[10.5px] uppercase tracking-wide shrink-0">
 													draft
 												</span>
 											)}
 											<span
 												className="ml-auto shrink-0 text-[10.5px] text-faint group-hover:hidden"
-												title={new Date(
-													s.prUpdatedAt || s.lastActivity,
-												).toLocaleString()}
+												title={new Date(r.updatedAt).toLocaleString()}
 											>
-												{shortTime(s.prUpdatedAt || s.lastActivity)}
+												{shortTime(r.updatedAt)}
 											</span>
 											<span
 												role="button"
@@ -1720,12 +1832,12 @@ export function Sidebar({
 												title="Open PR on GitHub"
 												onClick={(e) => {
 													e.stopPropagation();
-													window.open(s.prUrl, "_blank", "noopener");
+													window.open(r.url, "_blank", "noopener");
 												}}
 												onKeyDown={(e) => {
 													if (e.key === "Enter" || e.key === " ") {
 														e.stopPropagation();
-														window.open(s.prUrl, "_blank", "noopener");
+														window.open(r.url, "_blank", "noopener");
 													}
 												}}
 											>
