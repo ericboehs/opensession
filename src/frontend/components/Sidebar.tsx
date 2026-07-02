@@ -3152,7 +3152,7 @@ interface WsCardRow {
 // the sidebar row and the hover card head so they always read the same.
 function WsStatusMark({
 	row,
-	size = 17,
+	size = 18,
 }: {
 	row: { status: MineStatus; running: boolean; chats: UnifiedSession[] };
 	size?: number;
