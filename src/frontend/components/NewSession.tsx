@@ -92,7 +92,11 @@ function slugifyBranch(text: string): string {
   return slug || "new-session";
 }
 
-const isCodexModel = (m: string) => m.startsWith("gpt") || m.startsWith("codex") || m.startsWith("o");
+function isCodexModel(id: string, models: ModelOption[]): boolean {
+  const found = models.find((m) => m.id === id);
+  if (found) return found.provider === "codex";
+  return id.startsWith("gpt") || id.startsWith("codex");
+}
 
 export function NewSession({ onBack, send, addHandler, connected, prefillPrompt, projectId, forceRepo, forceBranch }: Props) {
   const [prefill] = useState(readPrefill);
@@ -453,7 +457,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             {optionsVisible && (
             <>
             <div className="palette-pill" title="Model">
-              <span className={`composer-model-dot ${isCodexModel(effectiveModel) ? "dot-codex" : "dot-claude"}`} />
+              <span className={`composer-model-dot ${isCodexModel(effectiveModel, models) ? "dot-codex" : "dot-claude"}`} />
               <span className="palette-pill-label">{modelLabel}</span>
               <IconChevronDown className="palette-chevron" size={20} />
               <select

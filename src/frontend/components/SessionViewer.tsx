@@ -92,6 +92,12 @@ function plainThreadUrl(threadId: string): string {
 	return `https://app.plain.com/workspace/${PLAIN_WORKSPACE_ID}/thread/${threadId}/`;
 }
 
+function modelIsCodex(id: string, models: ModelOption[]): boolean {
+	const found = models.find((m) => m.id === id);
+	if (found) return found.provider === "codex";
+	return id.startsWith("gpt") || id.startsWith("codex");
+}
+
 /** Upsert incoming entries by id so stream events and the file watcher never duplicate. */
 function mergeEntries(
 	prev: TranscriptEntry[],
@@ -717,8 +723,7 @@ export function SessionViewer({
 	// Codex-model sessions start fresh threads server-side; only Claude-model
 	// sessions need an existing claude session id to resume.
 	const effectiveModel = model || defaultModel;
-	const isCodexModel =
-		effectiveModel.startsWith("gpt") || effectiveModel.startsWith("codex");
+	const isCodexModel = modelIsCodex(effectiveModel, models);
 	// A backstage chat with no engine ids is a *fresh* chat (e.g. a new sibling
 	// from the tab strip's +): the composer stays enabled — its first prompt
 	// starts a new engine conversation server-side (see runSessionPrompt). Only

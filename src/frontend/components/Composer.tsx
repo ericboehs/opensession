@@ -122,6 +122,12 @@ function modelShortLabel(id: string, models: ModelOption[]): string {
   return m ? m.label : id;
 }
 
+function modelIsCodex(id: string, models: ModelOption[]): boolean {
+  const found = models.find((x) => x.id === id);
+  if (found) return found.provider === "codex";
+  return id.startsWith("gpt") || id.startsWith("codex");
+}
+
 /** Inline set/clear editor for the session goal. */
 function GoalPopover({
   initial,
@@ -351,7 +357,7 @@ export function Composer({
   }
 
   const effectiveModel = model || defaultModel;
-  const isCodex = effectiveModel.startsWith("gpt") || effectiveModel.startsWith("codex");
+  const isCodex = modelIsCodex(effectiveModel, models);
 
   return (
     <div className="composer-wrap">
