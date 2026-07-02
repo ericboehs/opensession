@@ -77,8 +77,11 @@ export function Tooltip({
 						}
 						className={cn(
 							"pointer-events-none flex max-w-[280px] items-center gap-2",
-							"rounded-panel bg-tooltip px-2 py-1 text-xs font-medium whitespace-nowrap text-tooltip-fg",
-							"shadow-[0_8px_24px_rgba(0,0,0,0.4),0_0_0_1px_var(--tooltip-ring)]",
+							// Sized after tella-fusion's UI__Tooltip3: 13px medium text
+							// (Tella overrides text-xs to 13px) on a near-black chip with
+							// its soft `shadow-popup` + our theme ring.
+							"rounded-panel bg-tooltip px-2 py-1 text-[13px] leading-snug font-medium whitespace-nowrap text-tooltip-fg",
+							"shadow-[0px_10px_38px_-10px_rgba(14,18,22,0.35),0px_10px_20px_-15px_rgba(14,18,22,0.2),0_0_0_1px_var(--tooltip-ring)]",
 						)}
 					>
 						<span className="overflow-hidden text-ellipsis">{label}</span>
@@ -87,7 +90,7 @@ export function Tooltip({
 								{shortcut.map((k, i) => (
 									<kbd
 										key={i}
-										className="inline-flex h-4 min-w-4 items-center justify-center rounded px-[3px] text-[11px] font-medium [font-family:inherit] bg-white/20 text-white/80"
+										className="inline-flex h-4 min-w-4 items-center justify-center rounded px-[3px] text-xs font-medium [font-family:inherit] bg-white/20 text-white/75"
 									>
 										{k}
 									</kbd>
