@@ -106,6 +106,31 @@ function modelIsCodex(id: string, models: ModelOption[]): boolean {
 	return id.startsWith("gpt") || id.startsWith("codex");
 }
 
+// Friendly "<name> · <engine>" for the model-switch divider, so a cross-provider
+// switch reads unmistakably as e.g. "Sonnet · Claude → GPT-5.5 · Codex". Pure
+// (no models list needed) so it works in the transcript_init weave before the
+// models endpoint has loaded.
+const MODEL_NAMES: Record<string, string> = {
+	"claude-fable-5": "Fable",
+	"claude-opus-4-8": "Opus 4.8",
+	"claude-sonnet-5": "Sonnet",
+	"claude-haiku-4-5-20251001": "Haiku",
+	"gpt-5.5": "GPT-5.5",
+	"gpt-5": "GPT-5",
+	codex: "Codex",
+};
+function prettyModel(id: string): string {
+	const isCodex = id.startsWith("gpt") || id.startsWith("codex");
+	const name = MODEL_NAMES[id] || id;
+	return `${name} · ${isCodex ? "Codex" : "Claude"}`;
+}
+function switchDividerText(model: string, from?: string, by?: string): string {
+	const head = from
+		? `Switched ${prettyModel(from)} → ${prettyModel(model)}`
+		: `Switched to ${prettyModel(model)}`;
+	return by ? `${head} · ${by}` : head;
+}
+
 /** Upsert incoming entries by id so stream events and the file watcher never duplicate. */
 function mergeEntries(
 	prev: TranscriptEntry[],
@@ -480,7 +505,7 @@ export function SessionViewer({
 						(h) => ({
 							id: `model-switch-${h.at}`,
 							type: "system" as const,
-							content: `Model switched to ${h.model}${h.by ? ` by ${h.by}` : ""}`,
+							content: switchDividerText(h.model, h.from, h.by),
 							timestamp: h.at,
 						}),
 					);
@@ -575,7 +600,7 @@ export function SessionViewer({
 							{
 								id: `model-switch-${Date.now()}`,
 								type: "system",
-								content: `Model switched to ${msg.model} by ${msg.by}`,
+								content: switchDividerText(msg.model, msg.from, msg.by),
 								timestamp: new Date().toISOString(),
 							},
 						]);

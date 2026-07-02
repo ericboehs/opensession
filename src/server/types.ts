@@ -62,8 +62,9 @@ export interface UnifiedSession {
   /** Provider whose engine last drove a run — lets the next run detect an
    *  in-place cross-provider switch and bridge context. */
   lastEngineProvider?: "claude" | "codex";
-  /** /model switches, newest last — rendered as dividers in the conversation. */
-  modelHistory?: Array<{ model: string; at: string; by?: string }>;
+  /** /model switches, newest last — rendered as dividers in the conversation.
+   *  `from` is the model in effect before the switch (for a "X → Y" divider). */
+  modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
   goal?: string;
   /** Goal record id, when this session is driven by a Goal (src/server/goals.ts). */
   goalId?: string;
@@ -165,7 +166,7 @@ export interface BackstageSessionFile {
    *  next run detect an in-place cross-provider switch (Claude↔Codex) and hand
    *  the incoming engine a transcript bridge so context carries over. */
   lastEngineProvider?: "claude" | "codex";
-  modelHistory?: Array<{ model: string; at: string; by?: string }>;
+  modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
   archived?: boolean;
   archivedAt?: string;
   archivedReason?: "manual" | "idle" | "auto" | "plain";

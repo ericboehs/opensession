@@ -28,6 +28,7 @@ import {
 	buildForkHandoffNote,
 	buildEngineSwitchHandoffNote,
 } from "./src/server/fork-handoff";
+import { wrapContext } from "./src/server/prompt-context";
 import {
 	buildWorkspaceOverview,
 	resolveTranscriptImage,
@@ -1237,7 +1238,7 @@ function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent): void
 			model: to,
 			modelHistory: [
 				...(session.modelHistory || []),
-				{ model: to, at: new Date().toISOString(), by: reason },
+				{ model: to, from: event.fromModel, at: new Date().toISOString(), by: reason },
 			],
 		});
 		sessionsCache = null;
@@ -1639,8 +1640,10 @@ async function runSessionPromptInner(
 	}
 	let prompt = content;
 	// Bridge a cross-provider engine switch (computed above) so the incoming
-	// engine continues the conversation instead of starting blank.
-	if (switchHandoff) prompt = `${switchHandoff}\n\n---\n\n${prompt}`;
+	// engine continues the conversation instead of starting blank. Fenced so the
+	// transcript shows only the human's message — the model-switch divider already
+	// marks the engine change; the handoff itself is plumbing (see prompt-context).
+	if (switchHandoff) prompt = `${wrapContext(switchHandoff)}\n\n${prompt}`;
 	// Non-image attachments: stage to disk and tell the agent where they landed.
 	prompt = withUploadsNote(prompt, stageFileAttachments(sessionId, rawFiles));
 	if (session.goal) {
@@ -1802,7 +1805,7 @@ async function runSessionPromptInner(
 						model: to,
 						modelHistory: [
 							...(session.modelHistory || []),
-							{ model: to, at: new Date().toISOString(), by: reason },
+							{ model: to, from: event.fromModel, at: new Date().toISOString(), by: reason },
 						],
 					});
 					sessionsCache = null;
@@ -1812,6 +1815,7 @@ async function runSessionPromptInner(
 						type: "model_changed",
 						sessionId,
 						model: to,
+						from: event.fromModel,
 						by: reason,
 					});
 				break;
@@ -2023,12 +2027,13 @@ function handleSlashCommand(
 				formatModelList(session.model),
 			].join("\n");
 		}
+		const prevModel = session.model || getDefaultModel();
 		const prevProvider = providerFor(session.model);
 		touchBackstageSession(session.id, {
 			model: resolved.id,
 			modelHistory: [
 				...(session.modelHistory || []),
-				{ model: resolved.id, at: new Date().toISOString(), by: user },
+				{ model: resolved.id, from: prevModel, at: new Date().toISOString(), by: user },
 			],
 		});
 		// Everyone watching sees the switch (pill + inline divider) immediately
@@ -2036,6 +2041,7 @@ function handleSlashCommand(
 			type: "model_changed",
 			sessionId: session.id,
 			model: resolved.id,
+			from: prevModel,
 			by: user,
 		});
 		const switchedProvider = prevProvider !== resolved.provider;
@@ -5659,13 +5665,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								const entries = forkSource.transcriptPath
 									? parseTranscript(forkSource.transcriptPath)
 									: [];
-								openingPrompt += `\n\n${buildForkHandoffNote({
-									sourceId: forkSource.id,
-									sourceTitle: forkSource.title,
-									sourceModel: forkSource.model,
-									messageId: forkFrom?.messageId,
-									entries,
-								})}`;
+								openingPrompt += `\n\n${wrapContext(
+									buildForkHandoffNote({
+										sourceId: forkSource.id,
+										sourceTitle: forkSource.title,
+										sourceModel: forkSource.model,
+										messageId: forkFrom?.messageId,
+										entries,
+									}),
+								)}`;
 							}
 
 							let engineSessionId = "";
@@ -5827,6 +5835,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										effectiveProvider = providerFor(to);
 										modelHistory.push({
 											model: to,
+											from: event.fromModel,
 											at: new Date().toISOString(),
 											by: reason,
 										});
@@ -5837,6 +5846,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										emit({
 											type: "model_changed",
 											model: to,
+											from: event.fromModel,
 											by: reason,
 										});
 									}
@@ -6282,6 +6292,7 @@ registerSessionControl({
 							effectiveProvider = providerFor(to);
 							modelHistory.push({
 								model: to,
+								from: event.fromModel,
 								at: new Date().toISOString(),
 								by: reason,
 							});
@@ -6293,6 +6304,7 @@ registerSessionControl({
 								type: "model_changed",
 								sessionId: bksId,
 								model: to,
+								from: event.fromModel,
 								by: reason,
 							});
 						}

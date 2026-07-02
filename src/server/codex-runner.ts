@@ -35,6 +35,7 @@ import {
 import { journalSet, journalClear, type StreamEvent, type ImageInput } from "./claude-runner";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { wrapContext } from "./prompt-context";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { extractBackstageVideos } from "./jsonl-parser";
@@ -271,8 +272,11 @@ export function buildCodexPrompt(input: {
         "output for a human to execute."
     );
   }
-  parts.push(input.prompt);
-  return parts.join("\n\n");
+  // Codex has no system-prompt channel, so all of the above rides on the user
+  // turn. Fence it so the transcript renders only the human's message, not this
+  // preamble (see prompt-context.ts). The engine still receives the full text.
+  const preamble = parts.join("\n\n");
+  return preamble ? `${wrapContext(preamble)}\n\n${input.prompt}` : input.prompt;
 }
 
 function describeToolUse(item: ThreadItem): { toolName: string; toolInput: unknown } | null {

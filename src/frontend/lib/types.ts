@@ -96,7 +96,7 @@ export interface UnifiedSession {
 	aliasIds?: string[];
 	model?: string;
 	codexThreadId?: string;
-	modelHistory?: Array<{ model: string; at: string; by?: string }>;
+	modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
 	linearIssue?: { identifier: string; title: string; url?: string };
 	slackThread?: { channel: string; threadTs: string };
 	/** A Slack channel linked to this session for in-context discussion. */
@@ -325,7 +325,7 @@ export type WSServerMessage =
 			newWorkspace?: boolean;
 	  }
 	| { type: "notice"; sessionId?: string; message: string }
-	| { type: "model_changed"; sessionId: string; model: string; by?: string }
+	| { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string }
 	| {
 			type: "queue_update";
 			sessionId: string;

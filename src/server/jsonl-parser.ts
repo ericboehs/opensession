@@ -3,6 +3,7 @@ import { openSync, readSync, closeSync, fstatSync } from "fs";
 import { existsSync } from "fs";
 import type { TranscriptEntry } from "./types";
 import { SLACK_ID_TO_NAME } from "./shared/user-mappings";
+import { stripContext } from "./prompt-context";
 
 const SLACK_USERS = SLACK_ID_TO_NAME;
 
@@ -170,10 +171,14 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
             entries.push(...harness);
             continue;
           }
+          // Fenced injected context (e.g. an engine-switch handoff prepended to
+          // the turn) is plumbing — show only the human's message.
+          const text = stripContext(block.text || "");
+          if (!text.trim()) continue;
           entries.push({
             id: raw.uuid || crypto.randomUUID(),
             type: "user",
-            content: resolveSlackIds(block.text),
+            content: resolveSlackIds(text),
             timestamp: ts,
           });
         }
@@ -196,7 +201,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
         }
       }
     } else if (!raw.isMeta) {
-      const text = extractText(content);
+      const text = stripContext(extractText(content));
       if (text) {
         const harness = harnessEntryFor(text, ts);
         if (harness) {
@@ -317,10 +322,14 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
 
   if (raw.type === "event_msg") {
     if (p.type === "user_message" && typeof p.message === "string" && p.message.trim()) {
-      // Hide harness-appended run-policy/fallback notes from the rendered prompt
-      const message = p.message
+      // Strip fenced injected context (system preamble, repos note, engine
+      // handoff — all of which ride on the Codex user turn) plus legacy
+      // harness-appended run-policy/fallback notes, so the rendered prompt is
+      // just what the human typed.
+      const message = stripContext(p.message)
         .split("\n\n[Run policy:")[0]
         .split("\n\n[Note: a previous attempt")[0];
+      if (!message.trim()) return [];
       return [{
         id: p.id || stableCodexId("codex-user", raw, p, message),
         type: "user",
