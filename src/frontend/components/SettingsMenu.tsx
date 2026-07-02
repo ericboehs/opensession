@@ -37,7 +37,7 @@ export function SettingsMenu({
 				aria-label="Settings"
 				className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border-none bg-transparent p-0 text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg max-[720px]:h-[38px] max-[720px]:w-[38px]"
 			>
-				<svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true">
+				<svg width="14" height="14" viewBox="0 0 10 10" aria-hidden="true">
 					<path
 						d="M2 3.5L5 6.5L8 3.5"
 						fill="none"
@@ -128,7 +128,7 @@ export function SettingsMenu({
 				<Menu.Separator className="-mx-3 my-3.5" />
 
 				<Menu.Item onClick={() => onOpenSettings?.()}>
-					<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+					<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
 						<circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4" />
 						<path
 							d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1M12.6 12.6l-1.1-1.1M4.5 4.5L3.4 3.4"

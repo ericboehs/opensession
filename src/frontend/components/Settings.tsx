@@ -192,7 +192,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
 		<div className="settings-page">
 			<aside className="settings-sidenav">
 				<button className="settings-back" onClick={onBack}>
-					<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+					<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
 						<path
 							d="M10 3.5L5.5 8l4.5 4.5"
 							stroke="currentColor"
@@ -400,7 +400,7 @@ function NotificationsPanel() {
 								disabled={s.sound === "none"}
 								title="Play sound"
 							>
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+								<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
 									<path
 										d="M3 6v4h2.5L9 13V3L5.5 6H3z"
 										stroke="currentColor"

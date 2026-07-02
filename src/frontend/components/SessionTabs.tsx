@@ -144,7 +144,7 @@ export function SessionTabs({
 						    already on screen in the composer — no pencil needed). */}
 						{key !== activeId && hasDraft(`chat:${key}`) && (
 							<span className="session-tab-draft" title="Unsent draft">
-								<IconPencil size={12} />
+								<IconPencil size={14} />
 							</span>
 						)}
 						<button

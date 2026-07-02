@@ -8,7 +8,7 @@ import React from "react";
  */
 type IconProps = React.SVGProps<SVGSVGElement> & { size?: number };
 
-function Svg({ size = 18, children, ...rest }: IconProps & { children: React.ReactNode }) {
+function Svg({ size = 20, children, ...rest }: IconProps & { children: React.ReactNode }) {
   return (
     <svg
       width={size}

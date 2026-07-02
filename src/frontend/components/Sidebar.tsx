@@ -1335,7 +1335,7 @@ export function Sidebar({
 				    and finish it. Yields to the hover actions like the count/time. */}
 				{row.chats.some((c) => hasDraft(`chat:${c.id}`)) && (
 					<span className="sidebar-ws-draft" title="Unsent draft — return to finish it">
-						<IconPencil size={13} />
+						<IconPencil size={15} />
 					</span>
 				)}
 				{/* Hover actions: pin + archive, side by side (replace the count). */}
@@ -1380,7 +1380,7 @@ export function Sidebar({
 									}
 								}}
 							>
-								<svg width="18" height="18" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
+								<svg width="20" height="20" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
 									<path
 										d="M8 1.8l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.5l-3.8 2 .72-4.23-3.07-3 4.25-.62L8 1.8z"
 										stroke="currentColor"
@@ -1412,7 +1412,7 @@ export function Sidebar({
 								}
 							}}
 						>
-							<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+							<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
 								<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
 								<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
 								<path d="M6.5 8.5h3" strokeLinecap="round" />
@@ -1469,7 +1469,7 @@ export function Sidebar({
 						<span>Tools</span>
 						<IconChevronDown
 							className="sidebar-band-chevron"
-							size={18}
+							size={20}
 							style={{ transform: toolsOpen ? "none" : "rotate(-90deg)" }}
 						/>
 					</button>
@@ -1528,7 +1528,7 @@ export function Sidebar({
 							}`}
 							onClick={() => setFilterOpen((o) => !o)}
 						>
-							<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+							<svg width="20" height="20" viewBox="0 0 16 16" fill="none">
 								<path
 									d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
 									stroke="currentColor"
@@ -1748,7 +1748,7 @@ export function Sidebar({
 								<span className="sidebar-group-name">Pinned</span>
 								<IconChevronDown
 									className="sidebar-group-chevron"
-									size={16}
+									size={18}
 									style={{ transform: pinnedOpen ? "none" : "rotate(-90deg)" }}
 								/>
 								<span className="sidebar-group-count">{pinnedCount}</span>
@@ -1820,7 +1820,7 @@ export function Sidebar({
 										<span className="sidebar-group-name">{meta.label}</span>
 										<IconChevronDown
 											className="sidebar-group-chevron"
-											size={16}
+											size={18}
 											style={{ transform: open ? "none" : "rotate(-90deg)" }}
 										/>
 										<span className="sidebar-group-count">{items.length}</span>
@@ -1874,7 +1874,7 @@ export function Sidebar({
 									<span className="sidebar-group-name">Open PRs</span>
 									<IconChevronDown
 										className="sidebar-group-chevron"
-										size={16}
+										size={18}
 										style={{ transform: open ? "none" : "rotate(-90deg)" }}
 									/>
 									<span className="sidebar-group-count">
@@ -1979,7 +1979,7 @@ export function Sidebar({
 									<span>People</span>
 									<IconChevronDown
 										className="sidebar-band-chevron"
-										size={18}
+										size={20}
 										style={{ transform: open ? "none" : "rotate(-90deg)" }}
 									/>
 								</button>
@@ -2035,7 +2035,7 @@ export function Sidebar({
 								<span>Automations</span>
 								<IconChevronDown
 									className="sidebar-band-chevron"
-									size={18}
+									size={20}
 									style={{
 										transform: bandOpen("automations")
 											? "none"
@@ -2067,7 +2067,7 @@ export function Sidebar({
 											<span className="sidebar-group-name">{group.label}</span>
 											<IconChevronDown
 												className="sidebar-group-chevron"
-												size={16}
+												size={18}
 												style={{
 													transform: open ? "none" : "rotate(-90deg)",
 												}}
@@ -2689,7 +2689,7 @@ function SidebarItem({
 				)}
 				{!editing && hasDraft(`chat:${session.id}`) && (
 					<span className="sidebar-ws-draft" title="Unsent draft — return to finish it">
-						<IconPencil size={13} />
+						<IconPencil size={15} />
 					</span>
 				)}
 			</div>
@@ -3152,7 +3152,7 @@ interface WsCardRow {
 // the sidebar row and the hover card head so they always read the same.
 function WsStatusMark({
 	row,
-	size = 18,
+	size = 20,
 }: {
 	row: { status: MineStatus; running: boolean; chats: UnifiedSession[] };
 	size?: number;
@@ -3291,7 +3291,7 @@ function WsOverviewInfo({
 					</span>
 				)}
 				<span className="flex shrink-0 items-center" title={meta?.label}>
-					<WsStatusMark row={row} size={16} />
+					<WsStatusMark row={row} size={18} />
 				</span>
 			</div>
 
@@ -3587,7 +3587,7 @@ function WsMobileSheet({
 							),
 						)}
 					>
-						<WsStatusMark row={row} size={18} />
+						<WsStatusMark row={row} size={20} />
 						Answer question
 					</button>
 				)}
@@ -3601,7 +3601,7 @@ function WsMobileSheet({
 							window.open(prChat.prUrl, "_blank", "noopener"),
 						)}
 					>
-						<IconPullRequest size={18} />
+						<IconPullRequest size={20} />
 						{prReady ? "Merge on GitHub" : "Review PR"}
 						{prChat.prNumber != null && ` #${prChat.prNumber}`}
 					</button>
@@ -3623,12 +3623,12 @@ function WsMobileSheet({
 							window.open(prChat.prUrl, "_blank", "noopener"),
 						)}
 					>
-						<IconPullRequest size={18} />
+						<IconPullRequest size={20} />
 						Open PR{prChat.prNumber != null ? ` #${prChat.prNumber}` : ""}
 					</button>
 				)}
 				<button className="mobile-sheet-item" onClick={closing(onTogglePin)}>
-					<svg width="18" height="18" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
+					<svg width="20" height="20" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
 						<path
 							d="M8 1.8l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.5l-3.8 2 .72-4.23-3.07-3 4.25-.62L8 1.8z"
 							stroke="currentColor"

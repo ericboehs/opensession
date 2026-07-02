@@ -640,7 +640,7 @@ function App() {
 	// marking the collapsible left column. Reused by the brand-row collapse button
 	// and the floating re-open control.
 	const panelIcon = (
-		<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+		<svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
 			<rect
 				x="1.75"
 				y="2.75"
