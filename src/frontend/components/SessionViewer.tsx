@@ -41,7 +41,7 @@ import { PreviewButton } from "./PreviewButton";
 import { StagingLink } from "./StagingLink";
 import { WorkspaceInfo } from "./WorkspaceInfo";
 import { SpinOffMenu } from "./SpinOffMenu";
-import { IconSidebarRight } from "./icons";
+import { IconSidebarRight, IconTrash } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
@@ -945,9 +945,14 @@ export function SessionViewer({
 		document.addEventListener("mousedown", onDoc);
 		return () => document.removeEventListener("mousedown", onDoc);
 	}, [overflowOpen]);
-	// A wider header no longer needs the menu — don't leave it stuck open.
+	// Closing the menu disarms a half-finished delete confirm — reopening it
+	// later shouldn't present the destructive choices without a fresh click.
 	useEffect(() => {
-		if (!compactHeader) setOverflowOpen(false);
+		if (!overflowOpen) setShowDeleteConfirm(false);
+	}, [overflowOpen]);
+	// The menu's contents change across the breakpoint — don't leave it stuck open.
+	useEffect(() => {
+		setOverflowOpen(false);
 	}, [compactHeader]);
 
 	const me = getCurrentUser();
@@ -1021,42 +1026,45 @@ export function SessionViewer({
 							send={send}
 							connected={connected}
 						/>
-						{!showDeleteConfirm ? (
-							<button
-								className="btn-viewer-delete"
-								onClick={() => setShowDeleteConfirm(true)}
-								title="Delete session"
-							>
-								Delete
-							</button>
-						) : (
-							<div className="viewer-delete-confirm">
-								{session.worktreeDir && !isAsk && (
-									<button
-										className="btn-delete-wt"
-										onClick={() => handleDelete(true)}
-										disabled={deleting}
-									>
-										{deleting ? "…" : "+ Worktree"}
-									</button>
-								)}
-								<button
-									className="btn-delete-only"
-									onClick={() => handleDelete(false)}
-									disabled={deleting}
-								>
-									{deleting ? "…" : "Session"}
-								</button>
-								<button
-									className="btn-delete-cancel"
-									onClick={() => setShowDeleteConfirm(false)}
-									disabled={deleting}
-								>
-									Cancel
-								</button>
-							</div>
-						)}
 					</>
+				);
+				// Delete is destructive, so it never rides in the visible action bar —
+				// it always lives inside the ⋯ menu, one deliberate hop away.
+				const deleteAction = !showDeleteConfirm ? (
+					<button
+						className="btn-viewer-delete"
+						onClick={() => setShowDeleteConfirm(true)}
+						title="Delete session"
+					>
+						<IconTrash size={17} />
+						Delete session
+					</button>
+				) : (
+					<div className="viewer-delete-confirm">
+						{session.worktreeDir && !isAsk && (
+							<button
+								className="btn-delete-wt"
+								onClick={() => handleDelete(true)}
+								disabled={deleting}
+							>
+								{deleting ? "…" : "+ Worktree"}
+							</button>
+						)}
+						<button
+							className="btn-delete-only"
+							onClick={() => handleDelete(false)}
+							disabled={deleting}
+						>
+							{deleting ? "…" : "Session"}
+						</button>
+						<button
+							className="btn-delete-cancel"
+							onClick={() => setShowDeleteConfirm(false)}
+							disabled={deleting}
+						>
+							Cancel
+						</button>
+					</div>
 				);
 				// Secondary header controls (Linear/Plain links, Preview, PR). Inline
 				// on desktop; on phones they fold into the ⋯ menu so the single top
@@ -1222,31 +1230,30 @@ export function SessionViewer({
 						</div>
 					)}
 					{!isPhone && secondaryActions}
-					{/* Pin / Share / Spin off / Delete ride inline when there's room,
-					    else collapse behind ⋯ so they never crowd the title. They sit
+					{/* Pin / Share / Spin off ride inline when there's room, else
+					    collapse behind ⋯ so they never crowd the title. They sit
 					    before Workspace so the Workspace toggle stays rightmost. On
-					    phones the secondary controls fold in here too. */}
-					{compactHeader || isPhone ? (
-						<div className="viewer-overflow" ref={overflowRef}>
-							<button
-								className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
-								onClick={() => setOverflowOpen((o) => !o)}
-								title="More actions"
-								aria-label="More actions"
-								aria-expanded={overflowOpen}
-							>
-								⋯
-							</button>
-							{overflowOpen && (
-								<div className="viewer-overflow-menu">
-									{isPhone && secondaryActions}
-									{collapsibleActions}
-								</div>
-							)}
-						</div>
-					) : (
-						collapsibleActions
-					)}
+					    phones the secondary controls fold in too. The ⋯ menu is always
+					    present — Delete lives only in there. */}
+					{!compactHeader && !isPhone && collapsibleActions}
+					<div className="viewer-overflow" ref={overflowRef}>
+						<button
+							className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
+							onClick={() => setOverflowOpen((o) => !o)}
+							title="More actions"
+							aria-label="More actions"
+							aria-expanded={overflowOpen}
+						>
+							⋯
+						</button>
+						{overflowOpen && (
+							<div className="viewer-overflow-menu">
+								{isPhone && secondaryActions}
+								{(compactHeader || isPhone) && collapsibleActions}
+								{deleteAction}
+							</div>
+						)}
+					</div>
 					{panelAvailable && (
 						<Tooltip
 							label={

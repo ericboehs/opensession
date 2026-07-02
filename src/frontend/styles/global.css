@@ -2243,6 +2243,7 @@ body.resizing-x {
 	display: inline-flex;
 	align-items: center;
 	gap: 7px;
+	white-space: nowrap;
 	background: none;
 	border: 1px solid var(--border-strong);
 	border-radius: 6px;
@@ -2488,6 +2489,7 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	border-radius: 6px;
 	padding: 5px 12px;
 	font-size: 13px;
+	white-space: nowrap;
 	border: 1px solid var(--border-strong);
 	background: none;
 	color: var(--text-dim);
