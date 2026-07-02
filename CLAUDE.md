@@ -39,7 +39,11 @@ opportunistically when touched (strangler pattern — never a big-bang rewrite):
   variables (`--bg`, `--text-dim`, …) into Tailwind's namespace via
   `@theme inline` — use `bg-panel text-dim border-line text-fg bg-surface` etc.,
   never raw hex or stock Tailwind grays. Dark/light theming comes for free
-  because the vars re-resolve under `html[data-theme]`.
+  because the vars re-resolve under `html[data-theme]`. The spacing/radius/text
+  scales are px-anchored there (global.css sets `html { font-size: 14px }`,
+  which would otherwise shrink every rem-based utility to 87.5%) — so `p-3` is
+  a true 12px and `text-xs` a true 12px. Bare `rounded` bypasses the radius
+  scale; use `rounded-sm/md/lg` (4/6/8px).
 - **Compile**: Tailwind is compiled by an `@tailwindcss/cli` subprocess inside
   `buildFrontend()` (backstage.ts) and linked *after* `global.css`; utilities
   are imported unlayered so they win source-order ties against legacy rules.
@@ -50,10 +54,15 @@ opportunistically when touched (strangler pattern — never a big-bang rewrite):
   pass `className` through `cn()` (ui/cn.ts); keep Base UI's composable parts
   shape rather than mega prop APIs; style open/close state via Base UI data
   attributes; few variants (`variant`/`size`), no boolean prop explosions.
-- **Motion**: use `motion.*` / `AnimatePresence` directly with shared presets
-  from `ui/motion.ts` — don't build wrapper components around Motion. Base UI
-  popups animate via controlled open state + `keepMounted` + `render=` (see
-  ui/tooltip.tsx).
+- **Motion**: use `motion.*` directly with shared presets from `ui/motion.ts` —
+  don't build wrapper components around Motion. Caveat for Base UI popups:
+  `render={<motion.div/>}` drops Base UI's injected attributes (role, data-*),
+  so it's only safe on non-focus popups like the tooltip (enter-only; restore
+  `role` by hand — see ui/tooltip.tsx). Focus-managed popups (menus, dialogs)
+  animate with CSS transitions on Base UI's `[data-starting-style]` /
+  `[data-ending-style]` lifecycle attributes instead (see ui/menu.tsx) — that
+  keeps keyboard nav + a11y intact and gets exit animations for free.
+  AnimatePresence can't track exits through Base UI portals; don't use it there.
 
 - Use `bun run backstage.ts` to start the server
 - Server binds to Tailscale IP (100.65.135.7:3850) — not publicly accessible

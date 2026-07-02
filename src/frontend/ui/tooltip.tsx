@@ -90,7 +90,7 @@ export function Tooltip({
 								{shortcut.map((k, i) => (
 									<kbd
 										key={i}
-										className="inline-flex h-4 min-w-4 items-center justify-center rounded px-[3px] text-xs font-medium [font-family:inherit] bg-white/20 text-white/75"
+										className="inline-flex h-4 min-w-4 items-center justify-center rounded-sm px-[3px] text-xs font-medium [font-family:inherit] bg-white/20 text-white/75"
 									>
 										{k}
 									</kbd>

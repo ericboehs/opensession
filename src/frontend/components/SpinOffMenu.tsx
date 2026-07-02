@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Menu } from "../ui/menu";
 import type { UnifiedSession, TranscriptEntry } from "../lib/types";
 import { getCurrentUser } from "./UserPicker";
 
@@ -18,7 +19,6 @@ interface Props {
  *  - analyze:   ask session reviewing what went well/wrong + better prompt
  */
 export function SpinOffMenu({ session, entries, send, connected }: Props) {
-  const [open, setOpen] = useState(false);
   const [flavor, setFlavor] = useState<Flavor | null>(null);
   const [branch, setBranch] = useState("");
   const [task, setTask] = useState("");
@@ -30,7 +30,6 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
 
   function pick(f: Flavor) {
     setFlavor(f);
-    setOpen(false);
     if (f === "build") {
       setBranch(suggestBranch(session.title));
       setTask("Implement what we discussed above.");
@@ -105,30 +104,33 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
   const needsBranch = flavor === "build" || flavor === "learnings";
   const canStart = connected && !starting && (!needsBranch || branch.trim());
 
+  // Two-line rows in a flush-edged popup (no inner padding, divider between rows).
+  const itemCls =
+    "flex-col items-start gap-0.5 rounded-none border-b border-line px-3.5 py-2.5 last:border-b-0";
+
   return (
     <div className="spinoff">
-      <button className="btn-panel-toggle" onClick={() => setOpen(!open)} title="Spin off a new session from this one">
-        Spin off ▾
-      </button>
-
-      {open && (
-        <div className="spinoff-menu">
+      <Menu.Root>
+        <Menu.Trigger className="btn-panel-toggle" title="Spin off a new session from this one">
+          Spin off ▾
+        </Menu.Trigger>
+        <Menu.Popup align="end" sideOffset={6} className="w-80 overflow-hidden p-0">
           {isAsk && (
-            <button className="spinoff-item" onClick={() => pick("build")}>
-              <span className="spinoff-item-title">Build this</span>
-              <span className="spinoff-item-sub">Start a coding session with this conversation as context</span>
-            </button>
+            <Menu.Item onClick={() => pick("build")} className={itemCls}>
+              <span className="text-[13px] font-semibold text-fg">Build this</span>
+              <span className="text-[11.5px] leading-[1.4] text-faint">Start a coding session with this conversation as context</span>
+            </Menu.Item>
           )}
-          <button className="spinoff-item" onClick={() => pick("learnings")}>
-            <span className="spinoff-item-title">Capture learnings → docs PR</span>
-            <span className="spinoff-item-sub">Michael adds what was learned here to tella-fusion docs</span>
-          </button>
-          <button className="spinoff-item" onClick={() => pick("analyze")}>
-            <span className="spinoff-item-title">Analyze session</span>
-            <span className="spinoff-item-sub">What went well, what didn't, and a better prompt</span>
-          </button>
-        </div>
-      )}
+          <Menu.Item onClick={() => pick("learnings")} className={itemCls}>
+            <span className="text-[13px] font-semibold text-fg">Capture learnings → docs PR</span>
+            <span className="text-[11.5px] leading-[1.4] text-faint">Michael adds what was learned here to tella-fusion docs</span>
+          </Menu.Item>
+          <Menu.Item onClick={() => pick("analyze")} className={itemCls}>
+            <span className="text-[13px] font-semibold text-fg">Analyze session</span>
+            <span className="text-[11.5px] leading-[1.4] text-faint">What went well, what didn't, and a better prompt</span>
+          </Menu.Item>
+        </Menu.Popup>
+      </Menu.Root>
 
       {flavor && (
         <div className="spinoff-form">

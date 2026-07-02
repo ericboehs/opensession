@@ -68,4 +68,17 @@
 	--font-sans: var(--sans);
 	--font-mono: var(--mono);
 	--radius-panel: var(--radius);
+
+	/* global.css sets html { font-size: 14px }, which silently shrinks every
+	   rem-based utility to 87.5% of its px design value (p-3 → 10.5px). Anchor
+	   the scales this codebase designs in px so utilities mean what they say. */
+	--spacing: 4px;
+	--radius-xs: 2px;
+	--radius-sm: 4px;
+	--radius-md: 6px;
+	--radius-lg: 8px;
+	--radius-xl: 12px;
+	--text-xs: 12px;
+	--text-sm: 13px;
+	--text-base: 14px;
 }

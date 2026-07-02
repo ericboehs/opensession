@@ -1,0 +1,131 @@
+import * as React from "react";
+import { Menu as BaseMenu } from "@base-ui/react/menu";
+import { cn } from "./cn";
+
+/**
+ * Menu on Base UI parts, styled with Tailwind tokens. Composable shape —
+ * consumers assemble Root/Trigger/Popup/Item rather than passing item configs.
+ *
+ * Unlike ui/tooltip.tsx this does NOT animate via a Motion render prop: the
+ * render merge drops Base UI's injected attributes (role, data-*), which a
+ * focus-managed popup can't afford. Menus animate with CSS transitions on
+ * Base UI's [data-starting-style]/[data-ending-style] lifecycle attributes —
+ * enter AND exit work, keyboard nav and a11y stay intact.
+ */
+
+function Trigger({
+	className,
+	...props
+}: Omit<React.ComponentProps<typeof BaseMenu.Trigger>, "className"> & {
+	className?: string;
+}) {
+	return <BaseMenu.Trigger {...props} className={cn(className)} />;
+}
+
+function Popup({
+	className,
+	side,
+	align,
+	sideOffset = 8,
+	children,
+}: {
+	className?: string;
+	side?: React.ComponentProps<typeof BaseMenu.Positioner>["side"];
+	align?: React.ComponentProps<typeof BaseMenu.Positioner>["align"];
+	sideOffset?: number;
+	children: React.ReactNode;
+}) {
+	return (
+		<BaseMenu.Portal>
+			<BaseMenu.Positioner
+				side={side}
+				align={align}
+				sideOffset={sideOffset}
+				collisionPadding={8}
+				className="z-[10001] outline-none"
+			>
+				<BaseMenu.Popup
+					className={cn(
+						"min-w-[180px] rounded-[10px] border border-line-strong bg-panel p-2 shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
+						"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",
+						"data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0",
+						"data-[ending-style]:opacity-0",
+						className,
+					)}
+				>
+					{children}
+				</BaseMenu.Popup>
+			</BaseMenu.Positioner>
+		</BaseMenu.Portal>
+	);
+}
+
+/** Shared row styling for anything that behaves like a menu item. Highlight
+ * via Base UI's data-highlighted so keyboard navigation lights rows up too. */
+const itemClasses =
+	"flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-2 text-left text-[13px] text-fg outline-none data-[highlighted]:bg-hover";
+
+function Item({
+	className,
+	...props
+}: Omit<React.ComponentProps<typeof BaseMenu.Item>, "className"> & {
+	className?: string;
+}) {
+	return <BaseMenu.Item {...props} className={cn(itemClasses, className)} />;
+}
+
+function SubmenuTrigger({
+	className,
+	...props
+}: Omit<React.ComponentProps<typeof BaseMenu.SubmenuTrigger>, "className"> & {
+	className?: string;
+}) {
+	return (
+		<BaseMenu.SubmenuTrigger
+			{...props}
+			className={cn(itemClasses, "data-[popup-open]:bg-hover", className)}
+		/>
+	);
+}
+
+function RadioItem({
+	className,
+	...props
+}: Omit<React.ComponentProps<typeof BaseMenu.RadioItem>, "className"> & {
+	className?: string;
+}) {
+	return (
+		<BaseMenu.RadioItem {...props} className={cn(itemClasses, className)} />
+	);
+}
+
+function Separator({ className }: { className?: string }) {
+	return <BaseMenu.Separator className={cn("my-2 h-px bg-line", className)} />;
+}
+
+function GroupLabel({ className, ...props }: { className?: string; children?: React.ReactNode }) {
+	return (
+		<BaseMenu.GroupLabel
+			{...props}
+			className={cn(
+				"px-2.5 pb-1.5 text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint",
+				className,
+			)}
+		/>
+	);
+}
+
+export const Menu = {
+	Root: BaseMenu.Root,
+	Trigger,
+	Popup,
+	Item,
+	Separator,
+	Group: BaseMenu.Group,
+	GroupLabel,
+	SubmenuRoot: BaseMenu.SubmenuRoot,
+	SubmenuTrigger,
+	RadioGroup: BaseMenu.RadioGroup,
+	RadioItem,
+	RadioItemIndicator: BaseMenu.RadioItemIndicator,
+};
