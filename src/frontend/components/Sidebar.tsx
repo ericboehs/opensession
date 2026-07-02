@@ -402,7 +402,9 @@ const FILTER_KEY = "michael-sidebar-filter";
 interface FilterState {
 	groupBy: GroupBy;
 	repo: string; // a repo id, or "all"
-	person: string; // a lowercased person key, or "all"
+	// "me" (your workspaces — the default), "everyone" (literally all
+	// workspaces), or a lowercased person key for a specific teammate.
+	person: string;
 	sort: SortBy;
 }
 
@@ -415,11 +417,16 @@ function readFilter(): FilterState {
 					? v.groupBy
 					: "status",
 			repo: typeof v.repo === "string" ? v.repo : "all",
-			person: typeof v.person === "string" ? v.person : "all",
+			// Legacy stored "all" behaved as "you" in the lanes — map it to "me"
+			// so nobody's default flips to everyone.
+			person:
+				typeof v.person === "string" && v.person && v.person !== "all"
+					? v.person
+					: "me",
 			sort: v.sort === "created" ? "created" : "updated",
 		};
 	} catch {
-		return { groupBy: "status", repo: "all", person: "all", sort: "updated" };
+		return { groupBy: "status", repo: "all", person: "me", sort: "updated" };
 	}
 }
 
@@ -569,19 +576,24 @@ export function Sidebar({
 		).length;
 	}, [sessions, currentUser, filter.repo]);
 
-	// Open PRs for the focus person (the Person filter, defaulting to you),
-	// honoring the repo filter and search — the same lens as the workspace lanes.
-	// One row per distinct PR: sessions sharing a PR URL dedupe to the most
-	// recently active one, which is the row's click target.
+	// Open PRs for the focus person (the Person filter, defaulting to you;
+	// "everyone" lifts the person lens), honoring the repo filter and search —
+	// the same lens as the workspace lanes. One row per distinct PR: sessions
+	// sharing a PR URL dedupe to the most recently active one, which is the
+	// row's click target.
 	const openPrRows = useMemo(() => {
 		const focus =
-			filter.person !== "all" ? filter.person : currentUser.toLowerCase();
+			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
 		const q = search.toLowerCase();
 		const byUrl = new Map<string, UnifiedSession>();
 		for (const s of sessions) {
 			if (s.archived || s.automation || s.prState !== "OPEN" || !s.prUrl)
 				continue;
-			if (!s.startedBy || s.startedBy.toLowerCase() !== focus) continue;
+			if (
+				focus !== "everyone" &&
+				(!s.startedBy || s.startedBy.toLowerCase() !== focus)
+			)
+				continue;
 			if (filter.repo !== "all" && sessionRepo(s) !== filter.repo) continue;
 			if (
 				q &&
@@ -640,7 +652,11 @@ export function Sidebar({
 		let visible = sessions.filter((s) => !s.archived);
 		if (filter.repo !== "all")
 			visible = visible.filter((s) => sessionRepo(s) === filter.repo);
-		if (filter.person !== "all")
+		// Only a specific teammate narrows the chats themselves. "me" and
+		// "everyone" keep every chat so workspace rows stay whole (your
+		// workspaces can contain teammates' chats, and pinned rows survive) —
+		// the owner lens is applied per-row in focusWsRows instead.
+		if (filter.person !== "me" && filter.person !== "everyone")
 			visible = visible.filter(
 				(s) =>
 					!s.automation &&
@@ -855,10 +871,10 @@ export function Sidebar({
 	const focusWsRows = useMemo(() => {
 		const pinSet = new Set(pins);
 		const focus =
-			filter.person !== "all" ? filter.person : currentUser.toLowerCase();
+			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
 		return wsRows.filter(
 			(r) =>
-				r.owner === focus &&
+				(focus === "everyone" || r.owner === focus) &&
 				!pinSet.has(r.key) &&
 				!r.chats.some((c) => pinSet.has(c.id)),
 		);
@@ -1282,9 +1298,11 @@ export function Sidebar({
 			>
 				<div className="sidebar-workspace-head" ref={headRef}>
 					<span className="sidebar-workspace-title" ref={titleRef}>
-						{filter.person !== "all"
-							? `${people.find((p) => p.key === filter.person)?.label || filter.person}'s workspaces`
-							: "Workspaces"}
+						{filter.person === "me"
+							? "Workspaces"
+							: filter.person === "everyone"
+								? "All workspaces"
+								: `${people.find((p) => p.key === filter.person)?.label || filter.person}'s workspaces`}
 					</span>
 					{/* Repo filter chip, inline behind the title when it fits. */}
 					{filter.repo !== "all" && repoInline && (
@@ -1304,7 +1322,7 @@ export function Sidebar({
 							}${
 								filter.groupBy !== "status" ||
 								filter.repo !== "all" ||
-								filter.person !== "all"
+								filter.person !== "me"
 									? " has-filter"
 									: ""
 							}`}
@@ -1354,6 +1372,7 @@ export function Sidebar({
 					filter={filter}
 					repos={repos}
 					people={people}
+					currentUser={currentUser}
 					onChange={setFilter}
 					onClose={() => setFilterOpen(false)}
 				/>
@@ -1579,7 +1598,7 @@ export function Sidebar({
 				<div className="sidebar-group">
 					{/* Status groups over the focus person's workspaces. The Person
 					    filter defaults to you; picking a teammate shows their groups
-					    instead (and hides the People band below). */}
+					    instead, and "Everyone" shows all workspaces. */}
 					{(() => {
 						const focusRows = focusWsRows;
 						// Empty status groups are hidden — only lanes with sessions render.
@@ -1922,6 +1941,7 @@ function FilterPopover({
 	filter,
 	repos,
 	people,
+	currentUser,
 	onChange,
 	onClose,
 }: {
@@ -1929,6 +1949,7 @@ function FilterPopover({
 	filter: FilterState;
 	repos: string[];
 	people: Array<{ key: string; label: string }>;
+	currentUser: string;
 	onChange: (patch: Partial<FilterState>) => void;
 	onClose: () => void;
 }) {
@@ -1947,18 +1968,26 @@ function FilterPopover({
 		})),
 	];
 
+	// You first (the default), then teammates, "Everyone" last — selecting
+	// Everyone literally shows all workspaces, which is rarely what you want,
+	// so it never leads the list.
+	const meKey = currentUser.toLowerCase();
+	const personDot = (key: string) => (
+		<span
+			className="sidebar-group-dot"
+			style={{ backgroundColor: personColor(key) }}
+		/>
+	);
 	const personOptions: SelectOption[] = [
-		{ value: "all", label: "All people" },
-		...people.map(({ key, label }) => ({
-			value: key,
-			label,
-			icon: (
-				<span
-					className="sidebar-group-dot"
-					style={{ backgroundColor: personColor(key) }}
-				/>
-			),
-		})),
+		{ value: "me", label: `${currentUser} (you)`, icon: personDot(meKey) },
+		...people
+			.filter(({ key }) => key !== meKey)
+			.map(({ key, label }) => ({
+				value: key,
+				label,
+				icon: personDot(key),
+			})),
+		{ value: "everyone", label: "Everyone" },
 	];
 
 	return createPortal(
