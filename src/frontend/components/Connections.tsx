@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { TEAM } from "./UserPicker";
 
 interface McpConnection {
   name: string;
@@ -535,17 +536,13 @@ function ClaudeAccounts() {
     }
   }
 
-  async function handleEditOwner(a: ClaudeAccountInfo) {
-    const next = prompt(
-      `Personal owner for "${a.name}" — their runs use it first, the shared pool is their backup. Leave empty for a shared pool account (used by everyone + automations).`,
-      a.owner || "",
-    );
-    if (next === null || next.trim() === (a.owner || "")) return;
+  async function handleSetOwner(a: ClaudeAccountInfo, owner: string) {
+    if (owner === (a.owner || "")) return;
     try {
       const res = await fetch(`/backstage/api/claude-accounts/${encodeURIComponent(a.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner: next.trim() }),
+        body: JSON.stringify({ owner }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
@@ -622,17 +619,26 @@ function ClaudeAccounts() {
               </div>
               <div className="conn-detail">
                 <span className="conn-target">{a.tokenMasked}</span>
-                <button
-                  className="btn-small"
-                  onClick={() => handleEditOwner(a)}
+                <select
+                  value={a.owner || ""}
+                  onChange={(e) => handleSetOwner(a, e.target.value)}
                   title={
                     a.owner
-                      ? `${a.owner}'s personal sub — their runs use it first, everyone else never does. Click to change.`
-                      : "Shared pool account — used by everyone and by automations. Click to make it someone's personal sub."
+                      ? `${a.owner}'s personal sub — their runs use it first, everyone else never does.`
+                      : "Shared pool account — used by everyone and by automations."
                   }
                 >
-                  {a.owner ? `👤 ${a.owner}` : "Shared pool"}
-                </button>
+                  <option value="">Shared pool</option>
+                  {/* Keep a non-team owner (e.g. set via API) selectable. */}
+                  {a.owner && !TEAM.includes(a.owner) && (
+                    <option value={a.owner}>👤 {a.owner}</option>
+                  )}
+                  {TEAM.map((name) => (
+                    <option key={name} value={name}>
+                      👤 {name}
+                    </option>
+                  ))}
+                </select>
               </div>
               {!a.noUsageScope && (
                 <>
@@ -887,14 +893,17 @@ function AddAccountForm({ onClose, onAdded }: { onClose: () => void; onAdded: ()
           />
         </label>
         <label
-          title="Personal sub: this person's runs use the account first, with the shared pool as backup — nobody else's runs touch it. Leave empty for a shared pool account (used by everyone + automations)."
+          title="Personal sub: this person's runs use the account first, with the shared pool as backup — nobody else's runs touch it. Shared pool = used by everyone and by automations."
         >
-          Owner (optional — empty = shared pool)
-          <input
-            value={owner}
-            onChange={(e) => setOwner(e.target.value)}
-            placeholder="Michiel"
-          />
+          Owner
+          <select value={owner} onChange={(e) => setOwner(e.target.value)}>
+            <option value="">Shared pool</option>
+            {TEAM.map((n) => (
+              <option key={n} value={n}>
+                👤 {n}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
 
