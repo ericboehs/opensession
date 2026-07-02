@@ -909,7 +909,7 @@ export function SessionViewer({
 		return () => ro.disconnect();
 	}, [topbarEl]);
 	// Collapse before the inline row can overrun: the title's non-shrinkable
-	// floor (source chip + model pill + Working pill) plus all six action buttons
+	// floor (source chip + Working pill) plus all six action buttons
 	// needs ~820px, so below that the secondary actions move into the ⋯ menu.
 	const compactHeader = headerW > 0 && headerW < 820;
 
@@ -1115,14 +1115,6 @@ export function SessionViewer({
 					)}
 					{session.startedBy && (
 						<span className="viewer-started-by">by {session.startedBy}</span>
-					)}
-					{(model || defaultModel) && (
-						<span
-							className={`model-pill ${isCodexModel ? "model-pill-codex" : "model-pill-claude"}`}
-							title={model ? "Model set for this session" : "Default model"}
-						>
-							{model || defaultModel}
-						</span>
 					)}
 					{session.archived && (
 						<span className="source-chip source-cli">archived</span>
