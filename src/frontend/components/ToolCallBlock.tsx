@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { langForFile, langForGrep } from "../lib/lang";
 import { cn } from "../ui/cn";
+import { openGalleryFrom } from "./MediaLightbox";
 import {
   IconTerminal,
   IconFile,
@@ -16,6 +17,7 @@ import {
   IconWrench,
   IconCheck,
   IconX,
+  IconExpand,
 } from "./icons";
 
 // Shiki (the syntax highlighter) is multi-MB; keep it out of the initial
@@ -354,7 +356,21 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
                 {result.videos && result.videos.length > 0 && (
                   <div className="tool-result-videos">
                     {result.videos.map((src, i) => (
-                      <video key={i} className="md-video" src={src} controls playsInline preload="metadata" />
+                      <div key={i} className="md-video-wrap">
+                        <video className="md-video" src={src} controls playsInline preload="metadata" />
+                        <button
+                          type="button"
+                          className="md-video-expand"
+                          aria-label="Expand"
+                          title="Expand"
+                          onClick={(e) => {
+                            const vid = e.currentTarget.parentElement?.querySelector("video");
+                            if (vid) openGalleryFrom(vid);
+                          }}
+                        >
+                          <IconExpand size={18} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}

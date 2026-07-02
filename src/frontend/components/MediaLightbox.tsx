@@ -3,25 +3,56 @@ import { type WorkspaceMediaItem } from "../lib/api";
 import { IconChevronLeft, IconChevronRight, IconX } from "./icons";
 
 /**
- * Full-screen lightbox for workspace media thumbnails (the sidebar hover
- * card, the mobile sheet, and the WorkspaceInfo panel), with prev/next
- * browsing across the workspace's media instead of jumping to the raw file
- * in a new tab.
+ * Full-screen lightbox for all in-app media: workspace-media thumbnails (the
+ * sidebar hover card, the mobile sheet, and the WorkspaceInfo panel) and any
+ * chat media (markdown images, pasted-image attachments, tool-result
+ * screenshots and recordings), with prev/next browsing instead of jumping to
+ * the raw file in a new tab — which for data:/blob URLs browsers block,
+ * leaving an empty window.
  *
  * Global singleton: the thumbnails live inside transient popovers — the
  * hover card unmounts on mouseleave/scroll — so the modal is hosted once in
  * App and opened imperatively via openLightbox(), surviving its opener.
+ * Chat media is wired through a delegated capture-phase click listener here
+ * (rather than per-component onClicks) because markdown images are injected
+ * via dangerouslySetInnerHTML and can't carry React handlers.
  */
 
+export interface LightboxItem {
+	kind: "image" | "video";
+	src: string;
+	chatTitle?: string;
+	at?: string;
+}
+
 interface LightboxState {
-	items: WorkspaceMediaItem[];
+	items: LightboxItem[];
 	index: number;
 }
 
 let host: ((s: LightboxState) => void) | null = null;
 
-export function openLightbox(items: WorkspaceMediaItem[], index: number) {
+export function openLightbox(
+	items: (LightboxItem | WorkspaceMediaItem)[],
+	index: number,
+) {
 	host?.({ items, index });
+}
+
+/** Every piece of chat media currently in the DOM, in document order —
+ * markdown images/videos, pasted attachments, tool-result screenshots. */
+const GALLERY_SELECTOR = "img.md-image, video.md-video";
+
+/** Open the lightbox on `el`, with prev/next browsing across all chat media
+ * currently on screen (a conversation-wide gallery). */
+export function openGalleryFrom(el: Element) {
+	const nodes = Array.from(document.querySelectorAll(GALLERY_SELECTOR));
+	const items: LightboxItem[] = nodes.map((n) => ({
+		kind: n.tagName === "VIDEO" ? "video" : "image",
+		src: (n as HTMLImageElement | HTMLVideoElement).src,
+	}));
+	if (items.length === 0) return;
+	openLightbox(items, Math.max(0, nodes.indexOf(el)));
 }
 
 export function MediaLightboxHost() {
@@ -31,6 +62,30 @@ export function MediaLightboxHost() {
 		return () => {
 			if (host === setState) host = null;
 		};
+	}, []);
+	// Delegated capture-phase listener: intercept plain left-clicks on any
+	// chat image and open the gallery instead of following the wrapping
+	// <a target="_blank"> (kept for cmd/middle-click open-in-tab). Videos are
+	// not intercepted — clicks there drive the native controls.
+	useEffect(() => {
+		function onClick(e: MouseEvent) {
+			if (
+				e.defaultPrevented ||
+				e.button !== 0 ||
+				e.metaKey ||
+				e.ctrlKey ||
+				e.shiftKey ||
+				e.altKey
+			)
+				return;
+			const img = (e.target as HTMLElement).closest?.("img.md-image");
+			if (!img) return;
+			e.preventDefault();
+			e.stopPropagation();
+			openGalleryFrom(img);
+		}
+		document.addEventListener("click", onClick, true);
+		return () => document.removeEventListener("click", onClick, true);
 	}, []);
 	if (!state) return null;
 	return (
@@ -49,7 +104,7 @@ function MediaLightbox({
 	onIndex,
 	onClose,
 }: {
-	items: WorkspaceMediaItem[];
+	items: LightboxItem[];
 	index: number;
 	onIndex: (i: number) => void;
 	onClose: () => void;
@@ -81,7 +136,10 @@ function MediaLightbox({
 	});
 
 	if (!item) return null;
-	const caption = [item.chatTitle, new Date(item.at).toLocaleString()]
+	const caption = [
+		item.chatTitle,
+		item.at ? new Date(item.at).toLocaleString() : null,
+	]
 		.filter(Boolean)
 		.join(" · ");
 	const navBtn =
@@ -161,14 +219,16 @@ function MediaLightbox({
 					</span>
 				)}
 				{caption && <span className="min-w-0 truncate">{caption}</span>}
-				<a
-					href={item.src}
-					target="_blank"
-					rel="noopener noreferrer"
-					className="shrink-0 text-white/70 hover:text-white hover:underline"
-				>
-					Open ↗
-				</a>
+				{!item.src.startsWith("data:") && (
+					<a
+						href={item.src}
+						target="_blank"
+						rel="noopener noreferrer"
+						className="shrink-0 text-white/70 hover:text-white hover:underline"
+					>
+						Open ↗
+					</a>
+				)}
 			</div>
 		</div>
 	);

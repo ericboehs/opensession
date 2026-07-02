@@ -336,6 +336,17 @@ export function IconImage(p: IconProps) {
   );
 }
 
+export function IconExpand(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M14.75 4.75H19.25V9.25" />
+      <path {...stroke} d="M19.25 4.75L13.75 10.25" />
+      <path {...stroke} d="M9.25 19.25H4.75V14.75" />
+      <path {...stroke} d="M4.75 19.25L10.25 13.75" />
+    </Svg>
+  );
+}
+
 export function IconTrash(p: IconProps) {
   return (
     <Svg {...p}>

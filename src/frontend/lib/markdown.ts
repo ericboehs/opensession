@@ -3,7 +3,8 @@ import { Marked } from "marked";
 // Dedicated marked instance for session messages so this config doesn't leak
 // into other markdown (wiki, etc.). Two customisations:
 //  - every link opens in a new tab (target=_blank + safe rel)
-//  - images render inline, capped in size, and click through to the full image
+//  - images/videos render inline, capped in size; clicks open the media
+//    lightbox (see MediaLightbox.tsx)
 const md = new Marked({ async: false, breaks: true });
 
 function attr(v: string | null | undefined): string {
@@ -33,6 +34,13 @@ md.use({
     },
     image(token: any) {
       const title = token.title ? ` title="${attr(token.title)}"` : "";
+      // Video files pasted with image syntax would render as a broken <img>
+      // linking to a new tab — play them inline instead. Clicks on .md-image
+      // open the media lightbox (delegated handler in MediaLightbox.tsx); the
+      // wrapping <a> stays for cmd/middle-click open-in-tab.
+      if (/\.(mp4|webm|mov|m4v)([?#]|$)/i.test(token.href ?? "")) {
+        return `<video class="md-video" src="${attr(token.href)}"${title} controls playsinline preload="metadata"></video>`;
+      }
       return (
         `<a href="${attr(token.href)}" target="_blank" rel="noopener noreferrer" class="md-image-link">` +
         `<img class="md-image" src="${attr(token.href)}" alt="${attr(token.text)}"${title} loading="lazy" />` +

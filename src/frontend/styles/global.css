@@ -8109,6 +8109,10 @@ html[data-theme="light"] .tool-code-surface {
 	margin: 6px 0;
 	display: block;
 }
+/* Chat images open the media lightbox (delegated handler in MediaLightbox.tsx) */
+.md-image {
+	cursor: zoom-in;
+}
 .tool-result-videos {
 	display: flex;
 	flex-wrap: wrap;
@@ -8123,6 +8127,32 @@ html[data-theme="light"] .tool-code-surface {
 	margin: 6px 0;
 	display: block;
 	background: #000;
+}
+.md-video-wrap {
+	position: relative;
+	line-height: 0;
+}
+/* Always visible (not hover-gated) so it works on touch/iOS. top offsets the
+   video's own 6px top margin inside the wrapper. */
+.md-video-expand {
+	position: absolute;
+	top: 12px;
+	right: 6px;
+	display: grid;
+	place-items: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: 0;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.55);
+	color: #fff;
+	cursor: pointer;
+	opacity: 0.75;
+}
+.md-video-expand:hover {
+	opacity: 1;
+	background: rgba(0, 0, 0, 0.75);
 }
 
 /* Composer image attachments (pasted/dropped screenshots) */
