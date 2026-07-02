@@ -2043,8 +2043,8 @@ function handleSlashCommand(
 			`Model set to ${resolved.id} (${modelLabel(resolved.id)}). Applies from the next prompt.` +
 			(switchedProvider
 				? resolved.provider === "codex"
-					? " Heads up: this switches the engine to Codex — the Claude conversation history doesn't carry over, so the next prompt starts a fresh Codex thread (switching back to a Claude model resumes the old history)."
-					: " Heads up: this switches the engine back to Claude — the Codex thread's history doesn't carry over, but the earlier Claude history (if any) resumes."
+					? " Heads up: this hands the wheel to Codex on the next prompt. The Codex engine can't share Claude's internal thread, so it gets a transcript handoff of the conversation so far and continues from there (switching back to a Claude model resumes its own history)."
+					: " Heads up: this hands the wheel back to Claude on the next prompt. Claude resumes its own earlier history (if any) and gets a transcript handoff of the turns Codex ran in between."
 				: "")
 		);
 	}
@@ -5801,6 +5801,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 												effectiveProvider,
 												engineSessionId,
 											),
+											...(engineSessionId
+												? { lastEngineProvider: effectiveProvider }
+												: {}),
 											...(effectiveModel ? { model: effectiveModel } : {}),
 										},
 									);
@@ -5894,6 +5897,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 											effectiveProvider,
 											engineSessionId,
 										),
+										...(engineSessionId
+											? { lastEngineProvider: effectiveProvider }
+											: {}),
 										...(effectiveModel ? { model: effectiveModel } : {}),
 										...(modelHistory.length ? { modelHistory } : {}),
 									},
