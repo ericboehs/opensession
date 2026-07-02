@@ -161,6 +161,33 @@ export async function fetchTranscript(sessionId: string) {
 	);
 }
 
+/** One media item in the workspace-overview panel. Image srcs are lazy-load
+ * refs served by /sessions/:id/transcript-image; videos stream from
+ * /backstage/media. */
+export interface WorkspaceMediaItem {
+	kind: "image" | "video";
+	src: string;
+	sessionId: string;
+	chatTitle?: string;
+	at: string;
+}
+
+export interface WorkspaceOverview {
+	prompt: { content: string; sessionId: string; at: string } | null;
+	media: WorkspaceMediaItem[];
+}
+
+/** Opening prompt + all media across a workspace's chats (the floating
+ * preview panel in the session viewer). */
+export async function fetchWorkspaceOverview(
+	wsId: string,
+): Promise<WorkspaceOverview> {
+	return request<WorkspaceOverview>(
+		`/workspaces/${encodeURIComponent(wsId)}/overview`,
+		{ label: "Failed to fetch workspace overview" },
+	);
+}
+
 export interface SubagentTranscript {
 	meta: {
 		agentId: string;

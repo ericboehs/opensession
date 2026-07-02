@@ -1028,6 +1028,7 @@ function App() {
 									topbarEl={topbarEl}
 									rightPanelEl={rightPanelEl}
 									newChatSeq={newChatSeq}
+									workspaceChats={projectChats}
 									onRename={async (id, title) => {
 										try {
 											await renameSessionApi(id, title);

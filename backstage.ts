@@ -21,6 +21,10 @@ import {
 	parseTranscriptTail,
 	transcriptMatchSnippet,
 } from "./src/server/jsonl-parser";
+import {
+	buildWorkspaceOverview,
+	resolveTranscriptImage,
+} from "./src/server/workspace-overview";
 import { getSubagentTranscript } from "./src/server/subagents";
 import {
 	startWatching,
@@ -2596,6 +2600,54 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					return Response.json({ error: "Session not found" }, { status: 404 });
 				if (!session.transcriptPath) return Response.json([]);
 				return Response.json(parseTranscript(session.transcriptPath));
+			}
+
+			// Workspace overview: the opening prompt + all media (screenshots,
+			// videos) across the workspace's member chats — feeds the floating
+			// preview panel in the session viewer. Images come back as
+			// transcript-image refs (below), not inline base64.
+			{
+				const m = path.match(
+					/^\/backstage\/api\/workspaces\/([^/]+)\/overview$/,
+				);
+				if (m && req.method === "GET") {
+					const wsId = decodeURIComponent(m[1]);
+					const chats = getCachedSessions().filter(
+						(s) => s.projectId === wsId,
+					);
+					return Response.json(buildWorkspaceOverview(chats));
+				}
+			}
+
+			// One image out of a transcript entry, served as real bytes (decoded
+			// from the base64 block) so the overview panel can lazy-load and the
+			// browser can cache thumbnails instead of shipping data URLs in JSON.
+			{
+				const m = path.match(
+					/^\/backstage\/api\/sessions\/(.+)\/transcript-image\/([^/]+)\/(\d+)$/,
+				);
+				if (m && req.method === "GET") {
+					const session = findSession(decodeURIComponent(m[1]));
+					if (!session?.transcriptPath)
+						return Response.json({ error: "Session not found" }, { status: 404 });
+					const img = resolveTranscriptImage(
+						session.transcriptPath,
+						decodeURIComponent(m[2]),
+						parseInt(m[3], 10),
+					);
+					if (!img)
+						return Response.json({ error: "Image not found" }, { status: 404 });
+					if ("redirect" in img)
+						return Response.redirect(img.redirect, 302);
+					return new Response(img.bytes, {
+						headers: {
+							"Content-Type": img.contentType,
+							"Content-Length": String(img.bytes.byteLength),
+							// A transcript entry never changes once written — cache hard.
+							"Cache-Control": "private, max-age=86400, immutable",
+						},
+					});
+				}
 			}
 
 			// Full-text search across session transcripts (the ⌘K palette's

@@ -271,6 +271,19 @@ export function IconWrench(p: IconProps) {
   );
 }
 
+export function IconImage(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M6.75 4.75H17.25C18.3546 4.75 19.25 5.64543 19.25 6.75V17.25C19.25 18.3546 18.3546 19.25 17.25 19.25H6.75C5.64543 19.25 4.75 18.3546 4.75 17.25V6.75C4.75 5.64543 5.64543 4.75 6.75 4.75Z"
+      />
+      <path {...stroke} d="M4.75 16.25L9 11.75L13 15.25L15.5 12.75L19.25 16.25" />
+      <circle cx="14.5" cy="8.5" r="1.25" stroke="currentColor" strokeWidth="1.5" />
+    </Svg>
+  );
+}
+
 export function IconX(p: IconProps) {
   return (
     <Svg {...p}>

@@ -37,6 +37,7 @@ import { PrPanel } from "./PrPanel";
 import { SlackChatPanel } from "./SlackChatPanel";
 import { PlainThreadPanel } from "./PlainThreadPanel";
 import { PreviewButton } from "./PreviewButton";
+import { WorkspacePreview } from "./WorkspacePreview";
 import { SpinOffMenu } from "./SpinOffMenu";
 import { IconSidebarRight } from "./icons";
 import { Tooltip } from "../ui/tooltip";
@@ -69,6 +70,9 @@ interface Props {
 	 */
 	workspaceName?: string;
 	onRenameWorkspace?: (name: string) => void;
+	/** Sibling chats in this chat's workspace (the tab strip's list, oldest
+	    first) — feeds the floating overview panel's cross-chat media. */
+	workspaceChats?: UnifiedSession[];
 }
 
 type PanelTab = "changes" | "terminal" | "pr" | "slack" | "plain";
@@ -111,6 +115,7 @@ export function SessionViewer({
 	onRename,
 	workspaceName,
 	onRenameWorkspace,
+	workspaceChats,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
@@ -802,6 +807,17 @@ export function SessionViewer({
 
 	const me = getCurrentUser();
 
+	// Media items in the live transcript — bumping this refreshes the floating
+	// overview panel as new screenshots land during a run.
+	const liveMediaCount = useMemo(
+		() =>
+			entries.reduce(
+				(n, e) => n + (e.images?.length || 0) + (e.videos?.length || 0),
+				0,
+			),
+		[entries],
+	);
+
 	async function handleDelete(cleanWorktree: boolean) {
 		setDeleteLabel(
 			cleanWorktree ? "Deleting session and worktree…" : "Deleting session…",
@@ -1139,6 +1155,18 @@ export function SessionViewer({
 			<div className="viewer-split">
 				<div className="viewer-chat">
 					<div className="viewer-messages-region">
+						<WorkspacePreview
+							workspaceId={session.projectId || null}
+							workspaceName={workspaceName}
+							chats={(workspaceChats?.length ? workspaceChats : [session]).map(
+								(s) => ({
+									id: s.id,
+									title: s.title,
+									createdAt: s.createdAt || "",
+								}),
+							)}
+							liveMediaCount={liveMediaCount}
+						/>
 						<div
 							className="viewer-messages"
 							ref={messagesRef}
