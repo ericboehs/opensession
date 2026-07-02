@@ -923,9 +923,22 @@ export function SessionViewer({
 							</Tooltip>
 						</>
 					) : (
-						<span className={`source-chip source-${session.source}`}>
-							{session.source}
-						</span>
+						// "backstage" is the default origin (web UI) — as a chip it's noise,
+						// and for backstage-repo sessions it read as the repo said twice.
+						// Only surface the unusual origins (slack/linear/cli).
+						session.source !== "backstage" && (
+							<span className={`source-chip source-${session.source}`}>
+								{session.source}
+							</span>
+						)
+					)}
+					{session.worktreeDir && !isAsk && (
+						<RepoBar
+							sessionId={session.id}
+							primaryRepo={session.repo || "tella-fusion"}
+							branch={session.branch}
+							initialAttached={session.attachedRepos || []}
+						/>
 					)}
 					{renameDraft !== null ? (
 						<input
@@ -1102,15 +1115,6 @@ export function SessionViewer({
 				);
 				return topbarEl ? createPortal(header, topbarEl) : header;
 			})()}
-
-			{session.worktreeDir && !isAsk && (
-				<RepoBar
-					sessionId={session.id}
-					primaryRepo={session.repo || "tella-fusion"}
-					branch={session.branch}
-					initialAttached={session.attachedRepos || []}
-				/>
-			)}
 
 			{(session.goal || session.loop) && (
 				<div className="session-banners">

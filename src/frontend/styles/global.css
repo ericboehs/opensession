@@ -5413,14 +5413,13 @@ html[data-theme="light"] .tool-code-surface {
 	color: var(--text-faint);
 }
 
-/* Cross-repo bar (primary + attached repos) above a code session */
+/* Cross-repo chips (primary + attached + attach), inline in the session topbar
+   just in front of the title */
 .repobar {
-	display: flex;
-	flex-wrap: wrap;
+	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	padding: 8px 16px;
-	border-bottom: 1px solid var(--border);
+	flex-shrink: 0;
 }
 .repobar-chip {
 	display: inline-flex;
@@ -5523,6 +5522,10 @@ html[data-theme="light"] .tool-code-surface {
 .repobar-error {
 	font-size: 11px;
 	color: var(--danger, #e5484d);
+	max-width: 220px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 /* "@"-mention file autocomplete */
@@ -6732,6 +6735,11 @@ html[data-theme="light"] .tool-code-surface {
 	/* The model pill duplicates the composer's model selector — drop it from the
      title row on phones so the title gets the full width (less truncation). */
 	.viewer-title .model-pill {
+		display: none;
+	}
+	/* The "+ repo" affordance is desktop workflow — on phones it just steals
+	   title width (the repo chip itself stays). */
+	.repobar-add-wrap {
 		display: none;
 	}
 

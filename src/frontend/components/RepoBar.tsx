@@ -17,9 +17,10 @@ interface Props {
 }
 
 /**
- * Cross-repo control for a code session: shows the primary repo plus any
- * attached repos (each an isolated worktree) and lets you attach another via a
- * dropdown. Mirrors the agent's michael-repos attach_repo tool — both go through
+ * Cross-repo control for a code session, rendered inline in the session topbar
+ * just in front of the title: shows the primary repo plus any attached repos
+ * (each an isolated worktree) and lets you attach another via a dropdown.
+ * Mirrors the agent's michael-repos attach_repo tool — both go through
  * POST /api/sessions/:id/attach-repo.
  *
  * The primary chip doubles as a repo *switcher* — for when the wrong repo was
