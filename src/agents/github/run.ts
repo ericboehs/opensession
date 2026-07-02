@@ -8,7 +8,8 @@ import { existsSync, readFileSync, readdirSync } from "fs";
 import { BACKSTAGE_CHATS_DIR } from "../../server/paths";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { runAgent } from "../../server/agent-runner";
-import { providerFor, DEFAULT_FALLBACK_MODEL } from "../../server/models";
+import { providerFor, DEFAULT_FALLBACK_MODEL, modelLabel } from "../../server/models";
+import { engineSessionPatch } from "../../server/sessions";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/claude-runner";
 import { gitIdentityFor, type GitIdentity } from "../../server/shared/user-mappings";
 import { findOrCreateWorkspaceByKey } from "../../server/workspaces";
@@ -91,15 +92,23 @@ export function finalSummary(text: string): string {
   return idx === -1 ? text.trim() : text.slice(idx + SUMMARY_SENTINEL.length).trim();
 }
 
-function readEngineSessionId(bksId: string): { id: string; isCodex: boolean } | null {
+function readSessionFile(bksId: string): BackstageSessionFile | null {
   const path = `${SESSIONS_DIR}/${bksId}.json`;
   if (!existsSync(path)) return null;
   try {
-    const f = JSON.parse(readFileSync(path, "utf-8")) as BackstageSessionFile;
-    if (f.codexThreadId) return { id: f.codexThreadId, isCodex: true };
-    if (f.claudeSessionId) return { id: f.claudeSessionId, isCodex: false };
+    return JSON.parse(readFileSync(path, "utf-8")) as BackstageSessionFile;
   } catch {}
   return null;
+}
+
+function readEngineSessionId(
+  file: BackstageSessionFile | null,
+  model?: string
+): string {
+  if (!file) return "";
+  const provider = providerFor(model || file.model);
+  if (provider === "codex") return file.codexThreadId || "";
+  return file.claudeSessionId || "";
 }
 
 export interface GithubRunOpts {
@@ -132,17 +141,27 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
   // Group this and the PR's other chats under one Project folder.
   const projectId = projectIdForPr(opts.prNumber, opts.branch, opts.title, opts.cwd);
 
-  const resumeFrom = opts.resume ? readEngineSessionId(bksId) : null;
+  const existingSessionFile = readSessionFile(bksId);
+  const resumeFrom = opts.resume
+    ? readEngineSessionId(existingSessionFile, opts.model)
+    : "";
 
-  let effectiveModel = opts.model;
-  let effectiveProvider = providerFor(opts.model);
+  let effectiveModel = opts.model || existingSessionFile?.model;
+  let effectiveProvider = providerFor(effectiveModel);
+  const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [
+    ...(existingSessionFile?.modelHistory || []),
+  ];
   const persist = (engineSessionId: string) => {
-    const isCodex = effectiveProvider === "codex";
+    const prior = readSessionFile(bksId) || existingSessionFile;
     const data: BackstageSessionFile = {
       id: bksId,
-      claudeSessionId: isCodex ? "" : engineSessionId,
-      ...(isCodex && engineSessionId ? { codexThreadId: engineSessionId } : {}),
+      claudeSessionId: prior?.claudeSessionId || "",
+      ...(prior?.codexThreadId ? { codexThreadId: prior.codexThreadId } : {}),
+      ...(engineSessionId
+        ? engineSessionPatch(effectiveProvider, engineSessionId)
+        : {}),
       ...(effectiveModel ? { model: effectiveModel } : {}),
+      ...(modelHistory.length ? { modelHistory } : {}),
       branch: opts.branch,
       worktreeDir: opts.cwd,
       createdBy: "GitHub (automation)",
@@ -157,16 +176,16 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
   };
 
   let text = "";
-  let engineSessionId = resumeFrom?.id || "";
+  let engineSessionId = resumeFrom;
   let errorMsg = "";
 
   try {
     for await (const event of runAgent({
       prompt: opts.prompt,
-      sessionId: resumeFrom?.id || undefined,
+      sessionId: resumeFrom || undefined,
       cwd: opts.cwd,
       mode: opts.mode,
-      model: opts.model,
+      model: effectiveModel,
       confirmTools: STRIPE_CONFIRM_TOOLS,
       aws: true,
       author: opts.author,
@@ -181,6 +200,17 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
         opts.onSessionCreated?.(bksId);
       } else if (event.type === "text_chunk") {
         text += event.text;
+      } else if (event.type === "model_switch") {
+        const to = event.toModel || "";
+        if (to) {
+          effectiveModel = to;
+          effectiveProvider = providerFor(to);
+          modelHistory.push({
+            model: to,
+            at: new Date().toISOString(),
+            by: `auto-switch — ${modelLabel(event.fromModel)} out of credits`,
+          });
+        }
       } else if (event.type === "done") {
         engineSessionId = event.sessionId || engineSessionId;
         if (event.provider) effectiveProvider = event.provider;
