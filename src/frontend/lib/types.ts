@@ -94,6 +94,12 @@ export interface UnifiedSession {
 	waitingForInput?: boolean;
 	/** Number of prompts queued behind the current run. Set by /api/sessions. */
 	queuedCount?: number;
+	/**
+	 * The last run died on a terminal failure (usage limits exhausted, credit/API
+	 * errors) — a human must act, so the session reads as "Needs input" rather
+	 * than Backlog. Cleared by the next run that ends cleanly. Set by /api/sessions.
+	 */
+	lastRunError?: { message: string; at: string };
 }
 
 /** A Project — an optional folder that groups chats (sessions). */

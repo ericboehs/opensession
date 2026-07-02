@@ -4,7 +4,8 @@ import { notifyEvent } from "../lib/notify";
 
 // Watches the polled session list and alerts (sound + desktop banner, per the
 // user's notification settings) each time one of *your* sessions newly:
-//   • transitions into "needs input" (blocked on an AskUserQuestion), or
+//   • transitions into "needs input" (blocked on an AskUserQuestion, or its
+//     run died on a terminal error — credits/usage limits/API failure), or
 //   • finishes a run (was running, now idle and not waiting).
 // Only transitions alert — a session already in that state when the tab opens, or
 // one that stays there across polls, does not re-fire. Which of the two events
@@ -28,7 +29,9 @@ export function useInputAlerts(
 	useEffect(() => {
 		const mine = sessions.filter((s) => isMineRef.current(s));
 
-		const waiting = mine.filter((s) => s.waitingForInput);
+		const waiting = mine.filter(
+			(s) => s.waitingForInput || (s.lastRunError && !s.isRunning),
+		);
 		const waitingIds = new Set(waiting.map((s) => s.id));
 		const running = mine.filter((s) => s.isRunning);
 		const runningIds = new Set(running.map((s) => s.id));
@@ -51,15 +54,19 @@ export function useInputAlerts(
 			notifyEvent(
 				"needsInput",
 				"Needs input",
-				s.title || "A session is waiting for your answer",
+				s.waitingForInput
+					? s.title || "A session is waiting for your answer"
+					: `Run failed — ${s.title || "a session needs attention"}`,
 				() => onOpenRef.current(s.id),
 			);
 		}
 
-		// Newly finished: was running, now not running and not waiting on a question.
+		// Newly finished: was running, now not running and not waiting on a
+		// question (a run that died on an error alerts as "needs input" above,
+		// not as a misleading "Finished").
 		for (const s of mine) {
 			if (!prevRunning.has(s.id)) continue;
-			if (s.isRunning || s.waitingForInput) continue;
+			if (s.isRunning || s.waitingForInput || s.lastRunError) continue;
 			notifyEvent(
 				"done",
 				"Finished",

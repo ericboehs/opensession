@@ -1287,8 +1287,21 @@ export function SessionViewer({
 						: header;
 			})()}
 
-			{(session.goal || session.loop) && (
+			{(session.goal || session.loop || (session.lastRunError && !isBusy)) && (
 				<div className="session-banners">
+					{/* The last run died on a terminal failure (usage limits/credits
+					    exhausted, API errors) — say why the session stopped; the error
+					    itself was only ever a transient toast. Hidden while a retry
+					    runs; cleared server-side by the next clean run. */}
+					{session.lastRunError && !isBusy && (
+						<span
+							className="session-banner text-red"
+							title={session.lastRunError.message}
+						>
+							⚠ Last run failed: {session.lastRunError.message.slice(0, 160)}
+							{session.lastRunError.message.length > 160 ? "…" : ""}
+						</span>
+					)}
 					{session.goal && (
 						<span className="session-banner" title="Cleared with /goal clear">
 							🎯 {session.goal}

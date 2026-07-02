@@ -254,6 +254,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       modelHistory: data.modelHistory,
       goal: data.goal,
       goalId: data.goalId,
+      lastRunError: data.lastRunError,
       loop: data.loop,
       slackChannel: data.slackChannel,
       lastActivity: data.lastActivity,

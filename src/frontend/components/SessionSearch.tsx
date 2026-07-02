@@ -36,7 +36,10 @@ const STATUS_ORDER: Status[] = [
 ];
 
 function sessionStatus(s: UnifiedSession): Status {
-	if (s.waitingForInput) return "needsinput";
+	// A blocked question — or a run that died on a terminal error (credits/
+	// usage limits, API failures) — needs a human before anything else.
+	if (s.waitingForInput || (s.lastRunError && !s.isRunning))
+		return "needsinput";
 	if (s.isRunning) return "running";
 	if (s.prState === "OPEN") return "review";
 	if (s.prState === "MERGED") return "merged";

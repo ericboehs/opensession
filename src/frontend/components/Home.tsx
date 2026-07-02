@@ -258,7 +258,9 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
   // Ambient status whisper — counts only, no lists; the sidebar has the lists.
   const active = sessions.filter((s) => !s.archived);
   const running = active.filter((s) => s.isRunning);
-  const waiting = active.filter((s) => s.waitingForInput && !s.isRunning);
+  const waiting = active.filter(
+    (s) => (s.waitingForInput || s.lastRunError) && !s.isRunning,
+  );
   const openPrs = new Set(
     active.filter((s) => s.prUrl && s.prState === "OPEN").map((s) => s.prUrl),
   ).size;

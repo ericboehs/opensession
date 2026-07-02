@@ -362,10 +362,19 @@ const MINE_STATUS_META: Array<{
 	{ key: "pending", label: "Backlog", dotColor: "var(--text-faint)" },
 ];
 
+// A run that died on a terminal failure (usage limits/credits exhausted, API
+// errors) needs a human to act, exactly like a blocked question — it must not
+// sink quietly into the Backlog. A live run means a retry is underway, so the
+// stale flag doesn't override "In progress".
+function runNeedsAttention(s: UnifiedSession): boolean {
+	return !!s.lastRunError && !s.isRunning;
+}
+
 function mineStatus(s: UnifiedSession): MineStatus {
-	// A blocked question needs a human right now — surface it above everything
-	// else, even an open PR, so it never hides inside another bucket.
-	if (s.waitingForInput) return "needsinput";
+	// A blocked question (or a run that died on an error) needs a human right
+	// now — surface it above everything else, even an open PR, so it never
+	// hides inside another bucket.
+	if (s.waitingForInput || runNeedsAttention(s)) return "needsinput";
 	if (s.prState === "MERGED") return "merged";
 	if (s.prState === "OPEN") return "review";
 	if (s.isRunning) return "inprogress";
@@ -2470,7 +2479,7 @@ function SidebarItem({
 	onMoveToProject?: (projectId: string | null) => void;
 }) {
 	const running = session.isRunning;
-	const waiting = !!session.waitingForInput;
+	const waiting = !!session.waitingForInput || runNeedsAttention(session);
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState("");
 	// Right-click context menu (move-to-project) anchored at the cursor.
@@ -3048,6 +3057,11 @@ function SessionHoverCard({
 					Blocked on a question — open the session to answer.
 				</div>
 			)}
+			{!s.waitingForInput && runNeedsAttention(s) && (
+				<div className="hovercard-callout">
+					Run failed: {s.lastRunError!.message.slice(0, 200)}
+				</div>
+			)}
 			{!s.waitingForInput && (s.queuedCount ?? 0) > 0 && (
 				<div className="hovercard-callout">
 					{s.queuedCount} prompt{s.queuedCount === 1 ? "" : "s"} queued.
@@ -3103,6 +3117,12 @@ function hoverState(s: UnifiedSession): {
 	if (s.waitingForInput)
 		return {
 			label: "Waiting for your input",
+			tone: "accent",
+			dotClass: "sidebar-status-waiting",
+		};
+	if (runNeedsAttention(s))
+		return {
+			label: "Last run failed — needs attention",
 			tone: "accent",
 			dotClass: "sidebar-status-waiting",
 		};
@@ -3311,11 +3331,19 @@ function WsOverviewInfo({
 
 			<div className="hovercard-title">{row.name}</div>
 
-			{row.status === "needsinput" && (
-				<div className="hovercard-callout">
-					Blocked on a question — open to answer.
-				</div>
-			)}
+			{row.status === "needsinput" &&
+				(row.chats.some((c) => c.waitingForInput) ? (
+					<div className="hovercard-callout">
+						Blocked on a question — open to answer.
+					</div>
+				) : (
+					<div className="hovercard-callout">
+						Run failed:{" "}
+						{row.chats
+							.find((c) => runNeedsAttention(c))
+							?.lastRunError?.message.slice(0, 200) || "needs attention"}
+					</div>
+				))}
 
 			{desc && (
 				<div className="selectable mt-1 text-xs leading-snug text-dim line-clamp-2">
@@ -3435,11 +3463,13 @@ function WsHoverCard({
 						className={`${WS_ACTION} bg-accent text-white hover:opacity-90`}
 						onClick={() =>
 							onOpen(
-								row.chats.find((c) => c.waitingForInput) || row.chats[0],
+								row.chats.find((c) => c.waitingForInput) ||
+									row.chats.find((c) => runNeedsAttention(c)) ||
+									row.chats[0],
 							)
 						}
 					>
-						Answer
+						{row.chats.some((c) => c.waitingForInput) ? "Answer" : "Open"}
 					</button>
 				) : row.status === "merged" ? (
 					<button
@@ -3597,12 +3627,16 @@ function WsMobileSheet({
 						style={{ color: "var(--accent)", fontWeight: 600 }}
 						onClick={closing(() =>
 							onOpen(
-								row.chats.find((c) => c.waitingForInput) || row.chats[0],
+								row.chats.find((c) => c.waitingForInput) ||
+									row.chats.find((c) => runNeedsAttention(c)) ||
+									row.chats[0],
 							),
 						)}
 					>
 						<WsStatusMark row={row} size={20} />
-						Answer question
+						{row.chats.some((c) => c.waitingForInput)
+							? "Answer question"
+							: "Check failed run"}
 					</button>
 				)}
 				{row.status === "review" && prChat?.prUrl && (

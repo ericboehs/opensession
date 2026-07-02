@@ -759,6 +759,40 @@ interface PendingAsk {
 }
 const pendingAsks: Map<string, PendingAsk> = (g.__pendingAsks ??= new Map());
 
+// Sessions whose LAST run died on a terminal failure (usage limits exhausted on
+// every account, credit/API errors). Those need a human to act — the sidebar
+// surfaces them as "Needs input" instead of letting them sink into the Backlog.
+// Keyed by canonical session id; parked on globalThis for hot reloads.
+// Backstage-owned sessions also persist the error on their session file (via
+// recordRunOutcome) so the flag survives a real restart.
+const runErrors: Map<string, { message: string; at: string }> = (g.__runErrors ??=
+	new Map());
+
+/**
+ * Record how a session's run ended: an error message when it died on a terminal
+ * failure, or null for a clean finish (which clears any earlier failure). The
+ * enriched /api/sessions list exposes this as `lastRunError`.
+ */
+function recordRunOutcome(sessionId: string, errorMessage: string | null): void {
+	const session = findSession(sessionId);
+	const id = session?.id || sessionId;
+	if (errorMessage) {
+		const entry = {
+			message: errorMessage.slice(0, 500),
+			at: new Date().toISOString(),
+		};
+		runErrors.set(id, entry);
+		if (session?.source === "backstage")
+			touchBackstageSession(id, { lastRunError: entry });
+	} else {
+		// Only rewrite the session file when there's actually a flag to clear
+		// (the in-memory map, or one persisted by a previous process).
+		const had = runErrors.delete(id) || !!session?.lastRunError;
+		if (had && session?.source === "backstage")
+			touchBackstageSession(id, { lastRunError: undefined });
+	}
+}
+
 // Flatten an AskUserQuestion payload into a single Slack-friendly prompt. Option
 // buttons are only offered when there's exactly one question (the human-asks card
 // carries one option set); multi-question asks fall back to a free-text reply.
@@ -1503,6 +1537,10 @@ async function runSessionPromptInner(
 
 	let finalSessionId = engineSessionId || "";
 	let endedWithError = false;
+	// Terminal failure this run died on (usage limits with no account left,
+	// credit/API errors) — recorded on the session after the loop so the sidebar
+	// surfaces it as "Needs input"; null (a clean finish) clears an earlier one.
+	let runFailure: string | null = null;
 	// Accumulate the assistant reply so we can mirror it to a linked Slack channel
 	// (this path — queue drain / deliverToSession / loops — is where a channel
 	// @mention lands; web-typed prompts stream through the WS handler instead, so
@@ -1610,6 +1648,11 @@ async function runSessionPromptInner(
 				break;
 			case "done":
 				finalSessionId = event.sessionId || finalSessionId;
+				// Dying on usage limits with no account left reports as a `done`
+				// whose result is the limit notice (not an `error` event) — but it
+				// still needs a human, so treat it as a failure.
+				if (event.usageLimitExhausted)
+					runFailure = event.result || "Usage limit reached on every account";
 				sessionsCache = null;
 				break;
 			case "error":
@@ -1630,6 +1673,7 @@ async function runSessionPromptInner(
 					return;
 				}
 				endedWithError = true;
+				runFailure = event.content || "Run failed";
 				broadcastToSession(sessionId, {
 					type: "error",
 					sessionId,
@@ -1648,6 +1692,10 @@ async function runSessionPromptInner(
 				: { claudeSessionId: finalSessionId || undefined },
 		);
 	}
+
+	// A terminal failure keeps the session in the "Needs input" bucket until a
+	// later run finishes cleanly (which clears it here too).
+	recordRunOutcome(session.id, runFailure);
 
 	// On a clean finish any steered messages already landed in the transcript, so
 	// drop their display-only receipts. But if the run ended in error/abort (e.g.
@@ -2644,6 +2692,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					...s,
 					waitingForInput: pendingAsks.has(s.id),
 					queuedCount: promptQueues.get(s.id)?.length || 0,
+					// Terminal failure of the last run (credits/limits/API) — persisted
+					// on backstage session files, in-memory for slack/linear sessions.
+					lastRunError: runErrors.get(s.id) || s.lastRunError,
 				}));
 				return Response.json(enriched);
 			}
@@ -5295,6 +5346,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 
 							let engineSessionId = "";
 							let persisted = false;
+							// Terminal failure the opening run died on — recorded after the
+							// loop so the fresh session surfaces as "Needs input".
+							let runFailure: string | null = null;
 							const persist = () => {
 								const sessionData: BackstageSessionFile = {
 									id: bksId,
@@ -5446,8 +5500,12 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								}
 								if (event.type === "done") {
 									engineSessionId = event.sessionId || engineSessionId;
+									if (event.usageLimitExhausted)
+										runFailure =
+											event.result || "Usage limit reached on every account";
 								}
 								if (event.type === "error") {
+									runFailure = event.content || "Run failed";
 									emit({ type: "error", message: event.content });
 								}
 							}
@@ -5460,6 +5518,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										? { codexThreadId: engineSessionId }
 										: { claudeSessionId: engineSessionId },
 								);
+							recordRunOutcome(bksId, runFailure);
 							} finally {
 								unmarkSessionStarting(bksId);
 							}
@@ -5730,6 +5789,9 @@ registerSessionControl({
 
 		let engineSessionId = "";
 		let persisted = false;
+		// Terminal failure the opening run died on — recorded after the loop so
+		// the fresh session surfaces as "Needs input".
+		let runFailure: string | null = null;
 		const persist = () => {
 			const sessionData: BackstageSessionFile = {
 				id: bksId,
@@ -5834,8 +5896,12 @@ registerSessionControl({
 					}
 					if (event.type === "done") {
 						engineSessionId = event.sessionId || engineSessionId;
+						if (event.usageLimitExhausted)
+							runFailure =
+								event.result || "Usage limit reached on every account";
 					}
 					if (event.type === "error") {
+						runFailure = event.content || "Run failed";
 						broadcastToSession(bksId, {
 							type: "error",
 							message: event.content,
@@ -5850,6 +5916,7 @@ registerSessionControl({
 							? { codexThreadId: engineSessionId }
 							: { claudeSessionId: engineSessionId },
 					);
+				recordRunOutcome(bksId, runFailure);
 				broadcastToSession(bksId, { type: "stream_done", sessionId: bksId });
 				broadcastToSession(bksId, {
 					type: "session_status",

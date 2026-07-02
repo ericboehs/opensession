@@ -53,6 +53,13 @@ export interface UnifiedSession {
   goal?: string;
   /** Goal record id, when this session is driven by a Goal (src/server/goals.ts). */
   goalId?: string;
+  /**
+   * The session's last run died on a terminal failure (usage limits exhausted
+   * on every account, credit/API errors) — a human must act before the session
+   * can continue, so the UI surfaces it as "Needs input" instead of Backlog.
+   * Cleared by the next run that ends cleanly.
+   */
+  lastRunError?: { message: string; at: string };
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   // Other IDs that resolve to this session. The same Claude session can be
   // tracked by multiple files (e.g. a Slack run writes both <branch>.json and
@@ -143,6 +150,7 @@ export interface BackstageSessionFile {
   archivedAt?: string;
   goal?: string; // pinned goal, appended to every prompt until cleared
   goalId?: string; // Goal record this session is driven by (src/server/goals.ts)
+  lastRunError?: { message: string; at: string }; // last run died on a terminal error; cleared on the next clean run
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   slackChannel?: SlackChannelLink; // Slack channel linked for in-context discussion
 }
