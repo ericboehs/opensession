@@ -2010,6 +2010,14 @@ async function runGoal(goal: Goal): Promise<void> {
 				engineSessionId = event.sessionId || engineSessionId;
 				if (event.model) effectiveModel = event.model;
 				persistSession(engineSessionId);
+				// A goal wake's transcript file is new each wake — attach anyone
+				// already viewing the goal session so the turn streams live.
+				if (providerFor(effectiveModel) === "claude" && engineSessionId) {
+					attachSessionWatchersToTranscript(
+						bksId,
+						getTranscriptPath(cwd, engineSessionId),
+					);
+				}
 			}
 			if (event.type === "done") {
 				engineSessionId = event.sessionId || engineSessionId;
@@ -5338,6 +5346,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 											? { codexThreadId: engineSessionId }
 											: { claudeSessionId: engineSessionId },
 									);
+									// The transcript file didn't exist when viewers sent their
+									// watch (fresh chat) — attach them now so this first turn
+									// streams live instead of only appearing after a re-watch.
+									if (!isCodex && engineSessionId) {
+										attachSessionWatchersToTranscript(
+											bksId,
+											getTranscriptPath(wtPath, engineSessionId),
+										);
+									}
 								}
 								if (event.type === "text_chunk") {
 									// Direct send for the creator (not in the room until they watch),
@@ -5735,6 +5752,15 @@ registerSessionControl({
 					if (event.type === "init") {
 						engineSessionId = event.sessionId || "";
 						persist();
+						// Attach anyone already viewing this fresh chat to its brand-new
+						// transcript file so the first turn streams live (see
+						// attachSessionWatchersToTranscript).
+						if (!isCodex && engineSessionId) {
+							attachSessionWatchersToTranscript(
+								bksId,
+								getTranscriptPath(wtPath, engineSessionId),
+							);
+						}
 					}
 					if (event.type === "text_chunk") {
 						broadcastToSession(bksId, {
