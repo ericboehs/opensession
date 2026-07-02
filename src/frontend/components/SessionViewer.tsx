@@ -1004,6 +1004,42 @@ export function SessionViewer({
 		}
 	}
 
+	// Preview / Staging / PR — the code-workspace affordances, docked at the top
+	// of the right panel (the "right sidebar") rather than the main header bar.
+	// Each self-gates (renders null when not applicable), so on a plain/ask
+	// session the row collapses to nothing (`.panel-actions:empty`).
+	const panelActions = (
+		<>
+			<PreviewButton
+				session={session}
+				onAttachImage={(img) => setImages((prev) => [...prev, img])}
+			/>
+			<StagingLink session={session} />
+			{hasWorkspace && session.prUrl && (
+				<button
+					className={`btn-panel-toggle btn-pr-header ${
+						subagentStack.length === 0 && panelTab === "pr" ? "active" : ""
+					}`}
+					onClick={() => {
+						// Jump straight to the PR tab in the workspace panel — a PR is
+						// worth surfacing without first hunting through Workspace.
+						setSubagentStack([]);
+						selectPanelTab("pr");
+						setPanelOpen(true);
+					}}
+					title={`Open PR #${session.prNumber ?? ""} (${(session.prState || "OPEN").toLowerCase()})`}
+				>
+					<span
+						className={`panel-tab-dot pr-dot-${(session.prState || "OPEN").toLowerCase()}`}
+					/>
+					<span className="btn-pr-label">
+						PR{session.prNumber ? ` #${session.prNumber}` : ""}
+					</span>
+				</button>
+			)}
+		</>
+	);
+
 	return (
 		<div className="session-viewer">
 			{deleting && (
@@ -1105,9 +1141,11 @@ export function SessionViewer({
 						</button>
 					</div>
 				);
-				// Secondary header controls (Linear/Plain links, Preview, PR). Inline
-				// on desktop; on phones they fold into the ⋯ menu so the single top
-				// bar holds only ⋯ + the Workspace toggle beside the centered title.
+				// Secondary header controls (Linear/Plain links). Inline on desktop;
+				// on phones they fold into the ⋯ menu so the single top bar holds only
+				// ⋯ + the Workspace toggle beside the centered title. The code
+				// affordances (Preview, Staging, PR) moved to the right panel's action
+				// row (`panelActions`) to keep this bar quiet.
 				const secondaryActions = (
 					<>
 						{session.linearIssue?.url && (
@@ -1129,35 +1167,6 @@ export function SessionViewer({
 							>
 								Plain ↗
 							</a>
-						)}
-						<PreviewButton
-							session={session}
-							onAttachImage={(img) => setImages((prev) => [...prev, img])}
-						/>
-						<StagingLink session={session} />
-						{hasWorkspace && session.prUrl && (
-							<button
-								className={`btn-panel-toggle btn-pr-header ${
-									panelOpen && subagentStack.length === 0 && panelTab === "pr"
-										? "active"
-										: ""
-								}`}
-								onClick={() => {
-									// Jump straight to the PR tab in the workspace panel — a PR is
-									// worth surfacing without first hunting through Workspace.
-									setSubagentStack([]);
-									selectPanelTab("pr");
-									setPanelOpen(true);
-								}}
-								title={`Open PR #${session.prNumber ?? ""} (${(session.prState || "OPEN").toLowerCase()})`}
-							>
-								<span
-									className={`panel-tab-dot pr-dot-${(session.prState || "OPEN").toLowerCase()}`}
-								/>
-								<span className="btn-pr-label">
-									PR{session.prNumber ? ` #${session.prNumber}` : ""}
-								</span>
-							</button>
 						)}
 					</>
 				);
@@ -1663,6 +1672,7 @@ export function SessionViewer({
 				) : panelAvailable && panelOpen ? (
 					<div className="viewer-panel" style={panelStyle}>
 						{panelResizeHandle}
+						<div className="panel-actions">{panelActions}</div>
 						{hasWorkspace && (
 							<PrStatusBar
 								sessionId={session.id}
