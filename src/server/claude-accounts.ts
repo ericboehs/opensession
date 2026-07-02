@@ -23,6 +23,11 @@ const STORE_PATH = `${HOME}/.backstage-claude-accounts.json`;
 const POLL_INTERVAL_MS = 60 * 60 * 1000;
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
+const TOKEN_URL = "https://console.anthropic.com/v1/oauth/token";
+// Claude Code's public OAuth client id — the one the CLI itself refreshes with.
+const OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+// Refresh a credentials-file access token this long before it expires.
+const TOKEN_REFRESH_SLACK_MS = 5 * 60 * 1000;
 // When a run hits a limit but the usage endpoint gives no reset time,
 // sideline the account for this long before retrying it.
 const DEFAULT_EXHAUST_MS = 60 * 60 * 1000;
@@ -48,6 +53,14 @@ export interface ClaudeAccount {
   // (`claude setup-token` tokens lack the user:profile scope). Persisted so
   // we never poll such accounts again, across restarts.
   usageScope?: "missing";
+  // Optional path to a full OAuth credentials file (same shape as
+  // ~/.claude/.credentials.json — the snapshots `claude-plan` keeps under
+  // ~/.claude/accounts/<name>/credentials.json). Login credentials carry the
+  // user:profile scope that setup-tokens lack, so when set, usage is polled
+  // with this file's access token instead of `token`, refreshing it via the
+  // OAuth refresh flow and writing rotated tokens back to the file. Runs
+  // still use `token`; this only restores usage visibility.
+  credentialsPath?: string;
 }
 
 interface UsageWindow {
@@ -189,6 +202,92 @@ async function fetchProfile(token: string): Promise<{ email?: string; plan?: str
   }
 }
 
+interface OauthCreds {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+}
+
+function readCredsFile(path: string): OauthCreds | null {
+  try {
+    const o = JSON.parse(readFileSync(path, "utf-8"))?.claudeAiOauth;
+    if (!o?.accessToken || !o?.refreshToken) return null;
+    return {
+      accessToken: o.accessToken,
+      refreshToken: o.refreshToken,
+      expiresAt: Number(o.expiresAt) || 0,
+    };
+  } catch (e) {
+    console.warn(`[claude-accounts] Failed to read credentials file ${path}:`, e);
+    return null;
+  }
+}
+
+/**
+ * Refresh the access token in a credentials file, writing rotated tokens
+ * back (Anthropic rotates refresh tokens on use — the write-back is what
+ * keeps the file usable for the next refresh, ours or `claude-plan`'s).
+ */
+async function refreshCredsFile(path: string, creds: OauthCreds): Promise<OauthCreds | null> {
+  try {
+    const res = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: creds.refreshToken,
+        client_id: OAUTH_CLIENT_ID,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      console.warn(`[claude-accounts] Token refresh for ${path} failed: HTTP ${res.status}`);
+      return null;
+    }
+    const body: any = await res.json();
+    if (!body?.access_token) return null;
+    const next: OauthCreds = {
+      accessToken: body.access_token,
+      refreshToken: body.refresh_token || creds.refreshToken,
+      expiresAt: Date.now() + (Number(body.expires_in) || 28_800) * 1000,
+    };
+    const raw = JSON.parse(readFileSync(path, "utf-8"));
+    raw.claudeAiOauth = { ...raw.claudeAiOauth, ...next };
+    writeFileAtomic(path, JSON.stringify(raw, null, 2) + "\n");
+    chmodSync(path, 0o600);
+    return next;
+  } catch (e) {
+    console.warn(`[claude-accounts] Token refresh for ${path} failed:`, e);
+    return null;
+  }
+}
+
+/**
+ * The token to poll usage with, and where it came from. Prefers the
+ * credentials file (login scope) when configured, falling back to the
+ * setup-token unless that's already known to lack the usage scope.
+ */
+async function usageToken(
+  account: ClaudeAccount
+): Promise<{ token: string; source: "credentials" | "setup-token" } | null> {
+  if (account.credentialsPath) {
+    const creds = readCredsFile(account.credentialsPath);
+    if (creds) {
+      if (creds.expiresAt > Date.now() + TOKEN_REFRESH_SLACK_MS) {
+        return { token: creds.accessToken, source: "credentials" };
+      }
+      const fresh = await refreshCredsFile(account.credentialsPath, creds);
+      if (fresh) return { token: fresh.accessToken, source: "credentials" };
+      // Refresh failed but the stored token may still have a few minutes left.
+      if (creds.expiresAt > Date.now()) {
+        return { token: creds.accessToken, source: "credentials" };
+      }
+    }
+  }
+  if (account.usageScope === "missing") return null;
+  return { token: account.token, source: "setup-token" };
+}
+
 /** Persist that this account's token can't read the usage endpoint. */
 function markUsageScopeMissing(id: string): void {
   const accounts = readStore();
@@ -201,14 +300,19 @@ function markUsageScopeMissing(id: string): void {
 
 /** Refresh cached usage for one account; clears exhausted state once reset has passed. */
 async function refreshAccountUsage(account: ClaudeAccount): Promise<AccountUsage | null> {
-  if (account.usageScope === "missing") return null;
+  const tok = await usageToken(account);
+  if (!tok) return null;
   const cached = usageCache.get(account.id);
 
-  const usage = await fetchUsage(account.token);
+  const usage = await fetchUsage(tok.token);
   if (usage.errorStatus === 403) {
-    markUsageScopeMissing(account.id);
-    usageCache.delete(account.id);
-    return null;
+    // Only a setup-token 403 means the scope is permanently missing; a 403
+    // on login credentials would be an anomaly worth surfacing, not latching.
+    if (tok.source === "setup-token") {
+      markUsageScopeMissing(account.id);
+      usageCache.delete(account.id);
+      return null;
+    }
   }
   // On a transient failure (rate limit, 5xx, timeout), keep showing the last
   // good snapshot instead of blanking it with an error.
@@ -230,7 +334,7 @@ export async function refreshAllUsage(): Promise<void> {
   // Sequential, not Promise.all — the endpoint rate-limits aggressively and a
   // burst of N simultaneous requests from one IP makes that worse.
   for (const account of readStore()) {
-    if (account.usageScope === "missing") continue;
+    if (account.usageScope === "missing" && !account.credentialsPath) continue;
     await refreshAccountUsage(account);
   }
 }
@@ -270,7 +374,7 @@ function toPublic(a: ClaudeAccount): ClaudeAccountPublic {
     createdAt: a.createdAt,
     owner: a.owner,
     usage,
-    noUsageScope: a.usageScope === "missing",
+    noUsageScope: a.usageScope === "missing" && !a.credentialsPath,
     exhaustedUntil: until !== undefined && until > Date.now() ? new Date(until).toISOString() : null,
     usable:
       !isExhausted(a.id) &&
