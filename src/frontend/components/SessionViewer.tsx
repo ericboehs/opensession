@@ -1087,6 +1087,7 @@ export function SessionViewer({
 							session={session}
 							onAttachImage={(img) => setImages((prev) => [...prev, img])}
 						/>
+						<StagingLink session={session} />
 						{hasWorkspace && session.prUrl && (
 							<button
 								className={`btn-panel-toggle btn-pr-header ${

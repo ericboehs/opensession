@@ -60,6 +60,8 @@ export interface UnifiedSession {
 	prDeletions?: number;
 	prChangedFiles?: number;
 	prReviewDecision?: string;
+	/** Person keys ("kent") of teammates with a pending review request. */
+	prReviewRequested?: string[];
 	prAuthor?: string;
 	prUpdatedAt?: string;
 	prChecks?: { total: number; passed: number; failed: number; pending: number };
@@ -192,6 +194,8 @@ export interface PrDetails {
 	mergeable?: string;
 	/** CLEAN | BEHIND | BLOCKED | DIRTY | UNSTABLE | … — merge-box state. */
 	mergeStateStatus?: string;
+	/** The PR's webapp staging deploy (Vercel preview), when one exists. */
+	staging?: { url: string; status: string } | null;
 }
 
 /** Local git state of a session's worktree (git-status endpoint). */

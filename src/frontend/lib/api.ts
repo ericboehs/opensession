@@ -89,6 +89,8 @@ export interface OpenPr {
 	/** Web user-picker key ("kent"), or null when the author isn't a teammate. */
 	person: string | null;
 	updatedAt: string;
+	/** Person keys of teammates with a pending review request on this PR. */
+	reviewRequested?: string[];
 }
 
 /** Every open PR in the repo, attributed to teammates by GitHub author. */

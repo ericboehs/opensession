@@ -29,6 +29,8 @@ export interface UnifiedSession {
   prDeletions?: number;
   prChangedFiles?: number;
   prReviewDecision?: string;
+  /** Person keys ("kent") of teammates with a pending review request. */
+  prReviewRequested?: string[];
   prAuthor?: string;
   prUpdatedAt?: string;
   prChecks?: { total: number; passed: number; failed: number; pending: number };

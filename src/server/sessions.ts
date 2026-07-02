@@ -312,6 +312,8 @@ interface PrInfo {
   author: string;
   updatedAt: string;
   checks: PrChecksSummary;
+  /** Person keys ("kent") of teammates with a pending review request. */
+  reviewRequested: string[];
 }
 // Repos the bulk PR cache covers — the active dev repos whose PRs the sidebar
 // Open PRs section and Reviews table surface. Fusion carries 200+ open PRs and
@@ -380,9 +382,10 @@ async function refreshPrCache(): Promise<void> {
       headRefName: string; url: string; state: string; number: number; title: string;
       isDraft: boolean; additions: number; deletions: number; changedFiles: number;
       reviewDecision: string; author?: { login?: string; name?: string }; updatedAt: string;
+      reviewRequests?: Array<{ login?: string; name?: string; slug?: string }>;
     };
     const FIELDS =
-      "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,updatedAt";
+      "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,updatedAt,reviewRequests";
 
     // A session's branch is matched against open PRs, so we must see EVERY open
     // PR — not just the newest N. Fusion carries 200+ open PRs at a time, so a
@@ -436,6 +439,11 @@ async function refreshPrCache(): Promise<void> {
         author: pr.author?.login || pr.author?.name || "",
         updatedAt: pr.updatedAt || "",
         checks: checksByNumber.get(pr.number) || { total: 0, passed: 0, failed: 0, pending: 0 },
+        // Individual review requests only — team requests ("Infra reviewers")
+        // have no login and we can't cheaply resolve their membership.
+        reviewRequested: (pr.reviewRequests || [])
+          .map((r) => githubLoginToPersonKey(r.login))
+          .filter((p): p is string => !!p),
       });
 
       // Seed with recent closed/merged (newest-first → keep the first per branch),
@@ -481,6 +489,8 @@ export interface OpenPrEntry {
 	/** Web user-picker key ("kent"), or null when the author isn't a teammate. */
 	person: string | null;
 	updatedAt: string;
+	/** Person keys of teammates with a pending review request on this PR. */
+	reviewRequested: string[];
 }
 
 export function getOpenPrs(): OpenPrEntry[] {
@@ -499,6 +509,7 @@ export function getOpenPrs(): OpenPrEntry[] {
 				author: pr.author,
 				person: githubLoginToPersonKey(pr.author),
 				updatedAt: pr.updatedAt,
+				reviewRequested: pr.reviewRequested,
 			});
 		}
 	}
@@ -563,6 +574,7 @@ export function getAllSessions(): UnifiedSession[] {
         session.prDeletions = pr.deletions;
         session.prChangedFiles = pr.changedFiles;
         session.prReviewDecision = pr.reviewDecision;
+        session.prReviewRequested = pr.reviewRequested;
         session.prAuthor = pr.author;
         session.prUpdatedAt = pr.updatedAt;
         session.prChecks = pr.checks;

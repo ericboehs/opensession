@@ -1187,14 +1187,28 @@ export function Sidebar({
 		});
 	}
 
-	// Distinct open PRs (deduped by URL) — shown as a badge on the Reviews tab.
+	// Reviews-tab badge: distinct open PRs (deduped by URL) where the CURRENT
+	// user has a pending review request — "PRs waiting on you", not every open
+	// PR. Sourced from both the session PRs and the repo-wide open-PR list, so
+	// a teammate's PR with no Backstage session still counts.
 	const openPrCount = useMemo(() => {
+		const me = currentUser.toLowerCase();
 		const urls = new Set<string>();
 		for (const s of sessions) {
-			if (s.prUrl && s.prState === "OPEN" && !s.archived) urls.add(s.prUrl);
+			if (
+				s.prUrl &&
+				s.prState === "OPEN" &&
+				!s.prIsDraft &&
+				!s.archived &&
+				s.prReviewRequested?.includes(me)
+			)
+				urls.add(s.prUrl);
+		}
+		for (const pr of openPrs || []) {
+			if (!pr.isDraft && pr.reviewRequested?.includes(me)) urls.add(pr.url);
 		}
 		return urls.size;
-	}, [sessions]);
+	}, [sessions, openPrs, currentUser]);
 
 	// "Archived" reads as a peer of the My-sessions status buckets (Needs input /
 	// Done …): an icon-led row that sits flush under them. Unlike those, it doesn't

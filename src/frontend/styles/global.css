@@ -2195,6 +2195,15 @@ body.resizing-x {
 	color: #5eead4;
 	border-color: rgba(13, 148, 136, 0.5);
 }
+.session-link-staging {
+	color: var(--yellow);
+	border-color: rgba(210, 153, 34, 0.45);
+}
+/* Deploy still building — link works (Vercel shows build progress) but reads
+   as not-ready-yet. */
+.session-link-staging-building {
+	opacity: 0.55;
+}
 
 .btn-panel-toggle {
 	display: inline-flex;
