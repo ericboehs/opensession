@@ -1032,9 +1032,7 @@ export function SessionViewer({
 					<span
 						className={`panel-tab-dot pr-dot-${(session.prState || "OPEN").toLowerCase()}`}
 					/>
-					<span className="btn-pr-label">
-						PR{session.prNumber ? ` #${session.prNumber}` : ""}
-					</span>
+					<span className="btn-pr-label">PR</span>
 				</button>
 			)}
 		</>
@@ -1676,7 +1674,6 @@ export function SessionViewer({
 				) : panelAvailable && panelOpen ? (
 					<div className="viewer-panel" style={panelStyle}>
 						{panelResizeHandle}
-						<div className="panel-actions">{panelActions}</div>
 						{hasWorkspace && (
 							<PrStatusBar
 								sessionId={session.id}
@@ -1686,6 +1683,7 @@ export function SessionViewer({
 								onOpenPrTab={() => setPanelTab("pr")}
 							/>
 						)}
+						<div className="panel-actions">{panelActions}</div>
 						<WorkspaceInfo
 							workspaceId={session.projectId || null}
 							workspaceName={workspaceName}
