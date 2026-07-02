@@ -2076,10 +2076,10 @@ body.resizing-x {
 	justify-content: center;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 5px;
+	border-radius: 6px;
 	color: var(--text-dim);
-	padding: 2px 9px;
-	font-size: 16px;
+	padding: 4px 11px;
+	font-size: 18px;
 	line-height: 1;
 }
 .btn-viewer-overflow.active,
@@ -2167,11 +2167,11 @@ body.resizing-x {
 }
 
 .session-link {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	text-decoration: none;
-	padding: 3px 9px;
-	border-radius: 5px;
+	padding: 5px 11px;
+	border-radius: 6px;
 	border: 1px solid var(--border-strong);
 	color: var(--text-dim);
 }
@@ -2202,20 +2202,25 @@ body.resizing-x {
 	gap: 6px;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 5px;
+	border-radius: 6px;
 	color: var(--text-dim);
-	padding: 3px 10px;
-	font-size: 12px;
+	padding: 5px 12px;
+	font-size: 13px;
 	white-space: nowrap;
 }
+/* The Workspace toggle is icon-only (23px glyph) — keep its padding tight so
+   it doesn't balloon past the text buttons it sits next to. */
+.btn-panel-toggle.btn-workspace {
+	padding: 3px 10px;
+}
 .btn-panel-toggle-icon {
-	font-size: 13px;
+	font-size: 14px;
 	line-height: 1;
 }
 /* PR button label stays visible everywhere (incl. mobile, where the generic
    .btn-panel-toggle-label is hidden) — the PR number is the point of it. */
 .btn-pr-label {
-	font-size: 12px;
+	font-size: 13px;
 	line-height: 1;
 }
 .btn-panel-toggle.active,
@@ -2226,12 +2231,15 @@ body.resizing-x {
 }
 
 .btn-viewer-delete {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 5px;
+	border-radius: 6px;
 	color: var(--text-faint);
-	padding: 3px 10px;
-	font-size: 12px;
+	padding: 5px 12px;
+	font-size: 13px;
 }
 
 /* Preview (local dev server) control */
@@ -2247,10 +2255,10 @@ body.resizing-x {
 	background: none;
 	border: 1px solid var(--border-strong);
 	border-right: none;
-	border-radius: 5px 0 0 5px;
+	border-radius: 6px 0 0 6px;
 	color: var(--text-dim);
-	padding: 3px 10px;
-	font-size: 12px;
+	padding: 5px 12px;
+	font-size: 13px;
 	font-weight: 600;
 	text-decoration: none;
 	white-space: nowrap;
@@ -2300,10 +2308,10 @@ button.preview-open:not(:disabled):hover {
 .preview-caret {
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 0 5px 5px 0;
+	border-radius: 0 6px 6px 0;
 	color: var(--text-dim);
-	padding: 3px 7px;
-	font-size: 11px;
+	padding: 5px 8px;
+	font-size: 12px;
 }
 .preview-caret.active,
 .preview-caret:hover {
@@ -2406,10 +2414,10 @@ button.preview-open:not(:disabled):hover {
 .btn-viewer-share {
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 5px;
+	border-radius: 6px;
 	color: var(--text-dim);
-	padding: 3px 10px;
-	font-size: 12px;
+	padding: 5px 12px;
+	font-size: 13px;
 	white-space: nowrap;
 }
 .btn-viewer-share:hover {
@@ -2424,11 +2432,11 @@ button.preview-open:not(:disabled):hover {
 .btn-viewer-pin {
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 5px;
+	border-radius: 6px;
 	color: var(--text-dim);
-	padding: 3px 9px;
-	font-size: 13px;
-	line-height: 1;
+	padding: 5px 10px;
+	font-size: 16px;
+	line-height: 1.2;
 }
 .btn-viewer-pin:hover {
 	color: var(--text);
@@ -2452,9 +2460,9 @@ button.preview-open:not(:disabled):hover {
 .btn-delete-wt,
 .btn-delete-only,
 .btn-delete-cancel {
-	border-radius: 5px;
-	padding: 3px 10px;
-	font-size: 12px;
+	border-radius: 6px;
+	padding: 5px 12px;
+	font-size: 13px;
 	border: 1px solid var(--border-strong);
 	background: none;
 	color: var(--text-dim);
