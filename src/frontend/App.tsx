@@ -192,6 +192,11 @@ function App() {
 	// (session name + actions, incl. the workspace-panel toggle) into this slot so
 	// the layout reads name-on-top / tabs-below; other views render a plain title.
 	const [topbarEl, setTopbarEl] = useState<HTMLDivElement | null>(null);
+	// Right slot of the mobile top bar. On phones the session viewer portals its
+	// header actions here (single iOS-style nav bar); desktop hides the bar and
+	// the actions render in the topbar slot above instead.
+	const [headerActionsEl, setHeaderActionsEl] =
+		useState<HTMLDivElement | null>(null);
 	// Right-column slot (sibling of the left sidebar). The session viewer portals
 	// its workspace/sub-agent panel here so it opens as a full-height column from
 	// the very top, at the same level as the left sidebar (Conductor-style).
@@ -693,6 +698,27 @@ function App() {
 							brand
 						)}
 					</div>
+					{/* Centered page title on pushed pages, iOS-sheet style. Sessions
+					    show the workspace name (per-chat titles live on the tabs) plus a
+					    working dot while the engine runs; other views show their plain
+					    title. Desktop hides the whole bar. */}
+					{mobileDetail && (
+						<span className="app-header-title">
+							{route.view === "session" && currentSession?.isRunning && (
+								<span className="working-dot" />
+							)}
+							<span className="app-header-title-text">
+								{route.view === "session"
+									? (activeProjectId
+											? projects.find((p) => p.id === activeProjectId)?.name
+											: undefined) ||
+										currentSession?.title ||
+										""
+									: topbarTitle}
+							</span>
+						</span>
+					)}
+					<div className="app-header-actions" ref={setHeaderActionsEl} />
 				</header>
 
 				{route.view === "settings" ? (
@@ -1046,6 +1072,7 @@ function App() {
 									addHandler={addHandler}
 									connected={connected}
 									topbarEl={topbarEl}
+									headerActionsEl={headerActionsEl}
 									rightPanelEl={rightPanelEl}
 									newChatSeq={newChatSeq}
 									workspaceChats={projectChats}

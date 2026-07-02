@@ -2103,14 +2103,18 @@ body.resizing-x {
 	border-radius: 10px;
 	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
 }
-/* Stack the collapsed actions as a tidy full-width list. */
+/* Stack the collapsed actions as a tidy full-width list. On phones the
+   secondary controls (Linear/Plain links, Preview, PR) fold in here too. */
 .viewer-overflow-menu > button,
+.viewer-overflow-menu > a,
+.viewer-overflow-menu > .preview-wrap,
 .viewer-overflow-menu > .spinoff,
 .viewer-overflow-menu > .spinoff > .btn-panel-toggle,
 .viewer-overflow-menu > .viewer-delete-confirm {
 	width: 100%;
 }
 .viewer-overflow-menu > button,
+.viewer-overflow-menu > a,
 .viewer-overflow-menu > .spinoff > .btn-panel-toggle {
 	justify-content: flex-start;
 	text-align: left;
@@ -7020,7 +7024,42 @@ html[data-theme="light"] .tool-code-surface {
 	   row and the drag-resize handle are desktop-only. */
 	.app-header {
 		display: flex;
+		position: relative;
 		padding: env(safe-area-inset-top, 0px) 10px 0;
+	}
+
+	/* Centered page title, iOS-sheet style: the Back chevron keeps the left
+	   edge, the title floats dead-center regardless of what's beside it (so it
+	   can't jump when actions come and go). Absolutely positioned inside the
+	   bar; pointer-events off so Back stays tappable under a long title. */
+	.app-header-title {
+		position: absolute;
+		left: 50%;
+		transform: translateX(-50%);
+		top: env(safe-area-inset-top, 0px);
+		bottom: 0;
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		max-width: 48%;
+		min-width: 0;
+		font-size: 16px;
+		font-weight: 600;
+		color: var(--text);
+		pointer-events: none;
+	}
+	.app-header-title .working-dot {
+		flex-shrink: 0;
+	}
+	.app-header-title-text {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	/* The title now lives in the top bar — the in-page copy under it is
+	   duplicate chrome. */
+	.detail-topbar-title {
+		display: none;
 	}
 	.sidebar-brand {
 		display: none;
@@ -7034,44 +7073,29 @@ html[data-theme="light"] .tool-code-surface {
 		display: none;
 	}
 
-	/* Two-line header on phones: title row first (single line, so it always
-     shows), a compact actions row right-aligned beneath it. */
-	.viewer-header {
-		padding: 7px 10px;
-		gap: 6px;
-		flex-wrap: wrap;
-		row-gap: 6px;
-	}
-	.viewer-title {
-		gap: 7px;
-		flex: 1 1 100%;
+	/* On phones the session header portals INTO the top bar's right slot (see
+	   headerActionsEl in App/SessionViewer): the title row is hidden — the
+	   centered bar title replaces it — and the actions sit flat beside it.
+	   One iOS-style nav bar, no second chrome row. */
+	.app-header-actions {
+		display: flex;
+		align-items: center;
+		margin-left: auto;
 		min-width: 0;
 	}
-	.viewer-started-by {
+	.viewer-title {
 		display: none;
 	}
-	.viewer-branch {
-		font-size: 14px;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	/* The model pill duplicates the composer's model selector — drop it from the
-     title row on phones so the title gets the full width (less truncation). */
-	.viewer-title .model-pill {
-		display: none;
-	}
-	/* The "+ repo" affordance is desktop workflow — on phones it just steals
-	   title width (the repo chip itself stays). */
-	.repobar-add-wrap {
-		display: none;
+	.app-header-actions .viewer-header {
+		padding: 0;
+		border: none;
+		background: none;
+		gap: 6px;
 	}
 
 	.viewer-header-actions {
-		width: 100%;
 		justify-content: flex-end;
 		align-items: center;
-		flex-wrap: wrap;
 		gap: 6px;
 	}
 	/* Comfortably-tappable controls that stay on one row — sized toward the iOS
@@ -7103,10 +7127,6 @@ html[data-theme="light"] .tool-code-surface {
 		background: var(--accent);
 		color: #fff;
 		border-color: var(--accent);
-	}
-	.working-pill {
-		padding: 3px 8px;
-		font-size: 11px;
 	}
 
 	/* The keyboard-shortcut hint is irrelevant on touch and eats vertical space
@@ -7270,6 +7290,18 @@ html[data-theme="light"] .tool-code-surface {
 	.session-tab-title {
 		font-size: 13.5px;
 	}
+	/* A one-chat workspace's tab strip is pure chrome on a phone: a single tab
+	   repeating the title in the top bar, plus a "+" that's hover-revealed and
+	   so mostly invisible on touch anyway. Hide the strip until the workspace
+	   actually has a second chat to switch between. */
+	.session-tabs:not(
+			:has(
+					.session-tab:not(.session-tab-new)
+						~ .session-tab:not(.session-tab-new)
+				)
+		) {
+		display: none;
+	}
 
 	/* Brand + settings in the top bar. */
 	.app-title {
@@ -7294,8 +7326,8 @@ html[data-theme="light"] .tool-code-surface {
 		font-size: 17px;
 	}
 	.composer-send svg {
-		width: 22px;
-		height: 22px;
+		width: 24px;
+		height: 24px;
 	}
 	.composer-attach-btn {
 		width: 36px;
@@ -7306,8 +7338,8 @@ html[data-theme="light"] .tool-code-surface {
 		height: 40px;
 	}
 	.palette-icon-btn svg {
-		width: 21px;
-		height: 21px;
+		width: 23px;
+		height: 23px;
 	}
 	.composer-model {
 		font-size: 13px;

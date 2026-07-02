@@ -38,6 +38,7 @@ import { PrStatusBar } from "./PrStatusBar";
 import { SlackChatPanel } from "./SlackChatPanel";
 import { PlainThreadPanel } from "./PlainThreadPanel";
 import { PreviewButton } from "./PreviewButton";
+import { StagingLink } from "./StagingLink";
 import { WorkspaceInfo } from "./WorkspaceInfo";
 import { SpinOffMenu } from "./SpinOffMenu";
 import { IconSidebarRight } from "./icons";
@@ -54,6 +55,10 @@ interface Props {
 	/** App-level top-bar node above the tab strip; when present the header renders
 	    there (name-on-top layout) instead of inline. */
 	topbarEl?: HTMLElement | null;
+	/** Right-side slot inside the mobile top bar (next to the centered title).
+	    On phones the header actions portal there — a single iOS-style nav bar —
+	    instead of rendering as their own row. Desktop ignores it. */
+	headerActionsEl?: HTMLElement | null;
 	/** App-level right-column node (sibling of the left sidebar); when present the
 	    workspace/sub-agent panel portals here so it spans the full height from the
 	    top, instead of opening only below the chat. */
@@ -111,6 +116,7 @@ export function SessionViewer({
 	addHandler,
 	connected,
 	topbarEl,
+	headerActionsEl,
 	rightPanelEl,
 	newChatSeq,
 	onRename,
@@ -913,6 +919,21 @@ export function SessionViewer({
 	// needs ~820px, so below that the secondary actions move into the ⋯ menu.
 	const compactHeader = headerW > 0 && headerW < 820;
 
+	// Phone layout (same 720px breakpoint as the CSS page-stack): the header
+	// actions portal into the top bar next to the centered title, and every
+	// secondary action folds into the ⋯ menu so the bar holds just ⋯ + Workspace.
+	const [isPhone, setIsPhone] = useState(
+		() =>
+			typeof window !== "undefined" &&
+			window.matchMedia("(max-width: 720px)").matches,
+	);
+	useEffect(() => {
+		const mq = window.matchMedia("(max-width: 720px)");
+		const onChange = () => setIsPhone(mq.matches);
+		mq.addEventListener("change", onChange);
+		return () => mq.removeEventListener("change", onChange);
+	}, []);
+
 	const [overflowOpen, setOverflowOpen] = useState(false);
 	const overflowRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
@@ -1037,6 +1058,61 @@ export function SessionViewer({
 						)}
 					</>
 				);
+				// Secondary header controls (Linear/Plain links, Preview, PR). Inline
+				// on desktop; on phones they fold into the ⋯ menu so the single top
+				// bar holds only ⋯ + the Workspace toggle beside the centered title.
+				const secondaryActions = (
+					<>
+						{session.linearIssue?.url && (
+							<a
+								href={session.linearIssue.url}
+								target="_blank"
+								rel="noopener"
+								className="session-link session-link-linear"
+							>
+								{session.linearIssue.identifier}
+							</a>
+						)}
+						{hasPlain && (
+							<a
+								href={plainUrl}
+								target="_blank"
+								rel="noopener"
+								className="session-link session-link-plain"
+							>
+								Plain ↗
+							</a>
+						)}
+						<PreviewButton
+							session={session}
+							onAttachImage={(img) => setImages((prev) => [...prev, img])}
+						/>
+						{hasWorkspace && session.prUrl && (
+							<button
+								className={`btn-panel-toggle btn-pr-header ${
+									panelOpen && subagentStack.length === 0 && panelTab === "pr"
+										? "active"
+										: ""
+								}`}
+								onClick={() => {
+									// Jump straight to the PR tab in the workspace panel — a PR is
+									// worth surfacing without first hunting through Workspace.
+									setSubagentStack([]);
+									selectPanelTab("pr");
+									setPanelOpen(true);
+								}}
+								title={`Open PR #${session.prNumber ?? ""} (${(session.prState || "OPEN").toLowerCase()})`}
+							>
+								<span
+									className={`panel-tab-dot pr-dot-${(session.prState || "OPEN").toLowerCase()}`}
+								/>
+								<span className="btn-pr-label">
+									PR{session.prNumber ? ` #${session.prNumber}` : ""}
+								</span>
+							</button>
+						)}
+					</>
+				);
 				const header = (
 					<div
 						className={`viewer-header ${compactHeader ? "viewer-header-compact" : ""}`}
@@ -1129,7 +1205,7 @@ export function SessionViewer({
 					)}
 				</div>
 				<div className="viewer-header-actions">
-					{viewers.length > 1 && (
+					{!isPhone && viewers.length > 1 && (
 						<div className="presence" title={`Viewing: ${viewers.join(", ")}`}>
 							{dedupeViewers(viewers).map((v) => (
 								<span
@@ -1144,58 +1220,12 @@ export function SessionViewer({
 							))}
 						</div>
 					)}
-					{session.linearIssue?.url && (
-						<a
-							href={session.linearIssue.url}
-							target="_blank"
-							rel="noopener"
-							className="session-link session-link-linear"
-						>
-							{session.linearIssue.identifier}
-						</a>
-					)}
-					{hasPlain && (
-						<a
-							href={plainUrl}
-							target="_blank"
-							rel="noopener"
-							className="session-link session-link-plain"
-						>
-							Plain ↗
-						</a>
-					)}
-					<PreviewButton
-						session={session}
-						onAttachImage={(img) => setImages((prev) => [...prev, img])}
-					/>
-					{hasWorkspace && session.prUrl && (
-						<button
-							className={`btn-panel-toggle btn-pr-header ${
-								panelOpen && subagentStack.length === 0 && panelTab === "pr"
-									? "active"
-									: ""
-							}`}
-							onClick={() => {
-								// Jump straight to the PR tab in the workspace panel — a PR is
-								// worth surfacing without first hunting through Workspace.
-								setSubagentStack([]);
-								selectPanelTab("pr");
-								setPanelOpen(true);
-							}}
-							title={`Open PR #${session.prNumber ?? ""} (${(session.prState || "OPEN").toLowerCase()})`}
-						>
-							<span
-								className={`panel-tab-dot pr-dot-${(session.prState || "OPEN").toLowerCase()}`}
-							/>
-							<span className="btn-pr-label">
-								PR{session.prNumber ? ` #${session.prNumber}` : ""}
-							</span>
-						</button>
-					)}
+					{!isPhone && secondaryActions}
 					{/* Pin / Share / Spin off / Delete ride inline when there's room,
 					    else collapse behind ⋯ so they never crowd the title. They sit
-					    before Workspace so the Workspace toggle stays rightmost. */}
-					{compactHeader ? (
+					    before Workspace so the Workspace toggle stays rightmost. On
+					    phones the secondary controls fold in here too. */}
+					{compactHeader || isPhone ? (
 						<div className="viewer-overflow" ref={overflowRef}>
 							<button
 								className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
@@ -1208,6 +1238,7 @@ export function SessionViewer({
 							</button>
 							{overflowOpen && (
 								<div className="viewer-overflow-menu">
+									{isPhone && secondaryActions}
 									{collapsibleActions}
 								</div>
 							)}
@@ -1245,7 +1276,14 @@ export function SessionViewer({
 				</div>
 			</div>
 				);
-				return topbarEl ? createPortal(header, topbarEl) : header;
+				// Phones: the whole header rides in the top bar's right slot (the
+				// title row is CSS-hidden there — the centered bar title replaces
+				// it), giving one iOS-style nav bar instead of a second chrome row.
+				return isPhone && headerActionsEl
+					? createPortal(header, headerActionsEl)
+					: topbarEl
+						? createPortal(header, topbarEl)
+						: header;
 			})()}
 
 			{(session.goal || session.loop) && (
