@@ -1058,6 +1058,71 @@ export function Sidebar({
 		return () => window.removeEventListener("scroll", close, true);
 	}, [wsHover]);
 
+	// Mobile: tap-to-open a workspace row fires from `touchend`, not the
+	// synthesized click — same trick as SessionRow. The row has :hover styles
+	// (the reveal-on-hover pin/archive swap, the hover background) plus a
+	// mouseenter hover card, and iOS treats the first tap on such an element as
+	// a hover-in, swallowing the click — so a click-driven open needs a second
+	// tap. A hold that stays roughly in place for LONG_PRESS_MS opens the
+	// workspace menu (the touch stand-in for right-click); real finger travel
+	// (a scroll) cancels both. Only one touch happens at a time, so one set of
+	// refs serves every row.
+	const wsPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const wsPressOrigin = useRef<{ x: number; y: number } | null>(null);
+	const wsLongPressed = useRef(false);
+	const wsMoved = useRef(false);
+
+	function clearWsPress() {
+		if (wsPressTimer.current) clearTimeout(wsPressTimer.current);
+		wsPressTimer.current = null;
+		wsPressOrigin.current = null;
+	}
+	function wsRowTouchStart(row: WsRow, e: React.TouchEvent) {
+		if (row.workspace && editingProjectId === row.workspace.id) return;
+		if (e.touches.length !== 1) return;
+		const t = e.touches[0];
+		wsLongPressed.current = false;
+		wsMoved.current = false;
+		clearWsPress();
+		// After clearWsPress (which nulls it) so it survives to move/end.
+		wsPressOrigin.current = { x: t.clientX, y: t.clientY };
+		wsPressTimer.current = setTimeout(() => {
+			wsLongPressed.current = true;
+			closeWsHover();
+			navigator.vibrate?.(10);
+			setProjectMenu({
+				id: row.workspace ? row.workspace.id : row.key,
+				x: t.clientX,
+				y: t.clientY,
+			});
+		}, LONG_PRESS_MS);
+	}
+	function wsRowTouchMove(e: React.TouchEvent) {
+		const o = wsPressOrigin.current;
+		if (!o || e.touches.length !== 1) return;
+		const t = e.touches[0];
+		if (
+			Math.abs(t.clientX - o.x) > LONG_PRESS_SLOP ||
+			Math.abs(t.clientY - o.y) > LONG_PRESS_SLOP
+		) {
+			wsMoved.current = true;
+			clearWsPress();
+		}
+	}
+	function wsRowTouchEnd(row: WsRow, e: React.TouchEvent) {
+		const hadOrigin = wsPressOrigin.current !== null;
+		clearWsPress();
+		if (row.workspace && editingProjectId === row.workspace.id) return;
+		// A clean tap: started on this row, never became a long-press, never
+		// turned into a scroll. Open now and swallow the ghost click — which
+		// also keeps the synthesized mouseenter from opening the hover card.
+		if (hadOrigin && !wsLongPressed.current && !wsMoved.current) {
+			e.preventDefault();
+			if (row.workspace) onOpenProject(row.workspace.id);
+			else if (row.chats[0]) onSelect(row.chats[0]);
+		}
+	}
+
 	// Repo groups are open by default (grouping by repo is itself the point), so we
 	// track their *collapsed* state under a "collapsed:" key; every other group is
 	// closed by default and tracked directly.
@@ -1166,7 +1231,15 @@ export function Sidebar({
 			<button
 				key={row.key}
 				className={`sidebar-item sidebar-ws-row ${active ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""} ${row.unread ? "sidebar-item-unread" : ""}`}
-				onClick={() => {
+				onClick={(e) => {
+					// Touch taps open from touchend (their ghost click is
+					// preventDefault'd), so this is the mouse/desktop path. Still
+					// swallow a click that ends a long-press, belt-and-suspenders.
+					if (wsLongPressed.current) {
+						wsLongPressed.current = false;
+						e.preventDefault();
+						return;
+					}
 					if (editing) return;
 					if (row.workspace) onOpenProject(row.workspace.id);
 					else if (row.chats[0]) onSelect(row.chats[0]);
@@ -1174,8 +1247,16 @@ export function Sidebar({
 				onMouseEnter={(e) => wsRowHoverEnter(row, e.currentTarget)}
 				onMouseLeave={scheduleWsHoverClose}
 				onMouseDown={closeWsHover}
+				onTouchStart={(e) => wsRowTouchStart(row, e)}
+				onTouchMove={wsRowTouchMove}
+				onTouchEnd={(e) => wsRowTouchEnd(row, e)}
+				onTouchCancel={clearWsPress}
 				onContextMenu={(e) => {
 					e.preventDefault();
+					// On touch this is the long-press callout: our long-press already
+					// opened the menu, so don't stack a second one (or the native
+					// text-selection callout) on top of it.
+					if (wsLongPressed.current || wsPressOrigin.current) return;
 					closeWsHover();
 					setProjectMenu({
 						id: row.workspace ? row.workspace.id : row.key,
