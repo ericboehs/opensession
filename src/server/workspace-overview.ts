@@ -32,6 +32,9 @@ export interface WorkspaceMediaItem {
 
 export interface WorkspaceOverview {
   prompt: { content: string; sessionId: string; at: string } | null;
+  /** Latest assistant text across all member chats — the "where things stand"
+   *  one-liner for the sidebar hover card. */
+  lastMessage: { content: string; sessionId: string; at: string } | null;
   media: WorkspaceMediaItem[];
 }
 
@@ -57,6 +60,7 @@ export function buildWorkspaceOverview(chats: OverviewChat[]): WorkspaceOverview
   );
 
   let prompt: WorkspaceOverview["prompt"] = null;
+  let lastMessage: WorkspaceOverview["lastMessage"] = null;
   const media: WorkspaceMediaItem[] = [];
 
   for (const chat of ordered) {
@@ -66,6 +70,14 @@ export function buildWorkspaceOverview(chats: OverviewChat[]): WorkspaceOverview
       const first = entries.find(isOpeningPrompt);
       if (first)
         prompt = { content: first.content, sessionId: chat.id, at: first.timestamp };
+    }
+    for (const e of entries) {
+      if (
+        e.type === "assistant" &&
+        (e.content?.trim().length || 0) > 0 &&
+        (!lastMessage || e.timestamp > lastMessage.at)
+      )
+        lastMessage = { content: e.content, sessionId: chat.id, at: e.timestamp };
     }
     for (const e of entries) {
       for (let i = 0; i < (e.images?.length || 0); i++) {
@@ -90,7 +102,7 @@ export function buildWorkspaceOverview(chats: OverviewChat[]): WorkspaceOverview
   }
 
   media.sort((a, b) => (b.at || "").localeCompare(a.at || ""));
-  return { prompt, media: media.slice(0, MEDIA_CAP) };
+  return { prompt, lastMessage, media: media.slice(0, MEDIA_CAP) };
 }
 
 /**

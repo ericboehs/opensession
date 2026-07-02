@@ -7,7 +7,8 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import type { UnifiedSession, Project } from "../lib/types";
-import { relativeTime } from "../lib/api";
+import { relativeTime, type WorkspaceOverview } from "../lib/api";
+import { loadOverview, overviewCache } from "../lib/workspace-overview";
 import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged, togglePin } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
@@ -886,6 +887,50 @@ export function Sidebar({
 		onArchiveWorkspace(row.chats, next?.chats[0] ?? null);
 	}
 
+	// ── Workspace hover card ────────────────────────────────────────────────
+	// One card for the whole list (only one row can be dwelled on at a time).
+	// Unlike the info-only SessionHoverCard it carries actions (Archive, PR
+	// link, thumbnails), so leaving the row schedules the close with a short
+	// grace period and entering the card cancels it — the pointer can travel
+	// the 8px gap without the card vanishing under it.
+	const wsHoverOpenT = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const wsHoverCloseT = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [wsHover, setWsHover] = useState<{ row: WsRow; anchor: DOMRect } | null>(
+		null,
+	);
+
+	function cancelWsHoverTimers() {
+		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
+		if (wsHoverCloseT.current) clearTimeout(wsHoverCloseT.current);
+		wsHoverOpenT.current = null;
+		wsHoverCloseT.current = null;
+	}
+	function wsRowHoverEnter(row: WsRow, el: HTMLElement) {
+		if (row.workspace && editingProjectId === row.workspace.id) return;
+		cancelWsHoverTimers();
+		wsHoverOpenT.current = setTimeout(() => {
+			setWsHover({ row, anchor: el.getBoundingClientRect() });
+		}, 380);
+	}
+	function scheduleWsHoverClose() {
+		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
+		wsHoverOpenT.current = null;
+		if (wsHoverCloseT.current) clearTimeout(wsHoverCloseT.current);
+		wsHoverCloseT.current = setTimeout(() => setWsHover(null), 140);
+	}
+	function closeWsHover() {
+		cancelWsHoverTimers();
+		setWsHover(null);
+	}
+	useEffect(() => cancelWsHoverTimers, []);
+	// The anchor rect goes stale the moment the list scrolls — just close.
+	useEffect(() => {
+		if (!wsHover) return;
+		const close = () => closeWsHover();
+		window.addEventListener("scroll", close, true);
+		return () => window.removeEventListener("scroll", close, true);
+	}, [wsHover]);
+
 	// Repo groups are open by default (grouping by repo is itself the point), so we
 	// track their *collapsed* state under a "collapsed:" key; every other group is
 	// closed by default and tracked directly.
@@ -999,8 +1044,12 @@ export function Sidebar({
 					if (row.workspace) onOpenProject(row.workspace.id);
 					else if (row.chats[0]) onSelect(row.chats[0]);
 				}}
+				onMouseEnter={(e) => wsRowHoverEnter(row, e.currentTarget)}
+				onMouseLeave={scheduleWsHoverClose}
+				onMouseDown={closeWsHover}
 				onContextMenu={(e) => {
 					e.preventDefault();
+					closeWsHover();
 					setProjectMenu({
 						id: row.workspace ? row.workspace.id : row.key,
 						x: e.clientX,
@@ -1841,6 +1890,18 @@ export function Sidebar({
 					</div>
 				)}
 			</div>
+			{wsHover && (
+				<WsHoverCard
+					row={wsHover.row}
+					anchor={wsHover.anchor}
+					onEnter={cancelWsHoverTimers}
+					onLeave={scheduleWsHoverClose}
+					onArchive={() => {
+						closeWsHover();
+						archiveWorkspaceWithNext(wsHover.row);
+					}}
+				/>
+			)}
 		</div>
 	);
 }
@@ -2775,4 +2836,245 @@ function compactNum(n: number): string {
 	if (n >= 10000) return `${Math.round(n / 1000)}k`;
 	if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
 	return String(n);
+}
+
+// ── Workspace hover card ────────────────────────────────────────────────────
+// Structural subset of WsRow (declared inside Sidebar) that the card reads.
+interface WsCardRow {
+	key: string;
+	workspace: Project | null;
+	name: string;
+	chats: UnifiedSession[];
+	status: MineStatus;
+	lastActivity: string;
+	running: boolean;
+}
+
+// The workspace counterpart of SessionHoverCard: branch + diff stats + status
+// at a glance, the latest assistant message as a "where things stand" line,
+// screenshot thumbnails from the workspace's chats, and quick actions
+// (Archive, PR link). Interactive — the parent keeps it open while the
+// pointer is over it (onEnter/onLeave), unlike the info-only session card.
+function WsHoverCard({
+	row,
+	anchor,
+	onEnter,
+	onLeave,
+	onArchive,
+}: {
+	row: WsCardRow;
+	anchor: DOMRect;
+	onEnter: () => void;
+	onLeave: () => void;
+	onArchive: () => void;
+}) {
+	const cardRef = useRef<HTMLDivElement>(null);
+	const [pos, setPos] = useState<{ left: number; top: number }>(() => ({
+		left: anchor.right + 8,
+		top: anchor.top,
+	}));
+
+	// Description + thumbnails come from the workspace overview. Same cache
+	// (and key) as the right panel's WorkspaceInfo block, so a workspace
+	// that's been opened paints its card instantly and vice versa.
+	const cacheKey =
+		row.workspace?.id || `chats:${row.chats.map((c) => c.id).join(",")}`;
+	const [ov, setOv] = useState<WorkspaceOverview | null>(
+		() => overviewCache.get(cacheKey)?.data ?? null,
+	);
+	useEffect(() => {
+		let alive = true;
+		const cached = overviewCache.get(cacheKey);
+		setOv(cached?.data ?? null);
+		if (row.chats.length === 0) return;
+		if (cached && Date.now() - cached.at < 30_000) return;
+		loadOverview(
+			cacheKey,
+			row.workspace?.id ?? null,
+			row.chats.map((c) => ({
+				id: c.id,
+				title: c.title,
+				createdAt: c.createdAt,
+				lastActivity: c.lastActivity,
+			})),
+		)
+			.then((d) => {
+				if (alive) setOv(d);
+			})
+			.catch(() => {
+				// Card just stays without a description/thumbnails.
+			});
+		return () => {
+			alive = false;
+		};
+	}, [cacheKey]);
+
+	// Clamp into the viewport once the rendered height is known; re-clamp when
+	// the overview lands (description/thumbnails change the height). Prefer the
+	// right of the row; flip to the left if it would overflow the right edge.
+	useEffect(() => {
+		const el = cardRef.current;
+		const h = el ? el.offsetHeight : 200;
+		const vw = window.innerWidth;
+		const vh = window.innerHeight;
+		let left = anchor.right + 8;
+		if (left + CARD_W > vw - 8) left = anchor.left - CARD_W - 8;
+		left = Math.max(8, left);
+		const top = Math.min(Math.max(8, anchor.top), vh - h - 8);
+		setPos({ left, top });
+	}, [anchor, ov]);
+
+	// The chat whose PR fronts the workspace: the newest one that has a PR.
+	const newestFirst = [...row.chats].sort((a, b) =>
+		(b.lastActivity || "").localeCompare(a.lastActivity || ""),
+	);
+	const prChat = newestFirst.find((c) => c.prUrl);
+	const branch = prChat?.branch || newestFirst.find((c) => c.branch)?.branch;
+	const meta = MINE_STATUS_META.find((m) => m.key === row.status);
+	const desc = (ov?.lastMessage?.content || ov?.prompt?.content || "")
+		.replace(/\s+/g, " ")
+		.trim();
+	const media = ov?.media || [];
+
+	const card = (
+		<div
+			ref={cardRef}
+			className="sidebar-hovercard pointer-events-auto"
+			style={{ left: pos.left, top: pos.top, width: CARD_W }}
+			onMouseEnter={onEnter}
+			onMouseLeave={onLeave}
+		>
+			<div className="hovercard-head">
+				<span className="hovercard-branch">
+					{branch || row.chats[0]?.repo || "tella-fusion"}
+				</span>
+				{prChat?.prAdditions != null && prChat?.prDeletions != null && (
+					<span className="hovercard-diff">
+						<span className="hovercard-add">
+							+{compactNum(prChat.prAdditions)}
+						</span>{" "}
+						<span className="hovercard-del">
+							-{compactNum(prChat.prDeletions)}
+						</span>
+					</span>
+				)}
+				{meta && (
+					<span
+						className={`sidebar-item-status hovercard-dot ${
+							row.status === "needsinput"
+								? "sidebar-status-waiting"
+								: row.running
+									? "sidebar-status-running"
+									: ""
+						}`}
+						style={
+							row.status === "needsinput" || row.running
+								? undefined
+								: { background: meta.dotColor }
+						}
+						title={meta.label}
+					/>
+				)}
+			</div>
+
+			<div className="hovercard-title">{row.name}</div>
+
+			{row.status === "needsinput" && (
+				<div className="hovercard-callout">
+					Blocked on a question — open to answer.
+				</div>
+			)}
+
+			{desc && (
+				<div className="mt-1 text-xs leading-snug text-dim line-clamp-2">
+					{desc}
+				</div>
+			)}
+
+			{media.length > 0 && (
+				<div className="mt-2 flex gap-1.5">
+					{media.slice(0, 4).map((m, i) => (
+						<a
+							key={`${m.sessionId}:${m.at}:${i}`}
+							href={m.src}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="relative block h-[58px] w-[62px] shrink-0 overflow-hidden rounded-sm border border-line bg-surface"
+							title={[m.chatTitle, new Date(m.at).toLocaleString()]
+								.filter(Boolean)
+								.join(" · ")}
+						>
+							{m.kind === "image" ? (
+								<img
+									src={m.src}
+									alt=""
+									loading="lazy"
+									className="h-full w-full object-cover"
+								/>
+							) : (
+								<>
+									<video
+										src={m.src}
+										muted
+										playsInline
+										preload="metadata"
+										className="h-full w-full object-cover"
+									/>
+									<span className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-white drop-shadow">
+										▶
+									</span>
+								</>
+							)}
+							{i === 3 && media.length > 4 && (
+								<span className="absolute inset-0 grid place-items-center bg-black/55 text-xs font-semibold text-white">
+									+{media.length - 4}
+								</span>
+							)}
+						</a>
+					))}
+				</div>
+			)}
+
+			<div className="mt-2.5 flex items-center gap-2.5 border-t border-line pt-2">
+				{row.chats.length > 0 && (
+					<button
+						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-xs text-dim hover:bg-hover hover:text-fg"
+						onClick={onArchive}
+					>
+						<svg
+							width="14"
+							height="14"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.4"
+						>
+							<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
+							<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
+							<path d="M6.5 8.5h3" strokeLinecap="round" />
+						</svg>
+						Archive
+					</button>
+				)}
+				{prChat?.prUrl && (
+					<a
+						href={prChat.prUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						className={`hovercard-mono text-xs hover:underline hovercard-pr-${prTone(prChat)}`}
+					>
+						{prChat.prNumber ? `#${prChat.prNumber}` : "PR"} ↗
+					</a>
+				)}
+				<span
+					className="ml-auto text-[11px] text-faint"
+					title={new Date(row.lastActivity).toLocaleString()}
+				>
+					{relativeTime(row.lastActivity)}
+				</span>
+			</div>
+		</div>
+	);
+
+	return createPortal(card, document.body);
 }

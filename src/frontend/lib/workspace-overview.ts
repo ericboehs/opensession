@@ -1,6 +1,6 @@
 /**
- * Client-side workspace overview loading, shared by the floating
- * WorkspacePreview panel and the sidebar's workspace hover card: one
+ * Client-side workspace overview loading, shared by the WorkspaceInfo block
+ * in the session right panel and the sidebar's workspace hover card: one
  * session-lifetime cache (switching back paints instantly), the server route
  * as the fast path, and transcript-based fallbacks for servers that haven't
  * restarted onto newer overview code (routes don't hot-apply).
