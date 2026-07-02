@@ -568,6 +568,36 @@ export function Sidebar({
 		).length;
 	}, [sessions, currentUser, filter.repo]);
 
+	// Open PRs for the focus person (the Person filter, defaulting to you),
+	// honoring the repo filter and search — the same lens as the workspace lanes.
+	// One row per distinct PR: sessions sharing a PR URL dedupe to the most
+	// recently active one, which is the row's click target.
+	const openPrRows = useMemo(() => {
+		const focus =
+			filter.person !== "all" ? filter.person : currentUser.toLowerCase();
+		const q = search.toLowerCase();
+		const byUrl = new Map<string, UnifiedSession>();
+		for (const s of sessions) {
+			if (s.archived || s.automation || s.prState !== "OPEN" || !s.prUrl)
+				continue;
+			if (!s.startedBy || s.startedBy.toLowerCase() !== focus) continue;
+			if (filter.repo !== "all" && sessionRepo(s) !== filter.repo) continue;
+			if (
+				q &&
+				!(s.prTitle || "").toLowerCase().includes(q) &&
+				!s.title.toLowerCase().includes(q) &&
+				!(s.branch || "").toLowerCase().includes(q)
+			)
+				continue;
+			const prev = byUrl.get(s.prUrl);
+			if (!prev || s.lastActivity > prev.lastActivity) byUrl.set(s.prUrl, s);
+		}
+		const key = filter.sort === "created" ? "createdAt" : "lastActivity";
+		return Array.from(byUrl.values()).sort((a, b) =>
+			(b[key] || "").localeCompare(a[key] || ""),
+		);
+	}, [sessions, currentUser, search, filter.person, filter.repo, filter.sort]);
+
 	// Distinct repos across the (non-archived) sessions, most-used first, for the
 	// Repo filter dropdown. Built off every session (not the search-filtered set)
 	// so the options don't churn while you type.
@@ -1596,6 +1626,123 @@ export function Sidebar({
 						</div>
 					);
 				})()}
+
+				{/* ── Open PRs: the focus person's open pull requests (defaults to
+				    yours; the Person/Repo filters narrow it — all repos when
+				    unfiltered). A peer of the Archived row below, but it folds open
+				    inline like the status lanes; a row jumps to the PR's session. ── */}
+				{openPrRows.length > 0 &&
+					(() => {
+						const open = isOpen("openprs");
+						return (
+							<div className="sidebar-group">
+								<button
+									className="sidebar-group-header sidebar-archived-row"
+									onClick={() => toggleGroup("openprs")}
+									title={open ? "Collapse open PRs" : "Expand open PRs"}
+								>
+									<span className="sidebar-archived-icon">
+										<svg
+											width="18"
+											height="18"
+											viewBox="0 0 16 16"
+											fill="none"
+											stroke="currentColor"
+											strokeWidth="1.4"
+										>
+											<circle cx="4.5" cy="3.5" r="1.7" />
+											<circle cx="4.5" cy="12.5" r="1.7" />
+											<circle cx="11.5" cy="12.5" r="1.7" />
+											<path
+												d="M4.5 5.2v5.6M8 3.5h1.5a2 2 0 0 1 2 2v5.3"
+												strokeLinecap="round"
+											/>
+										</svg>
+									</span>
+									<span className="sidebar-group-name">Open PRs</span>
+									<IconChevronDown
+										className="sidebar-group-chevron"
+										size={16}
+										style={{ transform: open ? "none" : "rotate(-90deg)" }}
+									/>
+									<span className="sidebar-group-count">
+										{openPrRows.length}
+									</span>
+								</button>
+								{open &&
+									openPrRows.map((s) => (
+										<button
+											key={s.prUrl}
+											className={`sidebar-item group flex items-center gap-2 min-w-0 ${
+												s.id === selectedId ? "sidebar-item-selected" : ""
+											}`}
+											onClick={() => onSelect(s)}
+											title={`${s.prNumber ? `#${s.prNumber} ` : ""}${
+												s.prTitle || s.title
+											} — ${sessionRepo(s)}`}
+										>
+											{filter.repo === "all" && (
+												<RepoTile name={sessionRepo(s)} />
+											)}
+											<span className="text-faint text-[11px] tabular-nums shrink-0">
+												{s.prNumber ? `#${s.prNumber}` : "PR"}
+											</span>
+											<span className="sidebar-item-title">
+												{s.prTitle || s.title}
+											</span>
+											{s.prIsDraft && (
+												<span className="text-faint text-[10.5px] uppercase tracking-wide shrink-0">
+													draft
+												</span>
+											)}
+											<span
+												className="ml-auto shrink-0 text-[10.5px] text-faint group-hover:hidden"
+												title={new Date(
+													s.prUpdatedAt || s.lastActivity,
+												).toLocaleString()}
+											>
+												{shortTime(s.prUpdatedAt || s.lastActivity)}
+											</span>
+											<span
+												role="button"
+												tabIndex={0}
+												className="ml-auto hidden group-hover:inline-flex items-center shrink-0 text-faint hover:text-fg"
+												title="Open PR on GitHub"
+												onClick={(e) => {
+													e.stopPropagation();
+													window.open(s.prUrl, "_blank", "noopener");
+												}}
+												onKeyDown={(e) => {
+													if (e.key === "Enter" || e.key === " ") {
+														e.stopPropagation();
+														window.open(s.prUrl, "_blank", "noopener");
+													}
+												}}
+											>
+												<svg
+													width="15"
+													height="15"
+													viewBox="0 0 16 16"
+													fill="none"
+													stroke="currentColor"
+													strokeWidth="1.4"
+												>
+													<path
+														d="M6.5 3.5H3.8A1.3 1.3 0 0 0 2.5 4.8v7.4a1.3 1.3 0 0 0 1.3 1.3h7.4a1.3 1.3 0 0 0 1.3-1.3V9.5"
+														strokeLinecap="round"
+													/>
+													<path
+														d="M9.5 2.5h4v4M13.2 2.8L7.5 8.5"
+														strokeLinecap="round"
+														strokeLinejoin="round"
+													/>
+												</svg>
+											</span>
+										</button>
+									))}
+							</div>
+						);
+					})()}
 
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
