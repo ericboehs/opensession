@@ -1177,27 +1177,6 @@ export function Sidebar({
 							</svg>
 						</button>
 						</Tooltip>
-						<Tooltip label="New workspace">
-						<button
-							className="sidebar-new-btn"
-							onClick={onNewSession}
-						>
-							<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-								<path
-									d="M1.75 4.25c0-.55.45-1 1-1h3.1c.32 0 .62.15.8.4l.7.95h5.1c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1V4.25z"
-									stroke="currentColor"
-									strokeWidth="1.4"
-									strokeLinejoin="round"
-								/>
-								<path
-									d="M8 6.8v3.4M6.3 8.5h3.4"
-									stroke="currentColor"
-									strokeWidth="1.4"
-									strokeLinecap="round"
-								/>
-							</svg>
-						</button>
-						</Tooltip>
 						<Tooltip label="New session">
 						<button
 							className="sidebar-new-btn"
