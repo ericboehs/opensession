@@ -1073,7 +1073,7 @@ export function Sidebar({
 									}
 								}}
 							>
-								<svg width="16" height="16" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
+								<svg width="18" height="18" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
 									<path
 										d="M8 1.8l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.5l-3.8 2 .72-4.23-3.07-3 4.25-.62L8 1.8z"
 										stroke="currentColor"
@@ -1105,7 +1105,7 @@ export function Sidebar({
 								}
 							}}
 						>
-							<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+							<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
 								<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
 								<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
 								<path d="M6.5 8.5h3" strokeLinecap="round" />
@@ -2194,8 +2194,8 @@ function SidebarItem({
 				}}
 			>
 				<svg
-					width="16"
-					height="16"
+					width="18"
+					height="18"
 					viewBox="0 0 16 16"
 					fill="none"
 					stroke="currentColor"
