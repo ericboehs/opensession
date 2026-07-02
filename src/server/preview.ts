@@ -56,8 +56,12 @@ const ENSURE_UP =
 // crashed/never-finished start eventually stops reporting "starting").
 const gStart = globalThis as unknown as {
   __previewStarting?: Map<string, number>;
+  __previewStartPgids?: Map<string, number>;
 };
 const starting: Map<string, number> = (gStart.__previewStarting ??= new Map());
+// worktreeDir -> process group of the in-flight bring-up (see startPreview's
+// setsid). Lets stopPreview cancel a start whose services aren't listening yet.
+const startPgids: Map<string, number> = (gStart.__previewStartPgids ??= new Map());
 const START_TTL_MS = 5 * 60_000;
 
 function isStarting(worktreeDir: string): boolean {
@@ -283,22 +287,29 @@ export async function startPreview(worktreeDir: string): Promise<PreviewStatus> 
       `/tmp/backstage-preview-${basename(worktreeDir)}.log`,
       "a",
     );
-    const proc = Bun.spawn(["bash", ENSURE_UP, worktreeDir], {
+    // setsid puts the bring-up in its own process group (pgid = pid): the
+    // nohup'd `just dev` and everything under it inherit that group, so a
+    // cancel (stopPreview mid-start) can kill the whole tree with one signal —
+    // and can never hit backstage's own group.
+    const proc = Bun.spawn(["setsid", "bash", ENSURE_UP, worktreeDir], {
       stdout: log,
       stderr: log,
       stdin: "ignore",
     });
+    startPgids.set(worktreeDir, proc.pid);
     // Don't hold the event loop open on it, and clear the flag when it exits
     // (success flips to running via polling; failure/exit stops "starting").
     proc.unref();
     proc.exited.then(() => {
       starting.delete(worktreeDir);
+      startPgids.delete(worktreeDir);
       try {
         closeSync(log);
       } catch {}
     });
   } catch {
     starting.delete(worktreeDir);
+    startPgids.delete(worktreeDir);
   }
   return { ...status, starting: true };
 }
@@ -317,6 +328,11 @@ export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
   starting.delete(worktreeDir); // a stop cancels any in-flight "starting" state
   const ports = readPorts(worktreeDir);
   const pgids = new Set<number>();
+  // An in-flight bring-up has nothing listening yet, so the port scan below
+  // can't see it — kill its dedicated process group (set up via setsid in
+  // startPreview) so cancelling mid-start actually stops the build/dev server.
+  const startPgid = startPgids.get(worktreeDir);
+  if (startPgid && startPgid > 1) pgids.add(startPgid);
   for (const { port } of ports) {
     for (const pid of await listenersOnPort(port)) {
       let cwd = "";

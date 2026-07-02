@@ -125,11 +125,15 @@ export function PreviewButton({
       ) : isStarting ? (
         <button
           className="preview-open starting"
-          disabled
-          title="Starting Tella Local — this can take a minute on first build"
+          onClick={stop}
+          disabled={stopping}
+          title="Starting Tella Local (first build can take a minute) — click to cancel"
         >
           <span className="preview-spinner" />
-          Starting…
+          <span className="preview-starting-label">
+            {stopping ? "Cancelling…" : "Starting…"}
+          </span>
+          <span className="preview-cancel-label">Cancel</span>
         </button>
       ) : (
         <button
@@ -257,9 +261,13 @@ export function PreviewButton({
             <button className="preview-stop" onClick={stop} disabled={!anyRunning || stopping}>
               {stopping ? "Stopping…" : "Stop dev server"}
             </button>
+          ) : isStarting ? (
+            <button className="preview-stop" onClick={stop} disabled={stopping}>
+              {stopping ? "Cancelling…" : "Cancel startup"}
+            </button>
           ) : (
-            <button className="preview-stop" onClick={start} disabled={isStarting}>
-              {isStarting ? "Starting…" : "Start dev server"}
+            <button className="preview-stop" onClick={start}>
+              Start dev server
             </button>
           )}
           <div className="preview-hint">

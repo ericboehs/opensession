@@ -2300,6 +2300,22 @@ button.preview-open:not(:disabled):hover {
 .preview-open.starting {
 	color: var(--text-dim);
 }
+/* While starting, the button doubles as a cancel: hover tints it red and swaps
+   the label. (Hover-only swap is fine here — on touch the tap itself cancels.) */
+.preview-cancel-label {
+	display: none;
+}
+button.preview-open.starting:not(:disabled):hover {
+	color: var(--red);
+	border-color: rgba(248, 81, 73, 0.4);
+	background: rgba(248, 81, 73, 0.1);
+}
+button.preview-open.starting:not(:disabled):hover .preview-starting-label {
+	display: none;
+}
+button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
+	display: inline;
+}
 .preview-spinner {
 	width: 10px;
 	height: 10px;
