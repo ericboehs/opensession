@@ -13,12 +13,12 @@ import { Actions } from "./components/Actions";
 import { Notes, type NotesSelection } from "./components/Notes";
 import { Archived } from "./components/Archived";
 import { Reviews } from "./components/Reviews";
+import { PrPreview } from "./components/PrPreview";
 import { UserGate, getCurrentUser } from "./components/UserPicker";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { Settings } from "./components/Settings";
 import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
-import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdateToast } from "./components/UpdateToast";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -53,6 +53,8 @@ type Route =
 	| { view: "home" }
 	| { view: "new"; prompt?: string }
 	| { view: "session"; id: string }
+	// Session-less PR preview (a sidebar PR row with no chat yet).
+	| { view: "pr"; repo: string; branch: string }
 	| { view: "reviews"; id?: string }
 	| { view: "automations" }
 	| { view: "security" }
@@ -75,6 +77,15 @@ function parseRoute(pathname: string): Route {
 	const sessionMatch = pathname.match(/^\/backstage\/session\/(.+)$/);
 	if (sessionMatch)
 		return { view: "session", id: decodeURIComponent(sessionMatch[1]) };
+	// PR preview: /backstage/pr/<repo>/<branch> (branch is fully URI-encoded, so
+	// slashes in branch names arrive as %2F and land in one segment).
+	const prMatch = pathname.match(/^\/backstage\/pr\/([^/]+)\/(.+)$/);
+	if (prMatch)
+		return {
+			view: "pr",
+			repo: decodeURIComponent(prMatch[1]),
+			branch: decodeURIComponent(prMatch[2]),
+		};
 	if (pathname === "/backstage/new") return { view: "new" };
 	if (pathname === "/backstage/automations") return { view: "automations" };
 	if (pathname === "/backstage/security") return { view: "security" };
@@ -120,6 +131,8 @@ function routePath(route: Route): string {
 	switch (route.view) {
 		case "session":
 			return `/backstage/session/${encodeURIComponent(route.id)}`;
+		case "pr":
+			return `/backstage/pr/${encodeURIComponent(route.repo)}/${encodeURIComponent(route.branch)}`;
 		case "new":
 			return route.prompt
 				? `/backstage/new?prompt=${encodeURIComponent(route.prompt)}`
@@ -605,7 +618,9 @@ function App() {
 								? "Notes"
 								: route.view === "new"
 									? "New session"
-									: "";
+									: route.view === "pr"
+										? "Pull request"
+										: "";
 
 	const activeView =
 		route.view === "automations" ||
@@ -671,7 +686,6 @@ function App() {
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
 			<UpdateToast addHandler={addHandler} />
-			<MediaLightboxHost />
 			<div className="app">
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
 				    on a pushed page (a session or other view) the brand is replaced by
@@ -774,6 +788,14 @@ function App() {
 								)
 							}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
+							onOpenPr={(repo, branch) =>
+								navigate({ view: "pr", repo, branch })
+							}
+							selectedPr={
+								route.view === "pr"
+									? { repo: route.repo, branch: route.branch }
+									: null
+							}
 							onNewSession={() => openPalette()}
 							onOpenProject={(id) => {
 								// Open the workspace's first chat (oldest, matching the tab
@@ -1017,6 +1039,15 @@ function App() {
 						) : route.view === "actions" ? (
 							<Actions
 								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
+						) : route.view === "pr" ? (
+							<PrPreview
+								key={`${route.repo}:${route.branch}`}
+								repo={route.repo}
+								branch={route.branch}
+								connected={connected}
+								send={send}
+								addHandler={addHandler}
 							/>
 						) : route.view === "reviews" ? (
 							<Reviews

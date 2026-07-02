@@ -451,7 +451,7 @@ export function PrPanel({ sessionId, onOpenSession, split, repos, send }: Props)
 
 type PrCheckRank = "check-success" | "check-failure" | "check-pending" | "check-neutral";
 
-function checkClass(status: string, conclusion: string): PrCheckRank {
+export function checkClass(status: string, conclusion: string): PrCheckRank {
   if (status !== "COMPLETED" && status !== "") return "check-pending";
   // StatusContexts (Vercel deploys) report a state, not a status — a pending
   // deploy is "COMPLETED"/PENDING here and must not read as neutral.
@@ -470,7 +470,7 @@ function checkClass(status: string, conclusion: string): PrCheckRank {
 
 // Vercel previews arrive as StatusContexts named "Preview – <project>" (no
 // workflow); everything with a workflow is CI.
-function isDeployment(check: PrCheck): boolean {
+export function isDeployment(check: PrCheck): boolean {
   return (
     !check.workflowName &&
     (/^preview\b/i.test(check.name) || /vercel|deploy/i.test(check.name))
@@ -487,7 +487,7 @@ function formatCheckDuration(check: PrCheck): string | null {
   return `${Math.round(secs / 60)}m`;
 }
 
-function CheckRow({ check }: { check: PrCheck }) {
+export function CheckRow({ check }: { check: PrCheck }) {
   const cls = checkClass(check.status, check.conclusion);
   const mark = cls === "check-success" ? "✓" : cls === "check-failure" ? "✕" : "●";
   const duration = formatCheckDuration(check);

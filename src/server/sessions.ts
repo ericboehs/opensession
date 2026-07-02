@@ -490,6 +490,7 @@ export interface OpenPrEntry {
 	/** Web user-picker key ("kent"), or null when the author isn't a teammate. */
 	person: string | null;
 	updatedAt: string;
+	checks: PrChecksSummary;
 	/** Person keys of teammates with a pending review request on this PR. */
 	reviewRequested: string[];
 }
@@ -510,6 +511,7 @@ export function getOpenPrs(): OpenPrEntry[] {
 				author: pr.author,
 				person: githubLoginToPersonKey(pr.author),
 				updatedAt: pr.updatedAt,
+				checks: pr.checks,
 				reviewRequested: pr.reviewRequested,
 			});
 		}

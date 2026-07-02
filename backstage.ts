@@ -34,6 +34,7 @@ import {
 import {
 	listWorktrees,
 	createWorktree,
+	createWorktreeForExistingBranch,
 	worktreePathFor,
 	removeWorktree,
 	reviveWorktree,
@@ -2983,6 +2984,24 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json(await getPrDiff(target.branch, target.ghRepo));
 			}
 
+			// Session-less PR preview (sidebar PR rows with no chat yet): PR details
+			// and diff straight from repo+branch — same pr-info helpers as the
+			// session routes, minus the session lookup.
+			if (path === "/backstage/api/pr-preview" && req.method === "GET") {
+				const branch = url.searchParams.get("branch") || "";
+				if (!branch)
+					return Response.json({ error: "branch required" }, { status: 400 });
+				const repo = getRepo(url.searchParams.get("repo") || undefined);
+				return Response.json(await getPrDetails(branch, repo.ghRepo));
+			}
+			if (path === "/backstage/api/pr-preview-diff" && req.method === "GET") {
+				const branch = url.searchParams.get("branch") || "";
+				if (!branch)
+					return Response.json({ error: "branch required" }, { status: 400 });
+				const repo = getRepo(url.searchParams.get("repo") || undefined);
+				return Response.json(await getPrDiff(branch, repo.ghRepo));
+			}
+
 			// Local dev-server ("Preview") status for a session's worktree — which
 			// services (.ports.conf) are listening, so the header can link to the
 			// webapp and show/stop running processes.
@@ -5160,6 +5179,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					case "create_session": {
 						const { branch, prompt, user, mode } = msg;
 						const images = parseImageDataUrls(msg.images);
+						// Session opened from a PR row (sidebar): `branch` is the PR's
+						// EXISTING head branch — check it out instead of creating a new
+						// branch off origin/default.
+						const fromPr =
+							msg.fromPr === true && typeof branch === "string" && !!branch;
 
 						// Fork: branch a new session off an existing one, keeping the REAL
 						// engine conversation (via SDK forkSession), optionally from a chosen
@@ -5272,6 +5296,18 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							if (forkSource) {
 								// Share the source's cwd so the fork sees the same code state.
 								wtPath = forkSource.worktreeDir || repo.repo;
+							} else if (fromPr) {
+								// From a PR row: work on the PR's existing head branch in an
+								// isolated worktree (even for shared-checkout repos and ask
+								// mode — the PR's code is the subject, and a PR branch must
+								// never check out in the live main checkout). Reuses a
+								// worktree already on that branch.
+								const worktrees = await listWorktrees(repo.id);
+								wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
+								if (!wtPath) {
+									wtPath = worktreePathFor(branch, repo.id, { isolated: true });
+									needsWorktree = true;
+								}
 							} else if (isAsk) {
 								// Ask sessions run read-only on the main checkout — no worktree
 								wtPath = repo.repo;
@@ -5359,13 +5395,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									...(model ? { model } : {}),
 									branch: forkSource
 										? forkSource.branch || ""
-										: isAsk
-											? ""
-											: repo.sharedCheckout
-												? repo.defaultBranch
-												: workspace?.worktreeDir === wtPath
-													? workspace.branch || branch
-													: branch,
+										: fromPr
+											? branch
+											: isAsk
+												? ""
+												: repo.sharedCheckout
+													? repo.defaultBranch
+													: workspace?.worktreeDir === wtPath
+														? workspace.branch || branch
+														: branch,
 									worktreeDir: wtPath,
 									repo: repoForPath(wtPath).id,
 									...(workspace
@@ -5412,15 +5450,19 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								emit({ type: "stream_start" });
 
 								if (needsWorktree) {
-									const base =
-										chatMode === "stack" && workspace?.branch
-											? workspace.branch
-											: undefined;
-									await createWorktree(
-										branch,
-										repo.id,
-										base ? { base } : undefined,
-									);
+									if (fromPr) {
+										await createWorktreeForExistingBranch(branch, repo.id);
+									} else {
+										const base =
+											chatMode === "stack" && workspace?.branch
+												? workspace.branch
+												: undefined;
+										await createWorktree(
+											branch,
+											repo.id,
+											base ? { base } : undefined,
+										);
+									}
 								}
 
 							for await (const event of runAgent({

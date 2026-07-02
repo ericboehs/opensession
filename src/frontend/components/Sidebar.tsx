@@ -14,7 +14,6 @@ import {
 	type WorkspaceOverview,
 } from "../lib/api";
 import { loadOverview, overviewCache } from "../lib/workspace-overview";
-import { openLightbox } from "./MediaLightbox";
 import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged, togglePin } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
@@ -132,6 +131,10 @@ interface Props {
 	activeView: NavView;
 	onNavigate: (view: NavView) => void;
 	onSelect: (session: UnifiedSession) => void;
+	/** Open the session-less PR preview for a PR row with no chat behind it. */
+	onOpenPr: (repo: string, branch: string) => void;
+	/** The PR preview currently open (highlights its row), or null. */
+	selectedPr?: { repo: string; branch: string } | null;
 	onNewSession: () => void;
 	/** Open a project — its chats surface in the top tab strip. */
 	onOpenProject: (id: string) => void;
@@ -469,6 +472,8 @@ export function Sidebar({
 	activeView,
 	onNavigate,
 	onSelect,
+	onOpenPr,
+	selectedPr = null,
 	onNewSession,
 	onOpenProject,
 	onRenameProject,
@@ -617,88 +622,73 @@ export function Sidebar({
 		};
 	}, []);
 
-	// One sidebar row per open PR of the focus person. `session` is the most
-	// recently active session on that PR (the click target); a sessionless PR
-	// opens on GitHub instead.
+	// A PR row in the "In review" lane. Chats that own a PR (their branch is
+	// its head branch) are already lane rows wearing the PR's status — these
+	// rows cover every OTHER open PR: `session` set means a chat owns the PR
+	// through an attached repo (the row opens that chat); null means no chat
+	// anywhere — the row opens the session-less PR preview, where the first
+	// message creates a session on the PR's branch.
 	interface PrRow {
 		url: string;
+		repo: string;
+		branch: string;
 		number?: number;
 		title: string;
 		isDraft: boolean;
+		checksFailed: boolean;
 		updatedAt: string;
-		repo: string;
 		session: UnifiedSession | null;
 	}
 
-	// Open PRs for the focus person (the Person filter, defaulting to you;
-	// "everyone" lifts the person lens), honoring the repo filter and search.
-	// A PR is a person's when their GitHub account authored it (identity table,
-	// resolved server-side), or — for bot-authored PRs, which Michael opens as
-	// tella-butler — when they started the session that opened it. The fetched
-	// repo-wide list means a person's PRs show even with no Backstage session.
-	const openPrRows = useMemo(() => {
+	// Open PRs of the focus person (the Person filter, defaulting to you;
+	// "everyone" lifts the person lens) that no chat row already represents,
+	// honoring the repo filter and search. A PR is a person's when their GitHub
+	// account authored it (identity table, resolved server-side), or — for
+	// bot-authored PRs, which Michael opens as tella-butler — when they started
+	// the chat that owns it.
+	const prLaneRows = useMemo(() => {
 		const focus =
 			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
 		const q = search.toLowerCase();
 
-		// Most recently active session per PR URL — the row's click target, and
-		// the owner of bot-authored PRs.
-		const sessionByUrl = new Map<string, UnifiedSession>();
+		// PRs represented by a live chat row already: any non-archived session
+		// whose primary repo+branch is the PR's head. Attached-repo branches get
+		// their own PR row that opens the owning chat (its row only wears the
+		// primary PR).
+		const primaryKeys = new Set<string>();
+		const attachedByKey = new Map<string, UnifiedSession>();
 		for (const s of sessions) {
-			if (s.archived || s.prState !== "OPEN" || !s.prUrl) continue;
-			const prev = sessionByUrl.get(s.prUrl);
-			if (!prev || s.lastActivity > prev.lastActivity)
-				sessionByUrl.set(s.prUrl, s);
+			if (s.archived) continue;
+			if (s.branch) primaryKeys.add(`${sessionRepo(s)}:${s.branch}`);
+			for (const ar of s.attachedRepos || []) {
+				const key = `${ar.repo}:${ar.branch}`;
+				const prev = attachedByKey.get(key);
+				if (!prev || s.lastActivity > prev.lastActivity)
+					attachedByKey.set(key, s);
+			}
 		}
 
 		const rows: PrRow[] = [];
-		const seen = new Set<string>();
-		const push = (row: PrRow) => {
-			if (seen.has(row.url)) return;
-			seen.add(row.url);
-			rows.push(row);
-		};
-
-		// The repo-wide list is authoritative for the repos it covers…
-		const fetchedUrls = new Set((openPrs || []).map((p) => p.url));
 		for (const pr of openPrs || []) {
-			const session = sessionByUrl.get(pr.url) || null;
+			const key = `${pr.repo}:${pr.branch}`;
+			if (primaryKeys.has(key)) continue;
+			const session = attachedByKey.get(key) || null;
 			const person =
 				pr.person ||
 				(session && !session.automation && session.startedBy
 					? session.startedBy.toLowerCase()
 					: null);
 			if (focus !== "everyone" && person !== focus) continue;
-			push({
+			rows.push({
 				url: pr.url,
+				repo: pr.repo,
+				branch: pr.branch,
 				number: pr.number,
 				title: pr.title,
 				isDraft: pr.isDraft,
+				checksFailed: (pr.checks?.failed || 0) > 0,
 				updatedAt: pr.updatedAt,
-				repo: pr.repo,
 				session,
-			});
-		}
-
-		// …session-derived PRs cover what it can't see (other repos, or the
-		// fetch not landed yet).
-		for (const s of sessions) {
-			if (s.archived || s.automation || s.prState !== "OPEN" || !s.prUrl)
-				continue;
-			if (fetchedUrls.has(s.prUrl)) continue;
-			if (
-				focus !== "everyone" &&
-				(!s.startedBy || s.startedBy.toLowerCase() !== focus)
-			)
-				continue;
-			push({
-				url: s.prUrl,
-				number: s.prNumber,
-				title: s.prTitle || s.title,
-				isDraft: !!s.prIsDraft,
-				updatedAt: s.prUpdatedAt || s.lastActivity,
-				repo: sessionRepo(s),
-				session: s,
 			});
 		}
 
@@ -709,7 +699,7 @@ export function Sidebar({
 			visible = visible.filter(
 				(r) =>
 					r.title.toLowerCase().includes(q) ||
-					(r.session?.branch || "").toLowerCase().includes(q) ||
+					r.branch.toLowerCase().includes(q) ||
 					String(r.number || "").includes(q.replace(/^#/, "")),
 			);
 		// "Created" sorts by PR number (creation order); "Updated" by activity.
@@ -1448,6 +1438,92 @@ export function Sidebar({
 		);
 	}
 
+	// A PR row in the "In review" lane: a chat-owned (attached-repo) PR opens
+	// its chat; an unowned PR opens the session-less PR preview, where the
+	// first message creates a session on the PR's head branch.
+	function renderPrRow(r: PrRow) {
+		const selected = r.session
+			? r.session.id === selectedId
+			: !!selectedPr &&
+				selectedPr.repo === r.repo &&
+				selectedPr.branch === r.branch;
+		return (
+			<button
+				key={`pr:${r.url}`}
+				className={`sidebar-item group flex items-center gap-2 min-w-0 ${
+					selected ? "sidebar-item-selected" : ""
+				}`}
+				onClick={() => {
+					if (r.session) onSelect(r.session);
+					else onOpenPr(r.repo, r.branch);
+				}}
+				title={`${r.number ? `#${r.number} ` : ""}${r.title} — ${r.repo}`}
+			>
+				<IconPullRequest
+					size={18}
+					className={`shrink-0 ${
+						r.checksFailed
+							? "text-red"
+							: r.isDraft
+								? "text-faint"
+								: "text-green"
+					}`}
+				/>
+				{filter.repo === "all" && <RepoTile name={r.repo} />}
+				<span className="text-faint text-[11px] max-[720px]:text-[13px] tabular-nums shrink-0">
+					{r.number ? `#${r.number}` : "PR"}
+				</span>
+				<span className="sidebar-item-title">{r.title}</span>
+				{r.isDraft && (
+					<span className="text-faint text-[10.5px] max-[720px]:text-[12px] uppercase tracking-wide shrink-0">
+						draft
+					</span>
+				)}
+				<span
+					className="ml-auto shrink-0 text-[10.5px] max-[720px]:text-[12px] text-faint group-hover:hidden"
+					title={new Date(r.updatedAt).toLocaleString()}
+				>
+					{shortTime(r.updatedAt)}
+				</span>
+				<span
+					role="button"
+					tabIndex={0}
+					className="ml-auto hidden group-hover:inline-flex items-center shrink-0 text-faint hover:text-fg"
+					title="Open PR on GitHub"
+					onClick={(e) => {
+						e.stopPropagation();
+						window.open(r.url, "_blank", "noopener");
+					}}
+					onKeyDown={(e) => {
+						if (e.key === "Enter" || e.key === " ") {
+							e.stopPropagation();
+							window.open(r.url, "_blank", "noopener");
+						}
+					}}
+				>
+					<svg
+						width="15"
+						height="15"
+						viewBox="0 0 16 16"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="1.4"
+					>
+						<path
+							d="M6.5 3.5H3.8A1.3 1.3 0 0 0 2.5 4.8v7.4a1.3 1.3 0 0 0 1.3 1.3h7.4a1.3 1.3 0 0 0 1.3-1.3V9.5"
+							strokeLinecap="round"
+						/>
+						<path
+							d="M9.5 2.5h4v4M13.2 2.8L7.5 8.5"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					</svg>
+				</span>
+			</button>
+		);
+	}
+
 	return (
 		<div className="sidebar">
 			<div className="sidebar-search-wrap">
@@ -1828,7 +1904,11 @@ export function Sidebar({
 						// Empty status groups are hidden — only lanes with sessions render.
 						return MINE_STATUS_META.map((meta) => {
 							const items = focusRows.filter((r) => r.status === meta.key);
-							if (items.length === 0) return null;
+							// The review lane is ALL the focus person's open PRs: chats
+							// with a PR are its workspace rows, and every other open PR
+							// (no chat, or owned via an attached repo) gets a PR row.
+							const prRows = meta.key === "review" ? prLaneRows : [];
+							if (items.length === 0 && prRows.length === 0) return null;
 							const gkey = `status:${meta.key}`;
 							const open = isOpen(gkey);
 							return (
@@ -1847,7 +1927,9 @@ export function Sidebar({
 											size={18}
 											style={{ transform: open ? "none" : "rotate(-90deg)" }}
 										/>
-										<span className="sidebar-group-count">{items.length}</span>
+										<span className="sidebar-group-count">
+											{items.length + prRows.length}
+										</span>
 									</button>
 									{items
 										.filter(
@@ -1855,129 +1937,22 @@ export function Sidebar({
 												open || r.chats.some((c) => c.id === selectedId),
 										)
 										.map(renderWsRow)}
+									{prRows
+										.filter(
+											(r) =>
+												open ||
+												(r.session
+													? r.session.id === selectedId
+													: !!selectedPr &&
+														selectedPr.repo === r.repo &&
+														selectedPr.branch === r.branch),
+										)
+										.map(renderPrRow)}
 								</React.Fragment>
 							);
 						});
 					})()}
 				</div>
-
-				{/* ── Open PRs: the focus person's open pull requests (defaults to
-				    yours; the Person/Repo filters narrow it — all repos when
-				    unfiltered), whether authored from their GitHub account or
-				    opened by Michael from their session. A peer of the Archived
-				    row below, but it folds open inline like the status lanes; a
-				    row jumps to the PR's session, or to GitHub when none. ── */}
-				{openPrRows.length > 0 &&
-					(() => {
-						const open = isOpen("openprs");
-						return (
-							<div className="sidebar-group">
-								<button
-									className="sidebar-group-header sidebar-archived-row"
-									onClick={() => toggleGroup("openprs")}
-									title={open ? "Collapse open PRs" : "Expand open PRs"}
-								>
-									<span className="sidebar-archived-icon">
-										<svg
-											width="18"
-											height="18"
-											viewBox="0 0 16 16"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="1.4"
-										>
-											<circle cx="4.5" cy="3.5" r="1.7" />
-											<circle cx="4.5" cy="12.5" r="1.7" />
-											<circle cx="11.5" cy="12.5" r="1.7" />
-											<path
-												d="M4.5 5.2v5.6M8 3.5h1.5a2 2 0 0 1 2 2v5.3"
-												strokeLinecap="round"
-											/>
-										</svg>
-									</span>
-									<span className="sidebar-group-name">Open PRs</span>
-									<IconChevronDown
-										className="sidebar-group-chevron"
-										size={18}
-										style={{ transform: open ? "none" : "rotate(-90deg)" }}
-									/>
-									<span className="sidebar-group-count">
-										{openPrRows.length}
-									</span>
-								</button>
-								{open &&
-									openPrRows.map((r) => (
-										<button
-											key={r.url}
-											className={`sidebar-item group flex items-center gap-2 min-w-0 ${
-												r.session?.id === selectedId
-													? "sidebar-item-selected"
-													: ""
-											}`}
-											onClick={() => {
-												if (r.session) onSelect(r.session);
-												else window.open(r.url, "_blank", "noopener");
-											}}
-											title={`${r.number ? `#${r.number} ` : ""}${r.title} — ${
-												r.repo
-											}${r.session ? "" : " (no session — opens on GitHub)"}`}
-										>
-											{filter.repo === "all" && <RepoTile name={r.repo} />}
-											<span className="text-faint text-[11px] max-[720px]:text-[13px] tabular-nums shrink-0">
-												{r.number ? `#${r.number}` : "PR"}
-											</span>
-											<span className="sidebar-item-title">{r.title}</span>
-											{r.isDraft && (
-												<span className="text-faint text-[10.5px] max-[720px]:text-[12px] uppercase tracking-wide shrink-0">
-													draft
-												</span>
-											)}
-											<span
-												className="ml-auto shrink-0 text-[10.5px] max-[720px]:text-[12px] text-faint group-hover:hidden"
-												title={new Date(r.updatedAt).toLocaleString()}
-											>
-												{shortTime(r.updatedAt)}
-											</span>
-											<span
-												role="button"
-												tabIndex={0}
-												className="ml-auto hidden group-hover:inline-flex items-center shrink-0 text-faint hover:text-fg"
-												title="Open PR on GitHub"
-												onClick={(e) => {
-													e.stopPropagation();
-													window.open(r.url, "_blank", "noopener");
-												}}
-												onKeyDown={(e) => {
-													if (e.key === "Enter" || e.key === " ") {
-														e.stopPropagation();
-														window.open(r.url, "_blank", "noopener");
-													}
-												}}
-											>
-												<svg
-													width="15"
-													height="15"
-													viewBox="0 0 16 16"
-													fill="none"
-													stroke="currentColor"
-													strokeWidth="1.4"
-												>
-													<path
-														d="M6.5 3.5H3.8A1.3 1.3 0 0 0 2.5 4.8v7.4a1.3 1.3 0 0 0 1.3 1.3h7.4a1.3 1.3 0 0 0 1.3-1.3V9.5"
-														strokeLinecap="round"
-													/>
-													<path
-														d="M9.5 2.5h4v4M13.2 2.8L7.5 8.5"
-														strokeLinecap="round"
-														strokeLinejoin="round"
-													/>
-												</svg>
-											</span>
-										</button>
-									))}
-							</div>
-						);
-					})()}
 
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
@@ -3355,11 +3330,12 @@ function WsOverviewInfo({
 			{media.length > 0 && (
 				<div className="mt-2 flex gap-1.5">
 					{media.slice(0, 4).map((m, i) => (
-						<button
+						<a
 							key={`${m.sessionId}:${m.at}:${i}`}
-							type="button"
-							onClick={() => openLightbox(media, i)}
-							className="relative block h-[58px] w-[62px] shrink-0 overflow-hidden rounded-sm border border-line bg-surface p-0"
+							href={m.src}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="relative block h-[58px] w-[62px] shrink-0 overflow-hidden rounded-sm border border-line bg-surface"
 							title={[m.chatTitle, new Date(m.at).toLocaleString()]
 								.filter(Boolean)
 								.join(" · ")}
@@ -3390,7 +3366,7 @@ function WsOverviewInfo({
 									+{media.length - 4}
 								</span>
 							)}
-						</button>
+						</a>
 					))}
 				</div>
 			)}

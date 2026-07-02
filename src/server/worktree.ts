@@ -279,6 +279,59 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
 }
 
 /**
+ * Worktree checked out to an EXISTING branch (a PR's head branch), for
+ * interactive sessions opened from a PR row. Unlike `createWorktreeForPrBranch`
+ * (the autofix agents' variant) it never hard-resets on reuse — a human may
+ * have un-pushed work there — and it checks out the branch itself (not a
+ * `-michael` copy), so commits/pushes land straight on the PR. Reuses an
+ * existing worktree for the branch when one exists; prefers the local branch
+ * (it may be ahead of origin), falling back to a fresh tracking branch off
+ * `origin/<branch>`. Works for shared-checkout repos too (backstage): a PR
+ * branch must never be checked out in the live main checkout, so it always
+ * gets an isolated worktree.
+ */
+export async function createWorktreeForExistingBranch(
+  branch: string,
+  repoId?: string,
+): Promise<string> {
+  const repo = getRepo(repoId);
+  const existing = (await listWorktrees(repo.id)).find((w) => w.branch === branch);
+  if (existing) return existing.path;
+
+  const wtPath = `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
+  await withGitLock(async () => {
+    await $`git -C ${repo.repo} worktree prune`.quiet();
+    if (existsSync(wtPath)) return; // pruned stale registration; dir already usable
+    await $`git -C ${repo.repo} fetch origin ${branch} --quiet`.nothrow();
+    const hasLocal =
+      (await $`git -C ${repo.repo} show-ref --verify --quiet refs/heads/${branch}`.nothrow())
+        .exitCode === 0;
+    if (hasLocal) {
+      await $`git -C ${repo.repo} worktree add ${wtPath} ${branch}`;
+    } else {
+      await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} origin/${branch}`;
+    }
+  });
+
+  // Best-effort dep install, same as createWorktree.
+  try {
+    if (repo.id === "tella-fusion") {
+      const webappDir = `${wtPath}/packages/core/webapp`;
+      await seedWebappEnv(webappDir);
+      if (await Bun.file(`${webappDir}/package.json`).exists()) {
+        await $`cd ${webappDir} && bun install`.quiet();
+      }
+    } else if (await Bun.file(`${wtPath}/package.json`).exists()) {
+      await $`cd ${wtPath} && bun install`.quiet();
+    }
+  } catch (e) {
+    console.warn(`[worktree] bun install failed for ${branch} (continuing):`, e);
+  }
+
+  return wtPath;
+}
+
+/**
  * Resolve a start-point ref for a new worktree branch: prefer a local ref
  * matching `base`, then `origin/<base>`, then `origin/<defaultBranch>`. Used for
  * stacked worktrees that branch off a workspace's existing branch.
@@ -301,10 +354,19 @@ async function resolveStartPoint(
  * The path `createWorktree(branch, repoId)` will produce, without doing any
  * git work. Lets the create-session flow announce a session (and drop the UI
  * into its empty chat) before the slow worktree setup actually runs.
+ * `isolated` forces the per-branch worktree path even for shared-checkout
+ * repos — the from-PR flow checks out PR branches in isolation, never the
+ * live main checkout (matches `createWorktreeForExistingBranch`).
  */
-export function worktreePathFor(branch: string, repoId?: string): string {
+export function worktreePathFor(
+  branch: string,
+  repoId?: string,
+  opts?: { isolated?: boolean },
+): string {
   const repo = getRepo(repoId);
-  return repo.sharedCheckout ? repo.repo : `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
+  return repo.sharedCheckout && !opts?.isolated
+    ? repo.repo
+    : `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
 }
 
 /**

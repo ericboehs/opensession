@@ -266,6 +266,12 @@ export type WSClientMessage =
 			effort?: "low" | "medium" | "high";
 			/** Fork an existing session, keeping its real conversation history. */
 			forkFrom?: { sourceId: string; messageId?: string };
+			/**
+			 * Session opened from a sidebar PR row: `branch` is the PR's existing
+			 * head branch — check it out (isolated worktree) instead of creating a
+			 * new branch off origin/default.
+			 */
+			fromPr?: boolean;
 	  }
 	// Collaborative notes (Yjs updates relayed as base64 over this socket).
 	| { type: "watch_note"; noteId: string; user?: string }

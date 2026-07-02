@@ -89,6 +89,7 @@ export interface OpenPr {
 	/** Web user-picker key ("kent"), or null when the author isn't a teammate. */
 	person: string | null;
 	updatedAt: string;
+	checks: { total: number; passed: number; failed: number; pending: number };
 	/** Person keys of teammates with a pending review request on this PR. */
 	reviewRequested?: string[];
 }
@@ -549,6 +550,21 @@ export async function fetchPrDiff(sessionId: string, repo?: string) {
 	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
 	return request<any>(
 		`/sessions/${encodeURIComponent(sessionId)}/pr-diff${qs}`,
+		{ label: "Failed to fetch PR diff" },
+	);
+}
+
+/** Session-less PR details for the sidebar's PR preview (keyed by repo+branch). */
+export async function fetchPrPreview(repo: string, branch: string) {
+	return request<any>(
+		`/pr-preview?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}`,
+		{ label: "Failed to fetch PR" },
+	);
+}
+
+export async function fetchPrPreviewDiff(repo: string, branch: string) {
+	return request<any>(
+		`/pr-preview-diff?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}`,
 		{ label: "Failed to fetch PR diff" },
 	);
 }

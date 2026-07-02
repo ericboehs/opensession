@@ -59,22 +59,6 @@ export function IconChevronDown(p: IconProps) {
   );
 }
 
-export function IconChevronLeft(p: IconProps) {
-  return (
-    <Svg {...p}>
-      <path {...stroke} d="M13.75 6.75L8.75 12L13.75 17.25" />
-    </Svg>
-  );
-}
-
-export function IconChevronRight(p: IconProps) {
-  return (
-    <Svg {...p}>
-      <path {...stroke} d="M10.25 6.75L15.25 12L10.25 17.25" />
-    </Svg>
-  );
-}
-
 export function IconCheck(p: IconProps) {
   return (
     <Svg {...p}>
