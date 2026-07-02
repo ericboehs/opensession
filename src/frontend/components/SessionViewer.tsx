@@ -146,6 +146,9 @@ export function SessionViewer({
 	const [isRunningLive, setIsRunningLive] = useState(session.isRunning);
 	const [streamText, setStreamText] = useState("");
 	const [streamBy, setStreamBy] = useState<string | null>(null);
+	// Bumped on every stream_start; lets the delayed stream_done cleanup verify
+	// it isn't wiping a NEWER run's in-progress text.
+	const streamSeqRef = useRef(0);
 	const [viewers, setViewers] = useState<string[]>([]);
 	const [queued, setQueued] = useState<
 		Array<{ content: string; user?: string }>
@@ -498,6 +501,7 @@ export function SessionViewer({
 					setIsRunningLive(msg.isRunning);
 					break;
 				case "stream_start":
+					streamSeqRef.current++;
 					setIsStreaming(true);
 					setStreamBy(msg.by || null);
 					setStreamText("");
@@ -509,11 +513,21 @@ export function SessionViewer({
 				case "stream_tool_result":
 					setEntries((prev) => mergeEntries(prev, [msg.entry]));
 					break;
-				case "stream_done":
+				case "stream_done": {
 					setIsStreaming(false);
 					setStreamBy(null);
-					setStreamText("");
+					// Don't wipe the streamed text yet: its persisted transcript entry
+					// usually lands a beat later (the 1s file-watcher poll) and the
+					// transcript_append handler strips it then — clearing here made the
+					// reply blink out and back in (or vanish entirely when the watcher
+					// wasn't attached). The timeout is only the fallback for text that
+					// never lands as an entry.
+					const seq = streamSeqRef.current;
+					window.setTimeout(() => {
+						if (streamSeqRef.current === seq) setStreamText("");
+					}, 5000);
 					break;
+				}
 				case "model_changed":
 					if (msg.sessionId !== session.id) break;
 					setModel(msg.model);
@@ -632,9 +646,16 @@ export function SessionViewer({
 		});
 	}, [steered, entries]);
 
-	// Forget optimistic bubbles when switching sessions
+	// Forget optimistic bubbles and any leftover stream state when switching
+	// sessions — the component isn't remounted per session, so a streaming
+	// bubble (now kept alive briefly past stream_done) would otherwise bleed
+	// into the next session's view.
 	useEffect(() => {
 		setPending([]);
+		streamSeqRef.current++;
+		setStreamText("");
+		setIsStreaming(false);
+		setStreamBy(null);
 	}, [session.id]);
 
 	// Reopen where the reader left off. A running session jumps to the live edge to

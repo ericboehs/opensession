@@ -61,7 +61,7 @@ function pollFile(state: WatchState) {
 export function startWatching(
   path: string,
   ws: any,
-  initialOffset: number = 0
+  initialOffset?: number
 ): void {
   let state = watches.get(path);
   if (state) {
@@ -71,11 +71,14 @@ export function startWatching(
 
   state = {
     path,
-    // With a caller-supplied offset, start with lastMtime 0 so the first poll
-    // flushes bytes appended between the caller's parse and this watch (the
-    // file's current mtime already covers them and would skip the tick).
-    lastMtime: initialOffset ? 0 : getMtime(path),
-    lastByteOffset: initialOffset || getFileSize(path),
+    // With a caller-supplied offset (including an explicit 0 — "stream this
+    // file from the beginning", used when a run starts writing a brand-new
+    // transcript), start with lastMtime 0 so the first poll flushes bytes
+    // appended between the caller's parse and this watch (the file's current
+    // mtime already covers them and would skip the tick). No offset = tail
+    // only from the file's current end.
+    lastMtime: initialOffset !== undefined ? 0 : getMtime(path),
+    lastByteOffset: initialOffset ?? getFileSize(path),
     viewers: new Set([ws]),
     interval: null,
   };

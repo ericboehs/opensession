@@ -4,7 +4,9 @@
  * worktree* for that repo and records it on the session, so the agent branches,
  * commits, and opens PRs there independently of the primary repo — instead of
  * editing another repo's shared main checkout (which is parked on whatever branch
- * was last used and collides with other sessions).
+ * was last used and collides with other sessions). Also lets a fresh session
+ * switch its primary repo when it was created against the wrong one (same
+ * clean-only switchPrimaryRepo the RepoBar UI uses).
  *
  * Wired the same way as michael-sessions/michael-admin: interactive runs only
  * (Backstage web sessions + Slack), never automations. The handlers run in the
@@ -21,6 +23,11 @@ export interface ReposToolContext {
   sessionId: string;
   /** Attach (or re-attach) a repo; throws with a human message on bad input. */
   attach: (repo: string, branch?: string) => Promise<{ attached: AttachedRepo; all: AttachedRepo[] }>;
+  /**
+   * Switch the session's PRIMARY repo (wrong repo picked at creation).
+   * Clean-only — throws if the session already has work.
+   */
+  switchPrimary: (repo: string) => Promise<{ repo: string; branch: string; worktreeDir: string }>;
   /** Current repo layout for the session, or null if it can't be resolved. */
   snapshot: () => {
     primaryRepo: string;
@@ -60,6 +67,7 @@ export function createReposMcpServer(ctx: ReposToolContext) {
         );
         lines.push("");
         lines.push("Attachable repos: " + attachable.map((p) => p.id).join(", "));
+        lines.push("Wrong primary repo? Use switch_repo (fresh sessions only).");
         return text(lines.join("\n"));
       }
     ),
@@ -87,6 +95,27 @@ export function createReposMcpServer(ctx: ReposToolContext) {
           );
         } catch (e: any) {
           return text(`Couldn't attach ${args.repo}: ${e?.message || String(e)}`);
+        }
+      }
+    ),
+    tool(
+      "switch_repo",
+      "Switch this session's PRIMARY repo — use when you realize the session was created against the wrong repo (e.g. the task is about tella-fusion but you're in backstage). Only works while the session is fresh (no uncommitted changes, no commits beyond base), so no work is ever stranded; if you've already done work, attach_repo instead. On success, cd into the returned worktree immediately — your current cwd still points at the old repo for the rest of this turn.",
+      {
+        repo: z
+          .string()
+          .describe("Repo id to switch to (e.g. 'tella-fusion', 'gitops', 'infra'). See list_repos."),
+      },
+      async (args: { repo: string }) => {
+        try {
+          const res = await ctx.switchPrimary(args.repo);
+          return text(
+            `Switched primary repo to ${res.repo} (branch ${res.branch}).\n` +
+              `Worktree: ${res.worktreeDir}\n` +
+              `cd there now — your current working directory still points at the old repo until the next turn.`
+          );
+        } catch (e: any) {
+          return text(`Couldn't switch to ${args.repo}: ${e?.message || String(e)}`);
         }
       }
     ),

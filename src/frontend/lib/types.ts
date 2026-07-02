@@ -206,6 +206,9 @@ export interface GitStatusInfo {
 }
 
 export type WSClientMessage =
+	// Liveness probe — the server echoes `pong`. Detects half-open sockets
+	// (iOS/Safari kills backgrounded connections without firing onclose).
+	| { type: "ping" }
 	| { type: "watch"; sessionId: string; user?: string }
 	| { type: "unwatch"; sessionId: string }
 	| { type: "load_history"; sessionId: string }
@@ -312,6 +315,7 @@ export type WSServerMessage =
 			sessionId: string;
 			slackChannel: SlackChannelLink | null;
 	  }
+	| { type: "pong" }
 	| { type: "error"; message: string };
 
 export interface AskQuestion {

@@ -343,6 +343,7 @@ function interactiveMcpServers(
 					"michael-repos": createReposMcpServer({
 						sessionId,
 						attach: (repo, branch) => attachRepo(sessionId, repo, branch),
+						switchPrimary: (repo) => switchPrimaryRepo(sessionId, repo),
 						snapshot: () => {
 							const s = findSession(sessionId);
 							if (!s) return null;
@@ -1143,6 +1144,25 @@ function resumeDrainedSessions(alreadyResumed: Set<string>): void {
 // hot reload (loadAgents runs only on a real boot, inside the guard below).
 let agents: AgentModule[] = (g.__agents as AgentModule[] | undefined) ?? [];
 
+/**
+ * Attach every socket viewing `sessionId` to a transcript file that only came
+ * into existence after they started watching — a fresh chat's first run (no
+ * transcriptPath existed at watch time), or an engine-id rotation forking to a
+ * new file mid-conversation. Without this the whole run is silent for viewers:
+ * the sent message sticks at "sending…" and the reply vanishes at stream_done,
+ * until a reload re-watches the right file. Streams from byte 0 — entry ids
+ * are the jsonl line uuids, so anything the client already has upserts
+ * instead of duplicating.
+ */
+function attachSessionWatchersToTranscript(
+	sessionId: string,
+	path: string,
+): void {
+	const set = sessionWatchers.get(sessionId);
+	if (!set) return;
+	for (const ws of set) startWatching(path, ws, 0);
+}
+
 function broadcastQueue(sessionId: string) {
 	broadcastToSession(sessionId, {
 		type: "queue_update",
@@ -1519,7 +1539,25 @@ async function runSessionPromptInner(
 	})) {
 		switch (event.type) {
 			case "init":
-				finalSessionId = event.sessionId || finalSessionId;
+				if (event.sessionId && event.sessionId !== finalSessionId) {
+					finalSessionId = event.sessionId;
+					// The engine session id just changed (first run of a fresh chat, or
+					// a rotation fork): the run writes to a transcript file nobody is
+					// watching yet. Persist + attach NOW — waiting for the run to end
+					// (the old behavior) left the entire turn invisible to viewers.
+					if (provider === "claude") {
+						if (session.source === "backstage") {
+							touchBackstageSession(session.id, {
+								claudeSessionId: finalSessionId,
+							});
+							sessionsCache = null; // new watchers must see the new transcriptPath
+						}
+						attachSessionWatchersToTranscript(
+							sessionId,
+							getTranscriptPath(cwd, finalSessionId),
+						);
+					}
+				}
 				break;
 			case "text_chunk":
 				assistantText += event.text;
@@ -4708,6 +4746,14 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				}
 
 				switch (msg.type) {
+					case "ping": {
+						// App-level liveness probe (browsers can't send WS protocol pings).
+						// The client closes + reconnects a socket whose ping goes unanswered
+						// — how a half-open iOS/Safari socket gets detected.
+						ws.send('{"type":"pong"}');
+						break;
+					}
+
 					case "watch": {
 						const sessionId = msg.sessionId;
 						const session = findSession(sessionId);
