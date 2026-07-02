@@ -21,7 +21,12 @@ import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { shortTime } from "../lib/time";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
-import { IconChevronDown, IconPencil } from "./icons";
+import {
+	IconChevronDown,
+	IconGitMerge,
+	IconPencil,
+	IconPullRequest,
+} from "./icons";
 import { Tooltip } from "../ui/tooltip";
 
 const AUTOMATION_COLOR = "#d29922";
@@ -1271,16 +1276,14 @@ export function Sidebar({
 				}}
 				title={row.name}
 			>
-				{(waiting || row.running) && (
-					<span
-						className={`sidebar-item-status ${
-							waiting ? "sidebar-status-waiting" : "sidebar-status-running"
-						}`}
-					/>
-				)}
-				{row.unread && !waiting && !row.running && (
-					<span className="sidebar-item-status sidebar-status-unread" />
-				)}
+				<WsStatusMark row={row} />
+				{row.unread &&
+					!waiting &&
+					!row.running &&
+					row.status !== "review" &&
+					row.status !== "merged" && (
+						<span className="sidebar-item-status sidebar-status-unread" />
+					)}
 				{editing ? (
 					<input
 						className="sidebar-item-rename"
@@ -2116,6 +2119,10 @@ export function Sidebar({
 					onArchive={() => {
 						closeWsHover();
 						archiveWorkspaceWithNext(wsHover.row);
+					}}
+					onOpen={(chat) => {
+						closeWsHover();
+						onSelect(chat);
 					}}
 				/>
 			)}
@@ -3077,6 +3084,42 @@ interface WsCardRow {
 	running: boolean;
 }
 
+// Leading status mark for a workspace, Conductor-style: the live dots
+// (blocked question, running) keep their animated form, then the PR lifecycle
+// gets an icon — open PR (green, faint while still a draft) or merged
+// (purple). Backlog rows get nothing; quiet is the signal there. Shared by
+// the sidebar row and the hover card head so they always read the same.
+function WsStatusMark({
+	row,
+	size = 15,
+}: {
+	row: { status: MineStatus; running: boolean; chats: UnifiedSession[] };
+	size?: number;
+}) {
+	if (row.status === "needsinput")
+		return <span className="sidebar-item-status sidebar-status-waiting" />;
+	if (row.running)
+		return <span className="sidebar-item-status sidebar-status-running" />;
+	if (row.status === "review") {
+		const open = row.chats.filter((c) => c.prState === "OPEN");
+		const allDraft = open.length > 0 && open.every((c) => c.prIsDraft);
+		return (
+			<IconPullRequest
+				size={size}
+				className={`shrink-0 ${allDraft ? "text-faint" : "text-green"}`}
+			/>
+		);
+	}
+	if (row.status === "merged")
+		return <IconGitMerge size={size} className="shrink-0 text-purple" />;
+	return null;
+}
+
+// Footer action button base — the color variant carries the status meaning
+// (green = ready to merge, purple = merged/archive, accent = needs an answer).
+const WS_ACTION =
+	"flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium no-underline";
+
 // The workspace counterpart of SessionHoverCard: branch + diff stats + status
 // at a glance, the latest assistant message as a "where things stand" line,
 // screenshot thumbnails from the workspace's chats, and quick actions
@@ -3088,12 +3131,15 @@ function WsHoverCard({
 	onEnter,
 	onLeave,
 	onArchive,
+	onOpen,
 }: {
 	row: WsCardRow;
 	anchor: DOMRect;
 	onEnter: () => void;
 	onLeave: () => void;
 	onArchive: () => void;
+	/** Open a chat (the "Answer" action jumps to the blocked one). */
+	onOpen: (chat: UnifiedSession) => void;
 }) {
 	const cardRef = useRef<HTMLDivElement>(null);
 	const [pos, setPos] = useState<{ left: number; top: number }>(() => ({
@@ -3163,6 +3209,34 @@ function WsHoverCard({
 		.trim();
 	const media = ov?.media || [];
 
+	// "Basically ready to be merged": an open, non-draft PR with green checks
+	// and no changes requested — that's when the action goes green.
+	const prReady =
+		!!prChat &&
+		prChat.prState === "OPEN" &&
+		!prChat.prIsDraft &&
+		prChat.prReviewDecision !== "CHANGES_REQUESTED" &&
+		(!prChat.prChecks ||
+			prChat.prChecks.total === 0 ||
+			(prChat.prChecks.failed === 0 && prChat.prChecks.pending === 0));
+	const prStatusBits = prChat
+		? [
+				prChat.prState === "OPEN" && prChat.prIsDraft ? "draft" : null,
+				prChat.prState === "MERGED" ? "merged" : null,
+				prChat.prState === "CLOSED" ? "closed" : null,
+				prChat.prReviewDecision
+					? prettyReview(prChat.prReviewDecision)
+					: null,
+				prChat.prChecks && prChat.prChecks.total > 0
+					? prChat.prChecks.failed > 0
+						? `${prChat.prChecks.failed} failing`
+						: prChat.prChecks.pending > 0
+							? `${prChat.prChecks.pending} pending`
+							: "checks pass"
+					: null,
+			].filter(Boolean)
+		: [];
+
 	const card = (
 		<div
 			ref={cardRef}
@@ -3185,23 +3259,9 @@ function WsHoverCard({
 						</span>
 					</span>
 				)}
-				{meta && (
-					<span
-						className={`sidebar-item-status hovercard-dot ${
-							row.status === "needsinput"
-								? "sidebar-status-waiting"
-								: row.running
-									? "sidebar-status-running"
-									: ""
-						}`}
-						style={
-							row.status === "needsinput" || row.running
-								? undefined
-								: { background: meta.dotColor }
-						}
-						title={meta.label}
-					/>
-				)}
+				<span className="flex shrink-0 items-center" title={meta?.label}>
+					<WsStatusMark row={row} size={16} />
+				</span>
 			</div>
 
 			<div className="hovercard-title">{row.name}</div>
@@ -3262,15 +3322,29 @@ function WsHoverCard({
 				</div>
 			)}
 
-			<div className="mt-2.5 flex items-center gap-2.5 border-t border-line pt-2">
-				{row.chats.length > 0 && (
+			<div className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-line pt-2">
+				{/* The single main action, colored by what the workspace needs next:
+				    answer the blocked question (accent), merge the ready PR (green),
+				    review the not-ready PR (neutral), or archive merged work (purple). */}
+				{row.status === "needsinput" && row.chats.length > 0 ? (
 					<button
-						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-xs text-dim hover:bg-hover hover:text-fg"
+						className={`${WS_ACTION} bg-accent text-white hover:opacity-90`}
+						onClick={() =>
+							onOpen(
+								row.chats.find((c) => c.waitingForInput) || row.chats[0],
+							)
+						}
+					>
+						Answer
+					</button>
+				) : row.status === "merged" ? (
+					<button
+						className={`${WS_ACTION} bg-purple text-white hover:opacity-90`}
 						onClick={onArchive}
 					>
 						<svg
-							width="14"
-							height="14"
+							width="13"
+							height="13"
 							viewBox="0 0 16 16"
 							fill="none"
 							stroke="currentColor"
@@ -3282,19 +3356,37 @@ function WsHoverCard({
 						</svg>
 						Archive
 					</button>
-				)}
+				) : row.status === "review" && prChat?.prUrl ? (
+					<a
+						href={prChat.prUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						className={
+							prReady
+								? `${WS_ACTION} bg-green text-white hover:opacity-90`
+								: `${WS_ACTION} border border-line bg-surface text-dim hover:bg-hover hover:text-fg`
+						}
+					>
+						{prReady ? "Merge" : "Review"} ↗
+					</a>
+				) : null}
 				{prChat?.prUrl && (
 					<a
 						href={prChat.prUrl}
 						target="_blank"
 						rel="noopener noreferrer"
-						className={`hovercard-mono text-xs hover:underline hovercard-pr-${prTone(prChat)}`}
+						className={`hovercard-mono shrink-0 text-xs hover:underline hovercard-pr-${prTone(prChat)}`}
 					>
 						{prChat.prNumber ? `#${prChat.prNumber}` : "PR"} ↗
 					</a>
 				)}
+				{prStatusBits.length > 0 && (
+					<span className="min-w-0 truncate text-[11px] text-faint">
+						{prStatusBits.join(" · ")}
+					</span>
+				)}
 				<span
-					className="ml-auto text-[11px] text-faint"
+					className="ml-auto shrink-0 text-[11px] text-faint"
 					title={new Date(row.lastActivity).toLocaleString()}
 				>
 					{relativeTime(row.lastActivity)}

@@ -292,3 +292,29 @@ export function IconX(p: IconProps) {
     </Svg>
   );
 }
+
+// Octicon-style git-pull-request, redrawn to this set's 24×24 stroke grammar.
+export function IconPullRequest(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="7" cy="6.5" r="1.75" />
+      <circle {...stroke} cx="7" cy="17.5" r="1.75" />
+      <circle {...stroke} cx="17" cy="17.5" r="1.75" />
+      <path {...stroke} d="M7 8.25V15.75" />
+      <path {...stroke} d="M12.25 6.5H15C16.1046 6.5 17 7.39543 17 8.5V15.75" />
+    </Svg>
+  );
+}
+
+// Octicon-style git-merge: branch line curving into the merge target.
+export function IconGitMerge(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="7" cy="6.5" r="1.75" />
+      <circle {...stroke} cx="7" cy="17.5" r="1.75" />
+      <circle {...stroke} cx="17" cy="13" r="1.75" />
+      <path {...stroke} d="M7 8.25V15.75" />
+      <path {...stroke} d="M7 9C7 11.5 10 13 15.25 13" />
+    </Svg>
+  );
+}
