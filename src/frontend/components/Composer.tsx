@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { ModelOption, FileMention } from "../lib/api";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
+import { loadDraft, saveDraft } from "../lib/drafts";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
@@ -26,6 +27,13 @@ interface Props {
    */
   value?: string;
   onChange?: (value: string) => void;
+  /**
+   * Uncontrolled mode only: persist the text draft under this key (lib/drafts)
+   * so it survives the component unmounting — switching to another chat,
+   * workspace or view. Restored on mount; cleared when a send is consumed.
+   * Controlled parents own their value and persist it themselves.
+   */
+  draftKey?: string;
   onSend: (text: string) => boolean | void;
   placeholder?: string;
   disabled?: boolean;
@@ -166,6 +174,7 @@ function GoalPopover({
 export function Composer({
   value,
   onChange,
+  draftKey,
   onSend,
   placeholder,
   disabled,
@@ -198,11 +207,18 @@ export function Composer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   // Uncontrolled mode (no `value` prop): the draft lives here so keystrokes
-  // re-render only the Composer, not the whole parent view.
-  const [innerValue, setInnerValue] = useState("");
+  // re-render only the Composer, not the whole parent view. With a `draftKey`
+  // it seeds from — and mirrors into — the draft store, so navigating away
+  // and back doesn't lose typed work.
+  const [innerValue, setInnerValue] = useState(() =>
+    draftKey ? loadDraft(draftKey).text : "",
+  );
   const isControlled = value !== undefined;
   const text = isControlled ? value : innerValue;
   const setText = isControlled ? onChange ?? (() => {}) : setInnerValue;
+  useEffect(() => {
+    if (!isControlled && draftKey) saveDraft(draftKey, { text: innerValue });
+  }, [isControlled, draftKey, innerValue]);
   // Fire a send handler with the current draft; in uncontrolled mode a `true`
   // return means "consumed" — clear the draft (falsy keeps it, e.g. offline).
   function fireSend(handler: (t: string) => boolean | void) {

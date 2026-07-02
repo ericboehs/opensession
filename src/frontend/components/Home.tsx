@@ -12,6 +12,7 @@ import {
 } from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
 import { Composer } from "./Composer";
+import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 
 interface Props {
   sessions: UnifiedSession[];
@@ -175,7 +176,12 @@ function HumanAsksCard({ onOpenSessionId }: { onOpenSessionId?: (id: string) => 
 }
 
 export function Home({ sessions, connected, send, addHandler, onSelect, onNewSession, onOpenReviews, onOpenSessionId }: Props) {
-  const [question, setQuestion] = useState("");
+  // Seeded from / mirrored into the draft store so wandering off to a chat or
+  // workspace and back doesn't lose a half-typed question.
+  const [question, setQuestion] = useState(() => loadDraft("home").text);
+  useEffect(() => {
+    saveDraft("home", { text: question });
+  }, [question]);
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   // Mirror of `asking` readable from the (stable) WS handler below.
@@ -208,6 +214,10 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
         clearTimeout(askTimer.current);
         setAsking(false);
         setAskError(msg.message || "Failed to start the session.");
+      } else if (msg.type === "session_created" && askingRef.current) {
+        // The question was consumed — drop the stored draft so it doesn't
+        // resurface next time Home mounts. (App navigates us away right after.)
+        clearDraft("home");
       }
     });
   }, [addHandler]);

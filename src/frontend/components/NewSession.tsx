@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { fetchWorktrees, fetchModels, fetchFileMentions, suggestBranch, type ModelOption } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
+import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
@@ -101,14 +102,19 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   // worktree; the user can still switch to "New branch" to fork a fresh one.
   const [selectedWorktree, setSelectedWorktree] = useState(forceBranch || "__new__");
   const [newBranch, setNewBranch] = useState(prefill.branch);
-  const [prompt, setPrompt] = useState(prefillPrompt || prefill.prompt);
+  // An explicit prefill (Home hand-off, deep link) wins; otherwise restore the
+  // stored draft so closing the palette / navigating away doesn't lose a
+  // half-written task. Mirrored back below; cleared on session_created.
+  const [prompt, setPrompt] = useState(
+    prefillPrompt || prefill.prompt || loadDraft("new-session").text,
+  );
   // Whether the user has hand-edited the branch field. Once true we stop
   // auto-suggesting so we never clobber what they typed. A prefilled branch
   // (deep link) counts as already-owned.
   const [branchEdited, setBranchEdited] = useState(!!prefill.branch);
   const [suggestingBranch, setSuggestingBranch] = useState(false);
-  const [images, setImages] = useState<string[]>([]);
-  const [files, setFiles] = useState<FileAttachment[]>([]);
+  const [images, setImages] = useState<string[]>(() => loadDraft("new-session").images);
+  const [files, setFiles] = useState<FileAttachment[]>(() => loadDraft("new-session").files);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -140,6 +146,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   useEffect(() => {
     promptRef.current?.focus();
   }, []);
+
+  // Keep the draft store in sync so a dismissed palette can restore the work.
+  useEffect(() => {
+    saveDraft("new-session", { text: prompt, images, files });
+  }, [prompt, images, files]);
 
   // Close the Create dropdown on an outside click.
   useEffect(() => {
@@ -200,6 +211,8 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         setError(msg.message);
         setCreating(false);
       } else if (msg.type === "session_created") {
+        // The prompt was consumed — drop the stored draft either way.
+        clearDraft("new-session");
         // With "Create more" on, stay in the palette and reset for the next task
         // (App still navigates into the created session behind the overlay). Off,
         // close and let App drop us into the new session.

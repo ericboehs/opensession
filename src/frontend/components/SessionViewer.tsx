@@ -29,6 +29,7 @@ import {
 import { Composer } from "./Composer";
 import { SchedulePromptButton } from "./SchedulePrompt";
 import type { FileAttachment } from "../lib/images";
+import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { DiffPanel } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
 import { AskCard } from "./AskCard";
@@ -122,9 +123,16 @@ export function SessionViewer({
 	// The composer draft lives INSIDE Composer (uncontrolled mode) so keystrokes
 	// don't re-render this whole component; the text arrives via handleSend /
 	// handleSteerSend. Same fix as the CommentableDiff draft-text gotcha.
-	// Pasted/dropped images (data URLs) staged for the next send.
-	const [images, setImages] = useState<string[]>([]);
-	const [files, setFiles] = useState<FileAttachment[]>([]);
+	// Text + attachments persist in the draft store (keyed per chat) so
+	// switching to another chat/workspace — which remounts this component —
+	// doesn't lose typed work. Text rides Composer's `draftKey`; the staged
+	// images/files live here, seeded from and mirrored into the same draft.
+	const draftKey = `chat:${session.id}`;
+	const [images, setImages] = useState<string[]>(() => loadDraft(draftKey).images);
+	const [files, setFiles] = useState<FileAttachment[]>(() => loadDraft(draftKey).files);
+	useEffect(() => {
+		saveDraft(draftKey, { images, files });
+	}, [draftKey, images, files]);
 	// When set, the next send forks a new session branching from this message
 	// instead of continuing this one.
 	const [forkFrom, setForkFrom] = useState<string | null>(null);
@@ -297,6 +305,11 @@ export function SessionViewer({
 	// session switches, which remount this with whatever the counter's at) and
 	// only react to real bumps from the tab-bar +.
 	const lastNewChatSeq = useRef(newChatSeq);
+	// Drop the persisted draft during render, before the key={newChatSeq}
+	// remount below re-reads it — in an effect the fresh Composer's state
+	// initializer would already have restored the old text. Idempotent, so
+	// running on the renders between the bump and the effect below is fine.
+	if (newChatSeq !== lastNewChatSeq.current) clearDraft(draftKey);
 	useEffect(() => {
 		if (newChatSeq === lastNewChatSeq.current) return;
 		lastNewChatSeq.current = newChatSeq;
@@ -1327,9 +1340,11 @@ export function SessionViewer({
 									</div>
 								)}
 								<Composer
-									// Uncontrolled: the draft lives in the Composer. Remount on
-									// the tab-bar + (newChatSeq) to clear it for the fresh chat.
+									// Uncontrolled: the draft lives in the Composer (persisted
+									// per chat via draftKey). Remount on the tab-bar +
+									// (newChatSeq) to clear it for the fresh chat.
 									key={newChatSeq ?? 0}
+									draftKey={draftKey}
 									onSend={handleSend}
 									images={images}
 									onImagesChange={setImages}
