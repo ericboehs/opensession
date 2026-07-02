@@ -5039,10 +5039,17 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								}
 							});
 							// Non-image attachments: stage to disk, hand the agent the paths.
-							const openingPrompt = withUploadsNote(
+							let openingPrompt = withUploadsNote(
 								prompt,
 								stageFileAttachments(bksId, msg.files),
 							);
+							// @session:<id> mentions from the New-session box get the same
+							// resolving footer as prompts on existing chats (see
+							// runSessionPromptInner) — this create path bypasses it.
+							{
+								const mentionsNote = sessionMentionsNote(openingPrompt);
+								if (mentionsNote) openingPrompt += `\n\n${mentionsNote}`;
+							}
 
 							ws.send(
 								JSON.stringify({ type: "stream_start", sessionId: bksId }),
@@ -5470,12 +5477,21 @@ registerSessionControl({
 			persisted = true;
 		};
 
+		// @session:<id> mentions in a create_session prompt (e.g. a monitor
+		// session spun up to watch others) get the same resolving footer as
+		// prompts on existing chats — this create path bypasses
+		// runSessionPromptInner.
+		const createMentionsNote = sessionMentionsNote(prompt);
+		const openingPrompt = createMentionsNote
+			? `${prompt}\n\n${createMentionsNote}`
+			: prompt;
+
 		// Run in the background; watchers (web UI) see the live stream, the same as
 		// a UI-created session. The tool returns the id immediately.
 		void (async () => {
 			try {
 				for await (const event of runAgent({
-					prompt,
+					prompt: openingPrompt,
 					cwd: wtPath,
 					mode: isAsk ? "ask" : "code",
 					model,
