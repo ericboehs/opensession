@@ -6,6 +6,7 @@ import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
 import { SessionSearch } from "./components/SessionSearch";
 import { Home } from "./components/Home";
+import { CatchUpDeck } from "./components/CatchUpDeck";
 import { Automations } from "./components/Automations";
 import { Security } from "./components/Security";
 import { Goals } from "./components/Goals";
@@ -69,7 +70,8 @@ type Route =
 	| { view: "actions" }
 	| { view: "notes"; sel: NotesSelection }
 	| { view: "settings"; section?: SettingsSectionKey }
-	| { view: "archived" };
+	| { view: "archived" }
+	| { view: "catchup" };
 
 // Route views that render as a tool section inside the Settings surface.
 const TOOL_VIEWS = [
@@ -143,6 +145,7 @@ function parseRoute(pathname: string): Route {
 		return { view: "settings" };
 	}
 	if (pathname === "/backstage/archived") return { view: "archived" };
+	if (pathname === "/backstage/catchup") return { view: "catchup" };
 	const reviewsMatch = pathname.match(/^\/backstage\/reviews(?:\/(.+))?$/);
 	if (reviewsMatch)
 		return {
@@ -199,6 +202,8 @@ function routePath(route: Route): string {
 				: "/backstage/settings";
 		case "archived":
 			return "/backstage/archived";
+		case "catchup":
+			return "/backstage/catchup";
 		case "reviews":
 			return route.id
 				? `/backstage/reviews/${encodeURIComponent(route.id)}`
@@ -998,6 +1003,8 @@ function App() {
 							}
 							onOpenSearch={() => setSearchOpen(true)}
 							onOpenArchived={() => navigate({ view: "archived" })}
+							onOpenCatchUp={() => navigate({ view: "catchup" })}
+							catchUpActive={route.view === "catchup"}
 							archivedActive={route.view === "archived"}
 							onArchive={async (s, next) => {
 								try {
@@ -1204,6 +1211,25 @@ function App() {
 								sessions={sessions}
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onChanged={refresh}
+							/>
+						) : route.view === "catchup" ? (
+							<CatchUpDeck
+								sessions={sessions}
+								projects={projects}
+								send={send}
+								connected={connected}
+								onArchive={async (chats) => {
+									try {
+										await Promise.all(
+											chats.map((c) => archiveSessionApi(c.id, true)),
+										);
+									} catch (e) {
+										console.error("Archive failed:", e);
+									}
+									refresh();
+								}}
+								onOpenSession={(id) => navigate({ view: "session", id })}
+								onExit={goBack}
 							/>
 						) : route.view === "session" ? (
 							currentSession ? (

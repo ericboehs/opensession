@@ -2416,6 +2416,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			"/backstage/settings": spaEntry,
 			"/backstage/actions": spaEntry,
 			"/backstage/archived": spaEntry,
+			"/backstage/catchup": spaEntry,
 			"/backstage/reviews": spaEntry,
 			"/backstage/reviews/*": spaEntry,
 		},

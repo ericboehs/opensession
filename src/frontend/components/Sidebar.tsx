@@ -148,6 +148,10 @@ interface Props {
 	onOpenArchived: () => void;
 	/** True while the archived view is open — highlights the Archived row. */
 	archivedActive: boolean;
+	/** Open the catch-up swipe deck (walk through your unread workspaces). */
+	onOpenCatchUp: () => void;
+	/** True while the catch-up deck is open — highlights its entry. */
+	catchUpActive: boolean;
 	/**
 	 * Archive a session. `next` is the session that follows it in the sidebar's
 	 * visible order (or the previous one for the last row) — the caller uses it
@@ -361,6 +365,8 @@ export function Sidebar({
 	onOpenSearch,
 	onOpenArchived,
 	archivedActive,
+	onOpenCatchUp,
+	catchUpActive,
 	onArchive,
 	onArchiveWorkspace,
 	onRename,
@@ -477,6 +483,21 @@ export function Sidebar({
 				(filter.repo === "all" || sessionRepo(s) === filter.repo),
 		).length;
 	}, [sessions, currentUser, filter.repo]);
+
+	// Catch-up badge: how many of *my* unread workspaces the deck would walk
+	// through (distinct workspace groups, same grouping the deck uses) — so the
+	// count matches the "N Left" it opens on.
+	const catchUpCount = useMemo(() => {
+		const user = currentUser.toLowerCase();
+		const groups = new Set<string>();
+		for (const s of sessions) {
+			if (s.archived || s.automation) continue;
+			if (!s.startedBy || s.startedBy.toLowerCase() !== user) continue;
+			if (!isUnread(s.id, s.lastActivity, reads)) continue;
+			groups.add(s.projectId ? `ws:${s.projectId}` : `chat:${s.id}`);
+		}
+		return groups.size;
+	}, [sessions, currentUser, reads]);
 
 	// The repo-wide open-PR list (every open PR, session or not), from the
 	// server's batched cache. Null until the first fetch lands — the rows memo
@@ -1412,6 +1433,29 @@ export function Sidebar({
 			    tool (Automations, Goals, Actions, Security, Notes) lives in
 			    Settings now. */}
 			<nav className="sidebar-nav">
+				<button
+					className={`sidebar-nav-item ${catchUpActive ? "active" : ""}`}
+					onClick={onOpenCatchUp}
+					title="Swipe through your unread workspaces"
+				>
+					<span className="sidebar-nav-icon">
+						<svg
+							width="18"
+							height="18"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.4"
+						>
+							<rect x="4.5" y="2.5" width="9" height="9" rx="1.4" />
+							<path d="M11.2 12.6a1.4 1.4 0 0 1-1.3.9H4a1.5 1.5 0 0 1-1.5-1.5V6.1a1.4 1.4 0 0 1 .9-1.3" />
+						</svg>
+					</span>
+					Catch up
+					{catchUpCount > 0 && (
+						<span className="sidebar-nav-count">{catchUpCount}</span>
+					)}
+				</button>
 				<button
 					className={`sidebar-nav-item ${reviewsActive ? "active" : ""}`}
 					onClick={onOpenReviews}
