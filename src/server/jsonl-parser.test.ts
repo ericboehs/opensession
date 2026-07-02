@@ -291,6 +291,7 @@ describe("Codex rollout parsing", () => {
     const entries = parseTranscript(path);
     expect(entries).toHaveLength(1);
     expect(entries[0].type).toBe("tool_result");
+    expect(entries[0].id).toBe("tr-call_shell_1");
     expect(entries[0].toolUseId).toBe("call_shell_1");
     expect(entries[0].videos).toEqual([
       "/backstage/media?path=%2Ftmp%2Fbackstage-demo.mp4",
@@ -313,6 +314,7 @@ describe("Codex rollout parsing", () => {
     const entries = parseTranscript(path);
     expect(entries).toHaveLength(1);
     expect(entries[0].type).toBe("tool_result");
+    expect(entries[0].id).toBe("tr-call_mcp_1");
     expect(entries[0].toolUseId).toBe("call_mcp_1");
     expect(entries[0].videos).toEqual([
       "/backstage/media?path=%2Fvar%2Ftmp%2Fmcp-recording.webm",

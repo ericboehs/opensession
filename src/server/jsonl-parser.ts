@@ -355,7 +355,7 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
       const content = outputText(p.output);
       const videos = extractBackstageVideos(content);
       return [{
-        id: crypto.randomUUID(),
+        id: p.call_id ? `tr-${p.call_id}` : crypto.randomUUID(),
         type: "tool_result",
         content,
         timestamp: ts,
@@ -382,7 +382,7 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
       const content = outputText(p.output);
       const videos = extractBackstageVideos(content);
       return [{
-        id: crypto.randomUUID(),
+        id: p.call_id ? `tr-${p.call_id}` : crypto.randomUUID(),
         type: "tool_result",
         content,
         timestamp: ts,
