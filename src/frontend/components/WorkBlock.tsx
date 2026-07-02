@@ -61,7 +61,7 @@ export const WorkBlock = React.memo(function WorkBlock({
             !expanded && "-rotate-90"
           )}
         >
-          <IconChevronDown size={12} />
+          <IconChevronDown size={14} />
         </span>
         <span className={cn("flex-shrink-0 font-medium", live && "text-green")}>
           {live ? "Working" : "Worked"}

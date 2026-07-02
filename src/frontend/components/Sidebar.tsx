@@ -1122,8 +1122,8 @@ export function Sidebar({
 			<div className="sidebar-search-wrap">
 				<svg
 					className="sidebar-search-icon"
-					width="16"
-					height="16"
+					width="18"
+					height="18"
 					viewBox="0 0 16 16"
 					fill="none"
 				>
@@ -1162,7 +1162,7 @@ export function Sidebar({
 						<span>Tools</span>
 						<IconChevronDown
 							className="sidebar-band-chevron"
-							size={16}
+							size={18}
 							style={{ transform: toolsOpen ? "none" : "rotate(-90deg)" }}
 						/>
 					</button>
@@ -1438,7 +1438,7 @@ export function Sidebar({
 								<span className="sidebar-group-name">Pinned</span>
 								<IconChevronDown
 									className="sidebar-group-chevron"
-									size={14}
+									size={16}
 									style={{ transform: pinnedOpen ? "none" : "rotate(-90deg)" }}
 								/>
 								<span className="sidebar-group-count">{pinnedCount}</span>
@@ -1510,7 +1510,7 @@ export function Sidebar({
 										<span className="sidebar-group-name">{meta.label}</span>
 										<IconChevronDown
 											className="sidebar-group-chevron"
-											size={14}
+											size={16}
 											style={{ transform: open ? "none" : "rotate(-90deg)" }}
 										/>
 										<span className="sidebar-group-count">{items.length}</span>
@@ -1547,7 +1547,7 @@ export function Sidebar({
 									<span>People</span>
 									<IconChevronDown
 										className="sidebar-band-chevron"
-										size={16}
+										size={18}
 										style={{ transform: open ? "none" : "rotate(-90deg)" }}
 									/>
 								</button>
@@ -1607,7 +1607,7 @@ export function Sidebar({
 								<span>Automations</span>
 								<IconChevronDown
 									className="sidebar-band-chevron"
-									size={16}
+									size={18}
 									style={{
 										transform: bandOpen("automations")
 											? "none"
@@ -1639,7 +1639,7 @@ export function Sidebar({
 											<span className="sidebar-group-name">{group.label}</span>
 											<IconChevronDown
 												className="sidebar-group-chevron"
-												size={14}
+												size={16}
 												style={{
 													transform: open ? "none" : "rotate(-90deg)",
 												}}
@@ -1822,8 +1822,8 @@ function MiniSelect({
 							{o.value === value && (
 								<svg
 									className="mini-select-check"
-									width="13"
-									height="13"
+									width="15"
+									height="15"
 									viewBox="0 0 16 16"
 									fill="none"
 								>
@@ -1857,8 +1857,8 @@ function MiniSelect({
 				</span>
 				<svg
 					className="mini-select-caret"
-					width="12"
-					height="12"
+					width="14"
+					height="14"
 					viewBox="0 0 16 16"
 					fill="none"
 				>
