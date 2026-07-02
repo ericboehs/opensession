@@ -16,6 +16,8 @@ import {
   IconChevronDown,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
+import { VoiceInput } from "./VoiceInput";
+import { useIsPhone } from "../hooks/useIsPhone";
 
 interface Props {
   /**
@@ -301,13 +303,30 @@ export function Composer({
     });
   }
 
-  // Auto-grow between a tall resting floor and the CSS max-height.
+  // Auto-grow between a resting floor and the CSS max-height. Phones get a
+  // one-line floor (ChatGPT-style lightweight bar); desktop keeps the tall
+  // inviting field.
+  const isPhone = useIsPhone();
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 120), 320)}px`;
-  }, [text]);
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, isPhone ? 44 : 120), 320)}px`;
+  }, [text, isPhone]);
+
+  // Dictated text lands at the end of the draft (with a joining space) and
+  // focus returns to the textarea so you can touch it up and send.
+  function insertDictation(t: string) {
+    const next = text.trim() ? `${text.replace(/\s+$/, "")} ${t}` : t;
+    setText(next);
+    queueMicrotask(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.selectionStart = el.selectionEnd = next.length;
+      }
+    });
+  }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (mentions.handleKeyDown(e)) return;
@@ -497,6 +516,8 @@ export function Composer({
               />
             </div>
           )}
+
+          <VoiceInput onText={insertDictation} disabled={disabled} />
 
           {busy && onSteerSend && (
             <Tooltip label="Fold in at Michael's next stopping point — don't interrupt the current turn">

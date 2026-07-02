@@ -647,6 +647,24 @@ export async function suggestBranch(prompt: string): Promise<string | null> {
 	}
 }
 
+/** Voice dictation: send a recorded clip (raw body), get the transcript back.
+ * Bypasses `request` — the body is audio bytes, not JSON. */
+export async function transcribeClip(audio: Blob): Promise<string> {
+	const res = await fetch(`${BASE}/transcribe`, {
+		method: "POST",
+		headers: { "Content-Type": audio.type || "audio/webm" },
+		body: audio,
+	});
+	const data = (await res.json().catch(() => null)) as { text?: unknown; error?: unknown } | null;
+	if (!res.ok) {
+		throw new ApiError(
+			typeof data?.error === "string" ? data.error : `Transcribe: ${res.status}`,
+			res.status,
+		);
+	}
+	return typeof data?.text === "string" ? data.text : "";
+}
+
 export async function fetchModels(): Promise<{
 	models: ModelOption[];
 	default: string;

@@ -39,6 +39,32 @@ export function IconArrowUp(p: IconProps) {
   );
 }
 
+export function IconMic(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M12 4.75c1.795 0 3.25 1.455 3.25 3.25v4a3.25 3.25 0 1 1-6.5 0V8c0-1.795 1.455-3.25 3.25-3.25Z"
+      />
+      <path {...stroke} d="M18.25 11.75V12a6.25 6.25 0 0 1-12.5 0v-.25" />
+      <path {...stroke} d="M12 18.25v1" />
+    </Svg>
+  );
+}
+
+export function IconSliders(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M4.75 8h6" />
+      <path {...stroke} d="M15.25 8h4" />
+      <circle {...stroke} cx="13" cy="8" r="2.25" fill="none" />
+      <path {...stroke} d="M4.75 16h3" />
+      <path {...stroke} d="M12.25 16h7" />
+      <circle {...stroke} cx="10" cy="16" r="2.25" fill="none" />
+    </Svg>
+  );
+}
+
 export function IconSidebarRight(p: IconProps) {
   return (
     <Svg {...p}>

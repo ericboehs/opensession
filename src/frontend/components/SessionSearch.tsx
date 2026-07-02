@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { relativeTime, searchTranscripts } from "../lib/api";
-import { IconSearch } from "./icons";
 
 interface Props {
 	sessions: UnifiedSession[];
@@ -271,7 +270,22 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 				onKeyDown={onKeyDown}
 			>
 				<div className="ss-search-row">
-					<IconSearch className="ss-search-icon" size={20} />
+					<svg
+						className="ss-search-icon"
+						width="18"
+						height="18"
+						viewBox="0 0 16 16"
+						fill="none"
+						aria-hidden="true"
+					>
+						<circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
+						<path
+							d="M14 14L10.7 10.7"
+							stroke="currentColor"
+							strokeWidth="1.5"
+							strokeLinecap="round"
+						/>
+					</svg>
 					<input
 						ref={inputRef}
 						className="ss-search-input"

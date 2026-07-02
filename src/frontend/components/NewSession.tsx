@@ -6,8 +6,10 @@ import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
-import { IconPaperclip, IconChevronDown, IconCheck } from "./icons";
+import { IconPaperclip, IconChevronDown, IconCheck, IconSliders } from "./icons";
 import type { WSServerMessage } from "../lib/types";
+import { VoiceInput } from "./VoiceInput";
+import { useIsPhone } from "../hooks/useIsPhone";
 
 interface Props {
   /** Close the palette (Esc, backdrop click, or after a create without "Create more"). */
@@ -128,6 +130,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const [createMore, setCreateMore] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const createSplitRef = useRef<HTMLDivElement>(null);
+  // Phones open on just the prompt — repo/base/model/effort have sensible
+  // defaults and hide behind the sliders toggle until you actually need them.
+  const isPhone = useIsPhone();
+  const [showOptions, setShowOptions] = useState(false);
+  const optionsVisible = !isPhone || showOptions;
 
   // "@"-mention file autocomplete against the selected repo's repo (no
   // session exists yet, so search by repo).
@@ -325,7 +332,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       }}
     >
       <div className="palette-card" role="dialog" aria-label="New session">
-        {/* Header: repo (left) · create-from (right) */}
+        {/* Header: repo (left) · create-from (right). Hidden on phones until
+            the options toggle in the footer opens it. */}
+        {optionsVisible && (
         <div className="palette-header">
           <div className="palette-trigger palette-trigger-strong" title="Repository">
             <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -381,6 +390,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             </select>
           </div>
         </div>
+        )}
 
         {/* Prompt */}
         <div
@@ -428,6 +438,20 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         {/* Footer toolbar */}
         <div className="palette-footer">
           <div className="palette-footer-left">
+            {isPhone && (
+              <button
+                type="button"
+                className={`palette-icon-btn palette-options-btn ${showOptions ? "is-on" : ""}`}
+                onClick={() => setShowOptions((v) => !v)}
+                disabled={creating}
+                aria-label="Repo, branch and model options"
+                aria-expanded={showOptions}
+              >
+                <IconSliders size={24} />
+              </button>
+            )}
+            {optionsVisible && (
+            <>
             <div className="palette-pill" title="Model">
               <span className={`composer-model-dot ${isCodexModel(effectiveModel) ? "dot-codex" : "dot-claude"}`} />
               <span className="palette-pill-label">{modelLabel}</span>
@@ -468,10 +492,18 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 ))}
               </select>
             </div>
-
+            </>
+            )}
           </div>
 
           <div className="palette-footer-right">
+            <VoiceInput
+              disabled={creating}
+              onText={(t) => {
+                setPrompt((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")} ${t}` : t));
+                promptRef.current?.focus();
+              }}
+            />
             <button
               type="button"
               className="palette-icon-btn"

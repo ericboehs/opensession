@@ -1835,13 +1835,30 @@ body.resizing-x {
 	background: var(--bg-hover);
 }
 
+/* Trailing history button — opens the workspace's archived-chats menu. Same
+   quiet reveal as the + it sits next to, but it stays visible (and lit) while
+   its menu is open. */
+.session-tab-history {
+	padding: 7px 10px;
+	font-family: inherit;
+	align-items: center;
+}
+.session-tab-history:hover,
+.session-tab-history[data-popup-open] {
+	color: var(--text);
+	background: var(--bg-hover);
+}
+
 @media (hover: hover) and (pointer: fine) {
-	.session-tab-new {
+	.session-tab-new,
+	.session-tab-history {
 		opacity: 0;
 		pointer-events: none;
 		transition: opacity 0.12s ease;
 	}
-	.session-tabs:hover .session-tab-new {
+	.session-tabs:hover .session-tab-new,
+	.session-tabs:hover .session-tab-history,
+	.session-tab-history[data-popup-open] {
 		opacity: 1;
 		pointer-events: auto;
 	}
@@ -7403,8 +7420,8 @@ html[data-theme="light"] .tool-code-surface {
 	   actually has a second chat to switch between. */
 	.session-tabs:not(
 			:has(
-					.session-tab:not(.session-tab-new)
-						~ .session-tab:not(.session-tab-new)
+					.session-tab:not(.session-tab-new):not(.session-tab-history)
+						~ .session-tab:not(.session-tab-new):not(.session-tab-history)
 				)
 		) {
 		display: none;
@@ -7577,8 +7594,9 @@ html[data-theme="light"] .tool-code-surface {
 		font-size: 14px;
 	}
 
-	/* The "+" new-chat tab keeps a comfortable square hit area. */
-	.session-tab-new {
+	/* The "+" new-chat and history tabs keep a comfortable square hit area. */
+	.session-tab-new,
+	.session-tab-history {
 		min-height: 36px;
 		padding: 6px 14px;
 	}
@@ -10086,5 +10104,162 @@ html[data-theme="light"] .tool-code-surface {
 	}
 	.mobile-fab:active {
 		transform: scale(0.92);
+	}
+}
+
+/* ── Voice dictation (VoiceInput: Composer mic + New-session palette mic) ──
+   The mic button sits with the other toolbar icons; while recording /
+   transcribing an overlay bar fills the whole host container (.composer /
+   .palette-card — both position:relative) with cancel ×, live waveform,
+   elapsed time and the accept ↑ button. */
+.voice-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 6;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 0 12px 0 10px;
+	background: var(--bg-raised);
+	border-radius: inherit;
+}
+.voice-cancel {
+	width: 38px;
+	height: 38px;
+	border-radius: 50%;
+	background: var(--bg-panel);
+	border: 1px solid var(--border-strong);
+	color: var(--text);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	cursor: pointer;
+}
+.voice-cancel:not(:disabled):hover {
+	border-color: var(--text-faint);
+}
+.voice-cancel:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+.voice-wave {
+	flex: 1;
+	min-width: 0;
+	height: 38px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 3px;
+	overflow: hidden;
+}
+.voice-wave span {
+	width: 3px;
+	min-height: 3px;
+	border-radius: 2px;
+	background: var(--text-dim);
+	transition: height 90ms linear;
+}
+.voice-time {
+	font-size: 12.5px;
+	font-weight: 500;
+	color: var(--text-dim);
+	font-variant-numeric: tabular-nums;
+	flex-shrink: 0;
+}
+.voice-accept {
+	width: 38px;
+	height: 38px;
+	border-radius: 50%;
+	background: var(--accent);
+	color: #fff;
+	border: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	cursor: pointer;
+	transition: filter 0.15s, transform 0.1s;
+}
+.voice-accept:hover {
+	filter: brightness(1.12);
+	transform: scale(1.05);
+}
+.voice-status {
+	font-size: 13.5px;
+	font-weight: 500;
+	color: var(--text-dim);
+}
+.voice-spinner {
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	border: 2px solid var(--border-strong);
+	border-top-color: var(--text-dim);
+	animation: voice-spin 0.8s linear infinite;
+	flex-shrink: 0;
+}
+@keyframes voice-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+.voice-error {
+	position: absolute;
+	bottom: calc(100% + 8px);
+	right: 0;
+	z-index: 7;
+	background: var(--red-soft);
+	color: var(--red);
+	border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+	font-size: 12.5px;
+	font-weight: 500;
+	padding: 7px 11px;
+	border-radius: 10px;
+	white-space: nowrap;
+}
+
+/* The palette's options toggle (phone-only, rendered only there) lights up
+   while the repo/base/model/effort controls are expanded. */
+.palette-options-btn.is-on {
+	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* ── Lightweight phone inputs ────────────────────────────────────
+   Phones get the ChatGPT-style minimal bar: just the input plus
+   + / mic / send. Model, effort and goal keep their defaults and stay
+   desktop-only (the palette hides repo/base/model/effort behind the
+   sliders toggle instead). */
+@media (max-width: 720px) {
+	.composer {
+		padding: 8px 12px 8px 12px;
+	}
+	.composer-textarea {
+		min-height: 44px;
+		max-height: 240px;
+	}
+	.composer-toolbar {
+		margin-top: 6px;
+	}
+	.composer-toolbar .palette-pill,
+	.composer-goal-btn {
+		display: none;
+	}
+	/* Comfortable thumb targets for what remains. */
+	.composer-toolbar .palette-icon-btn,
+	.composer-send {
+		width: 40px;
+		height: 40px;
+	}
+
+	/* New-session palette: "Create more" is a desktop workflow — the split
+	   caret goes away and the main button rounds out to a full pill. */
+	.palette-create-caret,
+	.palette-create-kbd {
+		display: none;
+	}
+	.palette-create-main {
+		border-radius: 999px;
 	}
 }

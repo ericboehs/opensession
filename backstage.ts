@@ -100,6 +100,7 @@ import {
 import { getSessionDiff, type SessionDiff } from "./src/server/git-diff";
 import { searchRepoFiles } from "./src/server/file-index";
 import { suggestBranchName } from "./src/server/suggest-branch";
+import { transcribeAudio, MAX_AUDIO_BYTES } from "./src/server/transcribe";
 import { getPreviewStatus, startPreview, stopPreview } from "./src/server/preview";
 import {
 	registerSessionControl,
@@ -4602,6 +4603,30 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const prompt = typeof body?.prompt === "string" ? body.prompt : "";
 				const branch = await suggestBranchName(prompt);
 				return Response.json({ branch });
+			}
+
+			// Voice dictation: raw audio body (whatever MediaRecorder produced) in,
+			// transcribed text out. Providers chain in src/server/transcribe.ts —
+			// hosted keys when configured, local whisper.cpp otherwise.
+			if (path === "/backstage/api/transcribe" && req.method === "POST") {
+				try {
+					const audio = await req.blob();
+					if (audio.size === 0) {
+						return Response.json({ error: "empty audio" }, { status: 400 });
+					}
+					if (audio.size > MAX_AUDIO_BYTES) {
+						return Response.json({ error: "audio too large" }, { status: 413 });
+					}
+					const mime = req.headers.get("content-type") || "audio/webm";
+					const result = await transcribeAudio(audio, mime);
+					return Response.json(result);
+				} catch (e: any) {
+					console.error("[transcribe]", e);
+					return Response.json(
+						{ error: e?.message || "transcription failed" },
+						{ status: 500 },
+					);
+				}
 			}
 
 			// Set (or clear, with model:null) the default model new sessions run on.
