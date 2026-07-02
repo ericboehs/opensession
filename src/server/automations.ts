@@ -445,6 +445,12 @@ export async function runAutomation(
      * button) before the run starts, instead of waiting for onSessionCreated.
      */
     bksSessionId?: string;
+    /**
+     * Model for THIS run only, beating the automation's configured model —
+     * e.g. the Plain ticket router downgrading a basic ticket to a cheaper
+     * model. Callers pass an already-resolved model id.
+     */
+    modelOverride?: string;
   }
 ): Promise<void> {
   const trigger = options?.trigger || "manual";
@@ -522,8 +528,8 @@ export async function runAutomation(
 
     // The effective model/provider can change mid-run (usage-limit fallback),
     // so track them from the runner's init/done events for persistence.
-    let effectiveModel = automation.model;
-    let effectiveProvider = providerFor(automation.model);
+    let effectiveModel = options?.modelOverride || automation.model;
+    let effectiveProvider = providerFor(effectiveModel);
     const persistSession = (engineSessionId: string) => {
       const isCodex = effectiveProvider === "codex";
       const data: BackstageSessionFile = {
@@ -544,8 +550,9 @@ export async function runAutomation(
       writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
     };
 
+    const runModel = options?.modelOverride || automation.model;
     console.log(
-      `[automations] Running "${automation.name}" → ${bksId}${automation.model ? ` (${automation.model})` : ""}`
+      `[automations] Running "${automation.name}" → ${bksId}${runModel ? ` (${runModel})` : ""}${options?.modelOverride ? " [routed]" : ""}`
     );
 
     let engineSessionId = "";
@@ -554,7 +561,7 @@ export async function runAutomation(
       prompt,
       cwd,
       mode: automation.mode,
-      model: automation.model,
+      model: runModel,
       mcpServers: automation.mcpServers,
       deniedTools: AUTOMATION_DENIED_TOOLS,
       // No onAskUser here, so confirm tools deny with "propose it for a human"
@@ -640,7 +647,11 @@ export function fireAutomationsForSlackChannel(channelId: string, payload: strin
   return fired;
 }
 
-export function fireAutomationsForEvent(eventKey: string, payload: string): number {
+export function fireAutomationsForEvent(
+  eventKey: string,
+  payload: string,
+  opts?: { modelOverride?: string }
+): number {
   let fired = 0;
   for (const automation of listAutomations()) {
     if (!automation.enabled || automation.eventKey !== eventKey) continue;
@@ -648,6 +659,7 @@ export function fireAutomationsForEvent(eventKey: string, payload: string): numb
     void runAutomation(automation, eventSessionCallback, {
       trigger: "event",
       eventContext: payload,
+      modelOverride: opts?.modelOverride,
     });
     fired++;
   }

@@ -1,6 +1,6 @@
 /**
  * Fast intent gate for Slack mentions — one no-tools Haiku call (mirrors
- * plain/spam-check) decides, with no regex/keyword parsing, two things:
+ * plain/ticket-router) decides, with no regex/keyword parsing, two things:
  *
  *  1. Is this an explicit GitHub PR action (review / auto-fix / simplify /
  *     adversarial) on a specific PR? → run it directly, no worktree.

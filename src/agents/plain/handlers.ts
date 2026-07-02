@@ -111,7 +111,7 @@ async function runClaude(
         resume: resumeSessionId || undefined,
         cwd,
         // Untrusted customer ticket text goes into this child — same minimal
-        // env as the Haiku classifier calls (spam-check.ts), no tokens from
+        // env as the Haiku classifier calls (ticket-router.ts), no tokens from
         // ~/.backstage.env. MCP servers carry their own credentials.
         env: {
           PATH: process.env.PATH,
@@ -471,12 +471,14 @@ export async function processMichaelMention(
 }
 
 /**
- * Spam-gate a new ticket, then fire the automation event bus.
+ * Route a new ticket, then fire the automation event bus.
  *
- * A no-tools Haiku call (see spam-check.ts) classifies the ticket before any
+ * A no-tools Haiku call (see ticket-router.ts) routes the ticket before any
  * triage automation starts a session. Confident spam → no run, just an
- * internal note explaining the skip. Everything else — including classifier
- * errors — fails open and fires the event as before.
+ * internal note explaining the skip. A very basic ask (simple refund,
+ * how-do-I) → triage runs on the router's cheaper model instead of the
+ * automation's default (Fable). Everything else — including router errors —
+ * fails open and fires the event on the default model as before.
  */
 async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<void> {
   const thread = payload.payload.thread;
@@ -500,10 +502,10 @@ async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<v
     if (full) ticketContent = formatThreadContext(full, true);
   } catch {}
 
-  const { classifyTicketSpam } = await import("./spam-check");
-  const verdict = await classifyTicketSpam(ticketContent);
+  const { classifyTicketRoute, getRouterConfig } = await import("./ticket-router");
+  const verdict = await classifyTicketRoute(ticketContent);
 
-  if (verdict?.spam) {
+  if (verdict?.route === "spam") {
     console.log(`[plain] Skipping auto-triage for thread ${thread.id} — spam: ${verdict.reason}`);
     if (thread.customer?.id) {
       await postNote(
@@ -514,6 +516,16 @@ async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<v
       );
     }
     return;
+  }
+
+  // "basic" → run triage on the router's cheaper model; "full"/no-verdict →
+  // the automation's own model (fail open, never downgrade on router errors).
+  const modelOverride =
+    verdict?.route === "basic" ? getRouterConfig().basicModel : undefined;
+  if (modelOverride) {
+    console.log(
+      `[plain] Routing thread ${thread.id} to ${modelOverride} — basic: ${verdict!.reason}`
+    );
   }
 
   fireAutomationsForEvent(
@@ -531,7 +543,8 @@ async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<v
       },
       null,
       2
-    )
+    ),
+    modelOverride ? { modelOverride } : undefined
   );
 }
 

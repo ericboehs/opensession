@@ -220,6 +220,8 @@ export function Connections() {
             })}
           </div>
 
+          <PlainRouter />
+
           <ClaudeAccounts />
 
           <CodexAccounts />
@@ -287,6 +289,128 @@ interface ModelInfo {
   provider: "claude" | "codex";
   label: string;
   aliases: string[];
+}
+
+/**
+ * Plain triage router — the pre-triage classifier that spam-gates new tickets
+ * and routes very basic asks (simple refunds, how-do-I) to a cheaper model,
+ * keeping Fable for tickets that benefit from real investigation. The prompt
+ * is editable here; the JSON output contract is enforced in code.
+ */
+function PlainRouter() {
+  const [cfg, setCfg] = useState<{
+    prompt: string;
+    isCustom: boolean;
+    basicModel: string;
+    defaultPrompt: string;
+    defaultBasicModel: string;
+  } | null>(null);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState(0);
+
+  useEffect(() => {
+    fetch("/backstage/api/connections/plain-router")
+      .then((r) => r.json())
+      .then((b) => {
+        setCfg(b);
+        setDraft(b.prompt);
+      })
+      .catch(() => {});
+    fetch("/backstage/api/models")
+      .then((r) => r.json())
+      .then((b) => setModels((b.models || []).filter((m: ModelInfo) => m.provider === "claude")))
+      .catch(() => {});
+  }, []);
+
+  async function save(patch: { prompt?: string; basicModel?: string }) {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/backstage/api/connections/plain-router", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      setCfg((c) => (c ? { ...c, ...body } : c));
+      if ("prompt" in patch) setDraft(body.prompt);
+      setSavedAt(Date.now());
+    } catch (e: any) {
+      setError(e.message);
+    }
+    setSaving(false);
+  }
+
+  if (!cfg) return null;
+  const dirty = draft !== cfg.prompt;
+
+  return (
+    <>
+      <div className="conn-section-title">Plain triage router — spam gate + model routing</div>
+      {error && (
+        <div className="form-error" onClick={() => setError(null)}>{error}</div>
+      )}
+      <div className="conn-card" style={{ maxWidth: 720 }}>
+        <div className="conn-blurb">
+          Every new Plain ticket goes through one cheap Haiku call before triage: spam is skipped
+          entirely, a very basic ask (simple refund, how-do-I) runs triage on the model below, and
+          everything else runs on the triage automation's own model. Router errors fail open to
+          full triage. Applies to the next ticket — no restart.
+        </div>
+        <div className="conn-detail" style={{ alignItems: "center", gap: 10 }}>
+          <span style={{ whiteSpace: "nowrap" }}>Model for basic tickets:</span>
+          <select
+            value={cfg.basicModel}
+            disabled={saving}
+            onChange={(e) => save({ basicModel: e.target.value })}
+            aria-label="Model for basic tickets"
+            style={{ flex: 1, minWidth: 0 }}
+          >
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={12}
+          spellCheck={false}
+          aria-label="Routing prompt"
+          style={{ width: "100%", fontFamily: "var(--mono, monospace)", fontSize: 12, marginTop: 8 }}
+        />
+        <div className="conn-detail" style={{ alignItems: "center", gap: 10, marginTop: 6 }}>
+          <button
+            className="btn btn-primary"
+            disabled={saving || !dirty}
+            onClick={() => save({ prompt: draft })}
+          >
+            {saving ? "Saving…" : "Save prompt"}
+          </button>
+          <button
+            className="btn"
+            disabled={saving || (!cfg.isCustom && !dirty)}
+            onClick={() => save({ prompt: "" })}
+          >
+            Reset to default
+          </button>
+          <span className="conn-target">
+            {dirty
+              ? "Unsaved changes"
+              : savedAt
+                ? "Saved."
+                : cfg.isCustom
+                  ? "Custom prompt active"
+                  : "Using the built-in default"}
+          </span>
+        </div>
+      </div>
+    </>
+  );
 }
 
 export function DefaultModel() {

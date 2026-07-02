@@ -4250,6 +4250,40 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json(result);
 			}
 
+			// ── Plain triage router (spam gate + model routing for new tickets) ──
+			// The prompt is editable so routing can be tweaked without a deploy;
+			// the JSON output contract is appended in code and can't be broken here.
+			if (
+				path === "/backstage/api/connections/plain-router" &&
+				req.method === "GET"
+			) {
+				const { getRouterConfig, DEFAULT_ROUTER_PROMPT, DEFAULT_BASIC_MODEL } =
+					await import("./src/agents/plain/ticket-router");
+				return Response.json({
+					...getRouterConfig(),
+					defaultPrompt: DEFAULT_ROUTER_PROMPT,
+					defaultBasicModel: DEFAULT_BASIC_MODEL,
+				});
+			}
+
+			if (
+				path === "/backstage/api/connections/plain-router" &&
+				req.method === "PUT"
+			) {
+				const body = (await req.json().catch(() => null)) as {
+					prompt?: string;
+					basicModel?: string;
+				} | null;
+				if (!body)
+					return Response.json({ error: "Invalid JSON" }, { status: 400 });
+				const { setRouterConfig } = await import(
+					"./src/agents/plain/ticket-router"
+				);
+				const result = setRouterConfig(body);
+				if ("error" in result) return Response.json(result, { status: 400 });
+				return Response.json(result);
+			}
+
 			// ── Claude account pool (tokens are never sent back, only masked) ──
 			if (path === "/backstage/api/claude-accounts" && req.method === "GET") {
 				return Response.json({ accounts: listAccountsPublic() });

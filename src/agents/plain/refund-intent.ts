@@ -3,7 +3,7 @@
  * executing a refund/cancellation that Michael previously PROPOSED in the thread?
  *
  * This is the gate in front of real customer money, so it is the inverse of the
- * spam check: any error, ambiguity, or unparseable output returns {approve:false}.
+ * router: any error, ambiguity, or unparseable output returns {approve:false}.
  * A no-tools Haiku call — it only reads, never acts.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
