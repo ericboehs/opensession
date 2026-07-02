@@ -1197,6 +1197,32 @@ function App() {
 				</div>
 				)}
 
+				{/* Mobile-only floating + on the root list page — thumb-reach shortcut
+				    to the new-session palette (desktop hides it via CSS; the sidebar's
+				    own + covers that layout). */}
+				{!mobileDetail && (
+					<button
+						className="mobile-fab"
+						onClick={() => openPalette()}
+						aria-label="New session"
+					>
+						<svg
+							width="26"
+							height="26"
+							viewBox="0 0 16 16"
+							fill="none"
+							aria-hidden="true"
+						>
+							<path
+								d="M8 2.5v11M2.5 8h11"
+								stroke="currentColor"
+								strokeWidth="1.8"
+								strokeLinecap="round"
+							/>
+						</svg>
+					</button>
+				)}
+
 				{/* ⌘K session-search palette — overlays every view. */}
 				{searchOpen && (
 					<SessionSearch
