@@ -167,6 +167,10 @@ export interface PrCheck {
 	status: string;
 	conclusion: string;
 	url?: string;
+	startedAt?: string;
+	completedAt?: string;
+	/** CheckRun workflow (e.g. "CI") — StatusContexts (Vercel deploys) have none. */
+	workflowName?: string;
 }
 
 export interface PrDetails {
@@ -184,6 +188,21 @@ export interface PrDetails {
 	author: string;
 	body: string;
 	checks: PrCheck[];
+	/** MERGEABLE | CONFLICTING | UNKNOWN — GitHub's conflict probe. */
+	mergeable?: string;
+	/** CLEAN | BEHIND | BLOCKED | DIRTY | UNSTABLE | … — merge-box state. */
+	mergeStateStatus?: string;
+}
+
+/** Local git state of a session's worktree (git-status endpoint). */
+export interface GitStatusInfo {
+	branch: string | null;
+	hasUpstream: boolean;
+	ahead: number;
+	behind: number;
+	behindBase: number;
+	baseBranch: string;
+	uncommittedFiles: number;
 }
 
 export type WSClientMessage =

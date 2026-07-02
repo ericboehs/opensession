@@ -162,6 +162,7 @@ import {
 	submitPrReview,
 	mergePr,
 } from "./src/server/pr-info";
+import { getGitStatus, gitPush } from "./src/server/git-status";
 import {
 	listAutomations,
 	getAutomation,
@@ -2792,6 +2793,68 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const target = resolvePrTarget(session, url.searchParams.get("repo"));
 				if (!target) return Response.json(null);
 				return Response.json(await getPrDetails(target.branch, target.ghRepo));
+			}
+
+			// Local git state for a session's worktree (status header + Git status
+			// rows). `?repo=<project>` targets an attached repo's checkout.
+			if (
+				path.match(/^\/backstage\/api\/sessions\/(.+)\/git-status$/) &&
+				req.method === "GET"
+			) {
+				const sessionId = decodeURIComponent(
+					path.match(/^\/backstage\/api\/sessions\/(.+)\/git-status$/)![1],
+				);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const repoId = url.searchParams.get("repo");
+				const primaryRepo =
+					session.repo ||
+					(session.worktreeDir
+						? repoForPath(session.worktreeDir).id
+						: "tella-fusion");
+				const dir =
+					!repoId || repoId === primaryRepo
+						? session.worktreeDir
+						: (session.attachedRepos || []).find((r) => r.repo === repoId)
+								?.dir;
+				if (!dir || !existsSync(dir)) return Response.json(null);
+				const repoConf = getRepo(repoId || primaryRepo);
+				return Response.json(await getGitStatus(dir, repoConf.defaultBranch));
+			}
+
+			// Push the session's branch (sets upstream on first push). Human-triggered
+			// from the status header — audited in git-status.ts.
+			if (
+				path.match(/^\/backstage\/api\/sessions\/(.+)\/git-push$/) &&
+				req.method === "POST"
+			) {
+				const sessionId = decodeURIComponent(
+					path.match(/^\/backstage\/api\/sessions\/(.+)\/git-push$/)![1],
+				);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const body = await req.json().catch(() => ({}));
+				const repoId = typeof body?.repo === "string" ? body.repo : null;
+				const primaryRepo =
+					session.repo ||
+					(session.worktreeDir
+						? repoForPath(session.worktreeDir).id
+						: "tella-fusion");
+				const dir =
+					!repoId || repoId === primaryRepo
+						? session.worktreeDir
+						: (session.attachedRepos || []).find((r) => r.repo === repoId)
+								?.dir;
+				if (!dir || !existsSync(dir))
+					return Response.json(
+						{ error: "Session has no worktree" },
+						{ status: 400 },
+					);
+				const result = await gitPush(dir, session.branch || "HEAD");
+				if ("error" in result) return Response.json(result, { status: 502 });
+				return Response.json(result);
 			}
 
 			// PR diff for inline review in the PR tab

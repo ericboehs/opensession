@@ -526,6 +526,23 @@ export async function fetchPr(sessionId: string, repo?: string) {
 	});
 }
 
+/** Local git state (ahead/behind, dirty tree) for the status header. */
+export async function fetchGitStatus(sessionId: string, repo?: string) {
+	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
+	return request<import("./types").GitStatusInfo | null>(
+		`/sessions/${encodeURIComponent(sessionId)}/git-status${qs}`,
+		{ label: "Failed to fetch git status" },
+	);
+}
+
+/** Push the session's branch (sets upstream on first push). */
+export async function gitPushApi(sessionId: string, repo?: string) {
+	return request<{ ok: true }>(
+		`/sessions/${encodeURIComponent(sessionId)}/git-push`,
+		{ method: "POST", body: repo ? { repo } : {} },
+	);
+}
+
 export async function fetchPrDiff(sessionId: string, repo?: string) {
 	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
 	return request<any>(

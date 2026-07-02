@@ -34,6 +34,7 @@ import { DiffPanel } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
+import { PrStatusBar } from "./PrStatusBar";
 import { SlackChatPanel } from "./SlackChatPanel";
 import { PlainThreadPanel } from "./PlainThreadPanel";
 import { PreviewButton } from "./PreviewButton";
@@ -1501,6 +1502,15 @@ export function SessionViewer({
 				) : panelAvailable && panelOpen ? (
 					<div className="viewer-panel" style={panelStyle}>
 						{panelResizeHandle}
+						{hasWorkspace && (
+							<PrStatusBar
+								sessionId={session.id}
+								repo={session.repo || undefined}
+								archived={session.archived}
+								send={connected ? send : undefined}
+								onOpenPrTab={() => setPanelTab("pr")}
+							/>
+						)}
 						<WorkspaceInfo
 							workspaceId={session.projectId || null}
 							workspaceName={workspaceName}
