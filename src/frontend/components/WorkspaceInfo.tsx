@@ -126,14 +126,19 @@ export function WorkspaceInfo({
 					{data.prompt && (
 						<div
 							className="cursor-pointer"
-							onClick={() => setPromptExpanded((v) => !v)}
+							onClick={() => {
+								// Selecting text inside also fires click — don't collapse
+								// the prompt out from under a selection.
+								if (window.getSelection()?.isCollapsed !== false)
+									setPromptExpanded((v) => !v);
+							}}
 							title={promptExpanded ? "Click to collapse" : "Click to expand"}
 						>
 							<div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-faint">
 								Opening prompt
 							</div>
 							<div
-								className={`whitespace-pre-wrap text-sm leading-snug text-dim ${
+								className={`selectable whitespace-pre-wrap text-sm leading-snug text-dim ${
 									promptExpanded ? "" : "line-clamp-3"
 								}`}
 							>
@@ -146,7 +151,7 @@ export function WorkspaceInfo({
 							<div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-faint">
 								Latest reply
 							</div>
-							<div className="line-clamp-2 whitespace-pre-wrap text-sm leading-snug text-dim">
+							<div className="selectable line-clamp-2 whitespace-pre-wrap text-sm leading-snug text-dim">
 								{data.lastMessage.content}
 							</div>
 						</div>

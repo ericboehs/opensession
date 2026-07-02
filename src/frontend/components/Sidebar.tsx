@@ -3208,7 +3208,7 @@ function WsHoverCard({
 			)}
 
 			{desc && (
-				<div className="mt-1 text-xs leading-snug text-dim line-clamp-2">
+				<div className="selectable mt-1 text-xs leading-snug text-dim line-clamp-2">
 					{desc}
 				</div>
 			)}
