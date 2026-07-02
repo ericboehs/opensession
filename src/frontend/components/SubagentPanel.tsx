@@ -18,6 +18,10 @@ interface Props {
   onBack: () => void;
   /** Close the panel entirely. */
   onClose: () => void;
+  /** Panel width override (the shared right-sidebar --panel-w var). */
+  style?: React.CSSProperties;
+  /** Drag handle for resizing, rendered on the panel's left edge. */
+  resizeHandle?: React.ReactNode;
 }
 
 /**
@@ -26,7 +30,7 @@ interface Props {
  * polls so a live sub-agent's transcript fills in. Sub-agents that spawn their
  * own sub-agents are navigable via the breadcrumb stack.
  */
-export function SubagentPanel({ sessionId, stack, onOpenSubagent, onBack, onClose }: Props) {
+export function SubagentPanel({ sessionId, stack, onOpenSubagent, onBack, onClose, style, resizeHandle }: Props) {
   const current = stack[stack.length - 1];
   const [data, setData] = useState<SubagentTranscript | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +89,8 @@ export function SubagentPanel({ sessionId, stack, onOpenSubagent, onBack, onClos
   const title = meta?.agentType || current.label || "Sub-agent";
 
   return (
-    <div className="viewer-panel subagent-panel">
+    <div className="viewer-panel subagent-panel" style={style}>
+      {resizeHandle}
       <div className="subagent-head">
         <div className="subagent-head-top">
           <span className="subagent-chip">sub-agent</span>

@@ -174,6 +174,9 @@ export interface WorkspaceMediaItem {
 
 export interface WorkspaceOverview {
 	prompt: { content: string; sessionId: string; at: string } | null;
+	/** Latest assistant text across the workspace's chats. Optional because a
+	 *  server that hasn't restarted onto the new overview code omits the key. */
+	lastMessage?: { content: string; sessionId: string; at: string } | null;
 	media: WorkspaceMediaItem[];
 }
 

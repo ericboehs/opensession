@@ -1,0 +1,125 @@
+/**
+ * Client-side workspace overview loading, shared by the floating
+ * WorkspacePreview panel and the sidebar's workspace hover card: one
+ * session-lifetime cache (switching back paints instantly), the server route
+ * as the fast path, and transcript-based fallbacks for servers that haven't
+ * restarted onto newer overview code (routes don't hot-apply).
+ */
+
+import {
+	ApiError,
+	fetchTranscript,
+	fetchWorkspaceOverview,
+	type WorkspaceMediaItem,
+	type WorkspaceOverview,
+} from "./api";
+import type { TranscriptEntry } from "./types";
+
+export interface OverviewChatRef {
+	id: string;
+	title: string;
+	createdAt: string;
+	/** When known, picks the freshest chat for the lastMessage fallback. */
+	lastActivity?: string;
+}
+
+// Session-lifetime cache; a background refetch replaces entries. Keyed by
+// workspace id (or the chat set for workspace-less rows).
+export const overviewCache = new Map<
+	string,
+	{ data: WorkspaceOverview; at: number }
+>();
+
+function firstPrompt(entries: TranscriptEntry[]): TranscriptEntry | undefined {
+	return entries.find((e) => {
+		const t = e.content?.trim() || "";
+		return e.type === "user" && t.length > 0 && !t.startsWith("/");
+	});
+}
+
+function lastAssistant(entries: TranscriptEntry[]): TranscriptEntry | undefined {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const e = entries[i];
+		if (e.type === "assistant" && (e.content?.trim().length || 0) > 0) return e;
+	}
+	return undefined;
+}
+
+/** Same shape the server endpoint returns, built from raw transcripts (the
+ * pre-restart fallback — data URLs render directly). */
+export async function buildClientOverview(
+	chats: OverviewChatRef[],
+): Promise<WorkspaceOverview> {
+	const transcripts = await Promise.all(
+		chats.map((c) =>
+			fetchTranscript(c.id).catch(() => null as TranscriptEntry[] | null),
+		),
+	);
+	let prompt: WorkspaceOverview["prompt"] = null;
+	let lastMessage: WorkspaceOverview["lastMessage"] = null;
+	const media: WorkspaceMediaItem[] = [];
+	chats.forEach((chat, i) => {
+		const entries = transcripts[i];
+		if (!entries) return;
+		if (!prompt) {
+			const first = firstPrompt(entries);
+			if (first)
+				prompt = { content: first.content, sessionId: chat.id, at: first.timestamp };
+		}
+		const last = lastAssistant(entries);
+		if (last && (!lastMessage || last.timestamp > lastMessage.at))
+			lastMessage = { content: last.content, sessionId: chat.id, at: last.timestamp };
+		for (const e of entries) {
+			for (const src of e.images || [])
+				media.push({ kind: "image", src, sessionId: chat.id, chatTitle: chat.title, at: e.timestamp });
+			for (const src of e.videos || [])
+				media.push({ kind: "video", src, sessionId: chat.id, chatTitle: chat.title, at: e.timestamp });
+		}
+	});
+	media.sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+	return { prompt, lastMessage, media: media.slice(0, 100) };
+}
+
+/**
+ * Load an overview (server route when the row is a real workspace, client
+ * assembly otherwise) and cache it under cacheKey. Two staleness fallbacks:
+ * a 404 means the server predates the route entirely; a response without the
+ * lastMessage key means it predates the description — fill it from the
+ * freshest chat's transcript so the hover card still shows one.
+ */
+export async function loadOverview(
+	cacheKey: string,
+	workspaceId: string | null,
+	chats: OverviewChatRef[],
+): Promise<WorkspaceOverview> {
+	let ov: WorkspaceOverview;
+	if (workspaceId) {
+		try {
+			ov = await fetchWorkspaceOverview(workspaceId);
+		} catch (e) {
+			if (e instanceof ApiError && e.status === 404)
+				ov = await buildClientOverview(chats);
+			else throw e;
+		}
+		if (ov.lastMessage === undefined && chats.length > 0) {
+			const newest = [...chats].sort((a, b) =>
+				(a.lastActivity || a.createdAt).localeCompare(
+					b.lastActivity || b.createdAt,
+				),
+			)[chats.length - 1];
+			try {
+				const entries: TranscriptEntry[] = await fetchTranscript(newest.id);
+				const last = lastAssistant(entries);
+				ov.lastMessage = last
+					? { content: last.content, sessionId: newest.id, at: last.timestamp }
+					: null;
+			} catch {
+				ov.lastMessage = null;
+			}
+		}
+	} else {
+		ov = await buildClientOverview(chats);
+	}
+	overviewCache.set(cacheKey, { data: ov, at: Date.now() });
+	return ov;
+}

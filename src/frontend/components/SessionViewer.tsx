@@ -37,7 +37,7 @@ import { PrPanel } from "./PrPanel";
 import { SlackChatPanel } from "./SlackChatPanel";
 import { PlainThreadPanel } from "./PlainThreadPanel";
 import { PreviewButton } from "./PreviewButton";
-import { WorkspacePreview } from "./WorkspacePreview";
+import { WorkspaceInfo } from "./WorkspaceInfo";
 import { SpinOffMenu } from "./SpinOffMenu";
 import { IconSidebarRight } from "./icons";
 import { Tooltip } from "../ui/tooltip";
@@ -207,6 +207,51 @@ export function SessionViewer({
 		setPanelOpenState(open);
 		localStorage.setItem("michael-panel-open", String(open));
 	}
+	// Right-panel width (px), drag-resizable from its left edge and persisted
+	// per browser; 0 = the CSS default (44%). Mirrors the left sidebar's resize.
+	// Shared by the Workspace and sub-agent panels via the --panel-w var.
+	const [panelW, setPanelW] = useState<number>(() => {
+		const v = Number(localStorage.getItem("michael-panel-w"));
+		return v >= 320 && v <= 900 ? v : 0;
+	});
+	const panelWRef = useRef(panelW);
+	panelWRef.current = panelW;
+	function startPanelResize(e: React.MouseEvent) {
+		e.preventDefault();
+		// The panel is the rightmost column, so its right edge tracks the pointer's
+		// distance from the container's right side.
+		const right =
+			(e.currentTarget.parentElement as HTMLElement | null)?.getBoundingClientRect()
+				.right ?? window.innerWidth;
+		document.body.classList.add("resizing-x");
+		const onMove = (ev: MouseEvent) => {
+			const max = Math.min(900, Math.round(window.innerWidth * 0.72));
+			const w = Math.min(max, Math.max(320, Math.round(right - ev.clientX)));
+			panelWRef.current = w;
+			setPanelW(w);
+		};
+		const onUp = () => {
+			document.body.classList.remove("resizing-x");
+			window.removeEventListener("mousemove", onMove);
+			window.removeEventListener("mouseup", onUp);
+			localStorage.setItem(
+				"michael-panel-w",
+				String(Math.round(panelWRef.current)),
+			);
+		};
+		window.addEventListener("mousemove", onMove);
+		window.addEventListener("mouseup", onUp);
+	}
+	const panelStyle = panelW
+		? ({ "--panel-w": `${panelW}px` } as React.CSSProperties)
+		: undefined;
+	const panelResizeHandle = (
+		<div
+			className="panel-resize"
+			onMouseDown={startPanelResize}
+			aria-hidden="true"
+		/>
+	);
 	// Intent-aware scrolling: stick to the live edge only while the reader is there,
 	// pin new turns near the top, and surface a "Jump to latest" affordance.
 	const {
@@ -1155,18 +1200,6 @@ export function SessionViewer({
 			<div className="viewer-split">
 				<div className="viewer-chat">
 					<div className="viewer-messages-region">
-						<WorkspacePreview
-							workspaceId={session.projectId || null}
-							workspaceName={workspaceName}
-							chats={(workspaceChats?.length ? workspaceChats : [session]).map(
-								(s) => ({
-									id: s.id,
-									title: s.title,
-									createdAt: s.createdAt || "",
-								}),
-							)}
-							liveMediaCount={liveMediaCount}
-						/>
 						<div
 							className="viewer-messages"
 							ref={messagesRef}
@@ -1450,9 +1483,28 @@ export function SessionViewer({
 						onOpenSubagent={openSubagent}
 						onBack={() => setSubagentStack((prev) => prev.slice(0, -1))}
 						onClose={() => setSubagentStack([])}
+						style={panelStyle}
+						resizeHandle={panelResizeHandle}
 					/>
 				) : panelAvailable && panelOpen ? (
-					<div className="viewer-panel">
+					<div className="viewer-panel" style={panelStyle}>
+						{panelResizeHandle}
+						<WorkspaceInfo
+							workspaceId={session.projectId || null}
+							workspaceName={workspaceName}
+							chats={(workspaceChats?.length ? workspaceChats : [session]).map(
+								(s) => ({
+									id: s.id,
+									title: s.title,
+									createdAt: s.createdAt || "",
+									startedBy: s.startedBy,
+								}),
+							)}
+							repo={
+								hasWorkspace ? session.repo || "tella-fusion" : undefined
+							}
+							liveMediaCount={liveMediaCount}
+						/>
 						<div className="panel-tabs">
 							{hasWorkspace && (
 								<>

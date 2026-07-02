@@ -2477,15 +2477,42 @@ button.preview-open:not(:disabled):hover {
 }
 
 .viewer-panel {
-	width: 44%;
-	max-width: 720px;
+	/* Drag-resizable from the left edge (.panel-resize sets --panel-w). */
+	width: var(--panel-w, 44%);
+	max-width: 900px;
 	min-width: 320px;
 	flex-shrink: 0;
+	position: relative;
 	border-left: 1px solid var(--border);
 	background: var(--bg-raised);
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
+}
+
+/* Left-edge drag handle of the right panel — mirror of .sidebar-resize. */
+.panel-resize {
+	position: absolute;
+	top: 0;
+	left: -3px;
+	width: 7px;
+	height: 100%;
+	cursor: col-resize;
+	z-index: 6;
+}
+.panel-resize::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 3px;
+	width: 2px;
+	height: 100%;
+	background: transparent;
+	transition: background 0.14s ease;
+}
+.panel-resize:hover::after,
+body.resizing-x .panel-resize::after {
+	background: var(--accent);
 }
 
 .panel-tabs {
@@ -6707,6 +6734,11 @@ html[data-theme="light"] .tool-code-surface {
 		display: none;
 	}
 	.sidebar-resize {
+		display: none;
+	}
+
+	/* The right panel is a fixed overlay on phones — no drag-resize. */
+	.panel-resize {
 		display: none;
 	}
 
