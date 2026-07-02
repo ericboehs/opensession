@@ -69,6 +69,12 @@ interface Props {
   /** Extra control rendered in the toolbar, left of the send button. */
   leftExtra?: React.ReactNode;
   /**
+   * Optional caret control fused onto the right of the send button as a Slack-style
+   * split button (e.g. "send later"). Rendered inside `.composer-send-split`; it
+   * should style its trigger with `composer-send-caret` and anchor its own popover.
+   */
+  sendMenu?: React.ReactNode;
+  /**
    * When set and busy, renders an extra "fold in" send button — the gentle
    * option that queues the message for Michael's next stopping point instead of
    * interrupting (the main send button interrupts immediately when busy).
@@ -194,6 +200,7 @@ export function Composer({
   goal,
   onSetGoal,
   leftExtra,
+  sendMenu,
   onSteerSend,
   hint,
   autoFocus,
@@ -374,6 +381,67 @@ export function Composer({
           />
         </div>
         <div className="composer-toolbar" ref={toolbarRef}>
+          {canAttach && (
+            <div className="composer-pop-wrap">
+              <Tooltip label="Add files or a file reference">
+                <button
+                  type="button"
+                  className="palette-icon-btn composer-add-btn"
+                  onClick={() => setMenu(menu === "add" ? null : "add")}
+                  disabled={disabled}
+                  aria-label="Add"
+                  aria-expanded={menu === "add"}
+                >
+                  <IconPlus size={24} />
+                </button>
+              </Tooltip>
+              {menu === "add" && (
+                <div className="composer-menu">
+                  <button
+                    type="button"
+                    className="composer-menu-item"
+                    onClick={() => {
+                      setMenu(null);
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    <span className="composer-menu-icon">
+                      <IconPaperclip size={22} />
+                    </span>
+                    {onFilesChange ? "Attach files" : "Attach an image"}
+                  </button>
+                  {mentionFetch && (
+                    <button
+                      type="button"
+                      className="composer-menu-item"
+                      onClick={() => {
+                        setMenu(null);
+                        startMention();
+                      }}
+                    >
+                      <span className="composer-menu-icon">
+                        <IconAtSign size={22} />
+                      </span>
+                      Reference a file
+                    </button>
+                  )}
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                {...(onFilesChange ? {} : { accept: "image/*" })}
+                multiple
+                hidden
+                onChange={(e) => {
+                  if (e.target.files?.length) void addFiles(e.target.files);
+                  // Reset so picking the same file again still fires onChange.
+                  e.target.value = "";
+                }}
+              />
+            </div>
+          )}
+
           <div className="palette-pill" title={modelTitle || "Model for this session"}>
             <span className={`composer-model-dot ${isCodex ? "dot-codex" : "dot-claude"}`} />
             <span className="palette-pill-label">{modelShortLabel(effectiveModel, models)}</span>
@@ -456,67 +524,6 @@ export function Composer({
           {leftExtra}
           <div className="composer-spacer" />
 
-          {canAttach && (
-            <div className="composer-pop-wrap">
-              <Tooltip label="Add files or a file reference">
-                <button
-                  type="button"
-                  className="palette-icon-btn composer-add-btn"
-                  onClick={() => setMenu(menu === "add" ? null : "add")}
-                  disabled={disabled}
-                  aria-label="Add"
-                  aria-expanded={menu === "add"}
-                >
-                  <IconPlus size={24} />
-                </button>
-              </Tooltip>
-              {menu === "add" && (
-                <div className="composer-menu">
-                  <button
-                    type="button"
-                    className="composer-menu-item"
-                    onClick={() => {
-                      setMenu(null);
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    <span className="composer-menu-icon">
-                      <IconPaperclip size={22} />
-                    </span>
-                    {onFilesChange ? "Attach files" : "Attach an image"}
-                  </button>
-                  {mentionFetch && (
-                    <button
-                      type="button"
-                      className="composer-menu-item"
-                      onClick={() => {
-                        setMenu(null);
-                        startMention();
-                      }}
-                    >
-                      <span className="composer-menu-icon">
-                        <IconAtSign size={22} />
-                      </span>
-                      Reference a file
-                    </button>
-                  )}
-                </div>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                {...(onFilesChange ? {} : { accept: "image/*" })}
-                multiple
-                hidden
-                onChange={(e) => {
-                  if (e.target.files?.length) void addFiles(e.target.files);
-                  // Reset so picking the same file again still fires onChange.
-                  e.target.value = "";
-                }}
-              />
-            </div>
-          )}
-
           <VoiceInput onText={insertDictation} disabled={disabled} />
 
           {busy && onSteerSend && (
@@ -530,20 +537,26 @@ export function Composer({
               </button>
             </Tooltip>
           )}
-          <Tooltip
-            label={
-              sendTitle ||
-              (busy ? "Send now — interrupts the current turn and redirects Michael (Enter)" : "Send (Enter)")
-            }
-          >
-            <button
-              className={`composer-send ${busy ? "composer-send-interrupt" : ""}`}
-              onClick={() => fireSend(onSend)}
-              disabled={disabled || isSendDisabled}
+          {/* When a `sendMenu` is wired, the send button fuses with a caret into a
+              Slack-style split button (send now / send later). Without it, the
+              send button stands alone as a plain circle. */}
+          <div className={`composer-send-split ${sendMenu ? "has-menu" : ""} ${busy ? "is-interrupt" : ""}`}>
+            <Tooltip
+              label={
+                sendTitle ||
+                (busy ? "Send now — interrupts the current turn and redirects Michael (Enter)" : "Send (Enter)")
+              }
             >
-              {busy ? <IconBolt size={24} /> : <IconArrowUp size={24} />}
-            </button>
-          </Tooltip>
+              <button
+                className={`composer-send ${busy ? "composer-send-interrupt" : ""}`}
+                onClick={() => fireSend(onSend)}
+                disabled={disabled || isSendDisabled}
+              >
+                {busy ? <IconBolt size={24} /> : <IconArrowUp size={24} />}
+              </button>
+            </Tooltip>
+            {sendMenu}
+          </div>
         </div>
       </div>
       {hint && <div className="composer-hint">{hint}</div>}

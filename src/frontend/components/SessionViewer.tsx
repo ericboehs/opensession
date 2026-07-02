@@ -1619,9 +1619,12 @@ export function SessionViewer({
 									}
 									mentionFetch={(q) => fetchFileMentions(q, session.id)}
 									textareaRef={composerRef}
-									leftExtra={
+									sendMenu={
 										session.source === "backstage" ? (
-											<SchedulePromptButton sessionId={session.id} />
+											<SchedulePromptButton
+												sessionId={session.id}
+												disabled={!connected}
+											/>
 										) : undefined
 									}
 								/>

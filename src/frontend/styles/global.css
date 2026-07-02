@@ -6128,6 +6128,79 @@ html[data-theme="light"] .tool-code-surface {
 	border: 1px solid var(--red);
 }
 
+/* Slack-style split send button: the round send fuses with a caret that opens
+   the "send later" scheduler. Without a menu (`.has-menu`) the wrapper is inert
+   and the send button keeps its plain circular shape (Home / PR-preview). */
+.composer-send-split {
+	position: relative;
+	display: inline-flex;
+	align-items: stretch;
+	flex-shrink: 0;
+}
+.composer-send-split.has-menu .composer-send {
+	width: 34px;
+	border-radius: 999px 0 0 999px;
+}
+.composer-send-split.has-menu .composer-send:not(:disabled):hover {
+	/* No scale on a fused half — it would tear the seam open. */
+	transform: none;
+}
+.composer-schedule-wrap {
+	position: relative;
+	display: inline-flex;
+	align-items: stretch;
+}
+.composer-send-caret {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	border: none;
+	border-radius: 0 999px 999px 0;
+	background: var(--accent);
+	color: #fff;
+	cursor: pointer;
+	/* Hairline seam between the two halves. */
+	box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.18);
+	transition: filter 0.15s;
+}
+.composer-send-caret:not(:disabled):hover {
+	filter: brightness(1.12);
+}
+.composer-send-caret:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+.composer-send-caret svg {
+	transition: transform 0.15s;
+}
+.composer-send-caret.is-open svg {
+	transform: rotate(180deg);
+}
+/* Busy → the caret matches the interrupt-red send half. */
+.composer-send-split.is-interrupt .composer-send-caret {
+	background: var(--red-soft);
+	color: var(--red);
+	box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.12);
+}
+.composer-schedule-badge {
+	position: absolute;
+	top: -5px;
+	right: -5px;
+	min-width: 15px;
+	height: 15px;
+	padding: 0 3px;
+	border-radius: 999px;
+	background: var(--yellow);
+	color: #fff;
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 15px;
+	text-align: center;
+	box-shadow: 0 0 0 2px var(--bg);
+	pointer-events: none;
+}
+
 .composer-hint {
 	color: var(--text-faint);
 	font-size: 11px;

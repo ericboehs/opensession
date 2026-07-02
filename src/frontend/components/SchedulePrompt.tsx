@@ -15,14 +15,22 @@ function inTime(iso: string): string {
   return `in ${Math.round(diff / 86_400_000)}d`;
 }
 import { getCurrentUser } from "./UserPicker";
+import { IconChevronDown } from "./icons";
 
 /**
  * Composer "send later": schedule a message for this session at a time. Due
  * prompts are delivered server-side through the normal prompt path (steer /
  * queue / fresh turn), so they behave exactly like typing at that moment.
- * Renders as a small clock button (with a count badge) + popover.
+ * Renders as the caret half of the send split button (Slack-style) — a chevron
+ * (with a pending-count badge) that opens the schedule popover above it.
  */
-export function SchedulePromptButton({ sessionId }: { sessionId: string }) {
+export function SchedulePromptButton({
+  sessionId,
+  disabled,
+}: {
+  sessionId: string;
+  disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<ScheduledPrompt[]>([]);
   const [text, setText] = useState("");
@@ -100,29 +108,25 @@ export function SchedulePromptButton({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="composer-schedule-wrap">
       <button
-        className="btn-task"
+        type="button"
+        className={`composer-send-caret ${open ? "is-open" : ""}`}
         onClick={() => setOpen(!open)}
+        disabled={disabled}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         title="Schedule a message for later"
+        aria-label="Schedule for later"
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          style={{ verticalAlign: "-2px" }}
-        >
-          <circle cx="8" cy="8" r="6" />
-          <path d="M8 4.8V8l2.2 1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        {pending.length > 0 && <span className="ml-1">{pending.length}</span>}
+        <IconChevronDown size={18} />
+        {pending.length > 0 && (
+          <span className="composer-schedule-badge">{pending.length}</span>
+        )}
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-2 z-[200] w-[340px] bg-raised border border-line rounded-panel shadow-2xl p-3 flex flex-col gap-2">
+        <div className="absolute bottom-full right-0 mb-2 z-[200] w-[340px] bg-raised border border-line rounded-panel shadow-2xl p-3 flex flex-col gap-2">
           <div className="text-fg text-[13px] font-medium">Send later</div>
 
           {pending.length > 0 && (
