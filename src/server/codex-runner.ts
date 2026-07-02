@@ -15,7 +15,9 @@
  *  - `confirmTools` (per-call human approval, e.g. money-moving Stripe) have
  *    no approval bridge on Codex, so they're disabled the same way. The agent
  *    is told to propose such actions instead.
- *  - ask mode → read-only sandbox; code mode → workspace-write with network.
+ *  - The Codex CLI sandbox is disabled in this service environment because
+ *    bwrap cannot initialize here; Backstage still controls cwd, mode,
+ *    network, MCP allowlists, and session creation.
  */
 
 import { Codex, type ThreadEvent, type ThreadItem } from "@openai/codex-sdk";
@@ -29,6 +31,9 @@ import {
 } from "./codex-accounts";
 import { journalSet, journalClear, type StreamEvent } from "./claude-runner";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
+import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
+import { registerRunToken, unregisterRunToken } from "./run-rpc";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
@@ -147,6 +152,26 @@ function codexEnv(account?: CodexAccount, author?: GitIdentity | null): Record<s
   return env;
 }
 
+function proxyMcpConfigs(
+  inProcessMcp: Record<string, unknown> | undefined,
+  rpcToken: string | undefined
+): Record<string, Record<string, unknown>> {
+  if (!inProcessMcp || !rpcToken) return {};
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const name of Object.keys(inProcessMcp)) {
+    out[name] = {
+      command: BUN_BIN,
+      args: ["run", MCP_PROXY_ENTRY],
+      env: {
+        BKS_RPC_SOCKET: rpcSocketPath(BACKSTAGE_CHATS_DIR),
+        BKS_RPC_TOKEN: rpcToken,
+        BKS_MCP_SERVER: name,
+      },
+    };
+  }
+  return out;
+}
+
 function describeToolUse(item: ThreadItem): { toolName: string; toolInput: unknown } | null {
   switch (item.type) {
     case "command_execution":
@@ -211,8 +236,10 @@ export async function* runCodex(opts: {
   author?: GitIdentity | null;
   /** Run's user; gates per-user MCP servers (mcp-config.json `allowedUsers`). */
   user?: string;
+  /** Trusted interactive michael-* SDK MCP servers; exposed to Codex through stdio proxies. */
+  inProcessMcp?: Record<string, unknown>;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, model, mcpServers, deniedTools, confirmTools, journal, busyKeys, author, user } = opts;
+  const { prompt, sessionId, cwd, mode, model, mcpServers, deniedTools, confirmTools, journal, busyKeys, author, user, inProcessMcp } = opts;
   const isAsk = mode === "ask";
 
   const runKey = sessionId || journal?.bksSessionId || busyKeys?.[0] || crypto.randomUUID();
@@ -225,6 +252,14 @@ export async function* runCodex(opts: {
   const registeredKeys = new Set<string>([runKey, ...(busyKeys || [])]);
   if (journal?.bksSessionId) registeredKeys.add(journal.bksSessionId);
   for (const key of registeredKeys) activeCodexRuns.set(key, abortController);
+
+  const rpcToken =
+    inProcessMcp && Object.keys(inProcessMcp).length && journal?.bksSessionId
+      ? crypto.randomUUID()
+      : undefined;
+  if (rpcToken && journal?.bksSessionId) {
+    registerRunToken(rpcToken, { sessionId: journal.bksSessionId, user });
+  }
 
   if (journal) {
     journalSet({
@@ -308,7 +343,10 @@ export async function* runCodex(opts: {
         env: codexEnv(account, author),
         ...(account?.kind === "api_key" ? { apiKey: account.value } : {}),
         config: {
-          mcp_servers: buildCodexMcpConfig(mcpServers, disabledToolNames, user) as any,
+          mcp_servers: {
+            ...buildCodexMcpConfig(mcpServers, disabledToolNames, user),
+            ...proxyMcpConfigs(inProcessMcp, rpcToken),
+          } as any,
         },
       });
 
@@ -316,9 +354,13 @@ export async function* runCodex(opts: {
         model,
         workingDirectory: cwd,
         skipGitRepoCheck: true,
-        sandboxMode: isAsk ? ("read-only" as const) : ("workspace-write" as const),
+        // Backstage already gates Codex runs by cwd, mode, MCP allowlists, and
+        // human-controlled session creation. Codex's local bwrap sandbox cannot
+        // initialize in this service environment (RTM_NEWADDR on loopback), which
+        // blocks even read-only commands, so run without Codex's extra sandbox.
+        sandboxMode: "danger-full-access" as const,
         approvalPolicy: "never" as const,
-        ...(isAsk ? {} : { networkAccessEnabled: true }),
+        networkAccessEnabled: !isAsk,
       };
 
       const thread = resultSessionId
@@ -494,6 +536,7 @@ export async function* runCodex(opts: {
       turnEvent({ direction: "out", kind: "cancelled" });
     }
     for (const key of registeredKeys) activeCodexRuns.delete(key);
+    unregisterRunToken(rpcToken);
     if (journal) journalClear(runKey);
   }
 }

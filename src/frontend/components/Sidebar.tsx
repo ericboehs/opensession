@@ -21,7 +21,7 @@ import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { UserAvatar } from "./UserAvatar";
-import { shortTime } from "../lib/time";
+import { shortTime, elapsedClock } from "../lib/time";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
 import {
 	IconChevronDown,
@@ -408,6 +408,11 @@ export function Sidebar({
 	const titleRef = useRef<HTMLSpanElement>(null);
 	const actionsRef = useRef<HTMLDivElement>(null);
 	const probeRef = useRef<HTMLSpanElement>(null);
+	// Client-observed run starts, keyed by workspace-row key — the fallback when
+	// the server hasn't stamped runStartedAt yet (external CLI runs, or the brief
+	// gap between isRunning flipping via WS and the next sessions poll). Entries
+	// are pruned once a row stops running so a later run starts its clock fresh.
+	const runStartSeen = useRef<Map<string, number>>(new Map());
 	// Divider under the Sessions header, shown only once the list is scrolled off
 	// the top — a scroll-shadow cue that there's content tucked under the header.
 	const [listScrolled, setListScrolled] = useState(false);
@@ -1136,6 +1141,27 @@ export function Sidebar({
 		const active = row.chats.some((s) => s.id === selectedId);
 		const editing = row.workspace && editingProjectId === row.workspace.id;
 		const waiting = row.status === "needsinput";
+		// The "in progress" ticker start: the earliest running chat's start, so a
+		// workspace with several live chats shows how long it's been busy overall.
+		// Done/idle chats don't count — only chats actually running feed the clock.
+		// Prefer the server's runStartedAt (survives refresh); fall back to the
+		// first moment we saw this row running. Pruned when the row goes idle.
+		let runStartMs: number | null = null;
+		if (row.running) {
+			const stamps = row.chats
+				.filter((c) => c.isRunning && c.runStartedAt)
+				.map((c) => Date.parse(c.runStartedAt!))
+				.filter((n) => !Number.isNaN(n));
+			if (stamps.length) {
+				runStartMs = Math.min(...stamps);
+				runStartSeen.current.set(row.key, runStartMs);
+			} else {
+				runStartMs = runStartSeen.current.get(row.key) ?? Date.now();
+				runStartSeen.current.set(row.key, runStartMs);
+			}
+		} else {
+			runStartSeen.current.delete(row.key);
+		}
 		return (
 			<button
 				key={row.key}
@@ -1222,19 +1248,23 @@ export function Sidebar({
 				{row.chats.length > 1 && (
 					<span className="sidebar-group-count">{row.chats.length}</span>
 				)}
-				{row.lastActivity && (
-					<span
-						className="sidebar-ws-time"
-						title={new Date(row.lastActivity).toLocaleString()}
-					>
-						{shortTime(row.lastActivity)}
-					</span>
+				{runStartMs !== null ? (
+					<RunTicker startMs={runStartMs} />
+				) : (
+					row.lastActivity && (
+						<span
+							className="sidebar-ws-time"
+							title={new Date(row.lastActivity).toLocaleString()}
+						>
+							{shortTime(row.lastActivity)}
+						</span>
+					)
 				)}
 				{/* Slack-style pencil: a chat here holds an unsent draft — come back
 				    and finish it. Yields to the hover actions like the count/time. */}
 				{row.chats.some((c) => hasDraft(`chat:${c.id}`)) && (
 					<span className="sidebar-ws-draft" title="Unsent draft — return to finish it">
-						<IconPencil size={15} />
+						<IconPencil size={18} />
 					</span>
 				)}
 				{/* Hover actions: pin + archive, side by side (replace the count). */}
@@ -1345,7 +1375,7 @@ export function Sidebar({
 				title={`${r.number ? `#${r.number} ` : ""}${r.title} — ${r.repo}`}
 			>
 				<IconPullRequest
-					size={18}
+					size={20}
 					className={`shrink-0 ${
 						r.checksFailed
 							? "text-red"
@@ -1412,7 +1442,7 @@ export function Sidebar({
 	return (
 		<div className="sidebar">
 			<div className="sidebar-search-wrap">
-				<IconSearch className="sidebar-search-icon" size={18} />
+				<IconSearch className="sidebar-search-icon" size={20} />
 				{/* Acts as a button: clicking (or focusing) it opens the ⌘K
 				    session-search palette rather than filtering inline. */}
 				<input
@@ -1724,7 +1754,7 @@ export function Sidebar({
 								<span className="sidebar-group-name">Pinned</span>
 								<IconChevronDown
 									className="sidebar-group-chevron"
-									size={18}
+									size={20}
 									style={{ transform: pinnedOpen ? "none" : "rotate(-90deg)" }}
 								/>
 								<span className="sidebar-group-count">{pinnedCount}</span>
@@ -1800,7 +1830,7 @@ export function Sidebar({
 										<span className="sidebar-group-name">{meta.label}</span>
 										<IconChevronDown
 											className="sidebar-group-chevron"
-											size={18}
+											size={20}
 											style={{ transform: open ? "none" : "rotate(-90deg)" }}
 										/>
 										<span className="sidebar-group-count">
@@ -1944,7 +1974,7 @@ export function Sidebar({
 											<span className="sidebar-group-name">{group.label}</span>
 											<IconChevronDown
 												className="sidebar-group-chevron"
-												size={18}
+												size={20}
 												style={{
 													transform: open ? "none" : "rotate(-90deg)",
 												}}
@@ -2566,7 +2596,7 @@ function SidebarItem({
 				)}
 				{!editing && hasDraft(`chat:${session.id}`) && (
 					<span className="sidebar-ws-draft" title="Unsent draft — return to finish it">
-						<IconPencil size={15} />
+						<IconPencil size={18} />
 					</span>
 				)}
 			</div>
@@ -3038,6 +3068,23 @@ interface WsCardRow {
 // gets an icon — open PR (green, faint while still a draft) or merged
 // (purple). Backlog rows get nothing; quiet is the signal there. Shared by
 // the sidebar row and the hover card head so they always read the same.
+// Live "in progress" ticker: counts up from when the run started, in the
+// in-progress color (yellow). Ticks once a second, isolated to this tiny node
+// so the whole sidebar doesn't re-render every second. `startMs` is the earliest
+// running chat's start (see runStartMs) — the workspace's been busy for that long.
+function RunTicker({ startMs }: { startMs: number }) {
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		const t = setInterval(() => setNow(Date.now()), 1000);
+		return () => clearInterval(t);
+	}, []);
+	return (
+		<span className="sidebar-ws-ticker" title="How long this run has been working">
+			{elapsedClock(startMs, now)}
+		</span>
+	);
+}
+
 function WsStatusMark({
 	row,
 	size = 20,
@@ -3179,7 +3226,7 @@ function WsOverviewInfo({
 					</span>
 				)}
 				<span className="flex shrink-0 items-center" title={meta?.label}>
-					<WsStatusMark row={row} size={18} />
+					<WsStatusMark row={row} size={20} />
 				</span>
 			</div>
 

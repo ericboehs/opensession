@@ -48,6 +48,13 @@ export interface UnifiedSession {
 	lastActivity: string;
 	createdAt: string;
 	isRunning: boolean;
+	/**
+	 * When the in-flight run started (ISO), for the "in progress" elapsed ticker
+	 * in the sidebar. Only set while isRunning; sourced server-side from the run
+	 * journal so it survives a refresh. Absent for external CLI/tmux runs — the
+	 * sidebar then falls back to a client-observed start time.
+	 */
+	runStartedAt?: string;
 	transcriptPath: string | null;
 	prUrl?: string;
 	prState?: "OPEN" | "MERGED" | "CLOSED";
@@ -260,6 +267,8 @@ export type WSClientMessage =
 			 */
 			chatMode?: "share" | "stack" | "ask";
 			model?: string;
+			/** Optional MCP server allowlist for the opening run. [] means no external MCP servers. */
+			mcpServers?: string[];
 			images?: string[];
 			/**
 			 * Reasoning effort — accepted but not yet consumed server-side (see

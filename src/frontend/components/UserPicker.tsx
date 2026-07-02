@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { UserAvatar } from "./UserAvatar";
 
 export const TEAM = ["Michiel", "Jaap", "Kent", "Grant", "Johnny", "John", "Louise"];
 const KEY = "backstage-user";
@@ -51,6 +52,7 @@ export function UserGate({ children }: { children: React.ReactNode }) {
               className="user-gate-btn"
               onClick={() => setStoredUser(name)}
             >
+              <UserAvatar name={name} size={36} />
               {name}
             </button>
           ))}

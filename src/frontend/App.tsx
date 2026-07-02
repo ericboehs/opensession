@@ -21,7 +21,7 @@ import { Settings, type SettingsSectionKey } from "./components/Settings";
 import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
-import { UpdateToast } from "./components/UpdateToast";
+import { UpdatePill } from "./components/UpdatePill";
 import { IconSearch } from "./components/icons";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -701,11 +701,11 @@ function App() {
 						? "Pull request"
 						: "";
 
-	// Brand: the Michael title + its dropdown (the "Michael menu"), which now carries
-	// the account switcher and connection status that used to sit as a separate chip.
-	// Shared between the mobile top bar and the desktop sidebar's brand row.
-	const brand = (
-		<div className="app-brand">
+	// The Michael title/logo, linking home. The desktop sidebar shows this alone
+	// at the top (the account/settings menu moved to the sidebar footer); the
+	// mobile top bar pairs it with the chevron Michael menu below.
+	const brandTitle = (
+		<div className="app-title-wrap">
 			<a
 				className="app-title"
 				href="/backstage/"
@@ -714,9 +714,19 @@ function App() {
 					navigate({ view: "home" });
 				}}
 			>
-				<span className="app-logo">M</span>
-				<span className="app-title-text">Michael</span>
+				<span className="app-logo">B</span>
+				<span className="app-title-text">Backstage</span>
 			</a>
+			<UpdatePill addHandler={addHandler} />
+		</div>
+	);
+
+	// Mobile top-bar brand: the title + its chevron dropdown (account switcher +
+	// connection status + Settings). On desktop that menu lives in the footer
+	// user row instead, so the top stays just the title + the collapse toggle.
+	const brand = (
+		<div className="app-brand">
+			{brandTitle}
 			<SettingsMenu
 				onOpenSettings={() => navigate({ view: "settings" })}
 				connected={connected}
@@ -752,7 +762,6 @@ function App() {
 	return (
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
-			<UpdateToast addHandler={addHandler} />
 			<MediaLightboxHost />
 			<div className="app">
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
@@ -910,11 +919,12 @@ function App() {
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
 						}
 					>
-						{/* Desktop brand row: Michael menu on the left, the collapse toggle
-						    on the right (hidden on mobile, where the top bar carries the
-						    brand instead). */}
+						{/* Desktop brand row: just the Michael title on the left and the
+						    collapse toggle on the right — the account/settings menu moved
+						    to the footer user row below. Hidden on mobile, where the top
+						    bar carries the brand instead. */}
 						<div className="sidebar-brand">
-							{brand}
+							{brandTitle}
 							<Tooltip label="Hide sidebar" side="bottom">
 								<button
 									className="sidebar-toggle-btn"
@@ -1051,6 +1061,16 @@ function App() {
 								refresh();
 							}}
 						/>
+						{/* Footer user row (desktop): avatar · current user · connection
+						    state · gear — the account/settings menu that used to sit at the
+						    top. Hidden on mobile, where the top bar carries it. */}
+						<div className="sidebar-footer">
+							<SettingsMenu
+								variant="footer"
+								onOpenSettings={() => navigate({ view: "settings" })}
+								connected={connected}
+							/>
+						</div>
 						{/* Drag the right edge to resize (desktop only; hidden on mobile). */}
 						<div
 							className="sidebar-resize"

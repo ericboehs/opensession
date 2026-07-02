@@ -564,7 +564,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                     >
                       <IconCheck
                         className="palette-create-menu-check"
-                        size={19}
+                        size={20}
                         style={{ visibility: createMore === opt.more ? "visible" : "hidden" }}
                       />
                       <span className="palette-create-menu-text">

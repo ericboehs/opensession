@@ -19,6 +19,7 @@ import { TranscriptBlocks } from "./TranscriptBlocks";
 import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
+import { UserAvatar } from "./UserAvatar";
 import {
 	deleteSessionApi,
 	archiveSessionApi,
@@ -903,9 +904,10 @@ export function SessionViewer({
 
 	// Responsive header: when the top bar gets narrow (small window, sidebar +
 	// workspace panel both open), the title truncates first (CSS), then the
-	// secondary actions (pin, Share, Spin off, Delete) collapse into a ⋯ menu so
-	// they never overlap the title. Measured on the header element itself so it
-	// tracks the real available width regardless of the surrounding chrome.
+	// Share button collapses into the ⋯ menu so it never overlaps the title.
+	// (Pin and Spin off live in the ⋯ menu at every width.) Measured on the
+	// header element itself so it tracks the real available width regardless
+	// of the surrounding chrome.
 	const headerRef = useRef<HTMLDivElement>(null);
 	const [headerW, setHeaderW] = useState(0);
 	useLayoutEffect(() => {
@@ -918,9 +920,9 @@ export function SessionViewer({
 		return () => ro.disconnect();
 	}, [topbarEl]);
 	// Collapse before the inline row can overrun: the title's non-shrinkable
-	// floor (source chip + Working pill) plus all six action buttons
-	// needs ~820px, so below that the secondary actions move into the ⋯ menu.
-	const compactHeader = headerW > 0 && headerW < 820;
+	// floor (source chip + Working pill) plus the inline actions (facepile,
+	// links, Share) needs ~740px, so below that Share moves into the ⋯ menu.
+	const compactHeader = headerW > 0 && headerW < 740;
 
 	// Phone layout (same 720px breakpoint as the CSS page-stack): the header
 	// actions portal into the top bar next to the centered title, and every
@@ -942,8 +944,11 @@ export function SessionViewer({
 	useEffect(() => {
 		if (!overflowOpen) return;
 		const onDoc = (e: MouseEvent) => {
-			if (!overflowRef.current?.contains(e.target as Node))
-				setOverflowOpen(false);
+			if (overflowRef.current?.contains(e.target as Node)) return;
+			// The Spin off flavor picker is a Base UI popup portaled to <body> —
+			// a click inside it must not close the ⋯ menu it was opened from.
+			if ((e.target as Element | null)?.closest?.('[role="menu"]')) return;
+			setOverflowOpen(false);
 		};
 		document.addEventListener("mousedown", onDoc);
 		return () => document.removeEventListener("mousedown", onDoc);
@@ -1054,25 +1059,27 @@ export function SessionViewer({
 				</div>
 			)}
 			{(() => {
-				// Secondary actions that ride inline on a wide header but tuck into
-				// the ⋯ overflow menu when it gets narrow.
+				// Share rides inline on a wide header but tucks into the ⋯ overflow
+				// menu when it gets narrow.
 				const collapsibleActions = (
+					<button
+						className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
+						onClick={handleShare}
+						title="Copy a link to this session"
+					>
+						{copied ? "Copied ✓" : "Share"}
+					</button>
+				);
+				// Star (pin) and Spin off live in the ⋯ menu at every width,
+				// alongside Delete — occasional actions, not header chrome.
+				const overflowActions = (
 					<>
-						<Tooltip label={pinned ? "Unpin tab" : "Pin as tab"}>
-							<button
-								className={`btn-viewer-pin ${pinned ? "active" : ""}`}
-								onClick={() => togglePin(session.id)}
-								aria-pressed={pinned}
-							>
-								{pinned ? "★" : "☆"}
-							</button>
-						</Tooltip>
 						<button
-							className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
-							onClick={handleShare}
-							title="Copy a link to this session"
+							className={`btn-viewer-pin ${pinned ? "active" : ""}`}
+							onClick={() => togglePin(session.id)}
+							aria-pressed={pinned}
 						>
-							{copied ? "Copied ✓" : "Share"}
+							{pinned ? "★ Unpin tab" : "☆ Pin as tab"}
 						</button>
 						<SpinOffMenu
 							session={session}
@@ -1092,7 +1099,7 @@ export function SessionViewer({
 						disabled={archiving}
 						title={session.archived ? "Unarchive session" : "Archive session"}
 					>
-						<IconArchive size={17} />
+						<IconArchive size={20} />
 						{archiving
 							? session.archived
 								? "Unarchiving…"
@@ -1110,7 +1117,7 @@ export function SessionViewer({
 						onClick={() => setShowDeleteConfirm(true)}
 						title="Delete session"
 					>
-						<IconTrash size={17} />
+						<IconTrash size={20} />
 						Delete session
 					</button>
 				) : (
@@ -1258,27 +1265,31 @@ export function SessionViewer({
 					)}
 				</div>
 				<div className="viewer-header-actions">
-					{!isPhone && viewers.length > 1 && (
+					{!isPhone && secondaryActions}
+					{/* Everyone with the session open, Figma/Notion-style, right
+					    before Share. You're always in it (rightmost); others stack
+					    in front with their GitHub picture. */}
+					{!isPhone && viewers.length > 0 && (
 						<div className="presence" title={`Viewing: ${viewers.join(", ")}`}>
-							{dedupeViewers(viewers).map((v) => (
-								<span
+							{dedupeViewers(viewers, me).map((v) => (
+								<UserAvatar
 									key={v.name}
+									name={v.name}
+									size={24}
 									className={`presence-avatar ${v.name === me ? "presence-me" : ""}`}
 								>
-									{v.name.charAt(0).toUpperCase()}
 									{v.count > 1 ? (
 										<span className="presence-count">{v.count}</span>
 									) : null}
-								</span>
+								</UserAvatar>
 							))}
 						</div>
 					)}
-					{!isPhone && secondaryActions}
-					{/* Pin / Share / Spin off ride inline when there's room, else
-					    collapse behind ⋯ so they never crowd the title. They sit
-					    before Workspace so the Workspace toggle stays rightmost. On
-					    phones the secondary controls fold in too. The ⋯ menu is always
-					    present — Delete lives only in there. */}
+					{/* Share rides inline when there's room, else collapses behind ⋯
+					    so it never crowds the title. It sits before Workspace so the
+					    Workspace toggle stays rightmost. On phones the secondary
+					    controls fold in too. The ⋯ menu is always present — Star,
+					    Spin off and Delete live only in there. */}
 					{!compactHeader && !isPhone && collapsibleActions}
 					<div className="viewer-overflow" ref={overflowRef}>
 						<button
@@ -1294,6 +1305,7 @@ export function SessionViewer({
 							<div className="viewer-overflow-menu">
 								{isPhone && secondaryActions}
 								{(compactHeader || isPhone) && collapsibleActions}
+								{overflowActions}
 								{archiveAction}
 								{deleteAction}
 							</div>
@@ -1322,7 +1334,7 @@ export function SessionViewer({
 								aria-label="Toggle side panel"
 							>
 								{/* Iconic sidebar-right glyph — reads as "right side panel". */}
-								<IconSidebarRight className="btn-panel-toggle-icon" size={23} />
+								<IconSidebarRight className="btn-panel-toggle-icon" size={24} />
 							</button>
 						</Tooltip>
 					)}
@@ -1845,10 +1857,14 @@ function StreamingMessage({ text }: { text: string }) {
 
 function dedupeViewers(
 	viewers: string[],
+	me?: string,
 ): Array<{ name: string; count: number }> {
 	const counts = new Map<string, number>();
 	for (const v of viewers) counts.set(v, (counts.get(v) || 0) + 1);
-	return Array.from(counts, ([name, count]) => ({ name, count }));
+	const list = Array.from(counts, ([name, count]) => ({ name, count }));
+	// Others first, you last (nearest Share) — the Figma/Notion facepile order.
+	if (me) list.sort((a, b) => Number(a.name === me) - Number(b.name === me));
+	return list;
 }
 
 // Clipboard fallback for non-secure contexts (where navigator.clipboard is absent)

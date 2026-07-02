@@ -5,25 +5,28 @@ import { BottomSheet } from "../ui/sheet";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { IconCheck, IconChevronRight } from "./icons";
 import { TEAM, setCurrentUser, useCurrentUser } from "./UserPicker";
+import { UserAvatar } from "./UserAvatar";
 
-// The dropdown behind the "Michael" title in the top bar — the "Michael menu". It
-// holds the account switcher (who you're acting as), the live connection status,
-// and an entry into the full Settings page (theme, notifications, …). On desktop
-// it's a Base UI menu (ui/menu: outside-click/Escape dismissal, keyboard nav and
-// submenu positioning come from the primitive); on phones the same content opens
-// as an iOS-style bottom sheet instead, with the account switcher inlined as a
-// tappable list rather than a hover submenu.
+// The "Michael menu": the account switcher (who you're acting as), the live
+// connection status, and an entry into the full Settings page (theme,
+// notifications, …). On desktop it's a Base UI menu (ui/menu: outside-click/
+// Escape dismissal, keyboard nav and submenu positioning come from the
+// primitive); on phones the same content opens as an iOS-style bottom sheet
+// instead, with the account switcher inlined as a tappable list rather than a
+// hover submenu.
+//
+// Two trigger shapes via `variant`:
+//   "chevron" — a small chevron (the mobile top bar's brand menu).
+//   "footer"  — a full-width user row (avatar · name · connection state · gear)
+//               that lives at the bottom of the desktop sidebar.
 
 function Avatar({ name, active }: { name: string; active?: boolean }) {
 	return (
-		<span
-			className={cn(
-				"inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-				active ? "bg-accent text-white" : "bg-active text-dim",
-			)}
-		>
-			{name.charAt(0).toUpperCase()}
-		</span>
+		<UserAvatar
+			name={name}
+			size={22}
+			className={cn(active && "border-accent shadow-[0_0_0_1px_var(--accent)]")}
+		/>
 	);
 }
 
@@ -52,27 +55,71 @@ const gearIcon = (
 	</svg>
 );
 
+/** The footer trigger's contents: avatar, name, live connection state, gear.
+ * Shared by the desktop menu trigger and the phone sheet trigger so the row
+ * looks identical however it opens. */
+function UserRow({
+	name,
+	connected,
+}: {
+	name: string;
+	connected?: boolean;
+}) {
+	return (
+		<>
+			<UserAvatar name={name} size={30} className="shrink-0" />
+			<span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left leading-tight">
+				<span className="truncate text-[13px] font-semibold text-fg">{name}</span>
+				<span className="flex items-center gap-1.5 text-[11px] font-medium text-faint">
+					<span
+						className={cn(
+							"h-1.5 w-1.5 shrink-0 rounded-full",
+							connected ? "bg-green" : "bg-red",
+						)}
+					/>
+					{connected ? "Connected" : "Reconnecting…"}
+				</span>
+			</span>
+			<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-faint">
+				{gearIcon}
+			</span>
+		</>
+	);
+}
+
 /** Phone variant: the same trigger opens a bottom sheet with the account
  * switcher as an inline grouped list (no submenus on touch). */
 function SettingsSheet({
 	onOpenSettings,
 	connected,
+	variant = "chevron",
 }: {
 	onOpenSettings?: () => void;
 	connected?: boolean;
+	variant?: "chevron" | "footer";
 }) {
 	const currentUser = useCurrentUser();
 	const [open, setOpen] = useState(false);
 
 	return (
 		<>
-			<button
-				aria-label="Michael menu"
-				className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-md border-none bg-transparent p-0 text-faint active:bg-hover active:text-fg"
-				onClick={() => setOpen(true)}
-			>
-				{triggerChevron}
-			</button>
+			{variant === "footer" ? (
+				<button
+					aria-label="Account & settings"
+					className="flex w-full items-center gap-2.5 rounded-lg border-none bg-transparent px-2 py-1.5 text-left active:bg-hover"
+					onClick={() => setOpen(true)}
+				>
+					<UserRow name={currentUser} connected={connected} />
+				</button>
+			) : (
+				<button
+					aria-label="Michael menu"
+					className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-md border-none bg-transparent p-0 text-faint active:bg-hover active:text-fg"
+					onClick={() => setOpen(true)}
+				>
+					{triggerChevron}
+				</button>
+			)}
 			{open && (
 				<BottomSheet label="Michael menu" onClose={() => setOpen(false)}>
 					{(dismiss) => (
@@ -95,7 +142,7 @@ function SettingsSheet({
 											{name}
 										</span>
 										{name === currentUser && (
-											<IconCheck size={18} className="shrink-0 text-accent" />
+											<IconCheck size={20} className="shrink-0 text-accent" />
 										)}
 									</button>
 								))}
@@ -115,7 +162,7 @@ function SettingsSheet({
 									<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
 										Settings
 									</span>
-									<IconChevronRight size={16} className="shrink-0 text-faint" />
+									<IconChevronRight size={18} className="shrink-0 text-faint" />
 								</button>
 							</div>
 
@@ -139,26 +186,52 @@ function SettingsSheet({
 export function SettingsMenu({
 	onOpenSettings,
 	connected,
+	variant = "chevron",
 }: {
 	onOpenSettings?: () => void;
 	connected?: boolean;
+	variant?: "chevron" | "footer";
 }) {
 	const currentUser = useCurrentUser();
 	const isPhone = useIsPhone();
 
 	if (isPhone)
-		return <SettingsSheet onOpenSettings={onOpenSettings} connected={connected} />;
+		return (
+			<SettingsSheet
+				onOpenSettings={onOpenSettings}
+				connected={connected}
+				variant={variant}
+			/>
+		);
+
+	const footer = variant === "footer";
 
 	return (
 		<Menu.Root>
-			<Menu.Trigger
-				aria-label="Settings"
-				className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border-none bg-transparent p-0 text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"
-			>
-				{triggerChevron}
-			</Menu.Trigger>
+			{footer ? (
+				<Menu.Trigger
+					aria-label="Account & settings"
+					className="flex w-full items-center gap-2.5 rounded-lg border-none bg-transparent px-2 py-1.5 text-left text-fg hover:bg-hover data-[popup-open]:bg-hover"
+				>
+					<UserRow name={currentUser} connected={connected} />
+				</Menu.Trigger>
+			) : (
+				<Menu.Trigger
+					aria-label="Settings"
+					className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border-none bg-transparent p-0 text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+				>
+					{triggerChevron}
+				</Menu.Trigger>
+			)}
 
-			<Menu.Popup align="start" sideOffset={8} className="min-w-[244px] p-3">
+			{/* Footer trigger sits at the very bottom of the sidebar — open the menu
+			    upward so it doesn't run off-screen. */}
+			<Menu.Popup
+				side={footer ? "top" : undefined}
+				align="start"
+				sideOffset={8}
+				className="min-w-[244px] p-3"
+			>
 				<Menu.SubmenuRoot>
 					<Menu.SubmenuTrigger className="gap-[9px] rounded-[7px] px-2 py-1.5">
 						<Avatar name={currentUser} active />
@@ -224,17 +297,23 @@ export function SettingsMenu({
 
 				<Menu.Separator className="-mx-3 my-3.5" />
 
-				<div className="flex items-center gap-2 px-2 py-0.5 text-xs text-dim">
-					<span
-						className={cn(
-							"h-2 w-2 rounded-full",
-							connected ? "bg-green" : "bg-red",
-						)}
-					/>
-					{connected ? "Connected" : "Reconnecting…"}
-				</div>
+				{/* The footer trigger already shows the connection state in its row,
+				    so the menu only repeats it for the compact chevron variant. */}
+				{!footer && (
+					<>
+						<div className="flex items-center gap-2 px-2 py-0.5 text-xs text-dim">
+							<span
+								className={cn(
+									"h-2 w-2 rounded-full",
+									connected ? "bg-green" : "bg-red",
+								)}
+							/>
+							{connected ? "Connected" : "Reconnecting…"}
+						</div>
 
-				<Menu.Separator className="-mx-3 my-3.5" />
+						<Menu.Separator className="-mx-3 my-3.5" />
+					</>
+				)}
 
 				<Menu.Item onClick={() => onOpenSettings?.()}>
 					{gearIcon}

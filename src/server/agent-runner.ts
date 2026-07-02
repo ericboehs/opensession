@@ -23,6 +23,12 @@ import {
 } from "./claude-runner";
 import { runCodex, isCodexSessionBusy, cancelCodexRun, activeCodexRunCount } from "./codex-runner";
 import { providerFor, resolveModel, DEFAULT_CODEX_MODEL, getDefaultModel } from "./models";
+import {
+  hostRunBusy,
+  hostSteer,
+  hostInterruptSteer,
+  hostCancel,
+} from "./host-registry";
 import type { GitIdentity } from "./shared/user-mappings";
 
 export type { StreamEvent };
@@ -38,8 +44,9 @@ export interface RunAgentOpts {
   mcpServers?: string[];
   /**
    * In-process SDK MCP servers (michael-sessions / michael-admin) for trusted
-   * interactive runs only — never automations. Claude backend only; the Codex
-   * runner ignores it. See runClaude opts for the full contract.
+   * interactive runs only — never automations. Claude receives them directly;
+   * Codex receives stdio proxy configs that forward to the same in-process
+   * servers through Backstage's run RPC socket.
    */
   inProcessMcp?: Record<string, unknown>;
   /**
@@ -88,6 +95,7 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerat
       mode: opts.mode,
       model: model || DEFAULT_CODEX_MODEL,
       mcpServers: opts.mcpServers,
+      inProcessMcp: opts.inProcessMcp,
       deniedTools: opts.deniedTools,
       confirmTools: opts.confirmTools,
       journal: opts.journal,
@@ -178,7 +186,13 @@ export function unmarkSessionStarting(id: string): void {
 export function isAgentSessionBusy(...ids: Array<string | null | undefined>): boolean {
   for (const id of ids) {
     if (!id) continue;
-    if (pendingStarts.has(id) || isSessionBusy(id) || isCodexSessionBusy(id)) return true;
+    if (
+      pendingStarts.has(id) ||
+      isSessionBusy(id) ||
+      isCodexSessionBusy(id) ||
+      hostRunBusy(id)
+    )
+      return true;
   }
   return false;
 }
@@ -202,7 +216,7 @@ export function steerAgentRun(
   text: string
 ): boolean {
   for (const id of ids) {
-    if (id && steerRun(id, text)) return true;
+    if (id && (steerRun(id, text) || hostSteer(id, text))) return true;
   }
   return false;
 }
@@ -217,7 +231,8 @@ export function interruptAndSteerAgentRun(
   text: string
 ): boolean {
   for (const id of ids) {
-    if (id && interruptAndSteerRun(id, text)) return true;
+    if (id && (interruptAndSteerRun(id, text) || hostInterruptSteer(id, text)))
+      return true;
   }
   return false;
 }
@@ -229,6 +244,7 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
     if (!id) continue;
     if (cancelRun(id)) cancelled = true;
     if (cancelCodexRun(id)) cancelled = true;
+    if (hostCancel(id)) cancelled = true;
   }
   return cancelled;
 }

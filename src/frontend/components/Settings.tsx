@@ -80,8 +80,8 @@ const SECTIONS: {
 		group: "Tools",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -98,8 +98,8 @@ const SECTIONS: {
 		group: "Tools",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -117,8 +117,8 @@ const SECTIONS: {
 		group: "Tools",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -137,8 +137,8 @@ const SECTIONS: {
 		group: "Tools",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -158,8 +158,8 @@ const SECTIONS: {
 		group: "Tools",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -179,8 +179,8 @@ const SECTIONS: {
 		group: "Personal",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -200,8 +200,8 @@ const SECTIONS: {
 		group: "Personal",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -238,8 +238,8 @@ const SECTIONS: {
 		group: "Personal",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -256,8 +256,8 @@ const SECTIONS: {
 		group: "Workspace",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -280,8 +280,8 @@ const SECTIONS: {
 		group: "Workspace",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -300,8 +300,8 @@ const SECTIONS: {
 		group: "Workspace",
 		icon: (
 			<svg
-				width="17"
-				height="17"
+				width="18"
+				height="18"
 				viewBox="0 0 16 16"
 				fill="none"
 				stroke="currentColor"
@@ -485,7 +485,7 @@ function MobileSettings({
 								className="absolute left-1 flex items-center gap-0.5 rounded-md border-none bg-transparent px-2 py-2 text-[15px] font-medium text-accent"
 								onClick={() => onShowRoot?.()}
 							>
-								<IconChevronLeft size={18} />
+								<IconChevronLeft size={20} />
 								Settings
 							</button>
 						)}
@@ -497,7 +497,7 @@ function MobileSettings({
 							onClick={dismiss}
 							aria-label="Close settings"
 						>
-							<IconX size={16} />
+							<IconX size={20} />
 						</button>
 					</div>
 
@@ -530,7 +530,7 @@ function MobileSettings({
 												<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
 													{s.label}
 												</span>
-												<IconChevronRight size={16} className="shrink-0 text-faint" />
+												<IconChevronRight size={18} className="shrink-0 text-faint" />
 											</button>
 										))}
 									</div>

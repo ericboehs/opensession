@@ -480,6 +480,16 @@ a {
 	min-width: 0;
 }
 
+/* Footer user row at the bottom of the desktop sidebar: the account/settings
+   menu (avatar · current user · connection state · gear) that used to sit in the
+   top brand row. Pinned below the scrolling workspace list. Hidden on mobile,
+   where the top bar carries the brand. */
+.sidebar-footer {
+	flex-shrink: 0;
+	padding: 6px 8px;
+	border-top: 1px solid var(--border);
+}
+
 /* Collapse toggle sitting where the user chip used to be. The floating re-open
    control (.sidebar-reopen) shares its look so the affordance reads the same
    whether the sidebar is open or hidden. */
@@ -2026,6 +2036,9 @@ body.resizing-x {
 }
 
 .viewer-started-by {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
 	color: var(--text-faint);
 	font-size: 12.5px;
 	flex-shrink: 0;
@@ -2150,26 +2163,49 @@ body.resizing-x {
 	gap: 6px;
 }
 
-/* presence avatars */
+/* The pin (star) row lives in the ⋯ menu with a text label — the base rule's
+   glyph-sized 16px would blow the label up. */
+.viewer-overflow-menu > .btn-viewer-pin {
+	font-size: 13px;
+}
+
+/* Round user picture (GitHub avatar, initial fallback) — see UserAvatar.tsx.
+   Size + font-size come inline from the component; the count badge the
+   presence facepile nests inside sits outside the circle, so no overflow
+   clipping here (the img rounds itself instead). */
+.user-avatar {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	border-radius: 50%;
+	background: var(--bg-active);
+	border: 1px solid var(--border-strong);
+	color: var(--text-dim);
+	font-weight: 700;
+	user-select: none;
+}
+.user-avatar img {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	border-radius: 50%;
+	object-fit: cover;
+}
+
+/* presence facepile (the Figma/Notion-style user row before Share) */
 .presence {
 	display: flex;
 	align-items: center;
 }
 
 .presence-avatar {
-	position: relative;
-	width: 24px;
-	height: 24px;
-	border-radius: 50%;
-	background: var(--bg-active);
-	border: 1px solid var(--border-strong);
-	color: var(--text-dim);
-	font-size: 11px;
-	font-weight: 700;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	margin-left: -6px;
+	margin-left: -7px;
+	/* Ring the color of the header behind it (.viewer-header is bg-raised),
+	   so stacked faces read as separate circles. */
+	box-shadow: 0 0 0 2px var(--bg-raised);
 }
 .presence-avatar:first-child {
 	margin-left: 0;
@@ -7226,6 +7262,10 @@ html[data-theme="light"] .tool-code-surface {
 }
 
 .user-gate-btn {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
 	border-radius: 8px;
@@ -7410,6 +7450,11 @@ html[data-theme="light"] .tool-code-surface {
 		display: none;
 	}
 	.sidebar-brand {
+		display: none;
+	}
+	/* The footer user row is a desktop affordance; on mobile the top bar carries
+	   the brand + account menu instead. */
+	.sidebar-footer {
 		display: none;
 	}
 	.sidebar-resize {
@@ -7735,8 +7780,8 @@ html[data-theme="light"] .tool-code-surface {
 		height: 40px;
 	}
 	.palette-icon-btn svg {
-		width: 23px;
-		height: 23px;
+		width: 24px;
+		height: 24px;
 	}
 	.composer-model {
 		font-size: 13px;
@@ -7780,7 +7825,8 @@ html[data-theme="light"] .tool-code-surface {
 	.sidebar-group-count {
 		font-size: 13px;
 	}
-	.sidebar-ws-time {
+	.sidebar-ws-time,
+	.sidebar-ws-ticker {
 		font-size: 12px;
 	}
 	.sidebar-item-title,
@@ -8284,7 +8330,7 @@ html[data-theme="light"] .tool-code-surface {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 16px;
+	width: 20px;
 	color: var(--text-dim);
 	font-size: 13px;
 }
@@ -9875,8 +9921,8 @@ html[data-theme="light"] .tool-code-surface {
 	color: var(--text-dim);
 	font-size: 13px;
 	font-weight: 500;
-	padding: 6px 8px;
-	border-radius: 6px;
+	padding: 6px 10px;
+	border-radius: 8px;
 	margin-bottom: 12px;
 }
 .settings-back:hover {
@@ -9891,32 +9937,33 @@ html[data-theme="light"] .tool-code-surface {
 }
 .settings-sidenav-label {
 	font-size: 11px;
-	font-weight: 600;
+	font-weight: 700;
 	letter-spacing: 0.02em;
 	color: var(--text-faint);
-	padding: 6px 8px 4px;
+	padding: 8px 10px 4px;
 }
 .settings-sidenav-item {
 	display: flex;
 	align-items: center;
-	gap: 9px;
+	gap: 11px;
 	background: none;
 	border: none;
 	cursor: pointer;
 	text-align: left;
 	width: 100%;
 	color: var(--text-dim);
-	font-size: 13px;
-	padding: 7px 8px;
-	border-radius: 6px;
+	font-size: 14px;
+	font-weight: 500;
+	padding: 8px 10px;
+	border-radius: 8px;
 }
 .settings-sidenav-icon {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	flex: none;
-	width: 16px;
-	height: 16px;
+	width: 18px;
+	height: 18px;
 	color: var(--text-faint);
 }
 .settings-sidenav-item:hover {
@@ -10321,6 +10368,23 @@ html[data-theme="light"] .tool-code-surface {
 	margin-left: 6px;
 }
 .sidebar-ws-row:hover .sidebar-ws-time {
+	display: none;
+}
+
+/* Live "in progress" elapsed ticker — sits where the time badge would, in the
+   in-progress color, with tabular figures so the digits don't jitter as they
+   tick. Yields to the hover actions like the time/count. */
+.sidebar-ws-ticker {
+	flex: 0 0 auto;
+	margin-left: auto;
+	font-size: 10.5px;
+	font-variant-numeric: tabular-nums;
+	color: var(--yellow);
+}
+.sidebar-group-count + .sidebar-ws-ticker {
+	margin-left: 6px;
+}
+.sidebar-ws-row:hover .sidebar-ws-ticker {
 	display: none;
 }
 

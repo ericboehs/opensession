@@ -112,6 +112,10 @@ import {
 	type SessionSummary,
 } from "./src/server/session-control";
 import {
+	registerInteractiveMcpBuilder,
+	startRunRpcServer,
+} from "./src/server/run-rpc";
+import {
 	startTerminal,
 	writeTerminal,
 	resizeTerminal,
@@ -302,6 +306,18 @@ function getCachedSessions(): UnifiedSession[] {
 		return sessionsCache.data;
 	}
 	const data = getAllSessions();
+	// Earliest run-start per session id, from the run journal — feeds the "in
+	// progress" elapsed ticker and survives a page refresh (a session can carry
+	// its bks id and its engine session id across records; key on both).
+	const runStarts = new Map<string, string>();
+	for (const r of activeRunRecords()) {
+		if (!r.startedAt) continue;
+		for (const key of [r.bksSessionId, r.claudeSessionId]) {
+			if (!key) continue;
+			const prev = runStarts.get(key);
+			if (!prev || r.startedAt < prev) runStarts.set(key, r.startedAt);
+		}
+	}
 	// Sessions driven from the web UI run in-process; surface those too
 	for (const s of data) {
 		if (
@@ -309,6 +325,12 @@ function getCachedSessions(): UnifiedSession[] {
 			isAgentSessionBusy(s.claudeSessionId, s.codexThreadId, s.id)
 		) {
 			s.isRunning = true;
+		}
+		if (s.isRunning) {
+			s.runStartedAt =
+				runStarts.get(s.id) ||
+				(s.claudeSessionId ? runStarts.get(s.claudeSessionId) : undefined) ||
+				(s.codexThreadId ? runStarts.get(s.codexThreadId) : undefined);
 		}
 	}
 	sessionsCache = { data, ts: Date.now() };
@@ -380,6 +402,14 @@ function interactiveMcpServers(
 			: {}),
 	};
 }
+
+// Codex cannot consume Claude SDK in-process MCP servers directly. Expose the
+// same interactive michael-* tools through the run-rpc stdio proxy so Codex
+// sessions can inspect/create/steer Backstage sessions too.
+registerInteractiveMcpBuilder((sessionId, user) =>
+	interactiveMcpServers(user, sessionId),
+);
+startRunRpcServer();
 
 /**
  * System-prompt note describing a session's repos when it spans more than one.
@@ -5325,6 +5355,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							: msg.model
 								? resolveModel(String(msg.model))?.id
 								: undefined;
+						const createMcpServers = Array.isArray(msg.mcpServers)
+							? msg.mcpServers.map(String)
+							: undefined;
 						const isCodex = providerFor(model) === "codex";
 						// Which repo this session works in (tella-fusion by default).
 						const repo = getRepo(
@@ -5569,6 +5602,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								mode: isAsk ? "ask" : "code",
 								model,
 								fallbackModel: interactiveFallbackModel(model),
+								mcpServers: createMcpServers,
 								images,
 								// Fork: resume the source engine session into a new branch,
 								// optionally from a specific past message.
@@ -5906,18 +5940,19 @@ registerSessionControl({
 		return cancelled;
 	},
 
-	createSession: async ({ prompt, branch, mode, model: modelInput, user }) => {
+	createSession: async ({ prompt, branch, repo: repoInput, mode, model: modelInput, mcpServers, user }) => {
 		const isAsk = mode !== "code";
 		const model = modelInput ? resolveModel(String(modelInput))?.id : undefined;
 		const isCodex = providerFor(model) === "codex";
+		const repo = getRepo(repoInput);
 
 		let wtPath: string;
 		if (isAsk) {
-			wtPath = `${HOME}/projects/tella-fusion`;
+			wtPath = repo.repo;
 		} else {
-			const worktrees = await listWorktrees();
+			const worktrees = await listWorktrees(repo.id);
 			wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
-			if (!wtPath) wtPath = await createWorktree(branch!);
+			if (!wtPath) wtPath = await createWorktree(branch!, repo.id);
 		}
 
 		const bksId = `bks-${randomUUIDv7()}`;
@@ -5943,6 +5978,7 @@ registerSessionControl({
 				...(model ? { model } : {}),
 				branch: isAsk ? "" : branch || "",
 				worktreeDir: wtPath,
+				repo: repo.id,
 				createdBy: user || "Michael",
 				createdAt: new Date().toISOString(),
 				lastActivity: new Date().toISOString(),
@@ -5973,6 +6009,7 @@ registerSessionControl({
 					mode: isAsk ? "ask" : "code",
 					model,
 					fallbackModel: interactiveFallbackModel(model),
+					mcpServers,
 					inProcessMcp: interactiveMcpServers(user, bksId),
 					confirmTools: STRIPE_CONFIRM_TOOLS,
 					aws: true,

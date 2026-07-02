@@ -203,7 +203,11 @@ export function filterMcpServers(
 // Every in-flight run is recorded on disk; entries that survive a process
 // restart are interrupted runs, which backstage resumes on boot.
 
-const ACTIVE_RUNS_PATH = `${BACKSTAGE_CHATS_DIR}/active-runs.json`;
+// Overridable so a detached run host (src/runner-host/host.ts) journals to its
+// own per-host file instead of read-modify-writing the shared journal from
+// multiple processes concurrently.
+const ACTIVE_RUNS_PATH =
+  process.env.BACKSTAGE_RUN_JOURNAL || `${BACKSTAGE_CHATS_DIR}/active-runs.json`;
 
 /** Backstage web UI base — used to give a session a link back to itself. */
 const UI_BASE =
@@ -846,7 +850,7 @@ export async function* runClaude(opts: {
             const parts: string[] = [];
             if (isAsk) {
               parts.push(
-                "You are Michael in Ask mode: answer questions about the tella-fusion codebase. " +
+                "You are Michael in Ask mode: answer questions about the current checkout. " +
                   "This is a READ-ONLY session on the main checkout — never modify, create, or delete " +
                   "files, never commit, never run state-changing commands. Explore with Read/Grep/Glob " +
                   "and read-only git commands, then answer clearly and concisely."
@@ -873,6 +877,22 @@ export async function* runClaude(opts: {
                   "create_session) and manage your own setup via michael-admin (automations, MCP " +
                   "connections, channel memory). Use these tools when asked to inspect or steer sessions, " +
                   "or to change configuration, rather than only describing how."
+              );
+              parts.push(
+                "## Model routing and Codex delegation\nUse Fable/Claude as the orchestrator for taste, " +
+                  "planning, judgment, review, and user-facing decisions. Do not burn Fable tokens on bulk " +
+                  "mechanical work when a cheaper worker can do it well. For clear-spec implementation, broad " +
+                  "read-only codebase analysis, migrations, test-log analysis, data crunching, or computer-use " +
+                  "style chores, create a separate Backstage worker session with michael-sessions `create_session` " +
+                  "and set `model` to `gpt-5.5` or `codex`. For workers that only need filesystem/code access, pass " +
+                  "`mcpServers: []` so unrelated external MCP startup does not slow or block them. Set `repo` to the " +
+                  "registered repo id the worker should inspect or edit, such as `backstage` or `tella-fusion`. Use ask mode for " +
+                  "read-only investigation and code mode with a branch for implementation. Give the worker a self-contained prompt with scope, repo/path, " +
+                  "acceptance criteria, and what to report back. Keep the final judgment with this orchestrator: " +
+                  "inspect the worker's summary/diff/results, rerun or escalate if the output is not good enough, " +
+                  "and use Fable/Opus/Sonnet for reviews, UI/UX, copy, API design, and anything ambiguous or " +
+                  "user-facing. Cost is only a tie-breaker; for shipped work prioritize intelligence, then taste, " +
+                  "then cost."
               );
             }
             return parts.length ? { append: parts.join("\n\n") } : {};

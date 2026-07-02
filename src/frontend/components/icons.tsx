@@ -5,6 +5,16 @@ import React from "react";
  * (packages/core/webapp/src/frontend/assets/icons/iconic-pro) so Backstage's
  * chat UI uses the same quality stroke icons as the product instead of emoji.
  * All are 24×24, `currentColor`, stroke-width 1.5 — size via the `size` prop.
+ *
+ * Size scale — stick to these three steps so icons feel consistent:
+ *   18 = inline/meta glyphs riding along with text (draft pencil, trailing
+ *        chevrons, tool-status check/x, disclosure carets in rows)
+ *   20 = standard standalone icons (the default — search, list rows, menus)
+ *   24 = primary action buttons + overlay chrome (composer send/mic/plus,
+ *        lightbox nav, mobile top-bar buttons)
+ * Note: the few hand-drawn 16-viewBox SVGs around the app render ~15% denser
+ * than this 24-grid set, so their pixel sizes run smaller for the same visual
+ * weight (a raw 17 ≈ iconic 20). Migrate them here when touched.
  */
 type IconProps = React.SVGProps<SVGSVGElement> & { size?: number };
 

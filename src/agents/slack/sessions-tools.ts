@@ -221,9 +221,13 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
       ),
       tool(
         "create_session",
-        "Spin up a new Backstage session and start it on a prompt. mode 'ask' (default) runs read-only on the main checkout — good for questions/investigations; mode 'code' creates a worktree on `branch` and can edit files / open PRs (never merges). The run starts in the background; the new session then shows up in list_sessions.",
+        "Spin up a new Backstage session and start it on a prompt. mode 'ask' (default) runs read-only on the selected repo checkout — good for questions/investigations; mode 'code' creates or reuses a worktree on `branch` and can edit files / open PRs (never merges). Pass repo when the worker should run outside the default tella-fusion repo, for example repo: 'backstage'. Pass model 'gpt-5.5' or 'codex' for a Codex worker session when delegating clear implementation, bulk analysis, migrations, logs, or other token-hungry mechanical work from a Fable/Claude orchestrator. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. The run starts in the background; the new session then shows up in list_sessions.",
         {
           prompt: z.string().describe("The task/prompt to start the session on."),
+          repo: z
+            .string()
+            .optional()
+            .describe("Registered repo id to run in, e.g. 'tella-fusion' or 'backstage'. Defaults to tella-fusion."),
           mode: z
             .enum(["ask", "code"])
             .optional()
@@ -233,12 +237,18 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
             .optional()
             .describe("Branch for the worktree (required for code mode; ignored for ask)."),
           model: z.string().optional().describe("Optional model id (e.g. 'claude-opus-4-8')."),
+          mcpServers: z
+            .array(z.string())
+            .optional()
+            .describe("Optional MCP server allowlist for the opening run. Use [] for no MCP servers."),
         },
         async (args: {
           prompt: string;
+          repo?: string;
           mode?: "ask" | "code";
           branch?: string;
           model?: string;
+          mcpServers?: string[];
         }) => {
           if (!args.prompt?.trim()) return text("Need a prompt to start a session.");
           if (args.mode === "code" && !args.branch?.trim()) {
@@ -246,9 +256,11 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           }
           const { id } = await getSessionControl().createSession({
             prompt: args.prompt,
+            repo: args.repo,
             mode: args.mode,
             branch: args.branch,
             model: args.model,
+            mcpServers: args.mcpServers,
             user: ctx.createdBy,
           });
           return text(

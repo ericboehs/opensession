@@ -117,6 +117,44 @@ Both `michael-admin` and `michael-sessions` are ALSO available inside **interact
 
 The `michael-sessions` in-process MCP (src/agents/slack/sessions-tools.ts) is a sibling, wired the same way (interactive runs only — Slack and Backstage sessions per above — never automations). It lets Michael see and steer every *other* Backstage session: read tools `list_sessions` (with a `waiting` filter for sessions blocked on an AskUserQuestion) and `get_session` (state + pending question + transcript tail) are open to any whitelisted user; the control tools — `answer_session_question` (resolves a paused question), `send_to_session` (steer/queue/start a turn), `cancel_session`, `create_session` — are gated to the trusted user via `isAdmin`. The tools don't touch in-process state directly; they go through the `SessionControl` registry (src/server/session-control.ts) that backstage.ts populates at startup with the same helpers (`runSessionPromptAndDrain`, `steerAgentRun`, `makeAskHandler`, the `pendingAsks`/`promptQueues` maps) the WebSocket handlers use — so steering from here behaves exactly like a human in the web UI, and a future autonomous monitor (src/agents/loops) can call the same registry directly without the MCP. Sessions whose runs aren't owned by this process (CLI/tmux) are surfaced as `observe-only` and can't be steered/cancelled. Do NOT wire `michael-sessions` into automation/`runAgent` paths — cross-session control from untrusted ticket text would be a privilege-escalation path.
 
+## Model routing and delegation
+
+Interactive Claude/Fable sessions should act as orchestrators, not as the only
+worker. Use the Backstage `michael-sessions` MCP tools to spin up focused worker
+sessions when that saves scarce premium-model tokens or reduces context noise.
+
+Model defaults:
+- `gpt-5.5` / `codex` (Codex backend): bulk and mechanical work. Use for
+  clear-spec implementation, broad read-only codebase analysis, migrations,
+  test-log analysis, data crunching, and computer-use-like chores. It is cheap
+  enough in practice that cost should rarely block use.
+- `claude-sonnet-5`: focused Claude worker for subsystem tracing or a second
+  implementation pass when Codex output is not good enough.
+- `claude-opus-4-8`: strong reviewer / design critic when taste or judgment
+  matters and Fable capacity should be saved.
+- `claude-fable-5`: orchestration, ambiguous planning, final judgment,
+  high-taste review, UI/UX, copy, API design, and deciding what ships.
+
+How to delegate from a Fable/Claude Backstage session:
+- Use `michael-sessions.create_session` with `model: "gpt-5.5"` or
+  `model: "codex"` for Codex workers.
+- For workers that only need filesystem/code access, pass `mcpServers: []` so
+  unrelated external MCP startup does not slow or block them.
+- Set `repo` to the registered repo id the worker should inspect or edit, such
+  as `backstage` or `tella-fusion`.
+- Use `mode: "ask"` for read-only investigation on the main checkout.
+- Use `mode: "code"` plus a branch name for implementation work that can edit
+  files or open a PR.
+- Give worker sessions self-contained prompts: scope, repo/worktree path,
+  relevant files, constraints, acceptance criteria, and exactly what to report
+  back. Ask for summarized findings and file references, not raw dumps.
+- Keep the final call in the orchestrator session. Inspect the worker's
+  summary, diff, tests, and assumptions; rerun, steer, or escalate to a smarter
+  model if the result misses the bar.
+
+Priority rule for shipped work: intelligence > taste > cost. Cost is only a
+tie-breaker. Do not ship mediocre output just because it was cheaper to produce.
+
 ## Multi-repo sessions
 
 A session is no longer single-repo. Beyond its primary `project`/`worktreeDir`/`branch`, it can **attach** secondary repos (`attachedRepos: {project,branch,dir}[]` on the session file + `UnifiedSession`). The registered repos live in `PROJECTS` (`src/server/worktree.ts`): tella-fusion, backstage (sharedCheckout), gitops, infra, shared-infra, gstreamer, gst-plugins-rs — each with a `defaultBranch` and `ghRepo` (`owner/name` for the gh CLI). All but backstage use the normal worktree+PR flow.

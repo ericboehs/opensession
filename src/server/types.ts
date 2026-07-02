@@ -17,6 +17,13 @@ export interface UnifiedSession {
   lastActivity: string;
   createdAt: string;
   isRunning: boolean;
+  /**
+   * When the in-flight run started (ISO), for the "in progress" elapsed ticker
+   * in the sidebar. Only set while isRunning; sourced from the run journal, so
+   * it survives a page refresh (external CLI/tmux runs have no journal record,
+   * so it's absent there and the UI falls back to a client-observed start).
+   */
+  runStartedAt?: string;
   transcriptPath: string | null;
   prUrl?: string;
   prState?: "OPEN" | "MERGED" | "CLOSED";

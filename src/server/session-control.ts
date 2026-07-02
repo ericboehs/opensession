@@ -53,10 +53,14 @@ export interface CreateSessionOpts {
   prompt: string;
   /** Branch for a code-mode worktree session. Ignored for ask mode. */
   branch?: string;
+  /** Registered repo id to run in. Defaults to tella-fusion. */
+  repo?: string;
   /** "ask" (default) runs read-only on the main checkout; "code" gets a worktree. */
   mode?: "ask" | "code";
   /** Optional model id; invalid input falls back to the default. */
   model?: string;
+  /** Optional MCP allowlist for the opening run. Empty array means no MCP servers. */
+  mcpServers?: string[];
   /** Display name credited as the creator. */
   user?: string;
 }

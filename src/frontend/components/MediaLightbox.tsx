@@ -116,7 +116,7 @@ function MediaLightbox({
 						onClick={prev}
 						aria-label="Previous"
 					>
-						<IconChevronLeft size={22} />
+						<IconChevronLeft size={24} />
 					</button>
 				)}
 				{item.kind === "image" ? (
@@ -144,7 +144,7 @@ function MediaLightbox({
 						onClick={next}
 						aria-label="Next"
 					>
-						<IconChevronRight size={22} />
+						<IconChevronRight size={24} />
 					</button>
 				)}
 			</div>
