@@ -19,7 +19,8 @@ import { mkdirSync, readdirSync, readFileSync, unlinkSync, existsSync } from "fs
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { runAgent } from "./agent-runner";
 import { STRIPE_CONFIRM_TOOLS } from "./claude-runner";
-import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL } from "./models";
+import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
+import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -363,13 +364,16 @@ export function runAction(
   void (async () => {
     let effectiveModel = model;
     let effectiveProvider = providerFor(model);
+    const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
     const persist = (engineSessionId: string) => {
-      const isCodex = effectiveProvider === "codex";
       const data: BackstageSessionFile = {
         id: bksId,
-        claudeSessionId: isCodex ? "" : engineSessionId,
-        ...(isCodex && engineSessionId ? { codexThreadId: engineSessionId } : {}),
+        claudeSessionId: "",
+        ...(engineSessionId
+          ? engineSessionPatch(effectiveProvider, engineSessionId)
+          : {}),
         ...(effectiveModel ? { model: effectiveModel } : {}),
+        ...(modelHistory.length ? { modelHistory } : {}),
         branch: "",
         worktreeDir: cwd,
         createdBy: `${action.name} (action)`,
@@ -411,6 +415,18 @@ export function runAction(
           if (event.model) effectiveModel = event.model;
           persist(engineSessionId);
           onSessionCreated?.(bksId);
+        }
+        if (event.type === "model_switch") {
+          const to = event.toModel || "";
+          if (to) {
+            effectiveModel = to;
+            effectiveProvider = providerFor(to);
+            modelHistory.push({
+              model: to,
+              at: new Date().toISOString(),
+              by: `auto-switch — ${modelLabel(event.fromModel)} out of credits`,
+            });
+          }
         }
         if (event.type === "done") {
           engineSessionId = event.sessionId || engineSessionId;

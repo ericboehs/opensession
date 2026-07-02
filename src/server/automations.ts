@@ -10,8 +10,9 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { parseCron, cronMatches, nextRun } from "./cron";
 import { STRIPE_CONFIRM_TOOLS } from "./claude-runner";
 import { runAgent } from "./agent-runner";
-import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL } from "./models";
+import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
 import { createWorktree, listWorktrees } from "./worktree";
+import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -530,13 +531,16 @@ export async function runAutomation(
     // so track them from the runner's init/done events for persistence.
     let effectiveModel = options?.modelOverride || automation.model;
     let effectiveProvider = providerFor(effectiveModel);
+    const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
     const persistSession = (engineSessionId: string) => {
-      const isCodex = effectiveProvider === "codex";
       const data: BackstageSessionFile = {
         id: bksId,
-        claudeSessionId: isCodex ? "" : engineSessionId,
-        ...(isCodex && engineSessionId ? { codexThreadId: engineSessionId } : {}),
+        claudeSessionId: "",
+        ...(engineSessionId
+          ? engineSessionPatch(effectiveProvider, engineSessionId)
+          : {}),
         ...(effectiveModel ? { model: effectiveModel } : {}),
+        ...(modelHistory.length ? { modelHistory } : {}),
         branch,
         worktreeDir: cwd,
         createdBy: `${automation.name} (automation)`,
@@ -580,6 +584,18 @@ export async function runAutomation(
         if (event.model) effectiveModel = event.model;
         persistSession(engineSessionId);
         onSessionCreated?.(bksId);
+      }
+      if (event.type === "model_switch") {
+        const to = event.toModel || "";
+        if (to) {
+          effectiveModel = to;
+          effectiveProvider = providerFor(to);
+          modelHistory.push({
+            model: to,
+            at: new Date().toISOString(),
+            by: `auto-switch — ${modelLabel(event.fromModel)} out of credits`,
+          });
+        }
       }
       if (event.type === "done") {
         engineSessionId = event.sessionId || engineSessionId;

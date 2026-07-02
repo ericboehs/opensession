@@ -19,6 +19,8 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { runAgent } from "./agent-runner";
 import { createWorktree, listWorktrees, REPOS, getRepo, type Repo } from "./worktree";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { providerFor, modelLabel } from "./models";
+import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -286,10 +288,18 @@ export async function executeScan(
       const prompt = buildScanPrompt(repo, profile, scan.instructions);
 
       let engineSessionId = "";
+      let effectiveModel = opts?.model;
+      let effectiveProvider = providerFor(effectiveModel);
+      const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
       const persistSession = () => {
         const data: BackstageSessionFile = {
           id: bksId,
-          claudeSessionId: engineSessionId,
+          claudeSessionId: "",
+          ...(engineSessionId
+            ? engineSessionPatch(effectiveProvider, engineSessionId)
+            : {}),
+          ...(effectiveModel ? { model: effectiveModel } : {}),
+          ...(modelHistory.length ? { modelHistory } : {}),
           branch,
           worktreeDir: cwd,
           createdBy: `${scan.createdBy} (security scan)`,
@@ -315,11 +325,31 @@ export async function executeScan(
         mcpServers: [], // deepsec + gh CLI only; findings land as PRs + summary
         journal: { bksSessionId: bksId, kind: "security-scan" },
       })) {
-        if (event.type === "init" || event.type === "done") {
+        if (event.type === "init") {
           if (event.sessionId) {
             engineSessionId = event.sessionId;
-            persistSession();
           }
+          if (event.provider) effectiveProvider = event.provider;
+          if (event.model) effectiveModel = event.model;
+          persistSession();
+        }
+        if (event.type === "model_switch") {
+          const to = event.toModel || "";
+          if (to) {
+            effectiveModel = to;
+            effectiveProvider = providerFor(to);
+            modelHistory.push({
+              model: to,
+              at: new Date().toISOString(),
+              by: `auto-switch — ${modelLabel(event.fromModel)} out of credits`,
+            });
+          }
+        }
+        if (event.type === "done") {
+          if (event.sessionId) engineSessionId = event.sessionId;
+          if (event.provider) effectiveProvider = event.provider;
+          if (event.model) effectiveModel = event.model;
+          persistSession();
         }
         if (event.type === "error") errorMsg = event.content || "Unknown error";
       }
