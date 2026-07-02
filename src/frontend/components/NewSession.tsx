@@ -204,13 +204,20 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     return () => clearTimeout(t);
   }, [prompt, mode, selectedWorktree, branchEdited]);
 
+  // Registered from mount and gated on a ref set synchronously in handleCreate:
+  // session_created is announced before the worktree even boots, so it can
+  // arrive before a `creating`-gated effect would have registered this handler
+  // — the palette would miss it (stuck on "creating", draft never cleared).
+  const creatingRef = useRef(false);
   useEffect(() => {
-    if (!creating) return;
     return addHandler((msg) => {
+      if (!creatingRef.current) return;
       if (msg.type === "error") {
+        creatingRef.current = false;
         setError(msg.message);
         setCreating(false);
       } else if (msg.type === "session_created") {
+        creatingRef.current = false;
         // The prompt was consumed — drop the stored draft either way.
         clearDraft("new-session");
         // With "Create more" on, stay in the palette and reset for the next task
@@ -232,7 +239,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         }
       }
     });
-  }, [creating, addHandler, createMore]);
+  }, [addHandler, createMore]);
 
   async function addAttachments(picked: FileList | File[]) {
     const { images: imgs, files: fls } = await splitAttachments(picked);
@@ -259,6 +266,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     // With "Create more" off, App tears down the palette when the
     // session_created event arrives (and drops us into the new session).
     setCreating(true);
+    creatingRef.current = true;
     // Workspace linkage: scoped to an existing workspace (the tab/sidebar +),
     // the chat joins it — sharing its worktree when reusing the sibling branch,
     // stacking a fresh worktree off it for a new branch. Unscoped, the default

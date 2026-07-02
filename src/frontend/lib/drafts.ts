@@ -20,6 +20,26 @@ export interface ComposerDraft {
 const EMPTY: ComposerDraft = { text: "", images: [], files: [] };
 const drafts = new Map<string, ComposerDraft>();
 
+// Fired only when a draft appears or disappears (never per keystroke — that
+// would re-render every subscriber, e.g. the whole sidebar, while typing).
+// Drives the "unsent draft" pencil indicators.
+const CHANGE_EVENT = "backstage-drafts-changed";
+
+function emit() {
+  window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+/** Subscribe to drafts appearing/disappearing; returns the unsubscribe. */
+export function onDraftsChanged(handler: () => void): () => void {
+  window.addEventListener(CHANGE_EVENT, handler);
+  return () => window.removeEventListener(CHANGE_EVENT, handler);
+}
+
+/** Whether a non-empty draft (text or attachments) is stored under this key. */
+export function hasDraft(key: string): boolean {
+  return !isEmpty(loadDraft(key));
+}
+
 const SS_PREFIX = "backstage-draft:";
 // Stay well under the ~5MB sessionStorage quota; an oversized draft (big
 // screenshots) just stays memory-only instead of throwing.
@@ -85,17 +105,34 @@ export function loadDraft(key: string): ComposerDraft {
 
 /** Merge a partial update into the stored draft; an all-empty result deletes it. */
 export function saveDraft(key: string, patch: Partial<ComposerDraft>): void {
+  const had = !isEmpty(loadDraft(key));
   const next = { ...loadDraft(key), ...patch };
-  if (isEmpty(next)) drafts.delete(key);
-  else drafts.set(key, next);
-  schedulePersist(key);
+  const has = !isEmpty(next);
+  if (has) {
+    drafts.set(key, next);
+    schedulePersist(key);
+  } else {
+    // Delete synchronously, never debounced: subscribers react to the change
+    // event by calling hasDraft/loadDraft, and with the sessionStorage entry
+    // still present a Map miss would re-cache the stale draft — resurrecting
+    // what was just cleared (drafts reappearing after send).
+    drafts.delete(key);
+    clearTimeout(timers.get(key));
+    timers.delete(key);
+    try {
+      sessionStorage.removeItem(SS_PREFIX + key);
+    } catch {}
+  }
+  if (had !== has) emit();
 }
 
 export function clearDraft(key: string): void {
+  const had = hasDraft(key);
   drafts.delete(key);
   clearTimeout(timers.get(key));
   timers.delete(key);
   try {
     sessionStorage.removeItem(SS_PREFIX + key);
   } catch {}
+  if (had) emit();
 }

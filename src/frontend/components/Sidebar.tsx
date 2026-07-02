@@ -12,9 +12,10 @@ import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged, togglePin } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
+import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { shortTime } from "../lib/time";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
-import { IconChevronDown } from "./icons";
+import { IconChevronDown, IconPencil } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 
 const AUTOMATION_COLOR = "#d29922";
@@ -521,6 +522,10 @@ export function Sidebar({
 	useEffect(() => onPinsChanged(() => setPins(getPins())), []);
 	useEffect(() => onRecentsChanged(() => setRecents(getRecents())), []);
 	useEffect(() => onReadsChanged(() => setReads(getReads())), []);
+	// Re-render when a composer draft appears/disappears — rows check hasDraft()
+	// during render to show the Slack-style "unsent draft" pencil.
+	const [, setDraftsRev] = useState(0);
+	useEffect(() => onDraftsChanged(() => setDraftsRev((v) => v + 1)), []);
 
 	// Right-click menu on a Project header (rename / color / delete), and inline
 	// rename (double-click the project name).
@@ -1029,6 +1034,13 @@ export function Sidebar({
 						title={new Date(row.lastActivity).toLocaleString()}
 					>
 						{shortTime(row.lastActivity)}
+					</span>
+				)}
+				{/* Slack-style pencil: a chat here holds an unsent draft — come back
+				    and finish it. Yields to the hover actions like the count/time. */}
+				{row.chats.some((c) => hasDraft(`chat:${c.id}`)) && (
+					<span className="sidebar-ws-draft" title="Unsent draft — return to finish it">
+						<IconPencil size={13} />
 					</span>
 				)}
 				{/* Hover actions: pin + archive, side by side (replace the count). */}
@@ -2170,6 +2182,11 @@ function SidebarItem({
 								{part}
 							</React.Fragment>
 						))}
+					</span>
+				)}
+				{!editing && hasDraft(`chat:${session.id}`) && (
+					<span className="sidebar-ws-draft" title="Unsent draft — return to finish it">
+						<IconPencil size={13} />
 					</span>
 				)}
 			</div>

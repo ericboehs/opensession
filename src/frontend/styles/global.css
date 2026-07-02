@@ -9555,3 +9555,25 @@ html[data-theme="light"] .tool-code-surface {
 .sidebar-ws-row:hover .sidebar-ws-time {
 	display: none;
 }
+
+/* Unsent-draft pencil (Slack-style) on sidebar rows and workspace tabs: typed
+   text/attachments were left in that chat's composer. Sits at the right edge
+   after the time; yields to the hover actions like the count/time do. */
+.sidebar-ws-draft {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	/* A drafted chat always has activity, so the time's margin-left:auto has
+	   already pushed this cluster to the right edge — keep just a small gap. */
+	margin-left: 6px;
+	color: var(--text-dim);
+}
+.sidebar-ws-row:hover .sidebar-ws-draft {
+	display: none;
+}
+.session-tab-draft {
+	display: inline-flex;
+	align-items: center;
+	flex: 0 0 auto;
+	color: var(--text-dim);
+}

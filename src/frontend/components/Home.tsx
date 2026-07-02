@@ -227,6 +227,10 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
     const q = question.trim();
     if (!q || asking || !connected) return;
     setAsking(true);
+    // Synchronously too — session_created is announced before the worktree even
+    // boots, so it can arrive before the effect mirrors `asking` into the ref,
+    // and the handler above would then skip the draft clear.
+    askingRef.current = true;
     setAskError(null);
     clearTimeout(askTimer.current);
     askTimer.current = setTimeout(() => {
@@ -283,7 +287,15 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
             leftExtra={
               <button
                 className="btn-task"
-                onClick={() => onNewSession(question.trim() || undefined)}
+                onClick={() => {
+                  const q = question.trim();
+                  onNewSession(q || undefined);
+                  // The palette takes ownership of the text (it lands in its own
+                  // "new-session" draft via the prefill) — clear it here so it
+                  // doesn't linger on Home and re-prefill the next palette after
+                  // the session is created (Kent's stale-draft report).
+                  if (q) setQuestion("");
+                }}
                 disabled={asking}
               >
                 {isPhone ? "Code task" : "Start a coding task"}

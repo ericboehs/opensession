@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
+import { hasDraft, onDraftsChanged } from "../lib/drafts";
+import { IconPencil } from "./icons";
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling chats of the
@@ -52,6 +54,10 @@ export function SessionTabs({
 	const [newMenu, setNewMenu] = useState<NewMenu | null>(null);
 	const [editKey, setEditKey] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
+	// Re-render when a composer draft appears/disappears — tabs check hasDraft()
+	// during render to show the unsent-draft pencil on sibling chats.
+	const [, setDraftsRev] = useState(0);
+	useEffect(() => onDraftsChanged(() => setDraftsRev((v) => v + 1)), []);
 
 	function commitRename() {
 		if (editKey !== null) onRename(editKey, draft.trim());
@@ -132,6 +138,13 @@ export function SessionTabs({
 								}}
 							>
 								{session.title}
+							</span>
+						)}
+						{/* Unsent draft in a sibling chat (the active tab's draft is
+						    already on screen in the composer — no pencil needed). */}
+						{key !== activeId && hasDraft(`chat:${key}`) && (
+							<span className="session-tab-draft" title="Unsent draft">
+								<IconPencil size={12} />
 							</span>
 						)}
 						<button
