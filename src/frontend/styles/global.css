@@ -5770,6 +5770,8 @@ html[data-theme="light"] .tool-code-surface {
 }
 
 .composer {
+	/* Anchors the dictation overlay (VoiceInput). */
+	position: relative;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
 	border-radius: 16px;
@@ -7596,42 +7598,6 @@ html[data-theme="light"] .tool-code-surface {
 		transform: translateX(18px);
 	}
 
-	/* Settings had no phone layout — the 232px sub-nav ate half the screen.
-	   Fold it into a horizontal, scrollable chip bar above the content. */
-	.settings-page {
-		flex-direction: column;
-	}
-	.settings-sidenav {
-		width: 100%;
-		flex-direction: row;
-		align-items: center;
-		gap: 6px;
-		padding: 8px 10px;
-		border-right: none;
-		border-bottom: 1px solid var(--border);
-		overflow-x: auto;
-	}
-	.settings-back {
-		width: auto;
-		flex-shrink: 0;
-		margin-bottom: 0;
-		padding: 9px 10px;
-	}
-	.settings-sidenav-group {
-		flex-direction: row;
-		gap: 4px;
-		margin-bottom: 0;
-	}
-	.settings-sidenav-label {
-		display: none;
-	}
-	.settings-sidenav-item {
-		width: auto;
-		white-space: nowrap;
-		flex-shrink: 0;
-		font-size: 14px;
-		padding: 9px 12px;
-	}
 }
 
 /* Touch screens can't hover, so the tab's close (×) is always visible
@@ -9038,6 +9004,8 @@ html[data-theme="light"] .tool-code-surface {
 	to { opacity: 1; }
 }
 .palette-card {
+	/* Anchors the dictation overlay (VoiceInput). */
+	position: relative;
 	width: min(820px, 100%);
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
@@ -9704,6 +9672,17 @@ html[data-theme="light"] .tool-code-surface {
 	font-weight: 600;
 	color: var(--text-faint);
 	margin: 22px 0 8px;
+}
+
+/* On phones Settings renders as a bottom sheet (Settings.tsx MobileSettings)
+   with its own paged header — the legacy panel classes adapt inside it: the
+   sheet header already carries the section title, and desktop's roomy content
+   padding doesn't fit a phone. */
+.settings-sheet .settings-content {
+	padding: 16px 16px 48px;
+}
+.settings-sheet .settings-title {
+	display: none;
 }
 
 .setting-card {

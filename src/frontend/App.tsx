@@ -25,6 +25,7 @@ import { IconSearch } from "./components/icons";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useBackSwipe } from "./hooks/useBackSwipe";
+import { useIsPhone } from "./hooks/useIsPhone";
 import { useInputAlerts } from "./hooks/useInputAlerts";
 import { initAlerts } from "./lib/notify";
 import {
@@ -350,8 +351,15 @@ function App() {
 		return unsub;
 	}, []);
 
+	// Settings (and the tool surfaces it hosts) render as a full page on
+	// desktop, but as a bottom sheet over the root list on phones.
+	const settingsActive = route.view === "settings" || isToolView(route.view);
+	const isPhone = useIsPhone();
+
 	// A pushed detail page is showing (anything but the sidebar-root home view).
-	const mobileDetail = route.view !== "home";
+	// On phones, Settings is a sheet floating over the root page rather than a
+	// pushed page — the bar keeps the brand and the sidebar stays underneath.
+	const mobileDetail = route.view !== "home" && !(isPhone && settingsActive);
 
 	// Keep the latest route readable from stable callbacks — `navigate` is
 	// recreated each render, but effects/handlers can capture an older copy.
@@ -769,14 +777,17 @@ function App() {
 					</div>
 				</header>
 
-				{route.view === "settings" || isToolView(route.view) ? (
+				{settingsActive && (
 					<Settings
 						onBack={goBack}
 						section={
 							route.view === "settings"
-								? (route.section ?? "notifications")
-								: route.view
+								? route.section
+								: isToolView(route.view)
+									? route.view
+									: undefined
 						}
+						onShowRoot={() => navigate({ view: "settings" })}
 						onSelect={(key) =>
 							key === "notes"
 								? navigate({ view: "notes", sel: null })
@@ -832,7 +843,11 @@ function App() {
 							/>
 						) : null}
 					</Settings>
-				) : (
+				)}
+				{/* On phones the app-body stays mounted beneath the Settings sheet
+				    (the sheet floats over the root list); on desktop Settings is a
+				    full page and replaces it. */}
+				{(!settingsActive || isPhone) && (
 				<div
 					className={`app-body ${mobileDetail ? "mobile-detail" : "mobile-root"}${
 						sidebarCollapsed ? " sidebar-collapsed" : ""

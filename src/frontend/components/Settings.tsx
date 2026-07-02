@@ -25,6 +25,10 @@ import {
 } from "../lib/api";
 import { getPushState, enablePush, disablePush, type PushState } from "../lib/push";
 import { getCurrentUser } from "./UserPicker";
+import { useIsPhone } from "../hooks/useIsPhone";
+import { BottomSheet } from "../ui/sheet";
+import { cn } from "../ui/cn";
+import { IconChevronLeft, IconChevronRight, IconX } from "./icons";
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
 // from the "Settings" item in the Michael menu. Designed to grow — each area is
@@ -287,28 +291,59 @@ const SECTIONS: {
 	},
 ];
 
+/** The active section's panel — shared by the desktop split and the phone
+ * sheet's detail page. Tool panels come in via children (App owns them). */
+function SectionPanel({
+	section,
+	children,
+}: {
+	section: SettingsSectionKey;
+	children?: React.ReactNode;
+}) {
+	return (
+		<>
+			{TOOL_SECTIONS.has(section) && children}
+			{section === "notifications" && <NotificationsPanel />}
+			{section === "monitor" && <MonitorPanel />}
+			{section === "appearance" && <AppearancePanel />}
+			{section === "audit" && <AuditPanel />}
+			{section === "model" && <ModelsPanel />}
+			{section === "connections" && <Connections />}
+		</>
+	);
+}
+
 export function Settings({
 	onBack,
 	section,
 	onSelect,
+	onShowRoot,
 	children,
 }: {
 	onBack: () => void;
-	/** Active section, derived from the route (tools have their own URLs). */
-	section: SettingsSectionKey;
+	/** Active section, derived from the route (tools have their own URLs).
+	 * Undefined = no explicit section: desktop defaults to Notifications, the
+	 * phone sheet shows its root list of sections. */
+	section?: SettingsSectionKey;
 	/** Navigate to a section — App maps tool keys to their own routes. */
 	onSelect: (key: SettingsSectionKey) => void;
+	/** Phone sheet's back-to-root (navigate to sectionless /settings). */
+	onShowRoot?: () => void;
 	/** The active tool's panel (App owns the tool components and their props). */
 	children?: React.ReactNode;
 }) {
-	// Esc returns to the app.
+	const isPhone = useIsPhone();
+
+	// Esc returns to the app (desktop only — the phone sheet handles Esc itself
+	// so the exit animation plays).
 	useEffect(() => {
+		if (isPhone) return;
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") onBack();
 		};
 		document.addEventListener("keydown", onKey);
 		return () => document.removeEventListener("keydown", onKey);
-	}, [onBack]);
+	}, [onBack, isPhone]);
 
 	// Group the nav entries under their group label (order preserved).
 	const groups: { group: string; items: typeof SECTIONS }[] = [];
@@ -317,6 +352,21 @@ export function Settings({
 		if (!g) groups.push((g = { group: s.group, items: [] }));
 		g.items.push(s);
 	}
+
+	if (isPhone)
+		return (
+			<MobileSettings
+				groups={groups}
+				section={section}
+				onSelect={onSelect}
+				onShowRoot={onShowRoot}
+				onBack={onBack}
+			>
+				{children}
+			</MobileSettings>
+		);
+
+	const active = section ?? "notifications";
 
 	return (
 		<div className="settings-page">
@@ -340,7 +390,7 @@ export function Settings({
 							<button
 								key={s.key}
 								className={`settings-sidenav-item ${
-									section === s.key ? "active" : ""
+									active === s.key ? "active" : ""
 								}`}
 								onClick={() => onSelect(s.key)}
 							>
@@ -357,18 +407,138 @@ export function Settings({
 			    padded reading column. */}
 			<div
 				className={`settings-content${
-					TOOL_SECTIONS.has(section) ? " settings-content-tool" : ""
+					TOOL_SECTIONS.has(active) ? " settings-content-tool" : ""
 				}`}
 			>
-				{TOOL_SECTIONS.has(section) && children}
-				{section === "notifications" && <NotificationsPanel />}
-				{section === "monitor" && <MonitorPanel />}
-				{section === "appearance" && <AppearancePanel />}
-				{section === "audit" && <AuditPanel />}
-				{section === "model" && <ModelsPanel />}
-				{section === "connections" && <Connections />}
+				<SectionPanel section={active}>{children}</SectionPanel>
 			</div>
 		</div>
+	);
+}
+
+/**
+ * Phone Settings: a bottom sheet sliding up over the root page, with iOS-style
+ * paging inside — the root page lists the sections as grouped tappable rows,
+ * and picking one slides its panel in from the right (Back slides it out).
+ * Which page shows is route-driven: a section in the URL = detail page.
+ */
+function MobileSettings({
+	groups,
+	section,
+	onSelect,
+	onShowRoot,
+	onBack,
+	children,
+}: {
+	groups: { group: string; items: typeof SECTIONS }[];
+	section?: SettingsSectionKey;
+	onSelect: (key: SettingsSectionKey) => void;
+	onShowRoot?: () => void;
+	onBack: () => void;
+	children?: React.ReactNode;
+}) {
+	// Keep the last opened section mounted while popping back to the root, so
+	// the detail page has content during its slide-out.
+	const [lastSection, setLastSection] = useState<SettingsSectionKey | null>(
+		section ?? null,
+	);
+	useEffect(() => {
+		if (section) setLastSection(section);
+	}, [section]);
+
+	const detail = section ?? null;
+	const shownSection = detail ?? lastSection;
+	const shownLabel = SECTIONS.find((s) => s.key === shownSection)?.label;
+	const pageEase = "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]";
+
+	return (
+		<BottomSheet onClose={onBack} label="Settings" className="settings-sheet h-[93dvh]">
+			{(dismiss) => (
+				<>
+					<div className="relative flex h-11 shrink-0 items-center justify-center px-3">
+						{detail && (
+							<button
+								className="absolute left-1 flex items-center gap-0.5 rounded-md border-none bg-transparent px-2 py-2 text-[15px] font-medium text-accent"
+								onClick={() => onShowRoot?.()}
+							>
+								<IconChevronLeft size={18} />
+								Settings
+							</button>
+						)}
+						<span className="text-[16px] font-semibold text-fg">
+							{detail ? shownLabel : "Settings"}
+						</span>
+						<button
+							className="absolute right-3 flex h-8 w-8 items-center justify-center rounded-full border-none bg-active text-dim"
+							onClick={dismiss}
+							aria-label="Close settings"
+						>
+							<IconX size={16} />
+						</button>
+					</div>
+
+					<div className="relative min-h-0 flex-1 overflow-hidden">
+						{/* Root page: grouped section list. Parked slightly left while a
+						    detail page covers it, iOS-style. */}
+						<div
+							className={cn(
+								"absolute inset-0 overflow-y-auto px-4 pb-10",
+								pageEase,
+								detail && "-translate-x-1/3",
+							)}
+							aria-hidden={!!detail}
+						>
+							{groups.map((g) => (
+								<div key={g.group}>
+									<div className="mb-2 mt-5 px-1 text-[13px] font-semibold text-faint">
+										{g.group}
+									</div>
+									<div className="overflow-hidden rounded-xl border border-line bg-panel">
+										{g.items.map((s) => (
+											<button
+												key={s.key}
+												className="flex w-full items-center gap-3 border-x-0 border-b border-t-0 border-solid border-line bg-transparent px-3.5 py-3 text-left last:border-b-0 active:bg-hover"
+												onClick={() => onSelect(s.key)}
+											>
+												<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-dim">
+													{s.icon}
+												</span>
+												<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
+													{s.label}
+												</span>
+												<IconChevronRight size={16} className="shrink-0 text-faint" />
+											</button>
+										))}
+									</div>
+								</div>
+							))}
+						</div>
+
+						{/* Detail page: the picked section's panel, slid in from the right. */}
+						<div
+							className={cn(
+								"absolute inset-0 flex flex-col bg-surface",
+								pageEase,
+								detail ? "translate-x-0" : "translate-x-full",
+							)}
+							aria-hidden={!detail}
+						>
+							{shownSection && (
+								<div
+									className={`settings-content min-h-0 flex-1${
+										TOOL_SECTIONS.has(shownSection)
+											? " settings-content-tool"
+											: ""
+									}`}
+								>
+									<SectionPanel section={shownSection}>{children}</SectionPanel>
+								</div>
+							)}
+						</div>
+					</div>
+				</>
+			)}
+		</BottomSheet>
 	);
 }
 
