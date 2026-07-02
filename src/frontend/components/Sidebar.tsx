@@ -1569,64 +1569,6 @@ export function Sidebar({
 					})()}
 				</div>
 
-				{/* ── People: teammates who are looking at a session right now. Click
-				    to follow along (your navigation shadows theirs); click again to
-				    stop. Band hides itself when nobody else is around. ── */}
-				{(() => {
-					const others = teamViewing.filter((v) => v.user !== currentUser);
-					if (others.length === 0) return null;
-					const titleFor = (id: string) =>
-						sessions.find((s) => s.id === id)?.title || id;
-					const open = bandOpen("people");
-					return (
-						<div className="sidebar-group sidebar-group--band-start">
-							<div className="sidebar-band-label">
-								<button
-									className="sidebar-band-toggle"
-									onClick={() => toggleBand("people")}
-									title={open ? "Collapse people" : "Expand people"}
-								>
-									<span>People</span>
-									<IconChevronDown
-										className="sidebar-band-chevron"
-										size={18}
-										style={{ transform: open ? "none" : "rotate(-90deg)" }}
-									/>
-								</button>
-							</div>
-							{open &&
-								others.map((v) => (
-									<button
-										key={v.user}
-										className={`flex items-center gap-2 w-full min-w-0 text-left text-[12.5px] bg-transparent border-0 cursor-pointer rounded-md px-2 py-1.5 hover:bg-hover ${
-											followUser === v.user ? "bg-active" : ""
-										}`}
-										onClick={() => onToggleFollow?.(v.user)}
-										title={
-											followUser === v.user
-												? `Following ${v.user} — click to stop`
-												: `${v.user} is viewing “${titleFor(v.sessionId)}” — click to follow along`
-										}
-									>
-										<span
-											className="w-[7px] h-[7px] rounded-full shrink-0"
-											style={{ backgroundColor: personColor(v.user) }}
-										/>
-										<span className="text-fg shrink-0">{v.user}</span>
-										<span className="text-faint truncate">
-											{titleFor(v.sessionId)}
-										</span>
-										{followUser === v.user && (
-											<span className="text-accent text-[10px] uppercase tracking-wide ml-auto shrink-0">
-												following
-											</span>
-										)}
-									</button>
-								))}
-						</div>
-					);
-				})()}
-
 				{/* ── Open PRs: the focus person's open pull requests (defaults to
 				    yours; the Person/Repo filters narrow it — all repos when
 				    unfiltered). A peer of the Archived row below, but it folds open
@@ -1747,6 +1689,64 @@ export function Sidebar({
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
+
+				{/* ── People: teammates who are looking at a session right now. Click
+				    to follow along (your navigation shadows theirs); click again to
+				    stop. Band hides itself when nobody else is around. ── */}
+				{(() => {
+					const others = teamViewing.filter((v) => v.user !== currentUser);
+					if (others.length === 0) return null;
+					const titleFor = (id: string) =>
+						sessions.find((s) => s.id === id)?.title || id;
+					const open = bandOpen("people");
+					return (
+						<div className="sidebar-group sidebar-group--band-start">
+							<div className="sidebar-band-label">
+								<button
+									className="sidebar-band-toggle"
+									onClick={() => toggleBand("people")}
+									title={open ? "Collapse people" : "Expand people"}
+								>
+									<span>People</span>
+									<IconChevronDown
+										className="sidebar-band-chevron"
+										size={18}
+										style={{ transform: open ? "none" : "rotate(-90deg)" }}
+									/>
+								</button>
+							</div>
+							{open &&
+								others.map((v) => (
+									<button
+										key={v.user}
+										className={`flex items-center gap-2 w-full min-w-0 text-left text-[12.5px] bg-transparent border-0 cursor-pointer rounded-md px-2 py-1.5 hover:bg-hover ${
+											followUser === v.user ? "bg-active" : ""
+										}`}
+										onClick={() => onToggleFollow?.(v.user)}
+										title={
+											followUser === v.user
+												? `Following ${v.user} — click to stop`
+												: `${v.user} is viewing “${titleFor(v.sessionId)}” — click to follow along`
+										}
+									>
+										<span
+											className="w-[7px] h-[7px] rounded-full shrink-0"
+											style={{ backgroundColor: personColor(v.user) }}
+										/>
+										<span className="text-fg shrink-0">{v.user}</span>
+										<span className="text-faint truncate">
+											{titleFor(v.sessionId)}
+										</span>
+										{followUser === v.user && (
+											<span className="text-accent text-[10px] uppercase tracking-wide ml-auto shrink-0">
+												following
+											</span>
+										)}
+									</button>
+								))}
+						</div>
+					);
+				})()}
 
 				{/* People browsing lives in the Person filter (funnel icon) — pick a
 				    teammate there to see their status lanes instead of yours. */}
