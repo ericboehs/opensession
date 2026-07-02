@@ -112,15 +112,6 @@ function personColor(key: string): string {
 // stray sections. "Michael" (the assistant) counts as a person here.
 const KNOWN_PEOPLE = new Set([...TEAM, "Michael"].map((n) => n.toLowerCase()));
 
-export type NavView =
-	| "sessions"
-	| "reviews"
-	| "automations"
-	| "security"
-	| "goals"
-	| "actions"
-	| "wiki";
-
 interface Props {
 	sessions: UnifiedSession[];
 	/** Project folders that group chats. */
@@ -130,8 +121,10 @@ interface Props {
 	selectedId: string | null;
 	/** The note currently open (highlights its pinned row), or null. */
 	activeNoteId: string | null;
-	activeView: NavView;
-	onNavigate: (view: NavView) => void;
+	/** True while the Reviews view is open — highlights the Reviews entry. */
+	reviewsActive: boolean;
+	/** Open the Reviews view (the sidebar's one non-workspace area). */
+	onOpenReviews: () => void;
 	onSelect: (session: UnifiedSession) => void;
 	/** Open the session-less PR preview for a PR row with no chat behind it. */
 	onOpenPr: (repo: string, branch: string) => void;
@@ -181,150 +174,32 @@ interface Props {
 	onToggleFollow?: (user: string) => void;
 }
 
-const NAV_ITEMS: Array<{
-	view: NavView;
-	label: string;
-	icon: React.ReactNode;
-}> = [
-	{
-		view: "sessions",
-		label: "Sessions",
-		icon: (
-			<svg
-				width="18"
-				height="18"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path d="M2.5 4h11M2.5 8h11M2.5 12h7" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		view: "reviews",
-		label: "Reviews",
-		icon: (
-			<svg
-				width="18"
-				height="18"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<circle cx="4" cy="4" r="1.6" />
-				<circle cx="4" cy="12" r="1.6" />
-				<circle cx="12" cy="12" r="1.6" />
-				<path
-					d="M4 5.6v4.8M12 10.4V8a2.4 2.4 0 0 0-2.4-2.4H7.2"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-				/>
-				<path
-					d="M8.8 4.2L7.2 5.6l1.6 1.4"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-				/>
-			</svg>
-		),
-	},
-	{
-		view: "automations",
-		label: "Automations",
-		icon: (
-			<svg
-				width="18"
-				height="18"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<circle cx="8" cy="8" r="5.5" />
-				<path d="M8 5v3l2 1.5" strokeLinecap="round" strokeLinejoin="round" />
-			</svg>
-		),
-	},
-	{
-		view: "security",
-		label: "Security",
-		icon: (
-			<svg
-				width="18"
-				height="18"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path
-					d="M8 1.8l4.6 1.7v3.8c0 3-1.9 5.2-4.6 6.5-2.7-1.3-4.6-3.5-4.6-6.5V3.5L8 1.8z"
-					strokeLinejoin="round"
-				/>
-				<path d="M6.1 8l1.3 1.3 2.5-2.6" strokeLinecap="round" strokeLinejoin="round" />
-			</svg>
-		),
-	},
-	{
-		view: "goals",
-		label: "Goals",
-		icon: (
-			<svg
-				width="18"
-				height="18"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<circle cx="8" cy="8" r="6" />
-				<circle cx="8" cy="8" r="3" />
-				<circle cx="8" cy="8" r="0.6" fill="currentColor" stroke="none" />
-			</svg>
-		),
-	},
-	{
-		view: "actions",
-		label: "Actions",
-		icon: (
-			<svg
-				width="18"
-				height="18"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path
-					d="M8.5 1.5L3 9h4l-.5 5.5L13 7H9l-.5-5.5z"
-					strokeLinejoin="round"
-				/>
-			</svg>
-		),
-	},
-	{
-		view: "wiki",
-		label: "Notes",
-		icon: (
-			<svg
-				width="18"
-				height="18"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path
-					d="M3 2.5h7a2 2 0 0 1 2 2v9l-3-1.8-3 1.8-3-1.8V2.5z"
-					strokeLinejoin="round"
-					transform="translate(0.5,0)"
-				/>
-			</svg>
-		),
-	},
-];
+// The Reviews entry's icon — the one non-workspace area left in the sidebar
+// (every other tool lives in Settings now).
+const REVIEWS_ICON = (
+	<svg
+		width="18"
+		height="18"
+		viewBox="0 0 16 16"
+		fill="none"
+		stroke="currentColor"
+		strokeWidth="1.4"
+	>
+		<circle cx="4" cy="4" r="1.6" />
+		<circle cx="4" cy="12" r="1.6" />
+		<circle cx="12" cy="12" r="1.6" />
+		<path
+			d="M4 5.6v4.8M12 10.4V8a2.4 2.4 0 0 0-2.4-2.4H7.2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		/>
+		<path
+			d="M8.8 4.2L7.2 5.6l1.6 1.4"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		/>
+	</svg>
+);
 
 // Groups are rendered in three visually separated bands (spacing between each):
 //   "personal"    — My sessions (split by status), Pinned
@@ -471,8 +346,8 @@ export function Sidebar({
 	notes,
 	selectedId,
 	activeNoteId,
-	activeView,
-	onNavigate,
+	reviewsActive,
+	onOpenReviews,
 	onSelect,
 	onOpenPr,
 	selectedPr = null,
@@ -1175,20 +1050,6 @@ export function Sidebar({
 		});
 	}
 
-	// The "Tools" nav band (Sessions / Reviews / Automations / … at the top) is
-	// open by default, so — like the Projects/People/Automations bands — its
-	// *collapsed* state is what's persisted, under a "collapsed:" key.
-	const toolsOpen = !expanded.has("collapsed:tools");
-	function toggleTools() {
-		setExpanded((prev) => {
-			const next = new Set(prev);
-			if (next.has("collapsed:tools")) next.delete("collapsed:tools");
-			else next.add("collapsed:tools");
-			localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
-			return next;
-		});
-	}
-
 	// Reviews-tab badge: distinct open PRs (deduped by URL) where the CURRENT
 	// user has a pending review request — "PRs waiting on you", not every open
 	// PR. Sourced from both the session PRs and the repo-wide open-PR list, so
@@ -1547,39 +1408,21 @@ export function Sidebar({
 				<kbd className="sidebar-search-kbd">⌘K</kbd>
 			</div>
 
-			<div className="sidebar-tools">
-				<div className="sidebar-band-label sidebar-tools-head">
-					<button
-						className="sidebar-band-toggle"
-						onClick={toggleTools}
-						title={toolsOpen ? "Collapse tools" : "Expand tools"}
-					>
-						<span>Tools</span>
-						<IconChevronDown
-							className="sidebar-band-chevron"
-							size={20}
-							style={{ transform: toolsOpen ? "none" : "rotate(-90deg)" }}
-						/>
-					</button>
-				</div>
-				{toolsOpen && (
-					<nav className="sidebar-nav">
-						{NAV_ITEMS.map((item) => (
-							<button
-								key={item.view}
-								className={`sidebar-nav-item ${activeView === item.view ? "active" : ""}`}
-								onClick={() => onNavigate(item.view)}
-							>
-								<span className="sidebar-nav-icon">{item.icon}</span>
-								{item.label}
-								{item.view === "reviews" && openPrCount > 0 && (
-									<span className="sidebar-nav-count">{openPrCount}</span>
-								)}
-							</button>
-						))}
-					</nav>
-				)}
-			</div>
+			{/* Reviews — the only non-workspace area in the sidebar. Every other
+			    tool (Automations, Goals, Actions, Security, Notes) lives in
+			    Settings now. */}
+			<nav className="sidebar-nav">
+				<button
+					className={`sidebar-nav-item ${reviewsActive ? "active" : ""}`}
+					onClick={onOpenReviews}
+				>
+					<span className="sidebar-nav-icon">{REVIEWS_ICON}</span>
+					Reviews
+					{openPrCount > 0 && (
+						<span className="sidebar-nav-count">{openPrCount}</span>
+					)}
+				</button>
+			</nav>
 
 			<div
 				className={`sidebar-workspace${listScrolled ? " sidebar-workspace--scrolled" : ""}`}

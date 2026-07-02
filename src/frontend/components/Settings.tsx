@@ -28,24 +28,143 @@ import { getCurrentUser } from "./UserPicker";
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
 // from the "Settings" item in the Michael menu. Designed to grow — each area is
-// just another entry in SECTIONS and a matching panel below. The "Personal" group
+// just another entry in SECTIONS and a matching panel below. The "Tools" group
+// holds the app's tool surfaces (Automations, Goals, …) — those render at their
+// own routes (/backstage/automations, …) with this surface as chrome, so the
+// section is controlled by the router, not local state. The "Personal" group
 // holds per-browser preferences (notifications, theme); the "Workspace" group holds
 // shared setup that configures how every session runs (default model, connections).
 
-type SectionKey =
+/** Tool surfaces hosted inside Settings — App renders their panel as children. */
+export type ToolSectionKey =
+	| "automations"
+	| "goals"
+	| "actions"
+	| "security"
+	| "notes";
+
+export type SettingsSectionKey =
 	| "notifications"
 	| "monitor"
 	| "appearance"
 	| "model"
 	| "connections"
-	| "audit";
+	| "audit"
+	| ToolSectionKey;
+
+const TOOL_SECTIONS = new Set<SettingsSectionKey>([
+	"automations",
+	"goals",
+	"actions",
+	"security",
+	"notes",
+]);
 
 const SECTIONS: {
-	key: SectionKey;
+	key: SettingsSectionKey;
 	label: string;
 	group: string;
 	icon: React.ReactNode;
 }[] = [
+	{
+		key: "automations",
+		label: "Automations",
+		group: "Tools",
+		icon: (
+			<svg
+				width="17"
+				height="17"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<circle cx="8" cy="8" r="5.5" />
+				<path d="M8 5v3l2 1.5" strokeLinecap="round" strokeLinejoin="round" />
+			</svg>
+		),
+	},
+	{
+		key: "goals",
+		label: "Goals",
+		group: "Tools",
+		icon: (
+			<svg
+				width="17"
+				height="17"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<circle cx="8" cy="8" r="6" />
+				<circle cx="8" cy="8" r="3" />
+				<circle cx="8" cy="8" r="0.6" fill="currentColor" stroke="none" />
+			</svg>
+		),
+	},
+	{
+		key: "actions",
+		label: "Actions",
+		group: "Tools",
+		icon: (
+			<svg
+				width="17"
+				height="17"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path
+					d="M8.5 1.5L3 9h4l-.5 5.5L13 7H9l-.5-5.5z"
+					strokeLinejoin="round"
+				/>
+			</svg>
+		),
+	},
+	{
+		key: "security",
+		label: "Security",
+		group: "Tools",
+		icon: (
+			<svg
+				width="17"
+				height="17"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path
+					d="M8 1.8l4.6 1.7v3.8c0 3-1.9 5.2-4.6 6.5-2.7-1.3-4.6-3.5-4.6-6.5V3.5L8 1.8z"
+					strokeLinejoin="round"
+				/>
+				<path d="M6.1 8l1.3 1.3 2.5-2.6" strokeLinecap="round" strokeLinejoin="round" />
+			</svg>
+		),
+	},
+	{
+		key: "notes",
+		label: "Notes",
+		group: "Tools",
+		icon: (
+			<svg
+				width="17"
+				height="17"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path
+					d="M3 2.5h7a2 2 0 0 1 2 2v9l-3-1.8-3 1.8-3-1.8V2.5z"
+					strokeLinejoin="round"
+					transform="translate(0.5,0)"
+				/>
+			</svg>
+		),
+	},
 	{
 		key: "notifications",
 		label: "Notifications",
@@ -168,9 +287,20 @@ const SECTIONS: {
 	},
 ];
 
-export function Settings({ onBack }: { onBack: () => void }) {
-	const [section, setSection] = useState<SectionKey>("notifications");
-
+export function Settings({
+	onBack,
+	section,
+	onSelect,
+	children,
+}: {
+	onBack: () => void;
+	/** Active section, derived from the route (tools have their own URLs). */
+	section: SettingsSectionKey;
+	/** Navigate to a section — App maps tool keys to their own routes. */
+	onSelect: (key: SettingsSectionKey) => void;
+	/** The active tool's panel (App owns the tool components and their props). */
+	children?: React.ReactNode;
+}) {
 	// Esc returns to the app.
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -212,7 +342,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
 								className={`settings-sidenav-item ${
 									section === s.key ? "active" : ""
 								}`}
-								onClick={() => setSection(s.key)}
+								onClick={() => onSelect(s.key)}
 							>
 								<span className="settings-sidenav-icon">{s.icon}</span>
 								{s.label}
@@ -222,7 +352,15 @@ export function Settings({ onBack }: { onBack: () => void }) {
 				))}
 			</aside>
 
-			<div className="settings-content">
+			{/* Tool sections fill the whole content area edge-to-edge (they carry
+			    their own layout/scrolling); settings panels keep the centered,
+			    padded reading column. */}
+			<div
+				className={`settings-content${
+					TOOL_SECTIONS.has(section) ? " settings-content-tool" : ""
+				}`}
+			>
+				{TOOL_SECTIONS.has(section) && children}
 				{section === "notifications" && <NotificationsPanel />}
 				{section === "monitor" && <MonitorPanel />}
 				{section === "appearance" && <AppearancePanel />}

@@ -9655,6 +9655,12 @@ html[data-theme="light"] .tool-code-surface {
 	justify-content: center;
 	padding: 44px 32px 88px;
 }
+/* Tool sections (Automations, Notes, …) hosted in Settings bring their own
+   layout, padding and scrolling — the content area goes edge-to-edge. */
+.settings-content-tool {
+	padding: 0;
+	min-height: 0;
+}
 .settings-panel {
 	width: 100%;
 	max-width: 640px;

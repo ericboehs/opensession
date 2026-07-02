@@ -16,7 +16,7 @@ import { Reviews } from "./components/Reviews";
 import { PrPreview } from "./components/PrPreview";
 import { UserGate, getCurrentUser } from "./components/UserPicker";
 import { SettingsMenu } from "./components/SettingsMenu";
-import { Settings } from "./components/Settings";
+import { Settings, type SettingsSectionKey } from "./components/Settings";
 import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
@@ -58,13 +58,38 @@ type Route =
 	// Session-less PR preview (a sidebar PR row with no chat yet).
 	| { view: "pr"; repo: string; branch: string }
 	| { view: "reviews"; id?: string }
+	// Tool surfaces (Automations/Security/Goals/Actions/Notes) render inside the
+	// Settings chrome but keep their own routes, so old links stay deep-linkable.
 	| { view: "automations" }
 	| { view: "security" }
 	| { view: "goals" }
 	| { view: "actions" }
 	| { view: "notes"; sel: NotesSelection }
-	| { view: "settings" }
+	| { view: "settings"; section?: SettingsSectionKey }
 	| { view: "archived" };
+
+// Route views that render as a tool section inside the Settings surface.
+const TOOL_VIEWS = [
+	"automations",
+	"security",
+	"goals",
+	"actions",
+	"notes",
+] as const;
+type ToolView = (typeof TOOL_VIEWS)[number];
+function isToolView(view: string): view is ToolView {
+	return (TOOL_VIEWS as readonly string[]).includes(view);
+}
+
+// Non-tool settings sections, addressable as /backstage/settings/<section>.
+const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
+	"notifications",
+	"monitor",
+	"appearance",
+	"model",
+	"connections",
+	"audit",
+]);
 
 function parseRoute(pathname: string): Route {
 	// Canonical chat URL: /backstage/workspace/<wsId>/chat/<chatId>. The chat id
@@ -94,8 +119,19 @@ function parseRoute(pathname: string): Route {
 	if (pathname === "/backstage/goals") return { view: "goals" };
 	if (pathname === "/backstage/actions") return { view: "actions" };
 	// Back-compat: Connections moved into Settings (a Workspace section).
-	if (pathname === "/backstage/connections") return { view: "settings" };
-	if (pathname === "/backstage/settings") return { view: "settings" };
+	if (pathname === "/backstage/connections")
+		return { view: "settings", section: "connections" };
+	// /backstage/settings/<section>: a settings section, or a tool key (tools
+	// live in the Settings surface but keep their own canonical routes).
+	const settingsMatch = pathname.match(/^\/backstage\/settings(?:\/(.+))?$/);
+	if (settingsMatch) {
+		const key = settingsMatch[1] as SettingsSectionKey | undefined;
+		if (key && isToolView(key))
+			return key === "notes" ? { view: "notes", sel: null } : { view: key };
+		if (key && SETTINGS_SECTIONS.has(key))
+			return { view: "settings", section: key };
+		return { view: "settings" };
+	}
 	if (pathname === "/backstage/archived") return { view: "archived" };
 	const reviewsMatch = pathname.match(/^\/backstage\/reviews(?:\/(.+))?$/);
 	if (reviewsMatch)
@@ -148,7 +184,9 @@ function routePath(route: Route): string {
 		case "actions":
 			return "/backstage/actions";
 		case "settings":
-			return "/backstage/settings";
+			return route.section
+				? `/backstage/settings/${route.section}`
+				: "/backstage/settings";
 		case "archived":
 			return "/backstage/archived";
 		case "reviews":
@@ -606,35 +644,13 @@ function App() {
 	const topbarTitle: string =
 		route.view === "reviews"
 			? "Reviews"
-			: route.view === "automations"
-				? "Automations"
-				: route.view === "security"
-					? "Security"
-				: route.view === "goals"
-					? "Goals"
-					: route.view === "actions"
-						? "Actions"
-						: route.view === "archived"
-							? "Archived"
-							: route.view === "notes"
-								? "Notes"
-								: route.view === "new"
-									? "New session"
-									: route.view === "pr"
-										? "Pull request"
-										: "";
-
-	const activeView =
-		route.view === "automations" ||
-		route.view === "security" ||
-		route.view === "goals" ||
-		route.view === "actions" ||
-		route.view === "notes" ||
-		route.view === "reviews"
-			? route.view === "notes"
-				? "wiki"
-				: route.view
-			: ("sessions" as const);
+			: route.view === "archived"
+				? "Archived"
+				: route.view === "new"
+					? "New session"
+					: route.view === "pr"
+						? "Pull request"
+						: "";
 
 	// Brand: the Michael title + its dropdown (the "Michael menu"), which now carries
 	// the account switcher and connection status that used to sit as a separate chip.
@@ -753,8 +769,69 @@ function App() {
 					</div>
 				</header>
 
-				{route.view === "settings" ? (
-					<Settings onBack={goBack} />
+				{route.view === "settings" || isToolView(route.view) ? (
+					<Settings
+						onBack={goBack}
+						section={
+							route.view === "settings"
+								? (route.section ?? "notifications")
+								: route.view
+						}
+						onSelect={(key) =>
+							key === "notes"
+								? navigate({ view: "notes", sel: null })
+								: isToolView(key)
+									? navigate({ view: key })
+									: navigate({ view: "settings", section: key })
+						}
+					>
+						{route.view === "automations" ? (
+							<Automations
+								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
+						) : route.view === "security" ? (
+							<Security
+								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
+						) : route.view === "goals" ? (
+							<Goals
+								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
+						) : route.view === "actions" ? (
+							<Actions
+								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
+						) : route.view === "notes" ? (
+							<Notes
+								sel={route.sel}
+								notes={notes}
+								refreshNotes={refreshNotes}
+								pinnedNoteIds={
+									new Set(
+										pins
+											.filter((p) => p.startsWith("note:"))
+											.map((p) => p.slice(5)),
+									)
+								}
+								onTogglePinNote={(id) => setPins(togglePin(`note:${id}`))}
+								onSelectNote={(id) =>
+									navigate({ view: "notes", sel: { kind: "note", id } })
+								}
+								onSelectDoc={(path) =>
+									navigate({
+										view: "notes",
+										sel: path ? { kind: "doc", path } : null,
+									})
+								}
+								sessions={sessions.map((s) => ({ id: s.id, title: s.title }))}
+								onOpenSession={(id) => navigate({ view: "session", id })}
+								user={getCurrentUser()}
+								connected={connected}
+								send={send}
+								addHandler={addHandler}
+							/>
+						) : null}
+					</Settings>
 				) : (
 				<div
 					className={`app-body ${mobileDetail ? "mobile-detail" : "mobile-root"}${
@@ -793,16 +870,8 @@ function App() {
 							}
 							selectedId={currentSession?.id || null}
 							activeNoteId={currentNoteId}
-							activeView={activeView}
-							onNavigate={(view) =>
-								navigate(
-									view === "sessions"
-										? { view: "home" }
-										: view === "wiki"
-											? { view: "notes", sel: null }
-											: { view },
-								)
-							}
+							reviewsActive={route.view === "reviews"}
+							onOpenReviews={() => navigate({ view: "reviews" })}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenPr={(repo, branch) =>
 								navigate({ view: "pr", repo, branch })
@@ -1040,23 +1109,7 @@ function App() {
 								refresh();
 							}}
 						/>
-						{route.view === "automations" ? (
-							<Automations
-								onOpenSession={(id) => navigate({ view: "session", id })}
-							/>
-						) : route.view === "security" ? (
-							<Security
-								onOpenSession={(id) => navigate({ view: "session", id })}
-							/>
-						) : route.view === "goals" ? (
-							<Goals
-								onOpenSession={(id) => navigate({ view: "session", id })}
-							/>
-						) : route.view === "actions" ? (
-							<Actions
-								onOpenSession={(id) => navigate({ view: "session", id })}
-							/>
-						) : route.view === "pr" ? (
+						{route.view === "pr" ? (
 							<PrPreview
 								key={`${route.repo}:${route.branch}`}
 								repo={route.repo}
@@ -1081,35 +1134,6 @@ function App() {
 								sessions={sessions}
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onChanged={refresh}
-							/>
-						) : route.view === "notes" ? (
-							<Notes
-								sel={route.sel}
-								notes={notes}
-								refreshNotes={refreshNotes}
-								pinnedNoteIds={
-									new Set(
-										pins
-											.filter((p) => p.startsWith("note:"))
-											.map((p) => p.slice(5)),
-									)
-								}
-								onTogglePinNote={(id) => setPins(togglePin(`note:${id}`))}
-								onSelectNote={(id) =>
-									navigate({ view: "notes", sel: { kind: "note", id } })
-								}
-								onSelectDoc={(path) =>
-									navigate({
-										view: "notes",
-										sel: path ? { kind: "doc", path } : null,
-									})
-								}
-								sessions={sessions.map((s) => ({ id: s.id, title: s.title }))}
-								onOpenSession={(id) => navigate({ view: "session", id })}
-								user={getCurrentUser()}
-								connected={connected}
-								send={send}
-								addHandler={addHandler}
 							/>
 						) : route.view === "session" ? (
 							currentSession ? (
