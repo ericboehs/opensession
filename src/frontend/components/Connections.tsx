@@ -886,6 +886,16 @@ function AddAccountForm({ onClose, onAdded }: { onClose: () => void; onAdded: ()
             placeholder="sk-ant-oat01-…"
           />
         </label>
+        <label
+          title="Personal sub: this person's runs use the account first, with the shared pool as backup — nobody else's runs touch it. Leave empty for a shared pool account (used by everyone + automations)."
+        >
+          Owner (optional — empty = shared pool)
+          <input
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            placeholder="Michiel"
+          />
+        </label>
       </div>
 
       {error && <div className="form-error">{error}</div>}
