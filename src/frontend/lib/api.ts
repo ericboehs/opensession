@@ -103,6 +103,63 @@ export async function fetchOpenPrs(): Promise<OpenPr[]> {
 	return data?.prs || [];
 }
 
+// ── PR Tinder (one-at-a-time triage of open tella-fusion PRs) ───────────────
+
+/** One card in the PR Tinder deck — richer than OpenPr (body, labels, diffstat). */
+export interface TinderPr {
+	number: number;
+	title: string;
+	url: string;
+	author: string;
+	isDraft: boolean;
+	createdAt: string;
+	updatedAt: string;
+	labels: Array<{ name: string; color: string }>;
+	body: string;
+	reviewDecision: string;
+	additions: number;
+	deletions: number;
+	changedFiles: number;
+}
+
+export interface TinderDeck {
+	prs: TinderPr[];
+	labels: Array<{ name: string; color: string }>;
+	/** PR numbers this user already kept (within the server's 14-day TTL). */
+	seen: number[];
+}
+
+export async function fetchTinderDeck(user: string): Promise<TinderDeck> {
+	return request<TinderDeck>(`/pr-tinder?user=${encodeURIComponent(user)}`, {
+		label: "Failed to fetch PR Tinder deck",
+	});
+}
+
+function tinderAction(
+	number: number,
+	action: string,
+	body: Record<string, unknown> = {},
+): Promise<{ ok: true }> {
+	return request<{ ok: true }>(`/pr-tinder/${number}/${action}`, {
+		method: "POST",
+		body,
+		label: `PR ${action} failed`,
+	});
+}
+
+export const keepTinderPr = (number: number, user: string) =>
+	tinderAction(number, "keep", { user });
+export const closeTinderPr = (number: number, reason?: string) =>
+	tinderAction(number, "close", { reason });
+export const reopenTinderPr = (number: number) =>
+	tinderAction(number, "reopen");
+export const commentTinderPr = (number: number, body: string, user: string) =>
+	tinderAction(number, "comment", { body, user });
+export const labelTinderPr = (
+	number: number,
+	opts: { add?: string; remove?: string },
+) => tinderAction(number, "labels", opts);
+
 export interface TranscriptMatch {
 	id: string;
 	snippet: string;

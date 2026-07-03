@@ -7,6 +7,7 @@ import { NewSession } from "./components/NewSession";
 import { SessionSearch } from "./components/SessionSearch";
 import { Home } from "./components/Home";
 import { CatchUpDeck } from "./components/CatchUpDeck";
+import { PrTinder } from "./components/PrTinder";
 import { Automations } from "./components/Automations";
 import { Security } from "./components/Security";
 import { Goals } from "./components/Goals";
@@ -63,6 +64,8 @@ type Route =
 	// Session-less support-ticket preview (a Support row with no session yet).
 	| { view: "support"; threadId: string }
 	| { view: "reviews"; id?: string }
+	// PR Tinder — one-at-a-time swipe triage of the repo's open PRs.
+	| { view: "prtinder" }
 	// Tool surfaces (Automations/Security/Goals/Actions/Notes) render inside the
 	// Settings chrome but keep their own routes, so old links stay deep-linkable.
 	| { view: "automations" }
@@ -144,6 +147,7 @@ function parseRoute(pathname: string): Route {
 	}
 	if (pathname === "/backstage/archived") return { view: "archived" };
 	if (pathname === "/backstage/catchup") return { view: "catchup" };
+	if (pathname === "/backstage/pr-tinder") return { view: "prtinder" };
 	const reviewsMatch = pathname.match(/^\/backstage\/reviews(?:\/(.+))?$/);
 	if (reviewsMatch)
 		return {
@@ -204,6 +208,8 @@ function routePath(route: Route): string {
 			return "/backstage/archived";
 		case "catchup":
 			return "/backstage/catchup";
+		case "prtinder":
+			return "/backstage/pr-tinder";
 		case "reviews":
 			return route.id
 				? `/backstage/reviews/${encodeURIComponent(route.id)}`
@@ -935,6 +941,8 @@ function App() {
 							activeNoteId={currentNoteId}
 							reviewsActive={route.view === "reviews"}
 							onOpenReviews={() => navigate({ view: "reviews" })}
+							prTinderActive={route.view === "prtinder"}
+							onOpenPrTinder={() => navigate({ view: "prtinder" })}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenPr={(repo, branch) =>
 								navigate({ view: "pr", repo, branch })
@@ -1236,6 +1244,8 @@ function App() {
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onChanged={refresh}
 							/>
+						) : route.view === "prtinder" ? (
+							<PrTinder onExit={goBack} />
 						) : route.view === "catchup" ? (
 							<CatchUpDeck
 								sessions={sessions}

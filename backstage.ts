@@ -181,6 +181,16 @@ import {
 	submitPrReview,
 	mergePr,
 } from "./src/server/pr-info";
+import {
+	listTinderPrs,
+	listTinderLabels,
+	getSeenPrs,
+	markPrSeen,
+	closeTinderPr,
+	reopenTinderPr,
+	commentTinderPr,
+	labelTinderPr,
+} from "./src/server/pr-tinder";
 import { getGitStatus, gitPush } from "./src/server/git-status";
 import {
 	listAutomations,
@@ -3089,6 +3099,78 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			// PRs that have no Backstage session).
 			if (path === "/backstage/api/open-prs" && req.method === "GET") {
 				return Response.json({ prs: getOpenPrs() });
+			}
+
+			// PR Tinder: the triage deck — every open tella-fusion PR with the
+			// rich card fields, the repo's labels, and which PRs this user already
+			// kept (so the deck doesn't re-deal them for 14 days).
+			if (path === "/backstage/api/pr-tinder" && req.method === "GET") {
+				const user = url.searchParams.get("user") || "";
+				try {
+					const [prs, labels] = await Promise.all([
+						listTinderPrs(),
+						listTinderLabels(),
+					]);
+					return Response.json({
+						prs,
+						labels,
+						seen: user ? getSeenPrs(user) : [],
+					});
+				} catch (e: any) {
+					return Response.json(
+						{ error: e.message || String(e) },
+						{ status: 502 },
+					);
+				}
+			}
+
+			// PR Tinder actions: keep (per-user, local state only), close (with an
+			// optional reason comment), reopen (the close undo), comment, label.
+			{
+				const m = path.match(/^\/backstage\/api\/pr-tinder\/(\d+)\/(\w+)$/);
+				if (m && req.method === "POST") {
+					const number = parseInt(m[1], 10);
+					const body = await req.json().catch(() => ({}));
+					try {
+						switch (m[2]) {
+							case "keep": {
+								if (!body.user)
+									return Response.json(
+										{ error: "user required" },
+										{ status: 400 },
+									);
+								markPrSeen(body.user, number);
+								return Response.json({ ok: true });
+							}
+							case "close": {
+								const r = await closeTinderPr(number, body.reason);
+								return Response.json(r, { status: "error" in r ? 502 : 200 });
+							}
+							case "reopen": {
+								const r = await reopenTinderPr(number);
+								return Response.json(r, { status: "error" in r ? 502 : 200 });
+							}
+							case "comment": {
+								const r = await commentTinderPr(number, body.body || "");
+								// Commenting is a triage verdict too — don't re-deal the PR.
+								if ("ok" in r && body.user) markPrSeen(body.user, number);
+								return Response.json(r, { status: "error" in r ? 502 : 200 });
+							}
+							case "labels": {
+								const r = await labelTinderPr(number, {
+									add: body.add,
+									remove: body.remove,
+								});
+								return Response.json(r, { status: "error" in r ? 502 : 200 });
+							}
+						}
+					} catch (e: any) {
+						return Response.json(
+							{ error: e.message || String(e) },
+							{ status: 500 },
+						);
+					}
+				}
 			}
 
 			// Get transcript for a session

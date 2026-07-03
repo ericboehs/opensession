@@ -127,6 +127,10 @@ interface Props {
 	reviewsActive: boolean;
 	/** Open the Reviews view (the sidebar's one non-workspace area). */
 	onOpenReviews: () => void;
+	/** True while the PR Tinder deck is open — highlights its entry. */
+	prTinderActive: boolean;
+	/** Open PR Tinder (swipe triage of the repo's open PRs). */
+	onOpenPrTinder: () => void;
 	onSelect: (session: UnifiedSession) => void;
 	/** Open the session-less PR preview for a PR row with no chat behind it. */
 	onOpenPr: (repo: string, branch: string) => void;
@@ -206,6 +210,27 @@ const REVIEWS_ICON = (
 		<path
 			d="M8.8 4.2L7.2 5.6l1.6 1.4"
 			strokeLinecap="round"
+			strokeLinejoin="round"
+		/>
+	</svg>
+);
+
+// PR Tinder's flame — swipe triage of open PRs, right under Reviews.
+const PR_TINDER_ICON = (
+	<svg
+		width="18"
+		height="18"
+		viewBox="0 0 16 16"
+		fill="none"
+		stroke="currentColor"
+		strokeWidth="1.4"
+	>
+		<path
+			d="M8 14c2.9 0 4.75-1.9 4.75-4.5 0-1.9-1.05-3.2-2.05-4.45C9.85 4 9 3 8.6 1.75c-.45.4-1.35 1.5-1.2 3.4C6.55 5 6.1 4.35 5.9 3.6c-1.4 1.2-2.65 3.2-2.65 5.9C3.25 12.1 5.1 14 8 14Z"
+			strokeLinejoin="round"
+		/>
+		<path
+			d="M8 14c1.35 0 2.2-.95 2.2-2.15 0-1.3-1.1-2.05-2.2-3.35-1.1 1.3-2.2 2.05-2.2 3.35C5.8 13.05 6.65 14 8 14Z"
 			strokeLinejoin="round"
 		/>
 	</svg>
@@ -358,6 +383,8 @@ export function Sidebar({
 	activeNoteId,
 	reviewsActive,
 	onOpenReviews,
+	prTinderActive,
+	onOpenPrTinder,
 	onSelect,
 	onOpenPr,
 	selectedPr = null,
@@ -1588,6 +1615,14 @@ export function Sidebar({
 					{openPrCount > 0 && (
 						<span className="sidebar-nav-count">{openPrCount}</span>
 					)}
+				</button>
+				<button
+					className={`sidebar-nav-item ${prTinderActive ? "active" : ""}`}
+					onClick={onOpenPrTinder}
+					title="Swipe through the repo's open PRs"
+				>
+					<span className="sidebar-nav-icon">{PR_TINDER_ICON}</span>
+					PR Tinder
 				</button>
 			</nav>
 
