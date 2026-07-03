@@ -8,7 +8,7 @@
  * that browser); moving them here makes them per-user and synced across devices.
  */
 
-import { existsSync, mkdirSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -32,6 +32,29 @@ export function getPins(user: string): string[] {
     return Array.isArray(raw?.pins) ? raw.pins.filter((x: unknown) => typeof x === "string") : [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * Drop the given pin keys from EVERY user's pins. Used when a session (or a
+ * workspace's last live chat) is archived — a pin to archived work is stale
+ * for everyone, and would silently resurface the row on unarchive or when a
+ * new chat joins the pinned workspace.
+ */
+export function unpinEverywhere(keys: string[]): void {
+  const drop = new Set(keys.filter(Boolean));
+  if (!drop.size || !existsSync(PINS_DIR)) return;
+  for (const file of readdirSync(PINS_DIR)) {
+    if (!file.endsWith(".json")) continue;
+    try {
+      const path = `${PINS_DIR}/${file}`;
+      const raw = JSON.parse(readFileSync(path, "utf8"));
+      const pins: string[] = Array.isArray(raw?.pins)
+        ? raw.pins.filter((x: unknown) => typeof x === "string")
+        : [];
+      const next = pins.filter((p) => !drop.has(p));
+      if (next.length !== pins.length) writeJsonAtomic(path, { pins: next });
+    } catch {}
   }
 }
 

@@ -6,6 +6,7 @@
 import { readFileSync, existsSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { unpinEverywhere } from "./pins";
 import type { UnifiedSession } from "./types";
 
 const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/archive-registry.json`;
@@ -64,6 +65,10 @@ export function setArchived(
   if (archived) registry[id] = { at: new Date().toISOString(), reason };
   else delete registry[id];
   save(registry);
+  // Archived work shouldn't stay pinned (for anyone) — it would resurface in
+  // the Pinned band on unarchive. Callers that know more keys (alias ids, the
+  // workspace pin) drop those on top of this.
+  if (archived) unpinEverywhere([id]);
 }
 
 /** Archive everything idle for more than `days` days. Returns count. */
@@ -73,14 +78,19 @@ export function archiveOlderThan(sessions: UnifiedSession[], days: number): numb
   let archived = 0;
   const now = new Date().toISOString();
 
+  const unpin: string[] = [];
   for (const s of sessions) {
     if (s.archived || s.isRunning) continue;
     if (registry[s.id]) continue;
     if (new Date(s.lastActivity).getTime() >= cutoff) continue;
     registry[s.id] = { at: now, reason: "idle" };
+    unpin.push(s.id, ...(s.aliasIds || []));
     archived++;
   }
 
-  if (archived > 0) save(registry);
+  if (archived > 0) {
+    save(registry);
+    unpinEverywhere(unpin);
+  }
   return archived;
 }

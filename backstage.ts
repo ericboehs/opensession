@@ -80,6 +80,7 @@ import type { ActiveRunRecord } from "./src/server/claude-runner";
 import {
 	getPins as getUserPins,
 	setPins as setUserPins,
+	unpinEverywhere,
 } from "./src/server/pins";
 import {
 	listWorkspaces,
@@ -3745,6 +3746,23 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				// sessions".
 				if (!archived) clearSessionFileArchive(sessionId);
 				sessionsCache = null;
+				if (archived) {
+					// setArchived drops the plain id pin; also drop legacy alias-id pins,
+					// and the workspace pin once its last live chat is archived (else the
+					// row resurfaces in Pinned when a new chat joins the workspace).
+					const keys = [session.id, ...(session.aliasIds || [])];
+					if (
+						session.projectId &&
+						!getAllSessions().some(
+							(s) =>
+								s.projectId === session.projectId &&
+								s.id !== session.id &&
+								!s.archived,
+						)
+					)
+						keys.push(`workspace:${session.projectId}`);
+					unpinEverywhere(keys);
+				}
 				return Response.json({ ok: true });
 			}
 
