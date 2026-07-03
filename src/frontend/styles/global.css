@@ -8077,7 +8077,7 @@ html[data-theme="light"] .tool-code-surface {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
 		gap: 8px;
-		padding: 8px 12px 10px;
+		padding: 12px 12px 10px;
 	}
 	.sidebar-nav-item {
 		flex-direction: column;
