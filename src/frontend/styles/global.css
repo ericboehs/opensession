@@ -492,7 +492,9 @@ a {
 	align-items: center;
 	justify-content: space-between;
 	gap: 8px;
-	padding: 10px 12px;
+	height: 48px;
+	padding: 0 12px;
+	border-bottom: 1px solid var(--border);
 	flex-shrink: 0;
 	min-width: 0;
 }
