@@ -747,7 +747,6 @@ function App() {
 				<span className="app-logo">B</span>
 				<span className="app-title-text">Backstage</span>
 			</a>
-			<UpdatePill addHandler={addHandler} />
 		</div>
 	);
 
@@ -1104,6 +1103,7 @@ function App() {
 						    state · gear — the account/settings menu that used to sit at the
 						    top. Hidden on mobile, where the top bar carries it. */}
 						<div className="sidebar-footer">
+							<UpdatePill addHandler={addHandler} />
 							<SettingsMenu
 								variant="footer"
 								onOpenSettings={() => navigate({ view: "settings" })}
