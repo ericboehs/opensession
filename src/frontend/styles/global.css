@@ -4,19 +4,22 @@
    ───────────────────────────────────────────────────────────── */
 
 :root {
-	--bg: #111111;
-	--bg-raised: #161616;
-	--bg-panel: #1a1a1a;
-	--bg-hover: #222222;
-	--bg-active: #292929;
-	--border: #272727;
-	--border-strong: #383838;
-	--text: #e8e8e8;
-	--text-dim: #9a9a9a;
-	--text-faint: #6b6b6b;
+	/* Conductor-style dark: lifted charcoal rather than near-black — the deepest
+	   surface sits ~#1b, so code blocks/terminals (which stay near-black) read
+	   as inset wells instead of blending in. */
+	--bg: #1b1b1b;
+	--bg-raised: #212121;
+	--bg-panel: #262626;
+	--bg-hover: #2e2e2e;
+	--bg-active: #363636;
+	--border: #333333;
+	--border-strong: #474747;
+	--text: #ececec;
+	--text-dim: #a3a3a3;
+	--text-faint: #757575;
 	--accent: #ff3b3b;
 	--accent-soft: rgba(255, 59, 59, 0.13);
-	--tooltip-bg: #252525;
+	--tooltip-bg: #313131;
 	--tooltip-fg: #f2f2f2;
 	--tooltip-ring: rgba(255, 255, 255, 0.1);
 	--green: #3fb950;

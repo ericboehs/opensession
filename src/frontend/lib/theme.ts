@@ -39,7 +39,7 @@ export function applyTheme(pref: ThemePref = getThemePref()) {
 	html.style.colorScheme = eff;
 	const meta = document.querySelector('meta[name="theme-color"]');
 	if (meta)
-		meta.setAttribute("content", eff === "light" ? "#ffffff" : "#111111");
+		meta.setAttribute("content", eff === "light" ? "#ffffff" : "#1b1b1b");
 }
 
 export function setThemePref(pref: ThemePref) {
