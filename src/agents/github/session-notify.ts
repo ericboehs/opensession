@@ -1,17 +1,21 @@
 /**
- * Merge/deploy events for PR-linked Backstage sessions. When a PR whose head
- * branch belongs to a session (primary branch or an attached repo) is merged,
- * a `[GitHub]` message is delivered into that session's chat through the
+ * Merge/deploy/preview events for PR-linked Backstage sessions. When a PR whose
+ * head branch belongs to a session (primary branch or an attached repo) is
+ * merged, a `[GitHub]` message is delivered into that session's chat through the
  * SessionControl registry — the same steer/queue/start path a human message
  * takes — so Michael sees it and can react. The merge commit is then tracked in
  * ~/.backstage-github/pending-deploys.json (survives restarts), and when the
  * Deploy workflow (.github/workflows/deploy.yml) completes for that commit the
- * session gets a second message with the outcome.
+ * session gets a second message with the outcome. Pre-merge, each time the PR's
+ * Vercel staging preview flips to Ready (butler edits its preview-table comment
+ * in place) the session gets a preview-ready message, deduped per deploy in
+ * ~/.backstage-github/preview-notified.json.
  */
 import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { tryGetSessionControl, type SessionControl, type SessionSummary } from "../../server/session-control";
 import { REPOS } from "../../server/worktree";
+import { githubRequest } from "./github-rest";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const PENDING_PATH = `${HOME}/.backstage-github/pending-deploys.json`;
@@ -112,6 +116,80 @@ export async function notifyMergedPrSessions(payload: any): Promise<void> {
     };
     writeJsonAtomic(PENDING_PATH, pending);
   }
+}
+
+const PREVIEW_NOTIFIED_PATH = `${HOME}/.backstage-github/preview-notified.json`;
+/** Dedup entries just bound file growth — a PR's preview stops changing long before this. */
+const PREVIEW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** prNumber → the Ready deploy we last announced (dedup across in-place comment edits). */
+type PreviewNotified = Record<string, { deployUrl: string; notifiedAt: string }>;
+
+function readPreviewNotified(): PreviewNotified {
+  if (!existsSync(PREVIEW_NOTIFIED_PATH)) return {};
+  try {
+    const all = JSON.parse(readFileSync(PREVIEW_NOTIFIED_PATH, "utf-8")) as PreviewNotified;
+    const cutoff = Date.now() - PREVIEW_TTL_MS;
+    for (const [pr, p] of Object.entries(all)) {
+      if (new Date(p.notifiedAt).getTime() < cutoff) delete all[pr];
+    }
+    return all;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The `tella` (webapp) row of butler's preview table. While building the last
+ * link is the workflow run; once Ready it's the unique per-deploy URL — that
+ * uniqueness is what lets a plain equality check dedup repeat edits (other
+ * apps' rows keep updating the same comment) yet still fire on every new push:
+ * | tella | Ready | [Open](https://tella-git-<branch>.tella.dev) | [Deployment](https://tella-<hash>.tella.dev) | <ts> |
+ */
+const PREVIEW_ROW =
+  /^\|\s*tella\s*\|\s*([^|]+?)\s*\|\s*\[[^\]]*\]\((https?:\/\/[^)\s]+)\)\s*\|\s*\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/m;
+
+/** `issue_comment` payload whose comment carries butler's preview-table marker. */
+export async function notifyVercelPreviewComment(payload: any): Promise<void> {
+  const prNumber: number | undefined = payload?.issue?.number;
+  if (!prNumber || !payload?.issue?.pull_request) return;
+  const projectId = projectIdForRepo(payload?.repository?.full_name || "");
+  if (!projectId) return;
+
+  const m = String(payload?.comment?.body || "").match(PREVIEW_ROW);
+  if (!m) return;
+  const [, status, previewUrl, deployUrl] = m;
+  if (status !== "Ready") return;
+
+  const notified = readPreviewNotified();
+  if (notified[prNumber]?.deployUrl === deployUrl) return;
+
+  const control = tryGetSessionControl();
+  if (!control) return;
+
+  // The comment payload carries no head branch — resolve it (and the PR state;
+  // a preview on a merged/closed PR isn't worth announcing).
+  const pr = await githubRequest<{ head?: { ref?: string }; state?: string; title?: string }>(
+    "GET",
+    `/repos/${payload.repository.full_name}/pulls/${prNumber}`,
+  );
+  const headRef = pr.data?.head?.ref;
+  if (!pr.ok || !headRef || pr.data?.state !== "open") return;
+
+  const sessions = matchSessions(control, projectId, headRef);
+  if (!sessions.length) return;
+
+  const title = pr.data?.title || `PR #${prNumber}`;
+  const message =
+    `🟢 The Vercel staging preview for this session's PR #${prNumber} “${title}” is ready: ${previewUrl} — ` +
+    `it now serves the branch's latest pushed commit. This is an FYI event: acknowledge briefly; ` +
+    `no action needed unless you were waiting to test on staging.`;
+
+  console.log(`[github] preview Ready for PR #${prNumber} → notifying ${sessions.length} session(s) on ${projectId}:${headRef}`);
+  await deliver(control, sessions.map((s) => s.id), message);
+
+  notified[prNumber] = { deployUrl, notifiedAt: new Date().toISOString() };
+  writeJsonAtomic(PREVIEW_NOTIFIED_PATH, notified);
 }
 
 /** `workflow_run` webhook payload; acts only on Deploy completions we're waiting on. */
