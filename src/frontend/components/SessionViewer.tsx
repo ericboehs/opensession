@@ -996,10 +996,29 @@ export function SessionViewer({
 									{hr ? `💬 ${hr.name} · via Slack` : s.user || "You"} ·
 									steering
 								</div>
-								<span className="composer-queue-pill">
-									<IconCrosshair size={16} />
-									Steering
-								</span>
+								<div className="composer-queue-actions">
+									<span className="composer-queue-pill">
+										<IconCrosshair size={16} />
+										Steering
+									</span>
+									{s.id && (
+										<Tooltip label="Dismiss — the run keeps going; this message won't be re-sent">
+											<button
+												type="button"
+												className="composer-queue-action danger"
+												onClick={() =>
+													send({
+														type: "delete_queued_prompt",
+														sessionId: session.id,
+														queueId: s.id,
+													})
+												}
+											>
+												<IconTrash size={20} />
+											</button>
+										</Tooltip>
+									)}
+								</div>
 							</div>
 							<div className="composer-queue-body">{hr ? hr.body : s.content}</div>
 							{s.images && s.images.length > 0 && (

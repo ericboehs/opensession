@@ -1165,15 +1165,34 @@ function deleteQueuedPrompt(
 	queueIndex?: number,
 ): boolean {
 	const queue = promptQueues.get(sessionId);
-	if (!queue) return false;
-	const index = queuedPromptIndex(queue, queueId, queueIndex);
-	if (index < 0) return false;
-	const next = queue.filter((_, i) => i !== index);
-	if (next.length > 0) promptQueues.set(sessionId, next);
-	else promptQueues.delete(sessionId);
-	persistQueues();
-	broadcastQueue(sessionId);
-	return true;
+	if (queue) {
+		const index = queuedPromptIndex(queue, queueId, queueIndex);
+		if (index >= 0) {
+			const next = queue.filter((_, i) => i !== index);
+			if (next.length > 0) promptQueues.set(sessionId, next);
+			else promptQueues.delete(sessionId);
+			persistQueues();
+			broadcastQueue(sessionId);
+			return true;
+		}
+	}
+	// Steer receipts are dismissable too (by id only — indexes are queue-
+	// relative). A receipt normally reconciles away when its message lands,
+	// but it lives server-side until the run finishes; on a long run a stale
+	// one must be deletable without waiting for that.
+	if (queueId) {
+		const steered = steeredReceipts.get(sessionId);
+		const index = (steered || []).findIndex((item) => item.id === queueId);
+		if (steered && index >= 0) {
+			const next = steered.filter((_, i) => i !== index);
+			if (next.length > 0) steeredReceipts.set(sessionId, next);
+			else steeredReceipts.delete(sessionId);
+			persistQueues();
+			broadcastQueue(sessionId);
+			return true;
+		}
+	}
+	return false;
 }
 
 function updateQueuedPrompt(
@@ -7395,3 +7414,4 @@ if (!g.__backstageBooted) {
 
 	g.__backstageBooted = true;
 }
+
