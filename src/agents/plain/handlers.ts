@@ -470,6 +470,21 @@ export async function processMichaelMention(
   }
 }
 
+/** Actor typename of the earliest email/chat message in a thread, or null if none yet. */
+function firstMessageActorType(thread: any): string | null {
+  const messages = (thread?.timelineEntries?.edges || [])
+    .map((e: any) => e?.node)
+    .filter(
+      (n: any) =>
+        n?.entry?.__typename === "EmailEntry" || n?.entry?.__typename === "ChatEntry"
+    );
+  if (messages.length === 0) return null;
+  messages.sort((a: any, b: any) =>
+    String(a.timestamp?.iso8601 || "").localeCompare(String(b.timestamp?.iso8601 || ""))
+  );
+  return messages[0].actor?.__typename || null;
+}
+
 /**
  * Route a new ticket, then fire the automation event bus.
  *
@@ -491,16 +506,38 @@ async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<v
   );
   if (!hasSubscriber) return;
 
+  // Outbound follow-ups fire thread_created too: when a teammate emails a
+  // customer on a done thread, Plain's state machine spins up a fresh linked
+  // thread — same event, and thread.createdBy is the state machine either way.
+  // The first message's actor is what separates a real inbound ticket from an
+  // agent follow-up, but that entry can land up to ~a minute after the webhook,
+  // so poll for it. No message after the wait → fail open and triage (never
+  // drop a real ticket on API lag).
+  let full: any = null;
+  let firstActor: string | null = null;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 15_000));
+    try {
+      full = await getThreadWithMessages(thread.id);
+    } catch {}
+    firstActor = firstMessageActorType(full);
+    if (firstActor) break;
+  }
+  if (firstActor === "UserActor" || firstActor === "MachineUserActor") {
+    console.log(
+      `[plain] Skipping auto-triage for thread ${thread.id} — opened by an outbound ` +
+        `${firstActor === "UserActor" ? "teammate" : "bot"} message, not a customer ticket`
+    );
+    return;
+  }
+
   // Give the classifier the real ticket content when we can fetch it; the
   // webhook payload (title + preview) is the fallback
   let ticketContent =
     `Title: ${thread.title || "(none)"}\n` +
     `Customer: ${thread.customer?.fullName || "(unknown)"} <${thread.customer?.email?.email || "no email"}>\n` +
     `Preview: ${thread.previewText || "(none)"}`;
-  try {
-    const full = await getThreadWithMessages(thread.id);
-    if (full) ticketContent = formatThreadContext(full, true);
-  } catch {}
+  if (full) ticketContent = formatThreadContext(full, true);
 
   const { classifyTicketRoute, getRouterConfig } = await import("./ticket-router");
   const verdict = await classifyTicketRoute(ticketContent);
