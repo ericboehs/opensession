@@ -1426,6 +1426,18 @@ export function SessionViewer({
 							</div>
 						)}
 					</div>
+					{/* Panel closed → surface the PR chip + its primary action (Merge/
+					    Push/Resolve) inline, so the header still tells you where the
+					    PR stands without opening the Workspace panel. */}
+					{!isPhone && hasWorkspace && !panelOpen && (
+						<PrStatusBar
+							sessionId={session.id}
+							repo={session.repo || undefined}
+							archived={session.archived}
+							send={connected ? send : undefined}
+							variant="header"
+						/>
+					)}
 					{panelAvailable && (
 						<Tooltip
 							label={

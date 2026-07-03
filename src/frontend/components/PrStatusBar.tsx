@@ -110,6 +110,9 @@ interface Props {
 	send?: (msg: any) => void;
 	/** Clicking the headline jumps to the PR tab. */
 	onOpenPrTab?: () => void;
+	/** "header" renders just the PR chip + primary action for the chat header
+	    (shown while the Workspace panel is closed); default is the full strip. */
+	variant?: "bar" | "header";
 }
 
 export function PrStatusBar({
@@ -118,6 +121,7 @@ export function PrStatusBar({
 	archived,
 	send,
 	onOpenPrTab,
+	variant = "bar",
 }: Props) {
 	const [pr, setPr] = useState<PrDetails | null>(null);
 	const [git, setGit] = useState<GitStatusInfo | null>(null);
@@ -188,6 +192,10 @@ export function PrStatusBar({
 	// No flash of an empty strip while loading; nothing to say once loaded
 	// (no PR, no local commits, clean tree) also keeps the chrome quiet.
 	if (!loaded || headline.key === "clean") return null;
+
+	// Header mode: only once a PR exists — the chip is the anchor; a bare
+	// Create PR/Push button in the chrome would just be noise.
+	if (variant === "header" && !pr) return null;
 
 	// Primary action for the current headline (right side of the strip).
 	function renderAction(): React.ReactNode {
@@ -268,6 +276,28 @@ export function PrStatusBar({
 			default:
 				return null;
 		}
+	}
+
+	if (variant === "header") {
+		return (
+			<div className="pr-head">
+				<a
+					className={`pr-bar-number pr-bar-number-${headline.tone}`}
+					href={pr!.url}
+					target="_blank"
+					rel="noopener"
+					title={`#${pr!.number} ${pr!.title} — ${headline.label}`}
+				>
+					#{pr!.number} <span className="pr-bar-arrow">↗</span>
+				</a>
+				{error && (
+					<span className="pr-bar-error" title={error}>
+						{error}
+					</span>
+				)}
+				{renderAction()}
+			</div>
+		);
 	}
 
 	return (
