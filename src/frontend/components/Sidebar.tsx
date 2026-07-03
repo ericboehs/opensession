@@ -32,6 +32,7 @@ import {
 	IconSearch,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
+import { useIsPhone } from "../hooks/useIsPhone";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -186,6 +187,12 @@ interface Props {
 	followUser?: string | null;
 	/** Toggle following a teammate. */
 	onToggleFollow?: (user: string) => void;
+	/**
+	 * The mobile top-bar's right-side actions slot. On phones the sidebar's
+	 * filter button lives here (next to Search) instead of in the workspace
+	 * header — the header's own filter/+ buttons are hidden on mobile.
+	 */
+	headerActionsEl?: HTMLElement | null;
 }
 
 // The Reviews entry's icon — the one non-workspace area left in the sidebar
@@ -408,7 +415,9 @@ export function Sidebar({
 	teamViewing = [],
 	followUser = null,
 	onToggleFollow,
+	headerActionsEl = null,
 }: Props) {
+	const isPhone = useIsPhone();
 	const [search, setSearch] = useState("");
 	// Groups are collapsed by default; the expanded set persists per browser
 	const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
@@ -423,6 +432,9 @@ export function Sidebar({
 	const [filter, setFilterState] = useState<FilterState>(readFilter);
 	const [filterOpen, setFilterOpen] = useState(false);
 	const filterBtnRef = useRef<HTMLButtonElement>(null);
+	// The phone stand-in for the header filter button (portaled into the top
+	// bar next to Search). The popover anchors to whichever button is live.
+	const mobileFilterBtnRef = useRef<HTMLButtonElement>(null);
 	function setFilter(patch: Partial<FilterState>) {
 		setFilterState((prev) => {
 			const next = { ...prev, ...patch };
@@ -1699,9 +1711,42 @@ export function Sidebar({
 				)}
 			</div>
 
+			{/* On phones the filter button lives in the top bar (next to Search);
+			    its popover anchors there. Desktop keeps it in the header. */}
+			{isPhone &&
+				headerActionsEl &&
+				createPortal(
+					<button
+						ref={mobileFilterBtnRef}
+						className={`mobile-filter-btn${filterOpen ? " active" : ""}${
+							filter.groupBy !== "status" ||
+							filter.repo !== "all" ||
+							filter.person !== "me"
+								? " has-filter"
+								: ""
+						}`}
+						onClick={() => setFilterOpen((o) => !o)}
+						aria-label="Group, filter & sort"
+					>
+						<svg width="24" height="24" viewBox="0 0 16 16" fill="none">
+							<path
+								d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
+								stroke="currentColor"
+								strokeWidth="1.6"
+								strokeLinecap="round"
+							/>
+						</svg>
+					</button>,
+					headerActionsEl,
+				)}
+
 			{filterOpen && (
 				<FilterPopover
-					anchor={filterBtnRef.current}
+					anchor={
+						isPhone
+							? mobileFilterBtnRef.current
+							: filterBtnRef.current
+					}
 					filter={filter}
 					repos={repos}
 					people={people}

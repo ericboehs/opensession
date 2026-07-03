@@ -1013,6 +1013,7 @@ function App() {
 								navigate({ view: "notes", sel: { kind: "note", id } })
 							}
 							onOpenSearch={() => setSearchOpen(true)}
+							headerActionsEl={headerActionsEl}
 							onOpenArchived={() => navigate({ view: "archived" })}
 							onOpenCatchUp={() => navigate({ view: "catchup" })}
 							catchUpActive={route.view === "catchup"}

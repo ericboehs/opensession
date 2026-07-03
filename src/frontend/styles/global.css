@@ -8048,6 +8048,103 @@ html[data-theme="light"] .tool-code-surface {
 
 }
 
+/* ── Phone: Slack-style top cards + relocated filter ─────────────
+   On phones the top nav (Catch up / Reviews / PR Tinder) reads as a row
+   of tap cards, like Slack's home. The workspace header's filter + "+"
+   buttons move out: filter is portaled into the top bar next to Search,
+   and the small "+" is dropped (the big red FAB covers new-session). This
+   is the last max-width:720px block so it wins source-order ties over the
+   base mobile bumps above. */
+@media (max-width: 720px) {
+	.sidebar-nav {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 8px;
+		padding: 8px 12px 10px;
+	}
+	.sidebar-nav-item {
+		flex-direction: column;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 10px;
+		position: relative;
+		min-height: 84px;
+		background: var(--bg-panel);
+		border: 1px solid var(--border);
+		border-radius: 14px;
+		padding: 12px;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text);
+		line-height: 1.25;
+	}
+	.sidebar-nav-item.active {
+		background: var(--bg-active);
+		border-color: var(--border-strong);
+		color: var(--text);
+	}
+	.sidebar-nav-item:hover {
+		background: var(--bg-panel);
+	}
+	.sidebar-nav-icon {
+		color: var(--text-dim);
+	}
+	.sidebar-nav-item.active .sidebar-nav-icon {
+		color: var(--text);
+	}
+	.sidebar-nav-icon svg {
+		width: 22px;
+		height: 22px;
+	}
+	/* Count sits as a corner badge on the card rather than inline. */
+	.sidebar-nav-count {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		margin-left: 0;
+	}
+
+	/* The header's filter + "+" cluster is gone on phones (filter → top bar,
+	   new-session → the red FAB). */
+	.sidebar-workspace-actions {
+		display: none;
+	}
+
+	/* Filter, docked in the top bar beside Search (portaled from the sidebar).
+	   `order: -1` seats it left of Search, which keeps its own edge bleed. Same
+	   iOS 44pt touch target as the search button; muted until a filter is set. */
+	.mobile-filter-btn {
+		order: -1;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--text-dim);
+		cursor: pointer;
+		border-radius: 50%;
+		-webkit-tap-highlight-color: transparent;
+		touch-action: manipulation;
+		transition:
+			opacity 0.18s ease,
+			color 0.12s ease;
+	}
+	.mobile-filter-btn svg {
+		stroke-width: 1.8;
+	}
+	.mobile-filter-btn.active,
+	.mobile-filter-btn.has-filter {
+		color: var(--accent);
+	}
+	.mobile-filter-btn:active {
+		opacity: 0.35;
+		transition-duration: 0s;
+	}
+}
+
 /* Touch screens can't hover, so the tab's close (×) is always visible
    there rather than hover-revealed — give it a finger-sized hit area
    (the glyph stays small, the tappable box grows). */
