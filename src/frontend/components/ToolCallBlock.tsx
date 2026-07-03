@@ -130,7 +130,7 @@ const FAMILY_STYLES: Record<FamilyKey, { chip: string; edge: string }> = {
   plain: { chip: "text-dim", edge: "border-l-line-strong" },
 };
 
-function toolFamily(toolName: string): FamilyKey {
+export function toolFamily(toolName: string): FamilyKey {
   if (parseMcpTool(toolName)) return "mcp";
   switch (toolName) {
     case "Bash":
@@ -161,8 +161,7 @@ function toolFamily(toolName: string): FamilyKey {
   }
 }
 
-function ToolGlyph({ toolName }: { toolName: string }) {
-  const size = 18;
+export function ToolGlyph({ toolName, size = 18 }: { toolName: string; size?: number }) {
   switch (toolFamily(toolName)) {
     case "run":
       return <IconTerminal size={size} />;
