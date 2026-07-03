@@ -1,10 +1,14 @@
 /**
  * Auto-archive sessions once they look "done" — no manual archive click
- * needed. Per user, opt-in by repo (default OFF everywhere except
- * `backstage`, so fast self-hosting iteration doesn't pile up in "My
- * sessions" — see Settings → Auto-archive). "Done" means: not running, not
- * waiting on you, no unresolved run error, and either the PR merged or
- * (opt-in, on by default) its checks are all green.
+ * needed. Two triggers with different scope (see Settings → Auto-archive):
+ *   - PR merged: a merged PR is unambiguously finished, so this archives its
+ *     session in EVERY repo, on by default (top-level `onMerge` toggle to opt
+ *     out entirely).
+ *   - Checks green (pre-merge): more aggressive, so it stays per-repo opt-in
+ *     (default only `backstage`, whose fast self-hosting iteration would
+ *     otherwise pile up in "My sessions").
+ * "Done" also always requires: not running, not waiting on you, no unresolved
+ * run error.
  *
  * Sibling of plain-archive.ts (external-signal-driven) and archive.ts's
  * archiveOlderThan (idle-driven) — this is the "work-finished" signal. All
@@ -30,13 +34,19 @@ const DEFAULT_PROJECT = "tella-fusion";
 mkdirSync(CONFIG_DIR, { recursive: true });
 
 export interface AutoArchiveUserConfig {
-  /** Repo ids this applies to. Empty = off everywhere. */
+  /** Archive a session once its PR merges, in any repo. On by default. */
+  onMerge: boolean;
+  /**
+   * Repo ids the pre-merge "checks green" trigger applies to. Empty = only
+   * merge-archiving (if `onMerge`) is active. Does not gate merge-archiving.
+   */
   repos: string[];
   /** Also archive once an open PR's checks are all green, before merge. */
   onChecksGreen: boolean;
 }
 
 export const AUTO_ARCHIVE_DEFAULTS: AutoArchiveUserConfig = {
+  onMerge: true,
   repos: ["backstage"],
   onChecksGreen: true,
 };
@@ -67,6 +77,7 @@ export function setAutoArchiveConfig(
   const next: AutoArchiveUserConfig = {
     ...AUTO_ARCHIVE_DEFAULTS,
     ...cfg.users[key],
+    ...(typeof patch.onMerge === "boolean" ? { onMerge: patch.onMerge } : {}),
     ...(Array.isArray(patch.repos)
       ? { repos: patch.repos.filter((r) => typeof r === "string") }
       : {}),
@@ -83,9 +94,16 @@ function sessionRepo(s: UnifiedSession): string {
   return s.repo || DEFAULT_PROJECT;
 }
 
-function isDone(s: SweepSession, cfg: AutoArchiveUserConfig): boolean {
-  if (s.isRunning || s.waitingForInput || s.lastRunError) return false;
-  if (s.prState === "MERGED") return true;
+/**
+ * Why a session counts as done, or null if it doesn't. "merged" applies in
+ * every repo; "checks" is gated to opted-in repos by the caller.
+ */
+function doneReason(
+  s: SweepSession,
+  cfg: AutoArchiveUserConfig,
+): "merged" | "checks" | null {
+  if (s.isRunning || s.waitingForInput || s.lastRunError) return null;
+  if (cfg.onMerge && s.prState === "MERGED") return "merged";
   if (
     cfg.onChecksGreen &&
     s.prState === "OPEN" &&
@@ -95,8 +113,8 @@ function isDone(s: SweepSession, cfg: AutoArchiveUserConfig): boolean {
     s.prChecks.failed === 0 &&
     s.prChecks.pending === 0
   )
-    return true;
-  return false;
+    return "checks";
+  return null;
 }
 
 /**
@@ -114,8 +132,12 @@ export function autoArchiveDoneSessions(sessions: SweepSession[]): number {
       ...AUTO_ARCHIVE_DEFAULTS,
       ...cfg.users[s.startedBy.trim()],
     };
-    if (!userCfg.repos.includes(sessionRepo(s))) continue;
-    if (!isDone(s, userCfg)) continue;
+    const reason = doneReason(s, userCfg);
+    if (!reason) continue;
+    // Merge-archiving applies everywhere; the pre-merge checks-green trigger
+    // only fires in the repos the user opted in.
+    if (reason === "checks" && !userCfg.repos.includes(sessionRepo(s)))
+      continue;
     setArchived(s.id, true, "auto");
     archived++;
   }

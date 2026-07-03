@@ -988,7 +988,9 @@ function AutoArchivePanel() {
 			.catch((e) => setError(e.message));
 	}, [user]);
 
-	function patch(p: Partial<Pick<AutoArchiveConfig, "repos" | "onChecksGreen">>) {
+	function patch(
+		p: Partial<Pick<AutoArchiveConfig, "onMerge" | "repos" | "onChecksGreen">>,
+	) {
 		if (!cfg) return;
 		const optimistic = { ...cfg, ...p };
 		setCfg(optimistic);
@@ -1017,11 +1019,10 @@ function AutoArchivePanel() {
 		<div className="settings-panel">
 			<h1 className="settings-title">Auto-archive</h1>
 			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
-				When a session looks done — its PR merged, or (below) its checks all
-				pass — Michael archives it for you, sorted under "Auto-archived" in{" "}
-				<b>{user}</b>'s Archived list instead of sitting in My sessions. Off
-				by default; on for <b>backstage</b> out of the box since that repo
-				moves fast and doesn't need manual tidy-up.
+				When a session looks done, Michael archives it for you — sorted under
+				"Auto-archived" in <b>{user}</b>'s Archived list instead of sitting in
+				My sessions. Merged PRs are archived everywhere by default; the
+				pre-merge "checks green" trigger below is per-repo.
 			</div>
 
 			{error && (
@@ -1032,8 +1033,19 @@ function AutoArchivePanel() {
 
 			<div className="setting-card">
 				<SettingRow
+					title="Archive when its PR merges"
+					desc="Once a session's pull request is merged, archive it. Applies to every repo — a merged PR is done."
+					control={
+						<Toggle
+							label="Archive when its PR merges"
+							checked={cfg.onMerge}
+							onChange={(v) => patch({ onMerge: v })}
+						/>
+					}
+				/>
+				<SettingRow
 					title="Archive once checks are green"
-					desc="Also archive an open (unmerged) PR once every check passes, not just after merge — for repos that iterate fast and don't need the PR to stick around once it builds."
+					desc="Also archive an open (unmerged) PR once every check passes, not just after merge — for repos that iterate fast and don't need the PR to stick around once it builds. Applies only to the repos below."
 					control={
 						<Toggle
 							label="Archive once checks are green"
@@ -1044,15 +1056,21 @@ function AutoArchivePanel() {
 				/>
 			</div>
 
-			<div className="setting-card" style={{ marginTop: 14 }}>
+			<div
+				className="setting-row-desc"
+				style={{ marginTop: 18, marginBottom: 8 }}
+			>
+				Repos for the "checks green" trigger
+			</div>
+			<div className="setting-card">
 				{cfg.availableRepos.map((repo) => (
 					<SettingRow
 						key={repo}
 						title={repo}
 						desc={
 							repo === "backstage"
-								? "Backstage self-hosts — sessions here finish fast and pile up otherwise."
-								: `Auto-archive done sessions in ${repo}.`
+								? "Archive on green checks here too — Backstage self-hosts, so sessions finish fast and pile up otherwise."
+								: `Archive open PRs in ${repo} once their checks pass.`
 						}
 						control={
 							<Toggle
