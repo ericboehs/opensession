@@ -1023,8 +1023,16 @@ async function escalateAskToSlack(
 }
 
 // Messages sent while a run is in flight queue up and deliver afterwards,
-// the same way Claude Code handles interruptions.
-type QueueItem = { content: string; user?: string };
+// the same way Claude Code handles interruptions. Attachments ride along:
+// `images` as composer `data:` URLs (parsed to ImageInput at delivery), `files`
+// as the raw composer payload (staged-path or inline refs). Both are persisted
+// with the queue so a restart doesn't silently drop a message's attachments.
+type QueueItem = {
+  content: string;
+  user?: string;
+  images?: string[];
+  files?: unknown;
+};
 const promptQueues: Map<string, QueueItem[]> = (g.__promptQueues ??= new Map());
 
 // Steered messages (folded into a live run, delivered at the run's next turn
@@ -1353,8 +1361,22 @@ async function drainQueue(sessionId: string): Promise<void> {
 				batch.length > 1 && m.user ? `[${m.user}] ${m.content}` : m.content,
 			)
 			.join("\n\n");
+		// Attachments queued alongside the text ride the drained turn: images are
+		// decoded to ImageInput, files handed through as staged/inline refs.
+		const combinedImages = parseImageDataUrls(
+			batch.flatMap((m) => m.images ?? []),
+		);
+		const combinedFiles = batch.flatMap((m) =>
+			Array.isArray(m.files) ? m.files : [],
+		);
 		try {
-			await runSessionPrompt(sessionId, combined, batch[0].user);
+			await runSessionPrompt(
+				sessionId,
+				combined,
+				batch[0].user,
+				combinedImages,
+				combinedFiles.length ? combinedFiles : undefined,
+			);
 		} catch (e) {
 			// The batch was already spliced out and persisted away — put it back at
 			// the front of the queue so a throw doesn't lose the messages.
@@ -1376,6 +1398,14 @@ async function runSessionPromptAndDrain(
 ): Promise<void> {
 	await runSessionPrompt(sessionId, content, user, images, rawFiles);
 	await drainQueue(sessionId);
+}
+
+/** Keep only the string `data:` URLs from a composer `images` payload — the
+ *  display/queue form (parsed to ImageInput at delivery via parseImageDataUrls). */
+function asDataUrlList(urls?: unknown): string[] | undefined {
+	if (!Array.isArray(urls)) return undefined;
+	const out = urls.filter((u): u is string => typeof u === "string");
+	return out.length ? out : undefined;
 }
 
 /** Decode composer `data:<mediatype>;base64,<data>` URLs into runner ImageInputs. */
@@ -5524,6 +5554,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					case "prompt": {
 						const { sessionId, content, user } = msg;
 						const images = parseImageDataUrls(msg.images);
+						const imageUrls = asDataUrlList(msg.images);
 						const session = findSession(sessionId);
 						if (!session) {
 							ws.send(
@@ -5556,24 +5587,36 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							)
 						) {
 							const attributed = user ? `[${user}] ${content}` : content;
+							// Images fold into the live run as content blocks; disk-staged
+							// files can't ride the steer channel, so a send carrying files
+							// falls through to the queue (its drain delivers images + files
+							// together at the run's next idle point).
+							const hasFiles = Array.isArray(msg.files) && msg.files.length > 0;
 							if (
+								!hasFiles &&
 								steerAgentRun(
 									[session.claudeSessionId, session.codexThreadId, session.id],
 									attributed,
+									images,
 								)
 							) {
 								// The message lands in the transcript when its turn starts. Until
 								// then a steer receipt is the durable visible record (survives
 								// reload/leave); kept out of promptQueues so the drain never
 								// re-delivers it, and cleared when the run finishes.
-								recordSteer(sessionId, { content, user });
+								recordSteer(sessionId, { content, user, images: imageUrls });
 								broadcastToSession(sessionId, {
 									type: "notice",
 									message: `Message from ${user || "you"} folded into the run — Michael picks it up at the next stopping point.`,
 								});
 								break;
 							}
-							enqueuePrompt(sessionId, { content, user });
+							enqueuePrompt(sessionId, {
+								content,
+								user,
+								images: imageUrls,
+								files: msg.files,
+							});
 							watchExternalRunAndDrain(sessionId);
 							break;
 						}
@@ -5605,6 +5648,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						// continue right away with this message. Falls back to a normal
 						// prompt (steer/queue/run) when there's nothing to interrupt.
 						const { sessionId, content, user } = msg;
+						const images = parseImageDataUrls(msg.images);
+						const imageUrls = asDataUrlList(msg.images);
 						const session = findSession(sessionId);
 						if (!session) {
 							ws.send(
@@ -5613,7 +5658,12 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							return;
 						}
 						const attributed = user ? `[${user}] ${content}` : content;
+						// Files can't ride the interrupt/steer content-block channel — a send
+						// carrying files falls through to the queue (drain delivers images +
+						// files together), so it isn't interrupted here.
+						const hasFiles = Array.isArray(msg.files) && msg.files.length > 0;
 						if (
+							!hasFiles &&
 							isAgentSessionBusy(
 								session.claudeSessionId,
 								session.codexThreadId,
@@ -5622,6 +5672,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							interruptAndSteerAgentRun(
 								[session.claudeSessionId, session.codexThreadId, session.id],
 								attributed,
+								images,
 							)
 						) {
 							// Interrupt aborts the current turn and continues immediately, so
@@ -5632,8 +5683,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							// filtered out in jsonl-parser.
 							break;
 						}
-						// Not interruptible (external run, codex, or just finished): treat
-						// like a normal send so the message is never lost.
+						// Not interruptible (external run, codex, has files, or just
+						// finished): treat like a normal send so nothing — text or
+						// attachment — is lost.
 						if (
 							isAgentSessionBusy(
 								session.claudeSessionId,
@@ -5641,11 +5693,22 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								session.id,
 							)
 						) {
-							enqueuePrompt(sessionId, { content, user });
+							enqueuePrompt(sessionId, {
+								content,
+								user,
+								images: imageUrls,
+								files: msg.files,
+							});
 							watchExternalRunAndDrain(sessionId);
 							break;
 						}
-						await runSessionPromptAndDrain(sessionId, content, user);
+						await runSessionPromptAndDrain(
+							sessionId,
+							content,
+							user,
+							images,
+							msg.files,
+						);
 						break;
 					}
 

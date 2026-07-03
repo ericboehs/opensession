@@ -207,12 +207,12 @@ export function SessionViewer({
 	const streamSeqRef = useRef(0);
 	const [viewers, setViewers] = useState<string[]>([]);
 	const [queued, setQueued] = useState<
-		Array<{ content: string; user?: string }>
+		Array<{ content: string; user?: string; images?: string[] }>
 	>([]);
 	// Steered messages folded into the live run — shown as a "folded in" receipt
 	// until their turn writes to the transcript (then reconciled away below).
 	const [steered, setSteered] = useState<
-		Array<{ content: string; user?: string }>
+		Array<{ content: string; user?: string; images?: string[] }>
 	>([]);
 	// Optimistic just-sent messages, shown instantly and reconciled once the real
 	// turn lands (transcript) or the server confirms it as queued (busy path).
@@ -853,10 +853,11 @@ export function SessionViewer({
 		if (noEngine) return false;
 		// Default while busy: interrupt the current turn and redirect right away, so
 		// the message lands now instead of waiting (possibly many minutes) for the
-		// turn to end. Idle: just run it. (Interrupt/steer follow-ups are text-only,
-		// so images ride the idle "prompt" path; they're dropped while busy either
-		// way.) The gentle "fold in at the next stopping point" option is the +
-		// button → handleSteerSend.
+		// turn to end. Idle: just run it. Attachments ride along on every path —
+		// images fold into the run as content blocks; files (which can't) route the
+		// send to the queue server-side and drain with the next turn. The gentle
+		// "fold in at the next stopping point" option is the + button →
+		// handleSteerSend.
 		send(
 			isBusy
 				? {
@@ -865,6 +866,8 @@ export function SessionViewer({
 						content: text,
 						user,
 						effort,
+						...(imgs.length ? { images: imgs } : {}),
+						...(fls.length ? { files: filePayload } : {}),
 					}
 				: {
 						type: "prompt",
@@ -885,7 +888,7 @@ export function SessionViewer({
 				content: text,
 				user,
 				sentAt: Date.now(),
-				images: !isBusy && imgs.length ? imgs : undefined,
+				images: imgs.length ? imgs : undefined,
 			},
 		]);
 		setImages([]);
@@ -897,11 +900,27 @@ export function SessionViewer({
 	// Michael's next stopping point without interrupting the current turn.
 	function handleSteerSend(raw: string): boolean {
 		const text = raw.trim();
-		if (!text) return false;
+		const imgs = images;
+		const fls = files;
+		if (!text && imgs.length === 0 && fls.length === 0) return false;
 		if (!connected || noEngine) return false;
 
 		const user = getCurrentUser();
-		send({ type: "prompt", sessionId: session.id, content: text, user, effort });
+		const filePayload = fls.map((f) =>
+			f.path ? { name: f.name, path: f.path } : { name: f.name, dataUrl: f.dataUrl },
+		);
+		// Server routes this to the live run: images fold in as content blocks at
+		// the next turn boundary; files (which can't ride the steer channel) drop
+		// to the queue and drain with the next turn.
+		send({
+			type: "prompt",
+			sessionId: session.id,
+			content: text,
+			user,
+			effort,
+			...(imgs.length ? { images: imgs } : {}),
+			...(fls.length ? { files: filePayload } : {}),
+		});
 		beginTurn(); // pin this new turn near the top so its reply streams in below
 		setPending((p) => [
 			...p,
@@ -910,8 +929,11 @@ export function SessionViewer({
 				content: text,
 				user,
 				sentAt: Date.now(),
+				images: imgs.length ? imgs : undefined,
 			},
 		]);
+		setImages([]);
+		setFiles([]);
 		return true;
 	}
 
@@ -1615,6 +1637,13 @@ export function SessionViewer({
 										>
 											{hr ? hr.body : s.content}
 										</div>
+										{s.images && s.images.length > 0 && (
+											<div className="msg-images">
+												{s.images.map((src, j) => (
+													<img key={j} className="md-image" src={src} alt="" />
+												))}
+											</div>
+										)}
 									</div>
 								);
 							})}
@@ -1637,6 +1666,13 @@ export function SessionViewer({
 										>
 											{hr ? hr.body : q.content}
 										</div>
+										{q.images && q.images.length > 0 && (
+											<div className="msg-images">
+												{q.images.map((src, j) => (
+													<img key={j} className="md-image" src={src} alt="" />
+												))}
+											</div>
+										)}
 									</div>
 								);
 							})}

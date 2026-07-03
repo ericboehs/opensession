@@ -217,10 +217,16 @@ export function activeAgentRunCount(): number {
  */
 export function steerAgentRun(
   ids: Array<string | null | undefined>,
-  text: string
+  text: string,
+  images?: ImageInput[]
 ): boolean {
   for (const id of ids) {
-    if (id && (steerRun(id, text) || hostSteer(id, text))) return true;
+    if (!id) continue;
+    // Local runs carry images as content blocks; the host-forward RPC is
+    // text-only, so a send with images falls through (caller queues it —
+    // the queue drain delivers images).
+    if (steerRun(id, text, images)) return true;
+    if (!images?.length && hostSteer(id, text)) return true;
   }
   return false;
 }
@@ -232,11 +238,13 @@ export function steerAgentRun(
  */
 export function interruptAndSteerAgentRun(
   ids: Array<string | null | undefined>,
-  text: string
+  text: string,
+  images?: ImageInput[]
 ): boolean {
   for (const id of ids) {
-    if (id && (interruptAndSteerRun(id, text) || hostInterruptSteer(id, text)))
-      return true;
+    if (!id) continue;
+    if (interruptAndSteerRun(id, text, images)) return true;
+    if (!images?.length && hostInterruptSteer(id, text)) return true;
   }
   return false;
 }

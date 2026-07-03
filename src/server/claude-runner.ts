@@ -321,16 +321,26 @@ export function cancelRun(sessionId: string): boolean {
 // reloaded module can't find the live run's controllers and return false — the
 // caller then falls back to the slow promptQueues poller (drains only when the
 // whole run ends) instead of folding the message in at the next turn boundary.
-const steerControllers: Map<string, (text: string) => void> = ((globalThis as any)
-  .__steerControllers ??= new Map());
+const steerControllers: Map<
+  string,
+  (text: string, images?: ImageInput[]) => void
+> = ((globalThis as any).__steerControllers ??= new Map());
 const interrupters: Map<string, () => void> = ((globalThis as any).__interrupters ??=
   new Map());
 
-/** Deliver a message into a running query. False = no steerable run found. */
-export function steerRun(sessionId: string, text: string): boolean {
+/**
+ * Deliver a message into a running query. False = no steerable run found.
+ * Pasted/dropped images ride along as content blocks (same shape as the
+ * opening message), released at the next turn boundary.
+ */
+export function steerRun(
+  sessionId: string,
+  text: string,
+  images?: ImageInput[],
+): boolean {
   const push = steerControllers.get(sessionId);
   if (!push) return false;
-  push(text);
+  push(text, images);
   return true;
 }
 
@@ -339,11 +349,15 @@ export function steerRun(sessionId: string, text: string): boolean {
  * query survive) and continue immediately with the given message as the next
  * turn. False = no interruptible run found.
  */
-export function interruptAndSteerRun(sessionId: string, text: string): boolean {
+export function interruptAndSteerRun(
+  sessionId: string,
+  text: string,
+  images?: ImageInput[],
+): boolean {
   const push = steerControllers.get(sessionId);
   const interrupt = interrupters.get(sessionId);
   if (!push || !interrupt) return false;
-  push(text); // queue first so the interrupt's turn boundary releases it
+  push(text, images); // queue first so the interrupt's turn boundary releases it
   interrupt();
   return true;
 }
@@ -534,7 +548,7 @@ export async function* runClaude(opts: {
   // turn ever starts, hanging the run). Each boundary release starts exactly
   // one more turn in the same query, so the end-of-run rule stays simple:
   // finish on a result with nothing held.
-  const steerPending: string[] = [];
+  const steerPending: Array<{ text: string; images?: ImageInput[] }> = [];
   let steerWake: (() => void) | null = null; // woken by releaseSteers/shutdown
   let steerReleases = 0; // boundary releases granted but not yet consumed
   let inputDone = false;
@@ -548,8 +562,8 @@ export async function* runClaude(opts: {
       message: { role: "user", content },
       parent_tool_use_id: null,
     }) as SDKUserMessage;
-  // The opening message can carry pasted/dropped images as content blocks
-  // (steered follow-ups stay text-only).
+  // The opening message — and steered follow-ups — can carry pasted/dropped
+  // images as content blocks.
   const mkUserMsgWithImages = (text: string, images?: ImageInput[]): SDKUserMessage => {
     if (!images || images.length === 0) return mkUserMsg(text);
     const blocks: unknown[] = [];
@@ -566,9 +580,14 @@ export async function* runClaude(opts: {
       parent_tool_use_id: null,
     } as SDKUserMessage;
   };
-  const pushSteer = (text: string) => {
-    turnEvent({ direction: "in", kind: "steered_prompt", ...summarizeText(text) });
-    steerPending.push(text);
+  const pushSteer = (text: string, images?: ImageInput[]) => {
+    turnEvent({
+      direction: "in",
+      kind: "steered_prompt",
+      ...summarizeText(text),
+      ...(images?.length ? { images: images.length } : {}),
+    });
+    steerPending.push({ text, images });
     // Parked at a held turn boundary (background tasks pending, no turn
     // running): there is no upcoming result to release this, so deliver now.
     if (atBoundaryHold) {
@@ -661,7 +680,16 @@ export async function* runClaude(opts: {
         if (steerReleases > 0) {
           steerReleases--;
           const batch = steerPending.splice(0);
-          if (batch.length > 0) yield mkUserMsg(batch.join("\n\n"));
+          if (batch.length > 0) {
+            const text = batch
+              .map((b) => b.text)
+              .filter(Boolean)
+              .join("\n\n");
+            const images = batch.flatMap((b) => b.images ?? []);
+            yield images.length
+              ? mkUserMsgWithImages(text, images)
+              : mkUserMsg(text);
+          }
           continue;
         }
         await new Promise<void>((resolve) => (steerWake = resolve));
