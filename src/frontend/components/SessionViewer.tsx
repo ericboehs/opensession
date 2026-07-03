@@ -37,7 +37,6 @@ import { RepoBar } from "./RepoBar";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
-import { PixelSpinner } from "./PixelSpinner";
 import { SlackChatPanel } from "./SlackChatPanel";
 import { PlainThreadPanel } from "./PlainThreadPanel";
 import { PreviewButton } from "./PreviewButton";
@@ -1369,14 +1368,6 @@ export function SessionViewer({
 					)}
 					{session.archived && (
 						<span className="source-chip source-cli">archived</span>
-					)}
-					{isBusy && (
-						<span className="working-pill">
-							<PixelSpinner className="working-spinner" />
-							<span className="working-label">
-								{streamBy ? `Working for ${streamBy}` : "Working"}
-							</span>
-						</span>
 					)}
 				</div>
 				<div className="viewer-header-actions">
