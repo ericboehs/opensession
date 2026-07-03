@@ -67,7 +67,9 @@ function matchSessions(control: SessionControl, projectId: string, branch: strin
 async function deliver(control: SessionControl, sessionIds: string[], message: string): Promise<void> {
   for (const id of sessionIds) {
     try {
-      const res = await control.deliverToSession(id, message, "GitHub");
+      // busy: "queue" — these are FYI events; wait behind an in-flight run
+      // rather than steering (interrupt-and-redirect) it like a human message.
+      const res = await control.deliverToSession(id, message, "GitHub", { busy: "queue" });
       console.log(`[github] session notify → ${id}: ${res.status}`);
     } catch (e) {
       console.error(`[github] session notify → ${id} failed:`, e);

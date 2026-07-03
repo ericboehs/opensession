@@ -89,8 +89,16 @@ export interface SessionControl {
    * Deliver a message to a session: steer it into the running turn if busy and
    * owned by this process, queue it behind an external run, or start a fresh
    * turn when idle. Fire-and-forget — returns once the message is placed.
+   * `opts.busy: "queue"` skips the steer: an FYI event (merge/deploy/preview
+   * notifications) must wait its turn, never interrupt-and-redirect a run the
+   * way a human message does.
    */
-  deliverToSession(id: string, content: string, user?: string): Promise<DeliverResult>;
+  deliverToSession(
+    id: string,
+    content: string,
+    user?: string,
+    opts?: { busy?: "steer" | "queue" },
+  ): Promise<DeliverResult>;
   /** Cancel a session's in-flight run (only runs this process owns). */
   cancelSession(id: string): boolean;
   /** Create a new session and start its first turn in the background. */

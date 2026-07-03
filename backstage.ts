@@ -6727,7 +6727,7 @@ registerSessionControl({
 		return true;
 	},
 
-	deliverToSession: async (id, content, user) => {
+	deliverToSession: async (id, content, user, opts) => {
 		const session = findSession(id);
 		if (!session)
 			return { status: "error" as const, message: "No session with that id." };
@@ -6755,7 +6755,10 @@ registerSessionControl({
 		) {
 			// Busy + owned here → fold into the running turn (delivered at the next
 			// stopping point). Otherwise queue and drain when the external run ends.
+			// FYI events opt out of steering entirely (busy: "queue") — they wait
+			// behind the run instead of interrupting it.
 			if (
+				opts?.busy !== "queue" &&
 				steerAgentRun(
 					[session.claudeSessionId, session.codexThreadId, session.id],
 					attributed,
