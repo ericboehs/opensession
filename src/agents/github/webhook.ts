@@ -120,7 +120,14 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       // author: tella-butler authors most real feature PRs (co-recording, camera
       // backgrounds, onboarding, …), and those are exactly the merges that need docs.
       const headRef = pr.head?.ref || "";
-      if (!headRef.startsWith(DOCS_SYNC_BRANCH_PREFIX)) {
+      if (headRef.startsWith(DOCS_SYNC_BRANCH_PREFIX)) {
+        // A docs-sync PR itself was merged — don't re-fire docs-sync (loop), but
+        // tick its Slack announcement done, like Mintlify used to.
+        const { markDocsSyncPrMerged } = await import("./docs-sync-notify");
+        void markDocsSyncPrMerged(pr.number).catch((e) =>
+          console.error(`[github] markDocsSyncPrMerged failed for #${pr.number}:`, e),
+        );
+      } else {
         const payload = JSON.stringify({
           prNumber: pr.number,
           title: pr.title || `PR #${pr.number}`,
