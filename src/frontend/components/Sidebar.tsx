@@ -1252,6 +1252,11 @@ export function Sidebar({
 					row.status !== "merged" && (
 						<span className="sidebar-item-status sidebar-status-unread" />
 					)}
+				{!editing && rowPrNumber(row) != null && (
+					<span className="text-faint text-[11px] max-[720px]:text-[13px] tabular-nums shrink-0">
+						#{rowPrNumber(row)}
+					</span>
+				)}
 				{editing ? (
 					<input
 						className="sidebar-item-rename"
@@ -2690,16 +2695,23 @@ function SidebarItem({
 						}}
 					/>
 				) : (
-					<span
-						className="sidebar-item-title"
-						onDoubleClick={(e) => {
-							e.stopPropagation();
-							setDraft(session.title);
-							setEditing(true);
-						}}
-					>
-						{session.title}
-					</span>
+					<>
+						{session.prNumber != null && (
+							<span className="text-faint text-[11px] max-[720px]:text-[13px] tabular-nums shrink-0">
+								#{session.prNumber}
+							</span>
+						)}
+						<span
+							className="sidebar-item-title"
+							onDoubleClick={(e) => {
+								e.stopPropagation();
+								setDraft(session.title);
+								setEditing(true);
+							}}
+						>
+							{session.title}
+						</span>
+					</>
 				)}
 				{mine && !editing && (
 					<span className="sidebar-item-inline-meta">
@@ -3200,6 +3212,14 @@ function RunTicker({ startMs }: { startMs: number }) {
 			{elapsedClock(startMs, now)}
 		</span>
 	);
+}
+
+// The row's fronting PR number — the newest chat that has one (same "fronting
+// PR" rule as wsPrInfo) — shown as a #123 prefix before the row name.
+function rowPrNumber(row: { chats: UnifiedSession[] }): number | undefined {
+	return [...row.chats]
+		.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""))
+		.find((c) => c.prNumber != null)?.prNumber;
 }
 
 function WsStatusMark({
