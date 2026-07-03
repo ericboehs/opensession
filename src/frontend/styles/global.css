@@ -10625,10 +10625,11 @@ html[data-theme="light"] .tool-code-surface {
 }
 
 /* ── Lightweight phone inputs ────────────────────────────────────
-   Phones get the ChatGPT-style minimal bar: just the input plus
-   + / mic / send. Model, effort and goal keep their defaults and stay
-   desktop-only (the palette hides repo/base/model/effort behind the
-   sliders toggle instead). */
+   Phones get the near-minimal bar: input plus + / model / mic / send.
+   The model pill stays — switching models mid-chat is a real phone
+   need — and its native <select> overlay is touch-friendly. Effort and
+   goal are secondary and stay desktop-only to keep the bar uncluttered
+   (the new-session palette still hides model behind its sliders toggle). */
 @media (max-width: 720px) {
 	.composer {
 		padding: 8px 12px 8px 12px;
@@ -10640,7 +10641,9 @@ html[data-theme="light"] .tool-code-surface {
 	.composer-toolbar {
 		margin-top: 6px;
 	}
-	.composer-toolbar .palette-pill,
+	/* Hide the effort pill (the one carrying the bars icon) and the goal
+	   button; keep the model pill so you can switch models from the chat. */
+	.composer-toolbar .palette-pill:has(.palette-effort-icon),
 	.composer-goal-btn {
 		display: none;
 	}
