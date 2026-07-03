@@ -7473,7 +7473,8 @@ html[data-theme="light"] .tool-code-surface {
 	.app-header {
 		display: flex;
 		position: relative;
-		padding: env(safe-area-inset-top, 0px) 10px 0;
+		/* 12px edges match the content column below (top cards, list). */
+		padding: env(safe-area-inset-top, 0px) 12px 0;
 	}
 
 	/* Centered page title, iOS-sheet style: the Back chevron keeps the left
@@ -7607,12 +7608,12 @@ html[data-theme="light"] .tool-code-surface {
 		align-items: center;
 		justify-content: center;
 		/* True iOS 44pt touch target; the negative margin lets the oversized
-		   hit area bleed into the header's 10px edge padding so the glyph
+		   hit area bleed into the header's 12px edge padding so the glyph
 		   itself stays optically aligned with the content column. */
 		width: 44px;
 		height: 44px;
 		padding: 0;
-		margin-right: -10px;
+		margin-right: -12px;
 		border: none;
 		background: none;
 		/* Nav-bar controls share the app tint, like the Back chevron. */
