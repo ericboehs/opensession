@@ -1931,18 +1931,6 @@ export function SessionViewer({
 									<span className="panel-tab-dot" />
 								</button>
 							)}
-							{session.branch && (
-								<span className="panel-branch" title={session.branch}>
-									{session.branch}
-								</span>
-							)}
-							<button
-								className="panel-close"
-								onClick={() => setPanelOpen(false)}
-								aria-label="Close panel"
-							>
-								✕
-							</button>
 						</div>
 						<div className="panel-body">
 							{/* Plain-only sessions (no code workspace) show just the timeline. */}
