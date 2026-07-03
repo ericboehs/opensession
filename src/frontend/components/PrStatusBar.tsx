@@ -9,7 +9,7 @@ import {
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
-import { IconPullRequest, IconGitMerge } from "./icons";
+import { IconArrowUp, IconPullRequest, IconGitMerge } from "./icons";
 
 /**
  * Conductor-style status strip at the top of the right Workspace panel: the PR
@@ -116,6 +116,32 @@ interface Props {
 	variant?: "bar" | "header";
 }
 
+interface PrBarButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+	tone: "green" | "purple" | "red" | "solid";
+	icon?: React.ReactNode;
+	confirm?: boolean;
+}
+
+function PrBarButton({
+	tone,
+	icon,
+	confirm,
+	className = "",
+	children,
+	...props
+}: PrBarButtonProps) {
+	return (
+		<button
+			type="button"
+			className={`pr-bar-btn pr-bar-btn-${tone}${confirm ? " pr-bar-btn-confirm" : ""}${className ? ` ${className}` : ""}`}
+			{...props}
+		>
+			{icon && <span className="pr-bar-btn-icon">{icon}</span>}
+			<span className="pr-bar-btn-label">{children}</span>
+		</button>
+	);
+}
+
 export function PrStatusBar({
 	sessionId,
 	repo,
@@ -205,8 +231,8 @@ export function PrStatusBar({
 		switch (headline.key) {
 			case "merged":
 				return isArchived ? null : (
-					<button
-						className="pr-bar-btn pr-bar-btn-purple"
+					<PrBarButton
+						tone="purple"
 						disabled={!!busy}
 						onClick={() =>
 							run("archive", async () => {
@@ -216,22 +242,23 @@ export function PrStatusBar({
 						}
 					>
 						{busy === "archive" ? "Archiving…" : "Archive"}
-					</button>
+					</PrBarButton>
 				);
 			case "ahead":
 				return (
-					<button
-						className="pr-bar-btn pr-bar-btn-solid"
+					<PrBarButton
+						tone="solid"
+						icon={<IconArrowUp size={18} />}
 						disabled={!!busy}
 						onClick={() => run("push", () => gitPushApi(sessionId, repo))}
 					>
-						{busy === "push" ? "Pushing…" : "↑ Push"}
-					</button>
+						{busy === "push" ? "Pushing…" : "Push"}
+					</PrBarButton>
 				);
 			case "conflicts":
 				return send ? (
-					<button
-						className="pr-bar-btn pr-bar-btn-red"
+					<PrBarButton
+						tone="red"
 						onClick={() =>
 							promptSession(
 								"resolve conflicts",
@@ -240,12 +267,13 @@ export function PrStatusBar({
 						}
 					>
 						Resolve
-					</button>
+					</PrBarButton>
 				) : null;
 			case "no-pr":
 				return send ? (
-					<button
-						className="pr-bar-btn pr-bar-btn-solid inline-flex items-center gap-1"
+					<PrBarButton
+						tone="solid"
+						icon={<IconPullRequest size={18} />}
 						onClick={() =>
 							promptSession(
 								"create a PR",
@@ -253,16 +281,18 @@ export function PrStatusBar({
 							)
 						}
 					>
-						<IconPullRequest size={15} className="shrink-0" /> Create PR
-					</button>
+						Create PR
+					</PrBarButton>
 				) : null;
 			case "ready":
 			case "failing":
 			case "running":
 			case "changes-requested":
 				return (
-					<button
-						className={`pr-bar-btn pr-bar-btn-green inline-flex items-center gap-1 ${confirmMerge ? "pr-bar-btn-confirm" : ""}`}
+					<PrBarButton
+						tone="green"
+						confirm={confirmMerge}
+						icon={!busy && !confirmMerge ? <IconGitMerge size={18} /> : undefined}
 						disabled={!!busy}
 						onClick={handleMerge}
 						title="Squash and merge this PR into its base branch"
@@ -271,8 +301,8 @@ export function PrStatusBar({
 							? "Merging…"
 							: confirmMerge
 								? "Confirm merge"
-								: <><IconGitMerge size={15} className="shrink-0" /> Merge</>}
-					</button>
+								: "Merge"}
+					</PrBarButton>
 				);
 			default:
 				return null;

@@ -3413,31 +3413,67 @@ body.resizing-x .panel-resize::after {
 }
 
 .pr-bar-btn {
-	border: none;
-	border-radius: 7px;
-	font-size: 12.5px;
-	font-weight: 600;
-	padding: 5px 12px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
+	min-height: 32px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	font-size: 13px;
+	line-height: 1;
+	font-weight: 650;
+	padding: 7px 12px;
 	white-space: nowrap;
 	cursor: pointer;
 	color: #fff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+	transition:
+		background-color 150ms ease,
+		border-color 150ms ease,
+		box-shadow 150ms ease,
+		color 150ms ease,
+		filter 150ms ease,
+		transform 150ms ease;
+	will-change: transform;
+}
+.pr-bar-btn-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	flex: 0 0 18px;
+}
+.pr-bar-btn-icon svg {
+	display: block;
+	stroke-width: 1.7;
+}
+.pr-bar-btn-label {
+	display: inline-flex;
+	align-items: center;
 }
 .pr-bar-btn:disabled {
 	opacity: 0.6;
 	cursor: default;
+	box-shadow: none;
 }
 .pr-bar-btn-green {
 	background: var(--green);
+	border-color: color-mix(in srgb, var(--green) 78%, black);
 }
 .pr-bar-btn-purple {
 	background: var(--purple);
+	border-color: color-mix(in srgb, var(--purple) 78%, black);
 }
 .pr-bar-btn-red {
 	background: var(--red);
+	border-color: color-mix(in srgb, var(--red) 78%, black);
 }
 .pr-bar-btn-solid {
 	background: var(--text);
 	color: var(--bg);
+	border-color: color-mix(in srgb, var(--text) 84%, transparent);
 }
 .pr-bar-btn-confirm {
 	outline: 2px solid color-mix(in srgb, var(--green) 45%, transparent);
@@ -3445,6 +3481,17 @@ body.resizing-x .panel-resize::after {
 }
 .pr-bar-btn:hover:not(:disabled) {
 	filter: brightness(1.08);
+	box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+	transform: translateY(-1px);
+}
+.pr-bar-btn:active:not(:disabled) {
+	filter: brightness(0.98);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+	transform: translateY(0) scale(0.98);
+}
+.pr-bar-btn:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
 }
 
 .pr-bar-error {
@@ -3475,8 +3522,9 @@ body.resizing-x .panel-resize::after {
 	border-radius: 6px;
 }
 .pr-head .pr-bar-btn {
-	padding: 6px 12px;
-	border-radius: 6px;
+	min-height: 34px;
+	padding: 7px 13px;
+	border-radius: 8px;
 	font-size: 13px;
 }
 .pr-head .pr-bar-error {
