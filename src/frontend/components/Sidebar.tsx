@@ -28,10 +28,12 @@ import {
 	IconChevronDown,
 	IconGitMerge,
 	IconPencil,
+	IconPlus,
 	IconPullRequest,
 	IconSearch,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
+import { RepoTile, swatchColor } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
 
 const AUTOMATION_COLOR = "#d29922";
@@ -87,26 +89,9 @@ const CTX_SEP_STYLE: React.CSSProperties = {
 	margin: "4px 2px",
 };
 
-// A palette for per-person group dots. The color is picked deterministically
-// from the (lowercased) person name so each teammate keeps a stable color.
-const PERSON_COLORS = [
-	"#e8836b",
-	"#6ba5e8",
-	"#8ed99c",
-	"#e8c46b",
-	"#c06be8",
-	"#6be8d2",
-	"#e86b9c",
-	"#a3b86b",
-];
-
-function personColor(key: string): string {
-	let hash = 0;
-	for (let i = 0; i < key.length; i++) {
-		hash = (hash * 31 + key.charCodeAt(i)) | 0;
-	}
-	return PERSON_COLORS[Math.abs(hash) % PERSON_COLORS.length];
-}
+// Per-person group dots share the repo-tile swatch palette (RepoTile.tsx) —
+// the same deterministic hash keeps each teammate's color stable.
+const personColor = swatchColor;
 
 // Only recognized people get their own "people" section. Sessions whose
 // `startedBy` is something other than a real teammate — test labels
@@ -376,11 +361,6 @@ function sessionRepo(s: UnifiedSession): string {
 	return s.repo || DEFAULT_PROJECT;
 }
 
-// Stable per-repo swatch color, reusing the person palette hashing so a repo
-// keeps the same color across renders.
-function repoColor(key: string): string {
-	return personColor(key);
-}
 
 export function Sidebar({
 	sessions,
@@ -1673,7 +1653,7 @@ export function Sidebar({
 							}`}
 							onClick={() => setFilterOpen((o) => !o)}
 						>
-							<svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+							<svg width="22" height="22" viewBox="0 0 16 16" fill="none">
 								<path
 									d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
 									stroke="currentColor"
@@ -1685,10 +1665,10 @@ export function Sidebar({
 						</Tooltip>
 						<Tooltip label="New session">
 						<button
-							className="sidebar-new-btn"
+							className="sidebar-new-btn inline-flex items-center justify-center"
 							onClick={onNewSession}
 						>
-							+
+							<IconPlus size={22} />
 						</button>
 						</Tooltip>
 					</div>
@@ -2497,15 +2477,6 @@ function MiniSelect({
 			</button>
 			{menu}
 		</div>
-	);
-}
-
-// A tiny colored letter-tile standing in for a repo's icon in the Repo dropdown.
-function RepoTile({ name }: { name: string }) {
-	return (
-		<span className="repo-tile" style={{ background: repoColor(name) }}>
-			{(name[0] || "?").toUpperCase()}
-		</span>
 	);
 }
 
