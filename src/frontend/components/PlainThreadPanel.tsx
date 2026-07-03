@@ -1,7 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { PlainThread, PlainTimelineEntry } from "../lib/types";
-import { fetchPlainThreadApi } from "../lib/api";
+import { fetchPlainThreadApi, sendPlainReplyApi } from "../lib/api";
 import { renderMarkdown } from "../lib/markdown";
+import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
+import { useCurrentUser } from "./UserPicker";
+import { cn } from "../ui/cn";
 
 interface Props {
 	sessionId: string;
@@ -48,33 +51,41 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 
 	// Load on mount / thread change, then poll — a customer can reply at any time
 	// and there's no live push for Plain, so a gentle refresh keeps it current.
+	// `load` is callable on its own so the reply box can refresh the timeline
+	// right after a send instead of waiting out the poll.
+	const aliveRef = useRef(true);
 	useEffect(() => {
-		let alive = true;
-		setLoading(true);
-		setError(null);
-		const load = () =>
+		aliveRef.current = true;
+		return () => {
+			aliveRef.current = false;
+		};
+	}, []);
+	const load = useCallback(
+		() =>
 			fetchPlainThreadApi(sessionId)
 				.then((t) => {
-					if (!alive) return;
+					if (!aliveRef.current) return;
 					setThread(t);
 					setError(null);
 				})
 				.catch((e) => {
-					if (alive) setError(e?.message || "Failed to load");
+					if (aliveRef.current) setError(e?.message || "Failed to load");
 				})
 				.finally(() => {
-					if (alive) setLoading(false);
-				});
+					if (aliveRef.current) setLoading(false);
+				}),
+		[sessionId],
+	);
+	useEffect(() => {
+		setLoading(true);
+		setError(null);
 		load();
 		const poll = setInterval(() => {
 			if (document.visibilityState === "hidden") return;
 			load();
 		}, 20000);
-		return () => {
-			alive = false;
-			clearInterval(poll);
-		};
-	}, [sessionId, threadId]);
+		return () => clearInterval(poll);
+	}, [threadId, load]);
 
 	// Keep the newest message in view, but only when the reader is already near the
 	// bottom — a poll refresh shouldn't yank them out of scrollback.
@@ -123,6 +134,136 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 				) : (
 					thread?.entries.map((e) => <PlainEntryRow key={e.id} entry={e} />)
 				)}
+			</div>
+
+			{thread && (
+				<PlainReplyBox
+					key={threadId}
+					threadId={threadId}
+					customerName={thread.customer?.name || thread.customer?.email || null}
+					onSent={load}
+					className="border-t border-line"
+				/>
+			)}
+		</div>
+	);
+}
+
+/**
+ * Human reply box for a Plain thread — a customer-facing reply (sent via
+ * Plain as the Michael machine user) or an internal note for the team.
+ * Shared by the session viewer's Plain tab and the Support ticket preview.
+ * ⌘/Ctrl+Enter sends; the draft persists per thread.
+ */
+export function PlainReplyBox({
+	threadId,
+	customerName,
+	onSent,
+	className,
+}: {
+	threadId: string;
+	customerName: string | null;
+	/** Called after a successful send, so the owner can refresh the timeline. */
+	onSent?: () => void;
+	className?: string;
+}) {
+	const draftKey = `plain-reply:${threadId}`;
+	const [text, setText] = useState(() => loadDraft(draftKey).text);
+	useEffect(() => {
+		saveDraft(draftKey, { text });
+	}, [draftKey, text]);
+	const [kind, setKind] = useState<"reply" | "note">("reply");
+	const [sending, setSending] = useState(false);
+	const [sent, setSent] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const sentTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+	useEffect(() => () => clearTimeout(sentTimer.current), []);
+	const currentUser = useCurrentUser();
+
+	async function handleSend() {
+		const t = text.trim();
+		if (!t || sending) return;
+		setSending(true);
+		setError(null);
+		try {
+			await sendPlainReplyApi(threadId, t, kind, currentUser);
+			setText("");
+			clearDraft(draftKey);
+			setSent(true);
+			clearTimeout(sentTimer.current);
+			sentTimer.current = setTimeout(() => setSent(false), 3000);
+			onSent?.();
+		} catch (e: any) {
+			setError(e?.message || "Failed to send");
+		} finally {
+			setSending(false);
+		}
+	}
+
+	return (
+		<div className={cn("shrink-0 p-2.5 flex flex-col gap-1.5", className)}>
+			<div className="flex items-center gap-1.5">
+				{(["reply", "note"] as const).map((k) => (
+					<button
+						key={k}
+						type="button"
+						className={cn(
+							"text-[11.5px] font-semibold px-2 py-0.5 rounded-full border cursor-pointer",
+							kind === k
+								? "bg-active text-fg border-line-strong"
+								: "bg-transparent text-faint border-line hover:text-dim",
+						)}
+						onClick={() => setKind(k)}
+					>
+						{k === "reply" ? "Reply" : "Internal note"}
+					</button>
+				))}
+				{sent && (
+					<span className="text-green text-[11.5px] font-semibold">Sent ✓</span>
+				)}
+			</div>
+			<textarea
+				className="w-full resize-none rounded-md border border-line bg-surface text-fg text-[13px] leading-normal p-2 min-h-[64px] focus:outline-none focus:border-line-strong placeholder:text-faint"
+				placeholder={
+					kind === "note"
+						? "Internal note for the team (English)…"
+						: `Reply to ${customerName || "the customer"} — sent via Plain…`
+				}
+				value={text}
+				disabled={sending}
+				onChange={(e) => setText(e.target.value)}
+				onKeyDown={(e) => {
+					if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+						e.preventDefault();
+						handleSend();
+					}
+				}}
+			/>
+			<div className="flex items-center gap-2 min-w-0">
+				{error ? (
+					<span className="text-red text-[12px] truncate" title={error}>
+						{error}
+					</span>
+				) : (
+					<span className="text-faint text-[11.5px] truncate">
+						{kind === "note"
+							? `Posted as ${currentUser} (via Backstage)`
+							: `Sends via Plain, signed “${currentUser.split(/\s+/)[0]}”`}
+					</span>
+				)}
+				<button
+					type="button"
+					className="ml-auto shrink-0 rounded-md bg-accent text-white text-[12.5px] font-semibold px-2.5 py-1 cursor-pointer border-0 hover:opacity-90 disabled:opacity-50 disabled:cursor-default"
+					onClick={handleSend}
+					disabled={sending || !text.trim()}
+					title="Send (⌘↵)"
+				>
+					{sending
+						? "Sending…"
+						: kind === "note"
+							? "Add note"
+							: "Send reply"}
+				</button>
 			</div>
 		</div>
 	);

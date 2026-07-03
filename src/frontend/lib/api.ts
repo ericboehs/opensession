@@ -502,6 +502,22 @@ export async function fetchPlainThreadById(
 }
 
 /**
+ * Send a human-written message into a Plain thread: a customer-facing reply
+ * (email/chat via Plain) or an internal note for the team.
+ */
+export async function sendPlainReplyApi(
+	threadId: string,
+	text: string,
+	kind: "reply" | "note",
+	user: string,
+): Promise<void> {
+	await request<{ ok: boolean }>(
+		`/plain/threads/${encodeURIComponent(threadId)}/reply`,
+		{ method: "POST", body: { text, kind, user }, label: "Failed to send" },
+	);
+}
+
+/**
  * Start (or reuse) a triage session for a Plain thread — runs the "Plain
  * ticket triage" automation. Slow (~15-60s) when it has to boot a fresh run.
  */

@@ -4340,6 +4340,73 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				}
 			}
 
+			// Human reply into a Plain thread from the Support preview / a
+			// session's Plain tab: a customer-facing reply (email/chat, sent as
+			// the Plain machine user) or an internal note. This is the human gate
+			// itself — agent runs never get this path as a tool; automation runs
+			// are denied Plain thread writes at the tool layer.
+			const plainReplyMatch = path.match(
+				/^\/backstage\/api\/plain\/threads\/([^/]+)\/reply$/,
+			);
+			if (plainReplyMatch && req.method === "POST") {
+				const threadId = decodeURIComponent(plainReplyMatch[1]);
+				const body = (await req.json().catch(() => null)) as {
+					text?: string;
+					kind?: string;
+					user?: string;
+				} | null;
+				const text = typeof body?.text === "string" ? body.text.trim() : "";
+				const kind = body?.kind === "note" ? "note" : "reply";
+				if (!text)
+					return Response.json({ error: "Empty message" }, { status: 400 });
+				// Plain's API can only impersonate customers, not workspace users, so
+				// everything lands as the Michael machine user — carry the human's
+				// name in the message instead: replies get their first name as an
+				// email-style sign-off (unless they already signed), notes get an
+				// author prefix.
+				const senderName =
+					typeof body?.user === "string" ? body.user.trim() : "";
+				const firstName = senderName.split(/\s+/)[0] || "";
+				try {
+					const { getThreadWithMessages, postNote, sendCustomerReply } =
+						await import("./src/agents/plain/api");
+					if (kind === "note") {
+						// Notes need the customer id; the thread lookup carries it.
+						const thread = await getThreadWithMessages(threadId);
+						const customerId = thread?.customer?.id;
+						if (!customerId) throw new Error("Thread has no customer");
+						const noteText = firstName
+							? `**${senderName} (via Backstage):**\n\n${text}`
+							: text;
+						const ok = await postNote(threadId, customerId, noteText);
+						if (!ok) throw new Error("Plain rejected the note");
+					} else {
+						const alreadySigned =
+							firstName &&
+							new RegExp(
+								`${firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`,
+								"i",
+							).test(text.trimEnd());
+						const replyText =
+							firstName && !alreadySigned
+								? `${text.trimEnd()}\n\n${firstName}`
+								: text;
+						const ok = await sendCustomerReply(threadId, "", replyText);
+						if (!ok) throw new Error("Plain rejected the reply");
+					}
+					console.log(
+						`[plain-reply] ${body?.user || "someone"} sent a ${kind} to ${threadId}`,
+					);
+					return Response.json({ ok: true });
+				} catch (e: any) {
+					console.error(`[plain-reply] ${kind} to ${threadId} failed:`, e);
+					return Response.json(
+						{ error: e?.message || "Plain write failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
 			// JSON twin of the /backstage/plain-triage/<id> redirect: the Support
 			// preview's "Triage this ticket" button. Reuses a live session linked to
 			// the thread, else starts the triage automation and waits for its

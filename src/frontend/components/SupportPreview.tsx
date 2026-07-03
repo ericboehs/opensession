@@ -10,6 +10,7 @@ import { Composer } from "./Composer";
 import { useCurrentUser } from "./UserPicker";
 import {
 	PlainEntryRow,
+	PlainReplyBox,
 	plainThreadUrl,
 	STATUS_LABEL,
 } from "./PlainThreadPanel";
@@ -260,6 +261,20 @@ export function SupportPreview({
 									))
 								)}
 							</div>
+
+							{/* Answer the customer (or leave a team note) right here —
+							    no Plain, no LLM. The composer below is for sessions. */}
+							{thread && (
+								<PlainReplyBox
+									key={threadId}
+									threadId={threadId}
+									customerName={
+										thread.customer?.name || thread.customer?.email || null
+									}
+									onSent={load}
+									className="mt-4 border border-line rounded-lg bg-panel"
+								/>
+							)}
 						</>
 					)}
 				</div>
