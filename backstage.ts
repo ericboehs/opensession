@@ -8,6 +8,8 @@ import {
 	writeFileSync,
 	readFileSync,
 	copyFileSync,
+	realpathSync,
+	statSync,
 	watch,
 } from "fs";
 import homepage from "./src/frontend/index.html";
@@ -1391,27 +1393,46 @@ function parseImageDataUrls(urls?: unknown): ImageInput[] | undefined {
 
 // Non-image composer attachments are staged to disk (the vision path only takes
 // images), then the agent is handed their absolute paths in the opening prompt.
+// Large files (a packed .crx, a zip, a PDF) stream straight to disk over a
+// dedicated HTTP endpoint (POST /backstage/api/upload) and only their {name,path}
+// reference rides the WebSocket — base64-over-WS can't carry them (frame cap +
+// memory). The legacy inline {name,dataUrl}-over-WS path is still accepted for
+// small files and older clients.
 const UPLOADS_DIR = `${BACKSTAGE_SESSIONS_DIR}/uploads`;
-// Base64-over-WebSocket is fine for modest files; cap so a huge upload can't OOM
-// the process or blow the message frame. Oversized files are dropped with a note.
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+// The HTTP endpoint stages here — a brand-new chat has no session id yet, so the
+// reference is resolved back (and validated) at send time.
+const STAGED_UPLOADS_DIR = `${UPLOADS_DIR}/staged`;
+// Cap so a single upload can't OOM the process. The HTTP path streams, but the
+// inline base64/WS path buffers, so keep it modest.
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+// Images still ride the WebSocket frame base64-encoded (~+33%) inside the JSON
+// envelope, and Bun's default WS `maxPayloadLength` is only 16 MB — below the
+// base64 size of a max upload — so a large image silently blew the frame
+// (close 1009). Size the frame cap off the upload cap + base64 overhead + slack.
+const WS_MAX_PAYLOAD_BYTES = Math.ceil(MAX_UPLOAD_BYTES * (4 / 3)) + 8 * 1024 * 1024;
 
-interface FileUpload {
-	name: string;
-	data: string; // base64 (no data: prefix)
-}
+// A composer attachment arrives either pre-staged on disk (HTTP upload — carries a
+// `path`) or inline as base64 over the WS frame (legacy — carries a data URL).
+type ParsedUpload =
+	| { kind: "staged"; name: string; path: string }
+	| { kind: "inline"; name: string; data: string };
 
-/** Decode composer `{name, dataUrl}` attachments into name + base64 payloads. */
-function parseFileUploads(raw?: unknown): FileUpload[] | undefined {
+/** Normalize composer `files` entries into staged-path refs or inline base64. */
+function parseFileUploads(raw?: unknown): ParsedUpload[] | undefined {
 	if (!Array.isArray(raw)) return undefined;
-	const out: FileUpload[] = [];
+	const out: ParsedUpload[] = [];
 	for (const f of raw) {
 		if (!f || typeof f !== "object") continue;
 		const name = typeof (f as any).name === "string" ? (f as any).name : "";
+		const path = typeof (f as any).path === "string" ? (f as any).path : "";
+		if (path) {
+			out.push({ kind: "staged", name, path });
+			continue;
+		}
 		const url = typeof (f as any).dataUrl === "string" ? (f as any).dataUrl : "";
 		const m = url.match(/^data:[^;]*;base64,(.+)$/s);
 		if (!m) continue;
-		out.push({ name, data: m[1] });
+		out.push({ kind: "inline", name, data: m[1] });
 	}
 	return out.length ? out : undefined;
 }
@@ -1423,20 +1444,94 @@ function sanitizeFilename(name: string): string {
 	return cleaned || "file";
 }
 
+/** Resolve `p` and confirm it lives inside UPLOADS_DIR — guards against a
+ *  client-supplied {name,path} ref pointing the agent at an arbitrary file. */
+function isWithinUploads(p: string): boolean {
+	try {
+		const real = realpathSync(p);
+		const base = realpathSync(UPLOADS_DIR);
+		return real === base || real.startsWith(base + "/");
+	} catch {
+		return false;
+	}
+}
+
+/** Pick a collision-free absolute path under `dir` for the sanitized `wanted`. */
+function uniqueUploadPath(dir: string, wanted: string, used?: Set<string>): string {
+	let fname = wanted;
+	let i = 1;
+	while (used?.has(fname) || existsSync(`${dir}/${fname}`)) {
+		const dot = wanted.lastIndexOf(".");
+		fname =
+			dot > 0
+				? `${wanted.slice(0, dot)}-${i}${wanted.slice(dot)}`
+				: `${wanted}-${i}`;
+		i++;
+	}
+	used?.add(fname);
+	return `${dir}/${fname}`;
+}
+
 /**
- * Write uploaded files to a per-session staging dir (outside any repo, so they
- * never pollute git) and return the absolute paths. Collisions are de-duped and
- * oversized files skipped.
+ * Stream one HTTP upload body to the staging dir and return the {name, path} the
+ * client echoes back in its next turn. Size cap enforced (the route rejects on
+ * Content-Length first; this re-checks the actual bytes).
+ */
+async function stageHttpUpload(
+	name: string,
+	req: Request,
+): Promise<{ name: string; path: string }> {
+	mkdirSync(STAGED_UPLOADS_DIR, { recursive: true });
+	const wanted = sanitizeFilename(name);
+	const p = uniqueUploadPath(STAGED_UPLOADS_DIR, wanted);
+	const buf = Buffer.from(await req.arrayBuffer());
+	if (buf.length === 0) throw new Error("empty upload");
+	if (buf.length > MAX_UPLOAD_BYTES)
+		throw new Error(
+			`file too large (${buf.length} bytes, max ${MAX_UPLOAD_BYTES})`,
+		);
+	writeFileSync(p, buf);
+	return { name: name || wanted, path: p };
+}
+
+/**
+ * Turn normalized uploads into on-disk {name, path} pairs the agent can read.
+ * Pre-staged refs (HTTP) are validated (confined to UPLOADS_DIR, exists, within
+ * cap) and passed through; inline base64 is written to a per-session dir (outside
+ * any repo, so it never pollutes git). Collisions de-duped, oversized skipped.
  */
 function stageUploads(
 	sessionId: string,
-	uploads: FileUpload[],
+	uploads: ParsedUpload[],
 ): { name: string; path: string }[] {
 	const dir = `${UPLOADS_DIR}/${sessionId}`;
 	mkdirSync(dir, { recursive: true });
 	const staged: { name: string; path: string }[] = [];
 	const used = new Set<string>();
 	for (const up of uploads) {
+		if (up.kind === "staged") {
+			if (!isWithinUploads(up.path) || !existsSync(up.path)) {
+				console.warn(
+					`[uploads] Dropping staged ref outside uploads dir: ${up.path}`,
+				);
+				continue;
+			}
+			let sz = 0;
+			try {
+				sz = statSync(up.path).size;
+			} catch {
+				continue;
+			}
+			if (sz === 0 || sz > MAX_UPLOAD_BYTES) {
+				console.warn(`[uploads] Skipping ${up.name || up.path} — ${sz} bytes`);
+				continue;
+			}
+			staged.push({
+				name: up.name || up.path.split("/").pop() || "file",
+				path: up.path,
+			});
+			continue;
+		}
 		const buf = Buffer.from(up.data, "base64");
 		if (buf.length === 0 || buf.length > MAX_UPLOAD_BYTES) {
 			console.warn(
@@ -1445,20 +1540,9 @@ function stageUploads(
 			continue;
 		}
 		const wanted = sanitizeFilename(up.name);
-		let fname = wanted;
-		let i = 1;
-		while (used.has(fname) || existsSync(`${dir}/${fname}`)) {
-			const dot = wanted.lastIndexOf(".");
-			fname =
-				dot > 0
-					? `${wanted.slice(0, dot)}-${i}${wanted.slice(dot)}`
-					: `${wanted}-${i}`;
-			i++;
-		}
-		used.add(fname);
-		const p = `${dir}/${fname}`;
+		const p = uniqueUploadPath(dir, wanted, used);
 		writeFileSync(p, buf);
-		staged.push({ name: up.name || fname, path: p });
+		staged.push({ name: up.name || wanted, path: p });
 	}
 	return staged;
 }
@@ -2911,6 +2995,34 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					return Response.json(
 						{ ok: false, error: String(e) },
 						{ status: 500 },
+					);
+				}
+			}
+
+			// Stream a large composer attachment straight to disk (base64-over-WS
+			// can't carry big files). Body is the raw file bytes; filename in the
+			// `x-file-name` header. Returns { name, path } the client echoes back in
+			// its next prompt/create_session `files` entry.
+			if (path === "/backstage/api/upload" && req.method === "POST") {
+				try {
+					const rawName = req.headers.get("x-file-name") || "file";
+					const name = decodeURIComponent(rawName);
+					const len = Number(req.headers.get("content-length") || 0);
+					if (len > MAX_UPLOAD_BYTES) {
+						return Response.json(
+							{
+								ok: false,
+								error: `File too large (${len} bytes, max ${MAX_UPLOAD_BYTES}).`,
+							},
+							{ status: 413 },
+						);
+					}
+					const staged = await stageHttpUpload(name, req);
+					return Response.json({ ok: true, ...staged });
+				} catch (e) {
+					return Response.json(
+						{ ok: false, error: String((e as Error)?.message || e) },
+						{ status: 400 },
 					);
 				}
 			}
@@ -5125,6 +5237,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 		},
 
 		websocket: {
+			// Default is 16 MB — too small for a base64'd attachment near MAX_UPLOAD_BYTES,
+			// which would otherwise drop the frame (close 1009) before staging. See above.
+			maxPayloadLength: WS_MAX_PAYLOAD_BYTES,
 			open(ws) {
 				allClients.add(ws);
 				console.log("WebSocket client connected");

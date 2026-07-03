@@ -253,9 +253,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   }, [addHandler, createMore]);
 
   async function addAttachments(picked: FileList | File[]) {
-    const { images: imgs, files: fls } = await splitAttachments(picked);
+    const { images: imgs, files: fls, rejected } = await splitAttachments(picked);
     if (imgs.length) setImages((prev) => [...prev, ...imgs]);
     if (fls.length) setFiles((prev) => [...prev, ...fls]);
+    if (rejected.length) alert(`Couldn't attach:\n${rejected.join("\n")}`);
   }
 
   function handlePaste(e: React.ClipboardEvent) {
@@ -297,7 +298,13 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       ...(model ? { model } : {}),
       effort,
       ...(images.length ? { images } : {}),
-      ...(files.length ? { files: files.map((f) => ({ name: f.name, dataUrl: f.dataUrl })) } : {}),
+      ...(files.length
+        ? {
+            files: files.map((f) =>
+              f.path ? { name: f.name, path: f.path } : { name: f.name, dataUrl: f.dataUrl },
+            ),
+          }
+        : {}),
     });
   }
 

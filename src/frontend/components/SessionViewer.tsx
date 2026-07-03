@@ -805,7 +805,10 @@ export function SessionViewer({
 		if (!connected) return false;
 
 		const user = getCurrentUser();
-		const filePayload = fls.map((f) => ({ name: f.name, dataUrl: f.dataUrl }));
+		// Prefer the staged disk path (HTTP upload); fall back to inline dataUrl.
+		const filePayload = fls.map((f) =>
+			f.path ? { name: f.name, path: f.path } : { name: f.name, dataUrl: f.dataUrl },
+		);
 
 		// Fork mode: branch a brand-new session from the selected message, keeping
 		// the real conversation history. App navigates into it on session_created.

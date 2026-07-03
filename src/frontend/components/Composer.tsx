@@ -277,11 +277,13 @@ export function Composer({
 
   async function addFiles(picked: FileList | File[]) {
     if (!canAttach) return;
-    const { images: newImgs, files: newFls } = await splitAttachments(picked);
+    const { images: newImgs, files: newFls, rejected } = await splitAttachments(picked);
     // Images ride the vision channel; other files need a dedicated file channel
     // (if the parent only wired images, non-image files are simply ignored).
     if (newImgs.length) onImagesChange?.([...imgs, ...newImgs]);
     if (newFls.length && onFilesChange) onFilesChange([...fls, ...newFls]);
+    // Fail loudly rather than dropping oversized/failed uploads silently.
+    if (rejected.length) alert(`Couldn't attach:\n${rejected.join("\n")}`);
   }
 
   function handlePaste(e: React.ClipboardEvent) {
