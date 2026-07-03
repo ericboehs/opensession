@@ -187,9 +187,11 @@ import {
 	listTinderLabels,
 	getSeenPrs,
 	markPrSeen,
+	markPrUnseen,
 	closeTinderPr,
 	reopenTinderPr,
 	commentTinderPr,
+	deleteTinderComment,
 	labelTinderPr,
 } from "./src/server/pr-tinder";
 import { getGitStatus, gitPush } from "./src/server/git-status";
@@ -3143,6 +3145,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								markPrSeen(body.user, number);
 								return Response.json({ ok: true });
 							}
+							case "unkeep": {
+								if (!body.user)
+									return Response.json(
+										{ error: "user required" },
+										{ status: 400 },
+									);
+								markPrUnseen(body.user, number);
+								return Response.json({ ok: true });
+							}
 							case "close": {
 								const r = await closeTinderPr(number, body.reason);
 								return Response.json(r, { status: "error" in r ? 502 : 200 });
@@ -3155,6 +3166,18 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								const r = await commentTinderPr(number, body.body || "");
 								// Commenting is a triage verdict too — don't re-deal the PR.
 								if ("ok" in r && body.user) markPrSeen(body.user, number);
+								return Response.json(r, { status: "error" in r ? 502 : 200 });
+							}
+							case "uncomment": {
+								// Undo for a comment: delete it and put the PR back in the
+								// user's deck.
+								if (!body.commentId)
+									return Response.json(
+										{ error: "commentId required" },
+										{ status: 400 },
+									);
+								const r = await deleteTinderComment(Number(body.commentId));
+								if ("ok" in r && body.user) markPrUnseen(body.user, number);
 								return Response.json(r, { status: "error" in r ? 502 : 200 });
 							}
 							case "labels": {

@@ -9,9 +9,11 @@ import {
 import {
 	fetchTinderDeck,
 	keepTinderPr,
+	unkeepTinderPr,
 	closeTinderPr,
 	reopenTinderPr,
 	commentTinderPr,
+	uncommentTinderPr,
 	labelTinderPr,
 	type TinderPr,
 } from "../lib/api";
@@ -21,11 +23,15 @@ import { useCurrentUser } from "./UserPicker";
 /**
  * PR Tinder — a swipe deck over tella-fusion's open PRs, one card at a time:
  *   swipe right / Keep  (→ or k) → remember it for 14 days, next
- *   swipe left  / Close (← or c) → close the PR (undo toast reopens), next
+ *   swipe left  / Close (← or c) → close the PR, next
  *   Comment (m) → post a comment, counts as triaged, next
  *   Label   (l) → add/remove labels in place
  *   GitHub  (o) → open the PR in a new tab
  *   Back    (b) → previous card · Esc → leave
+ * Every action lands on an undo stack: z (or the header ↩) reverses the most
+ * recent one — un-keeps, reopens, deletes the comment, reverts the label —
+ * and jumps back to that card. Not just a 7-second toast window: the whole
+ * session's actions stay undoable, newest first.
  * The deck is shuffled once per session (fresh eyes on the stale middle of the
  * list) and frozen, so acting on cards never reshuffles the rest.
  */
@@ -39,6 +45,21 @@ const UNDO_MS = 7000;
 const LABEL_SHORTLIST = ["Do Not Merge", "stale", "codex"];
 
 type Action = "keep" | "close" | "comment";
+
+/** One reversible deck action; `at` is the card's index, for jumping back. */
+type UndoEntry =
+	| { kind: "keep"; pr: TinderPr; at: number }
+	| { kind: "close"; pr: TinderPr; at: number }
+	| { kind: "comment"; pr: TinderPr; at: number; commentId?: number }
+	| {
+			kind: "label";
+			pr: TinderPr;
+			at: number;
+			name: string;
+			color: string;
+			/** true = the action added the label (undo removes it). */
+			added: boolean;
+	  };
 
 interface Props {
 	/** Leave the deck (back / done). */
@@ -175,6 +196,17 @@ export function PrTinder({ onExit }: Props) {
 	} | null>(null);
 	const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [busy, setBusy] = useState(false);
+	// The busy flag, readable from long-lived closures (toast undo buttons).
+	const busyRef = useRef(false);
+	busyRef.current = busy;
+	// Undo stack, newest last. Lives in a ref so toast/keyboard closures always
+	// see the current stack; the length mirror re-renders the header ↩ button.
+	const historyRef = useRef<UndoEntry[]>([]);
+	const [historyLen, setHistoryLen] = useState(0);
+	function pushHistory(e: UndoEntry) {
+		historyRef.current.push(e);
+		setHistoryLen(historyRef.current.length);
+	}
 
 	const cards = deck?.cards || [];
 	const card: TinderPr | undefined = cards[index];
@@ -201,6 +233,7 @@ export function PrTinder({ onExit }: Props) {
 
 	function keep() {
 		if (!card) return;
+		pushHistory({ kind: "keep", pr: card, at: index });
 		keepTinderPr(card.number, currentUser).catch(() => {});
 		advance("keep");
 	}
@@ -213,17 +246,9 @@ export function PrTinder({ onExit }: Props) {
 		closeTinderPr(closing.number)
 			.then(() => {
 				setBusy(false);
+				pushHistory({ kind: "close", pr: closing, at });
 				advance("close");
-				showToast(`Closed #${closing.number}`, () => {
-					setToast(null);
-					reopenTinderPr(closing.number)
-						.then(() => {
-							setDir(null);
-							setIndex(at); // re-deal the card
-							showToast(`Reopened #${closing.number}`);
-						})
-						.catch((e) => showToast(`Reopen failed: ${e.message}`));
-				});
+				showToast(`Closed #${closing.number}`, undoLast);
 			})
 			.catch((e) => {
 				setBusy(false);
@@ -234,12 +259,14 @@ export function PrTinder({ onExit }: Props) {
 	function comment(text: string) {
 		if (!card || busy) return;
 		const target = card;
+		const at = index;
 		setBusy(true);
 		commentTinderPr(target.number, text, currentUser)
-			.then(() => {
+			.then((r) => {
 				setBusy(false);
+				pushHistory({ kind: "comment", pr: target, at, commentId: r.commentId });
 				advance("comment");
-				showToast(`Commented on #${target.number}`);
+				showToast(`Commented on #${target.number}`, undoLast);
 			})
 			.catch((e) => {
 				setBusy(false);
@@ -251,23 +278,93 @@ export function PrTinder({ onExit }: Props) {
 		return labelEdits[pr.number] ?? pr.labels;
 	}
 
-	function toggleLabel(name: string, color: string) {
-		if (!card) return;
-		const current = cardLabels(card);
+	// Flip one label on a PR (optimistic, reverted on failure). Undo replays the
+	// opposite flip via the history stack; the replay itself isn't re-recorded.
+	function applyLabelToggle(
+		pr: TinderPr,
+		name: string,
+		color: string,
+		at: number,
+		record = true,
+	) {
+		const current = labelEdits[pr.number] ?? pr.labels;
 		const has = current.some((l) => l.name === name);
-		// Optimistic flip; revert on failure.
 		setLabelEdits((prev) => ({
 			...prev,
-			[card.number]: has
+			[pr.number]: has
 				? current.filter((l) => l.name !== name)
 				: [...current, { name, color }],
 		}));
-		labelTinderPr(card.number, has ? { remove: name } : { add: name }).catch(
-			(e) => {
-				setLabelEdits((prev) => ({ ...prev, [card.number]: current }));
+		labelTinderPr(pr.number, has ? { remove: name } : { add: name })
+			.then(() => {
+				if (record)
+					pushHistory({ kind: "label", pr, at, name, color, added: !has });
+			})
+			.catch((e) => {
+				setLabelEdits((prev) => ({ ...prev, [pr.number]: current }));
 				showToast(`Label change failed: ${e.message}`);
-			},
-		);
+			});
+	}
+
+	function toggleLabel(name: string, color: string) {
+		if (card) applyLabelToggle(card, name, color, index);
+	}
+
+	// Reverse the newest action on the stack and jump back to its card. Works
+	// any time (z / header ↩ / the toast button) — not just while a toast shows.
+	function undoLast() {
+		if (busyRef.current) return;
+		const entry = historyRef.current[historyRef.current.length - 1];
+		if (!entry) return;
+		const finish = (msg: string) => {
+			historyRef.current.pop();
+			setHistoryLen(historyRef.current.length);
+			setBusy(false);
+			setPanel(null);
+			setDir(null);
+			setIndex(entry.at);
+			showToast(msg);
+		};
+		const fail = (e: any) => {
+			setBusy(false);
+			showToast(`Undo failed: ${e.message || e}`);
+		};
+		if (entry.kind === "label") {
+			// The optimistic flip handles its own failure path; pop eagerly.
+			historyRef.current.pop();
+			setHistoryLen(historyRef.current.length);
+			applyLabelToggle(entry.pr, entry.name, entry.color, entry.at, false);
+			setDir(null);
+			setIndex(entry.at);
+			showToast(
+				`${entry.added ? "Removed" : "Re-added"} "${entry.name}" on #${entry.pr.number}`,
+			);
+			return;
+		}
+		setBusy(true);
+		if (entry.kind === "keep") {
+			unkeepTinderPr(entry.pr.number, currentUser)
+				.then(() => finish(`Un-kept #${entry.pr.number}`))
+				.catch(fail);
+		} else if (entry.kind === "close") {
+			reopenTinderPr(entry.pr.number)
+				.then(() => finish(`Reopened #${entry.pr.number}`))
+				.catch(fail);
+		} else if (entry.kind === "comment") {
+			if (entry.commentId != null) {
+				uncommentTinderPr(entry.pr.number, entry.commentId, currentUser)
+					.then(() => finish(`Deleted comment on #${entry.pr.number}`))
+					.catch(fail);
+			} else {
+				// Couldn't identify the comment on GitHub — at least un-keep the PR
+				// and come back to it.
+				unkeepTinderPr(entry.pr.number, currentUser)
+					.then(() =>
+						finish(`Back on #${entry.pr.number} — comment left in place`),
+					)
+					.catch(fail);
+			}
+		}
 	}
 
 	function back() {
@@ -285,7 +382,7 @@ export function PrTinder({ onExit }: Props) {
 	}
 
 	// Keyboard: →/k keep, ←/c close, m comment, l label, o GitHub, b back,
-	// Esc closes an open panel first, then leaves the deck.
+	// z undo; Esc closes an open panel first, then leaves the deck.
 	useEffect(() => {
 		function onKey(e: KeyboardEvent) {
 			if (e.key === "Escape") {
@@ -300,6 +397,12 @@ export function PrTinder({ onExit }: Props) {
 					el.isContentEditable)
 			)
 				return;
+			// Undo works even on the "Deck done" screen (no card left). Plain z,
+			// and ⌘Z/^Z for muscle memory.
+			if (e.key === "z") {
+				e.preventDefault();
+				return undoLast();
+			}
 			if (!card) return;
 			if (e.key === "ArrowRight" || e.key === "k") {
 				e.preventDefault();
@@ -352,7 +455,23 @@ export function PrTinder({ onExit }: Props) {
 							? "Deck done"
 							: `${cards.length - index} Left`}
 				</div>
-				<div className="h-8 w-8" />
+				<button
+					className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-dim hover:bg-panel hover:text-fg disabled:opacity-30 disabled:hover:bg-transparent"
+					onClick={undoLast}
+					disabled={historyLen === 0 || busy}
+					title="Undo last action (z)"
+					aria-label="Undo last action"
+				>
+					<svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+						<path
+							d="M6.5 3.5 3 7l3.5 3.5M3 7h6.75A3.25 3.25 0 0 1 13 10.25v.25"
+							stroke="currentColor"
+							strokeWidth="1.6"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					</svg>
+				</button>
 			</div>
 
 			{error ? (
@@ -390,7 +509,12 @@ export function PrTinder({ onExit }: Props) {
 							custom={dir}
 							onKeep={keep}
 							onClose={close}
-							onRemoveLabel={(name) => toggleLabel(name, "")}
+							onRemoveLabel={(name) =>
+								toggleLabel(
+									name,
+									cardLabels(card!).find((l) => l.name === name)?.color || "",
+								)
+							}
 						/>
 					</AnimatePresence>
 

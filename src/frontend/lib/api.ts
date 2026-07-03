@@ -135,12 +135,12 @@ export async function fetchTinderDeck(user: string): Promise<TinderDeck> {
 	});
 }
 
-function tinderAction(
+function tinderAction<T = { ok: true }>(
 	number: number,
 	action: string,
 	body: Record<string, unknown> = {},
-): Promise<{ ok: true }> {
-	return request<{ ok: true }>(`/pr-tinder/${number}/${action}`, {
+): Promise<T> {
+	return request<T>(`/pr-tinder/${number}/${action}`, {
 		method: "POST",
 		body,
 		label: `PR ${action} failed`,
@@ -149,12 +149,22 @@ function tinderAction(
 
 export const keepTinderPr = (number: number, user: string) =>
 	tinderAction(number, "keep", { user });
+export const unkeepTinderPr = (number: number, user: string) =>
+	tinderAction(number, "unkeep", { user });
 export const closeTinderPr = (number: number, reason?: string) =>
 	tinderAction(number, "close", { reason });
 export const reopenTinderPr = (number: number) =>
 	tinderAction(number, "reopen");
 export const commentTinderPr = (number: number, body: string, user: string) =>
-	tinderAction(number, "comment", { body, user });
+	tinderAction<{ ok: true; commentId?: number }>(number, "comment", {
+		body,
+		user,
+	});
+export const uncommentTinderPr = (
+	number: number,
+	commentId: number,
+	user: string,
+) => tinderAction(number, "uncomment", { commentId, user });
 export const labelTinderPr = (
 	number: number,
 	opts: { add?: string; remove?: string },

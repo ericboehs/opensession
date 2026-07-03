@@ -127,6 +127,13 @@ export function markPrSeen(user: string, number: number): void {
   writeJsonAtomic(STATE_PATH, { seen: state });
 }
 
+/** Undo for a keep — the PR goes straight back into the user's deck. */
+export function markPrUnseen(user: string, number: number): void {
+  const state = loadSeen();
+  delete state[user.toLowerCase()]?.[String(number)];
+  writeJsonAtomic(STATE_PATH, { seen: state });
+}
+
 // ── actions (gh mutations, audited) ─────────────────────────────────────────
 
 type ActionResult = { ok: true } | { error: string };
@@ -174,14 +181,46 @@ export async function reopenTinderPr(number: number): Promise<ActionResult> {
   );
 }
 
+/**
+ * Post a comment, returning the created comment's id so an accidental comment
+ * can be undone (deleted) from the deck's undo stack.
+ */
 export async function commentTinderPr(
   number: number,
   body: string,
-): Promise<ActionResult> {
+): Promise<{ ok: true; commentId?: number } | { error: string }> {
   if (!body.trim()) return { error: "Empty comment" };
   return audited(
     { context: "pr-tinder", action: "pr_comment", args: { number } },
-    () => ghRun(["pr", "comment", String(number), "--repo", REPO, "--body", body.trim()]),
+    async () => {
+      const proc = Bun.spawn(
+        ["gh", "pr", "comment", String(number), "--repo", REPO, "--body", body.trim()],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      const [out, err, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      if (code !== 0)
+        return { error: (err || "gh pr comment failed").slice(0, 300) } as const;
+      // gh prints the comment URL (…#issuecomment-<id>) on success.
+      const id = out.match(/#issuecomment-(\d+)/)?.[1];
+      return { ok: true, commentId: id ? Number(id) : undefined } as const;
+    },
+  );
+}
+
+/** Undo for a comment — deletes it (id from commentTinderPr's response). */
+export async function deleteTinderComment(
+  commentId: number,
+): Promise<ActionResult> {
+  return audited(
+    { context: "pr-tinder", action: "pr_comment_delete", args: { commentId } },
+    () =>
+      ghRun([
+        "api", "-X", "DELETE", `repos/${REPO}/issues/comments/${commentId}`,
+      ]),
   );
 }
 
