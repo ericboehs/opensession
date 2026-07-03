@@ -8056,6 +8056,17 @@ html[data-theme="light"] .tool-code-surface {
    is the last max-width:720px block so it wins source-order ties over the
    base mobile bumps above. */
 @media (max-width: 720px) {
+	/* The whole sidebar scrolls as one on phones, so the top cards (and the
+	   Workspaces header) scroll away with the list instead of staying pinned
+	   above a separately-scrolling list. */
+	.sidebar {
+		overflow-y: auto;
+	}
+	.sidebar-list {
+		flex: none;
+		overflow-y: visible;
+	}
+
 	.sidebar-nav {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
