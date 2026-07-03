@@ -158,7 +158,7 @@ function MediaLightbox({
 				onClick={onClose}
 				aria-label="Close"
 			>
-				<IconX size={20} />
+				<IconX size={22} />
 			</button>
 
 			<div

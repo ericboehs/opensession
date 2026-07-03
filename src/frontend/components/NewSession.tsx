@@ -355,7 +355,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             <span className="palette-trigger-label">
               {REPOS.find((p) => p.id === repo)?.label || repo}
             </span>
-            <IconChevronDown className="palette-chevron" size={20} />
+            <IconChevronDown className="palette-chevron" size={22} />
             <select
               className="palette-select-overlay"
               value={repo}
@@ -379,7 +379,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               <path d="M4 5.7v4.6M4 8h4a4 4 0 004-4" stroke="currentColor" strokeWidth="1.3" />
             </svg>
             <span className="palette-trigger-label">{createFromLabel}</span>
-            <IconChevronDown className="palette-chevron" size={20} />
+            <IconChevronDown className="palette-chevron" size={22} />
             <select
               className="palette-select-overlay"
               value={createFromValue}
@@ -466,7 +466,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             <div className="palette-pill" title="Model">
               <span className={`composer-model-dot ${isCodexModel(effectiveModel, models) ? "dot-codex" : "dot-claude"}`} />
               <span className="palette-pill-label">{modelLabel}</span>
-              <IconChevronDown className="palette-chevron" size={20} />
+              <IconChevronDown className="palette-chevron" size={22} />
               <select
                 className="palette-select-overlay"
                 value={model}
@@ -488,7 +488,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 <span /><span /><span />
               </span>
               <span className="palette-pill-label">{EFFORTS.find((e) => e.id === effort)?.label}</span>
-              <IconChevronDown className="palette-chevron" size={20} />
+              <IconChevronDown className="palette-chevron" size={22} />
               <select
                 className="palette-select-overlay"
                 value={effort}
@@ -554,7 +554,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 aria-expanded={createMenuOpen}
                 aria-label="Create options"
               >
-                <IconChevronDown size={20} />
+                <IconChevronDown size={22} />
               </button>
               {createMenuOpen && (
                 <div className="palette-create-menu" role="menu">
@@ -575,7 +575,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                     >
                       <IconCheck
                         className="palette-create-menu-check"
-                        size={20}
+                        size={22}
                         style={{ visibility: createMore === opt.more ? "visible" : "hidden" }}
                       />
                       <span className="palette-create-menu-text">

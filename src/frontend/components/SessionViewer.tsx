@@ -1205,7 +1205,7 @@ export function SessionViewer({
 						disabled={archiving}
 						title={session.archived ? "Unarchive session" : "Archive session"}
 					>
-						<IconArchive size={20} />
+						<IconArchive size={22} />
 						{archiving
 							? session.archived
 								? "Unarchiving…"
@@ -1223,7 +1223,7 @@ export function SessionViewer({
 						onClick={() => setShowDeleteConfirm(true)}
 						title="Delete session"
 					>
-						<IconTrash size={20} />
+						<IconTrash size={22} />
 						Delete session
 					</button>
 				) : (

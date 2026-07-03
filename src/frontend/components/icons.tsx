@@ -6,19 +6,21 @@ import React from "react";
  * chat UI uses the same quality stroke icons as the product instead of emoji.
  * All are 24×24, `currentColor`, stroke-width 1.5 — size via the `size` prop.
  *
- * Size scale — stick to these three steps so icons feel consistent:
- *   18 = inline/meta glyphs riding along with text (draft pencil, trailing
+ * Size scale — stick to these three steps so icons feel consistent (bumped
+ * one step 2026-07: the old 18/20 read too small — Kent + Michiel both asked
+ * for bigger icons):
+ *   20 = inline/meta glyphs riding along with text (draft pencil, trailing
  *        chevrons, tool-status check/x, disclosure carets in rows)
- *   20 = standard standalone icons (the default — search, list rows, menus)
+ *   22 = standard standalone icons (the default — search, list rows, menus)
  *   24 = primary action buttons + overlay chrome (composer send/mic/plus,
- *        lightbox nav, mobile top-bar buttons)
+ *        lightbox nav, mobile top-bar buttons, the footer settings gear)
  * Note: the few hand-drawn 16-viewBox SVGs around the app render ~15% denser
  * than this 24-grid set, so their pixel sizes run smaller for the same visual
  * weight (a raw 17 ≈ iconic 20). Migrate them here when touched.
  */
 type IconProps = React.SVGProps<SVGSVGElement> & { size?: number };
 
-function Svg({ size = 20, children, ...rest }: IconProps & { children: React.ReactNode }) {
+function Svg({ size = 22, children, ...rest }: IconProps & { children: React.ReactNode }) {
   return (
     <svg
       width={size}

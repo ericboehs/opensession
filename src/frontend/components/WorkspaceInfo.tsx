@@ -118,7 +118,7 @@ export function WorkspaceInfo({
 					)}
 				</span>
 				<IconChevronDown
-					size={20}
+					size={22}
 					className={`shrink-0 text-faint transition-transform ${open ? "" : "-rotate-90"}`}
 				/>
 			</button>

@@ -514,7 +514,7 @@ export function Composer({
                 <span className="palette-pill-label">
                   {modelShortLabel(effectiveModel, models)}
                 </span>
-                <IconChevronDown className="palette-chevron" size={20} />
+                <IconChevronDown className="palette-chevron" size={22} />
                 <select
                   className="palette-select-overlay"
                   value={model}
@@ -550,7 +550,7 @@ export function Composer({
                 <span className="palette-pill-label">
                   {EFFORTS.find((e) => e.id === effort)?.label ?? "High"}
                 </span>
-                <IconChevronDown className="palette-chevron" size={20} />
+                <IconChevronDown className="palette-chevron" size={22} />
                 <select
                   className="palette-select-overlay"
                   value={effort ?? "high"}

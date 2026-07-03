@@ -485,7 +485,7 @@ function MobileSettings({
 								className="absolute left-1 flex items-center gap-0.5 rounded-md border-none bg-transparent px-2 py-2 text-[15px] font-medium text-accent"
 								onClick={() => onShowRoot?.()}
 							>
-								<IconChevronLeft size={20} />
+								<IconChevronLeft size={22} />
 								Settings
 							</button>
 						)}
@@ -497,7 +497,7 @@ function MobileSettings({
 							onClick={dismiss}
 							aria-label="Close settings"
 						>
-							<IconX size={20} />
+							<IconX size={22} />
 						</button>
 					</div>
 
@@ -530,7 +530,7 @@ function MobileSettings({
 												<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
 													{s.label}
 												</span>
-												<IconChevronRight size={18} className="shrink-0 text-faint" />
+												<IconChevronRight size={20} className="shrink-0 text-faint" />
 											</button>
 										))}
 									</div>

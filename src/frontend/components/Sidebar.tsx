@@ -1351,7 +1351,7 @@ export function Sidebar({
 				    and finish it. Yields to the hover actions like the count/time. */}
 				{row.chats.some((c) => hasDraft(`chat:${c.id}`)) && (
 					<span className="sidebar-ws-draft" title="Unsent draft — return to finish it">
-						<IconPencil size={18} />
+						<IconPencil size={20} />
 					</span>
 				)}
 				{/* Hover actions: pin + archive, side by side (replace the count). */}
@@ -1462,7 +1462,7 @@ export function Sidebar({
 				title={`${r.number ? `#${r.number} ` : ""}${r.title} — ${r.repo}`}
 			>
 				<IconPullRequest
-					size={20}
+					size={22}
 					className={`shrink-0 ${
 						r.checksFailed
 							? "text-red"
@@ -1573,7 +1573,7 @@ export function Sidebar({
 	return (
 		<div className="sidebar">
 			<div className="sidebar-search-wrap">
-				<IconSearch className="sidebar-search-icon" size={20} />
+				<IconSearch className="sidebar-search-icon" size={22} />
 				{/* Acts as a button: clicking (or focusing) it opens the ⌘K
 				    session-search palette rather than filtering inline. */}
 				<input
@@ -1926,7 +1926,7 @@ export function Sidebar({
 								<span className="sidebar-group-name">Pinned</span>
 								<IconChevronDown
 									className="sidebar-group-chevron"
-									size={20}
+									size={22}
 									style={{ transform: pinnedOpen ? "none" : "rotate(-90deg)" }}
 								/>
 								<span className="sidebar-group-count">{pinnedCount}</span>
@@ -2002,7 +2002,7 @@ export function Sidebar({
 										<span className="sidebar-group-name">{meta.label}</span>
 										<IconChevronDown
 											className="sidebar-group-chevron"
-											size={20}
+											size={22}
 											style={{ transform: open ? "none" : "rotate(-90deg)" }}
 										/>
 										<span className="sidebar-group-count">
@@ -2053,7 +2053,7 @@ export function Sidebar({
 										<span>Support</span>
 										<IconChevronDown
 											className="sidebar-band-chevron"
-											size={20}
+											size={22}
 											style={{ transform: open ? "none" : "rotate(-90deg)" }}
 										/>
 										<span className="sidebar-group-count">
@@ -2086,7 +2086,7 @@ export function Sidebar({
 									<span>People</span>
 									<IconChevronDown
 										className="sidebar-band-chevron"
-										size={20}
+										size={22}
 										style={{ transform: open ? "none" : "rotate(-90deg)" }}
 									/>
 								</button>
@@ -2144,7 +2144,7 @@ export function Sidebar({
 								<span>Automations</span>
 								<IconChevronDown
 									className="sidebar-band-chevron"
-									size={20}
+									size={22}
 									style={{
 										transform: bandOpen("automations")
 											? "none"
@@ -2176,7 +2176,7 @@ export function Sidebar({
 											<span className="sidebar-group-name">{group.label}</span>
 											<IconChevronDown
 												className="sidebar-group-chevron"
-												size={20}
+												size={22}
 												style={{
 													transform: open ? "none" : "rotate(-90deg)",
 												}}
@@ -2805,7 +2805,7 @@ function SidebarItem({
 				)}
 				{!editing && hasDraft(`chat:${session.id}`) && (
 					<span className="sidebar-ws-draft" title="Unsent draft — return to finish it">
-						<IconPencil size={18} />
+						<IconPencil size={20} />
 					</span>
 				)}
 			</div>
@@ -3452,7 +3452,7 @@ function WsOverviewInfo({
 					</span>
 				)}
 				<span className="flex shrink-0 items-center" title={meta?.label}>
-					<WsStatusMark row={row} size={20} />
+					<WsStatusMark row={row} size={22} />
 				</span>
 			</div>
 
@@ -3759,7 +3759,7 @@ function WsMobileSheet({
 							),
 						)}
 					>
-						<WsStatusMark row={row} size={20} />
+						<WsStatusMark row={row} size={22} />
 						{row.chats.some((c) => c.waitingForInput)
 							? "Answer question"
 							: "Check failed run"}
@@ -3775,7 +3775,7 @@ function WsMobileSheet({
 							window.open(prChat.prUrl, "_blank", "noopener"),
 						)}
 					>
-						<IconPullRequest size={20} />
+						<IconPullRequest size={22} />
 						{prReady ? "Merge on GitHub" : "Review PR"}
 						{prChat.prNumber != null && ` #${prChat.prNumber}`}
 					</button>
@@ -3797,7 +3797,7 @@ function WsMobileSheet({
 							window.open(prChat.prUrl, "_blank", "noopener"),
 						)}
 					>
-						<IconPullRequest size={20} />
+						<IconPullRequest size={22} />
 						Open PR{prChat.prNumber != null ? ` #${prChat.prNumber}` : ""}
 					</button>
 				)}

@@ -105,7 +105,7 @@ function SettingsSheet({
 						className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-none bg-transparent p-0 text-faint active:bg-hover active:text-fg"
 						onClick={() => onOpenSettings?.()}
 					>
-						<IconGear size={20} />
+						<IconGear size={24} />
 					</button>
 				</div>
 			) : (
@@ -139,7 +139,7 @@ function SettingsSheet({
 											{name}
 										</span>
 										{name === currentUser && (
-											<IconCheck size={20} className="shrink-0 text-accent" />
+											<IconCheck size={22} className="shrink-0 text-accent" />
 										)}
 									</button>
 								))}
@@ -154,12 +154,12 @@ function SettingsSheet({
 									}}
 								>
 									<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-dim">
-										<IconGear size={20} />
+										<IconGear size={22} />
 									</span>
 									<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
 										Settings
 									</span>
-									<IconChevronRight size={18} className="shrink-0 text-faint" />
+									<IconChevronRight size={20} className="shrink-0 text-faint" />
 								</button>
 							</div>
 
@@ -219,7 +219,7 @@ export function SettingsMenu({
 							className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-none bg-transparent p-0 text-faint hover:bg-hover hover:text-fg"
 							onClick={() => onOpenSettings?.()}
 						>
-							<IconGear size={20} />
+							<IconGear size={24} />
 						</button>
 					</Tooltip>
 				</div>
@@ -324,7 +324,7 @@ export function SettingsMenu({
 				)}
 
 				<Menu.Item onClick={() => onOpenSettings?.()}>
-					<IconGear size={20} />
+					<IconGear size={22} />
 					Settings
 				</Menu.Item>
 			</Menu.Popup>

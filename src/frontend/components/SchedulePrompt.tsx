@@ -181,7 +181,7 @@ export function SchedulePromptButton({
         title="Schedule for later"
         aria-label="Schedule for later"
       >
-        <IconChevronDown size={18} />
+        <IconChevronDown size={20} />
         {pending.length > 0 && (
           <span className="composer-schedule-badge">{pending.length}</span>
         )}

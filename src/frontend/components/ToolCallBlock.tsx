@@ -308,11 +308,11 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
           <span className="size-[10px] flex-shrink-0 animate-spin rounded-full border-2 border-green-soft border-t-green" />
         ) : failed ? (
           <span className="flex-shrink-0 text-red">
-            <IconX size={18} />
+            <IconX size={20} />
           </span>
         ) : result ? (
           <span className="flex-shrink-0 text-green opacity-70">
-            <IconCheck size={18} />
+            <IconCheck size={20} />
           </span>
         ) : (
           <span className="flex-shrink-0 text-[10.5px] text-faint">—</span>
@@ -368,7 +368,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
                             if (vid) openGalleryFrom(vid);
                           }}
                         >
-                          <IconExpand size={18} />
+                          <IconExpand size={20} />
                         </button>
                       </div>
                     ))}

@@ -271,7 +271,7 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 				onKeyDown={onKeyDown}
 			>
 				<div className="ss-search-row">
-					<IconSearch className="ss-search-icon" size={20} />
+					<IconSearch className="ss-search-icon" size={22} />
 					<input
 						ref={inputRef}
 						className="ss-search-input"
