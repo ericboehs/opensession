@@ -235,6 +235,7 @@ export function Composer({
   const [innerValue, setInnerValue] = useState(() =>
     draftKey ? loadDraft(draftKey).text : "",
   );
+  const isPhone = useIsPhone();
   const isControlled = value !== undefined;
   const text = isControlled ? value : innerValue;
   const setText = isControlled ? onChange ?? (() => {}) : setInnerValue;
@@ -254,6 +255,14 @@ export function Composer({
   // Any attachment affordance (paste/drop/pick + thumbnails) is enabled when the
   // parent wired up either channel.
   const canAttach = !!onImagesChange || !!onFilesChange;
+
+  // Phones get a ChatGPT-style resting state: while the field is empty and
+  // unfocused, the composer collapses to a single-row pill ("+ · placeholder ·
+  // mic · send"), hiding the model/effort/goal chips. Focusing the field or
+  // adding any content (text or attachment) expands it to the full toolbar.
+  const [focused, setFocused] = useState(false);
+  const hasContent = !!text.trim() || imgs.length > 0 || fls.length > 0;
+  const minimized = isPhone && !focused && !hasContent;
 
   // Which toolbar popover is open ("add" menu or "goal" editor). Closed on an
   // outside click or after an action.
@@ -328,13 +337,15 @@ export function Composer({
   // Auto-grow between a resting floor and the CSS max-height. Phones get a
   // one-line floor (ChatGPT-style lightweight bar); desktop keeps the tall
   // inviting field.
-  const isPhone = useIsPhone();
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
+    // Minimized (resting phone pill) hugs a single line so it centers against
+    // the +/send circles; otherwise a phone one-line floor, desktop a tall field.
+    const floor = minimized ? 0 : isPhone ? 44 : 120;
     el.style.height = "auto";
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, isPhone ? 44 : 120), 320)}px`;
-  }, [text, isPhone]);
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, floor), 320)}px`;
+  }, [text, isPhone, minimized]);
 
   // Dictated text lands at the end of the draft (with a joining space) and
   // focus returns to the textarea so you can touch it up and send.
@@ -364,7 +375,7 @@ export function Composer({
   return (
     <div className="composer-wrap">
       <div
-        className={`composer ${disabled ? "composer-disabled" : ""}`}
+        className={`composer ${disabled ? "composer-disabled" : ""} ${minimized ? "composer-min" : ""}`}
         onDrop={handleDrop}
         onDragOver={(e) => canAttach && e.preventDefault()}
       >
@@ -385,7 +396,9 @@ export function Composer({
             onKeyDown={handleKeyDown}
             onKeyUp={mentions.sync}
             onClick={mentions.sync}
+            onFocus={() => setFocused(true)}
             onBlur={() => {
+              setFocused(false);
               // Let a click on a suggestion (mousedown) win the race first.
               setTimeout(mentions.close, 120);
             }}

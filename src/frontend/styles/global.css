@@ -5851,6 +5851,50 @@ html[data-theme="light"] .tool-code-surface {
 	opacity: 0.6;
 }
 
+/* ── Minimized composer (phone resting state) ────────────────────
+   A ChatGPT-style single-row pill: "+ · placeholder · mic · send". Applied
+   (from Composer.tsx) only on phones while the field is empty and unfocused;
+   focusing or typing drops the class and restores the full stacked toolbar.
+   `display: contents` on the toolbar lifts its buttons into this flex row so
+   the textarea can sit between the "+" and the mic/send, and `order` sequences
+   them. The model/effort/goal chips and spacer are hidden in this state. */
+.composer.composer-min {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	border-radius: 999px;
+	padding: 4px 6px;
+}
+.composer.composer-min .composer-toolbar {
+	display: contents;
+}
+.composer.composer-min .composer-input-wrap {
+	order: 2;
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.composer.composer-min .composer-textarea {
+	min-height: 0;
+	padding: 0 4px;
+}
+.composer.composer-min .composer-pop-wrap:has(.composer-add-btn) {
+	order: 1;
+}
+.composer.composer-min .voice-mic-btn {
+	order: 3;
+}
+.composer.composer-min .composer-send-queue {
+	order: 4;
+}
+.composer.composer-min .composer-send-split {
+	order: 5;
+}
+.composer.composer-min .palette-pill,
+.composer.composer-min .composer-spacer,
+.composer.composer-min .composer-pop-wrap:has(.composer-goal-btn) {
+	display: none;
+}
+
 .composer-textarea {
 	display: block;
 	width: 100%;
