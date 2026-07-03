@@ -31,8 +31,6 @@ function MsgTime({ ts }: { ts?: string }) {
 
 interface Props {
 	entry: TranscriptEntry;
-	/** When provided, assistant messages show a "Fork from here" action. */
-	onFork?: (entryId: string) => void;
 	/**
 	 * Who owns/drives this session (session.startedBy). An un-attributed user
 	 * turn is this person's own words, so it's credited to them — "You" only
@@ -63,12 +61,11 @@ function EntryImages({ images }: { images?: string[] }) {
 }
 
 // Memoized: entries keep stable references across stream events (mergeEntries
-// reuses objects) and onFork/owner are stable upstream, so a tool event
-// appended to the transcript re-renders only the affected blocks — not every
-// bubble's markdown/highlighting.
+// reuses objects) and owner is stable upstream, so a tool event appended to
+// the transcript re-renders only the affected blocks — not every bubble's
+// markdown/highlighting.
 export const MessageBubble = React.memo(function MessageBubble({
 	entry,
-	onFork,
 	owner,
 }: Props) {
 	const me = useCurrentUser();
@@ -145,20 +142,10 @@ export const MessageBubble = React.memo(function MessageBubble({
 		);
 	}
 
-	// assistant
+	// assistant — no speaker label: every left-aligned bubble is Michael, so
+	// the name row was pure noise above each answer.
 	return (
 		<div className="msg msg-assistant">
-			<div className="msg-label msg-label-assistant">
-				{onFork && (
-					<button
-						className="msg-fork-btn"
-						onClick={() => onFork(entry.id)}
-						title="Fork a new session that branches from this point, keeping the conversation so far"
-					>
-						⑂ Fork from here
-					</button>
-				)}
-			</div>
 			<div
 				className="msg-body msg-body-assistant markdown"
 				dangerouslySetInnerHTML={{ __html: html || "" }}

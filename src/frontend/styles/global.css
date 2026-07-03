@@ -239,9 +239,21 @@ button * {
 	user-select: none;
 }
 
+/* No preflight ships, so neutralize the UA button chrome here. The moment an
+   author background/border lands on a <button> (e.g. Tailwind's
+   bg-transparent), browsers drop native appearance and paint the "devolved"
+   2px-outset bevel + buttonface padding instead — iOS renders that as a
+   raised 3D card. Every button in the app styles itself via classes; none
+   want the native chrome. Scoped to button only — appearance:none would
+   break native selects/checkboxes. */
 button {
 	font-family: inherit;
 	cursor: pointer;
+	appearance: none;
+	-webkit-appearance: none;
+	border: none;
+	background: none;
+	padding: 0;
 }
 
 input,

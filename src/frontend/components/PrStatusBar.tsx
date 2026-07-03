@@ -9,6 +9,7 @@ import {
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
+import { IconPullRequest, IconGitMerge } from "./icons";
 
 /**
  * Conductor-style status strip at the top of the right Workspace panel: the PR
@@ -244,7 +245,7 @@ export function PrStatusBar({
 			case "no-pr":
 				return send ? (
 					<button
-						className="pr-bar-btn pr-bar-btn-solid"
+						className="pr-bar-btn pr-bar-btn-solid inline-flex items-center gap-1"
 						onClick={() =>
 							promptSession(
 								"create a PR",
@@ -252,7 +253,7 @@ export function PrStatusBar({
 							)
 						}
 					>
-						⑂ Create PR
+						<IconPullRequest size={15} className="shrink-0" /> Create PR
 					</button>
 				) : null;
 			case "ready":
@@ -261,7 +262,7 @@ export function PrStatusBar({
 			case "changes-requested":
 				return (
 					<button
-						className={`pr-bar-btn pr-bar-btn-green ${confirmMerge ? "pr-bar-btn-confirm" : ""}`}
+						className={`pr-bar-btn pr-bar-btn-green inline-flex items-center gap-1 ${confirmMerge ? "pr-bar-btn-confirm" : ""}`}
 						disabled={!!busy}
 						onClick={handleMerge}
 						title="Squash and merge this PR into its base branch"
@@ -270,7 +271,7 @@ export function PrStatusBar({
 							? "Merging…"
 							: confirmMerge
 								? "Confirm merge"
-								: "⑂ Merge"}
+								: <><IconGitMerge size={15} className="shrink-0" /> Merge</>}
 					</button>
 				);
 			default:
