@@ -747,7 +747,6 @@ function App() {
 				<span className="app-logo">B</span>
 				<span className="app-title-text">Backstage</span>
 			</a>
-			<UpdatePill addHandler={addHandler} />
 		</div>
 	);
 
@@ -792,6 +791,7 @@ function App() {
 	return (
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
+			<UpdatePill addHandler={addHandler} />
 			<MediaLightboxHost />
 			<div className="app">
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;

@@ -6,17 +6,14 @@ interface Props {
 }
 
 /**
- * "A new frontend build is live" affordance, rendered inline next to the
- * Backstage wordmark (desktop sidebar brand + mobile top bar, both via
- * `brandTitle`) as a small solid-red rounded button hugging its label. Fired by
- * the server's `frontend_updated` broadcast after an in-process rebuild (no
- * restart, so running sessions are untouched).
+ * "A new version is available" toast, docked bottom-right. Fired by the server's
+ * `frontend_updated` broadcast after an in-process rebuild (no restart, so
+ * running sessions are untouched).
  *
- * This replaced a center-bottom toast that floated over the composer and had to
- * be dismissed. Refreshing is optional — new page loads already get the new
- * build; this just nudges already-open tabs — so the indicator is deliberately
- * quiet and non-blocking: it never covers content and never needs dismissing.
- * It simply persists until the user clicks to refresh (or reloads on their own).
+ * Refreshing is optional — new page loads already get the new build; this just
+ * nudges already-open tabs — so the toast is non-blocking (it never covers the
+ * composer) and dismissable. It's rendered once at the app root, not inline next
+ * to the wordmark, so there's a single instance regardless of layout.
  */
 export function UpdatePill({ addHandler }: Props) {
   const [show, setShow] = useState(false);
@@ -29,13 +26,34 @@ export function UpdatePill({ addHandler }: Props) {
   if (!show) return null;
 
   return (
-    <button
-      className="update-pill"
-      onClick={() => location.reload()}
-      title="A new version of Backstage is available — click to refresh"
-      aria-label="A new version of Backstage is available — click to refresh"
-    >
-      <span className="update-pill-text">Update</span>
-    </button>
+    <div className="update-toast" role="status" aria-live="polite">
+      <div className="update-toast-body">
+        <span className="update-toast-dot" aria-hidden="true" />
+        <span className="update-toast-text">A new version is available</span>
+      </div>
+      <div className="update-toast-actions">
+        <button
+          className="update-toast-refresh"
+          onClick={() => location.reload()}
+        >
+          Refresh
+        </button>
+        <button
+          className="update-toast-dismiss"
+          onClick={() => setShow(false)}
+          title="Dismiss"
+          aria-label="Dismiss"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path
+              d="M3.5 3.5l7 7M10.5 3.5l-7 7"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
   );
 }
