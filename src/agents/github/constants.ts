@@ -9,6 +9,8 @@ export const REVIEW_AUTOMATION_NAME = "github-pr-review";
 export const PR_MERGED_EVENT_KEY = "github:pr_merged";
 /** Name of the seeded docs-sync automation (fires on PR merge). */
 export const DOCS_SYNC_AUTOMATION_NAME = "docs-sync";
+/** Branch prefix for docs-sync's own PRs — skipped on merge so it can't loop. */
+export const DOCS_SYNC_BRANCH_PREFIX = "auto-docs-sync-";
 
 export const LABEL_REVIEW = "michael-review";
 export const LABEL_AUTOFIX = "michael-auto-fix";
