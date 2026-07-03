@@ -1,0 +1,389 @@
+import React, { useState, Suspense, lazy } from "react";
+import type { TranscriptEntry } from "../lib/types";
+import { Menu } from "../ui/menu";
+import { Tooltip } from "../ui/tooltip";
+import { Popover } from "../ui/popover";
+import { cn } from "../ui/cn";
+import {
+  IconBranches,
+  IconCheck,
+  IconCopy,
+  IconDotsHorizontal,
+} from "./icons";
+
+/** One change a tool made to a file: old text removed, new text added.
+ * Writes have old: "" (the whole content is an addition). */
+export interface FileEdit {
+  old: string;
+  new: string;
+}
+
+export interface TouchedFile {
+  path: string;
+  additions: number;
+  deletions: number;
+  edits: FileEdit[];
+}
+
+// Same lazy split as ToolCallBlock: Shiki is multi-MB, load it only when a
+// diff preview actually opens. Until then the diff shows as a plain pre.
+const CodeHighlightLazy = lazy(() =>
+  import("./CodeHighlight").then((m) => ({ default: m.CodeHighlight }))
+);
+
+interface Props {
+  /** The turn's final answer entry — copy copies its markdown, fork forks from it. */
+  entry: TranscriptEntry;
+  durationMs: number;
+  files: TouchedFile[];
+  onFork?: (entryId: string) => void;
+}
+
+/**
+ * Conductor-style meta row under a turn's final answer: how long the turn
+ * took, copy / more-options actions, and one chip per file the turn edited
+ * with its ±line counts. Always visible (no hover reveal — hover-only
+ * affordances are unreachable on iOS).
+ */
+export const TurnFooter = React.memo(function TurnFooter({
+  entry,
+  durationMs,
+  files,
+  onFork,
+}: Props) {
+  const [copied, setCopied] = useState(false);
+  const doCopy = () => {
+    copyText(entry.content, () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  const duration = formatDuration(durationMs);
+  const shown = files.slice(0, MAX_CHIPS);
+  const rest = files.slice(MAX_CHIPS);
+
+  return (
+    <div className="mx-auto -mt-2.5 mb-[18px] flex w-full max-w-[var(--chat-col)] flex-wrap items-center gap-x-0.5 gap-y-1.5">
+      {duration && (
+        <span className="mr-1.5 text-xs font-medium text-faint">{duration}</span>
+      )}
+      <Tooltip label={copied ? "Copied" : "Copy message"}>
+        <button type="button" onClick={doCopy} className={BTN}>
+          {copied ? (
+            <IconCheck size={20} className="text-green" />
+          ) : (
+            <IconCopy size={20} />
+          )}
+        </button>
+      </Tooltip>
+      <Menu.Root>
+        <Menu.Trigger className={BTN + " data-[popup-open]:bg-hover data-[popup-open]:text-dim"}>
+          <IconDotsHorizontal size={20} />
+        </Menu.Trigger>
+        <Menu.Popup side="bottom" align="start" sideOffset={4}>
+          {onFork && (
+            <Menu.Item onClick={() => onFork(entry.id)}>
+              <IconBranches size={20} className="text-faint" />
+              Fork from here
+            </Menu.Item>
+          )}
+          <Menu.Item onClick={doCopy}>
+            <IconCopy size={20} className="text-faint" />
+            Copy message
+          </Menu.Item>
+        </Menu.Popup>
+      </Menu.Root>
+      {shown.map((f) => (
+        <FileChip key={f.path} file={f} />
+      ))}
+      {rest.length > 0 && <MoreChip files={rest} />}
+    </div>
+  );
+}, turnFooterPropsEqual);
+
+function turnFooterPropsEqual(prev: Props, next: Props): boolean {
+  if (
+    prev.entry !== next.entry ||
+    prev.durationMs !== next.durationMs ||
+    prev.onFork !== next.onFork ||
+    prev.files.length !== next.files.length
+  )
+    return false;
+  for (let i = 0; i < next.files.length; i++) {
+    const a = prev.files[i];
+    const b = next.files[i];
+    if (a.path !== b.path || a.additions !== b.additions || a.deletions !== b.deletions)
+      return false;
+  }
+  return true;
+}
+
+const BTN =
+  "flex size-7 flex-shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-faint hover:bg-hover hover:text-dim";
+
+const MAX_CHIPS = 4;
+
+function FileChip({ file }: { file: TouchedFile }) {
+  const name = file.path.split("/").pop() || file.path;
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        openOnHover
+        delay={250}
+        closeDelay={100}
+        className="ml-1 flex h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-panel px-1.5 hover:border-line-strong data-[popup-open]:border-line-strong"
+      >
+        <ExtBadge name={name} />
+        <span className="max-w-[180px] truncate text-xs font-medium text-dim">
+          {name}
+        </span>
+        <LineStats additions={file.additions} deletions={file.deletions} />
+      </Popover.Trigger>
+      <Popover.Popup
+        side="top"
+        align="start"
+        className="w-[min(520px,calc(100vw-24px))] overflow-hidden"
+      >
+        <div className="flex items-center gap-2 border-b border-line px-2.5 py-2">
+          <ExtBadge name={name} />
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
+            {tidyPath(file.path)}
+          </span>
+          <LineStats additions={file.additions} deletions={file.deletions} />
+        </div>
+        <div className="max-h-[min(360px,55vh)] overflow-y-auto p-1.5">
+          {file.edits.length === 0 ? (
+            <div className="px-1.5 py-2 text-xs text-faint">
+              No captured changes for this file.
+            </div>
+          ) : (
+            file.edits.map((e, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "tool-code-surface overflow-hidden rounded-md",
+                  i > 0 && "mt-1.5"
+                )}
+              >
+                <DiffHighlight code={truncateDiff(editDiffText(e))} />
+              </div>
+            ))
+          )}
+        </div>
+      </Popover.Popup>
+    </Popover.Root>
+  );
+}
+
+/** Hunk-style text for one edit: removed lines then added lines. */
+function editDiffText(e: FileEdit): string {
+  const lines: string[] = [];
+  if (e.old) for (const l of e.old.split("\n")) lines.push(`-${l}`);
+  if (e.new) for (const l of e.new.split("\n")) lines.push(`+${l}`);
+  return lines.join("\n");
+}
+
+function truncateDiff(s: string): string {
+  return s.length <= 3000 ? s : s.slice(0, 3000) + "\n…";
+}
+
+function tidyPath(p: string): string {
+  return p.replace(/^\/home\/[^/]+\//, "~/");
+}
+
+function DiffHighlight({ code }: { code: string }) {
+  return (
+    <Suspense fallback={<pre className="tool-pre">{code}</pre>}>
+      <CodeHighlightLazy code={code} lang="diff" />
+    </Suspense>
+  );
+}
+
+function MoreChip({ files }: { files: TouchedFile[] }) {
+  const additions = files.reduce((n, f) => n + f.additions, 0);
+  const deletions = files.reduce((n, f) => n + f.deletions, 0);
+  return (
+    <Tooltip
+      label={files
+        .slice(0, 12)
+        .map((f) => f.path.split("/").pop())
+        .join(", ") + (files.length > 12 ? ", …" : "")}
+    >
+      <span className="ml-1 flex h-6 items-center gap-1.5 rounded-md border border-line bg-panel px-1.5">
+        <span className="text-xs font-medium text-faint">
+          +{files.length} more
+        </span>
+        <LineStats additions={additions} deletions={deletions} />
+      </span>
+    </Tooltip>
+  );
+}
+
+function LineStats({ additions, deletions }: { additions: number; deletions: number }) {
+  return (
+    <span className="flex flex-shrink-0 items-center gap-1 font-mono text-[11px] font-medium">
+      <span className="text-green">+{additions}</span>
+      <span className="text-red">-{deletions}</span>
+    </span>
+  );
+}
+
+/** Tiny colored file-type badge (linguist-ish hues, muted for white text). */
+function ExtBadge({ name }: { name: string }) {
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLowerCase() : "";
+  const color = EXT_COLORS[ext] || "#6e7681";
+  const label = (ext || "?").slice(0, 3).toUpperCase();
+  return (
+    <span
+      className="flex h-4 w-[18px] flex-shrink-0 items-center justify-center rounded-[4px] text-[7px] font-bold leading-none text-white"
+      style={{ background: color }}
+    >
+      {label}
+    </span>
+  );
+}
+
+const EXT_COLORS: Record<string, string> = {
+  ts: "#3178c6",
+  tsx: "#3178c6",
+  js: "#a8871a",
+  jsx: "#a8871a",
+  mjs: "#a8871a",
+  cjs: "#a8871a",
+  css: "#663399",
+  scss: "#c6538c",
+  html: "#e34c26",
+  md: "#0969da",
+  mdx: "#0969da",
+  json: "#953800",
+  yaml: "#cb171e",
+  yml: "#cb171e",
+  toml: "#9c4221",
+  sh: "#4eaa25",
+  bash: "#4eaa25",
+  py: "#3572a5",
+  rs: "#b7410e",
+  go: "#00add8",
+  rb: "#701516",
+  swift: "#f05138",
+  java: "#b07219",
+  sql: "#e38c00",
+  svg: "#d97706",
+  res: "#ed5051",
+  resi: "#ed5051",
+};
+
+/**
+ * Per-file line stats from one edit-family tool call, or null for tools that
+ * don't write files. Line counts come from the tool inputs (old/new string
+ * sizes), so they're the same "±N" a diff would show for those hunks — minus
+ * anything Bash did, which we can't see.
+ */
+export function touchedFileFromTool(entry: TranscriptEntry): TouchedFile | null {
+  const input = entry.toolInput;
+  if (!input || typeof input !== "object") return null;
+  const inp = input as Record<string, unknown>;
+  const lines = (v: unknown) =>
+    typeof v === "string" && v.length > 0 ? v.split("\n").length : 0;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  switch (entry.toolName) {
+    case "Edit":
+      if (typeof inp.file_path !== "string") return null;
+      return {
+        path: inp.file_path,
+        additions: lines(inp.new_string),
+        deletions: lines(inp.old_string),
+        edits: [{ old: str(inp.old_string), new: str(inp.new_string) }],
+      };
+    case "MultiEdit": {
+      if (typeof inp.file_path !== "string" || !Array.isArray(inp.edits)) return null;
+      let additions = 0;
+      let deletions = 0;
+      const edits: FileEdit[] = [];
+      for (const e of inp.edits) {
+        if (!e || typeof e !== "object") continue;
+        const ee = e as Record<string, unknown>;
+        additions += lines(ee.new_string);
+        deletions += lines(ee.old_string);
+        edits.push({ old: str(ee.old_string), new: str(ee.new_string) });
+      }
+      return { path: inp.file_path, additions, deletions, edits };
+    }
+    case "Write":
+      if (typeof inp.file_path !== "string") return null;
+      return {
+        path: inp.file_path,
+        additions: lines(inp.content),
+        deletions: 0,
+        edits: [{ old: "", new: str(inp.content) }],
+      };
+    case "NotebookEdit":
+      if (typeof inp.notebook_path !== "string") return null;
+      return {
+        path: inp.notebook_path,
+        additions: lines(inp.new_source),
+        deletions: 0,
+        edits: [{ old: "", new: str(inp.new_source) }],
+      };
+    default:
+      return null;
+  }
+}
+
+/** All files a turn's tool calls edited, merged per path in first-touch order. */
+export function collectTouchedFiles(items: TranscriptEntry[]): TouchedFile[] {
+  const byPath = new Map<string, TouchedFile>();
+  for (const it of items) {
+    if (it.type !== "tool_use") continue;
+    const f = touchedFileFromTool(it);
+    if (!f) continue;
+    const prev = byPath.get(f.path);
+    if (prev) {
+      prev.additions += f.additions;
+      prev.deletions += f.deletions;
+      prev.edits.push(...f.edits);
+    } else {
+      byPath.set(f.path, { ...f, edits: [...f.edits] });
+    }
+  }
+  return [...byPath.values()];
+}
+
+/** "10m, 57s" / "1h, 4m" / "42s"; null under a second (nothing worth showing). */
+function formatDuration(ms: number): string | null {
+  const secs = Math.round(ms / 1000);
+  if (!isFinite(secs) || secs < 1) return null;
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m, ${secs % 60}s`;
+  return `${Math.floor(mins / 60)}h, ${mins % 60}m`;
+}
+
+// navigator.clipboard needs a secure context — backstage is served over plain
+// http on the tailnet, so fall back to a hidden-textarea copy.
+function copyText(text: string, onDone: () => void) {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(onDone, () => fallbackCopy(text, onDone));
+  } else {
+    fallbackCopy(text, onDone);
+  }
+}
+
+function fallbackCopy(text: string, onDone: () => void) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand("copy");
+    onDone();
+  } catch {
+    // nothing else to fall back to
+  } finally {
+    ta.remove();
+  }
+}

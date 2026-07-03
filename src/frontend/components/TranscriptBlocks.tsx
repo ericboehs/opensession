@@ -2,10 +2,17 @@ import React from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { TurnBlock } from "./TurnBlock";
+import { TurnFooter, collectTouchedFiles, type TouchedFile } from "./TurnFooter";
 
 type RenderBlock =
 	| { kind: "entry"; entry: TranscriptEntry }
-	| { kind: "turn"; items: TranscriptEntry[] };
+	| { kind: "turn"; items: TranscriptEntry[] }
+	| {
+			kind: "footer";
+			entry: TranscriptEntry;
+			durationMs: number;
+			files: TouchedFile[];
+	  };
 
 interface Props {
 	entries: TranscriptEntry[];
@@ -52,19 +59,32 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 	// user/system boundaries, accumulated then flushed as one fold.
 	let turn: TranscriptEntry[] = [];
 
-	const flushTurn = () => {
+	const flushTurn = (trailing = false) => {
 		if (turn.length === 0) return;
+		const last = turn[turn.length - 1];
+		const final = last.type === "assistant" ? last : null;
 		if (!turn.some((e) => e.type === "tool_use")) {
 			// Plain answer(s), nothing to fold.
 			for (const e of turn) blocks.push({ kind: "entry", entry: e });
 		} else {
 			// The turn's final answer (when it ended with one) stays visible;
 			// everything before it folds. A turn still mid-tools folds entirely.
-			const last = turn[turn.length - 1];
-			const final = last.type === "assistant" ? last : null;
 			const folded = final ? turn.slice(0, -1) : turn;
 			if (folded.length > 0) blocks.push({ kind: "turn", items: folded });
 			if (final) blocks.push({ kind: "entry", entry: final });
+		}
+		// Meta row under the settled turn's final answer: duration, copy / ⋯
+		// actions, per-file edit chips. The live trailing turn skips it — its
+		// footer appears when the run finishes.
+		if (final && !(live && trailing)) {
+			blocks.push({
+				kind: "footer",
+				entry: final,
+				durationMs:
+					new Date(final.timestamp).getTime() -
+					new Date(turn[0].timestamp).getTime(),
+				files: collectTouchedFiles(turn),
+			});
 		}
 		turn = [];
 	};
@@ -79,7 +99,7 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 			blocks.push({ kind: "entry", entry });
 		}
 	}
-	flushTurn();
+	flushTurn(true);
 
 	return (
 		<>
@@ -92,11 +112,18 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 						live={Boolean(live) && i === blocks.length - 1}
 						onOpenSubagent={onOpenSubagent}
 					/>
+				) : block.kind === "footer" ? (
+					<TurnFooter
+						key={`${block.entry.id}:footer`}
+						entry={block.entry}
+						durationMs={block.durationMs}
+						files={block.files}
+						onFork={onFork}
+					/>
 				) : (
 					<MessageBubble
 						key={block.entry.id}
 						entry={block.entry}
-						onFork={onFork}
 						owner={owner}
 					/>
 				),

@@ -8617,26 +8617,6 @@ html[data-theme="light"] .tool-code-surface {
 	cursor: default;
 }
 
-/* "Fork from here" affordance on assistant messages */
-.msg-fork-btn {
-	margin-left: 8px;
-	border: none;
-	background: none;
-	color: var(--text-dim);
-	font-size: 11px;
-	cursor: pointer;
-	opacity: 0;
-	transition:
-		opacity 0.12s,
-		color 0.12s;
-}
-.msg-assistant:hover .msg-fork-btn {
-	opacity: 1;
-}
-.msg-fork-btn:hover {
-	color: var(--accent);
-}
-
 /* Fork mode banner above the composer */
 .fork-banner {
 	display: flex;

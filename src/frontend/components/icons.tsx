@@ -463,3 +463,27 @@ export function IconGitMerge(p: IconProps) {
     </Svg>
   );
 }
+
+// Two stacked rounded squares: copy to clipboard.
+export function IconCopy(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="8.75" y="8.75" width="10.5" height="10.5" rx="2" />
+      <path
+        {...stroke}
+        d="M15.25 4.75H6.75C5.64543 4.75 4.75 5.64543 4.75 6.75V15.25"
+      />
+    </Svg>
+  );
+}
+
+// ⋯ more options.
+export function IconDotsHorizontal(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle cx="6" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="18" cy="12" r="1.3" fill="currentColor" />
+    </Svg>
+  );
+}
