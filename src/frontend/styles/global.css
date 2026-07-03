@@ -7670,6 +7670,12 @@ html[data-theme="light"] .tool-code-surface {
 		/* iOS press feel: dim instantly on touch-down, ease back on release. */
 		transition: opacity 0.18s ease;
 	}
+	.mobile-search-btn::after {
+		content: "";
+		position: absolute;
+		inset: -4px;
+		border-radius: 50%;
+	}
 	/* iOS nav-bar glyphs are bold — thicken the iconic icon's thin 1.5 stroke
 	   (CSS wins over the path's presentation attribute) so it reads at full
 	   weight, not spindly, at this size. */
@@ -8177,18 +8183,19 @@ html[data-theme="light"] .tool-code-surface {
 	}
 
 	/* Filter, docked in the top bar beside Search (portaled from the sidebar).
-	   `order: -1` seats it left of Search, which keeps its own edge bleed. Same
-	   iOS 44pt touch target as the search button; muted until a filter is set. */
+	   `order: -1` seats it left of Search. Same 36px circle as the search
+	   button (::after pads the hit area to 44pt); muted until a filter is set. */
 	.mobile-filter-btn {
 		order: -1;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 44px;
-		height: 44px;
+		position: relative;
+		width: 36px;
+		height: 36px;
 		padding: 0;
-		border: none;
-		background: none;
+		border: 1px solid var(--border);
+		background: var(--bg-panel);
 		color: var(--text-dim);
 		cursor: pointer;
 		border-radius: 50%;
@@ -8197,6 +8204,12 @@ html[data-theme="light"] .tool-code-surface {
 		transition:
 			opacity 0.18s ease,
 			color 0.12s ease;
+	}
+	.mobile-filter-btn::after {
+		content: "";
+		position: absolute;
+		inset: -4px;
+		border-radius: 50%;
 	}
 	.mobile-filter-btn svg {
 		stroke-width: 1.8;
