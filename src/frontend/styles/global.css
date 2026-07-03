@@ -8446,6 +8446,14 @@ html[data-theme="light"] .tool-code-surface {
 	padding: 4px;
 	z-index: 40;
 }
+/* The add ("+") button sits at the LEFT of the toolbar, so its menu must grow
+   rightward — the default right:0 anchoring pushes it off the left edge, where
+   it's clipped off-screen on narrow/mobile composers. Mirrors the goal
+   popover's left anchoring (its button is also in the left group). */
+.composer-pop-wrap:has(.composer-add-btn) .composer-menu {
+	left: 0;
+	right: auto;
+}
 .composer-menu-item {
 	display: flex;
 	align-items: center;

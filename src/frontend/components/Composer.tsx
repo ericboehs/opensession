@@ -271,11 +271,18 @@ export function Composer({
   const [menu, setMenu] = useState<null | "add" | "goal">(null);
   useEffect(() => {
     if (!menu) return;
-    function onDown(e: MouseEvent) {
+    // Dismiss on a tap/click outside the popover. iOS doesn't reliably fire
+    // `mousedown` on non-interactive elements, so listen for `touchstart` too —
+    // otherwise the menu gets stuck open on mobile.
+    function onDown(e: Event) {
       if (!(e.target as HTMLElement).closest(".composer-pop-wrap")) setMenu(null);
     }
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+    };
   }, [menu]);
 
   // "@"-mention file autocomplete (shared with the New-session prompt field).
