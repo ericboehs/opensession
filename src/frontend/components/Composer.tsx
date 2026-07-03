@@ -385,7 +385,10 @@ export function Composer({
     <div className="composer-wrap">
       <motion.div
         layout
-        animate={{ borderRadius: minimized ? 999 : 16 }}
+        // Fuller rounding in the expanded state on phones so the box's corners
+        // don't read as square against the iPhone's screen rounding; pill when
+        // collapsed. Desktop keeps the tighter 16px.
+        animate={{ borderRadius: minimized ? 999 : isPhone ? 22 : 16 }}
         transition={composerMorph}
         className={`composer ${disabled ? "composer-disabled" : ""} ${minimized ? "composer-min" : ""}`}
         onDrop={handleDrop}

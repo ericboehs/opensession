@@ -5866,6 +5866,9 @@ html[data-theme="light"] .tool-code-surface {
 	align-items: center;
 	gap: 4px;
 	padding: 4px 6px;
+	/* Inset the resting pill from the screen edges so it clears the iPhone's
+	   rounded bottom corners (Motion animates this away as it expands). */
+	margin: 0 6px;
 }
 .composer.composer-min .composer-toolbar {
 	display: contents;
@@ -7690,11 +7693,12 @@ html[data-theme="light"] .tool-code-surface {
 	}
 
 	.viewer-input {
-		padding: 8px 10px;
-		/* The hint is the bottom-most (non-interactive) element, so it can sit
-       right next to the home indicator — drop almost all of the safe-area
-       inset to keep the gap tight (~8px) on home-indicator iPhones. */
-		padding-bottom: max(8px, calc(env(safe-area-inset-bottom, 0px) - 26px));
+		padding: 8px 12px;
+		/* Clear the home indicator / bottom rounded corners: respect the full
+       safe-area inset (≈34px on home-indicator iPhones) rather than jamming
+       the composer against the very bottom edge. The hint is hidden on phones,
+       so the composer itself is the bottom-most element and needs the gap. */
+		padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
 	}
 
 	/* 16px stops iOS Safari from zooming into focused inputs, and reads at a
