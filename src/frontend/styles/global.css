@@ -37,6 +37,9 @@
 	--mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
 	--sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
 	--radius: 8px;
+	/* Chat column width — messages, work blocks, composer, ask cards all share
+	   it so the conversation reads as one column. */
+	--chat-col: 920px;
 	/* Header height grows by the iOS status-bar inset when installed as a PWA
      (black-translucent draws the webview under the clock/notch) */
 	--header-h: calc(52px + env(safe-area-inset-top, 0px));
@@ -4695,7 +4698,7 @@ body.resizing-x .panel-resize::after {
 	flex-shrink: 0;
 	/* Messages/work blocks center with auto side margins, and in a flex
 	   container auto cross-axis margins DISABLE align-items:stretch — the
-	   children would size to their content (up to their 860px max-width) and
+	   children would size to their content (up to their --chat-col max-width) and
 	   overflow sideways on phones. Explicit width restores the stretch; the
 	   max-width + auto margins still cap and center them. */
 	width: 100%;
@@ -4798,7 +4801,7 @@ body.resizing-x .panel-resize::after {
 
 .msg {
 	margin-bottom: 18px;
-	max-width: 860px;
+	max-width: var(--chat-col);
 	margin-left: auto;
 	margin-right: auto;
 	/* Flex for the same WebKit selection-gap reason as .viewer-messages:
@@ -4835,6 +4838,16 @@ body.resizing-x .panel-resize::after {
 	background: #5b7cfa;
 	opacity: 0.9;
 }
+/* Human turns sit on the right (assistant stays left). row-reverse keeps the
+   identity dot on the outer edge, mirroring the assistant label. */
+.msg-label-user,
+.msg-label-human {
+	flex-direction: row-reverse;
+}
+.msg-user .msg-images,
+.msg-human .msg-images {
+	justify-content: flex-end;
+}
 .msg-label-assistant::before {
 	border-radius: 50%;
 	background: linear-gradient(135deg, #ff5a5a, #b00000);
@@ -4867,13 +4880,15 @@ body.resizing-x .panel-resize::after {
 
 .msg-body-user {
 	display: inline-block;
-	max-width: 100%;
-	/* Shrink-wrap the bubble as a flex item (inline-block blockifies there). */
-	align-self: flex-start;
-	background: rgba(91, 124, 250, 0.1);
-	border: 1px solid rgba(91, 124, 250, 0.22);
+	/* Cap short of the column so a long message still reads right-aligned;
+	   assistant text keeps the full column. */
+	max-width: min(600px, 90%);
+	/* Shrink-wrap the bubble as a flex item (inline-block blockifies there);
+	   human turns hug the right edge, assistant text stays left. */
+	align-self: flex-end;
+	background: var(--bg-panel);
+	border: 1px solid var(--border);
 	border-radius: 14px;
-	border-top-left-radius: 5px;
 	padding: 10px 14px;
 	color: var(--text);
 }
@@ -4883,7 +4898,7 @@ body.resizing-x .panel-resize::after {
 }
 
 /* Human-in-the-loop: a teammate's reply routed back into the session. Distinct
-   from the driver's own blue "You" bubbles — a warm teal, to read as someone
+   from the driver's own neutral bubbles — a warm teal, to read as someone
    else stepping in. */
 .msg-human {
 	/* 4px, not 22px: flex margins don't collapse (see .msg-user). */
@@ -4898,12 +4913,11 @@ body.resizing-x .panel-resize::after {
 }
 .msg-body-human {
 	display: inline-block;
-	max-width: 100%;
-	align-self: flex-start;
+	max-width: min(600px, 90%);
+	align-self: flex-end;
 	background: rgba(31, 158, 138, 0.12);
 	border: 1px solid rgba(31, 158, 138, 0.3);
 	border-radius: 12px;
-	border-top-left-radius: 4px;
 	padding: 9px 14px;
 	color: var(--text);
 }
@@ -5783,7 +5797,7 @@ html[data-theme="light"] .tool-code-surface {
 	display: flex;
 	gap: 10px;
 	align-items: flex-end;
-	max-width: 860px;
+	max-width: var(--chat-col);
 	margin: 0 auto;
 }
 
@@ -5827,7 +5841,7 @@ html[data-theme="light"] .tool-code-surface {
 /* ── Composer (shared chat input — Claude/Codex style) ─────────────── */
 
 .composer-wrap {
-	max-width: 860px;
+	max-width: var(--chat-col);
 	margin: 0 auto;
 	width: 100%;
 }
@@ -6502,7 +6516,7 @@ html[data-theme="light"] .tool-code-surface {
 	gap: 10px;
 	color: var(--text-dim);
 	font-size: 13px;
-	max-width: 860px;
+	max-width: var(--chat-col);
 	margin: 0 auto;
 }
 
@@ -6553,7 +6567,7 @@ html[data-theme="light"] .tool-code-surface {
 .input-disabled {
 	color: var(--text-faint);
 	font-size: 13px;
-	max-width: 860px;
+	max-width: var(--chat-col);
 	margin: 0 auto;
 }
 
@@ -7629,12 +7643,6 @@ html[data-theme="light"] .tool-code-surface {
 		/* iOS press feel: dim instantly on touch-down, ease back on release. */
 		transition: opacity 0.18s ease;
 	}
-	.mobile-search-btn::after {
-		content: "";
-		position: absolute;
-		inset: -4px;
-		border-radius: 50%;
-	}
 	/* iOS nav-bar glyphs are bold — thicken the iconic icon's thin 1.5 stroke
 	   (CSS wins over the path's presentation attribute) so it reads at full
 	   weight, not spindly, at this size. */
@@ -8142,19 +8150,18 @@ html[data-theme="light"] .tool-code-surface {
 	}
 
 	/* Filter, docked in the top bar beside Search (portaled from the sidebar).
-	   `order: -1` seats it left of Search. Same 36px circle as the search
-	   button (::after pads the hit area to 44pt); muted until a filter is set. */
+	   `order: -1` seats it left of Search, which keeps its own edge bleed. Same
+	   iOS 44pt touch target as the search button; muted until a filter is set. */
 	.mobile-filter-btn {
 		order: -1;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		position: relative;
-		width: 36px;
-		height: 36px;
+		width: 44px;
+		height: 44px;
 		padding: 0;
-		border: 1px solid var(--border);
-		background: var(--bg-panel);
+		border: none;
+		background: none;
 		color: var(--text-dim);
 		cursor: pointer;
 		border-radius: 50%;
@@ -8163,12 +8170,6 @@ html[data-theme="light"] .tool-code-surface {
 		transition:
 			opacity 0.18s ease,
 			color 0.12s ease;
-	}
-	.mobile-filter-btn::after {
-		content: "";
-		position: absolute;
-		inset: -4px;
-		border-radius: 50%;
 	}
 	.mobile-filter-btn svg {
 		stroke-width: 1.8;
@@ -8222,7 +8223,7 @@ html[data-theme="light"] .tool-code-surface {
 /* ── AskUserQuestion card ────────────────────────────────── */
 
 .ask-card {
-	max-width: 860px;
+	max-width: var(--chat-col);
 	margin: 4px auto 16px;
 	background: var(--bg-panel);
 	border: 1px solid rgba(255, 59, 59, 0.4);

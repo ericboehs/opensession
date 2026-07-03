@@ -49,7 +49,7 @@ export const WorkBlock = React.memo(function WorkBlock({
   ).length;
 
   return (
-    <div className="mx-auto mb-3 max-w-[860px]">
+    <div className="mx-auto mb-3 max-w-[var(--chat-col)]">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}

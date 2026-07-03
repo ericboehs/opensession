@@ -123,9 +123,17 @@ export const MessageBubble = React.memo(function MessageBubble({
 		// the current viewer. Falls back to "You" when the owner is unknown.
 		const sender = attribution ? attribution.name : owner;
 		const fromOther = sender && sender !== me ? sender : null;
+		// Your own settled messages skip the label entirely — the right-aligned
+		// bubble already says "you". Turns sent by someone else keep the
+		// attribution label.
 		return (
 			<div className="msg msg-user">
-				<div className="msg-label msg-label-user">{fromOther || "You"}<MsgTime ts={entry.timestamp} /></div>
+				{fromOther && (
+					<div className="msg-label msg-label-user">
+						{fromOther}
+						<MsgTime ts={entry.timestamp} />
+					</div>
+				)}
 				{displayContent && (
 					<div
 						className="msg-body msg-body-user markdown"
