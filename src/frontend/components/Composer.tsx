@@ -18,6 +18,8 @@ import {
 import { Tooltip } from "../ui/tooltip";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
+import { motion, AnimatePresence } from "motion/react";
+import { composerMorph, composerChipMotion } from "../ui/motion";
 
 interface Props {
   /**
@@ -374,14 +376,22 @@ export function Composer({
 
   return (
     <div className="composer-wrap">
-      <div
+      <motion.div
+        layout
+        animate={{ borderRadius: minimized ? 999 : 16 }}
+        transition={composerMorph}
         className={`composer ${disabled ? "composer-disabled" : ""} ${minimized ? "composer-min" : ""}`}
         onDrop={handleDrop}
         onDragOver={(e) => canAttach && e.preventDefault()}
       >
         <ImageThumbs images={imgs} onRemove={removeImage} disabled={disabled} />
         <FileChips files={fls} onRemove={removeFile} disabled={disabled} />
-        <div className="composer-input-wrap" ref={mentions.inputWrapRef}>
+        <motion.div
+          layout="position"
+          transition={composerMorph}
+          className="composer-input-wrap"
+          ref={mentions.inputWrapRef}
+        >
           {mentions.popup}
           <textarea
             ref={textareaRef}
@@ -407,10 +417,10 @@ export function Composer({
             rows={1}
             autoFocus={autoFocus}
           />
-        </div>
+        </motion.div>
         <div className="composer-toolbar" ref={toolbarRef}>
           {canAttach && (
-            <div className="composer-pop-wrap">
+            <motion.div layout="position" transition={composerMorph} className="composer-pop-wrap">
               <Tooltip label="Add files or a file reference">
                 <button
                   type="button"
@@ -467,92 +477,120 @@ export function Composer({
                   e.target.value = "";
                 }}
               />
-            </div>
+            </motion.div>
           )}
 
-          <div className="palette-pill" title={modelTitle || "Model for this session"}>
-            <span className={`composer-model-dot ${isCodex ? "dot-codex" : "dot-claude"}`} />
-            <span className="palette-pill-label">{modelShortLabel(effectiveModel, models)}</span>
-            <IconChevronDown className="palette-chevron" size={20} />
-            <select
-              className="palette-select-overlay"
-              value={model}
-              onChange={(e) => onModelChange(e.target.value)}
-              disabled={disabled || modelDisabled}
-              aria-label="Model"
-            >
-              <option value="">{modelShortLabel(defaultModel, models)}</option>
-              {models
-                .filter((m) => m.id !== defaultModel)
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-            </select>
-          </div>
-
-          {onEffortChange && (
-            <div
-              className="palette-pill"
-              title="Reasoning effort — applies to new turns (not yet enforced server-side)"
-            >
-              <span className="palette-effort-icon" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-              <span className="palette-pill-label">
-                {EFFORTS.find((e) => e.id === effort)?.label ?? "High"}
-              </span>
-              <IconChevronDown className="palette-chevron" size={20} />
-              <select
-                className="palette-select-overlay"
-                value={effort ?? "high"}
-                onChange={(e) => onEffortChange(e.target.value)}
-                disabled={disabled}
-                aria-label="Reasoning effort"
+          {/* The model/effort/goal chips exist only in the expanded state; they
+              fade + scale in as the composer grows. AnimatePresence(initial=false)
+              skips the enter on first paint so they don't animate in on a fresh
+              desktop load; the chips carry no `exit` (see composerChipMotion) so
+              they're removed instantly on collapse rather than reflowing through
+              the reordered pill row. */}
+          <AnimatePresence initial={false}>
+            {!minimized && (
+              <motion.div
+                key="model"
+                layout="position"
+                {...composerChipMotion}
+                className="palette-pill"
+                title={modelTitle || "Model for this session"}
               >
-                {EFFORTS.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {onSetGoal && (
-            <div className="composer-pop-wrap">
-              <Tooltip label={goal ? `Goal: ${goal}` : "Pin a goal for this session"}>
-                <button
-                  type="button"
-                  className={`palette-icon-btn composer-goal-btn ${goal ? "is-on" : ""}`}
-                  onClick={() => setMenu(menu === "goal" ? null : "goal")}
-                  disabled={disabled}
-                  aria-pressed={!!goal}
+                <span className={`composer-model-dot ${isCodex ? "dot-codex" : "dot-claude"}`} />
+                <span className="palette-pill-label">
+                  {modelShortLabel(effectiveModel, models)}
+                </span>
+                <IconChevronDown className="palette-chevron" size={20} />
+                <select
+                  className="palette-select-overlay"
+                  value={model}
+                  onChange={(e) => onModelChange(e.target.value)}
+                  disabled={disabled || modelDisabled}
+                  aria-label="Model"
                 >
-                  <IconCrosshair size={24} />
-                  {goal && <span className="composer-goal-label">Goal</span>}
-                </button>
-              </Tooltip>
-              {menu === "goal" && (
-                <GoalPopover
-                  initial={goal || ""}
-                  onClose={() => setMenu(null)}
-                  onSubmit={(g) => {
-                    onSetGoal(g);
-                    setMenu(null);
-                  }}
-                />
-              )}
-            </div>
-          )}
+                  <option value="">{modelShortLabel(defaultModel, models)}</option>
+                  {models
+                    .filter((m) => m.id !== defaultModel)
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                </select>
+              </motion.div>
+            )}
+
+            {!minimized && onEffortChange && (
+              <motion.div
+                key="effort"
+                layout="position"
+                {...composerChipMotion}
+                className="palette-pill"
+                title="Reasoning effort — applies to new turns (not yet enforced server-side)"
+              >
+                <span className="palette-effort-icon" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+                <span className="palette-pill-label">
+                  {EFFORTS.find((e) => e.id === effort)?.label ?? "High"}
+                </span>
+                <IconChevronDown className="palette-chevron" size={20} />
+                <select
+                  className="palette-select-overlay"
+                  value={effort ?? "high"}
+                  onChange={(e) => onEffortChange(e.target.value)}
+                  disabled={disabled}
+                  aria-label="Reasoning effort"
+                >
+                  {EFFORTS.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.label}
+                    </option>
+                  ))}
+                </select>
+              </motion.div>
+            )}
+
+            {!minimized && onSetGoal && (
+              <motion.div
+                key="goal"
+                layout="position"
+                {...composerChipMotion}
+                className="composer-pop-wrap"
+              >
+                <Tooltip label={goal ? `Goal: ${goal}` : "Pin a goal for this session"}>
+                  <button
+                    type="button"
+                    className={`palette-icon-btn composer-goal-btn ${goal ? "is-on" : ""}`}
+                    onClick={() => setMenu(menu === "goal" ? null : "goal")}
+                    disabled={disabled}
+                    aria-pressed={!!goal}
+                  >
+                    <IconCrosshair size={24} />
+                    {goal && <span className="composer-goal-label">Goal</span>}
+                  </button>
+                </Tooltip>
+                {menu === "goal" && (
+                  <GoalPopover
+                    initial={goal || ""}
+                    onClose={() => setMenu(null)}
+                    onSubmit={(g) => {
+                      onSetGoal(g);
+                      setMenu(null);
+                    }}
+                  />
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {leftExtra}
           <div className="composer-spacer" />
 
-          <VoiceInput onText={insertDictation} disabled={disabled} />
+          <motion.div layout="position" transition={composerMorph} className="composer-voice-wrap">
+            <VoiceInput onText={insertDictation} disabled={disabled} />
+          </motion.div>
 
           {busy && onSteerSend && (
             <Tooltip label="Fold in at Michael's next stopping point — don't interrupt the current turn">
@@ -568,7 +606,11 @@ export function Composer({
           {/* When a `sendMenu` is wired, the send button fuses with a caret into a
               Slack-style split button (send now / send later). Without it, the
               send button stands alone as a plain circle. */}
-          <div className={`composer-send-split ${sendMenu ? "has-menu" : ""} ${busy ? "is-interrupt" : ""}`}>
+          <motion.div
+            layout="position"
+            transition={composerMorph}
+            className={`composer-send-split ${sendMenu ? "has-menu" : ""} ${busy ? "is-interrupt" : ""}`}
+          >
             <Tooltip
               label={
                 sendTitle ||
@@ -590,9 +632,9 @@ export function Composer({
                 if (!isControlled) setInnerValue("");
               },
             })}
-          </div>
+          </motion.div>
         </div>
-      </div>
+      </motion.div>
       {hint && <div className="composer-hint">{hint}</div>}
     </div>
   );

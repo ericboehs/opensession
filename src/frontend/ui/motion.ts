@@ -25,3 +25,27 @@ export const popupMotion = {
 	exit: { opacity: 0, transition: { duration: 0.1 } },
 	transition: popupTransition,
 } as const;
+
+/**
+ * Morph for the mobile composer collapsing to / expanding from its single-row
+ * resting pill. Gentle spring with a hint of bounce so the shape change reads
+ * as a settle, not a snap. Used as the `layout` transition on the composer and
+ * the enter/exit of its toolbar chips.
+ */
+export const composerMorph: Transition = {
+	type: "spring",
+	duration: 0.32,
+	bounce: 0.14,
+};
+
+/**
+ * Enter for the composer's toolbar chips (model/effort/goal) as it expands — a
+ * quick fade + scale from the collapsed baseline. Deliberately no `exit`: on
+ * collapse the chips are removed instantly (the container's layout glide carries
+ * the motion) so they don't briefly reflow through the reordered single-row.
+ */
+export const composerChipMotion = {
+	initial: { opacity: 0, scale: 0.8 },
+	animate: { opacity: 1, scale: 1 },
+	transition: composerMorph,
+} as const;

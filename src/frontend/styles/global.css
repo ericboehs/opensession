@@ -5857,12 +5857,14 @@ html[data-theme="light"] .tool-code-surface {
    focusing or typing drops the class and restores the full stacked toolbar.
    `display: contents` on the toolbar lifts its buttons into this flex row so
    the textarea can sit between the "+" and the mic/send, and `order` sequences
-   them. The model/effort/goal chips and spacer are hidden in this state. */
+   them. The model/effort/goal chips are unmounted in this state (they animate
+   in via AnimatePresence on expand); the spacer is hidden. Motion drives the
+   morph between the two states — see composerMorph in ui/motion.ts. The
+   border-radius is animated inline by Motion, so it isn't set here. */
 .composer.composer-min {
 	display: flex;
 	align-items: center;
 	gap: 4px;
-	border-radius: 999px;
 	padding: 4px 6px;
 }
 .composer.composer-min .composer-toolbar {
@@ -5880,7 +5882,7 @@ html[data-theme="light"] .tool-code-surface {
 .composer.composer-min .composer-pop-wrap:has(.composer-add-btn) {
 	order: 1;
 }
-.composer.composer-min .voice-mic-btn {
+.composer.composer-min .composer-voice-wrap {
 	order: 3;
 }
 .composer.composer-min .composer-send-queue {
@@ -5889,10 +5891,15 @@ html[data-theme="light"] .tool-code-surface {
 .composer.composer-min .composer-send-split {
 	order: 5;
 }
-.composer.composer-min .palette-pill,
-.composer.composer-min .composer-spacer,
-.composer.composer-min .composer-pop-wrap:has(.composer-goal-btn) {
+.composer.composer-min .composer-spacer {
 	display: none;
+}
+
+/* Inline wrapper around the dictation mic — lets Motion give it a layout box
+   so it glides between rows during the morph without disturbing either state. */
+.composer-voice-wrap {
+	display: inline-flex;
+	align-items: center;
 }
 
 .composer-textarea {
