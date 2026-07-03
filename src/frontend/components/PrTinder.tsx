@@ -213,6 +213,12 @@ export function PrTinder({ onExit }: Props) {
 	const done = deck !== null && index >= cards.length;
 	const next = cards[index + 1];
 
+	// A new card always starts at the top (the deck area is one normal scroll).
+	const deckScrollRef = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		deckScrollRef.current?.scrollTo(0, 0);
+	}, [index]);
+
 	function showToast(text: string, undo?: () => void) {
 		if (toastTimer.current) clearTimeout(toastTimer.current);
 		setToast({ text, undo });
@@ -493,50 +499,60 @@ export function PrTinder({ onExit }: Props) {
 					onExit={onExit}
 				/>
 			) : (
-				<div className="relative flex w-full max-w-[640px] flex-1 items-center justify-center px-4 pb-4">
-					{/* Peek of the next card behind the top one, for depth. */}
-					{next && (
-						<div
-							className="absolute inset-x-4 top-1 bottom-5 scale-[0.97] rounded-lg border border-line bg-panel opacity-60"
-							aria-hidden
-						/>
-					)}
-					<AnimatePresence initial={false} custom={dir}>
-						<SwipeCard
-							key={card!.number}
-							pr={card!}
-							labels={cardLabels(card!)}
-							custom={dir}
-							onKeep={keep}
-							onClose={close}
-							onRemoveLabel={(name) =>
-								toggleLabel(
-									name,
-									cardLabels(card!).find((l) => l.name === name)?.color || "",
-								)
-							}
-						/>
-					</AnimatePresence>
-
-					{/* Comment / label panels float over the card's lower half. */}
-					{panel === "comment" && card && (
-						<CommentPanel
-							key={`comment-${card.number}`}
-							busy={busy}
-							onSubmit={comment}
-							onCancel={() => setPanel(null)}
-						/>
-					)}
-					{panel === "label" && card && (
-						<LabelPanel
-							key={`label-${card.number}`}
-							all={deck.labels}
-							active={new Set(cardLabels(card).map((l) => l.name))}
-							onToggle={toggleLabel}
-							onClose={() => setPanel(null)}
-						/>
-					)}
+				/* The deck area scrolls like a normal page: the card is auto-height
+				   (the full PR description, no inner scroll pane) and long bodies
+				   just flow past the fold. */
+				<div
+					ref={deckScrollRef}
+					className="min-h-0 w-full flex-1 overflow-y-auto px-4 pb-4"
+				>
+					<div className="relative mx-auto w-full max-w-[640px]">
+						{/* Peek of the next card behind the top one, for depth. */}
+						{next && (
+							<div
+								className="absolute inset-x-0 -bottom-1.5 top-3 scale-x-[0.97] rounded-lg border border-line bg-panel opacity-60"
+								aria-hidden
+							/>
+						)}
+						<AnimatePresence initial={false} custom={dir}>
+							<SwipeCard
+								key={card!.number}
+								pr={card!}
+								labels={cardLabels(card!)}
+								custom={dir}
+								onKeep={keep}
+								onClose={close}
+								onRemoveLabel={(name) =>
+									toggleLabel(
+										name,
+										cardLabels(card!).find((l) => l.name === name)?.color ||
+											"",
+									)
+								}
+							/>
+						</AnimatePresence>
+					</div>
 				</div>
+			)}
+
+			{/* Comment / label panels float above the action bar (they must stay
+			    on-screen however far the card is scrolled). */}
+			{panel === "comment" && card && (
+				<CommentPanel
+					key={`comment-${card.number}`}
+					busy={busy}
+					onSubmit={comment}
+					onCancel={() => setPanel(null)}
+				/>
+			)}
+			{panel === "label" && card && deck && (
+				<LabelPanel
+					key={`label-${card.number}`}
+					all={deck.labels}
+					active={new Set(cardLabels(card).map((l) => l.name))}
+					onToggle={toggleLabel}
+					onClose={() => setPanel(null)}
+				/>
 			)}
 
 			{/* Action bar (works without gestures). */}
@@ -628,9 +644,16 @@ function SwipeCard({
 			onKeep();
 	}
 
-	// Exit flings left for close, right for keep/comment (both are "dealt with").
+	// Exit flings left for close, right for keep/comment (both are "dealt
+	// with"). The card lives in normal flow (auto height), so the exiting one
+	// is popped to absolute for its fling — otherwise it would hold layout and
+	// shove the incoming card down while both are mounted.
 	const variants = {
 		exit: (a: Action | null) => ({
+			position: "absolute" as const,
+			top: 0,
+			left: 0,
+			right: 0,
 			x: a === "close" ? -640 : 640,
 			rotate: a === "close" ? -12 : 12,
 			opacity: 0,
@@ -645,7 +668,7 @@ function SwipeCard({
 
 	return (
 		<motion.div
-			className="absolute inset-x-4 top-1 bottom-5 flex touch-pan-y flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-[0_8px_30px_rgba(0,0,0,0.28)]"
+			className="relative z-10 flex w-full touch-pan-y flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-[0_8px_30px_rgba(0,0,0,0.28)]"
 			style={{ x, rotate }}
 			drag="x"
 			dragConstraints={{ left: 0, right: 0 }}
@@ -726,12 +749,14 @@ function SwipeCard({
 				</div>
 			</div>
 
-			{/* touch-pan-y so vertical gestures scroll the body but horizontal ones
-			    bubble up to the card's drag handler. */}
-			<div className="min-h-0 flex-1 touch-pan-y overflow-y-auto px-5 py-4">
+			{/* Full-height body: the whole description renders, no inner scroll —
+			    overflow flows into the deck's normal page scroll. */}
+			<div className="px-5 py-4">
 				{bodyHtml ? (
+					/* .pr-body-md clamps itself to 360px + inner scroll for the PR
+					   panel — undo that here: the card shows the whole description. */
 					<div
-						className="pr-body-md markdown"
+						className="pr-body-md markdown max-h-none overflow-visible p-0 text-[13px]"
 						dangerouslySetInnerHTML={{ __html: bodyHtml }}
 					/>
 				) : (
@@ -754,7 +779,7 @@ function CommentPanel({
 	const [text, setText] = useState("");
 	return (
 		<div
-			className="absolute inset-x-8 bottom-10 z-20 rounded-lg border border-line-strong bg-panel p-3 shadow-[0_10px_34px_rgba(0,0,0,0.4)]"
+			className="absolute inset-x-4 bottom-24 z-30 mx-auto w-auto max-w-[600px] rounded-lg border border-line-strong bg-panel p-3 shadow-[0_10px_34px_rgba(0,0,0,0.4)] sm:inset-x-auto sm:left-1/2 sm:w-[600px] sm:-translate-x-1/2"
 			onPointerDownCapture={(e) => e.stopPropagation()}
 		>
 			<textarea
@@ -811,7 +836,7 @@ function LabelPanel({
 	const rows = [...shortlist, ...rest].filter(match);
 	return (
 		<div
-			className="absolute inset-x-8 bottom-10 z-20 flex max-h-[55%] flex-col rounded-lg border border-line-strong bg-panel shadow-[0_10px_34px_rgba(0,0,0,0.4)]"
+			className="absolute inset-x-4 bottom-24 z-30 mx-auto flex max-h-[55%] w-auto max-w-[600px] flex-col rounded-lg border border-line-strong bg-panel shadow-[0_10px_34px_rgba(0,0,0,0.4)] sm:inset-x-auto sm:left-1/2 sm:w-[600px] sm:-translate-x-1/2"
 			onPointerDownCapture={(e) => e.stopPropagation()}
 		>
 			<div className="flex items-center gap-2 border-b border-line px-3 py-2">
