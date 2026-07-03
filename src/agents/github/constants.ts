@@ -11,6 +11,8 @@ export const PR_MERGED_EVENT_KEY = "github:pr_merged";
 export const DOCS_SYNC_AUTOMATION_NAME = "docs-sync";
 /** Branch prefix for docs-sync's own PRs — skipped on merge so it can't loop. */
 export const DOCS_SYNC_BRANCH_PREFIX = "auto-docs-sync-";
+/** #proj-help-center — where docs-sync announces the PRs it opens. */
+export const DOCS_SYNC_SLACK_CHANNEL = "C09BAFFK8F8";
 
 export const LABEL_REVIEW = "michael-review";
 export const LABEL_AUTOFIX = "michael-auto-fix";
