@@ -1046,7 +1046,11 @@ function App() {
 								navigate({ view: "notes", sel: { kind: "note", id } })
 							}
 							onOpenSearch={() => setSearchOpen(true)}
-							headerActionsEl={headerActionsEl}
+							// Only hand the sidebar the top-bar actions slot on the root
+							// page — on a pushed page (chat, etc.) the sidebar is still
+							// mounted underneath and would portal its filter button into
+							// the chat's top bar.
+							headerActionsEl={mobileDetail ? null : headerActionsEl}
 							onOpenArchived={() => navigate({ view: "archived" })}
 							onOpenCatchUp={() => navigate({ view: "catchup" })}
 							catchUpActive={route.view === "catchup"}
