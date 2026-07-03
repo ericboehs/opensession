@@ -117,10 +117,12 @@ function harnessEntryFor(text: string, ts: string): TranscriptEntry[] | null {
     }];
   }
   if (t.startsWith("<system-reminder>")) return [];
-  // The SDK writes this marker into the jsonl whenever a turn is interrupted.
+  // The SDK writes this marker into the jsonl whenever a turn is interrupted
+  // ("… for tool use" when the abort landed on a pending tool call).
   // Interrupt-and-redirect is the default send-while-busy now, so this would
   // otherwise post on nearly every follow-up message — drop it as noise.
-  if (t.trimEnd() === "[Request interrupted by user]") return [];
+  if (/^\[Request interrupted by user( for tool use)?\]$/.test(t.trimEnd()))
+    return [];
   return null;
 }
 
@@ -628,19 +630,25 @@ export function parseTranscriptTail(
       const nl = buf.indexOf(0x0a);
       chunk = nl !== -1 ? buf.subarray(nl + 1) : Buffer.alloc(0);
     }
+    // If the read caught the writer mid-line, the tail after the last newline
+    // is half an entry. Point endOffset at the last complete line so the
+    // watcher re-reads the whole line once it's finished, instead of starting
+    // mid-line and dropping the entry as unparseable.
+    const lastNl = buf.lastIndexOf(0x0a);
+    const endOffset = size - (buf.length - (lastNl + 1));
     const lines = chunk.toString("utf-8").split("\n").filter((l) => l.trim());
     const entries = parseClaudeLines(lines);
 
     if (!truncated || entries.length >= minEntries)
-      return { entries, truncated, endOffset: size };
+      return { entries, truncated, endOffset };
     if (win >= MAX_TAIL_BYTES) {
       // A single line larger than the cap (e.g. a huge embedded tool result)
       // would leave the tail empty — fall back to the full parse so the viewer
       // is never blank.
       if (entries.length === 0) {
-        return { entries: parseTranscript(path), truncated: false, endOffset: size };
+        return { entries: parseTranscript(path), truncated: false, endOffset };
       }
-      return { entries, truncated, endOffset: size };
+      return { entries, truncated, endOffset };
     }
     win = Math.min(win * 4, MAX_TAIL_BYTES);
   }
@@ -725,11 +733,21 @@ export function parseTranscriptFrom(
   } catch {
     return { entries: [], newOffset: byteOffset };
   }
-  const chunk = buf.toString("utf-8");
+  // Consume only complete (newline-terminated) lines. The writer appends big
+  // jsonl lines non-atomically, so a poll can catch the last line half-written;
+  // advancing the offset to EOF would strand its remainder as unparseable
+  // garbage on the next poll — silently losing the entry (a lost *user* line
+  // has no other live delivery path, so the sender's bubble never reconciles).
+  // Leave the partial tail for the next poll instead.
+  const lastNl = buf.lastIndexOf(0x0a);
+  if (lastNl === -1) return { entries: [], newOffset: byteOffset };
+  const consumed = lastNl + 1;
+  const chunk = buf.subarray(0, consumed).toString("utf-8");
+  const newOffset = byteOffset + consumed;
   const lines = chunk.split("\n").filter((l) => l.trim());
 
   if (isCodexRolloutPath(path)) {
-    return { entries: parseCodexLines(lines), newOffset: size };
+    return { entries: parseCodexLines(lines), newOffset };
   }
 
   const entries: TranscriptEntry[] = [];
@@ -745,5 +763,5 @@ export function parseTranscriptFrom(
     entries.push(...parseEntry(parsed));
   }
 
-  return { entries, newOffset: size };
+  return { entries, newOffset };
 }

@@ -272,6 +272,23 @@ describe("parseTranscriptFrom", () => {
     const tail = entries.slice(-2).map((e) => e.type);
     expect(tail).toEqual(["tool_result", "assistant"]);
   });
+
+  it("leaves a half-written trailing line for the next poll instead of skipping it", () => {
+    const path = writeFixture([BASIC_LINES[0]]);
+    // Simulate catching the writer mid-append: a complete line plus the first
+    // half of the next one, no trailing newline yet.
+    const nextLine = assistantLine("a9", "Half-written reply");
+    writeFileSync(path, nextLine.slice(0, 25), { flag: "a" });
+    const first = parseTranscriptFrom(path, 0);
+    expect(first.entries.map((e) => e.id)).toEqual(["u1"]);
+    // Offset must stop at the end of the complete line, not EOF.
+    expect(first.newOffset).toBe(Buffer.byteLength(BASIC_LINES[0], "utf-8") + 1);
+    // Writer finishes the line; the next poll picks up the WHOLE entry.
+    writeFileSync(path, nextLine.slice(25) + "\n", { flag: "a" });
+    const second = parseTranscriptFrom(path, first.newOffset);
+    expect(second.entries.map((e) => e.id)).toEqual(["a9"]);
+    expect(second.newOffset).toBe(Bun.file(path).size);
+  });
 });
 
 describe("Codex rollout parsing", () => {

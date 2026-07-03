@@ -683,6 +683,19 @@ export function SessionViewer({
 					userPool.splice(ui, 1);
 					return false;
 				}
+				// Steers pending at the same turn boundary get joined into ONE user
+				// turn ("\n\n"-separated, each with its attribution prefix), possibly
+				// alongside a harness nudge — so the exact match above never fires.
+				// The "[user] " prefix is distinctive enough to claim by containment.
+				// Don't splice: the same joined entry may cover other bubbles too.
+				if (
+					p.user &&
+					userPool.some(
+						(u) => u.c.includes(attributed) && u.t >= p.sentAt - 30_000,
+					)
+				) {
+					return false;
+				}
 				return Date.now() - p.sentAt < 120_000;
 			});
 			return remaining.length === prev.length ? prev : remaining;
@@ -705,6 +718,10 @@ export function SessionViewer({
 				userPool.splice(i, 1);
 				return false;
 			}
+			// Same composite case as the pending reconcile: co-released steers land
+			// joined in one user turn — claim by containment (no splice; one joined
+			// entry can cover several receipts).
+			if (s.user && userPool.some((u) => u.includes(attributed))) return false;
 			return true;
 		});
 	}, [steered, entries]);
