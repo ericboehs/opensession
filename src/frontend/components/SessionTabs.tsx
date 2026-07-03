@@ -94,132 +94,136 @@ export function SessionTabs({
 
 	return (
 		<div className="session-tabs" role="tablist">
-			{tabs.map((session) => {
-				const key = session.id;
-				const waiting = !!session.waitingForInput;
-				const hex = colorHex(colors[key]);
-				return (
-					<div
-						key={key}
-						role="tab"
-						aria-selected={key === activeId}
-						className={`session-tab ${key === activeId ? "session-tab-active" : ""} ${
-							waiting ? "session-tab-waiting" : ""
-						} ${hex ? "session-tab-colored" : ""}`}
-						style={
-							hex ? ({ "--tab-color": hex } as React.CSSProperties) : undefined
-						}
-						onClick={() => onSelect(session)}
-						onContextMenu={(e) => {
-							e.preventDefault();
-							setMenu({ key, x: e.clientX, y: e.clientY });
-						}}
-						title={session.title}
-					>
-						{waiting ? (
-							<span className="session-tab-dot session-tab-dot-waiting" />
-						) : (
-							session.isRunning && <span className="session-tab-dot" />
-						)}
-						{editKey === key ? (
-							<input
-								className="session-tab-rename"
-								value={draft}
-								autoFocus
-								onChange={(e) => setDraft(e.target.value)}
-								onClick={(e) => e.stopPropagation()}
-								onDoubleClick={(e) => e.stopPropagation()}
-								onBlur={commitRename}
-								onKeyDown={(e) => {
-									if (e.key === "Enter") commitRename();
-									else if (e.key === "Escape") setEditKey(null);
-									e.stopPropagation();
-								}}
-							/>
-						) : (
-							<span
-								className="session-tab-title"
-								onDoubleClick={(e) => {
-									e.stopPropagation();
-									setDraft(session.title);
-									setEditKey(key);
-								}}
-							>
-								{session.title}
-							</span>
-						)}
-						{/* Unsent draft in a sibling chat (the active tab's draft is
-						    already on screen in the composer — no pencil needed). */}
-						{key !== activeId && hasDraft(`chat:${key}`) && (
-							<span className="session-tab-draft" title="Unsent draft">
-								<IconPencil size={20} />
-							</span>
-						)}
-						<button
-							type="button"
-							className="session-tab-close"
-							aria-label="Close chat"
-							title="Close chat"
-							onClick={(e) => {
-								e.stopPropagation();
-								onClose(session);
+			<div className="session-tabs-scroll">
+				{tabs.map((session) => {
+					const key = session.id;
+					const waiting = !!session.waitingForInput;
+					const hex = colorHex(colors[key]);
+					return (
+						<div
+							key={key}
+							role="tab"
+							aria-selected={key === activeId}
+							className={`session-tab ${key === activeId ? "session-tab-active" : ""} ${
+								waiting ? "session-tab-waiting" : ""
+							} ${hex ? "session-tab-colored" : ""}`}
+							style={
+								hex ? ({ "--tab-color": hex } as React.CSSProperties) : undefined
+							}
+							onClick={() => onSelect(session)}
+							onContextMenu={(e) => {
+								e.preventDefault();
+								setMenu({ key, x: e.clientX, y: e.clientY });
 							}}
+							title={session.title}
 						>
-							×
-						</button>
-					</div>
-				);
-			})}
-			<button
-				type="button"
-				className="session-tab session-tab-new"
-				aria-label="New chat in this workspace"
-				title="New chat — shares this workspace's worktree (right-click for options)"
-				onClick={() => onNewChat("share")}
-				onContextMenu={(e) => {
-					e.preventDefault();
-					setNewMenu({ x: e.clientX, y: e.clientY });
-				}}
-			>
-				+
-			</button>
-
-			{/* History: every archived (closed) chat of this workspace, in one
-			    list. Clicking a row opens the chat read-only-ish (it gets a tab
-			    while viewed); the ⟲ restores it into the strip for good. */}
-			{archived.length > 0 && (
-				<Menu.Root>
-					<Menu.Trigger
-						className="session-tab session-tab-history"
-						aria-label="Archived chats"
-						title="Archived chats"
-					>
-						<IconHistory size={22} />
-					</Menu.Trigger>
-					<Menu.Popup align="start" sideOffset={4} className="min-w-[240px] max-w-[320px]">
-						{archived.map((s) => (
-							<Menu.Item key={s.id} onClick={() => onSelect(s)}>
-								<span className="min-w-0 flex-1 truncate">{s.title}</span>
-								<span className="shrink-0 text-[11.5px] text-faint">
-									{relativeTime(s.lastActivity)}
-								</span>
-								<button
-									type="button"
-									className="flex shrink-0 cursor-pointer items-center rounded-sm border-0 bg-transparent p-0.5 text-dim hover:text-fg"
-									aria-label="Restore chat"
-									title="Restore to tabs"
-									onClick={(e) => {
+							{waiting ? (
+								<span className="session-tab-dot session-tab-dot-waiting" />
+							) : (
+								session.isRunning && <span className="session-tab-dot" />
+							)}
+							{editKey === key ? (
+								<input
+									className="session-tab-rename"
+									value={draft}
+									autoFocus
+									onChange={(e) => setDraft(e.target.value)}
+									onClick={(e) => e.stopPropagation()}
+									onDoubleClick={(e) => e.stopPropagation()}
+									onBlur={commitRename}
+									onKeyDown={(e) => {
+										if (e.key === "Enter") commitRename();
+										else if (e.key === "Escape") setEditKey(null);
 										e.stopPropagation();
-										onRestore(s);
+									}}
+								/>
+							) : (
+								<span
+									className="session-tab-title"
+									onDoubleClick={(e) => {
+										e.stopPropagation();
+										setDraft(session.title);
+										setEditKey(key);
 									}}
 								>
-									<IconRestore size={20} />
-								</button>
-							</Menu.Item>
-						))}
-					</Menu.Popup>
-				</Menu.Root>
-			)}
+									{session.title}
+								</span>
+							)}
+							{/* Unsent draft in a sibling chat (the active tab's draft is
+							    already on screen in the composer — no pencil needed). */}
+							{key !== activeId && hasDraft(`chat:${key}`) && (
+								<span className="session-tab-draft" title="Unsent draft">
+									<IconPencil size={20} />
+								</span>
+							)}
+							<button
+								type="button"
+								className="session-tab-close"
+								aria-label="Close chat"
+								title="Close chat"
+								onClick={(e) => {
+									e.stopPropagation();
+									onClose(session);
+								}}
+							>
+								×
+							</button>
+						</div>
+						);
+					})}
+				<button
+					type="button"
+					className="session-tab session-tab-new"
+					aria-label="New chat in this workspace"
+					title="New chat — shares this workspace's worktree (right-click for options)"
+					onClick={() => onNewChat("share")}
+					onContextMenu={(e) => {
+						e.preventDefault();
+						setNewMenu({ x: e.clientX, y: e.clientY });
+					}}
+				>
+					+
+				</button>
+			</div>
+			<div className="session-tabs-actions">
+
+				{/* History: every archived (closed) chat of this workspace, in one
+				    list. Clicking a row opens the chat read-only-ish (it gets a tab
+				    while viewed); the ⟲ restores it into the strip for good. */}
+				{archived.length > 0 && (
+					<Menu.Root>
+						<Menu.Trigger
+							className="session-tab session-tab-history"
+							aria-label="Archived chats"
+							title="Archived chats"
+						>
+							<IconHistory size={22} />
+						</Menu.Trigger>
+						<Menu.Popup align="end" sideOffset={4} className="min-w-[240px] max-w-[320px]">
+							{archived.map((s) => (
+								<Menu.Item key={s.id} onClick={() => onSelect(s)}>
+									<span className="min-w-0 flex-1 truncate">{s.title}</span>
+									<span className="shrink-0 text-[11.5px] text-faint">
+										{relativeTime(s.lastActivity)}
+									</span>
+									<button
+										type="button"
+										className="flex shrink-0 cursor-pointer items-center rounded-sm border-0 bg-transparent p-0.5 text-dim hover:text-fg"
+										aria-label="Restore chat"
+										title="Restore to tabs"
+										onClick={(e) => {
+											e.stopPropagation();
+											onRestore(s);
+										}}
+									>
+										<IconRestore size={20} />
+									</button>
+								</Menu.Item>
+							))}
+						</Menu.Popup>
+					</Menu.Root>
+				)}
+			</div>
 
 			{newMenu && (
 				<div

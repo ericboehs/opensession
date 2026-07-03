@@ -26,12 +26,21 @@ import { shortTime, elapsedClock } from "../lib/time";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
 import {
 	IconChevronDown,
+	IconArchive,
+	IconFilter,
 	IconGitMerge,
+	IconCheck,
+	IconClock,
+	IconFlame,
+	IconInbox,
+	IconMessageQuestion,
 	IconPencil,
 	IconPlus,
 	IconPullRequest,
+	IconReviewNodes,
 	IconSearch,
-	IconSliders,
+	IconStack,
+	IconStar,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { RepoTile, swatchColor } from "./RepoTile";
@@ -42,6 +51,31 @@ const AUTOMATION_COLOR = "#d29922";
 // Long-press (touch) tuning for the mobile action sheet.
 const LONG_PRESS_MS = 450; // hold before the sheet opens
 const LONG_PRESS_SLOP = 10; // px of finger travel that cancels it (a scroll)
+const SWIPE_REVEAL_PX = 82;
+const SWIPE_OPEN_THRESHOLD = 36;
+const SWIPE_FULL_RATIO = 0.45;
+const SWIPE_COMMIT_MS = 210;
+const SWIPE_AXIS_LOCK_PX = 8;
+
+type SwipeAction = "archive" | "star";
+type SwipeState = { key: string; offset: number; action?: SwipeAction };
+
+function clampSwipe(dx: number, rowWidth: number): number {
+	const limit = Math.max(SWIPE_REVEAL_PX, rowWidth);
+	return Math.max(-limit, Math.min(limit, dx));
+}
+
+function fullSwipeThreshold(rowWidth: number): number {
+	const usableWidth = Math.max(SWIPE_REVEAL_PX, rowWidth - 28);
+	return Math.min(
+		Math.max(SWIPE_REVEAL_PX * 1.8, rowWidth * SWIPE_FULL_RATIO),
+		usableWidth,
+	);
+}
+
+function swipeCommitOffset(action: SwipeAction, rowWidth: number): number {
+	return action === "archive" ? -rowWidth : rowWidth;
+}
 
 // Inline styles for the right-click menus. Kept inline (not in a CSS file)
 // because component-imported CSS isn't linked into the served bundle — only
@@ -49,18 +83,18 @@ const LONG_PRESS_SLOP = 10; // px of finger travel that cancels it (a scroll)
 const CTX_MENU_STYLE: React.CSSProperties = {
 	position: "fixed",
 	zIndex: 3000,
-	minWidth: 180,
-	maxWidth: 280,
+	minWidth: 210,
+	maxWidth: 320,
 	maxHeight: "60vh",
 	overflowY: "auto",
-	padding: 5,
+	padding: 8,
 	background: "var(--bg-panel)",
 	border: "1px solid var(--border-strong)",
-	borderRadius: 8,
-	boxShadow: "0 6px 20px rgba(0, 0, 0, 0.4)",
+	borderRadius: 14,
+	boxShadow: "0 10px 30px rgba(0, 0, 0, 0.32)",
 	display: "flex",
 	flexDirection: "column",
-	gap: 1,
+	gap: 2,
 };
 const CTX_ITEM_STYLE: React.CSSProperties = {
 	display: "block",
@@ -69,9 +103,9 @@ const CTX_ITEM_STYLE: React.CSSProperties = {
 	background: "none",
 	border: "none",
 	color: "var(--text)",
-	fontSize: 13,
-	padding: "6px 8px",
-	borderRadius: 5,
+	fontSize: 14,
+	padding: "9px 11px",
+	borderRadius: 8,
 	cursor: "pointer",
 	whiteSpace: "nowrap",
 	overflow: "hidden",
@@ -80,14 +114,14 @@ const CTX_ITEM_STYLE: React.CSSProperties = {
 const CTX_LABEL_STYLE: React.CSSProperties = {
 	fontSize: 11,
 	color: "var(--text-faint)",
-	padding: "4px 8px 2px",
+	padding: "5px 11px 3px",
 	textTransform: "uppercase",
 	letterSpacing: "0.04em",
 };
 const CTX_SEP_STYLE: React.CSSProperties = {
 	height: 1,
 	background: "var(--border-strong)",
-	margin: "4px 2px",
+	margin: "7px 4px",
 };
 
 // Per-person group dots share the repo-tile swatch palette (RepoTile.tsx) —
@@ -179,55 +213,9 @@ interface Props {
 	 * header — the header's own filter/+ buttons are hidden on mobile.
 	 */
 	headerActionsEl?: HTMLElement | null;
+	/** True once the scrollable workspace list has moved under its header. */
+	onListScrolledChange?: (scrolled: boolean) => void;
 }
-
-// The Reviews entry's icon — the one non-workspace area left in the sidebar
-// (every other tool lives in Settings now).
-const REVIEWS_ICON = (
-	<svg
-		width="20"
-		height="20"
-		viewBox="0 0 16 16"
-		fill="none"
-		stroke="currentColor"
-		strokeWidth="1.4"
-	>
-		<circle cx="4" cy="4" r="1.6" />
-		<circle cx="4" cy="12" r="1.6" />
-		<circle cx="12" cy="12" r="1.6" />
-		<path
-			d="M4 5.6v4.8M12 10.4V8a2.4 2.4 0 0 0-2.4-2.4H7.2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		/>
-		<path
-			d="M8.8 4.2L7.2 5.6l1.6 1.4"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		/>
-	</svg>
-);
-
-// PR Tinder's flame — swipe triage of open PRs, right under Reviews.
-const PR_TINDER_ICON = (
-	<svg
-		width="20"
-		height="20"
-		viewBox="0 0 16 16"
-		fill="none"
-		stroke="currentColor"
-		strokeWidth="1.4"
-	>
-		<path
-			d="M8 14c2.9 0 4.75-1.9 4.75-4.5 0-1.9-1.05-3.2-2.05-4.45C9.85 4 9 3 8.6 1.75c-.45.4-1.35 1.5-1.2 3.4C6.55 5 6.1 4.35 5.9 3.6c-1.4 1.2-2.65 3.2-2.65 5.9C3.25 12.1 5.1 14 8 14Z"
-			strokeLinejoin="round"
-		/>
-		<path
-			d="M8 14c1.35 0 2.2-.95 2.2-2.15 0-1.3-1.1-2.05-2.2-3.35-1.1 1.3-2.2 2.05-2.2 3.35C5.8 13.05 6.65 14 8 14Z"
-			strokeLinejoin="round"
-		/>
-	</svg>
-);
 
 // Groups are rendered in three visually separated bands (spacing between each):
 //   "personal"    — My sessions (split by status), Pinned
@@ -270,6 +258,26 @@ const MINE_STATUS_META: Array<{
 	{ key: "merged", label: "Done", dotColor: "var(--purple)" },
 	{ key: "pending", label: "Backlog", dotColor: "var(--text-faint)" },
 ];
+
+function SidebarGroupIcon({
+	status,
+	color,
+}: {
+	status: MineStatus;
+	color: string;
+}) {
+	const className = "sidebar-group-icon";
+	const style = { color };
+	if (status === "needsinput")
+		return <IconMessageQuestion className={className} style={style} />;
+	if (status === "inprogress")
+		return <IconClock className={className} style={style} />;
+	if (status === "review")
+		return <IconPullRequest className={className} style={style} />;
+	if (status === "merged")
+		return <IconCheck className={className} style={style} />;
+	return <IconInbox className={className} style={style} />;
+}
 
 // A run that died on a terminal failure (usage limits/credits exhausted, API
 // errors) needs a human to act, exactly like a blocked question — it must not
@@ -397,6 +405,7 @@ export function Sidebar({
 	followUser = null,
 	onToggleFollow,
 	headerActionsEl = null,
+	onListScrolledChange,
 }: Props) {
 	const isPhone = useIsPhone();
 	const [search, setSearch] = useState("");
@@ -941,6 +950,41 @@ export function Sidebar({
 			idx >= 0 ? (rest[Math.min(idx, rest.length - 1)] ?? null) : (rest[0] ?? null);
 		onArchive(s, next);
 	}
+	function sessionPinState(s: UnifiedSession) {
+		const keys = [s.id, ...(s.aliasIds || [])].filter(
+			(k, i, a) => pins.includes(k) && a.indexOf(k) === i,
+		);
+		const pinned = keys.length > 0;
+		const toggle = () => {
+			if (pinned) {
+				let next = pins;
+				for (const k of keys) next = togglePin(k);
+				setPins(next);
+			} else {
+				setPins(togglePin(s.id));
+			}
+		};
+		return { pinned, toggle };
+	}
+	function workspacePinState(row: WsRow) {
+		const pinKey = row.workspace ? `workspace:${row.workspace.id}` : row.key;
+		const keys = [
+			pinKey,
+			row.key,
+			...row.chats.flatMap((c) => [c.id, ...(c.aliasIds || [])]),
+		].filter((k, i, a) => pins.includes(k) && a.indexOf(k) === i);
+		const pinned = keys.length > 0;
+		const toggle = () => {
+			if (pinned) {
+				let next = pins;
+				for (const k of keys) next = togglePin(k);
+				setPins(next);
+			} else {
+				setPins(togglePin(pinKey));
+			}
+		};
+		return { pinned, toggle };
+	}
 
 	// Pinned rows (pinned via their own key or a legacy pin on a member chat)
 	// and the focus person's rows — shared by the list rendering below and by
@@ -1045,6 +1089,25 @@ export function Sidebar({
 	const wsPressOrigin = useRef<{ x: number; y: number } | null>(null);
 	const wsLongPressed = useRef(false);
 	const wsMoved = useRef(false);
+	const wsSwipeOrigin = useRef<{ x: number; y: number; width: number } | null>(
+		null,
+	);
+	const wsSwiping = useRef(false);
+	const wsSwipeOffset = useRef(0);
+	const [wsSwipe, setWsSwipe] = useState<SwipeState | null>(null);
+	const [wsDraggingKey, setWsDraggingKey] = useState<string | null>(null);
+	useEffect(() => {
+		if (!isPhone) {
+			setWsSwipe(null);
+			wsSwipeOffset.current = 0;
+			setWsDraggingKey(null);
+		}
+	}, [isPhone]);
+	useEffect(() => {
+		setWsSwipe(null);
+		wsSwipeOffset.current = 0;
+		setWsDraggingKey(null);
+	}, [selectedId]);
 
 	function clearWsPress() {
 		if (wsPressTimer.current) clearTimeout(wsPressTimer.current);
@@ -1057,9 +1120,16 @@ export function Sidebar({
 		const t = e.touches[0];
 		wsLongPressed.current = false;
 		wsMoved.current = false;
+		wsSwiping.current = false;
 		clearWsPress();
+		if (wsSwipe?.key && wsSwipe.key !== row.key) setWsSwipe(null);
 		// After clearWsPress (which nulls it) so it survives to move/end.
 		wsPressOrigin.current = { x: t.clientX, y: t.clientY };
+		wsSwipeOrigin.current = {
+			x: t.clientX - (wsSwipe?.key === row.key ? wsSwipe.offset : 0),
+			y: t.clientY,
+			width: e.currentTarget.clientWidth,
+		};
 		wsPressTimer.current = setTimeout(() => {
 			wsLongPressed.current = true;
 			closeWsHover();
@@ -1069,10 +1139,30 @@ export function Sidebar({
 			setWsSheet(row);
 		}, LONG_PRESS_MS);
 	}
-	function wsRowTouchMove(e: React.TouchEvent) {
-		const o = wsPressOrigin.current;
-		if (!o || e.touches.length !== 1) return;
+	function wsRowTouchMove(row: WsRow, e: React.TouchEvent) {
+		if (e.touches.length !== 1) return;
 		const t = e.touches[0];
+		const swipeO = wsSwipeOrigin.current;
+		if (swipeO && !wsLongPressed.current) {
+			const dx = t.clientX - swipeO.x;
+			const dy = t.clientY - swipeO.y;
+			if (
+				wsSwiping.current ||
+				(Math.abs(dx) > SWIPE_AXIS_LOCK_PX && Math.abs(dx) > Math.abs(dy))
+			) {
+				wsSwiping.current = true;
+				wsMoved.current = true;
+				setWsDraggingKey(row.key);
+				clearWsPress();
+				e.preventDefault();
+				const offset = clampSwipe(dx, swipeO.width);
+				wsSwipeOffset.current = offset;
+				setWsSwipe({ key: row.key, offset });
+				return;
+			}
+		}
+		const o = wsPressOrigin.current;
+		if (!o) return;
 		if (
 			Math.abs(t.clientX - o.x) > LONG_PRESS_SLOP ||
 			Math.abs(t.clientY - o.y) > LONG_PRESS_SLOP
@@ -1083,13 +1173,59 @@ export function Sidebar({
 	}
 	function wsRowTouchEnd(row: WsRow, e: React.TouchEvent) {
 		const hadOrigin = wsPressOrigin.current !== null;
+		const wasSwiping = wsSwiping.current;
+		const rowWidth = wsSwipeOrigin.current?.width ?? e.currentTarget.clientWidth;
+		const swipeOffset =
+			isPhone && wsSwipe?.key === row.key ? wsSwipeOffset.current : 0;
 		clearWsPress();
+		wsSwipeOrigin.current = null;
+		wsSwiping.current = false;
+		setWsDraggingKey(null);
 		if (row.workspace && editingProjectId === row.workspace.id) return;
+		if (wasSwiping) {
+			e.preventDefault();
+			if (Math.abs(swipeOffset) >= fullSwipeThreshold(rowWidth)) {
+				const action: SwipeAction = swipeOffset < 0 ? "archive" : "star";
+				setWsSwipe({
+					key: row.key,
+					offset: swipeCommitOffset(action, rowWidth),
+					action,
+				});
+				window.setTimeout(() => {
+					if (action === "archive") archiveWorkspaceWithNext(row);
+					else {
+						workspacePinState(row).toggle();
+						setWsSwipe({ key: row.key, offset: 0, action });
+						window.setTimeout(() => setWsSwipe(null), SWIPE_COMMIT_MS);
+					}
+					wsSwipeOffset.current = 0;
+				}, SWIPE_COMMIT_MS);
+				return;
+			}
+			setWsSwipe(
+				(() => {
+					const snapped =
+						Math.abs(swipeOffset) > SWIPE_OPEN_THRESHOLD
+							? swipeOffset > 0
+								? SWIPE_REVEAL_PX
+								: -SWIPE_REVEAL_PX
+							: 0;
+					wsSwipeOffset.current = snapped;
+					return snapped ? { key: row.key, offset: snapped } : null;
+				})(),
+			);
+			return;
+		}
 		// A clean tap: started on this row, never became a long-press, never
 		// turned into a scroll. Open now and swallow the ghost click — which
 		// also keeps the synthesized mouseenter from opening the hover card.
 		if (hadOrigin && !wsLongPressed.current && !wsMoved.current) {
 			e.preventDefault();
+			if (wsSwipe?.key === row.key && wsSwipe.offset !== 0) {
+				setWsSwipe(null);
+				wsSwipeOffset.current = 0;
+				return;
+			}
 			if (row.workspace) onOpenProject(row.workspace.id);
 			else if (row.chats[0]) onSelect(row.chats[0]);
 		} else if (wsLongPressed.current) {
@@ -1225,11 +1361,72 @@ export function Sidebar({
 		} else {
 			runStartSeen.current.delete(row.key);
 		}
+		const swipeOffset = isPhone && wsSwipe?.key === row.key ? wsSwipe.offset : 0;
+		const swipeAction = isPhone && wsSwipe?.key === row.key ? wsSwipe.action : null;
+		const rowPin = workspacePinState(row);
+		const pinned = rowPin.pinned;
+		const toggleRowPin = rowPin.toggle;
 		return (
-			<button
+			<div
 				key={row.key}
-				className={`sidebar-item sidebar-ws-row ${active ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""} ${row.unread ? "sidebar-item-unread" : ""}`}
-				onClick={(e) => {
+				className={`sidebar-swipe-row${
+					swipeAction === "archive" || swipeOffset < 0
+						? " is-open is-swipe-archive"
+						: swipeAction === "star" || swipeOffset > 0
+							? " is-open is-swipe-star"
+							: ""
+				}${wsDraggingKey === row.key ? " is-dragging" : ""}`}
+				style={
+					swipeOffset
+						? ({
+								"--swipe-action-w": `${Math.max(
+									SWIPE_REVEAL_PX,
+									Math.abs(swipeOffset),
+								)}px`,
+							} as React.CSSProperties)
+						: undefined
+				}
+			>
+				{isPhone && row.chats.length > 0 && (
+					<button
+						className="sidebar-swipe-action sidebar-swipe-action--archive"
+						onClick={(e) => {
+							e.stopPropagation();
+							setWsSwipe(null);
+							archiveWorkspaceWithNext(row);
+						}}
+						title={
+							row.chats.length > 1
+								? `Archive workspace (${row.chats.length} chats)`
+								: "Archive"
+						}
+					>
+						<IconArchive size={22} />
+						<span>Archive</span>
+					</button>
+				)}
+				{isPhone && (
+					<button
+						className={`sidebar-swipe-action sidebar-swipe-action--star${pinned ? " is-on" : ""}`}
+						onClick={(e) => {
+							e.stopPropagation();
+							setWsSwipe(null);
+							toggleRowPin();
+						}}
+						title={pinned ? "Unpin workspace" : "Pin workspace"}
+					>
+						<IconStar size={22} fill={pinned ? "currentColor" : "none"} />
+						<span>{pinned ? "Unpin" : "Star"}</span>
+					</button>
+				)}
+				<button
+					className={`sidebar-item sidebar-ws-row ${active ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""} ${row.unread ? "sidebar-item-unread" : ""}`}
+					style={
+						swipeOffset
+							? ({ "--swipe-x": `${swipeOffset}px` } as React.CSSProperties)
+							: undefined
+					}
+					onClick={(e) => {
 					// Touch taps open from touchend (their ghost click is
 					// preventDefault'd), so this is the mouse/desktop path. Still
 					// swallow a click that ends a long-press, belt-and-suspenders.
@@ -1242,14 +1439,19 @@ export function Sidebar({
 					if (row.workspace) onOpenProject(row.workspace.id);
 					else if (row.chats[0]) onSelect(row.chats[0]);
 				}}
-				onMouseEnter={(e) => wsRowHoverEnter(row, e.currentTarget)}
-				onMouseLeave={scheduleWsHoverClose}
-				onMouseDown={closeWsHover}
-				onTouchStart={(e) => wsRowTouchStart(row, e)}
-				onTouchMove={wsRowTouchMove}
-				onTouchEnd={(e) => wsRowTouchEnd(row, e)}
-				onTouchCancel={clearWsPress}
-				onContextMenu={(e) => {
+					onMouseEnter={(e) => wsRowHoverEnter(row, e.currentTarget)}
+					onMouseLeave={scheduleWsHoverClose}
+					onMouseDown={closeWsHover}
+					onTouchStart={(e) => wsRowTouchStart(row, e)}
+					onTouchMove={(e) => wsRowTouchMove(row, e)}
+					onTouchEnd={(e) => wsRowTouchEnd(row, e)}
+					onTouchCancel={() => {
+						clearWsPress();
+						wsSwipeOrigin.current = null;
+						wsSwiping.current = false;
+						setWsDraggingKey(null);
+					}}
+					onContextMenu={(e) => {
 					e.preventDefault();
 					// On touch this is the long-press callout: our long-press already
 					// opened the menu, so don't stack a second one (or the native
@@ -1261,9 +1463,9 @@ export function Sidebar({
 						x: e.clientX,
 						y: e.clientY,
 					});
-				}}
-				title={row.name}
-			>
+					}}
+					title={row.name}
+				>
 				<WsStatusMark row={row} />
 				{row.unread &&
 					!waiting &&
@@ -1337,57 +1539,24 @@ export function Sidebar({
 				)}
 				{/* Hover actions: pin + archive, side by side (replace the count). */}
 				<span className="sidebar-ws-actions">
-					{(() => {
-						const pinKey = row.workspace
-							? `workspace:${row.workspace.id}`
-							: row.key;
-						// A row can be surfaced in Pinned by its own key OR by a legacy
-						// pin on any member chat (incl. alias ids — e.g. a slack chat
-						// pinned from its header ☆ long ago). Unpin must clear ALL of
-						// them, or the row sticks in Pinned no matter what you click.
-						const pinnedKeys = [
-							pinKey,
-							row.key,
-							...row.chats.flatMap((c) => [c.id, ...(c.aliasIds || [])]),
-						].filter((k, i, a) => pins.includes(k) && a.indexOf(k) === i);
-						const pinned = pinnedKeys.length > 0;
-						const toggle = () => {
-							if (pinned) {
-								let next = pins;
-								for (const k of pinnedKeys) next = togglePin(k);
-								setPins(next);
-							} else {
-								setPins(togglePin(pinKey));
+					<span
+						role="button"
+						tabIndex={0}
+						className={`sidebar-ws-action${pinned ? " is-on" : ""}`}
+						title={pinned ? "Unpin workspace" : "Pin workspace"}
+						onClick={(e) => {
+							e.stopPropagation();
+							toggleRowPin();
+						}}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.stopPropagation();
+								toggleRowPin();
 							}
-						};
-						return (
-							<span
-								role="button"
-								tabIndex={0}
-								className={`sidebar-ws-action${pinned ? " is-on" : ""}`}
-								title={pinned ? "Unpin workspace" : "Pin workspace"}
-								onClick={(e) => {
-									e.stopPropagation();
-									toggle();
-								}}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" || e.key === " ") {
-										e.stopPropagation();
-										toggle();
-									}
-								}}
-							>
-								<svg width="20" height="20" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
-									<path
-										d="M8 1.8l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.5l-3.8 2 .72-4.23-3.07-3 4.25-.62L8 1.8z"
-										stroke="currentColor"
-										strokeWidth="1.4"
-										strokeLinejoin="round"
-									/>
-								</svg>
-							</span>
-						);
-					})()}
+						}}
+					>
+						<IconStar size={21} fill={pinned ? "currentColor" : "none"} />
+					</span>
 					{row.chats.length > 0 && (
 						<span
 							role="button"
@@ -1409,15 +1578,12 @@ export function Sidebar({
 								}
 							}}
 						>
-							<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-								<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
-								<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
-								<path d="M6.5 8.5h3" strokeLinecap="round" />
-							</svg>
+							<IconArchive size={21} />
 						</span>
 					)}
 				</span>
-			</button>
+				</button>
+			</div>
 		);
 	}
 
@@ -1582,17 +1748,7 @@ export function Sidebar({
 					title="Swipe through your unread workspaces"
 				>
 					<span className="sidebar-nav-icon">
-						<svg
-							width="20"
-							height="20"
-							viewBox="0 0 16 16"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="1.4"
-						>
-							<rect x="4.5" y="2.5" width="9" height="9" rx="1.4" />
-							<path d="M11.2 12.6a1.4 1.4 0 0 1-1.3.9H4a1.5 1.5 0 0 1-1.5-1.5V6.1a1.4 1.4 0 0 1 .9-1.3" />
-						</svg>
+						<IconStack />
 					</span>
 					Catch up
 					{catchUpCount > 0 && (
@@ -1603,7 +1759,9 @@ export function Sidebar({
 					className={`sidebar-nav-item ${reviewsActive ? "active" : ""}`}
 					onClick={onOpenReviews}
 				>
-					<span className="sidebar-nav-icon">{REVIEWS_ICON}</span>
+					<span className="sidebar-nav-icon">
+						<IconReviewNodes />
+					</span>
 					Reviews
 					{openPrCount > 0 && (
 						<span className="sidebar-nav-count">{openPrCount}</span>
@@ -1614,7 +1772,9 @@ export function Sidebar({
 					onClick={onOpenPrTinder}
 					title="Swipe through the repo's open PRs"
 				>
-					<span className="sidebar-nav-icon">{PR_TINDER_ICON}</span>
+					<span className="sidebar-nav-icon">
+						<IconFlame />
+					</span>
 					PR Tinder
 				</button>
 			</nav>
@@ -1654,7 +1814,7 @@ export function Sidebar({
 							}`}
 							onClick={() => setFilterOpen((o) => !o)}
 						>
-							<IconSliders size={22} />
+							<IconFilter size={24} />
 						</button>
 						</Tooltip>
 						<Tooltip label="New session">
@@ -1662,7 +1822,7 @@ export function Sidebar({
 							className="sidebar-new-btn inline-flex items-center justify-center"
 							onClick={onNewSession}
 						>
-							<IconPlus size={22} />
+							<IconPlus size={24} />
 						</button>
 						</Tooltip>
 					</div>
@@ -1702,7 +1862,7 @@ export function Sidebar({
 						onClick={() => setFilterOpen((o) => !o)}
 						aria-label="Group, filter & sort"
 					>
-						<IconSliders size={22} />
+						<IconFilter size={22} />
 					</button>,
 					headerActionsEl,
 				)}
@@ -1776,7 +1936,12 @@ export function Sidebar({
 								{ws && (
 									<>
 										<div
-											style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "4px 6px 2px" }}
+											style={{
+												display: "flex",
+												flexWrap: "wrap",
+												gap: 8,
+												padding: "5px 8px 3px",
+											}}
 										>
 											{TAB_COLORS.map((c) => (
 												<button
@@ -1851,7 +2016,11 @@ export function Sidebar({
 				className="sidebar-list"
 				onScroll={(e) => {
 					const scrolled = e.currentTarget.scrollTop > 0;
-					setListScrolled((prev) => (prev === scrolled ? prev : scrolled));
+					setListScrolled((prev) => {
+						if (prev === scrolled) return prev;
+						onListScrolledChange?.(scrolled);
+						return scrolled;
+					});
 				}}
 			>
 				{/* ── Pinned (workspaces + notes, mixed) ── */}
@@ -1892,9 +2061,9 @@ export function Sidebar({
 								className="sidebar-group-header"
 								onClick={() => toggleGroup("pinned")}
 							>
-								<span
-									className="sidebar-group-dot"
-									style={{ backgroundColor: "var(--text-faint)" }}
+								<IconStar
+									className="sidebar-group-icon"
+									style={{ color: "var(--text-faint)" }}
 								/>
 								<span className="sidebar-group-name">Pinned</span>
 								<IconChevronDown
@@ -1906,27 +2075,32 @@ export function Sidebar({
 							</button>
 							{pinnedOpen && pinnedRows.map(renderWsRow)}
 							{pinnedOpen &&
-								pinnedLoose.map((s) => (
-								<SidebarItem
-									key={`pin-${s.id}`}
-									session={s}
-									selected={s.id === selectedId}
-									unread={
-										s.id !== selectedId &&
-										isUnread(s.id, s.lastActivity, reads)
-									}
-									mine={
-										!!s.startedBy &&
-										!s.automation &&
-										s.startedBy.toLowerCase() === currentUser.toLowerCase()
-									}
-									onClick={() => onSelect(s)}
-									onArchive={() => archiveWithNext(s)}
-									onRename={(title) => onRename(s, title)}
-									projects={projects}
-									onMoveToProject={(pid) => onSetSessionProject(s.id, pid)}
-								/>
-							))}
+								pinnedLoose.map((s) => {
+									const pin = sessionPinState(s);
+									return (
+										<SidebarItem
+											key={`pin-${s.id}`}
+											session={s}
+											selected={s.id === selectedId}
+											unread={
+												s.id !== selectedId &&
+												isUnread(s.id, s.lastActivity, reads)
+											}
+											mine={
+												!!s.startedBy &&
+												!s.automation &&
+												s.startedBy.toLowerCase() === currentUser.toLowerCase()
+											}
+											onClick={() => onSelect(s)}
+											onArchive={() => archiveWithNext(s)}
+											pinned={pin.pinned}
+											onTogglePin={pin.toggle}
+											onRename={(title) => onRename(s, title)}
+											projects={projects}
+											onMoveToProject={(pid) => onSetSessionProject(s.id, pid)}
+										/>
+									);
+								})}
 							{pinnedOpen &&
 								pinnedNotes.map((n) => (
 									<button
@@ -1963,14 +2137,14 @@ export function Sidebar({
 							const gkey = `status:${meta.key}`;
 							const open = isOpen(gkey);
 							return (
-								<React.Fragment key={gkey}>
+								<div className="sidebar-status-group" key={gkey}>
 									<button
 										className="sidebar-group-header"
 										onClick={() => toggleGroup(gkey)}
 									>
-										<span
-											className="sidebar-group-dot"
-											style={{ backgroundColor: meta.dotColor }}
+										<SidebarGroupIcon
+											status={meta.key}
+											color={meta.dotColor}
 										/>
 										<span className="sidebar-group-name">{meta.label}</span>
 										<IconChevronDown
@@ -1998,8 +2172,8 @@ export function Sidebar({
 														selectedPr.repo === r.repo &&
 														selectedPr.branch === r.branch),
 										)
-										.map(renderPrRow)}
-								</React.Fragment>
+												.map(renderPrRow)}
+								</div>
 							);
 						});
 					})()}
@@ -2162,30 +2336,35 @@ export function Sidebar({
 										    session so it never disappears behind a closed header. */}
 										{group.items
 											.filter((s) => open || s.id === selectedId)
-											.map((s) => (
-												<SidebarItem
-													key={s.id}
-													session={s}
-													selected={s.id === selectedId}
-													unread={
-														s.id !== selectedId &&
-														isUnread(s.id, s.lastActivity, reads)
-													}
-													mine={
-														!!s.startedBy &&
-														!s.automation &&
-														s.startedBy.toLowerCase() ===
-															currentUser.toLowerCase()
-													}
-													onClick={() => onSelect(s)}
-													onArchive={() => archiveWithNext(s)}
-													onRename={(title) => onRename(s, title)}
-													projects={projects}
-													onMoveToProject={(pid) =>
-														onSetSessionProject(s.id, pid)
-													}
-												/>
-											))}
+											.map((s) => {
+												const pin = sessionPinState(s);
+												return (
+													<SidebarItem
+														key={s.id}
+														session={s}
+														selected={s.id === selectedId}
+														unread={
+															s.id !== selectedId &&
+															isUnread(s.id, s.lastActivity, reads)
+														}
+														mine={
+															!!s.startedBy &&
+															!s.automation &&
+															s.startedBy.toLowerCase() ===
+																currentUser.toLowerCase()
+														}
+														onClick={() => onSelect(s)}
+														onArchive={() => archiveWithNext(s)}
+														pinned={pin.pinned}
+														onTogglePin={pin.toggle}
+														onRename={(title) => onRename(s, title)}
+														projects={projects}
+														onMoveToProject={(pid) =>
+															onSetSessionProject(s.id, pid)
+														}
+													/>
+												);
+											})}
 									</React.Fragment>
 								);
 							})}
@@ -2212,7 +2391,7 @@ export function Sidebar({
 				(() => {
 					const row = wsSheet;
 					const ws = row.workspace;
-					// Same pin resolution as the row's ☆ and the right-click menu: a
+					// Same pin resolution as the row's star and the right-click menu: a
 					// row can be pinned via its own key or a legacy pin on any member
 					// chat (incl. alias ids) — unpin must clear all of them.
 					const pinKey = ws ? `workspace:${ws.id}` : row.key;
@@ -2509,6 +2688,8 @@ function SidebarItem({
 	mine,
 	onClick,
 	onArchive,
+	pinned,
+	onTogglePin,
 	onRename,
 	projects,
 	onMoveToProject,
@@ -2523,11 +2704,14 @@ function SidebarItem({
 	mine: boolean;
 	onClick: () => void;
 	onArchive: () => void;
+	pinned: boolean;
+	onTogglePin: () => void;
 	onRename: (title: string) => void;
 	/** When provided, right-click offers "Move to project" (projects list + None). */
 	projects?: Project[];
 	onMoveToProject?: (projectId: string | null) => void;
 }) {
+	const isPhone = useIsPhone();
 	const running = session.isRunning;
 	const waiting = !!session.waitingForInput || runNeedsAttention(session);
 	const [editing, setEditing] = useState(false);
@@ -2584,6 +2768,22 @@ function SidebarItem({
 	const pressOrigin = useRef<{ x: number; y: number } | null>(null);
 	const longPressed = useRef(false);
 	const moved = useRef(false);
+	const swipeOrigin = useRef<{ x: number; y: number; width: number } | null>(
+		null,
+	);
+	const swiping = useRef(false);
+	const swipeOffsetRef = useRef(0);
+	const [dragging, setDragging] = useState(false);
+	const [swipeAction, setSwipeAction] = useState<SwipeAction | null>(null);
+	const [swipeOffset, setSwipeOffset] = useState(0);
+	useEffect(() => {
+		if (selected || !isPhone) {
+			setSwipeOffset(0);
+			swipeOffsetRef.current = 0;
+			setSwipeAction(null);
+			setDragging(false);
+		}
+	}, [isPhone, selected]);
 
 	function clearPress() {
 		if (pressTimer.current) clearTimeout(pressTimer.current);
@@ -2595,9 +2795,16 @@ function SidebarItem({
 		const t = e.touches[0];
 		longPressed.current = false;
 		moved.current = false;
+		swiping.current = false;
 		clearPress();
 		// After clearPress (which nulls it) so it survives to onTouchMove/onTouchEnd.
 		pressOrigin.current = { x: t.clientX, y: t.clientY };
+		swipeOrigin.current = {
+			x: t.clientX - swipeOffset,
+			y: t.clientY,
+			width: e.currentTarget.clientWidth,
+		};
+		setSwipeAction(null);
 		pressTimer.current = setTimeout(() => {
 			longPressed.current = true;
 			closeHover();
@@ -2606,9 +2813,29 @@ function SidebarItem({
 		}, LONG_PRESS_MS);
 	}
 	function onTouchMove(e: React.TouchEvent) {
-		const o = pressOrigin.current;
-		if (!o || e.touches.length !== 1) return;
+		if (e.touches.length !== 1) return;
 		const t = e.touches[0];
+		const swipeO = swipeOrigin.current;
+		if (swipeO && !longPressed.current) {
+			const dx = t.clientX - swipeO.x;
+			const dy = t.clientY - swipeO.y;
+			if (
+				swiping.current ||
+				(Math.abs(dx) > SWIPE_AXIS_LOCK_PX && Math.abs(dx) > Math.abs(dy))
+			) {
+				swiping.current = true;
+				moved.current = true;
+				setDragging(true);
+				clearPress();
+				e.preventDefault();
+				const offset = clampSwipe(dx, swipeO.width);
+				swipeOffsetRef.current = offset;
+				setSwipeOffset(offset);
+				return;
+			}
+		}
+		const o = pressOrigin.current;
+		if (!o) return;
 		if (
 			Math.abs(t.clientX - o.x) > LONG_PRESS_SLOP ||
 			Math.abs(t.clientY - o.y) > LONG_PRESS_SLOP
@@ -2619,13 +2846,51 @@ function SidebarItem({
 	}
 	function onTouchEnd(e: React.TouchEvent) {
 		const hadOrigin = pressOrigin.current !== null;
+		const wasSwiping = swiping.current;
+		const rowWidth = swipeOrigin.current?.width ?? e.currentTarget.clientWidth;
+		const currentOffset = swipeOffsetRef.current;
 		clearPress();
+		swipeOrigin.current = null;
+		swiping.current = false;
+		setDragging(false);
 		if (editing) return;
+		if (wasSwiping) {
+			e.preventDefault();
+			if (Math.abs(currentOffset) >= fullSwipeThreshold(rowWidth)) {
+				const action: SwipeAction = currentOffset < 0 ? "archive" : "star";
+				setSwipeAction(action);
+				setSwipeOffset(swipeCommitOffset(action, rowWidth));
+				window.setTimeout(() => {
+					if (action === "archive") onArchive();
+					else {
+						onTogglePin();
+						setSwipeOffset(0);
+						window.setTimeout(() => setSwipeAction(null), SWIPE_COMMIT_MS);
+					}
+					swipeOffsetRef.current = 0;
+				}, SWIPE_COMMIT_MS);
+				return;
+			}
+			const snapped =
+				Math.abs(currentOffset) > SWIPE_OPEN_THRESHOLD
+					? currentOffset > 0
+						? SWIPE_REVEAL_PX
+						: -SWIPE_REVEAL_PX
+					: 0;
+			swipeOffsetRef.current = snapped;
+			setSwipeOffset(snapped);
+			return;
+		}
 		// A clean tap: it started on this row, never became a long-press, and
 		// never turned into a scroll. Open now and swallow the ghost click iOS
 		// would fire ~300ms later (which the :hover heuristic may drop anyway).
 		if (hadOrigin && !longPressed.current && !moved.current) {
 			e.preventDefault();
+			if (swipeOffset !== 0) {
+				setSwipeOffset(0);
+				swipeOffsetRef.current = 0;
+				return;
+			}
 			onClick();
 		}
 	}
@@ -2669,11 +2934,65 @@ function SidebarItem({
 		);
 	}
 
+	const visibleSwipeOffset = isPhone ? swipeOffset : 0;
+
 	return (
 		<>
+		<div
+			className={`sidebar-swipe-row${
+				swipeAction === "archive" || visibleSwipeOffset < 0
+					? " is-open is-swipe-archive"
+					: swipeAction === "star" || visibleSwipeOffset > 0
+						? " is-open is-swipe-star"
+						: ""
+			}${dragging ? " is-dragging" : ""}`}
+			style={
+				visibleSwipeOffset
+					? ({
+							"--swipe-action-w": `${Math.max(
+								SWIPE_REVEAL_PX,
+								Math.abs(visibleSwipeOffset),
+							)}px`,
+						} as React.CSSProperties)
+					: undefined
+			}
+		>
+			{isPhone && (
+				<button
+					className="sidebar-swipe-action sidebar-swipe-action--archive"
+					onClick={(e) => {
+						e.stopPropagation();
+						setSwipeOffset(0);
+						onArchive();
+					}}
+					title="Archive session"
+				>
+					<IconArchive size={22} />
+					<span>Archive</span>
+				</button>
+			)}
+			{isPhone && (
+				<button
+					className={`sidebar-swipe-action sidebar-swipe-action--star${pinned ? " is-on" : ""}`}
+					onClick={(e) => {
+						e.stopPropagation();
+						setSwipeOffset(0);
+						onTogglePin();
+					}}
+					title={pinned ? "Unpin session" : "Pin session"}
+				>
+					<IconStar size={22} fill={pinned ? "currentColor" : "none"} />
+					<span>{pinned ? "Unpin" : "Star"}</span>
+				</button>
+			)}
 		<button
 			ref={btnRef}
 			className={`sidebar-item ${!mine ? "sidebar-item--twoline" : ""} ${selected ? "sidebar-item-selected" : ""} ${waiting ? "sidebar-item-waiting" : ""} ${unread ? "sidebar-item-unread" : ""}`}
+			style={
+				visibleSwipeOffset
+					? ({ "--swipe-x": `${visibleSwipeOffset}px` } as React.CSSProperties)
+					: undefined
+			}
 			onClick={(e) => {
 				// Touch taps are handled on touchend (and their ghost click is
 				// preventDefault'd), so this path is the mouse/desktop one. Still
@@ -2691,7 +3010,12 @@ function SidebarItem({
 			onTouchStart={onTouchStart}
 			onTouchMove={onTouchMove}
 			onTouchEnd={onTouchEnd}
-			onTouchCancel={clearPress}
+			onTouchCancel={() => {
+				clearPress();
+				swipeOrigin.current = null;
+				swiping.current = false;
+				setDragging(false);
+			}}
 			onContextMenu={(e) => {
 				// On touch this is the long-press callout: the action sheet
 				// owns that gesture, so suppress the desktop menu (and the
@@ -2807,11 +3131,13 @@ function SidebarItem({
 				</svg>
 			</span>
 		</button>
+		</div>
 		{anchor && <SessionHoverCard session={session} anchor={anchor} />}
 		{ctxMenu &&
 			onMoveToProject &&
 			createPortal(
 				<div
+					className="sidebar-ctx-menu"
 					style={{ ...CTX_MENU_STYLE, left: ctxMenu.x, top: ctxMenu.y }}
 					onClick={(e) => e.stopPropagation()}
 				>
@@ -3313,6 +3639,7 @@ const WS_ACTION =
 function useWsOverview(row: WsCardRow): WorkspaceOverview | null {
 	const cacheKey =
 		row.workspace?.id || `chats:${row.chats.map((c) => c.id).join(",")}`;
+	const activityKey = row.lastActivity || row.chats.map((c) => c.lastActivity).join(",");
 	const [ov, setOv] = useState<WorkspaceOverview | null>(
 		() => overviewCache.get(cacheKey)?.data ?? null,
 	);
@@ -3321,7 +3648,13 @@ function useWsOverview(row: WsCardRow): WorkspaceOverview | null {
 		const cached = overviewCache.get(cacheKey);
 		setOv(cached?.data ?? null);
 		if (row.chats.length === 0) return;
-		if (cached && Date.now() - cached.at < 30_000) return;
+		const activityAt = activityKey ? new Date(activityKey).getTime() : 0;
+		if (
+			cached &&
+			Date.now() - cached.at < 30_000 &&
+			(!activityAt || cached.at >= activityAt)
+		)
+			return;
 		loadOverview(
 			cacheKey,
 			row.workspace?.id ?? null,
@@ -3341,7 +3674,7 @@ function useWsOverview(row: WsCardRow): WorkspaceOverview | null {
 		return () => {
 			alive = false;
 		};
-	}, [cacheKey]);
+	}, [cacheKey, activityKey]);
 	return ov;
 }
 
@@ -3766,14 +4099,7 @@ function WsMobileSheet({
 					</button>
 				)}
 				<button className="mobile-sheet-item" onClick={closing(onTogglePin)}>
-					<svg width="20" height="20" viewBox="0 0 16 16" fill={pinned ? "currentColor" : "none"}>
-						<path
-							d="M8 1.8l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.5l-3.8 2 .72-4.23-3.07-3 4.25-.62L8 1.8z"
-							stroke="currentColor"
-							strokeWidth="1.4"
-							strokeLinejoin="round"
-						/>
-					</svg>
+					<IconStar size={22} fill={pinned ? "currentColor" : "none"} />
 					{pinned ? "Unpin" : "Pin"}
 				</button>
 				<button className="mobile-sheet-item" onClick={closing(onRename)}>

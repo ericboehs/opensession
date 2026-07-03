@@ -28,6 +28,8 @@ export interface ChatScroll {
   following: boolean;
   /** True when content has streamed in below the fold while not following. */
   newBelow: boolean;
+  /** True when the latest message is out of view and the return control should show. */
+  showScrollToBottom: boolean;
   /** Bring the reader back to the latest reply and resume following. */
   scrollToLatest: (behavior?: ScrollBehavior) => void;
   /** Pin a turn near the top of the viewport (used for reopening at the last turn). */
@@ -53,6 +55,15 @@ function lastUserEl(container: HTMLElement): HTMLElement | null {
   return els[els.length - 1] ?? null;
 }
 
+function latestMessageVisible(container: HTMLElement): boolean {
+  const els = container.querySelectorAll<HTMLElement>(".msg");
+  const latest = els[els.length - 1];
+  if (!latest) return true;
+  const containerRect = container.getBoundingClientRect();
+  const latestRect = latest.getBoundingClientRect();
+  return latestRect.bottom > containerRect.top && latestRect.top < containerRect.bottom;
+}
+
 export function useChatScroll(): ChatScroll {
   const containerRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
@@ -61,6 +72,7 @@ export function useChatScroll(): ChatScroll {
   const followingRef = useRef(true);
   const [following, setFollowingState] = useState(true);
   const [newBelow, setNewBelow] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   // Whether the latest turn is currently pinned to the top (spacer active).
   const pinnedRef = useRef(false);
   // Set on send; consumed once to perform the one-time scroll-to-top.
@@ -84,9 +96,15 @@ export function useChatScroll(): ChatScroll {
     if (v) {
       // Returning to the live edge ends any pinned turn and clears the unread flag.
       setNewBelow(false);
+      setShowScrollToBottom(false);
       clearSpacer();
     }
   }, [clearSpacer]);
+
+  const updateScrollToBottomVisibility = useCallback((isFollowing = followingRef.current) => {
+    const el = containerRef.current;
+    setShowScrollToBottom(Boolean(el && !isFollowing && !latestMessageVisible(el)));
+  }, []);
 
   const scrollToLatest = useCallback(
     (behavior: ScrollBehavior = "smooth") => {
@@ -108,7 +126,8 @@ export function useChatScroll(): ChatScroll {
     // Leaving the live edge to read from the top is intent: stop following so the
     // streaming reply fills the space below instead of yanking us back down.
     setFollowing(false);
-  }, [setFollowing]);
+    updateScrollToBottomVisibility(false);
+  }, [setFollowing, updateScrollToBottomVisibility]);
 
   // Size the bottom spacer to exactly the room the pinned turn needs to sit near the
   // top. Resizing a spacer that's below the fold doesn't move what the reader sees.
@@ -151,6 +170,7 @@ export function useChatScroll(): ChatScroll {
           sizeSpacer();
         }
       }
+      updateScrollToBottomVisibility(false);
       return;
     }
     // Stick to the bottom only while following — and never mid-selection, since a
@@ -160,20 +180,23 @@ export function useChatScroll(): ChatScroll {
     } else if (!followingRef.current && distanceFromBottom() > STICK_THRESHOLD) {
       setNewBelow(true); // content arrived out of view — let the UI announce it
     }
-  }, [sizeSpacer, anchorToTop, distanceFromBottom]);
+    updateScrollToBottomVisibility();
+  }, [sizeSpacer, anchorToTop, distanceFromBottom, updateScrollToBottomVisibility]);
 
   // The reader's scroll is the source of truth for following. Reaching the live
   // edge re-engages it; scrolling away disengages it.
   const onScroll = useCallback(() => {
     const atEdge = distanceFromBottom() < STICK_THRESHOLD;
     if (atEdge !== followingRef.current) setFollowing(atEdge);
-  }, [distanceFromBottom, setFollowing]);
+    updateScrollToBottomVisibility(atEdge);
+  }, [distanceFromBottom, setFollowing, updateScrollToBottomVisibility]);
 
   return {
     containerRef,
     spacerRef,
     following,
     newBelow,
+    showScrollToBottom,
     scrollToLatest,
     anchorToTop,
     beginTurn,

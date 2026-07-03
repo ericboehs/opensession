@@ -98,7 +98,7 @@ export function BottomSheet({
 			<div
 				ref={sheetRef}
 				className={cn(
-					"absolute inset-x-0 bottom-0 flex max-h-[94dvh] flex-col overflow-hidden rounded-t-[16px] bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]",
+					"absolute inset-x-0 bottom-0 flex max-h-[94dvh] flex-col overflow-hidden rounded-t-[22px] [corner-shape:squircle] bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]",
 					"transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
 					shown ? "translate-y-0" : "translate-y-full",
 					className,

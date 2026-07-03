@@ -1041,6 +1041,7 @@ async function escalateAskToSlack(
 // as the raw composer payload (staged-path or inline refs). Both are persisted
 // with the queue so a restart doesn't silently drop a message's attachments.
 type QueueItem = {
+  id?: string;
   content: string;
   user?: string;
   images?: string[];
@@ -1060,10 +1061,25 @@ const steeredReceipts: Map<string, QueueItem[]> = (g.__steeredReceipts ??=
 // reload, which keeps the globalThis maps) doesn't silently drop queued or
 // just-steered messages. Restored + re-drained on boot (restorePromptQueues).
 const QUEUE_STORE = `${BACKSTAGE_SESSIONS_DIR}/prompt-queues.json`;
+function queueItem(item: QueueItem): QueueItem {
+	return item.id ? item : { ...item, id: crypto.randomUUID() };
+}
+
+function queueWithIds(items: QueueItem[] | undefined): QueueItem[] {
+	return (items || []).map((item) => {
+		if (item.id) return item;
+		return queueItem(item);
+	});
+}
+
 function persistQueues(): void {
 	try {
 		const entries = (m: Map<string, QueueItem[]>) =>
-			Object.fromEntries([...m].filter(([, v]) => v.length > 0));
+			Object.fromEntries(
+				[...m]
+					.map(([k, v]) => [k, queueWithIds(v)] as const)
+					.filter(([, v]) => v.length > 0),
+			);
 		// Keep the previous copy as .bak before overwriting: if the store on disk
 		// ever ends up unparsable, restorePromptQueues falls back to it instead of
 		// silently dropping every queued message.
@@ -1088,7 +1104,7 @@ function persistQueues(): void {
 /** Append a message to a session's drainable queue and persist + broadcast. */
 function enqueuePrompt(sessionId: string, item: QueueItem): void {
 	const queue = promptQueues.get(sessionId) || [];
-	queue.push(item);
+	queue.push(queueItem(item));
 	promptQueues.set(sessionId, queue);
 	persistQueues();
 	broadcastQueue(sessionId);
@@ -1097,7 +1113,7 @@ function enqueuePrompt(sessionId: string, item: QueueItem): void {
 /** Record a steered message as a visible receipt until its run finishes. */
 function recordSteer(sessionId: string, item: QueueItem): void {
 	const list = steeredReceipts.get(sessionId) || [];
-	list.push(item);
+	list.push(queueItem(item));
 	steeredReceipts.set(sessionId, list);
 	persistQueues();
 	broadcastQueue(sessionId);
@@ -1109,6 +1125,114 @@ function clearSteerReceipts(sessionId: string): void {
 	steeredReceipts.delete(sessionId);
 	persistQueues();
 	broadcastQueue(sessionId);
+}
+
+/** Put unconfirmed steers back into the normal queue when their run is cancelled. */
+function requeueSteerReceipts(sessionId: string): number {
+	const steered = steeredReceipts.get(sessionId);
+	if (!steered?.length) return 0;
+	const queue = promptQueues.get(sessionId) || [];
+	promptQueues.set(sessionId, [...steered, ...queue]);
+	steeredReceipts.delete(sessionId);
+	persistQueues();
+	broadcastQueue(sessionId);
+	return steered.length;
+}
+
+function queuedPromptIndex(
+	queue: QueueItem[],
+	queueId?: string,
+	queueIndex?: number,
+): number {
+	if (queueId) {
+		const byId = queue.findIndex((item) => item.id === queueId);
+		if (byId >= 0) return byId;
+	}
+	if (
+		typeof queueIndex === "number" &&
+		Number.isInteger(queueIndex) &&
+		queueIndex >= 0 &&
+		queueIndex < queue.length
+	) {
+		return queueIndex;
+	}
+	return -1;
+}
+
+function deleteQueuedPrompt(
+	sessionId: string,
+	queueId?: string,
+	queueIndex?: number,
+): boolean {
+	const queue = promptQueues.get(sessionId);
+	if (!queue) return false;
+	const index = queuedPromptIndex(queue, queueId, queueIndex);
+	if (index < 0) return false;
+	const next = queue.filter((_, i) => i !== index);
+	if (next.length > 0) promptQueues.set(sessionId, next);
+	else promptQueues.delete(sessionId);
+	persistQueues();
+	broadcastQueue(sessionId);
+	return true;
+}
+
+function updateQueuedPrompt(
+	sessionId: string,
+	queueId: string | undefined,
+	queueIndex: number | undefined,
+	content: string,
+): boolean {
+	const queue = promptQueues.get(sessionId);
+	if (!queue) return false;
+	const index = queuedPromptIndex(queue, queueId, queueIndex);
+	if (index < 0) return false;
+	const item = queue[index];
+	if (!item) return false;
+	item.content = content;
+	persistQueues();
+	broadcastQueue(sessionId);
+	return true;
+}
+
+function steerQueuedPrompt(
+	sessionId: string,
+	queueId?: string,
+	queueIndex?: number,
+): boolean {
+	const session = findSession(sessionId);
+	const queue = promptQueues.get(sessionId);
+	if (!session || !queue) return false;
+	const index = queuedPromptIndex(queue, queueId, queueIndex);
+	if (index < 0) return false;
+	const [item] = queue.splice(index, 1);
+	if (!item) return false;
+	if (Array.isArray(item.files) && item.files.length > 0) {
+		queue.splice(index, 0, item);
+		return false;
+	}
+	const attributed = item.user ? `[${item.user}] ${item.content}` : item.content;
+	const images = parseImageDataUrls(item.images || []);
+	if (
+		!isAgentSessionBusy(
+			session.claudeSessionId,
+			session.codexThreadId,
+			session.id,
+		) ||
+		!steerAgentRun(
+			[session.claudeSessionId, session.codexThreadId, session.id],
+			attributed,
+			images,
+		)
+	) {
+		queue.splice(index, 0, item);
+		return false;
+	}
+	if (queue.length > 0) promptQueues.set(sessionId, queue);
+	else promptQueues.delete(sessionId);
+	recordSteer(sessionId, item);
+	persistQueues();
+	broadcastQueue(sessionId);
+	return true;
 }
 
 /**
@@ -1339,11 +1463,15 @@ function attachSessionWatchersToEngineTranscript(
 }
 
 function broadcastQueue(sessionId: string) {
+	const queued = queueWithIds(promptQueues.get(sessionId));
+	const steered = queueWithIds(steeredReceipts.get(sessionId));
+	if (queued.length > 0) promptQueues.set(sessionId, queued);
+	if (steered.length > 0) steeredReceipts.set(sessionId, steered);
 	broadcastToSession(sessionId, {
 		type: "queue_update",
 		sessionId,
-		queued: promptQueues.get(sessionId) || [],
-		steered: steeredReceipts.get(sessionId) || [],
+		queued,
+		steered,
 	});
 }
 
@@ -5610,13 +5738,20 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							);
 						}
 
-						// Current message queue + steer receipts for this session
+						// Current message queue + steer receipts for this session. Older
+						// in-memory rows may lack ids; assign and persist them before
+						// sending so edit/delete/steer actions can address the same row.
+						const queuedPrompts = queueWithIds(promptQueues.get(sessionId));
+						const steeredPrompts = queueWithIds(steeredReceipts.get(sessionId));
+						if (queuedPrompts.length > 0) promptQueues.set(sessionId, queuedPrompts);
+						if (steeredPrompts.length > 0) steeredReceipts.set(sessionId, steeredPrompts);
+						if (queuedPrompts.length > 0 || steeredPrompts.length > 0) persistQueues();
 						ws.send(
 							JSON.stringify({
 								type: "queue_update",
 								sessionId,
-								queued: promptQueues.get(sessionId) || [],
-								steered: steeredReceipts.get(sessionId) || [],
+								queued: queuedPrompts,
+								steered: steeredPrompts,
 							}),
 						);
 
@@ -5698,10 +5833,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							break;
 						}
 
-						// Busy → steer it into the running query (delivered at the next
-						// turn boundary, Claude-Code style). Falls back to the queue when
-						// the run isn't steerable: codex runs, runs owned by another
-						// process (Slack handler, CLI in tmux), or a run that's finishing.
+						// Busy sends queue by default, so the user can still delete/edit or
+						// manually steer the message. Settings can opt the composer into
+						// steer-by-default (`busyMode: "steer"`), delivered at the next turn
+						// boundary and falling back to queue when the run isn't steerable.
 						if (
 							isAgentSessionBusy(
 								session.claudeSessionId,
@@ -5709,6 +5844,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								session.id,
 							)
 						) {
+							if (msg.busyMode === "queue") {
+								enqueuePrompt(sessionId, {
+									content,
+									user,
+									images: imageUrls,
+									files: msg.files,
+								});
+								watchExternalRunAndDrain(sessionId);
+								break;
+							}
 							const attributed = user ? `[${user}] ${content}` : content;
 							// Images fold into the live run as content blocks; disk-staged
 							// files can't ride the steer channel, so a send carrying files
@@ -5716,6 +5861,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							// together at the run's next idle point).
 							const hasFiles = Array.isArray(msg.files) && msg.files.length > 0;
 							if (
+								msg.busyMode === "steer" &&
 								!hasFiles &&
 								steerAgentRun(
 									[session.claudeSessionId, session.codexThreadId, session.id],
@@ -5835,6 +5981,38 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						break;
 					}
 
+					case "delete_queued_prompt": {
+						const { sessionId, queueId, queueIndex } = msg;
+						deleteQueuedPrompt(sessionId, queueId, queueIndex);
+						break;
+					}
+
+					case "update_queued_prompt": {
+						const { sessionId, queueId, queueIndex, content } = msg;
+						const next = String(content || "").trim();
+						if (!next) {
+							deleteQueuedPrompt(sessionId, queueId, queueIndex);
+						} else {
+							updateQueuedPrompt(sessionId, queueId, queueIndex, next);
+						}
+						break;
+					}
+
+					case "steer_queued_prompt": {
+						const { sessionId, queueId, queueIndex } = msg;
+						if (!steerQueuedPrompt(sessionId, queueId, queueIndex)) {
+							ws.send(
+								JSON.stringify({
+									type: "notice",
+									sessionId,
+									message:
+										"Could not steer that queued message right now. It is still queued.",
+								}),
+							);
+						}
+						break;
+					}
+
 					case "cancel": {
 						const data = ws.data;
 						if (data.watchingSessionId) {
@@ -5846,16 +6024,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									session.id,
 								);
 							}
-							clearSteerReceipts(data.watchingSessionId);
-							const dropped =
-								promptQueues.get(data.watchingSessionId)?.length || 0;
-							if (dropped > 0) {
-								promptQueues.delete(data.watchingSessionId);
-								persistQueues();
-								broadcastQueue(data.watchingSessionId);
+							const requeued = requeueSteerReceipts(data.watchingSessionId);
+							if (requeued > 0) {
 								broadcastToSession(data.watchingSessionId, {
 									type: "notice",
-									message: `Cancelled — ${dropped} queued message${dropped === 1 ? "" : "s"} dropped.`,
+									message: `Cancelled — ${requeued} steered message${requeued === 1 ? "" : "s"} returned to the queue.`,
 								});
 							}
 						}
@@ -6619,13 +6792,7 @@ registerSessionControl({
 			session.codexThreadId,
 			session.id,
 		);
-		clearSteerReceipts(id);
-		const dropped = promptQueues.get(id)?.length || 0;
-		if (dropped > 0) {
-			promptQueues.delete(id);
-			persistQueues();
-			broadcastQueue(id);
-		}
+		requeueSteerReceipts(id);
 		return cancelled;
 	},
 

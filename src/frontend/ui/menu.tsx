@@ -46,7 +46,7 @@ function Popup({
 			>
 				<BaseMenu.Popup
 					className={cn(
-						"min-w-[180px] rounded-[10px] border border-line-strong bg-panel p-2 shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
+						"min-w-[180px] rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel p-2 shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
 						"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",
 						"data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0",
 						"data-[ending-style]:opacity-0",

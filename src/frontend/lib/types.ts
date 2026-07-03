@@ -251,6 +251,8 @@ export type WSClientMessage =
 			content: string;
 			user?: string;
 			images?: string[];
+			files?: unknown;
+			busyMode?: "queue" | "steer";
 			/** Reasoning effort for this turn — forward-compatible, not yet enforced. */
 			effort?: "low" | "medium" | "high" | string;
 	  }
@@ -259,7 +261,28 @@ export type WSClientMessage =
 			sessionId: string;
 			content: string;
 			user?: string;
+			images?: string[];
+			files?: unknown;
 			effort?: "low" | "medium" | "high" | string;
+	  }
+	| {
+			type: "delete_queued_prompt";
+			sessionId: string;
+			queueId?: string;
+			queueIndex?: number;
+	  }
+	| {
+			type: "update_queued_prompt";
+			sessionId: string;
+			queueId?: string;
+			queueIndex?: number;
+			content: string;
+	  }
+	| {
+			type: "steer_queued_prompt";
+			sessionId: string;
+			queueId?: string;
+			queueIndex?: number;
 	  }
 	| { type: "cancel" }
 	| {
@@ -341,8 +364,20 @@ export type WSServerMessage =
 	| {
 			type: "queue_update";
 			sessionId: string;
-			queued: Array<{ content: string; user?: string }>;
-			steered?: Array<{ content: string; user?: string }>;
+			queued: Array<{
+				id: string;
+				content: string;
+				user?: string;
+				images?: string[];
+				files?: unknown;
+			}>;
+			steered?: Array<{
+				id: string;
+				content: string;
+				user?: string;
+				images?: string[];
+				files?: unknown;
+			}>;
 	  }
 	| {
 			type: "ask_question";

@@ -17,6 +17,7 @@ import toml from "@shikijs/langs/toml";
 import rust from "@shikijs/langs/rust";
 import swift from "@shikijs/langs/swift";
 import githubDark from "@shikijs/themes/github-dark-default";
+import githubLight from "@shikijs/themes/github-light-default";
 // Shiki ships no ReScript grammar — vendored from rescript-vscode
 import rescriptGrammar from "../lib/rescript.tmLanguage.json";
 
@@ -29,7 +30,7 @@ let highlighterPromise: Promise<HighlighterCore> | null = null;
 function getHighlighter(): Promise<HighlighterCore> {
   if (!highlighterPromise) {
     highlighterPromise = createHighlighterCore({
-      themes: [githubDark],
+      themes: [githubDark, githubLight],
       langs: [
         bash, typescript, tsx, javascript, jsx, json, css, html,
         yaml, markdown, sql, diff, toml, rust, swift, rescript,
@@ -38,6 +39,24 @@ function getHighlighter(): Promise<HighlighterCore> {
     });
   }
   return highlighterPromise;
+}
+
+function getResolvedTheme(): "dark" | "light" {
+  if (typeof document === "undefined") return "dark";
+  return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+}
+
+function useResolvedTheme(): "dark" | "light" {
+  const [theme, setTheme] = useState<"dark" | "light">(getResolvedTheme);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => setTheme(getResolvedTheme()));
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+
+  return theme;
 }
 
 /**
@@ -99,9 +118,11 @@ interface Props {
 /** Syntax-highlighted code block; falls back to a plain pre until (or if) shiki is ready. */
 export function CodeHighlight({ code, lang, gutter, requireGutter }: Props) {
   const [html, setHtml] = useState<string | null>(null);
+  const theme = useResolvedTheme();
 
   useEffect(() => {
     let alive = true;
+    setHtml(null);
     getHighlighter()
       .then((h) => {
         if (!alive) return;
@@ -110,7 +131,7 @@ export function CodeHighlight({ code, lang, gutter, requireGutter }: Props) {
         setHtml(
           h.codeToHtml(split ? split.code : code, {
             lang,
-            theme: "github-dark-default",
+            theme: theme === "light" ? "github-light-default" : "github-dark-default",
             transformers: split ? [gutterTransformer(split.nums)] : [],
           })
         );
@@ -122,7 +143,7 @@ export function CodeHighlight({ code, lang, gutter, requireGutter }: Props) {
     return () => {
       alive = false;
     };
-  }, [code, lang, gutter]);
+  }, [code, lang, gutter, requireGutter, theme]);
 
   if (html === null) return <pre className="tool-pre">{code}</pre>;
   return <div className="tool-pre tool-pre-code" dangerouslySetInnerHTML={{ __html: html }} />;

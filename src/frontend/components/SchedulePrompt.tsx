@@ -6,7 +6,7 @@ import {
   type ScheduledPrompt,
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
-import { IconChevronDown } from "./icons";
+import { IconChevronDown, IconClock } from "./icons";
 
 /** "in 45m" / "in 3h" / "in 2d" for a future instant (short form). */
 function inTime(iso: string): string {
@@ -40,6 +40,7 @@ export function SchedulePromptButton({
   text,
   disabled,
   onScheduled,
+  variant = "caret",
 }: {
   sessionId: string;
   /** Current composer draft — the message that gets scheduled. */
@@ -47,6 +48,7 @@ export function SchedulePromptButton({
   disabled?: boolean;
   /** Called after a successful schedule so the composer can clear its draft. */
   onScheduled?: () => void;
+  variant?: "caret" | "menu-item";
 }) {
   const [open, setOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
@@ -170,10 +172,17 @@ export function SchedulePromptButton({
   }
 
   return (
-    <div ref={rootRef} className="composer-schedule-wrap">
+    <div
+      ref={rootRef}
+      className={`composer-schedule-wrap ${variant === "menu-item" ? "composer-schedule-wrap-menu" : ""}`}
+    >
       <button
         type="button"
-        className={`composer-send-caret ${open ? "is-open" : ""}`}
+        className={
+          variant === "menu-item"
+            ? "composer-menu-item composer-schedule-item"
+            : `composer-send-caret ${open ? "is-open" : ""}`
+        }
         onClick={() => setOpen(!open)}
         disabled={disabled}
         aria-haspopup="menu"
@@ -181,7 +190,16 @@ export function SchedulePromptButton({
         title="Schedule for later"
         aria-label="Schedule for later"
       >
-        <IconChevronDown size={20} />
+        {variant === "menu-item" ? (
+          <>
+            <span className="composer-menu-icon">
+              <IconClock size={22} />
+            </span>
+            <span>Schedule message</span>
+          </>
+        ) : (
+          <IconChevronDown size={20} />
+        )}
         {pending.length > 0 && (
           <span className="composer-schedule-badge">{pending.length}</span>
         )}

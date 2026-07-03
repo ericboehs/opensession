@@ -94,6 +94,8 @@ function isToolView(view: string): view is ToolView {
 const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"notifications",
 	"monitor",
+	"autoArchive",
+	"composer",
 	"appearance",
 	"model",
 	"connections",
@@ -226,7 +228,7 @@ function routePath(route: Route): string {
 }
 
 function App() {
-	const { sessions, loading, refresh, inject } = useSessions();
+	const { sessions, loading, refresh, inject, patch, remove } = useSessions();
 	const { connected, send, addHandler } = useWebSocket();
 	// iOS evicts standalone PWAs from memory and relaunches them at the manifest
 	// start_url (/backstage/) — losing the session you had open. On a cold load
@@ -276,6 +278,7 @@ function App() {
 	// the actions render in the topbar slot above instead.
 	const [headerActionsEl, setHeaderActionsEl] =
 		useState<HTMLDivElement | null>(null);
+	const [rootListScrolled, setRootListScrolled] = useState(false);
 	// Right-column slot (sibling of the left sidebar). The session viewer portals
 	// its workspace/sub-agent panel here so it opens as a full-height column from
 	// the very top, at the same level as the left sidebar (Conductor-style).
@@ -717,6 +720,74 @@ function App() {
 		.filter((s) => s.id !== currentSession?.id)
 		.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
 
+	async function createNewChatFrom(
+		src: UnifiedSession,
+		mode: "share" | "stack" | "ask",
+	): Promise<string> {
+		const { id, session } = await newChatApi(src.id, getCurrentUser(), mode);
+		// Inject the created session so the viewer renders the new chat immediately
+		// — no "Loading session…" flash while the sessions poll catches up. If the
+		// server didn't return it, synthesize a close-enough copy from the source
+		// chat; the next poll replaces it with the real one either way.
+		const now = new Date().toISOString();
+		inject(
+			session ?? {
+				...src,
+				id,
+				source: "backstage",
+				claudeSessionId: null,
+				codexThreadId: undefined,
+				title: "New chat",
+				createdAt: now,
+				lastActivity: now,
+				isRunning: false,
+				transcriptPath: null,
+				startedBy: getCurrentUser(),
+				archived: false,
+				waitingForInput: false,
+				queuedCount: 0,
+				prUrl: undefined,
+				prState: undefined,
+				automation: undefined,
+				plainThreadId: undefined,
+				goal: undefined,
+				loop: undefined,
+				...(mode === "ask"
+					? {
+							branch: null,
+							worktreeDir: null,
+							mode: "ask" as const,
+						}
+					: {}),
+			},
+		);
+		setPendingSessionId(id);
+		refresh();
+		navigate({ view: "session", id });
+		return id;
+	}
+
+	// Start a new chat in the current workspace. The tab strip's + button and the
+	// SessionViewer ⋯ menu (the only reachable entry point on a phone, where the
+	// strip and its + are hidden/hover-revealed) both call this. It creates the
+	// sibling chat instantly (browser-tab feel): shares the workspace worktree by
+	// default, or stacks/asks. No engine run until the first prompt.
+	const handleNewChat = async (mode: "share" | "stack" | "ask") => {
+		const src = currentSession || projectChats[0];
+		if (!src) return;
+		try {
+			await createNewChatFrom(src, mode);
+		} catch (e) {
+			console.error("New chat failed:", e);
+		}
+	};
+	const handleSessionRunningChange = (id: string, isRunning: boolean) => {
+		patch(id, {
+			isRunning,
+			runStartedAt: isRunning ? new Date().toISOString() : undefined,
+		});
+	};
+
 	// Plain title shown in the top bar for non-session views (session routes let
 	// the SessionViewer portal its own header in instead). Home stays blank so the
 	// bar collapses (`.detail-topbar:empty`).
@@ -750,13 +821,13 @@ function App() {
 		</div>
 	);
 
-	// Mobile top-bar brand: the title + its chevron dropdown (account switcher +
-	// connection status + Settings). On desktop that menu lives in the footer
-	// user row instead, so the top stays just the title + the collapse toggle.
+	// Mobile top-bar brand: logo only, as the account/settings sheet trigger.
+	// On desktop that menu lives in the footer user row instead, so the top stays
+	// just the title + the collapse toggle.
 	const brand = (
 		<div className="app-brand">
-			{brandTitle}
 			<SettingsMenu
+				variant="brand"
 				onOpenSettings={() => navigate({ view: "settings" })}
 				connected={connected}
 			/>
@@ -767,7 +838,7 @@ function App() {
 	// marking the collapsible left column. Reused by the brand-row collapse button
 	// and the floating re-open control.
 	const panelIcon = (
-		<svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+		<svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">
 			<rect
 				x="1.75"
 				y="2.75"
@@ -798,7 +869,11 @@ function App() {
 				    on a pushed page (a session or other view) the brand is replaced by
 				    a Back chevron that pops back to the root, iOS-style. On desktop the
 				    brand/user live in the sidebar and this bar is hidden. */}
-				<header className="app-header">
+				<header
+					className={`app-header${
+						!mobileDetail && rootListScrolled ? " app-header-scrolled" : ""
+					}`}
+				>
 					<div className="app-header-left">
 						{mobileDetail ? (
 							<button
@@ -1051,21 +1126,25 @@ function App() {
 							// mounted underneath and would portal its filter button into
 							// the chat's top bar.
 							headerActionsEl={mobileDetail ? null : headerActionsEl}
+							onListScrolledChange={setRootListScrolled}
 							onOpenArchived={() => navigate({ view: "archived" })}
 							onOpenCatchUp={() => navigate({ view: "catchup" })}
 							catchUpActive={route.view === "catchup"}
 							archivedActive={route.view === "archived"}
 							onArchive={async (s, next) => {
+								patch(s.id, { archived: true, archivedReason: "manual" });
+								const wasOpen = route.view === "session" && route.id === s.id;
+								if (wasOpen) {
+									if (next) navigate({ view: "session", id: next.id });
+									else goBack();
+								}
 								try {
 									await archiveSessionApi(s.id, true);
 								} catch (e) {
 									console.error("Archive failed:", e);
-								}
-								// Archiving the open session shouldn't strand the viewer on a
-								// dead chat — hop to the sidebar's next row instead.
-								if (route.view === "session" && route.id === s.id) {
-									if (next) navigate({ view: "session", id: next.id });
-									else goBack();
+									patch(s.id, { archived: false, archivedReason: undefined });
+									if (wasOpen) navigate({ view: "session", id: s.id });
+									return;
 								}
 								refresh();
 							}}
@@ -1073,21 +1152,32 @@ function App() {
 								// Archive a whole workspace = archive every member chat (the
 								// archive registry is per-chat; the workspace row disappears
 								// once no live chats remain).
+								for (const chat of chats) {
+									patch(chat.id, { archived: true, archivedReason: "manual" });
+								}
+								const openChatId =
+									route.view === "session" &&
+									chats.some((c) => c.id === route.id)
+										? route.id
+										: null;
+								if (openChatId) {
+									if (next) navigate({ view: "session", id: next.id });
+									else goBack();
+								}
 								try {
 									await Promise.all(
 										chats.map((c) => archiveSessionApi(c.id, true)),
 									);
 								} catch (e) {
 									console.error("Archive workspace failed:", e);
-								}
-								// Archiving the open workspace shouldn't strand the viewer on
-								// a dead chat — hop to the next workspace in the sidebar.
-								if (
-									route.view === "session" &&
-									chats.some((c) => c.id === route.id)
-								) {
-									if (next) navigate({ view: "session", id: next.id });
-									else goBack();
+									for (const chat of chats) {
+										patch(chat.id, {
+											archived: false,
+											archivedReason: undefined,
+										});
+									}
+									if (openChatId) navigate({ view: "session", id: openChatId });
+									return;
 								}
 								refresh();
 							}}
@@ -1146,62 +1236,7 @@ function App() {
 							colors={tabColors}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
-							onNewChat={async (mode) => {
-								// + creates the sibling chat instantly (browser-tab feel): it
-								// shares the workspace worktree by default, or stacks/asks via
-								// the right-click menu. No engine run until the first prompt.
-								const src = currentSession || projectChats[0];
-								if (!src) return;
-								try {
-									const { id, session } = await newChatApi(
-										src.id,
-										getCurrentUser(),
-										mode,
-									);
-									// Inject the created session so the viewer renders the new
-									// chat immediately — no "Loading session…" flash while the
-									// sessions poll catches up. If the server didn't return it,
-									// synthesize a close-enough copy from the source chat; the
-									// next poll replaces it with the real one either way.
-									const now = new Date().toISOString();
-									inject(
-										session ?? {
-											...src,
-											id,
-											source: "backstage",
-											claudeSessionId: null,
-											codexThreadId: undefined,
-											title: "New chat",
-											createdAt: now,
-											lastActivity: now,
-											isRunning: false,
-											transcriptPath: null,
-											startedBy: getCurrentUser(),
-											archived: false,
-											waitingForInput: false,
-											queuedCount: 0,
-											prUrl: undefined,
-											prState: undefined,
-											automation: undefined,
-											plainThreadId: undefined,
-											goal: undefined,
-											loop: undefined,
-											...(mode === "ask"
-												? {
-														branch: null,
-														worktreeDir: null,
-														mode: "ask" as const,
-													}
-												: {}),
-										},
-									);
-									setPendingSessionId(id);
-									refresh();
-									navigate({ view: "session", id });
-								} catch (e) {
-									console.error("New chat failed:", e);
-								}
-							}}
+							onNewChat={handleNewChat}
 							onRename={async (id, title) => {
 								try {
 									await renameSessionApi(id, title);
@@ -1214,8 +1249,8 @@ function App() {
 								// Closing a tab archives the chat: it leaves the strip and the
 								// active list, but stays recoverable from Archived. An empty
 								// chat that never ran has nothing to recover, so it's deleted
-								// outright instead of cluttering Archived. If we just closed
-								// the open session, fall back to a sibling tab.
+								// outright instead of cluttering Archived. Update the local
+								// list before the request returns so closing feels instant.
 								const neverRan =
 									s.source === "backstage" &&
 									!s.claudeSessionId &&
@@ -1223,16 +1258,48 @@ function App() {
 									!s.transcriptPath &&
 									!s.isRunning &&
 									!s.queuedCount;
+								const wasOpen = currentSession?.id === s.id;
+								const next = wasOpen
+									? projectChats.find((c) => c.id !== s.id)
+									: null;
+								let replacementId: string | null = null;
+								if (wasOpen && !next) {
+									try {
+										replacementId = await createNewChatFrom(s, "share");
+									} catch (e) {
+										console.error("Replacement chat failed:", e);
+										return;
+									}
+								}
+								if (neverRan) {
+									remove(s.id);
+								} else {
+									patch(s.id, { archived: true, archivedReason: "manual" });
+								}
+								if (wasOpen) {
+									if (next) navigate({ view: "session", id: next.id });
+								}
 								try {
 									if (neverRan) await deleteSessionApi(s.id, false);
 									else await archiveSessionApi(s.id, true);
 								} catch (e) {
 									console.error("Close failed:", e);
-								}
-								if (currentSession?.id === s.id) {
-									const next = projectChats.find((c) => c.id !== s.id);
-									if (next) navigate({ view: "session", id: next.id });
-									else goBack();
+									if (neverRan) {
+										inject(s);
+									} else {
+										patch(s.id, { archived: false, archivedReason: undefined });
+									}
+									if (replacementId) {
+										remove(replacementId);
+										void deleteSessionApi(replacementId, false).catch((cleanupError) =>
+											console.error(
+												"Replacement cleanup failed:",
+												cleanupError,
+											),
+										);
+									}
+									if (wasOpen) navigate({ view: "session", id: s.id });
+									return;
 								}
 								refresh();
 							}}
@@ -1318,6 +1385,7 @@ function App() {
 									rightPanelEl={rightPanelEl}
 									newChatSeq={newChatSeq}
 									workspaceChats={projectChats}
+									onNewChat={handleNewChat}
 									parentSession={
 										currentSession.parentSessionId
 											? (() => {
@@ -1339,6 +1407,7 @@ function App() {
 											isRunning: s.isRunning,
 										}))}
 									onOpenSession={(id) => navigate({ view: "session", id })}
+									onRunningChange={handleSessionRunningChange}
 									onRename={async (id, title) => {
 										try {
 											await renameSessionApi(id, title);

@@ -39,7 +39,7 @@
 	--tool-skill: #2dd4bf;
 	--mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
 	--sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
-	--radius: 8px;
+	--radius: 14px;
 	/* Chat column width — messages, work blocks, composer, ask cards all share
 	   it so the conversation reads as one column. */
 	--chat-col: 1000px;
@@ -86,9 +86,7 @@ html[data-theme="light"] {
 	--tool-skill: #0f766e;
 }
 
-/* Spots that hardcode light-on-dark colors and would break on a light surface.
-   Code blocks (.markdown pre, .terminal) intentionally stay dark in both themes,
-   so only their inline/nested siblings need re-coloring. */
+/* Spots that hardcode light-on-dark colors and would break on a light surface. */
 html[data-theme="light"] .diff-line-add {
 	background: rgba(26, 127, 55, 0.12);
 	color: #1a7f37;
@@ -101,9 +99,13 @@ html[data-theme="light"] .markdown code {
 	background: rgba(0, 0, 0, 0.06);
 	color: #953b39;
 }
-/* .markdown pre stays dark, so keep its nested code light (it inherits --text). */
+html[data-theme="light"] .markdown pre {
+	background: #f6f8fa;
+	border-color: #d8dee4;
+	color: #1f2328;
+}
 html[data-theme="light"] .markdown pre code {
-	color: #dde1f0;
+	color: inherit;
 }
 html[data-theme="light"] .note-chip-session {
 	color: #c0322f;
@@ -256,6 +258,74 @@ button {
 	padding: 0;
 }
 
+@supports (corner-shape: squircle) {
+	:where(
+			[class*="rounded-"]:not([class*="rounded-full"]),
+			[class~="rounded"]
+		) {
+		corner-shape: squircle;
+	}
+
+	.diff-file,
+	.pr-checks,
+	.pr-git,
+	.pr-body,
+	.composer-schedule-modal,
+	.composer-schedule-input,
+	.composer-schedule-cancel,
+	.composer-schedule-submit,
+	.composer-file-card,
+	.composer-file-thumb,
+	.composer-queue-item,
+	.composer-queue-action,
+	.composer-queue-edit-cancel,
+	.composer-queue-images img,
+	.composer-queue-edit textarea,
+	.composer-queue-edit-save,
+	.mention-popup,
+	.mention-item,
+	.mention-repo,
+	.composer-menu,
+	.composer-menu-item,
+	.composer-goal-input,
+	.composer-goal-set,
+	.fork-banner,
+	.palette-card,
+	.palette-trigger,
+	.plain-entry,
+	.setting-card,
+	.ui-select,
+	.user-avatar,
+	.user-avatar img,
+	.rv-avatar,
+	.slack-avatar,
+	.viewer-branch-editable,
+	.viewer-branch-rename,
+	.viewer-overflow-menu,
+	.btn-viewer-overflow,
+	.session-link,
+	.btn-panel-toggle,
+	.btn-viewer-delete,
+	.btn-viewer-archive,
+	.btn-viewer-newchat,
+	.btn-viewer-share,
+	.btn-viewer-pin,
+	.sidebar-nav-item,
+	.sidebar-toggle-btn,
+	.sidebar-reopen,
+	.sidebar-search-wrap,
+	.sidebar-new-btn,
+	.sidebar-band-action,
+	.sidebar-group-header,
+	.sidebar-item,
+	.sidebar-item-x,
+	.sidebar-swipe-row,
+	.sidebar-item-rename,
+	.sidebar-hovercard {
+		corner-shape: squircle;
+	}
+}
+
 input,
 textarea,
 select {
@@ -295,9 +365,12 @@ a {
 	justify-content: space-between;
 	padding: env(safe-area-inset-top, 0px) 16px 0;
 	height: var(--header-h);
-	border-bottom: 1px solid var(--border);
+	border-bottom: 1px solid transparent;
 	background: var(--bg-raised);
 	flex-shrink: 0;
+}
+.app-header-scrolled {
+	border-bottom-color: var(--border);
 }
 
 .app-header-left {
@@ -345,14 +418,14 @@ a {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 26px;
-	height: 26px;
-	border-radius: 7px;
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
 	background: radial-gradient(120% 120% at 50% 38%, #1c0405 0%, #0a0608 70%);
 	border: 1px solid rgba(255, 40, 40, 0.22);
 	color: #ff2a2a;
 	font-weight: 800;
-	font-size: 14px;
+	font-size: 17px;
 	text-shadow:
 		0 0 6px rgba(255, 30, 30, 0.85),
 		0 0 2px rgba(255, 90, 90, 0.9);
@@ -378,6 +451,24 @@ a {
 	mix-blend-mode: screen;
 	pointer-events: none;
 	animation: kitt-scan 2.6s ease-in-out infinite alternate;
+}
+.app-logo-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+	width: 42px;
+	height: 42px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: inherit;
+	border-radius: 10px;
+	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
+}
+.app-logo-button:active {
+	background: var(--bg-hover);
 }
 @keyframes kitt-scan {
 	from {
@@ -406,7 +497,14 @@ a {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
-	padding: 4px 10px 6px;
+	--sidebar-nav-x: 10px;
+	padding: 4px var(--sidebar-nav-x) 6px;
+}
+
+@media (min-width: 721px) {
+	.sidebar-nav {
+		border-bottom: 1px solid var(--border);
+	}
 }
 
 .sidebar-nav-item {
@@ -417,11 +515,11 @@ a {
 	text-align: left;
 	background: none;
 	border: none;
-	border-radius: 8px;
+	border-radius: 12px;
 	color: var(--text-dim);
 	font-size: 14px;
 	font-weight: 500;
-	padding: 8px 10px;
+	padding: 8px 10px 8px calc(var(--sidebar-icon-left) - var(--sidebar-nav-x));
 }
 .sidebar-nav-item:hover {
 	color: var(--text);
@@ -476,6 +574,7 @@ a {
 
 .sidebar-container {
 	position: relative;
+	--sidebar-icon-left: 16px;
 	width: var(--sidebar-w, 252px);
 	flex-shrink: 0;
 	border-right: 1px solid var(--border);
@@ -492,7 +591,8 @@ a {
 	align-items: center;
 	justify-content: space-between;
 	gap: 8px;
-	padding: 10px 12px;
+	height: 48px;
+	padding: 0 12px 0 var(--sidebar-icon-left);
 	flex-shrink: 0;
 	min-width: 0;
 }
@@ -515,13 +615,13 @@ a {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 28px;
-	height: 28px;
+	width: 34px;
+	height: 34px;
 	flex-shrink: 0;
 	padding: 0;
 	background: none;
 	border: none;
-	border-radius: 7px;
+	border-radius: 11px;
 	color: var(--text-faint);
 	cursor: pointer;
 	transition: color 0.12s, background 0.12s;
@@ -536,8 +636,8 @@ a {
    desktop sidebar is collapsed (see the sidebar-collapsed rules below). */
 .sidebar-reopen {
 	position: absolute;
-	top: 11px;
-	left: 12px;
+	top: 9px;
+	left: 9px;
 	z-index: 20;
 	display: none;
 }
@@ -608,9 +708,8 @@ body.resizing-x {
 	min-width: 0;
 }
 .sidebar-workspace-title {
-	font-size: 13.5px;
+	font-size: 14px;
 	font-weight: 700;
-	letter-spacing: -0.01em;
 	color: var(--text);
 	flex-shrink: 0;
 }
@@ -638,14 +737,15 @@ body.resizing-x {
 .sidebar-repo-chip {
 	display: inline-flex;
 	align-items: center;
-	gap: 5px;
+	gap: 7px;
 	min-width: 0;
 	max-width: 100%;
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
 	border-radius: 999px;
-	padding: 2px 3px 2px 5px;
-	font-size: 12px;
+	padding: 4px 5px 4px 7px;
+	font-size: 13px;
+	line-height: 1.15;
 }
 /* Inline in the header: never let the spacer squeeze it (it's only shown when
    measured to fit). */
@@ -663,10 +763,10 @@ body.resizing-x {
 	max-width: none;
 }
 .sidebar-repo-chip .repo-tile {
-	width: 15px;
-	height: 15px;
+	width: 17px;
+	height: 17px;
 	border-radius: 4px;
-	font-size: 9px;
+	font-size: 10px;
 }
 .sidebar-repo-chip-name {
 	color: var(--text-dim);
@@ -679,8 +779,8 @@ body.resizing-x {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 16px;
-	height: 16px;
+	width: 19px;
+	height: 19px;
 	border: none;
 	background: none;
 	border-radius: 50%;
@@ -699,11 +799,12 @@ body.resizing-x {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	margin: 10px 8px 4px;
+	--sidebar-search-x: 8px;
+	margin: 10px var(--sidebar-search-x) 4px;
 	background: var(--bg-panel);
 	border: 1px solid transparent;
-	border-radius: 7px;
-	padding: 0 8px;
+	border-radius: 12px;
+	padding: 0 8px 0 calc(var(--sidebar-icon-left) - var(--sidebar-search-x));
 	min-width: 0;
 	transition:
 		border-color 0.12s,
@@ -744,13 +845,13 @@ body.resizing-x {
 }
 
 .sidebar-new-btn {
-	width: 28px;
-	height: 28px;
+	width: 34px;
+	height: 34px;
 	background: none;
 	color: var(--text-dim);
 	border: none;
-	border-radius: 7px;
-	font-size: 18px;
+	border-radius: 11px;
+	font-size: 20px;
 	line-height: 1;
 	font-weight: 500;
 	flex-shrink: 0;
@@ -783,10 +884,10 @@ body.resizing-x {
 .sidebar-filter-btn.has-filter::after {
 	content: "";
 	position: absolute;
-	top: 3px;
-	right: 3px;
-	width: 5px;
-	height: 5px;
+	top: 5px;
+	right: 5px;
+	width: 6px;
+	height: 6px;
 	border-radius: 50%;
 	background: var(--accent);
 }
@@ -821,10 +922,10 @@ body.resizing-x {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12px;
+	gap: 14px;
 }
 .filter-row-label {
-	font-size: 13px;
+	font-size: 14px;
 	color: var(--text-dim);
 	flex-shrink: 0;
 }
@@ -836,13 +937,13 @@ body.resizing-x {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	min-width: 132px;
+	min-width: 148px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
 	border-radius: 8px;
-	padding: 6px 8px 6px 10px;
+	padding: 8px 10px 8px 12px;
 	color: var(--text);
-	font-size: 13px;
+	font-size: 14px;
 	cursor: pointer;
 }
 .mini-select:hover {
@@ -925,7 +1026,7 @@ body.resizing-x {
 .sidebar-list {
 	flex: 1;
 	overflow-y: auto;
-	padding: 1px 10px 24px;
+	padding: 1px 14px 24px 10px;
 }
 
 /* "Archived" — an icon-led row styled as a peer of the My-sessions status buckets
@@ -961,6 +1062,10 @@ body.resizing-x {
 	margin-bottom: 14px;
 }
 
+.sidebar-status-group + .sidebar-status-group {
+	margin-top: 8px;
+}
+
 /* People and Automations render one collapsed row per group, so the 14px
    inter-group margin leaves them floating far apart. Drop it so consecutive
    people/automation rows stack flush, like the session items above them. The
@@ -978,13 +1083,12 @@ body.resizing-x {
 	border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
 }
 
-/* "My sessions" / "People" / "Projects" are peer section headings — same size,
-   weight, and color so they read as one consistent hierarchy level. */
+/* "My sessions" / "People" / "Projects" match the workspace heading. */
 .sidebar-band-label,
 .sidebar-mine-label {
-	font-size: 13.5px;
+	font-size: 14px;
 	font-weight: 700;
-	letter-spacing: -0.01em;
+	letter-spacing: 0;
 	color: var(--text);
 	padding: 4px 6px 8px;
 }
@@ -1033,7 +1137,7 @@ body.resizing-x {
 	height: 28px;
 	background: none;
 	border: none;
-	border-radius: 6px;
+	border-radius: 10px;
 	color: var(--text-dim);
 	flex-shrink: 0;
 }
@@ -1049,7 +1153,7 @@ body.resizing-x {
 	width: 100%;
 	background: none;
 	border: none;
-	border-radius: 6px;
+	border-radius: 10px;
 	color: var(--text-dim);
 	font-size: 14px;
 	font-weight: 500;
@@ -1079,6 +1183,13 @@ body.resizing-x {
 	opacity: 0.85;
 }
 
+.sidebar-group-icon {
+	width: 22px;
+	height: 22px;
+	flex-shrink: 0;
+	opacity: 0.9;
+}
+
 .sidebar-group-name {
 	text-align: left;
 	white-space: nowrap;
@@ -1089,6 +1200,7 @@ body.resizing-x {
 
 .sidebar-group-count {
 	margin-left: auto;
+	padding-right: 4px;
 	color: var(--text-faint);
 	font-size: 12px;
 	font-weight: 500;
@@ -1100,11 +1212,11 @@ body.resizing-x {
 	text-align: left;
 	background: none;
 	border: none;
-	border-radius: 6px;
+	border-radius: 12px;
 	/* Roomier rows: a taller hit target that's easier to click/tap. The extra
 	   left padding indents rows under their group header (whose dot + name start
 	   ~22px in), so the list reads as nested groups rather than one flat column. */
-	padding: 11px 9px 11px 22px;
+	padding: 11px 11px 11px 22px;
 	color: var(--text);
 	position: relative;
 }
@@ -1124,14 +1236,14 @@ body.resizing-x {
 .sidebar-item-x {
 	display: none;
 	position: absolute;
-	right: 8px;
+	right: 7px;
 	top: 50%;
 	transform: translateY(-50%);
 	width: 26px;
 	height: 26px;
 	align-items: center;
 	justify-content: center;
-	border-radius: 5px;
+	border-radius: 9px;
 	font-size: 15px;
 	line-height: 1;
 	color: var(--text-faint);
@@ -1161,9 +1273,124 @@ body.resizing-x {
 	color: var(--text);
 	background: var(--bg-active);
 }
-/* On touch there's no hover to reveal the archive X, so it stays hidden and the
-   full action set (Rename / Move / Archive) is reached by long-pressing a row,
-   which opens the mobile action sheet (see .mobile-action-sheet). */
+/* Mobile swipe row shell. Swipe left reveals Archive; swipe right reveals Star.
+   Long-press still opens the full action sheet. */
+.sidebar-swipe-row {
+	position: relative;
+	overflow: hidden;
+	border-radius: 12px;
+}
+.sidebar-swipe-row > .sidebar-item {
+	position: relative;
+	z-index: 1;
+	transform: translateX(var(--swipe-x, 0));
+	transition: transform 210ms cubic-bezier(0.22, 1, 0.36, 1);
+	touch-action: pan-y;
+	will-change: transform;
+}
+.sidebar-swipe-row > .sidebar-item:hover {
+	background: var(--bg-hover);
+}
+.sidebar-swipe-row > .sidebar-item-selected {
+	background: var(--bg-active);
+}
+.sidebar-swipe-row > .sidebar-item-waiting {
+	background: var(--accent-soft);
+}
+.sidebar-swipe-row.is-open > .sidebar-item {
+	transition-duration: 180ms;
+}
+.sidebar-swipe-row.is-dragging > .sidebar-item,
+.sidebar-swipe-row.is-dragging > .sidebar-swipe-action {
+	transition: none;
+}
+.sidebar-swipe-row.is-open .sidebar-item-x,
+.sidebar-swipe-row.is-open .sidebar-ws-actions {
+	display: none;
+}
+.sidebar-swipe-action {
+	position: absolute;
+	z-index: 0;
+	top: 0;
+	bottom: 0;
+	width: var(--swipe-action-w, 82px);
+	display: none;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2px;
+	border: 0;
+	color: white;
+	font-size: 11px;
+	font-weight: 600;
+	transition: width 210ms cubic-bezier(0.22, 1, 0.36, 1);
+	will-change: width;
+}
+.sidebar-swipe-action--archive {
+	right: 0;
+	background: var(--red);
+}
+.sidebar-swipe-action--star {
+	left: 0;
+	background: var(--yellow);
+	color: #17130a;
+}
+.sidebar-swipe-action--star.is-on {
+	background: var(--accent);
+	color: #fff;
+}
+.sidebar-swipe-action svg {
+	flex: 0 0 auto;
+}
+@media (hover: none) {
+	.sidebar-swipe-row.is-swipe-archive > .sidebar-swipe-action--archive,
+	.sidebar-swipe-row.is-swipe-star > .sidebar-swipe-action--star {
+		display: flex;
+	}
+	.sidebar-item:hover:not(.sidebar-item-selected):not(.sidebar-item-waiting) {
+		background: none;
+	}
+	.sidebar-swipe-row > .sidebar-item:hover:not(.sidebar-item-selected):not(.sidebar-item-waiting) {
+		background: none;
+	}
+	.sidebar-item:hover .sidebar-item-x,
+	.sidebar-ws-row:hover .sidebar-ws-actions {
+		display: none;
+	}
+	.sidebar-item:hover .sidebar-item-inline-meta {
+		opacity: 1;
+	}
+	.sidebar-item:hover .sidebar-item-meta {
+		padding-right: 0;
+	}
+	.sidebar-ws-row:hover .sidebar-group-count,
+	.sidebar-ws-row:hover .sidebar-ws-unread {
+		display: inline-flex;
+	}
+}
+@media (max-width: 720px) {
+	.sidebar-item:hover .sidebar-item-x,
+	.sidebar-ws-row:hover .sidebar-ws-actions {
+		display: none;
+	}
+	.sidebar-item:hover .sidebar-item-inline-meta {
+		opacity: 1;
+	}
+	.sidebar-item:hover .sidebar-item-meta {
+		padding-right: 0;
+	}
+	.sidebar-ws-row:hover .sidebar-group-count,
+	.sidebar-ws-row:hover .sidebar-ws-unread {
+		display: inline-flex;
+	}
+	.sidebar-ws-row:hover .sidebar-ws-time,
+	.sidebar-ws-row:hover .sidebar-ws-ticker,
+	.sidebar-ws-row:hover .sidebar-ws-draft {
+		display: inline-flex;
+	}
+}
+/* On touch, the full action set (Rename / Move / Archive) is still reached by
+   long-pressing a row, which opens the mobile action sheet. */
 
 /* Mobile action sheet — a bottom sheet raised by long-pressing a session row.
    Slides up over a dimmed backdrop; holds the per-session actions that live in
@@ -1341,7 +1568,7 @@ body.resizing-x {
 	color: inherit;
 	background: var(--bg);
 	border: 1px solid var(--accent, #6b8afd);
-	border-radius: 3px;
+	border-radius: 8px;
 	padding: 0 3px;
 	min-width: 0;
 	flex: 1;
@@ -1365,9 +1592,11 @@ body.resizing-x {
 .sidebar-item-inline-meta {
 	display: flex;
 	align-items: center;
+	justify-content: flex-end;
 	gap: 4px;
 	margin-left: auto;
-	padding-left: 8px;
+	padding-left: 10px;
+	min-width: 40px;
 	font-size: 12px;
 	color: var(--text-faint);
 	white-space: nowrap;
@@ -1398,7 +1627,7 @@ body.resizing-x {
 	z-index: 200;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: 16px;
 	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
 	padding: 11px 13px 12px;
 	color: var(--text);
@@ -1623,13 +1852,28 @@ body.resizing-x {
 	padding: 6px 8px 0;
 	background: var(--bg-raised);
 	border-bottom: 1px solid var(--border);
+	flex-shrink: 0;
+	min-width: 0;
+}
+.session-tabs-scroll {
+	display: flex;
+	align-items: stretch;
+	gap: 3px;
+	min-width: 0;
+	flex: 1 1 auto;
 	overflow-x: auto;
 	overscroll-behavior-x: contain;
-	flex-shrink: 0;
 	scrollbar-width: none;
 }
-.session-tabs::-webkit-scrollbar {
+.session-tabs-scroll::-webkit-scrollbar {
 	display: none;
+}
+.session-tabs-actions {
+	display: flex;
+	align-items: stretch;
+	gap: 3px;
+	flex: 0 0 auto;
+	margin-left: auto;
 }
 
 .session-tab {
@@ -1739,16 +1983,23 @@ body.resizing-x {
 	position: fixed;
 	z-index: 1000;
 	display: flex;
-	gap: 6px;
-	padding: 7px 8px;
+	gap: 8px;
+	padding: 9px 10px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
-	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+	border-radius: 14px;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+	corner-shape: squircle;
+}
+.sidebar-ctx-menu {
+	corner-shape: squircle;
+}
+.sidebar-ctx-menu button:not(.tab-color-swatch):hover {
+	background: var(--bg-hover, rgba(255, 255, 255, 0.06)) !important;
 }
 .tab-color-swatch {
-	width: 18px;
-	height: 18px;
+	width: 22px;
+	height: 22px;
 	border-radius: 50%;
 	border: 1px solid rgba(255, 255, 255, 0.15);
 	padding: 0;
@@ -2037,7 +2288,7 @@ body.resizing-x {
 /* Double-clickable to rename — hint it on hover without shifting layout. */
 .viewer-branch-editable {
 	cursor: text;
-	border-radius: 4px;
+	border-radius: 8px;
 	padding: 0 3px;
 	margin: 0 -3px;
 }
@@ -2054,7 +2305,7 @@ body.resizing-x {
 	color: inherit;
 	background: var(--bg);
 	border: 1px solid var(--accent, #6b8afd);
-	border-radius: 4px;
+	border-radius: 8px;
 	padding: 1px 4px;
 	margin: -2px 0;
 	outline: none;
@@ -2114,6 +2365,9 @@ body.resizing-x {
 	gap: 8px;
 	flex-shrink: 0;
 }
+.viewer-overflow + .btn-panel-toggle.btn-workspace {
+	margin-left: -4px;
+}
 
 /* Narrow (non-phone) top bar: give the title room first. Drop the "by X" line
    and shrink the Working pill to just its dot before any action is hidden. */
@@ -2139,9 +2393,9 @@ body.resizing-x {
 	justify-content: center;
 	background: none;
 	border: 1px solid transparent;
-	border-radius: 6px;
+	border-radius: 10px;
 	color: var(--text-dim);
-	padding: 4px 8px;
+	padding: 4px 6px;
 	font-size: 18px;
 	line-height: 1;
 }
@@ -2162,7 +2416,7 @@ body.resizing-x {
 	padding: 8px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: 16px;
 	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
 }
 /* Stack the collapsed actions as a tidy full-width list. On phones the
@@ -2193,9 +2447,9 @@ body.resizing-x {
 	font-size: 13px;
 }
 
-/* Round user picture (GitHub avatar, initial fallback) — see UserAvatar.tsx.
+/* Squircle user picture (GitHub avatar, initial fallback) — see UserAvatar.tsx.
    Size + font-size come inline from the component; the count badge the
-   presence facepile nests inside sits outside the circle, so no overflow
+   presence facepile nests inside sits outside the avatar, so no overflow
    clipping here (the img rounds itself instead). */
 .user-avatar {
 	position: relative;
@@ -2203,7 +2457,7 @@ body.resizing-x {
 	align-items: center;
 	justify-content: center;
 	flex-shrink: 0;
-	border-radius: 50%;
+	border-radius: 32%;
 	background: var(--bg-active);
 	border: 1px solid var(--border-strong);
 	color: var(--text-dim);
@@ -2215,7 +2469,7 @@ body.resizing-x {
 	inset: 0;
 	width: 100%;
 	height: 100%;
-	border-radius: 50%;
+	border-radius: inherit;
 	object-fit: cover;
 }
 
@@ -2226,9 +2480,9 @@ body.resizing-x {
 }
 
 .presence-avatar {
-	margin-left: -7px;
+	margin-left: -8px;
 	/* Ring the color of the header behind it (.viewer-header is bg-raised),
-	   so stacked faces read as separate circles. */
+	   so stacked faces read as separate avatars. */
 	box-shadow: 0 0 0 2px var(--bg-raised);
 }
 .presence-avatar:first-child {
@@ -2245,9 +2499,9 @@ body.resizing-x {
 	right: -3px;
 	background: var(--accent);
 	color: #fff;
-	font-size: 8.5px;
+	font-size: 9px;
 	border-radius: 99px;
-	padding: 0 3px;
+	padding: 0 3.5px;
 	line-height: 1.3;
 }
 
@@ -2256,7 +2510,7 @@ body.resizing-x {
 	font-weight: 600;
 	text-decoration: none;
 	padding: 5px 11px;
-	border-radius: 6px;
+	border-radius: 10px;
 	border: 1px solid var(--border-strong);
 	color: var(--text-dim);
 }
@@ -2296,7 +2550,7 @@ body.resizing-x {
 	gap: 6px;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 6px;
+	border-radius: 10px;
 	color: var(--text-dim);
 	padding: 5px 12px;
 	font-size: 13px;
@@ -2307,7 +2561,7 @@ body.resizing-x {
    tint/icon color carries the affordance (the border stays on the text-y
    .btn-panel-toggle siblings like the PR button). */
 .btn-panel-toggle.btn-workspace {
-	padding: 3px 7px;
+	padding: 3px 5px;
 	border-color: transparent;
 }
 .btn-panel-toggle.btn-workspace.active,
@@ -2324,8 +2578,12 @@ body.resizing-x {
 	font-size: 13px;
 	line-height: 1;
 }
-.btn-panel-toggle.active,
 .btn-panel-toggle:hover {
+	color: var(--accent);
+	border-color: var(--accent);
+	background: var(--accent-soft);
+}
+.btn-panel-toggle.active:not(.btn-workspace) {
 	color: var(--accent);
 	border-color: var(--accent);
 	background: var(--accent-soft);
@@ -2339,7 +2597,7 @@ body.resizing-x {
 	white-space: nowrap;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 6px;
+	border-radius: 10px;
 	color: var(--text-faint);
 	padding: 5px 12px;
 	font-size: 13px;
@@ -2354,6 +2612,33 @@ body.resizing-x {
 .btn-viewer-archive:disabled {
 	opacity: 0.6;
 	cursor: default;
+}
+.btn-viewer-shortcut {
+	margin-left: auto;
+	color: var(--text-faint);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0;
+}
+
+/* New-chat-in-workspace row (phone ⋯ menu). Matches the archive/delete rows:
+   icon + label, neutral until hover. It's a create action, so hover leans to
+   the full text color. */
+.btn-viewer-newchat {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	white-space: nowrap;
+	background: none;
+	border: 1px solid var(--border-strong);
+	border-radius: 10px;
+	color: var(--text-faint);
+	padding: 5px 12px;
+	font-size: 13px;
+}
+.btn-viewer-newchat:hover {
+	color: var(--text);
+	background: var(--bg-hover);
 }
 
 /* Preview (local dev server) control */
@@ -2542,33 +2827,38 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 }
 
 .btn-viewer-share {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 6px;
+	border-radius: 10px;
 	color: var(--text-dim);
 	padding: 5px 12px;
-	/* Extra breathing room to its left so it doesn't crowd the presence
-	   facepile / secondary actions that sit before it. */
-	margin-left: 6px;
 	font-size: 13px;
 	white-space: nowrap;
 }
 .btn-viewer-share:hover {
-	color: var(--text);
-	border-color: var(--text-faint);
+	color: var(--accent);
+	border-color: var(--accent);
+	background: var(--accent-soft);
 }
 .btn-viewer-share-done {
 	color: var(--green);
 	border-color: var(--green);
+	background: var(--green-soft);
 }
 
 .btn-viewer-pin {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 6px;
+	border-radius: 10px;
 	color: var(--text-dim);
 	padding: 5px 10px;
-	font-size: 16px;
+	font-size: 13px;
 	line-height: 1.2;
 }
 .btn-viewer-pin:hover {
@@ -2754,6 +3044,82 @@ body.resizing-x .panel-resize::after {
 	flex: 1;
 	overflow-y: auto;
 	min-height: 0;
+}
+
+.workspace-info-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	padding: 14px 14px 18px;
+}
+
+.workspace-info-head {
+	display: grid;
+	gap: 3px;
+}
+
+.workspace-info-kicker,
+.workspace-info-label {
+	color: var(--text-faint);
+	font-size: 10.5px;
+	font-weight: 650;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.workspace-info-title {
+	color: var(--text);
+	font-size: 18px;
+	font-weight: 680;
+	line-height: 1.15;
+	overflow-wrap: anywhere;
+}
+
+.workspace-info-meta {
+	color: var(--text-faint);
+	font-size: 12px;
+	line-height: 1.35;
+}
+
+.workspace-info-body {
+	display: grid;
+	gap: 14px;
+}
+
+.workspace-info-media {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+	gap: 8px;
+	max-height: 380px;
+	overflow-y: auto;
+	padding-right: 2px;
+}
+
+.workspace-info-thumb {
+	position: relative;
+	display: block;
+	aspect-ratio: 4 / 3;
+	overflow: hidden;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--bg-surface);
+}
+
+.workspace-info-section {
+	display: grid;
+	gap: 5px;
+}
+
+.workspace-info-text {
+	color: var(--text-dim);
+	font-size: 14px;
+	line-height: 1.42;
+}
+
+.workspace-info-empty {
+	color: var(--text-faint);
+	font-size: 13px;
+	padding-top: 2px;
 }
 
 .panel-placeholder {
@@ -4475,7 +4841,7 @@ body.resizing-x .panel-resize::after {
 .rv-avatar {
 	width: 22px;
 	height: 22px;
-	border-radius: 99px;
+	border-radius: 32%;
 	flex-shrink: 0;
 	background: var(--bg-active);
 }
@@ -4782,7 +5148,7 @@ body.resizing-x .panel-resize::after {
 	   dragging the whole transcript off-screen. */
 	overflow-x: hidden;
 	overscroll-behavior: contain;
-	padding: 18px 20px 10px;
+	padding: 18px 20px 4px;
 	min-height: 0;
 	/* Keep the reader's place when content loads/expands above them (principle 12):
      the browser anchors scroll to on-screen content instead of jumping. */
@@ -4857,25 +5223,31 @@ body.resizing-x .panel-resize::after {
 .jump-latest {
 	position: absolute;
 	left: 50%;
-	bottom: 14px;
+	bottom: 12px;
 	transform: translateX(-50%);
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
-	padding: 7px 14px;
-	font-size: 12.5px;
+	gap: 8px;
+	padding: 8px 14px;
+	font-size: 13px;
 	font-weight: 600;
 	color: var(--text);
 	background: var(--bg-raised);
 	border: 1px solid var(--border);
-	border-radius: 99px;
-	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+	border-radius: 8px;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 	cursor: pointer;
 	z-index: 5;
 	animation: jump-rise 0.18s ease-out;
+	transition:
+		background 0.12s,
+		border-color 0.12s,
+		box-shadow 0.12s;
 }
 .jump-latest:hover {
 	border-color: var(--accent);
+	background: var(--bg-hover);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .jump-latest-arrow {
 	font-size: 14px;
@@ -4893,7 +5265,7 @@ body.resizing-x .panel-resize::after {
 @keyframes jump-rise {
 	from {
 		opacity: 0;
-		transform: translate(-50%, 6px);
+		transform: translate(-50%, 4px);
 	}
 	to {
 		opacity: 1;
@@ -5036,6 +5408,28 @@ body.resizing-x .panel-resize::after {
 	animation: pulse 1s ease-in-out infinite;
 }
 
+.msg-busy-inline {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 9px;
+	width: 100%;
+	max-width: var(--chat-col);
+	margin-top: 2px;
+	padding: 5px 0;
+	color: var(--text-dim);
+	font-size: 12.5px;
+}
+
+.msg-busy-inline .pulse-dot {
+	width: 7px;
+	height: 7px;
+}
+
+.msg-busy-inline .queue-count {
+	color: var(--text-faint);
+}
+
 .msg-system {
 	text-align: center;
 	/* `auto` left/right keeps this in the same centered column as user/assistant
@@ -5163,6 +5557,7 @@ body.resizing-x .panel-resize::after {
 }
 
 /* Restart overlay (covers the UI while the server redeploys) */
+
 .restart-overlay {
 	position: fixed;
 	inset: 0;
@@ -5895,9 +6290,7 @@ button.home-whisper-link:hover {
 	background: color-mix(in oklab, currentColor 13%, var(--bg));
 }
 
-/* Code surface inside an expanded tool call: stays dark in BOTH themes (same
-   convention as .markdown pre / .terminal) — shiki highlights with a dark
-   token theme, which would be unreadable on the light panel otherwise. */
+/* Code surface inside an expanded tool call. */
 .tool-code-surface {
 	background: #0d0f13;
 	border: 1px solid rgba(255, 255, 255, 0.06);
@@ -5917,7 +6310,15 @@ button.home-whisper-link:hover {
 	color: #565d6b;
 }
 html[data-theme="light"] .tool-code-surface {
-	border-color: rgba(0, 0, 0, 0.25);
+	background: #f6f8fa;
+	border-color: #d8dee4;
+}
+html[data-theme="light"] .tool-code-surface .tool-pre,
+html[data-theme="light"] .tool-pre.tool-code-surface {
+	color: #57606a;
+}
+html[data-theme="light"] .tool-code-surface .shiki-gutter {
+	color: #8c959f;
 }
 
 /* Shiki-highlighted variant: keep .tool-pre's box, strip shiki's own chrome */
@@ -5943,7 +6344,7 @@ html[data-theme="light"] .tool-code-surface {
 /* ── Input area ──────────────────────────────────────────── */
 
 .viewer-input {
-	padding: 12px 20px 14px;
+	padding: 6px 20px 14px;
 	background: transparent;
 	flex-shrink: 0;
 }
@@ -6006,8 +6407,8 @@ html[data-theme="light"] .tool-code-surface {
 	position: relative;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 16px;
-	padding: 12px 12px 8px 14px;
+	border-radius: 34px;
+	padding: 14px 14px 10px 16px;
 	transition:
 		border-color 0.15s,
 		box-shadow 0.15s;
@@ -6018,6 +6419,165 @@ html[data-theme="light"] .tool-code-surface {
 }
 .composer-disabled {
 	opacity: 0.6;
+}
+
+.composer-queue {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0 0 10px;
+	padding: 0 0 10px;
+	border-bottom: 1px solid var(--border);
+}
+.composer-queue-title {
+	color: var(--text-dim);
+	font-size: 13px;
+	font-weight: 650;
+}
+.composer-queue-item {
+	display: grid;
+	gap: 7px;
+	padding: 9px 10px;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: color-mix(in srgb, var(--bg-panel) 78%, transparent);
+}
+.composer-queue-steered {
+	border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+	background: color-mix(in srgb, var(--accent) 9%, var(--bg-panel));
+}
+.composer-queue-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+.composer-queue-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-faint);
+	font-size: 11.5px;
+	font-weight: 650;
+}
+.composer-queue-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+}
+.composer-queue-action,
+.composer-queue-edit-cancel {
+	width: 28px;
+	height: 28px;
+	border-radius: 10px;
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--text-dim);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.composer-queue-action:not(:disabled):hover,
+.composer-queue-edit-cancel:hover {
+	background: var(--bg-raised);
+	border-color: var(--border);
+	color: var(--text);
+}
+.composer-queue-action:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+.composer-queue-steer {
+	width: auto;
+	padding: 0 8px;
+	gap: 4px;
+	color: var(--accent);
+	border-color: var(--accent-soft);
+	background: var(--accent-soft);
+	font-size: 12px;
+	font-weight: 650;
+}
+.composer-queue-steer:not(:disabled):hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+.composer-queue-action.danger:not(:disabled):hover {
+	color: var(--red);
+	border-color: var(--red);
+	background: var(--red-soft);
+}
+.composer-queue-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 24px;
+	padding: 0 8px;
+	border-radius: 999px;
+	border: 1px solid var(--accent-soft);
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-size: 11.5px;
+	font-weight: 650;
+	flex-shrink: 0;
+}
+.composer-queue-body {
+	color: var(--text);
+	font-size: 13px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.composer-queue-item.is-human .composer-queue-body {
+	color: color-mix(in srgb, var(--text) 88%, #1f9e8a);
+}
+.composer-queue-images {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.composer-queue-images img {
+	width: 80px;
+	height: 58px;
+	object-fit: cover;
+	border-radius: 12px;
+	border: 1px solid var(--border);
+}
+.composer-queue-edit {
+	display: grid;
+	gap: 8px;
+}
+.composer-queue-edit textarea {
+	width: 100%;
+	min-height: 76px;
+	resize: vertical;
+	border-radius: 12px;
+	border: 1px solid var(--border-strong);
+	background: var(--bg-raised);
+	color: var(--text);
+	padding: 9px 10px;
+	font: inherit;
+	outline: none;
+}
+.composer-queue-edit textarea:focus {
+	border-color: var(--accent);
+}
+.composer-queue-edit-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+}
+.composer-queue-edit-save {
+	height: 28px;
+	border-radius: 10px;
+	border: 1px solid var(--accent);
+	background: var(--accent);
+	color: var(--accent-contrast);
+	padding: 0 10px;
+	font-size: 12px;
+	font-weight: 650;
 }
 
 /* ── Minimized composer (phone resting state) ────────────────────
@@ -6084,9 +6644,9 @@ html[data-theme="light"] .tool-code-surface {
 	color: var(--text);
 	font-size: 13.5px;
 	line-height: 1.55;
-	min-height: 120px;
+	min-height: 128px;
 	max-height: 320px;
-	padding: 0;
+	padding: 2px 0 4px;
 	font-family: inherit;
 }
 .composer-textarea::placeholder {
@@ -6106,7 +6666,7 @@ html[data-theme="light"] .tool-code-surface {
 	overflow-y: auto;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: 16px;
 	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
 	padding: 4px;
 	z-index: 40;
@@ -6121,7 +6681,7 @@ html[data-theme="light"] .tool-code-surface {
 	align-items: baseline;
 	gap: 8px;
 	padding: 6px 9px;
-	border-radius: 7px;
+	border-radius: 10px;
 	cursor: pointer;
 	font-size: 12.5px;
 	line-height: 1.3;
@@ -6137,7 +6697,7 @@ html[data-theme="light"] .tool-code-surface {
 	font-weight: 600;
 	color: var(--accent);
 	background: color-mix(in srgb, var(--accent) 14%, transparent);
-	border-radius: 5px;
+	border-radius: 8px;
 	padding: 1px 5px;
 	align-self: center;
 }
@@ -6264,17 +6824,28 @@ html[data-theme="light"] .tool-code-surface {
 	color: var(--text-dim);
 	border: 1px solid var(--border-strong);
 }
+.composer-send-queue-main {
+	background: var(--bg-raised);
+	color: var(--accent);
+	border: 1px solid var(--accent-soft);
+}
 .composer-send-interrupt {
 	background: var(--red-soft);
 	color: var(--red);
 	border: 1px solid var(--red);
 }
+.composer-stop {
+	background: var(--bg-raised);
+	color: var(--red);
+	border: 1px solid var(--red-soft);
+}
+.composer-stop:not(:disabled):hover {
+	background: var(--red-soft);
+	border-color: var(--red);
+}
 
-/* Slack-style split send button: the send fuses with a caret that opens the
-   "send later" scheduler into a single rounded-rectangle (squircle) button,
-   the two halves parted by a thin light divider. Without a menu (`.has-menu`)
-   the wrapper is inert and the send button keeps its plain circular shape
-   (Home / PR-preview). */
+/* Right-side send button wrapper. Scheduler actions now live in the + menu;
+   the old split/caret styles remain for SchedulePromptButton's caret variant. */
 .composer-send-split {
 	position: relative;
 	display: inline-flex;
@@ -6283,7 +6854,7 @@ html[data-theme="light"] .tool-code-surface {
 }
 .composer-send-split.has-menu .composer-send {
 	width: 34px;
-	border-radius: 10px 0 0 10px;
+	border-radius: 14px 0 0 14px;
 }
 .composer-send-split.has-menu .composer-send:not(:disabled):hover {
 	/* No scale on a fused half — it would tear the seam open. */
@@ -6294,6 +6865,21 @@ html[data-theme="light"] .tool-code-surface {
 	display: inline-flex;
 	align-items: stretch;
 }
+.composer-schedule-wrap-menu {
+	display: block;
+	width: 100%;
+}
+.composer-schedule-item {
+	position: relative;
+	justify-content: flex-start;
+}
+.composer-schedule-item:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.composer-schedule-item:disabled:hover {
+	background: transparent;
+}
 .composer-send-caret {
 	position: relative;
 	display: inline-flex;
@@ -6301,7 +6887,7 @@ html[data-theme="light"] .tool-code-surface {
 	justify-content: center;
 	width: 30px;
 	border: none;
-	border-radius: 0 10px 10px 0;
+	border-radius: 0 14px 14px 0;
 	background: var(--accent);
 	color: #fff;
 	cursor: pointer;
@@ -6440,7 +7026,7 @@ html[data-theme="light"] .tool-code-surface {
 	max-width: 92vw;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 14px;
+	border-radius: 18px;
 	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 	padding: 20px;
 }
@@ -6482,7 +7068,7 @@ html[data-theme="light"] .tool-code-surface {
 	min-width: 0;
 	background: var(--bg-surface);
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: 10px;
 	padding: 9px 12px;
 	color: var(--text);
 	font-size: 14px;
@@ -6504,7 +7090,7 @@ html[data-theme="light"] .tool-code-surface {
 .composer-schedule-cancel {
 	padding: 9px 16px;
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: 10px;
 	background: none;
 	color: var(--text);
 	font-size: 13px;
@@ -6517,7 +7103,7 @@ html[data-theme="light"] .tool-code-surface {
 .composer-schedule-submit {
 	padding: 9px 16px;
 	border: none;
-	border-radius: 8px;
+	border-radius: 10px;
 	background: var(--accent);
 	color: #fff;
 	font-size: 13px;
@@ -7666,15 +8252,15 @@ html[data-theme="light"] .tool-code-surface {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		/* True iOS 44pt touch target; the negative margin lets the oversized
-		   hit area bleed into the header's 12px edge padding so the glyph
-		   itself stays optically aligned with the content column. */
-		width: 44px;
-		height: 44px;
+		/* iOS-style bar button: a visible 36px circle (same surface language
+		   as the top cards) so the tap target reads as a target. The ::after
+		   pads the real hit area back out past the 44pt minimum. */
+		position: relative;
+		width: 40px;
+		height: 40px;
 		padding: 0;
-		margin-right: -12px;
-		border: none;
-		background: none;
+		border: 1px solid var(--border);
+		background: var(--bg-panel);
 		/* Nav-bar controls share the app tint, like the Back chevron. */
 		color: var(--accent);
 		cursor: pointer;
@@ -7694,6 +8280,8 @@ html[data-theme="light"] .tool-code-surface {
 	   (CSS wins over the path's presentation attribute) so it reads at full
 	   weight, not spindly, at this size. */
 	.mobile-search-btn svg {
+		width: 25px;
+		height: 25px;
 		stroke-width: 2;
 	}
 	.mobile-search-btn:active {
@@ -7714,7 +8302,7 @@ html[data-theme="light"] .tool-code-surface {
 	.viewer-header-actions {
 		justify-content: flex-end;
 		align-items: center;
-		gap: 6px;
+		gap: 2px;
 	}
 	/* Comfortably-tappable controls that stay on one row — sized toward the iOS
 	   44pt minimum touch target, with legible labels. */
@@ -7725,6 +8313,10 @@ html[data-theme="light"] .tool-code-surface {
 		min-height: 38px;
 		display: inline-flex;
 		align-items: center;
+	}
+	.viewer-header-actions .btn-viewer-overflow {
+		padding-left: 7px;
+		padding-right: 7px;
 	}
 	/* Icon-only workspace toggle on phones — the label is kept on desktop */
 	.btn-panel-toggle-label {
@@ -7737,12 +8329,12 @@ html[data-theme="light"] .tool-code-surface {
 		order: 2;
 		color: var(--accent);
 		background: color-mix(in srgb, var(--accent) 12%, transparent);
-		padding: 5px 11px;
+		padding: 5px 7px;
 		font-size: 15px;
 	}
 	.viewer-header-actions .btn-workspace.active {
-		background: var(--accent);
-		color: #fff;
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+		color: var(--accent);
 	}
 
 	/* The keyboard-shortcut hint is irrelevant on touch and eats vertical space
@@ -7753,11 +8345,11 @@ html[data-theme="light"] .tool-code-surface {
 	}
 
 	.viewer-messages {
-		padding: 12px 12px 8px;
+		padding: 12px 12px 4px;
 	}
 
 	.viewer-input {
-		padding: 8px 12px;
+		padding: 4px 12px 8px;
 		/* Clear the home indicator / bottom rounded corners: respect the full
        safe-area inset (≈34px on home-indicator iPhones) rather than jamming
        the composer against the very bottom edge. The hint is hidden on phones,
@@ -7899,7 +8491,7 @@ html[data-theme="light"] .tool-code-surface {
 	/* Session list (the primary nav) — larger titles + meta. Keep the left
 	   indent (see the base rule) so rows stay nested under their group header. */
 	.sidebar-item {
-		padding: 12px 11px 12px 22px;
+		padding: 13px 11px 13px 22px;
 	}
 	.sidebar-item-title,
 	.sidebar-item-rename {
@@ -7922,14 +8514,36 @@ html[data-theme="light"] .tool-code-surface {
 	   actually has a second chat to switch between. */
 	.session-tabs:not(
 			:has(
-					.session-tab:not(.session-tab-new):not(.session-tab-history)
+					.session-tabs-scroll
+						> .session-tab:not(.session-tab-new):not(.session-tab-history)
 						~ .session-tab:not(.session-tab-new):not(.session-tab-history)
 				)
 		) {
 		display: none;
 	}
 
-	/* Brand + settings in the top bar. */
+	/* Brand logo in the top bar. */
+	.app-brand .app-title-wrap {
+		display: contents;
+	}
+	.app-brand .app-title {
+		order: 1;
+	}
+	.app-brand > button[aria-label="Michael menu"],
+	.app-brand > button[aria-label="Settings"] {
+		position: relative;
+		z-index: 1;
+		order: 2;
+	}
+	.app-brand > button.app-logo-button {
+		order: 1;
+	}
+	.app-brand .update-pill {
+		order: 3;
+		height: 28px;
+		padding: 0 15px;
+		font-size: 14px;
+	}
 	.app-title {
 		font-size: 16px;
 	}
@@ -8004,7 +8618,7 @@ html[data-theme="light"] .tool-code-surface {
 	   targets just like workspace rows — same 16px text, taller rows. */
 	.sidebar-group-header {
 		font-size: 16px;
-		padding: 9px 6px;
+		padding: 11px 6px;
 	}
 	.sidebar-group-count {
 		font-size: 13px;
@@ -8187,6 +8801,17 @@ html[data-theme="light"] .tool-code-surface {
 		right: 10px;
 		margin-left: 0;
 	}
+	.sidebar-workspace {
+		margin-top: 0;
+		padding: 5px 14px 1px 16px;
+	}
+	.sidebar-workspace-head {
+		margin-bottom: 0;
+	}
+	.sidebar-workspace-title {
+		font-size: 15px;
+		font-weight: 700;
+	}
 
 	/* The header's filter + "+" cluster is gone on phones (filter → top bar,
 	   new-session → the red FAB). */
@@ -8195,7 +8820,7 @@ html[data-theme="light"] .tool-code-surface {
 	}
 
 	/* Filter, docked in the top bar beside Search (portaled from the sidebar).
-	   `order: -1` seats it left of Search. Same 36px circle as the search
+	   `order: -1` seats it left of Search. Same 40px circle as the search
 	   button (::after pads the hit area to 44pt); muted until a filter is set. */
 	.mobile-filter-btn {
 		order: -1;
@@ -8203,8 +8828,8 @@ html[data-theme="light"] .tool-code-surface {
 		align-items: center;
 		justify-content: center;
 		position: relative;
-		width: 36px;
-		height: 36px;
+		width: 40px;
+		height: 40px;
 		padding: 0;
 		border: 1px solid var(--border);
 		background: var(--bg-panel);
@@ -8224,7 +8849,9 @@ html[data-theme="light"] .tool-code-surface {
 		border-radius: 50%;
 	}
 	.mobile-filter-btn svg {
-		stroke-width: 1.8;
+		width: 25px;
+		height: 25px;
+		stroke-width: 2;
 	}
 	.mobile-filter-btn.active,
 	.mobile-filter-btn.has-filter {
@@ -8365,10 +8992,6 @@ html[data-theme="light"] .tool-code-surface {
 	justify-content: flex-end;
 }
 
-.msg-queued {
-	opacity: 0.55;
-}
-
 /* Optimistic just-sent bubble: present but visibly not-yet-confirmed */
 .msg-sending {
 	opacity: 0.6;
@@ -8470,7 +9093,7 @@ html[data-theme="light"] .tool-code-surface {
 	width: auto;
 	max-width: 120px;
 	object-fit: cover;
-	border-radius: 8px;
+	border-radius: 10px;
 	border: 1px solid var(--border-strong);
 }
 .composer-image-remove {
@@ -8554,7 +9177,7 @@ html[data-theme="light"] .tool-code-surface {
 	max-width: 240px;
 	padding: 6px 26px 6px 6px;
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: 14px;
 	background: var(--bg-hover);
 }
 .composer-file-thumb {
@@ -8564,7 +9187,7 @@ html[data-theme="light"] .tool-code-surface {
 	justify-content: center;
 	width: 34px;
 	height: 34px;
-	border-radius: 7px;
+	border-radius: 10px;
 	background: color-mix(in srgb, var(--accent) 16%, transparent);
 	color: var(--accent);
 	font-size: 9.5px;
@@ -8633,7 +9256,7 @@ html[data-theme="light"] .tool-code-surface {
 	min-width: 172px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: 14px;
 	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
 	padding: 4px;
 	z-index: 40;
@@ -8656,7 +9279,7 @@ html[data-theme="light"] .tool-code-surface {
 	color: var(--text);
 	background: none;
 	border: none;
-	border-radius: 7px;
+	border-radius: 10px;
 	padding: 7px 9px;
 	cursor: pointer;
 }
@@ -8690,7 +9313,7 @@ html[data-theme="light"] .tool-code-surface {
 .composer-goal-input {
 	width: 100%;
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: 10px;
 	background: var(--bg);
 	color: var(--text);
 	font-family: inherit;
@@ -8718,7 +9341,7 @@ html[data-theme="light"] .tool-code-surface {
 }
 .composer-goal-set {
 	border: none;
-	border-radius: 8px;
+	border-radius: 10px;
 	padding: 6px 12px;
 	background: var(--text);
 	color: var(--bg);
@@ -8739,7 +9362,7 @@ html[data-theme="light"] .tool-code-surface {
 	gap: 12px;
 	padding: 7px 12px;
 	margin-bottom: 8px;
-	border-radius: 10px;
+	border-radius: 14px;
 	background: color-mix(in srgb, var(--accent) 12%, transparent);
 	border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
 	font-size: 12.5px;
@@ -9223,7 +9846,7 @@ html[data-theme="light"] .tool-code-surface {
 .slack-avatar {
 	width: 30px;
 	height: 30px;
-	border-radius: 7px;
+	border-radius: 32%;
 	flex-shrink: 0;
 	object-fit: cover;
 }
@@ -9562,7 +10185,7 @@ html[data-theme="light"] .tool-code-surface {
 	gap: 4px;
 	max-width: 88%;
 	padding: 8px 11px;
-	border-radius: 10px;
+	border-radius: 14px;
 	border: 1px solid var(--border);
 	background: var(--bg-panel);
 }
@@ -9663,7 +10286,7 @@ html[data-theme="light"] .tool-code-surface {
 	width: min(820px, 100%);
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 16px;
+	border-radius: 20px;
 	box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
 	display: flex;
 	flex-direction: column;
@@ -9694,7 +10317,7 @@ html[data-theme="light"] .tool-code-surface {
 	font-size: 13px;
 	font-weight: 500;
 	padding: 5px 8px;
-	border-radius: 8px;
+	border-radius: 10px;
 	cursor: pointer;
 	max-width: 46%;
 	transition: background 0.12s, color 0.12s;
@@ -9733,6 +10356,39 @@ html[data-theme="light"] .tool-code-surface {
 }
 .palette-select-overlay:disabled {
 	cursor: default;
+}
+.palette-select-motion {
+	display: inline-flex;
+	min-width: 0;
+}
+.palette-select-menu {
+	min-width: 180px;
+	max-width: min(360px, calc(100vw - 16px));
+	max-height: min(420px, calc(100vh - 24px));
+	overflow-y: auto;
+	padding: 5px;
+}
+.palette-select-menu-item {
+	justify-content: space-between;
+	gap: 12px;
+}
+.palette-select-menu-item.is-selected {
+	background: var(--bg-hover);
+}
+.palette-select-menu-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.palette-select-menu-check {
+	flex-shrink: 0;
+	color: var(--text-dim);
+}
+.palette-trigger:disabled,
+.palette-pill:disabled {
+	cursor: default;
+	opacity: 0.55;
 }
 
 .palette-body {
@@ -9864,12 +10520,16 @@ html[data-theme="light"] .tool-code-surface {
 	border: none;
 	border-radius: 9px;
 	padding: 7px 14px;
-	background: var(--text-dim);
+	background: var(--accent);
 	color: #fff;
 	font-size: 13px;
 	font-weight: 600;
 	cursor: pointer;
 	transition: filter 0.12s, opacity 0.12s;
+}
+html[data-theme="light"] .palette-card .palette-create {
+	background: var(--text);
+	color: var(--bg);
 }
 .palette-create:not(:disabled):hover {
 	filter: brightness(1.1);
@@ -10343,7 +11003,7 @@ html[data-theme="light"] .tool-code-surface {
 .setting-card {
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 12px;
+	border-radius: 16px;
 	overflow: hidden;
 }
 .setting-row {
@@ -10414,7 +11074,7 @@ html[data-theme="light"] .tool-code-surface {
 	background: var(--bg-raised);
 	color: var(--text);
 	border: 1px solid var(--border);
-	border-radius: 7px;
+	border-radius: 10px;
 	padding: 6px 10px;
 	font-size: 13px;
 	font-family: inherit;
@@ -10560,9 +11220,9 @@ html[data-theme="light"] .tool-code-surface {
 .session-tab-new-menu {
 	display: flex;
 	flex-direction: column;
-	gap: 1px;
-	padding: 5px;
-	min-width: 220px;
+	gap: 2px;
+	padding: 8px;
+	min-width: 250px;
 }
 .session-tab-new-menu-item {
 	display: block;
@@ -10571,9 +11231,9 @@ html[data-theme="light"] .tool-code-surface {
 	background: none;
 	border: none;
 	color: var(--text);
-	font-size: 13px;
-	padding: 6px 8px;
-	border-radius: 5px;
+	font-size: 14px;
+	padding: 9px 11px;
+	border-radius: 8px;
 	cursor: pointer;
 	white-space: nowrap;
 }
@@ -10618,7 +11278,7 @@ html[data-theme="light"] .tool-code-surface {
 .sidebar-ws-row {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 7px;
 }
 
 /* Workspace row hover actions: pin + archive side by side, replacing the
@@ -10630,9 +11290,9 @@ html[data-theme="light"] .tool-code-surface {
 .sidebar-ws-actions {
 	display: none;
 	align-items: center;
-	gap: 2px;
+	gap: 4px;
 	position: absolute;
-	right: 6px;
+	right: 7px;
 	top: 50%;
 	transform: translateY(-50%);
 	/* Long row names run under these icons — opaque row-hover bg with a soft
@@ -10648,6 +11308,9 @@ html[data-theme="light"] .tool-code-surface {
 .sidebar-ws-row:hover .sidebar-ws-actions {
 	display: inline-flex;
 }
+.sidebar-swipe-row.is-open .sidebar-ws-row:hover .sidebar-ws-actions {
+	display: none;
+}
 .sidebar-ws-row:hover .sidebar-group-count,
 .sidebar-ws-row:hover .sidebar-ws-unread {
 	display: none;
@@ -10656,9 +11319,9 @@ html[data-theme="light"] .tool-code-surface {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 26px;
-	height: 26px;
-	border-radius: 5px;
+	width: 32px;
+	height: 32px;
+	border-radius: 7px;
 	color: var(--text-faint);
 	cursor: pointer;
 }
@@ -10678,6 +11341,8 @@ html[data-theme="light"] .tool-code-surface {
 .sidebar-ws-time {
 	flex: 0 0 auto;
 	margin-left: auto;
+	min-width: 34px;
+	text-align: right;
 	font-size: 10.5px;
 	color: var(--text-faint);
 }
@@ -10694,6 +11359,8 @@ html[data-theme="light"] .tool-code-surface {
 .sidebar-ws-ticker {
 	flex: 0 0 auto;
 	margin-left: auto;
+	min-width: 34px;
+	text-align: right;
 	font-size: 10.5px;
 	font-variant-numeric: tabular-nums;
 	color: var(--yellow);
@@ -10893,11 +11560,13 @@ html[data-theme="light"] .tool-code-surface {
    sliders toggle. */
 @media (max-width: 720px) {
 	.composer {
-		padding: 8px 12px 8px 12px;
+		border-radius: 18px;
+		padding: 10px 12px 9px;
 	}
 	.composer-textarea {
-		min-height: 44px;
+		min-height: 48px;
 		max-height: 240px;
+		padding: 2px 0 4px;
 	}
 	.composer-toolbar {
 		margin-top: 6px;

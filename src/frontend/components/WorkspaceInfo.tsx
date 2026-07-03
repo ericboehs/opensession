@@ -1,11 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { type WorkspaceOverview } from "../lib/api";
+import { type WorkspaceMediaItem, type WorkspaceOverview } from "../lib/api";
 import {
 	loadOverview,
 	overviewCache,
 	type OverviewChatRef,
 } from "../lib/workspace-overview";
-import { IconChevronDown } from "./icons";
 import { openLightbox } from "./MediaLightbox";
 
 /**
@@ -30,6 +29,8 @@ interface Props {
 	/** Media items currently in the open chat's live entries — bumps refresh
 	    the panel as new screenshots land during a run. */
 	liveMediaCount: number;
+	/** Images visible in the chat UI before the transcript-backed overview catches up. */
+	liveMedia?: WorkspaceMediaItem[];
 }
 
 export function WorkspaceInfo({
@@ -38,6 +39,7 @@ export function WorkspaceInfo({
 	chats,
 	repo,
 	liveMediaCount,
+	liveMedia = [],
 }: Props) {
 	const chatsKey = chats.map((c) => c.id).join(",");
 	const cacheKey = workspaceId || `chats:${chatsKey}`;
@@ -45,13 +47,6 @@ export function WorkspaceInfo({
 		() => overviewCache.get(cacheKey)?.data ?? null,
 	);
 	const [promptExpanded, setPromptExpanded] = useState(false);
-	const [open, setOpenState] = useState(
-		() => localStorage.getItem("michael-ws-info-open") !== "false",
-	);
-	function setOpen(next: boolean) {
-		setOpenState(next);
-		localStorage.setItem("michael-ws-info-open", String(next));
-	}
 
 	// The chats array is re-created every App render — read it through a ref so
 	// the fetch effect keys on the stable chatsKey instead.
@@ -99,72 +94,38 @@ export function WorkspaceInfo({
 		.filter(Boolean)
 		.join(" · ");
 
-	const hasBody = Boolean(data && (data.prompt || data.media.length > 0));
+	const hasBody = Boolean(
+		(data && (data.prompt || data.lastMessage || data.media.length > 0)) ||
+			liveMedia.length > 0,
+	);
+	const title = workspaceName || oldest?.title || "Untitled chat";
+	const media = [...liveMedia, ...(data?.media || [])].filter(
+		(m, i, all) =>
+			all.findIndex(
+				(x) =>
+					x.kind === m.kind &&
+					x.src === m.src &&
+					x.sessionId === m.sessionId,
+			) === i,
+	);
 
 	return (
-		<div className="border-b border-line px-3 pb-2.5 pt-2">
-			<button
-				className="flex w-full items-center gap-2 bg-transparent text-left"
-				onClick={() => setOpen(!open)}
-				aria-expanded={open}
-				title={open ? "Collapse workspace info" : "Expand workspace info"}
-			>
-				<span className="min-w-0 flex-1">
-					<span className="block truncate text-sm font-semibold text-fg">
-						{workspaceName || oldest?.title || "Workspace"}
-					</span>
-					{meta && (
-						<span className="block truncate text-xs text-faint">{meta}</span>
-					)}
-				</span>
-				<IconChevronDown
-					size={22}
-					className={`shrink-0 text-faint transition-transform ${open ? "" : "-rotate-90"}`}
-				/>
-			</button>
-			{open && hasBody && data && (
-				<div className="mt-2">
-					{data.prompt && (
-						<div
-							className="cursor-pointer"
-							onClick={() => {
-								// Selecting text inside also fires click — don't collapse
-								// the prompt out from under a selection.
-								if (window.getSelection()?.isCollapsed !== false)
-									setPromptExpanded((v) => !v);
-							}}
-							title={promptExpanded ? "Click to collapse" : "Click to expand"}
-						>
-							<div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-faint">
-								Opening prompt
-							</div>
-							<div
-								className={`selectable whitespace-pre-wrap text-sm leading-snug text-dim ${
-									promptExpanded ? "" : "line-clamp-3"
-								}`}
-							>
-								{data.prompt.content}
-							</div>
-						</div>
-					)}
-					{data.lastMessage && (
-						<div className="mt-2">
-							<div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-faint">
-								Latest reply
-							</div>
-							<div className="selectable line-clamp-2 whitespace-pre-wrap text-sm leading-snug text-dim">
-								{data.lastMessage.content}
-							</div>
-						</div>
-					)}
-					{data.media.length > 0 && (
-						<div className="mt-2 grid max-h-44 grid-cols-4 gap-1.5 overflow-y-auto">
-							{data.media.map((m, i) => (
+		<div className="workspace-info-panel">
+			<div className="workspace-info-head">
+				<div className="workspace-info-kicker">Info</div>
+				<div className="workspace-info-title">{title}</div>
+				{meta && <div className="workspace-info-meta">{meta}</div>}
+			</div>
+			{hasBody ? (
+				<div className="workspace-info-body">
+					{media.length > 0 && (
+						<div className="workspace-info-media">
+							{media.map((m, i) => (
 								<button
 									key={`${m.sessionId}:${m.at}:${i}`}
 									type="button"
-									onClick={() => openLightbox(data.media, i)}
-									className="relative block aspect-square overflow-hidden rounded-sm border border-line bg-surface p-0"
+									onClick={() => openLightbox(media, i)}
+									className="workspace-info-thumb"
 									title={[m.chatTitle, new Date(m.at).toLocaleString()]
 										.filter(Boolean)
 										.join(" · ")}
@@ -194,7 +155,40 @@ export function WorkspaceInfo({
 							))}
 						</div>
 					)}
+					{data?.prompt && (
+						<div
+							className="workspace-info-section cursor-pointer"
+							onClick={() => {
+								// Selecting text inside also fires click — don't collapse
+								// the prompt out from under a selection.
+								if (window.getSelection()?.isCollapsed !== false)
+									setPromptExpanded((v) => !v);
+							}}
+							title={promptExpanded ? "Click to collapse" : "Click to expand"}
+						>
+							<div className="workspace-info-label">
+								Opening prompt
+							</div>
+							<div
+								className={`workspace-info-text selectable whitespace-pre-wrap ${
+									promptExpanded ? "" : "line-clamp-3"
+								}`}
+							>
+								{data.prompt.content}
+							</div>
+						</div>
+					)}
+					{data?.lastMessage && (
+						<div className="workspace-info-section">
+							<div className="workspace-info-label">Summary</div>
+							<div className="workspace-info-text selectable line-clamp-4 whitespace-pre-wrap">
+								{data.lastMessage.content}
+							</div>
+						</div>
+					)}
 				</div>
+			) : (
+				<div className="workspace-info-empty">No overview yet.</div>
 			)}
 		</div>
 	);

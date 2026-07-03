@@ -25,9 +25,9 @@ export function githubLoginFor(name?: string | null): string | null {
 }
 
 /**
- * Round user picture: the person's GitHub avatar, falling back to their
+ * Squircle user picture: the person's GitHub avatar, falling back to their
  * initial for unknown users (Michael, Anonymous) or when the image fails to
- * load. `children` render on top of the circle — the presence facepile uses
+ * load. `children` render on top of the squircle — the presence facepile uses
  * that for its count badge.
  */
 export function UserAvatar({

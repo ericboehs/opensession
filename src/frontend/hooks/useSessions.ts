@@ -69,5 +69,17 @@ export function useSessions(pollInterval = 5000) {
     );
   }, []);
 
-  return { sessions, loading, error, refresh, inject };
+  const patch = useCallback((id: string, patch: Partial<UnifiedSession>) => {
+    lastTextRef.current = null;
+    setSessions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    );
+  }, []);
+
+  const remove = useCallback((id: string) => {
+    lastTextRef.current = null;
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+
+  return { sessions, loading, error, refresh, inject, patch, remove };
 }

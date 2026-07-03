@@ -65,6 +65,25 @@ function pollFile(state: WatchState) {
   }
 }
 
+function sendTranscriptAppend(
+  ws: any,
+  entries: TranscriptEntry[],
+  sessionId?: string
+): void {
+  if (entries.length === 0) return;
+  try {
+    ws.send(
+      JSON.stringify({
+        type: "transcript_append",
+        ...(sessionId ? { sessionId } : {}),
+        entries,
+      })
+    );
+  } catch {
+    // Dead connection, will be cleaned up on close
+  }
+}
+
 export function startWatching(
   path: string,
   ws: any,
@@ -73,6 +92,14 @@ export function startWatching(
 ): void {
   let state = watches.get(path);
   if (state) {
+    // A shared watch has one global byte offset. A new viewer may have just
+    // parsed an older tail (or, for a fresh session, no transcript at all) and
+    // ask to stream from that offset. Fill that viewer's gap without rewinding
+    // the global watch for everyone else.
+    if (initialOffset !== undefined && initialOffset < state.lastByteOffset) {
+      const { entries } = parseTranscriptFrom(path, initialOffset);
+      sendTranscriptAppend(ws, entries, sessionId || state.sessionId);
+    }
     state.viewers.add(ws);
     if (sessionId && !state.sessionId) state.sessionId = sessionId;
     return;

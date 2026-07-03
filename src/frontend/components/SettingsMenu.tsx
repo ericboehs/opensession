@@ -16,8 +16,9 @@ import { UserAvatar } from "./UserAvatar";
 // instead, with the account switcher inlined as a tappable list rather than a
 // hover submenu.
 //
-// Two trigger shapes via `variant`:
-//   "chevron" — a small chevron (the mobile top bar's brand menu).
+// Three trigger shapes via `variant`:
+//   "chevron" — a small chevron.
+//   "brand"   — the mobile top bar logo.
 //   "footer"  — a full-width user row (avatar · name · connection state) at the
 //               bottom of the desktop sidebar, plus a sibling gear button that
 //               goes straight to the Settings page (bypassing the menu).
@@ -84,7 +85,7 @@ function SettingsSheet({
 }: {
 	onOpenSettings?: () => void;
 	connected?: boolean;
-	variant?: "chevron" | "footer";
+	variant?: "chevron" | "brand" | "footer";
 }) {
 	const currentUser = useCurrentUser();
 	const [open, setOpen] = useState(false);
@@ -108,6 +109,14 @@ function SettingsSheet({
 						<IconGear size={24} />
 					</button>
 				</div>
+			) : variant === "brand" ? (
+				<button
+					aria-label="Michael menu"
+					className="app-logo-button"
+					onClick={() => setOpen(true)}
+				>
+					<span className="app-logo">B</span>
+				</button>
 			) : (
 				<button
 					aria-label="Michael menu"
@@ -187,7 +196,7 @@ export function SettingsMenu({
 }: {
 	onOpenSettings?: () => void;
 	connected?: boolean;
-	variant?: "chevron" | "footer";
+	variant?: "chevron" | "brand" | "footer";
 }) {
 	const currentUser = useCurrentUser();
 	const isPhone = useIsPhone();

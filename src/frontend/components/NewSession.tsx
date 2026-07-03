@@ -10,6 +10,7 @@ import { IconPaperclip, IconChevronDown, IconCheck, IconSliders } from "./icons"
 import type { WSServerMessage } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
+import { PaletteSelect } from "./PaletteSelect";
 
 interface Props {
   /** Close the palette (Esc, backdrop click, or after a create without "Create more"). */
@@ -330,6 +331,16 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       : selectedWorktree === "__new__"
         ? "New branch"
         : selectedWorktree;
+  const createFromOptions = [
+    {
+      value: "__new__",
+      label: projectId && forceBranch
+        ? `New stacked branch (off ${forceBranch})`
+        : "New branch",
+    },
+    ...worktrees.map((wt) => ({ value: wt.branch, label: wt.branch })),
+    { value: "__ask__", label: "Ask — read-only on main", menuLabel: "Ask · read-only on main" },
+  ];
 
   const effectiveModel = model || defaultModel;
   const modelLabel =
@@ -347,7 +358,16 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             the options toggle in the footer opens it. */}
         {optionsVisible && (
         <div className="palette-header">
-          <div className="palette-trigger palette-trigger-strong" title="Repository">
+          <PaletteSelect
+            className="palette-trigger palette-trigger-strong"
+            title="Repository"
+            value={repo}
+            options={REPOS.map((p) => ({ value: p.id, label: p.label }))}
+            onChange={setRepo}
+            disabled={creating}
+            ariaLabel="Repository"
+            isPhone={isPhone}
+          >
             <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.3" />
               <path d="M2 6h12" stroke="currentColor" strokeWidth="1.3" />
@@ -356,22 +376,19 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               {REPOS.find((p) => p.id === repo)?.label || repo}
             </span>
             <IconChevronDown className="palette-chevron" size={22} />
-            <select
-              className="palette-select-overlay"
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-              disabled={creating}
-              aria-label="Repository"
-            >
-              {REPOS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          </PaletteSelect>
 
-          <div className="palette-trigger" title="What to create from">
+          <PaletteSelect
+            className="palette-trigger"
+            title="What to create from"
+            value={createFromValue}
+            options={createFromOptions}
+            onChange={onCreateFromChange}
+            disabled={creating}
+            ariaLabel="Create from"
+            isPhone={isPhone}
+            align="end"
+          >
             <svg width="19" height="19" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <circle cx="4" cy="4" r="1.7" stroke="currentColor" strokeWidth="1.3" />
               <circle cx="4" cy="12" r="1.7" stroke="currentColor" strokeWidth="1.3" />
@@ -380,26 +397,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             </svg>
             <span className="palette-trigger-label">{createFromLabel}</span>
             <IconChevronDown className="palette-chevron" size={22} />
-            <select
-              className="palette-select-overlay"
-              value={createFromValue}
-              onChange={(e) => onCreateFromChange(e.target.value)}
-              disabled={creating}
-              aria-label="Create from"
-            >
-              <option value="__new__">
-                {projectId && forceBranch
-                  ? `New stacked branch (off ${forceBranch})`
-                  : "New branch"}
-              </option>
-              {worktrees.map((wt) => (
-                <option key={wt.branch} value={wt.branch}>
-                  {wt.branch}
-                </option>
-              ))}
-              <option value="__ask__">Ask — read-only on main</option>
-            </select>
-          </div>
+          </PaletteSelect>
         </div>
         )}
 
@@ -463,46 +461,44 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             )}
             {optionsVisible && (
             <>
-            <div className="palette-pill" title="Model">
+            <PaletteSelect
+              className="palette-pill"
+              title="Model"
+              value={model}
+              options={[
+                { value: "", label: `Default${defaultModel ? ` — ${defaultModel}` : ""}` },
+                ...models.map((m) => ({
+                  value: m.id,
+                  label: `${m.label} (${m.provider === "codex" ? "OpenAI Codex" : "Claude"})`,
+                  menuLabel: m.label,
+                })),
+              ]}
+              onChange={setModel}
+              disabled={creating}
+              ariaLabel="Model"
+              isPhone={isPhone}
+            >
               <span className={`composer-model-dot ${isCodexModel(effectiveModel, models) ? "dot-codex" : "dot-claude"}`} />
               <span className="palette-pill-label">{modelLabel}</span>
               <IconChevronDown className="palette-chevron" size={22} />
-              <select
-                className="palette-select-overlay"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                disabled={creating}
-                aria-label="Model"
-              >
-                <option value="">Default{defaultModel ? ` — ${defaultModel}` : ""}</option>
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label} ({m.provider === "codex" ? "OpenAI Codex" : "Claude"})
-                  </option>
-                ))}
-              </select>
-            </div>
+            </PaletteSelect>
 
-            <div className="palette-pill" title="Reasoning effort (not yet wired server-side)">
+            <PaletteSelect
+              className="palette-pill"
+              title="Reasoning effort (not yet wired server-side)"
+              value={effort}
+              options={EFFORTS.map((e) => ({ value: e.id, label: e.label }))}
+              onChange={setEffort}
+              disabled={creating}
+              ariaLabel="Reasoning effort"
+              isPhone={isPhone}
+            >
               <span className="palette-effort-icon" aria-hidden="true">
                 <span /><span /><span />
               </span>
               <span className="palette-pill-label">{EFFORTS.find((e) => e.id === effort)?.label}</span>
               <IconChevronDown className="palette-chevron" size={22} />
-              <select
-                className="palette-select-overlay"
-                value={effort}
-                onChange={(e) => setEffort(e.target.value)}
-                disabled={creating}
-                aria-label="Reasoning effort"
-              >
-                {EFFORTS.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            </PaletteSelect>
             </>
             )}
           </div>

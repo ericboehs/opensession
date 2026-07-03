@@ -48,7 +48,7 @@ function Popup({
 					// A preview card, not a form: don't yank focus into the popup.
 					initialFocus={false}
 					className={cn(
-						"rounded-[10px] border border-line-strong bg-panel shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
+						"rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
 						"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",
 						"data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0",
 						"data-[ending-style]:opacity-0",
