@@ -21,9 +21,9 @@
  */
 
 import { Codex, type ThreadEvent, type ThreadItem } from "@openai/codex-sdk";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { readMcpConfig, withDynamicCredentials } from "./connections";
 import { audit, summarizeText } from "./audit";
 import {
@@ -39,6 +39,7 @@ import { wrapContext } from "./prompt-context";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { extractBackstageVideos } from "./jsonl-parser";
+import { markCodexModelExhausted, resolveConcreteModel } from "./models";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
@@ -87,10 +88,74 @@ function isCodexUsageLimitError(message: string): boolean {
  * entries map almost 1:1: stdio servers keep command/args/env, http servers
  * become `url` servers. Tool denials become per-server disabled_tools.
  */
+function parseProjectMcpServerNames(configToml: string): Set<string> {
+  const names = new Set<string>();
+  for (const line of configToml.split(/\r?\n/)) {
+    const m = line.match(/^\s*\[\s*mcp_servers\.([^\]\s]+)\s*\]\s*$/);
+    if (!m) continue;
+    names.add(m[1].replace(/^"(.*)"$/, "$1"));
+  }
+  return names;
+}
+
+function projectMcpServerNames(cwd: string): Set<string> {
+  const names = new Set<string>();
+  let dir = cwd;
+  for (;;) {
+    const configPath = join(dir, ".codex", "config.toml");
+    if (existsSync(configPath)) {
+      try {
+        for (const name of parseProjectMcpServerNames(readFileSync(configPath, "utf-8"))) {
+          names.add(name);
+        }
+      } catch {}
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return names;
+}
+
+function uniqueCodexMcpName(name: string, used: Set<string>): string {
+  const safe = name.replace(/[^A-Za-z0-9_-]/g, "_");
+  let candidate = `backstage_${safe}`;
+  let i = 2;
+  while (used.has(candidate)) candidate = `backstage_${safe}_${i++}`;
+  used.add(candidate);
+  return candidate;
+}
+
+export function buildCodexMcpNameMap(
+  serverNames: string[],
+  projectNames: Set<string>
+): Map<string, string> {
+  const used = new Set<string>([...projectNames, ...serverNames]);
+  const aliases = new Map<string, string>();
+  for (const name of serverNames) {
+    if (projectNames.has(name)) aliases.set(name, uniqueCodexMcpName(name, used));
+  }
+  return aliases;
+}
+
+function formatMcpAliasNote(aliases: Map<string, string>): string | undefined {
+  if (!aliases.size) return undefined;
+  const lines = [...aliases.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([from, to]) => `- \`${from}\` is exposed as \`${to}\``);
+  return [
+    "## MCP Server Aliases",
+    "This repo has project-local Codex MCP config with names that collide with Backstage's runtime MCP servers. Use these runtime names for tool calls in this Codex session:",
+    ...lines,
+    "For example, if instructions mention `mcp__plain__reply_to_thread`, use `mcp__backstage_plain__reply_to_thread` when `plain` is aliased to `backstage_plain`.",
+  ].join("\n");
+}
+
 function buildCodexMcpConfig(
   allowlist: string[] | undefined,
   disabledToolNames: string[],
-  user?: string
+  user: string | undefined,
+  aliases: Map<string, string>
 ): Record<string, Record<string, unknown>> {
   const all = withDynamicCredentials(readMcpConfig().mcpServers) as Record<string, any>;
   const names = allowlist ?? Object.keys(all);
@@ -120,19 +185,25 @@ function buildCodexMcpConfig(
       // User-restricted server this run's user isn't cleared for — hide it.
       continue;
     }
-    const entry: Record<string, unknown> = {};
-    if (server.type === "http" || server.url) {
-      entry.url = server.url;
-    } else {
-      entry.command = server.command;
-      if (server.args) entry.args = server.args;
-      if (server.env) entry.env = server.env;
-    }
+    const entry = codexMcpEntryFromServer(server);
     const disabled = disabledByServer.get(name);
     if (disabled?.length) entry.disabled_tools = disabled;
-    out[name] = entry;
+    out[aliases.get(name) || name] = entry;
   }
   return out;
+}
+
+export function codexMcpEntryFromServer(server: Record<string, any>): Record<string, unknown> {
+  const entry: Record<string, unknown> = {};
+  if (server.type === "http") {
+    entry.url = server.url;
+    return entry;
+  }
+
+  entry.command = server.command;
+  if (server.args) entry.args = server.args;
+  if (server.env) entry.env = server.env;
+  return entry;
 }
 
 /**
@@ -225,6 +296,7 @@ export function buildCodexPrompt(input: {
   inProcessMcp?: Record<string, unknown>;
   bksSessionId?: string;
   confirmTools?: Record<string, string>;
+  mcpAliasNote?: string;
 }): string {
   const parts: string[] = [];
   if (input.isAsk) {
@@ -236,6 +308,7 @@ export function buildCodexPrompt(input: {
     );
   }
   if (input.reposNote) parts.push(input.reposNote);
+  if (input.mcpAliasNote) parts.push(input.mcpAliasNote);
   if (!input.isAsk && input.bksSessionId) {
     const link = `${UI_BASE}/session/${input.bksSessionId}`;
     parts.push(
@@ -352,7 +425,8 @@ export async function* runCodex(opts: {
   /** Trusted interactive michael-* SDK MCP servers; exposed to Codex through stdio proxies. */
   inProcessMcp?: Record<string, unknown>;
 }): AsyncGenerator<StreamEvent> {
-  const { prompt, sessionId, cwd, mode, model, mcpServers, images, reposNote, deniedTools, confirmTools, fallbackModel, journal, busyKeys, author, user, inProcessMcp } = opts;
+  const { prompt, sessionId, cwd, mode, mcpServers, images, reposNote, deniedTools, confirmTools, fallbackModel, journal, busyKeys, author, user, inProcessMcp } = opts;
+  const model = resolveConcreteModel(opts.model);
   const isAsk = mode === "ask";
 
   const runKey = sessionId || journal?.bksSessionId || busyKeys?.[0] || crypto.randomUUID();
@@ -415,6 +489,9 @@ export async function* runCodex(opts: {
     ...Object.keys(confirmTools || {}),
   ];
 
+  const configuredMcp = withDynamicCredentials(readMcpConfig().mcpServers) as Record<string, any>;
+  const requestedMcpNames = mcpServers ?? Object.keys(configuredMcp);
+  const mcpAliases = buildCodexMcpNameMap(requestedMcpNames, projectMcpServerNames(cwd));
   const effectivePrompt = buildCodexPrompt({
     prompt,
     isAsk,
@@ -422,6 +499,7 @@ export async function* runCodex(opts: {
     inProcessMcp,
     bksSessionId: journal?.bksSessionId,
     confirmTools,
+    mcpAliasNote: formatMcpAliasNote(mcpAliases),
   });
   const codexImages = writeCodexImages(images);
 
@@ -436,7 +514,7 @@ export async function* runCodex(opts: {
 
   try {
     const triedAccountIds = new Set<string>();
-    let account = pickCodexAccount(triedAccountIds);
+    let account = pickCodexAccount(triedAccountIds, model);
 
     // Resuming: pin the account that owns the thread's CODEX_HOME — any other
     // account literally can't see the thread file.
@@ -464,7 +542,7 @@ export async function* runCodex(opts: {
         ...(account?.kind === "api_key" ? { apiKey: account.value } : {}),
         config: {
           mcp_servers: {
-            ...buildCodexMcpConfig(mcpServers, disabledToolNames, user),
+            ...buildCodexMcpConfig(mcpServers, disabledToolNames, user, mcpAliases),
             ...proxyMcpConfigs(inProcessMcp, rpcToken),
           } as any,
         },
@@ -624,9 +702,9 @@ export async function* runCodex(opts: {
         if (!abortController.signal.aborted && isCodexUsageLimitError(e?.message || String(e))) {
           if (account) {
             triedAccountIds.add(account.id);
-            markCodexExhausted(account.id);
+            markCodexExhausted(account.id, model);
           }
-          const next = pickCodexAccount(triedAccountIds);
+          const next = pickCodexAccount(triedAccountIds, model);
           // Without a pool there's nothing to rotate to; with one, retry until empty
           if (next && next.id !== account?.id) {
             account = next;
@@ -654,6 +732,7 @@ export async function* runCodex(opts: {
   } catch (e: any) {
     if (!abortController.signal.aborted) {
       const message = e.message || String(e);
+      if (isCodexUsageLimitError(message)) markCodexModelExhausted(model);
       turnEvent({ direction: "out", kind: "error", error: message });
       yield {
         type: "error",

@@ -68,14 +68,25 @@ function maskValue(account: CodexAccount): string {
   return `${v.slice(0, 8)}…${v.slice(-4)}`;
 }
 
-function isExhausted(id: string): boolean {
-  const until = exhaustedUntil.get(id);
+function exhaustionKey(id: string, model?: string): string {
+  return model ? `${id}:${model}` : id;
+}
+
+function isExhaustionKeyActive(key: string): boolean {
+  const until = exhaustedUntil.get(key);
   if (until === undefined) return false;
   if (Date.now() >= until) {
-    exhaustedUntil.delete(id);
+    exhaustedUntil.delete(key);
     return false;
   }
   return true;
+}
+
+function isExhausted(id: string, model?: string): boolean {
+  return (
+    isExhaustionKeyActive(exhaustionKey(id)) ||
+    (model ? isExhaustionKeyActive(exhaustionKey(id, model)) : false)
+  );
 }
 
 function toPublic(a: CodexAccount): CodexAccountPublic {
@@ -157,8 +168,8 @@ export function removeCodexAccount(id: string): boolean {
  * Returns undefined when none are configured/usable — the run then falls back
  * to the VPS's own ~/.codex login.
  */
-export function pickCodexAccount(exclude?: Set<string>): CodexAccount | undefined {
-  const candidates = readStore().filter((a) => !exclude?.has(a.id) && !isExhausted(a.id));
+export function pickCodexAccount(exclude?: Set<string>, model?: string): CodexAccount | undefined {
+  const candidates = readStore().filter((a) => !exclude?.has(a.id) && !isExhausted(a.id, model));
   if (candidates.length === 0) return undefined;
   const picked = candidates
     .map((a) => ({ a, picked: lastPickedAt.get(a.id) ?? 0 }))
@@ -225,11 +236,11 @@ export function findCodexRollout(
 }
 
 /** Sideline an account after a run hit a rate/usage limit. */
-export function markCodexExhausted(id: string): void {
+export function markCodexExhausted(id: string, model?: string): void {
   const account = readStore().find((a) => a.id === id);
   const until = Date.now() + DEFAULT_EXHAUST_MS;
-  exhaustedUntil.set(id, until);
+  exhaustedUntil.set(exhaustionKey(id, model), until);
   console.warn(
-    `[codex-accounts] ${account?.name || id} marked exhausted until ${new Date(until).toISOString()}`
+    `[codex-accounts] ${account?.name || id}${model ? ` (${model})` : ""} marked exhausted until ${new Date(until).toISOString()}`
   );
 }

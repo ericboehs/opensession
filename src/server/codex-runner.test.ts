@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "fs";
-import { buildCodexPrompt, writeCodexImages } from "./codex-runner";
+import {
+  buildCodexMcpNameMap,
+  buildCodexPrompt,
+  codexMcpEntryFromServer,
+  writeCodexImages,
+} from "./codex-runner";
 
 describe("buildCodexPrompt", () => {
   it("adds Claude-equivalent Backstage context for interactive Codex runs", () => {
@@ -21,6 +26,19 @@ describe("buildCodexPrompt", () => {
     expect(prompt.endsWith("Implement the thing.")).toBe(true);
   });
 
+  it("adds MCP alias guidance when runtime server names are remapped", () => {
+    const prompt = buildCodexPrompt({
+      prompt: "Reply in Plain.",
+      isAsk: false,
+      mcpAliasNote:
+        "## MCP Server Aliases\n- `plain` is exposed as `backstage_plain`",
+    });
+
+    expect(prompt).toContain("MCP Server Aliases");
+    expect(prompt).toContain("`plain` is exposed as `backstage_plain`");
+    expect(prompt.endsWith("Reply in Plain.")).toBe(true);
+  });
+
   it("adds read-only guardrails for ask-mode Codex runs", () => {
     const prompt = buildCodexPrompt({
       prompt: "What changed?",
@@ -30,6 +48,34 @@ describe("buildCodexPrompt", () => {
     expect(prompt).toContain("READ-ONLY session");
     expect(prompt).toContain("never modify, create, or delete files");
     expect(prompt).toContain("What changed?");
+  });
+});
+
+describe("buildCodexMcpNameMap", () => {
+  it("aliases runtime MCP servers that collide with project Codex config", () => {
+    const aliases = buildCodexMcpNameMap(
+      ["plain", "linear", "workos"],
+      new Set(["plain", "workos", "backstage_plain"])
+    );
+
+    expect(aliases.get("plain")).toBe("backstage_plain_2");
+    expect(aliases.get("workos")).toBe("backstage_workos");
+    expect(aliases.has("linear")).toBe(false);
+  });
+});
+
+describe("codexMcpEntryFromServer", () => {
+  it("serializes stdio servers with command even when metadata includes a url", () => {
+    const entry = codexMcpEntryFromServer({
+      command: "bun",
+      args: ["run", "/tmp/plain-mcp/src/index.ts"],
+      url: "https://app.plain.com/thread/example",
+    });
+
+    expect(entry).toEqual({
+      command: "bun",
+      args: ["run", "/tmp/plain-mcp/src/index.ts"],
+    });
   });
 });
 

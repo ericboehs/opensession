@@ -24,6 +24,7 @@ export const KNOWN_MODELS: ModelInfo[] = [
   { id: "claude-sonnet-5", provider: "claude", label: "Claude Sonnet 5", aliases: ["sonnet", "sonnet5"] },
   { id: "claude-sonnet-4-6", provider: "claude", label: "Claude Sonnet 4.6", aliases: ["sonnet4.6"] },
   { id: "claude-haiku-4-5", provider: "claude", label: "Claude Haiku 4.5", aliases: ["haiku"] },
+  { id: "codex-best-available", provider: "codex", label: "Best available (Codex)", aliases: ["best", "best-available", "best-codex"] },
   { id: "gpt-5.5", provider: "codex", label: "GPT-5.5 (Codex)", aliases: ["codex", "gpt", "gpt5.5"] },
   { id: "gpt-5.4", provider: "codex", label: "GPT-5.4 (Codex)", aliases: ["gpt5.4"] },
   { id: "gpt-5.4-mini", provider: "codex", label: "GPT-5.4 mini (Codex)", aliases: ["mini"] },
@@ -33,6 +34,26 @@ export const KNOWN_MODELS: ModelInfo[] = [
 /** Per-provider defaults: claude-fable-5 for Anthropic, gpt-5.5 for OpenAI. */
 export const DEFAULT_CLAUDE_MODEL = "claude-fable-5";
 export const DEFAULT_CODEX_MODEL = "gpt-5.5";
+export const BEST_AVAILABLE_CODEX_MODEL = "codex-best-available";
+
+const CODEX_MODEL_ORDER = [
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.3-codex-spark",
+];
+
+const FALLBACK_MODEL_ORDER = [
+  "claude-fable-5",
+  "claude-opus-4-8",
+  "claude-sonnet-5",
+  "gpt-5.5",
+  "gpt-5.4",
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5",
+  "gpt-5.4-mini",
+  "gpt-5.3-codex-spark",
+];
 
 /**
  * Persisted override for the global default model, set from the Connections UI
@@ -43,6 +64,8 @@ export const DEFAULT_CODEX_MODEL = "gpt-5.5";
 const HOME = process.env.HOME || "/home/ubuntu";
 const DEFAULT_MODEL_STORE = `${HOME}/.backstage-default-model.json`;
 const FALLBACK_AUTO_STORE = `${HOME}/.backstage-model-fallback.json`;
+const CODEX_MODEL_EXHAUST_MS = 60 * 60 * 1000;
+const codexModelExhaustedUntil = new Map<string, number>();
 
 // undefined = not yet loaded from disk; null = no override set.
 let overrideCache: string | null | undefined;
@@ -139,6 +162,46 @@ export function setModelFallbackAuto(auto: boolean): boolean {
   return auto;
 }
 
+function isCodexModelExhausted(model: string): boolean {
+  const until = codexModelExhaustedUntil.get(model);
+  if (until === undefined) return false;
+  if (Date.now() >= until) {
+    codexModelExhaustedUntil.delete(model);
+    return false;
+  }
+  return true;
+}
+
+export function markCodexModelExhausted(model: string): void {
+  const resolved = resolveModel(model);
+  if (!resolved || resolved.provider !== "codex") return;
+  if (resolved.id === BEST_AVAILABLE_CODEX_MODEL) return;
+  const until = Date.now() + CODEX_MODEL_EXHAUST_MS;
+  codexModelExhaustedUntil.set(resolved.id, until);
+  console.warn(
+    `[models] ${resolved.id} marked unavailable until ${new Date(until).toISOString()}`
+  );
+}
+
+export function resolveConcreteModel(
+  model?: string | null,
+  exclude?: Set<string>
+): string {
+  const resolved = model ? resolveModel(model) : resolveModel(getDefaultModel());
+  if (resolved?.id !== BEST_AVAILABLE_CODEX_MODEL) {
+    return resolved?.id || getDefaultModel();
+  }
+
+  for (const id of CODEX_MODEL_ORDER) {
+    if (exclude?.has(id)) continue;
+    if (!isCodexModelExhausted(id)) return id;
+  }
+  for (const id of CODEX_MODEL_ORDER) {
+    if (!exclude?.has(id)) return id;
+  }
+  return DEFAULT_CODEX_MODEL;
+}
+
 /**
  * Fallback model for an *interactive* session running on `primaryModel`, or
  * undefined when auto-switch is off (manual) or fallback is hard-disabled.
@@ -157,6 +220,41 @@ export function interactiveFallbackModel(primaryModel?: string): string | undefi
   const primary = resolveModel(primaryModel || getDefaultModel());
   if (primary?.id === "claude-fable-5") return "claude-sonnet-5";
   return DEFAULT_FALLBACK_MODEL;
+}
+
+/**
+ * Ordered model fallback chain after a provider's account pool is exhausted.
+ * The explicitly configured fallback gets the first shot, then Backstage tries
+ * the strongest known models across both providers. The caller tracks models
+ * that already exhausted during this run and skips them.
+ */
+export function fallbackModelChain(
+  primaryModel: string | undefined,
+  preferredFallbackModel: string | undefined
+): ModelInfo[] {
+  const preferred = preferredFallbackModel
+    ? resolveModel(preferredFallbackModel)
+    : null;
+  if (!preferred) return [];
+
+  const primary = resolveModel(primaryModel || getDefaultModel());
+  const seen = new Set<string>();
+  const out: ModelInfo[] = [];
+  const add = (model: ModelInfo | null) => {
+    if (!model) return;
+    if (model.id === primary?.id) return;
+    if (model.id === BEST_AVAILABLE_CODEX_MODEL) {
+      for (const id of CODEX_MODEL_ORDER) add(resolveModel(id));
+      return;
+    }
+    if (seen.has(model.id)) return;
+    seen.add(model.id);
+    out.push(model);
+  };
+
+  add(preferred);
+  for (const id of FALLBACK_MODEL_ORDER) add(resolveModel(id));
+  return out;
 }
 
 /**

@@ -22,7 +22,16 @@ import {
   type ImageInput,
 } from "./claude-runner";
 import { runCodex, isCodexSessionBusy, cancelCodexRun, activeCodexRunCount } from "./codex-runner";
-import { providerFor, resolveModel, DEFAULT_CODEX_MODEL, getDefaultModel } from "./models";
+import {
+  providerFor,
+  fallbackModelChain,
+  DEFAULT_CODEX_MODEL,
+  BEST_AVAILABLE_CODEX_MODEL,
+  getDefaultModel,
+  markCodexModelExhausted,
+  resolveConcreteModel,
+  resolveModel,
+} from "./models";
 import {
   hostRunBusy,
   hostSteer,
@@ -111,59 +120,87 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerat
 }
 
 export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
-  const fallback = opts.fallbackModel ? resolveModel(opts.fallbackModel) : null;
-  if (!fallback || fallback.id === (opts.model || getDefaultModel())) {
-    yield* runOnModel(opts, opts.model);
+  const requestedModel = resolveModel(opts.model || getDefaultModel());
+  const wantsBestCodex = requestedModel?.id === BEST_AVAILABLE_CODEX_MODEL;
+  const primaryModel = resolveConcreteModel(opts.model);
+  const preferredFallback = wantsBestCodex
+    ? BEST_AVAILABLE_CODEX_MODEL
+    : opts.fallbackModel;
+  const fallbackChain = fallbackModelChain(primaryModel, preferredFallback);
+  if (!fallbackChain.length) {
+    yield* runOnModel(opts, primaryModel);
     return;
   }
 
-  let sawInit = false;
-  let primaryEngineId = opts.sessionId;
-  for await (const event of runOnModel(opts, opts.model)) {
-    if (event.type === "init") {
-      sawInit = true;
-      primaryEngineId = event.sessionId || primaryEngineId;
-    }
-    const exhausted =
-      (event.type === "done" || event.type === "error") && event.usageLimitExhausted;
-    if (!exhausted) {
-      yield event;
-      continue;
+  let currentOpts = opts;
+  let currentModel = primaryModel;
+  const exhaustedModels = new Set<string>();
+
+  for (;;) {
+    let sawInit = false;
+    let currentEngineId = currentOpts.sessionId;
+    let exhausted = false;
+
+    for await (const event of runOnModel(currentOpts, currentModel)) {
+      if (event.type === "init") {
+        sawInit = true;
+        currentEngineId = event.sessionId || currentEngineId;
+      }
+      exhausted =
+        (event.type === "done" || event.type === "error") &&
+        event.usageLimitExhausted === true;
+      if (!exhausted) {
+        yield event;
+        continue;
+      }
+      break;
     }
 
-    // Primary model out of usage on every account — switch to the fallback.
-    const crossProvider = providerFor(opts.model) !== fallback.provider;
-    const primaryName = opts.model || getDefaultModel();
-    console.warn(`[runner] ${primaryName} exhausted on all accounts; falling back to ${fallback.id}`);
+    if (!exhausted) return;
+
+    exhaustedModels.add(currentModel);
+    if (providerFor(currentModel) === "codex") markCodexModelExhausted(currentModel);
+    const fallback = fallbackChain.find((m) => !exhaustedModels.has(m.id));
+    if (!fallback) {
+      yield {
+        type: "error",
+        content: `${currentModel} usage exhausted, and no fallback models remain.`,
+        provider: providerFor(currentModel),
+        model: currentModel,
+        usageLimitExhausted: true,
+      };
+      return;
+    }
+
+    // Current model is out of usage on every account — switch to the next fallback.
+    const crossProvider = providerFor(currentModel) !== fallback.provider;
+    console.warn(`[runner] ${currentModel} exhausted on all accounts; falling back to ${fallback.id}`);
     // Structured cue: interactive sessions turn this into a durable model-switch
     // divider + model pill update (backstage.ts run loop). Other consumers ignore
     // it and rely on the human-readable text line below.
-    yield { type: "model_switch", fromModel: primaryName, toModel: fallback.id };
+    yield { type: "model_switch", fromModel: currentModel, toModel: fallback.id };
     yield {
       type: "text_chunk",
-      text: `\n\n[runner] ${primaryName} usage exhausted on all accounts; falling back to ${fallback.id}.\n\n`,
+      text: `\n\n[runner] ${currentModel} usage exhausted on all accounts; falling back to ${fallback.id}.\n\n`,
     };
 
-    let prompt = opts.prompt;
+    let prompt = currentOpts.prompt;
     if (sawInit && crossProvider) {
       prompt +=
         "\n\n[Note: a previous attempt on another model was cut short by usage limits and may have " +
         "left partial work in this directory — review what's already done before continuing.]";
     }
 
-    yield* runOnModel(
-      {
-        ...opts,
-        prompt,
-        // Same provider can resume the partial session; cross-provider starts fresh
-        sessionId: crossProvider ? undefined : primaryEngineId,
-        journal: opts.journal
-          ? { ...opts.journal, kind: `${opts.journal.kind || "run"}-fallback` }
-          : undefined,
-      },
-      fallback.id
-    );
-    return;
+    currentOpts = {
+      ...currentOpts,
+      prompt,
+      // Same provider can resume the partial session; cross-provider starts fresh
+      sessionId: crossProvider ? undefined : currentEngineId,
+      journal: opts.journal
+        ? { ...opts.journal, kind: `${opts.journal.kind || "run"}-fallback` }
+        : undefined,
+    };
+    currentModel = fallback.id;
   }
 }
 
