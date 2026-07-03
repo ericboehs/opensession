@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   fetchRepos,
   attachRepoApi,
@@ -8,6 +8,8 @@ import {
   type RepoInfo,
   type AttachedRepo,
 } from "../lib/api";
+import { Menu } from "../ui/menu";
+import { IconRepo, IconCheck, IconPlus, IconX, IconChevronRight } from "./icons";
 
 interface Props {
   sessionId: string;
@@ -17,28 +19,21 @@ interface Props {
 }
 
 /**
- * Cross-repo control for a code session, rendered inline in the session topbar
- * just in front of the title: shows the primary repo plus any attached repos
- * (each an isolated worktree) and lets you attach another via a dropdown.
- * Mirrors the agent's michael-repos attach_repo tool — both go through
- * POST /api/sessions/:id/attach-repo.
- *
- * The primary chip doubles as a repo *switcher* — for when the wrong repo was
- * picked at creation. It's only interactive while the session is fresh (no
- * committed/uncommitted work), so a switch never silently strands work; once the
- * session has changes the chip goes back to a plain label.
+ * Repo segment of the session-header breadcrumb: `[icon] repo › title`.
+ * Clicking the repo opens one menu that covers all cross-repo control —
+ * switch the primary repo (fresh sessions only, so a switch never strands
+ * work), detach an attached repo, or attach another (isolated worktree,
+ * same as the agent's michael-repos attach_repo tool — both go through
+ * POST /api/sessions/:id/attach-repo).
  */
 export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Props) {
   const [attached, setAttached] = useState<AttachedRepo[]>(initialAttached);
   const [primary, setPrimary] = useState(primaryRepo);
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [open, setOpen] = useState(false);
-  const [switchOpen, setSwitchOpen] = useState(false);
   const [switchable, setSwitchable] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null); // trigger label while an action runs
   const [error, setError] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const switchRef = useRef<HTMLDivElement>(null);
 
   // Keep in sync if the session prop changes (e.g. the agent attached one, or a
   // switch landed and the parent re-fetched).
@@ -51,20 +46,8 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
   }, [sessionId, primary]);
 
   useEffect(() => {
-    if ((open || switchOpen) && !repos.length)
-      fetchRepos().then(setRepos).catch(() => {});
-  }, [open, switchOpen]);
-
-  useEffect(() => {
-    if (!open && !switchOpen) return;
-    const onClick = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (menuRef.current && !menuRef.current.contains(t)) setOpen(false);
-      if (switchRef.current && !switchRef.current.contains(t)) setSwitchOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open, switchOpen]);
+    if (open && !repos.length) fetchRepos().then(setRepos).catch(() => {});
+  }, [open]);
 
   const attachedIds = new Set(attached.map((r) => r.repo));
   const attachable = repos.filter(
@@ -74,11 +57,10 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
   const switchTargets = repos.filter((p) => p.id !== primary);
 
   async function attach(repo: string) {
-    setBusy(repo);
+    setBusy("Attaching…");
     setError(null);
     try {
       setAttached(await attachRepoApi(sessionId, repo, branch || undefined));
-      setOpen(false);
     } catch (e: any) {
       setError(e.message || String(e));
     } finally {
@@ -87,7 +69,7 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
   }
 
   async function detach(repo: string) {
-    setBusy(repo);
+    setBusy("Detaching…");
     setError(null);
     try {
       setAttached(await detachRepoApi(sessionId, repo));
@@ -99,13 +81,13 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
   }
 
   async function switchPrimary(repo: string) {
-    setBusy(repo);
+    if (repo === primary) return;
+    setBusy("Switching…");
     setError(null);
     try {
       const res = await switchPrimaryRepoApi(sessionId, repo);
       setPrimary(res.repo);
       setAttached((prev) => prev.filter((r) => r.repo !== res.repo));
-      setSwitchOpen(false);
     } catch (e: any) {
       setError(e.message || String(e));
       // A concurrent turn may have dirtied the worktree — hide the switcher.
@@ -115,87 +97,113 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
     }
   }
 
+  // Static (non-menu-item) row — current repo when it can't switch, attached rows.
+  const staticRow = "flex items-center gap-2 rounded-md px-2.5 py-2 text-[13px] text-fg";
+
   return (
-    <div className="repobar">
-      {switchable ? (
-        <div className="repobar-add-wrap" ref={switchRef}>
-          <button
-            className="repobar-chip repobar-chip-primary repobar-chip-switch"
-            onClick={() => setSwitchOpen((o) => !o)}
-            title="Wrong repo? Switch this session's primary repo (fresh sessions only)"
-          >
-            {primary} <span className="repobar-caret">▾</span>
-          </button>
-          {switchOpen && (
-            <div className="repobar-menu">
-              <div className="repobar-menu-head">Switch primary repo</div>
-              {!repos.length ? (
-                <div className="repobar-menu-empty">Loading…</div>
-              ) : switchTargets.length ? (
-                switchTargets.map((p) => (
-                  <button
-                    key={p.id}
-                    className="repobar-menu-item"
-                    onClick={() => switchPrimary(p.id)}
-                    disabled={!!busy}
-                  >
-                    {busy === p.id ? "Switching…" : p.id}
-                  </button>
+    <>
+      <Menu.Root open={open} onOpenChange={setOpen}>
+        <Menu.Trigger
+          className="-mx-1.5 -my-1 flex min-w-0 shrink-0 cursor-pointer items-center gap-[7px] rounded-md border-0 bg-transparent px-1.5 py-1 text-[14px] font-medium text-fg hover:bg-hover data-[popup-open]:bg-hover"
+          title="Repo — click to switch or attach another"
+        >
+          <IconRepo size={18} className="shrink-0 text-purple" />
+          <span className="max-w-[180px] truncate">{busy ?? primary}</span>
+          {attached.length > 0 && (
+            <span
+              className="text-[12px] text-dim"
+              title={attached.map((r) => r.repo).join(", ")}
+            >
+              +{attached.length}
+            </span>
+          )}
+        </Menu.Trigger>
+        <Menu.Popup align="start" sideOffset={6} className="min-w-[230px]">
+          {!repos.length ? (
+            <div className="px-2.5 py-2 text-[12px] text-faint">Loading…</div>
+          ) : (
+            <>
+              {switchable ? (
+                // Fresh session: the repo is still a free choice — one select
+                // list, current checked, click another to switch the worktree.
+                [{ id: primary }, ...switchTargets].map((p) => (
+                  <Menu.Item key={p.id} onClick={() => switchPrimary(p.id)}>
+                    <IconRepo
+                      size={18}
+                      className={p.id === primary ? "text-purple" : "text-faint"}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{p.id}</span>
+                    {p.id === primary && <IconCheck size={18} className="text-dim" />}
+                  </Menu.Item>
                 ))
               ) : (
-                <div className="repobar-menu-empty">No other repos</div>
+                <div className={staticRow}>
+                  <IconRepo size={18} className="text-purple" />
+                  <span className="min-w-0 flex-1 truncate">{primary}</span>
+                  <IconCheck size={18} className="text-dim" />
+                </div>
               )}
-            </div>
+              {attached.length > 0 && (
+                <>
+                  <Menu.Separator />
+                  <Menu.Group>
+                    <Menu.GroupLabel>Attached</Menu.GroupLabel>
+                    {attached.map((r) => (
+                      <div key={r.repo} className={staticRow} title={`${r.dir} — branch ${r.branch}`}>
+                        <IconRepo size={18} className="text-faint" />
+                        <span className="min-w-0 flex-1 truncate">
+                          {r.repo} <span className="text-faint">· {r.branch}</span>
+                        </span>
+                        <button
+                          className="cursor-pointer rounded border-0 bg-transparent p-0.5 text-faint hover:text-fg"
+                          onClick={() => detach(r.repo)}
+                          title="Detach (leaves the worktree on disk)"
+                          aria-label={`Detach ${r.repo}`}
+                        >
+                          <IconX size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </Menu.Group>
+                </>
+              )}
+              <Menu.Separator />
+              <Menu.Group>
+                <Menu.GroupLabel>Attach another repo</Menu.GroupLabel>
+                {attachable.length ? (
+                  attachable.map((p) => (
+                    <Menu.Item
+                      key={p.id}
+                      onClick={() => attach(p.id)}
+                      title="Attach to this session as an isolated worktree"
+                    >
+                      <IconPlus size={18} className="text-dim" />
+                      <span className="min-w-0 flex-1 truncate">{p.id}</span>
+                    </Menu.Item>
+                  ))
+                ) : (
+                  <div className="px-2.5 py-1.5 text-[12px] text-faint">
+                    No more repos to attach
+                  </div>
+                )}
+              </Menu.Group>
+              {!switchable && (
+                <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-[11px] leading-snug text-faint">
+                  Switching the primary repo is only possible before the session
+                  has changes.
+                </div>
+              )}
+            </>
           )}
-        </div>
-      ) : (
-        <span className="repobar-chip repobar-chip-primary" title="Primary repo">
-          {primary}
+        </Menu.Popup>
+      </Menu.Root>
+      {error && (
+        <span className="max-w-[220px] truncate text-[11px] text-red" title={error}>
+          {error}
         </span>
       )}
-      {attached.map((r) => (
-        <span key={r.repo} className="repobar-chip" title={`${r.dir} — branch ${r.branch}`}>
-          {r.repo}
-          <button
-            className="repobar-detach"
-            onClick={() => detach(r.repo)}
-            disabled={busy === r.repo}
-            title="Detach (leaves the worktree on disk)"
-          >
-            ×
-          </button>
-        </span>
-      ))}
-      <div className="repobar-add-wrap" ref={menuRef}>
-        <button
-          className="repobar-add"
-          onClick={() => setOpen((o) => !o)}
-          title="Attach another repo to this session (isolated worktree)"
-        >
-          + repo
-        </button>
-        {open && (
-          <div className="repobar-menu">
-            {!repos.length ? (
-              <div className="repobar-menu-empty">Loading…</div>
-            ) : attachable.length ? (
-              attachable.map((p) => (
-                <button
-                  key={p.id}
-                  className="repobar-menu-item"
-                  onClick={() => attach(p.id)}
-                  disabled={!!busy}
-                >
-                  {busy === p.id ? "Attaching…" : p.id}
-                </button>
-              ))
-            ) : (
-              <div className="repobar-menu-empty">No more repos to attach</div>
-            )}
-          </div>
-        )}
-      </div>
-      {error && <span className="repobar-error">{error}</span>}
-    </div>
+      {/* Breadcrumb separator between the repo and the session title. */}
+      <IconChevronRight size={16} className="shrink-0 text-faint" />
+    </>
   );
 }
