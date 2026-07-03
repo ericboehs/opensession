@@ -7584,6 +7584,10 @@ html[data-theme="light"] .tool-code-surface {
 	.app-header-actions {
 		display: flex;
 		align-items: center;
+		/* Air between the root page's filter + search buttons — glyph-to-glyph
+		   they read cramped without it (the pushed-page portal is a single
+		   child, so the gap is inert there). */
+		gap: 10px;
 		margin-left: auto;
 		min-width: 0;
 	}
