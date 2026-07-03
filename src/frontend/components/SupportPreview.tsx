@@ -287,8 +287,8 @@ export function SupportPreview({
 					onSend={handleStart}
 					placeholder={
 						starting
-							? "Starting session on this ticket…"
-							: "Start a session on this ticket — investigate, dig into the account, draft a reply…"
+							? "Starting…"
+							: "Start a session on this ticket…"
 					}
 					disabled={starting}
 					sendDisabled={starting || !connected || !prompt.trim()}

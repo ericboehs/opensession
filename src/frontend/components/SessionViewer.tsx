@@ -1781,10 +1781,10 @@ export function SessionViewer({
 										!connected
 											? "Not connected"
 											: forkFrom
-												? "New direction for the forked session…"
+												? "New direction…"
 												: isBusy
-													? "Message Michael — interrupts and redirects now (+ folds in instead)…"
-													: "Ask Michael to build, fix, or explain…"
+													? "Redirect Michael… (+ to fold in)"
+													: "Ask Michael…"
 									}
 									disabled={!connected}
 									sendDisabled={(text) =>

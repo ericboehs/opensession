@@ -275,7 +275,7 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
             value={question}
             onChange={setQuestion}
             onSend={handleAsk}
-            placeholder="Ask a question about the codebase — Michael answers without touching anything…"
+            placeholder="Ask about the codebase…"
             disabled={asking}
             sendDisabled={asking || !connected || !question.trim()}
             sendTitle="Ask (Enter)"

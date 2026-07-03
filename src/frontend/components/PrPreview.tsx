@@ -305,8 +305,8 @@ export function PrPreview({ repo, branch, connected, send, addHandler }: Props) 
 					onSend={handleStart}
 					placeholder={
 						starting
-							? "Starting session on this PR…"
-							: "Start a session on this PR — review it, fix the checks, keep building…"
+							? "Starting…"
+							: "Start a session on this PR…"
 					}
 					disabled={starting}
 					sendDisabled={starting || !connected || !prompt.trim()}
