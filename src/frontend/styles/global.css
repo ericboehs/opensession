@@ -39,7 +39,7 @@
 	--radius: 8px;
 	/* Chat column width — messages, work blocks, composer, ask cards all share
 	   it so the conversation reads as one column. */
-	--chat-col: 920px;
+	--chat-col: 1000px;
 	/* Header height grows by the iOS status-bar inset when installed as a PWA
      (black-translucent draws the webview under the clock/notch) */
 	--header-h: calc(52px + env(safe-area-inset-top, 0px));
