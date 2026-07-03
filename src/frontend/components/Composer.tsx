@@ -396,7 +396,12 @@ export function Composer({
           <textarea
             ref={textareaRef}
             className="composer-textarea"
-            placeholder={placeholder}
+            // In the resting pill the full prompt would clip, so show a short
+            // "Ask <model>" (ChatGPT-style) that fits the single row; the
+            // descriptive placeholder returns once it expands.
+            placeholder={
+              minimized ? `Ask ${modelShortLabel(effectiveModel, models)}` : placeholder
+            }
             value={text}
             onChange={(e) => {
               setText(e.target.value);
