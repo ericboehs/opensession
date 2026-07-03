@@ -84,6 +84,15 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       return;
     }
 
+    // Deploy workflow completions → notify sessions waiting on a merged PR's deploy.
+    if (event === "workflow_run") {
+      const { handleDeployWorkflowRun } = await import("./session-notify");
+      void handleDeployWorkflowRun(payload).catch((e) =>
+        console.error("[github] handleDeployWorkflowRun failed:", e),
+      );
+      return;
+    }
+
     if (event !== "pull_request") return;
 
     const pr = payload.pull_request as PrPayload;
@@ -108,8 +117,11 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       return;
     }
 
-    // ── Merge → queue seo-sweep PRs + fire docs-sync ──
+    // ── Merge → notify linked sessions + queue seo-sweep PRs + fire docs-sync ──
     if (action === "closed" && pr.merged) {
+      import("./session-notify")
+        .then((m) => m.notifyMergedPrSessions(payload))
+        .catch((e) => console.error("[github] notifyMergedPrSessions failed:", e));
       if ((pr.labels || []).some((l) => l.name === SEO_LABEL)) {
         const { recordMergedSeoPr } = await import("../loops/seo");
         recordMergedSeoPr(pr.number, pr.merged_at || new Date().toISOString());

@@ -628,13 +628,15 @@ Please address this feedback:
         });
       }
 
-      // Forward PR events to the github agent (review / auto-fix / simplify, and
-      // @mention replies on PR comments). Fire-and-forget so a github-module
-      // error never breaks the Slack path.
+      // Forward PR events to the github agent (review / auto-fix / simplify,
+      // @mention replies on PR comments, and merge/deploy notifications into
+      // linked sessions). Fire-and-forget so a github-module error never breaks
+      // the Slack path.
       if (
         event === "pull_request" ||
         event === "issue_comment" ||
-        event === "pull_request_review_comment"
+        event === "pull_request_review_comment" ||
+        event === "workflow_run"
       ) {
         import("../github/webhook")
           .then((m) => m.handleGithubPrEvent(event, payload))
