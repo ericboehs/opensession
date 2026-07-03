@@ -3229,10 +3229,19 @@ function WsStatusMark({
 	row: { status: MineStatus; running: boolean; chats: UnifiedSession[] };
 	size?: number;
 }) {
-	if (row.status === "needsinput")
-		return <span className="sidebar-item-status sidebar-status-waiting" />;
-	if (row.running)
-		return <span className="sidebar-item-status sidebar-status-running" />;
+	// Dots are only 8px wide while the PR/merge icons are `size` (20px). Center
+	// the dot in a `size`-wide slot so every row's #number/title lines up at the
+	// same x whichever mark the row carries.
+	const dot = (cls: string) => (
+		<span
+			className="flex shrink-0 items-center justify-center"
+			style={{ width: size, height: size }}
+		>
+			<span className={`sidebar-item-status ${cls}`} />
+		</span>
+	);
+	if (row.status === "needsinput") return dot("sidebar-status-waiting");
+	if (row.running) return dot("sidebar-status-running");
 	if (row.status === "review") {
 		const open = row.chats.filter((c) => c.prState === "OPEN");
 		const allDraft = open.length > 0 && open.every((c) => c.prIsDraft);
