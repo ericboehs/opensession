@@ -117,7 +117,7 @@ interface Props {
 }
 
 interface PrBarButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-	tone: "green" | "purple" | "red" | "solid";
+	tone: "green" | "purple" | "red" | "secondary" | "solid";
 	icon?: React.ReactNode;
 	confirm?: boolean;
 }
@@ -272,7 +272,7 @@ export function PrStatusBar({
 			case "no-pr":
 				return send ? (
 					<PrBarButton
-						tone="solid"
+						tone="secondary"
 						icon={<IconPullRequest size={18} />}
 						onClick={() =>
 							promptSession(
@@ -344,14 +344,16 @@ export function PrStatusBar({
 					#{pr.number} <span className="pr-bar-arrow">↗</span>
 				</a>
 			)}
-			<Tooltip label="Open the PR tab">
-				<button
-					className={`pr-bar-state pr-bar-state-${headline.tone}`}
-					onClick={onOpenPrTab}
-				>
-					{headline.label}
-				</button>
-			</Tooltip>
+			{headline.key !== "no-pr" && (
+				<Tooltip label="Open the PR tab">
+					<button
+						className={`pr-bar-state pr-bar-state-${headline.tone}`}
+						onClick={onOpenPrTab}
+					>
+						{headline.label}
+					</button>
+				</Tooltip>
+			)}
 			<span className="pr-bar-spacer" />
 			{error && <span className="pr-bar-error" title={error}>{error}</span>}
 			{renderAction()}

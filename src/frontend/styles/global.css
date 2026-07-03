@@ -3416,18 +3416,18 @@ body.resizing-x .panel-resize::after {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: 7px;
-	min-height: 32px;
+	gap: 6px;
+	min-height: 30px;
 	border: 1px solid transparent;
 	border-radius: 8px;
 	font-size: 13px;
 	line-height: 1;
 	font-weight: 650;
-	padding: 7px 12px;
+	padding: 5px 10px;
 	white-space: nowrap;
 	cursor: pointer;
 	color: #fff;
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 	transition:
 		background-color 150ms ease,
 		border-color 150ms ease,
@@ -3475,18 +3475,26 @@ body.resizing-x .panel-resize::after {
 	color: var(--bg);
 	border-color: color-mix(in srgb, var(--text) 84%, transparent);
 }
+.pr-bar-btn-secondary {
+	background: var(--bg-raised);
+	color: var(--text);
+	border-color: var(--border-strong);
+}
 .pr-bar-btn-confirm {
 	outline: 2px solid color-mix(in srgb, var(--green) 45%, transparent);
 	outline-offset: 1px;
 }
 .pr-bar-btn:hover:not(:disabled) {
 	filter: brightness(1.08);
-	box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
-	transform: translateY(-1px);
+	box-shadow: 0 2px 5px rgba(0, 0, 0, 0.16);
+}
+.pr-bar-btn-secondary:hover:not(:disabled) {
+	background: var(--bg-hover);
+	filter: none;
 }
 .pr-bar-btn:active:not(:disabled) {
 	filter: brightness(0.98);
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 	transform: translateY(0) scale(0.98);
 }
 .pr-bar-btn:focus-visible {
@@ -3522,8 +3530,8 @@ body.resizing-x .panel-resize::after {
 	border-radius: 6px;
 }
 .pr-head .pr-bar-btn {
-	min-height: 34px;
-	padding: 7px 13px;
+	min-height: 32px;
+	padding: 5px 11px;
 	border-radius: 8px;
 	font-size: 13px;
 }
