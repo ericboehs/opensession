@@ -3,7 +3,8 @@ import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { BottomSheet } from "../ui/sheet";
 import { useIsPhone } from "../hooks/useIsPhone";
-import { IconCheck, IconChevronRight } from "./icons";
+import { IconCheck, IconChevronRight, IconGear } from "./icons";
+import { Tooltip } from "../ui/tooltip";
 import { TEAM, setCurrentUser, useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 
@@ -17,8 +18,9 @@ import { UserAvatar } from "./UserAvatar";
 //
 // Two trigger shapes via `variant`:
 //   "chevron" — a small chevron (the mobile top bar's brand menu).
-//   "footer"  — a full-width user row (avatar · name · connection state · gear)
-//               that lives at the bottom of the desktop sidebar.
+//   "footer"  — a full-width user row (avatar · name · connection state) at the
+//               bottom of the desktop sidebar, plus a sibling gear button that
+//               goes straight to the Settings page (bypassing the menu).
 
 function Avatar({ name, active }: { name: string; active?: boolean }) {
 	return (
@@ -43,21 +45,10 @@ const triggerChevron = (
 	</svg>
 );
 
-const gearIcon = (
-	<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-		<circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4" />
-		<path
-			d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1M12.6 12.6l-1.1-1.1M4.5 4.5L3.4 3.4"
-			stroke="currentColor"
-			strokeWidth="1.4"
-			strokeLinecap="round"
-		/>
-	</svg>
-);
-
-/** The footer trigger's contents: avatar, name, live connection state, gear.
+/** The footer trigger's contents: avatar, name, live connection state.
  * Shared by the desktop menu trigger and the phone sheet trigger so the row
- * looks identical however it opens. */
+ * looks identical however it opens. The settings gear sits next to this row
+ * as its own button (straight to Settings), not inside the trigger. */
 function UserRow({
 	name,
 	connected,
@@ -80,9 +71,6 @@ function UserRow({
 					{connected ? "Connected" : "Reconnecting…"}
 				</span>
 			</span>
-			<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-faint">
-				{gearIcon}
-			</span>
 		</>
 	);
 }
@@ -104,13 +92,22 @@ function SettingsSheet({
 	return (
 		<>
 			{variant === "footer" ? (
-				<button
-					aria-label="Account & settings"
-					className="flex w-full items-center gap-2.5 rounded-lg border-none bg-transparent px-2 py-1.5 text-left active:bg-hover"
-					onClick={() => setOpen(true)}
-				>
-					<UserRow name={currentUser} connected={connected} />
-				</button>
+				<div className="flex w-full items-center">
+					<button
+						aria-label="Account menu"
+						className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border-none bg-transparent px-2 py-1.5 text-left active:bg-hover"
+						onClick={() => setOpen(true)}
+					>
+						<UserRow name={currentUser} connected={connected} />
+					</button>
+					<button
+						aria-label="Open settings"
+						className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-none bg-transparent p-0 text-faint active:bg-hover active:text-fg"
+						onClick={() => onOpenSettings?.()}
+					>
+						<IconGear size={20} />
+					</button>
+				</div>
 			) : (
 				<button
 					aria-label="Michael menu"
@@ -157,7 +154,7 @@ function SettingsSheet({
 									}}
 								>
 									<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-dim">
-										{gearIcon}
+										<IconGear size={20} />
 									</span>
 									<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
 										Settings
@@ -209,12 +206,23 @@ export function SettingsMenu({
 	return (
 		<Menu.Root>
 			{footer ? (
-				<Menu.Trigger
-					aria-label="Account & settings"
-					className="flex w-full items-center gap-2.5 rounded-lg border-none bg-transparent px-2 py-1.5 text-left text-fg hover:bg-hover data-[popup-open]:bg-hover"
-				>
-					<UserRow name={currentUser} connected={connected} />
-				</Menu.Trigger>
+				<div className="flex w-full items-center">
+					<Menu.Trigger
+						aria-label="Account menu"
+						className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border-none bg-transparent px-2 py-1.5 text-left text-fg hover:bg-hover data-[popup-open]:bg-hover"
+					>
+						<UserRow name={currentUser} connected={connected} />
+					</Menu.Trigger>
+					<Tooltip label="Settings">
+						<button
+							aria-label="Open settings"
+							className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-none bg-transparent p-0 text-faint hover:bg-hover hover:text-fg"
+							onClick={() => onOpenSettings?.()}
+						>
+							<IconGear size={20} />
+						</button>
+					</Tooltip>
+				</div>
 			) : (
 				<Menu.Trigger
 					aria-label="Settings"
@@ -316,7 +324,7 @@ export function SettingsMenu({
 				)}
 
 				<Menu.Item onClick={() => onOpenSettings?.()}>
-					{gearIcon}
+					<IconGear size={20} />
 					Settings
 				</Menu.Item>
 			</Menu.Popup>
