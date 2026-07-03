@@ -5012,19 +5012,17 @@ body.resizing-x .panel-resize::after {
 	min-width: 0;
 }
 .update-pill {
-	display: flex;
-	width: 100%;
+	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: 6px;
+	gap: 5px;
 	flex-shrink: 0;
-	padding: 9px 12px;
-	margin-bottom: 6px;
-	border-radius: 10px;
+	padding: 4px 10px;
+	border-radius: 8px;
 	border: none;
 	background: var(--red);
 	color: #fff;
-	font-size: 13px;
+	font-size: 12px;
 	font-weight: 600;
 	line-height: 1;
 	cursor: pointer;
