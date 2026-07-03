@@ -31,6 +31,7 @@ import {
 	IconPlus,
 	IconPullRequest,
 	IconSearch,
+	IconSliders,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { RepoTile, swatchColor } from "./RepoTile";
@@ -1653,14 +1654,7 @@ export function Sidebar({
 							}`}
 							onClick={() => setFilterOpen((o) => !o)}
 						>
-							<svg width="22" height="22" viewBox="0 0 16 16" fill="none">
-								<path
-									d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
-									stroke="currentColor"
-									strokeWidth="1.5"
-									strokeLinecap="round"
-								/>
-							</svg>
+							<IconSliders size={22} />
 						</button>
 						</Tooltip>
 						<Tooltip label="New session">
@@ -1708,14 +1702,7 @@ export function Sidebar({
 						onClick={() => setFilterOpen((o) => !o)}
 						aria-label="Group, filter & sort"
 					>
-						<svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-							<path
-								d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
-								stroke="currentColor"
-								strokeWidth="1.6"
-								strokeLinecap="round"
-							/>
-						</svg>
+						<IconSliders size={22} />
 					</button>,
 					headerActionsEl,
 				)}
