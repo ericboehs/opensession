@@ -77,6 +77,25 @@ export function IconSliders(p: IconProps) {
   );
 }
 
+export function IconFilter(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        d="M4.75 7C4.33579 7 4 7.33579 4 7.75C4 8.16421 4.33579 8.5 4.75 8.5H19.25C19.6642 8.5 20 8.16421 20 7.75C20 7.33579 19.6642 7 19.25 7H4.75Z"
+        fill="currentColor"
+      />
+      <path
+        d="M6.75 11C6.33579 11 6 11.3358 6 11.75C6 12.1642 6.33579 12.5 6.75 12.5H17.25C17.6642 12.5 18 12.1642 18 11.75C18 11.3358 17.6642 11 17.25 11H6.75Z"
+        fill="currentColor"
+      />
+      <path
+        d="M8.75 15C8.33579 15 8 15.3358 8 15.75C8 16.1642 8.33579 16.5 8.75 16.5H15.25C15.6642 16.5 16 16.1642 16 15.75C16 15.3358 15.6642 15 15.25 15H8.75Z"
+        fill="currentColor"
+      />
+    </Svg>
+  );
+}
+
 export function IconSidebarRight(p: IconProps) {
   return (
     <Svg {...p}>
@@ -245,8 +264,8 @@ export function IconPencil(p: IconProps) {
 export function IconSearch(p: IconProps) {
   return (
     <Svg {...p}>
-      <circle {...stroke} cx="11" cy="11" r="4.25" />
-      <path {...stroke} d="M14.5 14.5L19.25 19.25" />
+      <circle {...stroke} cx="10.5" cy="10.5" r="5.75" />
+      <path {...stroke} d="M14.85 14.85L18.75 18.75" />
     </Svg>
   );
 }
@@ -270,6 +289,17 @@ export function IconSparkle(p: IconProps) {
       <path
         {...stroke}
         d="M12 4.75C12.75 8.5 15.5 11.25 19.25 12C15.5 12.75 12.75 15.5 12 19.25C11.25 15.5 8.5 12.75 4.75 12C8.5 11.25 11.25 8.5 12 4.75Z"
+      />
+    </Svg>
+  );
+}
+
+export function IconStar(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M12 4.75L14.214 9.235L19.164 9.954L15.582 13.446L16.427 18.375L12 16.047L7.573 18.375L8.418 13.446L4.836 9.954L9.786 9.235L12 4.75Z"
       />
     </Svg>
   );
@@ -401,6 +431,64 @@ export function IconX(p: IconProps) {
   );
 }
 
+export function IconStopSquare(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect
+        x="7.25"
+        y="7.25"
+        width="9.5"
+        height="9.5"
+        rx="2"
+        fill="currentColor"
+      />
+    </Svg>
+  );
+}
+
+export function IconClock(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="12" cy="12" r="7.25" />
+      <path {...stroke} d="M12 8.25V12L14.75 14.25" />
+    </Svg>
+  );
+}
+
+export function IconMessageQuestion(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M6.75 5.25H17.25C18.3546 5.25 19.25 6.14543 19.25 7.25V14.25C19.25 15.3546 18.3546 16.25 17.25 16.25H11.25L7.25 19.25V16.25H6.75C5.64543 16.25 4.75 15.3546 4.75 14.25V7.25C4.75 6.14543 5.64543 5.25 6.75 5.25Z"
+      />
+      <path {...stroke} d="M10 9.25C10.35 8.35 11.15 7.75 12.15 7.75C13.35 7.75 14.25 8.55 14.25 9.65C14.25 10.55 13.75 11.05 12.9 11.55C12.3 11.9 12 12.25 12 13" />
+      <path {...stroke} d="M12 14.75H12.01" />
+    </Svg>
+  );
+}
+
+export function IconInbox(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M5.25 10.25L7.05 5.85C7.357 5.121 8.07 4.75 8.861 4.75H15.139C15.93 4.75 16.643 5.121 16.95 5.85L18.75 10.25V17.25C18.75 18.3546 17.8546 19.25 16.75 19.25H7.25C6.14543 19.25 5.25 18.3546 5.25 17.25V10.25Z"
+      />
+      <path {...stroke} d="M5.25 10.25H9.25L10.25 12.25H13.75L14.75 10.25H18.75" />
+    </Svg>
+  );
+}
+
+export function IconStack(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="8.25" y="4.75" width="11" height="11" rx="2" />
+      <path {...stroke} d="M15.75 19.25H6.75C5.64543 19.25 4.75 18.3546 4.75 17.25V8.25" />
+    </Svg>
+  );
+}
+
 // Archive box (lidded crate with a pull slot), redrawn to this set's 24×24
 // grammar — the reversible sibling of IconTrash.
 export function IconArchive(p: IconProps) {
@@ -460,6 +548,34 @@ export function IconGitMerge(p: IconProps) {
       <circle {...stroke} cx="17" cy="13" r="1.75" />
       <path {...stroke} d="M7 8.25V15.75" />
       <path {...stroke} d="M7 9C7 11.5 10 13 15.25 13" />
+    </Svg>
+  );
+}
+
+export function IconReviewNodes(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="7" cy="6.5" r="1.75" />
+      <circle {...stroke} cx="7" cy="17.5" r="1.75" />
+      <circle {...stroke} cx="17" cy="17.5" r="1.75" />
+      <path {...stroke} d="M7 8.25V15.75" />
+      <path {...stroke} d="M17 15.75V12.25C17 11.1454 16.1046 10.25 15 10.25H10.25" />
+      <path {...stroke} d="M12 8.25L10.25 10.25L12 12.25" />
+    </Svg>
+  );
+}
+
+export function IconFlame(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M12 19.25C15.55 19.25 17.75 16.95 17.75 13.75C17.75 11.45 16.5 9.85 15.25 8.25C14.15 6.85 13.1 5.55 12.6 4.25C11.95 4.85 10.95 6.15 11.1 8.25C10 8.05 9.25 7.25 8.9 6.25C7.35 7.65 6.25 10.05 6.25 13.75C6.25 16.95 8.45 19.25 12 19.25Z"
+      />
+      <path
+        {...stroke}
+        d="M12 19.25C13.55 19.25 14.55 18.2 14.55 16.8C14.55 15.35 13.25 14.45 12 13C10.75 14.45 9.45 15.35 9.45 16.8C9.45 18.2 10.45 19.25 12 19.25Z"
+      />
     </Svg>
   );
 }

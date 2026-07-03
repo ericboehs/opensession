@@ -7,27 +7,35 @@ import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
 import {
   IconArrowUp,
-  IconBolt,
   IconArrowDownRight,
+  IconBolt,
   IconPlus,
   IconPaperclip,
   IconAtSign,
   IconCrosshair,
   IconChevronDown,
+  IconStopSquare,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
+import {
+  getSendKeyPref,
+  onSendKeyChanged,
+  isSendCombo,
+  sendKeyLabel,
+} from "../lib/send-key";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { motion, AnimatePresence } from "motion/react";
 import { composerMorph, composerChipMotion } from "../ui/motion";
+import { PaletteSelect } from "./PaletteSelect";
 
 interface Props {
   /**
    * Controlled draft text. Omit it (with `onChange`) to let the Composer own
    * the draft internally — the parent then receives the text via `onSend` and
    * stops re-rendering on every keystroke (the CommentableDiff draft-text
-   * lesson). In uncontrolled mode the draft clears when `onSend`/`onSteerSend`
-   * returns true (i.e. the message was actually consumed).
+   * lesson). In uncontrolled mode the draft clears when `onSend` returns true
+   * (i.e. the message was actually consumed).
    */
   value?: string;
   onChange?: (value: string) => void;
@@ -47,6 +55,8 @@ interface Props {
   /** Shows on the send button tooltip when busy-queueing. */
   sendTitle?: string;
   busy?: boolean;
+  busySendMode?: "interrupt" | "queue" | "steer";
+  onStop?: () => void;
   models: ModelOption[];
   defaultModel: string;
   /** Current model id; "" = default. */
@@ -70,25 +80,14 @@ interface Props {
   onSetGoal?: (goal: string | null) => void;
   /** Extra control rendered in the toolbar, left of the send button. */
   leftExtra?: React.ReactNode;
-  /**
-   * Optional caret control fused onto the right of the send button as a Slack-style
-   * split button (e.g. "send later"). Rendered inside `.composer-send-split`; it
-   * should style its trigger with `composer-send-caret` and anchor its own popover.
-   * Given the current draft `text`, the shared `disabled` state (same as the send
-   * button — so the whole split greys out on an empty draft), and `onScheduled` to
-   * clear the draft once the message has been handed off.
-   */
+  /** Content visually attached to the composer above the draft field. */
+  attached?: React.ReactNode;
+  /** Optional action rendered inside the "+" menu, e.g. "schedule message". */
   sendMenu?: (ctx: {
     text: string;
     disabled: boolean;
     onScheduled: () => void;
   }) => React.ReactNode;
-  /**
-   * When set and busy, renders an extra "fold in" send button — the gentle
-   * option that queues the message for Michael's next stopping point instead of
-   * interrupting (the main send button interrupts immediately when busy).
-   */
-  onSteerSend?: (text: string) => boolean | void;
   hint?: string;
   autoFocus?: boolean;
   /** Exposes the textarea so parents can focus it (e.g. keyboard shortcuts). */
@@ -204,6 +203,8 @@ export function Composer({
   sendDisabled,
   sendTitle,
   busy,
+  busySendMode = "interrupt",
+  onStop,
   models,
   defaultModel,
   model,
@@ -215,8 +216,8 @@ export function Composer({
   goal,
   onSetGoal,
   leftExtra,
+  attached,
   sendMenu,
-  onSteerSend,
   hint,
   autoFocus,
   textareaRef: externalRef,
@@ -238,6 +239,9 @@ export function Composer({
     draftKey ? loadDraft(draftKey).text : "",
   );
   const isPhone = useIsPhone();
+  // "Send messages with" preference (Settings → Composer): Enter or ⌘/Ctrl+Enter.
+  const [sendKey, setSendKey] = useState(getSendKeyPref);
+  useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
   const isControlled = value !== undefined;
   const text = isControlled ? value : innerValue;
   const setText = isControlled ? onChange ?? (() => {}) : setInnerValue;
@@ -263,8 +267,10 @@ export function Composer({
   // mic · send"), hiding the model/effort/goal chips. Focusing the field or
   // adding any content (text or attachment) expands it to the full toolbar.
   const [focused, setFocused] = useState(false);
-  const hasContent = !!text.trim() || imgs.length > 0 || fls.length > 0;
+  const hasAttached = !!attached;
+  const hasContent = !!text.trim() || imgs.length > 0 || fls.length > 0 || hasAttached;
   const minimized = isPhone && !focused && !hasContent;
+  const showSend = !busy || hasContent;
 
   // Which toolbar popover is open ("add" menu or "goal" editor). Closed on an
   // outside click or after an action.
@@ -372,7 +378,7 @@ export function Composer({
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (mentions.handleKeyDown(e)) return;
-    if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) {
+    if (isSendCombo(e, sendKey) && !(e.nativeEvent as any).isComposing) {
       e.preventDefault();
       if (!disabled && !isSendDisabled) fireSend(onSend);
     }
@@ -394,6 +400,7 @@ export function Composer({
         onDrop={handleDrop}
         onDragOver={(e) => canAttach && e.preventDefault()}
       >
+        {attached}
         <ImageThumbs images={imgs} onRemove={removeImage} disabled={disabled} />
         <FileChips files={fls} onRemove={removeFile} disabled={disabled} />
         <motion.div
@@ -478,6 +485,14 @@ export function Composer({
                       Reference a file
                     </button>
                   )}
+                  {sendMenu?.({
+                    text,
+                    disabled: !!(disabled || isSendDisabled),
+                    onScheduled: () => {
+                      if (!isControlled) setInnerValue("");
+                      setMenu(null);
+                    },
+                  })}
                 </div>
               )}
               <input
@@ -507,30 +522,29 @@ export function Composer({
                 key="model"
                 layout="position"
                 {...composerChipMotion}
-                className="palette-pill"
-                title={modelTitle || "Model for this session"}
+                className="palette-select-motion"
               >
+                <PaletteSelect
+                  className="palette-pill"
+                  title={modelTitle || "Model for this session"}
+                  value={model}
+                  options={[
+                    { value: "", label: modelShortLabel(defaultModel, models) },
+                    ...models
+                      .filter((m) => m.id !== defaultModel)
+                      .map((m) => ({ value: m.id, label: m.label })),
+                  ]}
+                  onChange={onModelChange}
+                  disabled={disabled || modelDisabled}
+                  ariaLabel="Model"
+                  isPhone={isPhone}
+                >
                 <span className={`composer-model-dot ${isCodex ? "dot-codex" : "dot-claude"}`} />
                 <span className="palette-pill-label">
                   {modelShortLabel(effectiveModel, models)}
                 </span>
                 <IconChevronDown className="palette-chevron" size={22} />
-                <select
-                  className="palette-select-overlay"
-                  value={model}
-                  onChange={(e) => onModelChange(e.target.value)}
-                  disabled={disabled || modelDisabled}
-                  aria-label="Model"
-                >
-                  <option value="">{modelShortLabel(defaultModel, models)}</option>
-                  {models
-                    .filter((m) => m.id !== defaultModel)
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
-                </select>
+                </PaletteSelect>
               </motion.div>
             )}
 
@@ -539,9 +553,18 @@ export function Composer({
                 key="effort"
                 layout="position"
                 {...composerChipMotion}
-                className="palette-pill"
-                title="Reasoning effort — applies to new turns (not yet enforced server-side)"
+                className="palette-select-motion"
               >
+                <PaletteSelect
+                  className="palette-pill"
+                  title="Reasoning effort — applies to new turns (not yet enforced server-side)"
+                  value={effort ?? "high"}
+                  options={EFFORTS.map((e) => ({ value: e.id, label: e.label }))}
+                  onChange={onEffortChange}
+                  disabled={disabled}
+                  ariaLabel="Reasoning effort"
+                  isPhone={isPhone}
+                >
                 <span className="palette-effort-icon" aria-hidden="true">
                   <span />
                   <span />
@@ -551,19 +574,7 @@ export function Composer({
                   {EFFORTS.find((e) => e.id === effort)?.label ?? "High"}
                 </span>
                 <IconChevronDown className="palette-chevron" size={22} />
-                <select
-                  className="palette-select-overlay"
-                  value={effort ?? "high"}
-                  onChange={(e) => onEffortChange(e.target.value)}
-                  disabled={disabled}
-                  aria-label="Reasoning effort"
-                >
-                  {EFFORTS.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.label}
-                    </option>
-                  ))}
-                </select>
+                </PaletteSelect>
               </motion.div>
             )}
 
@@ -607,47 +618,59 @@ export function Composer({
             <VoiceInput onText={insertDictation} disabled={disabled} />
           </motion.div>
 
-          {busy && onSteerSend && (
-            <Tooltip label="Fold in at Michael's next stopping point — don't interrupt the current turn">
+          {busy && onStop && (
+            <Tooltip label="Stop the current run">
               <button
-                className="composer-send composer-send-queue"
-                onClick={() => fireSend(onSteerSend)}
-                disabled={disabled || isSendDisabled}
+                type="button"
+                className="composer-send composer-stop"
+                onClick={onStop}
+                disabled={disabled}
+                aria-label="Stop current run"
               >
-                <IconArrowDownRight size={24} />
+                <IconStopSquare size={24} />
               </button>
             </Tooltip>
           )}
-          {/* When a `sendMenu` is wired, the send button fuses with a caret into a
-              Slack-style split button (send now / send later). Without it, the
-              send button stands alone as a plain circle. */}
-          <motion.div
-            layout="position"
-            transition={composerMorph}
-            className={`composer-send-split ${sendMenu ? "has-menu" : ""} ${busy ? "is-interrupt" : ""}`}
-          >
-            <Tooltip
-              label={
-                sendTitle ||
-                (busy ? "Send now — interrupts the current turn and redirects Michael (Enter)" : "Send (Enter)")
-              }
+          {/* Keep the right edge clean: stop (while busy) and send only. Niche
+              actions such as scheduling live under the + menu. */}
+          {showSend && (
+            <motion.div
+              layout="position"
+              transition={composerMorph}
+              className={`composer-send-split ${busy && busySendMode !== "queue" ? "is-interrupt" : ""}`}
             >
-              <button
-                className={`composer-send ${busy ? "composer-send-interrupt" : ""}`}
-                onClick={() => fireSend(onSend)}
-                disabled={disabled || isSendDisabled}
+              <Tooltip
+                label={
+                  sendTitle ||
+                  (busy
+                    ? busySendMode === "steer"
+                      ? `Steer into the current run (${sendKeyLabel(sendKey)})`
+                      : busySendMode === "queue"
+                        ? `Queue for the next turn (${sendKeyLabel(sendKey)})`
+                        : `Send now — interrupts the current turn (${sendKeyLabel(sendKey)})`
+                    : `Send (${sendKeyLabel(sendKey)})`)
+                }
               >
-                {busy ? <IconBolt size={24} /> : <IconArrowUp size={24} />}
-              </button>
-            </Tooltip>
-            {sendMenu?.({
-              text,
-              disabled: !!(disabled || isSendDisabled),
-              onScheduled: () => {
-                if (!isControlled) setInnerValue("");
-              },
-            })}
-          </motion.div>
+                <button
+                  className={`composer-send ${busy && busySendMode !== "queue" ? "composer-send-interrupt" : busy ? "composer-send-queue-main" : ""}`}
+                  onClick={() => fireSend(onSend)}
+                  disabled={disabled || isSendDisabled}
+                >
+                  {busy ? (
+                    busySendMode === "steer" ? (
+                      <IconCrosshair size={24} />
+                    ) : busySendMode === "queue" ? (
+                      <IconArrowDownRight size={24} />
+                    ) : (
+                      <IconBolt size={24} />
+                    )
+                  ) : (
+                    <IconArrowUp size={24} />
+                  )}
+                </button>
+              </Tooltip>
+            </motion.div>
+          )}
         </div>
       </motion.div>
       {hint && <div className="composer-hint">{hint}</div>}

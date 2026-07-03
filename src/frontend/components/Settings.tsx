@@ -15,6 +15,17 @@ import {
 	onThemeChanged,
 	type ThemePref,
 } from "../lib/theme";
+import {
+	getSendKeyPref,
+	setSendKeyPref,
+	onSendKeyChanged,
+	getBusySendPref,
+	setBusySendPref,
+	onBusySendChanged,
+	MOD_ENTER_LABEL,
+	type BusySendPref,
+	type SendKeyPref,
+} from "../lib/send-key";
 import { Connections } from "./Connections";
 import { ModelsPanel } from "./Models";
 import {
@@ -54,6 +65,7 @@ export type SettingsSectionKey =
 	| "notifications"
 	| "monitor"
 	| "autoArchive"
+	| "composer"
 	| "appearance"
 	| "model"
 	| "connections"
@@ -233,6 +245,27 @@ const SECTIONS: {
 		),
 	},
 	{
+		key: "composer",
+		label: "Composer",
+		group: "Personal",
+		icon: (
+			<svg
+				width="20"
+				height="20"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<rect x="1.75" y="4.25" width="12.5" height="7.5" rx="1.2" />
+				<path
+					d="M4 6.8h.01M6.7 6.8h.01M9.4 6.8h.01M12.1 6.8h.01M5 9.5h6"
+					strokeLinecap="round"
+				/>
+			</svg>
+		),
+	},
+	{
 		key: "appearance",
 		label: "Appearance",
 		group: "Personal",
@@ -329,6 +362,7 @@ function SectionPanel({
 			{section === "notifications" && <NotificationsPanel />}
 			{section === "monitor" && <MonitorPanel />}
 			{section === "autoArchive" && <AutoArchivePanel />}
+			{section === "composer" && <ComposerPanel />}
 			{section === "appearance" && <AppearancePanel />}
 			{section === "audit" && <AuditPanel />}
 			{section === "model" && <ModelsPanel />}
@@ -1233,6 +1267,55 @@ function AuditPanel() {
 					</button>
 				</div>
 			)}
+		</div>
+	);
+}
+
+/** Composer preferences — per-browser, like theme (lib/send-key). */
+function ComposerPanel() {
+	const [sendKey, setSendKey] = useState<SendKeyPref>(getSendKeyPref);
+	const [busySend, setBusySend] = useState<BusySendPref>(getBusySendPref);
+	useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
+	useEffect(() => onBusySendChanged(() => setBusySend(getBusySendPref())), []);
+
+	return (
+		<div className="settings-panel">
+			<h1 className="settings-title">Composer</h1>
+			<div className="setting-card">
+				<SettingRow
+					title="Send messages with"
+					desc={`Choose which key combination sends messages. Use ${
+						sendKey === "mod-enter" ? "↵" : "⇧↵"
+					} for new lines.`}
+					control={
+						<Select
+							label="Send messages with"
+							value={sendKey}
+							options={[
+								{ value: "enter", label: "Enter" },
+								{ value: "mod-enter", label: MOD_ENTER_LABEL },
+							]}
+							onChange={setSendKeyPref}
+						/>
+					}
+				/>
+				<SettingRow
+					title="When Michael is working"
+					desc="Choose what the main send button does during an active turn. Interrupt stops the current turn and redirects right away; queue and steer wait for a stopping point."
+					control={
+						<Select
+							label="When Michael is working"
+							value={busySend}
+							options={[
+								{ value: "interrupt", label: "Interrupt now" },
+								{ value: "queue", label: "Queue for later" },
+								{ value: "steer", label: "Steering" },
+							]}
+							onChange={setBusySendPref}
+						/>
+					}
+				/>
+			</div>
 		</div>
 	);
 }

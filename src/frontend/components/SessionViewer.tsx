@@ -26,6 +26,7 @@ import {
 	fetchModels,
 	fetchFileMentions,
 	promoteChatApi,
+	type WorkspaceMediaItem,
 	type ModelOption,
 } from "../lib/api";
 import { Composer } from "./Composer";
@@ -43,11 +44,34 @@ import { PreviewButton } from "./PreviewButton";
 import { StagingLink } from "./StagingLink";
 import { WorkspaceInfo } from "./WorkspaceInfo";
 import { SpinOffMenu } from "./SpinOffMenu";
-import { IconSidebarRight, IconTrash, IconArchive, IconChevronDown } from "./icons";
+import {
+	IconSidebarRight,
+	IconTrash,
+	IconArchive,
+	IconChevronDown,
+	IconPlus,
+	IconPencil,
+	IconCrosshair,
+	IconX,
+	IconStar,
+} from "./icons";
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
 import { Tooltip } from "../ui/tooltip";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
+import {
+	getBusySendPref,
+	onBusySendChanged,
+	type BusySendPref,
+} from "../lib/send-key";
+
+type QueueReceipt = {
+	id?: string;
+	content: string;
+	user?: string;
+	images?: string[];
+	files?: unknown;
+};
 
 interface Props {
 	session: UnifiedSession;
@@ -86,6 +110,9 @@ interface Props {
 	/** Sibling chats in this chat's workspace (the tab strip's list, oldest
 	    first) — feeds the floating overview panel's cross-chat media. */
 	workspaceChats?: UnifiedSession[];
+	/** Start a new chat in this workspace — surfaced in the ⋯ menu so it's
+	    reachable on a phone, where the tab strip's + button is hidden. */
+	onNewChat?: (mode: "share" | "stack" | "ask") => void;
 	/** Orchestrator this session was delegated from (when it's a worker
 	    sub-session), and the worker sessions it in turn spawned. Powers the
 	    header relationship chips. */
@@ -93,9 +120,11 @@ interface Props {
 	workerSessions?: RelatedSession[];
 	/** Navigate to another session (used by the relationship chips). */
 	onOpenSession?: (id: string) => void;
+	/** Mirror live run state into the app-level session list for sidebar rows. */
+	onRunningChange?: (id: string, isRunning: boolean) => void;
 }
 
-type PanelTab = "changes" | "terminal" | "pr" | "slack" | "plain";
+type PanelTab = "info" | "changes" | "terminal" | "pr" | "slack" | "plain";
 
 /** Workspace of the Plain app the tickets live in (for the "jump into Plain" link). */
 const PLAIN_WORKSPACE_ID = "w_01J7WXJG68TFDV9RD1C4JE3W6F";
@@ -169,9 +198,11 @@ export function SessionViewer({
 	workspaceName,
 	onRenameWorkspace,
 	workspaceChats,
+	onNewChat,
 	parentSession,
 	workerSessions,
 	onOpenSession,
+	onRunningChange,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
@@ -182,8 +213,8 @@ export function SessionViewer({
 	const [historyTruncated, setHistoryTruncated] = useState(false);
 	const [loadingHistory, setLoadingHistory] = useState(false);
 	// The composer draft lives INSIDE Composer (uncontrolled mode) so keystrokes
-	// don't re-render this whole component; the text arrives via handleSend /
-	// handleSteerSend. Same fix as the CommentableDiff draft-text gotcha.
+	// don't re-render this whole component; the text arrives via handleSend.
+	// Same fix as the CommentableDiff draft-text gotcha.
 	// Text + attachments persist in the draft store (keyed per chat) so
 	// switching to another chat/workspace — which remounts this component —
 	// doesn't lose typed work. Text rides Composer's `draftKey`; the staged
@@ -205,14 +236,21 @@ export function SessionViewer({
 	// it isn't wiping a NEWER run's in-progress text.
 	const streamSeqRef = useRef(0);
 	const [viewers, setViewers] = useState<string[]>([]);
-	const [queued, setQueued] = useState<
-		Array<{ content: string; user?: string; images?: string[] }>
-	>([]);
-	// Steered messages folded into the live run — shown as a "folded in" receipt
+	const [queued, setQueued] = useState<QueueReceipt[]>([]);
+	// Steered messages routed into the live run — shown as a steering receipt
 	// until their turn writes to the transcript (then reconciled away below).
-	const [steered, setSteered] = useState<
-		Array<{ content: string; user?: string; images?: string[] }>
-	>([]);
+	const [steered, setSteered] = useState<QueueReceipt[]>([]);
+	const [editingQueue, setEditingQueue] = useState<{
+		key: string;
+		id?: string;
+		index: number;
+		content: string;
+	} | null>(null);
+	const [busySend, setBusySend] = useState<BusySendPref>(getBusySendPref);
+	useEffect(
+		() => onBusySendChanged(() => setBusySend(getBusySendPref())),
+		[],
+	);
 	// Optimistic just-sent messages, shown instantly and reconciled once the real
 	// turn lands (transcript) or the server confirms it as queued (busy path).
 	const [pending, setPending] = useState<
@@ -244,10 +282,12 @@ export function SessionViewer({
 			Boolean(session.worktreeDir || session.branch);
 		const stored = localStorage.getItem("michael-panel-tab") as PanelTab | null;
 		if (stored) {
-			const available = stored === "plain" ? Boolean(session.plainThreadId) : workspace;
+			const available =
+				stored === "info" ||
+				(stored === "plain" ? Boolean(session.plainThreadId) : workspace);
 			if (available) return stored;
 		}
-		return !workspace && session.plainThreadId ? "plain" : "changes";
+		return "info";
 	});
 	function selectPanelTab(tab: PanelTab) {
 		setPanelTab(tab);
@@ -328,8 +368,8 @@ export function SessionViewer({
 	const {
 		containerRef: messagesRef,
 		spacerRef,
-		following,
 		newBelow,
+		showScrollToBottom,
 		scrollToLatest,
 		anchorToTop,
 		beginTurn,
@@ -566,6 +606,7 @@ export function SessionViewer({
 					break;
 				case "session_status":
 					setIsRunningLive(msg.isRunning);
+					onRunningChange?.(session.id, msg.isRunning);
 					break;
 				case "stream_start":
 					streamSeqRef.current++;
@@ -790,6 +831,12 @@ export function SessionViewer({
 		!session.claudeSessionId &&
 		!session.codexThreadId &&
 		session.source !== "backstage";
+	const busySendLabel =
+		busySend === "queue"
+			? "Queue for Michael's next turn"
+			: busySend === "steer"
+				? "Steer into Michael's current run"
+				: "Send now — interrupts the current turn and redirects Michael";
 	// Exact engine-state forks use Claude's SDK forkSession. Other backends can
 	// still fork as a new sibling with a transcript handoff.
 	const canForkSession =
@@ -850,26 +897,37 @@ export function SessionViewer({
 		}
 
 		if (noEngine) return false;
-		// Default while busy: interrupt the current turn and redirect right away, so
-		// the message lands now instead of waiting (possibly many minutes) for the
-		// turn to end. Idle: just run it. Attachments ride along on every path —
-		// images fold into the run as content blocks; files (which can't) route the
-		// send to the queue server-side and drain with the next turn. The gentle
-		// "fold in at the next stopping point" option is the + button →
-		// handleSteerSend.
+		// While busy, respect the per-browser Composer setting: interrupt the
+		// current turn and redirect right away (default — the message lands now
+		// instead of waiting, possibly many minutes, for the turn to end), queue
+		// for later, or steer into the live run at the next stopping point.
+		// Idle: just run it. Attachments ride along on every path — images fold
+		// into the run as content blocks; files route to the queue server-side.
+		const interrupting = isBusy && busySend === "interrupt";
 		send(
 			isBusy
-				? {
-						type: "interrupt_prompt",
-						sessionId: session.id,
-						content: text,
-						user,
-						effort,
-						...(imgs.length ? { images: imgs } : {}),
-						...(fls.length ? { files: filePayload } : {}),
-					}
+				? interrupting
+					? {
+							type: "interrupt_prompt" as const,
+							sessionId: session.id,
+							content: text,
+							user,
+							effort,
+							...(imgs.length ? { images: imgs } : {}),
+							...(fls.length ? { files: filePayload } : {}),
+						}
+					: {
+							type: "prompt" as const,
+							sessionId: session.id,
+							content: text,
+							user,
+							effort,
+							busyMode: busySend === "steer" ? ("steer" as const) : ("queue" as const),
+							...(imgs.length ? { images: imgs } : {}),
+							...(fls.length ? { files: filePayload } : {}),
+						}
 				: {
-						type: "prompt",
+						type: "prompt" as const,
 						sessionId: session.id,
 						content: text,
 						user,
@@ -878,63 +936,208 @@ export function SessionViewer({
 						...(fls.length ? { files: filePayload } : {}),
 					},
 		);
-		beginTurn(); // pin this new turn near the top so its reply streams in below
-		// Show it immediately; reconciled away when the real turn / queue echo lands
-		setPending((p) => [
-			...p,
-			{
-				id: `pending-${crypto.randomUUID()}`,
-				content: text,
-				user,
-				sentAt: Date.now(),
-				images: imgs.length ? imgs : undefined,
-			},
-		]);
+		if (!isBusy || interrupting) {
+			if (!isBusy) {
+				setIsRunningLive(true);
+				onRunningChange?.(session.id, true);
+			}
+			beginTurn(); // pin this new turn near the top so its reply streams in below
+			// Show it immediately; interrupt sends land in the transcript almost at
+			// once and reconcile away. Queued/steered sends show in the attached
+			// queue instead.
+			setPending((p) => [
+				...p,
+				{
+					id: `pending-${crypto.randomUUID()}`,
+					content: text,
+					user,
+					sentAt: Date.now(),
+					images: imgs.length ? imgs : undefined,
+				},
+			]);
+		}
 		setImages([]);
 		setFiles([]);
 		return true;
 	}
 
-	// Gentle alternative to handleSend while busy: fold the message into the run at
-	// Michael's next stopping point without interrupting the current turn.
-	function handleSteerSend(raw: string): boolean {
-		const text = raw.trim();
-		const imgs = images;
-		const fls = files;
-		if (!text && imgs.length === 0 && fls.length === 0) return false;
-		if (!connected || noEngine) return false;
+	function queueHasFiles(item: QueueReceipt): boolean {
+		return Array.isArray(item.files) && item.files.length > 0;
+	}
 
-		const user = getCurrentUser();
-		const filePayload = fls.map((f) =>
-			f.path ? { name: f.name, path: f.path } : { name: f.name, dataUrl: f.dataUrl },
-		);
-		// Server routes this to the live run: images fold in as content blocks at
-		// the next turn boundary; files (which can't ride the steer channel) drop
-		// to the queue and drain with the next turn.
+	function saveQueuedEdit() {
+		if (!editingQueue) return;
 		send({
-			type: "prompt",
+			type: "update_queued_prompt",
 			sessionId: session.id,
-			content: text,
-			user,
-			effort,
-			...(imgs.length ? { images: imgs } : {}),
-			...(fls.length ? { files: filePayload } : {}),
+			queueId: editingQueue.id,
+			queueIndex: editingQueue.index,
+			content: editingQueue.content,
 		});
-		beginTurn(); // pin this new turn near the top so its reply streams in below
-		setPending((p) => [
-			...p,
-			{
-				id: `pending-${crypto.randomUUID()}`,
-				content: text,
-				user,
-				sentAt: Date.now(),
-				images: imgs.length ? imgs : undefined,
-			},
-		]);
-		setImages([]);
-		setFiles([]);
-		return true;
+		setEditingQueue(null);
 	}
+
+	const attachedQueue =
+		visibleSteered.length > 0 || queued.length > 0 ? (
+			<div className="composer-queue" aria-label="Queued messages">
+				<div className="composer-queue-title">
+					{queued.length + visibleSteered.length} queued{" "}
+					{queued.length + visibleSteered.length === 1 ? "message" : "messages"}
+				</div>
+				{visibleSteered.map((s, i) => {
+					const hr = parseHumanReply(s.content);
+					return (
+						<div
+							key={`steered-${i}`}
+							className={`composer-queue-item composer-queue-steered ${hr ? "is-human" : ""}`}
+						>
+							<div className="composer-queue-head">
+								<div className="composer-queue-label">
+									{hr ? `💬 ${hr.name} · via Slack` : s.user || "You"} ·
+									steering
+								</div>
+								<span className="composer-queue-pill">
+									<IconCrosshair size={16} />
+									Steering
+								</span>
+							</div>
+							<div className="composer-queue-body">{hr ? hr.body : s.content}</div>
+							{s.images && s.images.length > 0 && (
+								<div className="composer-queue-images">
+									{s.images.map((src, j) => (
+										<img key={j} src={src} alt="" />
+									))}
+								</div>
+							)}
+						</div>
+					);
+				})}
+
+				{queued.map((q, i) => {
+					const hr = parseHumanReply(q.content);
+					const id = q.id;
+					const key = id || `queued-${i}`;
+					const editing = editingQueue?.key === key;
+					const canSteer = !queueHasFiles(q);
+					return (
+						<div
+							key={key}
+							className={`composer-queue-item ${hr ? "is-human" : ""}`}
+						>
+							<div className="composer-queue-head">
+								<div className="composer-queue-label">
+									{hr ? `💬 ${hr.name} · via Slack` : q.user || "You"} · queued
+								</div>
+								<div className="composer-queue-actions">
+									<Tooltip
+										label={
+											canSteer
+												? "Steer into the current run now"
+												: "Messages with files cannot be steered"
+										}
+									>
+										<button
+											type="button"
+											className="composer-queue-action composer-queue-steer"
+											disabled={!canSteer}
+											onClick={() =>
+												send({
+													type: "steer_queued_prompt",
+													sessionId: session.id,
+													queueId: id,
+													queueIndex: i,
+												})
+											}
+										>
+											<IconCrosshair size={20} />
+											<span>Steer</span>
+										</button>
+									</Tooltip>
+									<Tooltip label="Edit queued message">
+										<button
+											type="button"
+											className="composer-queue-action"
+											onClick={() =>
+												setEditingQueue({ key, id, index: i, content: q.content })
+											}
+										>
+											<IconPencil size={20} />
+										</button>
+									</Tooltip>
+									<Tooltip label="Delete queued message">
+										<button
+											type="button"
+											className="composer-queue-action danger"
+											onClick={() =>
+												send({
+													type: "delete_queued_prompt",
+													sessionId: session.id,
+													queueId: id,
+													queueIndex: i,
+												})
+											}
+										>
+											<IconTrash size={20} />
+										</button>
+									</Tooltip>
+								</div>
+							</div>
+							{editing ? (
+								<div className="composer-queue-edit">
+									<textarea
+										value={editingQueue.content}
+										onChange={(e) =>
+											setEditingQueue({
+												key,
+												id,
+												index: i,
+												content: e.currentTarget.value,
+											})
+										}
+										onKeyDown={(e) => {
+											if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+												e.preventDefault();
+												saveQueuedEdit();
+											}
+											if (e.key === "Escape") {
+												e.preventDefault();
+												setEditingQueue(null);
+											}
+										}}
+										autoFocus
+									/>
+									<div className="composer-queue-edit-actions">
+										<button
+											type="button"
+											className="composer-queue-edit-cancel"
+											onClick={() => setEditingQueue(null)}
+										>
+											<IconX size={20} />
+										</button>
+										<button
+											type="button"
+											className="composer-queue-edit-save"
+											onClick={saveQueuedEdit}
+										>
+											Save
+										</button>
+									</div>
+								</div>
+							) : (
+								<div className="composer-queue-body">{hr ? hr.body : q.content}</div>
+							)}
+							{q.images && q.images.length > 0 && (
+								<div className="composer-queue-images">
+									{q.images.map((src, j) => (
+										<img key={j} src={src} alt="" />
+									))}
+								</div>
+							)}
+						</div>
+					);
+				})}
+			</div>
+		) : null;
 
 	function handleCancel() {
 		send({ type: "cancel" });
@@ -1081,6 +1284,25 @@ export function SessionViewer({
 			),
 		[entries],
 	);
+	const liveOverviewMedia = useMemo<WorkspaceMediaItem[]>(() => {
+		const fromImages = (
+			items: Array<{ images?: string[]; sentAt?: number }>,
+		): WorkspaceMediaItem[] =>
+			items.flatMap((item) =>
+				(item.images || []).map((src, i) => ({
+					kind: "image" as const,
+					src,
+					sessionId: session.id,
+					chatTitle: session.title,
+					at: new Date((item.sentAt || Date.now()) + i).toISOString(),
+				})),
+			);
+		return [
+			...fromImages(pending),
+			...fromImages(queued),
+			...fromImages(visibleSteered),
+		];
+	}, [pending, queued, visibleSteered, session.id, session.title]);
 
 	async function handleDelete(cleanWorktree: boolean) {
 		setDeleteLabel(
@@ -1103,7 +1325,7 @@ export function SessionViewer({
 	// session (and worktree) and just tucks it into the Archived view, so no
 	// confirm step. Unarchiving from here (viewing an already-archived session)
 	// brings it back. Either way we hop out to the list the same way delete does.
-	async function handleArchive() {
+	const handleArchive = useCallback(async () => {
 		const next = !session.archived;
 		setArchiving(true);
 		setOverflowOpen(false);
@@ -1114,7 +1336,40 @@ export function SessionViewer({
 			alert(`${next ? "Archive" : "Unarchive"} failed: ${e.message}`);
 			setArchiving(false);
 		}
-	}
+	}, [onBack, session.archived, session.id]);
+
+	useEffect(() => {
+		function onKeyDown(e: KeyboardEvent) {
+			if (
+				e.defaultPrevented ||
+				document.querySelector(
+					".palette-backdrop, .composer-schedule-modal-backdrop, .session-delete-overlay",
+				)
+			) {
+				return;
+			}
+			const target = e.target as HTMLElement | null;
+			if (
+				target?.closest(
+					"input, textarea, select, [contenteditable='true'], [contenteditable='']",
+				)
+			) {
+				return;
+			}
+			if (
+				e.key.toLowerCase() === "a" &&
+				(e.metaKey || e.ctrlKey) &&
+				e.shiftKey &&
+				!e.altKey &&
+				!archiving
+			) {
+				e.preventDefault();
+				void handleArchive();
+			}
+		}
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [archiving, handleArchive, session.archived]);
 
 	// Preview / Staging / PR — the code-workspace affordances, docked at the top
 	// of the right panel (the "right sidebar") rather than the main header bar.
@@ -1173,7 +1428,24 @@ export function SessionViewer({
 						onClick={handleShare}
 						title="Copy a link to this session"
 					>
-						{copied ? "Copied ✓" : "Share"}
+						{copied ? "Copied" : "Share"}
+					</button>
+				);
+				// New chat in this workspace — phone-only, since desktop has the
+				// always-visible + in the tab strip. On a phone the strip (and its
+				// hover-revealed +) is hidden, so the ⋯ menu is the only way to add a
+				// sibling chat. Shares the workspace worktree, like the + default.
+				const newChatAction = isPhone && onNewChat && (
+					<button
+						className="btn-viewer-newchat"
+						onClick={() => {
+							setOverflowOpen(false);
+							onNewChat("share");
+						}}
+						title="Start a new chat in this workspace"
+					>
+						<IconPlus size={22} />
+						New chat in workspace
 					</button>
 				);
 				// Star (pin) and Spin off live in the ⋯ menu at every width,
@@ -1185,7 +1457,8 @@ export function SessionViewer({
 							onClick={() => togglePin(session.id)}
 							aria-pressed={pinned}
 						>
-							{pinned ? "★ Unpin tab" : "☆ Pin as tab"}
+							<IconStar size={20} fill={pinned ? "currentColor" : "none"} />
+							{pinned ? "Unpin tab" : "Pin as tab"}
 						</button>
 						<SpinOffMenu
 							session={session}
@@ -1203,16 +1476,23 @@ export function SessionViewer({
 						className="btn-viewer-archive"
 						onClick={handleArchive}
 						disabled={archiving}
-						title={session.archived ? "Unarchive session" : "Archive session"}
+						title={
+							session.archived
+								? "Unarchive session (⌘⇧A)"
+								: "Archive session (⌘⇧A)"
+						}
 					>
 						<IconArchive size={22} />
-						{archiving
-							? session.archived
-								? "Unarchiving…"
-								: "Archiving…"
-							: session.archived
-								? "Unarchive session"
-								: "Archive session"}
+						<span>
+							{archiving
+								? session.archived
+									? "Unarchiving…"
+									: "Archiving…"
+								: session.archived
+									? "Unarchive session"
+									: "Archive session"}
+						</span>
+						<span className="btn-viewer-shortcut">⌘⇧A</span>
 					</button>
 				);
 				// Delete is destructive, so it never rides in the visible action bar —
@@ -1381,7 +1661,7 @@ export function SessionViewer({
 								<UserAvatar
 									key={v.name}
 									name={v.name}
-									size={24}
+									size={28}
 									className={`presence-avatar ${v.name === me ? "presence-me" : ""}`}
 								>
 									{v.count > 1 ? (
@@ -1411,6 +1691,7 @@ export function SessionViewer({
 							<div className="viewer-overflow-menu">
 								{isPhone && secondaryActions}
 								{(compactHeader || isPhone) && collapsibleActions}
+								{newChatAction}
 								{overflowActions}
 								{archiveAction}
 								{deleteAction}
@@ -1607,6 +1888,12 @@ export function SessionViewer({
 
 							{streamText && <StreamingMessage text={streamText} />}
 
+							{isBusy && (
+								<BusyInline
+									since={busySince}
+								/>
+							)}
+
 							{ask && (
 								<AskCard
 									key={ask.questionId}
@@ -1622,69 +1909,18 @@ export function SessionViewer({
 								/>
 							)}
 
-							{visibleSteered.map((s, i) => {
-								const hr = parseHumanReply(s.content);
-								return (
-									<div
-										key={`steered-${i}`}
-										className={`msg msg-queued ${hr ? "msg-human" : "msg-user"}`}
-									>
-										<div
-											className={`msg-label ${hr ? "msg-label-human" : "msg-label-user"}`}
-										>
-											{hr ? `💬 ${hr.name} · via Slack` : s.user || "You"} ·
-											folded in
+								{pending.map((p) => (
+									<div key={p.id} className="msg msg-user msg-sending">
+										<div className="msg-label msg-label-user">
+											{p.user || "You"} ·{" "}
+											{isBusy
+												? busySend === "steer"
+													? "steering…"
+													: busySend === "queue"
+														? "queueing…"
+														: "redirecting…"
+												: "sending…"}
 										</div>
-										<div
-											className={`msg-body ${hr ? "msg-body-human" : "msg-body-user"}`}
-										>
-											{hr ? hr.body : s.content}
-										</div>
-										{s.images && s.images.length > 0 && (
-											<div className="msg-images">
-												{s.images.map((src, j) => (
-													<img key={j} className="md-image" src={src} alt="" />
-												))}
-											</div>
-										)}
-									</div>
-								);
-							})}
-
-							{queued.map((q, i) => {
-								const hr = parseHumanReply(q.content);
-								return (
-									<div
-										key={`queued-${i}`}
-										className={`msg msg-queued ${hr ? "msg-human" : "msg-user"}`}
-									>
-										<div
-											className={`msg-label ${hr ? "msg-label-human" : "msg-label-user"}`}
-										>
-											{hr ? `💬 ${hr.name} · via Slack` : q.user || "You"} ·
-											queued
-										</div>
-										<div
-											className={`msg-body ${hr ? "msg-body-human" : "msg-body-user"}`}
-										>
-											{hr ? hr.body : q.content}
-										</div>
-										{q.images && q.images.length > 0 && (
-											<div className="msg-images">
-												{q.images.map((src, j) => (
-													<img key={j} className="md-image" src={src} alt="" />
-												))}
-											</div>
-										)}
-									</div>
-								);
-							})}
-
-							{pending.map((p) => (
-								<div key={p.id} className="msg msg-user msg-sending">
-									<div className="msg-label msg-label-user">
-										{p.user || "You"} · {isBusy ? "redirecting…" : "sending…"}
-									</div>
 									{p.content && (
 										<div className="msg-body msg-body-user">{p.content}</div>
 									)}
@@ -1709,18 +1945,14 @@ export function SessionViewer({
 							<div ref={spacerRef} className="turn-spacer" aria-hidden="true" />
 						</div>
 
-						{!following && entries.length > 0 && (
+						{showScrollToBottom && entries.length > 0 && (
 							<button
 								className={`jump-latest ${newBelow ? "jump-latest-new" : ""}`}
 								onClick={() => scrollToLatest("smooth")}
-								title="Return to the latest reply"
+								title="Scroll to the bottom"
 							>
 								<span className="jump-latest-arrow">↓</span>
-								{isBusy
-									? "Michael is replying"
-									: newBelow
-										? "New messages"
-										: "Jump to latest"}
+								{newBelow ? "New messages" : "Scroll to bottom"}
 							</button>
 						)}
 					</div>
@@ -1730,31 +1962,6 @@ export function SessionViewer({
 							<div className="input-disabled">No engine session to resume</div>
 						) : (
 							<>
-								{isBusy && (
-									<div className="input-busy">
-										<span className="pulse-dot" />
-										{streamBy && streamBy !== me
-											? `${streamBy} is driving — Michael is working…`
-											: "Michael is working…"}
-										{busySince != null && <BusyElapsed since={busySince} />}
-										{(queued.length > 0 || visibleSteered.length > 0) && (
-											<span className="queue-count">
-												{visibleSteered.length > 0 &&
-													`${visibleSteered.length} folded in`}
-												{visibleSteered.length > 0 && queued.length > 0 && ", "}
-												{queued.length > 0 && `${queued.length} queued`}
-											</span>
-										)}
-										<button
-											className="btn-cancel"
-											onClick={handleCancel}
-											title="Stop the current run"
-										>
-											<span className="btn-cancel-icon" />
-											Stop
-										</button>
-									</div>
-								)}
 								{forkFrom && (
 									<div className="fork-banner">
 										<span>
@@ -1786,15 +1993,25 @@ export function SessionViewer({
 											: forkFrom
 												? "New direction…"
 												: isBusy
-													? "Redirect Michael… (+ to fold in)"
+													? busySend === "queue"
+															? "Queue for later…"
+															: busySend === "steer"
+																? "Steer this run…"
+																: "New direction…"
 													: "Ask Michael…"
 									}
 									disabled={!connected}
 									sendDisabled={(text) =>
-										!text.trim() && images.length === 0 && !forkFrom
+										!text.trim() &&
+										images.length === 0 &&
+										files.length === 0 &&
+										!forkFrom
 									}
 									busy={isBusy && !forkFrom}
-									onSteerSend={forkFrom ? undefined : handleSteerSend}
+									busySendMode={busySend}
+									onStop={handleCancel}
+									sendTitle={isBusy ? busySendLabel : undefined}
+									attached={attachedQueue}
 									models={models}
 									defaultModel={defaultModel}
 									model={model}
@@ -1821,6 +2038,7 @@ export function SessionViewer({
 														text={text}
 														disabled={disabled}
 														onScheduled={onScheduled}
+														variant="menu-item"
 													/>
 												)
 											: undefined
@@ -1871,23 +2089,13 @@ export function SessionViewer({
 							/>
 						)}
 						<div className="panel-actions">{panelActions}</div>
-						<WorkspaceInfo
-							workspaceId={session.projectId || null}
-							workspaceName={workspaceName}
-							chats={(workspaceChats?.length ? workspaceChats : [session]).map(
-								(s) => ({
-									id: s.id,
-									title: s.title,
-									createdAt: s.createdAt || "",
-									startedBy: s.startedBy,
-								}),
-							)}
-							repo={
-								hasWorkspace ? session.repo || "tella-fusion" : undefined
-							}
-							liveMediaCount={liveMediaCount}
-						/>
 						<div className="panel-tabs">
+							<button
+								className={`panel-tab ${panelTab === "info" ? "active" : ""}`}
+								onClick={() => selectPanelTab("info")}
+							>
+								Info
+							</button>
 							{hasWorkspace && (
 								<>
 									<button
@@ -1929,12 +2137,30 @@ export function SessionViewer({
 								>
 									Plain
 									<span className="panel-tab-dot" />
-								</button>
+							</button>
 							)}
 						</div>
 						<div className="panel-body">
 							{/* Plain-only sessions (no code workspace) show just the timeline. */}
-							{(panelTab === "plain" || !hasWorkspace) && hasPlain ? (
+							{panelTab === "info" ? (
+								<WorkspaceInfo
+									workspaceId={session.projectId || null}
+									workspaceName={workspaceName}
+									chats={(workspaceChats?.length ? workspaceChats : [session]).map(
+										(s) => ({
+											id: s.id,
+											title: s.title,
+											createdAt: s.createdAt || "",
+											startedBy: s.startedBy,
+										}),
+									)}
+									repo={
+										hasWorkspace ? session.repo || "tella-fusion" : undefined
+									}
+									liveMediaCount={liveMediaCount}
+									liveMedia={liveOverviewMedia}
+								/>
+							) : (panelTab === "plain" || !hasWorkspace) && hasPlain ? (
 								<PlainThreadPanel
 									sessionId={session.id}
 									threadId={session.plainThreadId!}
@@ -1989,7 +2215,7 @@ export function SessionViewer({
 	);
 }
 
-// Ticking elapsed-time label for the "Michael is working…" line. Self-ticking
+// Ticking elapsed-time label for the busy dot row. Self-ticking
 // so the 10Hz re-render stays inside this tiny span, not the whole viewer.
 function BusyElapsed({ since }: { since: number }) {
 	const [now, setNow] = useState(() => Date.now());
@@ -2004,6 +2230,19 @@ function BusyElapsed({ since }: { since: number }) {
 		label = `${Math.floor(s / 60)}m, ${(s % 60).toFixed(1)}s`;
 	else label = `${Math.floor(s / 3600)}h, ${Math.floor((s % 3600) / 60)}m`;
 	return <span className="busy-elapsed">{label}</span>;
+}
+
+function BusyInline({
+	since,
+}: {
+	since: number | null;
+}) {
+	return (
+		<div className="msg msg-busy-inline">
+			<span className="pulse-dot" />
+			{since != null && <BusyElapsed since={since} />}
+		</div>
+	);
 }
 
 function StreamingMessage({ text }: { text: string }) {
