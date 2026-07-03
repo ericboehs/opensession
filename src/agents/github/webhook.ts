@@ -11,6 +11,7 @@ import { GITHUB_REPO, BOT_LOGIN } from "./github-rest";
 import {
   PR_EVENT_KEY,
   PR_MERGED_EVENT_KEY,
+  DOCS_SYNC_BRANCH_PREFIX,
   REVIEW_AUTOMATION_NAME,
   LABEL_REVIEW,
   LABEL_AUTOFIX,
@@ -114,13 +115,16 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
         recordMergedSeoPr(pr.number, pr.merged_at || new Date().toISOString());
       }
       // Docs-sync: review the merged PR for user-facing changes and update the
-      // Mintlify docs. Skip PRs authored by our bot account — that includes the
-      // docs-sync automation's own PRs, so this can never loop on itself.
-      if (pr.user?.login !== BOT_LOGIN) {
+      // Mintlify docs. Skip only the docs-sync automation's OWN PRs (they land on
+      // `auto-docs-sync-*` branches) so it can never loop on itself. Do NOT skip by
+      // author: tella-butler authors most real feature PRs (co-recording, camera
+      // backgrounds, onboarding, …), and those are exactly the merges that need docs.
+      const headRef = pr.head?.ref || "";
+      if (!headRef.startsWith(DOCS_SYNC_BRANCH_PREFIX)) {
         const payload = JSON.stringify({
           prNumber: pr.number,
           title: pr.title || `PR #${pr.number}`,
-          headRef: pr.head?.ref || "",
+          headRef,
           author: pr.user?.login || "",
         });
         const fired = fireAutomationsForEvent(PR_MERGED_EVENT_KEY, payload);
