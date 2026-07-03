@@ -107,7 +107,7 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
           className="-mx-1.5 -my-1 flex min-w-0 shrink-0 cursor-pointer items-center gap-[7px] rounded-md border-0 bg-transparent px-1.5 py-1 text-[14px] font-medium text-fg hover:bg-hover data-[popup-open]:bg-hover"
           title="Repo — click to switch or attach another"
         >
-          <IconRepo size={18} className="shrink-0 text-purple" />
+          <IconRepo size={20} className="shrink-0 text-purple" />
           <span className="max-w-[180px] truncate">{busy ?? primary}</span>
           {attached.length > 0 && (
             <span
@@ -129,18 +129,18 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
                 [{ id: primary }, ...switchTargets].map((p) => (
                   <Menu.Item key={p.id} onClick={() => switchPrimary(p.id)}>
                     <IconRepo
-                      size={18}
+                      size={20}
                       className={p.id === primary ? "text-purple" : "text-faint"}
                     />
                     <span className="min-w-0 flex-1 truncate">{p.id}</span>
-                    {p.id === primary && <IconCheck size={18} className="text-dim" />}
+                    {p.id === primary && <IconCheck size={20} className="text-dim" />}
                   </Menu.Item>
                 ))
               ) : (
                 <div className={staticRow}>
-                  <IconRepo size={18} className="text-purple" />
+                  <IconRepo size={20} className="text-purple" />
                   <span className="min-w-0 flex-1 truncate">{primary}</span>
-                  <IconCheck size={18} className="text-dim" />
+                  <IconCheck size={20} className="text-dim" />
                 </div>
               )}
               {attached.length > 0 && (
@@ -150,7 +150,7 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
                     <Menu.GroupLabel>Attached</Menu.GroupLabel>
                     {attached.map((r) => (
                       <div key={r.repo} className={staticRow} title={`${r.dir} — branch ${r.branch}`}>
-                        <IconRepo size={18} className="text-faint" />
+                        <IconRepo size={20} className="text-faint" />
                         <span className="min-w-0 flex-1 truncate">
                           {r.repo} <span className="text-faint">· {r.branch}</span>
                         </span>
@@ -160,7 +160,7 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
                           title="Detach (leaves the worktree on disk)"
                           aria-label={`Detach ${r.repo}`}
                         >
-                          <IconX size={14} />
+                          <IconX size={16} />
                         </button>
                       </div>
                     ))}
@@ -177,7 +177,7 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
                       onClick={() => attach(p.id)}
                       title="Attach to this session as an isolated worktree"
                     >
-                      <IconPlus size={18} className="text-dim" />
+                      <IconPlus size={20} className="text-dim" />
                       <span className="min-w-0 flex-1 truncate">{p.id}</span>
                     </Menu.Item>
                   ))
@@ -203,7 +203,7 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
         </span>
       )}
       {/* Breadcrumb separator between the repo and the session title. */}
-      <IconChevronRight size={16} className="shrink-0 text-faint" />
+      <IconChevronRight size={18} className="shrink-0 text-faint" />
     </>
   );
 }

@@ -1488,7 +1488,7 @@ export function SessionViewer({
 							{models.find((m) => m.id === effectiveModel)?.label ||
 								prettyModel(effectiveModel)}
 						</span>
-						<IconChevronDown className="header-model-chevron" size={11} />
+						<IconChevronDown className="header-model-chevron" size={14} />
 						{session.source === "backstage" && (
 							<select
 								className="palette-select-overlay"

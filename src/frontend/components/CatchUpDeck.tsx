@@ -498,7 +498,7 @@ function ReplyBox({
 					title="Send reply (Enter)"
 					aria-label="Send reply"
 				>
-					<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+					<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
 						<path
 							d="M2.5 8h9M7.5 4l4 4-4 4"
 							stroke="currentColor"

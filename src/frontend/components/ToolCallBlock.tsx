@@ -161,7 +161,7 @@ export function toolFamily(toolName: string): FamilyKey {
   }
 }
 
-export function ToolGlyph({ toolName, size = 18 }: { toolName: string; size?: number }) {
+export function ToolGlyph({ toolName, size = 20 }: { toolName: string; size?: number }) {
   switch (toolFamily(toolName)) {
     case "run":
       return <IconTerminal size={size} />;

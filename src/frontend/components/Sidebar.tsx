@@ -199,8 +199,8 @@ interface Props {
 // (every other tool lives in Settings now).
 const REVIEWS_ICON = (
 	<svg
-		width="18"
-		height="18"
+		width="20"
+		height="20"
 		viewBox="0 0 16 16"
 		fill="none"
 		stroke="currentColor"
@@ -225,8 +225,8 @@ const REVIEWS_ICON = (
 // PR Tinder's flame — swipe triage of open PRs, right under Reviews.
 const PR_TINDER_ICON = (
 	<svg
-		width="18"
-		height="18"
+		width="20"
+		height="20"
 		viewBox="0 0 16 16"
 		fill="none"
 		stroke="currentColor"
@@ -1197,8 +1197,8 @@ export function Sidebar({
 			>
 				<span className="sidebar-archived-icon">
 					<svg
-						width="18"
-						height="18"
+						width="20"
+						height="20"
 						viewBox="0 0 16 16"
 						fill="none"
 						stroke="currentColor"
@@ -1504,8 +1504,8 @@ export function Sidebar({
 					}}
 				>
 					<svg
-						width="15"
-						height="15"
+						width="17"
+						height="17"
 						viewBox="0 0 16 16"
 						fill="none"
 						stroke="currentColor"
@@ -1602,8 +1602,8 @@ export function Sidebar({
 				>
 					<span className="sidebar-nav-icon">
 						<svg
-							width="18"
-							height="18"
+							width="20"
+							height="20"
 							viewBox="0 0 16 16"
 							fill="none"
 							stroke="currentColor"
@@ -1728,7 +1728,7 @@ export function Sidebar({
 						onClick={() => setFilterOpen((o) => !o)}
 						aria-label="Group, filter & sort"
 					>
-						<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+						<svg width="20" height="20" viewBox="0 0 16 16" fill="none">
 							<path
 								d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
 								stroke="currentColor"
@@ -2446,8 +2446,8 @@ function MiniSelect({
 							{o.value === value && (
 								<svg
 									className="mini-select-check"
-									width="15"
-									height="15"
+									width="17"
+									height="17"
 									viewBox="0 0 16 16"
 									fill="none"
 								>
@@ -2481,8 +2481,8 @@ function MiniSelect({
 				</span>
 				<svg
 					className="mini-select-caret"
-					width="14"
-					height="14"
+					width="16"
+					height="16"
 					viewBox="0 0 16 16"
 					fill="none"
 				>
@@ -2830,8 +2830,8 @@ function SidebarItem({
 				}}
 			>
 				<svg
-					width="18"
-					height="18"
+					width="20"
+					height="20"
 					viewBox="0 0 16 16"
 					fill="none"
 					stroke="currentColor"
@@ -2957,8 +2957,8 @@ function MobileActionSheet({
 							}}
 						>
 							<svg
-								width="18"
-								height="18"
+								width="20"
+								height="20"
 								viewBox="0 0 16 16"
 								fill="none"
 								stroke="currentColor"
@@ -2974,8 +2974,8 @@ function MobileActionSheet({
 								onClick={() => setStep("project")}
 							>
 								<svg
-									width="18"
-									height="18"
+									width="20"
+									height="20"
 									viewBox="0 0 16 16"
 									fill="none"
 									stroke="currentColor"
@@ -2996,8 +2996,8 @@ function MobileActionSheet({
 							}}
 						>
 							<svg
-								width="18"
-								height="18"
+								width="20"
+								height="20"
 								viewBox="0 0 16 16"
 								fill="none"
 								stroke="currentColor"
@@ -3603,8 +3603,8 @@ function WsHoverCard({
 						onClick={onArchive}
 					>
 						<svg
-							width="13"
-							height="13"
+							width="15"
+							height="15"
 							viewBox="0 0 16 16"
 							fill="none"
 							stroke="currentColor"
@@ -3702,8 +3702,8 @@ function WsMobileSheet({
 	};
 	const archiveGlyph = (
 		<svg
-			width="18"
-			height="18"
+			width="20"
+			height="20"
 			viewBox="0 0 16 16"
 			fill="none"
 			stroke="currentColor"
@@ -3814,8 +3814,8 @@ function WsMobileSheet({
 				</button>
 				<button className="mobile-sheet-item" onClick={closing(onRename)}>
 					<svg
-						width="18"
-						height="18"
+						width="20"
+						height="20"
 						viewBox="0 0 16 16"
 						fill="none"
 						stroke="currentColor"
@@ -3867,8 +3867,8 @@ function WsMobileSheet({
 						onClick={closing(onDelete)}
 					>
 						<svg
-							width="18"
-							height="18"
+							width="20"
+							height="20"
 							viewBox="0 0 16 16"
 							fill="none"
 							stroke="currentColor"

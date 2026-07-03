@@ -33,7 +33,7 @@ function Avatar({ name, active }: { name: string; active?: boolean }) {
 }
 
 const triggerChevron = (
-	<svg width="14" height="14" viewBox="0 0 10 10" aria-hidden="true">
+	<svg width="16" height="16" viewBox="0 0 10 10" aria-hidden="true">
 		<path
 			d="M2 3.5L5 6.5L8 3.5"
 			fill="none"
@@ -251,8 +251,8 @@ export function SettingsMenu({
 						</span>
 						<svg
 							className="shrink-0 text-faint"
-							width="12"
-							height="12"
+							width="14"
+							height="14"
 							viewBox="0 0 10 10"
 							aria-hidden="true"
 						>
@@ -283,8 +283,8 @@ export function SettingsMenu({
 									{name === currentUser && (
 										<svg
 											className="shrink-0 text-accent"
-											width="15"
-											height="15"
+											width="17"
+											height="17"
 											viewBox="0 0 16 16"
 											fill="none"
 										>

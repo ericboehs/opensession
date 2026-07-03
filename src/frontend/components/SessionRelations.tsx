@@ -56,14 +56,14 @@ export function SessionRelations({
 					}`}
 				>
 					{/* rotated to point up-left: "this belongs to a parent above" */}
-					<IconArrowDownRight size={12} className="shrink-0 rotate-180" />
+					<IconArrowDownRight size={14} className="shrink-0 rotate-180" />
 					<span className="truncate">worker of {parent.title}</span>
 				</button>
 			)}
 			{hasWorkers && (
 				<Menu.Root>
 					<Menu.Trigger className={cn(chip, "data-[popup-open]:bg-hover data-[popup-open]:text-fg")}>
-						<IconArrowDownRight size={12} className="shrink-0" />
+						<IconArrowDownRight size={14} className="shrink-0" />
 						<span>
 							{workers!.length} worker{workers!.length > 1 ? "s" : ""}
 						</span>

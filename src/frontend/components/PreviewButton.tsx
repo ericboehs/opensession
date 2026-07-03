@@ -168,7 +168,7 @@ export function PreviewButton({
           {snapping ? (
             <span className="preview-spinner" />
           ) : (
-            <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+            <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
               <path d="M2.5 5.5h2l1.2-1.8h4.6L11.5 5.5h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" strokeLinejoin="round" />
               <circle cx="8" cy="9" r="2.4" />
             </svg>
