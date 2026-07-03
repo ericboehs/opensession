@@ -7700,6 +7700,12 @@ html[data-theme="light"] .tool-code-surface {
        so the composer itself is the bottom-most element and needs the gap. */
 		padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
 	}
+	/* Keyboard up: it now covers the home-indicator area, but iOS keeps reporting
+     the safe-area inset — which would leave a big gap under the input. Drop back
+     to a snug gap so the composer sits just above the keyboard. */
+	body.kb-open .viewer-input {
+		padding-bottom: 10px;
+	}
 
 	/* 16px stops iOS Safari from zooming into focused inputs, and reads at a
 	   comfortable iOS body size. Includes the in-session composer textarea — the

@@ -369,6 +369,39 @@ function App() {
 		setPins(getPins());
 		return unsub;
 	}, []);
+
+	// Track the on-screen keyboard via input focus. It's the only reliable iOS
+	// signal: in a standalone PWA visualViewport doesn't shrink, and
+	// env(safe-area-inset-bottom) keeps reporting the home-indicator inset even
+	// while the keyboard covers that area. A `kb-open` body class lets the
+	// composer drop its safe-area bottom padding so it sits snug above the
+	// keyboard instead of floating ~34px above it.
+	useEffect(() => {
+		const isText = (el: Element | null) =>
+			!!el &&
+			(el.tagName === "TEXTAREA" ||
+				(el.tagName === "INPUT" &&
+					!["button", "checkbox", "radio", "submit", "file", "range", "color"].includes(
+						(el as HTMLInputElement).type,
+					)) ||
+				(el as HTMLElement).isContentEditable);
+		const onIn = (e: FocusEvent) => {
+			if (isText(e.target as Element)) document.body.classList.add("kb-open");
+		};
+		const onOut = () => {
+			// activeElement updates a tick after focusout; defer so moving between
+			// fields doesn't flicker the class off and back on.
+			setTimeout(() => {
+				if (!isText(document.activeElement)) document.body.classList.remove("kb-open");
+			}, 0);
+		};
+		document.addEventListener("focusin", onIn);
+		document.addEventListener("focusout", onOut);
+		return () => {
+			document.removeEventListener("focusin", onIn);
+			document.removeEventListener("focusout", onOut);
+		};
+	}, []);
 	useEffect(() => {
 		const unsub = onTabColorsChanged(() => setTabColors(getTabColors()));
 		setTabColors(getTabColors());
