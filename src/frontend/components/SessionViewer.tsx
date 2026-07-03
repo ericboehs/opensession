@@ -44,7 +44,7 @@ import { PreviewButton } from "./PreviewButton";
 import { StagingLink } from "./StagingLink";
 import { WorkspaceInfo } from "./WorkspaceInfo";
 import { SpinOffMenu } from "./SpinOffMenu";
-import { IconSidebarRight, IconTrash, IconArchive } from "./icons";
+import { IconSidebarRight, IconTrash, IconArchive, IconChevronDown } from "./icons";
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
 import { Tooltip } from "../ui/tooltip";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
@@ -63,6 +63,10 @@ interface Props {
 	    On phones the header actions portal there — a single iOS-style nav bar —
 	    instead of rendering as their own row. Desktop ignores it. */
 	headerActionsEl?: HTMLElement | null;
+	/** Centered slot under the mobile top-bar title. On phones the composer's
+	    model pill is hidden, so a compact tap-to-switch model selector portals
+	    here instead. Desktop ignores it. */
+	headerModelEl?: HTMLElement | null;
 	/** App-level right-column node (sibling of the left sidebar); when present the
 	    workspace/sub-agent panel portals here so it spans the full height from the
 	    top, instead of opening only below the chat. */
@@ -159,6 +163,7 @@ export function SessionViewer({
 	connected,
 	topbarEl,
 	headerActionsEl,
+	headerModelEl,
 	rightPanelEl,
 	newChatSeq,
 	onRename,
@@ -1438,6 +1443,50 @@ export function SessionViewer({
 						? createPortal(header, topbarEl)
 						: header;
 			})()}
+
+			{/* Compact model switcher under the mobile top-bar title. The composer's
+			    model pill is hidden on phones (keeps the input clean), so this small
+			    label — the session's model — doubles as a tap target: a native
+			    <select> overlays it and opens the OS picker. Backstage sessions only;
+			    Slack/Linear-owned sessions set their model from the owning thread. */}
+			{isPhone && headerModelEl && models.length > 0 &&
+				createPortal(
+					<span
+						className="header-model-select"
+						title={
+							session.source !== "backstage"
+								? "Set the model from the owning agent (/model in the Slack thread)"
+								: "Switch the model for this session"
+						}
+					>
+						<span className="header-model-label">
+							{models.find((m) => m.id === effectiveModel)?.label ||
+								prettyModel(effectiveModel)}
+						</span>
+						<IconChevronDown className="header-model-chevron" size={11} />
+						{session.source === "backstage" && (
+							<select
+								className="palette-select-overlay"
+								value={model}
+								onChange={(e) => handleModelChange(e.target.value)}
+								aria-label="Model"
+							>
+								<option value="">
+									{models.find((m) => m.id === defaultModel)?.label ||
+										prettyModel(defaultModel)}
+								</option>
+								{models
+									.filter((m) => m.id !== defaultModel)
+									.map((m) => (
+										<option key={m.id} value={m.id}>
+											{m.label}
+										</option>
+									))}
+							</select>
+						)}
+					</span>,
+					headerModelEl,
+				)}
 
 			{(session.goal || session.loop || (session.lastRunError && !isBusy)) && (
 				<div className="session-banners">

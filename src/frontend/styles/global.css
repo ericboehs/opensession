@@ -7460,7 +7460,9 @@ html[data-theme="light"] .tool-code-surface {
 		white-space: nowrap;
 	}
 	/* Small centered model line under the title — the composer's model pill is
-	   hidden on phones, so this is where a session's model surfaces. */
+	   hidden on phones, so this is where a session's model surfaces. It doubles
+	   as a tap-to-switch control (see .header-model-select), so re-enable pointer
+	   events that the pointer-events:none title wrapper turns off. */
 	.app-header-model {
 		max-width: 100%;
 		overflow: hidden;
@@ -7470,6 +7472,33 @@ html[data-theme="light"] .tool-code-surface {
 		font-weight: 500;
 		line-height: 1.1;
 		color: var(--text-dim);
+		pointer-events: auto;
+	}
+	/* Model line as a tap target: a compact label + chevron with a full-bleed
+	   transparent native <select> over it (opens the OS picker). Kept tiny to
+	   read as a subtitle until tapped. */
+	.header-model-select {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		max-width: 100%;
+		color: var(--text-dim);
+	}
+	.header-model-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.header-model-chevron {
+		flex-shrink: 0;
+		opacity: 0.6;
+	}
+	/* Grow the touch area past the thin text line without shifting layout. */
+	.header-model-select .palette-select-overlay {
+		top: -8px;
+		bottom: -8px;
+		height: auto;
 	}
 	/* The title now lives in the top bar — the in-page copy under it is
 	   duplicate chrome. */
@@ -10625,11 +10654,12 @@ html[data-theme="light"] .tool-code-surface {
 }
 
 /* ── Lightweight phone inputs ────────────────────────────────────
-   Phones get the near-minimal bar: input plus + / model / mic / send.
-   The model pill stays — switching models mid-chat is a real phone
-   need — and its native <select> overlay is touch-friendly. Effort and
-   goal are secondary and stay desktop-only to keep the bar uncluttered
-   (the new-session palette still hides model behind its sliders toggle). */
+   Phones get the ChatGPT-style minimal bar: just the input plus
+   + / mic / send. Model, effort and goal keep their defaults and stay
+   out of the composer — the model surfaces (and switches) from the
+   compact selector under the top-bar title instead (.header-model-select),
+   and the new-session palette hides repo/base/model/effort behind the
+   sliders toggle. */
 @media (max-width: 720px) {
 	.composer {
 		padding: 8px 12px 8px 12px;
@@ -10641,9 +10671,7 @@ html[data-theme="light"] .tool-code-surface {
 	.composer-toolbar {
 		margin-top: 6px;
 	}
-	/* Hide the effort pill (the one carrying the bars icon) and the goal
-	   button; keep the model pill so you can switch models from the chat. */
-	.composer-toolbar .palette-pill:has(.palette-effort-icon),
+	.composer-toolbar .palette-pill,
 	.composer-goal-btn {
 		display: none;
 	}
