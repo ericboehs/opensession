@@ -7707,8 +7707,11 @@ html[data-theme="light"] .tool-code-surface {
 	}
 	/* Keyboard up: it now covers the home-indicator area, but iOS keeps reporting
      the safe-area inset — which would leave a big gap under the input. Drop back
-     to a snug gap so the composer sits just above the keyboard. */
-	body.kb-open .viewer-input {
+     to a snug gap so the composer sits just above the keyboard. Scope this to
+     the EXPANDED composer: the minimized resting pill only shows when the field
+     is unfocused (keyboard closed), so it must always keep the full safe-area
+     gap — otherwise a lingering kb-open would drop it too low. */
+	body.kb-open .viewer-input:has(.composer:not(.composer-min)) {
 		padding-bottom: 10px;
 	}
 
