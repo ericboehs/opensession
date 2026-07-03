@@ -147,18 +147,6 @@ export function IconPlus(p: IconProps) {
   );
 }
 
-/* Repo glyph for the session-header breadcrumb: a 2×2 grid of tiles. */
-export function IconRepo(p: IconProps) {
-  return (
-    <Svg {...p}>
-      <rect {...stroke} x="4.75" y="4.75" width="6" height="6" rx="1.75" />
-      <rect {...stroke} x="13.25" y="4.75" width="6" height="6" rx="1.75" />
-      <rect {...stroke} x="4.75" y="13.25" width="6" height="6" rx="1.75" />
-      <rect {...stroke} x="13.25" y="13.25" width="6" height="6" rx="1.75" />
-    </Svg>
-  );
-}
-
 export function IconPaperclip(p: IconProps) {
   return (
     <Svg viewBox="0 0 25 24" {...p}>

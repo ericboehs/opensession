@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import type { WSServerMessage } from "../lib/types";
-import { IconRestore } from "./icons";
 
 interface Props {
   addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
@@ -9,8 +8,8 @@ interface Props {
 /**
  * "A new frontend build is live" affordance, rendered inline next to the
  * Backstage wordmark (desktop sidebar brand + mobile top bar, both via
- * `brandTitle`) as a small solid-red button hugging its content. Fired by the
- * server's `frontend_updated` broadcast after an in-process rebuild (no
+ * `brandTitle`) as a small solid-red rounded button hugging its label. Fired by
+ * the server's `frontend_updated` broadcast after an in-process rebuild (no
  * restart, so running sessions are untouched).
  *
  * This replaced a center-bottom toast that floated over the composer and had to
@@ -36,7 +35,6 @@ export function UpdatePill({ addHandler }: Props) {
       title="A new version of Backstage is available — click to refresh"
       aria-label="A new version of Backstage is available — click to refresh"
     >
-      <IconRestore size={15} className="update-pill-icon" />
       <span className="update-pill-text">Update</span>
     </button>
   );
