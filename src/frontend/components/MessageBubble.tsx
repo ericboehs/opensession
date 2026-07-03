@@ -149,8 +149,6 @@ export const MessageBubble = React.memo(function MessageBubble({
 	return (
 		<div className="msg msg-assistant">
 			<div className="msg-label msg-label-assistant">
-				Michael
-				<MsgTime ts={entry.timestamp} />
 				{onFork && (
 					<button
 						className="msg-fork-btn"

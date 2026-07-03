@@ -2023,7 +2023,6 @@ function StreamingMessage({ text }: { text: string }) {
 
 	return (
 		<div className="msg msg-assistant msg-streaming">
-			<div className="msg-label msg-label-assistant">Michael</div>
 			<div
 				className="msg-body msg-body-assistant markdown"
 				dangerouslySetInnerHTML={{ __html: html }}
