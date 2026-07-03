@@ -2661,6 +2661,69 @@ function scheduleFrontendRebuild(reason: string, debounceMs = 300): void {
 	}, debounceMs);
 }
 
+// Land a Plain thread in a triage session: reuse the most recent live
+// (non-archived) session already linked to the thread, else kick off the
+// "Plain ticket triage" automation with the same context the webhook event
+// carries and wait (up to 2 min) for its session to boot. Shared by the
+// /plain-triage redirect (Plain support cards) and the JSON API behind the
+// Support view's "Triage this ticket" button.
+async function resolvePlainTriageSession(
+	threadId: string,
+): Promise<string | null> {
+	const existing = getCachedSessions()
+		.filter((s) => s.plainThreadId === threadId && !s.archived)
+		.sort(
+			(a, b) =>
+				new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
+		)[0];
+	if (existing) return existing.id;
+
+	const automation = listAutomations().find(
+		(a) => a.eventKey === "plain:thread_created",
+	);
+	if (!automation) return null;
+
+	// Build the same payload shape the webhook event carries
+	let payload: Record<string, unknown> = { threadId };
+	try {
+		const { getThreadWithMessages } = await import("./src/agents/plain/api");
+		const thread = await getThreadWithMessages(threadId);
+		payload = {
+			threadId,
+			title: thread?.title || null,
+			previewText: thread?.previewText || thread?.description || null,
+			status: thread?.status || null,
+			customer: {
+				email: thread?.customer?.email?.email || null,
+				fullName: thread?.customer?.fullName || null,
+			},
+		};
+	} catch (e) {
+		console.error(`[plain-triage] Thread lookup failed for ${threadId}:`, e);
+	}
+
+	return new Promise<string | null>((resolve) => {
+		const timer = setTimeout(() => resolve(null), 120_000);
+		void runAutomation(
+			automation,
+			(id) => {
+				sessionsCache = null;
+				clearTimeout(timer);
+				resolve(id);
+			},
+			{
+				trigger: "event",
+				eventContext: JSON.stringify(payload, null, 2),
+			},
+		);
+	});
+}
+
+// The Support sidebar's TODO-thread list, cached briefly so a click-through
+// of tickets doesn't hammer Plain's API (every open browser polls this).
+let plainTodoCache: { data: unknown[]; ts: number } | null = null;
+const PLAIN_TODO_TTL = 30_000;
+
 console.log(`Starting Backstage server on ${HOST}:${PORT}...`);
 
 // Reuse the listening server across hot reloads so existing WebSocket clients
@@ -2698,6 +2761,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			"/backstage/catchup": spaEntry,
 			"/backstage/reviews": spaEntry,
 			"/backstage/reviews/*": spaEntry,
+			"/backstage/support/*": spaEntry,
 		},
 
 		async fetch(req) {
@@ -2891,69 +2955,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			);
 			if (plainTriageMatch && req.method === "GET") {
 				const threadId = decodeURIComponent(plainTriageMatch[1]);
-
-				const redirect = (to: string) =>
-					new Response(null, { status: 302, headers: { Location: to } });
-
-				// Reuse the most recent live (non-archived) session for this thread so
-				// the card links to ongoing work instead of spawning a duplicate run.
-				const existing = getCachedSessions()
-					.filter((s) => s.plainThreadId === threadId && !s.archived)
-					.sort(
-						(a, b) =>
-							new Date(b.lastActivity).getTime() -
-							new Date(a.lastActivity).getTime(),
-					)[0];
-				if (existing) return redirect(`/backstage/session/${existing.id}`);
-
-				const automation = listAutomations().find(
-					(a) => a.eventKey === "plain:thread_created",
-				);
-				if (!automation) return redirect("/backstage/");
-
-				// Build the same payload shape the webhook event carries
-				let payload: Record<string, unknown> = { threadId };
-				try {
-					const { getThreadWithMessages } = await import(
-						"./src/agents/plain/api"
-					);
-					const thread = await getThreadWithMessages(threadId);
-					payload = {
-						threadId,
-						title: thread?.title || null,
-						previewText: thread?.previewText || thread?.description || null,
-						status: thread?.status || null,
-						customer: {
-							email: thread?.customer?.email?.email || null,
-							fullName: thread?.customer?.fullName || null,
-						},
-					};
-				} catch (e) {
-					console.error(
-						`[plain-triage] Thread lookup failed for ${threadId}:`,
-						e,
-					);
-				}
-
-				const sessionId = await new Promise<string | null>((resolve) => {
-					const timer = setTimeout(() => resolve(null), 120_000);
-					void runAutomation(
-						automation,
-						(id) => {
-							sessionsCache = null;
-							clearTimeout(timer);
-							resolve(id);
-						},
-						{
-							trigger: "event",
-							eventContext: JSON.stringify(payload, null, 2),
-						},
-					);
+				const sessionId = await resolvePlainTriageSession(threadId);
+				return new Response(null, {
+					status: 302,
+					headers: {
+						Location: sessionId
+							? `/backstage/session/${sessionId}`
+							: "/backstage/",
+					},
 				});
-
-				return redirect(
-					sessionId ? `/backstage/session/${sessionId}` : "/backstage/",
-				);
 			}
 
 			// Health check (includes agent health — Tailscale-only, not public).
@@ -4283,6 +4293,69 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						{ status: 502 },
 					);
 				}
+			}
+
+			// The Support sidebar's ticket queue: every TODO Plain thread, newest
+			// status change first (Plain's own Todo-inbox ordering). Cached ~30s.
+			if (path === "/backstage/api/plain/threads" && req.method === "GET") {
+				if (plainTodoCache && Date.now() - plainTodoCache.ts < PLAIN_TODO_TTL)
+					return Response.json({ threads: plainTodoCache.data });
+				try {
+					const { listTodoThreads } = await import("./src/agents/plain/api");
+					const threads = await listTodoThreads(50);
+					plainTodoCache = { data: threads, ts: Date.now() };
+					return Response.json({ threads });
+				} catch (e: any) {
+					console.error("[plain-threads] List failed:", e);
+					return Response.json(
+						{ error: e?.message || "Plain lookup failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
+			// A thread's conversation timeline by thread id — the session-less
+			// Support preview reads this (no session exists for the ticket yet).
+			const plainThreadByIdMatch = path.match(
+				/^\/backstage\/api\/plain\/threads\/([^/]+)$/,
+			);
+			if (plainThreadByIdMatch && req.method === "GET") {
+				const threadId = decodeURIComponent(plainThreadByIdMatch[1]);
+				try {
+					const { getThreadWithMessages, normalizePlainThread } =
+						await import("./src/agents/plain/api");
+					const thread = await getThreadWithMessages(threadId);
+					if (!thread)
+						return Response.json(
+							{ error: "Thread not found" },
+							{ status: 404 },
+						);
+					return Response.json({ thread: normalizePlainThread(thread) });
+				} catch (e: any) {
+					console.error(`[plain-thread] Lookup failed for ${threadId}:`, e);
+					return Response.json(
+						{ error: e?.message || "Plain lookup failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
+			// JSON twin of the /backstage/plain-triage/<id> redirect: the Support
+			// preview's "Triage this ticket" button. Reuses a live session linked to
+			// the thread, else starts the triage automation and waits for its
+			// session to boot (~15-60s — the client shows a progress state).
+			const plainTriageApiMatch = path.match(
+				/^\/backstage\/api\/plain\/triage\/([^/]+)$/,
+			);
+			if (plainTriageApiMatch && req.method === "POST") {
+				const threadId = decodeURIComponent(plainTriageApiMatch[1]);
+				const sessionId = await resolvePlainTriageSession(threadId);
+				if (!sessionId)
+					return Response.json(
+						{ error: "Failed to start a triage session" },
+						{ status: 502 },
+					);
+				return Response.json({ sessionId });
 			}
 
 			// ── Automations ──
@@ -5776,6 +5849,32 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								const mentionsNote = sessionMentionsNote(openingPrompt);
 								if (mentionsNote) openingPrompt += `\n\n${mentionsNote}`;
 							}
+							// Session opened from the Support view: link it to its Plain
+							// thread (right-sidebar conversation tab + the sidebar's
+							// ticket→session mapping) and hand the agent the ticket
+							// conversation so the first message is self-contained.
+							const plainThreadId =
+								typeof msg.plainThreadId === "string" && msg.plainThreadId
+									? msg.plainThreadId
+									: undefined;
+							if (plainThreadId) {
+								try {
+									const { getThreadWithMessages, formatThreadContext } =
+										await import("./src/agents/plain/api");
+									const thread = await getThreadWithMessages(plainThreadId);
+									openingPrompt += `\n\n${wrapContext(
+										`This chat was opened from a Plain support ticket. Ticket context:\n\n${formatThreadContext(thread, true)}`,
+									)}`;
+								} catch (e) {
+									console.error(
+										`[create_session] Plain thread lookup failed for ${plainThreadId}:`,
+										e,
+									);
+									openingPrompt += `\n\n${wrapContext(
+										`This chat was opened from Plain support ticket ${plainThreadId} (the context lookup failed — use the plain MCP tools to fetch the thread).`,
+									)}`;
+								}
+							}
 							if (needsForkHandoff && forkSource) {
 								const entries = forkSource.transcriptPath
 									? parseTranscript(forkSource.transcriptPath)
@@ -5841,6 +5940,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									lastActivity: new Date().toISOString(),
 									title,
 									mode: isAsk ? "ask" : "code",
+									...(plainThreadId ? { plainThreadId } : {}),
 								};
 								writeJsonAtomic(
 									`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,

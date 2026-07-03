@@ -15,6 +15,7 @@ import { Notes, type NotesSelection } from "./components/Notes";
 import { Archived } from "./components/Archived";
 import { Reviews } from "./components/Reviews";
 import { PrPreview } from "./components/PrPreview";
+import { SupportPreview } from "./components/SupportPreview";
 import { UserGate, getCurrentUser } from "./components/UserPicker";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { Settings, type SettingsSectionKey } from "./components/Settings";
@@ -61,6 +62,8 @@ type Route =
 	| { view: "session"; id: string }
 	// Session-less PR preview (a sidebar PR row with no chat yet).
 	| { view: "pr"; repo: string; branch: string }
+	// Session-less support-ticket preview (a Support row with no session yet).
+	| { view: "support"; threadId: string }
 	| { view: "reviews"; id?: string }
 	// Tool surfaces (Automations/Security/Goals/Actions/Notes) render inside the
 	// Settings chrome but keep their own routes, so old links stay deep-linkable.
@@ -125,6 +128,10 @@ function parseRoute(pathname: string): Route {
 			repo: decodeURIComponent(prMatch[1]),
 			branch: decodeURIComponent(prMatch[2]),
 		};
+	// Support-ticket preview: /backstage/support/<plain thread id>.
+	const supportMatch = pathname.match(/^\/backstage\/support\/(.+)$/);
+	if (supportMatch)
+		return { view: "support", threadId: decodeURIComponent(supportMatch[1]) };
 	if (pathname === "/backstage/new") return { view: "new" };
 	if (pathname === "/backstage/automations") return { view: "automations" };
 	if (pathname === "/backstage/security") return { view: "security" };
@@ -184,6 +191,8 @@ function routePath(route: Route): string {
 			return `/backstage/session/${encodeURIComponent(route.id)}`;
 		case "pr":
 			return `/backstage/pr/${encodeURIComponent(route.repo)}/${encodeURIComponent(route.branch)}`;
+		case "support":
+			return `/backstage/support/${encodeURIComponent(route.threadId)}`;
 		case "new":
 			return route.prompt
 				? `/backstage/new?prompt=${encodeURIComponent(route.prompt)}`
@@ -957,6 +966,12 @@ function App() {
 									? { repo: route.repo, branch: route.branch }
 									: null
 							}
+							onOpenSupportThread={(threadId) =>
+								navigate({ view: "support", threadId })
+							}
+							selectedSupportThreadId={
+								route.view === "support" ? route.threadId : null
+							}
 							onNewSession={() => openPalette()}
 							onOpenProject={(id) => {
 								// Open the workspace's first chat (oldest, matching the tab
@@ -1214,6 +1229,17 @@ function App() {
 								connected={connected}
 								send={send}
 								addHandler={addHandler}
+							/>
+						) : route.view === "support" ? (
+							<SupportPreview
+								key={route.threadId}
+								threadId={route.threadId}
+								connected={connected}
+								send={send}
+								addHandler={addHandler}
+								onOpenSession={(id) =>
+									navigate({ view: "session", id })
+								}
 							/>
 						) : route.view === "reviews" ? (
 							<Reviews

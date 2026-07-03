@@ -11,11 +11,17 @@ interface Props {
 	plainUrl: string;
 }
 
-const STATUS_LABEL: Record<string, string> = {
+export const STATUS_LABEL: Record<string, string> = {
 	TODO: "Todo",
 	SNOOZED: "Snoozed",
 	DONE: "Done",
 };
+
+/** Workspace of the Plain app the tickets live in (for "open in Plain" links). */
+const PLAIN_WORKSPACE_ID = "w_01J7WXJG68TFDV9RD1C4JE3W6F";
+export function plainThreadUrl(threadId: string): string {
+	return `https://app.plain.com/workspace/${PLAIN_WORKSPACE_ID}/thread/${threadId}/`;
+}
 
 function timeOf(iso: string): string {
 	const d = new Date(iso);
@@ -122,7 +128,7 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 	);
 }
 
-function PlainEntryRow({ entry }: { entry: PlainTimelineEntry }) {
+export function PlainEntryRow({ entry }: { entry: PlainTimelineEntry }) {
 	if (entry.kind === "note") {
 		return (
 			<div className="plain-entry plain-entry-note">

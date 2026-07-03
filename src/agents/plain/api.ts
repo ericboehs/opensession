@@ -205,6 +205,83 @@ export function normalizePlainThread(thread: any): NormalizedPlainThread {
   };
 }
 
+/** A TODO-queue thread summary for the Backstage Support sidebar. */
+export interface SupportThreadSummary {
+  id: string;
+  title: string | null;
+  previewText: string | null;
+  status: string | null;
+  statusChangedAt: string | null;
+  createdAt: string | null;
+  priority: number | null;
+  customer: { name: string | null; email: string | null };
+}
+
+/**
+ * All TODO threads, newest status change first — the same ordering as Plain's
+ * own Todo inbox. Feeds the sidebar's Support section.
+ */
+export async function listTodoThreads(limit: number = 50): Promise<SupportThreadSummary[]> {
+  const query = `
+    query TodoThreads($filters: ThreadsFilter, $sortBy: ThreadsSort, $first: Int!) {
+      threads(filters: $filters, sortBy: $sortBy, first: $first) {
+        edges {
+          node {
+            id
+            title
+            previewText
+            status
+            statusChangedAt {
+              iso8601
+            }
+            createdAt {
+              iso8601
+            }
+            priority
+            customer {
+              fullName
+              email {
+                email
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const result = await plain.rawRequest({
+    query,
+    variables: {
+      filters: { statuses: ["TODO"] },
+      sortBy: { field: "STATUS_CHANGED_AT", direction: "DESC" },
+      first: limit,
+    },
+  });
+
+  if (result.error) {
+    throw new Error(`Failed to list TODO threads: ${result.error.message}`);
+  }
+
+  const edges = (result.data as any).threads?.edges || [];
+  return edges.map((e: any) => {
+    const n = e?.node || {};
+    return {
+      id: n.id,
+      title: n.title || null,
+      previewText: n.previewText || null,
+      status: n.status || null,
+      statusChangedAt: n.statusChangedAt?.iso8601 || null,
+      createdAt: n.createdAt?.iso8601 || null,
+      priority: n.priority ?? null,
+      customer: {
+        name: n.customer?.fullName || null,
+        email: n.customer?.email?.email || null,
+      },
+    };
+  });
+}
+
 /** Search for threads */
 export async function searchThreads(query: string, limit: number = 10): Promise<any[]> {
   const gqlQuery = `

@@ -27,6 +27,18 @@ export interface PlainThread {
 	entries: PlainTimelineEntry[];
 }
 
+/** A TODO Plain thread in the sidebar's Support queue. */
+export interface SupportThread {
+	id: string;
+	title: string | null;
+	previewText: string | null;
+	status: string | null;
+	statusChangedAt: string | null;
+	createdAt: string | null;
+	priority: number | null;
+	customer: { name: string | null; email: string | null };
+}
+
 /** One message in a linked Slack channel, as shown in the chat panel. */
 export interface SlackMessage {
 	ts: string;

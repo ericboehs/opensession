@@ -3,6 +3,7 @@ import type {
 	SlackChannelLink,
 	SlackMessage,
 	PlainThread,
+	SupportThread,
 	Project,
 } from "./types";
 
@@ -480,6 +481,36 @@ export async function fetchPlainThreadApi(
 		`/sessions/${encodeURIComponent(sessionId)}/plain/thread`,
 	);
 	return body?.thread || null;
+}
+
+/** The Support sidebar's queue: TODO Plain threads, newest status change first. */
+export async function fetchSupportThreads(): Promise<SupportThread[]> {
+	const body = await request<{ threads?: SupportThread[] }>("/plain/threads", {
+		label: "Failed to fetch support threads",
+	});
+	return body?.threads || [];
+}
+
+/** A Plain thread's conversation by thread id (the session-less Support preview). */
+export async function fetchPlainThreadById(
+	threadId: string,
+): Promise<PlainThread | null> {
+	const body = await request<{ thread?: PlainThread }>(
+		`/plain/threads/${encodeURIComponent(threadId)}`,
+	);
+	return body?.thread || null;
+}
+
+/**
+ * Start (or reuse) a triage session for a Plain thread — runs the "Plain
+ * ticket triage" automation. Slow (~15-60s) when it has to boot a fresh run.
+ */
+export async function startPlainTriageApi(threadId: string): Promise<string> {
+	const body = await request<{ sessionId: string }>(
+		`/plain/triage/${encodeURIComponent(threadId)}`,
+		{ method: "POST", label: "Failed to start triage" },
+	);
+	return body.sessionId;
 }
 
 export async function postChannelMessageApi(

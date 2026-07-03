@@ -6,10 +6,11 @@ import React, {
 	useRef,
 } from "react";
 import { createPortal } from "react-dom";
-import type { UnifiedSession, Project } from "../lib/types";
+import type { UnifiedSession, Project, SupportThread } from "../lib/types";
 import {
 	relativeTime,
 	fetchOpenPrs,
+	fetchSupportThreads,
 	type OpenPr,
 	type WorkspaceOverview,
 } from "../lib/api";
@@ -131,6 +132,10 @@ interface Props {
 	onOpenPr: (repo: string, branch: string) => void;
 	/** The PR preview currently open (highlights its row), or null. */
 	selectedPr?: { repo: string; branch: string } | null;
+	/** Open the session-less ticket preview for a Support row with no session. */
+	onOpenSupportThread: (threadId: string) => void;
+	/** The support preview currently open (highlights its row), or null. */
+	selectedSupportThreadId?: string | null;
 	onNewSession: () => void;
 	/** Open a project — its chats surface in the top tab strip. */
 	onOpenProject: (id: string) => void;
@@ -356,6 +361,8 @@ export function Sidebar({
 	onSelect,
 	onOpenPr,
 	selectedPr = null,
+	onOpenSupportThread,
+	selectedSupportThreadId = null,
 	onNewSession,
 	onOpenProject,
 	onRenameProject,
@@ -525,6 +532,42 @@ export function Sidebar({
 			clearInterval(t);
 		};
 	}, []);
+
+	// The Plain TODO queue for the Support band, polled gently (the server
+	// caches ~30s, so every open browser sharing one fetch is fine). Null until
+	// the first fetch lands; fetch errors (Plain not configured, API down) just
+	// keep the band hidden.
+	const [supportThreads, setSupportThreads] = useState<SupportThread[] | null>(
+		null,
+	);
+	useEffect(() => {
+		let alive = true;
+		const load = () =>
+			fetchSupportThreads()
+				.then((threads) => {
+					if (alive) setSupportThreads(threads);
+				})
+				.catch(() => {});
+		load();
+		const t = setInterval(load, 60_000);
+		return () => {
+			alive = false;
+			clearInterval(t);
+		};
+	}, []);
+
+	// Newest live session per Plain thread — a Support row with one opens that
+	// session instead of the session-less ticket preview.
+	const supportSessionByThread = useMemo(() => {
+		const m = new Map<string, UnifiedSession>();
+		for (const s of sessions) {
+			if (s.archived || !s.plainThreadId) continue;
+			const prev = m.get(s.plainThreadId);
+			if (!prev || s.lastActivity > prev.lastActivity)
+				m.set(s.plainThreadId, s);
+		}
+		return m;
+	}, [sessions]);
 
 	// A PR row in the "In review" lane. Chats that own a PR (their branch is
 	// its head branch) are already lane rows wearing the PR's status — these
@@ -1064,9 +1107,9 @@ export function Sidebar({
 	// The People / Automations bands are open by default, so — like
 	// repo groups — their *collapsed* state is what's persisted. Collapsing one
 	// hides every group within that band. Searching forces them open.
-	const bandOpen = (band: GroupBand) =>
+	const bandOpen = (band: GroupBand | "support") =>
 		search.trim().length > 0 ? true : !expanded.has(`collapsed:band:${band}`);
-	function toggleBand(band: GroupBand) {
+	function toggleBand(band: GroupBand | "support") {
 		const key = `collapsed:band:${band}`;
 		setExpanded((prev) => {
 			const next = new Set(prev);
@@ -1435,6 +1478,50 @@ export function Sidebar({
 						/>
 					</svg>
 				</span>
+			</button>
+		);
+	}
+
+	// A Support row: one TODO Plain ticket. The dot wears the linked session's
+	// status (faint when no session exists yet); click opens the session, or the
+	// session-less ticket preview when there isn't one.
+	function renderSupportRow(t: SupportThread) {
+		const session = supportSessionByThread.get(t.id) || null;
+		const active = session
+			? session.id === selectedId
+			: selectedSupportThreadId === t.id;
+		const customer = t.customer.name || t.customer.email || "Unknown";
+		const label = t.title || customer;
+		return (
+			<button
+				key={`support:${t.id}`}
+				className={`sidebar-item flex items-center gap-1.5 min-w-0 ${
+					active ? "sidebar-item-selected" : ""
+				}`}
+				onClick={() =>
+					session ? onSelect(session) : onOpenSupportThread(t.id)
+				}
+				title={`${customer} — ${label}${
+					t.previewText ? `\n${t.previewText.slice(0, 200)}` : ""
+				}`}
+			>
+				<span
+					className="sidebar-group-dot"
+					style={{
+						backgroundColor: session
+							? STATUS_DOT[mineStatus(session)]
+							: "var(--text-faint)",
+					}}
+				/>
+				<span className="sidebar-item-title">{label}</span>
+				{t.statusChangedAt && (
+					<span
+						className="sidebar-ws-time"
+						title={new Date(t.statusChangedAt).toLocaleString()}
+					>
+						{shortTime(t.statusChangedAt)}
+					</span>
+				)}
 			</button>
 		);
 	}
@@ -1863,6 +1950,36 @@ export function Sidebar({
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
+
+				{/* ── Support: the Plain TODO queue, newest status change first (the
+				    same ordering as Plain's Todo inbox). Rows with a linked session
+				    open it; the rest open the session-less ticket preview. ── */}
+				{(supportThreads?.length || 0) > 0 &&
+					(() => {
+						const open = bandOpen("support");
+						return (
+							<div className="sidebar-group sidebar-group--band-start">
+								<div className="sidebar-band-label">
+									<button
+										className="sidebar-band-toggle"
+										onClick={() => toggleBand("support")}
+										title={open ? "Collapse support" : "Expand support"}
+									>
+										<span>Support</span>
+										<IconChevronDown
+											className="sidebar-band-chevron"
+											size={20}
+											style={{ transform: open ? "none" : "rotate(-90deg)" }}
+										/>
+										<span className="sidebar-group-count">
+											{supportThreads!.length}
+										</span>
+									</button>
+								</div>
+								{open && supportThreads!.map(renderSupportRow)}
+							</div>
+						);
+					})()}
 
 				{/* ── People: teammates who are looking at a session right now. Click
 				    to follow along (your navigation shadows theirs); click again to
