@@ -2118,7 +2118,7 @@ body.resizing-x {
 	border: 1px solid transparent;
 	border-radius: 6px;
 	color: var(--text-dim);
-	padding: 4px 11px;
+	padding: 4px 8px;
 	font-size: 18px;
 	line-height: 1;
 }
@@ -2284,7 +2284,7 @@ body.resizing-x {
    tint/icon color carries the affordance (the border stays on the text-y
    .btn-panel-toggle siblings like the PR button). */
 .btn-panel-toggle.btn-workspace {
-	padding: 3px 10px;
+	padding: 3px 7px;
 	border-color: transparent;
 }
 .btn-panel-toggle.btn-workspace.active,
@@ -2524,6 +2524,9 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	border-radius: 6px;
 	color: var(--text-dim);
 	padding: 5px 12px;
+	/* Extra breathing room to its left so it doesn't crowd the presence
+	   facepile / secondary actions that sit before it. */
+	margin-left: 6px;
 	font-size: 13px;
 	white-space: nowrap;
 }
