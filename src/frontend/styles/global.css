@@ -2115,7 +2115,7 @@ body.resizing-x {
 	align-items: center;
 	justify-content: center;
 	background: none;
-	border: 1px solid var(--border-strong);
+	border: 1px solid transparent;
 	border-radius: 6px;
 	color: var(--text-dim);
 	padding: 4px 11px;
@@ -2125,7 +2125,6 @@ body.resizing-x {
 .btn-viewer-overflow.active,
 .btn-viewer-overflow:hover {
 	color: var(--accent);
-	border-color: var(--accent);
 	background: var(--accent-soft);
 }
 .viewer-overflow-menu {
@@ -2281,9 +2280,16 @@ body.resizing-x {
 	white-space: nowrap;
 }
 /* The Workspace toggle is icon-only (23px glyph) — keep its padding tight so
-   it doesn't balloon past the text buttons it sits next to. */
+   it doesn't balloon past the text buttons it sits next to. Borderless: the
+   tint/icon color carries the affordance (the border stays on the text-y
+   .btn-panel-toggle siblings like the PR button). */
 .btn-panel-toggle.btn-workspace {
 	padding: 3px 10px;
+	border-color: transparent;
+}
+.btn-panel-toggle.btn-workspace.active,
+.btn-panel-toggle.btn-workspace:hover {
+	border-color: transparent;
 }
 .btn-panel-toggle-icon {
 	font-size: 14px;
@@ -7723,7 +7729,6 @@ html[data-theme="light"] .tool-code-surface {
 	.viewer-header-actions .btn-workspace {
 		order: 2;
 		color: var(--accent);
-		border-color: color-mix(in srgb, var(--accent) 55%, transparent);
 		background: color-mix(in srgb, var(--accent) 12%, transparent);
 		padding: 5px 11px;
 		font-size: 15px;
@@ -7731,7 +7736,6 @@ html[data-theme="light"] .tool-code-surface {
 	.viewer-header-actions .btn-workspace.active {
 		background: var(--accent);
 		color: #fff;
-		border-color: var(--accent);
 	}
 
 	/* The keyboard-shortcut hint is irrelevant on touch and eats vertical space
