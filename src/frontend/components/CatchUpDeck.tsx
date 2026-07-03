@@ -415,9 +415,12 @@ function CardBody({
 				<span className="text-xs text-faint">{meta}</span>
 			</button>
 
+			{/* touch-pan-y so vertical gestures scroll the transcript but horizontal
+			    ones bubble up to the card's drag handler (otherwise the scroll
+			    container eats the swipe on touch devices). */}
 			<div
 				ref={scrollRef}
-				className="catchup-scroll min-h-0 flex-1 overflow-y-auto px-4 py-3"
+				className="catchup-scroll min-h-0 flex-1 touch-pan-y overflow-y-auto px-4 py-3"
 			>
 				{entries === null ? (
 					<div className="space-y-2">
@@ -483,7 +486,10 @@ function ReplyBox({
 							submit();
 						}
 					}}
-					className="max-h-28 min-h-[22px] flex-1 resize-none bg-transparent text-sm leading-snug text-fg outline-none placeholder:text-faint disabled:opacity-60"
+					// appearance-none + explicit box: global.css skips Tailwind
+					// preflight, so without this iOS paints its native bordered /
+					// inset-shadow textarea inside the wrapper (looks broken).
+					className="max-h-28 min-h-[24px] flex-1 resize-none appearance-none rounded-none border-0 bg-transparent p-0 text-sm leading-relaxed text-fg outline-none [-webkit-appearance:none] placeholder:text-faint disabled:opacity-60"
 				/>
 				<button
 					className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-accent text-white disabled:opacity-40"
