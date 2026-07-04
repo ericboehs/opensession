@@ -51,6 +51,7 @@ import {
 	IconChevronDown,
 	IconPlus,
 	IconPencil,
+	IconArrowUp,
 	IconCrosshair,
 	IconStar,
 	IconPullRequest,
@@ -253,6 +254,8 @@ export function SessionViewer({
 	);
 	// Optimistic just-sent messages, shown instantly and reconciled once the real
 	// turn lands (transcript) or the server confirms it as queued (busy path).
+	// `busyMode` marks a send made while the run was busy: it renders inside the
+	// queue flap (as "Queueing…"/"Steering…") instead of as a transcript bubble.
 	const [pending, setPending] = useState<
 		Array<{
 			id: string;
@@ -260,6 +263,7 @@ export function SessionViewer({
 			user: string;
 			sentAt: number;
 			images?: string[];
+			busyMode?: "queue" | "steer";
 		}>
 	>([]);
 	const [ask, setAsk] = useState<{
@@ -932,7 +936,7 @@ export function SessionViewer({
 			onRunningChange?.(session.id, true);
 			beginTurn(); // pin this new turn near the top so its reply streams in below
 			// Show it immediately; it reconciles away when the real transcript entry
-			// arrives. Queued/steered sends show in the attached queue instead.
+			// arrives (or the queue echo, if the server turns out to be busy).
 			setPending((p) => [
 				...p,
 				{
@@ -943,6 +947,23 @@ export function SessionViewer({
 					images: imgs.length ? imgs : undefined,
 				},
 			]);
+		} else {
+			// Busy send: show it in the queue flap right away (no transcript
+			// bubble) — the server's queue_update / steer-receipt echo replaces it.
+			setPending((p) => [
+				...p,
+				{
+					id: `pending-${crypto.randomUUID()}`,
+					content: text,
+					user,
+					sentAt: Date.now(),
+					images: imgs.length ? imgs : undefined,
+					busyMode:
+						opts?.steer || busySend === "steer"
+							? ("steer" as const)
+							: ("queue" as const),
+				},
+			]);
 		}
 		setImages([]);
 		setFiles([]);
@@ -951,6 +972,34 @@ export function SessionViewer({
 
 	function queueHasFiles(item: QueueReceipt): boolean {
 		return Array.isArray(item.files) && item.files.length > 0;
+	}
+
+	function renderQueueContent(
+		item: QueueReceipt,
+		opts: { human?: ReturnType<typeof parseHumanReply>; github?: boolean },
+	) {
+		const firstImage = item.images?.[0];
+		const extraImages = Math.max(0, (item.images?.length ?? 0) - 1);
+		const body = opts.human ? opts.human.body : item.content;
+		return (
+			<div className="composer-queue-content">
+				{firstImage && (
+					<div className="composer-queue-image">
+						<img src={firstImage} alt="" />
+						{extraImages > 0 && (
+							<span className="composer-queue-image-count">+{extraImages}</span>
+						)}
+					</div>
+				)}
+				<div className="composer-queue-body">
+					{opts.human && (
+						<span className="composer-queue-from">💬 {opts.human.name}</span>
+					)}
+					{opts.github && <span className="composer-queue-from">GitHub</span>}
+					{body}
+				</div>
+			</div>
+		);
 	}
 
 	// "Edit" pulls the message back into the composer: drop it from the queue
@@ -974,12 +1023,17 @@ export function SessionViewer({
 		setComposerPrefill((p) => ({ seq: (p?.seq ?? 0) + 1, text: q.content }));
 	}
 
+	// Busy sends live in the flap from the moment of the send; idle sends are
+	// optimistic transcript bubbles. Both reconcile through the same effect.
+	const pendingQueue = pending.filter((p) => p.busyMode);
+	const pendingBubbles = pending.filter((p) => !p.busyMode);
+
+	const queueCount = queued.length + visibleSteered.length + pendingQueue.length;
 	const attachedQueue =
-		visibleSteered.length > 0 || queued.length > 0 ? (
+		queueCount > 0 ? (
 			<div className="composer-queue" aria-label="Queued messages">
 				<div className="composer-queue-title">
-					{queued.length + visibleSteered.length} queued{" "}
-					{queued.length + visibleSteered.length === 1 ? "message" : "messages"}
+					{queueCount} queued {queueCount === 1 ? "message" : "messages"}
 				</div>
 				{visibleSteered.map((s, i) => {
 					const hr = parseHumanReply(s.content);
@@ -1011,19 +1065,7 @@ export function SessionViewer({
 									</Tooltip>
 								)}
 							</div>
-							<div className="composer-queue-body">
-								{hr && (
-									<span className="composer-queue-from">💬 {hr.name}</span>
-								)}
-								{hr ? hr.body : s.content}
-							</div>
-							{s.images && s.images.length > 0 && (
-								<div className="composer-queue-images">
-									{s.images.map((src, j) => (
-										<img key={j} src={src} alt="" />
-									))}
-								</div>
-							)}
+							{renderQueueContent(s, { human: hr })}
 						</div>
 					);
 				})}
@@ -1047,30 +1089,6 @@ export function SessionViewer({
 									</span>
 								) : (
 									<>
-										<Tooltip
-											label={
-												canSteer
-													? "Steer into the current run now"
-													: "Messages with files cannot be steered"
-											}
-										>
-											<button
-												type="button"
-												className="composer-queue-action composer-queue-steer"
-												disabled={!canSteer}
-												onClick={() =>
-													send({
-														type: "steer_queued_prompt",
-														sessionId: session.id,
-														queueId: id,
-														queueIndex: i,
-													})
-												}
-											>
-												<IconCrosshair size={20} />
-												<span>Steer</span>
-											</button>
-										</Tooltip>
 										<Tooltip label="Edit — puts the message back into the composer">
 											<button
 												type="button"
@@ -1098,26 +1116,50 @@ export function SessionViewer({
 										<IconTrash size={24} />
 									</button>
 								</Tooltip>
-							</div>
-							<div className="composer-queue-body">
-								{hr && (
-									<span className="composer-queue-from">💬 {hr.name}</span>
+								{!isGitHub && (
+									<Tooltip
+										label={
+											canSteer
+												? "Steer"
+												: "Messages with files cannot be steered"
+										}
+									>
+										<button
+											type="button"
+											className="composer-queue-action composer-queue-steer"
+											aria-label="Steer"
+											disabled={!canSteer}
+											onClick={() =>
+												send({
+													type: "steer_queued_prompt",
+													sessionId: session.id,
+													queueId: id,
+													queueIndex: i,
+												})
+											}
+										>
+											<IconArrowUp size={24} />
+										</button>
+									</Tooltip>
 								)}
-								{isGitHub && (
-									<span className="composer-queue-from">GitHub</span>
-								)}
-								{hr ? hr.body : q.content}
 							</div>
-							{q.images && q.images.length > 0 && (
-								<div className="composer-queue-images">
-									{q.images.map((src, j) => (
-										<img key={j} src={src} alt="" />
-									))}
-								</div>
-							)}
+							{renderQueueContent(q, { human: hr, github: isGitHub })}
 						</div>
 					);
 				})}
+
+				{/* Just-sent while busy: already visually in the queue, awaiting the
+				    server's echo (which swaps in the real item with actions). */}
+				{pendingQueue.map((p) => (
+					<div key={p.id} className="composer-queue-item composer-queue-sending">
+						<div className="composer-queue-actions">
+							<span className="composer-queue-pill composer-queue-pill-sending">
+								{p.busyMode === "steer" ? "Steering…" : "Queueing…"}
+							</span>
+						</div>
+						{renderQueueContent(p, {})}
+					</div>
+				))}
 			</div>
 		) : null;
 
@@ -1891,18 +1933,13 @@ export function SessionViewer({
 								/>
 							)}
 
-								{pending.map((p) => (
+								{pendingBubbles.map((p) => (
 									<div key={p.id} className="msg msg-user msg-sending">
 										{/* No name: the bubble is right-aligned, so authorship is
-										    already clear — just the transient status. */}
+										    already clear — just the transient status. Busy sends
+										    render in the queue flap, never as a bubble. */}
 										<div className="msg-label msg-label-user">
-											<span className="msg-label-status">
-												{isBusy
-													? busySend === "steer"
-														? "Steering…"
-														: "Queueing…"
-													: "Sending…"}
-											</span>
+											<span className="msg-label-status">Sending…</span>
 										</div>
 									{p.content && (
 										<div className="msg-body msg-body-user">{p.content}</div>

@@ -6441,6 +6441,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 }
 .composer-queue-item {
 	position: relative;
+	min-height: calc(13px * 1.45 * 2);
 }
 .composer-queue-item + .composer-queue-item {
 	border-top: 1px solid var(--border);
@@ -6483,20 +6484,11 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	cursor: default;
 }
 .composer-queue-steer {
-	width: auto;
-	height: 32px;
-	padding: 0 13px;
-	gap: 6px;
-	border-radius: 999px;
 	color: var(--accent);
-	border-color: transparent;
-	background: var(--accent-soft);
-	font-size: 13px;
-	font-weight: 650;
 }
 .composer-queue-steer:not(:disabled):hover {
-	border-color: var(--accent);
 	color: var(--accent);
+	border-color: transparent;
 	background: var(--accent-soft);
 }
 .composer-queue-action.danger:not(:disabled):hover {
@@ -6523,7 +6515,55 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	color: var(--text-dim);
 	border-color: var(--border);
 }
+/* Optimistic busy send: in the flap since the send, awaiting the server echo. */
+.composer-queue-pill-sending {
+	background: var(--bg-raised);
+	color: var(--text-faint);
+	border-color: var(--border);
+}
+.composer-queue-sending .composer-queue-body {
+	color: var(--text-dim);
+}
+.composer-queue-content {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding-right: 112px;
+}
+.composer-queue-image {
+	position: relative;
+	flex: 0 0 auto;
+	width: 46px;
+	height: 34px;
+	margin-top: 1px;
+}
+.composer-queue-image img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	border-radius: 8px;
+	border: 1px solid var(--border);
+	display: block;
+}
+.composer-queue-image-count {
+	position: absolute;
+	right: -4px;
+	bottom: -4px;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 4px;
+	border-radius: 999px;
+	background: var(--bg-raised);
+	border: 1px solid var(--border);
+	color: var(--text-dim);
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 16px;
+	text-align: center;
+}
 .composer-queue-body {
+	min-width: 0;
+	min-height: calc(1.45em * 2);
 	color: var(--text);
 	font-size: 13px;
 	line-height: 1.45;
@@ -6545,18 +6585,6 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 }
 .composer-queue-item.is-github .composer-queue-body {
 	color: var(--text-dim);
-}
-.composer-queue-images {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-}
-.composer-queue-images img {
-	width: 80px;
-	height: 58px;
-	object-fit: cover;
-	border-radius: 12px;
-	border: 1px solid var(--border);
 }
 /* ── Minimized composer (phone resting state) ────────────────────
    A ChatGPT-style single-row pill: "+ · placeholder · mic · send". Applied
