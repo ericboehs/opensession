@@ -278,10 +278,7 @@ button {
 	.composer-file-thumb,
 	.composer-queue-item,
 	.composer-queue-action,
-	.composer-queue-edit-cancel,
 	.composer-queue-images img,
-	.composer-queue-edit textarea,
-	.composer-queue-edit-save,
 	.mention-popup,
 	.mention-item,
 	.mention-repo,
@@ -6453,22 +6450,21 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
    behind them, fading out under a gradient of the flap's own background. */
 .composer-queue-actions {
 	position: absolute;
-	top: -5px;
+	top: -8px;
 	right: 0;
 	z-index: 1;
 	display: inline-flex;
 	align-items: center;
 	gap: 2px;
-	padding-left: 26px;
-	background: linear-gradient(90deg, transparent, var(--bg-panel) 24px);
+	padding-left: 28px;
+	background: linear-gradient(90deg, transparent, var(--bg-panel) 26px);
 }
 .composer-queue-item + .composer-queue-item .composer-queue-actions {
-	top: 3px;
+	top: 0;
 }
-.composer-queue-action,
-.composer-queue-edit-cancel {
-	width: 30px;
-	height: 30px;
+.composer-queue-action {
+	width: 34px;
+	height: 34px;
 	border-radius: 10px;
 	border: 1px solid transparent;
 	background: transparent;
@@ -6477,8 +6473,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	align-items: center;
 	justify-content: center;
 }
-.composer-queue-action:not(:disabled):hover,
-.composer-queue-edit-cancel:hover {
+.composer-queue-action:not(:disabled):hover {
 	background: var(--bg-raised);
 	border-color: var(--border);
 	color: var(--text);
@@ -6489,13 +6484,14 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 }
 .composer-queue-steer {
 	width: auto;
-	padding: 0 11px;
-	gap: 5px;
+	height: 32px;
+	padding: 0 13px;
+	gap: 6px;
 	border-radius: 999px;
 	color: var(--accent);
 	border-color: transparent;
 	background: var(--accent-soft);
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 650;
 }
 .composer-queue-steer:not(:disabled):hover {
@@ -6511,14 +6507,14 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 .composer-queue-pill {
 	display: inline-flex;
 	align-items: center;
-	gap: 5px;
-	height: 28px;
-	padding: 0 11px;
+	gap: 6px;
+	height: 32px;
+	padding: 0 13px;
 	border-radius: 999px;
 	border: 1px solid transparent;
 	background: var(--accent-soft);
 	color: var(--accent);
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 650;
 	flex-shrink: 0;
 }
@@ -6562,42 +6558,6 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	border-radius: 12px;
 	border: 1px solid var(--border);
 }
-.composer-queue-edit {
-	display: grid;
-	gap: 8px;
-}
-.composer-queue-edit textarea {
-	width: 100%;
-	min-height: 76px;
-	resize: vertical;
-	border-radius: 12px;
-	border: 1px solid var(--border-strong);
-	background: var(--bg-raised);
-	color: var(--text);
-	padding: 9px 10px;
-	font: inherit;
-	outline: none;
-}
-.composer-queue-edit textarea:focus {
-	border-color: var(--accent);
-}
-.composer-queue-edit-actions {
-	display: flex;
-	align-items: center;
-	justify-content: flex-end;
-	gap: 6px;
-}
-.composer-queue-edit-save {
-	height: 28px;
-	border-radius: 10px;
-	border: 1px solid var(--accent);
-	background: var(--accent);
-	color: var(--accent-contrast);
-	padding: 0 10px;
-	font-size: 12px;
-	font-weight: 650;
-}
-
 /* ── Minimized composer (phone resting state) ────────────────────
    A ChatGPT-style single-row pill: "+ · placeholder · mic · send". Applied
    (from Composer.tsx) only on phones while the field is empty and unfocused;

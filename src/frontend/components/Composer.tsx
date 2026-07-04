@@ -83,6 +83,13 @@ interface Props {
   leftExtra?: React.ReactNode;
   /** Content visually attached to the composer above the draft field. */
   attached?: React.ReactNode;
+  /**
+   * One-shot draft injection (e.g. editing a queued message pulls its text
+   * back into the composer). Applied when `seq` changes: appended to a
+   * non-empty draft, otherwise it becomes the draft; the caret lands at the
+   * end. Works in both controlled and uncontrolled modes.
+   */
+  prefill?: { seq: number; text: string } | null;
   /** Optional action rendered inside the "+" menu, e.g. "schedule message". */
   sendMenu?: (ctx: {
     text: string;
@@ -206,6 +213,7 @@ export function Composer({
   onSetGoal,
   leftExtra,
   attached,
+  prefill,
   sendMenu,
   hint,
   autoFocus,
@@ -237,6 +245,24 @@ export function Composer({
   useEffect(() => {
     if (!isControlled && draftKey) saveDraft(draftKey, { text: innerValue });
   }, [isControlled, draftKey, innerValue]);
+  // One-shot prefill (see the prop doc): each new seq folds the given text
+  // into the draft and focuses the field for immediate editing.
+  const prefillSeqRef = useRef(0);
+  useEffect(() => {
+    if (!prefill || prefill.seq === prefillSeqRef.current) return;
+    prefillSeqRef.current = prefill.seq;
+    const next = text.trim()
+      ? `${text.replace(/\s+$/, "")}\n${prefill.text}`
+      : prefill.text;
+    setText(next);
+    queueMicrotask(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.selectionStart = el.selectionEnd = next.length;
+      }
+    });
+  }, [prefill]);
   // Fire a send handler with the current draft; in uncontrolled mode a `true`
   // return means "consumed" — clear the draft (falsy keeps it, e.g. offline).
   function fireSend(

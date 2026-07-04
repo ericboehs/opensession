@@ -52,7 +52,6 @@ import {
 	IconPlus,
 	IconPencil,
 	IconCrosshair,
-	IconX,
 	IconStar,
 	IconPullRequest,
 } from "./icons";
@@ -241,11 +240,11 @@ export function SessionViewer({
 	// Steered messages routed into the live run — shown as a steering receipt
 	// until their turn writes to the transcript (then reconciled away below).
 	const [steered, setSteered] = useState<QueueReceipt[]>([]);
-	const [editingQueue, setEditingQueue] = useState<{
-		key: string;
-		id?: string;
-		index: number;
-		content: string;
+	// One-shot draft injection into the Composer (bump seq to apply) — how
+	// "edit queued message" puts the text back into the input.
+	const [composerPrefill, setComposerPrefill] = useState<{
+		seq: number;
+		text: string;
 	} | null>(null);
 	const [busySend, setBusySend] = useState<BusySendPref>(getBusySendPref);
 	useEffect(
@@ -954,16 +953,25 @@ export function SessionViewer({
 		return Array.isArray(item.files) && item.files.length > 0;
 	}
 
-	function saveQueuedEdit() {
-		if (!editingQueue) return;
+	// "Edit" pulls the message back into the composer: drop it from the queue
+	// and hand its parts (text, images, files) to the draft — sending simply
+	// re-queues the edited version.
+	function editQueuedInComposer(q: QueueReceipt, index: number) {
 		send({
-			type: "update_queued_prompt",
+			type: "delete_queued_prompt",
 			sessionId: session.id,
-			queueId: editingQueue.id,
-			queueIndex: editingQueue.index,
-			content: editingQueue.content,
+			queueId: q.id,
+			queueIndex: index,
 		});
-		setEditingQueue(null);
+		if (q.images?.length) {
+			const imgs = q.images;
+			setImages((prev) => [...prev, ...imgs]);
+		}
+		if (Array.isArray(q.files) && q.files.length > 0) {
+			const fls = q.files as FileAttachment[];
+			setFiles((prev) => [...prev, ...fls]);
+		}
+		setComposerPrefill((p) => ({ seq: (p?.seq ?? 0) + 1, text: q.content }));
 	}
 
 	const attachedQueue =
@@ -982,7 +990,7 @@ export function SessionViewer({
 						>
 							<div className="composer-queue-actions">
 								<span className="composer-queue-pill">
-									<IconCrosshair size={18} />
+									<IconCrosshair size={20} />
 									Steering
 								</span>
 								{s.id && (
@@ -998,7 +1006,7 @@ export function SessionViewer({
 												})
 											}
 										>
-											<IconTrash size={22} />
+											<IconTrash size={24} />
 										</button>
 									</Tooltip>
 								)}
@@ -1025,134 +1033,81 @@ export function SessionViewer({
 					const isGitHub = isGitHubAttribution(q.user);
 					const id = q.id;
 					const key = id || `queued-${i}`;
-					const editing = editingQueue?.key === key;
 					const canSteer = !isGitHub && !queueHasFiles(q);
 					return (
 						<div
 							key={key}
 							className={`composer-queue-item ${hr ? "is-human" : ""} ${isGitHub ? "is-github" : ""}`}
 						>
-							{!editing && (
-								<div className="composer-queue-actions">
-									{isGitHub ? (
-										<span className="composer-queue-pill composer-queue-pill-github">
-											<IconPullRequest size={18} />
-											FYI
-										</span>
-									) : (
-										<>
-											<Tooltip
-												label={
-													canSteer
-														? "Steer into the current run now"
-														: "Messages with files cannot be steered"
+							<div className="composer-queue-actions">
+								{isGitHub ? (
+									<span className="composer-queue-pill composer-queue-pill-github">
+										<IconPullRequest size={20} />
+										FYI
+									</span>
+								) : (
+									<>
+										<Tooltip
+											label={
+												canSteer
+													? "Steer into the current run now"
+													: "Messages with files cannot be steered"
+											}
+										>
+											<button
+												type="button"
+												className="composer-queue-action composer-queue-steer"
+												disabled={!canSteer}
+												onClick={() =>
+													send({
+														type: "steer_queued_prompt",
+														sessionId: session.id,
+														queueId: id,
+														queueIndex: i,
+													})
 												}
 											>
-												<button
-													type="button"
-													className="composer-queue-action composer-queue-steer"
-													disabled={!canSteer}
-													onClick={() =>
-														send({
-															type: "steer_queued_prompt",
-															sessionId: session.id,
-															queueId: id,
-															queueIndex: i,
-														})
-													}
-												>
-													<IconCrosshair size={18} />
-													<span>Steer</span>
-												</button>
-											</Tooltip>
-											<Tooltip label="Edit queued message">
-												<button
-													type="button"
-													className="composer-queue-action"
-													onClick={() =>
-														setEditingQueue({
-															key,
-															id,
-															index: i,
-															content: q.content,
-														})
-													}
-												>
-													<IconPencil size={22} />
-												</button>
-											</Tooltip>
-										</>
-									)}
-									<Tooltip label="Delete queued message">
-										<button
-											type="button"
-											className="composer-queue-action danger"
-											onClick={() =>
-												send({
-													type: "delete_queued_prompt",
-													sessionId: session.id,
-													queueId: id,
-													queueIndex: i,
-												})
-											}
-										>
-											<IconTrash size={22} />
-										</button>
-									</Tooltip>
-								</div>
-							)}
-							{editing ? (
-								<div className="composer-queue-edit">
-									<textarea
-										value={editingQueue.content}
-										onChange={(e) =>
-											setEditingQueue({
-												key,
-												id,
-												index: i,
-												content: e.currentTarget.value,
+												<IconCrosshair size={20} />
+												<span>Steer</span>
+											</button>
+										</Tooltip>
+										<Tooltip label="Edit — puts the message back into the composer">
+											<button
+												type="button"
+												className="composer-queue-action"
+												onClick={() => editQueuedInComposer(q, i)}
+											>
+												<IconPencil size={24} />
+											</button>
+										</Tooltip>
+									</>
+								)}
+								<Tooltip label="Delete queued message">
+									<button
+										type="button"
+										className="composer-queue-action danger"
+										onClick={() =>
+											send({
+												type: "delete_queued_prompt",
+												sessionId: session.id,
+												queueId: id,
+												queueIndex: i,
 											})
 										}
-										onKeyDown={(e) => {
-											if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-												e.preventDefault();
-												saveQueuedEdit();
-											}
-											if (e.key === "Escape") {
-												e.preventDefault();
-												setEditingQueue(null);
-											}
-										}}
-										autoFocus
-									/>
-									<div className="composer-queue-edit-actions">
-										<button
-											type="button"
-											className="composer-queue-edit-cancel"
-											onClick={() => setEditingQueue(null)}
-										>
-											<IconX size={20} />
-										</button>
-										<button
-											type="button"
-											className="composer-queue-edit-save"
-											onClick={saveQueuedEdit}
-										>
-											Save
-										</button>
-									</div>
-								</div>
-							) : (
-								<div className="composer-queue-body">
-									{hr && (
-										<span className="composer-queue-from">💬 {hr.name}</span>
-									)}
-									{isGitHub && (
-										<span className="composer-queue-from">GitHub</span>
-									)}
-									{hr ? hr.body : q.content}
-								</div>
-							)}
+									>
+										<IconTrash size={24} />
+									</button>
+								</Tooltip>
+							</div>
+							<div className="composer-queue-body">
+								{hr && (
+									<span className="composer-queue-from">💬 {hr.name}</span>
+								)}
+								{isGitHub && (
+									<span className="composer-queue-from">GitHub</span>
+								)}
+								{hr ? hr.body : q.content}
+							</div>
 							{q.images && q.images.length > 0 && (
 								<div className="composer-queue-images">
 									{q.images.map((src, j) => (
@@ -2038,6 +1993,7 @@ export function SessionViewer({
 									onStop={handleCancel}
 									sendTitle={isBusy ? busySendLabel : undefined}
 									attached={attachedQueue}
+									prefill={composerPrefill}
 									models={models}
 									defaultModel={defaultModel}
 									model={model}
