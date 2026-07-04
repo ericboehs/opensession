@@ -1935,7 +1935,7 @@ async function runSessionPromptInner(
 	const isAutomationSession = !!session.automation;
 	const mcpServers = isAutomationSession
 		? automationMcpServersByName(session.automation!)
-		: undefined;
+		: (session.mcpServers && session.mcpServers.length) ? session.mcpServers : [];
 	const deniedTools = isAutomationSession ? automationDeniedTools() : undefined;
 
 	// @session:<id> mentions → footer resolving them for the agent's

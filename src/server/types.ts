@@ -85,6 +85,7 @@ export interface UnifiedSession {
   // Source-specific
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
+  mcpServers?: string[]; // External MCP servers loaded for this session
 }
 
 // Slack session file format (two variants exist)
@@ -175,6 +176,7 @@ export interface BackstageSessionFile {
   lastRunError?: { message: string; at: string }; // last run died on a terminal error; cleared on the next clean run
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   slackChannel?: SlackChannelLink; // Slack channel linked for in-context discussion
+  mcpServers?: string[]; // External MCP servers to load for this session; empty = none (minimal context)
 }
 
 export interface TranscriptEntry {

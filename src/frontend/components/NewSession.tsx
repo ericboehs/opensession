@@ -26,6 +26,17 @@ interface Props {
   /** …and defaults to the project's shared repo + worktree (a sibling's branch). */
   forceRepo?: string;
   forceBranch?: string;
+  /** Lets App render the pending chat shell before the created session appears
+      in the polled session list. */
+  onCreateStarted?: (draft: {
+    prompt: string;
+    mode: "ask" | "code";
+    repo: string;
+    branch: string | null;
+    projectId?: string;
+    model?: string;
+    images?: string[];
+  }) => void;
 }
 
 interface Worktree {
@@ -88,7 +99,7 @@ function slugifyBranch(text: string): string {
   return slug || "new-session";
 }
 
-export function NewSession({ onBack, send, addHandler, connected, prefillPrompt, projectId, forceRepo, forceBranch }: Props) {
+export function NewSession({ onBack, send, addHandler, connected, prefillPrompt, projectId, forceRepo, forceBranch, onCreateStarted }: Props) {
   const [prefill] = useState(readPrefill);
   const [mode, setMode] = useState<"ask" | "code">(prefill.mode);
   // In a Project, default to the folder's shared repo; else the prefill/filter repo.
@@ -129,6 +140,23 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const isPhone = useIsPhone();
   const [showOptions, setShowOptions] = useState(false);
   const optionsVisible = !isPhone || showOptions;
+
+  // MCP servers: empty by default (minimal context), users can opt in for specific ones
+  const [selectedMcpServers, setSelectedMcpServers] = useState<string[]>([]);
+  const availableMcpServers = [
+    "linear",
+    "slack",
+    "stripe",
+    "plain",
+    "sentry",
+    "ahrefs",
+    "amplitude",
+    "brex",
+    "grafana",
+    "incident",
+    "tinybird",
+    "workos",
+  ];
 
   // "@"-mention file autocomplete against the selected repo's repo (no
   // session exists yet, so search by repo).
@@ -275,6 +303,15 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     // is a brand-new Workspace + first Chat created together.
     const chatMode =
       mode === "ask" ? "ask" : selectedWorktree === "__new__" ? "stack" : "share";
+    onCreateStarted?.({
+      prompt: prompt.trim(),
+      mode,
+      repo,
+      branch: mode === "ask" ? null : branch,
+      ...(projectId ? { projectId } : {}),
+      ...(model ? { model } : {}),
+      ...(images.length ? { images } : {}),
+    });
     send({
       type: "create_session",
       mode,
@@ -287,6 +324,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       user: getCurrentUser(),
       ...(model ? { model } : {}),
       effort,
+      ...(selectedMcpServers.length ? { mcpServers: selectedMcpServers } : {}),
       ...(images.length ? { images } : {}),
       ...(files.length
         ? {
@@ -383,6 +421,33 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             <span className="palette-trigger-label">{createFromLabel}</span>
             <IconChevronDown className="palette-chevron" size={22} />
           </PaletteSelect>
+        </div>
+        )}
+
+        {/* Advanced: MCP servers */}
+        {optionsVisible && (
+        <div className="palette-advanced">
+          <div className="palette-advanced-label">Connected services (optional)</div>
+          <div className="palette-mcp-grid">
+            {availableMcpServers.map((mcp) => (
+              <label key={mcp} className="palette-mcp-checkbox">
+                <input
+                  type="checkbox"
+                  checked={selectedMcpServers.includes(mcp)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedMcpServers((prev) => [...prev, mcp]);
+                    } else {
+                      setSelectedMcpServers((prev) => prev.filter((m) => m !== mcp));
+                    }
+                  }}
+                  disabled={creating}
+                  aria-label={`Enable ${mcp}`}
+                />
+                <span className="palette-mcp-label">{mcp}</span>
+              </label>
+            ))}
+          </div>
         </div>
         )}
 
