@@ -11,6 +11,7 @@ import type { WSServerMessage } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { PaletteSelect } from "./PaletteSelect";
+import { ModelEffortSelect } from "./ModelEffortSelect";
 
 interface Props {
   /** Close the palette (Esc, backdrop click, or after a create without "Create more"). */
@@ -42,12 +43,6 @@ const REPOS = [
   { id: "shared-infra", label: "shared-infra" },
   { id: "gstreamer", label: "gstreamer" },
   { id: "gst-plugins-rs", label: "gst-plugins-rs" },
-];
-
-const EFFORTS = [
-  { id: "low", label: "Low" },
-  { id: "medium", label: "Medium" },
-  { id: "high", label: "High" },
 ];
 
 // The repo the sidebar is currently filtered to (persisted by Sidebar.tsx under
@@ -91,12 +86,6 @@ function slugifyBranch(text: string): string {
     .slice(0, 6)
     .join("-");
   return slug || "new-session";
-}
-
-function isCodexModel(id: string, models: ModelOption[]): boolean {
-  const found = models.find((m) => m.id === id);
-  if (found) return found.provider === "codex";
-  return id.startsWith("gpt") || id.startsWith("codex");
 }
 
 export function NewSession({ onBack, send, addHandler, connected, prefillPrompt, projectId, forceRepo, forceBranch }: Props) {
@@ -342,10 +331,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     { value: "__ask__", label: "Ask — read-only on main", menuLabel: "Ask · read-only on main" },
   ];
 
-  const effectiveModel = model || defaultModel;
-  const modelLabel =
-    models.find((m) => m.id === effectiveModel)?.label || effectiveModel || "Default";
-
   return (
     <div
       className="palette-backdrop"
@@ -459,58 +444,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 <IconSliders size={24} />
               </button>
             )}
-            {optionsVisible && (
-            <>
-            <PaletteSelect
-              className="palette-pill"
-              title="Model"
-              value={model}
-              options={[
-                { value: "", label: `Default${defaultModel ? ` — ${defaultModel}` : ""}` },
-                ...models.map((m) => ({
-                  value: m.id,
-                  label: `${m.label} (${m.provider === "codex" ? "OpenAI Codex" : "Claude"})`,
-                  menuLabel: m.label,
-                })),
-              ]}
-              onChange={setModel}
-              disabled={creating}
-              ariaLabel="Model"
-              isPhone={isPhone}
-            >
-              <span className={`composer-model-dot ${isCodexModel(effectiveModel, models) ? "dot-codex" : "dot-claude"}`} />
-              <span className="palette-pill-label">{modelLabel}</span>
-              <IconChevronDown className="palette-chevron" size={22} />
-            </PaletteSelect>
-
-            <PaletteSelect
-              className="palette-pill"
-              title="Reasoning effort (not yet wired server-side)"
-              value={effort}
-              options={EFFORTS.map((e) => ({ value: e.id, label: e.label }))}
-              onChange={setEffort}
-              disabled={creating}
-              ariaLabel="Reasoning effort"
-              isPhone={isPhone}
-            >
-              <span className="palette-effort-icon" aria-hidden="true">
-                <span /><span /><span />
-              </span>
-              <span className="palette-pill-label">{EFFORTS.find((e) => e.id === effort)?.label}</span>
-              <IconChevronDown className="palette-chevron" size={22} />
-            </PaletteSelect>
-            </>
-            )}
-          </div>
-
-          <div className="palette-footer-right">
-            <VoiceInput
-              disabled={creating}
-              onText={(t) => {
-                setPrompt((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")} ${t}` : t));
-                promptRef.current?.focus();
-              }}
-            />
             <button
               type="button"
               className="palette-icon-btn"
@@ -529,6 +462,29 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               onChange={(e) => {
                 if (e.target.files?.length) void addAttachments(e.target.files);
                 e.target.value = "";
+              }}
+            />
+          </div>
+
+          <div className="palette-footer-right">
+            {optionsVisible && (
+              <ModelEffortSelect
+                className="palette-pill max-w-[230px]"
+                title="Model and reasoning effort"
+                models={models}
+                defaultModel={defaultModel}
+                model={model}
+                onModelChange={setModel}
+                effort={effort}
+                onEffortChange={setEffort}
+                disabled={creating}
+              />
+            )}
+            <VoiceInput
+              disabled={creating}
+              onText={(t) => {
+                setPrompt((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")} ${t}` : t));
+                promptRef.current?.focus();
               }}
             />
 

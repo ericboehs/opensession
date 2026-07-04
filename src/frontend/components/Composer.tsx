@@ -13,7 +13,6 @@ import {
   IconPaperclip,
   IconAtSign,
   IconCrosshair,
-  IconChevronDown,
   IconStopSquare,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
@@ -27,7 +26,7 @@ import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { motion, AnimatePresence } from "motion/react";
 import { composerMorph, composerChipMotion } from "../ui/motion";
-import { PaletteSelect } from "./PaletteSelect";
+import { ModelEffortSelect } from "./ModelEffortSelect";
 
 interface Props {
   /**
@@ -112,21 +111,9 @@ interface Props {
   mentionFetch?: (query: string) => Promise<FileMention[]>;
 }
 
-const EFFORTS = [
-  { id: "low", label: "Low" },
-  { id: "medium", label: "Medium" },
-  { id: "high", label: "High" },
-];
-
 function modelShortLabel(id: string, models: ModelOption[]): string {
   const m = models.find((x) => x.id === id);
   return m ? m.label : id;
-}
-
-function modelIsCodex(id: string, models: ModelOption[]): boolean {
-  const found = models.find((x) => x.id === id);
-  if (found) return found.provider === "codex";
-  return id.startsWith("gpt") || id.startsWith("codex");
 }
 
 /** Inline set/clear editor for the session goal. */
@@ -385,7 +372,6 @@ export function Composer({
   }
 
   const effectiveModel = model || defaultModel;
-  const isCodex = modelIsCodex(effectiveModel, models);
 
   return (
     <div className="composer-wrap">
@@ -510,74 +496,13 @@ export function Composer({
             </motion.div>
           )}
 
-          {/* The model/effort/goal chips exist only in the expanded state; they
-              fade + scale in as the composer grows. AnimatePresence(initial=false)
-              skips the enter on first paint so they don't animate in on a fresh
-              desktop load; the chips carry no `exit` (see composerChipMotion) so
-              they're removed instantly on collapse rather than reflowing through
-              the reordered pill row. */}
+          {/* The goal chip exists only in the expanded state; it fades + scales
+              in as the composer grows. AnimatePresence(initial=false) skips the
+              enter on first paint so it doesn't animate in on a fresh desktop
+              load; the chips carry no `exit` (see composerChipMotion) so they're
+              removed instantly on collapse rather than reflowing through the
+              reordered pill row. */}
           <AnimatePresence initial={false}>
-            {!minimized && (
-              <motion.div
-                key="model"
-                layout="position"
-                {...composerChipMotion}
-                className="palette-select-motion"
-              >
-                <PaletteSelect
-                  className="palette-pill"
-                  title={modelTitle || "Model for this session"}
-                  value={model}
-                  options={[
-                    { value: "", label: modelShortLabel(defaultModel, models) },
-                    ...models
-                      .filter((m) => m.id !== defaultModel)
-                      .map((m) => ({ value: m.id, label: m.label })),
-                  ]}
-                  onChange={onModelChange}
-                  disabled={disabled || modelDisabled}
-                  ariaLabel="Model"
-                  isPhone={isPhone}
-                >
-                <span className={`composer-model-dot ${isCodex ? "dot-codex" : "dot-claude"}`} />
-                <span className="palette-pill-label">
-                  {modelShortLabel(effectiveModel, models)}
-                </span>
-                <IconChevronDown className="palette-chevron" size={22} />
-                </PaletteSelect>
-              </motion.div>
-            )}
-
-            {!minimized && onEffortChange && (
-              <motion.div
-                key="effort"
-                layout="position"
-                {...composerChipMotion}
-                className="palette-select-motion"
-              >
-                <PaletteSelect
-                  className="palette-pill"
-                  title="Reasoning effort — applies to new turns (not yet enforced server-side)"
-                  value={effort ?? "high"}
-                  options={EFFORTS.map((e) => ({ value: e.id, label: e.label }))}
-                  onChange={onEffortChange}
-                  disabled={disabled}
-                  ariaLabel="Reasoning effort"
-                  isPhone={isPhone}
-                >
-                <span className="palette-effort-icon" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </span>
-                <span className="palette-pill-label">
-                  {EFFORTS.find((e) => e.id === effort)?.label ?? "High"}
-                </span>
-                <IconChevronDown className="palette-chevron" size={22} />
-                </PaletteSelect>
-              </motion.div>
-            )}
-
             {!minimized && onSetGoal && (
               <motion.div
                 key="goal"
@@ -613,6 +538,33 @@ export function Composer({
 
           {leftExtra}
           <div className="composer-spacer" />
+
+          {/* Model + effort live together on the right edge (ChatGPT-style):
+              one pill, effort levels up top, the model behind a submenu. */}
+          <AnimatePresence initial={false}>
+            {!minimized && (
+              <motion.div
+                key="model-effort"
+                layout="position"
+                {...composerChipMotion}
+                className="palette-select-motion"
+              >
+                <ModelEffortSelect
+                  className="palette-pill max-w-[230px]"
+                  title={modelTitle || "Model and reasoning effort for this session"}
+                  models={models}
+                  defaultModel={defaultModel}
+                  model={model}
+                  onModelChange={onModelChange}
+                  modelDisabled={modelDisabled}
+                  modelTitle={modelTitle}
+                  effort={effort}
+                  onEffortChange={onEffortChange}
+                  disabled={disabled}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <motion.div layout="position" transition={composerMorph} className="composer-voice-wrap">
             <VoiceInput onText={insertDictation} disabled={disabled} />
