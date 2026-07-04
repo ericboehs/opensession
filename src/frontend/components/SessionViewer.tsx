@@ -1931,14 +1931,20 @@ export function SessionViewer({
 								{pending.map((p) => (
 									<div key={p.id} className="msg msg-user msg-sending">
 										<div className="msg-label msg-label-user">
-											{p.user || "You"} ·{" "}
-											{isBusy
-												? busySend === "steer"
-													? "steering…"
-													: busySend === "queue"
-														? "queueing…"
-														: "redirecting…"
-												: "sending…"}
+											{/* One wrapping span so the label stays a single flex item
+											    (msg-label-user is row-reverse; bare siblings would flip). */}
+											<span>
+												{p.user || "You"} ·{" "}
+												<span className="msg-label-status">
+													{isBusy
+														? busySend === "steer"
+															? "steering…"
+															: busySend === "queue"
+																? "queueing…"
+																: "redirecting…"
+														: "sending…"}
+												</span>
+											</span>
 										</div>
 									{p.content && (
 										<div className="msg-body msg-body-user">{p.content}</div>

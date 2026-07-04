@@ -8996,6 +8996,12 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 .msg-sending {
 	opacity: 0.6;
 }
+/* The "sending…" status reads as a quiet aside, not a shouted label —
+   undo the uppercase/tracking the name part of .msg-label carries. */
+.msg-label .msg-label-status {
+	text-transform: none;
+	letter-spacing: normal;
+}
 .msg-sending .msg-label-user {
 	animation: sendingPulse 1.2s ease-in-out infinite;
 }
