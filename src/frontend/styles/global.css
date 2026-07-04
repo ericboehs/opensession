@@ -6835,13 +6835,9 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	border: 1px solid var(--red);
 }
 .composer-stop {
-	background: var(--bg-raised);
-	color: var(--red);
-	border: 1px solid var(--red-soft);
-}
-.composer-stop:not(:disabled):hover {
-	background: var(--red-soft);
-	border-color: var(--red);
+	background: var(--red);
+	color: #fff;
+	border: none;
 }
 
 /* Right-side send button wrapper. Scheduler actions now live in the + menu;
