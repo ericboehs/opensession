@@ -26,7 +26,7 @@ import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { motion, AnimatePresence } from "motion/react";
 import { composerMorph, composerChipMotion } from "../ui/motion";
-import { ModelEffortSelect } from "./ModelEffortSelect";
+import { ModelEffortSelect, shortModelLabel } from "./ModelEffortSelect";
 
 interface Props {
   /**
@@ -118,11 +118,6 @@ interface Props {
    * "@" is inert.
    */
   mentionFetch?: (query: string) => Promise<FileMention[]>;
-}
-
-function modelShortLabel(id: string, models: ModelOption[]): string {
-  const m = models.find((x) => x.id === id);
-  return m ? m.label : id;
 }
 
 /** Inline set/clear editor for the session goal. */
@@ -451,7 +446,7 @@ export function Composer({
             // "Ask <model>" (ChatGPT-style) that fits the single row; the
             // descriptive placeholder returns once it expands.
             placeholder={
-              minimized ? `Ask ${modelShortLabel(effectiveModel, models)}` : placeholder
+              minimized ? `Ask ${shortModelLabel(effectiveModel, models)}` : placeholder
             }
             value={text}
             onChange={(e) => {
@@ -598,7 +593,7 @@ export function Composer({
                 className="palette-select-motion"
               >
                 <ModelEffortSelect
-                  className="palette-pill max-w-[230px]"
+                  className="palette-pill"
                   title={modelTitle || "Model and reasoning effort for this session"}
                   models={models}
                   defaultModel={defaultModel}

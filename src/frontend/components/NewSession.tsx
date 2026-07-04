@@ -469,7 +469,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
           <div className="palette-footer-right">
             {optionsVisible && (
               <ModelEffortSelect
-                className="palette-pill max-w-[230px]"
+                className="palette-pill"
                 title="Model and reasoning effort"
                 models={models}
                 defaultModel={defaultModel}
