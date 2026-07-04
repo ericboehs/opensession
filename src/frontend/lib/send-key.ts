@@ -4,7 +4,7 @@
 // habit, not per-user cloud state.
 
 export type SendKeyPref = "enter" | "mod-enter";
-export type BusySendPref = "interrupt" | "queue" | "steer";
+export type BusySendPref = "queue" | "steer";
 
 const KEY = "michael-send-key";
 const BUSY_KEY = "michael-busy-send";
@@ -28,15 +28,14 @@ export function onSendKeyChanged(handler: () => void): () => void {
 }
 
 export function getBusySendPref(): BusySendPref {
-	const v = localStorage.getItem(BUSY_KEY);
-	// Default is interrupt-and-redirect (matches Esc in the CLI): the message
-	// lands now instead of waiting minutes for the turn to end. Queue and steer
-	// are the gentler opt-ins.
-	return v === "steer" || v === "queue" ? v : "interrupt";
+	// Follow-up behavior: queue (default) waits for the turn to end; steer folds
+	// the message into the live run at its next stopping point. While queueing,
+	// ⌘/Ctrl+Enter is the per-send steer escape hatch.
+	return localStorage.getItem(BUSY_KEY) === "steer" ? "steer" : "queue";
 }
 
 export function setBusySendPref(pref: BusySendPref) {
-	if (pref === "interrupt") localStorage.removeItem(BUSY_KEY);
+	if (pref === "queue") localStorage.removeItem(BUSY_KEY);
 	else localStorage.setItem(BUSY_KEY, pref);
 	window.dispatchEvent(new Event(BUSY_CHANGE_EVENT));
 }
@@ -56,6 +55,9 @@ const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
 /** Platform-aware display label for the modifier combo ("⌘ Enter" / "Ctrl Enter"). */
 export const MOD_ENTER_LABEL = isApple ? "⌘ Enter" : "Ctrl Enter";
+
+/** Compact glyph form for inline hints ("⌘↩" / "Ctrl ↩"). */
+export const MOD_ENTER_GLYPH = isApple ? "⌘↩" : "Ctrl ↩";
 
 export function sendKeyLabel(pref: SendKeyPref = getSendKeyPref()): string {
 	return pref === "mod-enter" ? MOD_ENTER_LABEL : "Enter";

@@ -834,9 +834,7 @@ export function SessionViewer({
 	const busySendLabel =
 		busySend === "queue"
 			? "Queue for Michael's next turn"
-			: busySend === "steer"
-				? "Steer into Michael's current run"
-				: "Send now — interrupts the current turn and redirects Michael";
+			: "Steer into Michael's current run";
 	// Exact engine-state forks use Claude's SDK forkSession. Other backends can
 	// still fork as a new sibling with a transcript handoff.
 	const canForkSession =
@@ -865,7 +863,9 @@ export function SessionViewer({
 
 	// Returns true when the message was consumed, so the (uncontrolled)
 	// Composer knows to clear its draft; false keeps it for a retry.
-	function handleSend(raw: string): boolean {
+	// `opts.steer` is the per-send override (⌘/Ctrl+Enter while queueing):
+	// fold this one message into the live run instead of queueing it.
+	function handleSend(raw: string, opts?: { steer?: boolean }): boolean {
 		const text = raw.trim();
 		const imgs = images;
 		const fls = files;
@@ -897,35 +897,26 @@ export function SessionViewer({
 		}
 
 		if (noEngine) return false;
-		// While busy, respect the per-browser Composer setting: interrupt the
-		// current turn and redirect right away (default — the message lands now
-		// instead of waiting, possibly many minutes, for the turn to end), queue
-		// for later, or steer into the live run at the next stopping point.
+		// While busy, respect the per-browser follow-up setting: queue for the
+		// next turn (default) or steer into the live run at its next stopping
+		// point. `opts.steer` (⌘/Ctrl+Enter) steers one send while queueing.
 		// Idle: just run it. Attachments ride along on every path — images fold
 		// into the run as content blocks; files route to the queue server-side.
-		const interrupting = isBusy && busySend === "interrupt";
 		send(
 			isBusy
-				? interrupting
-					? {
-							type: "interrupt_prompt" as const,
-							sessionId: session.id,
-							content: text,
-							user,
-							effort,
-							...(imgs.length ? { images: imgs } : {}),
-							...(fls.length ? { files: filePayload } : {}),
-						}
-					: {
-							type: "prompt" as const,
-							sessionId: session.id,
-							content: text,
-							user,
-							effort,
-							busyMode: busySend === "steer" ? ("steer" as const) : ("queue" as const),
-							...(imgs.length ? { images: imgs } : {}),
-							...(fls.length ? { files: filePayload } : {}),
-						}
+				? {
+						type: "prompt" as const,
+						sessionId: session.id,
+						content: text,
+						user,
+						effort,
+						busyMode:
+							opts?.steer || busySend === "steer"
+								? ("steer" as const)
+								: ("queue" as const),
+						...(imgs.length ? { images: imgs } : {}),
+						...(fls.length ? { files: filePayload } : {}),
+					}
 				: {
 						type: "prompt" as const,
 						sessionId: session.id,
@@ -936,15 +927,12 @@ export function SessionViewer({
 						...(fls.length ? { files: filePayload } : {}),
 					},
 		);
-		if (!isBusy || interrupting) {
-			if (!isBusy) {
-				setIsRunningLive(true);
-				onRunningChange?.(session.id, true);
-			}
+		if (!isBusy) {
+			setIsRunningLive(true);
+			onRunningChange?.(session.id, true);
 			beginTurn(); // pin this new turn near the top so its reply streams in below
-			// Show it immediately; interrupt sends land in the transcript almost at
-			// once and reconcile away. Queued/steered sends show in the attached
-			// queue instead.
+			// Show it immediately; it reconciles away when the real transcript entry
+			// arrives. Queued/steered sends show in the attached queue instead.
 			setPending((p) => [
 				...p,
 				{
@@ -1937,9 +1925,7 @@ export function SessionViewer({
 												{isBusy
 													? busySend === "steer"
 														? "Steering…"
-														: busySend === "queue"
-															? "Queueing…"
-															: "Redirecting…"
+														: "Queueing…"
 													: "Sending…"}
 											</span>
 										</div>
@@ -2015,11 +2001,9 @@ export function SessionViewer({
 											: forkFrom
 												? "New direction…"
 												: isBusy
-													? busySend === "queue"
-															? "Queue for later…"
-															: busySend === "steer"
-																? "Steer this run…"
-																: "New direction…"
+													? busySend === "steer"
+														? "Steer this run…"
+														: "Queue for later…"
 													: "Ask Michael…"
 									}
 									disabled={!connected}

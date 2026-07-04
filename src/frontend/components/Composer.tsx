@@ -8,7 +8,6 @@ import { useFileMentions } from "./useFileMentions";
 import {
   IconArrowUp,
   IconArrowDownRight,
-  IconBolt,
   IconPlus,
   IconPaperclip,
   IconAtSign,
@@ -21,6 +20,7 @@ import {
   onSendKeyChanged,
   isSendCombo,
   sendKeyLabel,
+  MOD_ENTER_GLYPH,
 } from "../lib/send-key";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -45,7 +45,9 @@ interface Props {
    * Controlled parents own their value and persist it themselves.
    */
   draftKey?: string;
-  onSend: (text: string) => boolean | void;
+  /** `steer` is set when the send should fold into the live run right away
+   * (⌘/Ctrl+Enter while the queue follow-up mode is active). */
+  onSend: (text: string, opts?: { steer?: boolean }) => boolean | void;
   placeholder?: string;
   disabled?: boolean;
   /** Boolean, or a predicate on the current draft (for uncontrolled mode,
@@ -54,7 +56,7 @@ interface Props {
   /** Shows on the send button tooltip when busy-queueing. */
   sendTitle?: string;
   busy?: boolean;
-  busySendMode?: "interrupt" | "queue" | "steer";
+  busySendMode?: "queue" | "steer";
   onStop?: () => void;
   models: ModelOption[];
   defaultModel: string;
@@ -190,7 +192,7 @@ export function Composer({
   sendDisabled,
   sendTitle,
   busy,
-  busySendMode = "interrupt",
+  busySendMode = "queue",
   onStop,
   models,
   defaultModel,
@@ -237,8 +239,11 @@ export function Composer({
   }, [isControlled, draftKey, innerValue]);
   // Fire a send handler with the current draft; in uncontrolled mode a `true`
   // return means "consumed" — clear the draft (falsy keeps it, e.g. offline).
-  function fireSend(handler: (t: string) => boolean | void) {
-    const consumed = handler(text);
+  function fireSend(
+    handler: (t: string, opts?: { steer?: boolean }) => boolean | void,
+    opts?: { steer?: boolean },
+  ) {
+    const consumed = handler(text, opts);
     if (!isControlled && consumed === true) setInnerValue("");
   }
   const isSendDisabled =
@@ -365,7 +370,22 @@ export function Composer({
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (mentions.handleKeyDown(e)) return;
-    if (isSendCombo(e, sendKey) && !(e.nativeEvent as any).isComposing) {
+    if ((e.nativeEvent as any).isComposing) return;
+    // While a run is busy and follow-ups queue, ⌘/Ctrl+Enter steers this one
+    // send into the live run instead. (Only when plain Enter is the send key —
+    // otherwise ⌘/Ctrl+Enter already means "send".)
+    if (
+      busy &&
+      busySendMode === "queue" &&
+      sendKey === "enter" &&
+      e.key === "Enter" &&
+      (e.metaKey || e.ctrlKey)
+    ) {
+      e.preventDefault();
+      if (!disabled && !isSendDisabled) fireSend(onSend, { steer: true });
+      return;
+    }
+    if (isSendCombo(e, sendKey)) {
       e.preventDefault();
       if (!disabled && !isSendDisabled) fireSend(onSend);
     }
@@ -589,7 +609,7 @@ export function Composer({
             <motion.div
               layout="position"
               transition={composerMorph}
-              className={`composer-send-split ${busy && busySendMode !== "queue" ? "is-interrupt" : ""}`}
+              className={`composer-send-split ${busy && busySendMode === "steer" ? "is-interrupt" : ""}`}
             >
               <Tooltip
                 label={
@@ -597,24 +617,22 @@ export function Composer({
                   (busy
                     ? busySendMode === "steer"
                       ? `Steer into the current run (${sendKeyLabel(sendKey)})`
-                      : busySendMode === "queue"
-                        ? `Queue for the next turn (${sendKeyLabel(sendKey)})`
-                        : `Send now — interrupts the current turn (${sendKeyLabel(sendKey)})`
+                      : `Queue for the next turn (${sendKeyLabel(sendKey)})${
+                          sendKey === "enter" ? ` — ${MOD_ENTER_GLYPH} steers` : ""
+                        }`
                     : `Send (${sendKeyLabel(sendKey)})`)
                 }
               >
                 <button
-                  className={`composer-send ${busy && busySendMode !== "queue" ? "composer-send-interrupt" : busy ? "composer-send-queue-main" : ""}`}
+                  className={`composer-send ${busy && busySendMode === "steer" ? "composer-send-interrupt" : busy ? "composer-send-queue-main" : ""}`}
                   onClick={() => fireSend(onSend)}
                   disabled={disabled || isSendDisabled}
                 >
                   {busy ? (
                     busySendMode === "steer" ? (
                       <IconCrosshair size={24} />
-                    ) : busySendMode === "queue" ? (
-                      <IconArrowDownRight size={24} />
                     ) : (
-                      <IconBolt size={24} />
+                      <IconArrowDownRight size={24} />
                     )
                   ) : (
                     <IconArrowUp size={24} />

@@ -23,6 +23,7 @@ import {
 	setBusySendPref,
 	onBusySendChanged,
 	MOD_ENTER_LABEL,
+	MOD_ENTER_GLYPH,
 	type BusySendPref,
 	type SendKeyPref,
 } from "../lib/send-key";
@@ -608,7 +609,7 @@ function SettingRow({
 	control,
 }: {
 	title: string;
-	desc: string;
+	desc: React.ReactNode;
 	control: React.ReactNode;
 }) {
 	return (
@@ -1300,16 +1301,25 @@ function ComposerPanel() {
 					}
 				/>
 				<SettingRow
-					title="When Michael is working"
-					desc="Choose what the main send button does during an active turn. Interrupt stops the current turn and redirects right away; queue and steer wait for a stopping point."
+					title="Follow-up behavior"
+					desc={
+						<>
+							Queue messages to send after the agent finishes, or steer the
+							agent mid-turn.
+							{busySend === "queue" && sendKey === "enter" && (
+								<div className="text-dim text-xs mt-1">
+									Use {MOD_ENTER_GLYPH} to steer
+								</div>
+							)}
+						</>
+					}
 					control={
 						<Select
-							label="When Michael is working"
+							label="Follow-up behavior"
 							value={busySend}
 							options={[
-								{ value: "interrupt", label: "Interrupt now" },
-								{ value: "queue", label: "Queue for later" },
-								{ value: "steer", label: "Steering" },
+								{ value: "queue", label: "Queue" },
+								{ value: "steer", label: "Steer" },
 							]}
 							onChange={setBusySendPref}
 						/>
