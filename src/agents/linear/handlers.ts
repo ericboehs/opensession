@@ -130,7 +130,7 @@ export async function handleIssueUpdate(webhook: IssueWebhook, tokens: LinearTok
   }
 
   if (!existingSession) {
-    const branch = await generateBranchName(details.title, issue.identifier);
+    const branch = generateBranchName(details.title, issue.identifier);
     const diskSession = await loadSessionInfo(branch);
     if (diskSession?.claudeSessionId) {
       existingSession = {

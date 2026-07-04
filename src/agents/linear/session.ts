@@ -125,34 +125,19 @@ Co-Authored-By: ${lastActiveUser.name} <${email}>`;
 
 // --- Branch & Worktree ---
 
-export async function generateBranchName(title: string, issueIdentifier?: string): Promise<string> {
-  let branchName = "";
-  try {
-    const q = query({
-      prompt: `Generate a 1-2 word branch name (lowercase, hyphen-separated, no special chars) for this ticket: "${title}". Output ONLY the branch name, nothing else.`,
-      options: {
-        model: "haiku",
-        maxTurns: 1,
-        cwd: "/home/ubuntu/projects/tella-fusion",
-        allowedTools: [],
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
-        executable: "bun",
-      },
-    });
-    for await (const msg of q) {
-      if (msg.type === "result" && (msg as any).subtype === "success") {
-        branchName = ((msg as any).result || "").trim();
-      }
-    }
-  } catch (e) {
-    console.error("[linear] Error generating branch name:", e);
-  }
-
-  let branch = branchName
+export function generateBranchName(title: string, issueIdentifier?: string): string {
+  // Heuristic: take first 1-2 words from title, lowercased, hyphen-separated, no special chars
+  // Avoids a full Haiku query just for a branch name.
+  const words = title
     .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "")
-    .slice(0, 30);
-  branch = branch || "task";
+    .replace(/[^a-z0-9\s-]/g, "") // Remove special chars
+    .split(/\s+/) // Split on whitespace
+    .filter((w) => w.length > 0) // Remove empty strings
+    .slice(0, 2) // Take first 2 words
+    .join("-") // Hyphenate
+    .slice(0, 30); // Max 30 chars
+
+  let branch = words || "task";
 
   if (issueIdentifier) {
     const suffix = issueIdentifier.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -447,7 +432,7 @@ export async function runClaudeHeadless(
   const accountUser =
     session?.lastActiveUser?.email || session?.issueCreator?.email || undefined;
   const triedAccountIds = new Set<string>();
-  let account = pickAccount(triedAccountIds, accountUser);
+  let account = pickAccount(triedAccountIds, accountUser, session?.model);
   let limitExhausted = false;
 
   rotation: for (;;) {
@@ -571,9 +556,9 @@ export async function runClaudeHeadless(
 
   if (account) {
     triedAccountIds.add(account.id);
-    markExhausted(account.id);
+    markExhausted(account.id, session?.model);
   }
-  const next = pickAccount(triedAccountIds, accountUser);
+  const next = pickAccount(triedAccountIds, accountUser, session?.model);
   if (next && next.id !== account?.id) {
     account = next;
     console.warn(`[linear] Usage limit hit; retrying on account ${next.name}`);

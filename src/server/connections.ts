@@ -3,18 +3,39 @@
  * run with (mcp-config.json). Targets are sanitized — never expose URL
  * query strings (they can embed tokens) or env values.
  */
-import { existsSync, readFileSync, copyFileSync } from "fs";
+import { existsSync, readFileSync, copyFileSync, watchFile } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CONFIG_PATH = `${HOME}/projects/tella-backstage/mcp-config.json`;
 
-export function readMcpConfig(): { mcpServers: Record<string, any> } {
+// Cache the parsed MCP config with file-watcher invalidation
+let cachedMcpConfig: { mcpServers: Record<string, any> } | null = null;
+let cacheWatcherSetUp = false;
+
+function setupCacheWatcher() {
+  if (cacheWatcherSetUp) return;
+  cacheWatcherSetUp = true;
   try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-  } catch {
-    return { mcpServers: {} };
+    watchFile(CONFIG_PATH, () => {
+      cachedMcpConfig = null;
+      console.log("[mcp-cache] config changed, invalidating cache");
+    });
+  } catch (e) {
+    console.warn("[mcp-cache] failed to set up file watcher:", e);
   }
+}
+
+export function readMcpConfig(): { mcpServers: Record<string, any> } {
+  if (!cacheWatcherSetUp) setupCacheWatcher();
+  if (cachedMcpConfig) return cachedMcpConfig;
+
+  try {
+    cachedMcpConfig = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+  } catch {
+    cachedMcpConfig = { mcpServers: {} };
+  }
+  return cachedMcpConfig;
 }
 
 const LINEAR_AGENT_TOKENS_PATH = `${HOME}/.linear-agent-tokens.json`;

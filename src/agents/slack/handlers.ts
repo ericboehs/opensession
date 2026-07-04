@@ -88,6 +88,38 @@ import type { SlackSession, PendingAnswer } from "./state";
 
 const ALLOWED_USER_ID = process.env.ALLOWED_SLACK_USER_ID;
 
+// Cache admin MCP servers per session to avoid rebuilding identical tool objects
+// on every message. Invalidated when memory changes (detected via hash).
+const adminMcpServersCache = new Map<
+  string,
+  { tools: Record<string, any>; memoryHash: string }
+>();
+
+// Cache worktree existence checks per worktree dir (30s TTL)
+const worktreeExistsCache = new Map<string, { exists: boolean; expiresAt: number }>();
+
+// Cache thread context per channel+threadTs (30s TTL)
+const threadContextCache = new Map<string, { context: string; expiresAt: number }>();
+
+// Cached worktree existence check (TTL 30s) — avoids repeated fs.existsSync calls on every message
+function cachedWorktreeExists(dir: string): boolean {
+  const cached = worktreeExistsCache.get(dir);
+  if (cached && cached.expiresAt > Date.now()) return cached.exists;
+  const exists = existsSync(dir);
+  worktreeExistsCache.set(dir, { exists, expiresAt: Date.now() + 30000 });
+  return exists;
+}
+
+// Cached thread context (TTL 30s) — avoids refetching the same thread multiple times
+async function cachedFetchThreadContext(channel: string, threadTs: string): Promise<string> {
+  const cacheKey = `${channel}:${threadTs}`;
+  const cached = threadContextCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.context;
+  const context = await fetchThreadContext(channel, threadTs);
+  threadContextCache.set(cacheKey, { context, expiresAt: Date.now() + 30000 });
+  return context;
+}
+
 // Save the session and mirror claudeSessionId/lastActivity into the
 // branch-named session file (written by `wt new-slack`), so backstage can
 // dedupe the two into one session as soon as the id exists.
@@ -129,38 +161,19 @@ function branchExists(branch: string): boolean {
   }
 }
 
-async function generateBranchName(text: string): Promise<string> {
-  let baseName: string;
-  try {
-    const q = query({
-      prompt: `Generate a 1-3 word branch name (lowercase, hyphen-separated, no special chars) for this task: "${text.substring(0, 200)}". Output ONLY the branch name, nothing else.`,
-      options: {
-        model: "haiku",
-        maxTurns: 1,
-        cwd: DEFAULT_CWD,
-        allowedTools: [],
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
-        executable: "bun",
-      },
-    });
+function generateBranchName(text: string): string {
+  // Heuristic: take first 2-3 words, lowercased, hyphen-separated, no special chars
+  // Avoids a full Haiku query just for a branch name.
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "") // Remove special chars
+    .split(/\s+/) // Split on whitespace
+    .filter((w) => w.length > 0) // Remove empty strings
+    .slice(0, 3) // Take first 3 words
+    .join("-") // Hyphenate
+    .slice(0, 30); // Max 30 chars
 
-    let branchName = "";
-    for await (const msg of q) {
-      if (msg.type === "result" && (msg as any).subtype === "success") {
-        branchName = (msg as any).result || "";
-      }
-    }
-
-    baseName =
-      branchName
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9-]/g, "")
-        .slice(0, 30) || "slack-task";
-  } catch (e) {
-    console.error("[slack] Failed to generate branch name:", e);
-    baseName = "slack-task";
-  }
+  const baseName = words || "slack-task";
 
   // Deduplicate: if branch already exists, append a numeric suffix
   if (!branchExists(baseName)) return baseName;
@@ -691,7 +704,7 @@ export async function processMessage(
   // Recreate worktree if it was cleaned up (revived thread)
   if (
     session.worktreeDir &&
-    !existsSync(session.worktreeDir) &&
+    !cachedWorktreeExists(session.worktreeDir) &&
     session.branch
   ) {
     console.log(
@@ -809,7 +822,7 @@ export async function processMessage(
   // on the next one. With everything exhausted, fall back to the codex model
   // (DEFAULT_FALLBACK_MODEL) as the last resort.
   const triedAccountIds = new Set<string>();
-  let account = pickAccount(triedAccountIds, msg.userId);
+  let account = pickAccount(triedAccountIds, msg.userId, session.model);
   let limitExhausted = false;
 
   // --- Channel memory + self-management tools (interactive Slack only) -------
@@ -828,30 +841,39 @@ export async function processMessage(
       isPrivate: kind.isPrivate,
     };
     memoryAppend = await renderMemoryForPrompt(memCtx);
-    const isAdmin = !ALLOWED_USER_ID || msg.userId === ALLOWED_USER_ID;
-    adminMcpServers = {
-      "michael-admin": createAdminMcpServer({
-        ...memCtx,
-        createdBy: userName || msg.userId,
-        isAdmin,
-        threadTs: msg.threadTs,
-      }),
-      "michael-github": createGithubMcpServer({
-        requestedBy: msg.userId,
-        channel,
-        threadTs: msg.threadTs,
-      }),
-      "michael-sessions": createSessionsMcpServer({
-        createdBy: userName || msg.userId,
-        isAdmin,
-        currentSessionId: `slack-${sessionKey}`,
-      }),
-      "michael-humans": createHumansMcpServer({
-        sessionId: `slack-${sessionKey}`,
-        createdBy: userName || msg.userId,
-        isAdmin,
-      }),
-    };
+    const memoryHash = `${channel}:${msg.userId}:${memoryAppend}`.substring(0, 40); // Simple hash
+
+    // Check cache: reuse admin tools if memory hasn't changed
+    const cached = adminMcpServersCache.get(sessionKey);
+    if (cached && cached.memoryHash === memoryHash) {
+      adminMcpServers = cached.tools;
+    } else {
+      const isAdmin = !ALLOWED_USER_ID || msg.userId === ALLOWED_USER_ID;
+      adminMcpServers = {
+        "michael-admin": createAdminMcpServer({
+          ...memCtx,
+          createdBy: userName || msg.userId,
+          isAdmin,
+          threadTs: msg.threadTs,
+        }),
+        "michael-github": createGithubMcpServer({
+          requestedBy: msg.userId,
+          channel,
+          threadTs: msg.threadTs,
+        }),
+        "michael-sessions": createSessionsMcpServer({
+          createdBy: userName || msg.userId,
+          isAdmin,
+          currentSessionId: `slack-${sessionKey}`,
+        }),
+        "michael-humans": createHumansMcpServer({
+          sessionId: `slack-${sessionKey}`,
+          createdBy: userName || msg.userId,
+          isAdmin,
+        }),
+      };
+      adminMcpServersCache.set(sessionKey, { tools: adminMcpServers, memoryHash });
+    }
   } catch (e) {
     console.warn("[slack] failed to build admin tools / memory:", e);
   }
@@ -1122,9 +1144,9 @@ export async function processMessage(
   // Usage limit: sideline the account (if any) and rotate
   if (account) {
     triedAccountIds.add(account.id);
-    markExhausted(account.id);
+    markExhausted(account.id, session.model);
   }
-  const next = pickAccount(triedAccountIds, msg.userId);
+  const next = pickAccount(triedAccountIds, msg.userId, session.model);
   if (next && next.id !== account?.id) {
     account = next;
     console.warn(`[slack] Usage limit hit for ${sessionKey}; retrying on account ${next.name}`);
@@ -1285,7 +1307,7 @@ export async function handleMessageEvent(event: any): Promise<void> {
     let prompt: string;
 
     try {
-      branch = await generateBranchName(text);
+      branch = generateBranchName(text);
       worktreeDir = createWorktree(branch, user, text);
 
       prompt = `${userName} sent me a Slack message:
@@ -1448,7 +1470,7 @@ export async function handleMentionEvent(event: any): Promise<void> {
     // Fetch thread/channel context
     let context = "";
     if (thread_ts) {
-      context = await fetchThreadContext(channel, thread_ts);
+      context = await cachedFetchThreadContext(channel, thread_ts);
     }
 
     let prompt: string;
@@ -1521,7 +1543,7 @@ Please help with this request. Start by exploring the codebase to understand wha
   // requests and would leak into the session prompt.
   let context = "";
   if (thread_ts) {
-    context = await fetchThreadContext(channel, thread_ts);
+    context = await cachedFetchThreadContext(channel, thread_ts);
   }
 
   // Ask mode: a question/discussion — answer in-thread in the main checkout, no
