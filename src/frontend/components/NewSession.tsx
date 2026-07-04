@@ -143,6 +143,8 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
 
   // MCP servers: empty by default (minimal context), users can opt in for specific ones
   const [selectedMcpServers, setSelectedMcpServers] = useState<string[]>([]);
+  const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
+  const mcpPickerRef = useRef<HTMLDivElement>(null);
   const availableMcpServers = [
     "linear",
     "slack",
@@ -157,6 +159,18 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     "tinybird",
     "workos",
   ];
+
+  // Close MCP picker on outside click
+  useEffect(() => {
+    if (!mcpPickerOpen) return;
+    function onDown(e: MouseEvent) {
+      if (mcpPickerRef.current && !mcpPickerRef.current.contains(e.target as Node)) {
+        setMcpPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [mcpPickerOpen]);
 
   // "@"-mention file autocomplete against the selected repo's repo (no
   // session exists yet, so search by repo).
@@ -424,8 +438,8 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         </div>
         )}
 
-        {/* Advanced: MCP servers */}
-        {optionsVisible && (
+        {/* Advanced: MCP servers (desktop only; mobile uses footer icon) */}
+        {optionsVisible && !isPhone && (
         <div className="palette-advanced">
           <div className="palette-advanced-label">Connected services (optional)</div>
           <div className="palette-mcp-grid">
@@ -509,6 +523,53 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 <IconSliders size={24} />
               </button>
             )}
+            {/* MCP picker: mobile visible by default, desktop in the advanced section */}
+            <div className="palette-mcp-picker-container" ref={mcpPickerRef}>
+              <button
+                type="button"
+                className={`palette-icon-btn palette-mcp-picker-btn ${selectedMcpServers.length ? "is-on" : ""}`}
+                onClick={() => setMcpPickerOpen((v) => !v)}
+                disabled={creating}
+                title={`Connected services${selectedMcpServers.length ? ` (${selectedMcpServers.length})` : ""}`}
+                aria-label="Choose connected services"
+                aria-expanded={mcpPickerOpen}
+              >
+                {/* Simple plugs icon */}
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="6" cy="7" r="1.5" stroke="currentColor" strokeWidth="1.5" />
+                  <circle cx="18" cy="7" r="1.5" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M6 8.5v4.5a3 3 0 0 0 3 3h2v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M18 8.5v4.5a3 3 0 0 1-3 3h-2v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                {selectedMcpServers.length > 0 && (
+                  <span className="palette-mcp-picker-badge">{selectedMcpServers.length}</span>
+                )}
+              </button>
+              {mcpPickerOpen && (
+                <div className="palette-mcp-picker-popover">
+                  <div className="palette-mcp-picker-header">Connected services</div>
+                  <div className="palette-mcp-picker-grid">
+                    {availableMcpServers.map((mcp) => (
+                      <label key={mcp} className="palette-mcp-checkbox-compact">
+                        <input
+                          type="checkbox"
+                          checked={selectedMcpServers.includes(mcp)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedMcpServers((prev) => [...prev, mcp]);
+                            } else {
+                              setSelectedMcpServers((prev) => prev.filter((m) => m !== mcp));
+                            }
+                          }}
+                          disabled={creating}
+                        />
+                        <span>{mcp}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
             <button
               type="button"
               className="palette-icon-btn"
