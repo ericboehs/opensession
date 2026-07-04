@@ -1930,20 +1930,17 @@ export function SessionViewer({
 
 								{pending.map((p) => (
 									<div key={p.id} className="msg msg-user msg-sending">
+										{/* No name: the bubble is right-aligned, so authorship is
+										    already clear — just the transient status. */}
 										<div className="msg-label msg-label-user">
-											{/* One wrapping span so the label stays a single flex item
-											    (msg-label-user is row-reverse; bare siblings would flip). */}
-											<span>
-												{p.user || "You"} ·{" "}
-												<span className="msg-label-status">
-													{isBusy
-														? busySend === "steer"
-															? "steering…"
-															: busySend === "queue"
-																? "queueing…"
-																: "redirecting…"
-														: "sending…"}
-												</span>
+											<span className="msg-label-status">
+												{isBusy
+													? busySend === "steer"
+														? "Steering…"
+														: busySend === "queue"
+															? "Queueing…"
+															: "Redirecting…"
+													: "Sending…"}
 											</span>
 										</div>
 									{p.content && (
