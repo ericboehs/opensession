@@ -395,6 +395,9 @@ export function Composer({
 
   return (
     <div className="composer-wrap">
+      {/* Queued/steered messages fold out from behind the composer box —
+          a sibling flap tucked under its top edge, not a box-in-box. */}
+      {attached}
       <motion.div
         layout
         // Fuller rounding in the expanded state on phones so the box's corners
@@ -406,7 +409,6 @@ export function Composer({
         onDrop={handleDrop}
         onDragOver={(e) => canAttach && e.preventDefault()}
       >
-        {attached}
         <ImageThumbs images={imgs} onRemove={removeImage} disabled={disabled} />
         <FileChips files={fls} onRemove={removeFile} disabled={disabled} />
         <motion.div

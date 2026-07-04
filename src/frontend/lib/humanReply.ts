@@ -41,3 +41,7 @@ export function parseAttribution(content?: string): { name: string; body: string
   if (!m) return null;
   return { name: m[1].trim(), body: m[2] };
 }
+
+export function isGitHubAttribution(name?: string | null): boolean {
+  return name === "GitHub" || name === "GitHub (automation)";
+}
