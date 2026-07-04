@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
-import { parseHumanReply, parseAttribution } from "../lib/humanReply";
+import { parseHumanReply, parseAttribution, isGitHubAttribution } from "../lib/humanReply";
 import { useCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
 
@@ -88,6 +88,14 @@ export const MessageBubble = React.memo(function MessageBubble({
 	}, [entry.type, entry.content, humanReply]);
 	const displayContent = attribution ? attribution.body : entry.content;
 	const html = useMemo(() => renderMarkdown(displayContent), [displayContent]);
+
+	if (entry.type === "user" && attribution && isGitHubAttribution(attribution.name)) {
+		return (
+			<div className="msg msg-system">
+				<span className="msg-system-text">{displayContent}</span>
+			</div>
+		);
+	}
 
 	if (entry.type === "system") {
 		return (

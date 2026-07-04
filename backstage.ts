@@ -1049,6 +1049,10 @@ type QueueItem = {
 };
 const promptQueues: Map<string, QueueItem[]> = (g.__promptQueues ??= new Map());
 
+function isGitHubQueueItem(item?: QueueItem): boolean {
+	return item?.user === "GitHub" || item?.user === "GitHub (automation)";
+}
+
 // Steered messages (folded into a live run, delivered at the run's next turn
 // boundary) aren't in promptQueues — the drain would re-deliver them. But until
 // their turn lands they're invisible on reload, so we keep a display-only
@@ -1207,6 +1211,7 @@ function updateQueuedPrompt(
 	if (index < 0) return false;
 	const item = queue[index];
 	if (!item) return false;
+	if (isGitHubQueueItem(item)) return false;
 	item.content = content;
 	persistQueues();
 	broadcastQueue(sessionId);
@@ -1225,7 +1230,7 @@ function steerQueuedPrompt(
 	if (index < 0) return false;
 	const [item] = queue.splice(index, 1);
 	if (!item) return false;
-	if (Array.isArray(item.files) && item.files.length > 0) {
+	if (isGitHubQueueItem(item) || (Array.isArray(item.files) && item.files.length > 0)) {
 		queue.splice(index, 0, item);
 		return false;
 	}
