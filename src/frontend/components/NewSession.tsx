@@ -1,17 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, suggestBranch, type ModelOption } from "../lib/api";
+import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, suggestBranch, type ModelOption } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
-import { IconPaperclip, IconChevronDown, IconCheck, IconSliders } from "./icons";
+import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconPlug } from "./icons";
 import type { WSServerMessage } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { PaletteSelect } from "./PaletteSelect";
 import { ModelEffortSelect } from "./ModelEffortSelect";
+import { Menu } from "../ui/menu";
 
 interface Props {
   /** Close the palette (Esc, backdrop click, or after a create without "Create more"). */
@@ -141,26 +142,25 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const [showOptions, setShowOptions] = useState(false);
   const optionsVisible = !isPhone || showOptions;
 
-  // MCP servers: empty by default (minimal context), users can opt in for specific ones
+  // MCP servers: empty by default (minimal context), users can opt in for
+  // specific ones. The list comes from mcp-config.json via the connections
+  // API so it never drifts from what's actually installed.
   const [selectedMcpServers, setSelectedMcpServers] = useState<string[]>([]);
+  const [availableMcpServers, setAvailableMcpServers] = useState<string[]>([]);
+  useEffect(() => {
+    fetchConnections()
+      .then((c) => setAvailableMcpServers((c.mcpServers || []).map((s) => s.name)))
+      .catch(() => {});
+  }, []);
+  function toggleMcpServer(name: string, on: boolean) {
+    setSelectedMcpServers((prev) =>
+      on ? [...prev, name] : prev.filter((m) => m !== name),
+    );
+  }
+
+  // Phone-only sheet state (desktop uses a Menu popup instead).
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
   const mcpPickerRef = useRef<HTMLDivElement>(null);
-  const availableMcpServers = [
-    "linear",
-    "slack",
-    "stripe",
-    "plain",
-    "sentry",
-    "ahrefs",
-    "amplitude",
-    "brex",
-    "grafana",
-    "incident",
-    "tinybird",
-    "workos",
-  ];
-
-  // Close MCP picker on outside click
   useEffect(() => {
     if (!mcpPickerOpen) return;
     function onDown(e: MouseEvent) {
@@ -497,7 +497,44 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 <IconSliders size={24} />
               </button>
             )}
-            {/* Connected-services picker: a footer popover on every viewport */}
+            {/* Connected services: a Menu popup on desktop, a full-width sheet
+                on phones (a positioned popup is too cramped there). */}
+            {!isPhone ? (
+              <Menu.Root>
+                <Menu.Trigger
+                  type="button"
+                  className={`palette-icon-btn palette-mcp-picker-btn ${selectedMcpServers.length ? "is-on" : ""}`}
+                  disabled={creating}
+                  title={`Connected services${selectedMcpServers.length ? ` (${selectedMcpServers.length})` : ""}`}
+                  aria-label="Choose connected services"
+                >
+                  <IconPlug size={24} />
+                  {selectedMcpServers.length > 0 && (
+                    <span className="palette-mcp-picker-badge">{selectedMcpServers.length}</span>
+                  )}
+                </Menu.Trigger>
+                <Menu.Popup align="start" sideOffset={6} className="palette-select-menu">
+                  <Menu.Group>
+                    <Menu.GroupLabel className="pt-1.5">Connected services</Menu.GroupLabel>
+                    {availableMcpServers.map((mcp) => {
+                      const checked = selectedMcpServers.includes(mcp);
+                      return (
+                        <Menu.CheckboxItem
+                          key={mcp}
+                          checked={checked}
+                          closeOnClick={false}
+                          onCheckedChange={(on) => toggleMcpServer(mcp, on)}
+                          className={`palette-select-menu-item ${checked ? "is-selected" : ""}`}
+                        >
+                          <span className="palette-select-menu-label">{mcp}</span>
+                          {checked && <IconCheck className="palette-select-menu-check" size={17} />}
+                        </Menu.CheckboxItem>
+                      );
+                    })}
+                  </Menu.Group>
+                </Menu.Popup>
+              </Menu.Root>
+            ) : (
             <div className="palette-mcp-picker-container" ref={mcpPickerRef}>
               <button
                 type="button"
@@ -508,13 +545,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 aria-label="Choose connected services"
                 aria-expanded={mcpPickerOpen}
               >
-                {/* Simple plugs icon */}
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle cx="6" cy="7" r="1.5" stroke="currentColor" strokeWidth="1.5" />
-                  <circle cx="18" cy="7" r="1.5" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M6 8.5v4.5a3 3 0 0 0 3 3h2v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  <path d="M18 8.5v4.5a3 3 0 0 1-3 3h-2v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
+                <IconPlug size={24} />
                 {selectedMcpServers.length > 0 && (
                   <span className="palette-mcp-picker-badge">{selectedMcpServers.length}</span>
                 )}
@@ -528,13 +559,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                         <input
                           type="checkbox"
                           checked={selectedMcpServers.includes(mcp)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedMcpServers((prev) => [...prev, mcp]);
-                            } else {
-                              setSelectedMcpServers((prev) => prev.filter((m) => m !== mcp));
-                            }
-                          }}
+                          onChange={(e) => toggleMcpServer(mcp, e.target.checked)}
                           disabled={creating}
                         />
                         <span>{mcp}</span>
@@ -544,6 +569,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 </div>
               )}
             </div>
+            )}
             <button
               type="button"
               className="palette-icon-btn"

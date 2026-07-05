@@ -10543,8 +10543,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .palette-effort-icon span:nth-child(2) { height: 10px; }
 .palette-effort-icon span:nth-child(3) { height: 15px; }
 
-/* Connected-services picker (footer icon button + popover). The popover is a
-   full-width sheet above the footer on phones, an anchored popup on desktop. */
+/* Connected-services picker (footer icon button). Desktop opens a Menu popup
+   (palette-select-menu); the popover below is the phone-only full-width sheet. */
 .palette-mcp-picker-container {
 	position: relative;
 }
@@ -10573,11 +10573,10 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	justify-content: center;
 }
 .palette-mcp-picker-popover {
-	/* Desktop: anchored above the footer button. */
-	position: absolute;
-	bottom: calc(100% + 8px);
-	left: 0;
-	width: 240px;
+	position: fixed;
+	bottom: 60px;
+	left: 12px;
+	right: 12px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
 	border-radius: 12px;
@@ -10586,16 +10585,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	max-height: 50vh;
 	overflow-y: auto;
 	z-index: 1000;
-}
-@media (max-width: 720px) {
-	/* Phone: full-width sheet floating above the footer. */
-	.palette-mcp-picker-popover {
-		position: fixed;
-		bottom: 60px;
-		left: 12px;
-		right: 12px;
-		width: auto;
-	}
 }
 .palette-mcp-picker-header {
 	font-size: 11px;
@@ -10608,13 +10597,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .palette-mcp-picker-grid {
 	display: grid;
-	grid-template-columns: 1fr 1fr;
+	grid-template-columns: 1fr;
 	gap: 4px;
-}
-@media (max-width: 720px) {
-	.palette-mcp-picker-grid {
-		grid-template-columns: 1fr;
-	}
 }
 .palette-mcp-checkbox-compact {
 	display: flex;

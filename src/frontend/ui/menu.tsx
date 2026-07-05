@@ -99,6 +99,17 @@ function RadioItem({
 	);
 }
 
+function CheckboxItem({
+	className,
+	...props
+}: Omit<React.ComponentProps<typeof BaseMenu.CheckboxItem>, "className"> & {
+	className?: string;
+}) {
+	return (
+		<BaseMenu.CheckboxItem {...props} className={cn(itemClasses, className)} />
+	);
+}
+
 function Separator({ className }: { className?: string }) {
 	return <BaseMenu.Separator className={cn("my-2 h-px bg-line", className)} />;
 }
@@ -128,4 +139,5 @@ export const Menu = {
 	RadioGroup: BaseMenu.RadioGroup,
 	RadioItem,
 	RadioItemIndicator: BaseMenu.RadioItemIndicator,
+	CheckboxItem,
 };
