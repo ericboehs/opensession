@@ -485,6 +485,11 @@ function firstMessageActorType(thread: any): string | null {
   return messages[0].actor?.__typename || null;
 }
 
+/** Total timeline entries of any kind (messages, links, label/status changes). */
+function threadEntryCount(thread: any): number {
+  return (thread?.timelineEntries?.edges || []).length;
+}
+
 /**
  * Route a new ticket, then fire the automation event bus.
  *
@@ -507,14 +512,23 @@ async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<v
   if (!hasSubscriber) return;
 
   // Outbound follow-ups fire thread_created too: when a teammate emails a
-  // customer on a done thread, Plain's state machine spins up a fresh linked
-  // thread — same event, and thread.createdBy is the state machine either way.
-  // The first message's actor is what separates a real inbound ticket from an
-  // agent follow-up, but that entry can land up to ~a minute after the webhook,
-  // so poll for it. No message after the wait → fail open and triage (never
-  // drop a real ticket on API lag).
+  // customer on a done thread, or the Linear integration links a thread and
+  // sets it to "close the loop", Plain spins up a fresh thread — same event,
+  // and thread.createdBy is the state machine either way. Two outbound shapes
+  // to reject:
+  //   1. First message is a teammate/bot (UserActor/MachineUserActor).
+  //   2. No customer message at all — the thread was created by a Linear link
+  //      / status change and any reply is outbound. The outbound EmailEntry can
+  //      lag the webhook by MINUTES (seen: 147s), longer than we poll, so we
+  //      can't wait for it. But a genuine inbound ticket opens WITH the
+  //      customer's message as its genesis entry — so a thread that already has
+  //      OTHER activity (links, labels, status) yet still no customer/teammate
+  //      message after a short grace is outbound, not a ticket.
+  // A truly empty thread is API lag on a real ticket: keep polling, then fail
+  // open and triage (never drop a real ticket).
   let full: any = null;
   let firstActor: string | null = null;
+  let outboundNoCustomer = false;
   for (let attempt = 0; attempt < 8; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, 15_000));
     try {
@@ -522,11 +536,23 @@ async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<v
     } catch {}
     firstActor = firstMessageActorType(full);
     if (firstActor) break;
+    // No message yet, but the thread already carries non-message activity
+    // (link/label/status) after ~30s → outbound / close-the-loop, not a ticket.
+    if (attempt >= 2 && threadEntryCount(full) > 0) {
+      outboundNoCustomer = true;
+      break;
+    }
   }
-  if (firstActor === "UserActor" || firstActor === "MachineUserActor") {
+  if (
+    outboundNoCustomer ||
+    firstActor === "UserActor" ||
+    firstActor === "MachineUserActor"
+  ) {
+    const why = outboundNoCustomer
+      ? "no customer message — outbound / close-the-loop thread"
+      : `opened by an outbound ${firstActor === "UserActor" ? "teammate" : "bot"} message`;
     console.log(
-      `[plain] Skipping auto-triage for thread ${thread.id} — opened by an outbound ` +
-        `${firstActor === "UserActor" ? "teammate" : "bot"} message, not a customer ticket`
+      `[plain] Skipping auto-triage for thread ${thread.id} — ${why}, not a customer ticket`
     );
     return;
   }
