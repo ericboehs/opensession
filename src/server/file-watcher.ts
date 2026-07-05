@@ -20,6 +20,25 @@ interface WatchState {
 const watches: Map<string, WatchState> = ((globalThis as any).__transcriptWatches ??=
   new Map());
 
+// Server-side hook: backstage registers a listener so appended entries can
+// reconcile state that mirrors the transcript (steer receipts — a receipt
+// whose message has landed must clear NOW, not at run end, or it shows as
+// still-queued and a mid-run restart would re-deliver it). On globalThis so
+// hot reloads re-register cleanly; read at call time.
+type AppendListener = (sessionId: string, entries: TranscriptEntry[]) => void;
+export function setTranscriptAppendListener(fn: AppendListener): void {
+  (globalThis as any).__transcriptAppendListener = fn;
+}
+function notifyAppendListener(sessionId: string | undefined, entries: TranscriptEntry[]) {
+  if (!sessionId || entries.length === 0) return;
+  const fn = (globalThis as any).__transcriptAppendListener as AppendListener | undefined;
+  try {
+    fn?.(sessionId, entries);
+  } catch {
+    // Reconcile is best-effort; never let it break transcript delivery.
+  }
+}
+
 function getMtime(path: string): number {
   try {
     return statSync(path).mtimeMs;
@@ -50,6 +69,8 @@ function pollFile(state: WatchState) {
   state.lastByteOffset = newOffset;
 
   if (entries.length === 0) return;
+
+  notifyAppendListener(state.sessionId, entries);
 
   const msg = JSON.stringify({
     type: "transcript_append",

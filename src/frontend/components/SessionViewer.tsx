@@ -215,6 +215,10 @@ export function SessionViewer({
 	// the "load earlier history" affordance at the top of the conversation.
 	const [historyTruncated, setHistoryTruncated] = useState(false);
 	const [loadingHistory, setLoadingHistory] = useState(false);
+	// Scroll anchor for "Load earlier history": older entries prepend above the
+	// viewport, so keep the reader on the same content by offsetting scrollTop
+	// by the height the prepended history added.
+	const historyAnchor = useRef<{ height: number; top: number } | null>(null);
 	// The composer draft lives INSIDE Composer (uncontrolled mode) so keystrokes
 	// don't re-render this whole component; the text arrives via handleSend.
 	// Same fix as the CommentableDiff draft-text gotcha.
@@ -816,6 +820,18 @@ export function SessionViewer({
 	useLayoutEffect(() => {
 		relayout();
 	}, [entries, streamText, queued, visibleSteered, pending, relayout]);
+
+	// "Load earlier history" prepends the older transcript above the viewport:
+	// restore the reader to the content they were on by adding the prepended
+	// height to scrollTop. Declared after relayout() so this write wins the
+	// paint. Layout effect: adjusting before paint avoids a jump-to-top flash.
+	useLayoutEffect(() => {
+		const anchor = historyAnchor.current;
+		const el = messagesRef.current;
+		if (!anchor || !el) return;
+		historyAnchor.current = null;
+		el.scrollTop = el.scrollHeight - anchor.height + anchor.top;
+	}, [entries, messagesRef]);
 
 	// When a turn finishes, release the spacer so the layout settles back.
 	const wasBusyRef = useRef(false);
@@ -1930,6 +1946,12 @@ export function SessionViewer({
 												className="load-history-btn"
 												disabled={loadingHistory}
 												onClick={() => {
+													const el = messagesRef.current;
+													if (el)
+														historyAnchor.current = {
+															height: el.scrollHeight,
+															top: el.scrollTop,
+														};
 													setLoadingHistory(true);
 													send({ type: "load_history", sessionId: session.id });
 												}}

@@ -465,7 +465,10 @@ export function Composer({
         layout
         // Fuller rounding in the expanded state on phones so the box's corners
         // don't read as square against the iPhone's screen rounding; pill when
-        // collapsed. Desktop keeps the tighter 16px.
+        // collapsed. Desktop keeps the tighter 16px. initial={false}: adopt the
+        // target radius instantly on mount — otherwise Motion animates from the
+        // stylesheet value on load, a visible radius morph.
+        initial={false}
         animate={{ borderRadius: minimized ? 999 : isPhone ? 22 : 16 }}
         transition={composerMorph}
         className={`composer ${disabled ? "composer-disabled" : ""} ${minimized ? "composer-min" : ""}`}
