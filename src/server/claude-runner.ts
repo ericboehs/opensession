@@ -4,7 +4,12 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFi
 import { readMcpConfig, withDynamicCredentials } from "./connections";
 import { getAgentAwsEnv } from "./aws-creds";
 import { audit, summarizeText } from "./audit";
-import { pickAccount, markExhausted, type ClaudeAccount } from "./claude-accounts";
+import {
+  pickAccount,
+  getUsableAccountById,
+  markExhausted,
+  type ClaudeAccount,
+} from "./claude-accounts";
 import { cleanPlainToolInput } from "./shared/note-style";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
@@ -226,6 +231,7 @@ export interface ActiveRunRecord {
   confirmTools?: Record<string, string>; // per-run human-confirmed tools, preserved across resume
   aws?: boolean; // whether to inject AWS creds, preserved across resume
   model?: string; // per-session model, preserved across resume (decides the provider)
+  accountId?: string; // pinned Claude subscription, preserved across resume
   fallbackModel?: string; // usage-limit fallback policy, preserved across resume
   kind?: string;
   startedAt: string;
@@ -491,6 +497,12 @@ export async function* runClaude(opts: {
   user?: string;
   /** Usage-limit fallback model chosen by the dispatcher; journaled for resume. */
   fallbackModel?: string;
+  /**
+   * Pinned subscription (claude-accounts id) for this session. Preferred when
+   * it's usable; falls back to the normal pool pick otherwise, and rotates into
+   * the pool on exhaustion. Journaled so a resume keeps the pin.
+   */
+  accountId?: string;
   journal?: { bksSessionId?: string; kind?: string };
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
@@ -748,7 +760,12 @@ export async function* runClaude(opts: {
     // one until nothing eligible is left. With no pool configured, fall back
     // to the legacy one-shot credentials-file switch (~/.claude/accounts).
     const triedAccountIds = new Set<string>();
-    let account: ClaudeAccount | undefined = pickAccount(triedAccountIds, user);
+    // A session-pinned subscription wins the first pick when it's usable; the
+    // normal pool pick (personal-first, shared fallback) covers the unpinned
+    // case and takes over once the pin is exhausted (rotateAfterLimit below).
+    let account: ClaudeAccount | undefined =
+      (opts.accountId ? getUsableAccountById(opts.accountId) : undefined) ??
+      pickAccount(triedAccountIds, user);
     let legacySwitched = false;
 
     const rotateAfterLimit = (): string | undefined => {
@@ -1057,6 +1074,7 @@ export async function* runClaude(opts: {
           confirmTools,
           aws,
           model: opts.model,
+          accountId: opts.accountId,
           kind: journal?.kind,
           startedAt: new Date().toISOString(),
         });

@@ -282,6 +282,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       archivedReason: data.archivedReason,
       plainThreadId: data.plainThreadId,
       model: data.model,
+      accountId: data.accountId,
       codexThreadId: data.codexThreadId,
       lastEngineProvider: data.lastEngineProvider,
       modelHistory: data.modelHistory,

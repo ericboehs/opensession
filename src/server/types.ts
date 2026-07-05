@@ -57,6 +57,13 @@ export interface UnifiedSession {
   plainThreadId?: string;
   /** Model id for runs in this session; unset = default (MICHAEL_MODEL). */
   model?: string;
+  /**
+   * Pinned Claude subscription (claude-accounts id) for runs in this session.
+   * Unset = auto (personal-sub-first, shared-pool fallback). Claude models only;
+   * the pinned account is preferred and the pool is still the fallback when it's
+   * exhausted, so a pin never hard-fails a run.
+   */
+  accountId?: string;
   /** Codex thread id, when this session has run on a codex-provider model. */
   codexThreadId?: string;
   /** Provider whose engine last drove a run — lets the next run detect an
@@ -162,6 +169,7 @@ export interface BackstageSessionFile {
 
   plainThreadId?: string; // Plain thread this session is triaging
   model?: string; // model id for this session's runs; unset = default
+  accountId?: string; // pinned Claude subscription (claude-accounts id); unset = auto pool
   codexThreadId?: string; // codex thread id once the session has run on a codex model
   /** Provider whose engine last actually drove a run in this session. Lets the
    *  next run detect an in-place cross-provider switch (Claude↔Codex) and hand

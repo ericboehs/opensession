@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { ModelOption, FileMention } from "../lib/api";
+import type { ModelOption, FileMention, ClaudeAccountOption } from "../lib/api";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft } from "../lib/drafts";
 import {
@@ -76,6 +76,11 @@ interface Props {
    */
   effort?: string;
   onEffortChange?: (effort: string) => void;
+  /** Pinnable Claude subscriptions + current pin, for the model pill's
+   *  Subscription submenu. Empty/omitted hides it (e.g. Codex sessions). */
+  accounts?: ClaudeAccountOption[];
+  accountId?: string;
+  onAccountChange?: (accountId: string) => void;
   /**
    * Session goal (pinned via /goal, rides along with every prompt). When
    * `onSetGoal` is wired, a target button lets you set/clear it inline; it lights
@@ -214,6 +219,9 @@ export function Composer({
   modelTitle,
   effort,
   onEffortChange,
+  accounts,
+  accountId,
+  onAccountChange,
   goal,
   onSetGoal,
   leftExtra,
@@ -660,6 +668,9 @@ export function Composer({
                   modelTitle={modelTitle}
                   effort={effort}
                   onEffortChange={onEffortChange}
+                  accounts={accounts}
+                  accountId={accountId}
+                  onAccountChange={onAccountChange}
                   disabled={disabled}
                 />
               </motion.div>

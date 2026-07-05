@@ -87,10 +87,17 @@ export interface RunAgentOpts {
    * Model to switch to when the primary model dies on usage limits with no
    * account left in its pool (claude-runner/codex-runner rotate their own
    * account pools first — this fires only once a whole pool is exhausted).
-   * Cross-provider fallback starts a fresh engine session: conversation
-   * history doesn't carry over, but the cwd/worktree state does.
+   * Cross-provider fallback starts a fresh native engine session. The previous
+   * engine's internal history cannot carry over, so the runner injects a recent
+   * transcript handoff when one is available; cwd/worktree state carries over.
    */
   fallbackModel?: string;
+  /**
+   * Pinned Claude subscription (claude-accounts id) for this session. Flows to
+   * runClaude, which prefers it and falls back to the pool on exhaustion.
+   * Claude only — Codex has its own account pool. Journaled for resume.
+   */
+  accountId?: string;
   journal?: { bksSessionId?: string; kind?: string };
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
@@ -397,6 +404,7 @@ export function resumeInterruptedRuns(
             confirmTools: run.confirmTools,
             aws: run.aws,
             fallbackModel: run.fallbackModel,
+            accountId: run.accountId,
             journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-rerun` },
             onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
           })) {
@@ -433,6 +441,7 @@ export function resumeInterruptedRuns(
           confirmTools: run.confirmTools,
           aws: run.aws,
           fallbackModel: run.fallbackModel,
+          accountId: run.accountId,
           journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
           onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
         })) {

@@ -279,6 +279,7 @@ import {
 	setAccountOwner,
 	refreshAllUsage,
 	startUsagePoller,
+	type ClaudeAccountPublic,
 } from "./src/server/claude-accounts";
 import { startWebhookServer } from "./src/server/webhook-server";
 import type { AgentModule } from "./src/agents/types";
@@ -2105,6 +2106,9 @@ async function runSessionPromptInner(
 		cwd,
 		mode: session.mode,
 		model: session.model,
+		// Pinned subscription for this session (claude-runner prefers it, pool
+		// fallback on exhaustion). Ignored by Codex models.
+		accountId: session.accountId,
 		// When the pool is exhausted on the primary model, drop to a fallback
 		// rather than dead-ending. Fable's weekly cap is separate from general
 		// capacity, so a spent-Fable session resumes on Sonnet in-place.
@@ -2370,6 +2374,8 @@ function handleSlashCommand(
 		!text.startsWith("/goal") &&
 		!text.startsWith("/loop") &&
 		!text.startsWith("/model") &&
+		text !== "/sub" &&
+		!text.startsWith("/sub ") &&
 		text !== "/help"
 	) {
 		return null;
@@ -2390,6 +2396,9 @@ function handleSlashCommand(
 			"/loop stop — stop the loop",
 			"/model — show the session's model and what's available",
 			"/model <name> — switch model (e.g. /model opus, /model gpt-5.5)",
+			"/sub — show the session's pinned Claude subscription and what's available",
+			"/sub <name> — pin a specific subscription for this session's runs",
+			"/sub auto — back to automatic (personal-first, shared-pool fallback)",
 		].join("\n");
 	}
 
@@ -2436,6 +2445,72 @@ function handleSlashCommand(
 					: " Heads up: this hands the wheel back to Claude on the next prompt. Claude resumes its own earlier history (if any) and gets a transcript handoff of the turns Codex ran in between."
 				: "")
 		);
+	}
+
+	// Pin (or clear) the Claude subscription used for this session's runs. Like
+	// /model, it persists on the session, broadcasts to every viewer, and applies
+	// from the next prompt; unlike /model it's a preference the runner falls back
+	// off when the pinned account is exhausted (never a hard requirement).
+	if (text === "/sub" || text === "/sub show" || text === "/sub list") {
+		const accounts = listAccountsPublic();
+		const current = session.accountId
+			? accounts.find((a) => a.id === session.accountId)
+			: null;
+		const line = (a: ClaudeAccountPublic) =>
+			`${a.id === session.accountId ? "• " : "  "}${a.name}` +
+			`${a.owner ? ` (personal — ${a.owner})` : " (pool)"}` +
+			`${a.usable ? "" : " — exhausted"}`;
+		return [
+			`Subscription: ${current ? current.name : "auto (personal-first, pool fallback)"}`,
+			"",
+			"Available (set with /sub <name>, or /sub auto to unpin):",
+			...accounts.map(line),
+		].join("\n");
+	}
+	if (
+		text === "/sub auto" ||
+		text === "/sub clear" ||
+		text === "/sub none" ||
+		text === "/sub default"
+	) {
+		touchBackstageSession(session.id, { accountId: undefined });
+		broadcastToSession(session.id, {
+			type: "subscription_changed",
+			sessionId: session.id,
+			accountId: null,
+			name: null,
+			by: user,
+		});
+		return "Subscription set to auto (personal-first, shared-pool fallback). Applies from the next prompt.";
+	}
+	if (text.startsWith("/sub ")) {
+		const input = text.slice("/sub ".length).trim();
+		const accounts = listAccountsPublic();
+		const match =
+			accounts.find((a) => a.id === input) ||
+			accounts.find((a) => a.name.toLowerCase() === input.toLowerCase());
+		if (!match) {
+			return [
+				`Unknown subscription "${input}". Available:`,
+				...accounts.map((a) => `  ${a.name}${a.owner ? ` (personal — ${a.owner})` : " (pool)"}`),
+			].join("\n");
+		}
+		touchBackstageSession(session.id, { accountId: match.id });
+		broadcastToSession(session.id, {
+			type: "subscription_changed",
+			sessionId: session.id,
+			accountId: match.id,
+			name: match.name,
+			by: user,
+		});
+		const codexNote =
+			providerFor(session.model) === "codex"
+				? " Note: this session is on a Codex model, which uses its own accounts — the pin applies when you switch back to a Claude model."
+				: "";
+		const exhaustedNote = match.usable
+			? ""
+			: " Heads up: this subscription is currently exhausted, so runs fall back to the pool until it resets.";
+		return `Subscription pinned to ${match.name}. Applies from the next prompt.${codexNote}${exhaustedNote}`;
 	}
 
 	if (text === "/goal" || text === "/goal show") {

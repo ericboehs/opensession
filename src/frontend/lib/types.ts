@@ -107,6 +107,8 @@ export interface UnifiedSession {
 	};
 	aliasIds?: string[];
 	model?: string;
+	/** Pinned Claude subscription (claude-accounts id); unset = auto pool. */
+	accountId?: string;
 	codexThreadId?: string;
 	modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
 	linearIssue?: { identifier: string; title: string; url?: string };
@@ -367,6 +369,13 @@ export type WSServerMessage =
 	  }
 	| { type: "notice"; sessionId?: string; message: string }
 	| { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string }
+	| {
+			type: "subscription_changed";
+			sessionId: string;
+			accountId: string | null;
+			name: string | null;
+			by?: string;
+	  }
 	| {
 			type: "queue_update";
 			sessionId: string;

@@ -817,6 +817,30 @@ export async function fetchModels(): Promise<{
 	});
 }
 
+/** Trimmed Claude subscription shape for the per-session subscription picker. */
+export interface ClaudeAccountOption {
+	id: string;
+	name: string;
+	/** Personal-sub owner, if any (else it's a shared-pool account). */
+	owner?: string;
+	/** False when the account is currently exhausted / over its cap. */
+	usable: boolean;
+}
+
+export async function fetchClaudeAccounts(): Promise<ClaudeAccountOption[]> {
+	try {
+		const data = await request<{ accounts?: any[] }>("/claude-accounts");
+		return (data?.accounts ?? []).map((a) => ({
+			id: a.id,
+			name: a.name,
+			owner: a.owner || undefined,
+			usable: a.usable !== false,
+		}));
+	} catch {
+		return [];
+	}
+}
+
 export async function fetchAutomations() {
 	return request<any>("/automations", {
 		label: "Failed to fetch automations",

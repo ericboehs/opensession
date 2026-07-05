@@ -1,5 +1,5 @@
 import React from "react";
-import type { ModelOption } from "../lib/api";
+import type { ModelOption, ClaudeAccountOption } from "../lib/api";
 import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { IconCheck, IconChevronRight } from "./icons";
@@ -22,6 +22,16 @@ type Props = {
 	/** When effort isn't wired, the menu is just the model list. */
 	effort?: string;
 	onEffortChange?: (effort: string) => void;
+	/**
+	 * Pinnable Claude subscriptions. When present (and onAccountChange is wired),
+	 * a "Subscription" submenu lets this session force a specific account; "" =
+	 * auto (personal-first, pool fallback). Only meaningful for Claude models —
+	 * callers pass an empty list for Codex sessions to hide the submenu.
+	 */
+	accounts?: ClaudeAccountOption[];
+	/** Pinned account id; "" / undefined = auto. */
+	accountId?: string;
+	onAccountChange?: (accountId: string) => void;
 	disabled?: boolean;
 	title?: string;
 	className?: string;
@@ -56,6 +66,9 @@ export function ModelEffortSelect({
 	modelTitle,
 	effort,
 	onEffortChange,
+	accounts,
+	accountId,
+	onAccountChange,
 	disabled,
 	title,
 	className,
@@ -64,6 +77,11 @@ export function ModelEffortSelect({
 	const modelLabel = shortModelLabel(effectiveModel, models);
 	const effortLabel = EFFORTS.find((e) => e.id === effort)?.label ?? "High";
 	const hasEffort = !!onEffortChange;
+	const hasSubscription = !!onAccountChange && !!accounts && accounts.length > 0;
+	const currentAccount = accountId
+		? accounts?.find((a) => a.id === accountId)
+		: undefined;
+	const subscriptionLabel = currentAccount ? currentAccount.name : "Auto";
 
 	// "" (default) first, labeled with the default model's name, then the rest.
 	const modelOptions = [
@@ -133,6 +151,50 @@ export function ModelEffortSelect({
 											className={`palette-select-menu-item ${selected ? "is-selected" : ""}`}
 										>
 											<span className="palette-select-menu-label">{e.label}</span>
+											{selected && (
+												<IconCheck className="palette-select-menu-check" size={17} />
+											)}
+										</Menu.Item>
+									);
+								})}
+							</Menu.Popup>
+						</Menu.SubmenuRoot>
+					</>
+				)}
+				{hasSubscription && (
+					<>
+						{!hasEffort && <Menu.Separator className="my-1" />}
+						<Menu.SubmenuRoot>
+							<Menu.SubmenuTrigger className="palette-select-menu-item">
+								<span className="palette-select-menu-label">Subscription</span>
+								<span className="flex flex-none items-center gap-1 text-dim">
+									{subscriptionLabel}
+									<IconChevronRight className="palette-select-menu-check" size={17} />
+								</span>
+							</Menu.SubmenuTrigger>
+							<Menu.Popup className="palette-select-menu">
+								<Menu.Item
+									onClick={() => onAccountChange!("")}
+									className={`palette-select-menu-item ${!accountId ? "is-selected" : ""}`}
+								>
+									<span className="palette-select-menu-label">Auto</span>
+									{!accountId && (
+										<IconCheck className="palette-select-menu-check" size={17} />
+									)}
+								</Menu.Item>
+								{accounts!.map((a) => {
+									const selected = a.id === accountId;
+									return (
+										<Menu.Item
+											key={a.id}
+											onClick={() => onAccountChange!(a.id)}
+											className={`palette-select-menu-item ${selected ? "is-selected" : ""}`}
+										>
+											<span className="palette-select-menu-label">
+												{a.name}
+												{a.owner ? ` · ${a.owner}` : ""}
+												{a.usable ? "" : " · exhausted"}
+											</span>
 											{selected && (
 												<IconCheck className="palette-select-menu-check" size={17} />
 											)}

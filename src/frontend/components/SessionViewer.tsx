@@ -24,11 +24,13 @@ import {
 	deleteSessionApi,
 	archiveSessionApi,
 	fetchModels,
+	fetchClaudeAccounts,
 	fetchFileMentions,
 	fetchSkillMentions,
 	promoteChatApi,
 	type WorkspaceMediaItem,
 	type ModelOption,
+	type ClaudeAccountOption,
 } from "../lib/api";
 import { Composer } from "./Composer";
 import { SchedulePromptButton } from "./SchedulePrompt";
@@ -392,6 +394,9 @@ export function SessionViewer({
 	const [model, setModel] = useState(session.model || "");
 	const [models, setModels] = useState<ModelOption[]>([]);
 	const [defaultModel, setDefaultModel] = useState("");
+	// Pinnable Claude subscriptions + this session's pin ("" = auto pool).
+	const [accounts, setAccounts] = useState<ClaudeAccountOption[]>([]);
+	const [accountId, setAccountId] = useState(session.accountId || "");
 	// Reasoning effort — a composer control mirroring the new-session palette.
 	// Threaded through to the runner (forward-compatible; not yet enforced).
 	const [effort, setEffort] = useState("high");
@@ -412,10 +417,16 @@ export function SessionViewer({
 				setDefaultModel(m.default);
 			})
 			.catch(() => {});
+		fetchClaudeAccounts()
+			.then(setAccounts)
+			.catch(() => {});
 	}, []);
 	useEffect(() => {
 		setModel(session.model || "");
 	}, [session.id, session.model]);
+	useEffect(() => {
+		setAccountId(session.accountId || "");
+	}, [session.id, session.accountId]);
 
 	// Keep the pin star in sync with the store (changes can come from the tab bar
 	// or the Home screen) and reset when switching sessions.
@@ -660,6 +671,12 @@ export function SessionViewer({
 							},
 						]);
 					}
+					break;
+				case "subscription_changed":
+					// Keep every viewer's Subscription submenu in sync; the /sub
+					// notice in the transcript carries the human-readable detail.
+					if (msg.sessionId !== session.id) break;
+					setAccountId(msg.accountId || "");
 					break;
 				case "notice":
 					setEntries((prev) => [
@@ -1284,6 +1301,23 @@ export function SessionViewer({
 			type: "prompt",
 			sessionId: session.id,
 			content: `/model ${target}`,
+			user: getCurrentUser(),
+		});
+	}
+
+	// Pin (or clear, "" = auto) the Claude subscription for this session's runs.
+	// Same shape as the model switch: the /sub slash command persists, notices,
+	// and broadcasts subscription_changed to every viewer.
+	function handleAccountChange(next: string) {
+		if (next === (accountId || "")) return;
+		setAccountId(next);
+		const target = next ? accounts.find((a) => a.id === next) : null;
+		send({
+			type: "prompt",
+			sessionId: session.id,
+			// The name reads better in the transcript; the command matches by
+			// id first, then case-insensitive name, so either form works.
+			content: next ? `/sub ${target?.name || next}` : "/sub auto",
 			user: getCurrentUser(),
 		});
 	}
@@ -2114,6 +2148,20 @@ export function SessionViewer({
 									}
 									effort={effort}
 									onEffortChange={setEffort}
+									// Subscription pinning is a backstage-session affordance
+									// (routed through /sub), and only meaningful on Claude
+									// models — Codex has its own account pool.
+									accounts={
+										session.source === "backstage" && !isCodexModel
+											? accounts
+											: undefined
+									}
+									accountId={accountId}
+									onAccountChange={
+										session.source === "backstage"
+											? handleAccountChange
+											: undefined
+									}
 									goal={currentGoal}
 									onSetGoal={
 										session.source === "backstage" ? handleSetGoal : undefined

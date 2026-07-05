@@ -403,6 +403,19 @@ export function listAccountsPublic(): ClaudeAccountPublic[] {
   return readStore().map(toPublic);
 }
 
+/**
+ * A session can pin a specific subscription (see BackstageSessionFile.accountId).
+ * Return it when it exists and is currently usable; undefined when it's gone or
+ * exhausted, so the caller falls back to the normal pool pick (a pin is a
+ * preference, never a hard requirement that could wedge a run).
+ */
+export function getUsableAccountById(id: string): ClaudeAccount | undefined {
+  const a = readStore().find((x) => x.id === id);
+  if (!a || isExhausted(a.id)) return undefined;
+  const fiveHour = usageCache.get(a.id)?.fiveHour?.utilization ?? 0;
+  return fiveHour < EXHAUSTED_UTILIZATION ? a : undefined;
+}
+
 export function hasAccounts(): boolean {
   return readStore().length > 0;
 }
