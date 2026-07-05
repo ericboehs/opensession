@@ -16,6 +16,7 @@ import {
   cancelRun,
   steerRun,
   interruptRun,
+  stopRunTurn,
   interruptAndSteerRun,
   takeInterruptedRuns,
   activeRunCount,
@@ -281,6 +282,22 @@ export function interruptAgentRun(
   for (const id of ids) {
     if (!id) continue;
     if (interruptRun(id)) return true;
+  }
+  return false;
+}
+
+/**
+ * Esc-style stop on an in-flight Claude run: discard undelivered steers and
+ * abort the current turn so the run winds down gracefully at the boundary.
+ * False = nothing Esc-stoppable (codex runs, external processes) — caller
+ * falls back to the hard cancel.
+ */
+export function stopAgentRunTurn(
+  ids: Array<string | null | undefined>
+): boolean {
+  for (const id of ids) {
+    if (!id) continue;
+    if (stopRunTurn(id)) return true;
   }
   return false;
 }

@@ -66,6 +66,7 @@ import {
 	cancelAgentRun,
 	steerAgentRun,
 	interruptAgentRun,
+	stopAgentRunTurn,
 	interruptAndSteerAgentRun,
 	resumeInterruptedRuns,
 	RESUME_CONTINUATION_PROMPT,
@@ -1063,6 +1064,13 @@ function isGitHubQueueItem(item?: QueueItem): boolean {
 const steeredReceipts: Map<string, QueueItem[]> = (g.__steeredReceipts ??=
 	new Map());
 
+// Sessions whose run the user explicitly stopped. The queue drain skips these:
+// without the flag, stop would requeue the held steers and drainQueue would
+// immediately deliver them into a fresh run — "stop then instantly resume".
+// Cleared by the next explicit action (any new runSessionPrompt). In-memory
+// only: after a real restart a stop is stale anyway, and boot re-drains.
+const stoppedSessions: Set<string> = (g.__stoppedSessions ??= new Set());
+
 // Both maps are persisted to disk so a real restart/crash (not just a hot
 // reload, which keeps the globalThis maps) doesn't silently drop queued or
 // just-steered messages. Restored + re-drained on boot (restorePromptQueues).
@@ -1565,6 +1573,9 @@ function broadcastQueue(sessionId: string) {
 async function drainQueue(sessionId: string): Promise<void> {
 	let queue;
 	while ((queue = promptQueues.get(sessionId)) && queue.length > 0) {
+		// The user pressed stop: leave the queue visible-but-parked until their
+		// next explicit action instead of restarting the run they just stopped.
+		if (stoppedSessions.has(sessionId)) return;
 		// A racing run can own the session by the time we loop again (e.g. our
 		// last batch lost the start race and got re-queued) — hand off to the
 		// idle-watcher instead of busy-spinning runs that immediately bounce.
@@ -1865,6 +1876,8 @@ async function runSessionPrompt(
 	images?: ImageInput[],
 	rawFiles?: unknown,
 ): Promise<void> {
+	// Any explicit new run lifts a user stop — the queue may drain again.
+	stoppedSessions.delete(sessionId);
 	// Synchronously reserve the session BEFORE the awaits below (worktree revive,
 	// title gen, upload staging) register the run with the runner — otherwise two
 	// racing prompts both pass isAgentSessionBusy and the loser's message is
@@ -6138,19 +6151,35 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					case "cancel": {
 						const data = ws.data;
 						if (data.watchingSessionId) {
-							const session = findSession(data.watchingSessionId);
+							const sessionId = data.watchingSessionId;
+							const session = findSession(sessionId);
+							// Park the queue until the user's next explicit action —
+							// otherwise the drain would deliver the requeued steers into a
+							// fresh run the moment the stopped one winds down.
+							stoppedSessions.add(sessionId);
 							if (session) {
-								cancelAgentRun(
+								// Esc-style: gracefully interrupt the current turn (the run
+								// winds down at the forced boundary with a clean transcript).
+								// Hard cancel only for runs with no interrupt support (codex,
+								// external processes); the full kill lives on session delete.
+								const stopped = stopAgentRunTurn([
 									session.claudeSessionId,
 									session.codexThreadId,
 									session.id,
-								);
+								]);
+								if (!stopped) {
+									cancelAgentRun(
+										session.claudeSessionId,
+										session.codexThreadId,
+										session.id,
+									);
+								}
 							}
-							const requeued = requeueSteerReceipts(data.watchingSessionId);
+							const requeued = requeueSteerReceipts(sessionId);
 							if (requeued > 0) {
-								broadcastToSession(data.watchingSessionId, {
+								broadcastToSession(sessionId, {
 									type: "notice",
-									message: `Cancelled — ${requeued} steered message${requeued === 1 ? "" : "s"} returned to the queue.`,
+									message: `Stopped — ${requeued} steered message${requeued === 1 ? "" : "s"} returned to the queue.`,
 								});
 							}
 						}

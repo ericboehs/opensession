@@ -332,6 +332,11 @@ const interrupters: Map<string, () => void> = ((globalThis as any).__interrupter
 // then would abort live work and end the run instead of fast-forwarding a steer.
 const pendingSteerProbes: Map<string, () => number> = ((globalThis as any)
   .__pendingSteerProbes ??= new Map());
+// Discard a run's unreleased steers (returns how many were dropped). The
+// Esc-style stop uses this so the forced boundary winds the run down instead
+// of delivering the held messages; the caller requeues their receipts.
+const steerDiscarders: Map<string, () => number> = ((globalThis as any)
+  .__steerDiscarders ??= new Map());
 
 /**
  * Deliver a message into a running query. False = no steerable run found.
@@ -360,6 +365,20 @@ export function interruptRun(sessionId: string): boolean {
   const interrupt = interrupters.get(sessionId);
   const pendingSteers = pendingSteerProbes.get(sessionId);
   if (!interrupt || !pendingSteers || pendingSteers() === 0) return false;
+  interrupt();
+  return true;
+}
+
+/**
+ * Esc-style stop: discard any unreleased steered messages, then abort the
+ * current turn. With nothing held, the forced boundary winds the run down
+ * gracefully (clean transcript, normal process exit) instead of the hard
+ * abort cancelRun does. False = no interruptible Claude run found.
+ */
+export function stopRunTurn(sessionId: string): boolean {
+  const interrupt = interrupters.get(sessionId);
+  if (!interrupt) return false;
+  steerDiscarders.get(sessionId)?.();
   interrupt();
   return true;
 }
@@ -684,6 +703,7 @@ export async function* runClaude(opts: {
     steerControllers.set(key, pushSteer);
     interrupters.set(key, () => currentInterrupt?.());
     pendingSteerProbes.set(key, () => steerPending.length);
+    steerDiscarders.set(key, () => steerPending.splice(0).length);
   };
   for (const k of [...steerKeys]) registerSteerKey(k);
   // Stop accepting steers (steerRun → false; callers fall back to their queue)
@@ -692,6 +712,7 @@ export async function* runClaude(opts: {
       steerControllers.delete(k);
       interrupters.delete(k);
       pendingSteerProbes.delete(k);
+      steerDiscarders.delete(k);
     }
   };
   const mkInputStream = (initial: string) =>

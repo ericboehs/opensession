@@ -621,13 +621,13 @@ export function Composer({
           </motion.div>
 
           {busy && onStop && (
-            <Tooltip label="Stop the current run">
+            <Tooltip label="Stop — interrupts the current turn; the session stays ready">
               <button
                 type="button"
                 className="composer-send composer-stop"
                 onClick={onStop}
                 disabled={disabled}
-                aria-label="Stop current run"
+                aria-label="Stop current turn"
               >
                 <IconStopSquare size={24} />
               </button>
