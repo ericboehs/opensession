@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { FileMention } from "../lib/api";
 
 /**
@@ -61,9 +62,9 @@ interface Options {
 }
 
 interface FileMentions {
-  /** Ref for the positioned wrapper the popup anchors against (needs position:relative). */
+  /** Ref for the wrapper the popup is measured against. */
   inputWrapRef: React.RefObject<HTMLDivElement | null>;
-  /** The suggestion popup to render inside the wrapper, or null when closed. */
+  /** The suggestion popup (portaled to <body>), or null when closed. */
   popup: React.ReactNode;
   /** True while the popup is open (suggestions visible). */
   open: boolean;
@@ -93,10 +94,17 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
   const pendingCaret = useRef<number | null>(null);
   // Guards against a stale async fetch overwriting a newer query's results.
   const fetchSeq = useRef(0);
-  // Whether the popup opens downward instead of upward — decided by available
-  // space so it never clips against the top of the viewport.
+  // Latest fetchers in refs: callers pass inline closures, so depending on
+  // them directly would re-run the fetch effect on every render — which loops
+  // (fetch → setSuggestions → render → new closure → fetch) while open.
+  const mentionFetchRef = useRef(mentionFetch);
+  mentionFetchRef.current = mentionFetch;
+  const skillsFetchRef = useRef(skillsFetch);
+  skillsFetchRef.current = skillsFetch;
   const inputWrapRef = useRef<HTMLDivElement>(null);
-  const [dropDown, setDropDown] = useState(false);
+  // Fixed viewport coordinates for the portaled popup, measured from the
+  // wrapper. Null until the first measure after opening.
+  const [pos, setPos] = useState<React.CSSProperties | null>(null);
 
   // Apply a pending caret position after a programmatic value change.
   useEffect(() => {
@@ -128,7 +136,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
 
   // Debounced fetch of suggestions for the active mention/skill query.
   useEffect(() => {
-    const fetcher = mention?.kind === "skill" ? skillsFetch : mentionFetch;
+    const fetcher = mention?.kind === "skill" ? skillsFetchRef.current : mentionFetchRef.current;
     if (!mention || !fetcher) {
       setSuggestions([]);
       return;
@@ -142,21 +150,48 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
       }
     }, 70);
     return () => clearTimeout(t);
-  }, [mention?.query, mention?.start, mention?.kind, mentionFetch, skillsFetch]);
+  }, [mention?.query, mention?.start, mention?.kind]);
 
   const open = !!mention && suggestions.length > 0;
 
-  // Pick the popup direction from available space: open upward by default, but
-  // flip downward when there isn't room above (e.g. centered home composer).
-  useEffect(() => {
-    if (!open) return;
-    const el = inputWrapRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const POPUP_MAX = 240;
-    const spaceAbove = rect.top;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    setDropDown(spaceAbove < POPUP_MAX && spaceBelow > spaceAbove);
+  // Position the popup against the wrapper. It renders in a portal with fixed
+  // viewport coordinates so an overflow:hidden ancestor (e.g. the new-session
+  // palette card) can't clip it. Opens upward by default, flips downward when
+  // there isn't room above.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const measure = () => {
+      const el = inputWrapRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const POPUP_MAX = 240;
+      const spaceAbove = rect.top;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const down = spaceAbove < POPUP_MAX && spaceBelow > spaceAbove;
+      setPos({
+        left: rect.left,
+        width: Math.min(520, rect.width),
+        ...(down
+          ? {
+              top: rect.bottom + 6,
+              maxHeight: Math.min(POPUP_MAX, spaceBelow - 12),
+            }
+          : {
+              bottom: window.innerHeight - rect.top + 6,
+              maxHeight: Math.min(POPUP_MAX, spaceAbove - 12),
+            }),
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
   }, [open, suggestions.length]);
 
   function applySuggestion(item: FileMention) {
@@ -203,8 +238,8 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
     setMention(null);
   }
 
-  const popup = open ? (
-    <div className={`mention-popup ${dropDown ? "mention-popup-down" : ""}`} role="listbox">
+  const popup = open && pos ? createPortal(
+    <div className="mention-popup" role="listbox" style={pos}>
       {suggestions.map((item, i) => {
         const isSession = item.kind === "session";
         const isSkill = item.kind === "skill";
@@ -233,7 +268,8 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
           </div>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   ) : null;
 
   return { inputWrapRef, popup, open, sync, handleKeyDown, close };

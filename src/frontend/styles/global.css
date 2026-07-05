@@ -6718,11 +6718,12 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .composer-input-wrap {
 	position: relative;
 }
+/* Portaled to <body>; left/width/top-or-bottom/max-height are set inline by
+   useFileMentions from the input wrapper's viewport rect, so no ancestor's
+   overflow:hidden (e.g. .palette-card) can clip it. z-index must beat the
+   palette backdrop (6000). */
 .mention-popup {
-	position: absolute;
-	left: 0;
-	bottom: calc(100% + 6px);
-	width: min(520px, 100%);
+	position: fixed;
 	max-height: 240px;
 	overflow-y: auto;
 	background: var(--bg-panel);
@@ -6730,12 +6731,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: 16px;
 	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
 	padding: 4px;
-	z-index: 40;
-}
-/* Flip below the input when there isn't room above (centered home composer). */
-.mention-popup-down {
-	bottom: auto;
-	top: calc(100% + 6px);
+	z-index: 7000;
 }
 .mention-item {
 	display: flex;
