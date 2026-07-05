@@ -27,6 +27,11 @@ import {
 	type BusySendPref,
 	type SendKeyPref,
 } from "../lib/send-key";
+import {
+	getPinNewSessions,
+	setPinNewSessions,
+	onPinNewSessionsChanged,
+} from "../lib/pins";
 import { Connections } from "./Connections";
 import { ModelsPanel } from "./Models";
 import {
@@ -1276,8 +1281,13 @@ function AuditPanel() {
 function ComposerPanel() {
 	const [sendKey, setSendKey] = useState<SendKeyPref>(getSendKeyPref);
 	const [busySend, setBusySend] = useState<BusySendPref>(getBusySendPref);
+	const [pinNew, setPinNew] = useState<boolean>(getPinNewSessions);
 	useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
 	useEffect(() => onBusySendChanged(() => setBusySend(getBusySendPref())), []);
+	useEffect(
+		() => onPinNewSessionsChanged(() => setPinNew(getPinNewSessions())),
+		[],
+	);
 
 	return (
 		<div className="settings-panel">
@@ -1323,6 +1333,17 @@ function ComposerPanel() {
 								{ value: "queue", label: "Queue" },
 							]}
 							onChange={setBusySendPref}
+						/>
+					}
+				/>
+				<SettingRow
+					title="Pin new sessions"
+					desc="Automatically pin a session to your tab strip when you start it."
+					control={
+						<Toggle
+							label="Pin new sessions"
+							checked={pinNew}
+							onChange={setPinNewSessions}
 						/>
 					}
 				/>

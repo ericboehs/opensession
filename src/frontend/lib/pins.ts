@@ -70,6 +70,37 @@ export function isPinned(id: string): boolean {
 	return cache.includes(id);
 }
 
+/** Add a pin if it isn't already set (never removes). Returns the new list. */
+export function pin(id: string): string[] {
+	if (cache.includes(id)) return cache;
+	const next = [...cache, id];
+	cache = next;
+	emit();
+	void savePinsApi(getCurrentUser(), next).catch(() => {});
+	return next;
+}
+
+// "Pin new sessions" preference — per-browser (a workflow habit, like the
+// send-key/theme prefs), default ON. Absence = on; the string "off" is the
+// only stored form, so the default survives a cleared store.
+const PIN_NEW_KEY = "michael-pin-new-sessions";
+const PIN_NEW_EVENT = "michael-pin-new-changed";
+
+export function getPinNewSessions(): boolean {
+	return localStorage.getItem(PIN_NEW_KEY) !== "off";
+}
+
+export function setPinNewSessions(on: boolean): void {
+	if (on) localStorage.removeItem(PIN_NEW_KEY);
+	else localStorage.setItem(PIN_NEW_KEY, "off");
+	window.dispatchEvent(new Event(PIN_NEW_EVENT));
+}
+
+export function onPinNewSessionsChanged(handler: () => void): () => void {
+	window.addEventListener(PIN_NEW_EVENT, handler);
+	return () => window.removeEventListener(PIN_NEW_EVENT, handler);
+}
+
 export function togglePin(id: string): string[] {
 	const next = cache.includes(id)
 		? cache.filter((p) => p !== id)

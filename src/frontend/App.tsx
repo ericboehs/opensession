@@ -46,7 +46,14 @@ import {
 import type { Project } from "./lib/types";
 import { pushRecent } from "./lib/recents";
 import { markRead } from "./lib/reads";
-import { getPins, togglePin, reorderPins, onPinsChanged } from "./lib/pins";
+import {
+	getPins,
+	togglePin,
+	pin,
+	reorderPins,
+	onPinsChanged,
+	getPinNewSessions,
+} from "./lib/pins";
 import {
 	getTabColors,
 	setTabColor,
@@ -587,6 +594,10 @@ function App() {
 				return;
 			}
 			if (msg.type === "session_created") {
+				// Pin the just-created session for its creator (this WS reply is
+				// creator-only, so it never pins a teammate's new chat onto my bar).
+				// Per-browser opt-out in Settings; on by default.
+				if (getPinNewSessions()) setPins(pin(msg.id));
 				// Mark it pending so the viewer shows "Starting…" until the poll
 				// catches up; a fallback timeout clears it so a failed create can't
 				// stick.
