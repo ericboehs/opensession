@@ -6673,6 +6673,46 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 .composer-textarea::placeholder {
 	color: var(--text-faint);
 }
+/* Live code styling: a mirror div (same .composer-textarea metrics) paints the
+   styled draft behind a transparent-text textarea — caret, selection, undo and
+   IME stay native. The tints are color/background ONLY: any font, padding or
+   size change here would desync the caret from the painted glyphs. */
+.composer-hl {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	user-select: none;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+	overflow: hidden;
+	z-index: 0;
+}
+.composer-textarea.has-hl {
+	position: relative;
+	z-index: 1;
+	color: transparent;
+	caret-color: var(--text);
+	/* Match the mirror's wrapping so long tokens break identically. */
+	overflow-wrap: break-word;
+}
+.composer-hl .cmp-code {
+	background: rgba(255, 255, 255, 0.09);
+	border-radius: 4px;
+	color: #e8b3b9;
+}
+.composer-hl .cmp-fence {
+	background: rgba(255, 255, 255, 0.06);
+	border-radius: 4px;
+	color: #dde1f0;
+}
+html[data-theme="light"] .composer-hl .cmp-code {
+	background: rgba(0, 0, 0, 0.07);
+	color: #953b39;
+}
+html[data-theme="light"] .composer-hl .cmp-fence {
+	background: rgba(0, 0, 0, 0.05);
+	color: #1f2328;
+}
 
 /* "@"-mention file autocomplete */
 .composer-input-wrap {

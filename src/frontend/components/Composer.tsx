@@ -1,7 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ModelOption, FileMention } from "../lib/api";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft } from "../lib/drafts";
+import {
+  composerHighlightHtml,
+  needsComposerHighlight,
+} from "../lib/composer-highlight";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
@@ -383,6 +387,23 @@ export function Composer({
     el.style.height = `${Math.min(Math.max(el.scrollHeight, floor), 320)}px`;
   }, [text, isPhone, minimized]);
 
+  // Live code styling: when the draft contains a backtick, a metrics-identical
+  // mirror div paints `inline` / ```fence``` tints behind a transparent-text
+  // textarea (native caret/selection/undo stay). Plain drafts skip the mirror
+  // entirely — the stock opaque textarea has zero desync risk.
+  const hlRef = useRef<HTMLDivElement>(null);
+  const hlActive = needsComposerHighlight(text);
+  const hlHtml = useMemo(
+    () => (hlActive ? composerHighlightHtml(text) : ""),
+    [hlActive, text],
+  );
+  useEffect(() => {
+    // The textarea scrolls internally at max-height; keep the mirror locked to it.
+    const el = textareaRef.current;
+    const hl = hlRef.current;
+    if (el && hl) hl.scrollTop = el.scrollTop;
+  }, [hlHtml, textareaRef]);
+
   // Dictated text lands at the end of the draft (with a joining space) and
   // focus returns to the textarea so you can touch it up and send.
   function insertDictation(t: string) {
@@ -460,9 +481,17 @@ export function Composer({
           ref={mentions.inputWrapRef}
         >
           {mentions.popup}
+          {hlActive && (
+            <div
+              ref={hlRef}
+              className="composer-textarea composer-hl"
+              aria-hidden="true"
+              dangerouslySetInnerHTML={{ __html: hlHtml }}
+            />
+          )}
           <textarea
             ref={textareaRef}
-            className="composer-textarea"
+            className={`composer-textarea ${hlActive ? "has-hl" : ""}`}
             // In the resting pill the full prompt would clip, so show a short
             // "Ask <model>" (ChatGPT-style) that fits the single row; the
             // descriptive placeholder returns once it expands.
@@ -478,6 +507,10 @@ export function Composer({
             onKeyDown={handleKeyDown}
             onKeyUp={mentions.sync}
             onClick={mentions.sync}
+            onScroll={(e) => {
+              if (hlRef.current)
+                hlRef.current.scrollTop = e.currentTarget.scrollTop;
+            }}
             onFocus={() => setFocused(true)}
             onBlur={() => {
               setFocused(false);
