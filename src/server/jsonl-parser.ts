@@ -102,6 +102,40 @@ export function extractBackstageVideos(text: string): string[] {
  * Harness-injected user turns (not typed by a person). Task notifications get
  * a system line built from their <summary>; system-reminders are dropped.
  */
+// Steered messages released at the same turn boundary — and queued messages
+// drained as one batch — are joined into a SINGLE engine turn ("\n\n"-
+// separated, each part carrying its "[Name] " attribution; see claude-runner's
+// steer batching and backstage's drainQueue combine). Split those back into
+// per-sender entries so the UI shows them as the separate messages they were
+// (and steer receipts reconcile by exact match instead of containment). Only
+// fires when the turn itself STARTS with an attribution, so an ordinary paste
+// containing bracketed lines ("[ERROR] …") can't split.
+const ATTRIBUTION_PREFIX_RE = /^\[[^\]\n{}]{1,40}\] /;
+const ATTRIBUTED_JOIN_RE = /\n\n(?=\[[^\]\n{}]{1,40}\] )/;
+function splitAttributedParts(text: string): string[] {
+  if (!ATTRIBUTION_PREFIX_RE.test(text)) return [text];
+  return text.split(ATTRIBUTED_JOIN_RE);
+}
+
+/** Push a user turn, splitting a steer-joined composite into one entry per
+ *  attributed part (derived ids keep streaming merges stable). */
+function pushUserEntries(
+  entries: TranscriptEntry[],
+  id: string,
+  text: string,
+  ts: string,
+): void {
+  const parts = splitAttributedParts(text);
+  parts.forEach((part, i) => {
+    entries.push({
+      id: i === 0 ? id : `${id}-j${i + 1}`,
+      type: "user",
+      content: resolveSlackIds(part),
+      timestamp: ts,
+    });
+  });
+}
+
 function harnessEntryFor(text: string, ts: string): TranscriptEntry[] | null {
   const t = text.trimStart();
   if (t.startsWith("<task-notification>")) {
@@ -177,12 +211,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
           // the turn) is plumbing — show only the human's message.
           const text = stripContext(block.text || "");
           if (!text.trim()) continue;
-          entries.push({
-            id: raw.uuid || crypto.randomUUID(),
-            type: "user",
-            content: resolveSlackIds(text),
-            timestamp: ts,
-          });
+          pushUserEntries(entries, raw.uuid || crypto.randomUUID(), text, ts);
         }
       }
 
@@ -209,12 +238,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
         if (harness) {
           entries.push(...harness);
         } else {
-          entries.push({
-            id: raw.uuid || crypto.randomUUID(),
-            type: "user",
-            content: resolveSlackIds(text),
-            timestamp: ts,
-          });
+          pushUserEntries(entries, raw.uuid || crypto.randomUUID(), text, ts);
         }
       }
     }

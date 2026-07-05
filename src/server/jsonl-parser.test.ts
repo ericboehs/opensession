@@ -381,3 +381,47 @@ describe("extractBackstageVideos", () => {
     ]);
   });
 });
+
+describe("steer-joined composite user turns", () => {
+  it("splits co-released attributed messages into separate entries", () => {
+    const path = writeFixture([
+      userLine(
+        "u1",
+        "[Michiel] we flagged autoRatio right?\n\n[Michiel] Also, explain the changes",
+      ),
+    ]);
+    const entries = parseTranscript(path).filter((e) => e.type === "user");
+    expect(entries.length).toBe(2);
+    expect(entries[0].content).toBe("[Michiel] we flagged autoRatio right?");
+    expect(entries[1].content).toBe("[Michiel] Also, explain the changes");
+    expect(entries[0].id).toBe("u1");
+    expect(entries[1].id).toBe("u1-j2");
+  });
+
+  it("splits parts from different senders", () => {
+    const path = writeFixture([
+      userLine("u1", "[Michiel] first\n\n[Johnny] second"),
+    ]);
+    const entries = parseTranscript(path).filter((e) => e.type === "user");
+    expect(entries.map((e) => e.content)).toEqual([
+      "[Michiel] first",
+      "[Johnny] second",
+    ]);
+  });
+
+  it("does not split a paste with bracketed lines when the turn is unattributed", () => {
+    const path = writeFixture([
+      userLine("u1", "look at these logs\n\n[ERROR] it broke\n\n[ERROR] again"),
+    ]);
+    const entries = parseTranscript(path).filter((e) => e.type === "user");
+    expect(entries.length).toBe(1);
+  });
+
+  it("keeps a single attributed message intact (blank lines without a prefix)", () => {
+    const path = writeFixture([
+      userLine("u1", "[Michiel] first paragraph\n\nsecond paragraph"),
+    ]);
+    const entries = parseTranscript(path).filter((e) => e.type === "user");
+    expect(entries.length).toBe(1);
+  });
+});
