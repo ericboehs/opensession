@@ -45,9 +45,9 @@ interface Props {
    * Controlled parents own their value and persist it themselves.
    */
   draftKey?: string;
-  /** `steer` is set when the send should fold into the live run right away
-   * (⌘/Ctrl+Enter while the queue follow-up mode is active). */
-  onSend: (text: string, opts?: { steer?: boolean }) => boolean | void;
+  /** `interrupt` is set when the send should abort the current turn and
+   * deliver right away (⌘/Ctrl+Enter while a run is busy). */
+  onSend: (text: string, opts?: { interrupt?: boolean }) => boolean | void;
   placeholder?: string;
   disabled?: boolean;
   /** Boolean, or a predicate on the current draft (for uncontrolled mode,
@@ -268,8 +268,8 @@ export function Composer({
   // Fire a send handler with the current draft; in uncontrolled mode a `true`
   // return means "consumed" — clear the draft (falsy keeps it, e.g. offline).
   function fireSend(
-    handler: (t: string, opts?: { steer?: boolean }) => boolean | void,
-    opts?: { steer?: boolean },
+    handler: (t: string, opts?: { interrupt?: boolean }) => boolean | void,
+    opts?: { interrupt?: boolean },
   ) {
     const consumed = handler(text, opts);
     if (!isControlled && consumed === true) setInnerValue("");
@@ -400,18 +400,17 @@ export function Composer({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (mentions.handleKeyDown(e)) return;
     if ((e.nativeEvent as any).isComposing) return;
-    // While a run is busy and follow-ups queue, ⌘/Ctrl+Enter steers this one
-    // send into the live run instead. (Only when plain Enter is the send key —
+    // While a run is busy, ⌘/Ctrl+Enter interrupts: abort the current turn and
+    // deliver this send right away. (Only when plain Enter is the send key —
     // otherwise ⌘/Ctrl+Enter already means "send".)
     if (
       busy &&
-      busySendMode === "queue" &&
       sendKey === "enter" &&
       e.key === "Enter" &&
       (e.metaKey || e.ctrlKey)
     ) {
       e.preventDefault();
-      if (!disabled && !isSendDisabled) fireSend(onSend, { steer: true });
+      if (!disabled && !isSendDisabled) fireSend(onSend, { interrupt: true });
       return;
     }
     if (isSendCombo(e, sendKey)) {
@@ -647,9 +646,11 @@ export function Composer({
                   sendTitle ||
                   (busy
                     ? busySendMode === "steer"
-                      ? `Steer into the current run (${sendKeyLabel(sendKey)})`
+                      ? `Steer into the current run (${sendKeyLabel(sendKey)})${
+                          sendKey === "enter" ? ` — ${MOD_ENTER_GLYPH} interrupts` : ""
+                        }`
                       : `Queue for the next turn (${sendKeyLabel(sendKey)})${
-                          sendKey === "enter" ? ` — ${MOD_ENTER_GLYPH} steers` : ""
+                          sendKey === "enter" ? ` — ${MOD_ENTER_GLYPH} interrupts` : ""
                         }`
                     : `Send (${sendKeyLabel(sendKey)})`)
                 }

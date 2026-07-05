@@ -28,14 +28,14 @@ export function onSendKeyChanged(handler: () => void): () => void {
 }
 
 export function getBusySendPref(): BusySendPref {
-	// Follow-up behavior: queue (default) waits for the turn to end; steer folds
-	// the message into the live run at its next stopping point. While queueing,
-	// ⌘/Ctrl+Enter is the per-send steer escape hatch.
-	return localStorage.getItem(BUSY_KEY) === "steer" ? "steer" : "queue";
+	// Follow-up behavior: steer (default) folds the message into the live run at
+	// its next stopping point; queue waits for the whole run to end. While busy,
+	// ⌘/Ctrl+Enter is the per-send interrupt (abort the turn, deliver now).
+	return localStorage.getItem(BUSY_KEY) === "queue" ? "queue" : "steer";
 }
 
 export function setBusySendPref(pref: BusySendPref) {
-	if (pref === "queue") localStorage.removeItem(BUSY_KEY);
+	if (pref === "steer") localStorage.removeItem(BUSY_KEY);
 	else localStorage.setItem(BUSY_KEY, pref);
 	window.dispatchEvent(new Event(BUSY_CHANGE_EVENT));
 }

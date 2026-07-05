@@ -52,6 +52,7 @@ import {
 	IconChevronDown,
 	IconPlus,
 	IconPencil,
+	IconArrowDownRight,
 	IconArrowUp,
 	IconCrosshair,
 	IconStar,
@@ -868,9 +869,9 @@ export function SessionViewer({
 
 	// Returns true when the message was consumed, so the (uncontrolled)
 	// Composer knows to clear its draft; false keeps it for a retry.
-	// `opts.steer` is the per-send override (⌘/Ctrl+Enter while queueing):
-	// fold this one message into the live run instead of queueing it.
-	function handleSend(raw: string, opts?: { steer?: boolean }): boolean {
+	// `opts.interrupt` is the per-send override (⌘/Ctrl+Enter while busy):
+	// abort the current turn and deliver this message right away.
+	function handleSend(raw: string, opts?: { interrupt?: boolean }): boolean {
 		const text = raw.trim();
 		const imgs = images;
 		const fls = files;
@@ -902,26 +903,37 @@ export function SessionViewer({
 		}
 
 		if (noEngine) return false;
-		// While busy, respect the per-browser follow-up setting: queue for the
-		// next turn (default) or steer into the live run at its next stopping
-		// point. `opts.steer` (⌘/Ctrl+Enter) steers one send while queueing.
+		// While busy, respect the per-browser follow-up setting: steer into the
+		// live run at its next stopping point (default) or queue for the next
+		// turn. `opts.interrupt` (⌘/Ctrl+Enter) aborts the current turn and
+		// delivers this send right away instead (the server falls back to the
+		// queue when nothing is interruptible or files are attached).
 		// Idle: just run it. Attachments ride along on every path — images fold
 		// into the run as content blocks; files route to the queue server-side.
+		const interrupting = isBusy && !!opts?.interrupt;
 		send(
 			isBusy
-				? {
-						type: "prompt" as const,
-						sessionId: session.id,
-						content: text,
-						user,
-						effort,
-						busyMode:
-							opts?.steer || busySend === "steer"
-								? ("steer" as const)
-								: ("queue" as const),
-						...(imgs.length ? { images: imgs } : {}),
-						...(fls.length ? { files: filePayload } : {}),
-					}
+				? interrupting
+					? {
+							type: "interrupt_prompt" as const,
+							sessionId: session.id,
+							content: text,
+							user,
+							effort,
+							...(imgs.length ? { images: imgs } : {}),
+							...(fls.length ? { files: filePayload } : {}),
+						}
+					: {
+							type: "prompt" as const,
+							sessionId: session.id,
+							content: text,
+							user,
+							effort,
+							busyMode:
+								busySend === "queue" ? ("queue" as const) : ("steer" as const),
+							...(imgs.length ? { images: imgs } : {}),
+							...(fls.length ? { files: filePayload } : {}),
+						}
 				: {
 						type: "prompt" as const,
 						sessionId: session.id,
@@ -932,7 +944,7 @@ export function SessionViewer({
 						...(fls.length ? { files: filePayload } : {}),
 					},
 		);
-		if (!isBusy) {
+		if (!isBusy || interrupting) {
 			setIsRunningLive(true);
 			onRunningChange?.(session.id, true);
 			beginTurn(); // pin this new turn near the top so its reply streams in below
@@ -960,9 +972,7 @@ export function SessionViewer({
 					sentAt: Date.now(),
 					images: imgs.length ? imgs : undefined,
 					busyMode:
-						opts?.steer || busySend === "steer"
-							? ("steer" as const)
-							: ("queue" as const),
+						busySend === "queue" ? ("queue" as const) : ("steer" as const),
 				},
 			]);
 		}
@@ -1065,6 +1075,24 @@ export function SessionViewer({
 										</button>
 									</Tooltip>
 								)}
+								{s.id && (
+									<Tooltip label="Interrupt — stop the current work and deliver this now">
+										<button
+											type="button"
+											className="composer-queue-action composer-queue-steer"
+											aria-label="Interrupt"
+											onClick={() =>
+												send({
+													type: "interrupt_queued_prompt",
+													sessionId: session.id,
+													queueId: s.id,
+												})
+											}
+										>
+											<IconArrowDownRight size={24} />
+										</button>
+									</Tooltip>
+								)}
 							</div>
 							{renderQueueContent(s, { human: hr })}
 						</div>
@@ -1118,30 +1146,56 @@ export function SessionViewer({
 									</button>
 								</Tooltip>
 								{!isGitHub && (
-									<Tooltip
-										label={
-											canSteer
-												? "Steer"
-												: "Messages with files cannot be steered"
-										}
-									>
-										<button
-											type="button"
-											className="composer-queue-action composer-queue-steer"
-											aria-label="Steer"
-											disabled={!canSteer}
-											onClick={() =>
-												send({
-													type: "steer_queued_prompt",
-													sessionId: session.id,
-													queueId: id,
-													queueIndex: i,
-												})
+									<>
+										<Tooltip
+											label={
+												canSteer
+													? "Steer — folds in when the current work pauses"
+													: "Messages with files cannot be steered"
 											}
 										>
-											<IconArrowUp size={24} />
-										</button>
-									</Tooltip>
+											<button
+												type="button"
+												className="composer-queue-action composer-queue-steer"
+												aria-label="Steer"
+												disabled={!canSteer}
+												onClick={() =>
+													send({
+														type: "steer_queued_prompt",
+														sessionId: session.id,
+														queueId: id,
+														queueIndex: i,
+													})
+												}
+											>
+												<IconArrowUp size={24} />
+											</button>
+										</Tooltip>
+										<Tooltip
+											label={
+												canSteer
+													? "Interrupt — stop the current work and deliver this now"
+													: "Messages with files cannot interrupt"
+											}
+										>
+											<button
+												type="button"
+												className="composer-queue-action composer-queue-steer"
+												aria-label="Interrupt"
+												disabled={!canSteer}
+												onClick={() =>
+													send({
+														type: "interrupt_queued_prompt",
+														sessionId: session.id,
+														queueId: id,
+														queueIndex: i,
+													})
+												}
+											>
+												<IconArrowDownRight size={24} />
+											</button>
+										</Tooltip>
+									</>
 								)}
 							</div>
 							{renderQueueContent(q, { human: hr, github: isGitHub })}
@@ -1408,24 +1462,18 @@ export function SessionViewer({
 			/>
 			<StagingLink session={session} />
 			{hasWorkspace && session.prUrl && (
-				<button
-					className={`btn-panel-toggle btn-pr-header ${
-						subagentStack.length === 0 && panelTab === "pr" ? "active" : ""
-					}`}
-					onClick={() => {
-						// Jump straight to the PR tab in the workspace panel — a PR is
-						// worth surfacing without first hunting through Workspace.
-						setSubagentStack([]);
-						selectPanelTab("pr");
-						setPanelOpen(true);
-					}}
-					title={`Open PR #${session.prNumber ?? ""} (${(session.prState || "OPEN").toLowerCase()})`}
+				<a
+					className="btn-panel-toggle btn-pr-header"
+					href={session.prUrl}
+					target="_blank"
+					rel="noreferrer"
+					title={`Open PR #${session.prNumber ?? ""} on GitHub (${(session.prState || "OPEN").toLowerCase()})`}
 				>
 					<span
 						className={`panel-tab-dot pr-dot-${(session.prState || "OPEN").toLowerCase()}`}
 					/>
-					<span className="btn-pr-label">PR</span>
-				</button>
+					<span className="btn-pr-label">PR ↗</span>
+				</a>
 			)}
 		</>
 	);

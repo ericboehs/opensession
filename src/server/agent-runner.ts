@@ -15,6 +15,7 @@ import {
   isSessionBusy,
   cancelRun,
   steerRun,
+  interruptRun,
   interruptAndSteerRun,
   takeInterruptedRuns,
   activeRunCount,
@@ -264,6 +265,22 @@ export function steerAgentRun(
     // the queue drain delivers images).
     if (steerRun(id, text, images)) return true;
     if (!images?.length && hostSteer(id, text)) return true;
+  }
+  return false;
+}
+
+/**
+ * Bare interrupt on an in-flight Claude run: abort the current turn WITHOUT a
+ * new message so the boundary releases the run's already-steered text at once.
+ * Refuses (false) when the run holds no unreleased steers. Local runs only —
+ * there is no host-RPC path for a bare interrupt.
+ */
+export function interruptAgentRun(
+  ids: Array<string | null | undefined>
+): boolean {
+  for (const id of ids) {
+    if (!id) continue;
+    if (interruptRun(id)) return true;
   }
   return false;
 }

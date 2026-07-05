@@ -65,6 +65,7 @@ import {
 	unmarkSessionStarting,
 	cancelAgentRun,
 	steerAgentRun,
+	interruptAgentRun,
 	interruptAndSteerAgentRun,
 	resumeInterruptedRuns,
 	RESUME_CONTINUATION_PROMPT,
@@ -1255,6 +1256,67 @@ function steerQueuedPrompt(
 	if (queue.length > 0) promptQueues.set(sessionId, queue);
 	else promptQueues.delete(sessionId);
 	recordSteer(sessionId, item);
+	persistQueues();
+	broadcastQueue(sessionId);
+	return true;
+}
+
+/**
+ * Interrupt-deliver a waiting message: abort the run's current turn so the
+ * message lands right away instead of at the next natural stopping point.
+ * Two cases: an already-steered receipt just needs a bare interrupt (its text
+ * is in the run's steer buffer — the forced boundary releases it; pushing it
+ * again would double-deliver), while a queued item is folded in through the
+ * interrupt-and-steer path. False = still queued, nothing was interrupted.
+ */
+function interruptQueuedPrompt(
+	sessionId: string,
+	queueId?: string,
+	queueIndex?: number,
+): boolean {
+	const session = findSession(sessionId);
+	if (!session) return false;
+	if (queueId && (steeredReceipts.get(sessionId) || []).some((s) => s.id === queueId)) {
+		// Receipt stays visible until the message lands in the transcript (the
+		// usual reconcile) — dropping it here would lose it if the interrupt
+		// fires between release and delivery.
+		return interruptAgentRun([
+			session.claudeSessionId,
+			session.codexThreadId,
+			session.id,
+		]);
+	}
+	const queue = promptQueues.get(sessionId);
+	if (!queue) return false;
+	const index = queuedPromptIndex(queue, queueId, queueIndex);
+	if (index < 0) return false;
+	const [item] = queue.splice(index, 1);
+	if (!item) return false;
+	if (isGitHubQueueItem(item) || (Array.isArray(item.files) && item.files.length > 0)) {
+		queue.splice(index, 0, item);
+		return false;
+	}
+	const attributed = item.user ? `[${item.user}] ${item.content}` : item.content;
+	const images = parseImageDataUrls(item.images || []);
+	if (
+		!isAgentSessionBusy(
+			session.claudeSessionId,
+			session.codexThreadId,
+			session.id,
+		) ||
+		!interruptAndSteerAgentRun(
+			[session.claudeSessionId, session.codexThreadId, session.id],
+			attributed,
+			images,
+		)
+	) {
+		queue.splice(index, 0, item);
+		return false;
+	}
+	// No steer receipt: an interrupt delivers almost immediately, so the
+	// transcript entry is the record (same treatment as a direct interrupt send).
+	if (queue.length > 0) promptQueues.set(sessionId, queue);
+	else promptQueues.delete(sessionId);
 	persistQueues();
 	broadcastQueue(sessionId);
 	return true;
@@ -6052,6 +6114,21 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									sessionId,
 									message:
 										"Could not steer that queued message right now. It is still queued.",
+								}),
+							);
+						}
+						break;
+					}
+
+					case "interrupt_queued_prompt": {
+						const { sessionId, queueId, queueIndex } = msg;
+						if (!interruptQueuedPrompt(sessionId, queueId, queueIndex)) {
+							ws.send(
+								JSON.stringify({
+									type: "notice",
+									sessionId,
+									message:
+										"Could not interrupt with that message right now. It is still queued.",
 								}),
 							);
 						}

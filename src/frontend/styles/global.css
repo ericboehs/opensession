@@ -2560,6 +2560,9 @@ body.resizing-x {
 	padding: 5px 12px;
 	font-size: 13px;
 	white-space: nowrap;
+	/* The PR header affordance is an <a> now (opens GitHub) — keep it looking
+	   like its button siblings. */
+	text-decoration: none;
 }
 /* The Workspace toggle is icon-only (23px glyph) — keep its padding tight so
    it doesn't balloon past the text buttons it sits next to. Borderless: the

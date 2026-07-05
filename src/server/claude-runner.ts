@@ -327,6 +327,11 @@ const steerControllers: Map<
 > = ((globalThis as any).__steerControllers ??= new Map());
 const interrupters: Map<string, () => void> = ((globalThis as any).__interrupters ??=
   new Map());
+// How many steered messages a run is still holding (unreleased). Lets the bare
+// interruptRun refuse to fire when there's nothing to release — interrupting
+// then would abort live work and end the run instead of fast-forwarding a steer.
+const pendingSteerProbes: Map<string, () => number> = ((globalThis as any)
+  .__pendingSteerProbes ??= new Map());
 
 /**
  * Deliver a message into a running query. False = no steerable run found.
@@ -341,6 +346,21 @@ export function steerRun(
   const push = steerControllers.get(sessionId);
   if (!push) return false;
   push(text, images);
+  return true;
+}
+
+/**
+ * Bare Esc-style interrupt: abort the current turn (the session and the query
+ * survive) WITHOUT adding a message — the resulting turn boundary immediately
+ * releases whatever is already waiting in the run's steer buffer. Used by the
+ * queue flap's Interrupt on an already-steered message (pushing its text again
+ * would deliver it twice). False = no interruptible run found.
+ */
+export function interruptRun(sessionId: string): boolean {
+  const interrupt = interrupters.get(sessionId);
+  const pendingSteers = pendingSteerProbes.get(sessionId);
+  if (!interrupt || !pendingSteers || pendingSteers() === 0) return false;
+  interrupt();
   return true;
 }
 
@@ -663,6 +683,7 @@ export async function* runClaude(opts: {
     steerKeys.add(key);
     steerControllers.set(key, pushSteer);
     interrupters.set(key, () => currentInterrupt?.());
+    pendingSteerProbes.set(key, () => steerPending.length);
   };
   for (const k of [...steerKeys]) registerSteerKey(k);
   // Stop accepting steers (steerRun → false; callers fall back to their queue)
@@ -670,6 +691,7 @@ export async function* runClaude(opts: {
     for (const k of steerKeys) {
       steerControllers.delete(k);
       interrupters.delete(k);
+      pendingSteerProbes.delete(k);
     }
   };
   const mkInputStream = (initial: string) =>

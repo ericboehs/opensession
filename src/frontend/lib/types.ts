@@ -284,6 +284,12 @@ export type WSClientMessage =
 			queueId?: string;
 			queueIndex?: number;
 	  }
+	| {
+			type: "interrupt_queued_prompt";
+			sessionId: string;
+			queueId?: string;
+			queueIndex?: number;
+	  }
 	| { type: "cancel" }
 	| {
 			type: "create_session";

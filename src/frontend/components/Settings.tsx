@@ -1304,11 +1304,12 @@ function ComposerPanel() {
 					title="Follow-up behavior"
 					desc={
 						<>
-							Queue messages to send after the agent finishes, or steer the
-							agent mid-turn.
-							{busySend === "queue" && sendKey === "enter" && (
+							Steer folds your message into the run at its next stopping
+							point; Queue waits until the agent finishes.
+							{sendKey === "enter" && (
 								<div className="text-dim text-xs mt-1">
-									Use {MOD_ENTER_GLYPH} to steer
+									Use {MOD_ENTER_GLYPH} to interrupt — stops the current turn
+									and delivers right away
 								</div>
 							)}
 						</>
@@ -1318,8 +1319,8 @@ function ComposerPanel() {
 							label="Follow-up behavior"
 							value={busySend}
 							options={[
-								{ value: "queue", label: "Queue" },
 								{ value: "steer", label: "Steer" },
+								{ value: "queue", label: "Queue" },
 							]}
 							onChange={setBusySendPref}
 						/>
