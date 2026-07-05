@@ -190,10 +190,11 @@ function ZoomableImage({
 	const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
 	const [zoomed, setZoomed] = useState(false);
 
-	function apply() {
+	function apply(animate = false) {
 		const img = imgRef.current;
 		if (!img) return;
 		const { s, tx, ty } = t.current;
+		img.style.transition = animate ? "transform 0.18s ease-out" : "none";
 		img.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
 		setZoomed(s > 1);
 	}
@@ -207,12 +208,14 @@ function ZoomableImage({
 		return { x: r.left - tx, y: r.top - ty, w: r.width / s, h: r.height / s };
 	}
 
-	/** Keep the scaled image covering the container (or centered when smaller). */
+	/** Keep the scaled image covering the viewport (or centered when smaller).
+	 * Bounds are the full screen, not the letterboxed wrapper — a zoomed photo
+	 * should spread under the floating chrome like a native photo viewer, not
+	 * clip at the wrapper edges. */
 	function clamp(next: { s: number; tx: number; ty: number }) {
-		const wrap = wrapRef.current;
 		const img = imgRef.current;
-		if (!wrap || !img) return next;
-		const C = wrap.getBoundingClientRect();
+		if (!img) return next;
+		const C = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
 		const o = layoutOrigin();
 		const clampAxis = (
 			pos: number, // desired translation on this axis
@@ -235,14 +238,14 @@ function ZoomableImage({
 	}
 
 	/** Rescale to `sNew` keeping the viewport point `p` fixed on the image. */
-	function zoomAt(p: { x: number; y: number }, sNew: number) {
+	function zoomAt(p: { x: number; y: number }, sNew: number, animate = false) {
 		const o = layoutOrigin();
 		const { s, tx, ty } = t.current;
 		const ux = (p.x - o.x - tx) / s;
 		const uy = (p.y - o.y - ty) / s;
 		t.current = clamp({ s: sNew, tx: p.x - o.x - ux * sNew, ty: p.y - o.y - uy * sNew });
 		if (t.current.s <= 1.02) t.current = { s: 1, tx: 0, ty: 0 };
-		apply();
+		apply(animate);
 	}
 
 	function onPointerDown(e: React.PointerEvent) {
@@ -287,11 +290,13 @@ function ZoomableImage({
 		if (g.pinched && pts.length >= 2) {
 			const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
 			const m = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
-			const sNew = Math.min(MAX_SCALE, Math.max(1, (g.t0.s * d) / (g.d0 || 1)));
+			// No clamping mid-pinch — fighting the fingers makes the image slide
+			// away from the focal point. Bounds are re-imposed on release.
+			const sNew = Math.min(MAX_SCALE, Math.max(0.5, (g.t0.s * d) / (g.d0 || 1)));
 			const o = layoutOrigin();
 			const ux = (g.m0.x - o.x - g.t0.tx) / g.t0.s;
 			const uy = (g.m0.y - o.y - g.t0.ty) / g.t0.s;
-			t.current = clamp({ s: sNew, tx: m.x - o.x - ux * sNew, ty: m.y - o.y - uy * sNew });
+			t.current = { s: sNew, tx: m.x - o.x - ux * sNew, ty: m.y - o.y - uy * sNew };
 			apply();
 			g.moved = true;
 		} else if (pts.length === 1) {
@@ -322,10 +327,13 @@ function ZoomableImage({
 			return;
 		}
 		if (remaining.length > 0) return;
-		// Last pointer up — settle and check for tap gestures.
+		// Last pointer up — settle back inside bounds (animated) and check taps.
 		if (t.current.s <= 1.05) {
 			t.current = { s: 1, tx: 0, ty: 0 };
-			apply();
+			apply(true);
+		} else {
+			t.current = clamp({ ...t.current });
+			apply(true);
 		}
 		const isTap =
 			!g.moved && e.pointerType !== "mouse"
@@ -341,7 +349,7 @@ function ZoomableImage({
 			Math.hypot(p.x - prevTap.x, p.y - prevTap.y) < 40;
 		if (isDouble) {
 			lastTap.current = null;
-			zoomAt(p, t.current.s > 1 ? 1 : DOUBLE_TAP_SCALE);
+			zoomAt(p, t.current.s > 1 ? 1 : DOUBLE_TAP_SCALE, true);
 			return;
 		}
 		// Single tap on the backdrop (not the photo itself) closes, like the
@@ -369,7 +377,7 @@ function ZoomableImage({
 	return (
 		<div
 			ref={wrapRef}
-			className={`flex min-h-0 min-w-0 flex-1 touch-none select-none items-center justify-center self-stretch overflow-hidden ${
+			className={`flex min-h-0 min-w-0 flex-1 touch-none select-none items-center justify-center self-stretch ${
 				zoomed ? "cursor-grab" : "cursor-zoom-in"
 			}`}
 			onPointerDown={onPointerDown}
@@ -432,8 +440,11 @@ function MediaLightbox({
 	]
 		.filter(Boolean)
 		.join(" · ");
+	// z-10 keeps the chrome floating above a zoomed image, which is free to
+	// spread under it across the whole viewport (z-index applies to flex items
+	// without needing position).
 	const navBtn =
-		"grid h-10 w-10 shrink-0 place-items-center rounded-full border-0 bg-white/10 p-0 text-white hover:bg-white/20";
+		"z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full border-0 bg-white/10 p-0 text-white hover:bg-white/20";
 
 	return (
 		<div
@@ -444,7 +455,7 @@ function MediaLightbox({
 		>
 			<button
 				type="button"
-				className={`${navBtn} absolute right-3 top-3 z-10`}
+				className={`${navBtn} absolute right-3 top-3`}
 				onClick={onClose}
 				aria-label="Close"
 			>
@@ -493,7 +504,7 @@ function MediaLightbox({
 			</div>
 
 			<div
-				className="flex items-center justify-center gap-3 px-4 pb-4 pt-1 text-xs text-white/70"
+				className="z-10 flex items-center justify-center gap-3 px-4 pb-4 pt-1 text-xs text-white/70"
 				onMouseDown={(e) => {
 					if (e.target === e.currentTarget) onClose();
 				}}
