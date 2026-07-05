@@ -168,24 +168,17 @@ export function buildAutoFixPrompt(
 
   return `You are Michael, working on PR #${pr.number} ("${pr.title}") on tella-fusion. You are checked out on the PR's head branch \`${pr.headRefName}\` in a worktree. This is auto-fix iteration ${iteration}.
 
-Your job: address ALL the open review feedback on this PR — from EVERY reviewer (Michael and human reviewers alike), not just Michael's — AND any failing CI, then commit, push, and reply in each thread you addressed. You are allowed and expected to fix everything actionable, not just blockers — P2 and P3 findings included. Only leave a finding unfixed when you have a clear reason, and record that reason (see the SKIPPED line below).
+Use the **pr-autofix** skill (invoke it via the Skill tool with the PR number ${pr.number}) — it defines the whole job: address ALL the open review feedback from EVERY reviewer AND any failing CI, commit and push, reply in each addressed thread with honest attribution, and end your turn with the disposition lines. Follow it exactly.
 ${steerBlock(steer)}
 
+Context already gathered for this iteration — treat it as current, don't re-derive it:
+
 Open review feedback to address (inline comments + review summaries; each tagged with its author and, for inline comments, a \`comment <id>\` — fix every actionable point):
-${reviewSummary || "(none fetched — run `gh pr view " + pr.number + " --comments`, `gh api repos/tellahq/tella-fusion/pulls/" + pr.number + "/comments`, and `.../reviews` to gather them, then assess the diff)"}
+${reviewSummary || "(none fetched — gather it yourself per the skill's instructions, then assess the diff)"}
 
 ${ci}
 
-Instructions:
-1. Run \`gh pr diff ${pr.number}\` and inspect the failing checks (e.g. \`gh pr checks ${pr.number}\`, run the relevant tests/typecheck/lint locally) to understand what needs fixing. Also skim \`gh pr view ${pr.number} --comments\` for any human requests in the conversation not listed above.
-2. Make the smallest correct changes that resolve the findings and the CI failures. Match the surrounding code style. Do NOT make unrelated changes. Fix as many findings as you reasonably can this round (P2 and P3 included) — don't stop at the blockers. If you deliberately leave one, it goes on the SKIPPED line with a reason.
-3. Commit your work with a clear message, then push to the PR branch with: \`git push origin HEAD:${pr.headRefName}\`
-4. **Reply in each review thread you addressed** so reviewers see it was handled. Reply via \`gh api repos/tellahq/tella-fusion/pulls/${pr.number}/comments/<id>/replies -f body="<body>"\`. Attribute honestly — only claim work you actually did:
-   - A finding **you** fixed in a commit you pushed this run: \`<!-- michael-fixed -->\\nFixed in <your-short-sha> — <what you changed>.\`
-   - A finding that was **already resolved by an existing commit** (someone else's work, before your run): \`<!-- michael-fixed -->\\nLooks addressed in <short-sha> — <how it's handled now>.\` Do NOT say you fixed it.
-   - A finding you **deliberately did not act on**: reply with your reasoning, and do NOT include the \`<!-- michael-fixed -->\` marker or the words "Fixed in" — that keeps the thread open for a human.
-   The \`<!-- michael-fixed -->\` marker (or a leading "Fixed in") is what marks a thread resolved, so only put it on threads that are genuinely handled. Never claim you or Michael fixed something a human actually fixed. This applies to human reviewers' comments too, not just Michael's.
-5. NEVER merge the PR (\`gh pr merge\` is forbidden) and never force-push over other people's work.
+Push to the PR branch with \`git push origin HEAD:${pr.headRefName}\`. NEVER merge the PR (\`gh pr merge\` is forbidden) and never force-push over other people's work.
 
 End your turn with these three lines (exact keys, one line each) so the loop can report what happened and decide whether to continue. Use "none" where a category is empty:
 \`FIXED: <short list of findings you fixed and pushed, or none>\`

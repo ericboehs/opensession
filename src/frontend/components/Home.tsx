@@ -3,6 +3,7 @@ import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import {
   fetchModels,
   fetchFileMentions,
+  fetchSkillMentions,
   fetchHumanAsks,
   nudgeHumanAsk,
   cancelHumanAsk,
@@ -285,6 +286,7 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
             onModelChange={setAskModel}
             modelTitle="Model for this Ask session"
             mentionFetch={(q) => fetchFileMentions(q)}
+            skillsFetch={(q) => fetchSkillMentions(q)}
             autoFocus={!isPhone}
             leftExtra={
               <button

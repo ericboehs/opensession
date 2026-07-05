@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchWorktrees, fetchModels, fetchFileMentions, suggestBranch, type ModelOption } from "../lib/api";
+import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, suggestBranch, type ModelOption } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
@@ -183,6 +183,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     onChange: setPrompt,
     textareaRef: promptRef,
     mentionFetch: (q) => fetchFileMentions(q, undefined, repo),
+    skillsFetch: (q) => fetchSkillMentions(q, undefined, repo),
   });
 
   // Focus the prompt as soon as the palette opens.

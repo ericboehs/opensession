@@ -113,6 +113,7 @@ import {
 } from "./src/server/codex-accounts";
 import { getSessionDiff, type SessionDiff } from "./src/server/git-diff";
 import { searchRepoFiles } from "./src/server/file-index";
+import { searchSkills } from "./src/server/skills";
 import { suggestBranchName } from "./src/server/suggest-branch";
 import { transcribeAudio, MAX_AUDIO_BYTES } from "./src/server/transcribe";
 import { getPreviewStatus, startPreview, stopPreview } from "./src/server/preview";
@@ -4078,6 +4079,26 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json({
 					files: [...out.slice(0, 24 - sessionHits.length), ...sessionHits],
 				});
+			}
+
+			// Skill/command autocomplete ("/" at the start of the composer). Lists
+			// what a Claude run in the session's primary checkout would see: user
+			// skills+commands (~/.claude) plus the checkout's project ones. Same
+			// session/repo resolution as /api/files, primary repo only (project
+			// skills load from the run's cwd, so attached repos don't apply).
+			if (path === "/backstage/api/skills" && req.method === "GET") {
+				const q = url.searchParams.get("q") || "";
+				const sessionId = url.searchParams.get("session");
+				const session = sessionId ? findSession(sessionId) : undefined;
+				let dir: string | undefined =
+					session?.worktreeDir && existsSync(session.worktreeDir)
+						? session.worktreeDir
+						: undefined;
+				if (!dir) {
+					const proj = getRepo(url.searchParams.get("repo") || undefined);
+					if (existsSync(proj.repo)) dir = proj.repo;
+				}
+				return Response.json({ skills: searchSkills(dir, q) });
 			}
 
 			// Repos available to attach / start a chat against.

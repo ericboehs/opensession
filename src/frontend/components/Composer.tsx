@@ -118,6 +118,12 @@ interface Props {
    * "@" is inert.
    */
   mentionFetch?: (query: string) => Promise<FileMention[]>;
+  /**
+   * Enables "/"-skill autocomplete when the draft starts with "/". Given the
+   * text typed after the "/", returns matching skills/commands. When omitted,
+   * "/" is inert.
+   */
+  skillsFetch?: (query: string) => Promise<FileMention[]>;
 }
 
 /** Inline set/clear editor for the session goal. */
@@ -218,6 +224,7 @@ export function Composer({
   files,
   onFilesChange,
   mentionFetch,
+  skillsFetch,
 }: Props) {
   const internalRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = externalRef ?? internalRef;
@@ -310,6 +317,7 @@ export function Composer({
     onChange: setText,
     textareaRef,
     mentionFetch,
+    skillsFetch,
   });
 
   async function addFiles(picked: FileList | File[]) {

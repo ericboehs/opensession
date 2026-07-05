@@ -316,8 +316,8 @@ export interface FileMention {
 	/** Repo label, set only when more than one repo is searched (cross-repo). */
 	repo?: string;
 	/** Entry type; absent means a file. */
-	kind?: "session";
-	/** Subtitle for non-file entries (e.g. a session's branch). */
+	kind?: "session" | "skill";
+	/** Subtitle for non-file entries (e.g. a session's branch, a skill's description). */
 	sub?: string;
 }
 
@@ -342,6 +342,35 @@ export async function fetchFileMentions(
 		return data?.files ?? [];
 	} catch (e) {
 		console.warn("fetchFileMentions failed:", e);
+		return [];
+	}
+}
+
+/**
+ * Skill/command suggestions for the "/" trigger in the composer. Lists what a
+ * Claude run in the session's checkout would see (user + project skills and
+ * commands); `repo` is the fallback for composers with no session yet.
+ */
+export async function fetchSkillMentions(
+	query: string,
+	sessionId?: string,
+	repo?: string,
+): Promise<FileMention[]> {
+	const params = new URLSearchParams({ q: query });
+	if (sessionId) params.set("session", sessionId);
+	else if (repo) params.set("repo", repo);
+	try {
+		const data = await request<{
+			skills?: Array<{ name: string; description: string; source: string }>;
+		}>(`/skills?${params.toString()}`);
+		return (data?.skills ?? []).map((s) => ({
+			display: s.name,
+			insert: s.name,
+			kind: "skill" as const,
+			sub: s.description,
+		}));
+	} catch (e) {
+		console.warn("fetchSkillMentions failed:", e);
 		return [];
 	}
 }

@@ -25,6 +25,7 @@ import {
 	archiveSessionApi,
 	fetchModels,
 	fetchFileMentions,
+	fetchSkillMentions,
 	promoteChatApi,
 	type WorkspaceMediaItem,
 	type ModelOption,
@@ -2048,6 +2049,7 @@ export function SessionViewer({
 										session.source === "backstage" ? handleSetGoal : undefined
 									}
 									mentionFetch={(q) => fetchFileMentions(q, session.id)}
+									skillsFetch={(q) => fetchSkillMentions(q, session.id)}
 									textareaRef={composerRef}
 									sendMenu={
 										session.source === "backstage"

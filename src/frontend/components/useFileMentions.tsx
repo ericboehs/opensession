@@ -7,6 +7,12 @@ import type { FileMention } from "../lib/api";
  * mention token. A mention starts at "@" that is at the start of the text or
  * preceded by whitespace, and runs until the first whitespace.
  */
+interface TriggerContext {
+  start: number;
+  query: string;
+  kind: "file" | "skill";
+}
+
 function mentionContextAt(value: string, caret: number): { start: number; query: string } | null {
   // Walk back from the caret to the "@", bailing on whitespace.
   let i = caret - 1;
@@ -25,6 +31,19 @@ function mentionContextAt(value: string, caret: number): { start: number; query:
   return null;
 }
 
+/**
+ * Find the active "/"-skill being typed. Only triggers when "/" is the very
+ * first character of the whole input (like a CLI slash command) and the caret
+ * is still inside that first token — so typing a path like `src/foo` mid-text
+ * never opens it.
+ */
+function slashContextAt(value: string, caret: number): { start: number; query: string } | null {
+  if (value[0] !== "/" || caret < 1) return null;
+  const query = value.slice(1, caret);
+  if (/\s/.test(query)) return null;
+  return { start: 0, query };
+}
+
 interface Options {
   value: string;
   onChange: (value: string) => void;
@@ -34,6 +53,11 @@ interface Options {
    * returns matching files. When omitted, the hook is inert.
    */
   mentionFetch?: (query: string) => Promise<FileMention[]>;
+  /**
+   * Enables "/"-skill autocomplete when the input starts with "/". Given the
+   * text typed after the "/", returns matching skills/commands.
+   */
+  skillsFetch?: (query: string) => Promise<FileMention[]>;
 }
 
 interface FileMentions {
@@ -61,8 +85,8 @@ interface FileMentions {
  * popup node plus handlers to wire into a host textarea. Used by both the chat
  * Composer and the New-session prompt field so they behave identically.
  */
-export function useFileMentions({ value, onChange, textareaRef, mentionFetch }: Options): FileMentions {
-  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
+export function useFileMentions({ value, onChange, textareaRef, mentionFetch, skillsFetch }: Options): FileMentions {
+  const [mention, setMention] = useState<TriggerContext | null>(null);
   const [suggestions, setSuggestions] = useState<FileMention[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   // Caret-target to apply after a programmatic value change (insertion).
@@ -87,30 +111,38 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch }: 
   }, [value]);
 
   function sync() {
-    if (!mentionFetch) return;
+    if (!mentionFetch && !skillsFetch) return;
     const el = textareaRef.current;
     if (!el) return;
-    const ctx = mentionContextAt(el.value, el.selectionStart ?? el.value.length);
+    const caret = el.selectionStart ?? el.value.length;
+    const slash = skillsFetch ? slashContextAt(el.value, caret) : null;
+    const at = !slash && mentionFetch ? mentionContextAt(el.value, caret) : null;
+    const ctx: TriggerContext | null = slash
+      ? { ...slash, kind: "skill" }
+      : at
+        ? { ...at, kind: "file" }
+        : null;
     setMention(ctx);
     if (!ctx) setSuggestions([]);
   }
 
-  // Debounced fetch of suggestions for the active mention query.
+  // Debounced fetch of suggestions for the active mention/skill query.
   useEffect(() => {
-    if (!mention || !mentionFetch) {
+    const fetcher = mention?.kind === "skill" ? skillsFetch : mentionFetch;
+    if (!mention || !fetcher) {
       setSuggestions([]);
       return;
     }
     const seq = ++fetchSeq.current;
     const t = setTimeout(async () => {
-      const files = await mentionFetch(mention.query);
+      const files = await fetcher(mention.query);
       if (seq === fetchSeq.current) {
         setSuggestions(files);
         setActiveIdx(0);
       }
     }, 70);
     return () => clearTimeout(t);
-  }, [mention?.query, mention?.start, mentionFetch]);
+  }, [mention?.query, mention?.start, mention?.kind, mentionFetch, skillsFetch]);
 
   const open = !!mention && suggestions.length > 0;
 
@@ -133,7 +165,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch }: 
     const caret = el?.selectionStart ?? value.length;
     const before = value.slice(0, mention.start);
     const after = value.slice(caret);
-    const insert = `@${item.insert} `;
+    const insert = `${mention.kind === "skill" ? "/" : "@"}${item.insert} `;
     const next = before + insert + after;
     pendingCaret.current = before.length + insert.length;
     setMention(null);
@@ -175,8 +207,9 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch }: 
     <div className={`mention-popup ${dropDown ? "mention-popup-down" : ""}`} role="listbox">
       {suggestions.map((item, i) => {
         const isSession = item.kind === "session";
+        const isSkill = item.kind === "skill";
         const path = item.display;
-        const slash = isSession ? -1 : path.lastIndexOf("/");
+        const slash = isSession || isSkill ? -1 : path.lastIndexOf("/");
         const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
         const base = slash >= 0 ? path.slice(slash + 1) : path;
         return (
@@ -192,9 +225,9 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch }: 
             onMouseEnter={() => setActiveIdx(i)}
           >
             {isSession && <span className="mention-repo">session</span>}
-            {!isSession && item.repo && <span className="mention-repo">{item.repo}</span>}
-            <span className="mention-base">{base}</span>
-            {isSession
+            {!isSession && !isSkill && item.repo && <span className="mention-repo">{item.repo}</span>}
+            <span className="mention-base">{isSkill ? `/${base}` : base}</span>
+            {isSession || isSkill
               ? item.sub && <span className="mention-dir">{item.sub}</span>
               : dir && <span className="mention-dir">{dir}</span>}
           </div>
