@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
+import { MarkdownBody } from "./MarkdownBody";
 import { parseHumanReply, parseAttribution, isGitHubAttribution } from "../lib/humanReply";
 import { useCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
@@ -112,9 +113,9 @@ export const MessageBubble = React.memo(function MessageBubble({
 					💬 {humanReply.name} · via Slack
 					<MsgTime ts={entry.timestamp} />
 				</div>
-				<div
+				<MarkdownBody
 					className="msg-body msg-body-human markdown"
-					dangerouslySetInnerHTML={{ __html: humanReply.html || "" }}
+					html={humanReply.html || ""}
 				/>
 				<EntryImages images={entry.images} />
 			</div>
@@ -140,9 +141,9 @@ export const MessageBubble = React.memo(function MessageBubble({
 					</div>
 				)}
 				{displayContent && (
-					<div
+					<MarkdownBody
 						className="msg-body msg-body-user markdown"
-						dangerouslySetInnerHTML={{ __html: html || "" }}
+						html={html || ""}
 					/>
 				)}
 				<EntryImages images={entry.images} />
@@ -154,9 +155,9 @@ export const MessageBubble = React.memo(function MessageBubble({
 	// the name row was pure noise above each answer.
 	return (
 		<div className="msg msg-assistant">
-			<div
+			<MarkdownBody
 				className="msg-body msg-body-assistant markdown"
-				dangerouslySetInnerHTML={{ __html: html || "" }}
+				html={html || ""}
 			/>
 			<EntryImages images={entry.images} />
 		</div>

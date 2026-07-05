@@ -400,6 +400,20 @@ export function Composer({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (mentions.handleKeyDown(e)) return;
     if ((e.nativeEvent as any).isComposing) return;
+    // Inside an unclosed ``` fence, plain Enter inserts a newline instead of
+    // sending — you can't type a multi-line code block otherwise. Closing the
+    // fence (or ⌘/Ctrl+Enter, or the send button) sends as usual.
+    if (
+      sendKey === "enter" &&
+      e.key === "Enter" &&
+      !e.shiftKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      const caret = textareaRef.current?.selectionStart ?? text.length;
+      const fences = text.slice(0, caret).match(/```/g);
+      if (fences && fences.length % 2 === 1) return; // let the newline land
+    }
     // While a run is busy, ⌘/Ctrl+Enter interrupts: abort the current turn and
     // deliver this send right away. (Only when plain Enter is the send key —
     // otherwise ⌘/Ctrl+Enter already means "send".)

@@ -20,6 +20,7 @@ import githubDark from "@shikijs/themes/github-dark-default";
 import githubLight from "@shikijs/themes/github-light-default";
 // Shiki ships no ReScript grammar — vendored from rescript-vscode
 import rescriptGrammar from "../lib/rescript.tmLanguage.json";
+import { LANG_BY_EXT } from "../lib/lang";
 
 const rescript = { ...(rescriptGrammar as any), name: "rescript" };
 
@@ -44,6 +45,28 @@ function getHighlighter(): Promise<HighlighterCore> {
 function getResolvedTheme(): "dark" | "light" {
   if (typeof document === "undefined") return "dark";
   return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+}
+
+/**
+ * Highlight bare code to shiki HTML for the current theme, or null when the
+ * language isn't one we ship a grammar for (caller keeps its plain <pre>).
+ * Accepts markdown fence infos ("ts", "typescript", "sh", …) — short forms go
+ * through the same extension map the tool blocks use.
+ */
+export async function highlightToHtml(
+  code: string,
+  lang: string,
+): Promise<string | null> {
+  const h = await getHighlighter();
+  const resolved = LANG_BY_EXT[lang.toLowerCase()] ?? lang.toLowerCase();
+  if (!h.getLoadedLanguages().includes(resolved)) return null;
+  return h.codeToHtml(code, {
+    lang: resolved,
+    theme:
+      getResolvedTheme() === "light"
+        ? "github-light-default"
+        : "github-dark-default",
+  });
 }
 
 function useResolvedTheme(): "dark" | "light" {
