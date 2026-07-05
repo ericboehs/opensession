@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { pickAccount } from "./claude-accounts";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/generated-titles.json`;
@@ -66,6 +67,8 @@ function sanitizeTitle(raw: string): string {
 export async function ensureGeneratedTitle(
 	id: string,
 	prompt: string,
+	user?: string,
+	model?: string,
 ): Promise<string | null> {
 	if (getGeneratedTitle(id)) return null; // already have one
 	const source = prompt.trim().slice(0, 2000);
@@ -73,6 +76,7 @@ export async function ensureGeneratedTitle(
 
 	let out = "";
 	try {
+		const account = pickAccount(undefined, user, model);
 		const q = query({
 			prompt: `Summarize this coding task as a short title of 3 to 6 words, phrased as an imperative like a git branch or PR title (e.g. "Add onboarding flow", "Fix layout thumbnails", "Raise timeline playhead"). Sentence case, no trailing punctuation, no quotes, no code. Output ONLY the title, nothing else.\n\nTask:\n"""\n${source}\n"""`,
 			options: {
@@ -82,6 +86,12 @@ export async function ensureGeneratedTitle(
 				allowedTools: [],
 				pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
 				executable: "bun",
+				env: {
+					PATH: process.env.PATH,
+					HOME: process.env.HOME,
+					LANG: process.env.LANG,
+					...(account ? { CLAUDE_CODE_OAUTH_TOKEN: account.token } : {}),
+				},
 			},
 		});
 		for await (const msg of q) {

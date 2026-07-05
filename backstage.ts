@@ -1124,6 +1124,10 @@ function enqueuePrompt(sessionId: string, item: QueueItem): void {
 	promptQueues.set(sessionId, queue);
 	persistQueues();
 	broadcastQueue(sessionId);
+	// Queueing is a delivery promise, not just a UI state. Arm the idle watcher
+	// here so every queued message drains after the current run, even if a caller
+	// forgets to do that explicitly or the session becomes idle between checks.
+	watchExternalRunAndDrain(sessionId);
 }
 
 /** Record a steered message as a visible receipt until its run finishes. */
@@ -2071,6 +2075,8 @@ async function runSessionPromptInner(
 		void ensureGeneratedTitle(
 			session.id,
 			provisional ? content : session.title,
+			user || session.startedBy || undefined,
+			session.model || undefined,
 		).then((t) => {
 			if (t) sessionsCache = null;
 		});
@@ -2109,9 +2115,8 @@ async function runSessionPromptInner(
 		// Pinned subscription for this session (claude-runner prefers it, pool
 		// fallback on exhaustion). Ignored by Codex models.
 		accountId: session.accountId,
-		// When the pool is exhausted on the primary model, drop to a fallback
-		// rather than dead-ending. Fable's weekly cap is separate from general
-		// capacity, so a spent-Fable session resumes on Sonnet in-place.
+		// Only switch models when a fallback is explicitly configured. By default,
+		// usage exhaustion stops the run so the human can choose what to do.
 		fallbackModel: interactiveFallbackModel(session.model),
 		images,
 		mcpServers,
@@ -5560,6 +5565,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					body.name,
 					body.token,
 					typeof body.owner === "string" ? body.owner : undefined,
+					typeof body.credentialsPath === "string" ? body.credentialsPath : undefined,
 				);
 				if ("error" in result) return Response.json(result, { status: 400 });
 				return Response.json(result);
@@ -5587,6 +5593,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const updated = setAccountOwner(
 					decodeURIComponent(accountDelMatch[1]),
 					typeof body?.owner === "string" ? body.owner : undefined,
+					typeof body?.credentialsPath === "string"
+						? body.credentialsPath
+						: undefined,
 				);
 				return updated
 					? Response.json(updated)
@@ -6506,7 +6515,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								!!msg.createWorkspace &&
 								!msg.createWorkspace.name;
 							const wsToName = workspace;
-							void ensureGeneratedTitle(bksId, prompt).then((t) => {
+							void ensureGeneratedTitle(bksId, prompt, user, model).then((t) => {
 								if (!t) return;
 								sessionsCache = null;
 								if (wsAutoNamed && wsToName) {
@@ -6621,6 +6630,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									title,
 									mode: isAsk ? "ask" : "code",
 									...(plainThreadId ? { plainThreadId } : {}),
+									...(createMcpServers && createMcpServers.length ? { mcpServers: createMcpServers } : {}),
 								};
 								writeJsonAtomic(
 									`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
@@ -6816,7 +6826,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 
 							emit({ type: "stream_done" });
 							emit({ type: "session_status", isRunning: false });
-							if (!promptQueues.get(bksId)?.length)
+							if (promptQueues.get(bksId)?.length)
+								await drainQueue(bksId);
+							else
 								onHumanAsksSessionIdle(bksId);
 						} catch (e: any) {
 							// Failure after the early session_created: the client is already
@@ -7095,7 +7107,7 @@ registerSessionControl({
 		}
 		// Replace the raw first-line title with a short summary in the background;
 		// the next sessions poll (≤5s) picks it up.
-		void ensureGeneratedTitle(bksId, prompt).then((t) => {
+		void ensureGeneratedTitle(bksId, prompt, user, model).then((t) => {
 			if (t) sessionsCache = null;
 		});
 
@@ -7652,4 +7664,3 @@ if (!g.__backstageBooted) {
 
 	g.__backstageBooted = true;
 }
-

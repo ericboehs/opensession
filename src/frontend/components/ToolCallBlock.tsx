@@ -73,6 +73,8 @@ export function toolSummary(toolName: string, input: unknown, fallback: string):
     case "Edit":
     case "Write":
       return tidyPath((inp.file_path as string) || fallback);
+    case "FileChange":
+      return fileChangeSummary(inp) || fallback;
     case "Bash":
       return truncate(((inp.command as string) || fallback).replace(/\s*\n\s*/g, " ⏎ "), 160);
     case "Grep":
@@ -109,6 +111,21 @@ function compactInput(inp: Record<string, unknown>): string {
   return parts.join("  ·  ");
 }
 
+function fileChangeSummary(inp: Record<string, unknown>): string {
+  if (!Array.isArray(inp.changes)) return "";
+  return inp.changes
+    .map((change) => {
+      if (typeof change === "string") return change;
+      if (!change || typeof change !== "object") return "";
+      const c = change as Record<string, unknown>;
+      const path = typeof c.path === "string" ? tidyPath(c.path) : "";
+      return [c.kind, path].filter(Boolean).join(" ");
+    })
+    .filter(Boolean)
+    .slice(0, 4)
+    .join("  ·  ");
+}
+
 /**
  * Tool families: each gets an icon and an accent hue (via the --tool-* palette
  * vars, theme-aware). Class strings are literal so the Tailwind scanner sees
@@ -141,6 +158,7 @@ export function toolFamily(toolName: string): FamilyKey {
       return "file";
     case "Edit":
     case "Write":
+    case "FileChange":
       return "edit";
     case "Grep":
     case "Glob":

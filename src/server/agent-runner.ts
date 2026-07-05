@@ -40,6 +40,10 @@ import {
   hostInterruptSteer,
   hostCancel,
 } from "./host-registry";
+import { buildEngineSwitchHandoffNote } from "./fork-handoff";
+import { parseTranscript } from "./jsonl-parser";
+import { wrapContext } from "./prompt-context";
+import { getEngineTranscriptPath } from "./sessions";
 import type { GitIdentity } from "./shared/user-mappings";
 
 export type { StreamEvent };
@@ -195,9 +199,26 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
 
     let prompt = currentOpts.prompt;
     if (sawInit && crossProvider) {
-      prompt +=
-        "\n\n[Note: a previous attempt on another model was cut short by usage limits and may have " +
-        "left partial work in this directory — review what's already done before continuing.]";
+      const handoffPath = currentEngineId
+        ? getEngineTranscriptPath(currentOpts.cwd, currentEngineId, providerFor(currentModel))
+        : null;
+      const entries = handoffPath ? parseTranscript(handoffPath) : [];
+      if (entries.length) {
+        prompt =
+          `${wrapContext(
+            buildEngineSwitchHandoffNote({
+              fromModel: currentModel,
+              fromProvider: providerFor(currentModel),
+              toProvider: fallback.provider,
+              targetResuming: false,
+              entries,
+            })
+          )}\n\n${prompt}`;
+      } else {
+        prompt +=
+          "\n\n[Note: a previous attempt on another model was cut short by usage limits and may have " +
+          "left partial work in this directory — review what's already done before continuing.]";
+      }
     }
 
     currentOpts = {

@@ -44,8 +44,8 @@ const CODEX_MODEL_ORDER = [
 ];
 
 const FALLBACK_MODEL_ORDER = [
-  "claude-fable-5",
   "claude-opus-4-8",
+  "claude-fable-5",
   "claude-sonnet-5",
   "gpt-5.5",
   "gpt-5.4",
@@ -116,26 +116,26 @@ export function setDefaultModel(input: string | null): string {
 }
 
 /**
- * Global fallback model when a run dies on usage limits with every account in
- * its pool exhausted (Slack/Linear agents and automations without their own
- * fallbackModel). MICHAEL_FALLBACK_MODEL=none disables it.
+ * Optional global fallback model when a run dies on usage limits with every
+ * account in its pool exhausted. Unset means no automatic fallback; callers
+ * that want fallback should pass an explicit per-session/per-automation
+ * fallbackModel.
  */
 export const DEFAULT_FALLBACK_MODEL: string | undefined = (() => {
   const v = (process.env.MICHAEL_FALLBACK_MODEL || "").trim().toLowerCase();
   if (v === "none") return undefined;
-  return v || DEFAULT_CODEX_MODEL;
+  return v || undefined;
 })();
 
 /**
- * Whether interactive sessions auto-switch to a fallback model when the primary
- * runs out of usage credits pool-wide. On (the default) = the session drops to
- * another model and keeps going; off ("manual") = the run stops on the limit
- * notice and the human picks the next model. Persisted so the choice survives a
- * restart; read fresh per run so a UI toggle takes effect without one.
+ * Whether interactive sessions auto-switch when they have an explicit fallback
+ * model. On (the default) = use that configured fallback; off ("manual") = stop
+ * on the limit notice and let the human pick the next model. Persisted so the
+ * choice survives a restart; read fresh per run so a UI toggle takes effect
+ * without one.
  *
- * Stored as { auto: boolean } in FALLBACK_AUTO_STORE. Independent of
- * MICHAEL_FALLBACK_MODEL=none, which hard-disables fallback everywhere (incl.
- * agents/automations); this toggle only governs interactive sessions.
+ * Stored as { auto: boolean } in FALLBACK_AUTO_STORE. This toggle only governs
+ * interactive sessions; it does not create a fallback model by itself.
  */
 let fallbackAutoCache: boolean | undefined;
 
@@ -203,22 +203,11 @@ export function resolveConcreteModel(
 }
 
 /**
- * Fallback model for an *interactive* session running on `primaryModel`, or
- * undefined when auto-switch is off (manual) or fallback is hard-disabled.
- *
- * Fable has its own (small) weekly cap that's separate from the account's
- * general 5-hour / 7-day capacity — so a Fable session can exhaust Fable
- * pool-wide ("You're out of usage credits") while every account still has
- * plenty of general capacity left. In that case Sonnet on the *same* provider
- * is the right fallback: it resumes the session in-place (no cross-provider
- * fresh start) and draws on that still-available general capacity. Any other
- * primary uses the global cross-provider default. Honors MICHAEL_FALLBACK_MODEL=none.
+ * Fallback model for an interactive session, or undefined when no fallback is
+ * explicitly configured. This no longer invents a Claude → Codex fallback.
  */
-export function interactiveFallbackModel(primaryModel?: string): string | undefined {
-  if (DEFAULT_FALLBACK_MODEL === undefined) return undefined;
+export function interactiveFallbackModel(_primaryModel?: string): string | undefined {
   if (!getModelFallbackAuto()) return undefined;
-  const primary = resolveModel(primaryModel || getDefaultModel());
-  if (primary?.id === "claude-fable-5") return "claude-sonnet-5";
   return DEFAULT_FALLBACK_MODEL;
 }
 

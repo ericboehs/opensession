@@ -414,6 +414,17 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
         ...(videos.length > 0 ? { videos } : {}),
       }];
     }
+    if (p.type === "file_change") {
+      return [{
+        id: p.id || stableCodexId("codex-file-change", raw, p, p.changes),
+        type: "tool_use",
+        content: `Changed ${(p.changes || []).length || ""} file(s)`.trim(),
+        timestamp: ts,
+        toolName: "FileChange",
+        toolInput: { changes: Array.isArray(p.changes) ? p.changes : [] },
+        toolUseId: p.id,
+      }];
+    }
     // Shell commands
     if (p.type === "local_shell_call") {
       const command = Array.isArray(p.action?.command)

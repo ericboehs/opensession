@@ -8,11 +8,12 @@ import {
 
 describe("fallbackModelChain", () => {
   it("tries the configured fallback first, then other top models", () => {
-    const chain = fallbackModelChain("claude-fable-5", "claude-sonnet-5").map(
+    const chain = fallbackModelChain("claude-fable-5", "gpt-5.5").map(
       (m) => m.id
     );
 
-    expect(chain[0]).toBe("claude-sonnet-5");
+    expect(chain[0]).toBe("gpt-5.5");
+    expect(chain[1]).toBe("claude-opus-4-8");
     expect(chain).toContain("gpt-5.5");
     expect(chain).not.toContain("claude-fable-5");
   });
@@ -20,7 +21,7 @@ describe("fallbackModelChain", () => {
   it("skips the primary when the configured fallback is the same model", () => {
     const chain = fallbackModelChain("gpt-5.5", "gpt-5.5").map((m) => m.id);
 
-    expect(chain[0]).toBe("claude-fable-5");
+    expect(chain[0]).toBe("claude-opus-4-8");
     expect(chain).not.toContain("gpt-5.5");
   });
 

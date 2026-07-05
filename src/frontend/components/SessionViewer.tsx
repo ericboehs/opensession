@@ -84,6 +84,14 @@ interface Props {
 	send: (msg: any) => void;
 	addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
 	connected: boolean;
+	/** Opening prompt shown while a just-created session is still catching up
+	    through the session poll. Reconciles away when the transcript arrives. */
+	initialPending?: {
+		content: string;
+		user: string;
+		sentAt: number;
+		images?: string[];
+	};
 	/** App-level top-bar node above the tab strip; when present the header renders
 	    there (name-on-top layout) instead of inline. */
 	topbarEl?: HTMLElement | null;
@@ -194,6 +202,7 @@ export function SessionViewer({
 	send,
 	addHandler,
 	connected,
+	initialPending,
 	topbarEl,
 	headerActionsEl,
 	headerModelEl,
@@ -273,7 +282,33 @@ export function SessionViewer({
 			images?: string[];
 			busyMode?: "queue" | "steer";
 		}>
-	>([]);
+	>(() =>
+		initialPending
+			? [{ id: `pending-initial-${session.id}`, ...initialPending }]
+			: [],
+	);
+	useEffect(() => {
+		if (!initialPending) return;
+		const content = initialPending.content.trim();
+		setPending((prev) => {
+			if (prev.some((p) => p.id === `pending-initial-${session.id}`))
+				return prev;
+			if (
+				entries.some(
+					(e) => e.type === "user" && (!content || e.content.trim() === content),
+				)
+			) {
+				return prev;
+			}
+			return [
+				...prev,
+				{
+					id: `pending-initial-${session.id}`,
+					...initialPending,
+				},
+			];
+		});
+	}, [entries, initialPending, session.id]);
 	const [ask, setAsk] = useState<{
 		questionId: string;
 		questions: AskQuestion[];
@@ -803,7 +838,11 @@ export function SessionViewer({
 	// bubble (now kept alive briefly past stream_done) would otherwise bleed
 	// into the next session's view.
 	useEffect(() => {
-		setPending([]);
+		setPending(
+			initialPending
+				? [{ id: `pending-initial-${session.id}`, ...initialPending }]
+				: [],
+		);
 		streamSeqRef.current++;
 		setStreamText("");
 		setIsStreaming(false);
@@ -1071,6 +1110,8 @@ export function SessionViewer({
 	// optimistic transcript bubbles. Both reconcile through the same effect.
 	const pendingQueue = pending.filter((p) => p.busyMode);
 	const pendingBubbles = pending.filter((p) => !p.busyMode);
+	const hasLiveConversation =
+		pendingBubbles.length > 0 || !!streamText || isBusy || !!ask;
 
 	const queueCount = queued.length + visibleSteered.length + pendingQueue.length;
 	const attachedQueue =
@@ -1970,7 +2011,7 @@ export function SessionViewer({
 										No transcript available for this session
 									</div>
 								) : null
-							) : entries.length === 0 ? (
+							) : entries.length === 0 && !hasLiveConversation ? (
 								<div className="empty">Empty transcript</div>
 							) : (
 								<>

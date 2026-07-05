@@ -237,6 +237,26 @@ function routePath(route: Route): string {
 function App() {
 	const { sessions, loading, refresh, inject, patch, remove } = useSessions();
 	const { connected, send, addHandler } = useWebSocket();
+	const sessionsRef = useRef(sessions);
+	sessionsRef.current = sessions;
+	type PendingCreateDraft = {
+		prompt: string;
+		mode: "ask" | "code";
+		repo: string;
+		branch: string | null;
+		projectId?: string;
+		model?: string;
+		images?: string[];
+		startedAt: string;
+		user: string;
+	};
+	const pendingCreateDraftRef = useRef<PendingCreateDraft | null>(null);
+	const [pendingInitialPrompts, setPendingInitialPrompts] = useState<
+		Record<
+			string,
+			{ content: string; user: string; sentAt: number; images?: string[] }
+		>
+	>({});
 	// iOS evicts standalone PWAs from memory and relaunches them at the manifest
 	// start_url (/backstage/) — losing the session you had open. On a cold load
 	// that lands on home, restore the last session so it isn't dropped. This only
@@ -594,10 +614,59 @@ function App() {
 				return;
 			}
 			if (msg.type === "session_created") {
+				const draft = pendingCreateDraftRef.current;
+				pendingCreateDraftRef.current = null;
 				// Pin the just-created session for its creator (this WS reply is
 				// creator-only, so it never pins a teammate's new chat onto my bar).
 				// Per-browser opt-out in Settings; on by default.
 				if (getPinNewSessions()) setPins(pin(msg.id));
+				if (!sessionsRef.current.some((s) => s.id === msg.id)) {
+					const now = new Date().toISOString();
+					const user = draft?.user || getCurrentUser();
+					const createdAt = draft?.startedAt || now;
+					inject({
+						id: msg.id,
+						claudeSessionId: null,
+						source: "backstage",
+						branch: draft?.branch ?? null,
+						worktreeDir: null,
+						startedBy: user,
+						title: msg.newWorkspace
+							? "New workspace"
+							: draft?.projectId
+								? "New chat"
+								: "New session",
+						lastActivity: now,
+						createdAt,
+						isRunning: true,
+						runStartedAt: now,
+						transcriptPath: null,
+						mode: draft?.mode,
+						repo: draft?.repo,
+						projectId: msg.workspaceId || draft?.projectId || null,
+						model: draft?.model,
+						archived: false,
+					});
+				}
+				if (draft?.prompt || draft?.images?.length) {
+					setPendingInitialPrompts((prev) => ({
+						...prev,
+						[msg.id]: {
+							content: draft.prompt,
+							user: draft.user,
+							sentAt: new Date(draft.startedAt).getTime(),
+							...(draft.images?.length ? { images: draft.images } : {}),
+						},
+					}));
+					window.setTimeout(() => {
+						setPendingInitialPrompts((prev) => {
+							if (!prev[msg.id]) return prev;
+							const next = { ...prev };
+							delete next[msg.id];
+							return next;
+						});
+					}, 120_000);
+				}
 				// Mark it pending so the viewer shows "Starting…" until the poll
 				// catches up; a fallback timeout clears it so a failed create can't
 				// stick.
@@ -873,7 +942,6 @@ function App() {
 	return (
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
-			<UpdatePill addHandler={addHandler} />
 			<MediaLightboxHost />
 			<div className="app">
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
@@ -1201,6 +1269,7 @@ function App() {
 								refresh();
 							}}
 						/>
+						<UpdatePill addHandler={addHandler} />
 						{/* Footer user row (desktop): avatar · current user · connection
 						    state · gear — the account/settings menu that used to sit at the
 						    top. Hidden on mobile, where the top bar carries it. */}
@@ -1390,6 +1459,7 @@ function App() {
 									send={send}
 									addHandler={addHandler}
 									connected={connected}
+									initialPending={pendingInitialPrompts[currentSession.id]}
 									topbarEl={topbarEl}
 									headerActionsEl={headerActionsEl}
 									headerModelEl={headerModelEl}
@@ -1479,6 +1549,13 @@ function App() {
 								addHandler={addHandler}
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onNewSession={(prompt) => openPalette(prompt)}
+								onCreateStarted={(draft) => {
+									pendingCreateDraftRef.current = {
+										...draft,
+										startedAt: new Date().toISOString(),
+										user: getCurrentUser(),
+									};
+								}}
 								onOpenReviews={() => navigate({ view: "reviews" })}
 								onOpenSessionId={(id) => navigate({ view: "session", id })}
 							/>
@@ -1540,6 +1617,13 @@ function App() {
 						projectId={palette.projectId}
 						forceRepo={palette.repo}
 						forceBranch={palette.branch}
+						onCreateStarted={(draft) => {
+							pendingCreateDraftRef.current = {
+								...draft,
+								startedAt: new Date().toISOString(),
+								user: getCurrentUser(),
+							};
+						}}
 					/>
 				)}
 			</div>

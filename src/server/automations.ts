@@ -113,7 +113,7 @@ export interface Automation {
   model?: string;
   /**
    * Model to switch to when the primary's whole account pool is exhausted.
-   * Unset = the global default fallback (gpt-5.5); "none" disables fallback.
+   * Unset = no fallback; "none" also disables fallback.
    */
   fallbackModel?: string;
   lastRunAt?: string;

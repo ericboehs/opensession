@@ -6,14 +6,13 @@ interface Props {
 }
 
 /**
- * "A new version is available" toast, docked bottom-right. Fired by the server's
+ * "A new version is available" toast, docked to the sidebar bottom. Fired by the server's
  * `frontend_updated` broadcast after an in-process rebuild (no restart, so
  * running sessions are untouched).
  *
  * Refreshing is optional — new page loads already get the new build; this just
  * nudges already-open tabs — so the toast is non-blocking (it never covers the
- * composer) and dismissable. It's rendered once at the app root, not inline next
- * to the wordmark, so there's a single instance regardless of layout.
+ * composer) and dismissable.
  */
 export function UpdatePill({ addHandler }: Props) {
   const [show, setShow] = useState(false);
@@ -28,8 +27,7 @@ export function UpdatePill({ addHandler }: Props) {
   return (
     <div className="update-toast" role="status" aria-live="polite">
       <div className="update-toast-body">
-        <span className="update-toast-dot" aria-hidden="true" />
-        <span className="update-toast-text">A new version is available</span>
+        <span className="update-toast-text">New update available</span>
       </div>
       <div className="update-toast-actions">
         <button

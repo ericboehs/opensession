@@ -1019,6 +1019,12 @@ export function Sidebar({
 		],
 		[pinnedWsRows, focusWsRows],
 	);
+	const hasWorkspaceFilter =
+		!!search || filter.repo !== "all" || filter.person !== "me";
+	const workspaceListEmpty =
+		pinnedWsRows.length === 0 &&
+		focusWsRows.length === 0 &&
+		prLaneRows.length === 0;
 
 	function archiveWorkspaceWithNext(row: WsRow) {
 		// Chatless rows can't be opened, so they're not "next" candidates.
@@ -2023,6 +2029,14 @@ export function Sidebar({
 					});
 				}}
 			>
+				{workspaceListEmpty && (
+					<div className="sidebar-workspace-empty">
+						{hasWorkspaceFilter
+							? "No matching workspaces"
+							: "No workspaces yet"}
+					</div>
+				)}
+
 				{/* ── Pinned (workspaces + notes, mixed) ── */}
 				{(() => {
 					const pinnedRows = pinnedWsRows;

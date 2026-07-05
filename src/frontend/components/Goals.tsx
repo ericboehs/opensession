@@ -438,8 +438,7 @@ function GoalForm({
         <label>
           Fallback (all accounts hit limits)
           <select value={fallbackModel} onChange={(e) => setFallbackModel(e.target.value)}>
-            <option value="">Default — gpt-5.5</option>
-            <option value="none">None — fail instead</option>
+            <option value="">None — fail instead</option>
             {models.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label} ({m.provider === "codex" ? "OpenAI Codex" : "Claude"})

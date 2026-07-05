@@ -764,15 +764,15 @@ export async function* runClaude(opts: {
     // normal pool pick (personal-first, shared fallback) covers the unpinned
     // case and takes over once the pin is exhausted (rotateAfterLimit below).
     let account: ClaudeAccount | undefined =
-      (opts.accountId ? getUsableAccountById(opts.accountId) : undefined) ??
-      pickAccount(triedAccountIds, user);
+      (opts.accountId ? getUsableAccountById(opts.accountId, model) : undefined) ??
+      pickAccount(triedAccountIds, user, model);
     let legacySwitched = false;
 
     const rotateAfterLimit = (): string | undefined => {
       if (account) {
         triedAccountIds.add(account.id);
-        markExhausted(account.id);
-        const next = pickAccount(triedAccountIds, user);
+        markExhausted(account.id, model);
+        const next = pickAccount(triedAccountIds, user, model);
         if (!next) return undefined;
         account = next;
         return next.name;

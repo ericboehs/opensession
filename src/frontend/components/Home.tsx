@@ -22,6 +22,13 @@ interface Props {
   addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
   onSelect: (session: UnifiedSession) => void;
   onNewSession: (prompt?: string) => void;
+  onCreateStarted?: (draft: {
+    prompt: string;
+    mode: "ask";
+    repo: string;
+    branch: null;
+    model?: string;
+  }) => void;
   onOpenReviews: () => void;
   onOpenSessionId?: (id: string) => void;
 }
@@ -176,7 +183,7 @@ function HumanAsksCard({ onOpenSessionId }: { onOpenSessionId?: (id: string) => 
   );
 }
 
-export function Home({ sessions, connected, send, addHandler, onSelect, onNewSession, onOpenReviews, onOpenSessionId }: Props) {
+export function Home({ sessions, connected, send, addHandler, onSelect, onNewSession, onCreateStarted, onOpenReviews, onOpenSessionId }: Props) {
   // Seeded from / mirrored into the draft store so wandering off to a chat or
   // workspace and back doesn't lose a half-typed question.
   const [question, setQuestion] = useState(() => loadDraft("home").text);
@@ -239,6 +246,13 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
       setAsking(false);
       setAskError("Michael didn't respond — check the connection and try again.");
     }, 15_000);
+    onCreateStarted?.({
+      prompt: q,
+      mode: "ask",
+      repo: "tella-fusion",
+      branch: null,
+      ...(askModel ? { model: askModel } : {}),
+    });
     send({
       type: "create_session",
       mode: "ask",

@@ -37,18 +37,26 @@ type Props = {
 	className?: string;
 };
 
-function providerDot(id: string, models: ModelOption[]): string {
-	const found = models.find((m) => m.id === id);
-	const codex = found ? found.provider === "codex" : id.startsWith("gpt") || id.startsWith("codex");
-	return `composer-model-dot ${codex ? "dot-codex" : "dot-claude"}`;
-}
+const PRIMARY_MODEL_IDS = [
+	"claude-fable-5",
+	"claude-opus-4-8",
+	"claude-sonnet-5",
+	"gpt-5.5",
+] as const;
+const PRIMARY_MODEL_ID_SET = new Set<string>(PRIMARY_MODEL_IDS);
 
 /** Display name without the vendor noise: "Claude Fable 5" → "Fable 5",
- * "GPT-5.5 (Codex)" → "GPT-5.5". The provider dot carries that signal. */
+ * "GPT-5.5 (Codex)" → "GPT-5.5". */
 export function shortModelLabel(id: string, models: ModelOption[]): string {
 	const raw = models.find((m) => m.id === id)?.label || id || "Default";
 	return raw.replace(/^Claude\s+/i, "").replace(/\s*\(Codex\)$/i, "");
 }
+
+type ModelMenuOption = {
+	value: string;
+	label: string;
+	id: string;
+};
 
 /**
  * Combined model + reasoning-effort pill (Claude-app-style): one trigger on the
@@ -83,20 +91,45 @@ export function ModelEffortSelect({
 		: undefined;
 	const subscriptionLabel = currentAccount ? currentAccount.name : "Auto";
 
-	// "" (default) first, labeled with the default model's name, then the rest.
-	const modelOptions = [
-		{ value: "", label: shortModelLabel(defaultModel, models), dotId: defaultModel },
+	const optionFor = (id: string): ModelMenuOption => ({
+		value: id === defaultModel ? "" : id,
+		label: shortModelLabel(id, models),
+		id,
+	});
+	const availableModelIds = new Set(models.map((m) => m.id));
+	const primaryOptions = PRIMARY_MODEL_IDS
+		.filter((id) => availableModelIds.has(id))
+		.map((id) => optionFor(id));
+	const otherOptions = [
+		...(PRIMARY_MODEL_ID_SET.has(defaultModel) ? [] : [optionFor(defaultModel)]),
 		...models
-			.filter((m) => m.id !== defaultModel)
-			.map((m) => ({ value: m.id, label: shortModelLabel(m.id, models), dotId: m.id })),
+			.filter((m) => m.id !== defaultModel && !PRIMARY_MODEL_ID_SET.has(m.id))
+			.map((m) => optionFor(m.id)),
 	];
+	const isSelected = (option: ModelMenuOption) =>
+		option.value === model || (option.value === "" && (model === "" || model === defaultModel));
+
+	const renderModelOption = (option: ModelMenuOption) => {
+		const selected = isSelected(option);
+		return (
+			<Menu.Item
+				key={option.value || option.id}
+				onClick={() => onModelChange(option.value)}
+				disabled={modelDisabled}
+				title={modelDisabled ? modelTitle : undefined}
+				className={`palette-select-menu-item ${selected ? "is-selected" : ""} ${modelDisabled ? "opacity-55" : ""}`}
+			>
+				<span className="palette-select-menu-label">{option.label}</span>
+				{selected && <IconCheck className="palette-select-menu-check" size={17} />}
+			</Menu.Item>
+		);
+	};
 
 	return (
 		<Menu.Root>
 			<Menu.Trigger
 				type="button"
-				// Quiet pill: no outline at rest, hover state only, no chevron —
-				// the provider dot + dim effort read as one compact label.
+				// Quiet pill: no outline at rest, hover state only, no chevron.
 				className={cn(
 					"border-transparent hover:border-transparent hover:bg-hover",
 					className,
@@ -105,105 +138,91 @@ export function ModelEffortSelect({
 				disabled={disabled || (!hasEffort && modelDisabled)}
 				aria-label={hasEffort ? "Model and reasoning effort" : "Model"}
 			>
-				<span className={providerDot(effectiveModel, models)} />
 				<span className="palette-pill-label">{modelLabel}</span>
 				{hasEffort && <span className="flex-none text-faint">{effortLabel}</span>}
 			</Menu.Trigger>
 			<Menu.Popup align="end" sideOffset={6} className="palette-select-menu">
-				{modelOptions.map((option) => {
-					// An explicitly-set default model counts as the default row.
-					const selected =
-						option.value === model || (option.value === "" && model === defaultModel);
-					return (
-						<Menu.Item
-							key={option.value}
-							onClick={() => onModelChange(option.value)}
-							disabled={modelDisabled}
-							title={modelDisabled ? modelTitle : undefined}
-							className={`palette-select-menu-item ${selected ? "is-selected" : ""} ${modelDisabled ? "opacity-55" : ""}`}
-						>
-							<span className="flex min-w-0 items-center gap-2">
-								<span className={providerDot(option.dotId, models)} />
-								<span className="palette-select-menu-label">{option.label}</span>
-							</span>
-							{selected && <IconCheck className="palette-select-menu-check" size={17} />}
-						</Menu.Item>
-					);
-				})}
+				{primaryOptions.map(renderModelOption)}
+				{otherOptions.length > 0 && (
+					<Menu.SubmenuRoot>
+						<Menu.SubmenuTrigger className="palette-select-menu-item">
+							<span className="palette-select-menu-label">Other models</span>
+							<IconChevronRight className="palette-select-menu-check" size={17} />
+						</Menu.SubmenuTrigger>
+						<Menu.Popup className="palette-select-menu">
+							{otherOptions.map(renderModelOption)}
+						</Menu.Popup>
+					</Menu.SubmenuRoot>
+				)}
+				{(hasEffort || hasSubscription) && <Menu.Separator className="my-1" />}
 				{hasEffort && (
-					<>
-						<Menu.Separator className="my-1" />
-						<Menu.SubmenuRoot>
-							<Menu.SubmenuTrigger className="palette-select-menu-item">
-								<span className="palette-select-menu-label">Effort</span>
-								<span className="flex flex-none items-center gap-1 text-dim">
-									{effortLabel}
-									<IconChevronRight className="palette-select-menu-check" size={17} />
-								</span>
-							</Menu.SubmenuTrigger>
-							<Menu.Popup className="palette-select-menu">
-								{EFFORTS.map((e) => {
-									const selected = (effort ?? "high") === e.id;
-									return (
-										<Menu.Item
-											key={e.id}
-											onClick={() => onEffortChange!(e.id)}
-											className={`palette-select-menu-item ${selected ? "is-selected" : ""}`}
-										>
-											<span className="palette-select-menu-label">{e.label}</span>
-											{selected && (
-												<IconCheck className="palette-select-menu-check" size={17} />
-											)}
-										</Menu.Item>
-									);
-								})}
-							</Menu.Popup>
-						</Menu.SubmenuRoot>
-					</>
+					<Menu.SubmenuRoot>
+						<Menu.SubmenuTrigger className="palette-select-menu-item">
+							<span className="palette-select-menu-label">Effort</span>
+							<span className="flex flex-none items-center gap-1 text-dim">
+								{effortLabel}
+								<IconChevronRight className="palette-select-menu-check" size={17} />
+							</span>
+						</Menu.SubmenuTrigger>
+						<Menu.Popup className="palette-select-menu">
+							{EFFORTS.map((e) => {
+								const selected = (effort ?? "high") === e.id;
+								return (
+									<Menu.Item
+										key={e.id}
+										onClick={() => onEffortChange!(e.id)}
+										className={`palette-select-menu-item ${selected ? "is-selected" : ""}`}
+									>
+										<span className="palette-select-menu-label">{e.label}</span>
+										{selected && (
+											<IconCheck className="palette-select-menu-check" size={17} />
+										)}
+									</Menu.Item>
+								);
+							})}
+						</Menu.Popup>
+					</Menu.SubmenuRoot>
 				)}
 				{hasSubscription && (
-					<>
-						{!hasEffort && <Menu.Separator className="my-1" />}
-						<Menu.SubmenuRoot>
-							<Menu.SubmenuTrigger className="palette-select-menu-item">
-								<span className="palette-select-menu-label">Subscription</span>
-								<span className="flex flex-none items-center gap-1 text-dim">
-									{subscriptionLabel}
-									<IconChevronRight className="palette-select-menu-check" size={17} />
-								</span>
-							</Menu.SubmenuTrigger>
-							<Menu.Popup className="palette-select-menu">
-								<Menu.Item
-									onClick={() => onAccountChange!("")}
-									className={`palette-select-menu-item ${!accountId ? "is-selected" : ""}`}
-								>
-									<span className="palette-select-menu-label">Auto</span>
-									{!accountId && (
-										<IconCheck className="palette-select-menu-check" size={17} />
-									)}
-								</Menu.Item>
-								{accounts!.map((a) => {
-									const selected = a.id === accountId;
-									return (
-										<Menu.Item
-											key={a.id}
-											onClick={() => onAccountChange!(a.id)}
-											className={`palette-select-menu-item ${selected ? "is-selected" : ""}`}
-										>
-											<span className="palette-select-menu-label">
-												{a.name}
-												{a.owner ? ` · ${a.owner}` : ""}
-												{a.usable ? "" : " · exhausted"}
-											</span>
-											{selected && (
-												<IconCheck className="palette-select-menu-check" size={17} />
-											)}
-										</Menu.Item>
-									);
-								})}
-							</Menu.Popup>
-						</Menu.SubmenuRoot>
-					</>
+					<Menu.SubmenuRoot>
+						<Menu.SubmenuTrigger className="palette-select-menu-item">
+							<span className="palette-select-menu-label">Subscription</span>
+							<span className="flex flex-none items-center gap-1 text-dim">
+								{subscriptionLabel}
+								<IconChevronRight className="palette-select-menu-check" size={17} />
+							</span>
+						</Menu.SubmenuTrigger>
+						<Menu.Popup className="palette-select-menu">
+							<Menu.Item
+								onClick={() => onAccountChange!("")}
+								className={`palette-select-menu-item ${!accountId ? "is-selected" : ""}`}
+							>
+								<span className="palette-select-menu-label">Auto</span>
+								{!accountId && (
+									<IconCheck className="palette-select-menu-check" size={17} />
+								)}
+							</Menu.Item>
+							{accounts!.map((a) => {
+								const selected = a.id === accountId;
+								return (
+									<Menu.Item
+										key={a.id}
+										onClick={() => onAccountChange!(a.id)}
+										className={`palette-select-menu-item ${selected ? "is-selected" : ""}`}
+									>
+										<span className="palette-select-menu-label">
+											{a.name}
+											{a.owner ? ` · ${a.owner}` : ""}
+											{a.usable ? "" : " · exhausted"}
+										</span>
+										{selected && (
+											<IconCheck className="palette-select-menu-check" size={17} />
+										)}
+									</Menu.Item>
+								);
+							})}
+						</Menu.Popup>
+					</Menu.SubmenuRoot>
 				)}
 			</Menu.Popup>
 		</Menu.Root>

@@ -206,12 +206,12 @@ export function Automations({ onOpenSession }: Props) {
                 >
                   {a.model || defaultModel || "default"}
                 </span>
-                {a.fallbackModel !== "none" && (
+                {a.fallbackModel && a.fallbackModel !== "none" && (
                   <span
                     className="source-chip chip-fallback"
                     title="Fallback — used only when every account for the primary model has hit its usage limit"
                   >
-                    ↯ {a.fallbackModel || "gpt-5.5"}
+                    ↯ {a.fallbackModel}
                   </span>
                 )}
                 {(a.isRunning || a.lastRunStatus === "running") && (
@@ -1006,8 +1006,7 @@ function AutomationForm({
           <label>
             Fallback (when all accounts hit usage limits)
             <select value={fallbackModel} onChange={(e) => setFallbackModel(e.target.value)}>
-              <option value="">Default — gpt-5.5</option>
-              <option value="none">None — fail instead of falling back</option>
+              <option value="">None — fail instead of falling back</option>
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label} ({m.provider === "codex" ? "OpenAI Codex" : "Claude"})

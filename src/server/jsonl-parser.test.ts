@@ -324,6 +324,36 @@ describe("Codex rollout parsing", () => {
     expect(full[1].id).toStartWith("codex-web-");
   });
 
+  it("parses Codex file_change items as file edit tool uses", () => {
+    const path = writeCodexFixture([
+      JSON.stringify({
+        timestamp: TS,
+        type: "response_item",
+        payload: {
+          id: "fc_1",
+          type: "file_change",
+          status: "completed",
+          changes: [
+            { kind: "update", path: "src/frontend/components/TurnFooter.tsx" },
+            { kind: "add", path: "src/server/new-file.ts" },
+          ],
+        },
+      }),
+    ]);
+
+    const entries = parseTranscript(path);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe("tool_use");
+    expect(entries[0].toolName).toBe("FileChange");
+    expect(entries[0].toolUseId).toBe("fc_1");
+    expect(entries[0].toolInput).toEqual({
+      changes: [
+        { kind: "update", path: "src/frontend/components/TurnFooter.tsx" },
+        { kind: "add", path: "src/server/new-file.ts" },
+      ],
+    });
+  });
+
   it("extracts videos from Codex shell tool output markers", () => {
     const path = writeCodexFixture([
       JSON.stringify({

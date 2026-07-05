@@ -361,7 +361,7 @@ function describeToolUse(item: ThreadItem): { toolName: string; toolInput: unkno
     case "file_change":
       return {
         toolName: "FileChange",
-        toolInput: { changes: item.changes.map((c) => `${c.kind} ${c.path}`) },
+        toolInput: { changes: item.changes },
       };
     case "web_search":
       return { toolName: "WebSearch", toolInput: { query: item.query } };

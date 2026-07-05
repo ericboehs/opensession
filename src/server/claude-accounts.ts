@@ -92,18 +92,23 @@ export interface ClaudeAccountPublic {
   owner?: string;
   usage: AccountUsage | null;
   noUsageScope: boolean;
+  credentialsPath?: string;
   exhaustedUntil: string | null;
   usable: boolean;
 }
 
 const usageCache = new Map<string, AccountUsage>();
 const exhaustedUntil = new Map<string, number>();
+const modelExhaustedUntil = new Map<string, number>();
 const lastPickedAt = new Map<string, number>();
-// After a 429 from the usage endpoint, don't hit it again until this passes
-// (429s carry Retry-After of up to ~1h, and blocked requests still count).
-let usageRateLimitedUntil = 0;
+// After a 429 from the usage endpoint, don't hit that same account again until
+// this passes. The endpoint rate-limits per token; one account must not hide
+// usage for every other account in the dashboard.
+const usageRateLimitedUntil = new Map<string, number>();
+const credentialsRefreshBlockedUntil = new Map<string, number>();
 const MAX_RATE_LIMIT_WAIT_MS = 60 * 60 * 1000;
 const DEFAULT_RATE_LIMIT_WAIT_MS = 10 * 60 * 1000;
+const FAILED_REFRESH_WAIT_MS = 60 * 60 * 1000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 function fetchWithTimeout(url: string, token: string, timeoutMs = 10_000): Promise<Response> {
@@ -138,13 +143,14 @@ export function maskToken(token: string): string {
   return `${token.slice(0, 12)}…${token.slice(-4)}`;
 }
 
-async function fetchUsage(token: string): Promise<AccountUsage> {
-  if (Date.now() < usageRateLimitedUntil) {
+async function fetchUsage(token: string, rateLimitKey: string): Promise<AccountUsage> {
+  const rateLimitedUntil = usageRateLimitedUntil.get(rateLimitKey) ?? 0;
+  if (Date.now() < rateLimitedUntil) {
     return {
       fetchedAt: new Date().toISOString(),
       fiveHour: null,
       sevenDay: null,
-      error: `usage endpoint rate-limited, retrying after ${new Date(usageRateLimitedUntil).toLocaleTimeString("en-GB", { timeZone: "UTC" })} UTC`,
+      error: `usage endpoint rate-limited, retrying after ${new Date(rateLimitedUntil).toLocaleTimeString("en-GB", { timeZone: "UTC" })} UTC`,
       errorStatus: 429,
     };
   }
@@ -157,8 +163,8 @@ async function fetchUsage(token: string): Promise<AccountUsage> {
           Number.isFinite(retryAfter) && retryAfter > 0
             ? Math.min(retryAfter * 1000, MAX_RATE_LIMIT_WAIT_MS)
             : DEFAULT_RATE_LIMIT_WAIT_MS;
-        usageRateLimitedUntil = Date.now() + waitMs;
-        console.warn(`[claude-accounts] usage endpoint rate-limited; backing off ${Math.round(waitMs / 60000)}m`);
+        usageRateLimitedUntil.set(rateLimitKey, Date.now() + waitMs);
+        console.warn(`[claude-accounts] usage endpoint rate-limited for ${rateLimitKey}; backing off ${Math.round(waitMs / 60000)}m`);
       }
       return {
         fetchedAt: new Date().toISOString(),
@@ -246,6 +252,8 @@ function readCredsFile(path: string): OauthCreds | null {
  * keeps the file usable for the next refresh, ours or `claude-plan`'s).
  */
 async function refreshCredsFile(path: string, creds: OauthCreds): Promise<OauthCreds | null> {
+  const blockedUntil = credentialsRefreshBlockedUntil.get(path) ?? 0;
+  if (Date.now() < blockedUntil) return null;
   try {
     const res = await fetch(TOKEN_URL, {
       method: "POST",
@@ -258,6 +266,14 @@ async function refreshCredsFile(path: string, creds: OauthCreds): Promise<OauthC
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const waitMs =
+        res.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter * 1000, MAX_RATE_LIMIT_WAIT_MS)
+          : res.status === 429
+            ? DEFAULT_RATE_LIMIT_WAIT_MS
+            : FAILED_REFRESH_WAIT_MS;
+      credentialsRefreshBlockedUntil.set(path, Date.now() + waitMs);
       console.warn(`[claude-accounts] Token refresh for ${path} failed: HTTP ${res.status}`);
       return null;
     }
@@ -272,8 +288,10 @@ async function refreshCredsFile(path: string, creds: OauthCreds): Promise<OauthC
     raw.claudeAiOauth = { ...raw.claudeAiOauth, ...next };
     writeFileAtomic(path, JSON.stringify(raw, null, 2) + "\n");
     chmodSync(path, 0o600);
+    credentialsRefreshBlockedUntil.delete(path);
     return next;
   } catch (e) {
+    credentialsRefreshBlockedUntil.set(path, Date.now() + DEFAULT_RATE_LIMIT_WAIT_MS);
     console.warn(`[claude-accounts] Token refresh for ${path} failed:`, e);
     return null;
   }
@@ -286,7 +304,7 @@ async function refreshCredsFile(path: string, creds: OauthCreds): Promise<OauthC
  */
 async function usageToken(
   account: ClaudeAccount
-): Promise<{ token: string; source: "credentials" | "setup-token" } | null> {
+): Promise<{ token: string; source: "credentials" | "setup-token" } | { error: string } | null> {
   if (account.credentialsPath) {
     const creds = readCredsFile(account.credentialsPath);
     if (creds) {
@@ -299,7 +317,18 @@ async function usageToken(
       if (creds.expiresAt > Date.now()) {
         return { token: creds.accessToken, source: "credentials" };
       }
+      const blockedUntil = credentialsRefreshBlockedUntil.get(account.credentialsPath) ?? 0;
+      if (Date.now() < blockedUntil) {
+        return {
+          error: `OAuth token refresh is cooling down after a failed refresh; retrying after ${new Date(blockedUntil).toLocaleTimeString("en-GB", { timeZone: "UTC" })} UTC.`,
+        };
+      }
+      return {
+        error:
+          "OAuth credentials expired and refresh failed. Re-run `claude` login or `claude-plan auth` for this account, then set the usage credentials path again.",
+      };
     }
+    return { error: `Couldn't read OAuth credentials at ${account.credentialsPath}` };
   }
   if (account.usageScope === "missing") return null;
   return { token: account.token, source: "setup-token" };
@@ -319,9 +348,19 @@ function markUsageScopeMissing(id: string): void {
 async function refreshAccountUsage(account: ClaudeAccount): Promise<AccountUsage | null> {
   const tok = await usageToken(account);
   if (!tok) return null;
+  if ("error" in tok) {
+    const usage = {
+      fetchedAt: new Date().toISOString(),
+      fiveHour: null,
+      sevenDay: null,
+      error: tok.error,
+    };
+    usageCache.set(account.id, usage);
+    return usage;
+  }
   const cached = usageCache.get(account.id);
 
-  const usage = await fetchUsage(tok.token);
+  const usage = await fetchUsage(tok.token, account.id);
   if (usage.errorStatus === 403) {
     // Only a setup-token 403 means the scope is permanently missing; a 403
     // on login credentials would be an anomaly worth surfacing, not latching.
@@ -378,10 +417,47 @@ function isExhausted(id: string): boolean {
   return true;
 }
 
+function modelExhaustionKey(id: string, model?: string): string {
+  return model ? `${id}:${model}` : id;
+}
+
+function isModelExhausted(id: string, model?: string): boolean {
+  if (!model) return false;
+  const key = modelExhaustionKey(id, model);
+  const until = modelExhaustedUntil.get(key);
+  if (until === undefined) return false;
+  if (Date.now() >= until) {
+    modelExhaustedUntil.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function scopedLimitForModel(usage: AccountUsage | undefined, model?: string): number | null {
+  if (!usage || !model) return null;
+  if (model === "claude-fable-5" || model.toLowerCase().includes("fable")) {
+    const fable = usage.scopedLimits?.find((l) => l.label.toLowerCase() === "fable");
+    return fable?.utilization ?? null;
+  }
+  return null;
+}
+
+function accountUtilization(a: ClaudeAccount, model?: string): number {
+  const usage = usageCache.get(a.id);
+  const fiveHour = usage?.fiveHour?.utilization ?? 0;
+  const scoped = scopedLimitForModel(usage, model);
+  return scoped === null ? fiveHour : Math.max(fiveHour, scoped);
+}
+
+function isAccountUsableFor(a: ClaudeAccount, model?: string): boolean {
+  if (isExhausted(a.id) || isModelExhausted(a.id, model)) return false;
+  return accountUtilization(a, model) < EXHAUSTED_UTILIZATION;
+}
+
 function toPublic(a: ClaudeAccount): ClaudeAccountPublic {
   const usage = usageCache.get(a.id) || null;
   const until = exhaustedUntil.get(a.id);
-  const fiveHour = usage?.fiveHour?.utilization;
+  const fiveHour = usage?.fiveHour?.utilization ?? null;
   return {
     id: a.id,
     name: a.name,
@@ -392,10 +468,11 @@ function toPublic(a: ClaudeAccount): ClaudeAccountPublic {
     owner: a.owner,
     usage,
     noUsageScope: a.usageScope === "missing" && !a.credentialsPath,
+    credentialsPath: a.credentialsPath,
     exhaustedUntil: until !== undefined && until > Date.now() ? new Date(until).toISOString() : null,
     usable:
       !isExhausted(a.id) &&
-      (fiveHour === null || fiveHour === undefined || fiveHour < EXHAUSTED_UTILIZATION),
+      (fiveHour === null || fiveHour < EXHAUSTED_UTILIZATION),
   };
 }
 
@@ -405,15 +482,16 @@ export function listAccountsPublic(): ClaudeAccountPublic[] {
 
 /**
  * A session can pin a specific subscription (see BackstageSessionFile.accountId).
- * Return it when it exists and is currently usable; undefined when it's gone or
- * exhausted, so the caller falls back to the normal pool pick (a pin is a
- * preference, never a hard requirement that could wedge a run).
+ * Return it when it exists and is currently usable for `model`; undefined when
+ * it's gone or exhausted, so the caller falls back to the normal pool pick
+ * (a pin is a preference, never a hard requirement that could wedge a run).
  */
-export function getUsableAccountById(id: string): ClaudeAccount | undefined {
+export function getUsableAccountById(
+  id: string,
+  model?: string
+): ClaudeAccount | undefined {
   const a = readStore().find((x) => x.id === id);
-  if (!a || isExhausted(a.id)) return undefined;
-  const fiveHour = usageCache.get(a.id)?.fiveHour?.utilization ?? 0;
-  return fiveHour < EXHAUSTED_UTILIZATION ? a : undefined;
+  return a && isAccountUsableFor(a, model) ? a : undefined;
 }
 
 export function hasAccounts(): boolean {
@@ -423,7 +501,8 @@ export function hasAccounts(): boolean {
 export async function addAccount(
   name: string,
   token: string,
-  owner?: string
+  owner?: string,
+  credentialsPath?: string
 ): Promise<ClaudeAccountPublic | { error: string }> {
   const trimmedName = name.trim();
   // Strip ALL whitespace, not just the ends — a token copied from the
@@ -431,6 +510,7 @@ export async function addAccount(
   // newlines in the middle.
   const trimmedToken = token.replace(/\s+/g, "");
   const trimmedOwner = owner?.trim() || undefined;
+  const trimmedCredentialsPath = credentialsPath?.trim() || undefined;
   if (!trimmedName) return { error: "Name is required" };
   if (!/^sk-ant-/.test(trimmedToken)) {
     return { error: "Token doesn't look like a Claude OAuth token (expected sk-ant-…). Generate one with `claude setup-token`." };
@@ -447,7 +527,7 @@ export async function addAccount(
   // token is bad: `claude setup-token` tokens get a 403 here (no user:profile
   // scope) and the endpoint 429s aggressively — neither means the token can't
   // run Claude Code.
-  const usage = await fetchUsage(trimmedToken);
+  const usage = await fetchUsage(trimmedToken, `add:${trimmedName}`);
   if (usage.errorStatus === 401) {
     return { error: `Token validation failed: ${usage.error}` };
   }
@@ -464,6 +544,7 @@ export async function addAccount(
     plan: profile.plan,
     createdAt: new Date().toISOString(),
     ...(trimmedOwner ? { owner: trimmedOwner } : {}),
+    ...(trimmedCredentialsPath ? { credentialsPath: trimmedCredentialsPath } : {}),
     ...(usage.errorStatus === 403 ? { usageScope: "missing" as const } : {}),
   };
   writeStore([...accounts, account]);
@@ -477,7 +558,8 @@ export async function addAccount(
 /** Set or clear (empty/undefined) an account's personal owner. */
 export function setAccountOwner(
   id: string,
-  owner: string | undefined
+  owner: string | undefined,
+  credentialsPath?: string | undefined
 ): ClaudeAccountPublic | null {
   const accounts = readStore();
   const idx = accounts.findIndex((a) => a.id === id);
@@ -486,6 +568,14 @@ export function setAccountOwner(
   const next = { ...accounts[idx] };
   if (trimmed) next.owner = trimmed;
   else delete next.owner;
+  if (credentialsPath !== undefined) {
+    const trimmedPath = credentialsPath.trim();
+    if (trimmedPath) next.credentialsPath = trimmedPath;
+    else delete next.credentialsPath;
+    usageCache.delete(id);
+    if (accounts[idx].credentialsPath) credentialsRefreshBlockedUntil.delete(accounts[idx].credentialsPath);
+    if (trimmedPath) credentialsRefreshBlockedUntil.delete(trimmedPath);
+  }
   accounts[idx] = next;
   writeStore(accounts);
   console.log(
@@ -501,6 +591,9 @@ export function removeAccount(id: string): boolean {
   writeStore(next);
   usageCache.delete(id);
   exhaustedUntil.delete(id);
+  for (const key of [...modelExhaustedUntil.keys()]) {
+    if (key.startsWith(`${id}:`)) modelExhaustedUntil.delete(key);
+  }
   return true;
 }
 
@@ -522,16 +615,17 @@ export function removeAccount(id: string): boolean {
  */
 export function pickAccount(
   exclude?: Set<string>,
-  user?: string
+  user?: string,
+  model?: string
 ): ClaudeAccount | undefined {
   const eligible = readStore().filter(
-    (a) => !exclude?.has(a.id) && !isExhausted(a.id)
+    (a) => !exclude?.has(a.id) && isAccountUsableFor(a, model)
   );
   const best = (list: ClaudeAccount[]): ClaudeAccount | undefined =>
     list
       .map((a) => ({
         a,
-        bucket: Math.floor((usageCache.get(a.id)?.fiveHour?.utilization ?? 0) / 10),
+        bucket: Math.floor(accountUtilization(a, model) / 10),
         picked: lastPickedAt.get(a.id) ?? 0,
       }))
       .filter(({ bucket }) => bucket * 10 < EXHAUSTED_UTILIZATION)
@@ -549,16 +643,25 @@ export function pickAccount(
  * time when known (refreshes usage in the background to confirm), otherwise a
  * fixed cool-off.
  */
-export function markExhausted(id: string): void {
+export function markExhausted(id: string, model?: string): void {
   const account = readStore().find((a) => a.id === id);
   const cached = usageCache.get(id);
-  const resetsAt = cached?.fiveHour?.resetsAt ? Date.parse(cached.fiveHour.resetsAt) : NaN;
+  const scoped =
+    model && (model === "claude-fable-5" || model.toLowerCase().includes("fable"))
+      ? cached?.scopedLimits?.find((l) => l.label.toLowerCase() === "fable")
+      : undefined;
+  const resetsAt = scoped?.resetsAt
+    ? Date.parse(scoped.resetsAt)
+    : cached?.fiveHour?.resetsAt
+      ? Date.parse(cached.fiveHour.resetsAt)
+      : NaN;
   const until = Number.isFinite(resetsAt) && resetsAt > Date.now()
     ? resetsAt
     : Date.now() + DEFAULT_EXHAUST_MS;
-  exhaustedUntil.set(id, until);
+  if (scoped && model) modelExhaustedUntil.set(modelExhaustionKey(id, model), until);
+  else exhaustedUntil.set(id, until);
   console.warn(
-    `[claude-accounts] ${account?.name || id} marked exhausted until ${new Date(until).toISOString()}`
+    `[claude-accounts] ${account?.name || id}${model ? ` (${model})` : ""} marked exhausted until ${new Date(until).toISOString()}`
   );
   if (account) void refreshAccountUsage(account);
 }

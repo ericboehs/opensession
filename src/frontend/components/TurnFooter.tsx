@@ -279,26 +279,26 @@ const EXT_COLORS: Record<string, string> = {
  * Per-file line stats from one edit-family tool call, or null for tools that
  * don't write files. Line counts come from the tool inputs (old/new string
  * sizes), so they're the same "±N" a diff would show for those hunks — minus
- * anything Bash did, which we can't see.
+ * tools that only report paths, such as Bash and Codex FileChange.
  */
-export function touchedFileFromTool(entry: TranscriptEntry): TouchedFile | null {
+export function touchedFilesFromTool(entry: TranscriptEntry): TouchedFile[] {
   const input = entry.toolInput;
-  if (!input || typeof input !== "object") return null;
+  if (!input || typeof input !== "object") return [];
   const inp = input as Record<string, unknown>;
   const lines = (v: unknown) =>
     typeof v === "string" && v.length > 0 ? v.split("\n").length : 0;
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   switch (entry.toolName) {
     case "Edit":
-      if (typeof inp.file_path !== "string") return null;
-      return {
+      if (typeof inp.file_path !== "string") return [];
+      return [{
         path: inp.file_path,
         additions: lines(inp.new_string),
         deletions: lines(inp.old_string),
         edits: [{ old: str(inp.old_string), new: str(inp.new_string) }],
-      };
+      }];
     case "MultiEdit": {
-      if (typeof inp.file_path !== "string" || !Array.isArray(inp.edits)) return null;
+      if (typeof inp.file_path !== "string" || !Array.isArray(inp.edits)) return [];
       let additions = 0;
       let deletions = 0;
       const edits: FileEdit[] = [];
@@ -309,36 +309,56 @@ export function touchedFileFromTool(entry: TranscriptEntry): TouchedFile | null 
         deletions += lines(ee.old_string);
         edits.push({ old: str(ee.old_string), new: str(ee.new_string) });
       }
-      return { path: inp.file_path, additions, deletions, edits };
+      return [{ path: inp.file_path, additions, deletions, edits }];
     }
     case "Write":
-      if (typeof inp.file_path !== "string") return null;
-      return {
+      if (typeof inp.file_path !== "string") return [];
+      return [{
         path: inp.file_path,
         additions: lines(inp.content),
         deletions: 0,
         edits: [{ old: "", new: str(inp.content) }],
-      };
+      }];
     case "NotebookEdit":
-      if (typeof inp.notebook_path !== "string") return null;
-      return {
+      if (typeof inp.notebook_path !== "string") return [];
+      return [{
         path: inp.notebook_path,
         additions: lines(inp.new_source),
         deletions: 0,
         edits: [{ old: "", new: str(inp.new_source) }],
-      };
+      }];
+    case "FileChange": {
+      if (!Array.isArray(inp.changes)) return [];
+      const files: TouchedFile[] = [];
+      for (const change of inp.changes) {
+        const path = fileChangePath(change);
+        if (!path) continue;
+        files.push({ path, additions: 0, deletions: 0, edits: [] });
+      }
+      return mergeTouchedFiles(files);
+    }
     default:
-      return null;
+      return [];
   }
+}
+
+export function touchedFileFromTool(entry: TranscriptEntry): TouchedFile | null {
+  return touchedFilesFromTool(entry)[0] || null;
 }
 
 /** All files a turn's tool calls edited, merged per path in first-touch order. */
 export function collectTouchedFiles(items: TranscriptEntry[]): TouchedFile[] {
+  return mergeTouchedFiles(
+    items.flatMap((it) => {
+      if (it.type !== "tool_use") return [];
+      return touchedFilesFromTool(it);
+    })
+  );
+}
+
+function mergeTouchedFiles(files: TouchedFile[]): TouchedFile[] {
   const byPath = new Map<string, TouchedFile>();
-  for (const it of items) {
-    if (it.type !== "tool_use") continue;
-    const f = touchedFileFromTool(it);
-    if (!f) continue;
+  for (const f of files) {
     const prev = byPath.get(f.path);
     if (prev) {
       prev.additions += f.additions;
@@ -349,6 +369,16 @@ export function collectTouchedFiles(items: TranscriptEntry[]): TouchedFile[] {
     }
   }
   return [...byPath.values()];
+}
+
+function fileChangePath(change: unknown): string | null {
+  if (typeof change === "string") {
+    const m = change.match(/^(?:add|delete|update)\s+(.+)$/);
+    return (m?.[1] || change).trim() || null;
+  }
+  if (!change || typeof change !== "object") return null;
+  const path = (change as Record<string, unknown>).path;
+  return typeof path === "string" && path.trim() ? path : null;
 }
 
 /** "10m, 57s" / "1h, 4m" / "42s"; null under a second (nothing worth showing). */

@@ -1,4 +1,5 @@
 import React from "react";
+import { openLightbox } from "./MediaLightbox";
 
 interface Props {
   /** Attached images as `data:` URLs. */
@@ -14,7 +15,19 @@ export function ImageThumbs({ images, onRemove, disabled }: Props) {
     <div className="composer-images">
       {images.map((src, i) => (
         <div key={i} className="composer-image-thumb">
-          <img src={src} alt="" />
+          <button
+            type="button"
+            className="composer-image-preview"
+            onClick={() =>
+              openLightbox(
+                images.map((image) => ({ kind: "image", src: image })),
+                i,
+              )
+            }
+            aria-label="Open image preview"
+          >
+            <img src={src} alt="" />
+          </button>
           <button
             type="button"
             className="composer-image-remove"

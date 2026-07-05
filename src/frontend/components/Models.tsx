@@ -34,6 +34,7 @@ interface ClaudeAccountInfo {
 		errorStatus?: number;
 	} | null;
 	noUsageScope: boolean;
+	credentialsPath?: string;
 	exhaustedUntil: string | null;
 	usable: boolean;
 }
@@ -201,7 +202,7 @@ function AutoFallbackRow() {
 				<div className="setting-row-title">Auto-switch when out of credits</div>
 				<div className="setting-row-desc">
 					{error ||
-						"When a model runs out of usage credits, keep the session going on another model (Fable → Sonnet, otherwise the cross-provider fallback) instead of stopping. Off = the run halts and you pick the next model. Either way the switch shows in the chat."}
+						"When a run has an explicit fallback model and the current model runs out of usage credits, keep going on that configured fallback. Off = the run halts and you pick the next model. Either way the switch shows in the chat."}
 				</div>
 			</div>
 			<div className="setting-row-control">
@@ -283,6 +284,18 @@ function ClaudeStatusPill({ a }: { a: ClaudeAccountInfo }) {
 				Token error
 			</span>
 		);
+	if (a.usage?.error)
+		return (
+			<span className="status-pill status-yellow" title={a.usage.error}>
+				Usage unknown
+			</span>
+		);
+	if (a.noUsageScope)
+		return (
+			<span className="status-pill status-yellow" title="Add OAuth usage credentials to show dashboard usage.">
+				Usage hidden
+			</span>
+		);
 	if (a.exhaustedUntil)
 		return (
 			<span className="status-pill status-red" title={`Sidelined until ${a.exhaustedUntil}`}>
@@ -346,6 +359,29 @@ function ClaudeAccountsSection() {
 		}
 	}
 
+	async function handleSetCredentialsPath(a: ClaudeAccountInfo) {
+		const current =
+			a.credentialsPath ||
+			`/home/ubuntu/.claude/accounts/${a.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}/credentials.json`;
+		const credentialsPath = prompt(
+			"Path to this account's Claude OAuth credentials.json for usage polling. Leave empty to clear it.",
+			current,
+		);
+		if (credentialsPath === null) return;
+		try {
+			const res = await fetch(`/backstage/api/claude-accounts/${encodeURIComponent(a.id)}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ owner: a.owner || "", credentialsPath }),
+			});
+			const body = await res.json();
+			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+			load(true);
+		} catch (e: any) {
+			setError(e.message);
+		}
+	}
+
 	return (
 		<>
 			<SectionHeader
@@ -404,8 +440,8 @@ function ClaudeAccountsSection() {
 								</div>
 								{a.noUsageScope ? (
 									<div className="text-faint text-[11.5px] mt-1.5">
-										Usage not visible — setup-tokens can't read the usage endpoint. Runs
-										work fine.
+										Usage not visible — setup-tokens cannot read the usage endpoint. Add
+										a Claude OAuth credentials path for this account to show usage.
 									</div>
 								) : (
 									<>
@@ -416,6 +452,11 @@ function ClaudeAccountsSection() {
 										))}
 										{a.usage?.error && (
 											<div className="text-red text-[11.5px] mt-1.5">{a.usage.error}</div>
+										)}
+										{a.credentialsPath && (
+											<div className="text-faint text-[11.5px] mt-1.5 truncate">
+												Usage credentials: <code>{a.credentialsPath}</code>
+											</div>
 										)}
 									</>
 								)}
@@ -444,6 +485,13 @@ function ClaudeAccountsSection() {
 									))}
 								</select>
 								<button
+									className="btn-small"
+									onClick={() => handleSetCredentialsPath(a)}
+									title="Set the OAuth credentials file used only for usage polling"
+								>
+									Usage creds
+								</button>
+								<button
 									className="btn-small btn-small-danger"
 									onClick={() => handleRemove(a)}
 									title="Remove this account"
@@ -458,7 +506,10 @@ function ClaudeAccountsSection() {
 			<div className="settings-hint">
 				The usage pool for Claude session runs — each run picks the least-used usable account.
 				A personal account is used first by its owner's runs and never by anyone else's;
-				automations only use the shared pool.
+				automations only use the shared pool. For usage bars, setup-tokens need a matching
+				OAuth snapshot such as <code>/home/ubuntu/.claude/accounts/tella-dev/credentials.json</code>.
+				If that snapshot expires and cannot refresh, log into that account with <code>claude</code>
+				or <code>claude-plan auth</code> again and update the path.
 			</div>
 		</>
 	);
@@ -585,6 +636,7 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 	const [name, setName] = useState("");
 	const [token, setToken] = useState("");
 	const [owner, setOwner] = useState("");
+	const [credentialsPath, setCredentialsPath] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -600,6 +652,7 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 					// Strip all whitespace — CLI copies often carry line-wrap newlines.
 					token: token.replace(/\s+/g, ""),
 					...(owner.trim() ? { owner: owner.trim() } : {}),
+					...(credentialsPath.trim() ? { credentialsPath: credentialsPath.trim() } : {}),
 				}),
 			});
 			const body = await res.json();
@@ -617,7 +670,8 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 			<div className="setting-row-desc" style={{ marginTop: -8 }}>
 				On any machine, log into the Max account with <code>claude</code>, run{" "}
 				<code>claude setup-token</code>, and paste the one-year token here. It's stored on the
-				VPS (0600) and only ever shown masked.
+				VPS (0600) and only ever shown masked. To show usage, also point at that account's
+				<code> credentials.json</code> snapshot from <code>~/.claude/accounts</code>.
 			</div>
 
 			<div className="automation-form-row">
@@ -645,6 +699,15 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 							</option>
 						))}
 					</select>
+				</label>
+				<label>
+					Usage credentials path
+					<input
+						className="mono-input"
+						value={credentialsPath}
+						onChange={(e) => setCredentialsPath(e.target.value)}
+						placeholder="/home/ubuntu/.claude/accounts/tella-dev/credentials.json"
+					/>
 				</label>
 			</div>
 
