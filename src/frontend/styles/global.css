@@ -10543,52 +10543,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .palette-effort-icon span:nth-child(2) { height: 10px; }
 .palette-effort-icon span:nth-child(3) { height: 15px; }
 
-/* Advanced section: MCP servers */
-.palette-advanced {
-	padding: 10px 16px;
-	border-top: 1px solid var(--border);
-	border-bottom: 1px solid var(--border);
-}
-.palette-advanced-label {
-	font-size: 11.5px;
-	font-weight: 600;
-	color: var(--text-dim);
-	text-transform: uppercase;
-	letter-spacing: 0.4px;
-	margin-bottom: 8px;
-}
-.palette-mcp-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(95px, 1fr));
-	gap: 8px;
-}
-.palette-mcp-checkbox {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	padding: 6px 8px;
-	border-radius: 8px;
-	background: var(--bg-raised);
-	cursor: pointer;
-	font-size: 13px;
-	color: var(--text-dim);
-	transition: background 0.12s, color 0.12s;
-	user-select: none;
-}
-.palette-mcp-checkbox:hover {
-	background: var(--bg-hover);
-	color: var(--text);
-}
-.palette-mcp-checkbox input[type="checkbox"] {
-	cursor: pointer;
-	accent-color: var(--accent);
-}
-.palette-mcp-checkbox input[type="checkbox"]:disabled {
-	cursor: default;
-	opacity: 0.55;
-}
-
-/* MCP picker for mobile (footer icon button + popover) */
+/* Connected-services picker (footer icon button + popover). The popover is a
+   full-width sheet above the footer on phones, an anchored popup on desktop. */
 .palette-mcp-picker-container {
 	position: relative;
 }
@@ -10617,10 +10573,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	justify-content: center;
 }
 .palette-mcp-picker-popover {
-	position: fixed;
-	bottom: 60px;
-	left: 12px;
-	right: 12px;
+	/* Desktop: anchored above the footer button. */
+	position: absolute;
+	bottom: calc(100% + 8px);
+	left: 0;
+	width: 240px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
 	border-radius: 12px;
@@ -10629,6 +10586,16 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	max-height: 50vh;
 	overflow-y: auto;
 	z-index: 1000;
+}
+@media (max-width: 720px) {
+	/* Phone: full-width sheet floating above the footer. */
+	.palette-mcp-picker-popover {
+		position: fixed;
+		bottom: 60px;
+		left: 12px;
+		right: 12px;
+		width: auto;
+	}
 }
 .palette-mcp-picker-header {
 	font-size: 11px;
@@ -10641,8 +10608,13 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .palette-mcp-picker-grid {
 	display: grid;
-	grid-template-columns: 1fr;
+	grid-template-columns: 1fr 1fr;
 	gap: 4px;
+}
+@media (max-width: 720px) {
+	.palette-mcp-picker-grid {
+		grid-template-columns: 1fr;
+	}
 }
 .palette-mcp-checkbox-compact {
 	display: flex;

@@ -439,33 +439,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         </div>
         )}
 
-        {/* Advanced: MCP servers (desktop only; mobile uses footer icon) */}
-        {optionsVisible && !isPhone && (
-        <div className="palette-advanced">
-          <div className="palette-advanced-label">Connected services (optional)</div>
-          <div className="palette-mcp-grid">
-            {availableMcpServers.map((mcp) => (
-              <label key={mcp} className="palette-mcp-checkbox">
-                <input
-                  type="checkbox"
-                  checked={selectedMcpServers.includes(mcp)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedMcpServers((prev) => [...prev, mcp]);
-                    } else {
-                      setSelectedMcpServers((prev) => prev.filter((m) => m !== mcp));
-                    }
-                  }}
-                  disabled={creating}
-                  aria-label={`Enable ${mcp}`}
-                />
-                <span className="palette-mcp-label">{mcp}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-        )}
-
         {/* Prompt */}
         <div
           className="palette-body"
@@ -524,7 +497,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 <IconSliders size={24} />
               </button>
             )}
-            {/* MCP picker: mobile visible by default, desktop in the advanced section */}
+            {/* Connected-services picker: a footer popover on every viewport */}
             <div className="palette-mcp-picker-container" ref={mcpPickerRef}>
               <button
                 type="button"
