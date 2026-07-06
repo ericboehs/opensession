@@ -909,28 +909,6 @@ function App() {
 						? "Pull request"
 						: "";
 
-	// The Michael logo — a home link carrying the live connection dot. On desktop
-	// the sidebar pairs it with the "Backstage" wordmark, which is itself the
-	// account/settings menu trigger (see SettingsMenu variant="top" below).
-	const brandTitle = (
-		<a
-			className="app-logo-link"
-			href="/backstage/"
-			aria-label="Home"
-			onClick={(e) => {
-				e.preventDefault();
-				navigate({ view: "home" });
-			}}
-		>
-			<span className="app-logo">B</span>
-			<span
-				className="app-logo-status"
-				style={{ background: connected ? "var(--green)" : "var(--red)" }}
-				title={connected ? "Connected" : "Reconnecting…"}
-			/>
-		</a>
-	);
-
 	// Mobile top-bar brand: logo only, as the account/settings sheet trigger.
 	// On desktop that menu lives in the footer user row instead, so the top stays
 	// just the title + the collapse toggle.
@@ -1110,19 +1088,16 @@ function App() {
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
 						}
 					>
-						{/* Desktop brand row: the logo (home link, with the connection
-						    dot) + the "Backstage" wordmark that opens the account/settings
-						    menu on the left, and the collapse toggle on the right. Hidden
-						    on mobile, where the top bar carries the brand instead. */}
+						{/* Desktop brand row: the whole Backstage brand (logo + wordmark)
+						    opens the account/settings menu on the left, and the collapse
+						    toggle on the right. Hidden on mobile, where the top bar carries
+						    the brand instead. */}
 						<div className="sidebar-brand">
-							<div className="sidebar-brand-left">
-								{brandTitle}
-								<SettingsMenu
-									variant="top"
-									onOpenSettings={() => navigate({ view: "settings" })}
-									connected={connected}
-								/>
-							</div>
+							<SettingsMenu
+								variant="top"
+								onOpenSettings={() => navigate({ view: "settings" })}
+								connected={connected}
+							/>
 							<Tooltip label="Hide sidebar" side="bottom">
 								<button
 									className="sidebar-toggle-btn"

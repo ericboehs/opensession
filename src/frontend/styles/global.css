@@ -587,30 +587,24 @@ a {
 	justify-content: space-between;
 	gap: 8px;
 	height: 48px;
-	padding: 0 12px 0 var(--sidebar-icon-left);
+	/* The brand trigger carries its own 8px left padding, so pull the row's in
+	   to keep the logo aligned with the list icons at --sidebar-icon-left. */
+	padding: 0 12px 0 calc(var(--sidebar-icon-left) - 8px);
 	flex-shrink: 0;
 	min-width: 0;
 }
 
-/* Left cluster of the brand row: the logo home-link + the "Backstage" wordmark
-   (the account/settings menu trigger). */
-.sidebar-brand-left {
-	display: flex;
-	align-items: center;
-	gap: 2px;
-	min-width: 0;
+/* Smaller logo tile for the brand trigger (the KITT scanner scales via % so it
+   still animates). The default .app-logo (32px) is used elsewhere. */
+.app-logo--sm {
+	width: 26px;
+	height: 26px;
+	font-size: 14px;
+	border-radius: 7px;
 }
 
-/* Logo home-link — wraps the KITT tile so the connection dot can sit on its
-   corner (the tile itself is overflow:hidden for the scanner beam). */
-.app-logo-link {
-	position: relative;
-	display: inline-flex;
-	align-items: center;
-	flex-shrink: 0;
-	text-decoration: none;
-	border-radius: 8px;
-}
+/* Live connection dot on the logo corner — sits on a relative wrapper because
+   the tile itself is overflow:hidden for the scanner beam. */
 .app-logo-status {
 	position: absolute;
 	right: -2px;

@@ -19,9 +19,10 @@ import { UserAvatar } from "./UserAvatar";
 // Four trigger shapes via `variant`:
 //   "chevron" — a small chevron.
 //   "brand"   — the mobile top bar logo.
-//   "top"     — the "Backstage" wordmark + chevron in the desktop sidebar's top
-//               brand row, opening the account menu. The sibling logo (home
-//               link) carries the connection dot; there's no separate avatar.
+//   "top"     — the whole Backstage brand (logo + wordmark) in the desktop
+//               sidebar's top row, as one hover area that opens the account
+//               menu. The logo carries the connection dot; the chevron only
+//               shows on hover (or while the menu is open).
 //   "footer"  — a full-width user row (avatar · name · connection state) at the
 //               bottom of the desktop sidebar, plus a sibling gear button that
 //               goes straight to the Settings page (bypassing the menu).
@@ -239,10 +240,24 @@ export function SettingsMenu({
 			) : top ? (
 				<Menu.Trigger
 					aria-label="Account menu"
-					className="flex items-center gap-0.5 rounded-md border-none bg-transparent px-1.5 py-1 text-[15px] font-semibold leading-none tracking-[-0.01em] text-fg hover:bg-hover data-[popup-open]:bg-hover"
+					className="group flex items-center gap-2 rounded-lg border-none bg-transparent py-1 pl-2 pr-1.5 text-fg hover:bg-hover data-[popup-open]:bg-hover"
 				>
-					Backstage
-					<span className="text-faint">{triggerChevron}</span>
+					<span className="relative inline-flex shrink-0">
+						<span className="app-logo app-logo--sm">B</span>
+						{/* Live connection dot on the logo corner (ring matches sidebar bg). */}
+						<span
+							className="app-logo-status"
+							style={{ background: connected ? "var(--green)" : "var(--red)" }}
+							title={connected ? "Connected" : "Reconnecting…"}
+						/>
+					</span>
+					<span className="text-[15px] font-semibold leading-none tracking-[-0.01em]">
+						Backstage
+					</span>
+					{/* Chevron only appears on hover or while the menu is open. */}
+					<span className="text-faint opacity-0 transition-opacity group-hover:opacity-100 group-data-[popup-open]:opacity-100">
+						{triggerChevron}
+					</span>
 				</Menu.Trigger>
 			) : (
 				<Menu.Trigger
