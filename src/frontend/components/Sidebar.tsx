@@ -111,13 +111,6 @@ const CTX_ITEM_STYLE: React.CSSProperties = {
 	overflow: "hidden",
 	textOverflow: "ellipsis",
 };
-const CTX_LABEL_STYLE: React.CSSProperties = {
-	fontSize: 11,
-	color: "var(--text-faint)",
-	padding: "5px 11px 3px",
-	textTransform: "uppercase",
-	letterSpacing: "0.04em",
-};
 const CTX_SEP_STYLE: React.CSSProperties = {
 	height: 1,
 	background: "var(--border-strong)",
@@ -170,8 +163,6 @@ interface Props {
 	onDeleteProject: (id: string) => void;
 	/** Set a project's swatch color (null clears it). */
 	onSetProjectColor: (id: string, color: string | null) => void;
-	/** Move a chat into a project (or null to make it standalone). */
-	onSetSessionProject: (sessionId: string, projectId: string | null) => void;
 	/** Open a note (pinned-note row click). */
 	onOpenNote: (id: string) => void;
 	/** Open the ⌘K session-search palette (from the sidebar search field). */
@@ -391,7 +382,6 @@ export function Sidebar({
 	onRenameProject,
 	onDeleteProject,
 	onSetProjectColor,
-	onSetSessionProject,
 	onOpenNote,
 	onOpenSearch,
 	onOpenArchived,
@@ -2114,8 +2104,6 @@ export function Sidebar({
 											pinned={pin.pinned}
 											onTogglePin={pin.toggle}
 											onRename={(title) => onRename(s, title)}
-											projects={projects}
-											onMoveToProject={(pid) => onSetSessionProject(s.id, pid)}
 										/>
 									);
 								})}
@@ -2376,10 +2364,6 @@ export function Sidebar({
 														pinned={pin.pinned}
 														onTogglePin={pin.toggle}
 														onRename={(title) => onRename(s, title)}
-														projects={projects}
-														onMoveToProject={(pid) =>
-															onSetSessionProject(s.id, pid)
-														}
 													/>
 												);
 											})}
@@ -2709,8 +2693,6 @@ function SidebarItem({
 	pinned,
 	onTogglePin,
 	onRename,
-	projects,
-	onMoveToProject,
 }: {
 	session: UnifiedSession;
 	selected: boolean;
@@ -2725,27 +2707,12 @@ function SidebarItem({
 	pinned: boolean;
 	onTogglePin: () => void;
 	onRename: (title: string) => void;
-	/** When provided, right-click offers "Move to project" (projects list + None). */
-	projects?: Project[];
-	onMoveToProject?: (projectId: string | null) => void;
 }) {
 	const isPhone = useIsPhone();
 	const running = session.isRunning;
 	const waiting = !!session.waitingForInput || runNeedsAttention(session);
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState("");
-	// Right-click context menu (move-to-project) anchored at the cursor.
-	const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-	useEffect(() => {
-		if (!ctxMenu) return;
-		const close = () => setCtxMenu(null);
-		window.addEventListener("click", close);
-		window.addEventListener("scroll", close, true);
-		return () => {
-			window.removeEventListener("click", close);
-			window.removeEventListener("scroll", close, true);
-		};
-	}, [ctxMenu]);
 
 	// Hover card: after a short dwell, anchor a detail popover to this row's right
 	// edge. Suppressed while renaming (the input owns the interaction).
@@ -3036,16 +3003,9 @@ function SidebarItem({
 			}}
 			onContextMenu={(e) => {
 				// On touch this is the long-press callout: the action sheet
-				// owns that gesture, so suppress the desktop menu (and the
-				// native text-selection callout) rather than stacking both.
-				if (longPressed.current || pressOrigin.current) {
-					e.preventDefault();
-					return;
-				}
-				if (!onMoveToProject) return;
-				e.preventDefault();
-				closeHover();
-				setCtxMenu({ x: e.clientX, y: e.clientY });
+				// owns that gesture, so suppress the native text-selection
+				// callout rather than stacking both.
+				if (longPressed.current || pressOrigin.current) e.preventDefault();
 			}}
 		>
 			<div className="sidebar-item-top">
@@ -3151,60 +3111,9 @@ function SidebarItem({
 		</button>
 		</div>
 		{anchor && <SessionHoverCard session={session} anchor={anchor} />}
-		{ctxMenu &&
-			onMoveToProject &&
-			createPortal(
-				<div
-					className="sidebar-ctx-menu"
-					style={{ ...CTX_MENU_STYLE, left: ctxMenu.x, top: ctxMenu.y }}
-					onClick={(e) => e.stopPropagation()}
-				>
-					<div style={CTX_LABEL_STYLE}>Move to project</div>
-					{(projects || []).map((p) => (
-						<button
-							key={p.id}
-							style={{
-								...CTX_ITEM_STYLE,
-								...(session.projectId === p.id
-									? { color: "var(--accent)", fontWeight: 600 }
-									: {}),
-							}}
-							onClick={() => {
-								onMoveToProject(p.id);
-								setCtxMenu(null);
-							}}
-						>
-							{p.name}
-						</button>
-					))}
-					{(projects || []).length === 0 && (
-						<div style={{ ...CTX_LABEL_STYLE, textTransform: "none" }}>
-							No projects yet
-						</div>
-					)}
-					<div style={CTX_SEP_STYLE} />
-					<button
-						style={{
-							...CTX_ITEM_STYLE,
-							...(!session.projectId
-								? { color: "var(--accent)", fontWeight: 600 }
-								: {}),
-						}}
-						onClick={() => {
-							onMoveToProject(null);
-							setCtxMenu(null);
-						}}
-					>
-						None (standalone)
-					</button>
-				</div>,
-				document.body,
-			)}
 			{sheetOpen && (
 				<MobileActionSheet
 					session={session}
-					projects={projects}
-					onMoveToProject={onMoveToProject}
 					onRename={() => {
 						setDraft(session.title);
 						setEditing(true);
@@ -3218,26 +3127,19 @@ function SidebarItem({
 }
 
 // The bottom sheet raised by long-pressing a session row on touch. It gathers
-// the per-session actions that live behind hover/right-click on desktop
-// (rename, move-to-project, archive) into thumb-sized rows. "Move to project"
-// swaps the sheet to a second step listing the projects rather than nesting a
-// menu. Rendered in a portal over a dimmed, tap-to-dismiss backdrop.
+// the per-session actions (rename, archive) into thumb-sized rows. Rendered in
+// a portal over a dimmed, tap-to-dismiss backdrop.
 function MobileActionSheet({
 	session,
-	projects,
-	onMoveToProject,
 	onRename,
 	onArchive,
 	onClose,
 }: {
 	session: UnifiedSession;
-	projects?: Project[];
-	onMoveToProject?: (projectId: string | null) => void;
 	onRename: () => void;
 	onArchive: () => void;
 	onClose: () => void;
 }) {
-	const [step, setStep] = useState<"main" | "project">("main");
 	// Lock the page behind the sheet so a scroll drags the list, not the page.
 	useEffect(() => {
 		const prev = document.body.style.overflow;
@@ -3246,7 +3148,6 @@ function MobileActionSheet({
 			document.body.style.overflow = prev;
 		};
 	}, []);
-	const check = <span className="mobile-sheet-item-check">✓</span>;
 	return createPortal(
 		<div className="mobile-action-sheet-backdrop" onClick={onClose}>
 			<div
@@ -3254,102 +3155,48 @@ function MobileActionSheet({
 				onClick={(e) => e.stopPropagation()}
 			>
 				<div className="mobile-sheet-grip" />
-				{step === "main" ? (
-					<>
-						<div className="mobile-sheet-title">{session.title}</div>
-						<button
-							className="mobile-sheet-item"
-							onClick={() => {
-								onRename();
-								onClose();
-							}}
-						>
-							<svg
-								width="20"
-								height="20"
-								viewBox="0 0 16 16"
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="1.4"
-							>
-								<path d="M10.5 2.5l3 3L6 13l-3.5.5L3 10z" />
-							</svg>
-							Rename
-						</button>
-						{onMoveToProject && (
-							<button
-								className="mobile-sheet-item"
-								onClick={() => setStep("project")}
-							>
-								<svg
-									width="20"
-									height="20"
-									viewBox="0 0 16 16"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="1.4"
-								>
-									<path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.2l1.3 1.5h5.5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" />
-								</svg>
-								Move to project
-								<span className="mobile-sheet-item-chevron">›</span>
-							</button>
-						)}
-						<div className="mobile-sheet-sep" />
-						<button
-							className="mobile-sheet-item mobile-sheet-item--danger"
-							onClick={() => {
-								onArchive();
-								onClose();
-							}}
-						>
-							<svg
-								width="20"
-								height="20"
-								viewBox="0 0 16 16"
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="1.4"
-							>
-								<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
-								<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
-								<path d="M6.5 8.5h3" strokeLinecap="round" />
-							</svg>
-							Archive
-						</button>
-					</>
-				) : (
-					<>
-						<div className="mobile-sheet-title">Move to project</div>
-						{(projects || []).map((p) => (
-							<button
-								key={p.id}
-								className="mobile-sheet-item"
-								onClick={() => {
-									onMoveToProject?.(p.id);
-									onClose();
-								}}
-							>
-								{p.name}
-								{session.projectId === p.id && check}
-							</button>
-						))}
-						{(projects || []).length === 0 && (
-							<div className="mobile-sheet-empty">No projects yet</div>
-						)}
-						<div className="mobile-sheet-sep" />
-						<button
-							className="mobile-sheet-item"
-							onClick={() => {
-								onMoveToProject?.(null);
-								onClose();
-							}}
-						>
-							None (standalone)
-							{!session.projectId && check}
-						</button>
-					</>
-				)}
+				<div className="mobile-sheet-title">{session.title}</div>
+				<button
+					className="mobile-sheet-item"
+					onClick={() => {
+						onRename();
+						onClose();
+					}}
+				>
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 16 16"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="1.4"
+					>
+						<path d="M10.5 2.5l3 3L6 13l-3.5.5L3 10z" />
+					</svg>
+					Rename
+				</button>
+				<div className="mobile-sheet-sep" />
+				<button
+					className="mobile-sheet-item mobile-sheet-item--danger"
+					onClick={() => {
+						onArchive();
+						onClose();
+					}}
+				>
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 16 16"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="1.4"
+					>
+						<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
+						<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
+						<path d="M6.5 8.5h3" strokeLinecap="round" />
+					</svg>
+					Archive
+				</button>
 			</div>
 		</div>,
 		document.body,

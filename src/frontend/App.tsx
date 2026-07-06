@@ -39,7 +39,6 @@ import {
 	fetchProjects,
 	updateProjectApi,
 	deleteProjectApi,
-	setSessionProjectApi,
 	newChatApi,
 	type NoteMeta,
 } from "./lib/api";
@@ -644,8 +643,10 @@ function App() {
 				pendingCreateDraftRef.current = null;
 				// Pin the just-created session for its creator (this WS reply is
 				// creator-only, so it never pins a teammate's new chat onto my bar).
-				// Per-browser opt-out in Settings; on by default.
-				if (getPinNewSessions()) setPins(pin(msg.id));
+				// Per-browser opt-out in Settings; on by default. Skip brand-new
+				// workspaces — auto-pinning every workspace you spin up floods the
+				// Pinned band; the setting is about quick tab access to a session.
+				if (getPinNewSessions() && !msg.newWorkspace) setPins(pin(msg.id));
 				if (!sessionsRef.current.some((s) => s.id === msg.id)) {
 					const now = new Date().toISOString();
 					const user = draft?.user || getCurrentUser();
@@ -1192,15 +1193,6 @@ function App() {
 									refreshProjects();
 								} catch (e) {
 									console.error("Set project color failed:", e);
-								}
-							}}
-							onSetSessionProject={async (sessionId, projectId) => {
-								try {
-									await setSessionProjectApi(sessionId, projectId);
-									refresh();
-									refreshProjects();
-								} catch (e) {
-									console.error("Move to project failed:", e);
 								}
 							}}
 							onOpenNote={(id) =>
