@@ -19,6 +19,7 @@ import {
   IconStopSquare,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
+import { Modal } from "../ui/modal";
 import {
   getSendKeyPref,
   onSendKeyChanged,
@@ -135,83 +136,46 @@ interface Props {
   skillsFetch?: (query: string) => Promise<FileMention[]>;
 }
 
-/** Centered modal to set / update / clear the session goal. */
+/** Set / update / clear the session goal — a centered dialog on the shared
+ *  Modal primitive (Base UI, squircle shell, focus-trapped, exit-animated). */
 function GoalModal({
+  open,
   initial,
+  onOpenChange,
   onSubmit,
-  onClose,
 }: {
+  open: boolean;
   initial: string;
+  onOpenChange: (open: boolean) => void;
   onSubmit: (goal: string | null) => void;
-  onClose: () => void;
 }) {
   const [text, setText] = useState(initial);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Reseed the field to the current goal (and select it) each time we open.
   useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
-  // Escape closes from anywhere in the modal (the textarea swallows keydowns).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    if (open) {
+      setText(initial);
+      queueMicrotask(() => inputRef.current?.select());
+    }
+  }, [open, initial]);
 
   return (
-    <motion.div
-      className="goal-modal-backdrop"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <motion.div
-        className="goal-modal"
-        initial={{ opacity: 0, scale: 0.96, y: 6 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.97, y: 4 }}
-        transition={composerMorph}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Session goal"
-      >
-        <div className="goal-modal-head">
-          <span className="goal-modal-icon">
-            <IconCrosshair size={22} />
-          </span>
-          <div className="goal-modal-heading">
-            <div className="goal-modal-title">Session goal</div>
-            <div className="goal-modal-sub">
-              Pinned to the session — it rides along with every prompt you send.
-            </div>
-          </div>
-          <button
-            type="button"
-            className="goal-modal-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
+    <Modal.Root open={open} onOpenChange={onOpenChange}>
+      <Modal.Content initialFocus={inputRef}>
+        <Modal.Header
+          icon={<IconCrosshair size={22} />}
+          title="Session goal"
+          description="Pinned to the session — it rides along with every prompt you send."
+        />
 
         <textarea
           ref={inputRef}
-          className="goal-modal-input"
+          className="min-h-[120px] w-full resize-y rounded-[18px] [corner-shape:squircle] border border-line-strong bg-surface px-4 py-3.5 text-[15px] leading-relaxed text-fg outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
           value={text}
           rows={3}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            // ⌘/Ctrl+Enter or plain Enter submits; Shift+Enter newlines.
+            // Plain / ⌘/Ctrl+Enter submits; Shift+Enter newlines.
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               onSubmit(text.trim() || null);
@@ -220,31 +184,31 @@ function GoalModal({
           placeholder="e.g. Ship the onboarding redesign — keep every reply focused on that."
         />
 
-        <div className="goal-modal-actions">
+        <Modal.Footer>
           {initial && (
             <button
               type="button"
-              className="goal-modal-clear"
+              className="rounded-[10px] px-3 py-2 text-[13.5px] font-medium text-red hover:bg-red-soft"
               onClick={() => onSubmit(null)}
             >
               Clear goal
             </button>
           )}
-          <div className="composer-spacer" />
-          <button type="button" className="goal-modal-cancel" onClick={onClose}>
+          <div className="flex-1" />
+          <Modal.Close className="rounded-[10px] border border-line-strong px-4 py-2 text-[13.5px] font-medium text-fg outline-none hover:bg-hover">
             Cancel
-          </button>
+          </Modal.Close>
           <button
             type="button"
-            className="goal-modal-set"
+            className="rounded-[10px] bg-accent px-5 py-2 text-[13.5px] font-semibold text-white outline-none hover:brightness-105 disabled:cursor-default disabled:opacity-40"
             onClick={() => onSubmit(text.trim() || null)}
             disabled={text.trim() === initial.trim()}
           >
             {initial ? "Update goal" : "Set goal"}
           </button>
-        </div>
-      </motion.div>
-    </motion.div>
+        </Modal.Footer>
+      </Modal.Content>
+    </Modal.Root>
   );
 }
 
@@ -363,7 +327,11 @@ export function Composer({
   // outside click or after an action.
   const [menu, setMenu] = useState<null | "add" | "goal">(null);
   useEffect(() => {
-    if (!menu) return;
+    // The goal editor is a portaled Base UI dialog — it dismisses itself
+    // (backdrop / Escape) and lives outside .composer-pop-wrap, so this
+    // handler would wrongly close it on any click inside it. Only the anchored
+    // "add" menu needs outside-click dismissal here.
+    if (menu !== "add") return;
     // Dismiss on a tap/click outside the popover. iOS doesn't reliably fire
     // `mousedown` on non-interactive elements, so listen for `touchstart` too —
     // otherwise the menu gets stuck open on mobile.
@@ -685,18 +653,15 @@ export function Composer({
                     {goal && <span className="composer-goal-label">Goal</span>}
                   </button>
                 </Tooltip>
-                <AnimatePresence>
-                  {menu === "goal" && (
-                    <GoalModal
-                      initial={goal || ""}
-                      onClose={() => setMenu(null)}
-                      onSubmit={(g) => {
-                        onSetGoal(g);
-                        setMenu(null);
-                      }}
-                    />
-                  )}
-                </AnimatePresence>
+                <GoalModal
+                  open={menu === "goal"}
+                  initial={goal || ""}
+                  onOpenChange={(o) => setMenu(o ? "goal" : null)}
+                  onSubmit={(g) => {
+                    onSetGoal(g);
+                    setMenu(null);
+                  }}
+                />
               </motion.div>
             )}
           </AnimatePresence>
