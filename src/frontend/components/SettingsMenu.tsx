@@ -253,7 +253,7 @@ export function SettingsMenu({
 					<Menu.SubmenuTrigger className="gap-[9px] rounded-[7px] px-2 py-1.5">
 						<Avatar name={currentUser} active />
 						<span className="flex min-w-0 flex-1 flex-col gap-px leading-tight">
-							<span className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint">
+							<span className="text-[10.5px] font-bold tracking-[0.06em] text-faint">
 								Acting as
 							</span>
 							<span className="font-medium">{currentUser}</span>

@@ -1620,7 +1620,7 @@ export function Sidebar({
 				</span>
 				<span className="sidebar-item-title">{r.title}</span>
 				{r.isDraft && (
-					<span className="text-faint text-[10.5px] max-[720px]:text-[12px] uppercase tracking-wide shrink-0">
+					<span className="text-faint text-[10.5px] max-[720px]:text-[12px] tracking-wide shrink-0">
 						draft
 					</span>
 				)}
@@ -2269,7 +2269,7 @@ export function Sidebar({
 											{titleFor(v.sessionId)}
 										</span>
 										{followUser === v.user && (
-											<span className="text-accent text-[11px] max-[720px]:text-[12px] uppercase tracking-wide ml-auto shrink-0">
+											<span className="text-accent text-[11px] max-[720px]:text-[12px] tracking-wide ml-auto shrink-0">
 												following
 											</span>
 										)}

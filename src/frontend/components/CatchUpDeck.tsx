@@ -335,13 +335,13 @@ function SwipeCard({
 		>
 			{/* Swipe intent stamps. */}
 			<motion.div
-				className="pointer-events-none absolute left-4 top-16 z-10 rounded-md border-2 border-red px-2.5 py-1 text-sm font-bold uppercase tracking-wide text-red"
+				className="pointer-events-none absolute left-4 top-16 z-10 rounded-md border-2 border-red px-2.5 py-1 text-sm font-bold tracking-wide text-red"
 				style={{ opacity: archiveTint, rotate: -12 }}
 			>
 				Archive
 			</motion.div>
 			<motion.div
-				className="pointer-events-none absolute right-4 top-16 z-10 rounded-md border-2 border-green px-2.5 py-1 text-sm font-bold uppercase tracking-wide text-green"
+				className="pointer-events-none absolute right-4 top-16 z-10 rounded-md border-2 border-green px-2.5 py-1 text-sm font-bold tracking-wide text-green"
 				style={{ opacity: readTint, rotate: 12 }}
 			>
 				Read

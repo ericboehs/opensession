@@ -80,7 +80,7 @@ function StatusChip({ label, dot }: { label: string; dot: string }) {
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-2.5 mt-7 text-xs font-bold uppercase tracking-[0.05em] text-faint">
+    <div className="mb-2.5 mt-7 text-xs font-bold tracking-[0.05em] text-faint">
       {children}
     </div>
   );

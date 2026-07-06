@@ -2247,7 +2247,6 @@ body.resizing-x {
 .source-chip {
 	font-size: 10.5px;
 	font-weight: 700;
-	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	padding: 2px 8px;
 	border-radius: 99px;
@@ -2776,7 +2775,6 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 .preview-popover-title {
 	font-size: 11px;
 	font-weight: 700;
-	text-transform: uppercase;
 	letter-spacing: 0.04em;
 	color: var(--text-faint);
 	margin-bottom: 8px;
@@ -3077,7 +3075,6 @@ body.resizing-x .panel-resize::after {
 	font-size: 10.5px;
 	font-weight: 650;
 	letter-spacing: 0.04em;
-	text-transform: uppercase;
 }
 
 .workspace-info-title {
@@ -3160,7 +3157,6 @@ body.resizing-x .panel-resize::after {
 .subagent-chip {
 	font-size: 10.5px;
 	font-weight: 600;
-	text-transform: uppercase;
 	letter-spacing: 0.04em;
 	color: var(--accent);
 	background: var(--accent-soft);
@@ -3336,7 +3332,6 @@ body.resizing-x .panel-resize::after {
 .diff-truncated {
 	font-size: 10.5px;
 	font-weight: 700;
-	text-transform: uppercase;
 	color: var(--yellow);
 	background: rgba(210, 153, 34, 0.15);
 	border-radius: 4px;
@@ -3976,7 +3971,6 @@ body.resizing-x .panel-resize::after {
 .pr-pill {
 	font-size: 11px;
 	font-weight: 700;
-	text-transform: uppercase;
 	letter-spacing: 0.04em;
 	padding: 3px 10px;
 	border-radius: 99px;
@@ -4060,7 +4054,6 @@ body.resizing-x .panel-resize::after {
 .pr-checks-title {
 	font-size: 11.5px;
 	font-weight: 600;
-	text-transform: uppercase;
 	letter-spacing: 0.04em;
 	color: var(--text-faint);
 	padding: 8px 12px 6px;
@@ -4146,7 +4139,6 @@ body.resizing-x .panel-resize::after {
 .pr-checks-group {
 	font-size: 11.5px;
 	font-weight: 600;
-	text-transform: uppercase;
 	letter-spacing: 0.04em;
 	color: var(--text-faint);
 	padding: 10px 12px 4px;
@@ -4584,7 +4576,6 @@ body.resizing-x .panel-resize::after {
 	padding-bottom: 9px;
 	font-size: 11px;
 	font-weight: 600;
-	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	color: var(--text-faint);
 }
@@ -5310,7 +5301,6 @@ body.resizing-x .panel-resize::after {
 	font-size: 10.5px;
 	font-weight: 600;
 	margin-bottom: 5px;
-	text-transform: uppercase;
 	letter-spacing: 0.07em;
 	color: var(--text-faint);
 }
@@ -5790,7 +5780,6 @@ body.resizing-x .panel-resize::after {
 	text-align: left;
 	font-size: 10.5px;
 	font-weight: 600;
-	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	color: var(--text-faint);
 	border-bottom: 1px solid var(--border-strong);
@@ -5996,7 +5985,6 @@ button.home-whisper-link:hover {
 .home-section-title {
 	font-size: 12px;
 	font-weight: 700;
-	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	color: var(--text-faint);
 	margin-bottom: 8px;
@@ -6227,7 +6215,6 @@ button.home-whisper-link:hover {
 .automation-webhook-label {
 	font-size: 10.5px;
 	font-weight: 700;
-	text-transform: uppercase;
 	letter-spacing: 0.04em;
 	color: var(--text-faint);
 	flex-shrink: 0;
@@ -7650,7 +7637,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .conn-section-title {
 	font-size: 12px;
 	font-weight: 700;
-	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	color: var(--text-faint);
 	margin: 22px 0 10px;
@@ -8964,7 +8950,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 8px;
 	font-size: 12px;
 	font-weight: 700;
-	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	color: var(--accent);
 }
@@ -8972,7 +8957,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .ask-card-header {
 	font-size: 11px;
 	font-weight: 700;
-	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	color: var(--text-faint);
 	margin-bottom: 3px;
@@ -9370,7 +9354,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-size: 11px;
 	font-weight: 600;
 	color: var(--text-faint);
-	text-transform: uppercase;
 	letter-spacing: 0.04em;
 	margin-bottom: 7px;
 }
@@ -9538,7 +9521,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-size: 11px;
 	font-weight: 700;
 	letter-spacing: 0.06em;
-	text-transform: uppercase;
 	color: var(--text-faint);
 }
 .notes-add {
@@ -10189,7 +10171,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .plain-status {
 	font-size: 10.5px;
 	font-weight: 700;
-	text-transform: uppercase;
 	letter-spacing: 0.03em;
 	padding: 2px 7px;
 	border-radius: 999px;
@@ -10288,7 +10269,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .plain-kind-badge {
 	font-size: 9.5px;
 	font-weight: 700;
-	text-transform: uppercase;
 	letter-spacing: 0.04em;
 	color: var(--text-faint);
 	border: 1px solid var(--border-strong);

@@ -683,13 +683,13 @@ function SwipeCard({
 		>
 			{/* Swipe intent stamps. */}
 			<motion.div
-				className="pointer-events-none absolute left-4 top-16 z-10 rounded-md border-2 border-red px-2.5 py-1 text-sm font-bold uppercase tracking-wide text-red"
+				className="pointer-events-none absolute left-4 top-16 z-10 rounded-md border-2 border-red px-2.5 py-1 text-sm font-bold tracking-wide text-red"
 				style={{ opacity: closeTint, rotate: -12 }}
 			>
 				Close
 			</motion.div>
 			<motion.div
-				className="pointer-events-none absolute right-4 top-16 z-10 rounded-md border-2 border-green px-2.5 py-1 text-sm font-bold uppercase tracking-wide text-green"
+				className="pointer-events-none absolute right-4 top-16 z-10 rounded-md border-2 border-green px-2.5 py-1 text-sm font-bold tracking-wide text-green"
 				style={{ opacity: keepTint, rotate: 12 }}
 			>
 				Keep
@@ -721,7 +721,7 @@ function SwipeCard({
 					<span>·</span>
 					<span>{ageLabel(pr.createdAt)} old</span>
 					{pr.isDraft && (
-						<span className="rounded border border-yellow/50 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide text-yellow">
+						<span className="rounded border border-yellow/50 px-1.5 py-px text-[10px] font-bold tracking-wide text-yellow">
 							Draft
 						</span>
 					)}

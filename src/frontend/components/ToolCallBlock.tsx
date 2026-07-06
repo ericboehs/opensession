@@ -284,7 +284,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
 
         {mcp ? (
           <span className="flex min-w-0 flex-shrink-0 items-baseline gap-1.5 text-[12px]">
-            <span className="rounded bg-purple/15 px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.04em] text-purple">
+            <span className="rounded bg-purple/15 px-1.5 py-px text-[10px] font-bold tracking-[0.04em] text-purple">
               {mcp.server}
             </span>
             <span className="font-medium text-fg">{mcp.tool}</span>
@@ -348,7 +348,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
             <>
               <div
                 className={cn(
-                  "px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-[0.05em]",
+                  "px-2.5 pb-1 pt-1.5 text-[10px] font-bold tracking-[0.05em]",
                   inputNode && "border-t border-line",
                   failed ? "text-red" : "text-faint"
                 )}
