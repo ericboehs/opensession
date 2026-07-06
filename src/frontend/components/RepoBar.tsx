@@ -22,17 +22,19 @@ interface Props {
 /**
  * Repo segment of the session-header breadcrumb: `[icon] repo › title`.
  * Clicking the repo opens one menu that covers all cross-repo control —
- * switch the primary repo (fresh sessions only, so a switch never strands
- * work), detach an attached repo, or attach another (isolated worktree,
- * same as the agent's michael-repos attach_repo tool — both go through
- * POST /api/sessions/:id/attach-repo).
+ * switch the primary repo (any session, including a wrong choice made after
+ * work started; the old worktree is left on disk so nothing is stranded, and
+ * a switch-with-work is confirmed first), detach an attached repo, or attach
+ * another (isolated worktree, same as the agent's michael-repos attach_repo
+ * tool — both go through POST /api/sessions/:id/attach-repo).
  */
 export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Props) {
   const [attached, setAttached] = useState<AttachedRepo[]>(initialAttached);
   const [primary, setPrimary] = useState(primaryRepo);
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [open, setOpen] = useState(false);
-  const [switchable, setSwitchable] = useState(false);
+  const [switchable, setSwitchable] = useState(false); // false only for ask sessions
+  const [hasWork, setHasWork] = useState(false); // already has edits/commits → confirm on switch
   const [busy, setBusy] = useState<string | null>(null); // trigger label while an action runs
   const [error, setError] = useState<string | null>(null);
 
@@ -41,9 +43,14 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
   useEffect(() => setAttached(initialAttached), [JSON.stringify(initialAttached)]);
   useEffect(() => setPrimary(primaryRepo), [primaryRepo]);
 
-  // Can this session's primary repo be switched? (fresh worktree only)
+  // Can this session's primary repo be switched, and does it already have work?
   useEffect(() => {
-    fetchRepoSwitchable(sessionId).then(setSwitchable).catch(() => {});
+    fetchRepoSwitchable(sessionId)
+      .then(({ switchable, hasWork }) => {
+        setSwitchable(switchable);
+        setHasWork(hasWork);
+      })
+      .catch(() => {});
   }, [sessionId, primary]);
 
   useEffect(() => {
@@ -83,16 +90,35 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
 
   async function switchPrimary(repo: string) {
     if (repo === primary) return;
+    // Switching just repoints the session at another worktree — the current one
+    // (branch, commits, edits) stays on disk. Confirm when there's work so the
+    // move to a different codebase is a deliberate choice, not a surprise.
+    if (
+      hasWork &&
+      !window.confirm(
+        `Switch this workspace from ${primary} to ${repo}?\n\n` +
+          `Your current changes stay in the ${primary} worktree${
+            branch ? ` (branch ${branch})` : ""
+          } — they won't move to ${repo}. You can reopen them from that branch.`,
+      )
+    )
+      return;
     setBusy("Switching…");
     setError(null);
     try {
-      const res = await switchPrimaryRepoApi(sessionId, repo);
+      const res = await switchPrimaryRepoApi(sessionId, repo, hasWork);
       setPrimary(res.repo);
+      setHasWork(false); // the new worktree starts fresh
       setAttached((prev) => prev.filter((r) => r.repo !== res.repo));
     } catch (e: any) {
       setError(e.message || String(e));
-      // A concurrent turn may have dirtied the worktree — hide the switcher.
-      setSwitchable(false);
+      // Resync in case a concurrent turn changed the session's state.
+      fetchRepoSwitchable(sessionId)
+        .then(({ switchable, hasWork }) => {
+          setSwitchable(switchable);
+          setHasWork(hasWork);
+        })
+        .catch(() => {});
     } finally {
       setBusy(null);
     }
@@ -186,11 +212,18 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
                   </div>
                 )}
               </Menu.Group>
-              {!switchable && (
+              {!switchable ? (
                 <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-[11px] leading-snug text-faint">
-                  Switching the primary repo is only possible before the session
-                  has changes.
+                  Ask sessions read the shared checkout — there's no primary repo
+                  to switch.
                 </div>
+              ) : (
+                hasWork && (
+                  <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-[11px] leading-snug text-faint">
+                    Switching keeps your current changes in the {primary} worktree
+                    — they won't move to the new repo.
+                  </div>
+                )
               )}
             </>
           )}

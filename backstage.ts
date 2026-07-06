@@ -629,6 +629,7 @@ async function attachRepo(
 async function switchPrimaryRepo(
 	sessionId: string,
 	repoId: string,
+	force = false,
 ): Promise<{ repo: string; branch: string; worktreeDir: string }> {
 	const session = findSession(sessionId);
 	if (!session) throw new Error("Session not found");
@@ -637,7 +638,13 @@ async function switchPrimaryRepo(
 	if (!REPOS[repoId]) throw new Error(`Unknown repo "${repoId}"`);
 	if (session.repo === repoId)
 		throw new Error(`${repoId} is already this session's primary repo`);
+	// A switch just repoints the session at a different worktree — the old one
+	// (branch, commits, uncommitted edits) stays on disk, so nothing is ever
+	// destroyed. We still block by default when there's work so the agent-facing
+	// switch_repo tool can't silently abandon it; the human UI passes force=true
+	// after confirming, since fixing a wrong-repo choice is exactly that case.
 	if (
+		!force &&
 		session.worktreeDir &&
 		session.branch &&
 		(await worktreeHasWork(session.worktreeDir, session.branch, session.repo))
@@ -4590,32 +4597,43 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const session = findSession(sessionId);
 				if (!session)
 					return Response.json({ error: "Session not found" }, { status: 404 });
-				const switchable =
-					session.mode !== "ask" &&
-					!(
-						session.worktreeDir &&
-						session.branch &&
-						(await worktreeHasWork(
-							session.worktreeDir,
-							session.branch,
-							session.repo,
-						))
-					);
-				return Response.json({ switchable });
+				// `switchable`: this session type can switch its primary repo at all
+				// (ask sessions read the shared checkout — nothing to switch).
+				// `hasWork`: it already has commits/edits, so the UI confirms before
+				// switching (the work stays in the old worktree, not carried over).
+				const switchable = session.mode !== "ask";
+				const hasWork =
+					switchable &&
+					!!session.worktreeDir &&
+					!!session.branch &&
+					(await worktreeHasWork(
+						session.worktreeDir,
+						session.branch,
+						session.repo,
+					));
+				return Response.json({ switchable, hasWork });
 			}
 
 			// Switch the session's PRIMARY repo (wrong repo picked at creation).
-			// Clean-only — rejects with 400 if the session already has work.
+			// Rejects with 400 if the session has work unless `force` is set; the
+			// old worktree is left on disk either way, so work is never destroyed.
 			const switchMatch = path.match(
 				/^\/backstage\/api\/sessions\/(.+)\/switch-primary-repo$/,
 			);
 			if (switchMatch && req.method === "POST") {
 				const sessionId = decodeURIComponent(switchMatch[1]);
-				const body = (await req.json().catch(() => ({}))) as { repo?: string };
+				const body = (await req.json().catch(() => ({}))) as {
+					repo?: string;
+					force?: boolean;
+				};
 				if (!body.repo)
 					return Response.json({ error: "repo required" }, { status: 400 });
 				try {
-					const result = await switchPrimaryRepo(sessionId, body.repo);
+					const result = await switchPrimaryRepo(
+						sessionId,
+						body.repo,
+						!!body.force,
+					);
 					return Response.json({ ok: true, ...result });
 				} catch (e: any) {
 					return Response.json(

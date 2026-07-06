@@ -515,28 +515,34 @@ export async function detachRepoApi(
 	return body.attachedRepos;
 }
 
-// Whether this session is fresh enough to switch its primary repo (clean-only).
-export async function fetchRepoSwitchable(sessionId: string): Promise<boolean> {
+// Can this session switch its primary repo, and does it already have work?
+// `switchable` is false only for ask sessions; `hasWork` means the UI should
+// confirm first (the current changes stay in the old worktree, not carried over).
+export async function fetchRepoSwitchable(
+	sessionId: string,
+): Promise<{ switchable: boolean; hasWork: boolean }> {
 	try {
-		const body = await request<{ switchable?: boolean }>(
+		const body = await request<{ switchable?: boolean; hasWork?: boolean }>(
 			`/sessions/${encodeURIComponent(sessionId)}/repo-switchable`,
 		);
-		return !!body?.switchable;
+		return { switchable: !!body?.switchable, hasWork: !!body?.hasWork };
 	} catch (e) {
 		console.warn("fetchRepoSwitchable failed:", e);
-		return false;
+		return { switchable: false, hasWork: false };
 	}
 }
 
 // Switch the session's PRIMARY repo (wrong repo picked at creation). Returns the
-// new primary repo + branch; the next prompt runs from the new worktree.
+// new primary repo + branch; the next prompt runs from the new worktree. Pass
+// force to switch past existing work (it stays in the old worktree on disk).
 export async function switchPrimaryRepoApi(
 	sessionId: string,
 	repo: string,
+	force = false,
 ): Promise<{ repo: string; branch: string; worktreeDir: string }> {
 	return request<{ repo: string; branch: string; worktreeDir: string }>(
 		`/sessions/${encodeURIComponent(sessionId)}/switch-primary-repo`,
-		{ method: "POST", body: { repo } },
+		{ method: "POST", body: { repo, force } },
 	);
 }
 
