@@ -279,6 +279,48 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
 }
 
 /**
+ * Worktree for a FOLLOW-UP branch cut fresh off `baseRef` (a PR's base, e.g.
+ * `main`). Used when someone @-mentions Michael asking for a change on a PR that
+ * is already merged/closed — you can't push to the old PR, so the work goes on a
+ * new branch that opens its own PR. Idempotent: reuses an existing worktree/branch
+ * (so a webhook-redelivery replay doesn't fork a second branch) rather than
+ * failing on `worktree add -b`.
+ */
+export async function createWorktreeForFollowup(
+  branch: string,
+  baseRef: string,
+): Promise<string> {
+  const existing = (await listWorktrees("tella-fusion")).find((w) => w.branch === branch);
+  if (existing) return existing.path;
+
+  const wtPath = `${WORKTREES_DIR}/tella-fusion-${branch}`;
+  await withGitLock(async () => {
+    await $`git -C ${TELLA_FUSION} worktree prune`.quiet();
+    if (existsSync(wtPath)) return; // pruned stale registration; dir already usable
+    await $`git -C ${TELLA_FUSION} fetch origin ${baseRef} --quiet`.nothrow();
+    const startPoint =
+      (await $`git -C ${TELLA_FUSION} rev-parse --verify --quiet origin/${baseRef}`.nothrow())
+        .exitCode === 0
+        ? `origin/${baseRef}`
+        : "origin/main";
+    await $`git -C ${TELLA_FUSION} worktree add -b ${branch} ${wtPath} ${startPoint}`;
+  });
+
+  // Best-effort dep install so the follow-up run can build/test, same as siblings.
+  const webappDir = `${wtPath}/packages/core/webapp`;
+  await seedWebappEnv(webappDir);
+  try {
+    if (await Bun.file(`${webappDir}/package.json`).exists()) {
+      await $`cd ${webappDir} && bun install`.quiet();
+    }
+  } catch (e) {
+    console.warn(`[worktree] bun install failed for ${branch} (continuing):`, e);
+  }
+
+  return wtPath;
+}
+
+/**
  * Worktree checked out to an EXISTING branch (a PR's head branch), for
  * interactive sessions opened from a PR row. Unlike `createWorktreeForPrBranch`
  * (the autofix agents' variant) it never hard-resets on reuse — a human may

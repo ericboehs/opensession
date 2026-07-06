@@ -59,7 +59,13 @@ function projectIdForPr(prNumber: number, branch: string, title: string, cwd: st
   }
 }
 
-export type GithubRunKind = "review" | "autofix" | "simplify" | "mention" | "adversarial";
+export type GithubRunKind =
+  | "review"
+  | "autofix"
+  | "simplify"
+  | "mention"
+  | "adversarial"
+  | "followup";
 
 /** Stable, deterministic backstage session id per PR + behavior (one resumable session each). */
 export function bksIdFor(prNumber: number, kind: GithubRunKind): string {

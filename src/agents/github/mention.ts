@@ -7,9 +7,9 @@
  * posts), and only act when the body actually mentions a Michael handle — so
  * Michael's replies (which don't mention itself) never re-trigger.
  */
-import { getPrDetails } from "../../server/pr-info";
+import { getPrDetails, type PrDetails } from "../../server/pr-info";
 import { listAutomations } from "../../server/automations";
-import { createWorktreeForPrBranch } from "../../server/worktree";
+import { createWorktreeForPrBranch, createWorktreeForFollowup } from "../../server/worktree";
 import {
   claimLock,
   releaseLock,
@@ -19,7 +19,7 @@ import {
   clearPendingMention,
 } from "./state";
 import { runGithubAgent, authorForLogin, finalSummary, sessionUrl } from "./run";
-import { buildMentionPrompt } from "./prompts";
+import { buildMentionPrompt, buildFollowupMentionPrompt } from "./prompts";
 import { triggerPrAction } from "./trigger";
 import {
   postIssueComment,
@@ -168,7 +168,14 @@ export async function runConversationalMention(
   let headRef = "";
   try {
     const details = await getPrDetails(String(prNumber));
-    if (!details || details.state !== "OPEN") return;
+    if (!details) return;
+    // Merged/closed PR: you can't push to it, but a mention like "fix this in a
+    // follow-up PR" (Kent's case) should still spin up a session — off a fresh
+    // branch that opens its own PR — not be silently dropped.
+    if (details.state !== "OPEN") {
+      await runFollowupMention(args, details);
+      return;
+    }
     headRef = details.headRefName;
     const model = listAutomations().find((a) => a.eventKey === PR_EVENT_KEY)?.model;
     const link = `[📺 open session](${sessionUrl(prNumber, "mention")})`;
@@ -242,5 +249,71 @@ export async function runConversationalMention(
     fin.activeMention = undefined;
     writePrState(fin);
     releaseLock("code", prNumber);
+  }
+}
+
+/**
+ * Handle a mention on a merged/closed PR: the head branch can't take new commits,
+ * so branch fresh off the PR's base and let the run open its own follow-up PR.
+ * Called from within `runConversationalMention`, which already holds the code lock.
+ */
+async function runFollowupMention(
+  args: ConversationalMentionArgs,
+  details: PrDetails,
+): Promise<void> {
+  const { prNumber } = args;
+  const baseRef = details.baseRefName || "main";
+  const stateLabel = details.state === "MERGED" ? "merged" : "closed";
+  // Stable per-thread branch suffix (replyToId is the thread root) so a webhook
+  // redelivery replays onto the same branch instead of forking a second one.
+  const suffix = args.replyToId ? String(args.replyToId) : String(prNumber);
+  const branch = `followup-pr-${prNumber}-${suffix}`.slice(0, 80);
+  const link = `[📺 open session](${sessionUrl(prNumber, "followup")})`;
+
+  const progressId = await postOrEditComment(
+    prNumber,
+    undefined,
+    `${REPLY_MARKER}\n🔄 On it — PR #${prNumber} is ${stateLabel}, so I'm starting a fresh follow-up branch off \`${baseRef}\` for @${args.author}'s request… · ${link}`,
+  );
+
+  const model = listAutomations().find((a) => a.eventKey === PR_EVENT_KEY)?.model;
+  const worktreeDir = await createWorktreeForFollowup(branch, baseRef);
+  console.log(
+    `[github] Follow-up mention on ${stateLabel} PR #${prNumber} from @${args.author} → branch ${branch}`,
+  );
+
+  const result = await runGithubAgent({
+    prNumber,
+    kind: "followup",
+    prompt: buildFollowupMentionPrompt({
+      prNumber,
+      prTitle: details.title,
+      state: stateLabel,
+      baseRef,
+      branch,
+      author: args.author,
+      commentBody: args.body,
+      inline: args.inline,
+    }),
+    cwd: worktreeDir,
+    mode: "code",
+    model,
+    branch,
+    title: `Follow-up · PR #${prNumber} ${details.title}`.slice(0, 100),
+    resume: false, // fresh branch → fresh session, don't resume the merged PR's thread
+    author: authorForLogin(args.author), // attribute commits to the person who asked
+  });
+
+  const reply = finalSummary(result.text) || "(no reply produced)";
+  const out = `${REPLY_MARKER}\n${reply}\n\n<sub>${link}</sub>`;
+  if (args.kind === "review" && args.replyToId) {
+    const ok = await replyToReviewComment(prNumber, args.replyToId, out);
+    if (!ok) console.warn(`[github] failed to post follow-up thread reply for PR #${prNumber}`);
+    if (progressId)
+      await editIssueComment(progressId, `${REPLY_MARKER}\n✓ Replied in the review thread above. · ${link}`);
+  } else if (progressId) {
+    if (!(await editIssueComment(progressId, out))) await postIssueComment(prNumber, out);
+  } else {
+    await postIssueComment(prNumber, out);
   }
 }

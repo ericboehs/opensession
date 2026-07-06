@@ -232,6 +232,51 @@ Then write a concise reply as Michael: answer the question, show what you ran an
 When finished, output the marker \`===MICHAEL-SUMMARY===\` on its own line, then your reply as GitHub markdown. ONLY the text after that marker is posted as the reply — everything before it is working notes that stay private. Do not post anything yourself.`;
 }
 
+/**
+ * Mention on a PR that's already merged/closed: you can't push to the old PR, so
+ * the run works on a FRESH branch cut off the base and opens its own follow-up PR.
+ */
+export function buildFollowupMentionPrompt(opts: {
+  prNumber: number;
+  prTitle: string;
+  state: "merged" | "closed";
+  baseRef: string;
+  branch: string;
+  author: string;
+  commentBody: string;
+  inline?: { path: string; line?: number; diffHunk?: string };
+}): string {
+  const where = opts.inline
+    ? `Their comment is anchored to \`${opts.inline.path}\`${opts.inline.line ? `:${opts.inline.line}` : ""}.${
+        opts.inline.diffHunk
+          ? `\n\nDiff hunk for context:\n\`\`\`diff\n${opts.inline.diffHunk.slice(0, 2000)}\n\`\`\``
+          : ""
+      }`
+    : "They commented in the PR conversation.";
+
+  const changesLocation =
+    opts.state === "merged"
+      ? `The merged PR's changes are already in \`${opts.baseRef}\`, so you're building on top of them.`
+      : `The PR was NOT merged, so its changes are NOT in \`${opts.baseRef}\` — if you need them, \`git fetch\` and cherry-pick from PR #${opts.prNumber}'s head branch first.`;
+
+  return `You are Michael, replying to @${opts.author}, who mentioned you on PR #${opts.prNumber} ("${opts.prTitle}") on tella-fusion. That PR is already ${opts.state}, so you can no longer push to it. You are on a FRESH branch \`${opts.branch}\` cut from \`${opts.baseRef}\` in a worktree, ready to do a follow-up. ${where}
+
+Their comment:
+"""
+${opts.commentBody}
+"""
+
+Decide what they need:
+- If it's just a question or discussion, answer it directly (\`gh pr view ${opts.prNumber} --comments\`, \`gh pr diff ${opts.prNumber}\`, read files). Make no changes and open no PR.
+- If they're asking for a code change or fix (the usual case for "fix this in a follow-up PR"), implement it on this branch. ${changesLocation} Keep it tightly scoped to exactly what they asked.
+
+If you made changes, commit them with a clear message (\`git add\` specific paths, never \`git add .\`), push with \`git push -u origin HEAD\`, and open a NEW pull request:
+\`gh pr create --repo tellahq/tella-fusion --base ${opts.baseRef} --head ${opts.branch} --title "<concise title>" --body "<what and why, including 'Follow-up to #${opts.prNumber}'>"\`.
+NEVER push to PR #${opts.prNumber}'s branch and NEVER run \`gh pr merge\`.
+
+When finished, output the marker \`===MICHAEL-SUMMARY===\` on its own line, then your reply as GitHub markdown — link the new PR you opened, or explain why none was needed. ONLY the text after that marker is posted as the reply — everything before it is working notes that stay private. Do not post anything yourself.`;
+}
+
 export function buildSimplifyPrompt(pr: PrDetails, steer?: string): string {
   return `You are Michael, simplifying PR #${pr.number} ("${pr.title}") on tella-fusion. You are checked out on the PR's head branch \`${pr.headRefName}\` in a worktree.
 
