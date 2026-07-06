@@ -50,6 +50,7 @@ import {
 	getPins,
 	togglePin,
 	pin,
+	unpin,
 	reorderPins,
 	onPinsChanged,
 	getPinNewSessions,
@@ -398,6 +399,31 @@ function App() {
 		const unsub = onPinsChanged(() => setPins(getPins()));
 		setPins(getPins());
 		return unsub;
+	}, []);
+
+	// Drop the pins made stale by archiving `justArchived`, mirroring the
+	// server's unpinArchivedSessions: each chat's own id + alias ids, plus a
+	// `workspace:<id>` pin once none of that workspace's chats are live anymore.
+	// The server already does this, but our pin cache is optimistic and never
+	// hears about that write — without this a later savePinsApi re-uploads the
+	// stale list and resurrects the archived pin as an unreachable ghost row.
+	const dropStalePins = React.useCallback((justArchived: UnifiedSession[]) => {
+		if (!justArchived.length) return;
+		const archivedIds = new Set(justArchived.map((s) => s.id));
+		const all = sessionsRef.current;
+		const keys: string[] = [];
+		const projectIds = new Set<string>();
+		for (const s of justArchived) {
+			keys.push(s.id, ...(s.aliasIds || []));
+			if (s.projectId) projectIds.add(s.projectId);
+		}
+		for (const pid of projectIds) {
+			const hasLive = all.some(
+				(s) => s.projectId === pid && !s.archived && !archivedIds.has(s.id),
+			);
+			if (!hasLive) keys.push(`workspace:${pid}`);
+		}
+		setPins(unpin(keys));
 	}, []);
 
 	// Track the on-screen keyboard via input focus. It's the only reliable iOS
@@ -1206,6 +1232,7 @@ function App() {
 									if (wasOpen) navigate({ view: "session", id: s.id });
 									return;
 								}
+								dropStalePins([s]);
 								refresh();
 							}}
 							onArchiveWorkspace={async (chats, next) => {
@@ -1239,6 +1266,7 @@ function App() {
 									if (openChatId) navigate({ view: "session", id: openChatId });
 									return;
 								}
+								dropStalePins(chats);
 								refresh();
 							}}
 							onRename={async (s, title) => {

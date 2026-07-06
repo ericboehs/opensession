@@ -101,6 +101,26 @@ export function onPinNewSessionsChanged(handler: () => void): () => void {
 	return () => window.removeEventListener(PIN_NEW_EVENT, handler);
 }
 
+/**
+ * Remove any of `ids` that are currently pinned (no-op for the rest). Returns
+ * the new list. This is the client-side mirror of the server's
+ * `unpinArchivedSessions` — archiving a session drops its pins server-side, but
+ * our cache is optimistic and never hears about that write, so the next
+ * `savePinsApi` would re-upload the whole stale list and *resurrect* the pin we
+ * just archived away. Call this on archive so the cache stays in sync and can't
+ * bring an archived (unreachable) pin back to the Pinned band.
+ */
+export function unpin(ids: string[]): string[] {
+	const drop = new Set(ids.filter(Boolean));
+	if (!drop.size) return cache;
+	const next = cache.filter((id) => !drop.has(id));
+	if (next.length === cache.length) return cache;
+	cache = next;
+	emit();
+	void savePinsApi(getCurrentUser(), next).catch(() => {});
+	return next;
+}
+
 export function togglePin(id: string): string[] {
 	const next = cache.includes(id)
 		? cache.filter((p) => p !== id)

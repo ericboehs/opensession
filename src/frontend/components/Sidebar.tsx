@@ -2052,7 +2052,11 @@ export function Sidebar({
 								(s) => s.id === id || s.aliasIds?.includes(id),
 							),
 						)
-						.filter((s): s is UnifiedSession => !!s)
+						// An archived chat must never surface in Pinned — its pin is
+						// stale (archiving drops it server-side, but a resurrected or
+						// legacy pin can still point at it). Skip it so it can't render
+						// as an un-archivable ghost row.
+						.filter((s): s is UnifiedSession => !!s && !s.archived)
 						// Honor the repo filter — a pinned chat from another repo
 						// shouldn't leak into a repo-scoped view (workspace pins
 						// already drop out via wsRows/filtered).
