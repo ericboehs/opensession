@@ -2573,6 +2573,9 @@ body.resizing-x {
 .btn-panel-toggle.btn-workspace {
 	padding: 3px 5px;
 	border-color: transparent;
+	/* Match the left sidebar toggle's rest tone (text-faint) — the base
+	   .btn-panel-toggle is text-dim, which read a shade darker than its mirror. */
+	color: var(--text-faint);
 }
 .btn-panel-toggle.btn-workspace.active,
 .btn-panel-toggle.btn-workspace:hover {
