@@ -157,6 +157,7 @@ import { createSessionsMcpServer } from "./src/agents/slack/sessions-tools";
 import { createAdminMcpServer } from "./src/agents/slack/admin-tools";
 import { createHumansMcpServer } from "./src/agents/slack/humans-tools";
 import { createReposMcpServer } from "./src/agents/slack/repos-tools";
+import { createPreviewMcpServer } from "./src/agents/slack/preview-tools";
 import {
 	createGoalsMcpServer,
 	createGoalSelfMcpServer,
@@ -429,6 +430,16 @@ function interactiveMcpServers(
 								defaultBranch: p.defaultBranch,
 								sharedCheckout: !!p.sharedCheckout,
 							})),
+					}),
+					// Deep-link testing: record where the change should be tested so
+					// the Preview/Staging buttons open that route directly.
+					"michael-preview": createPreviewMcpServer({
+						sessionId,
+						setPreviewPath: (path) =>
+							touchBackstageSession(sessionId, {
+								previewPath: path || undefined,
+							}),
+						current: () => findSession(sessionId)?.previewPath ?? null,
 					}),
 				}
 			: {}),

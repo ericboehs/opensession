@@ -3044,17 +3044,18 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	min-height: 0;
 }
 
-/* Action row at the top of the right panel: Preview / Staging / PR — the
-   code-workspace affordances that used to crowd the main header bar. Each child
-   self-gates (renders null when N/A), so :empty collapses the row on sessions
-   with no code affordances (e.g. Plain-only). */
+/* Action row docked at the bottom of the right panel: Preview / Staging / PR —
+   the code-workspace affordances that used to crowd the main header bar. It
+   sits below the tab body so it stays visible on every tab (tab-agnostic).
+   Each child self-gates (renders null when N/A), so :empty collapses the row on
+   sessions with no code affordances (e.g. Plain-only). */
 .panel-actions {
 	display: flex;
 	align-items: center;
 	flex-wrap: wrap;
 	gap: 8px;
 	padding: 10px 12px;
-	border-bottom: 1px solid var(--border);
+	border-top: 1px solid var(--border);
 }
 .panel-actions:empty {
 	display: none;

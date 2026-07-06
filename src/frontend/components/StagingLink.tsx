@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchPr } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
+import { withPreviewPath } from "../lib/preview-url";
 import { IconArrowUpRight, IconGlobe } from "./icons";
 
 /**
@@ -47,16 +48,19 @@ export function StagingLink({ session }: { session: UnifiedSession }) {
 	if (!relevant || !staging) return null;
 
 	const building = staging.status !== "Ready";
+	// Deep-link to the agent-flagged route (set_preview_path) so the button
+	// opens the feature under test, not the app root.
+	const href = withPreviewPath(staging.url, session.previewPath);
 	return (
 		<a
-			href={staging.url}
+			href={href}
 			target="_blank"
 			rel="noopener"
 			className={`staging-link ${building ? "staging-link-building" : ""}`}
 			title={
 				building
-					? `Staging deploy ${staging.status.toLowerCase()}… — ${staging.url}`
-					: `Test this PR on staging — ${staging.url}`
+					? `Staging deploy ${staging.status.toLowerCase()}… — ${href}`
+					: `Test this PR on staging — ${href}`
 			}
 		>
 			<IconGlobe size={15} className="staging-globe" />

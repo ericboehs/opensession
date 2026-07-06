@@ -50,6 +50,12 @@ export interface UnifiedSession {
   parentSessionId?: string;
   /** Secondary repos this session also works in (cross-repo sessions). */
   attachedRepos?: AttachedRepo[];
+  /**
+   * Root-relative route the agent recorded as the place to test this change
+   * (e.g. `/settings/tags`). Appended to the Preview (local dev) and Staging
+   * (PR deploy) URLs so a click lands directly on the feature under test.
+   */
+  previewPath?: string;
   automation?: string;
   archived?: boolean;
   /** Why this session is archived — powers the "Auto-archived" filter. */
@@ -162,6 +168,9 @@ export interface BackstageSessionFile {
   worktreeDir: string;
   /** Secondary repos this session also works in (cross-repo sessions). */
   attachedRepos?: AttachedRepo[];
+  /** Root-relative route the Preview/Staging buttons deep-link to (set by the
+   *  agent via michael-preview's set_preview_path). Unset = open the app root. */
+  previewPath?: string;
   createdBy: string;
   createdAt: string;
   lastActivity: string;

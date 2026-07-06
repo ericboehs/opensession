@@ -337,6 +337,14 @@ export function buildCodexPrompt(input: {
         "Pass `mcpServers: []` for filesystem-only work, set `repo` explicitly, and give a self-contained prompt with scope, " +
         "acceptance criteria, and what to report back. Keep final judgment with the orchestrator."
     );
+    if (!input.isAsk) {
+      parts.push(
+        "## Deep-link the change for testing\nWhen your change is viewable at a specific route " +
+          "(a settings page, an editor screen, etc.), call michael-preview's `set_preview_path` with that " +
+          "root-relative path (e.g. `/settings/tags`) so the human's Preview and Staging buttons open directly " +
+          "on the feature under test instead of the app root. Pass an empty string to clear it."
+      );
+    }
   }
   if (Object.keys(input.confirmTools || {}).length > 0) {
     parts.push(

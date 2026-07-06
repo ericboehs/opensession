@@ -274,6 +274,7 @@ function scanBackstageSessions(): UnifiedSession[] {
         null,
       parentSessionId: data.parentSessionId,
       attachedRepos: data.attachedRepos,
+      previewPath: data.previewPath,
       automation:
         data.automation ||
         (data.createdBy?.endsWith(" (automation)")

@@ -7,6 +7,7 @@ import {
   type PreviewStatus,
 } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
+import { withPreviewPath } from "../lib/preview-url";
 import { IconArrowUpRight, IconCamera, IconChevronDown, IconPlay } from "./icons";
 
 // Only tella-fusion worktrees are previewable — the bring-up script
@@ -86,7 +87,11 @@ export function PreviewButton({
   // The webapp is only openable once Caddy has fronted it with an HTTPS origin
   // (previewUrl). A secure origin is required for the app to load fully.
   const running = status.running && status.previewUrl != null;
-  const url = status.previewUrl ?? "#";
+  // Deep-link to the route the agent flagged (set_preview_path), so the human
+  // lands on the feature under test instead of the app root.
+  const url = status.previewUrl
+    ? withPreviewPath(status.previewUrl, session.previewPath)
+    : "#";
   const anyRunning = status.services.some((s) => s.running);
   const isStarting = busy && !running;
 

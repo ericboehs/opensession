@@ -1546,10 +1546,11 @@ export function SessionViewer({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [archiving, handleArchive, session.archived]);
 
-	// Preview / Staging / PR — the code-workspace affordances, docked at the top
-	// of the right panel (the "right sidebar") rather than the main header bar.
-	// Each self-gates (renders null when not applicable), so on a plain/ask
-	// session the row collapses to nothing (`.panel-actions:empty`).
+	// Preview / Staging / PR — the code-workspace affordances, docked at the
+	// bottom of the right panel (the "right sidebar") so they stay visible on
+	// every tab, rather than the main header bar. Each self-gates (renders null
+	// when not applicable), so on a plain/ask session the row collapses to
+	// nothing (`.panel-actions:empty`).
 	const panelActions = (
 		<>
 			<PreviewButton
@@ -2273,7 +2274,6 @@ export function SessionViewer({
 								onOpenPrTab={() => setPanelTab("pr")}
 							/>
 						)}
-						<div className="panel-actions">{panelActions}</div>
 						<div className="panel-tabs">
 							<button
 								className={`panel-tab ${panelTab === "info" ? "active" : ""}`}
@@ -2389,6 +2389,7 @@ export function SessionViewer({
 								/>
 							)}
 						</div>
+						<div className="panel-actions">{panelActions}</div>
 					</div>
 				) : null}
 					</>
