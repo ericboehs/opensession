@@ -1655,6 +1655,7 @@ function App() {
 									}
 									workspaceChats={projectChats}
 									allSessions={sessions}
+									allProjects={projects}
 									onNewChat={handleNewChat}
 									parentSession={
 										currentSession.parentSessionId

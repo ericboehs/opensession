@@ -138,6 +138,8 @@ interface Props {
 	workspaceChats?: UnifiedSession[];
 	/** Every session — powers the Chat tab's @-session tagging. */
 	allSessions?: UnifiedSession[];
+	/** Workspace names — lets the Chat tab's @-search match workspaces too. */
+	allProjects?: Array<{ id: string; name: string }>;
 	/** Start a new chat in this workspace — surfaced in the ⋯ menu so it's
 	    reachable on a phone, where the tab strip's + button is hidden. */
 	onNewChat?: (mode: "share" | "stack" | "ask") => void;
@@ -239,6 +241,7 @@ export function SessionViewer({
 	onRenameWorkspace,
 	workspaceChats,
 	allSessions,
+	allProjects,
 	onNewChat,
 	parentSession,
 	workerSessions,
@@ -2425,6 +2428,7 @@ export function SessionViewer({
 									channel={`session:${session.id}`}
 									user={getCurrentUser()}
 									sessions={allSessions || workspaceChats || []}
+									projects={allProjects}
 									send={send}
 									addHandler={addHandler}
 									onOpenSession={(id) => onOpenSession?.(id)}
