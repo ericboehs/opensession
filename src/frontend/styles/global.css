@@ -1094,12 +1094,10 @@ body.resizing-x {
 	margin-bottom: 0;
 }
 
-/* Extra spacing + a hairline divider where one band ends and the next begins
+/* Whitespace (not a divider line) separates one band from the next
    (personal → people → automations). */
 .sidebar-group--band-start {
-	margin-top: 22px;
-	padding-top: 16px;
-	border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+	margin-top: 28px;
 }
 
 /* Top-level band labels (Support / People / Automations) — small quiet labels
@@ -1114,7 +1112,7 @@ body.resizing-x {
 	color: var(--text-faint);
 }
 .sidebar-band-label {
-	padding: 0 0 6px;
+	padding: 0;
 }
 .sidebar-band-toggle {
 	display: flex;
@@ -1124,7 +1122,7 @@ body.resizing-x {
 	background: none;
 	border: none;
 	border-radius: 8px;
-	padding: 4px 6px;
+	padding: 6px 8px;
 	margin: 0;
 	font: inherit;
 	color: inherit;
