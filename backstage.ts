@@ -264,6 +264,7 @@ import {
 	startAutoArchiveSweep,
 } from "./src/server/auto-archive";
 import { setTitleOverride, getTitleOverride } from "./src/server/title-overrides";
+import { setStatusOverride, isManualStatus } from "./src/server/status-overrides";
 import { ensureGeneratedTitle } from "./src/server/generated-titles";
 import {
 	getConnections,
@@ -4251,6 +4252,24 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const title =
 					typeof body?.title === "string" ? body.title.trim().slice(0, 80) : "";
 				setTitleOverride(sessionId, title || null);
+				sessionsCache = null;
+				return Response.json({ ok: true });
+			}
+
+			// Set (or clear) a session's manual sidebar-lane. `status` is one of the
+			// lane keys (needsinput/inprogress/review/merged/pending); null/invalid
+			// clears the override back to the derived lane.
+			const statusMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/status$/,
+			);
+			if (statusMatch && req.method === "PUT") {
+				const sessionId = decodeURIComponent(statusMatch[1]);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const body = await req.json().catch(() => ({}));
+				const status = isManualStatus(body?.status) ? body.status : null;
+				setStatusOverride(sessionId, status);
 				sessionsCache = null;
 				return Response.json({ ok: true });
 			}

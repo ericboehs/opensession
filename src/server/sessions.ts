@@ -7,6 +7,7 @@ import {
 } from "./shared/user-mappings";
 import { isArchivedId, getArchiveReason } from "./archive";
 import { getTitleOverride } from "./title-overrides";
+import { getStatusOverride } from "./status-overrides";
 import { getGeneratedTitle } from "./generated-titles";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
@@ -648,6 +649,15 @@ export function getAllSessions(): UnifiedSession[] {
       getTitleOverride(session.id) ??
       session.aliasIds?.map((a) => getTitleOverride(a)).find(Boolean);
     if (override) session.title = override;
+  }
+
+  // Apply manual status-lane overrides. Keyed by unified id or any merged alias
+  // id (same as the rename registry) so a pinned lane survives the dedup scan.
+  for (const session of allSessions) {
+    const status =
+      getStatusOverride(session.id) ??
+      session.aliasIds?.map((a) => getStatusOverride(a)).find(Boolean);
+    if (status) session.manualStatus = status;
   }
 
   // Sort by lastActivity descending

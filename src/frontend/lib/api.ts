@@ -1508,6 +1508,27 @@ export async function renameSessionApi(
 	});
 }
 
+/**
+ * Pin a session into a sidebar lane (needsinput/inprogress/review/merged/pending),
+ * or pass null to clear the override back to the derived lane.
+ */
+export async function setSessionStatusApi(
+	sessionId: string,
+	status:
+		| "needsinput"
+		| "inprogress"
+		| "review"
+		| "merged"
+		| "pending"
+		| null,
+): Promise<void> {
+	await request<void>(`/sessions/${encodeURIComponent(sessionId)}/status`, {
+		method: "PUT",
+		body: { status },
+		label: "Failed to change session status",
+	});
+}
+
 export function getWebSocketUrl(): string {
 	const proto = location.protocol === "https:" ? "wss:" : "ws:";
 	return `${proto}//${location.host}/backstage/ws`;

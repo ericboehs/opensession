@@ -82,6 +82,13 @@ export interface UnifiedSession {
    * Cleared by the next run that ends cleanly.
    */
   lastRunError?: { message: string; at: string };
+  /**
+   * Manual sidebar-lane override (Needs input / In progress / In review / Done /
+   * Backlog). When set it wins over the derived lane in the sidebar, letting a
+   * human pin a session where they want it. Set from the status-override
+   * registry in getAllSessions; unset = derive the lane as usual.
+   */
+  manualStatus?: "needsinput" | "inprogress" | "review" | "merged" | "pending";
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   // Other IDs that resolve to this session. The same Claude session can be
   // tracked by multiple files (e.g. a Slack run writes both <branch>.json and

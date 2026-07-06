@@ -125,6 +125,12 @@ export interface UnifiedSession {
 	 * than Backlog. Cleared by the next run that ends cleanly. Set by /api/sessions.
 	 */
 	lastRunError?: { message: string; at: string };
+	/**
+	 * Manual sidebar-lane override. When set it wins over the lane derived from
+	 * PR/run state, letting a human pin a session into any lane (e.g. Backlog).
+	 * Set server-side from the status-override registry; unset = derive as usual.
+	 */
+	manualStatus?: "needsinput" | "inprogress" | "review" | "merged" | "pending";
 }
 
 /** A Project — an optional folder that groups chats (sessions). */

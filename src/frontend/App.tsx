@@ -35,6 +35,7 @@ import {
 	archiveSessionApi,
 	deleteSessionApi,
 	renameSessionApi,
+	setSessionStatusApi,
 	fetchNotes,
 	fetchProjects,
 	updateProjectApi,
@@ -1322,6 +1323,19 @@ function App() {
 									await renameSessionApi(s.id, title);
 								} catch (e) {
 									console.error("Rename failed:", e);
+								}
+								refresh();
+							}}
+							onSetStatus={async (chats, status) => {
+								// Optimistically move the row, then persist per chat.
+								for (const c of chats)
+									patch(c.id, { manualStatus: status ?? undefined });
+								try {
+									await Promise.all(
+										chats.map((c) => setSessionStatusApi(c.id, status)),
+									);
+								} catch (e) {
+									console.error("Set status failed:", e);
 								}
 								refresh();
 							}}

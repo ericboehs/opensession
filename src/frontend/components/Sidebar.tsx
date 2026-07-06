@@ -192,6 +192,11 @@ interface Props {
 	) => void;
 	/** Rename a session (double-click its title); empty title resets it. */
 	onRename: (session: UnifiedSession, title: string) => void;
+	/**
+	 * Pin a workspace's chats into a sidebar lane (or clear back to derived with
+	 * `null`). Applies to every chat in the row so the aggregated row lands there.
+	 */
+	onSetStatus: (chats: UnifiedSession[], status: MineStatus | null) => void;
 	/** Who's viewing what right now (global presence), for the follow rail. */
 	teamViewing?: Array<{ user: string; sessionId: string }>;
 	/** Teammate currently being followed (navigation shadows them). */
@@ -280,9 +285,13 @@ function runNeedsAttention(s: UnifiedSession): boolean {
 
 function mineStatus(s: UnifiedSession): MineStatus {
 	// A blocked question (or a run that died on an error) needs a human right
-	// now — surface it above everything else, even an open PR, so it never
-	// hides inside another bucket.
+	// now — surface it above everything else, even a manual pin or an open PR, so
+	// it never hides inside another bucket. This state is transient (it clears the
+	// moment the question is answered / the run recovers), so it doesn't stomp the
+	// manual pin permanently — it just floats above it while live.
 	if (s.waitingForInput || runNeedsAttention(s)) return "needsinput";
+	// A human-pinned lane wins over everything derived from PR/run state below.
+	if (s.manualStatus) return s.manualStatus;
 	if (s.prState === "MERGED") return "merged";
 	if (s.prState === "OPEN") return "review";
 	if (s.isRunning) return "inprogress";
@@ -391,6 +400,7 @@ export function Sidebar({
 	onArchive,
 	onArchiveWorkspace,
 	onRename,
+	onSetStatus,
 	teamViewing = [],
 	followUser = null,
 	onToggleFollow,
@@ -1929,6 +1939,96 @@ export function Sidebar({
 									{pinned ? "Unpin" : "Pin"}
 								</button>
 								<div style={CTX_SEP_STYLE} />
+{/* Move the workspace into a lane manually. Applies the pin to every
+								    chat so the aggregated row lands there; "Auto" clears it back
+								    to the derived lane. */}
+								{menuRow &&
+									menuRow.chats.length > 0 &&
+									(() => {
+										const statusChats = menuRow.chats;
+										const anyManual = statusChats.some((c) => c.manualStatus);
+										const sharedManual =
+											anyManual &&
+											statusChats.every(
+												(c) =>
+													c.manualStatus === statusChats[0].manualStatus,
+											)
+												? (statusChats[0].manualStatus ?? null)
+												: null;
+										const check = (on: boolean) => (
+											<span
+												style={{
+													width: 14,
+													display: "inline-flex",
+													justifyContent: "center",
+													color: "var(--text-dim)",
+												}}
+											>
+												{on ? "✓" : ""}
+											</span>
+										);
+										return (
+											<>
+												<div
+													style={{
+														fontSize: 11,
+														fontWeight: 600,
+														color: "var(--text-faint)",
+														padding: "3px 11px 2px",
+													}}
+												>
+													Move to
+												</div>
+												{MINE_STATUS_META.map((m) => (
+													<button
+														key={m.key}
+														style={{
+															...CTX_ITEM_STYLE,
+															display: "flex",
+															alignItems: "center",
+															gap: 8,
+														}}
+														onClick={() => {
+															onSetStatus(
+																statusChats,
+																sharedManual === m.key ? null : m.key,
+															);
+															setProjectMenu(null);
+														}}
+													>
+														<span
+															style={{
+																width: 8,
+																height: 8,
+																borderRadius: "50%",
+																background: m.dotColor,
+																flexShrink: 0,
+															}}
+														/>
+														<span style={{ flex: 1 }}>{m.label}</span>
+														{check(sharedManual === m.key)}
+													</button>
+												))}
+												<button
+													style={{
+														...CTX_ITEM_STYLE,
+														display: "flex",
+														alignItems: "center",
+														gap: 8,
+													}}
+													onClick={() => {
+														onSetStatus(statusChats, null);
+														setProjectMenu(null);
+													}}
+												>
+													<span style={{ width: 8, flexShrink: 0 }} />
+													<span style={{ flex: 1 }}>Auto (default)</span>
+													{check(!anyManual)}
+												</button>
+												<div style={CTX_SEP_STYLE} />
+											</>
+										);
+									})()}
 								{ws && (
 									<>
 										<div
@@ -2409,6 +2509,7 @@ export function Sidebar({
 							}}
 							onClose={() => setWsSheet(null)}
 							onArchive={() => archiveWorkspaceWithNext(row)}
+							onSetStatus={(status) => onSetStatus(row.chats, status)}
 							onOpen={(chat) => onSelect(chat)}
 							onRename={() => {
 								if (ws) {
@@ -3823,6 +3924,7 @@ function WsMobileSheet({
 	onTogglePin,
 	onClose,
 	onArchive,
+	onSetStatus,
 	onOpen,
 	onRename,
 	onSetColor,
@@ -3833,6 +3935,8 @@ function WsMobileSheet({
 	onTogglePin: () => void;
 	onClose: () => void;
 	onArchive: () => void;
+	/** Pin the workspace into a lane, or clear back to derived with `null`. */
+	onSetStatus: (status: MineStatus | null) => void;
 	onOpen: (chat: UnifiedSession) => void;
 	onRename: () => void;
 	/** Real workspaces only — solo rows have no color/delete. */
@@ -3971,6 +4075,72 @@ function WsMobileSheet({
 					</svg>
 					Rename
 				</button>
+				{/* Pin the workspace into a lane manually — tap a chip to move it there
+				    (tap the active one, or Auto, to release it back to the derived lane). */}
+				{row.chats.length > 0 &&
+					(() => {
+						const anyManual = row.chats.some((c) => c.manualStatus);
+						const sharedManual =
+							anyManual &&
+							row.chats.every(
+								(c) => c.manualStatus === row.chats[0].manualStatus,
+							)
+								? (row.chats[0].manualStatus ?? null)
+								: null;
+						return (
+							<div className="px-4 py-2">
+								<div className="mb-1.5 text-[11px] font-semibold text-faint">
+									Move to lane
+								</div>
+								<div className="flex flex-wrap gap-1.5">
+									{MINE_STATUS_META.map((m) => {
+										const on = sharedManual === m.key;
+										return (
+											<button
+												key={m.key}
+												type="button"
+												className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-[13px]"
+												style={{
+													borderColor: on ? m.dotColor : "var(--border)",
+													color: on ? "var(--text)" : "var(--text-dim)",
+													background: on
+														? "color-mix(in srgb, var(--bg-panel), transparent)"
+														: "transparent",
+												}}
+												onClick={closing(() =>
+													onSetStatus(on ? null : m.key),
+												)}
+											>
+												<span
+													style={{
+														width: 8,
+														height: 8,
+														borderRadius: "50%",
+														background: m.dotColor,
+														flexShrink: 0,
+													}}
+												/>
+												{m.label}
+											</button>
+										);
+									})}
+									<button
+										type="button"
+										className="rounded-md border px-2 py-1 text-[13px]"
+										style={{
+											borderColor: !anyManual
+												? "var(--text-dim)"
+												: "var(--border)",
+											color: !anyManual ? "var(--text)" : "var(--text-dim)",
+										}}
+										onClick={closing(() => onSetStatus(null))}
+									>
+										Auto
+									</button>
+								</div>
+							</div>
+						);
+					})()}
 				{onSetColor && (
 					<div className="flex flex-wrap items-center gap-2 px-4 py-2">
 						{TAB_COLORS.map((c) => (
