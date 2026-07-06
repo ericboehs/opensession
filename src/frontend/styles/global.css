@@ -4934,6 +4934,29 @@ body.resizing-x .panel-resize::after {
 	margin-bottom: 0;
 }
 
+/* Collapsed by default: show just the first couple of lines so the checks sit
+   right under the title. A soft fade hints there's more behind "Show more". */
+.pr-body-clamped {
+	max-height: 2.9em;
+	overflow: hidden;
+	-webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+	mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+.pr-body-toggle {
+	margin-top: 3px;
+	padding: 0;
+	background: none;
+	border: 0;
+	font-family: var(--sans);
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+.pr-body-toggle:hover {
+	color: var(--text);
+}
+
 /* ── Select-text → send-to-session popover ─────────────────────── */
 .selection-host {
 	display: contents;

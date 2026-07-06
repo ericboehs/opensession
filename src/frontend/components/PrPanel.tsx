@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import type { GitStatusInfo, PrCheck, PrComment, PrDetails } from "../lib/types";
 import {
   fetchPr,
@@ -64,6 +64,9 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
   const [confirmMerge, setConfirmMerge] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [checksOpen, setChecksOpen] = useState(true);
+  const [bodyOpen, setBodyOpen] = useState(false);
+  const [bodyOverflows, setBodyOverflows] = useState(false);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -192,6 +195,16 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
 
   const bodyHtml = useMemo(() => (pr?.body ? renderMarkdown(pr.body) : ""), [pr?.body]);
 
+  // Only offer the expand toggle when the clamped description is actually taller
+  // than its collapsed height — a two-line PR body shouldn't get a "Show more".
+  useEffect(() => {
+    // Measure against the clamped height; when expanded the toggle must stay
+    // visible to collapse again, so only recompute while collapsed.
+    if (bodyOpen) return;
+    const el = bodyRef.current;
+    setBodyOverflows(!!el && el.scrollHeight - el.clientHeight > 4);
+  }, [bodyHtml, bodyOpen]);
+
   const switcher = repoList ? (
     <div className="pr-repo-tabs">
       {repoList.map((r) => (
@@ -244,7 +257,16 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
 
       {pr.body && (
         <div className="pr-body pr-body-top">
-          <div className="pr-body-md markdown" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+          <div
+            ref={bodyRef}
+            className={`pr-body-md markdown ${bodyOpen ? "" : "pr-body-clamped"}`}
+            dangerouslySetInnerHTML={{ __html: bodyHtml }}
+          />
+          {(bodyOverflows || bodyOpen) && (
+            <button className="pr-body-toggle" onClick={() => setBodyOpen((o) => !o)}>
+              {bodyOpen ? "Show less" : "Show more"}
+            </button>
+          )}
         </div>
       )}
 
