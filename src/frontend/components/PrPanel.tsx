@@ -12,7 +12,6 @@ import { CommentableDiff, type CommentTarget, type PendingComment } from "./Comm
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
 import { renderMarkdown } from "../lib/markdown";
-import { Tooltip } from "../ui/tooltip";
 
 type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
@@ -374,9 +373,6 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
       )}
 
       <div className="pr-actions">
-        <Tooltip label="Refresh PR">
-          <button className="btn-open-session" onClick={load}>Refresh</button>
-        </Tooltip>
         <a className="btn-open-pr" href={pr.url} target="_blank" rel="noopener">
           Open on GitHub ↗
         </a>
