@@ -135,8 +135,8 @@ interface Props {
   skillsFetch?: (query: string) => Promise<FileMention[]>;
 }
 
-/** Inline set/clear editor for the session goal. */
-function GoalPopover({
+/** Centered modal to set / update / clear the session goal. */
+function GoalModal({
   initial,
   onSubmit,
   onClose,
@@ -146,50 +146,105 @@ function GoalPopover({
   onClose: () => void;
 }) {
   const [text, setText] = useState(initial);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
+  // Escape closes from anywhere in the modal (the textarea swallows keydowns).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
-    <div className="composer-menu composer-goal-pop">
-      <div className="composer-goal-pop-title">Session goal</div>
-      <input
-        ref={inputRef}
-        className="composer-goal-input"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            onSubmit(text.trim() || null);
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            onClose();
-          }
-        }}
-        placeholder="Pin a goal — rides along with every prompt…"
-      />
-      <div className="composer-goal-pop-actions">
-        {initial && (
+    <motion.div
+      className="goal-modal-backdrop"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <motion.div
+        className="goal-modal"
+        initial={{ opacity: 0, scale: 0.96, y: 6 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97, y: 4 }}
+        transition={composerMorph}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Session goal"
+      >
+        <div className="goal-modal-head">
+          <span className="goal-modal-icon">
+            <IconCrosshair size={22} />
+          </span>
+          <div className="goal-modal-heading">
+            <div className="goal-modal-title">Session goal</div>
+            <div className="goal-modal-sub">
+              Pinned to the session — it rides along with every prompt you send.
+            </div>
+          </div>
           <button
             type="button"
-            className="composer-menu-item composer-goal-clear"
-            onClick={() => onSubmit(null)}
+            className="goal-modal-close"
+            onClick={onClose}
+            aria-label="Close"
           >
-            Clear goal
+            ✕
           </button>
-        )}
-        <button
-          type="button"
-          className="composer-goal-set"
-          onClick={() => onSubmit(text.trim() || null)}
-          disabled={text.trim() === initial}
-        >
-          {initial ? "Update" : "Set goal"}
-        </button>
-      </div>
-    </div>
+        </div>
+
+        <textarea
+          ref={inputRef}
+          className="goal-modal-input"
+          value={text}
+          rows={3}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            // ⌘/Ctrl+Enter or plain Enter submits; Shift+Enter newlines.
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onSubmit(text.trim() || null);
+            }
+          }}
+          placeholder="e.g. Ship the onboarding redesign — keep every reply focused on that."
+        />
+
+        <div className="goal-modal-actions">
+          {initial && (
+            <button
+              type="button"
+              className="goal-modal-clear"
+              onClick={() => onSubmit(null)}
+            >
+              Clear goal
+            </button>
+          )}
+          <div className="composer-spacer" />
+          <button type="button" className="goal-modal-cancel" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="goal-modal-set"
+            onClick={() => onSubmit(text.trim() || null)}
+            disabled={text.trim() === initial.trim()}
+          >
+            {initial ? "Update goal" : "Set goal"}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -630,16 +685,18 @@ export function Composer({
                     {goal && <span className="composer-goal-label">Goal</span>}
                   </button>
                 </Tooltip>
-                {menu === "goal" && (
-                  <GoalPopover
-                    initial={goal || ""}
-                    onClose={() => setMenu(null)}
-                    onSubmit={(g) => {
-                      onSetGoal(g);
-                      setMenu(null);
-                    }}
-                  />
-                )}
+                <AnimatePresence>
+                  {menu === "goal" && (
+                    <GoalModal
+                      initial={goal || ""}
+                      onClose={() => setMenu(null)}
+                      onSubmit={(g) => {
+                        onSetGoal(g);
+                        setMenu(null);
+                      }}
+                    />
+                  )}
+                </AnimatePresence>
               </motion.div>
             )}
           </AnimatePresence>

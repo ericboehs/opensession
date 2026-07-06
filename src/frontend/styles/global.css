@@ -284,8 +284,10 @@ button {
 	.mention-repo,
 	.composer-menu,
 	.composer-menu-item,
-	.composer-goal-input,
-	.composer-goal-set,
+	.goal-modal,
+	.goal-modal-input,
+	.goal-modal-set,
+	.goal-modal-cancel,
 	.fork-banner,
 	.palette-card,
 	.palette-trigger,
@@ -9339,60 +9341,138 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-size: 13px;
 }
 
-/* Goal set/clear editor — left-anchored (its button sits in the left group) */
-.composer-goal-pop {
-	left: 0;
-	right: auto;
-	min-width: 244px;
-	padding: 10px;
+/* Session-goal editor — a centered modal (opened from the toolbar target). */
+.goal-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 300;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.4);
+	padding: 20px;
+	/* The button that opens it lives in a text-left toolbar; keep the modal
+	   content centered regardless of that context. */
+	text-align: left;
 }
-.composer-goal-pop-title {
-	font-size: 11px;
-	font-weight: 600;
-	color: var(--text-faint);
-	letter-spacing: 0.04em;
-	margin-bottom: 7px;
-}
-.composer-goal-input {
-	width: 100%;
+.goal-modal {
+	width: 440px;
+	max-width: 92vw;
+	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
+	border-radius: 18px;
+	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+	padding: 18px;
+}
+.goal-modal-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 11px;
+}
+.goal-modal-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 34px;
+	height: 34px;
 	border-radius: 10px;
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+.goal-modal-heading {
+	flex: 1;
+	min-width: 0;
+}
+.goal-modal-title {
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--text);
+}
+.goal-modal-sub {
+	margin-top: 2px;
+	font-size: 12.5px;
+	line-height: 1.4;
+	color: var(--text-dim);
+}
+.goal-modal-close {
+	flex-shrink: 0;
+	border: none;
+	background: none;
+	color: var(--text-faint);
+	font-size: 15px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 2px 4px;
+}
+.goal-modal-close:hover {
+	color: var(--text);
+}
+.goal-modal-input {
+	width: 100%;
+	margin-top: 14px;
+	border: 1px solid var(--border-strong);
+	border-radius: 12px;
 	background: var(--bg);
 	color: var(--text);
 	font-family: inherit;
-	font-size: 12.5px;
-	padding: 7px 9px;
+	font-size: 13.5px;
+	line-height: 1.45;
+	padding: 10px 12px;
 	outline: none;
+	resize: vertical;
+	min-height: 70px;
 }
-.composer-goal-input:focus {
+.goal-modal-input:focus {
 	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.composer-goal-pop-actions {
+.goal-modal-actions {
 	display: flex;
 	align-items: center;
-	justify-content: flex-end;
-	gap: 6px;
-	margin-top: 8px;
+	gap: 8px;
+	margin-top: 14px;
 }
-.composer-goal-clear {
-	width: auto;
+.goal-modal-clear {
+	border: none;
+	background: none;
 	color: var(--red);
-	padding: 6px 8px;
+	font-size: 12.5px;
+	font-weight: 500;
+	padding: 7px 10px;
+	border-radius: 9px;
+	cursor: pointer;
 }
-.composer-goal-clear:hover {
+.goal-modal-clear:hover {
 	background: var(--red-soft);
 }
-.composer-goal-set {
+.goal-modal-cancel {
+	border: 1px solid var(--border-strong);
+	background: none;
+	color: var(--text);
+	font-size: 12.5px;
+	font-weight: 500;
+	padding: 7px 14px;
+	border-radius: 9px;
+	cursor: pointer;
+}
+.goal-modal-cancel:hover {
+	background: var(--bg-hover);
+}
+.goal-modal-set {
 	border: none;
-	border-radius: 10px;
-	padding: 6px 12px;
-	background: var(--text);
-	color: var(--bg);
-	font-size: 12px;
+	border-radius: 9px;
+	padding: 7px 16px;
+	background: var(--accent);
+	color: #fff;
+	font-size: 12.5px;
 	font-weight: 600;
 	cursor: pointer;
 }
-.composer-goal-set:disabled {
+.goal-modal-set:hover:not(:disabled) {
+	filter: brightness(1.05);
+}
+.goal-modal-set:disabled {
 	opacity: 0.4;
 	cursor: default;
 }
