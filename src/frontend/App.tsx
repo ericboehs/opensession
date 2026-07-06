@@ -53,6 +53,7 @@ import {
 	reorderPins,
 	onPinsChanged,
 	getPinNewSessions,
+	getPinNewWorkspaces,
 } from "./lib/pins";
 import {
 	getTabColors,
@@ -578,6 +579,15 @@ function App() {
 	// session open there's nothing to stay in, so it falls back to the palette.
 	const [newChatSeq, setNewChatSeq] = useState(0);
 
+	// Set for the render right after opening a workspace from the sidebar, so the
+	// session it lands on autofocuses its composer (you picked the workspace to
+	// type in it). Reset immediately after — a one-shot pulse, not a mode — so
+	// sessions opened by any other means don't grab focus.
+	const [focusComposerOnOpen, setFocusComposerOnOpen] = useState(false);
+	useEffect(() => {
+		if (focusComposerOnOpen) setFocusComposerOnOpen(false);
+	}, [focusComposerOnOpen]);
+
 	// The ⌘K session-search command palette. Like the new-session palette it's an
 	// overlay driven by its own state so it can open over any view.
 	const [searchOpen, setSearchOpen] = useState(false);
@@ -658,10 +668,13 @@ function App() {
 				pendingCreateDraftRef.current = null;
 				// Pin the just-created session for its creator (this WS reply is
 				// creator-only, so it never pins a teammate's new chat onto my bar).
-				// Per-browser opt-out in Settings; on by default. Skip brand-new
-				// workspaces — auto-pinning every workspace you spin up floods the
-				// Pinned band; the setting is about quick tab access to a session.
-				if (getPinNewSessions() && !msg.newWorkspace) setPins(pin(msg.id));
+				// Per-browser prefs in Settings: new chats/sessions pin on by
+				// default; new workspaces are heavier, so they have their own
+				// pref that's off by default.
+				const shouldPin = msg.newWorkspace
+					? getPinNewWorkspaces()
+					: getPinNewSessions();
+				if (shouldPin) setPins(pin(msg.id));
 				if (!sessionsRef.current.some((s) => s.id === msg.id)) {
 					const now = new Date().toISOString();
 					const user = draft?.user || getCurrentUser();
@@ -757,19 +770,22 @@ function App() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [route]);
 
-	// Clear the pending flag once the session shows up in the polled list.
+	// Drop the pending flag once we've navigated away from the pending chat (its
+	// fallback timeout clears it otherwise). We deliberately DON'T clear it the
+	// instant the session first shows up in the list: a poll that predates the
+	// create can momentarily drop the just-injected copy again, and clearing here
+	// would flash "Session not found" in that gap. Keeping the flag set masks the
+	// gap with the "Starting…" state until the next poll re-adds the session (or
+	// the timeout fires on a genuinely failed create).
 	useEffect(() => {
 		if (
 			pendingSessionId &&
-			sessions.some(
-				(s) =>
-					s.id === pendingSessionId || s.aliasIds?.includes(pendingSessionId),
-			)
+			!(route.view === "session" && route.id === pendingSessionId)
 		) {
 			setPendingSessionId(null);
 			clearTimeout(pendingTimer.current);
 		}
-	}, [sessions, pendingSessionId]);
+	}, [route, pendingSessionId]);
 
 	const currentSession: UnifiedSession | null =
 		route.view === "session"
@@ -1130,15 +1146,26 @@ function App() {
 								onOpenSettings={() => navigate({ view: "settings" })}
 								connected={connected}
 							/>
-							<Tooltip label="Hide sidebar" side="bottom">
-								<button
-									className="sidebar-toggle-btn"
-									onClick={toggleSidebarCollapsed}
-									aria-label="Hide sidebar"
-								>
-									{panelIcon}
-								</button>
-							</Tooltip>
+							<div className="sidebar-brand-actions">
+								<Tooltip label="Search sessions" side="bottom">
+									<button
+										className="sidebar-toggle-btn"
+										onClick={() => setSearchOpen(true)}
+										aria-label="Search sessions"
+									>
+										<IconSearch size={24} />
+									</button>
+								</Tooltip>
+								<Tooltip label="Hide sidebar" side="bottom">
+									<button
+										className="sidebar-toggle-btn"
+										onClick={toggleSidebarCollapsed}
+										aria-label="Hide sidebar"
+									>
+										{panelIcon}
+									</button>
+								</Tooltip>
+							</div>
 						</div>
 						<Sidebar
 							sessions={sessions}
@@ -1171,6 +1198,9 @@ function App() {
 								route.view === "support" ? route.threadId : null
 							}
 							onNewSession={() => openPalette()}
+							onNewSessionInRepo={(repo) =>
+								setPalette({ open: true, repo })
+							}
 							onOpenProject={(id) => {
 								// Open the workspace's first chat (oldest, matching the tab
 								// strip's order — there's always one post-migration). An empty
@@ -1180,9 +1210,12 @@ function App() {
 									.sort((a, b) =>
 										(a.createdAt || "").localeCompare(b.createdAt || ""),
 									);
-								if (chats.length)
+								if (chats.length) {
+									// Picked a workspace to work in — land in its first chat
+									// with the composer focused, ready to type.
+									setFocusComposerOnOpen(true);
 									navigate({ view: "session", id: chats[0].id });
-								else {
+								} else {
 									const p = projects.find((x) => x.id === id);
 									setPalette({ open: true, projectId: id, repo: p?.repo });
 								}
@@ -1215,7 +1248,6 @@ function App() {
 							onOpenNote={(id) =>
 								navigate({ view: "notes", sel: { kind: "note", id } })
 							}
-							onOpenSearch={() => setSearchOpen(true)}
 							// Only hand the sidebar the top-bar actions slot on the root
 							// page — on a pushed page (chat, etc.) the sidebar is still
 							// mounted underneath and would portal its filter button into
@@ -1490,6 +1522,7 @@ function App() {
 									headerModelEl={headerModelEl}
 									rightPanelEl={rightPanelEl}
 									newChatSeq={newChatSeq}
+									autoFocusComposer={focusComposerOnOpen}
 									workspaceChats={projectChats}
 									onNewChat={handleNewChat}
 									parentSession={
