@@ -1,8 +1,8 @@
-import React, { useMemo, useState, useRef, useCallback } from "react";
+import React, { useMemo, useState, useRef, useCallback, useEffect } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import type { SelectedLineRange, FileDiffMetadata, DiffLineAnnotation } from "@pierre/diffs";
-import { IconChevronRight } from "./icons";
+import { IconChevronRight, IconTrash } from "./icons";
 
 export interface CommentTarget {
   path: string;
@@ -30,6 +30,13 @@ interface Props {
    */
   pendingComments?: PendingComment[];
   onRemovePending?: (id: string) => void;
+  /**
+   * When provided, each file row gets a hover-revealed "Discard" action that
+   * resets the file to its base state (removing it from the diff). Only wired
+   * where the diff maps to a live, editable worktree (the session Changes tab),
+   * never in read-only PR previews. `oldPath` is set for renames.
+   */
+  onDiscard?: (path: string, oldPath?: string) => Promise<void>;
 }
 
 interface Draft {
@@ -86,6 +93,7 @@ export function CommentableDiff({
   onSubmit,
   pendingComments,
   onRemovePending,
+  onDiscard,
 }: Props) {
   const reviewMode = pendingComments !== undefined;
   const files = useMemo<FileDiffMetadata[]>(() => {
@@ -114,6 +122,39 @@ export function CommentableDiff({
   }, [files]);
 
   const stats = useMemo(() => files.map(fileStats), [files]);
+
+  // Discard is destructive + irreversible, so it's a two-click arm/confirm:
+  // the first click arms a row (button flips to "Discard changes?"), the second
+  // within 4s performs it. `discarding` disables the row while the request runs.
+  const [armed, setArmed] = useState<string | null>(null);
+  const [discarding, setDiscarding] = useState<string | null>(null);
+  const disarmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const disarm = useCallback(() => {
+    clearTimeout(disarmTimer.current);
+    setArmed(null);
+  }, []);
+  const handleDiscard = useCallback(
+    async (file: FileDiffMetadata) => {
+      if (!onDiscard) return;
+      const key = file.name;
+      if (armed !== key) {
+        setArmed(key);
+        clearTimeout(disarmTimer.current);
+        disarmTimer.current = setTimeout(() => setArmed(null), 4000);
+        return;
+      }
+      clearTimeout(disarmTimer.current);
+      setArmed(null);
+      setDiscarding(key);
+      try {
+        await onDiscard(file.name, file.prevName);
+      } finally {
+        setDiscarding(null);
+      }
+    },
+    [onDiscard, armed],
+  );
+  useEffect(() => () => clearTimeout(disarmTimer.current), []);
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
@@ -270,11 +311,22 @@ export function CommentableDiff({
 
         return (
           <div className="diff-file" key={`${file.name}-${i}`}>
-            <button
-              type="button"
+            <div
               className="diff-file-header"
+              role="button"
+              tabIndex={0}
               aria-expanded={isOpen}
-              onClick={() => toggle(i)}
+              onClick={() => {
+                disarm();
+                toggle(i);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  disarm();
+                  toggle(i);
+                }
+              }}
             >
               <IconChevronRight
                 size={16}
@@ -289,7 +341,26 @@ export function CommentableDiff({
                 {s.add > 0 && <span className="diff-add">+{s.add}</span>}
                 {s.del > 0 && <span className="diff-del">−{s.del}</span>}
               </span>
-            </button>
+              {onDiscard && (
+                <button
+                  type="button"
+                  className={`diff-file-discard ${armed === file.name ? "diff-file-discard-armed" : ""}`}
+                  disabled={discarding === file.name}
+                  title="Discard this file's changes (reset to base)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDiscard(file);
+                  }}
+                >
+                  <IconTrash size={15} />
+                  {discarding === file.name
+                    ? "Discarding…"
+                    : armed === file.name
+                      ? "Discard changes?"
+                      : "Discard"}
+                </button>
+              )}
+            </div>
             {isOpen && (
               <FileDiffRow
                 file={file}

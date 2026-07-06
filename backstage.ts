@@ -113,7 +113,7 @@ import {
 	addCodexAccount,
 	removeCodexAccount,
 } from "./src/server/codex-accounts";
-import { getSessionDiff, type SessionDiff } from "./src/server/git-diff";
+import { getSessionDiff, discardSessionFile, type SessionDiff } from "./src/server/git-diff";
 import { searchRepoFiles } from "./src/server/file-index";
 import { searchSkills } from "./src/server/skills";
 import { suggestBranchName } from "./src/server/suggest-branch";
@@ -3744,6 +3744,64 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				);
 
 				return Response.json({ repos });
+			}
+
+			// Discard one file's changes in a session worktree (hover action on a
+			// diff row). `{ repo, path, oldPath? }` — resets the file to its
+			// base-branch state so it drops out of the Changes diff. Destructive.
+			const discardMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/discard-file$/,
+			);
+			if (discardMatch && req.method === "POST") {
+				const sessionId = decodeURIComponent(discardMatch[1]);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const body = (await req.json().catch(() => ({}))) as {
+					repo?: string;
+					path?: string;
+					oldPath?: string;
+				};
+				if (!body.path)
+					return Response.json({ error: "Missing path" }, { status: 400 });
+
+				// Resolve the worktree dir for the targeted repo (primary or attached).
+				const primaryRepo =
+					session.repo ||
+					(session.worktreeDir
+						? repoForPath(session.worktreeDir).id
+						: "tella-fusion");
+				let dir: string | null = null;
+				let repoId = primaryRepo;
+				if (!body.repo || body.repo === primaryRepo) {
+					dir = session.worktreeDir;
+				} else {
+					const att = (session.attachedRepos || []).find(
+						(r) => r.repo === body.repo,
+					);
+					dir = att?.dir ?? null;
+					repoId = body.repo;
+				}
+				if (!dir || !existsSync(dir))
+					return Response.json(
+						{ error: "No worktree for this repo" },
+						{ status: 400 },
+					);
+
+				try {
+					await discardSessionFile(
+						dir,
+						getRepo(repoId).defaultBranch,
+						body.path,
+						body.oldPath,
+					);
+				} catch (e: any) {
+					return Response.json(
+						{ error: e?.message || "Failed to discard file" },
+						{ status: 500 },
+					);
+				}
+				return Response.json({ ok: true });
 			}
 
 			// PR details for a session's branch (PR tab). `?repo=<project>` targets an

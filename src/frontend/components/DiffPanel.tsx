@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, startTransition } from "react";
 import type { RepoDiff } from "../lib/types";
-import { fetchDiff } from "../lib/api";
+import { fetchDiff, discardDiffFile } from "../lib/api";
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
@@ -45,6 +45,12 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
     const interval = setInterval(load, isRunning ? 8000 : 30000);
     return () => clearInterval(interval);
   }, [load, isRunning]);
+
+  async function handleDiscard(repo: string, path: string, oldPath?: string) {
+    await discardDiffFile(sessionId, path, repo, oldPath);
+    // Reflect the reverted file immediately (don't wait for the poll).
+    await load();
+  }
 
   async function handleComment(repo: string, target: CommentTarget, text: string) {
     if (!canSend) throw new Error("Michael is busy — wait for the current run to finish");
@@ -118,6 +124,9 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
           disabled={!canSend}
           disabledHint="Michael is working — feedback can be sent when the current run finishes."
           onSubmit={(target, text) => handleComment(cur.repo, target, text)}
+          // Discarding edits the worktree — withhold it while the agent is running
+          // to avoid racing its writes.
+          onDiscard={canSend ? (path, oldPath) => handleDiscard(cur.repo, path, oldPath) : undefined}
         />
       </div>
     </div>

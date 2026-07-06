@@ -670,6 +670,24 @@ export async function fetchDiff(
 	);
 }
 
+/**
+ * Discard one file's changes in a session worktree (hover action on a diff
+ * row). Resets the file to its base-branch state so it drops out of the diff.
+ * `repo` targets an attached repo; omit for the primary. Destructive.
+ */
+export async function discardDiffFile(
+	sessionId: string,
+	path: string,
+	repo?: string,
+	oldPath?: string,
+): Promise<void> {
+	await request(`/sessions/${encodeURIComponent(sessionId)}/discard-file`, {
+		method: "POST",
+		body: { path, ...(repo ? { repo } : {}), ...(oldPath ? { oldPath } : {}) },
+		label: "Failed to discard file",
+	});
+}
+
 /** `repo` (a repo id) targets an attached repo's PR; omit for the primary. */
 export async function fetchPr(sessionId: string, repo?: string) {
 	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
