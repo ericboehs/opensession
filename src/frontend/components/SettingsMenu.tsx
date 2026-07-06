@@ -19,9 +19,9 @@ import { UserAvatar } from "./UserAvatar";
 // Four trigger shapes via `variant`:
 //   "chevron" — a small chevron.
 //   "brand"   — the mobile top bar logo.
-//   "top"     — a compact avatar + chevron (with a live connection dot) that
-//               sits in the desktop sidebar's top brand row, next to the
-//               Backstage title.
+//   "top"     — the "Backstage" wordmark + chevron in the desktop sidebar's top
+//               brand row, opening the account menu. The sibling logo (home
+//               link) carries the connection dot; there's no separate avatar.
 //   "footer"  — a full-width user row (avatar · name · connection state) at the
 //               bottom of the desktop sidebar, plus a sibling gear button that
 //               goes straight to the Settings page (bypassing the menu).
@@ -239,21 +239,10 @@ export function SettingsMenu({
 			) : top ? (
 				<Menu.Trigger
 					aria-label="Account menu"
-					className="flex shrink-0 items-center gap-0.5 rounded-lg border-none bg-transparent p-1 text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+					className="flex items-center gap-0.5 rounded-md border-none bg-transparent px-1.5 py-1 text-[15px] font-semibold leading-none tracking-[-0.01em] text-fg hover:bg-hover data-[popup-open]:bg-hover"
 				>
-					<span className="relative flex">
-						<UserAvatar name={currentUser} size={26} className="shrink-0" />
-						{/* Live connection dot — the glanceable bit the footer row used to
-						    show, tucked onto the avatar corner. Ring matches the sidebar bg. */}
-						<span
-							className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2"
-							style={{
-								borderColor: "var(--bg-raised)",
-								background: connected ? "var(--green)" : "var(--red)",
-							}}
-						/>
-					</span>
-					{triggerChevron}
+					Backstage
+					<span className="text-faint">{triggerChevron}</span>
 				</Menu.Trigger>
 			) : (
 				<Menu.Trigger
@@ -265,11 +254,10 @@ export function SettingsMenu({
 			)}
 
 			{/* Footer trigger sits at the very bottom of the sidebar — open the menu
-			    upward so it doesn't run off-screen. The top trigger sits near the
-			    sidebar's right edge, so align its popup to that edge. */}
+			    upward so it doesn't run off-screen. */}
 			<Menu.Popup
 				side={footer ? "top" : undefined}
-				align={top ? "end" : "start"}
+				align="start"
 				sideOffset={8}
 				className="min-w-[244px] p-3"
 			>

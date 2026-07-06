@@ -909,23 +909,26 @@ function App() {
 						? "Pull request"
 						: "";
 
-	// The Michael title/logo, linking home. The desktop sidebar shows this alone
-	// at the top (the account/settings menu moved to the sidebar footer); the
-	// mobile top bar pairs it with the chevron Michael menu below.
+	// The Michael logo — a home link carrying the live connection dot. On desktop
+	// the sidebar pairs it with the "Backstage" wordmark, which is itself the
+	// account/settings menu trigger (see SettingsMenu variant="top" below).
 	const brandTitle = (
-		<div className="app-title-wrap">
-			<a
-				className="app-title"
-				href="/backstage/"
-				onClick={(e) => {
-					e.preventDefault();
-					navigate({ view: "home" });
-				}}
-			>
-				<span className="app-logo">B</span>
-				<span className="app-title-text">Backstage</span>
-			</a>
-		</div>
+		<a
+			className="app-logo-link"
+			href="/backstage/"
+			aria-label="Home"
+			onClick={(e) => {
+				e.preventDefault();
+				navigate({ view: "home" });
+			}}
+		>
+			<span className="app-logo">B</span>
+			<span
+				className="app-logo-status"
+				style={{ background: connected ? "var(--green)" : "var(--red)" }}
+				title={connected ? "Connected" : "Reconnecting…"}
+			/>
+		</a>
 	);
 
 	// Mobile top-bar brand: logo only, as the account/settings sheet trigger.
@@ -1107,28 +1110,28 @@ function App() {
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
 						}
 					>
-						{/* Desktop brand row: the Michael title on the left, and on the
-						    right the account/settings menu (avatar + connection dot) next
-						    to the collapse toggle. Hidden on mobile, where the top bar
-						    carries the brand instead. */}
+						{/* Desktop brand row: the logo (home link, with the connection
+						    dot) + the "Backstage" wordmark that opens the account/settings
+						    menu on the left, and the collapse toggle on the right. Hidden
+						    on mobile, where the top bar carries the brand instead. */}
 						<div className="sidebar-brand">
-							{brandTitle}
-							<div className="sidebar-brand-actions">
+							<div className="sidebar-brand-left">
+								{brandTitle}
 								<SettingsMenu
 									variant="top"
 									onOpenSettings={() => navigate({ view: "settings" })}
 									connected={connected}
 								/>
-								<Tooltip label="Hide sidebar" side="bottom">
-									<button
-										className="sidebar-toggle-btn"
-										onClick={toggleSidebarCollapsed}
-										aria-label="Hide sidebar"
-									>
-										{panelIcon}
-									</button>
-								</Tooltip>
 							</div>
+							<Tooltip label="Hide sidebar" side="bottom">
+								<button
+									className="sidebar-toggle-btn"
+									onClick={toggleSidebarCollapsed}
+									aria-label="Hide sidebar"
+								>
+									{panelIcon}
+								</button>
+							</Tooltip>
 						</div>
 						<Sidebar
 							sessions={sessions}

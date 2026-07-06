@@ -596,13 +596,33 @@ a {
 	min-width: 0;
 }
 
-/* Right-side cluster of the brand row: the account/settings menu (avatar +
-   connection dot) next to the collapse toggle. */
-.sidebar-brand-actions {
+/* Left cluster of the brand row: the logo home-link + the "Backstage" wordmark
+   (the account/settings menu trigger). */
+.sidebar-brand-left {
 	display: flex;
 	align-items: center;
 	gap: 2px;
+	min-width: 0;
+}
+
+/* Logo home-link — wraps the KITT tile so the connection dot can sit on its
+   corner (the tile itself is overflow:hidden for the scanner beam). */
+.app-logo-link {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
 	flex-shrink: 0;
+	text-decoration: none;
+	border-radius: 8px;
+}
+.app-logo-status {
+	position: absolute;
+	right: -2px;
+	bottom: -2px;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	border: 2px solid var(--bg-raised);
 }
 
 /* Collapse toggle sitting where the user chip used to be. The floating re-open
@@ -5471,7 +5491,9 @@ body.resizing-x .panel-resize::after {
 	position: absolute;
 	left: 8px;
 	right: 8px;
-	bottom: 58px;
+	/* Flush to the sidebar bottom — the account/settings footer that used to sit
+	   below it moved up into the brand row. */
+	bottom: 8px;
 	z-index: 9500;
 	display: flex;
 	align-items: center;
