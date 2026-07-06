@@ -194,7 +194,7 @@ function PrNumberSplit({
 				onClick={copy}
 				title={copied ? "Link copied" : "Copy PR link"}
 			>
-				{copied ? <IconCheck size={14} /> : <IconLink size={14} />}
+				{copied ? <IconCheck size={18} /> : <IconLink size={18} />}
 			</button>
 		</span>
 	);
