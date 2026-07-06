@@ -4483,7 +4483,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					const proj = getRepo(url.searchParams.get("repo") || undefined);
 					if (existsSync(proj.repo)) dir = proj.repo;
 				}
-				return Response.json({ skills: searchSkills(dir, q) });
+				// Backstage's own slash commands (/compact, /model, /goal, …) only
+				// work on existing backstage sessions — handleSlashCommand runs in
+				// the prompt path, not on new-session opening prompts.
+				const includeBuiltins = session?.source === "backstage";
+				return Response.json({
+					skills: searchSkills(dir, q, undefined, includeBuiltins),
+				});
 			}
 
 			// Repos available to attach / start a chat against.
