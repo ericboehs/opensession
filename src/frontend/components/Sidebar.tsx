@@ -38,7 +38,6 @@ import {
 	IconPlus,
 	IconPullRequest,
 	IconReviewNodes,
-	IconSearch,
 	IconStack,
 	IconStar,
 } from "./icons";
@@ -137,9 +136,9 @@ interface Props {
 	selectedId: string | null;
 	/** The note currently open (highlights its pinned row), or null. */
 	activeNoteId: string | null;
-	/** True while the Reviews view is open — highlights the Reviews entry. */
+	/** True while the Checks view is open — highlights the Checks entry. */
 	reviewsActive: boolean;
-	/** Open the Reviews view (the sidebar's one non-workspace area). */
+	/** Open the Checks view (the sidebar's one non-workspace area). */
 	onOpenReviews: () => void;
 	/** True while the PR Tinder deck is open — highlights its entry. */
 	prTinderActive: boolean;
@@ -155,6 +154,8 @@ interface Props {
 	/** The support preview currently open (highlights its row), or null. */
 	selectedSupportThreadId?: string | null;
 	onNewSession: () => void;
+	/** Start a new session with a repo pre-selected (the repo-band "+" action). */
+	onNewSessionInRepo: (repo: string) => void;
 	/** Open a project — its chats surface in the top tab strip. */
 	onOpenProject: (id: string) => void;
 	/** Rename a project folder. */
@@ -165,8 +166,6 @@ interface Props {
 	onSetProjectColor: (id: string, color: string | null) => void;
 	/** Open a note (pinned-note row click). */
 	onOpenNote: (id: string) => void;
-	/** Open the ⌘K session-search palette (from the sidebar search field). */
-	onOpenSearch: () => void;
 	onOpenArchived: () => void;
 	/** True while the archived view is open — highlights the Archived row. */
 	archivedActive: boolean;
@@ -387,12 +386,12 @@ export function Sidebar({
 	onOpenSupportThread,
 	selectedSupportThreadId = null,
 	onNewSession,
+	onNewSessionInRepo,
 	onOpenProject,
 	onRenameProject,
 	onDeleteProject,
 	onSetProjectColor,
 	onOpenNote,
-	onOpenSearch,
 	onOpenArchived,
 	archivedActive,
 	onOpenCatchUp,
@@ -1282,7 +1281,7 @@ export function Sidebar({
 		});
 	}
 
-	// Reviews-tab badge: distinct open PRs (deduped by URL) where the CURRENT
+	// Checks-tab badge: distinct open PRs (deduped by URL) where the CURRENT
 	// user has a pending review request — "PRs waiting on you", not every open
 	// PR. Sourced from both the session PRs and the repo-wide open-PR list, so
 	// a teammate's PR with no Backstage session still counts.
@@ -1723,28 +1722,147 @@ export function Sidebar({
 		);
 	}
 
+	// The repo a workspace row belongs to when grouping by repo — its first
+	// chat's primary repo (chats share a workspace, so they share a repo in
+	// practice); chatless workspace rows fall back to the default repo.
+	function wsRowRepo(row: WsRow): string {
+		return row.chats[0] ? sessionRepo(row.chats[0]) : DEFAULT_PROJECT;
+	}
+
+	// The Conductor-style status lanes (Needs input / In progress / …) over a set
+	// of workspace rows. `ns` namespaces the per-lane collapse keys so the same
+	// lane can appear once per repo with independent open/closed state; the
+	// default (status grouping) passes "" to keep the original `status:<key>`
+	// keys and their persisted state. The review lane also absorbs the PR rows.
+	function renderStatusLanes(rows: WsRow[], prRows: PrRow[], ns: string) {
+		return MINE_STATUS_META.map((meta) => {
+			const items = rows.filter((r) => r.status === meta.key);
+			const lanePrRows = meta.key === "review" ? prRows : [];
+			if (items.length === 0 && lanePrRows.length === 0) return null;
+			const gkey = `${ns}status:${meta.key}`;
+			const open = isOpen(gkey);
+			return (
+				<div className="sidebar-status-group" key={gkey}>
+					<button
+						className="sidebar-group-header"
+						onClick={() => toggleGroup(gkey)}
+					>
+						<SidebarGroupIcon status={meta.key} color={meta.dotColor} />
+						<span className="sidebar-group-name">{meta.label}</span>
+						<IconChevronDown
+							className="sidebar-group-chevron"
+							size={22}
+							style={{ transform: open ? "none" : "rotate(-90deg)" }}
+						/>
+						<span className="sidebar-group-count">
+							{items.length + lanePrRows.length}
+						</span>
+					</button>
+					{items
+						.filter((r) => open || r.chats.some((c) => c.id === selectedId))
+						.map(renderWsRow)}
+					{lanePrRows
+						.filter(
+							(r) =>
+								open ||
+								(r.session
+									? r.session.id === selectedId
+									: !!selectedPr &&
+										selectedPr.repo === r.repo &&
+										selectedPr.branch === r.branch),
+						)
+						.map(renderPrRow)}
+				</div>
+			);
+		});
+	}
+
+	// "Group by: Repo" — one collapsible band per repo, each holding that repo's
+	// status lanes. Repos are ordered by the sidebar's frequency list (`repos`),
+	// with any stragglers appended; a band is force-open while it holds the
+	// selected row so the open session never hides inside a collapsed repo.
+	function renderRepoGroups() {
+		const byRepo = new Map<string, { rows: WsRow[]; prs: PrRow[] }>();
+		const bucket = (repo: string) => {
+			let b = byRepo.get(repo);
+			if (!b) {
+				b = { rows: [], prs: [] };
+				byRepo.set(repo, b);
+			}
+			return b;
+		};
+		for (const r of focusWsRows) bucket(wsRowRepo(r)).rows.push(r);
+		for (const pr of prLaneRows) bucket(pr.repo).prs.push(pr);
+		const order = [
+			...repos,
+			...Array.from(byRepo.keys()).filter((r) => !repos.includes(r)),
+		];
+		return order
+			.filter((repo) => byRepo.has(repo))
+			.map((repo) => {
+				const b = byRepo.get(repo)!;
+				const gkey = `repo:${repo}`;
+				const hasSelected =
+					b.rows.some((r) => r.chats.some((c) => c.id === selectedId)) ||
+					b.prs.some((r) =>
+						r.session
+							? r.session.id === selectedId
+							: !!selectedPr &&
+								selectedPr.repo === r.repo &&
+								selectedPr.branch === r.branch,
+					);
+				const open = isOpen(gkey) || hasSelected;
+				return (
+					<div className="sidebar-repo-group" key={gkey}>
+						<button
+							className="sidebar-group-header sidebar-repo-head"
+							onClick={() => toggleGroup(gkey)}
+						>
+							<RepoTile name={repo} />
+							<span className="sidebar-group-name">{repo}</span>
+							{/* Count rides directly behind the repo name, not pinned right. */}
+							<span className="sidebar-group-count">
+								{b.rows.length + b.prs.length}
+							</span>
+							<IconChevronDown
+								className="sidebar-group-chevron"
+								size={22}
+								style={{ transform: open ? "none" : "rotate(-90deg)" }}
+							/>
+							{/* Hover action at the far end: start a new session with this
+							    repo already selected. role=button (not a nested <button>). */}
+							<span
+								role="button"
+								tabIndex={0}
+								className="sidebar-repo-new"
+								title={`New session in ${repo}`}
+								onClick={(e) => {
+									e.stopPropagation();
+									onNewSessionInRepo(repo);
+								}}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" || e.key === " ") {
+										e.stopPropagation();
+										onNewSessionInRepo(repo);
+									}
+								}}
+							>
+								<IconPlus size={24} />
+							</span>
+						</button>
+						{open && (
+							<div className="sidebar-repo-lanes">
+								{renderStatusLanes(b.rows, b.prs, `repo:${repo}::`)}
+							</div>
+						)}
+					</div>
+				);
+			});
+	}
+
 	return (
 		<div className="sidebar">
-			<div className="sidebar-search-wrap">
-				<IconSearch className="sidebar-search-icon" size={22} />
-				{/* Acts as a button: clicking (or focusing) it opens the ⌘K
-				    session-search palette rather than filtering inline. */}
-				<input
-					className="sidebar-search"
-					type="text"
-					placeholder="Search sessions"
-					value=""
-					readOnly
-					onMouseDown={(e) => {
-						e.preventDefault();
-						onOpenSearch();
-					}}
-					onFocus={onOpenSearch}
-				/>
-				<kbd className="sidebar-search-kbd">⌘K</kbd>
-			</div>
-
-			{/* Reviews — the only non-workspace area in the sidebar. Every other
+			{/* Checks — the only non-workspace area in the sidebar. Every other
 			    tool (Automations, Goals, Actions, Security, Notes) lives in
 			    Settings now. */}
 			<nav className="sidebar-nav">
@@ -1800,7 +1918,9 @@ export function Sidebar({
 					{filter.repo !== "all" && repoInline && (
 						<RepoFilterChip
 							repo={filter.repo}
+							repos={repos}
 							onClear={() => setFilter({ repo: "all" })}
+							onSelect={(v) => setFilter({ repo: v })}
 							variant="inline"
 						/>
 					)}
@@ -1844,7 +1964,9 @@ export function Sidebar({
 					<div className="sidebar-repo-row">
 						<RepoFilterChip
 							repo={filter.repo}
+							repos={repos}
 							onClear={() => setFilter({ repo: "all" })}
+							onSelect={(v) => setFilter({ repo: v })}
 							variant="row"
 						/>
 					</div>
@@ -2229,60 +2351,12 @@ export function Sidebar({
 				<div className="sidebar-group">
 					{/* Status groups over the focus person's workspaces. The Person
 					    filter defaults to you; picking a teammate shows their groups
-					    instead, and "Everyone" shows all workspaces. */}
-					{(() => {
-						const focusRows = focusWsRows;
-						// Empty status groups are hidden — only lanes with sessions render.
-						return MINE_STATUS_META.map((meta) => {
-							const items = focusRows.filter((r) => r.status === meta.key);
-							// The review lane is ALL the focus person's open PRs: chats
-							// with a PR are its workspace rows, and every other open PR
-							// (no chat, or owned via an attached repo) gets a PR row.
-							const prRows = meta.key === "review" ? prLaneRows : [];
-							if (items.length === 0 && prRows.length === 0) return null;
-							const gkey = `status:${meta.key}`;
-							const open = isOpen(gkey);
-							return (
-								<div className="sidebar-status-group" key={gkey}>
-									<button
-										className="sidebar-group-header"
-										onClick={() => toggleGroup(gkey)}
-									>
-										<SidebarGroupIcon
-											status={meta.key}
-											color={meta.dotColor}
-										/>
-										<span className="sidebar-group-name">{meta.label}</span>
-										<IconChevronDown
-											className="sidebar-group-chevron"
-											size={22}
-											style={{ transform: open ? "none" : "rotate(-90deg)" }}
-										/>
-										<span className="sidebar-group-count">
-											{items.length + prRows.length}
-										</span>
-									</button>
-									{items
-										.filter(
-											(r) =>
-												open || r.chats.some((c) => c.id === selectedId),
-										)
-										.map(renderWsRow)}
-									{prRows
-										.filter(
-											(r) =>
-												open ||
-												(r.session
-													? r.session.id === selectedId
-													: !!selectedPr &&
-														selectedPr.repo === r.repo &&
-														selectedPr.branch === r.branch),
-										)
-												.map(renderPrRow)}
-								</div>
-							);
-						});
-					})()}
+					    instead, and "Everyone" shows all workspaces. "Group by: Repo"
+					    nests those same status lanes under one band per repo. Empty
+					    lanes/bands are hidden — only groups with sessions render. */}
+					{filter.groupBy === "repo"
+						? renderRepoGroups()
+						: renderStatusLanes(focusWsRows, prLaneRows, "")}
 				</div>
 
 				{archivedBand && (
@@ -2616,6 +2690,17 @@ function FilterPopover({
 			<div className="menu-backdrop" onClick={onClose} />
 			<div className="filter-popover" style={{ left, top, width }}>
 				<div className="filter-row">
+					<span className="filter-row-label">Group by</span>
+					<MiniSelect
+						value={filter.groupBy}
+						options={[
+							{ value: "status", label: "Status" },
+							{ value: "repo", label: "Repo" },
+						]}
+						onSelect={(v) => onChange({ groupBy: v as GroupBy })}
+					/>
+				</div>
+				<div className="filter-row">
 					<span className="filter-row-label">Repo</span>
 					<MiniSelect
 						value={filter.repo}
@@ -2752,18 +2837,98 @@ function MiniSelect({
 // non-interactive and hidden from a11y).
 const RepoFilterChip = React.forwardRef<
 	HTMLSpanElement,
-	{ repo: string; onClear?: () => void; variant: "inline" | "row" | "probe" }
->(function RepoFilterChip({ repo, onClear, variant }, ref) {
+	{
+		repo: string;
+		repos?: string[];
+		onClear?: () => void;
+		onSelect?: (repo: string) => void;
+		variant: "inline" | "row" | "probe";
+	}
+>(function RepoFilterChip({ repo, repos = [], onClear, onSelect, variant }, ref) {
 	const probe = variant === "probe";
+	const [open, setOpen] = useState(false);
+	const bodyRef = useRef<HTMLButtonElement>(null);
+	const r = open && bodyRef.current ? bodyRef.current.getBoundingClientRect() : null;
+
+	// Repo dropdown, opened straight off the chip body (no detour through the
+	// filter popover). "All repos" clears the filter; reuses the MiniSelect menu.
+	let menu: React.ReactNode = null;
+	if (open && r) {
+		const options: SelectOption[] = [
+			{ value: "all", label: "All repos" },
+			...repos.map((name) => ({
+				value: name,
+				label: name,
+				icon: <RepoTile name={name} />,
+			})),
+		];
+		const menuW = Math.max(r.width, 170);
+		const left = Math.max(8, Math.min(r.left, window.innerWidth - menuW - 8));
+		menu = createPortal(
+			<>
+				<div className="menu-backdrop" onClick={() => setOpen(false)} />
+				<div
+					className="mini-select-menu"
+					style={{ left, top: r.bottom + 5, minWidth: menuW }}
+				>
+					{options.map((o) => (
+						<button
+							key={o.value}
+							className={`mini-select-item${o.value === repo ? " selected" : ""}`}
+							onClick={() => {
+								onSelect?.(o.value);
+								setOpen(false);
+							}}
+						>
+							{o.icon}
+							<span className="mini-select-item-text">{o.label}</span>
+							{o.value === repo && (
+								<svg
+									className="mini-select-check"
+									width="17"
+									height="17"
+									viewBox="0 0 16 16"
+									fill="none"
+								>
+									<path
+										d="M3.5 8.5l3 3 6-7"
+										stroke="currentColor"
+										strokeWidth="1.6"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+									/>
+								</svg>
+							)}
+						</button>
+					))}
+				</div>
+			</>,
+			document.body,
+		);
+	}
+
 	return (
 		<span
 			ref={ref}
-			className={`sidebar-repo-chip sidebar-repo-chip--${variant}`}
+			className={`sidebar-repo-chip sidebar-repo-chip--${variant}${
+				open ? " open" : ""
+			}`}
 			aria-hidden={probe || undefined}
 		>
-			<RepoTile name={repo} />
-			<span className="sidebar-repo-chip-name">{repo}</span>
+			{/* Body opens the repo dropdown; the × clears the filter. */}
 			<button
+				type="button"
+				ref={bodyRef}
+				className="sidebar-repo-chip-open"
+				title="Switch repo"
+				tabIndex={probe ? -1 : undefined}
+				onClick={probe ? undefined : () => setOpen((o) => !o)}
+			>
+				<RepoTile name={repo} />
+				<span className="sidebar-repo-chip-name">{repo}</span>
+			</button>
+			<button
+				type="button"
 				className="sidebar-repo-chip-x"
 				title="Clear repo filter"
 				tabIndex={probe ? -1 : undefined}
@@ -2771,6 +2936,7 @@ const RepoFilterChip = React.forwardRef<
 			>
 				×
 			</button>
+			{menu}
 		</span>
 	);
 });

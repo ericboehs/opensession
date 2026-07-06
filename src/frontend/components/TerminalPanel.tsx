@@ -147,7 +147,7 @@ function ShellView({
         cursorBlink: true,
         scrollback: 5000,
         theme: {
-          background: cs.getPropertyValue("--bg-panel").trim() || "#141414",
+          background: cs.getPropertyValue("--bg").trim() || "#141414",
           foreground: cs.getPropertyValue("--text").trim() || "#e6e6e6",
           cursor: cs.getPropertyValue("--accent").trim() || "#e6e6e6",
           selectionBackground: "rgba(128,128,128,0.35)",

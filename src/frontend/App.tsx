@@ -586,6 +586,17 @@ function App() {
 	// type in it). Reset immediately after — a one-shot pulse, not a mode — so
 	// sessions opened by any other means don't grab focus.
 	const [focusComposerOnOpen, setFocusComposerOnOpen] = useState(false);
+	const [sessionComposerPrefills, setSessionComposerPrefills] = useState<
+		Record<string, { seq: number; text: string }>
+	>({});
+	const addToSessionInput = React.useCallback((sessionId: string, text: string) => {
+		setSessionComposerPrefills((prev) => ({
+			...prev,
+			[sessionId]: { seq: (prev[sessionId]?.seq ?? 0) + 1, text },
+		}));
+		setFocusComposerOnOpen(true);
+		navigate({ view: "session", id: sessionId });
+	}, []);
 	useEffect(() => {
 		if (focusComposerOnOpen) setFocusComposerOnOpen(false);
 	}, [focusComposerOnOpen]);
@@ -941,9 +952,7 @@ function App() {
 	// the SessionViewer portal its own header in instead). Home stays blank so the
 	// bar collapses (`.detail-topbar:empty`).
 	const topbarTitle: string =
-		route.view === "reviews"
-			? "Reviews"
-			: route.view === "archived"
+		route.view === "archived"
 				? "Archived"
 				: route.view === "new"
 					? "New session"
@@ -1495,6 +1504,7 @@ function App() {
 								selectedId={route.id ?? null}
 								onSelect={(id) => navigate({ view: "reviews", id })}
 								onOpenSession={(id) => navigate({ view: "session", id })}
+								onAddToInput={addToSessionInput}
 								user={getCurrentUser()}
 								addHandler={addHandler}
 								onRefresh={refresh}
@@ -1547,6 +1557,18 @@ function App() {
 									rightPanelEl={rightPanelEl}
 									newChatSeq={newChatSeq}
 									autoFocusComposer={focusComposerOnOpen}
+									composerPrefillExternal={
+										sessionComposerPrefills[currentSession.id] ?? null
+									}
+									onComposerPrefillConsumed={(seq) =>
+										setSessionComposerPrefills((prev) => {
+											const cur = prev[currentSession.id];
+											if (!cur || cur.seq !== seq) return prev;
+											const next = { ...prev };
+											delete next[currentSession.id];
+											return next;
+										})
+									}
 									workspaceChats={projectChats}
 									onNewChat={handleNewChat}
 									parentSession={

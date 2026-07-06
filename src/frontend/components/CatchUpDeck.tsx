@@ -12,11 +12,30 @@ import type {
 	TranscriptEntry,
 	WSClientMessage,
 } from "../lib/types";
-import { fetchTranscript } from "../lib/api";
+import {
+	fetchTranscript,
+	fetchModels,
+	fetchClaudeAccounts,
+	fetchFileMentions,
+	fetchSkillMentions,
+	type ModelOption,
+	type ClaudeAccountOption,
+} from "../lib/api";
+import { loadDraft, saveDraft } from "../lib/drafts";
+import type { FileAttachment } from "../lib/images";
 import { getReads, isUnread, markRead } from "../lib/reads";
 import { TranscriptBlocks } from "./TranscriptBlocks";
+import { Composer } from "./Composer";
 import { useCurrentUser } from "./UserPicker";
 import { shortTime } from "../lib/time";
+
+/** Does this model id route to Codex (mirrors SessionViewer)? Codex sessions
+ *  have their own account pool, so the subscription pill is hidden for them. */
+function modelIsCodex(id: string, models: ModelOption[]): boolean {
+	const found = models.find((m) => m.id === id);
+	if (found) return found.provider === "codex";
+	return id.startsWith("gpt") || id.startsWith("codex");
+}
 
 /**
  * Catch-up deck — a Slack-style "swipe through your unread" card stack. Each
@@ -77,6 +96,23 @@ export function CatchUpDeck({
 	onExit,
 }: Props) {
 	const currentUser = useCurrentUser();
+
+	// Model / subscription options for the reply composer (fetched once, shared
+	// across cards). Empty until they load — the composer degrades gracefully.
+	const [models, setModels] = useState<ModelOption[]>([]);
+	const [defaultModel, setDefaultModel] = useState("");
+	const [accounts, setAccounts] = useState<ClaudeAccountOption[]>([]);
+	useEffect(() => {
+		fetchModels()
+			.then((m) => {
+				setModels(m.models);
+				setDefaultModel(m.default);
+			})
+			.catch(() => {});
+		fetchClaudeAccounts()
+			.then(setAccounts)
+			.catch(() => {});
+	}, []);
 
 	// The unread queue is snapshotted once and then frozen — subsequent refreshes
 	// (from our own mark-read / archive / reply, or live WS activity) must not
@@ -151,17 +187,10 @@ export function CatchUpDeck({
 		setIndex((i) => i + 1);
 	}
 
-	// Send a reply into the freshest chat, mark the workspace read, advance.
-	function reply(text: string) {
-		if (!card) return;
-		const target = replyTarget(card);
-		send({
-			type: "prompt",
-			sessionId: target.id,
-			content: text,
-			user: currentUser,
-		});
-		act("read");
+	// After a reply is sent (by the card's composer, into the freshest chat),
+	// mark the workspace read and advance — same as a right-swipe.
+	function onReplied() {
+		if (card) act("read");
 	}
 
 	// Keyboard: ←/→ act, ↑ skip, esc leaves. (Space is left for the composer.)
@@ -233,10 +262,15 @@ export function CatchUpDeck({
 							card={card}
 							custom={dir}
 							connected={connected}
+							models={models}
+							defaultModel={defaultModel}
+							accounts={accounts}
+							send={send}
+							currentUser={currentUser}
 							onArchive={() => act("archive")}
 							onMarkRead={() => act("read")}
 							onOpen={() => onOpenSession(replyTarget(card).id)}
-							onReply={reply}
+							onReplied={onReplied}
 						/>
 					</AnimatePresence>
 				</div>
@@ -281,18 +315,28 @@ function SwipeCard({
 	card,
 	custom,
 	connected,
+	models,
+	defaultModel,
+	accounts,
+	send,
+	currentUser,
 	onArchive,
 	onMarkRead,
 	onOpen,
-	onReply,
+	onReplied,
 }: {
 	card: CatchupCard;
 	custom: Action | null;
 	connected: boolean;
+	models: ModelOption[];
+	defaultModel: string;
+	accounts: ClaudeAccountOption[];
+	send: (msg: WSClientMessage) => void;
+	currentUser: string;
 	onArchive: () => void;
 	onMarkRead: () => void;
 	onOpen: () => void;
-	onReply: (text: string) => void;
+	onReplied: () => void;
 }) {
 	const x = useMotionValue(0);
 	const rotate = useTransform(x, [-260, 260], [-9, 9]);
@@ -350,8 +394,13 @@ function SwipeCard({
 			<CardBody
 				card={card}
 				connected={connected}
+				models={models}
+				defaultModel={defaultModel}
+				accounts={accounts}
+				send={send}
+				currentUser={currentUser}
 				onOpen={onOpen}
-				onReply={onReply}
+				onReplied={onReplied}
 			/>
 		</motion.div>
 	);
@@ -360,13 +409,23 @@ function SwipeCard({
 function CardBody({
 	card,
 	connected,
+	models,
+	defaultModel,
+	accounts,
+	send,
+	currentUser,
 	onOpen,
-	onReply,
+	onReplied,
 }: {
 	card: CatchupCard;
 	connected: boolean;
+	models: ModelOption[];
+	defaultModel: string;
+	accounts: ClaudeAccountOption[];
+	send: (msg: WSClientMessage) => void;
+	currentUser: string;
 	onOpen: () => void;
-	onReply: (text: string) => void;
+	onReplied: () => void;
 }) {
 	const target = replyTarget(card);
 	const [entries, setEntries] = useState<TranscriptEntry[] | null>(null);
@@ -435,80 +494,174 @@ function CardBody({
 				)}
 			</div>
 
-			<ReplyBox connected={connected} onSend={onReply} />
+			<CatchUpComposer
+				target={target}
+				connected={connected}
+				models={models}
+				defaultModel={defaultModel}
+				accounts={accounts}
+				send={send}
+				currentUser={currentUser}
+				onReplied={onReplied}
+			/>
 		</>
 	);
 }
 
-function ReplyBox({
+/**
+ * The catch-up reply box is the full shared Composer, wired to the card's
+ * reply-target session — so a reply from the deck has the same reach as one
+ * from the session view: attach images/files, switch the model + reasoning
+ * effort, pin a subscription, set a goal, dictate, and @-mention repo files.
+ * Model / subscription / goal changes route through the /model, /sub and /goal
+ * slash commands (persisted + broadcast server-side), exactly like SessionViewer.
+ * Non-backstage sessions (Slack/Linear-owned) keep the model fixed — that's the
+ * owning agent's call — but still get attachments and effort.
+ */
+function CatchUpComposer({
+	target,
 	connected,
-	onSend,
+	models,
+	defaultModel,
+	accounts,
+	send,
+	currentUser,
+	onReplied,
 }: {
+	target: UnifiedSession;
 	connected: boolean;
-	onSend: (text: string) => void;
+	models: ModelOption[];
+	defaultModel: string;
+	accounts: ClaudeAccountOption[];
+	send: (msg: WSClientMessage) => void;
+	currentUser: string;
+	onReplied: () => void;
 }) {
-	const [text, setText] = useState("");
-	const ref = useRef<HTMLTextAreaElement>(null);
+	// Share the session's draft with the main chat view (same key), so a reply
+	// half-typed here shows up there and vice-versa. Images/files are parked in
+	// the same draft record (Composer only owns the text).
+	const draftKey = `chat:${target.id}`;
+	const [images, setImages] = useState<string[]>(() => loadDraft(draftKey).images);
+	const [files, setFiles] = useState<FileAttachment[]>(
+		() => loadDraft(draftKey).files,
+	);
+	useEffect(() => {
+		saveDraft(draftKey, { images, files });
+	}, [draftKey, images, files]);
 
-	function submit() {
-		const t = text.trim();
-		if (!t || !connected) return;
-		onSend(t);
-		setText("");
+	const [model, setModel] = useState(target.model || "");
+	const [accountId, setAccountId] = useState(target.accountId || "");
+	const [effort, setEffort] = useState("high");
+	// Optimistic goal (the /goal command persists but doesn't broadcast a live
+	// update); `undefined` defers to the session's stored goal.
+	const [goalOverride, setGoalOverride] = useState<string | null | undefined>(
+		undefined,
+	);
+	const currentGoal =
+		goalOverride !== undefined ? goalOverride : target.goal ?? null;
+
+	const isBackstage = target.source === "backstage";
+	const effectiveModel = model || defaultModel;
+	const isCodexModel = modelIsCodex(effectiveModel, models);
+
+	// Send the reply into the target session (images fold in as content blocks;
+	// files route to the queue server-side), then advance the deck.
+	function handleSend(raw: string): boolean {
+		const text = raw.trim();
+		if (!text && images.length === 0 && files.length === 0) return false;
+		if (!connected) return false;
+		// Prefer the staged disk path (HTTP upload); fall back to inline dataUrl.
+		const filePayload = files.map((f) =>
+			f.path ? { name: f.name, path: f.path } : { name: f.name, dataUrl: f.dataUrl },
+		);
+		send({
+			type: "prompt",
+			sessionId: target.id,
+			content: text,
+			user: currentUser,
+			effort,
+			...(images.length ? { images } : {}),
+			...(files.length ? { files: filePayload } : {}),
+		});
+		setImages([]);
+		setFiles([]);
+		onReplied();
+		return true;
 	}
 
-	function autosize(el: HTMLTextAreaElement) {
-		el.style.height = "auto";
-		el.style.height = `${Math.min(el.scrollHeight, 112)}px`;
+	// Model / subscription / goal all route through their slash commands (they
+	// persist, notice, and broadcast to other viewers) — mirrors SessionViewer.
+	function handleModelChange(next: string) {
+		const targetModel = next || defaultModel;
+		if (!targetModel || targetModel === (model || defaultModel)) return;
+		setModel(next);
+		send({
+			type: "prompt",
+			sessionId: target.id,
+			content: `/model ${targetModel}`,
+			user: currentUser,
+		});
+	}
+	function handleAccountChange(next: string) {
+		if (next === (accountId || "")) return;
+		setAccountId(next);
+		const acct = next ? accounts.find((a) => a.id === next) : null;
+		send({
+			type: "prompt",
+			sessionId: target.id,
+			content: next ? `/sub ${acct?.name || next}` : "/sub auto",
+			user: currentUser,
+		});
+	}
+	function handleSetGoal(goal: string | null) {
+		setGoalOverride(goal);
+		send({
+			type: "prompt",
+			sessionId: target.id,
+			content: goal ? `/goal ${goal}` : "/goal clear",
+			user: currentUser,
+		});
 	}
 
 	return (
-		// Stop pointerdown from reaching the card's drag handler so typing and
-		// text selection in the reply box never start a swipe.
+		// Stop pointerdown from reaching the card's drag handler so typing, the
+		// menus and text selection in the composer never start a swipe.
 		<div
 			className="shrink-0 border-t border-line p-2.5"
 			onPointerDownCapture={(e) => e.stopPropagation()}
 		>
-			<div className="flex items-end gap-2 rounded-lg border border-line bg-surface px-3 py-2">
-				<textarea
-					ref={ref}
-					rows={1}
-					value={text}
-					placeholder={connected ? "Reply…" : "Not connected"}
-					disabled={!connected}
-					onChange={(e) => {
-						setText(e.target.value);
-						autosize(e.target);
-					}}
-					onKeyDown={(e) => {
-						if (e.key === "Enter" && !e.shiftKey) {
-							e.preventDefault();
-							submit();
-						}
-					}}
-					// appearance-none + explicit box: global.css skips Tailwind
-					// preflight, so without this iOS paints its native bordered /
-					// inset-shadow textarea inside the wrapper (looks broken).
-					className="max-h-28 min-h-[24px] flex-1 resize-none appearance-none rounded-none border-0 bg-transparent p-0 text-sm leading-relaxed text-fg outline-none [-webkit-appearance:none] placeholder:text-faint disabled:opacity-60"
-				/>
-				<button
-					className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-accent text-white disabled:opacity-40"
-					onClick={submit}
-					disabled={!connected || !text.trim()}
-					title="Send reply (Enter)"
-					aria-label="Send reply"
-				>
-					<svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-						<path
-							d="M2.5 8h9M7.5 4l4 4-4 4"
-							stroke="currentColor"
-							strokeWidth="1.6"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						/>
-					</svg>
-				</button>
-			</div>
+			<Composer
+				draftKey={draftKey}
+				onSend={handleSend}
+				placeholder={connected ? "Reply…" : "Not connected"}
+				disabled={!connected}
+				sendDisabled={(text) =>
+					!text.trim() && images.length === 0 && files.length === 0
+				}
+				images={images}
+				onImagesChange={setImages}
+				files={files}
+				onFilesChange={setFiles}
+				models={models}
+				defaultModel={defaultModel}
+				model={model}
+				onModelChange={handleModelChange}
+				modelDisabled={!isBackstage}
+				modelTitle={
+					isBackstage
+						? "Switch the model for this session"
+						: "Set the model from the owning agent (/model in the Slack thread)"
+				}
+				effort={effort}
+				onEffortChange={setEffort}
+				accounts={isBackstage && !isCodexModel ? accounts : undefined}
+				accountId={accountId}
+				onAccountChange={isBackstage ? handleAccountChange : undefined}
+				goal={currentGoal}
+				onSetGoal={isBackstage ? handleSetGoal : undefined}
+				mentionFetch={(q) => fetchFileMentions(q, target.id)}
+				skillsFetch={(q) => fetchSkillMentions(q, target.id)}
+			/>
 		</div>
 	);
 }

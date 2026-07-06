@@ -17,7 +17,6 @@ import {
   LABEL_AUTOFIX,
   LABEL_SIMPLIFY,
   LABEL_ADVERSARIAL,
-  PREVIEW_COMMENT_MARKER,
 } from "./constants";
 import { runReview, type PrRef, type ReviewConfig } from "./review";
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
@@ -77,20 +76,10 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     // @mention replies on PR comments (inline + conversation). Never react to our own
     // comments/reviews (mention.ts also re-checks the author + our hidden markers).
     if (event === "issue_comment" || event === "pull_request_review_comment") {
-      // Vercel preview-ready → notify linked sessions. Butler edits its preview
-      // table in place, and butler IS our bot account — so this must run before
-      // the self-trigger guard. A butler table edit is never a mention.
-      if (
-        event === "issue_comment" &&
-        (payload.action === "created" || payload.action === "edited") &&
-        String(payload?.comment?.body || "").includes(PREVIEW_COMMENT_MARKER)
-      ) {
-        const { notifyVercelPreviewComment } = await import("./session-notify");
-        void notifyVercelPreviewComment(payload).catch((e) =>
-          console.error("[github] notifyVercelPreviewComment failed:", e),
-        );
-        return;
-      }
+      // Butler's Vercel preview-table edits (from our bot account) carry no
+      // mention and need no reaction — the session header's Staging button
+      // already surfaces the preview URL + Ready state, so we don't inject a
+      // redundant chat notification. They fall through to the self-trigger guard.
       if (senderIsBot) return;
       const { handleMention } = await import("./mention");
       void handleMention(event === "issue_comment" ? "issue" : "review", payload).catch((e) =>

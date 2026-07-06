@@ -101,6 +101,28 @@ export function onPinNewSessionsChanged(handler: () => void): () => void {
 	return () => window.removeEventListener(PIN_NEW_EVENT, handler);
 }
 
+// "Pin new workspaces" preference — per-browser, default OFF. A new workspace is
+// heavier than a chat, so pinning every one you spin up floods the Pinned band;
+// off by default. The string "on" is the only stored form, so the default
+// survives a cleared store.
+const PIN_NEW_WS_KEY = "michael-pin-new-workspaces";
+const PIN_NEW_WS_EVENT = "michael-pin-new-workspaces-changed";
+
+export function getPinNewWorkspaces(): boolean {
+	return localStorage.getItem(PIN_NEW_WS_KEY) === "on";
+}
+
+export function setPinNewWorkspaces(on: boolean): void {
+	if (on) localStorage.setItem(PIN_NEW_WS_KEY, "on");
+	else localStorage.removeItem(PIN_NEW_WS_KEY);
+	window.dispatchEvent(new Event(PIN_NEW_WS_EVENT));
+}
+
+export function onPinNewWorkspacesChanged(handler: () => void): () => void {
+	window.addEventListener(PIN_NEW_WS_EVENT, handler);
+	return () => window.removeEventListener(PIN_NEW_WS_EVENT, handler);
+}
+
 /**
  * Remove any of `ids` that are currently pinned (no-op for the rest). Returns
  * the new list. This is the client-side mirror of the server's

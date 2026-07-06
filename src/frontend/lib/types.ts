@@ -237,6 +237,13 @@ export interface PrCheck {
 	workflowName?: string;
 }
 
+export interface PrComment {
+	author: string;
+	body: string;
+	url?: string;
+	createdAt?: string;
+}
+
 export interface PrDetails {
 	number: number;
 	title: string;
@@ -252,6 +259,7 @@ export interface PrDetails {
 	author: string;
 	body: string;
 	checks: PrCheck[];
+	comments?: PrComment[];
 	/** MERGEABLE | CONFLICTING | UNKNOWN — GitHub's conflict probe. */
 	mergeable?: string;
 	/** CLEAN | BEHIND | BLOCKED | DIRTY | UNSTABLE | … — merge-box state. */

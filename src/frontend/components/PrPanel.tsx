@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import type { GitStatusInfo, PrCheck, PrDetails } from "../lib/types";
+import type { GitStatusInfo, PrCheck, PrComment, PrDetails } from "../lib/types";
 import {
   fetchPr,
   fetchPrDiff,
@@ -20,6 +20,8 @@ interface Props {
   sessionId: string;
   /** When provided, renders an "Open session →" action (used by the Reviews view). */
   onOpenSession?: () => void;
+  /** Append PR/check/comment context to this session's composer draft. */
+  onAddToInput?: (text: string) => void;
   /** Side-by-side info|diff layout for wide containers (the Reviews drawer). */
   split?: boolean;
   /**
@@ -42,7 +44,7 @@ interface PrDiffData {
   patch: string;
 }
 
-export function PrPanel({ sessionId, onOpenSession, split, repos, send }: Props) {
+export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, send }: Props) {
   const repoList = repos && repos.length > 1 ? repos : null;
   const [activeRepo, setActiveRepo] = useState<string | undefined>(
     repoList ? (repoList.find((r) => r.primary)?.repo ?? repoList[0].repo) : undefined,
@@ -231,44 +233,20 @@ export function PrPanel({ sessionId, onOpenSession, split, repos, send }: Props)
       </div>
     );
 
-  const stateClass =
-    pr.state === "MERGED" ? "pr-pill-merged" : pr.state === "CLOSED" ? "pr-pill-closed" : pr.isDraft ? "pr-pill-draft" : "pr-pill-open";
-  const stateLabel = pr.state === "OPEN" && pr.isDraft ? "Draft" : pr.state.charAt(0) + pr.state.slice(1).toLowerCase();
-
   return (
     <div className={`pr-panel ${split ? "pr-panel-split" : ""}`}>
       {switcher}
       <SelectionToSession sessionId={sessionId} label={`PR #${pr.number}`} send={send}>
       <div className="pr-panel-info">
-      <div className="pr-head">
-        <span className={`pr-pill ${stateClass}`}>{stateLabel}</span>
-        <a className="pr-number" href={pr.url} target="_blank" rel="noopener">
-          #{pr.number}
-        </a>
-        <Tooltip label="Refresh PR">
-          <button className="btn-icon" onClick={load}>↻</button>
-        </Tooltip>
-      </div>
-
       <a className="pr-title" href={pr.url} target="_blank" rel="noopener">
         {pr.title}
       </a>
 
-      <div className="pr-meta">
-        <span className="pr-branch">
-          {pr.headRefName} → {pr.baseRefName}
-        </span>
-        <span>
-          {pr.changedFiles} file{pr.changedFiles === 1 ? "" : "s"}
-          {" "}<span className="diff-add">+{pr.additions}</span>{" "}
-          <span className="diff-del">−{pr.deletions}</span>
-        </span>
-        {pr.reviewDecision && (
-          <span className={`pr-review pr-review-${pr.reviewDecision.toLowerCase()}`}>
-            {pr.reviewDecision.replaceAll("_", " ").toLowerCase()}
-          </span>
-        )}
-      </div>
+      {pr.body && (
+        <div className="pr-body pr-body-top">
+          <div className="pr-body-md markdown" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+        </div>
+      )}
 
       <GitStatusSection
         git={git}
@@ -335,14 +313,48 @@ export function PrPanel({ sessionId, onOpenSession, split, repos, send }: Props)
         </div>
       )}
 
-      {pr.body && (
-        <div className="pr-body">
-          <div className="pr-checks-title">Description</div>
-          <div className="pr-body-md markdown" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+      {(pr.comments?.length || 0) > 0 && (
+        <div className="pr-comments">
+          <div className="pr-comments-head">
+            <span className="pr-checks-title pr-comments-title">Comments</span>
+            {onAddToInput && (
+              <button
+                className="pr-comments-add-all"
+                onClick={() => onAddToInput(formatPrCommentsPrompt(pr.comments || [], pr))}
+              >
+                Add all to chat
+              </button>
+            )}
+          </div>
+          {(pr.comments || []).map((comment, i) => (
+            <div className="pr-comment-row" key={`${comment.url || comment.createdAt || i}`}>
+              <span className="pr-comment-select" aria-hidden />
+              <div className="pr-comment-meta">
+                <span className="pr-comment-author">{comment.author || "comment"}</span>
+              </div>
+              <div className="pr-comment-body">{comment.body}</div>
+              {comment.url && (
+                <a className="pr-comment-link" href={comment.url} target="_blank" rel="noopener">
+                  ↗
+                </a>
+              )}
+              {onAddToInput && (
+                <button
+                  className="pr-comment-add"
+                  onClick={() => onAddToInput(formatPrCommentPrompt(comment, pr))}
+                >
+                  Add to chat
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
       <div className="pr-actions">
+        <Tooltip label="Refresh PR">
+          <button className="btn-open-session" onClick={load}>Refresh</button>
+        </Tooltip>
         <a className="btn-open-pr" href={pr.url} target="_blank" rel="noopener">
           Open on GitHub ↗
         </a>
@@ -403,6 +415,14 @@ export function PrPanel({ sessionId, onOpenSession, split, repos, send }: Props)
               >
                 {reviewOpen ? "Hide" : "Finish review"}
               </button>
+              {onAddToInput && (
+                <button
+                  className="pr-review-toggle"
+                  onClick={() => onAddToInput(formatPendingCommentsPrompt(pending, pr))}
+                >
+                  Add to chat
+                </button>
+              )}
             </div>
 
             {reviewOpen && (
@@ -487,19 +507,55 @@ function formatCheckDuration(check: PrCheck): string | null {
   return `${Math.round(secs / 60)}m`;
 }
 
+function formatPendingCommentsPrompt(comments: PendingComment[], pr: PrDetails): string {
+  const body = comments
+    .map((c, i) => {
+      const range =
+        c.startLine && c.startLine !== c.endLine
+          ? `${c.startLine}-${c.endLine}`
+          : String(c.endLine);
+      return `${i + 1}. ${c.path}:${range}\n${c.text}`;
+    })
+    .join("\n\n");
+  return `Please address these pending review comments on PR #${pr.number} (${pr.title}).\n\n${body}`;
+}
+
+function trimCommentBody(body: string): string {
+  return body.trim().replace(/\n{3,}/g, "\n\n");
+}
+
+export function formatPrCommentPrompt(comment: PrComment, pr: PrDetails): string {
+  const author = comment.author ? ` from ${comment.author}` : "";
+  const link = comment.url ? `\nURL: ${comment.url}` : "";
+  return `Please address this PR comment${author} on PR #${pr.number} (${pr.title}).${link}\n\n${trimCommentBody(comment.body)}`;
+}
+
+function formatPrCommentsPrompt(comments: PrComment[], pr: PrDetails): string {
+  const body = comments
+    .map((c, i) => {
+      const by = c.author ? ` by ${c.author}` : "";
+      const link = c.url ? `\n${c.url}` : "";
+      return `${i + 1}. Comment${by}${link}\n${trimCommentBody(c.body)}`;
+    })
+    .join("\n\n");
+  return `Please review these PR comments on PR #${pr.number} (${pr.title}).\n\n${body}`;
+}
+
 export function CheckRow({ check }: { check: PrCheck }) {
   const cls = checkClass(check.status, check.conclusion);
   const mark = cls === "check-success" ? "✓" : cls === "check-failure" ? "✕" : "●";
   const duration = formatCheckDuration(check);
   return (
-    <a className="pr-check" href={check.url} target="_blank" rel="noopener">
-      <span className={`pr-check-mark ${cls}-text ${cls === "check-pending" ? "pr-check-mark-pending" : ""}`}>
-        {mark}
-      </span>
-      <span className="pr-check-name">{check.name}</span>
-      {duration && <span className="pr-check-duration">{duration}</span>}
-      {check.url && <span className="pr-check-open">↗</span>}
-    </a>
+    <div className="pr-check pr-check-row">
+      <a className="pr-check-main" href={check.url} target="_blank" rel="noopener">
+        <span className={`pr-check-mark ${cls}-text ${cls === "check-pending" ? "pr-check-mark-pending" : ""}`}>
+          {mark}
+        </span>
+        <span className="pr-check-name">{check.name}</span>
+        {duration && <span className="pr-check-duration">{duration}</span>}
+        {check.url && <span className="pr-check-open">↗</span>}
+      </a>
+    </div>
   );
 }
 

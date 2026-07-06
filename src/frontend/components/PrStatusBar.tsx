@@ -85,7 +85,7 @@ function deriveHeadline(
 	return { key: "clean", label: "", tone: "muted" };
 }
 
-function summarizeChecks(pr: PrDetails | null): {
+export function summarizeChecks(pr: PrDetails | null): {
 	passed: number;
 	failed: number;
 	pending: number;

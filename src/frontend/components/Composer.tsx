@@ -462,7 +462,7 @@ export function Composer({
       const fences = text.slice(0, caret).match(/```/g);
       if (fences && fences.length % 2 === 1) return; // let the newline land
     }
-    // While a run is busy, ⌘/Ctrl+Enter interrupts: abort the current turn and
+    // While a run is busy, ⌘/Ctrl+Enter steers: stop the current turn and
     // deliver this send right away. (Only when plain Enter is the send key —
     // otherwise ⌘/Ctrl+Enter already means "send".)
     if (
@@ -725,11 +725,9 @@ export function Composer({
                   sendTitle ||
                   (busy
                     ? busySendMode === "steer"
-                      ? `Steer into the current run (${sendKeyLabel(sendKey)})${
-                          sendKey === "enter" ? ` — ${MOD_ENTER_GLYPH} interrupts` : ""
-                        }`
+                      ? `Steer — stop the current turn and deliver now (${sendKeyLabel(sendKey)})`
                       : `Queue for the next turn (${sendKeyLabel(sendKey)})${
-                          sendKey === "enter" ? ` — ${MOD_ENTER_GLYPH} interrupts` : ""
+                          sendKey === "enter" ? ` — ${MOD_ENTER_GLYPH} steers now` : ""
                         }`
                     : `Send (${sendKeyLabel(sendKey)})`)
                 }

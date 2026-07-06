@@ -9,6 +9,7 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onOpenSession: (id: string) => void;
+  onAddToInput: (id: string, text: string) => void;
   user: string;
   addHandler: (h: (msg: WSServerMessage) => void) => () => void;
   onRefresh?: () => void;
@@ -150,6 +151,7 @@ export function Reviews({
   selectedId,
   onSelect,
   onOpenSession,
+  onAddToInput,
   user,
   addHandler,
   onRefresh,
@@ -260,7 +262,7 @@ export function Reviews({
       <div className="reviews-main">
         <div className="reviews-header">
           <div className="reviews-header-top">
-            <h1 className="reviews-title">Pull requests</h1>
+            <h1 className="reviews-title">Reviews</h1>
             <div className="reviews-search">
               <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                 <path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z" />
@@ -268,7 +270,7 @@ export function Reviews({
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search pull requests…"
+                placeholder="Search checks…"
                 spellCheck={false}
               />
             </div>
@@ -285,25 +287,7 @@ export function Reviews({
               </button>
             ))}
           </div>
-        </div>
-
-        {filtered.length === 0 ? (
-          <div className="reviews-empty">
-            <div className="detail-empty-inner">
-              <div className="detail-empty-title">
-                {prSessions.length === 0 ? "No pull requests yet" : "Nothing here"}
-              </div>
-              <div className="detail-empty-sub">
-                {prSessions.length === 0
-                  ? "PRs opened by Michael sessions show up here for review."
-                  : filter === "review"
-                    ? "All caught up — nothing needs review."
-                    : "No PRs match this filter."}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="reviews-table" role="table">
+          {filtered.length > 0 && (
             <div className="reviews-row reviews-row-head" role="row">
               <span className="rv-c-state">Status</span>
               <span className="rv-c-title">Pull request</span>
@@ -313,6 +297,26 @@ export function Reviews({
               <span className="rv-c-author">Author</span>
               <span className="rv-c-updated">Updated</span>
             </div>
+          )}
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="reviews-empty">
+            <div className="detail-empty-inner">
+              <div className="detail-empty-title">
+                {prSessions.length === 0 ? "No checks yet" : "Nothing here"}
+              </div>
+              <div className="detail-empty-sub">
+                {prSessions.length === 0
+                  ? "PRs opened by Michael sessions show their checks here."
+                  : filter === "review"
+                    ? "All caught up — nothing needs review."
+                    : "No PRs match this filter."}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="reviews-table" role="table">
             {filtered.map((s) => {
               const meta = stateMeta(s);
               const active = selected?.id === s.id;
@@ -404,12 +408,12 @@ export function Reviews({
             <button
               className="reviews-drawer-back"
               onClick={() => onSelect("")}
-              title="Back to pull requests"
+              title="Back to checks"
             >
               <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                 <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 1 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
               </svg>
-              Pull requests
+              Checks
             </button>
             <button
               className="reviews-drawer-close"
@@ -443,6 +447,7 @@ export function Reviews({
               key={selected.id}
               sessionId={selected.id}
               onOpenSession={() => onOpenSession(selected.id)}
+              onAddToInput={(text) => onAddToInput(selected.id, text)}
               split
               send={send}
             />

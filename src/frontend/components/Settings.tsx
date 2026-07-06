@@ -31,6 +31,9 @@ import {
 	getPinNewSessions,
 	setPinNewSessions,
 	onPinNewSessionsChanged,
+	getPinNewWorkspaces,
+	setPinNewWorkspaces,
+	onPinNewWorkspacesChanged,
 } from "../lib/pins";
 import { Connections } from "./Connections";
 import { ModelsPanel } from "./Models";
@@ -557,7 +560,7 @@ function MobileSettings({
 									<div className="mb-2 mt-5 px-1 text-[13px] font-semibold text-faint">
 										{g.group}
 									</div>
-									<div className="overflow-hidden rounded-xl border border-line bg-panel">
+									<div className="overflow-hidden rounded-2xl border border-line bg-panel">
 										{g.items.map((s) => (
 											<button
 												key={s.key}
@@ -1195,7 +1198,7 @@ function AuditPanel() {
 				~/.backstage-audit (400-day retention).
 			</div>
 
-			<div className="flex flex-wrap items-center gap-2 mb-3">
+			<div className="flex flex-wrap items-center gap-2 mb-3 px-2.5">
 				<select className="ui-select" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date">
 					{dates.map((d) => (
 						<option key={d} value={d}>
@@ -1224,7 +1227,7 @@ function AuditPanel() {
 				/>
 			</div>
 
-			<div className="text-faint text-[11.5px] mb-2">
+			<div className="text-faint text-[11.5px] mb-2 px-2.5">
 				{loading ? "Loading…" : `${events.length} of ${total} events (newest first)`}
 			</div>
 
@@ -1282,10 +1285,15 @@ function ComposerPanel() {
 	const [sendKey, setSendKey] = useState<SendKeyPref>(getSendKeyPref);
 	const [busySend, setBusySend] = useState<BusySendPref>(getBusySendPref);
 	const [pinNew, setPinNew] = useState<boolean>(getPinNewSessions);
+	const [pinNewWs, setPinNewWs] = useState<boolean>(getPinNewWorkspaces);
 	useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
 	useEffect(() => onBusySendChanged(() => setBusySend(getBusySendPref())), []);
 	useEffect(
 		() => onPinNewSessionsChanged(() => setPinNew(getPinNewSessions())),
+		[],
+	);
+	useEffect(
+		() => onPinNewWorkspacesChanged(() => setPinNewWs(getPinNewWorkspaces())),
 		[],
 	);
 
@@ -1314,12 +1322,12 @@ function ComposerPanel() {
 					title="Follow-up behavior"
 					desc={
 						<>
-							Steer folds your message into the run at its next stopping
-							point; Queue waits until the agent finishes.
+							Steer stops the current turn and delivers your message right
+							away; Queue waits until the agent finishes.
 							{sendKey === "enter" && (
 								<div className="text-dim text-xs mt-1">
-									Use {MOD_ENTER_GLYPH} to interrupt — stops the current turn
-									and delivers right away
+									Use {MOD_ENTER_GLYPH} to steer even when Queue is your
+									default
 								</div>
 							)}
 						</>
@@ -1344,6 +1352,17 @@ function ComposerPanel() {
 							label="Pin new sessions"
 							checked={pinNew}
 							onChange={setPinNewSessions}
+						/>
+					}
+				/>
+				<SettingRow
+					title="Pin new workspaces"
+					desc="Also pin a workspace to your tab strip when you create one."
+					control={
+						<Toggle
+							label="Pin new workspaces"
+							checked={pinNewWs}
+							onChange={setPinNewWorkspaces}
 						/>
 					}
 				/>

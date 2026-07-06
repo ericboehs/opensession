@@ -56,7 +56,6 @@ import {
 	IconChevronDown,
 	IconPlus,
 	IconPencil,
-	IconArrowDownRight,
 	IconArrowUp,
 	IconCrosshair,
 	IconStar,
@@ -115,6 +114,13 @@ interface Props {
 	/** Bumped by the tab-bar + to start a fresh chat in this same session: clears
 	    the composer and jumps to the live edge. A visual reset — same thread. */
 	newChatSeq?: number;
+	/** One-shot pulse set when this session was opened by picking its workspace
+	    in the sidebar — focus the composer on open so you can type right away.
+	    Ignored on phones (would pop the keyboard over the chat). */
+	autoFocusComposer?: boolean;
+	/** One-shot draft text appended from another surface, such as Checks. */
+	composerPrefillExternal?: { seq: number; text: string } | null;
+	onComposerPrefillConsumed?: (seq: number) => void;
 	/** Rename this session (double-click the header title); empty resets it to
 	    the derived title. Same handler the tab strip and sidebar use. */
 	onRename?: (id: string, title: string) => void;
@@ -214,6 +220,9 @@ export function SessionViewer({
 	headerModelEl,
 	rightPanelEl,
 	newChatSeq,
+	autoFocusComposer,
+	composerPrefillExternal,
+	onComposerPrefillConsumed,
 	onRename,
 	workspaceName,
 	onRenameWorkspace,
@@ -278,7 +287,7 @@ export function SessionViewer({
 	// Optimistic just-sent messages, shown instantly and reconciled once the real
 	// turn lands (transcript) or the server confirms it as queued (busy path).
 	// `busyMode` marks a send made while the run was busy: it renders inside the
-	// queue flap (as "Queueing…"/"Steering…") instead of as a transcript bubble.
+	// queue flap (as "Queueing…") instead of as a transcript bubble.
 	const [pending, setPending] = useState<
 		Array<{
 			id: string;
@@ -928,7 +937,7 @@ export function SessionViewer({
 	const busySendLabel =
 		busySend === "queue"
 			? "Queue for Michael's next turn"
-			: "Steer into Michael's current run";
+			: "Steer — stop the current turn and deliver now";
 	// Exact engine-state forks use Claude's SDK forkSession. Other backends can
 	// still fork as a new sibling with a transcript handoff.
 	const canForkSession =
@@ -991,17 +1000,17 @@ export function SessionViewer({
 		}
 
 		if (noEngine) return false;
-		// While busy, respect the per-browser follow-up setting: steer into the
-		// live run at its next stopping point (default) or queue for the next
-		// turn. `opts.interrupt` (⌘/Ctrl+Enter) aborts the current turn and
-		// delivers this send right away instead (the server falls back to the
-		// queue when nothing is interruptible or files are attached).
-		// Idle: just run it. Attachments ride along on every path — images fold
-		// into the run as content blocks; files route to the queue server-side.
-		const interrupting = isBusy && !!opts?.interrupt;
+		// Two follow-up behaviors while busy (per-browser setting): Queue (waits
+		// for the next turn) or Steer (stops the current turn and delivers now —
+		// the interrupt_prompt path, which falls back to the queue when nothing is
+		// interruptible or files are attached). ⌘/Ctrl+Enter forces Steer
+		// regardless of the default. Idle: just run it. Attachments ride along on
+		// every path — images fold into the run as content blocks; files route to
+		// the queue server-side.
+		const steerNow = isBusy && (!!opts?.interrupt || busySend === "steer");
 		send(
 			isBusy
-				? interrupting
+				? steerNow
 					? {
 							type: "interrupt_prompt" as const,
 							sessionId: session.id,
@@ -1017,8 +1026,7 @@ export function SessionViewer({
 							content: text,
 							user,
 							effort,
-							busyMode:
-								busySend === "queue" ? ("queue" as const) : ("steer" as const),
+							busyMode: "queue" as const,
 							...(imgs.length ? { images: imgs } : {}),
 							...(fls.length ? { files: filePayload } : {}),
 						}
@@ -1032,7 +1040,7 @@ export function SessionViewer({
 						...(fls.length ? { files: filePayload } : {}),
 					},
 		);
-		if (!isBusy || interrupting) {
+		if (!isBusy || steerNow) {
 			setIsRunningLive(true);
 			onRunningChange?.(session.id, true);
 			beginTurn(); // pin this new turn near the top so its reply streams in below
@@ -1059,8 +1067,7 @@ export function SessionViewer({
 					user,
 					sentAt: Date.now(),
 					images: imgs.length ? imgs : undefined,
-					busyMode:
-						busySend === "queue" ? ("queue" as const) : ("steer" as const),
+					busyMode: "queue" as const,
 				},
 			]);
 		}
@@ -1165,24 +1172,6 @@ export function SessionViewer({
 										</button>
 									</Tooltip>
 								)}
-								{s.id && (
-									<Tooltip label="Interrupt — stop the current work and deliver this now">
-										<button
-											type="button"
-											className="composer-queue-action composer-queue-steer"
-											aria-label="Interrupt"
-											onClick={() =>
-												send({
-													type: "interrupt_queued_prompt",
-													sessionId: session.id,
-													queueId: s.id,
-												})
-											}
-										>
-											<IconArrowDownRight size={24} />
-										</button>
-									</Tooltip>
-								)}
 							</div>
 							{renderQueueContent(s, { human: hr })}
 						</div>
@@ -1236,56 +1225,28 @@ export function SessionViewer({
 									</button>
 								</Tooltip>
 								{!isGitHub && (
-									<>
-										<Tooltip
-											label={
-												canSteer
-													? "Steer — folds in when the current work pauses"
-													: "Messages with files cannot be steered"
+									<Tooltip
+										label={
+											canSteer ? "Steer" : "Messages with files cannot be steered"
+										}
+									>
+										<button
+											type="button"
+											className="composer-queue-action composer-queue-steer"
+											aria-label="Steer"
+											disabled={!canSteer}
+											onClick={() =>
+												send({
+													type: "interrupt_queued_prompt",
+													sessionId: session.id,
+													queueId: id,
+													queueIndex: i,
+												})
 											}
 										>
-											<button
-												type="button"
-												className="composer-queue-action composer-queue-steer"
-												aria-label="Steer"
-												disabled={!canSteer}
-												onClick={() =>
-													send({
-														type: "steer_queued_prompt",
-														sessionId: session.id,
-														queueId: id,
-														queueIndex: i,
-													})
-												}
-											>
-												<IconArrowUp size={24} />
-											</button>
-										</Tooltip>
-										<Tooltip
-											label={
-												canSteer
-													? "Interrupt — stop the current work and deliver this now"
-													: "Messages with files cannot interrupt"
-											}
-										>
-											<button
-												type="button"
-												className="composer-queue-action composer-queue-steer"
-												aria-label="Interrupt"
-												disabled={!canSteer}
-												onClick={() =>
-													send({
-														type: "interrupt_queued_prompt",
-														sessionId: session.id,
-														queueId: id,
-														queueIndex: i,
-													})
-												}
-											>
-												<IconArrowDownRight size={24} />
-											</button>
-										</Tooltip>
-									</>
+											<IconArrowUp size={24} />
+										</button>
+									</Tooltip>
 								)}
 							</div>
 							{renderQueueContent(q, { human: hr, github: isGitHub })}
@@ -1299,7 +1260,7 @@ export function SessionViewer({
 					<div key={p.id} className="composer-queue-item composer-queue-sending">
 						<div className="composer-queue-actions">
 							<span className="composer-queue-pill composer-queue-pill-sending">
-								{p.busyMode === "steer" ? "Steering…" : "Queueing…"}
+								Queueing…
 							</span>
 						</div>
 						{renderQueueContent(p, {})}
@@ -1434,6 +1395,21 @@ export function SessionViewer({
 		return () => mq.removeEventListener("change", onChange);
 	}, []);
 
+	// Opened by picking this session's workspace in the sidebar: focus the
+	// composer so you can start typing immediately. Runs on mount (a new session
+	// remounts this component) and when the pulse re-fires for the already-open
+	// session. Skipped on phones so we don't shove the keyboard over the chat.
+	useEffect(() => {
+		if (autoFocusComposer && !isPhone) composerRef.current?.focus();
+	}, [autoFocusComposer, isPhone]);
+
+	useEffect(() => {
+		if (!composerPrefillExternal) return;
+		setComposerPrefill(composerPrefillExternal);
+		onComposerPrefillConsumed?.(composerPrefillExternal.seq);
+		if (!isPhone) composerRef.current?.focus();
+	}, [composerPrefillExternal, onComposerPrefillConsumed, isPhone]);
+
 	const [overflowOpen, setOverflowOpen] = useState(false);
 	const overflowRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
@@ -1558,11 +1534,11 @@ export function SessionViewer({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [archiving, handleArchive, session.archived]);
 
-	// Preview / Staging / PR — the code-workspace affordances, docked at the
-	// bottom of the right panel (the "right sidebar") so they stay visible on
-	// every tab, rather than the main header bar. Each self-gates (renders null
-	// when not applicable), so on a plain/ask session the row collapses to
-	// nothing (`.panel-actions:empty`).
+	// Preview / Staging — the code-workspace testing affordances, docked right
+	// under the PR status strip (the merge-actions row) at the top of the right
+	// panel so they read as first-class "test this change" actions, visible on
+	// every tab. Each self-gates (renders null when not applicable), so on a
+	// plain/ask session the row collapses to nothing (`.panel-actions:empty`).
 	const panelActions = (
 		<>
 			<PreviewButton
@@ -1570,20 +1546,6 @@ export function SessionViewer({
 				onAttachImage={(img) => setImages((prev) => [...prev, img])}
 			/>
 			<StagingLink session={session} />
-			{hasWorkspace && session.prUrl && (
-				<a
-					className="btn-panel-toggle btn-pr-header"
-					href={session.prUrl}
-					target="_blank"
-					rel="noreferrer"
-					title={`Open PR #${session.prNumber ?? ""} on GitHub (${(session.prState || "OPEN").toLowerCase()})`}
-				>
-					<span
-						className={`panel-tab-dot pr-dot-${(session.prState || "OPEN").toLowerCase()}`}
-					/>
-					<span className="btn-pr-label">PR ↗</span>
-				</a>
-			)}
 		</>
 	);
 
@@ -1829,7 +1791,15 @@ export function SessionViewer({
 						/>
 					)}
 					{session.archived && (
-						<span className="source-chip source-cli">archived</span>
+						<button
+							type="button"
+							className="source-chip source-cli archived-chip"
+							onClick={handleArchive}
+							disabled={archiving}
+							title="Click to unarchive"
+						>
+							Archived
+						</button>
 					)}
 				</div>
 				<div className="viewer-header-actions">
@@ -2337,6 +2307,7 @@ export function SessionViewer({
 								onOpenPrTab={() => setPanelTab("pr")}
 							/>
 						)}
+						<div className="panel-actions">{panelActions}</div>
 						<div className="panel-tabs">
 							<button
 								className={`panel-tab ${panelTab === "info" ? "active" : ""}`}
@@ -2362,7 +2333,7 @@ export function SessionViewer({
 										className={`panel-tab ${panelTab === "pr" ? "active" : ""}`}
 										onClick={() => selectPanelTab("pr")}
 									>
-										PR
+										Checks
 										{session.prState && (
 											<span
 												className={`panel-tab-dot pr-dot-${session.prState.toLowerCase()}`}
@@ -2392,6 +2363,7 @@ export function SessionViewer({
 							{/* Plain-only sessions (no code workspace) show just the timeline. */}
 							{panelTab === "info" ? (
 								<WorkspaceInfo
+									sessionId={session.id}
 									workspaceId={session.projectId || null}
 									workspaceName={workspaceName}
 									chats={(workspaceChats?.length ? workspaceChats : [session]).map(
@@ -2404,6 +2376,15 @@ export function SessionViewer({
 									)}
 									repo={
 										hasWorkspace ? session.repo || "tella-fusion" : undefined
+									}
+									prState={hasWorkspace ? session.prState : undefined}
+									slackChannel={session.slackChannel}
+									onOpenTab={(tab) => selectPanelTab(tab)}
+									onAddToInput={(text) =>
+										setComposerPrefill((p) => ({
+											seq: (p?.seq ?? 0) + 1,
+											text,
+										}))
 									}
 									liveMediaCount={liveMediaCount}
 									liveMedia={liveOverviewMedia}
@@ -2439,6 +2420,12 @@ export function SessionViewer({
 								<PrPanel
 									sessionId={session.id}
 									send={send}
+									onAddToInput={(text) =>
+										setComposerPrefill((p) => ({
+											seq: (p?.seq ?? 0) + 1,
+											text,
+										}))
+									}
 									repos={[
 										{
 											repo: session.repo || "tella-fusion",
@@ -2452,7 +2439,6 @@ export function SessionViewer({
 								/>
 							)}
 						</div>
-						<div className="panel-actions">{panelActions}</div>
 					</div>
 				) : null}
 					</>
