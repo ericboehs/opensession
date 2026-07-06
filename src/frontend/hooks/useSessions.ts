@@ -12,6 +12,26 @@ export function useSessions(pollInterval = 5000) {
   // identity would otherwise re-render the whole app (Sidebar memos, the open
   // SessionViewer's `session` prop, …) for nothing.
   const lastTextRef = useRef<string | null>(null);
+  // Optimistically-injected sessions the server hasn't caught up to yet (a
+  // just-created workspace/chat). A plain poll replaces the whole array and
+  // would drop the injected copy — flashing a loading placeholder until the
+  // create lands seconds later. Keep these merged into every poll result until
+  // the server's own copy shows up (auto-cleared here) or `unstick` drops it.
+  const stickyRef = useRef<Map<string, UnifiedSession>>(new Map());
+
+  const applyServer = useCallback((parsed: UnifiedSession[]) => {
+    if (stickyRef.current.size === 0) {
+      setSessions(parsed);
+      return;
+    }
+    const present = new Set(parsed.map((s) => s.id));
+    const extras: UnifiedSession[] = [];
+    for (const [id, s] of stickyRef.current) {
+      if (present.has(id)) stickyRef.current.delete(id);
+      else extras.push(s);
+    }
+    setSessions(extras.length ? [...parsed, ...extras] : parsed);
+  }, []);
 
   const poll = useCallback(async () => {
     try {
@@ -19,7 +39,7 @@ export function useSessions(pollInterval = 5000) {
       if (!mountedRef.current) return;
       if (text !== lastTextRef.current) {
         lastTextRef.current = text;
-        setSessions(JSON.parse(text));
+        applyServer(JSON.parse(text));
       }
       setLoading(false);
       setError(null);
@@ -29,7 +49,7 @@ export function useSessions(pollInterval = 5000) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [applyServer]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -57,16 +77,29 @@ export function useSessions(pollInterval = 5000) {
   // Drop a just-created session straight into the list so the UI can render it
   // immediately (e.g. the tab-strip + creating a new chat) instead of showing a
   // loading state until the next poll. The next poll replaces it with the
-  // server's copy.
-  const inject = useCallback((session: UnifiedSession) => {
-    // The list no longer matches the last server response — force the next
-    // poll to apply (it reconciles the injected copy, same as before).
-    lastTextRef.current = null;
-    setSessions((prev) =>
-      prev.some((s) => s.id === session.id)
-        ? prev.map((s) => (s.id === session.id ? session : s))
-        : [...prev, session],
-    );
+  // server's copy. Pass `{ sticky: true }` for a create the server takes a while
+  // to register (a new workspace): the injected copy then survives every poll
+  // until the server's own copy lands, so the new tab renders instead of a
+  // "Starting…" placeholder. Call `unstick` if the create fails.
+  const inject = useCallback(
+    (session: UnifiedSession, opts?: { sticky?: boolean }) => {
+      // The list no longer matches the last server response — force the next
+      // poll to apply (it reconciles the injected copy, same as before).
+      lastTextRef.current = null;
+      if (opts?.sticky) stickyRef.current.set(session.id, session);
+      setSessions((prev) =>
+        prev.some((s) => s.id === session.id)
+          ? prev.map((s) => (s.id === session.id ? session : s))
+          : [...prev, session],
+      );
+    },
+    [],
+  );
+
+  // Drop a session's sticky status (e.g. its create failed / was abandoned).
+  // The session itself stays until the next poll reconciles it away.
+  const unstick = useCallback((id: string) => {
+    if (stickyRef.current.delete(id)) lastTextRef.current = null;
   }, []);
 
   const patch = useCallback((id: string, patch: Partial<UnifiedSession>) => {
@@ -78,8 +111,9 @@ export function useSessions(pollInterval = 5000) {
 
   const remove = useCallback((id: string) => {
     lastTextRef.current = null;
+    stickyRef.current.delete(id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
-  return { sessions, loading, error, refresh, inject, patch, remove };
+  return { sessions, loading, error, refresh, inject, unstick, patch, remove };
 }

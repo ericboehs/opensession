@@ -237,7 +237,8 @@ function routePath(route: Route): string {
 }
 
 function App() {
-	const { sessions, loading, refresh, inject, patch, remove } = useSessions();
+	const { sessions, loading, refresh, inject, unstick, patch, remove } =
+		useSessions();
 	const { connected, send, addHandler } = useWebSocket();
 	const sessionsRef = useRef(sessions);
 	sessionsRef.current = sessions;
@@ -702,7 +703,12 @@ function App() {
 						projectId: msg.workspaceId || draft?.projectId || null,
 						model: draft?.model,
 						archived: false,
-					});
+						},
+						// Keep the optimistic copy alive across polls until the server
+						// registers it, so the new tab renders straight away instead of
+						// flashing "Starting…" — matters most for a new workspace, whose
+						// worktree prep can take several polls to land.
+						{ sticky: true });
 				}
 				if (draft?.prompt || draft?.images?.length) {
 					setPendingInitialPrompts((prev) => ({
@@ -725,20 +731,20 @@ function App() {
 				}
 				// Mark it pending so the viewer shows "Starting…" until the poll
 				// catches up; a fallback timeout clears it so a failed create can't
-				// stick.
+				// stick — including dropping the sticky optimistic copy above.
 				setPendingSessionId(msg.id);
 				setPendingNewWorkspace(!!msg.newWorkspace);
 				clearTimeout(pendingTimer.current);
-				pendingTimer.current = setTimeout(
-					() => setPendingSessionId(null),
-					30000,
-				);
+				pendingTimer.current = setTimeout(() => {
+					setPendingSessionId(null);
+					unstick(msg.id);
+				}, 30000);
 				refresh();
 				refreshProjects();
 				navigate({ view: "session", id: msg.id });
 			}
 		});
-	}, [addHandler, refresh, refreshProjects]);
+	}, [addHandler, refresh, refreshProjects, unstick]);
 
 	// Follow mode: whenever the followed teammate's session changes, go along.
 	// Dropping out is explicit (click again) or implicit — navigating anywhere
@@ -785,8 +791,12 @@ function App() {
 		) {
 			setPendingSessionId(null);
 			clearTimeout(pendingTimer.current);
+			// Drop its sticky status now that we've left (and cancelled the 30s
+			// fallback). A real session is retained by the next poll; a phantom
+			// from a failed create is reconciled away instead of lingering.
+			unstick(pendingSessionId);
 		}
-	}, [route, pendingSessionId]);
+	}, [route, pendingSessionId, unstick]);
 
 	const currentSession: UnifiedSession | null =
 		route.view === "session"
