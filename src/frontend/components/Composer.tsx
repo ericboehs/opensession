@@ -165,7 +165,7 @@ function GoalModal({
         <Modal.Header
           icon={<IconCrosshair size={22} />}
           title="Session goal"
-          description="Pinned to the session — it rides along with every prompt you send."
+          description="Pinned to the session. It rides along with every prompt you send."
         />
 
         <textarea

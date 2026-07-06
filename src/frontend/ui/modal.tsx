@@ -67,9 +67,9 @@ function Content({
 					"fixed left-1/2 top-1/2 z-[10001] w-[92vw] -translate-x-1/2 -translate-y-1/2",
 					widthClassName,
 					"max-h-[85vh] overflow-y-auto overscroll-contain outline-none",
-					// Squircle shell matching the menu/popover family (ui/menu.tsx,
-					// ui/popover.tsx both use rounded-[14px]).
-					"rounded-[14px] [corner-shape:squircle] border border-line-strong bg-raised",
+					// Soft squircle shell — rounder than the menu/popover 14px since a
+					// large surface reads flatter at the same radius.
+					"rounded-[22px] [corner-shape:squircle] border border-line-strong bg-raised",
 					"p-7 shadow-[0_24px_70px_rgba(0,0,0,0.45)]",
 					"flex flex-col gap-4",
 					"origin-center transition-[transform,opacity] duration-150 ease-out",
@@ -106,11 +106,14 @@ function Header({
 				</span>
 			)}
 			<div className="min-w-0 flex-1">
-				<BaseDialog.Title className="text-[19px] font-semibold text-fg">
+				{/* Base UI renders Title as <h2> and Description as <p>; preflight
+				    isn't imported (global.css owns resets), so zero their UA margins
+				    or the <h2> top margin reads as phantom padding above the head. */}
+				<BaseDialog.Title className="m-0 text-[19px] font-semibold text-fg">
 					{title}
 				</BaseDialog.Title>
 				{description && (
-					<BaseDialog.Description className="mt-1 text-[13.5px] leading-snug text-dim">
+					<BaseDialog.Description className="m-0 mt-1 text-[13.5px] leading-snug text-dim">
 						{description}
 					</BaseDialog.Description>
 				)}
