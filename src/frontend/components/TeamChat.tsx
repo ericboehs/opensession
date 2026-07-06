@@ -26,6 +26,8 @@ interface Props {
 	user: string;
 	/** All sessions — powers @-session autocomplete and tag-chip titles. */
 	sessions: UnifiedSession[];
+	/** Workspace names — lets @-session search match on the workspace too. */
+	projects?: Array<{ id: string; name: string }>;
 	send: (msg: WSClientMessage) => void;
 	addHandler: (h: (msg: WSServerMessage) => void) => () => void;
 	onOpenSession: (id: string) => void;
@@ -35,25 +37,35 @@ interface Props {
 
 type Suggestion =
 	| { kind: "person"; name: string }
-	| { kind: "session"; id: string; title: string };
+	| { kind: "session"; id: string; title: string; workspace?: string };
 
-/** The active `@`-mention token at the caret, or null. */
+/**
+ * The active `@`-mention token at the caret, or null. Spaces are allowed in
+ * the query (session titles are multi-word) — the popup simply closes when
+ * nothing matches anymore, so ordinary prose after a completed tag doesn't
+ * keep it open. Capped so a stray `@` far back doesn't hijack typing forever.
+ */
 function mentionAt(
 	value: string,
 	caret: number,
 ): { start: number; query: string } | null {
 	let i = caret - 1;
-	while (i >= 0) {
+	let len = 0;
+	while (i >= 0 && len < 60) {
 		const ch = value[i];
 		if (ch === "@") {
 			const prev = i > 0 ? value[i - 1] : " ";
 			if (prev === " " || prev === "\n") {
-				return { start: i, query: value.slice(i + 1, caret) };
+				const query = value.slice(i + 1, caret);
+				// "@ " is punctuation, not a mention being typed.
+				if (query.startsWith(" ")) return null;
+				return { start: i, query };
 			}
 			return null;
 		}
-		if (ch === " " || ch === "\n") return null;
+		if (ch === "\n") return null;
 		i--;
+		len++;
 	}
 	return null;
 }
@@ -146,6 +158,7 @@ export function TeamChat({
 	channel,
 	user,
 	sessions,
+	projects,
 	send,
 	addHandler,
 	onOpenSession,
@@ -172,27 +185,46 @@ export function TeamChat({
 		[sessions],
 	);
 
+	const workspaceNames = useMemo(
+		() => new Map((projects || []).map((p) => [p.id, p.name])),
+		[projects],
+	);
+
 	const suggestions = useMemo<Suggestion[]>(() => {
 		if (!mention) return [];
-		const q = mention.query.toLowerCase();
-		const people: Suggestion[] = TEAM.filter((n) =>
-			n.toLowerCase().startsWith(q),
-		).map((name) => ({ kind: "person", name }));
-		// Sessions by title match — on a bare "@", surface the recent few so the
-		// affordance is discoverable.
-		const live = sessions.filter((s) => !s.archived);
-		const matched = q
-			? live.filter((s) => s.title.toLowerCase().includes(q))
-			: [...live]
-					.sort((a, b) =>
-						(b.lastActivity || "").localeCompare(a.lastActivity || ""),
-					)
-					.slice(0, 3);
-		const chats: Suggestion[] = matched
-			.slice(0, 5)
-			.map((s) => ({ kind: "session", id: s.id, title: s.title }));
-		return [...people, ...chats].slice(0, 8);
-	}, [mention, sessions]);
+		const q = mention.query.toLowerCase().trim();
+		const tokens = q.split(/\s+/).filter(Boolean);
+		// People are single names — only offer them while the query is one word.
+		const people: Suggestion[] =
+			tokens.length > 1
+				? []
+				: TEAM.filter((n) => n.toLowerCase().startsWith(q)).map((name) => ({
+						kind: "person",
+						name,
+					}));
+		// Sessions: every query word must appear in the title, workspace name, or
+		// id (AND-match, so multi-word fragments of a title work). On a bare "@",
+		// surface the recent few so the affordance is discoverable.
+		const live = sessions
+			.filter((s) => !s.archived)
+			.sort((a, b) =>
+				(b.lastActivity || "").localeCompare(a.lastActivity || ""),
+			);
+		const matched = tokens.length
+			? live.filter((s) => {
+					const hay =
+						`${s.title} ${(s.projectId && workspaceNames.get(s.projectId)) || ""} ${s.id}`.toLowerCase();
+					return tokens.every((t) => hay.includes(t));
+				})
+			: live.slice(0, 3);
+		const chats: Suggestion[] = matched.slice(0, 6).map((s) => ({
+			kind: "session",
+			id: s.id,
+			title: s.title,
+			workspace: (s.projectId && workspaceNames.get(s.projectId)) || undefined,
+		}));
+		return [...people, ...chats].slice(0, 9);
+	}, [mention, sessions, workspaceNames]);
 
 	function syncMention() {
 		const el = inputRef.current;
@@ -458,8 +490,8 @@ export function TeamChat({
 													<IconMessage size={16} />
 												</span>
 												<span className="truncate">{s.title}</span>
-												<span className="ml-auto shrink-0 text-[11px] text-faint">
-													session
+												<span className="ml-auto max-w-24 shrink-0 truncate text-[11px] text-faint">
+													{s.workspace || "session"}
 												</span>
 											</>
 										)}

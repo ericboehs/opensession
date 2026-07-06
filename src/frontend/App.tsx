@@ -1597,6 +1597,7 @@ function App() {
 								channel="watercooler"
 								user={getCurrentUser()}
 								sessions={sessions}
+								projects={projects}
 								send={send}
 								addHandler={addHandler}
 								onOpenSession={(id) => navigate({ view: "session", id })}
