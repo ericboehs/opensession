@@ -8988,16 +8988,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		width: 36px;
 		height: 36px;
 	}
-	/* On phones one button owns the right corner while a run is going (the
-	   ChatGPT-mobile pattern): Stop when the input is empty, but the steer/queue
-	   Send the moment you start typing a follow-up. The send-split only renders
-	   once there's content to send (showSend), so its presence means "composing"
-	   — hide the Stop then so the visible icon matches what pressing return /
-	   tapping actually does (steer vs queue). Empty input → no send-split → Stop
-	   stays. Desktop keeps both. */
-	.composer-stop:has(+ .composer-send-split) {
-		display: none;
-	}
+	/* Phones show the SAME busy right-edge as desktop: Stop plus the steer/queue
+	   Send side by side once you start composing a follow-up (empty input still
+	   falls back to Stop alone, since the send-split only renders with content).
+	   No mobile-only hiding of either button — the two-button row matches desktop
+	   so the queue/steer affordance is never lost on a phone. */
 	/* Fit the whole toolbar at phone widths so the send button never clips:
 	   drop the pill chevrons (the pill is obviously tappable), collapse the
 	   effort pill to its bars icon, and tighten pill padding. The shrink rules
