@@ -2,6 +2,7 @@ import React, { useMemo, useState, useRef, useCallback } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import type { SelectedLineRange, FileDiffMetadata, DiffLineAnnotation } from "@pierre/diffs";
+import { IconChevronRight } from "./icons";
 
 export interface CommentTarget {
   path: string;
@@ -43,10 +44,23 @@ const BASE_OPTIONS = {
   theme: "pierre-dark",
   themeType: "dark" as const,
   diffStyle: "unified" as const,
-  stickyHeader: true,
+  // Our own collapsible row owns the file header (name + stats + caret), so
+  // suppress @pierre/diffs' built-in one to avoid a double header.
+  disableFileHeader: true,
   overflow: "scroll" as const,
   enableLineSelection: true,
 };
+
+/** Per-file +/- counts, summed from the parsed hunks. */
+function fileStats(file: FileDiffMetadata): { add: number; del: number } {
+  let add = 0;
+  let del = 0;
+  for (const h of file.hunks) {
+    add += h.additionLines;
+    del += h.deletionLines;
+  }
+  return { add, del };
+}
 
 // Stable empty-annotations reference so files with no comments keep prop identity
 // across re-renders (lets the memoized row bail out instead of re-parsing).
@@ -81,6 +95,25 @@ export function CommentableDiff({
       return [];
     }
   }, [patch]);
+
+  // Files render collapsed by default (just the header row) — mounting a
+  // FileDiff parses + highlights on the main thread, so a large change would
+  // otherwise block the tab. `expanded` holds the indices the user opened.
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
+  const toggle = useCallback((i: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }, []);
+  const allOpen = expanded.size >= files.length && files.length > 0;
+  const toggleAll = useCallback(() => {
+    setExpanded((prev) => (prev.size >= files.length ? new Set() : new Set(files.map((_, i) => i))));
+  }, [files]);
+
+  const stats = useMemo(() => files.map(fileStats), [files]);
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
@@ -209,9 +242,21 @@ export function CommentableDiff({
   return (
     <div className="commentable-diff">
       {confirmation && <div className="diff-comment-confirmation">{confirmation}</div>}
+      <div className="diff-file-toolbar">
+        <button type="button" className="diff-file-toggle-all" onClick={toggleAll}>
+          {allOpen ? "Collapse all" : "Expand all"}
+        </button>
+      </div>
       {files.map((file, i) => {
         const pend = pendingByFile.get(file.name) || NO_ANNOTATIONS;
         const isDraftFile = draft?.fileIndex === i;
+        // Keep a file open while it holds a draft (the comment form lives inside
+        // the diff) or already-added pending comments (so they stay visible).
+        const isOpen = expanded.has(i) || isDraftFile || pend.length > 0;
+        const s = stats[i];
+        const slash = file.name.lastIndexOf("/");
+        const dir = slash >= 0 ? file.name.slice(0, slash + 1) : "";
+        const base = slash >= 0 ? file.name.slice(slash + 1) : file.name;
         const annotations = isDraftFile
           ? [
               ...pend,
@@ -224,15 +269,38 @@ export function CommentableDiff({
           : pend;
 
         return (
-          <FileDiffRow
-            key={`${file.name}-${i}`}
-            file={file}
-            fileIndex={i}
-            annotations={annotations}
-            selectedLines={isDraftFile ? draft!.range : null}
-            onSelect={handleSelect}
-            renderAnnotation={renderAnnotation}
-          />
+          <div className="diff-file" key={`${file.name}-${i}`}>
+            <button
+              type="button"
+              className="diff-file-header"
+              aria-expanded={isOpen}
+              onClick={() => toggle(i)}
+            >
+              <IconChevronRight
+                size={16}
+                className={`diff-file-caret ${isOpen ? "diff-file-caret-open" : ""}`}
+              />
+              <span className="diff-file-name">
+                {dir && <span className="diff-file-dir">{dir}</span>}
+                <span className="diff-file-base">{base}</span>
+              </span>
+              {pend.length > 0 && <span className="diff-file-comments">{pend.length}</span>}
+              <span className="diff-file-stats">
+                {s.add > 0 && <span className="diff-add">+{s.add}</span>}
+                {s.del > 0 && <span className="diff-del">−{s.del}</span>}
+              </span>
+            </button>
+            {isOpen && (
+              <FileDiffRow
+                file={file}
+                fileIndex={i}
+                annotations={annotations}
+                selectedLines={isDraftFile ? draft!.range : null}
+                onSelect={handleSelect}
+                renderAnnotation={renderAnnotation}
+              />
+            )}
+          </div>
         );
       })}
       <div className="diff-comment-hint">
