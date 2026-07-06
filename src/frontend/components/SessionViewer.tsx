@@ -1861,6 +1861,17 @@ export function SessionViewer({
 							<div className="viewer-overflow-menu">
 								{isPhone && secondaryActions}
 								{(compactHeader || isPhone) && collapsibleActions}
+								{/* Repo switch/attach also lives here so it's reachable on a
+								    phone even when the top-bar chat bar is cramped. */}
+								{isPhone && hasWorkspace && (
+									<RepoBar
+										sessionId={session.id}
+										primaryRepo={session.repo || "tella-fusion"}
+										branch={session.branch}
+										initialAttached={session.attachedRepos || []}
+										variant="menu-row"
+									/>
+								)}
 								{newChatAction}
 								{overflowActions}
 								{archiveAction}
@@ -1920,45 +1931,69 @@ export function SessionViewer({
 						: header;
 			})()}
 
-			{/* Compact model switcher under the mobile top-bar title. The composer's
-			    model pill is hidden on phones (keeps the input clean), so this small
-			    label — the session's model — doubles as a tap target: a native
-			    <select> overlays it and opens the OS picker. Backstage sessions only;
+			{/* Compact "chat bar" under the mobile top-bar title: the session's repo
+			    (tap to switch/attach) then its model. Both the RepoBar and the
+			    composer's model pill are hidden on phones (the title row is CSS-hidden,
+			    the composer stays clean), so this row is where they surface. The model
+			    label doubles as a tap target — a native <select> overlays it and opens
+			    the OS picker. Backstage sessions only for the model switch;
 			    Slack/Linear-owned sessions set their model from the owning thread. */}
-			{isPhone && headerModelEl && models.length > 0 &&
+			{isPhone &&
+				headerModelEl &&
+				(hasWorkspace || models.length > 0) &&
 				createPortal(
-					<span
-						className="header-model-select"
-						title={
-							session.source !== "backstage"
-								? "Set the model from the owning agent (/model in the Slack thread)"
-								: "Switch the model for this session"
-						}
-					>
-						<span className="header-model-label">
-							{models.find((m) => m.id === effectiveModel)?.label ||
-								prettyModel(effectiveModel)}
-						</span>
-						<IconChevronDown className="header-model-chevron" size={14} />
-						{session.source === "backstage" && (
-							<select
-								className="palette-select-overlay"
-								value={model}
-								onChange={(e) => handleModelChange(e.target.value)}
-								aria-label="Model"
+					<span className="header-chatbar">
+						{hasWorkspace && (
+							<>
+								<RepoBar
+									sessionId={session.id}
+									primaryRepo={session.repo || "tella-fusion"}
+									branch={session.branch}
+									initialAttached={session.attachedRepos || []}
+									variant="compact"
+								/>
+								{models.length > 0 && (
+									<span className="header-chatbar-sep" aria-hidden="true">
+										·
+									</span>
+								)}
+							</>
+						)}
+						{models.length > 0 && (
+							<span
+								className="header-model-select"
+								title={
+									session.source !== "backstage"
+										? "Set the model from the owning agent (/model in the Slack thread)"
+										: "Switch the model for this session"
+								}
 							>
-								<option value="">
-									{models.find((m) => m.id === defaultModel)?.label ||
-										prettyModel(defaultModel)}
-								</option>
-								{models
-									.filter((m) => m.id !== defaultModel)
-									.map((m) => (
-										<option key={m.id} value={m.id}>
-											{m.label}
+								<span className="header-model-label">
+									{models.find((m) => m.id === effectiveModel)?.label ||
+										prettyModel(effectiveModel)}
+								</span>
+								<IconChevronDown className="header-model-chevron" size={14} />
+								{session.source === "backstage" && (
+									<select
+										className="palette-select-overlay"
+										value={model}
+										onChange={(e) => handleModelChange(e.target.value)}
+										aria-label="Model"
+									>
+										<option value="">
+											{models.find((m) => m.id === defaultModel)?.label ||
+												prettyModel(defaultModel)}
 										</option>
-									))}
-							</select>
+										{models
+											.filter((m) => m.id !== defaultModel)
+											.map((m) => (
+												<option key={m.id} value={m.id}>
+													{m.label}
+												</option>
+											))}
+									</select>
+								)}
+							</span>
 						)}
 					</span>,
 					headerModelEl,

@@ -9,7 +9,13 @@ import {
   type AttachedRepo,
 } from "../lib/api";
 import { Menu } from "../ui/menu";
-import { IconCheck, IconPlus, IconX, IconChevronRight } from "./icons";
+import {
+  IconCheck,
+  IconPlus,
+  IconX,
+  IconChevronRight,
+  IconChevronDown,
+} from "./icons";
 import { RepoTile } from "./RepoTile";
 
 interface Props {
@@ -17,6 +23,16 @@ interface Props {
   primaryRepo: string;
   branch: string | null;
   initialAttached: AttachedRepo[];
+  /**
+   * How the trigger renders:
+   *  - "breadcrumb" (default): the desktop session-header pill, followed by a
+   *    "›" separator before the title.
+   *  - "compact": a tiny "[tile] repo ⌄" chip for the phone top-bar model line
+   *    (sits before the model selector).
+   *  - "menu-row": a full-width row styled like the ⋯ overflow menu's other
+   *    items, so the same switch/attach menu is reachable from there on a phone.
+   */
+  variant?: "breadcrumb" | "compact" | "menu-row";
 }
 
 /**
@@ -28,7 +44,13 @@ interface Props {
  * another (isolated worktree, same as the agent's michael-repos attach_repo
  * tool — both go through POST /api/sessions/:id/attach-repo).
  */
-export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Props) {
+export function RepoBar({
+  sessionId,
+  primaryRepo,
+  branch,
+  initialAttached,
+  variant = "breadcrumb",
+}: Props) {
   const [attached, setAttached] = useState<AttachedRepo[]>(initialAttached);
   const [primary, setPrimary] = useState(primaryRepo);
   const [repos, setRepos] = useState<RepoInfo[]>([]);
@@ -127,24 +149,59 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
   // Static (non-menu-item) row — current repo when it can't switch, attached rows.
   const staticRow = "flex items-center gap-2 rounded-md px-2.5 py-2 text-[13px] text-fg";
 
+  const trigger =
+    variant === "compact" ? (
+      // Phone top-bar model line: a tiny chip that sits before the model.
+      <Menu.Trigger
+        className="flex min-w-0 shrink-0 cursor-pointer items-center gap-1 rounded-md border-0 bg-transparent p-0 text-[11px] font-medium text-dim data-[popup-open]:text-fg"
+        title="Repo — tap to switch or attach another"
+      >
+        <RepoTile name={primary} size={14} />
+        <span className="max-w-[120px] truncate">{busy ?? primary}</span>
+        {attached.length > 0 && (
+          <span className="text-faint" title={attached.map((r) => r.repo).join(", ")}>
+            +{attached.length}
+          </span>
+        )}
+        <IconChevronDown size={12} className="shrink-0 opacity-60" />
+      </Menu.Trigger>
+    ) : variant === "menu-row" ? (
+      // ⋯ overflow menu row (phone): matches the other menu items' shape.
+      <Menu.Trigger
+        className="flex w-full cursor-pointer items-center gap-[7px] whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-3 py-[7px] text-[13px] font-medium text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+        title="Repo — switch or attach another"
+      >
+        <RepoTile name={primary} size={18} />
+        <span className="min-w-0 flex-1 truncate text-left">
+          {busy ?? primary}
+          {attached.length > 0 && (
+            <span className="text-faint"> +{attached.length}</span>
+          )}
+        </span>
+        <IconChevronRight size={16} className="shrink-0 text-faint" />
+      </Menu.Trigger>
+    ) : (
+      <Menu.Trigger
+        className="-mx-1.5 -my-1 flex min-w-0 shrink-0 cursor-pointer items-center gap-[7px] rounded-md border-0 bg-transparent px-1.5 py-1 text-[14px] font-medium text-fg hover:bg-hover data-[popup-open]:bg-hover"
+        title="Repo — click to switch or attach another"
+      >
+        <RepoTile name={primary} />
+        <span className="max-w-[180px] truncate">{busy ?? primary}</span>
+        {attached.length > 0 && (
+          <span
+            className="text-[12px] text-dim"
+            title={attached.map((r) => r.repo).join(", ")}
+          >
+            +{attached.length}
+          </span>
+        )}
+      </Menu.Trigger>
+    );
+
   return (
     <>
       <Menu.Root open={open} onOpenChange={setOpen}>
-        <Menu.Trigger
-          className="-mx-1.5 -my-1 flex min-w-0 shrink-0 cursor-pointer items-center gap-[7px] rounded-md border-0 bg-transparent px-1.5 py-1 text-[14px] font-medium text-fg hover:bg-hover data-[popup-open]:bg-hover"
-          title="Repo — click to switch or attach another"
-        >
-          <RepoTile name={primary} />
-          <span className="max-w-[180px] truncate">{busy ?? primary}</span>
-          {attached.length > 0 && (
-            <span
-              className="text-[12px] text-dim"
-              title={attached.map((r) => r.repo).join(", ")}
-            >
-              +{attached.length}
-            </span>
-          )}
-        </Menu.Trigger>
+        {trigger}
         <Menu.Popup align="start" sideOffset={6} className="min-w-[230px]">
           {!repos.length ? (
             <div className="px-2.5 py-2 text-[12px] text-faint">Loading…</div>
@@ -234,8 +291,11 @@ export function RepoBar({ sessionId, primaryRepo, branch, initialAttached }: Pro
           {error}
         </span>
       )}
-      {/* Breadcrumb separator between the repo and the session title. */}
-      <IconChevronRight size={18} className="shrink-0 text-faint" />
+      {/* Breadcrumb separator between the repo and the session title — only in
+          the desktop header, not the compact/menu-row phone variants. */}
+      {variant === "breadcrumb" && (
+        <IconChevronRight size={18} className="shrink-0 text-faint" />
+      )}
     </>
   );
 }

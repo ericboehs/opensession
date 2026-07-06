@@ -8488,6 +8488,21 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		color: var(--text-dim);
 		pointer-events: auto;
 	}
+	/* The compact "chat bar" line under the title: repo chip · model. Centered
+	   to sit under the centered title; each child stays tappable. */
+	.header-chatbar {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		max-width: 100%;
+		min-width: 0;
+		pointer-events: auto;
+	}
+	.header-chatbar-sep {
+		color: var(--text-faint);
+		flex-shrink: 0;
+	}
 	/* Model line as a tap target: a compact label + chevron with a full-bleed
 	   transparent native <select> over it (opens the OS picker). Kept tiny to
 	   read as a subtitle until tapped. */
@@ -8630,9 +8645,23 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		display: inline-flex;
 		align-items: center;
 	}
+	/* The ⋯ is the phone's main gateway to session actions, so give it a real
+	   iOS-style circular touch target (matching .mobile-search-btn) with a
+	   larger glyph — the tiny 18px text-only button read as an afterthought. */
 	.viewer-header-actions .btn-viewer-overflow {
-		padding-left: 7px;
-		padding-right: 7px;
+		width: 40px;
+		height: 40px;
+		min-height: 40px;
+		padding: 0;
+		font-size: 24px;
+		border-radius: 50%;
+		border-color: var(--border);
+		background: var(--bg-panel);
+		color: var(--accent);
+	}
+	.viewer-header-actions .btn-viewer-overflow.active {
+		background: var(--accent-soft);
+		border-color: var(--accent-soft);
 	}
 	/* Icon-only workspace toggle on phones — the label is kept on desktop */
 	.btn-panel-toggle-label {
