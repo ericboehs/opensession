@@ -633,7 +633,9 @@ a {
    desktop sidebar is collapsed (see the sidebar-collapsed rules below). */
 .sidebar-reopen {
 	position: absolute;
-	top: 9px;
+	/* Center the 34px control on the 48px header row so it lines up with the
+	   right-panel toggle across the bar ((48 - 34) / 2 = 7). */
+	top: 7px;
 	left: 9px;
 	z-index: 20;
 	display: none;

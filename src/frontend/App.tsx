@@ -24,7 +24,7 @@ import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdatePill } from "./components/UpdatePill";
-import { IconSearch } from "./components/icons";
+import { IconSearch, IconSidebarLeft } from "./components/icons";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useBackSwipe } from "./hooks/useBackSwipe";
@@ -916,28 +916,9 @@ function App() {
 
 	// The "toggle left sidebar" panel glyph — a framed rectangle with a divider
 	// marking the collapsible left column. Reused by the brand-row collapse button
-	// and the floating re-open control.
-	const panelIcon = (
-		<svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-			<rect
-				x="1.75"
-				y="2.75"
-				width="12.5"
-				height="10.5"
-				rx="2"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			/>
-			<line
-				x1="6.25"
-				y1="2.75"
-				x2="6.25"
-				y2="13.25"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			/>
-		</svg>
-	);
+	// and the floating re-open control. Size 24 to match the right-panel toggle
+	// (IconSidebarRight) in the session header — they read as a mirrored pair.
+	const panelIcon = <IconSidebarLeft size={24} />;
 
 	return (
 		<UserGate>
