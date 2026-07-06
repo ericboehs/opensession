@@ -5594,6 +5594,34 @@ body.resizing-x .panel-resize::after {
 	}
 }
 
+/* Compact top-bar variant, docked next to the brand logo on phones. */
+.update-pill {
+	display: inline-flex;
+	align-items: center;
+	flex-shrink: 0;
+	height: 28px;
+	padding: 0 13px;
+	border-radius: 999px;
+	corner-shape: squircle;
+	border: none;
+	background: var(--red);
+	color: #fff;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1;
+	cursor: pointer;
+	transition: background 0.12s ease;
+	animation: update-toast-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.update-pill:hover {
+	background: color-mix(in srgb, var(--red) 85%, black);
+}
+@media (prefers-reduced-motion: reduce) {
+	.update-pill {
+		animation: none;
+	}
+}
+
 /* Restart overlay (covers the UI while the server redeploys) */
 
 .restart-overlay {

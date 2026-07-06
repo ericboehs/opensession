@@ -961,7 +961,12 @@ function App() {
 								<span>Back</span>
 							</button>
 						) : (
-							brand
+							<>
+								{brand}
+								{/* Update nudge lives in the top bar on phones, right after
+								    the brand logo (desktop keeps the sidebar-bottom toast). */}
+								<UpdatePill addHandler={addHandler} variant="pill" />
+							</>
 						)}
 					</div>
 					{/* Centered page title on pushed pages, iOS-sheet style. Sessions
@@ -1255,7 +1260,9 @@ function App() {
 								refresh();
 							}}
 						/>
-						<UpdatePill addHandler={addHandler} />
+						{/* Desktop: docked toast at the sidebar bottom. On phones the
+						    update nudge moves to the top bar (next to the brand). */}
+						{!isPhone && <UpdatePill addHandler={addHandler} />}
 						{/* Drag the right edge to resize (desktop only; hidden on mobile). */}
 						<div
 							className="sidebar-resize"
