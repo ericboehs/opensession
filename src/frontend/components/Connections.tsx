@@ -1,4 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { Menu } from "../ui/menu";
+import { cn } from "../ui/cn";
+import { IconDotsHorizontal, IconTrash, IconSliders, IconHistory, IconPlus } from "./icons";
 
 interface McpConnection {
   name: string;
@@ -22,27 +25,115 @@ interface ConnectionsData {
   agents: Record<string, AgentHealth>;
 }
 
-const STATUS_META: Record<McpConnection["status"], { label: string; tone: string }> = {
-  connected: { label: "Connected", tone: "green" },
-  ready: { label: "Ready", tone: "green" },
-  "needs-env": { label: "Needs env", tone: "yellow" },
-  unreachable: { label: "Unreachable", tone: "red" },
-  missing: { label: "Missing", tone: "red" },
+const STATUS_META: Record<McpConnection["status"], { label: string; dot: string; bad?: boolean }> = {
+  connected: { label: "Connected", dot: "var(--green)" },
+  ready: { label: "Ready", dot: "var(--green)" },
+  "needs-env": { label: "Needs setup", dot: "var(--yellow)", bad: true },
+  unreachable: { label: "Unreachable", dot: "var(--red)", bad: true },
+  missing: { label: "Missing", dot: "var(--red)", bad: true },
 };
 
 const MCP_BLURBS: Record<string, string> = {
-  linear: "Issues & projects — sessions can read and update Linear",
+  linear: "Issues & projects — read and update Linear",
   plain: "Customer support threads from Plain",
   sentry: "Errors and performance issues",
   workos: "User & organization admin",
   tinybird: "Analytics queries over product events",
+  stripe: "Billing, subscriptions & refunds",
+  amplitude: "Product analytics events",
+  grafana: "Dashboards, logs & metrics",
+  incident: "incident.io — incidents & on-call",
+  slack: "Post & read Slack messages",
+  ahrefs: "SEO, keywords & backlink data",
+  github: "Repos, issues & pull requests",
+  circle: "Community & support workspace",
+  tellainternalsupportmcp: "Tella's internal support investigation tools",
 };
 
 const AGENT_BLURBS: Record<string, string> = {
   slack: "Mentions & worktree channels in Slack",
   linear: "Delegated Linear issues become sessions",
   plain: "Support escalations from Plain",
+  stripe: "Inbound billing events",
+  "grafana-poller": "Polls Grafana alerts into sessions",
+  github: "Inbound repository events",
 };
+
+/** Brand tile colors, keyed by lowercased server/agent name. */
+const BRANDS: Record<string, { bg: string; fg?: string }> = {
+  slack: { bg: "#4a154b" },
+  linear: { bg: "#5e6ad2" },
+  plain: { bg: "#0d9488" },
+  sentry: { bg: "#362d59" },
+  workos: { bg: "#6363f1" },
+  tinybird: { bg: "#27f795", fg: "#08080a" },
+  stripe: { bg: "#635bff" },
+  amplitude: { bg: "#2d6ff7" },
+  grafana: { bg: "#f46800" },
+  "grafana-poller": { bg: "#f46800" },
+  github: { bg: "#24292e" },
+  incident: { bg: "#f25533" },
+  ahrefs: { bg: "#ff6b00" },
+  circle: { bg: "#6c47ff" },
+  tellainternalsupportmcp: { bg: "#111827" },
+};
+
+/** Pretty display names for the handful that don't title-case cleanly. */
+const DISPLAY_NAMES: Record<string, string> = {
+  workos: "WorkOS",
+  github: "GitHub",
+  "grafana-poller": "Grafana Poller",
+  tellainternalsupportmcp: "Tella Support",
+  incident: "incident.io",
+};
+
+function displayName(name: string): string {
+  return DISPLAY_NAMES[name] || name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function IconTile({ name, size = 34 }: { name: string; size?: number }) {
+  const brand = BRANDS[name.toLowerCase()];
+  return (
+    <span
+      className="flex flex-shrink-0 items-center justify-center rounded-[9px] font-semibold"
+      style={{
+        width: size,
+        height: size,
+        fontSize: size * 0.42,
+        background: brand?.bg || "var(--bg-active)",
+        color: brand?.fg || (brand ? "#fff" : "var(--text-dim)"),
+      }}
+    >
+      {name.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+function LockIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="5" y="10.5" width="14" height="9" rx="2" fill="currentColor" opacity="0.9" />
+      <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" stroke="currentColor" strokeWidth="1.8" fill="none" />
+    </svg>
+  );
+}
+
+function StatusChip({ label, dot }: { label: string; dot: string }) {
+  return (
+    <span className="flex flex-shrink-0 items-center gap-1.5 text-xs text-dim">
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: dot }} />
+      {label}
+    </span>
+  );
+}
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2.5 mt-7 text-xs font-bold uppercase tracking-[0.05em] text-faint">
+      {children}
+    </div>
+  );
+}
 
 export function Connections() {
   const [data, setData] = useState<ConnectionsData | null>(null);
@@ -116,12 +207,21 @@ export function Connections() {
             What Michael is wired into — inbound agents and the MCP tools every session can use.
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn-small" onClick={() => load(true)} disabled={refreshing}>
-            {refreshing ? "Checking…" : "↻ Re-check"}
+        <div className="flex flex-shrink-0 items-center gap-2">
+          <button
+            className="flex items-center gap-1.5 rounded-md border border-line-strong px-3 py-2 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+            onClick={() => load(true)}
+            disabled={refreshing}
+          >
+            <IconHistory size={16} className={refreshing ? "animate-spin" : ""} />
+            {refreshing ? "Checking…" : "Re-check"}
           </button>
-          <button className="btn-new-session" style={{ marginTop: 0, padding: "6px 14px" }} onClick={() => setShowAdd(true)}>
-            + Add MCP server
+          <button
+            className="flex items-center gap-1 rounded-md bg-accent px-3.5 py-2 text-[13px] font-medium text-white transition-[filter] hover:brightness-110"
+            onClick={() => setShowAdd(true)}
+          >
+            <IconPlus size={16} />
+            Add MCP server
           </button>
         </div>
       </div>
@@ -144,77 +244,102 @@ export function Connections() {
         <div className="loading">Checking connections…</div>
       ) : (
         <>
-          <div className="conn-section-title">Agents — how work reaches Michael</div>
-          <div className="conn-grid">
+          <SectionHeading>Agents — how work reaches Michael</SectionHeading>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
             {Object.entries(data.agents).map(([name, health]) => {
               const ok = health?.status === "operational";
+              const count = typeof health?.activeSessions === "number" ? health.activeSessions : null;
               return (
-                <div key={name} className="conn-card">
-                  <div className="conn-card-top">
-                    <span className={`conn-logo conn-logo-${name}`}>{name.charAt(0).toUpperCase()}</span>
-                    <span className="conn-name">{name}</span>
-                    <span className={`status-pill status-${ok ? "green" : "red"}`}>
-                      {ok ? "Operational" : String(health?.status || "down")}
+                <div
+                  key={name}
+                  className="flex flex-col gap-2 rounded-lg border border-line bg-panel p-3.5"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <IconTile name={name} size={30} />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
+                      {displayName(name)}
                     </span>
+                    <StatusChip
+                      label={ok ? "Operational" : String(health?.status || "down")}
+                      dot={ok ? "var(--green)" : "var(--red)"}
+                    />
                   </div>
-                  <div className="conn-blurb">{AGENT_BLURBS[name] || "Inbound agent"}</div>
-                  {typeof health?.activeSessions === "number" && (
-                    <div className="conn-detail">{health.activeSessions} active session{health.activeSessions === 1 ? "" : "s"}</div>
+                  <div className="text-xs leading-snug text-dim">
+                    {AGENT_BLURBS[name] || "Inbound agent"}
+                  </div>
+                  {count !== null && (
+                    <div className="text-xs text-faint">
+                      {count.toLocaleString()} active session{count === 1 ? "" : "s"}
+                    </div>
                   )}
                 </div>
               );
             })}
           </div>
 
-          <div className="conn-section-title">MCP servers — tools inside every session</div>
-          <div className="conn-grid">
-            {data.mcpServers.map((s) => {
+          <SectionHeading>MCP servers — tools inside every session</SectionHeading>
+          <div className="overflow-hidden rounded-lg border border-line bg-panel">
+            {data.mcpServers.map((s, i) => {
               const meta = STATUS_META[s.status];
+              const restricted = !!s.allowedUsers?.length;
               return (
-                <div key={s.name} className="conn-card">
-                  <div className="conn-card-top">
-                    <span className={`conn-logo conn-logo-${s.name}`}>{s.name.charAt(0).toUpperCase()}</span>
-                    <span className="conn-name">{s.name}</span>
-                    <span className={`status-pill status-${meta.tone}`} title={s.detail}>
-                      {meta.label}
-                    </span>
-                  </div>
-                  <div className="conn-blurb">{MCP_BLURBS[s.name] || "MCP server"}</div>
-                  <div className="conn-detail">
-                    <span className="conn-transport">{s.transport}</span>
-                    <span className="conn-target" title={s.target}>{s.target}</span>
-                  </div>
-                  <div className="conn-detail">
-                    {s.allowedUsers?.length ? (
-                      <span
-                        className="conn-transport"
-                        title={`Only these people's sessions get this server: ${s.allowedUsers.join(", ")}`}
-                      >
-                        🔒 {s.allowedUsers.join(", ")}
+                <div
+                  key={s.name}
+                  className={cn(
+                    "group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-hover/50",
+                    i > 0 && "border-t border-line",
+                  )}
+                >
+                  <IconTile name={s.name} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-fg">
+                        {displayName(s.name)}
                       </span>
-                    ) : (
-                      <span className="conn-target">Available to everyone</span>
+                      {restricted && (
+                        <span
+                          className="flex flex-shrink-0 items-center gap-1 rounded-full bg-active px-1.5 py-0.5 text-[10.5px] font-medium text-dim"
+                          title={`Only these people's sessions get this server: ${s.allowedUsers!.join(", ")}`}
+                        >
+                          <LockIcon /> {s.allowedUsers!.join(", ")}
+                        </span>
+                      )}
+                    </div>
+                    <div className="truncate text-xs text-dim">
+                      {MCP_BLURBS[s.name] || "MCP server"}
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-faint">
+                      <span className="rounded bg-active px-1.5 py-px font-mono">{s.transport}</span>
+                      <span className="truncate font-mono" title={s.target}>{s.target}</span>
+                    </div>
+                    {meta.bad && s.detail && (
+                      <div className="mt-1 truncate font-mono text-[11px] text-red" title={s.detail}>
+                        {s.detail}
+                      </div>
                     )}
                   </div>
-                  {s.status !== "connected" && s.status !== "ready" && s.detail && (
-                    <div className="conn-error">{s.detail}</div>
-                  )}
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      className="conn-remove"
-                      onClick={() => handleRestrict(s)}
-                      title="Restrict this MCP server to specific users"
+                  <StatusChip label={meta.label} dot={meta.dot} />
+                  <Menu.Root>
+                    <Menu.Trigger
+                      className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-faint opacity-0 transition-[color,opacity,background] hover:bg-active hover:text-fg group-hover:opacity-100 data-[popup-open]:bg-active data-[popup-open]:text-fg data-[popup-open]:opacity-100"
+                      aria-label={`Manage ${s.name}`}
                     >
-                      {s.allowedUsers?.length ? "Edit access" : "Restrict"}
-                    </button>
-                    <button
-                      className="conn-remove"
-                      onClick={() => handleRemove(s.name)}
-                      title="Remove this MCP server"
-                    >
-                      Remove
-                    </button>
-                  </div>
+                      <IconDotsHorizontal size={18} />
+                    </Menu.Trigger>
+                    <Menu.Popup align="end" sideOffset={4}>
+                      <Menu.Item onClick={() => handleRestrict(s)}>
+                        <IconSliders size={16} className="text-faint" />
+                        {restricted ? "Edit access" : "Restrict access"}
+                      </Menu.Item>
+                      <Menu.Item
+                        onClick={() => handleRemove(s.name)}
+                        className="text-red data-[highlighted]:bg-red-soft"
+                      >
+                        <IconTrash size={16} />
+                        Remove server
+                      </Menu.Item>
+                    </Menu.Popup>
+                  </Menu.Root>
                 </div>
               );
             })}
@@ -298,7 +423,7 @@ function PlainRouter() {
 
   return (
     <>
-      <div className="conn-section-title">Plain triage router — spam gate + model routing</div>
+      <SectionHeading>Plain triage router — spam gate + model routing</SectionHeading>
       {error && (
         <div className="form-error" onClick={() => setError(null)}>{error}</div>
       )}
