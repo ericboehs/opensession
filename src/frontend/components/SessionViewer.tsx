@@ -33,6 +33,7 @@ import {
 	type ClaudeAccountOption,
 } from "../lib/api";
 import { Composer } from "./Composer";
+import { UsageMeter } from "./UsageMeter";
 import { SchedulePromptButton } from "./SchedulePrompt";
 import type { FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
@@ -437,6 +438,9 @@ export function SessionViewer({
 	// Pinnable Claude subscriptions + this session's pin ("" = auto pool).
 	const [accounts, setAccounts] = useState<ClaudeAccountOption[]>([]);
 	const [accountId, setAccountId] = useState(session.accountId || "");
+	// Live token/cost accounting — seeded from the session, updated per run via
+	// the `usage_update` broadcast. Powers the composer cost/context pill.
+	const [usage, setUsage] = useState(session.usage);
 	// Reasoning effort — a composer control mirroring the new-session palette.
 	// Threaded through to the runner (forward-compatible; not yet enforced).
 	const [effort, setEffort] = useState("high");
@@ -467,6 +471,9 @@ export function SessionViewer({
 	useEffect(() => {
 		setAccountId(session.accountId || "");
 	}, [session.id, session.accountId]);
+	useEffect(() => {
+		setUsage(session.usage);
+	}, [session.id, session.usage]);
 
 	// Keep the pin star in sync with the store (changes can come from the tab bar
 	// or the Home screen) and reset when switching sessions.
@@ -717,6 +724,10 @@ export function SessionViewer({
 					// notice in the transcript carries the human-readable detail.
 					if (msg.sessionId !== session.id) break;
 					setAccountId(msg.accountId || "");
+					break;
+				case "usage_update":
+					if (msg.sessionId !== session.id) break;
+					setUsage(msg.usage);
 					break;
 				case "notice":
 					setEntries((prev) => [
@@ -2277,6 +2288,11 @@ export function SessionViewer({
 											: undefined
 									}
 								/>
+								{usage && usage.turns > 0 && (
+									<div className="viewer-usage-row">
+										<UsageMeter usage={usage} />
+									</div>
+								)}
 							</>
 						)}
 					</div>

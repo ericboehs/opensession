@@ -13,7 +13,7 @@ import {
 import { cleanPlainToolInput } from "./shared/note-style";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
-import { getDefaultModel } from "./models";
+import { getDefaultModel, hasPricing, priceUsageUsd } from "./models";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
@@ -21,6 +21,24 @@ const CLAUDE_DIR = `${HOME}/.claude`;
 const CLAUDE_CREDENTIALS_PATH = `${CLAUDE_DIR}/.credentials.json`;
 const CLAUDE_ACCOUNTS_DIR = `${CLAUDE_DIR}/accounts`;
 const CLAUDE_ACTIVE_ACCOUNT_PATH = `${CLAUDE_ACCOUNTS_DIR}/.active`;
+
+/**
+ * Token/cost accounting for a single run (accumulated across all turns in the
+ * run — steers and background-task follow-ups included), attached to the
+ * terminal `done` event. `costUsd` is authoritative for Claude (the SDK's
+ * `total_cost_usd`) and computed from the rate table for Codex (`costApproximate`
+ * then true). `contextTokens` is the last turn's full prompt size (input + cache
+ * read + cache creation) — the live "how full is the context window" figure.
+ */
+export interface TurnUsage {
+  costUsd?: number;
+  costApproximate?: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  contextTokens: number;
+}
 
 export interface StreamEvent {
   type:
@@ -57,6 +75,8 @@ export interface StreamEvent {
   provider?: "claude" | "codex";
   /** Effective model for the run (set on init/done). */
   model?: string;
+  /** Cumulative token/cost accounting for the run (set on the terminal done). */
+  usage?: TurnUsage;
   /**
    * Set on a terminal done/error when the run died on usage limits with no
    * account left to rotate to — the dispatcher's cue to try a fallback model.
@@ -567,6 +587,18 @@ export async function* runClaude(opts: {
   // sha256 + bounded snippet — the full text lives in the session jsonl.
   const turnId = crypto.randomUUID();
   let resultSessionId = sessionId || "";
+  // Per-run token/cost accumulators, folded across every result message this run
+  // produces (a run spans multiple turns via steer-release / bg-task holds).
+  // Attached to the terminal `done`. `runContextTokens` tracks the LAST turn's
+  // full prompt size (the current context-window fill), not a sum.
+  const runUsage: TurnUsage = {
+    costUsd: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    contextTokens: 0,
+  };
   // Fork happens once, on the first attempt; after the SDK hands back the new
   // forked session id (init) we just resume that id on any rotation retry.
   let forkConsumed = false;
@@ -1192,6 +1224,36 @@ export async function* runClaude(opts: {
           ...summarizeText(resultText),
         });
 
+        // Fold this turn into the run's cumulative usage. We price from the
+        // published API rate table (input/output/cache split — matching the
+        // billing model), NOT the SDK's total_cost_usd: subscription (OAuth)
+        // runs report total_cost_usd = 0, but the whole point here is the
+        // API-equivalent cost that usage-credits will charge. Fall back to the
+        // SDK figure only for unpriced (passthrough) models. Context size = this
+        // turn's full prompt (input + both cache buckets), overwritten each turn
+        // so it reflects the current window fill, not a running sum.
+        const inTok = rm.usage?.input_tokens || 0;
+        const outTok = rm.usage?.output_tokens || 0;
+        const cacheReadTok = rm.usage?.cache_read_input_tokens || 0;
+        const cacheCreateTok = rm.usage?.cache_creation_input_tokens || 0;
+        runUsage.inputTokens += inTok;
+        runUsage.outputTokens += outTok;
+        runUsage.cacheReadTokens += cacheReadTok;
+        runUsage.cacheCreationTokens += cacheCreateTok;
+        const turnCost = hasPricing(model)
+          ? priceUsageUsd(model, {
+              input: inTok,
+              output: outTok,
+              cacheRead: cacheReadTok,
+              cacheWrite: cacheCreateTok,
+            })
+          : typeof rm.total_cost_usd === "number"
+            ? rm.total_cost_usd
+            : undefined;
+        if (typeof turnCost === "number")
+          runUsage.costUsd = (runUsage.costUsd || 0) + turnCost;
+        runUsage.contextTokens = inTok + cacheReadTok + cacheCreateTok;
+
         let limitExhausted = false;
         if (isClaudeUsageLimitError(resultText, rm.subtype !== "success")) {
           const nextAccount = rotateAfterLimit();
@@ -1252,6 +1314,7 @@ export async function* runClaude(opts: {
           provider: "claude",
           model,
           usageLimitExhausted: limitExhausted || undefined,
+          usage: runUsage,
         };
         return;
       }

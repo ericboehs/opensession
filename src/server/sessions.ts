@@ -288,6 +288,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       codexThreadId: data.codexThreadId,
       lastEngineProvider: data.lastEngineProvider,
       modelHistory: data.modelHistory,
+      usage: data.usage,
       goal: data.goal,
       goalId: data.goalId,
       lastRunError: data.lastRunError,

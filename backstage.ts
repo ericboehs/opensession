@@ -102,6 +102,7 @@ import {
 	resolveModel,
 	providerFor,
 	modelLabel,
+	contextWindowFor,
 	formatModelList,
 	DEFAULT_FALLBACK_MODEL,
 	interactiveFallbackModel,
@@ -288,7 +289,9 @@ import type {
 	UnifiedSession,
 	BackstageSessionFile,
 	AttachedRepo,
+	SessionUsage,
 } from "./src/server/types";
+import type { TurnUsage } from "./src/server/claude-runner";
 
 const PORT = parseInt(process.env.PORT || "3850");
 const HOST = process.env.HOST || "127.0.0.1";
@@ -1919,6 +1922,45 @@ function watchExternalRunAndDrain(sessionId: string): void {
 	}, 3000);
 }
 
+/**
+ * Fold a completed run's usage into a session's cumulative totals. Cost and
+ * token counts accumulate; context size (contextTokens/contextWindow) reflects
+ * the latest turn rather than a sum — it's the current window fill, not lifetime
+ * throughput. `costApproximate` sticks once any Codex run contributes a
+ * table-priced (non-authoritative) figure.
+ */
+function foldSessionUsage(
+	prev: SessionUsage | undefined,
+	turn: TurnUsage,
+	model?: string | null,
+): SessionUsage {
+	const base: SessionUsage = prev ?? {
+		costUsd: 0,
+		inputTokens: 0,
+		outputTokens: 0,
+		cacheReadTokens: 0,
+		cacheCreationTokens: 0,
+		contextTokens: 0,
+		contextWindow: 0,
+		turns: 0,
+		updatedAt: "",
+	};
+	return {
+		costUsd: base.costUsd + (turn.costUsd || 0),
+		...(base.costApproximate || turn.costApproximate
+			? { costApproximate: true }
+			: {}),
+		inputTokens: base.inputTokens + turn.inputTokens,
+		outputTokens: base.outputTokens + turn.outputTokens,
+		cacheReadTokens: base.cacheReadTokens + turn.cacheReadTokens,
+		cacheCreationTokens: base.cacheCreationTokens + turn.cacheCreationTokens,
+		contextTokens: turn.contextTokens || base.contextTokens,
+		contextWindow: contextWindowFor(model) || base.contextWindow,
+		turns: base.turns + 1,
+		updatedAt: new Date().toISOString(),
+	};
+}
+
 /** Run a prompt against an existing session, broadcasting to all watchers. */
 async function runSessionPrompt(
 	sessionId: string,
@@ -1957,6 +1999,9 @@ async function runSessionPromptInner(
 	const provider = providerFor(session.model);
 	let effectiveProvider = provider;
 	let effectiveModel = session.model;
+	// Cumulative token/cost accounting — seeded from the session's stored total,
+	// folded per completed run, persisted + broadcast live (see the `done` case).
+	let latestUsage: SessionUsage | undefined = session.usage;
 	const engineSessionId =
 		provider === "codex" ? session.codexThreadId : session.claudeSessionId;
 	// A claude session with no engine id yet is a *fresh* chat (e.g. a new sibling
@@ -2275,6 +2320,20 @@ async function runSessionPromptInner(
 				// still needs a human, so treat it as a failure.
 				if (event.usageLimitExhausted)
 					runFailure = event.result || "Usage limit reached on every account";
+				// Fold this run's token/cost into the session total and push it live
+				// to viewers (persisted below with the rest of the session patch).
+				if (event.usage) {
+					latestUsage = foldSessionUsage(
+						latestUsage,
+						event.usage,
+						event.model || effectiveModel,
+					);
+					broadcastToSession(sessionId, {
+						type: "usage_update",
+						sessionId,
+						usage: latestUsage,
+					});
+				}
 				sessionsCache = null;
 				break;
 			case "error":
@@ -2313,6 +2372,7 @@ async function runSessionPromptInner(
 				...engineSessionPatch(effectiveProvider, finalSessionId),
 				lastEngineProvider: effectiveProvider,
 				...(effectiveModel ? { model: effectiveModel } : {}),
+				...(latestUsage ? { usage: latestUsage } : {}),
 			},
 		);
 	}
@@ -6739,6 +6799,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								BackstageSessionFile["modelHistory"]
 							> = [];
 							let persisted = false;
+							// Cumulative token/cost for this new session's opening run.
+							let latestUsage: SessionUsage | undefined;
 							// Terminal failure the opening run died on — recorded after the
 							// loop so the fresh session surfaces as "Needs input".
 							let runFailure: string | null = null;
@@ -6949,6 +7011,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									if (event.usageLimitExhausted)
 										runFailure =
 											event.result || "Usage limit reached on every account";
+									if (event.usage) {
+										latestUsage = foldSessionUsage(
+											latestUsage,
+											event.usage,
+											event.model || effectiveModel,
+										);
+										// emit (not a bare broadcast) so it also reaches the
+										// creator's socket in the window before they watch.
+										emit({ type: "usage_update", usage: latestUsage });
+									}
 								}
 								if (event.type === "error") {
 									runFailure = event.content || "Run failed";
@@ -6972,6 +7044,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										...(modelHistory.length ? { modelHistory } : {}),
 									},
 								);
+								// Persist opening-run usage regardless of which branch ran
+								// above (persist() writes the base file without it).
+								if (latestUsage)
+									touchBackstageSession(bksId, { usage: latestUsage });
 							recordRunOutcome(bksId, runFailure);
 							} finally {
 								unmarkSessionStarting(bksId);
@@ -7269,6 +7345,7 @@ registerSessionControl({
 		let effectiveProvider = providerFor(effectiveModel);
 		const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
 		let persisted = false;
+		let latestUsage: SessionUsage | undefined;
 		// Terminal failure the opening run died on — recorded after the loop so
 		// the fresh session surfaces as "Needs input".
 		let runFailure: string | null = null;
@@ -7416,6 +7493,18 @@ registerSessionControl({
 						if (event.usageLimitExhausted)
 							runFailure =
 								event.result || "Usage limit reached on every account";
+						if (event.usage) {
+							latestUsage = foldSessionUsage(
+								latestUsage,
+								event.usage,
+								event.model || effectiveModel,
+							);
+							broadcastToSession(bksId, {
+								type: "usage_update",
+								sessionId: bksId,
+								usage: latestUsage,
+							});
+						}
 					}
 					if (event.type === "error") {
 						runFailure = event.content || "Run failed";
@@ -7435,6 +7524,8 @@ registerSessionControl({
 							...(modelHistory.length ? { modelHistory } : {}),
 						},
 					);
+				if (latestUsage)
+					touchBackstageSession(bksId, { usage: latestUsage });
 				recordRunOutcome(bksId, runFailure);
 				broadcastToSession(bksId, { type: "stream_done", sessionId: bksId });
 				broadcastToSession(bksId, {

@@ -6,6 +6,32 @@ export interface SlackChannelLink {
   name: string;
 }
 
+/**
+ * Cumulative token/cost accounting for a chat session, updated after every run.
+ * Cost is the API-equivalent USD spend (authoritative `total_cost_usd` from the
+ * Claude SDK; computed from the rate table for Codex). `contextTokens` is the
+ * size of the most recent turn's full prompt (input + cache read + cache
+ * creation) — the live "how full is the window" number, shown against
+ * `contextWindow`. `costApproximate` is set when any run in the session priced
+ * cost from the table rather than an authoritative SDK figure (i.e. Codex).
+ */
+export interface SessionUsage {
+  costUsd: number;
+  costApproximate?: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  /** Most recent turn's full prompt size (context currently in use). */
+  contextTokens: number;
+  /** Token ceiling of the model that produced `contextTokens`. */
+  contextWindow: number;
+  /** Number of completed turns folded into these totals. */
+  turns: number;
+  /** ISO time of the last update. */
+  updatedAt: string;
+}
+
 export interface UnifiedSession {
   id: string;
   claudeSessionId: string | null;
@@ -78,6 +104,8 @@ export interface UnifiedSession {
   /** /model switches, newest last — rendered as dividers in the conversation.
    *  `from` is the model in effect before the switch (for a "X → Y" divider). */
   modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
+  /** Cumulative token/cost accounting for this session's runs. */
+  usage?: SessionUsage;
   goal?: string;
   /** Goal record id, when this session is driven by a Goal (src/server/goals.ts). */
   goalId?: string;
@@ -192,6 +220,7 @@ export interface BackstageSessionFile {
    *  the incoming engine a transcript bridge so context carries over. */
   lastEngineProvider?: "claude" | "codex";
   modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
+  usage?: SessionUsage; // cumulative token/cost accounting for this session's runs
   archived?: boolean;
   archivedAt?: string;
   archivedReason?: "manual" | "idle" | "auto" | "plain";

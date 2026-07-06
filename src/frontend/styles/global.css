@@ -6652,6 +6652,15 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	margin: 0 auto;
 }
 
+/* Live cost/context pill, aligned under the composer's right edge. */
+.viewer-usage-row {
+	display: flex;
+	justify-content: flex-end;
+	max-width: var(--chat-col);
+	margin: 4px auto 0;
+	padding: 0 2px;
+}
+
 .prompt-input {
 	flex: 1;
 	background: var(--bg-panel);

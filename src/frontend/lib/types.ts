@@ -49,6 +49,26 @@ export interface SlackMessage {
 	isBot: boolean;
 }
 
+/**
+ * Cumulative token/cost accounting for a session (mirror of the server type).
+ * Cost is the API-equivalent USD spend — authoritative for Claude runs, an
+ * approximation for Codex (`costApproximate`). `contextTokens` is the most
+ * recent turn's full prompt size, shown against `contextWindow` as the live
+ * "how full is the context window" gauge.
+ */
+export interface SessionUsage {
+	costUsd: number;
+	costApproximate?: boolean;
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheCreationTokens: number;
+	contextTokens: number;
+	contextWindow: number;
+	turns: number;
+	updatedAt: string;
+}
+
 export interface UnifiedSession {
 	id: string;
 	claudeSessionId: string | null;
@@ -114,6 +134,8 @@ export interface UnifiedSession {
 	accountId?: string;
 	codexThreadId?: string;
 	modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
+	/** Cumulative token/cost accounting for this session's runs. */
+	usage?: SessionUsage;
 	linearIssue?: { identifier: string; title: string; url?: string };
 	slackThread?: { channel: string; threadTs: string };
 	/** A Slack channel linked to this session for in-context discussion. */
@@ -369,6 +391,7 @@ export type WSServerMessage =
 	| { type: "stream_tool_use"; sessionId?: string; entry: TranscriptEntry }
 	| { type: "stream_tool_result"; sessionId?: string; entry: TranscriptEntry }
 	| { type: "stream_done"; sessionId?: string }
+	| { type: "usage_update"; sessionId: string; usage: SessionUsage }
 	| {
 			type: "session_created";
 			id: string;

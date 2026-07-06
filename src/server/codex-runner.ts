@@ -39,7 +39,7 @@ import { wrapContext } from "./prompt-context";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { extractBackstageVideos } from "./jsonl-parser";
-import { markCodexModelExhausted, resolveConcreteModel } from "./models";
+import { markCodexModelExhausted, priceUsageUsd, resolveConcreteModel } from "./models";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
@@ -669,6 +669,9 @@ export async function* runCodex(opts: {
           }
 
           if (event.type === "turn.completed") {
+            const inTok = event.usage?.input_tokens || 0;
+            const outTok = event.usage?.output_tokens || 0;
+            const cacheReadTok = event.usage?.cached_input_tokens || 0;
             turnEvent({
               direction: "out",
               kind: "result",
@@ -685,6 +688,20 @@ export async function* runCodex(opts: {
               result: finalResponse || "Done! (no text output)",
               provider: "codex",
               model,
+              // Codex reports no cost — price from the rate table (approximate).
+              usage: {
+                costUsd: priceUsageUsd(model, {
+                  input: inTok,
+                  output: outTok,
+                  cacheRead: cacheReadTok,
+                }),
+                costApproximate: true,
+                inputTokens: inTok,
+                outputTokens: outTok,
+                cacheReadTokens: cacheReadTok,
+                cacheCreationTokens: 0,
+                contextTokens: inTok + cacheReadTok,
+              },
             };
             return;
           }
