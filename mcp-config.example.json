@@ -24,6 +24,10 @@
     "tinybird": {
       "type": "http",
       "url": "https://mcp.tinybird.co?token=<your-tinybird-token>"
+    },
+    "circle": {
+      "type": "http",
+      "url": "https://app.circle.so/api/mcp"
     }
   }
 }
