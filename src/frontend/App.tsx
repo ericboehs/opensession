@@ -15,6 +15,7 @@ import { Actions } from "./components/Actions";
 import { Notes, type NotesSelection } from "./components/Notes";
 import { Archived } from "./components/Archived";
 import { Reviews } from "./components/Reviews";
+import { TeamChat } from "./components/TeamChat";
 import { PrPreview } from "./components/PrPreview";
 import { SupportPreview } from "./components/SupportPreview";
 import { UserGate, getCurrentUser } from "./components/UserPicker";
@@ -41,6 +42,7 @@ import {
 	updateProjectApi,
 	deleteProjectApi,
 	newChatApi,
+	fetchChatMessagesApi,
 	type NoteMeta,
 } from "./lib/api";
 import type { Project } from "./lib/types";
@@ -84,7 +86,9 @@ type Route =
 	| { view: "notes"; sel: NotesSelection }
 	| { view: "settings"; section?: SettingsSectionKey }
 	| { view: "archived" }
-	| { view: "catchup" };
+	| { view: "catchup" }
+	// Watercooler — the team-wide native chat room (not Slack).
+	| { view: "watercooler" };
 
 // Route views that render as a tool section inside the Settings surface.
 const TOOL_VIEWS = [
@@ -159,6 +163,7 @@ function parseRoute(pathname: string): Route {
 	if (pathname === "/backstage/archived") return { view: "archived" };
 	if (pathname === "/backstage/catchup") return { view: "catchup" };
 	if (pathname === "/backstage/pr-tinder") return { view: "prtinder" };
+	if (pathname === "/backstage/watercooler") return { view: "watercooler" };
 	const reviewsMatch = pathname.match(/^\/backstage\/reviews(?:\/(.+))?$/);
 	if (reviewsMatch)
 		return {
@@ -221,6 +226,8 @@ function routePath(route: Route): string {
 			return "/backstage/catchup";
 		case "prtinder":
 			return "/backstage/pr-tinder";
+		case "watercooler":
+			return "/backstage/watercooler";
 		case "reviews":
 			return route.id
 				? `/backstage/reviews/${encodeURIComponent(route.id)}`
@@ -275,6 +282,23 @@ function App() {
 		},
 		[],
 	);
+	// Watercooler unread badge: messages newer than the locally-stored
+	// last-read stamp (own messages never count). Live chat_message events bump
+	// it; having the Watercooler open marks read continuously.
+	const [chatUnread, setChatUnread] = useState(0);
+	useEffect(() => {
+		fetchChatMessagesApi("watercooler")
+			.then((msgs) => {
+				const lastRead = Number(
+					localStorage.getItem("backstage-chat-read") || 0,
+				);
+				const me = getCurrentUser();
+				setChatUnread(
+					msgs.filter((m) => m.ts > lastRead && m.user !== me).length,
+				);
+			})
+			.catch(() => {});
+	}, []);
 	// iOS evicts standalone PWAs from memory and relaunches them at the manifest
 	// start_url (/backstage/) — losing the session you had open. On a cold load
 	// that lands on home, restore the last session so it isn't dropped. This only
@@ -292,6 +316,28 @@ function App() {
 		}
 		return parsed;
 	});
+	// Track Watercooler reads: while it's open, arriving messages are read
+	// immediately; otherwise they bump the sidebar badge.
+	const chatOpenRef = useRef(false);
+	chatOpenRef.current = route.view === "watercooler";
+	useEffect(
+		() =>
+			addHandler((msg) => {
+				if (msg.type !== "chat_message" || msg.channel !== "watercooler")
+					return;
+				if (chatOpenRef.current) {
+					localStorage.setItem("backstage-chat-read", String(msg.message.ts));
+				} else if (msg.message.user !== getCurrentUser()) {
+					setChatUnread((n) => n + 1);
+				}
+			}),
+		[addHandler],
+	);
+	useEffect(() => {
+		if (route.view !== "watercooler") return;
+		localStorage.setItem("backstage-chat-read", String(Date.now()));
+		setChatUnread(0);
+	}, [route.view]);
 	// On phones the layout is an iOS-style page stack: the sidebar is the root
 	// page and any non-home route is a page pushed over it. `mobileDetail` drives
 	// that (see the `.mobile-detail` CSS and the back button below). It's inert on
@@ -1227,6 +1273,9 @@ function App() {
 							onOpenReviews={() => navigate({ view: "reviews" })}
 							prTinderActive={route.view === "prtinder"}
 							onOpenPrTinder={() => navigate({ view: "prtinder" })}
+							watercoolerActive={route.view === "watercooler"}
+							onOpenWatercooler={() => navigate({ view: "watercooler" })}
+							watercoolerUnread={chatUnread}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenPr={(repo, branch) =>
 								navigate({ view: "pr", repo, branch })
@@ -1543,6 +1592,15 @@ function App() {
 							/>
 						) : route.view === "prtinder" ? (
 							<PrTinder onExit={goBack} />
+						) : route.view === "watercooler" ? (
+							<TeamChat
+								channel="watercooler"
+								user={getCurrentUser()}
+								sessions={sessions}
+								send={send}
+								addHandler={addHandler}
+								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
 						) : route.view === "catchup" ? (
 							<CatchUpDeck
 								sessions={sessions}
@@ -1595,6 +1653,7 @@ function App() {
 										})
 									}
 									workspaceChats={projectChats}
+									allSessions={sessions}
 									onNewChat={handleNewChat}
 									parentSession={
 										currentSession.parentSessionId

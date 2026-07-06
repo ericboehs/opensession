@@ -45,6 +45,7 @@ import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
 import { SlackChatPanel } from "./SlackChatPanel";
+import { TeamChat } from "./TeamChat";
 import { PlainThreadPanel } from "./PlainThreadPanel";
 import { PreviewButton } from "./PreviewButton";
 import { StagingLink } from "./StagingLink";
@@ -135,6 +136,8 @@ interface Props {
 	/** Sibling chats in this chat's workspace (the tab strip's list, oldest
 	    first) — feeds the floating overview panel's cross-chat media. */
 	workspaceChats?: UnifiedSession[];
+	/** Every session — powers the Chat tab's @-session tagging. */
+	allSessions?: UnifiedSession[];
 	/** Start a new chat in this workspace — surfaced in the ⋯ menu so it's
 	    reachable on a phone, where the tab strip's + button is hidden. */
 	onNewChat?: (mode: "share" | "stack" | "ask") => void;
@@ -149,7 +152,14 @@ interface Props {
 	onRunningChange?: (id: string, isRunning: boolean) => void;
 }
 
-type PanelTab = "info" | "changes" | "terminal" | "pr" | "slack" | "plain";
+type PanelTab =
+	| "info"
+	| "changes"
+	| "terminal"
+	| "pr"
+	| "slack"
+	| "chat"
+	| "plain";
 
 /** Workspace of the Plain app the tickets live in (for the "jump into Plain" link). */
 const PLAIN_WORKSPACE_ID = "w_01J7WXJG68TFDV9RD1C4JE3W6F";
@@ -228,6 +238,7 @@ export function SessionViewer({
 	workspaceName,
 	onRenameWorkspace,
 	workspaceChats,
+	allSessions,
 	onNewChat,
 	parentSession,
 	workerSessions,
@@ -2334,6 +2345,12 @@ export function SessionViewer({
 										Slack
 										{session.slackChannel && <span className="panel-tab-dot" />}
 									</button>
+									<button
+										className={`panel-tab ${panelTab === "chat" ? "active" : ""}`}
+										onClick={() => selectPanelTab("chat")}
+									>
+										Chat
+									</button>
 								</>
 							)}
 							{hasPlain && (
@@ -2402,6 +2419,16 @@ export function SessionViewer({
 									slackChannel={session.slackChannel}
 									user={getCurrentUser()}
 									addHandler={addHandler}
+								/>
+							) : panelTab === "chat" ? (
+								<TeamChat
+									channel={`session:${session.id}`}
+									user={getCurrentUser()}
+									sessions={allSessions || workspaceChats || []}
+									send={send}
+									addHandler={addHandler}
+									onOpenSession={(id) => onOpenSession?.(id)}
+									variant="panel"
 								/>
 							) : (
 								<PrPanel

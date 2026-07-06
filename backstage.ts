@@ -5343,6 +5343,56 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				});
 			}
 
+			// ── Team chat (native Backstage chat, unrelated to Slack). Channels:
+			// "watercooler" (team-wide) and "session:<id>" (per-session Chat tab). ──
+			if (path === "/backstage/api/chat/messages" && req.method === "GET") {
+				const { getChatMessages, isValidChatChannel } = await import(
+					"./src/server/chat"
+				);
+				const channel = url.searchParams.get("channel") || "watercooler";
+				if (!isValidChatChannel(channel))
+					return Response.json({ error: "invalid channel" }, { status: 400 });
+				const limit = Number(url.searchParams.get("limit")) || 200;
+				return Response.json({ messages: getChatMessages(channel, limit) });
+			}
+
+			if (path === "/backstage/api/chat/messages" && req.method === "POST") {
+				const body = await req.json().catch(() => null);
+				const user = typeof body?.user === "string" ? body.user.trim() : "";
+				const text = typeof body?.text === "string" ? body.text.trim() : "";
+				const channel =
+					typeof body?.channel === "string" ? body.channel : "watercooler";
+				const { addChatMessage, mentionedUsers, isValidChatChannel } =
+					await import("./src/server/chat");
+				if (!user || !text)
+					return Response.json(
+						{ error: "user and text required" },
+						{ status: 400 },
+					);
+				if (!isValidChatChannel(channel))
+					return Response.json({ error: "invalid channel" }, { status: 400 });
+				const message = addChatMessage(channel, user, text);
+				// Everyone gets it live — clients not viewing this channel use the
+				// same event to bump unread badges.
+				broadcastToAll({ type: "chat_message", channel, message });
+				// @-mentions ping the tagged teammate's devices (works app-closed).
+				const { sendPushToUser } = await import("./src/server/push");
+				const inSession = channel.startsWith("session:");
+				for (const name of mentionedUsers(text, user)) {
+					void sendPushToUser(name, {
+						title: inSession
+							? `${user} mentioned you in a session chat`
+							: `${user} mentioned you in the Watercooler`,
+						body: text.length > 140 ? `${text.slice(0, 139)}…` : text,
+						url: inSession
+							? `/backstage/session/${encodeURIComponent(channel.slice("session:".length))}`
+							: "/backstage/watercooler",
+						tag: `backstage-chat-${channel}`,
+					});
+				}
+				return Response.json({ message });
+			}
+
 			// ── Web Push (phone/desktop notifications, app closed) ──
 			if (path === "/backstage/api/push/vapid-key" && req.method === "GET") {
 				const { getVapidPublicKey } = await import("./src/server/push");
@@ -7159,6 +7209,31 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							{ type: "note_awareness", noteId, update: msg.update },
 							ws,
 						);
+						break;
+					}
+
+					// ── Team chat: typing indicator (ephemeral — relay only, never
+					// persisted; mirrors note_awareness). Fanned out to every client
+					// except the typist; only chat views on this channel render it. ──
+					case "chat_typing": {
+						const typer =
+							typeof msg.user === "string" && msg.user.trim()
+								? msg.user.trim()
+								: ws.data?.user;
+						const channel =
+							typeof msg.channel === "string" ? msg.channel : "watercooler";
+						if (!typer) return;
+						const payload = JSON.stringify({
+							type: "chat_typing",
+							channel,
+							user: typer,
+						});
+						for (const client of allClients) {
+							if (client === ws) continue;
+							try {
+								client.send(payload);
+							} catch {}
+						}
 						break;
 					}
 				}

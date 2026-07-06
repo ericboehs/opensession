@@ -40,6 +40,7 @@ import {
 	IconReviewNodes,
 	IconStack,
 	IconStar,
+	IconWatercooler,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { RepoTile, swatchColor } from "./RepoTile";
@@ -144,6 +145,12 @@ interface Props {
 	prTinderActive: boolean;
 	/** Open PR Tinder (swipe triage of the repo's open PRs). */
 	onOpenPrTinder: () => void;
+	/** True while the Watercooler (team chat) is open — highlights its entry. */
+	watercoolerActive: boolean;
+	/** Open the Watercooler — the team-wide native chat room (not Slack). */
+	onOpenWatercooler: () => void;
+	/** Unread Watercooler messages (badge on its entry). */
+	watercoolerUnread: number;
 	onSelect: (session: UnifiedSession) => void;
 	/** Open the session-less PR preview for a PR row with no chat behind it. */
 	onOpenPr: (repo: string, branch: string) => void;
@@ -380,6 +387,9 @@ export function Sidebar({
 	onOpenReviews,
 	prTinderActive,
 	onOpenPrTinder,
+	watercoolerActive,
+	onOpenWatercooler,
+	watercoolerUnread,
 	onSelect,
 	onOpenPr,
 	selectedPr = null,
@@ -1900,6 +1910,19 @@ export function Sidebar({
 						<IconFlame />
 					</span>
 					PR Tinder
+				</button>
+				<button
+					className={`sidebar-nav-item ${watercoolerActive ? "active" : ""}`}
+					onClick={onOpenWatercooler}
+					title="Team chat — @ tags a teammate (they get a ping) or a session"
+				>
+					<span className="sidebar-nav-icon">
+						<IconWatercooler />
+					</span>
+					Watercooler
+					{watercoolerUnread > 0 && (
+						<span className="sidebar-nav-count">{watercoolerUnread}</span>
+					)}
 				</button>
 			</nav>
 

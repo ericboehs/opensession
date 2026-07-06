@@ -50,6 +50,20 @@ export interface SlackMessage {
 }
 
 /**
+ * Native team-chat message (mirror of src/server/chat.ts). Lives in a channel:
+ * "watercooler" (team-wide room) or "session:<id>" (a session's Chat tab).
+ * Text may carry `@Name` teammate mentions and `@session:<id>` session tags.
+ */
+export interface ChatMessage {
+	id: string;
+	/** Sender's self-selected backstage-user display name ("Michiel"). */
+	user: string;
+	text: string;
+	/** ms epoch */
+	ts: number;
+}
+
+/**
  * Cumulative token/cost accounting for a session (mirror of the server type).
  * Cost is the API-equivalent USD spend — authoritative for Claude runs, an
  * approximation for Codex (`costApproximate`). `contextTokens` is the most
@@ -372,7 +386,10 @@ export type WSClientMessage =
 	| { type: "watch_note"; noteId: string; user?: string }
 	| { type: "leave_note" }
 	| { type: "note_update"; noteId: string; update: string }
-	| { type: "note_awareness"; noteId: string; update: string };
+	| { type: "note_awareness"; noteId: string; update: string }
+	// Native team chat: ephemeral typing signal for a chat channel
+	// ("watercooler" or "session:<id>"). Relay-only, never persisted.
+	| { type: "chat_typing"; channel: string; user: string };
 
 export type WSServerMessage =
 	// sessionId on the session-scoped messages lets viewers drop events meant
@@ -448,6 +465,10 @@ export type WSServerMessage =
 	| { type: "note_update"; noteId: string; update: string }
 	| { type: "note_awareness"; noteId: string; update: string }
 	| { type: "note_presence"; noteId: string; viewers: string[] }
+	// Native team chat (Watercooler + per-session Chat tabs — not Slack).
+	// Broadcast to every client so unread badges work without joining.
+	| { type: "chat_message"; channel: string; message: ChatMessage }
+	| { type: "chat_typing"; channel: string; user: string }
 	// Linked Slack channel: a message arrived (inbound event or our own echo).
 	| { type: "slack_message"; channelId: string; message: SlackMessage }
 	| {

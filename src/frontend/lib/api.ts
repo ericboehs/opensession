@@ -2,6 +2,7 @@ import type {
 	UnifiedSession,
 	SlackChannelLink,
 	SlackMessage,
+	ChatMessage,
 	PlainThread,
 	SupportThread,
 	Project,
@@ -640,6 +641,31 @@ export async function postChannelMessageApi(
 		`/sessions/${encodeURIComponent(sessionId)}/channel/message`,
 		{ method: "POST", body: { text, user } },
 	);
+	return body.message;
+}
+
+// ── Native team chat (Watercooler + per-session Chat tabs — not Slack) ──
+
+export async function fetchChatMessagesApi(
+	channel: string,
+): Promise<ChatMessage[]> {
+	const body = await request<{ messages?: ChatMessage[] }>(
+		`/chat/messages?channel=${encodeURIComponent(channel)}`,
+		{ label: "Failed to fetch chat" },
+	);
+	return Array.isArray(body?.messages) ? body.messages : [];
+}
+
+export async function postChatMessageApi(
+	channel: string,
+	text: string,
+	user: string,
+): Promise<ChatMessage> {
+	const body = await request<{ message: ChatMessage }>("/chat/messages", {
+		method: "POST",
+		body: { channel, text, user },
+		label: "Failed to send",
+	});
 	return body.message;
 }
 

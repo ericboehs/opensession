@@ -521,6 +521,30 @@ export function IconClock(p: IconProps) {
   );
 }
 
+export function IconMessage(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M6.75 5.25H17.25C18.3546 5.25 19.25 6.14543 19.25 7.25V14.25C19.25 15.3546 18.3546 16.25 17.25 16.25H11.25L7.25 19.25V16.25H6.75C5.64543 16.25 4.75 15.3546 4.75 14.25V7.25C4.75 6.14543 5.64543 5.25 6.75 5.25Z"
+      />
+    </Svg>
+  );
+}
+
+/** Water-cup icon for the Watercooler team chat (a cup with a ripple). */
+export function IconWatercooler(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M6.25 4.75H17.75L16.4 19.25H7.6L6.25 4.75Z"
+      />
+      <path {...stroke} d="M7 9.25C8.5 10.25 10 8.5 11.5 9.25C13 10 14.5 8.5 17 9.25" />
+    </Svg>
+  );
+}
+
 export function IconMessageQuestion(p: IconProps) {
   return (
     <Svg {...p}>
