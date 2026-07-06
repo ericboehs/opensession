@@ -254,9 +254,19 @@ export function SettingsMenu({
 					<span className="text-[15px] font-semibold leading-none tracking-[-0.01em]">
 						Backstage
 					</span>
-					{/* Chevron only appears on hover or while the menu is open. */}
-					<span className="text-faint opacity-0 transition-opacity group-hover:opacity-100 group-data-[popup-open]:opacity-100">
-						{triggerChevron}
+					{/* A smaller chevron, hugged to the wordmark and vertically centered.
+					    Only shows on hover or while the menu is open. */}
+					<span className="-ml-1 inline-flex items-center text-faint opacity-0 transition-opacity group-hover:opacity-100 group-data-[popup-open]:opacity-100">
+						<svg width="14" height="14" viewBox="0 0 10 10" aria-hidden="true">
+							<path
+								d="M2 3.5L5 6.5L8 3.5"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="1.5"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							/>
+						</svg>
 					</span>
 				</Menu.Trigger>
 			) : (
