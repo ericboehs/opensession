@@ -9356,27 +9356,27 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	text-align: left;
 }
 .goal-modal {
-	width: 440px;
+	width: 560px;
 	max-width: 92vw;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 18px;
-	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-	padding: 18px;
+	border-radius: 20px;
+	box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+	padding: 26px 28px;
 }
 .goal-modal-head {
 	display: flex;
 	align-items: flex-start;
-	gap: 11px;
+	gap: 14px;
 }
 .goal-modal-icon {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	flex-shrink: 0;
-	width: 34px;
-	height: 34px;
-	border-radius: 10px;
+	width: 42px;
+	height: 42px;
+	border-radius: 12px;
 	background: var(--accent-soft);
 	color: var(--accent);
 }
@@ -9385,14 +9385,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	min-width: 0;
 }
 .goal-modal-title {
-	font-size: 16px;
+	font-size: 19px;
 	font-weight: 600;
 	color: var(--text);
 }
 .goal-modal-sub {
-	margin-top: 2px;
-	font-size: 12.5px;
-	line-height: 1.4;
+	margin-top: 4px;
+	font-size: 13.5px;
+	line-height: 1.45;
 	color: var(--text-dim);
 }
 .goal-modal-close {
@@ -9400,28 +9400,28 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border: none;
 	background: none;
 	color: var(--text-faint);
-	font-size: 15px;
+	font-size: 17px;
 	line-height: 1;
 	cursor: pointer;
-	padding: 2px 4px;
+	padding: 3px 5px;
 }
 .goal-modal-close:hover {
 	color: var(--text);
 }
 .goal-modal-input {
 	width: 100%;
-	margin-top: 14px;
+	margin-top: 20px;
 	border: 1px solid var(--border-strong);
-	border-radius: 12px;
+	border-radius: 14px;
 	background: var(--bg);
 	color: var(--text);
 	font-family: inherit;
-	font-size: 13.5px;
-	line-height: 1.45;
-	padding: 10px 12px;
+	font-size: 15px;
+	line-height: 1.5;
+	padding: 14px 16px;
 	outline: none;
 	resize: vertical;
-	min-height: 70px;
+	min-height: 120px;
 }
 .goal-modal-input:focus {
 	border-color: var(--accent);
@@ -9430,17 +9430,17 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .goal-modal-actions {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	margin-top: 14px;
+	gap: 10px;
+	margin-top: 20px;
 }
 .goal-modal-clear {
 	border: none;
 	background: none;
 	color: var(--red);
-	font-size: 12.5px;
+	font-size: 13.5px;
 	font-weight: 500;
-	padding: 7px 10px;
-	border-radius: 9px;
+	padding: 9px 12px;
+	border-radius: 10px;
 	cursor: pointer;
 }
 .goal-modal-clear:hover {
@@ -9450,10 +9450,10 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border: 1px solid var(--border-strong);
 	background: none;
 	color: var(--text);
-	font-size: 12.5px;
+	font-size: 13.5px;
 	font-weight: 500;
-	padding: 7px 14px;
-	border-radius: 9px;
+	padding: 9px 18px;
+	border-radius: 10px;
 	cursor: pointer;
 }
 .goal-modal-cancel:hover {
@@ -9461,11 +9461,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .goal-modal-set {
 	border: none;
-	border-radius: 9px;
-	padding: 7px 16px;
+	border-radius: 10px;
+	padding: 9px 20px;
 	background: var(--accent);
 	color: #fff;
-	font-size: 12.5px;
+	font-size: 13.5px;
 	font-weight: 600;
 	cursor: pointer;
 }
