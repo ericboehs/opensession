@@ -15,6 +15,13 @@ import { RepoTile } from "./RepoTile";
 import { ModelEffortSelect } from "./ModelEffortSelect";
 import { Menu } from "../ui/menu";
 
+/** Display label for an MCP server id ("linear" → "Linear"). A few brands keep
+ * their own casing; anything else is just first-letter capitalized. */
+const MCP_DISPLAY_NAMES: Record<string, string> = { workos: "WorkOS" };
+function mcpDisplayName(id: string): string {
+  return MCP_DISPLAY_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
+}
+
 interface Props {
   /** Close the palette (Esc, backdrop click, or after a create without "Create more"). */
   onBack: () => void;
@@ -515,7 +522,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                     <span className="palette-mcp-picker-badge">{selectedMcpServers.length}</span>
                   )}
                 </Menu.Trigger>
-                <Menu.Popup align="start" sideOffset={6} className="palette-select-menu">
+                <Menu.Popup align="start" sideOffset={6} className="max-w-[min(360px,calc(100vw-1rem))]">
                   <Menu.Group>
                     <Menu.GroupLabel className="pt-1.5">Connected services</Menu.GroupLabel>
                     {availableMcpServers.map((mcp) => {
@@ -526,10 +533,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                           checked={checked}
                           closeOnClick={false}
                           onCheckedChange={(on) => toggleMcpServer(mcp, on)}
-                          className={`palette-select-menu-item ${checked ? "is-selected" : ""}`}
+                          className={`justify-between gap-3 ${checked ? "bg-hover" : ""}`}
                         >
-                          <span className="palette-select-menu-label">{mcp}</span>
-                          {checked && <IconCheck className="palette-select-menu-check" size={17} />}
+                          <span className="min-w-0 truncate">{mcpDisplayName(mcp)}</span>
+                          {checked && <IconCheck className="shrink-0 text-dim" size={17} />}
                         </Menu.CheckboxItem>
                       );
                     })}
@@ -564,7 +571,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                           onChange={(e) => toggleMcpServer(mcp, e.target.checked)}
                           disabled={creating}
                         />
-                        <span>{mcp}</span>
+                        <span>{mcpDisplayName(mcp)}</span>
                       </label>
                     ))}
                   </div>

@@ -1,5 +1,6 @@
 import React from "react";
 import { Menu } from "../ui/menu";
+import { cn } from "../ui/cn";
 import { IconCheck } from "./icons";
 
 export type PaletteSelectOption = {
@@ -67,26 +68,26 @@ export function PaletteSelect({
 			>
 				{children}
 			</Menu.Trigger>
-			<Menu.Popup align={align} sideOffset={6} className="palette-select-menu">
+			<Menu.Popup align={align} sideOffset={6} className="max-w-[min(360px,calc(100vw-1rem))]">
 				{options.map((option) => {
 					const selected = option.value === value;
 					return (
 						<Menu.Item
 							key={option.value}
 							onClick={() => onChange(option.value)}
-							className={`palette-select-menu-item ${selected ? "is-selected" : ""}`}
+							className={cn("justify-between gap-3", selected && "bg-hover")}
 						>
-							<span className="palette-select-menu-main">
+							<span className="flex min-w-0 items-center gap-2.5">
 								{option.icon && (
-									<span className="palette-select-menu-icon" aria-hidden="true">
+									<span className="flex shrink-0 text-dim" aria-hidden="true">
 										{option.icon}
 									</span>
 								)}
-								<span className="palette-select-menu-label">
+								<span className="min-w-0 truncate">
 									{option.menuLabel ?? option.label}
 								</span>
 							</span>
-							{selected && <IconCheck className="palette-select-menu-check" size={17} />}
+							{selected && <IconCheck className="shrink-0 text-dim" size={17} />}
 						</Menu.Item>
 					);
 				})}

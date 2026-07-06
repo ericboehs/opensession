@@ -46,7 +46,7 @@ function Popup({
 			>
 				<BaseMenu.Popup
 					className={cn(
-						"min-w-[180px] rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel p-2 shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
+						"min-w-[180px] max-h-[min(60vh,420px)] overflow-y-auto rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel p-2 shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
 						"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",
 						"data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0",
 						"data-[ending-style]:opacity-0",
@@ -119,7 +119,7 @@ function GroupLabel({ className, ...props }: { className?: string; children?: Re
 		<BaseMenu.GroupLabel
 			{...props}
 			className={cn(
-				"px-2.5 pb-1.5 text-[10.5px] font-bold uppercase tracking-[0.06em] text-faint",
+				"px-2.5 pb-1.5 text-[11px] font-semibold tracking-normal text-faint",
 				className,
 			)}
 		/>

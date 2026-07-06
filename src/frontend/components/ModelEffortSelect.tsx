@@ -117,10 +117,10 @@ export function ModelEffortSelect({
 				onClick={() => onModelChange(option.value)}
 				disabled={modelDisabled}
 				title={modelDisabled ? modelTitle : undefined}
-				className={`palette-select-menu-item ${selected ? "is-selected" : ""} ${modelDisabled ? "opacity-55" : ""}`}
+				className={cn("justify-between gap-3", selected && "bg-hover", modelDisabled && "opacity-55")}
 			>
-				<span className="palette-select-menu-label">{option.label}</span>
-				{selected && <IconCheck className="palette-select-menu-check" size={17} />}
+				<span className="min-w-0 truncate">{option.label}</span>
+				{selected && <IconCheck className="shrink-0 text-dim" size={17} />}
 			</Menu.Item>
 		);
 	};
@@ -141,15 +141,15 @@ export function ModelEffortSelect({
 				<span className="palette-pill-label">{modelLabel}</span>
 				{hasEffort && <span className="flex-none text-faint">{effortLabel}</span>}
 			</Menu.Trigger>
-			<Menu.Popup align="end" sideOffset={6} className="palette-select-menu">
+			<Menu.Popup align="end" sideOffset={6} className="max-w-[min(360px,calc(100vw-1rem))]">
 				{primaryOptions.map(renderModelOption)}
 				{otherOptions.length > 0 && (
 					<Menu.SubmenuRoot>
-						<Menu.SubmenuTrigger className="palette-select-menu-item">
-							<span className="palette-select-menu-label">Other models</span>
-							<IconChevronRight className="palette-select-menu-check" size={17} />
+						<Menu.SubmenuTrigger className="justify-between gap-3">
+							<span className="min-w-0 truncate">Other models</span>
+							<IconChevronRight className="shrink-0 text-dim" size={17} />
 						</Menu.SubmenuTrigger>
-						<Menu.Popup className="palette-select-menu">
+						<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
 							{otherOptions.map(renderModelOption)}
 						</Menu.Popup>
 					</Menu.SubmenuRoot>
@@ -157,25 +157,25 @@ export function ModelEffortSelect({
 				{(hasEffort || hasSubscription) && <Menu.Separator className="my-1" />}
 				{hasEffort && (
 					<Menu.SubmenuRoot>
-						<Menu.SubmenuTrigger className="palette-select-menu-item">
-							<span className="palette-select-menu-label">Effort</span>
+						<Menu.SubmenuTrigger className="justify-between gap-3">
+							<span className="min-w-0 truncate">Effort</span>
 							<span className="flex flex-none items-center gap-1 text-dim">
 								{effortLabel}
-								<IconChevronRight className="palette-select-menu-check" size={17} />
+								<IconChevronRight className="shrink-0 text-dim" size={17} />
 							</span>
 						</Menu.SubmenuTrigger>
-						<Menu.Popup className="palette-select-menu">
+						<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
 							{EFFORTS.map((e) => {
 								const selected = (effort ?? "high") === e.id;
 								return (
 									<Menu.Item
 										key={e.id}
 										onClick={() => onEffortChange!(e.id)}
-										className={`palette-select-menu-item ${selected ? "is-selected" : ""}`}
+										className={cn("justify-between gap-3", selected && "bg-hover")}
 									>
-										<span className="palette-select-menu-label">{e.label}</span>
+										<span className="min-w-0 truncate">{e.label}</span>
 										{selected && (
-											<IconCheck className="palette-select-menu-check" size={17} />
+											<IconCheck className="shrink-0 text-dim" size={17} />
 										)}
 									</Menu.Item>
 								);
@@ -185,21 +185,21 @@ export function ModelEffortSelect({
 				)}
 				{hasSubscription && (
 					<Menu.SubmenuRoot>
-						<Menu.SubmenuTrigger className="palette-select-menu-item">
-							<span className="palette-select-menu-label">Subscription</span>
+						<Menu.SubmenuTrigger className="justify-between gap-3">
+							<span className="min-w-0 truncate">Subscription</span>
 							<span className="flex flex-none items-center gap-1 text-dim">
 								{subscriptionLabel}
-								<IconChevronRight className="palette-select-menu-check" size={17} />
+								<IconChevronRight className="shrink-0 text-dim" size={17} />
 							</span>
 						</Menu.SubmenuTrigger>
-						<Menu.Popup className="palette-select-menu">
+						<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
 							<Menu.Item
 								onClick={() => onAccountChange!("")}
-								className={`palette-select-menu-item ${!accountId ? "is-selected" : ""}`}
+								className={cn("justify-between gap-3", !accountId && "bg-hover")}
 							>
-								<span className="palette-select-menu-label">Auto</span>
+								<span className="min-w-0 truncate">Auto</span>
 								{!accountId && (
-									<IconCheck className="palette-select-menu-check" size={17} />
+									<IconCheck className="shrink-0 text-dim" size={17} />
 								)}
 							</Menu.Item>
 							{accounts!.map((a) => {
@@ -208,15 +208,15 @@ export function ModelEffortSelect({
 									<Menu.Item
 										key={a.id}
 										onClick={() => onAccountChange!(a.id)}
-										className={`palette-select-menu-item ${selected ? "is-selected" : ""}`}
+										className={cn("justify-between gap-3", selected && "bg-hover")}
 									>
-										<span className="palette-select-menu-label">
+										<span className="min-w-0 truncate">
 											{a.name}
 											{a.owner ? ` · ${a.owner}` : ""}
 											{a.usable ? "" : " · exhausted"}
 										</span>
 										{selected && (
-											<IconCheck className="palette-select-menu-check" size={17} />
+											<IconCheck className="shrink-0 text-dim" size={17} />
 										)}
 									</Menu.Item>
 								);
