@@ -2204,13 +2204,15 @@ export function Sidebar({
 										title={open ? "Collapse support" : "Expand support"}
 									>
 										<span>Support</span>
-										<IconChevronDown
-											className="sidebar-band-chevron"
-											size={22}
-											style={{ transform: open ? "none" : "rotate(-90deg)" }}
-										/>
-										<span className="sidebar-group-count">
-											{supportThreads!.length}
+										<span className="sidebar-band-trail">
+											<span className="sidebar-group-count">
+												{supportThreads!.length}
+											</span>
+											<IconChevronDown
+												className="sidebar-band-chevron"
+												size={22}
+												style={{ transform: open ? "none" : "rotate(-90deg)" }}
+											/>
 										</span>
 									</button>
 								</div>
@@ -2295,20 +2297,20 @@ export function Sidebar({
 								}
 							>
 								<span>Automations</span>
-								<IconChevronDown
-									className="sidebar-band-chevron"
-									size={22}
-									style={{
-										transform: bandOpen("automations")
-											? "none"
-											: "rotate(-90deg)",
-									}}
-								/>
-								{!bandOpen("automations") && (
+								<span className="sidebar-band-trail">
 									<span className="sidebar-group-count">
 										{groups.reduce((n, g) => n + g.items.length, 0)}
 									</span>
-								)}
+									<IconChevronDown
+										className="sidebar-band-chevron"
+										size={22}
+										style={{
+											transform: bandOpen("automations")
+												? "none"
+												: "rotate(-90deg)",
+										}}
+									/>
+								</span>
 							</button>
 						</div>
 						{bandOpen("automations") &&

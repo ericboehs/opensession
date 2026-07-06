@@ -718,9 +718,10 @@ body.resizing-x {
 	min-width: 0;
 }
 .sidebar-workspace-title {
-	font-size: 14px;
-	font-weight: 700;
-	color: var(--text);
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	color: var(--text-faint);
 	flex-shrink: 0;
 }
 .sidebar-workspace-spacer {
@@ -1104,10 +1105,10 @@ body.resizing-x {
 /* "My sessions" / "People" / "Projects" match the workspace heading. */
 .sidebar-band-label,
 .sidebar-mine-label {
-	font-size: 14px;
-	font-weight: 700;
-	letter-spacing: 0;
-	color: var(--text);
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	color: var(--text-faint);
 	padding: 4px 6px 8px;
 }
 
@@ -1144,6 +1145,32 @@ body.resizing-x {
 .sidebar-band-toggle:hover .sidebar-band-chevron {
 	color: var(--text);
 	opacity: 1;
+}
+/* Small quiet band labels read as labels, not rows — but stay interactive:
+   darken on hover, and the trailing slot shows the count at rest, swapping to
+   the collapse chevron (and room for more actions) on hover. */
+.sidebar-band-toggle:hover {
+	color: var(--text-dim);
+}
+.sidebar-workspace-head:hover .sidebar-workspace-title {
+	color: var(--text-dim);
+}
+.sidebar-band-trail {
+	margin-left: auto;
+	display: grid;
+	align-items: center;
+	justify-items: end;
+}
+.sidebar-band-trail > * {
+	grid-area: 1 / 1;
+}
+.sidebar-band-trail .sidebar-group-count {
+	margin: 0;
+	padding: 0;
+	transition: opacity 0.15s ease;
+}
+.sidebar-band-toggle:hover .sidebar-band-trail .sidebar-group-count {
+	opacity: 0;
 }
 
 .sidebar-band-action {
