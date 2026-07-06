@@ -659,6 +659,22 @@ export function IconCopy(p: IconProps) {
   );
 }
 
+// Two interlocking rounded links: copy/share a link.
+export function IconLink(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M10.75 13.25C11.44 13.94 12.34 14.28 13.24 14.28C14.14 14.28 15.04 13.94 15.73 13.25L18.5 10.48C19.87 9.11 19.87 6.89 18.5 5.52C17.13 4.15 14.91 4.15 13.54 5.52L12.82 6.24"
+      />
+      <path
+        {...stroke}
+        d="M13.25 10.75C12.56 10.06 11.66 9.72 10.76 9.72C9.86 9.72 8.96 10.06 8.27 10.75L5.5 13.52C4.13 14.89 4.13 17.11 5.5 18.48C6.87 19.85 9.09 19.85 10.46 18.48L11.18 17.76"
+      />
+    </Svg>
+  );
+}
+
 // ⋯ more options.
 export function IconDotsHorizontal(p: IconProps) {
   return (

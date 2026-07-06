@@ -9,7 +9,14 @@ import {
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
-import { IconArrowUp, IconPullRequest, IconGitMerge } from "./icons";
+import {
+	IconArrowUp,
+	IconPullRequest,
+	IconGitMerge,
+	IconArrowUpRight,
+	IconLink,
+	IconCheck,
+} from "./icons";
 
 /**
  * Conductor-style status strip at the top of the right Workspace panel: the PR
@@ -139,6 +146,57 @@ function PrBarButton({
 			{icon && <span className="pr-bar-btn-icon">{icon}</span>}
 			<span className="pr-bar-btn-label">{children}</span>
 		</button>
+	);
+}
+
+/**
+ * The PR chip as a segmented split button (Tella's Share pattern): the wide
+ * segment opens the PR in a new tab, the trailing segment copies its URL to the
+ * clipboard (flipping to a check for a beat). One rounded outline, a single
+ * hairline divider between the halves.
+ */
+function PrNumberSplit({
+	pr,
+	tone,
+}: {
+	pr: PrDetails;
+	tone: PrHeadline["tone"];
+}) {
+	const [copied, setCopied] = useState(false);
+
+	const copy = useCallback(
+		(e: React.MouseEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			navigator.clipboard?.writeText(pr.url).then(() => {
+				setCopied(true);
+				setTimeout(() => setCopied(false), 1500);
+			});
+		},
+		[pr.url],
+	);
+
+	return (
+		<span className={`pr-num-split pr-num-split-${tone}`}>
+			<a
+				className="pr-num-open"
+				href={pr.url}
+				target="_blank"
+				rel="noopener"
+				title={`#${pr.number} ${pr.title}`}
+			>
+				#{pr.number}
+				<IconArrowUpRight size={13} className="pr-num-ext" />
+			</a>
+			<button
+				type="button"
+				className="pr-num-copy"
+				onClick={copy}
+				title={copied ? "Link copied" : "Copy PR link"}
+			>
+				{copied ? <IconCheck size={14} /> : <IconLink size={14} />}
+			</button>
+		</span>
 	);
 }
 
@@ -312,15 +370,7 @@ export function PrStatusBar({
 	if (variant === "header") {
 		return (
 			<div className="pr-head">
-				<a
-					className={`pr-bar-number pr-bar-number-${headline.tone}`}
-					href={pr!.url}
-					target="_blank"
-					rel="noopener"
-					title={`#${pr!.number} ${pr!.title} — ${headline.label}`}
-				>
-					#{pr!.number} <span className="pr-bar-arrow">↗</span>
-				</a>
+				<PrNumberSplit pr={pr!} tone={headline.tone} />
 				{error && (
 					<span className="pr-bar-error" title={error}>
 						{error}
@@ -333,17 +383,7 @@ export function PrStatusBar({
 
 	return (
 		<div className={`pr-bar pr-bar-${headline.tone}`}>
-			{pr && (
-				<a
-					className={`pr-bar-number pr-bar-number-${headline.tone}`}
-					href={pr.url}
-					target="_blank"
-					rel="noopener"
-					title={pr.title}
-				>
-					#{pr.number} <span className="pr-bar-arrow">↗</span>
-				</a>
-			)}
+			{pr && <PrNumberSplit pr={pr} tone={headline.tone} />}
 			{headline.key !== "no-pr" && (
 				<Tooltip label="Open the PR tab">
 					<button

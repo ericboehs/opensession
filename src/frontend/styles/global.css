@@ -3809,40 +3809,69 @@ body.resizing-x .panel-resize::after {
 	background: var(--bg-panel);
 }
 
-.pr-bar-number {
-	font-size: 12.5px;
-	font-weight: 600;
-	font-variant-numeric: tabular-nums;
-	text-decoration: none;
-	padding: 3px 9px;
-	border-radius: 7px;
+/* PR chip as a segmented split button (Tella's Share pattern): the wide half
+   opens the PR, the trailing half copies its link. One rounded outline, one
+   hairline divider; the tone colour flows to text, border, divider and the
+   hover tint via currentColor. */
+.pr-num-split {
+	display: inline-flex;
+	align-items: stretch;
 	border: 1px solid var(--border);
+	border-radius: 7px;
+	overflow: hidden;
 	color: var(--text-dim);
 	background: var(--bg-raised);
 	white-space: nowrap;
 }
-.pr-bar-number:hover {
-	border-color: currentColor;
-}
-.pr-bar-number-green {
+.pr-num-split-green {
 	color: var(--green);
 	border-color: color-mix(in srgb, var(--green) 40%, transparent);
 }
-.pr-bar-number-purple {
+.pr-num-split-purple {
 	color: var(--purple);
 	border-color: color-mix(in srgb, var(--purple) 40%, transparent);
 }
-.pr-bar-number-red {
+.pr-num-split-red {
 	color: var(--red);
 	border-color: color-mix(in srgb, var(--red) 40%, transparent);
 }
-.pr-bar-number-yellow {
+.pr-num-split-yellow {
 	color: var(--yellow);
 	border-color: color-mix(in srgb, var(--yellow) 40%, transparent);
 }
-.pr-bar-arrow {
-	font-size: 11px;
-	opacity: 0.8;
+.pr-num-open {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 3px 8px;
+	font-size: 12.5px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	text-decoration: none;
+	color: inherit;
+}
+.pr-num-ext {
+	opacity: 0.75;
+}
+.pr-num-copy {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 27px;
+	padding: 0;
+	border: none;
+	border-left: 1px solid color-mix(in srgb, currentColor 32%, transparent);
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	transition: background-color 120ms ease;
+}
+.pr-num-open:hover,
+.pr-num-copy:hover {
+	background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.pr-num-copy:active {
+	background: color-mix(in srgb, currentColor 18%, transparent);
 }
 
 .pr-bar-state {
@@ -3992,9 +4021,15 @@ body.resizing-x .panel-resize::after {
 	gap: 8px;
 	min-width: 0;
 }
-.pr-head .pr-bar-number {
-	padding: 5px 10px;
+.pr-head .pr-num-split {
 	border-radius: 6px;
+}
+.pr-head .pr-num-open {
+	padding: 5px 10px;
+	font-size: 13px;
+}
+.pr-head .pr-num-copy {
+	width: 30px;
 }
 .pr-head .pr-bar-btn {
 	min-height: 32px;
