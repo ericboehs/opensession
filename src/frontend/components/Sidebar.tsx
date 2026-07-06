@@ -644,7 +644,15 @@ export function Sidebar({
 		const attachedByKey = new Map<string, UnifiedSession>();
 		for (const s of sessions) {
 			if (s.archived) continue;
-			if (s.branch) primaryKeys.add(`${sessionRepo(s)}:${s.branch}`);
+			// A human's chat owns its PR and represents it in the sidebar, so we drop
+			// that PR from the PR lane. Automation sessions (e.g. github-pr-review)
+			// are different: they claim the author's branch but show under "GitHub
+			// (automation)", not the author — so letting them suppress the row hides
+			// the PR from its own author's default "me" view (it's in neither lane).
+			// Don't let an automation session claim a PR-lane row; the PR then shows
+			// attributed to its author (pr.person).
+			if (s.branch && !s.automation)
+				primaryKeys.add(`${sessionRepo(s)}:${s.branch}`);
 			for (const ar of s.attachedRepos || []) {
 				const key = `${ar.repo}:${ar.branch}`;
 				const prev = attachedByKey.get(key);
