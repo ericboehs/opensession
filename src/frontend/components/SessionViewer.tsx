@@ -38,6 +38,7 @@ import type { FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { DiffPanel } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
+import { ModelMenuRow } from "./ModelMenuRow";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
@@ -1870,6 +1871,17 @@ export function SessionViewer({
 										branch={session.branch}
 										initialAttached={session.attachedRepos || []}
 										variant="menu-row"
+									/>
+								)}
+								{/* Model is changeable from here too on phones — the composer's model
+								    pill is hidden and the header's native picker is fiddly. */}
+								{isPhone && session.source === "backstage" && models.length > 0 && (
+									<ModelMenuRow
+										models={models}
+										model={model}
+										defaultModel={defaultModel}
+										onChange={handleModelChange}
+										prettyLabel={prettyModel}
 									/>
 								)}
 								{newChatAction}
