@@ -8959,12 +8959,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		width: 36px;
 		height: 36px;
 	}
-	/* On phones the stop button REPLACES the send button while a run is going
-	   (the ChatGPT-mobile pattern): hide the busy queue/steer send so stop
-	   alone owns the right corner. The adjacency selector only fires when a
-	   stop button is actually rendered to take its place, so we never leave
-	   the composer with no right-edge action. Desktop keeps both. */
-	.composer-stop + .composer-send-split {
+	/* On phones one button owns the right corner while a run is going (the
+	   ChatGPT-mobile pattern): Stop when the input is empty, but the steer/queue
+	   Send the moment you start typing a follow-up. The send-split only renders
+	   once there's content to send (showSend), so its presence means "composing"
+	   — hide the Stop then so the visible icon matches what pressing return /
+	   tapping actually does (steer vs queue). Empty input → no send-split → Stop
+	   stays. Desktop keeps both. */
+	.composer-stop:has(+ .composer-send-split) {
 		display: none;
 	}
 	/* Fit the whole toolbar at phone widths so the send button never clips:
