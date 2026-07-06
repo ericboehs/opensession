@@ -7,6 +7,7 @@ import {
   type PreviewStatus,
 } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
+import { IconArrowUpRight, IconCamera, IconChevronDown, IconPlay } from "./icons";
 
 // Only tella-fusion worktrees are previewable — the bring-up script
 // (tella-local ensure-up.sh) seeds a tella-fusion webapp specifically.
@@ -110,7 +111,7 @@ export function PreviewButton({
   }
 
   return (
-    <div className="preview-wrap" ref={wrapRef}>
+    <div className={`preview-wrap ${running ? "running" : ""}`} ref={wrapRef}>
       {running ? (
         <a
           className="preview-open running"
@@ -119,8 +120,9 @@ export function PreviewButton({
           rel="noopener"
           title={`Open the webapp — ${url}`}
         >
-          <span className="preview-dot" />
-          Preview ↗
+          <IconPlay size={15} className="preview-play" />
+          Preview
+          <IconArrowUpRight size={15} className="preview-ext" />
         </a>
       ) : isStarting ? (
         <button
@@ -141,15 +143,13 @@ export function PreviewButton({
           onClick={start}
           title="Start Tella Local and preview this session"
         >
-          <span className="preview-play" aria-hidden="true">
-            ▶
-          </span>
+          <IconPlay size={15} className="preview-play" />
           Preview
         </button>
       )}
       {running && (
         <button
-          className="preview-caret"
+          className="preview-caret preview-snap"
           onClick={async () => {
             if (snapping) return;
             setSnapping(true);
@@ -165,23 +165,16 @@ export function PreviewButton({
           disabled={snapping}
           title="Snapshot the preview (headless Chrome screenshot)"
         >
-          {snapping ? (
-            <span className="preview-spinner" />
-          ) : (
-            <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-              <path d="M2.5 5.5h2l1.2-1.8h4.6L11.5 5.5h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" strokeLinejoin="round" />
-              <circle cx="8" cy="9" r="2.4" />
-            </svg>
-          )}
+          {snapping ? <span className="preview-spinner" /> : <IconCamera size={18} />}
         </button>
       )}
       <button
-        className={`preview-caret ${open ? "active" : ""}`}
+        className={`preview-caret preview-menu ${open ? "active" : ""}`}
         onClick={() => setOpen((v) => !v)}
         title="Dev server processes"
         aria-expanded={open}
       >
-        ▾
+        <IconChevronDown size={16} />
       </button>
 
       {(shot || shotError) && (

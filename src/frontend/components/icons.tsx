@@ -172,6 +172,42 @@ export function IconArrowDownRight(p: IconProps) {
   );
 }
 
+// ↗ open-in-new / external-link arrow — the icon-set replacement for the raw
+// "↗" glyph on the Preview and Staging links.
+export function IconArrowUpRight(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M8.75 15.25L15.25 8.75" />
+      <path {...stroke} d="M9.25 8.75H15.25V14.75" />
+    </Svg>
+  );
+}
+
+// Filled play triangle — starts Tella Local (replaces the raw "▶" glyph). The
+// round linejoin softens the tips so it matches the stroke set's rounding.
+export function IconPlay(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} fill="currentColor" d="M9 7.5L16.5 12L9 16.5V7.5Z" />
+    </Svg>
+  );
+}
+
+// Camera — snapshot the preview. Redrawn on the 24-grid so it carries the same
+// weight as its split-button siblings (the old hand-drawn 16-viewBox one read
+// denser and off-scale).
+export function IconCamera(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M4.75 8.75C4.75 7.64543 5.64543 6.75 6.75 6.75H8L9 5.25H15L16 6.75H17.25C18.3546 6.75 19.25 7.64543 19.25 8.75V16.25C19.25 17.3546 18.3546 18.25 17.25 18.25H6.75C5.64543 18.25 4.75 17.3546 4.75 16.25V8.75Z"
+      />
+      <circle {...stroke} cx="12" cy="12.25" r="3" fill="none" />
+    </Svg>
+  );
+}
+
 export function IconPlus(p: IconProps) {
   return (
     <Svg {...p}>

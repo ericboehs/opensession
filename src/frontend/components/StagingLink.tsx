@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchPr } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
+import { IconArrowUpRight, IconGlobe } from "./icons";
 
 /**
  * Header link to the PR's staging deploy (the Vercel preview at
@@ -51,14 +52,16 @@ export function StagingLink({ session }: { session: UnifiedSession }) {
 			href={staging.url}
 			target="_blank"
 			rel="noopener"
-			className={`session-link session-link-staging ${building ? "session-link-staging-building" : ""}`}
+			className={`staging-link ${building ? "staging-link-building" : ""}`}
 			title={
 				building
 					? `Staging deploy ${staging.status.toLowerCase()}… — ${staging.url}`
 					: `Test this PR on staging — ${staging.url}`
 			}
 		>
-			Staging ↗
+			<IconGlobe size={15} className="staging-globe" />
+			Staging
+			<IconArrowUpRight size={15} className="staging-ext" />
 		</a>
 	);
 }

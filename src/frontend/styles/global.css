@@ -2566,13 +2566,33 @@ body.resizing-x {
 	color: #5eead4;
 	border-color: rgba(13, 148, 136, 0.5);
 }
-.session-link-staging {
+/* Staging deploy link — a standalone yellow pill sized to match the Preview
+   button it sits beside in the right panel (same 13px/600, 5px 12px padding,
+   6px radius). Its own class (not .session-link) so the markdown session-chip
+   rule below can't clobber it into a red mono chip with a stray ::after arrow. */
+.staging-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 13px;
+	font-weight: 600;
+	text-decoration: none;
+	padding: 5px 11px;
+	border-radius: 7px;
+	border: 1px solid rgba(210, 153, 34, 0.45);
 	color: var(--yellow);
-	border-color: rgba(210, 153, 34, 0.45);
+	white-space: nowrap;
+}
+.staging-ext {
+	margin-left: -1px;
+	opacity: 0.8;
+}
+.staging-link:hover {
+	background: rgba(210, 153, 34, 0.12);
 }
 /* Deploy still building — link works (Vercel shows build progress) but reads
    as not-ready-yet. */
-.session-link-staging-building {
+.staging-link-building {
 	opacity: 0.55;
 }
 
@@ -2679,22 +2699,47 @@ body.resizing-x {
 	background: var(--bg-hover);
 }
 
-/* Preview (local dev server) control */
+/* Preview (local dev server) control — a segmented split button:
+   [ Preview ] [ 📷 ] [ ⌄ ]. The segments share single hairline dividers
+   (collapsed via -1px margins) inside one rounded outline, and the hovered/
+   open segment lifts above its neighbours (z-index) so its tinted border wins
+   over the shared edge. */
 .preview-wrap {
 	position: relative;
 	display: inline-flex;
 	align-items: stretch;
+}
+/* Shared segment chrome: full border on each, adjacent borders collapsed so the
+   group reads as one control with hairline dividers between the segments. */
+.preview-wrap > .preview-open,
+.preview-wrap > .preview-caret {
+	border: 1px solid var(--border-strong);
+	border-radius: 0;
+}
+.preview-wrap > .preview-caret {
+	margin-left: -1px;
+}
+.preview-wrap > .preview-open {
+	border-radius: 7px 0 0 7px;
+}
+.preview-wrap > .preview-menu {
+	border-radius: 0 7px 7px 0;
+}
+/* Lift the segment being interacted with so its colored border sits on top of
+   the shared divider instead of being clipped by the neighbour. */
+.preview-wrap > .preview-open:hover,
+.preview-wrap > .preview-caret:hover,
+.preview-wrap > .preview-caret.active {
+	position: relative;
+	z-index: 1;
 }
 .preview-open {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
 	background: none;
-	border: 1px solid var(--border-strong);
-	border-right: none;
-	border-radius: 6px 0 0 6px;
 	color: var(--text-dim);
-	padding: 5px 12px;
+	padding: 5px 11px;
 	font-size: 13px;
 	font-weight: 600;
 	text-decoration: none;
@@ -2702,16 +2747,12 @@ body.resizing-x {
 }
 .preview-open.running {
 	color: var(--green);
-	border-color: rgba(63, 185, 80, 0.4);
-}
-.preview-open.running:hover {
-	background: rgba(63, 185, 80, 0.12);
 }
 .preview-open:disabled {
 	color: var(--text-faint);
 	cursor: default;
 }
-/* Off state is now a clickable ▶ play button that starts Tella Local. */
+/* Off state is a clickable play button that starts Tella Local. */
 button.preview-open:not(:disabled) {
 	cursor: pointer;
 }
@@ -2720,10 +2761,19 @@ button.preview-open:not(:disabled):hover {
 	border-color: var(--accent);
 	background: var(--accent-soft);
 }
+/* Trailing ↗ on the live link reads as a secondary affordance. */
+.preview-ext {
+	margin-left: -1px;
+	opacity: 0.8;
+}
+/* Play glyph: accent while off (draws the eye to "start"); inherits the green
+   label color once the server is live. */
 .preview-play {
-	font-size: 9px;
-	line-height: 1;
 	color: var(--accent);
+}
+.preview-open.running .preview-play {
+	color: inherit;
+	opacity: 0.9;
 }
 .preview-open.starting {
 	color: var(--text-dim);
@@ -2759,18 +2809,35 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	}
 }
 .preview-caret {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	background: none;
-	border: 1px solid var(--border-strong);
-	border-radius: 0 6px 6px 0;
 	color: var(--text-dim);
-	padding: 5px 8px;
-	font-size: 12px;
+	padding: 4px 8px;
+	cursor: pointer;
 }
 .preview-caret.active,
 .preview-caret:hover {
 	color: var(--accent);
 	border-color: var(--accent);
 	background: var(--accent-soft);
+}
+/* Running: the whole split is a cohesive green control — green outline on every
+   segment, muted-green caret glyphs, green-soft hover per segment. */
+.preview-wrap.running > .preview-open,
+.preview-wrap.running > .preview-caret {
+	border-color: rgba(63, 185, 80, 0.4);
+}
+.preview-wrap.running > .preview-caret {
+	color: color-mix(in srgb, var(--green) 72%, var(--text-dim));
+}
+.preview-wrap.running > .preview-open.running:hover,
+.preview-wrap.running > .preview-caret:hover,
+.preview-wrap.running > .preview-caret.active {
+	color: var(--green);
+	border-color: rgba(63, 185, 80, 0.5);
+	background: rgba(63, 185, 80, 0.12);
 }
 
 .preview-dot {
