@@ -2090,6 +2090,19 @@ async function runSessionPromptInner(
 		}
 	}
 	let prompt = content;
+	// A teammate sending into someone else's idle session gets the same
+	// "[Name] " attribution the steer path already applies — without it the
+	// message lands bare in the transcript and the viewer credits it to the
+	// session owner (startedBy). The owner's own turns stay bare (the common
+	// case), automation runs pass no user, and multi-message queue drains
+	// arrive pre-attributed — don't double-prefix those.
+	if (
+		user &&
+		user !== session.startedBy &&
+		!content.startsWith(`[${user}] `)
+	) {
+		prompt = `[${user}] ${prompt}`;
+	}
 	// Bridge a cross-provider engine switch (computed above) so the incoming
 	// engine continues the conversation instead of starting blank. Fenced so the
 	// transcript shows only the human's message — the model-switch divider already
