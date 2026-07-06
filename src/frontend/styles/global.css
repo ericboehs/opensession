@@ -8624,9 +8624,9 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 	.app-brand .update-pill {
 		order: 3;
-		height: 28px;
-		padding: 0 15px;
-		font-size: 14px;
+		height: 34px;
+		padding: 0 18px;
+		font-size: 15px;
 	}
 	.app-title {
 		font-size: 16px;
