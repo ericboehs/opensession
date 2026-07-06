@@ -8959,6 +8959,12 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		width: 36px;
 		height: 36px;
 	}
+	/* On phones the stop button sits on the right edge, past the send button —
+	   that's where the thumb is. Flex order pushes it after the send-split
+	   without reordering the DOM (desktop keeps stop to the left of send). */
+	.composer-stop {
+		order: 1;
+	}
 	/* Fit the whole toolbar at phone widths so the send button never clips:
 	   drop the pill chevrons (the pill is obviously tappable), collapse the
 	   effort pill to its bars icon, and tighten pill padding. The shrink rules
