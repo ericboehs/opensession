@@ -2203,16 +2203,14 @@ export function Sidebar({
 										onClick={() => toggleBand("support")}
 										title={open ? "Collapse support" : "Expand support"}
 									>
-										<span>Support</span>
+										<span className="sidebar-band-name">Support</span>
+										<IconChevronDown
+											className="sidebar-band-chevron"
+											size={18}
+											style={{ transform: open ? "none" : "rotate(-90deg)" }}
+										/>
 										<span className="sidebar-band-trail">
-											<span className="sidebar-group-count">
-												{supportThreads!.length}
-											</span>
-											<IconChevronDown
-												className="sidebar-band-chevron"
-												size={22}
-												style={{ transform: open ? "none" : "rotate(-90deg)" }}
-											/>
+											<span className="sidebar-group-count">{supportThreads!.length}</span>
 										</span>
 									</button>
 								</div>
@@ -2238,12 +2236,15 @@ export function Sidebar({
 									onClick={() => toggleBand("people")}
 									title={open ? "Collapse people" : "Expand people"}
 								>
-									<span>People</span>
+									<span className="sidebar-band-name">People</span>
 									<IconChevronDown
 										className="sidebar-band-chevron"
-										size={22}
+										size={18}
 										style={{ transform: open ? "none" : "rotate(-90deg)" }}
 									/>
+									<span className="sidebar-band-trail">
+										<span className="sidebar-group-count">{others.length}</span>
+									</span>
 								</button>
 							</div>
 							{open &&
@@ -2296,20 +2297,14 @@ export function Sidebar({
 										: "Expand automations"
 								}
 							>
-								<span>Automations</span>
+								<span className="sidebar-band-name">Automations</span>
+								<IconChevronDown
+									className="sidebar-band-chevron"
+									size={18}
+									style={{ transform: bandOpen("automations") ? "none" : "rotate(-90deg)" }}
+								/>
 								<span className="sidebar-band-trail">
-									<span className="sidebar-group-count">
-										{groups.reduce((n, g) => n + g.items.length, 0)}
-									</span>
-									<IconChevronDown
-										className="sidebar-band-chevron"
-										size={22}
-										style={{
-											transform: bandOpen("automations")
-												? "none"
-												: "rotate(-90deg)",
-										}}
-									/>
+									<span className="sidebar-group-count">{groups.reduce((n, g) => n + g.items.length, 0)}</span>
 								</span>
 							</button>
 						</div>

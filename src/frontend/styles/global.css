@@ -1102,75 +1102,71 @@ body.resizing-x {
 	border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
 }
 
-/* "My sessions" / "People" / "Projects" match the workspace heading. */
+/* Top-level band labels (Support / People / Automations) — small quiet labels
+   that read like section kickers but behave like Notion's: the whole heading is
+   a full-width hover row that toggles the band; the collapse chevron sits by the
+   label (revealed on hover), and the count / any actions live on the right. */
 .sidebar-band-label,
 .sidebar-mine-label {
 	font-size: 12px;
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	color: var(--text-faint);
-	padding: 4px 6px 8px;
 }
-
-/* The "Projects" band header carries a trailing New-project (folder-plus)
-   action, so lay it out as a row with the button pushed to the right. */
 .sidebar-band-label {
-	display: flex;
-	align-items: center;
-	gap: 6px;
+	padding: 0 0 6px;
 }
-/* The Projects band title doubles as a collapse toggle — a bare button that
-   keeps the band-label's type. Its chevron (like group headers) only appears on
-   hover, so the sidebar stays clean until you reach for it. */
 .sidebar-band-toggle {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 5px;
+	width: 100%;
 	background: none;
 	border: none;
-	padding: 0;
+	border-radius: 8px;
+	padding: 4px 6px;
+	margin: 0;
 	font: inherit;
 	color: inherit;
+	text-align: left;
 	cursor: pointer;
 }
+.sidebar-band-toggle:hover {
+	background: var(--bg-hover);
+	color: var(--text-dim);
+}
+.sidebar-band-name {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
+}
+/* Chevron appears just after the label on hover. display-toggle (not opacity)
+   so it reserves no space at rest — the label stays put and the auto-margin
+   before the trail absorbs it, so nothing shifts. Rotate = collapsed state. */
 .sidebar-band-chevron {
 	color: var(--text-faint);
 	flex-shrink: 0;
-	opacity: 0;
-	transition: transform 0.15s ease, opacity 0.15s ease;
-}
-.sidebar-band-label:hover .sidebar-band-chevron {
-	opacity: 1;
+	display: none;
 }
 .sidebar-band-toggle:hover .sidebar-band-chevron {
-	color: var(--text);
-	opacity: 1;
-}
-/* Small quiet band labels read as labels, not rows — but stay interactive:
-   darken on hover, and the trailing slot shows the count at rest, swapping to
-   the collapse chevron (and room for more actions) on hover. */
-.sidebar-band-toggle:hover {
+	display: inline-flex;
 	color: var(--text-dim);
 }
-.sidebar-workspace-head:hover .sidebar-workspace-title {
-	color: var(--text-dim);
-}
+/* Count (and any future actions) pinned right; count stays visible at rest. */
 .sidebar-band-trail {
 	margin-left: auto;
-	display: grid;
+	display: flex;
 	align-items: center;
-	justify-items: end;
-}
-.sidebar-band-trail > * {
-	grid-area: 1 / 1;
+	gap: 6px;
+	flex-shrink: 0;
 }
 .sidebar-band-trail .sidebar-group-count {
 	margin: 0;
 	padding: 0;
-	transition: opacity 0.15s ease;
 }
-.sidebar-band-toggle:hover .sidebar-band-trail .sidebar-group-count {
-	opacity: 0;
+.sidebar-workspace-head:hover .sidebar-workspace-title {
+	color: var(--text-dim);
 }
 
 .sidebar-band-action {
