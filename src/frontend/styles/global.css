@@ -1151,16 +1151,10 @@ body.resizing-x {
 	display: inline-flex;
 	color: var(--text-dim);
 }
-/* Count (and any future actions) pinned right; count stays visible at rest. */
-.sidebar-band-trail {
-	margin-left: auto;
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	flex-shrink: 0;
-}
-.sidebar-band-trail .sidebar-group-count {
-	margin: 0;
+/* Count sits right after the heading (not pinned right). Any future actions can
+   still be pushed to the far right with margin-left:auto. */
+.sidebar-band-toggle .sidebar-group-count {
+	margin-left: 0;
 	padding: 0;
 }
 .sidebar-workspace-head:hover .sidebar-workspace-title {
