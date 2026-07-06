@@ -594,14 +594,13 @@ a {
 	min-width: 0;
 }
 
-/* Footer user row at the bottom of the desktop sidebar: the account/settings
-   menu (avatar · current user · connection state · gear) that used to sit in the
-   top brand row. Pinned below the scrolling workspace list. Hidden on mobile,
-   where the top bar carries the brand. */
-.sidebar-footer {
+/* Right-side cluster of the brand row: the account/settings menu (avatar +
+   connection dot) next to the collapse toggle. */
+.sidebar-brand-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
 	flex-shrink: 0;
-	padding: 6px 8px;
-	border-top: 1px solid var(--border);
 }
 
 /* Collapse toggle sitting where the user chip used to be. The floating re-open
@@ -8231,12 +8230,9 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.detail-topbar-title {
 		display: none;
 	}
+	/* The brand row (with its account menu) is a desktop affordance; on mobile
+	   the top bar carries the brand + account menu instead. */
 	.sidebar-brand {
-		display: none;
-	}
-	/* The footer user row is a desktop affordance; on mobile the top bar carries
-	   the brand + account menu instead. */
-	.sidebar-footer {
 		display: none;
 	}
 	.sidebar-resize {

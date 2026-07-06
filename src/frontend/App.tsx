@@ -1107,21 +1107,28 @@ function App() {
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
 						}
 					>
-						{/* Desktop brand row: just the Michael title on the left and the
-						    collapse toggle on the right — the account/settings menu moved
-						    to the footer user row below. Hidden on mobile, where the top
-						    bar carries the brand instead. */}
+						{/* Desktop brand row: the Michael title on the left, and on the
+						    right the account/settings menu (avatar + connection dot) next
+						    to the collapse toggle. Hidden on mobile, where the top bar
+						    carries the brand instead. */}
 						<div className="sidebar-brand">
 							{brandTitle}
-							<Tooltip label="Hide sidebar" side="bottom">
-								<button
-									className="sidebar-toggle-btn"
-									onClick={toggleSidebarCollapsed}
-									aria-label="Hide sidebar"
-								>
-									{panelIcon}
-								</button>
-							</Tooltip>
+							<div className="sidebar-brand-actions">
+								<SettingsMenu
+									variant="top"
+									onOpenSettings={() => navigate({ view: "settings" })}
+									connected={connected}
+								/>
+								<Tooltip label="Hide sidebar" side="bottom">
+									<button
+										className="sidebar-toggle-btn"
+										onClick={toggleSidebarCollapsed}
+										aria-label="Hide sidebar"
+									>
+										{panelIcon}
+									</button>
+								</Tooltip>
+							</div>
 						</div>
 						<Sidebar
 							sessions={sessions}
@@ -1271,16 +1278,6 @@ function App() {
 							}}
 						/>
 						<UpdatePill addHandler={addHandler} />
-						{/* Footer user row (desktop): avatar · current user · connection
-						    state · gear — the account/settings menu that used to sit at the
-						    top. Hidden on mobile, where the top bar carries it. */}
-						<div className="sidebar-footer">
-							<SettingsMenu
-								variant="footer"
-								onOpenSettings={() => navigate({ view: "settings" })}
-								connected={connected}
-							/>
-						</div>
 						{/* Drag the right edge to resize (desktop only; hidden on mobile). */}
 						<div
 							className="sidebar-resize"

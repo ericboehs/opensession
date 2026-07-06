@@ -16,9 +16,12 @@ import { UserAvatar } from "./UserAvatar";
 // instead, with the account switcher inlined as a tappable list rather than a
 // hover submenu.
 //
-// Three trigger shapes via `variant`:
+// Four trigger shapes via `variant`:
 //   "chevron" — a small chevron.
 //   "brand"   — the mobile top bar logo.
+//   "top"     — a compact avatar + chevron (with a live connection dot) that
+//               sits in the desktop sidebar's top brand row, next to the
+//               Backstage title.
 //   "footer"  — a full-width user row (avatar · name · connection state) at the
 //               bottom of the desktop sidebar, plus a sibling gear button that
 //               goes straight to the Settings page (bypassing the menu).
@@ -85,7 +88,7 @@ function SettingsSheet({
 }: {
 	onOpenSettings?: () => void;
 	connected?: boolean;
-	variant?: "chevron" | "brand" | "footer";
+	variant?: "chevron" | "brand" | "top" | "footer";
 }) {
 	const currentUser = useCurrentUser();
 	const [open, setOpen] = useState(false);
@@ -196,7 +199,7 @@ export function SettingsMenu({
 }: {
 	onOpenSettings?: () => void;
 	connected?: boolean;
-	variant?: "chevron" | "brand" | "footer";
+	variant?: "chevron" | "brand" | "top" | "footer";
 }) {
 	const currentUser = useCurrentUser();
 	const isPhone = useIsPhone();
@@ -211,6 +214,7 @@ export function SettingsMenu({
 		);
 
 	const footer = variant === "footer";
+	const top = variant === "top";
 
 	return (
 		<Menu.Root>
@@ -232,6 +236,25 @@ export function SettingsMenu({
 						</button>
 					</Tooltip>
 				</div>
+			) : top ? (
+				<Menu.Trigger
+					aria-label="Account menu"
+					className="flex shrink-0 items-center gap-0.5 rounded-lg border-none bg-transparent p-1 text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+				>
+					<span className="relative flex">
+						<UserAvatar name={currentUser} size={26} className="shrink-0" />
+						{/* Live connection dot — the glanceable bit the footer row used to
+						    show, tucked onto the avatar corner. Ring matches the sidebar bg. */}
+						<span
+							className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2"
+							style={{
+								borderColor: "var(--bg-raised)",
+								background: connected ? "var(--green)" : "var(--red)",
+							}}
+						/>
+					</span>
+					{triggerChevron}
+				</Menu.Trigger>
 			) : (
 				<Menu.Trigger
 					aria-label="Settings"
@@ -242,10 +265,11 @@ export function SettingsMenu({
 			)}
 
 			{/* Footer trigger sits at the very bottom of the sidebar — open the menu
-			    upward so it doesn't run off-screen. */}
+			    upward so it doesn't run off-screen. The top trigger sits near the
+			    sidebar's right edge, so align its popup to that edge. */}
 			<Menu.Popup
 				side={footer ? "top" : undefined}
-				align="start"
+				align={top ? "end" : "start"}
 				sideOffset={8}
 				className="min-w-[244px] p-3"
 			>
@@ -314,9 +338,10 @@ export function SettingsMenu({
 
 				<Menu.Separator className="-mx-3 my-3.5" />
 
-				{/* The footer trigger already shows the connection state in its row,
-				    so the menu only repeats it for the compact chevron variant. */}
-				{!footer && (
+				{/* The footer row and the top trigger's avatar dot already show the
+				    connection state, so the menu only repeats it for the compact
+				    chevron variant. */}
+				{!footer && !top && (
 					<>
 						<div className="flex items-center gap-2 px-2 py-0.5 text-xs text-dim">
 							<span
