@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { IconDotsHorizontal, IconTrash, IconSliders, IconHistory, IconPlus } from "./icons";
+import { BRAND_LOGOS } from "../brand-logos";
 
 interface McpConnection {
   name: string;
@@ -92,7 +93,10 @@ function displayName(name: string): string {
 }
 
 function IconTile({ name, size = 34 }: { name: string; size?: number }) {
-  const brand = BRANDS[name.toLowerCase()];
+  const key = name.toLowerCase();
+  const brand = BRANDS[key];
+  // Agents like "grafana-poller" reuse the base brand's logo.
+  const logo = BRAND_LOGOS[key] || BRAND_LOGOS[key.split("-")[0]];
   return (
     <span
       className="flex flex-shrink-0 items-center justify-center rounded-[9px] font-semibold"
@@ -104,7 +108,21 @@ function IconTile({ name, size = 34 }: { name: string; size?: number }) {
         color: brand?.fg || (brand ? "#fff" : "var(--text-dim)"),
       }}
     >
-      {name.charAt(0).toUpperCase()}
+      {logo ? (
+        <svg
+          viewBox={logo.viewBox}
+          width={size * 0.56}
+          height={size * 0.56}
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          {logo.paths.map((d, i) => (
+            <path key={i} d={d} />
+          ))}
+        </svg>
+      ) : (
+        name.charAt(0).toUpperCase()
+      )}
     </span>
   );
 }
