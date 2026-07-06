@@ -257,7 +257,7 @@ export function SettingsMenu({
 					{/* A smaller chevron, hugged to the wordmark and vertically centered.
 					    Only shows on hover or while the menu is open. */}
 					<span className="-ml-1 inline-flex items-center text-faint opacity-0 transition-opacity group-hover:opacity-100 group-data-[popup-open]:opacity-100">
-						<svg width="14" height="14" viewBox="0 0 10 10" aria-hidden="true">
+						<svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true">
 							<path
 								d="M2 3.5L5 6.5L8 3.5"
 								fill="none"
