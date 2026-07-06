@@ -67,8 +67,9 @@ function Content({
 					"fixed left-1/2 top-1/2 z-[10001] w-[92vw] -translate-x-1/2 -translate-y-1/2",
 					widthClassName,
 					"max-h-[85vh] overflow-y-auto overscroll-contain outline-none",
-					// Big, soft squircle shell — this is the "way rounder" standard.
-					"rounded-[28px] [corner-shape:squircle] border border-line-strong bg-raised",
+					// Squircle shell matching the menu/popover family (ui/menu.tsx,
+					// ui/popover.tsx both use rounded-[14px]).
+					"rounded-[14px] [corner-shape:squircle] border border-line-strong bg-raised",
 					"p-7 shadow-[0_24px_70px_rgba(0,0,0,0.45)]",
 					"flex flex-col gap-4",
 					"origin-center transition-[transform,opacity] duration-150 ease-out",
@@ -100,7 +101,7 @@ function Header({
 	return (
 		<div className={cn("flex items-start gap-3.5", className)}>
 			{icon && (
-				<span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[14px] [corner-shape:squircle] bg-accent-soft text-accent">
+				<span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
 					{icon}
 				</span>
 			)}

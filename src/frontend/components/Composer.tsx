@@ -170,7 +170,7 @@ function GoalModal({
 
         <textarea
           ref={inputRef}
-          className="min-h-[120px] w-full resize-y rounded-[18px] [corner-shape:squircle] border border-line-strong bg-surface px-4 py-3.5 text-[15px] leading-relaxed text-fg outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
+          className="min-h-[120px] w-full resize-y rounded-md border border-line-strong bg-surface px-4 py-3.5 text-[15px] leading-relaxed text-fg outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
           value={text}
           rows={3}
           onChange={(e) => setText(e.target.value)}
@@ -188,19 +188,19 @@ function GoalModal({
           {initial && (
             <button
               type="button"
-              className="rounded-[10px] px-3 py-2 text-[13.5px] font-medium text-red hover:bg-red-soft"
+              className="rounded-md px-3 py-2 text-[13.5px] font-medium text-red hover:bg-red-soft"
               onClick={() => onSubmit(null)}
             >
               Clear goal
             </button>
           )}
           <div className="flex-1" />
-          <Modal.Close className="rounded-[10px] border border-line-strong px-4 py-2 text-[13.5px] font-medium text-fg outline-none hover:bg-hover">
+          <Modal.Close className="rounded-md border border-line-strong px-4 py-2 text-[13.5px] font-medium text-fg outline-none hover:bg-hover">
             Cancel
           </Modal.Close>
           <button
             type="button"
-            className="rounded-[10px] bg-accent px-5 py-2 text-[13.5px] font-semibold text-white outline-none hover:brightness-105 disabled:cursor-default disabled:opacity-40"
+            className="rounded-md bg-accent px-5 py-2 text-[13.5px] font-semibold text-white outline-none hover:brightness-105 disabled:cursor-default disabled:opacity-40"
             onClick={() => onSubmit(text.trim() || null)}
             disabled={text.trim() === initial.trim()}
           >
