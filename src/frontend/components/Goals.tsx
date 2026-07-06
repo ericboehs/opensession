@@ -75,12 +75,12 @@ export function Goals({ onOpenSession }: Props) {
   }, []);
 
   useEffect(() => {
-    document.title = "Goals — Michael";
+    document.title = "Goals — Backstage";
     load();
     const id = setInterval(load, 10000);
     return () => {
       clearInterval(id);
-      document.title = "Michael — Tella";
+      document.title = "Backstage — Tella";
     };
   }, [load]);
 

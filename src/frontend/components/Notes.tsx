@@ -161,12 +161,12 @@ export function Notes({
 	useEffect(() => {
 		const note = selNoteId ? notes.find((n) => n.id === selNoteId) : null;
 		document.title = note
-			? `${note.title} — Notes — Michael`
+			? `${note.title} — Notes — Backstage`
 			: selDocPath
-				? `${selDocPath.split("/").pop()} — Docs — Michael`
-				: "Notes — Michael";
+				? `${selDocPath.split("/").pop()} — Docs — Backstage`
+				: "Notes — Backstage";
 		return () => {
-			document.title = "Michael — Tella";
+			document.title = "Backstage — Tella";
 		};
 	}, [selNoteId, selDocPath, notes]);
 

@@ -573,9 +573,9 @@ export function SessionViewer({
 
 	// Browser tab title follows the session
 	useEffect(() => {
-		document.title = `${session.title} — Michael`;
+		document.title = `${session.title} — Backstage`;
 		return () => {
-			document.title = "Michael — Tella";
+			document.title = "Backstage — Tella";
 		};
 	}, [session.title]);
 

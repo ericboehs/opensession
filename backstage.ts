@@ -3324,8 +3324,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			if (path === "/backstage/manifest.webmanifest") {
 				return Response.json(
 					{
-						name: "Michael",
-						short_name: "Michael",
+						name: "Backstage",
+						short_name: "Backstage",
 						start_url: "/backstage/",
 						display: "standalone",
 						background_color: "#0b0809",

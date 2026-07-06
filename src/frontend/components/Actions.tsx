@@ -39,10 +39,10 @@ export function Actions({ onOpenSession }: Props) {
   }, []);
 
   useEffect(() => {
-    document.title = "Actions — Michael";
+    document.title = "Actions — Backstage";
     load();
     return () => {
-      document.title = "Michael — Tella";
+      document.title = "Backstage — Tella";
     };
   }, [load]);
 

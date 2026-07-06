@@ -102,10 +102,10 @@ export function Connections() {
   }, []);
 
   useEffect(() => {
-    document.title = "Connections — Michael";
+    document.title = "Connections — Backstage";
     load();
     return () => {
-      document.title = "Michael — Tella";
+      document.title = "Backstage — Tella";
     };
   }, [load]);
 

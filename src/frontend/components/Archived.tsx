@@ -49,9 +49,9 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
   const [reason, setReason] = useState<ReasonFilter>("all");
 
   useEffect(() => {
-    document.title = "Archived — Michael";
+    document.title = "Archived — Backstage";
     return () => {
-      document.title = "Michael — Tella";
+      document.title = "Backstage — Tella";
     };
   }, []);
 

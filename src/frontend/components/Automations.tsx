@@ -99,12 +99,12 @@ export function Automations({ onOpenSession }: Props) {
   }, []);
 
   useEffect(() => {
-    document.title = "Automations — Michael";
+    document.title = "Automations — Backstage";
     load();
     const id = setInterval(load, 10000);
     return () => {
       clearInterval(id);
-      document.title = "Michael — Tella";
+      document.title = "Backstage — Tella";
     };
   }, [load]);
 

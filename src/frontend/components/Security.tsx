@@ -59,12 +59,12 @@ export function Security({ onOpenSession }: Props) {
   }, []);
 
   useEffect(() => {
-    document.title = "Security — Michael";
+    document.title = "Security — Backstage";
     load();
     const id = setInterval(load, 10000);
     return () => {
       clearInterval(id);
-      document.title = "Michael — Tella";
+      document.title = "Backstage — Tella";
     };
   }, [load]);
 
