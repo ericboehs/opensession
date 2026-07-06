@@ -6,6 +6,8 @@ export type PaletteSelectOption = {
 	value: string;
 	label: string;
 	menuLabel?: string;
+	/** Optional leading icon shown before the label in the desktop menu. */
+	icon?: React.ReactNode;
 };
 
 type Props = {
@@ -74,8 +76,15 @@ export function PaletteSelect({
 							onClick={() => onChange(option.value)}
 							className={`palette-select-menu-item ${selected ? "is-selected" : ""}`}
 						>
-							<span className="palette-select-menu-label">
-								{option.menuLabel ?? option.label}
+							<span className="palette-select-menu-main">
+								{option.icon && (
+									<span className="palette-select-menu-icon" aria-hidden="true">
+										{option.icon}
+									</span>
+								)}
+								<span className="palette-select-menu-label">
+									{option.menuLabel ?? option.label}
+								</span>
 							</span>
 							{selected && <IconCheck className="palette-select-menu-check" size={17} />}
 						</Menu.Item>

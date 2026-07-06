@@ -45,6 +45,16 @@ interface Worktree {
   path: string;
 }
 
+// Shared repo glyph — used both in the trigger and each menu option.
+function RepoIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M2 6h12" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  );
+}
+
 // Repos a session can run against. tella-fusion is the default.
 // Keep in sync with REPOS in src/server/worktree.ts.
 const REPOS = [
@@ -400,16 +410,17 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             className="palette-trigger palette-trigger-strong"
             title="Repository"
             value={repo}
-            options={REPOS.map((p) => ({ value: p.id, label: p.label }))}
+            options={REPOS.map((p) => ({
+              value: p.id,
+              label: p.label,
+              icon: <RepoIcon size={17} />,
+            }))}
             onChange={setRepo}
             disabled={creating}
             ariaLabel="Repository"
             isPhone={isPhone}
           >
-            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.3" />
-              <path d="M2 6h12" stroke="currentColor" strokeWidth="1.3" />
-            </svg>
+            <RepoIcon />
             <span className="palette-trigger-label">
               {REPOS.find((p) => p.id === repo)?.label || repo}
             </span>

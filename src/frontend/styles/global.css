@@ -10436,6 +10436,17 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .palette-select-menu-item.is-selected {
 	background: var(--bg-hover);
 }
+.palette-select-menu-main {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 0;
+}
+.palette-select-menu-icon {
+	flex-shrink: 0;
+	display: flex;
+	color: var(--text-dim);
+}
 .palette-select-menu-label {
 	min-width: 0;
 	overflow: hidden;
