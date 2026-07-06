@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Sidebar } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
@@ -257,6 +257,21 @@ function App() {
 			{ content: string; user: string; sentAt: number; images?: string[] }
 		>
 	>({});
+	// Transient bottom toast (e.g. "Archived · stopped the running turn"). One at
+	// a time; a fresh message resets the auto-dismiss timer.
+	const [toast, setToast] = useState<string | null>(null);
+	const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const showToast = useCallback((message: string) => {
+		if (toastTimer.current) clearTimeout(toastTimer.current);
+		setToast(message);
+		toastTimer.current = setTimeout(() => setToast(null), 3200);
+	}, []);
+	useEffect(
+		() => () => {
+			if (toastTimer.current) clearTimeout(toastTimer.current);
+		},
+		[],
+	);
 	// iOS evicts standalone PWAs from memory and relaunches them at the manifest
 	// start_url (/backstage/) — losing the session you had open. On a cold load
 	// that lands on home, restore the last session so it isn't dropped. This only
@@ -932,6 +947,18 @@ function App() {
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
 			<MediaLightboxHost />
+			{toast && (
+				<div className="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4">
+					<button
+						type="button"
+						role="status"
+						onClick={() => setToast(null)}
+						className="pointer-events-auto flex items-center gap-2 rounded-lg border border-line-strong bg-panel px-4 py-2.5 text-sm text-fg shadow-[0_6px_20px_rgba(0,0,0,0.35)]"
+					>
+						{toast}
+					</button>
+				</div>
+			)}
 			<div className="app">
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
 				    on a pushed page (a session or other view) the brand is replaced by
@@ -1207,7 +1234,9 @@ function App() {
 									else goBack();
 								}
 								try {
-									await archiveSessionApi(s.id, true);
+									const { stoppedRun } = await archiveSessionApi(s.id, true);
+									if (stoppedRun)
+										showToast("Archived · stopped the running turn");
 								} catch (e) {
 									console.error("Archive failed:", e);
 									patch(s.id, { archived: false, archivedReason: undefined });
@@ -1234,9 +1263,14 @@ function App() {
 									else goBack();
 								}
 								try {
-									await Promise.all(
+									const results = await Promise.all(
 										chats.map((c) => archiveSessionApi(c.id, true)),
 									);
+									const stopped = results.filter((r) => r.stoppedRun).length;
+									if (stopped > 0)
+										showToast(
+											`Archived · stopped ${stopped} running turn${stopped === 1 ? "" : "s"}`,
+										);
 								} catch (e) {
 									console.error("Archive workspace failed:", e);
 									for (const chat of chats) {
@@ -1344,7 +1378,11 @@ function App() {
 								}
 								try {
 									if (neverRan) await deleteSessionApi(s.id, false);
-									else await archiveSessionApi(s.id, true);
+									else {
+										const { stoppedRun } = await archiveSessionApi(s.id, true);
+										if (stoppedRun)
+											showToast("Archived · stopped the running turn");
+									}
 								} catch (e) {
 									console.error("Close failed:", e);
 									if (neverRan) {
@@ -1439,6 +1477,10 @@ function App() {
 									key={currentSession.id}
 									session={currentSession}
 									onBack={goBack}
+									onArchived={(stoppedRun) => {
+										if (stoppedRun)
+											showToast("Archived · stopped the running turn");
+									}}
 									send={send}
 									addHandler={addHandler}
 									connected={connected}

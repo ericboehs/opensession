@@ -1454,12 +1454,22 @@ export async function promptNoteApi(id: string, prompt: string): Promise<void> {
 	});
 }
 
-export async function archiveSessionApi(sessionId: string, archived: boolean) {
-	await request<void>(`/sessions/${encodeURIComponent(sessionId)}/archive`, {
-		method: "POST",
-		body: { archived },
-		label: "Failed to update archive state",
-	});
+/** Returns `stoppedRun: true` when archiving gracefully stopped an in-flight,
+ * process-owned turn (so callers can surface a "stopped the running turn"
+ * notice). Always false on unarchive and for idle/external sessions. */
+export async function archiveSessionApi(
+	sessionId: string,
+	archived: boolean,
+): Promise<{ stoppedRun: boolean }> {
+	const res = await request<{ ok?: boolean; stoppedRun?: boolean } | null>(
+		`/sessions/${encodeURIComponent(sessionId)}/archive`,
+		{
+			method: "POST",
+			body: { archived },
+			label: "Failed to update archive state",
+		},
+	);
+	return { stoppedRun: !!res?.stoppedRun };
 }
 
 /** Set a manual display title for a session; empty string clears the rename. */

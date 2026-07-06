@@ -4122,6 +4122,40 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					return Response.json({ error: "Session not found" }, { status: 404 });
 				const body = await req.json().catch(() => ({}));
 				const archived = body.archived !== false;
+				// Archiving means "I'm done with this" — so stop an owned in-flight
+				// run rather than leaving an orphaned turn burning tokens after the
+				// session already reads as archived. Only runs owned by this process
+				// (busyHere) are stoppable; external/CLI runs can't be reached from
+				// here. Graceful Esc-style stop (fall back to hard cancel for runs
+				// with no interrupt support) keeps the transcript clean and resumable
+				// on unarchive.
+				let stoppedRun = false;
+				if (
+					archived &&
+					isAgentSessionBusy(
+						session.claudeSessionId,
+						session.codexThreadId,
+						session.id,
+					)
+				) {
+					// Park the queue so the drain doesn't feed requeued steers into a
+					// fresh run as the stopped one winds down.
+					stoppedSessions.add(session.id);
+					const stopped = stopAgentRunTurn([
+						session.claudeSessionId,
+						session.codexThreadId,
+						session.id,
+					]);
+					if (!stopped) {
+						cancelAgentRun(
+							session.claudeSessionId,
+							session.codexThreadId,
+							session.id,
+						);
+					}
+					requeueSteerReceipts(session.id);
+					stoppedRun = true;
+				}
 				setArchived(sessionId, archived);
 				// Plain done-tickets are archived via a file-level flag, not the
 				// registry; clearing only the registry would leave them archived. On
@@ -4133,20 +4167,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					// setArchived drops the plain id pin; also drop legacy alias-id pins,
 					// and the workspace pin once its last live chat is archived (else the
 					// row resurfaces in Pinned when a new chat joins the workspace).
-					const keys = [session.id, ...(session.aliasIds || [])];
-					if (
-						session.projectId &&
-						!getAllSessions().some(
-							(s) =>
-								s.projectId === session.projectId &&
-								s.id !== session.id &&
-								!s.archived,
-						)
-					)
-						keys.push(`workspace:${session.projectId}`);
-					unpinEverywhere(keys);
+					unpinArchivedSessions([session], getAllSessions());
 				}
-				return Response.json({ ok: true });
+				return Response.json({ ok: true, stoppedRun });
 			}
 
 			// Rename a session (manual display title; empty/blank clears it back to

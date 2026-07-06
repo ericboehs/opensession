@@ -81,6 +81,9 @@ type QueueReceipt = {
 interface Props {
 	session: UnifiedSession;
 	onBack: () => void;
+	/** Called after a successful archive (not unarchive), with whether archiving
+	    gracefully stopped an in-flight owned turn — so the parent can toast. */
+	onArchived?: (stoppedRun: boolean) => void;
 	send: (msg: any) => void;
 	addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
 	connected: boolean;
@@ -199,6 +202,7 @@ function mergeEntries(
 export function SessionViewer({
 	session,
 	onBack,
+	onArchived,
 	send,
 	addHandler,
 	connected,
@@ -1500,13 +1504,14 @@ export function SessionViewer({
 		setArchiving(true);
 		setOverflowOpen(false);
 		try {
-			await archiveSessionApi(session.id, next);
+			const { stoppedRun } = await archiveSessionApi(session.id, next);
+			if (next) onArchived?.(stoppedRun);
 			onBack();
 		} catch (e: any) {
 			alert(`${next ? "Archive" : "Unarchive"} failed: ${e.message}`);
 			setArchiving(false);
 		}
-	}, [onBack, session.archived, session.id]);
+	}, [onArchived, onBack, session.archived, session.id]);
 
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
