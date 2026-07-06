@@ -6,7 +6,7 @@ import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
-import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconPlug } from "./icons";
+import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections } from "./icons";
 import type { WSServerMessage } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -500,6 +500,26 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 <IconSliders size={24} />
               </button>
             )}
+            <button
+              type="button"
+              className="palette-icon-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={creating}
+              title="Attach a file"
+              aria-label="Attach a file"
+            >
+              <IconPaperclip size={24} />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files?.length) void addAttachments(e.target.files);
+                e.target.value = "";
+              }}
+            />
             {/* Connected services: a Menu popup on desktop, a full-width sheet
                 on phones (a positioned popup is too cramped there). */}
             {!isPhone ? (
@@ -511,7 +531,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                   title={`Connected services${selectedMcpServers.length ? ` (${selectedMcpServers.length})` : ""}`}
                   aria-label="Choose connected services"
                 >
-                  <IconPlug size={24} />
+                  <IconConnections size={24} />
                   {selectedMcpServers.length > 0 && (
                     <span className="palette-mcp-picker-badge">{selectedMcpServers.length}</span>
                   )}
@@ -551,7 +571,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 aria-label="Choose connected services"
                 aria-expanded={mcpPickerOpen}
               >
-                <IconPlug size={24} />
+                <IconConnections size={24} />
                 {selectedMcpServers.length > 0 && (
                   <span className="palette-mcp-picker-badge">{selectedMcpServers.length}</span>
                 )}
@@ -577,26 +597,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               )}
             </div>
             )}
-            <button
-              type="button"
-              className="palette-icon-btn"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={creating}
-              title="Attach a file"
-              aria-label="Attach a file"
-            >
-              <IconPaperclip size={24} />
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              hidden
-              onChange={(e) => {
-                if (e.target.files?.length) void addAttachments(e.target.files);
-                e.target.value = "";
-              }}
-            />
           </div>
 
           <div className="palette-footer-right">

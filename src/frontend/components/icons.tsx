@@ -349,6 +349,21 @@ export function IconPlug(p: IconProps) {
   );
 }
 
+// Share-nodes glyph (one node linked to two) — matches the Connections nav
+// item. Drawn on the 24-grid so it carries the same visual weight as the
+// other composer icons (the old IconPlug read visibly smaller).
+export function IconConnections(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="7" cy="12" r="2.25" fill="none" />
+      <circle {...stroke} cx="16.5" cy="6.75" r="2.25" fill="none" />
+      <circle {...stroke} cx="16.5" cy="17.25" r="2.25" fill="none" />
+      <path {...stroke} d="M8.95 10.9L14.55 7.85" />
+      <path {...stroke} d="M8.95 13.1L14.55 16.4" />
+    </Svg>
+  );
+}
+
 export function IconBook(p: IconProps) {
   return (
     <Svg {...p}>
