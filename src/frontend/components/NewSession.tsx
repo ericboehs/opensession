@@ -14,13 +14,7 @@ import { PaletteSelect } from "./PaletteSelect";
 import { RepoTile } from "./RepoTile";
 import { ModelEffortSelect } from "./ModelEffortSelect";
 import { Menu } from "../ui/menu";
-
-/** Display label for an MCP server id ("linear" → "Linear"). A few brands keep
- * their own casing; anything else is just first-letter capitalized. */
-const MCP_DISPLAY_NAMES: Record<string, string> = { workos: "WorkOS" };
-function mcpDisplayName(id: string): string {
-  return MCP_DISPLAY_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
-}
+import { IconTile, displayName } from "./BrandTile";
 
 interface Props {
   /** Close the palette (Esc, backdrop click, or after a create without "Create more"). */
@@ -535,7 +529,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                           onCheckedChange={(on) => toggleMcpServer(mcp, on)}
                           className={`justify-between gap-3 ${checked ? "bg-hover" : ""}`}
                         >
-                          <span className="min-w-0 truncate">{mcpDisplayName(mcp)}</span>
+                          <span className="flex min-w-0 items-center gap-2.5">
+                            <IconTile name={mcp} size={20} />
+                            <span className="min-w-0 truncate">{displayName(mcp)}</span>
+                          </span>
                           {checked && <IconCheck className="shrink-0 text-dim" size={17} />}
                         </Menu.CheckboxItem>
                       );
@@ -571,7 +568,8 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                           onChange={(e) => toggleMcpServer(mcp, e.target.checked)}
                           disabled={creating}
                         />
-                        <span>{mcpDisplayName(mcp)}</span>
+                        <IconTile name={mcp} size={20} />
+                        <span>{displayName(mcp)}</span>
                       </label>
                     ))}
                   </div>

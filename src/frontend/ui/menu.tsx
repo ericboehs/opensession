@@ -46,14 +46,18 @@ function Popup({
 			>
 				<BaseMenu.Popup
 					className={cn(
-						"min-w-[180px] max-h-[min(60vh,420px)] overflow-y-auto rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel p-2 shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
+						// overflow-hidden keeps the inner scrollbar's ends clipped to the
+						// rounded corner instead of poking past it.
+						"min-w-[180px] overflow-hidden rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
 						"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",
 						"data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0",
 						"data-[ending-style]:opacity-0",
 						className,
 					)}
 				>
-					{children}
+					<div className="max-h-[min(60vh,420px)] overflow-y-auto overscroll-contain p-2">
+						{children}
+					</div>
 				</BaseMenu.Popup>
 			</BaseMenu.Positioner>
 		</BaseMenu.Portal>
