@@ -83,7 +83,6 @@ import type { ActiveRunRecord } from "./src/server/claude-runner";
 import {
 	getPins as getUserPins,
 	setPins as setUserPins,
-	unpinEverywhere,
 } from "./src/server/pins";
 import {
 	listWorkspaces,
@@ -258,7 +257,7 @@ import {
 	findSlackChannel,
 } from "./src/agents/slack/worktree-channels";
 import { startPlainArchiveSweep, clearSessionFileArchive } from "./src/server/plain-archive";
-import { setArchived, archiveOlderThan } from "./src/server/archive";
+import { setArchived, archiveOlderThan, unpinArchivedSessions } from "./src/server/archive";
 import {
 	getAutoArchiveConfig,
 	setAutoArchiveConfig,

@@ -51,6 +51,36 @@ export function isArchivedId(id: string): boolean {
   return id in load();
 }
 
+/**
+ * Drop every pin made stale by archiving `justArchived`: the sessions' own ids
+ * and alias ids, plus each `workspace:<id>` pin whose workspace now has no live
+ * chat left. Pass the full current session list so the "last live chat" test
+ * can see siblings — call this AFTER the archive registry is written so the
+ * just-archived sessions read back as archived. Centralizes what the manual,
+ * idle-sweep, and auto-archive paths all need; `setArchived` still handles the
+ * lone plain-id case for callers that don't have the full list.
+ */
+export function unpinArchivedSessions(
+  justArchived: UnifiedSession[],
+  allSessions: UnifiedSession[],
+): void {
+  if (!justArchived.length) return;
+  const dead = (s: UnifiedSession) => s.archived || isArchivedId(s.id);
+  const keys: string[] = [];
+  const projectIds = new Set<string>();
+  for (const s of justArchived) {
+    keys.push(s.id, ...(s.aliasIds || []));
+    if (s.projectId) projectIds.add(s.projectId);
+  }
+  // A workspace pin is stale only once none of its chats are live anymore —
+  // else archiving one chat would yank a still-active workspace off Pinned.
+  for (const pid of projectIds) {
+    if (!allSessions.some((s) => s.projectId === pid && !dead(s)))
+      keys.push(`workspace:${pid}`);
+  }
+  unpinEverywhere(keys);
+}
+
 export function getArchiveReason(id: string): ArchiveReason | null {
   const raw = load()[id];
   return raw ? toEntry(raw).reason : null;
@@ -78,19 +108,21 @@ export function archiveOlderThan(sessions: UnifiedSession[], days: number): numb
   let archived = 0;
   const now = new Date().toISOString();
 
-  const unpin: string[] = [];
+  const justArchived: UnifiedSession[] = [];
   for (const s of sessions) {
     if (s.archived || s.isRunning) continue;
     if (registry[s.id]) continue;
     if (new Date(s.lastActivity).getTime() >= cutoff) continue;
     registry[s.id] = { at: now, reason: "idle" };
-    unpin.push(s.id, ...(s.aliasIds || []));
+    justArchived.push(s);
     archived++;
   }
 
   if (archived > 0) {
     save(registry);
-    unpinEverywhere(unpin);
+    // Registry is written, so isArchivedId now reflects this batch — drop the
+    // stale session/alias pins and any workspace pin whose last chat just went.
+    unpinArchivedSessions(justArchived, sessions);
   }
   return archived;
 }

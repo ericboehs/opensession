@@ -17,7 +17,7 @@
  */
 import { readFileSync, existsSync, mkdirSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
-import { setArchived } from "./archive";
+import { setArchived, unpinArchivedSessions } from "./archive";
 import type { UnifiedSession } from "./types";
 
 // `waitingForInput` is a live, in-process signal (pendingAsks) layered onto
@@ -124,7 +124,7 @@ function doneReason(
  */
 export function autoArchiveDoneSessions(sessions: SweepSession[]): number {
   const cfg = readConfig();
-  let archived = 0;
+  const justArchived: SweepSession[] = [];
 
   for (const s of sessions) {
     if (s.archived || s.automation || !s.startedBy) continue;
@@ -139,10 +139,14 @@ export function autoArchiveDoneSessions(sessions: SweepSession[]): number {
     if (reason === "checks" && !userCfg.repos.includes(sessionRepo(s)))
       continue;
     setArchived(s.id, true, "auto");
-    archived++;
+    justArchived.push(s);
   }
 
-  return archived;
+  // setArchived drops each plain-id pin; now that the registry is written, also
+  // drop alias-id pins and any workspace pin whose last live chat just archived.
+  unpinArchivedSessions(justArchived, sessions);
+
+  return justArchived.length;
 }
 
 let sweepInterval: ReturnType<typeof setInterval> | null = null;
