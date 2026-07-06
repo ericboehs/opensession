@@ -721,7 +721,7 @@ function SwipeCard({
 					<span>·</span>
 					<span>{ageLabel(pr.createdAt)} old</span>
 					{pr.isDraft && (
-						<span className="rounded border border-yellow/50 px-1.5 py-px text-[10px] font-bold tracking-wide text-yellow">
+						<span className="rounded border border-yellow/50 px-1.5 py-px text-[10px] font-bold tracking-[-0.01em] text-yellow">
 							Draft
 						</span>
 					)}

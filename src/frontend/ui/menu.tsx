@@ -123,7 +123,7 @@ function GroupLabel({ className, ...props }: { className?: string; children?: Re
 		<BaseMenu.GroupLabel
 			{...props}
 			className={cn(
-				"px-2.5 pb-1.5 text-[11px] font-semibold tracking-normal text-faint",
+				"px-2.5 pb-1.5 text-[11px] font-semibold tracking-[-0.01em] text-faint",
 				className,
 			)}
 		/>

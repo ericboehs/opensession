@@ -123,7 +123,7 @@ function HumanAsksCard({ onOpenSessionId }: { onOpenSessionId?: (id: string) => 
 
   return (
     <div className="w-full max-w-[640px] mx-auto mt-6 text-left bg-panel border border-line rounded-panel px-4 py-3">
-      <div className="text-dim text-[12px] font-medium tracking-wide mb-2">
+      <div className="text-dim text-[12px] font-medium tracking-[-0.01em] mb-2">
         Waiting on teammates
       </div>
       <div className="flex flex-col gap-2">

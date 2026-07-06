@@ -638,7 +638,7 @@ function TypeChooser({
               >
                 <div className="flex items-baseline gap-2 mb-1">
                   <span className="text-fg text-[13px] font-medium">{t.name}</span>
-                  <span className="text-faint text-[10px] tracking-wide ml-auto shrink-0">
+                  <span className="text-faint text-[10px] tracking-[-0.01em] ml-auto shrink-0">
                     {CATEGORY_LABELS[t.category] || t.category}
                   </span>
                 </div>
