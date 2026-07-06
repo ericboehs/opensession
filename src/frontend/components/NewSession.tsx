@@ -11,6 +11,7 @@ import type { WSServerMessage } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { PaletteSelect } from "./PaletteSelect";
+import { RepoTile } from "./RepoTile";
 import { ModelEffortSelect } from "./ModelEffortSelect";
 import { Menu } from "../ui/menu";
 
@@ -43,16 +44,6 @@ interface Props {
 interface Worktree {
   branch: string;
   path: string;
-}
-
-// Shared repo glyph — used both in the trigger and each menu option.
-function RepoIcon({ size = 20 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M2 6h12" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  );
 }
 
 // Repos a session can run against. tella-fusion is the default.
@@ -413,14 +404,14 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             options={REPOS.map((p) => ({
               value: p.id,
               label: p.label,
-              icon: <RepoIcon size={17} />,
+              icon: <RepoTile name={p.id} />,
             }))}
             onChange={setRepo}
             disabled={creating}
             ariaLabel="Repository"
             isPhone={isPhone}
           >
-            <RepoIcon />
+            <RepoTile name={repo} />
             <span className="palette-trigger-label">
               {REPOS.find((p) => p.id === repo)?.label || repo}
             </span>
