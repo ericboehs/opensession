@@ -24,7 +24,7 @@ import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdatePill } from "./components/UpdatePill";
-import { IconSearch, IconSidebarLeft } from "./components/icons";
+import { IconSearch, IconSidebarLeft, IconChevronDown } from "./components/icons";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useBackSwipe } from "./hooks/useBackSwipe";
@@ -1038,7 +1038,26 @@ function App() {
 					    title. Desktop hides the whole bar. */}
 					{mobileDetail && (
 						<span className="app-header-title">
-							<span className="app-header-title-row">
+							{/* On a session the whole heading is the tap target for the
+							    workspace/chat settings menu (repo, model, actions) —
+							    SessionViewer listens for the toggle event. */}
+							<span
+								className={`app-header-title-row ${
+									route.view === "session" && currentSession
+										? "session-settings-trigger app-header-title-tappable"
+										: ""
+								}`}
+								{...(route.view === "session" && currentSession
+									? {
+											role: "button",
+											tabIndex: 0,
+											onClick: () =>
+												window.dispatchEvent(
+													new Event("backstage:toggle-session-settings"),
+												),
+										}
+									: {})}
+							>
 								{route.view === "session" && currentSession?.isRunning && (
 									<span className="working-dot" />
 								)}
@@ -1051,6 +1070,12 @@ function App() {
 											""
 										: topbarTitle}
 								</span>
+								{route.view === "session" && currentSession && (
+									<IconChevronDown
+										className="app-header-title-caret"
+										size={15}
+									/>
+								)}
 							</span>
 							{route.view === "session" && currentSession && (
 								// Filled by SessionViewer's portal (compact model selector).

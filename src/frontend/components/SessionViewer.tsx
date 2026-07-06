@@ -39,6 +39,7 @@ import type { FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { DiffPanel } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
+import { RepoTile } from "./RepoTile";
 import { ModelMenuRow } from "./ModelMenuRow";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
@@ -1419,11 +1420,25 @@ export function SessionViewer({
 			// The Spin off flavor picker is a Base UI popup portaled to <body> —
 			// a click inside it must not close the ⋯ menu it was opened from.
 			if ((e.target as Element | null)?.closest?.('[role="menu"]')) return;
+			// The heading + chat-bar are toggles for this menu (phone): let their
+			// own onClick handle open/close instead of this outside-click closing
+			// on the same tap that's meant to toggle it.
+			if ((e.target as Element | null)?.closest?.(".session-settings-trigger"))
+				return;
 			setOverflowOpen(false);
 		};
 		document.addEventListener("mousedown", onDoc);
 		return () => document.removeEventListener("mousedown", onDoc);
 	}, [overflowOpen]);
+	// The mobile top-bar title (rendered by App, outside this component) opens the
+	// same settings menu — it toggles via a window event so it doesn't need a prop
+	// thread through App's render.
+	useEffect(() => {
+		const toggle = () => setOverflowOpen((o) => !o);
+		window.addEventListener("backstage:toggle-session-settings", toggle);
+		return () =>
+			window.removeEventListener("backstage:toggle-session-settings", toggle);
+	}, []);
 	// Closing the menu disarms a half-finished delete confirm — reopening it
 	// later shouldn't present the destructive choices without a fresh click.
 	useEffect(() => {
@@ -1924,27 +1939,29 @@ export function SessionViewer({
 						: header;
 			})()}
 
-			{/* Compact "chat bar" under the mobile top-bar title: the session's repo
-			    (tap to switch/attach) then its model. Both the RepoBar and the
-			    composer's model pill are hidden on phones (the title row is CSS-hidden,
-			    the composer stays clean), so this row is where they surface. The model
-			    label doubles as a tap target — a native <select> overlays it and opens
-			    the OS picker. Backstage sessions only for the model switch;
-			    Slack/Linear-owned sessions set their model from the owning thread. */}
+			{/* Compact "chat bar" under the mobile top-bar title: it just *shows*
+			    the session's repo and model (no per-item dropdowns) — tapping it (or
+			    the title above) opens the settings menu where they, and every other
+			    workspace/chat setting, can be changed. */}
 			{isPhone &&
 				headerModelEl &&
 				(hasWorkspace || models.length > 0) &&
 				createPortal(
-					<span className="header-chatbar">
+					<span
+						className="header-chatbar session-settings-trigger"
+						role="button"
+						tabIndex={0}
+						title="Workspace & chat settings"
+						onClick={() => setOverflowOpen((o) => !o)}
+					>
 						{hasWorkspace && (
 							<>
-								<RepoBar
-									sessionId={session.id}
-									primaryRepo={session.repo || "tella-fusion"}
-									branch={session.branch}
-									initialAttached={session.attachedRepos || []}
-									variant="compact"
-								/>
+								<span className="header-chatbar-repo">
+									<RepoTile name={session.repo || "tella-fusion"} size={14} />
+									<span className="truncate">
+										{session.repo || "tella-fusion"}
+									</span>
+								</span>
 								{models.length > 0 && (
 									<span className="header-chatbar-sep" aria-hidden="true">
 										·
@@ -1953,39 +1970,9 @@ export function SessionViewer({
 							</>
 						)}
 						{models.length > 0 && (
-							<span
-								className="header-model-select"
-								title={
-									session.source !== "backstage"
-										? "Set the model from the owning agent (/model in the Slack thread)"
-										: "Switch the model for this session"
-								}
-							>
-								<span className="header-model-label">
-									{models.find((m) => m.id === effectiveModel)?.label ||
-										prettyModel(effectiveModel)}
-								</span>
-								<IconChevronDown className="header-model-chevron" size={14} />
-								{session.source === "backstage" && (
-									<select
-										className="palette-select-overlay"
-										value={model}
-										onChange={(e) => handleModelChange(e.target.value)}
-										aria-label="Model"
-									>
-										<option value="">
-											{models.find((m) => m.id === defaultModel)?.label ||
-												prettyModel(defaultModel)}
-										</option>
-										{models
-											.filter((m) => m.id !== defaultModel)
-											.map((m) => (
-												<option key={m.id} value={m.id}>
-													{m.label}
-												</option>
-											))}
-									</select>
-								)}
+							<span className="header-chatbar-model truncate">
+								{models.find((m) => m.id === effectiveModel)?.label ||
+									prettyModel(effectiveModel)}
 							</span>
 						)}
 					</span>,

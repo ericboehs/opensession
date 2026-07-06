@@ -9,13 +9,7 @@ import {
   type AttachedRepo,
 } from "../lib/api";
 import { Menu } from "../ui/menu";
-import {
-  IconCheck,
-  IconPlus,
-  IconX,
-  IconChevronRight,
-  IconChevronDown,
-} from "./icons";
+import { IconCheck, IconPlus, IconX, IconChevronRight } from "./icons";
 import { RepoTile } from "./RepoTile";
 
 interface Props {
@@ -27,12 +21,11 @@ interface Props {
    * How the trigger renders:
    *  - "breadcrumb" (default): the desktop session-header pill, followed by a
    *    "›" separator before the title.
-   *  - "compact": a tiny "[tile] repo ⌄" chip for the phone top-bar model line
-   *    (sits before the model selector).
    *  - "menu-row": a full-width row styled like the ⋯ overflow menu's other
-   *    items, so the same switch/attach menu is reachable from there on a phone.
+   *    items, so the switch/attach menu is reachable from there on a phone (the
+   *    phone top bar just *shows* the repo — settings live behind the heading).
    */
-  variant?: "breadcrumb" | "compact" | "menu-row";
+  variant?: "breadcrumb" | "menu-row";
 }
 
 /**
@@ -150,22 +143,7 @@ export function RepoBar({
   const staticRow = "flex items-center gap-2 rounded-md px-2.5 py-2 text-[13px] text-fg";
 
   const trigger =
-    variant === "compact" ? (
-      // Phone top-bar model line: a tiny chip that sits before the model.
-      <Menu.Trigger
-        className="flex min-w-0 shrink-0 cursor-pointer items-center gap-1 rounded-md border-0 bg-transparent p-0 text-[11px] font-medium text-dim data-[popup-open]:text-fg"
-        title="Repo — tap to switch or attach another"
-      >
-        <RepoTile name={primary} size={14} />
-        <span className="max-w-[120px] truncate">{busy ?? primary}</span>
-        {attached.length > 0 && (
-          <span className="text-faint" title={attached.map((r) => r.repo).join(", ")}>
-            +{attached.length}
-          </span>
-        )}
-        <IconChevronDown size={12} className="shrink-0 opacity-60" />
-      </Menu.Trigger>
-    ) : variant === "menu-row" ? (
+    variant === "menu-row" ? (
       // ⋯ overflow menu row (phone): matches the other menu items' shape.
       <Menu.Trigger
         className="flex w-full cursor-pointer items-center gap-[7px] whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-3 py-[7px] text-[13px] font-medium text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"

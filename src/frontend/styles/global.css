@@ -8882,6 +8882,22 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
+	/* On a session the heading is the tap target for the settings menu — the
+	   pointer-events:none title wrapper is re-enabled just for this row, and a
+	   small caret hints it opens a menu (the repo/model line below stays plain). */
+	.app-header-title-tappable {
+		pointer-events: auto;
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+	}
+	.app-header-title-caret {
+		flex-shrink: 0;
+		opacity: 0.5;
+		color: var(--text-dim);
+	}
+	.app-header-title-tappable:active .app-header-title-text {
+		opacity: 0.6;
+	}
 	/* Small centered model line under the title — the composer's model pill is
 	   hidden on phones, so this is where a session's model surfaces. It doubles
 	   as a tap-to-switch control (see .header-model-select), so re-enable pointer
@@ -8897,8 +8913,9 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		color: var(--text-dim);
 		pointer-events: auto;
 	}
-	/* The compact "chat bar" line under the title: repo chip · model. Centered
-	   to sit under the centered title; each child stays tappable. */
+	/* The "chat bar" line under the title just *shows* repo · model (no
+	   per-item dropdowns) — tapping it (or the heading) opens the settings menu
+	   where they're changed. Centered to sit under the centered title. */
 	.header-chatbar {
 		display: inline-flex;
 		align-items: center;
@@ -8907,10 +8924,27 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		max-width: 100%;
 		min-width: 0;
 		pointer-events: auto;
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+	}
+	.header-chatbar:active {
+		opacity: 0.6;
 	}
 	.header-chatbar-sep {
 		color: var(--text-faint);
 		flex-shrink: 0;
+	}
+	/* Repo chip: tile + name, sized to the thin subtitle line. */
+	.header-chatbar-repo {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		min-width: 0;
+		max-width: 45vw;
+	}
+	.header-chatbar-model {
+		min-width: 0;
+		max-width: 45vw;
 	}
 	/* Model line as a tap target: a compact label + chevron with a full-bleed
 	   transparent native <select> over it (opens the OS picker). Kept tiny to
