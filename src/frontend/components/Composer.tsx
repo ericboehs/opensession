@@ -163,7 +163,6 @@ function GoalModal({
     <Modal.Root open={open} onOpenChange={onOpenChange}>
       <Modal.Content initialFocus={inputRef}>
         <Modal.Header
-          icon={<IconCrosshair size={22} />}
           title="Session goal"
           description="Pinned to the session. It rides along with every prompt you send."
         />
@@ -195,9 +194,6 @@ function GoalModal({
             </button>
           )}
           <div className="flex-1" />
-          <Modal.Close className="rounded-md border border-line-strong px-4 py-2 text-[13.5px] font-medium text-fg outline-none hover:bg-hover">
-            Cancel
-          </Modal.Close>
           <button
             type="button"
             className="rounded-md bg-accent px-5 py-2 text-[13.5px] font-semibold text-white outline-none hover:brightness-105 disabled:cursor-default disabled:opacity-40"
