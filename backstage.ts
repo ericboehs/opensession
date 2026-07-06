@@ -2380,6 +2380,8 @@ function handleSlashCommand(
 		!text.startsWith("/model") &&
 		text !== "/sub" &&
 		!text.startsWith("/sub ") &&
+		text !== "/compact" &&
+		!text.startsWith("/compact ") &&
 		text !== "/help"
 	) {
 		return null;
@@ -2403,6 +2405,7 @@ function handleSlashCommand(
 			"/sub — show the session's pinned Claude subscription and what's available",
 			"/sub <name> — pin a specific subscription for this session's runs",
 			"/sub auto — back to automatic (personal-first, shared-pool fallback)",
+			"/compact — summarize the conversation so far to shrink context and cost (Claude sessions only)",
 		].join("\n");
 	}
 
@@ -2515,6 +2518,28 @@ function handleSlashCommand(
 			? ""
 			: " Heads up: this subscription is currently exhausted, so runs fall back to the pool until it resets.";
 		return `Subscription pinned to ${match.name}. Applies from the next prompt.${codexNote}${exhaustedNote}`;
+	}
+
+	// /compact is a built-in command of the Claude Agent SDK, not a backstage
+	// config change: we return null so the "/compact" text flows through to the
+	// runner, where the SDK summarizes the live context and continues from that
+	// summary (emitting a compact_boundary). We intercept only to (a) block it on
+	// Codex sessions, which have no such command and would otherwise get the
+	// literal text as a prompt, and (b) give the room immediate feedback, since
+	// the SDK's own output for the command is terse. Unlike the marathon-session
+	// problem this exists to fight, it's a manual lever — auto-compact still only
+	// fires near the context-window ceiling.
+	if (text === "/compact" || text.startsWith("/compact ")) {
+		if (providerFor(session.model) === "codex") {
+			return "/compact only applies to Claude sessions — Codex manages its own context window. Switch to a Claude model with /model first, or start a fresh session to shed context.";
+		}
+		broadcastToSession(session.id, {
+			type: "notice",
+			sessionId: session.id,
+			message:
+				"Compacting context — the next reply continues from a summary of the conversation so far.",
+		});
+		return null; // fall through: the SDK runs its built-in /compact on this turn
 	}
 
 	if (text === "/goal" || text === "/goal show") {
