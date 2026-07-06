@@ -240,7 +240,7 @@ export function SettingsMenu({
 			) : top ? (
 				<Menu.Trigger
 					aria-label="Account menu"
-					className="group flex items-center gap-2 rounded-md border-none bg-transparent py-1 pl-2 pr-1.5 text-fg hover:bg-hover data-[popup-open]:bg-hover"
+					className="group flex items-center gap-1.5 rounded-md border-none bg-transparent py-1 pl-1.5 pr-1.5 text-fg hover:bg-hover data-[popup-open]:bg-hover"
 				>
 					<span className="relative inline-flex shrink-0">
 						<span className="app-logo app-logo--sm">B</span>
@@ -256,7 +256,7 @@ export function SettingsMenu({
 					</span>
 					{/* A smaller chevron, hugged to the wordmark and vertically centered.
 					    Only shows on hover or while the menu is open. */}
-					<span className="-ml-1 inline-flex items-center text-faint opacity-0 transition-opacity group-hover:opacity-100 group-data-[popup-open]:opacity-100">
+					<span className="relative top-px -ml-1 inline-flex items-center text-faint opacity-0 transition-opacity group-hover:opacity-100 group-data-[popup-open]:opacity-100">
 						<svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true">
 							<path
 								d="M2 3.5L5 6.5L8 3.5"
