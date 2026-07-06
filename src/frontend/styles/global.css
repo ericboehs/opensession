@@ -8959,11 +8959,13 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		width: 36px;
 		height: 36px;
 	}
-	/* On phones the stop button sits on the right edge, past the send button —
-	   that's where the thumb is. Flex order pushes it after the send-split
-	   without reordering the DOM (desktop keeps stop to the left of send). */
-	.composer-stop {
-		order: 1;
+	/* On phones the stop button REPLACES the send button while a run is going
+	   (the ChatGPT-mobile pattern): hide the busy queue/steer send so stop
+	   alone owns the right corner. The adjacency selector only fires when a
+	   stop button is actually rendered to take its place, so we never leave
+	   the composer with no right-edge action. Desktop keeps both. */
+	.composer-stop + .composer-send-split {
+		display: none;
 	}
 	/* Fit the whole toolbar at phone widths so the send button never clips:
 	   drop the pill chevrons (the pill is obviously tappable), collapse the
