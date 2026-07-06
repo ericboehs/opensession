@@ -470,7 +470,7 @@ export function TeamChat({
 						<div className="flex items-end gap-2 rounded-lg border border-line bg-panel p-2 focus-within:border-line-strong">
 							<textarea
 								ref={inputRef}
-								className="max-h-40 min-h-[38px] flex-1 resize-none bg-transparent px-1 py-1 text-[13px] font-medium leading-snug text-fg outline-none placeholder:text-faint"
+								className="max-h-40 min-h-[38px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-[13px] font-medium leading-snug text-fg shadow-none outline-none placeholder:text-faint"
 								placeholder={
 									isPage
 										? `Message the team as ${user} — @ to tag`

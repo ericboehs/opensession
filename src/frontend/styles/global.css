@@ -1903,13 +1903,19 @@ body.resizing-x {
 	background: var(--bg-raised);
 	border-bottom: 1px solid var(--border);
 }
+/* When the tab strip follows the top bar they read as one block: drop the
+   divider between them (the strip's own bottom border is the only divider). */
+.detail-topbar:has(+ .session-tabs) .viewer-header,
+.detail-topbar:has(+ .session-tabs) .detail-topbar-title {
+	border-bottom: none;
+}
 
 /* Pinned sessions as tabs, above the session title (mobile + desktop) */
 .session-tabs {
 	display: flex;
 	align-items: stretch;
 	gap: 3px;
-	padding: 6px 8px 0;
+	padding: 0 8px 0;
 	background: var(--bg-raised);
 	border-bottom: 1px solid var(--border);
 	flex-shrink: 0;
