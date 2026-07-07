@@ -1523,11 +1523,6 @@ export function Sidebar({
 					row.status !== "merged" && (
 						<span className="sidebar-item-status sidebar-status-unread" />
 					)}
-				{!editing && rowPrNumber(row) != null && (
-					<span className="text-faint text-[11px] max-[720px]:text-[13px] tabular-nums shrink-0">
-						#{rowPrNumber(row)}
-					</span>
-				)}
 				{editing ? (
 					<input
 						className="sidebar-item-rename"
@@ -1561,27 +1556,16 @@ export function Sidebar({
 							}
 						}}
 					>
-						{row.name}
+						{stripPrTitlePrefix(row.name)}
 					</span>
 				)}
 				{row.chats.length > 1 && (
 					<span className="sidebar-group-count">{row.chats.length}</span>
 				)}
-				{runStartMs !== null ? (
-					<RunTicker startMs={runStartMs} />
-				) : (
-					// On phones the idle "time since" is noise — only the live
-					// working ticker (above) earns the spot. Desktop keeps it.
-					!isPhone &&
-					row.lastActivity && (
-						<span
-							className="sidebar-ws-time"
-							title={new Date(row.lastActivity).toLocaleString()}
-						>
-							{shortTime(row.lastActivity)}
-						</span>
-					)
-				)}
+				{/* Only a live run earns a time badge — the idle "time since" was
+				    sidebar noise everywhere (the hovercard/sheet still show last
+				    activity for anyone who wants it). */}
+				{runStartMs !== null && <RunTicker startMs={runStartMs} />}
 				{/* Slack-style pencil: a chat here holds an unsent draft — come back
 				    and finish it. Yields to the hover actions like the count/time. */}
 				{row.chats.some((c) => hasDraft(`chat:${c.id}`)) && (
@@ -1671,21 +1655,12 @@ export function Sidebar({
 					}`}
 				/>
 				{filter.repo === "all" && <RepoTile name={r.repo} />}
-				<span className="text-faint text-[11px] max-[720px]:text-[13px] tabular-nums shrink-0">
-					{r.number ? `#${r.number}` : "PR"}
-				</span>
 				<span className="sidebar-item-title">{r.title}</span>
 				{r.isDraft && (
 					<span className="text-faint text-[10.5px] max-[720px]:text-[12px] tracking-[-0.01em] shrink-0">
 						draft
 					</span>
 				)}
-				<span
-					className="ml-auto shrink-0 text-[10.5px] max-[720px]:text-[12px] text-faint group-hover:hidden"
-					title={new Date(r.updatedAt).toLocaleString()}
-				>
-					{shortTime(r.updatedAt)}
-				</span>
 				<span
 					role="button"
 					tabIndex={0}
@@ -3243,7 +3218,8 @@ function SidebarItem({
 	if (!mine && session.startedBy && !session.automation) {
 		metaParts.push(<span key="u">{session.startedBy}</span>);
 	}
-	metaParts.push(<span key="t">{relativeTime(session.lastActivity)}</span>);
+	// No idle "time since" here — times only appear while a run is live (the
+	// hovercard/details still carry last activity).
 	if (session.prUrl) {
 		metaParts.push(
 			<span
@@ -3394,25 +3370,18 @@ function SidebarItem({
 						}}
 					/>
 				) : (
-					<>
-						{session.prNumber != null && (
-							<span className="text-faint text-[11px] max-[720px]:text-[13px] tabular-nums shrink-0">
-								#{session.prNumber}
-							</span>
-						)}
-						<span
-							className="sidebar-item-title"
-							onDoubleClick={(e) => {
-								e.stopPropagation();
-								setDraft(session.title);
-								setEditing(true);
-							}}
-						>
-							{session.title}
-						</span>
-					</>
+					<span
+						className="sidebar-item-title"
+						onDoubleClick={(e) => {
+							e.stopPropagation();
+							setDraft(session.title);
+							setEditing(true);
+						}}
+					>
+						{stripPrTitlePrefix(session.title)}
+					</span>
 				)}
-				{mine && !editing && (
+				{mine && !editing && metaParts.length > 0 && (
 					<span className="sidebar-item-inline-meta">
 						{metaParts.map((part, i) => (
 							<React.Fragment key={i}>
@@ -3802,12 +3771,12 @@ function RunTicker({ startMs }: { startMs: number }) {
 	);
 }
 
-// The row's fronting PR number — the newest chat that has one (same "fronting
-// PR" rule as wsPrInfo) — shown as a #123 prefix before the row name.
-function rowPrNumber(row: { chats: UnifiedSession[] }): number | undefined {
-	return [...row.chats]
-		.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""))
-		.find((c) => c.prNumber != null)?.prNumber;
+// Workspaces adopted from a PR inherit names like "PR #3662: Rehome setup
+// controls" — in the sidebar the PR icon already carries that identity, so the
+// row shows just the human title. Display-only: the tooltip, rename field and
+// hovercard keep the full name (and the PR number lives there + in the PR tab).
+function stripPrTitlePrefix(name: string): string {
+	return name.replace(/^PR\s*#\d+(:|\s*[—–-])\s*/i, "");
 }
 
 function WsStatusMark({

@@ -12989,11 +12989,11 @@ html[data-theme="light"] .palette-card .palette-create {
 	color: var(--accent);
 }
 
-/* Compact last-activity time on workspace rows (full time in the title
-   tooltip). Yields to the hover actions like the count badge. When a chat
-   count precedes it, the count's own margin-left:auto already pushes the pair
-   to the right edge — the time then keeps just a small fixed gap, otherwise
-   BOTH auto margins would split the free space and strand the count mid-row. */
+/* Compact last-activity time (now only on Support rows — workspace rows show
+   a time only while a run is live, via the ticker below). Full time in the
+   title tooltip. When a count precedes it, the count's own margin-left:auto
+   already pushes the pair to the right edge — the time then keeps a small
+   fixed gap, otherwise BOTH auto margins would split the free space. */
 .sidebar-ws-time {
 	flex: 0 0 auto;
 	margin-left: auto;
@@ -13039,10 +13039,20 @@ html[data-theme="light"] .palette-card .palette-create {
 	flex: 0 0 auto;
 	display: inline-flex;
 	align-items: center;
-	/* A drafted chat always has activity, so the time's margin-left:auto has
-	   already pushed this cluster to the right edge — keep just a small gap. */
+	/* In session rows the inline-meta's margin-left:auto has already pushed
+	   this cluster to the right edge — keep just a small gap. */
 	margin-left: 6px;
 	color: var(--text-dim);
+}
+/* Workspace rows dropped the idle time badge, so the pencil pins itself to the
+   right edge — unless a count/ticker already did the pushing (a second auto
+   margin would split the free space and strand that badge mid-row). */
+.sidebar-ws-row .sidebar-ws-draft {
+	margin-left: auto;
+}
+.sidebar-group-count + .sidebar-ws-draft,
+.sidebar-ws-ticker + .sidebar-ws-draft {
+	margin-left: 6px;
 }
 @media (hover: hover) {
 	.sidebar-ws-row:hover .sidebar-ws-draft {
