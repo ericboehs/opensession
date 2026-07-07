@@ -2519,7 +2519,7 @@ body.resizing-x {
 	border-radius: 10px;
 	color: var(--text-dim);
 	padding: 4px 6px;
-	font-size: 18px;
+	font-size: 22px;
 	line-height: 1;
 }
 .btn-viewer-overflow.active,

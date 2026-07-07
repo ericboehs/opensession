@@ -1927,7 +1927,7 @@ export function SessionViewer({
 								aria-label="Toggle side panel"
 							>
 								{/* Iconic sidebar-right glyph — reads as "right side panel". */}
-								<IconSidebarRight className="btn-panel-toggle-icon" size={24} />
+								<IconSidebarRight className="btn-panel-toggle-icon" size={26} />
 							</button>
 						</Tooltip>
 					)}
