@@ -2524,8 +2524,8 @@ body.resizing-x {
 }
 .btn-viewer-overflow.active,
 .btn-viewer-overflow:hover {
-	color: var(--accent);
-	background: var(--accent-soft);
+	color: var(--text);
+	background: var(--bg-hover);
 }
 .viewer-overflow-menu {
 	position: absolute;
@@ -2740,9 +2740,14 @@ body.resizing-x {
 	   .btn-panel-toggle is text-dim, which read a shade darker than its mirror. */
 	color: var(--text-faint);
 }
+/* The Workspace toggle's affordance is neutral, not the red accent — hover/
+   active lean toward the text color over a plain row-hover wash (same as the
+   ⋯ overflow button), so only genuinely alarming controls wear red. */
 .btn-panel-toggle.btn-workspace.active,
 .btn-panel-toggle.btn-workspace:hover {
 	border-color: transparent;
+	color: var(--text);
+	background: var(--bg-hover);
 }
 .btn-panel-toggle-icon {
 	font-size: 14px;
