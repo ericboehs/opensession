@@ -447,7 +447,7 @@ function PrAgentActions({
 	return (
 		<div className="workspace-info-agent mt-3">
 			<div className="workspace-info-label">Ask Michael</div>
-			<div className="flex flex-wrap gap-1.5">
+			<div className="mt-2 flex flex-wrap gap-1.5">
 				{PR_AGENT_ACTIONS.map((a) => (
 					<button
 						key={a.kind}
