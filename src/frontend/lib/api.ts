@@ -1005,6 +1005,7 @@ export async function createAutomationApi(input: {
 	model?: string;
 	fallbackModel?: string;
 	accountId?: string;
+	accountStrict?: boolean;
 	usageCredits?: boolean;
 	mcpServers?: string[];
 	slackWatch?: { channel: string };

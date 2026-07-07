@@ -41,6 +41,7 @@ interface Automation {
   model?: string;
   fallbackModel?: string;
   accountId?: string;
+  accountStrict?: boolean;
   usageCredits?: boolean;
   lastRunAt?: string;
   lastRunSessionId?: string;
@@ -238,9 +239,14 @@ export function Automations({ onOpenSession }: Props) {
                 {a.accountId && (
                   <span
                     className="source-chip"
-                    title="Hard account pin — runs use only this Claude subscription; when it's out of usage they fall to the fallback model, never the shared pool"
+                    title={
+                      a.accountStrict === false
+                        ? "Soft account pin — runs prefer this Claude subscription and fall back to the shared pool when it's out of usage"
+                        : "Hard account pin — runs use only this Claude subscription; when it's out of usage they fall to the fallback model, never the shared pool"
+                    }
                   >
-                    {claudeAccounts.find((x) => x.id === a.accountId)?.name || "pinned account"} only
+                    {claudeAccounts.find((x) => x.id === a.accountId)?.name || "pinned account"}
+                    {a.accountStrict === false ? " first" : " only"}
                   </span>
                 )}
                 {a.usageCredits && (
@@ -843,6 +849,7 @@ function AutomationForm({
   const [model, setModel] = useState(initial?.model || "");
   const [fallbackModel, setFallbackModel] = useState(initial?.fallbackModel || "");
   const [accountId, setAccountId] = useState(initial?.accountId || "");
+  const [accountStrict, setAccountStrict] = useState(initial?.accountStrict !== false);
   const [usageCredits, setUsageCredits] = useState(!!initial?.usageCredits);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
@@ -883,6 +890,7 @@ function AutomationForm({
           model,
           fallbackModel,
           accountId,
+          accountStrict,
           usageCredits,
           mcpServers: mcpServers ?? null,
           slackWatch,
@@ -897,6 +905,7 @@ function AutomationForm({
           model: model || undefined,
           fallbackModel: fallbackModel || undefined,
           accountId: accountId || undefined,
+          accountStrict: accountId && !accountStrict ? false : undefined,
           usageCredits: usageCredits || undefined,
           mcpServers,
           slackWatch,
@@ -1059,7 +1068,7 @@ function AutomationForm({
             </select>
           </label>
 
-          <label title="Hard pin: runs use only this subscription. When it's out of usage they switch to the fallback model — never the shared pool — so this account's limits are the automation's cost ceiling.">
+          <label title="Pin runs to one subscription. Only applies to Claude models; Codex runs use the Codex pool.">
             Claude account
             <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
               <option value="">Auto — shared pool rotation</option>
@@ -1070,10 +1079,20 @@ function AutomationForm({
                 </option>
               ))}
             </select>
-            <span className="text-faint text-[11.5px] leading-snug mt-1">
-              Only applies to Claude models; Codex runs use the Codex pool.
-            </span>
           </label>
+
+          {accountId && (
+            <label title="This account only: when it's out of usage, runs switch to the fallback model — never the shared pool — so this account's limits are the automation's cost ceiling. Prefer it: exhausted runs rotate into the shared pool instead.">
+              When the pinned account is out of usage
+              <select
+                value={accountStrict ? "strict" : "pool"}
+                onChange={(e) => setAccountStrict(e.target.value === "strict")}
+              >
+                <option value="strict">This account only — fall back by model (cost cap)</option>
+                <option value="pool">Prefer it — fall back to the shared pool</option>
+              </select>
+            </label>
+          )}
 
           <label title="Usage-credits are pay-as-you-go spend past the subscription's included limits. Only takes effect on accounts with extra usage enabled at claude.ai — and their monthly credit cap still bounds the spend.">
             Usage credits
