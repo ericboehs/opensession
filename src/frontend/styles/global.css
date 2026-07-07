@@ -1258,7 +1258,9 @@ body.resizing-x {
 	font-size: 14px;
 	font-weight: 500;
 	letter-spacing: 0;
-	padding: 4px 6px;
+	/* Left pad matches the row's (list 10 + 10 = 20) so a lane's header icon
+	   sits on the same column as its rows' leading status marks. */
+	padding: 4px 6px 4px 10px;
 }
 .sidebar-group-header:hover {
 	color: var(--text);
@@ -1318,7 +1320,7 @@ body.resizing-x {
 	   icons above it (list pad-left 10 + 6 = 16), so a row's status mark sits
 	   directly under its lane's icon; the right padding lands the trailing
 	   time/number flush under the header's filter/＋ buttons. */
-	padding: 11px 8px 11px 6px;
+	padding: 11px 8px 11px 10px;
 	color: var(--text);
 	position: relative;
 }
@@ -10075,7 +10077,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   touch, but the same tight horizontal insets as the base rule so leading
 	   icons align under their group header and trailing times land flush right. */
 	.sidebar-item {
-		padding: 13px 8px 13px 6px;
+		padding: 13px 8px 13px 10px;
 	}
 	.sidebar-item-title,
 	.sidebar-item-rename {
