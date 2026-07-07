@@ -29,6 +29,7 @@ import {
 } from "../lib/workspace-overview";
 import { summarizeChecks } from "./PrStatusBar";
 import { openLightbox } from "./MediaLightbox";
+import { IconCheck, IconClock, IconX } from "./icons";
 
 /**
  * Workspace info block at the top of the right side panel (the "Info" tab): a
@@ -73,15 +74,19 @@ interface Props {
 
 type ChipTone = "green" | "red" | "yellow" | "purple" | "muted";
 
-/** The check/review/PR-state chips shown in the status row (only the ones that
-    say something are rendered). */
-function statusChips(pr: PrDetails | null): Array<{
+type StatusChip = {
 	key: string;
 	label: string;
 	tone: ChipTone;
-}> {
+	/** Optional leading glyph, pulled from the icon library (never raw unicode). */
+	icon?: React.ReactNode;
+};
+
+/** The check/review/PR-state chips shown in the status row (only the ones that
+    say something are rendered). */
+function statusChips(pr: PrDetails | null): StatusChip[] {
 	if (!pr) return [];
-	const chips: Array<{ key: string; label: string; tone: ChipTone }> = [];
+	const chips: StatusChip[] = [];
 	if (pr.state === "MERGED")
 		chips.push({ key: "merged", label: "Merged", tone: "purple" });
 	else if (pr.state === "CLOSED")
@@ -92,13 +97,24 @@ function statusChips(pr: PrDetails | null): Array<{
 	if (c.failed > 0)
 		chips.push({
 			key: "checks",
-			label: `✕ ${c.failed} check${c.failed === 1 ? "" : "s"} failing`,
+			label: `${c.failed} check${c.failed === 1 ? "" : "s"} failing`,
 			tone: "red",
+			icon: <IconX size={14} />,
 		});
 	else if (c.pending > 0)
-		chips.push({ key: "checks", label: "⧗ Checks running", tone: "yellow" });
+		chips.push({
+			key: "checks",
+			label: "Checks running",
+			tone: "yellow",
+			icon: <IconClock size={14} />,
+		});
 	else if (c.passed > 0)
-		chips.push({ key: "checks", label: "✓ Checks passing", tone: "green" });
+		chips.push({
+			key: "checks",
+			label: "Checks passing",
+			tone: "green",
+			icon: <IconCheck size={14} />,
+		});
 
 	if (pr.mergeable === "CONFLICTING")
 		chips.push({ key: "conflicts", label: "Merge conflicts", tone: "red" });
@@ -535,6 +551,9 @@ export function WorkspaceInfo({
 								className={`wi-chip wi-chip-${chip.tone}`}
 								onClick={() => onOpenTab?.("pr")}
 							>
+								{chip.icon && (
+									<span className="wi-chip-icon">{chip.icon}</span>
+								)}
 								{chip.label}
 							</button>
 						))}
