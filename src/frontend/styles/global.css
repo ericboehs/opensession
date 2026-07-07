@@ -9208,6 +9208,31 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		border-bottom-color: transparent;
 	}
 
+	/* Sidebar (home) + chat (session): the bar floats over the content instead
+	   of reserving a solid band above it. Taken out of flow so the list / the
+	   transcript fill the full height and scroll UNDER the pills — the pills stay
+	   put on top (with their own soft shadow) rather than the scroll being clipped
+	   at a hard top-bar line. The scroll containers below pad their top by the bar
+	   height so the first row still clears the pills at rest. */
+	.app-header-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 40;
+		/* Transparent so the controls read as floating pills over the scrolling
+		   content — no chrome band, and no scroll-triggered divider line hanging
+		   across mid-screen. */
+		background: transparent;
+		border-bottom: none;
+		/* Let taps fall through the empty gaps between the pills to the content
+		   scrolling underneath; the pills themselves re-enable pointer events. */
+		pointer-events: none;
+	}
+	.app-header-overlay > * {
+		pointer-events: auto;
+	}
+
 	/* Centered page title, iOS-sheet style: the Back chevron keeps the left
 	   edge, the title floats dead-center regardless of what's beside it (so it
 	   can't jump when actions come and go). Absolutely positioned inside the
@@ -9565,7 +9590,9 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		background: var(--bg-panel);
 		/* Nav-bar controls share the app tint, like the Back chevron. */
 		color: var(--accent);
-		/* No drop shadow — matches the flat filter button sitting beside it. */
+		/* Soft shadow so the pill lifts off the list scrolling underneath it —
+		   matches the Back / title / ⋯ bubbles on pushed pages. */
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 		cursor: pointer;
 		border-radius: 50%;
 		-webkit-tap-highlight-color: transparent;
@@ -9670,7 +9697,19 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 
 	.viewer-messages {
-		padding: 12px 12px 4px;
+		/* Clear the floating pills at rest, then scroll under them: the top inset
+		   is the bar height (+ a little air) so the newest/first row sits just
+		   below the title pill rather than behind it. */
+		padding: calc(var(--header-h) + 8px) 12px 4px;
+		/* Dissolve the transcript into the bar as it scrolls up under the pills,
+		   so text never bleeds sharply above them — the pills stay the topmost,
+		   cleanly-legible layer. */
+		-webkit-mask-image: linear-gradient(
+			to bottom,
+			transparent 0,
+			#000 var(--header-h)
+		);
+		mask-image: linear-gradient(to bottom, transparent 0, #000 var(--header-h));
 	}
 
 	.viewer-input {
@@ -10083,6 +10122,17 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   above a separately-scrolling list. */
 	.sidebar {
 		overflow-y: auto;
+		/* The top bar floats over the list (see .app-header-overlay), so pad the
+		   scroll's top by the bar height — the tool cards clear the pills at rest
+		   and the list scrolls under them. */
+		padding-top: var(--header-h);
+		/* Fade the list into the bar as it scrolls under the floating pills. */
+		-webkit-mask-image: linear-gradient(
+			to bottom,
+			transparent 0,
+			#000 var(--header-h)
+		);
+		mask-image: linear-gradient(to bottom, transparent 0, #000 var(--header-h));
 	}
 	.sidebar-list {
 		flex: none;
@@ -10187,6 +10237,9 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		border: 1px solid var(--border);
 		background: var(--bg-panel);
 		color: var(--text-dim);
+		/* Soft shadow to lift it off the scrolling list, matching the search pill
+		   beside it and the pushed-page bubbles. */
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 		cursor: pointer;
 		border-radius: 50%;
 		-webkit-tap-highlight-color: transparent;

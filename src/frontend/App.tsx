@@ -1068,7 +1068,11 @@ function App() {
 				<header
 					className={`app-header${
 						!mobileDetail && rootListScrolled ? " app-header-scrolled" : ""
-					}${mobileDetail ? " app-header-detail" : ""}`}
+					}${mobileDetail ? " app-header-detail" : ""}${
+						route.view === "home" || route.view === "session"
+							? " app-header-overlay"
+							: ""
+					}`}
 				>
 					<div className="app-header-left">
 						{mobileDetail ? (
