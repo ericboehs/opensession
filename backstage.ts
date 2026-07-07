@@ -90,6 +90,8 @@ import {
 	createWorkspace,
 	updateWorkspace,
 	deleteWorkspace,
+	findWorkspaceByWorktree,
+	type Workspace,
 } from "./src/server/workspaces";
 import {
 	getTabColors as getUserTabColors,
@@ -625,6 +627,21 @@ function touchBackstageSession(
 	} catch (e) {
 		console.error(`Failed to update backstage session ${bksId}:`, e);
 	}
+}
+
+/**
+ * The workspace that already owns this worktree, or null. Adopt-don't-duplicate:
+ * every create path that's about to wrap a chat in a fresh workspace checks here
+ * first, so landing on an already-owned worktree joins the existing workspace
+ * instead of minting a second one over it. Repo main checkouts never match —
+ * they're shared by every backstage/ask chat, so ownership is meaningless there.
+ */
+function workspaceOwningWorktree(
+	worktreeDir: string | null | undefined,
+): Workspace | null {
+	if (!worktreeDir) return null;
+	if (Object.values(REPOS).some((r) => r.repo === worktreeDir)) return null;
+	return findWorkspaceByWorktree(worktreeDir);
 }
 
 /**
@@ -4623,6 +4640,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			// worktree, branch, repo, and project. It has no engine session yet — its
 			// first prompt starts a fresh run (see runSessionPrompt). Powers the tab
 			// strip's + button ("new chat in this project").
+			//
+			// Workspace membership is adopt-don't-duplicate: when a chat/create lands
+			// on a worktree an existing workspace already owns, it joins that
+			// workspace — a second workspace over the same worktree is always the
+			// "clicked + and got a whole new workspace" bug. Main checkouts are
+			// excluded (shared by every backstage/ask chat, so ownership is
+			// meaningless there); see workspaceOwningWorktree.
 			const newChatMatch = path.match(
 				/^\/backstage\/api\/sessions\/(.+)\/new-chat$/,
 			);
@@ -4669,23 +4693,31 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						repoId = repoForPath(ws.worktreeDir).id;
 					}
 				}
-				// A workspace-less backstage source (e.g. an ask chat from before the
-				// Home box created workspaces) gets healed here: wrap the SOURCE in a
-				// fresh workspace and put the sibling in it too, so the pair actually
-				// links up in the tab strip and sidebar. Read-only sources
-				// (slack/linear files) can't be stamped — they keep grouping by
-				// shared worktree instead.
+				// A workspace-less source gets healed here: adopt the workspace that
+				// already owns its worktree when there is one (a fresh workspace over
+				// an owned worktree is the "clicked + and got a whole new workspace"
+				// bug), else wrap the SOURCE in a fresh workspace and put the sibling
+				// in it too, so the pair actually links up in the tab strip and
+				// sidebar. Read-only sources (slack/linear files) can join an adopted
+				// workspace but can't be stamped themselves.
 				let workspaceId = src.projectId || null;
-				if (!workspaceId && src.source === "backstage") {
-					const ws = createWorkspace({
-						name: src.title || src.branch || "Workspace",
-						repo: src.repo,
-						createdBy: body.user || src.startedBy || "Anonymous",
-						...(src.branch ? { branch: src.branch } : {}),
-						...(src.worktreeDir ? { worktreeDir: src.worktreeDir } : {}),
-					});
-					touchBackstageSession(src.id, { projectId: ws.id });
-					workspaceId = ws.id;
+				if (!workspaceId) {
+					const owned = workspaceOwningWorktree(src.worktreeDir);
+					if (owned) {
+						workspaceId = owned.id;
+						if (src.source === "backstage")
+							touchBackstageSession(src.id, { projectId: owned.id });
+					} else if (src.source === "backstage") {
+						const ws = createWorkspace({
+							name: src.title || src.branch || "Workspace",
+							repo: src.repo,
+							createdBy: body.user || src.startedBy || "Anonymous",
+							...(src.branch ? { branch: src.branch } : {}),
+							...(src.worktreeDir ? { worktreeDir: src.worktreeDir } : {}),
+						});
+						touchBackstageSession(src.id, { projectId: ws.id });
+						workspaceId = ws.id;
+					}
 				}
 				const data: BackstageSessionFile = {
 					id: bksId,
@@ -6801,16 +6833,29 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						// word its brief pending state accordingly.
 						let createdWorkspaceNow = false;
 						if (!workspace && msg.createWorkspace) {
-							createdWorkspaceNow = true;
-							workspace = createWorkspace({
-								name:
-									(typeof msg.createWorkspace.name === "string" &&
-										msg.createWorkspace.name) ||
-									prompt.trim().split("\n")[0].slice(0, 80) ||
-									"Workspace",
-								repo: repo.id,
-								createdBy: user || "Anonymous",
-							});
+							// A code create landing on a branch whose worktree an existing
+							// workspace already owns joins that workspace (the worktree
+							// lookup below would silently reuse the worktree anyway —
+							// re-submitted prompt slugs and existing branches picked in the
+							// unscoped palette both hit this). Only then mint a fresh one.
+							if (!isAsk && !forkSource && !fromPr && !repo.sharedCheckout && branch) {
+								const existingWt = (await listWorktrees(repo.id)).find(
+									(w) => w.branch === branch,
+								)?.path;
+								workspace = workspaceOwningWorktree(existingWt);
+							}
+							if (!workspace) {
+								createdWorkspaceNow = true;
+								workspace = createWorkspace({
+									name:
+										(typeof msg.createWorkspace.name === "string" &&
+											msg.createWorkspace.name) ||
+										prompt.trim().split("\n")[0].slice(0, 80) ||
+										"Workspace",
+									repo: repo.id,
+									createdBy: user || "Anonymous",
+								});
+							}
 						}
 						// Set once the session has been announced to the client (early
 						// session_created) — a later failure must then close out the
@@ -6916,7 +6961,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							// auto-created workspace is named ONCE from the same generated
 							// summary (it provisionally wore the raw first line) and keeps
 							// that name for life — later chats never rename it.
+							// Only a workspace minted by THIS create gets auto-named — an
+							// adopted pre-existing workspace keeps its own name.
 							const wsAutoNamed =
+								createdWorkspaceNow &&
 								!!workspace &&
 								!!msg.createWorkspace &&
 								!msg.createWorkspace.name;
@@ -7572,18 +7620,28 @@ registerSessionControl({
 		const bksId = `bks-${randomUUIDv7()}`;
 		const title = prompt.trim().split("\n")[0].slice(0, 80);
 		let projectId = parentSession?.projectId || null;
-		if (!projectId && parentSession?.source === "backstage") {
-			const ws = createWorkspace({
-				name: parentSession.title || parentSession.branch || "Workspace",
-				repo: parentSession.repo,
-				createdBy: user || parentSession.startedBy || "Anonymous",
-				...(parentSession.branch ? { branch: parentSession.branch } : {}),
-				...(parentSession.worktreeDir
-					? { worktreeDir: parentSession.worktreeDir }
-					: {}),
-			});
-			touchBackstageSession(parentSession.id, { projectId: ws.id });
-			projectId = ws.id;
+		if (!projectId) {
+			// Adopt the workspace that already owns the (parent's or this child's)
+			// worktree before minting a duplicate one over it; only a workspace-less
+			// backstage parent on an unowned worktree gets wrapped in a fresh one.
+			const owned =
+				workspaceOwningWorktree(parentSession?.worktreeDir) ??
+				workspaceOwningWorktree(wtPath);
+			if (owned) projectId = owned.id;
+			else if (parentSession?.source === "backstage") {
+				const ws = createWorkspace({
+					name: parentSession.title || parentSession.branch || "Workspace",
+					repo: parentSession.repo,
+					createdBy: user || parentSession.startedBy || "Anonymous",
+					...(parentSession.branch ? { branch: parentSession.branch } : {}),
+					...(parentSession.worktreeDir
+						? { worktreeDir: parentSession.worktreeDir }
+						: {}),
+				});
+				projectId = ws.id;
+			}
+			if (projectId && parentSession?.source === "backstage")
+				touchBackstageSession(parentSession.id, { projectId });
 		}
 		// Replace the raw first-line title with a short summary in the background;
 		// the next sessions poll (≤5s) picks it up.

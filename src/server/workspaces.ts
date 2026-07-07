@@ -149,6 +149,23 @@ export function createWorkspace(input: {
   return workspace;
 }
 
+/**
+ * The workspace that owns `worktreeDir`, or null. When duplicates exist (older
+ * create paths minted a second workspace over an already-owned worktree), the
+ * oldest wins — it's the one the user thinks of as "the" workspace. Callers
+ * must not pass a repo's main checkout: those are legitimately shared by many
+ * workspaces (every backstage chat, every ask chat), so "ownership" is
+ * meaningless there.
+ */
+export function findWorkspaceByWorktree(worktreeDir: string): Workspace | null {
+  if (!worktreeDir) return null;
+  const owners = listWorkspaces().filter((w) => w.worktreeDir === worktreeDir);
+  if (owners.length < 2) return owners[0] || null;
+  return owners.sort(
+    (a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0),
+  )[0];
+}
+
 /** Find a workspace by its stable dedupe key, or null. */
 export function findWorkspaceByKey(key: string): Workspace | null {
   if (!key) return null;
