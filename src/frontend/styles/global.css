@@ -4503,7 +4503,10 @@ body.resizing-x .panel-resize::after {
 	background: rgba(210, 153, 34, 0.09);
 }
 .pr-bar-muted {
-	background: var(--bg-panel);
+	/* Match the chat's top bar surface so the panel's top row reads as the same
+	   bar across the seam (header + tab strip = one continuous light band),
+	   rather than a heavier gray block that looks shorter/misaligned. */
+	background: var(--topbar-bg);
 }
 
 /* PR chip as a segmented split button (Tella's Share pattern): the wide half
