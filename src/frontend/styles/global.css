@@ -9948,7 +9948,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		padding: 12px 12px 10px 16px;
 		overflow-x: auto;
 		overflow-y: hidden;
-		scroll-snap-type: x proximity;
 		-webkit-overflow-scrolling: touch;
 		scrollbar-width: none;
 		overscroll-behavior-x: contain;
@@ -9959,7 +9958,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.sidebar-nav-item {
 		flex: 0 0 auto;
 		width: 132px;
-		scroll-snap-align: start;
 		flex-direction: column;
 		align-items: flex-start;
 		justify-content: space-between;
