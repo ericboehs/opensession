@@ -837,6 +837,28 @@ export async function mergePrApi(
 	);
 }
 
+/** GitHub PR agent behaviors (the michael-* PR labels) fired straight from the
+    info panel: review / auto-fix / simplify / adversarial. tella-fusion only. */
+export type PrAgentAction = "review" | "autofix" | "simplify" | "adversarial";
+
+export async function triggerPrActionApi(
+	sessionId: string,
+	kind: PrAgentAction,
+	user: string,
+	repo?: string,
+) {
+	return request<{
+		ok: boolean;
+		message?: string;
+		url?: string;
+		bksId?: string;
+		error?: string;
+	}>(`/sessions/${encodeURIComponent(sessionId)}/pr-action`, {
+		method: "POST",
+		body: { kind, user, ...(repo ? { repo } : {}) },
+	});
+}
+
 // ── Automations ──
 
 export interface ModelOption {

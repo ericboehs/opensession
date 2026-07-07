@@ -10,9 +10,12 @@ import {
 	fetchChannelHistoryApi,
 	fetchDiff,
 	fetchPr,
+	triggerPrActionApi,
+	type PrAgentAction,
 	type WorkspaceMediaItem,
 	type WorkspaceOverview,
 } from "../lib/api";
+import { getCurrentUser } from "./UserPicker";
 import type {
 	DiffFile,
 	PrDetails,
@@ -369,6 +372,125 @@ function CommentCard({
 	);
 }
 
+/** The GitHub PR agent behaviors, surfaced as one-tap buttons on the info panel.
+    Each maps to a michael-* PR label; hitting the button is equivalent to adding
+    that label on GitHub (or @mentioning Michael on the PR), but without leaving
+    Backstage. tella-fusion PRs only — the agent is repo-scoped. */
+const PR_AGENT_ACTIONS: Array<{
+	kind: PrAgentAction;
+	label: string;
+	hint: string;
+}> = [
+	{
+		kind: "review",
+		label: "Review",
+		hint: "Full review pass (michael-review) — Michael posts findings on the PR",
+	},
+	{
+		kind: "autofix",
+		label: "Auto-fix",
+		hint: "Fix outstanding findings and push until CI is green (michael-auto-fix)",
+	},
+	{
+		kind: "simplify",
+		label: "Simplify",
+		hint: "Quality cleanup pass — reuse, simpler shapes, dead code (michael-simplify)",
+	},
+	{
+		kind: "adversarial",
+		label: "Adversarial",
+		hint: "Deeper two-pass adversarial review (michael-adversarial)",
+	},
+];
+
+function PrAgentActions({
+	sessionId,
+	repo,
+	prUrl,
+}: {
+	sessionId: string;
+	repo?: string;
+	prUrl?: string;
+}) {
+	const [busy, setBusy] = useState<PrAgentAction | null>(null);
+	const [done, setDone] = useState<{ label: string; bksId?: string } | null>(
+		null,
+	);
+	const [error, setError] = useState<string | null>(null);
+
+	async function run(action: (typeof PR_AGENT_ACTIONS)[number]) {
+		if (busy) return;
+		setBusy(action.kind);
+		setError(null);
+		setDone(null);
+		try {
+			const res = await triggerPrActionApi(
+				sessionId,
+				action.kind,
+				getCurrentUser(),
+				repo,
+			);
+			if (res.ok) setDone({ label: action.label, bksId: res.bksId });
+			else setError(res.error || res.message || "Couldn't start");
+		} catch (e: any) {
+			setError(e?.message || "Couldn't start");
+		} finally {
+			setBusy(null);
+		}
+	}
+
+	return (
+		<div className="workspace-info-agent mt-3">
+			<div className="workspace-info-label">Ask Michael</div>
+			<div className="flex flex-wrap gap-1.5">
+				{PR_AGENT_ACTIONS.map((a) => (
+					<button
+						key={a.kind}
+						type="button"
+						title={a.hint}
+						disabled={busy !== null}
+						onClick={() => run(a)}
+						className="rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-fg transition-colors hover:border-line-strong hover:bg-panel disabled:opacity-50"
+					>
+						{busy === a.kind ? "Starting…" : a.label}
+					</button>
+				))}
+			</div>
+			{done && (
+				<div className="mt-1.5 text-[11.5px] font-medium text-dim">
+					Started {done.label.toLowerCase()} — Michael will post results on{" "}
+					{prUrl ? (
+						<a
+							href={prUrl}
+							target="_blank"
+							rel="noopener"
+							className="text-fg underline decoration-line-strong underline-offset-2"
+						>
+							the PR
+						</a>
+					) : (
+						"the PR"
+					)}
+					{done.bksId && (
+						<>
+							{" · "}
+							<a
+								href={`/backstage/session/${encodeURIComponent(done.bksId)}`}
+								className="text-fg underline decoration-line-strong underline-offset-2"
+							>
+								open run
+							</a>
+						</>
+					)}
+				</div>
+			)}
+			{error && (
+				<div className="mt-1.5 text-[11.5px] font-medium text-red">{error}</div>
+			)}
+		</div>
+	);
+}
+
 export function WorkspaceInfo({
 	sessionId,
 	workspaceId,
@@ -558,6 +680,9 @@ export function WorkspaceInfo({
 							</button>
 						))}
 					</div>
+				)}
+				{pr?.number && repo === "tella-fusion" && (
+					<PrAgentActions sessionId={sessionId} repo={repo} prUrl={pr.url} />
 				)}
 			</div>
 			{hasBody ? (

@@ -4318,6 +4318,60 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				}
 			}
 
+			// Fire a GitHub PR agent behavior straight from the info panel — the same
+			// actions the michael-* PR labels / Slack @mentions kick off (review,
+			// auto-fix, simplify, adversarial). tella-fusion only (the agent is
+			// repo-scoped), and there must be an open PR for the branch.
+			if (
+				path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-action$/) &&
+				req.method === "POST"
+			) {
+				const sessionId = decodeURIComponent(
+					path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-action$/)![1],
+				);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+
+				const body = await req.json().catch(() => null);
+				const kind = body?.kind;
+				if (!["review", "autofix", "simplify", "adversarial"].includes(kind))
+					return Response.json({ error: "Unknown action" }, { status: 400 });
+
+				const target = resolvePrTarget(session, body?.repo);
+				if (!target)
+					return Response.json(
+						{ error: "No branch/PR for that repo" },
+						{ status: 400 },
+					);
+				if (target.ghRepo !== "tellahq/tella-fusion")
+					return Response.json(
+						{ error: "The PR agent only runs on tella-fusion" },
+						{ status: 400 },
+					);
+
+				const details = await getPrDetails(target.branch, target.ghRepo);
+				if (!details?.number)
+					return Response.json(
+						{ error: "No open PR for this branch yet" },
+						{ status: 400 },
+					);
+
+				const { triggerPrAction } = await import("./src/agents/github/trigger");
+				const result = await triggerPrAction(
+					kind,
+					details.number,
+					body?.user || "Someone",
+				);
+				return Response.json({
+					ok: result.ok,
+					message: result.message,
+					url: result.url,
+					bksId: result.bksId,
+					...(result.ok ? {} : { error: result.message }),
+				});
+			}
+
 			// Bulk-archive idle sessions
 			if (
 				path === "/backstage/api/sessions/archive-old" &&
