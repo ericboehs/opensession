@@ -571,6 +571,18 @@ export function IconMessageQuestion(p: IconProps) {
   );
 }
 
+export function IconBell(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M17.25 12V10C17.25 7.1 14.9 4.75 12 4.75C9.1 4.75 6.75 7.1 6.75 10V12L4.75 16.25H19.25L17.25 12Z"
+      />
+      <path {...stroke} d="M9.75 16.5C9.75 17.74 10.76 18.75 12 18.75C13.24 18.75 14.25 17.74 14.25 16.5" />
+    </Svg>
+  );
+}
+
 export function IconInbox(p: IconProps) {
   return (
     <Svg {...p}>

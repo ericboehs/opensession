@@ -180,6 +180,12 @@ export interface UnifiedSession {
 	 * Set server-side from the status-override registry; unset = derive as usual.
 	 */
 	manualStatus?: "needsinput" | "inprogress" | "review" | "merged" | "pending";
+	/**
+	 * A pending "please review this" pointed at a teammate, set from the info
+	 * panel's Reviewer picker. Surfaces the session in a "Needs review" band at
+	 * the top of the reviewer's sidebar until cleared or re-assigned.
+	 */
+	reviewRequest?: { to: string; by: string; at: string };
 }
 
 /** A Project — an optional folder that groups chats (sessions). */

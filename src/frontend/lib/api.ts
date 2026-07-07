@@ -1600,6 +1600,22 @@ export async function setSessionStatusApi(
 	});
 }
 
+/**
+ * Ask a teammate to review this session (surfaces it in a "Needs review" band
+ * at the top of their sidebar + pushes a notification); null clears the request.
+ */
+export async function setSessionReviewerApi(
+	sessionId: string,
+	reviewer: string | null,
+	by: string,
+): Promise<void> {
+	await request<void>(`/sessions/${encodeURIComponent(sessionId)}/review`, {
+		method: "PUT",
+		body: { reviewer, by },
+		label: "Failed to set reviewer",
+	});
+}
+
 export function getWebSocketUrl(): string {
 	const proto = location.protocol === "https:" ? "wss:" : "ws:";
 	return `${proto}//${location.host}/backstage/ws`;

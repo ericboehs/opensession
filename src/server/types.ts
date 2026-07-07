@@ -123,6 +123,13 @@ export interface UnifiedSession {
    * registry in getAllSessions; unset = derive the lane as usual.
    */
   manualStatus?: "needsinput" | "inprogress" | "review" | "merged" | "pending";
+  /**
+   * A pending "please review this" pointed at a teammate, set from the info
+   * panel's Reviewer picker. Surfaces the session in a "Needs review" band at
+   * the top of the reviewer's sidebar. Set from the review-request registry in
+   * getAllSessions; cleared by picking "No reviewer" (or re-assigning).
+   */
+  reviewRequest?: { to: string; by: string; at: string };
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   // Other IDs that resolve to this session. The same Claude session can be
   // tracked by multiple files (e.g. a Slack run writes both <branch>.json and

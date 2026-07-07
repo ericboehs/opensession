@@ -2052,6 +2052,7 @@ export function SessionViewer({
 										repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
 										prState={hasWorkspace ? session.prState : undefined}
 										slackChannel={session.slackChannel}
+										reviewRequest={session.reviewRequest}
 										onOpenTab={(tab) => {
 											setInfoPageOpen(false);
 											setSubagentStack([]);
@@ -2580,6 +2581,7 @@ export function SessionViewer({
 									}
 									prState={hasWorkspace ? session.prState : undefined}
 									slackChannel={session.slackChannel}
+									reviewRequest={session.reviewRequest}
 									onOpenTab={(tab) => selectPanelTab(tab)}
 									onAddToInput={(text) =>
 										setComposerPrefill((p) => ({

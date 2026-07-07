@@ -27,6 +27,7 @@ import { colorHex, TAB_COLORS } from "../lib/tab-colors";
 import {
 	IconChevronDown,
 	IconArchive,
+	IconBell,
 	IconFilter,
 	IconGitMerge,
 	IconCheck,
@@ -312,6 +313,7 @@ const EXPANDED_KEY = "michael-sidebar-expanded";
 const DEFAULT_EXPANDED = [
 	"recently",
 	"pinned",
+	"needsreview",
 	"status:needsinput",
 	"status:merged",
 	"status:pending",
@@ -1006,39 +1008,55 @@ export function Sidebar({
 	// Pinned rows (pinned via their own key or a legacy pin on a member chat)
 	// and the focus person's rows — shared by the list rendering below and by
 	// archive-next, so both always agree on what's actually in the sidebar.
+	// Rows a teammate flagged for YOUR review (the info panel's Reviewer picker).
+	// They get their own band at the very top: they're usually someone else's
+	// workspaces, so the owner lens below would otherwise hide them entirely.
+	const needsReviewRows = useMemo(() => {
+		const me = currentUser.toLowerCase();
+		return wsRows.filter((r) =>
+			r.chats.some((c) => c.reviewRequest?.to?.toLowerCase() === me),
+		);
+	}, [wsRows, currentUser]);
 	const pinnedWsRows = useMemo(() => {
 		const pinSet = new Set(pins);
+		const reviewKeys = new Set(needsReviewRows.map((r) => r.key));
 		return wsRows.filter(
-			(r) => pinSet.has(r.key) || r.chats.some((c) => pinSet.has(c.id)),
+			(r) =>
+				!reviewKeys.has(r.key) &&
+				(pinSet.has(r.key) || r.chats.some((c) => pinSet.has(c.id))),
 		);
-	}, [wsRows, pins]);
+	}, [wsRows, pins, needsReviewRows]);
 	const focusWsRows = useMemo(() => {
 		const pinSet = new Set(pins);
+		const reviewKeys = new Set(needsReviewRows.map((r) => r.key));
 		const focus =
 			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
 		return wsRows.filter(
 			(r) =>
 				(focus === "everyone" || r.owner === focus) &&
+				!reviewKeys.has(r.key) &&
 				!pinSet.has(r.key) &&
 				!r.chats.some((c) => pinSet.has(c.id)),
 		);
-	}, [wsRows, pins, filter.person, currentUser]);
+	}, [wsRows, pins, filter.person, currentUser, needsReviewRows]);
 
 	// Workspace rows in the sidebar's visual order (Pinned band first, then the
 	// status lanes) — archiveWorkspaceWithNext walks this to pick the row that
 	// should open when the active workspace is archived away.
 	const wsRowOrder = useMemo(
 		() => [
+			...needsReviewRows,
 			...pinnedWsRows,
 			...MINE_STATUS_META.flatMap((meta) =>
 				focusWsRows.filter((r) => r.status === meta.key),
 			),
 		],
-		[pinnedWsRows, focusWsRows],
+		[needsReviewRows, pinnedWsRows, focusWsRows],
 	);
 	const hasWorkspaceFilter =
 		!!search || filter.repo !== "all" || filter.person !== "me";
 	const workspaceListEmpty =
+		needsReviewRows.length === 0 &&
 		pinnedWsRows.length === 0 &&
 		focusWsRows.length === 0 &&
 		prLaneRows.length === 0;
@@ -2287,6 +2305,41 @@ export function Sidebar({
 							: "No workspaces yet"}
 					</div>
 				)}
+
+				{/* ── Needs review: sessions a teammate asked YOU to look at (the info
+				    panel's Reviewer picker). Rides above everything — it's a direct
+				    request, like a blocked question. ── */}
+				{needsReviewRows.length > 0 &&
+					(() => {
+						const open = isOpen("needsreview");
+						return (
+							<div className="sidebar-group sidebar-group--review">
+								<button
+									className="sidebar-group-header"
+									onClick={() => toggleGroup("needsreview")}
+								>
+									<IconBell
+										className="sidebar-group-icon"
+										style={{ color: "var(--accent)" }}
+									/>
+									<span className="sidebar-group-name">Needs review</span>
+									<span className="sidebar-group-count">
+										{needsReviewRows.length}
+									</span>
+									<IconChevronDown
+										className="sidebar-group-chevron"
+										size={22}
+										style={{ transform: open ? "none" : "rotate(-90deg)" }}
+									/>
+								</button>
+								{needsReviewRows
+									.filter(
+										(r) => open || r.chats.some((c) => c.id === selectedId),
+									)
+									.map(renderWsRow)}
+							</div>
+						);
+					})()}
 
 				{/* ── Pinned (workspaces + notes, mixed) ── */}
 				{(() => {

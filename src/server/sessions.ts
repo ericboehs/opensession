@@ -8,6 +8,7 @@ import {
 import { isArchivedId, getArchiveReason } from "./archive";
 import { getTitleOverride } from "./title-overrides";
 import { getStatusOverride } from "./status-overrides";
+import { getReviewRequest } from "./review-requests";
 import { getGeneratedTitle } from "./generated-titles";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
@@ -660,6 +661,15 @@ export function getAllSessions(): UnifiedSession[] {
       getStatusOverride(session.id) ??
       session.aliasIds?.map((a) => getStatusOverride(a)).find(Boolean);
     if (status) session.manualStatus = status;
+  }
+
+  // Apply pending review requests (the info panel's Reviewer picker), keyed by
+  // unified id or any merged alias id like the registries above.
+  for (const session of allSessions) {
+    const review =
+      getReviewRequest(session.id) ??
+      session.aliasIds?.map((a) => getReviewRequest(a)).find(Boolean);
+    if (review) session.reviewRequest = review;
   }
 
   // Sort by lastActivity descending

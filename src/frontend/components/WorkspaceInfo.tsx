@@ -10,12 +10,15 @@ import {
 	fetchChannelHistoryApi,
 	fetchDiff,
 	fetchPr,
+	setSessionReviewerApi,
 	triggerPrActionApi,
 	type PrAgentAction,
 	type WorkspaceMediaItem,
 	type WorkspaceOverview,
 } from "../lib/api";
-import { getCurrentUser } from "./UserPicker";
+import { getCurrentUser, TEAM } from "./UserPicker";
+import { UserAvatar } from "./UserAvatar";
+import { Menu } from "../ui/menu";
 import type {
 	DiffFile,
 	PrDetails,
@@ -32,7 +35,7 @@ import {
 } from "../lib/workspace-overview";
 import { summarizeChecks } from "./PrStatusBar";
 import { openLightbox } from "./MediaLightbox";
-import { IconCheck, IconClock, IconX } from "./icons";
+import { IconBell, IconCheck, IconClock, IconX } from "./icons";
 
 /**
  * Workspace info block at the top of the right side panel (the "Info" tab): a
@@ -64,6 +67,8 @@ interface Props {
 	prState?: string | null;
 	/** Linked Slack channel, when one exists — gates the Slack fetch. */
 	slackChannel?: SlackChannelLink | null;
+	/** Pending review request on the open chat — the Reviewer chip's state. */
+	reviewRequest?: { to: string; by: string; at: string } | null;
 	/** Jump to a sibling tab when a status chip / reply row is clicked. */
 	onOpenTab?: (tab: PanelTab) => void;
 	/** Prefill the composer (the per-comment "Add to chat" hover action). */
@@ -491,6 +496,71 @@ function PrAgentActions({
 	);
 }
 
+/** The Reviewer picker chip in the status row: pick a teammate to flag this
+    session as "needs review" — it jumps into a Needs-review band at the top of
+    their sidebar and buzzes their registered devices. Re-pick to hand off,
+    "Clear review request" to withdraw. Optimistic; the polled session list
+    confirms (or reverts) on the next refresh. */
+function ReviewerChip({
+	sessionId,
+	reviewRequest,
+}: {
+	sessionId: string;
+	reviewRequest?: { to: string; by: string; at: string } | null;
+}) {
+	const [req, setReq] = useState(reviewRequest ?? null);
+	// Follow the polled session as it refreshes (another viewer may re-assign).
+	useEffect(() => {
+		setReq(reviewRequest ?? null);
+	}, [reviewRequest?.to, reviewRequest?.at]);
+
+	function pick(name: string | null) {
+		const prev = req;
+		const me = getCurrentUser();
+		setReq(name ? { to: name, by: me, at: new Date().toISOString() } : null);
+		setSessionReviewerApi(sessionId, name, me).catch(() => setReq(prev));
+	}
+
+	return (
+		<Menu.Root>
+			<Menu.Trigger
+				className={`wi-chip ${req ? "wi-chip-yellow" : "wi-chip-muted"}`}
+				title={
+					req
+						? `Review requested by ${req.by}`
+						: "Ask a teammate to review this session"
+				}
+			>
+				{req ? (
+					<UserAvatar name={req.to} size={15} />
+				) : (
+					<span className="wi-chip-icon">
+						<IconBell size={14} />
+					</span>
+				)}
+				{req ? `Review: ${req.to}` : "Request review"}
+			</Menu.Trigger>
+			<Menu.Popup align="start" sideOffset={6} className="min-w-[200px]">
+				{TEAM.map((name) => (
+					<Menu.Item key={name} onClick={() => pick(name)}>
+						<UserAvatar name={name} size={20} />
+						<span className="min-w-0 flex-1 truncate">{name}</span>
+						{req?.to === name && <IconCheck size={16} className="text-dim" />}
+					</Menu.Item>
+				))}
+				{req && (
+					<>
+						<Menu.Separator />
+						<Menu.Item className="text-dim" onClick={() => pick(null)}>
+							Clear review request
+						</Menu.Item>
+					</>
+				)}
+			</Menu.Popup>
+		</Menu.Root>
+	);
+}
+
 export function WorkspaceInfo({
 	sessionId,
 	workspaceId,
@@ -499,6 +569,7 @@ export function WorkspaceInfo({
 	repo,
 	prState,
 	slackChannel,
+	reviewRequest,
 	onOpenTab,
 	onAddToInput,
 	liveMediaCount,
@@ -664,23 +735,22 @@ export function WorkspaceInfo({
 			<div className="workspace-info-head">
 				<div className="workspace-info-title">{title}</div>
 				{meta && <div className="workspace-info-meta">{meta}</div>}
-				{chips.length > 0 && (
-					<div className="workspace-info-status">
-						{chips.map((chip) => (
-							<button
-								key={chip.key}
-								type="button"
-								className={`wi-chip wi-chip-${chip.tone}`}
-								onClick={() => onOpenTab?.("pr")}
-							>
-								{chip.icon && (
-									<span className="wi-chip-icon">{chip.icon}</span>
-								)}
-								{chip.label}
-							</button>
-						))}
-					</div>
-				)}
+				<div className="workspace-info-status">
+					{chips.map((chip) => (
+						<button
+							key={chip.key}
+							type="button"
+							className={`wi-chip wi-chip-${chip.tone}`}
+							onClick={() => onOpenTab?.("pr")}
+						>
+							{chip.icon && (
+								<span className="wi-chip-icon">{chip.icon}</span>
+							)}
+							{chip.label}
+						</button>
+					))}
+					<ReviewerChip sessionId={sessionId} reviewRequest={reviewRequest} />
+				</div>
 				{pr?.number && repo === "tella-fusion" && (
 					<PrAgentActions sessionId={sessionId} repo={repo} prUrl={pr.url} />
 				)}

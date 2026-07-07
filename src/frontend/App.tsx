@@ -613,6 +613,8 @@ function App() {
 				!s.automation && !!s.startedBy && s.startedBy.toLowerCase() === me
 			);
 		},
+		isMyReview: (s) =>
+			s.reviewRequest?.to?.toLowerCase() === getCurrentUser().toLowerCase(),
 		onOpen: (id) => navigate({ view: "session", id }),
 	});
 

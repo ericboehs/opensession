@@ -269,6 +269,7 @@ import {
 } from "./src/server/auto-archive";
 import { setTitleOverride, getTitleOverride } from "./src/server/title-overrides";
 import { setStatusOverride, isManualStatus } from "./src/server/status-overrides";
+import { setReviewRequest } from "./src/server/review-requests";
 import { ensureGeneratedTitle } from "./src/server/generated-titles";
 import {
 	getConnections,
@@ -4478,6 +4479,48 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const status = isManualStatus(body?.status) ? body.status : null;
 				setStatusOverride(sessionId, status);
 				sessionsCache = null;
+				return Response.json({ ok: true });
+			}
+
+			// Set (or clear) a session's review request — the info panel's Reviewer
+			// picker. `reviewer` is a teammate display name; null/empty clears the
+			// request. Setting one pushes a "needs your review" notification to the
+			// reviewer's registered devices (mirrors the needs-input ask push).
+			const reviewMatch = path.match(
+				/^\/backstage\/api\/sessions\/(.+)\/review$/,
+			);
+			if (reviewMatch && req.method === "PUT") {
+				const sessionId = decodeURIComponent(reviewMatch[1]);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const body = await req.json().catch(() => ({}));
+				const reviewer =
+					typeof body?.reviewer === "string"
+						? body.reviewer.trim().slice(0, 40)
+						: "";
+				const by = typeof body?.by === "string" ? body.by.trim().slice(0, 40) : "";
+				setReviewRequest(
+					sessionId,
+					reviewer
+						? { to: reviewer, by: by || "someone", at: new Date().toISOString() }
+						: null,
+				);
+				sessionsCache = null;
+				if (reviewer) {
+					// Best-effort phone buzz — never let a push hiccup fail the request.
+					void (async () => {
+						try {
+							const { sendPushToUser } = await import("./src/server/push");
+							await sendPushToUser(reviewer, {
+								title: "Needs your review",
+								body: `${by || "Someone"} asked you to review ${session.title || sessionId}`.slice(0, 180),
+								url: `/backstage/session/${encodeURIComponent(sessionId)}`,
+								tag: `review-${sessionId}`,
+							});
+						} catch {}
+					})();
+				}
 				return Response.json({ ok: true });
 			}
 
