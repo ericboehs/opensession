@@ -1145,14 +1145,14 @@ body.resizing-x {
 }
 /* The nesting reads through an inset alone — the old 1px rail was one more
    line of chrome than the grouping needs. And the inset lives in the rows'
-   own left padding (base 10px + 26.5px), not a container margin, so a row's
-   hover/selection pill still runs the sidebar's full width — only the icons
-   and text sit indented under the repo header. */
+   own left padding (base 10px + a gentle Notion-ish 14px step), not a
+   container margin, so a row's hover/selection pill still runs the sidebar's
+   full width — only the icons and text sit indented under the repo header. */
 .sidebar-repo-lanes .sidebar-group-header {
-	padding-left: 36.5px;
+	padding-left: 24px;
 }
 .sidebar-repo-lanes .sidebar-item {
-	padding-left: 36.5px;
+	padding-left: 24px;
 }
 
 /* People and Automations render one collapsed row per group, so the 14px
