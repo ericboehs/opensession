@@ -63,6 +63,7 @@ import {
 	IconCrosshair,
 	IconStar,
 	IconPullRequest,
+	IconLink,
 } from "./icons";
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
 import { Tooltip } from "../ui/tooltip";
@@ -1597,6 +1598,7 @@ export function SessionViewer({
 						onClick={handleShare}
 						title="Copy a link to this session"
 					>
+						<IconLink size={20} />
 						{copied ? "Copied" : "Share"}
 					</button>
 				);

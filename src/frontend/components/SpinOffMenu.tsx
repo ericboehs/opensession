@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Menu } from "../ui/menu";
+import { IconBranches } from "./icons";
 import type { UnifiedSession, TranscriptEntry } from "../lib/types";
 import { getCurrentUser } from "./UserPicker";
 
@@ -112,6 +113,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
     <div className="spinoff">
       <Menu.Root>
         <Menu.Trigger className="btn-panel-toggle" title="Spin off a new session from this one">
+          <IconBranches size={20} />
           Spin off ▾
         </Menu.Trigger>
         <Menu.Popup align="end" sideOffset={6} className="w-80 overflow-hidden p-0">
