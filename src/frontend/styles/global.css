@@ -9619,13 +9619,13 @@ html[data-theme="light"] .composer-hl .cmp-fence {
      is unfocused (keyboard closed), so it must always keep the full safe-area
      gap — otherwise a lingering kb-open would drop it too low. */
 	body.kb-open .viewer-input:has(.composer:not(.composer-min)) {
-		padding-bottom: 4px;
+		padding-bottom: 0;
 	}
 	/* Team chat (Watercooler + session Chat tab): keyboard closed keeps its snug
-     resting gap; keyboard up drops it to the same tight gap as the main
-     composer so more of the conversation stays visible while typing. */
+     resting gap; keyboard up drops it flush to the keyboard so the maximum
+     amount of the conversation stays visible while typing. */
 	body.kb-open .chat-input-bar {
-		padding-bottom: 4px;
+		padding-bottom: 0;
 	}
 
 	/* 16px stops iOS Safari from zooming into focused inputs, and reads at a
