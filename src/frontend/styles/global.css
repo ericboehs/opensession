@@ -12,6 +12,10 @@
 	/* Surface for the session top bar + tab strip. Matches --bg-raised in dark;
 	   in light it's pulled a touch toward white so the bar reads cleaner. */
 	--topbar-bg: #212121;
+	/* Clean control chips (header Share, PR chip): sit one gentle step above the
+	   topbar so they read as lifted, with a whisper of shadow. Codex-style. */
+	--control-surface: #2a2a2a;
+	--control-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 	--bg-panel: #262626;
 	--bg-hover: #2e2e2e;
 	--bg-active: #363636;
@@ -61,6 +65,10 @@ html[data-theme="light"] {
 	--bg: #ffffff;
 	--bg-raised: #f7f6f4;
 	--topbar-bg: #fcfbfa;
+	/* Pure white, a hair brighter than the warm topbar, + a barely-there shadow —
+	   the clean lifted chip from the Codex reference. */
+	--control-surface: #ffffff;
+	--control-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 	--bg-panel: #f2f0ec;
 	--bg-hover: #ece9e4;
 	--bg-active: #e4e0d9;
@@ -3163,9 +3171,10 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	justify-content: center;
 	gap: 6px;
 	min-height: 32px;
-	background: var(--bg-raised);
+	background: var(--control-surface);
 	border: 1px solid var(--border);
 	border-radius: 8px;
+	box-shadow: var(--control-shadow);
 	color: var(--text-dim);
 	padding: 0 13px;
 	font-size: 13px;
@@ -4502,7 +4511,8 @@ body.resizing-x .panel-resize::after {
 	border-radius: 7px;
 	overflow: hidden;
 	color: var(--text-dim);
-	background: var(--bg-raised);
+	background: var(--control-surface);
+	box-shadow: var(--control-shadow);
 	white-space: nowrap;
 }
 .pr-num-split-green {
