@@ -9742,19 +9742,33 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 
 	.viewer-messages {
+		/* Bottom fade depth — reused by the padding (to lift resting content
+		   clear of it) and the mask, so they always match. */
+		--msg-fade-b: 26px;
 		/* Clear the floating pills at rest, then scroll under them: the top inset
 		   is the bar height (+ a little air) so the newest/first row sits just
-		   below the title pill rather than behind it. */
-		padding: calc(var(--header-h) + 8px) 12px 4px;
-		/* Dissolve the transcript into the bar as it scrolls up under the pills,
-		   so text never bleeds sharply above them — the pills stay the topmost,
-		   cleanly-legible layer. */
+		   below the title pill rather than behind it. The bottom inset does the
+		   same against the composer — the newest row rests just above the fade
+		   zone (crisp), and only scrolled-past text dips into it. */
+		padding: calc(var(--header-h) + 8px) 12px var(--msg-fade-b);
+		/* Dissolve the transcript at BOTH ends: into the bar as it scrolls up
+		   under the pills, and into the composer as it scrolls down under it —
+		   text never bleeds sharply against either floating layer, and the hard
+		   cut where the transcript met the composer is now a soft fade. */
 		-webkit-mask-image: linear-gradient(
 			to bottom,
 			transparent 0,
-			#000 var(--header-h)
+			#000 var(--header-h),
+			#000 calc(100% - var(--msg-fade-b)),
+			transparent 100%
 		);
-		mask-image: linear-gradient(to bottom, transparent 0, #000 var(--header-h));
+		mask-image: linear-gradient(
+			to bottom,
+			transparent 0,
+			#000 var(--header-h),
+			#000 calc(100% - var(--msg-fade-b)),
+			transparent 100%
+		);
 	}
 
 	.viewer-input {
