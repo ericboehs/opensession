@@ -193,6 +193,17 @@ export function IconPlay(p: IconProps) {
   );
 }
 
+// Outlined play triangle — same glyph, stroke-only so it reads like the rest of
+// the icon set (used for the session-header preview affordance, where the state
+// color carries the meaning and a filled wedge looked heavy).
+export function IconPlayOutline(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M8.5 6.75L17.5 12L8.5 17.25V6.75Z" />
+    </Svg>
+  );
+}
+
 // Camera — snapshot the preview. Redrawn on the 24-grid so it carries the same
 // weight as its split-button siblings (the old hand-drawn 16-viewBox one read
 // denser and off-scale).

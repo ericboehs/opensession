@@ -8,7 +8,13 @@ import {
 } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
 import { withPreviewPath } from "../lib/preview-url";
-import { IconArrowUpRight, IconCamera, IconChevronDown, IconPlay } from "./icons";
+import {
+  IconArrowUpRight,
+  IconCamera,
+  IconChevronDown,
+  IconPlay,
+  IconPlayOutline,
+} from "./icons";
 
 // Only tella-fusion worktrees are previewable — the bring-up script
 // (tella-local ensure-up.sh) seeds a tella-fusion webapp specifically.
@@ -255,7 +261,7 @@ export function PreviewButton({
             onContextMenu={openMenu}
             title={`Preview is live — open the webapp (${url}). Right-click for dev services.`}
           >
-            <IconPlay size={22} />
+            <IconPlayOutline size={22} />
           </a>
         ) : isStarting ? (
           <button
@@ -274,7 +280,7 @@ export function PreviewButton({
             onContextMenu={openMenu}
             title="Start Tella Local and preview this session. Right-click for dev services."
           >
-            <IconPlay size={22} />
+            <IconPlayOutline size={22} />
           </button>
         )}
         {servicesPopover}
