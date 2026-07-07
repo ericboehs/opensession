@@ -9079,8 +9079,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		opacity: 0.6;
 	}
 
-	/* Repo tile sits in front of the session name in the top-bar title. */
-	.app-header-title-row .repo-tile {
+	/* Repo tile leads the metadata line under the title (repo · model · cost). */
+	.header-chatbar .repo-tile {
 		flex-shrink: 0;
 	}
 

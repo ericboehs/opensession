@@ -2067,10 +2067,17 @@ export function SessionViewer({
 				(hasWorkspace || models.length > 0) &&
 				createPortal(
 					<span className="header-chatbar">
+						{hasWorkspace && (
+							<RepoTile name={session.repo || "tella-fusion"} size={15} />
+						)}
 						{models.length > 0 && (
 							<span className="header-chatbar-model truncate">
-								{models.find((m) => m.id === effectiveModel)?.label ||
-									prettyModel(effectiveModel)}
+								{/* Drop the "Claude " prefix — "Opus 4.8" reads fine in the
+								    thin subtitle and leaves room for the cost meter. */}
+								{(
+									models.find((m) => m.id === effectiveModel)?.label ||
+									prettyModel(effectiveModel)
+								).replace(/^Claude[\s-]+/i, "")}
 							</span>
 						)}
 						{/* The composer's cost/context meter can't fit in the toolbar on

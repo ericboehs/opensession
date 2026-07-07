@@ -26,7 +26,6 @@ import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdatePill } from "./components/UpdatePill";
 import { IconSearch, IconSidebarLeft } from "./components/icons";
-import { RepoTile } from "./components/RepoTile";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useBackSwipe } from "./hooks/useBackSwipe";
@@ -1100,16 +1099,11 @@ function App() {
 									}
 									: {})}
 						>
-							{/* Repo tile + name; the metadata line under it shares this one tap
-							    target that opens the session's deeper info page. No chevron —
-							    the tile + tappable block carry the "opens more" affordance. */}
+							{/* Name only; the metadata line under it (repo tile · model ·
+							    cost) shares this one tap target that opens the session's
+							    deeper info page. No chevron — the tappable block carries
+							    the "opens more" affordance. */}
 							<span className="app-header-title-row">
-								{route.view === "session" && currentSession && (
-									<RepoTile
-										name={currentSession.repo || "tella-fusion"}
-										size={18}
-									/>
-								)}
 								{route.view === "session" && currentSession?.isRunning && (
 									<span className="working-dot" />
 								)}
