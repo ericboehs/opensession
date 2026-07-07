@@ -29,13 +29,25 @@ export function repoColor(key: string): string {
 // A tiny colored letter-tile standing in for a repo's icon (sidebar Repo
 // dropdown, session-header breadcrumb, repo menus). `size` (px) shrinks it for
 // tight spots like the phone header's model line; omitted = the 18px default.
-export function RepoTile({ name, size }: { name: string; size?: number }) {
+// `round` makes it a full circle (e.g. the phone title pill, where it sits
+// against the pill's own rounding).
+export function RepoTile({
+	name,
+	size,
+	round,
+}: {
+	name: string;
+	size?: number;
+	round?: boolean;
+}) {
 	const style: React.CSSProperties = { background: repoColor(name) };
 	if (size) {
 		style.width = size;
 		style.height = size;
 		style.fontSize = Math.round(size * 0.6);
-		style.borderRadius = Math.max(3, Math.round(size * 0.28));
+		style.borderRadius = round ? "50%" : Math.max(3, Math.round(size * 0.28));
+	} else if (round) {
+		style.borderRadius = "50%";
 	}
 	return (
 		<span className="repo-tile" style={style}>

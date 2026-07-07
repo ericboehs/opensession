@@ -2068,7 +2068,7 @@ export function SessionViewer({
 				headerRepoEl &&
 				hasWorkspace &&
 				createPortal(
-					<RepoTile name={session.repo || "tella-fusion"} size={26} />,
+					<RepoTile name={session.repo || "tella-fusion"} size={18} round />,
 					headerRepoEl,
 				)}
 
