@@ -3275,6 +3275,11 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	flex-direction: column;
 	min-width: 0;
 	min-height: 0;
+	/* Depth the transcript scrolls up behind the composer. Shared by the
+	   composer's negative margin + backdrop, the transcript's bottom inset, and
+	   the jump-to-latest offset so they always line up. The mobile media query
+	   inherits this; both viewports get the "chat scrolls under the input" fade. */
+	--chat-under: 44px;
 }
 
 /* The panel portals into this app-level slot. `display: contents` dissolves the
@@ -6197,7 +6202,11 @@ body.resizing-x .panel-resize::after {
 	   dragging the whole transcript off-screen. */
 	overflow-x: hidden;
 	overscroll-behavior: contain;
-	padding: 18px 20px 4px;
+	/* Bottom inset lifts the newest row clear of the composer, which floats up
+	   over the transcript (see .viewer-input). The row stays full-strength; only
+	   rows scrolled down behind the composer fade — and they fade in the
+	   composer's backdrop, not here. */
+	padding: 18px 20px var(--chat-under);
 	min-height: 0;
 	/* Keep the reader's place when content loads/expands above them (principle 12):
      the browser anchors scroll to on-screen content instead of jumping. */
@@ -6272,7 +6281,9 @@ body.resizing-x .panel-resize::after {
 .jump-latest {
 	position: absolute;
 	left: 50%;
-	bottom: 12px;
+	/* The messages region runs --chat-under px deeper (under the composer), so
+	   lift this floating pill by the same amount to keep it above the composer. */
+	bottom: calc(var(--chat-under, 0px) + 12px);
 	transform: translateX(-50%);
 	display: inline-flex;
 	align-items: center;
@@ -7409,9 +7420,22 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 /* ── Input area ──────────────────────────────────────────── */
 
 .viewer-input {
-	padding: 6px 20px 14px;
-	background: transparent;
+	/* Float the composer up over the transcript so the chat scrolls UNDER it
+	   (not cut off above it), in normal flow — a negative top margin only shifts
+	   it visually. z-index lifts it over the position:relative messages region it
+	   now overlaps. */
+	position: relative;
+	z-index: 1;
+	margin-top: calc(-1 * var(--chat-under));
 	flex-shrink: 0;
+	/* The backdrop IS the fade: transparent at the top of the overlap so the
+	   transcript shows through crisp, ramping to the solid page bg by the time a
+	   row reaches the composer — rows dissolve behind it, not on the readable
+	   content row above it. */
+	background: linear-gradient(to bottom, transparent 0, var(--bg) var(--chat-under));
+	/* Top padding re-opens the space the negative margin ate, so the composer
+	   sits where it did before; the fade lives in that reclaimed strip. */
+	padding: calc(var(--chat-under) + 6px) 20px 14px;
 }
 
 .viewer-input-row {
