@@ -1591,14 +1591,16 @@ export function SessionViewer({
 			)}
 			{(() => {
 				// Share rides inline on a wide header but tucks into the ⋯ overflow
-				// menu when it gets narrow.
-				const collapsibleActions = (
+				// menu when it gets narrow. Inline it's a bare text chip (the header
+				// is already dense with icons); in the menu it takes a leading icon
+				// so it lines up with the other icon+label rows.
+				const shareAction = (inMenu: boolean) => (
 					<button
 						className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
 						onClick={handleShare}
 						title="Copy a link to this session"
 					>
-						<IconLink size={20} />
+						{inMenu && <IconLink size={20} />}
 						{copied ? "Copied" : "Share"}
 					</button>
 				);
@@ -1855,7 +1857,7 @@ export function SessionViewer({
 					    Workspace toggle stays rightmost. On phones the secondary
 					    controls fold in too. The ⋯ menu is always present — Star,
 					    Spin off and Delete live only in there. */}
-					{!compactHeader && !isPhone && collapsibleActions}
+					{!compactHeader && !isPhone && shareAction(false)}
 					<div className="viewer-overflow" ref={overflowRef}>
 						<button
 							className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
@@ -1871,7 +1873,7 @@ export function SessionViewer({
 								{/* iOS-style quick-actions menu. The workspace overview + repo/model
 								    settings live on the title’s info page instead; this stays lean. */}
 								{isPhone && secondaryActions}
-								{(compactHeader || isPhone) && collapsibleActions}
+								{(compactHeader || isPhone) && shareAction(true)}
 								{newChatAction}
 								{overflowActions}
 								{archiveAction}

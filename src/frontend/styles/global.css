@@ -314,6 +314,7 @@ button {
 	.btn-viewer-archive,
 	.btn-viewer-newchat,
 	.btn-viewer-share,
+	.pr-num-split,
 	.btn-viewer-pin,
 	.sidebar-nav-item,
 	.sidebar-toggle-btn,
@@ -3152,26 +3153,33 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	text-align: center;
 }
 
+/* Header Share: a soft-filled chip (not a floating hairline outline) matched to
+   the PR split-button beside it — same 32px height, 8px squircle radius, raised
+   fill. The subtle fill + border reads as a solid, deliberate control instead of
+   the thin ring it used to be. In the ⋯ menu the list styling overrides all this. */
 .btn-viewer-share {
 	display: inline-flex;
 	align-items: center;
+	justify-content: center;
 	gap: 6px;
-	background: none;
-	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	min-height: 32px;
+	background: var(--bg-raised);
+	border: 1px solid var(--border);
+	border-radius: 8px;
 	color: var(--text-dim);
-	padding: 5px 12px;
+	padding: 0 13px;
 	font-size: 13px;
+	font-weight: 550;
 	white-space: nowrap;
 }
 .btn-viewer-share:hover {
-	color: var(--accent);
-	border-color: var(--accent);
-	background: var(--accent-soft);
+	color: var(--text);
+	border-color: var(--border-strong);
+	background: var(--bg-hover);
 }
 .btn-viewer-share-done {
 	color: var(--green);
-	border-color: var(--green);
+	border-color: color-mix(in srgb, var(--green) 40%, transparent);
 	background: var(--green-soft);
 }
 
@@ -4696,14 +4704,15 @@ body.resizing-x .panel-resize::after {
 	min-width: 0;
 }
 .pr-head .pr-num-split {
-	border-radius: 6px;
+	min-height: 32px;
+	border-radius: 8px;
 }
 .pr-head .pr-num-open {
-	padding: 5px 10px;
+	padding: 0 11px;
 	font-size: 13px;
 }
 .pr-head .pr-num-copy {
-	width: 30px;
+	width: 32px;
 }
 .pr-head .pr-bar-btn {
 	min-height: 32px;
