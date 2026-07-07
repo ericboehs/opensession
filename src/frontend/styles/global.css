@@ -2058,6 +2058,10 @@ body.resizing-x {
 		height: 44px;
 		/* Overlay the messages below instead of pushing them down. */
 		margin-bottom: -44px;
+		/* Tuck the pills up into the header's empty bottom padding (its buttons are
+		   centered in the 54px row) so they sit close under the header instead of
+		   floating with a wide gap above them. */
+		margin-top: -8px;
 		padding: 0 8px;
 		position: relative;
 		z-index: 6;
