@@ -73,6 +73,9 @@ interface Props {
 	onOpenTab?: (tab: PanelTab) => void;
 	/** Prefill the composer (the per-comment "Add to chat" hover action). */
 	onAddToInput?: (text: string) => void;
+	/** Navigate to a session — used by Auto-fix, which spins up a new chat in this
+	    workspace and jumps into it. */
+	onOpenSession?: (id: string) => void;
 	/** Media items currently in the open chat's live entries — bumps refresh
 	    the panel as new screenshots land during a run. */
 	liveMediaCount: number;
@@ -394,7 +397,7 @@ const PR_AGENT_ACTIONS: Array<{
 	{
 		kind: "autofix",
 		label: "Auto-fix",
-		hint: "Fix outstanding findings and push until CI is green (michael-auto-fix)",
+		hint: "Opens a new chat in this workspace that fixes every finding + failing CI and pushes — watch and steer it live",
 	},
 	{
 		kind: "simplify",
@@ -412,10 +415,12 @@ function PrAgentActions({
 	sessionId,
 	repo,
 	prUrl,
+	onOpenSession,
 }: {
 	sessionId: string;
 	repo?: string;
 	prUrl?: string;
+	onOpenSession?: (id: string) => void;
 }) {
 	const [busy, setBusy] = useState<PrAgentAction | null>(null);
 	const [done, setDone] = useState<{ label: string; bksId?: string } | null>(
@@ -435,8 +440,15 @@ function PrAgentActions({
 				getCurrentUser(),
 				repo,
 			);
-			if (res.ok) setDone({ label: action.label, bksId: res.bksId });
-			else setError(res.error || res.message || "Couldn't start");
+			if (res.ok) {
+				// Auto-fix opens a live chat in this workspace — jump straight into it
+				// instead of leaving a "posted on the PR" note behind.
+				if (res.openChat && res.bksId && onOpenSession) {
+					onOpenSession(res.bksId);
+					return;
+				}
+				setDone({ label: action.label, bksId: res.bksId });
+			} else setError(res.error || res.message || "Couldn't start");
 		} catch (e: any) {
 			setError(e?.message || "Couldn't start");
 		} finally {
@@ -572,6 +584,7 @@ export function WorkspaceInfo({
 	reviewRequest,
 	onOpenTab,
 	onAddToInput,
+	onOpenSession,
 	liveMediaCount,
 	liveMedia = [],
 }: Props) {
@@ -752,7 +765,12 @@ export function WorkspaceInfo({
 					<ReviewerChip sessionId={sessionId} reviewRequest={reviewRequest} />
 				</div>
 				{pr?.number && repo === "tella-fusion" && (
-					<PrAgentActions sessionId={sessionId} repo={repo} prUrl={pr.url} />
+					<PrAgentActions
+							sessionId={sessionId}
+							repo={repo}
+							prUrl={pr.url}
+							onOpenSession={onOpenSession}
+						/>
 				)}
 			</div>
 			{hasBody ? (

@@ -4358,6 +4358,31 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						{ status: 400 },
 					);
 
+				// Auto-fix is code-writing work, not a review pass to post on the PR —
+				// so it opens a live chat right in this workspace (shares the worktree +
+				// branch) and fixes everything there, where you can watch and steer it,
+				// instead of firing a headless GitHub-labeled run. The other actions
+				// (review / simplify / adversarial) stay headless and post on the PR.
+				if (kind === "autofix") {
+					const prompt = [
+						"/pr-autofix",
+						"",
+						`Fix everything on PR #${details.number} (“${details.title}”) — branch \`${target.branch}\`.`,
+						"Address every reviewer's open feedback and any failing CI, commit and push to the branch,",
+						"and reply in each thread you address with honest attribution. Keep going until it's all handled.",
+					].join("\n");
+					const { id } = await getSessionControl().createSession({
+						prompt,
+						repo: session.repo || "tella-fusion",
+						mode: "code",
+						branch: target.branch,
+						parentSessionId: session.id,
+						reportBack: false,
+						user: body?.user || "Someone",
+					});
+					return Response.json({ ok: true, bksId: id, openChat: true });
+				}
+
 				const { triggerPrAction } = await import("./src/agents/github/trigger");
 				const result = await triggerPrAction(
 					kind,

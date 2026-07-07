@@ -853,6 +853,9 @@ export async function triggerPrActionApi(
 		url?: string;
 		bksId?: string;
 		error?: string;
+		/** Auto-fix opens a live chat in the workspace instead of a headless PR run —
+		    the caller navigates into bksId rather than showing a "posted on the PR" note. */
+		openChat?: boolean;
 	}>(`/sessions/${encodeURIComponent(sessionId)}/pr-action`, {
 		method: "POST",
 		body: { kind, user, ...(repo ? { repo } : {}) },

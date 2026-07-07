@@ -2066,6 +2066,10 @@ export function SessionViewer({
 												text,
 											}));
 										}}
+										onOpenSession={(id) => {
+											setInfoPageOpen(false);
+											onOpenSession?.(id);
+										}}
 										liveMediaCount={liveMediaCount}
 										liveMedia={liveOverviewMedia}
 									/>
@@ -2589,6 +2593,7 @@ export function SessionViewer({
 											text,
 										}))
 									}
+									onOpenSession={(id) => onOpenSession?.(id)}
 									liveMediaCount={liveMediaCount}
 									liveMedia={liveOverviewMedia}
 								/>
