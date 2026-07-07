@@ -118,13 +118,18 @@ export interface Automation {
    */
   fallbackModel?: string;
   /**
-   * Pinned Claude subscription (claude-accounts id) — a HARD pin: runs use
-   * only that account, and when it's exhausted they fall to `fallbackModel`
-   * instead of the shared pool. That makes the account's limits (and its
-   * usage-credits monthly cap) this automation's cost ceiling. Unset =
-   * shared-pool rotation as before. Claude models only; Codex runs ignore it.
+   * Pinned Claude subscription (claude-accounts id). By default a HARD pin:
+   * runs use only that account, and when it's exhausted they fall to
+   * `fallbackModel` instead of the shared pool — that makes the account's
+   * limits (and its usage-credits monthly cap) this automation's cost
+   * ceiling. Set `accountStrict: false` to soften it: the pinned account is
+   * preferred, but an exhausted pin rotates into the shared pool like a
+   * session pin does. Unset = shared-pool rotation as before. Claude models
+   * only; Codex runs ignore it.
    */
   accountId?: string;
+  /** false = soft pin (pool fallback); unset/true = hard pin (cost cap). */
+  accountStrict?: boolean;
   /**
    * Allow runs to keep going on usage-credits once the account's subscription
    * limits are spent (only works on accounts with extra usage enabled at
@@ -270,6 +275,7 @@ export function createAutomation(input: {
   model?: string;
   fallbackModel?: string;
   accountId?: string;
+  accountStrict?: boolean;
   usageCredits?: boolean;
   grafanaPoll?: GrafanaPollConfig;
   slackWatch?: SlackWatchConfig;
@@ -310,6 +316,8 @@ export function createAutomation(input: {
     model,
     fallbackModel,
     accountId,
+    // Only false is worth storing — unset/true both mean the hard-pin default.
+    accountStrict: input.accountStrict === false ? false : undefined,
     usageCredits: input.usageCredits === true || undefined,
     grafanaPoll,
     slackWatch,
@@ -320,7 +328,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "accountId" | "usageCredits" | "grafanaPoll" | "slackWatch">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "accountId" | "accountStrict" | "usageCredits" | "grafanaPoll" | "slackWatch">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -359,6 +367,9 @@ export function updateAutomation(
     const accountId = sanitizeAccountId(patch.accountId);
     if (accountId && typeof accountId === "object") return accountId;
     next.accountId = accountId;
+  }
+  if ("accountStrict" in patch) {
+    next.accountStrict = patch.accountStrict === false ? false : undefined;
   }
   if ("usageCredits" in patch) {
     next.usageCredits = patch.usageCredits === true || undefined;
@@ -615,11 +626,12 @@ export async function runAutomation(
       // (on codex models they're disabled outright — see codex-runner.ts)
       confirmTools: STRIPE_CONFIRM_TOOLS,
       aws: true, // automation runs get short-lived instance-role read creds
-      // Cost controls: a pinned account is a HARD pin for automation runs
-      // (exhaustion falls to fallbackModel, never the shared pool), and
+      // Cost controls: a pinned account defaults to a HARD pin for automation
+      // runs (exhaustion falls to fallbackModel, never the shared pool) unless
+      // accountStrict is explicitly false (soft pin: preferred, pool backup);
       // usage-credits spend is only allowed when explicitly enabled.
       accountId: automation.accountId,
-      accountStrict: !!automation.accountId,
+      accountStrict: !!automation.accountId && automation.accountStrict !== false,
       usageCredits: automation.usageCredits,
       fallbackModel:
         automation.fallbackModel === "none"

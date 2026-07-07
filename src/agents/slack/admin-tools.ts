@@ -177,7 +177,13 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
             .string()
             .optional()
             .describe(
-              "Optional claude-accounts id to HARD-pin runs to one subscription (cost cap: exhaustion falls to the fallback model, never the shared pool)."
+              "Optional claude-accounts id to pin runs to one subscription. By default a hard pin (cost cap: exhaustion falls to the fallback model, never the shared pool)."
+            ),
+          accountStrict: z
+            .boolean()
+            .optional()
+            .describe(
+              "false = soft pin: prefer the pinned account but fall back to the shared pool when it's exhausted. Default true (hard pin)."
             ),
           usageCredits: z
             .boolean()
@@ -194,6 +200,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           mcpServers?: string[];
           model?: string;
           accountId?: string;
+          accountStrict?: boolean;
           usageCredits?: boolean;
         }) => {
           const res = createAutomation({
@@ -205,6 +212,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
             mcpServers: args.mcpServers,
             model: args.model,
             accountId: args.accountId,
+            accountStrict: args.accountStrict,
             usageCredits: args.usageCredits,
           });
           if ("error" in res) return text(`Couldn't create it: ${res.error}`);
@@ -230,7 +238,11 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           accountId: z
             .string()
             .optional()
-            .describe("Hard-pin runs to this claude-accounts id; '' clears the pin."),
+            .describe("Pin runs to this claude-accounts id; '' clears the pin."),
+          accountStrict: z
+            .boolean()
+            .optional()
+            .describe("false = soft pin (pool fallback when exhausted); true = hard pin (cost cap)."),
           usageCredits: z
             .boolean()
             .optional()
@@ -246,6 +258,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           mcpServers?: string[];
           model?: string;
           accountId?: string;
+          accountStrict?: boolean;
           usageCredits?: boolean;
         }) => {
           const { id, ...patch } = args;
