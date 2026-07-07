@@ -13812,18 +13812,3 @@ html[data-theme="light"] .pixel-spinner .pixel {
   animation-name: pixel-snake-trail;
   animation-delay: 1066ms;
 }
-
-/* Plain-text contenteditable (ui/plain-content-editable.tsx) — a textarea-shaped
-   input that dodges iOS's native keyboard accessory bar. Placeholder rides a
-   data-empty attr + ::before since contenteditable has no ::placeholder. */
-.plain-ce {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  outline: none;
-  -webkit-user-modify: read-write-plaintext-only;
-}
-.plain-ce[data-empty]::before {
-  content: attr(data-placeholder);
-  color: var(--text-faint);
-  pointer-events: none;
-}

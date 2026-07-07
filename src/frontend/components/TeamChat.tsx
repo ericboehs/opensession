@@ -16,10 +16,6 @@ import { imageFilesFromPaste } from "../lib/images";
 import { TEAM } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { IconArrowUp, IconMessage, IconImage, IconX } from "./icons";
-import {
-	PlainContentEditable,
-	type PlainCEHandle,
-} from "../ui/plain-content-editable";
 import { cn } from "../ui/cn";
 
 /**
@@ -190,7 +186,7 @@ export function TeamChat({
 	} | null>(null);
 	const [mentionIdx, setMentionIdx] = useState(0);
 	const bodyRef = useRef<HTMLDivElement | null>(null);
-	const inputRef = useRef<PlainCEHandle | null>(null);
+	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const lastTypingSentRef = useRef(0);
 
@@ -261,25 +257,26 @@ export function TeamChat({
 	function syncMention() {
 		const el = inputRef.current;
 		if (!el) return;
-		const val = el.getText();
-		setMention(mentionAt(val, el.getCaret()));
+		setMention(mentionAt(el.value, el.selectionStart ?? el.value.length));
 		setMentionIdx(0);
 	}
 
 	function applySuggestion(s: Suggestion) {
-		const el = inputRef.current;
-		if (!mention || !el) return;
-		const val = el.getText();
+		if (!mention) return;
 		const insert = s.kind === "person" ? `@${s.name}` : `@session:${s.id}`;
-		const before = val.slice(0, mention.start);
-		const after = val.slice(el.getCaret());
-		const next = `${before}${insert} ${after}`;
-		setText(next);
+		const before = text.slice(0, mention.start);
+		const after = text.slice(
+			(inputRef.current?.selectionStart ?? text.length) as number,
+		);
+		setText(`${before}${insert} ${after}`);
 		setMention(null);
 		const caret = before.length + insert.length + 1;
 		requestAnimationFrame(() => {
-			el.focus();
-			el.setCaret(caret);
+			const el = inputRef.current;
+			if (el) {
+				el.focus();
+				el.setSelectionRange(caret, caret);
+			}
 		});
 	}
 
@@ -621,10 +618,11 @@ export function TeamChat({
 										e.target.value = "";
 									}}
 								/>
-								<PlainContentEditable
+								<textarea
 									ref={inputRef}
-									className="max-h-40 min-h-[38px] flex-1 overflow-y-auto px-1 py-2 text-[13px] font-medium leading-snug text-fg"
+									className="max-h-40 min-h-[38px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-[13px] font-medium leading-snug text-fg shadow-none outline-none placeholder:text-faint"
 									aria-label="Message"
+									rows={1}
 									placeholder={
 										isPage
 											? `Message the team as ${user} — @ to tag`
@@ -632,9 +630,9 @@ export function TeamChat({
 									}
 									value={text}
 									disabled={posting}
-									onChange={(v) => {
-										setText(v);
-										if (v.trim()) noteTyping();
+									onChange={(e) => {
+										setText(e.target.value);
+										if (e.target.value.trim()) noteTyping();
 										requestAnimationFrame(syncMention);
 									}}
 									onClick={syncMention}
