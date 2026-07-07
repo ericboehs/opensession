@@ -78,7 +78,10 @@ export function StagingLink({
 					rel="noopener"
 					className={`viewer-code-icon staging-icon ${building ? "is-building" : "is-ready"}`}
 				>
-					<IconGlobe size={26} />
+					{/* The globe glyph only fills ~60% of its box (thin circle in a 24
+					    viewBox), so it needs a couple px more than the play/sidebar
+					    icons to read at the same weight in the top bar. */}
+					<IconGlobe size={30} />
 				</a>
 			</Tooltip>
 		);
