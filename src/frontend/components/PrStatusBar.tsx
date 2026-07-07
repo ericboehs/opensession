@@ -121,6 +121,10 @@ interface Props {
 	/** "header" renders just the PR chip + primary action for the chat header
 	    (shown while the Workspace panel is closed); default is the full strip. */
 	variant?: "bar" | "header";
+	/** Optional element rendered inside the strip, left of the PR chip (bar
+	    variant only) so it shares the strip's tone background — e.g. the globe
+	    staging-deploy icon in the Workspace panel. */
+	leading?: React.ReactNode;
 }
 
 interface PrBarButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -207,6 +211,7 @@ export function PrStatusBar({
 	send,
 	onOpenPrTab,
 	variant = "bar",
+	leading,
 }: Props) {
 	const [pr, setPr] = useState<PrDetails | null>(null);
 	const [git, setGit] = useState<GitStatusInfo | null>(null);
@@ -383,6 +388,7 @@ export function PrStatusBar({
 
 	return (
 		<div className={`pr-bar pr-bar-${headline.tone}`}>
+			{leading}
 			{pr && <PrNumberSplit pr={pr} tone={headline.tone} />}
 			{headline.key !== "no-pr" && (
 				<Tooltip label="Open the PR tab">

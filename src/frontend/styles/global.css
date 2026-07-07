@@ -4490,6 +4490,12 @@ body.resizing-x .panel-resize::after {
 	   panel's first divider lines up with it. */
 	min-height: 54px;
 }
+/* Globe (staging) icon riding inside the PR strip, left of the PR chip, so it
+   shares the strip's tone background. Nudge it flush-left to the strip padding. */
+.pr-bar > .staging-icon {
+	flex-shrink: 0;
+	margin-left: -2px;
+}
 .pr-bar-green {
 	background: var(--green-soft);
 }

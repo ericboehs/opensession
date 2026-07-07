@@ -1881,8 +1881,25 @@ export function SessionViewer({
 							</div>
 						)}
 					</div>
+					{/* Code-workspace testing affordances as state-colored icons, docked
+					    immediately left of the side-panel toggle. Each self-gates
+					    (renders null when not applicable). The play button stays put;
+					    the globe rides beside it only while the panel is closed —
+					    once the panel opens the globe moves into the panel's PR row
+					    (to the left of the PR), so it isn't shown twice. */}
+					{!isPhone && (
+						<PreviewButton
+							session={session}
+							onAttachImage={(img) => setImages((prev) => [...prev, img])}
+							variant="header"
+						/>
+					)}
+					{!isPhone && !panelOpen && (
+						<StagingLink session={session} variant="header" />
+					)}
 					{/* Panel closed → surface the PR chip + its primary action (Merge/
-					    Push/Resolve) inline, so the header still tells you where the
+					    Push/Resolve) inline, grouped with the globe directly left of
+					    the side-panel toggle, so the header still tells you where the
 					    PR stands without opening the Workspace panel. */}
 					{!isPhone && hasWorkspace && !panelOpen && (
 						<PrStatusBar
@@ -1893,17 +1910,6 @@ export function SessionViewer({
 							variant="header"
 						/>
 					)}
-					{/* Code-workspace testing affordances as state-colored icons, docked
-					    immediately left of the side-panel toggle. Each self-gates
-					    (renders null when not applicable). */}
-					{!isPhone && (
-						<PreviewButton
-							session={session}
-							onAttachImage={(img) => setImages((prev) => [...prev, img])}
-							variant="header"
-						/>
-					)}
-					{!isPhone && <StagingLink session={session} variant="header" />}
 					{!isPhone && panelAvailable && (
 						<Tooltip
 							label={
@@ -2449,6 +2455,15 @@ export function SessionViewer({
 								archived={session.archived}
 								send={connected ? send : undefined}
 								onOpenPrTab={() => setPanelTab("pr")}
+								// Globe (staging deploy) rides inside the strip, left of the
+								// PR chip, so it shares the strip's tone background — it's
+								// pulled out of the header while the panel is open. On phones
+								// the globe stays in the panel-actions row below.
+								leading={
+									!isPhone ? (
+										<StagingLink session={session} variant="header" />
+									) : undefined
+								}
 							/>
 						)}
 						{/* Phones don't get the header's icon affordances (that bar is
