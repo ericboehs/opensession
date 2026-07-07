@@ -9571,6 +9571,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		margin-left: auto;
 		min-width: 0;
 	}
+	/* On a pushed page the title pill already carries margin-right:auto to shove
+	   this cluster to the right edge. Two competing auto margins both collapse to
+	   0 on a long title, so the pill butts straight against the ⋯ bubble — swap
+	   to a fixed gap (and stop the cluster shrinking) so there's always air. */
+	.app-header-detail .app-header-actions {
+		margin-left: 10px;
+		flex: none;
+	}
 	.viewer-title {
 		display: none;
 	}
