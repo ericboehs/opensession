@@ -9180,8 +9180,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		display: flex;
 		align-items: center;
 		position: relative;
-		/* 12px edges match the content column below (top cards, list). */
-		padding: env(safe-area-inset-top, 0px) 12px 0;
+		/* 12px edges match the content column below (top cards, list). Keep at
+		   least a small top gap so the floating controls never hug the screen
+		   edge on a flat top (no notch), while a notched device still gets its
+		   full safe-area inset. */
+		padding: max(env(safe-area-inset-top, 0px), 8px) 12px 0;
 	}
 
 	/* Pushed pages (a session, PR, etc.): the bar itself goes invisible so its
