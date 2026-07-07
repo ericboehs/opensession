@@ -2738,6 +2738,76 @@ body.resizing-x {
 	background: var(--accent-soft);
 }
 
+/* Session-header code affordances (Preview ▶ / Staging 🌐) rendered icon-only,
+   sized and padded to sit flush beside the .btn-workspace panel toggle. State
+   is carried entirely by icon color (dim = off, amber = in flight, green =
+   live), so no label is needed. */
+.viewer-code-icon-wrap {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+}
+.viewer-code-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 3px 5px;
+	border: 1px solid transparent;
+	border-radius: 10px;
+	background: none;
+	color: var(--text-faint);
+	cursor: pointer;
+	text-decoration: none;
+}
+.viewer-code-icon:hover {
+	color: var(--accent);
+	background: var(--accent-soft);
+}
+/* Preview: off = neutral (accent on hover, like "press to start"); starting =
+   amber; live = green (click opens the webapp). */
+.preview-icon.is-off {
+	color: var(--text-faint);
+}
+.preview-icon.is-starting,
+.preview-icon.is-starting:hover {
+	color: var(--yellow);
+	background: none;
+}
+.preview-icon.is-live {
+	color: var(--green);
+}
+.preview-icon.is-live:hover {
+	color: var(--green);
+	background: var(--green-soft);
+}
+/* Staging: amber (dimmed) while the deploy builds, green once Ready. */
+.staging-icon.is-building {
+	color: var(--yellow);
+	opacity: 0.72;
+}
+.staging-icon.is-building:hover {
+	color: var(--yellow);
+	background: rgba(210, 153, 34, 0.13);
+	opacity: 1;
+}
+.staging-icon.is-ready {
+	color: var(--green);
+}
+.staging-icon.is-ready:hover {
+	color: var(--green);
+	background: var(--green-soft);
+}
+/* The header preview icon's cancel-spinner sits in the same 22px box as the
+   glyph so the row doesn't jump between states. */
+.preview-icon .preview-spinner {
+	width: 14px;
+	height: 14px;
+}
+/* Snapshot action reached from the header popover (no caret to host it). */
+.preview-snap-row {
+	margin-top: 6px;
+}
+
 .btn-viewer-delete,
 .btn-viewer-archive {
 	display: inline-flex;

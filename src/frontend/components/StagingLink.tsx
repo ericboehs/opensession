@@ -13,7 +13,16 @@ import { IconArrowUpRight, IconGlobe } from "./icons";
  * webapp never get one). While the deploy is still building the link renders
  * dimmed; it flips live on the next poll.
  */
-export function StagingLink({ session }: { session: UnifiedSession }) {
+export function StagingLink({
+	session,
+	variant = "bar",
+}: {
+	session: UnifiedSession;
+	/** "bar" = the labelled Staging link (right panel's action row); "header" = a
+	 *  single state-colored 🌐 icon (amber while building, green once Ready) for
+	 *  the session header, sized to match the panel-toggle icon beside it. */
+	variant?: "bar" | "header";
+}) {
 	const [staging, setStaging] = useState<{ url: string; status: string } | null>(
 		null,
 	);
@@ -51,6 +60,25 @@ export function StagingLink({ session }: { session: UnifiedSession }) {
 	// Deep-link to the agent-flagged route (set_preview_path) so the button
 	// opens the feature under test, not the app root.
 	const href = withPreviewPath(staging.url, session.previewPath);
+
+	if (variant === "header") {
+		return (
+			<a
+				href={href}
+				target="_blank"
+				rel="noopener"
+				className={`viewer-code-icon staging-icon ${building ? "is-building" : "is-ready"}`}
+				title={
+					building
+						? `Staging deploy ${staging.status.toLowerCase()}… — ${href}`
+						: `Test this PR on staging — ${href}`
+				}
+			>
+				<IconGlobe size={22} />
+			</a>
+		);
+	}
+
 	return (
 		<a
 			href={href}

@@ -1568,20 +1568,6 @@ export function SessionViewer({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [archiving, handleArchive, session.archived]);
 
-	// Preview / Staging — the code-workspace testing affordances, docked right
-	// under the PR status strip (the merge-actions row) at the top of the right
-	// panel so they read as first-class "test this change" actions, visible on
-	// every tab. Each self-gates (renders null when not applicable), so on a
-	// plain/ask session the row collapses to nothing (`.panel-actions:empty`).
-	const panelActions = (
-		<>
-			<PreviewButton
-				session={session}
-				onAttachImage={(img) => setImages((prev) => [...prev, img])}
-			/>
-			<StagingLink session={session} />
-		</>
-	);
 
 	return (
 		<div className="session-viewer">
@@ -1714,8 +1700,8 @@ export function SessionViewer({
 				// Secondary header controls (Linear/Plain links). Inline on desktop;
 				// on phones they fold into the ⋯ menu so the single top bar holds only
 				// ⋯ + the Workspace toggle beside the centered title. The code
-				// affordances (Preview, Staging, PR) moved to the right panel's action
-				// row (`panelActions`) to keep this bar quiet.
+				// affordances (Preview, Staging) sit as state-colored icons just left
+				// of the panel toggle on desktop; PR status rides its own row.
 				const secondaryActions = (
 					<>
 						{session.linearIssue?.url && (
@@ -1898,6 +1884,17 @@ export function SessionViewer({
 							variant="header"
 						/>
 					)}
+					{/* Code-workspace testing affordances as state-colored icons, docked
+					    immediately left of the side-panel toggle. Each self-gates
+					    (renders null when not applicable). */}
+					{!isPhone && (
+						<PreviewButton
+							session={session}
+							onAttachImage={(img) => setImages((prev) => [...prev, img])}
+							variant="header"
+						/>
+					)}
+					{!isPhone && <StagingLink session={session} variant="header" />}
 					{!isPhone && panelAvailable && (
 						<Tooltip
 							label={
@@ -2441,7 +2438,19 @@ export function SessionViewer({
 								onOpenPrTab={() => setPanelTab("pr")}
 							/>
 						)}
-						<div className="panel-actions">{panelActions}</div>
+						{/* Phones don't get the header's icon affordances (that bar is
+						    hidden there), so keep the labelled Preview/Staging controls in
+						    the panel action row on phones only. On desktop they live in the
+						    session header as state-colored icons. */}
+						{isPhone && (
+							<div className="panel-actions">
+								<PreviewButton
+									session={session}
+									onAttachImage={(img) => setImages((prev) => [...prev, img])}
+								/>
+								<StagingLink session={session} />
+							</div>
+						)}
 						<div className="panel-tabs">
 							<button
 								className={`panel-tab ${panelTab === "info" ? "active" : ""}`}

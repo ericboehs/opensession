@@ -28,11 +28,17 @@ function isPreviewable(session: UnifiedSession): boolean {
 export function PreviewButton({
   session,
   onAttachImage,
+  variant = "bar",
 }: {
   session: UnifiedSession;
   /** When set, the snapshot modal offers "Attach to chat" (stages the PNG as a
    *  composer image, like a paste). */
   onAttachImage?: (dataUrl: string) => void;
+  /** "bar" = the full segmented split button (right panel's action row);
+   *  "header" = a single state-colored ▶ icon for the session header, sized to
+   *  match the panel-toggle icon it sits beside. Right-click opens the dev
+   *  services popover (stop / snapshot). */
+  variant?: "bar" | "header";
 }) {
   const [status, setStatus] = useState<PreviewStatus | null>(null);
   const [open, setOpen] = useState(false);
@@ -115,6 +121,168 @@ export function PreviewButton({
     }
   }
 
+  async function snap() {
+    if (snapping) return;
+    setSnapping(true);
+    setShotError(null);
+    try {
+      setShot(await capturePreviewShot(session.id));
+    } catch (e: any) {
+      setShotError(e.message);
+      setShot(null);
+    }
+    setSnapping(false);
+  }
+
+  // Shared snapshot preview modal — rendered by both layouts.
+  const snapshotModal = (shot || shotError) && (
+    <div
+      className="fixed inset-0 z-[300] bg-black/60 flex items-center justify-center p-6"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) {
+          setShot(null);
+          setShotError(null);
+        }
+      }}
+    >
+      <div className="bg-raised border border-line rounded-panel shadow-2xl p-3 max-w-[90vw] max-h-[90vh] flex flex-col gap-2.5">
+        {shotError ? (
+          <div className="text-red text-[13px] px-2 py-4">{shotError}</div>
+        ) : (
+          <img
+            src={shot!}
+            alt="Preview screenshot"
+            className="max-w-full max-h-[75vh] object-contain rounded-md border border-line"
+          />
+        )}
+        <div className="flex items-center gap-2 justify-end">
+          {shot && onAttachImage && (
+            <button
+              className="btn-create"
+              style={{ padding: "6px 14px" }}
+              onClick={() => {
+                onAttachImage(shot);
+                setShot(null);
+              }}
+            >
+              Attach to chat
+            </button>
+          )}
+          {shot && (
+            <a className="btn-small" href={shot} download={`preview-${session.id}.png`}>
+              Download
+            </a>
+          )}
+          <button
+            className="btn-small"
+            onClick={() => {
+              setShot(null);
+              setShotError(null);
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Shared dev-services popover — the stop/start control and per-service list.
+  // In header mode it also carries the snapshot action (there's no caret for it).
+  const servicesPopover = open && (
+    <div className="preview-popover">
+      <div className="preview-popover-title">Dev services</div>
+      {status.services.length === 0 ? (
+        <div className="preview-empty">
+          {isStarting ? "Starting up…" : "Not started yet"}
+        </div>
+      ) : (
+        <ul className="preview-services">
+          {status.services.map((s) => (
+            <li key={s.key}>
+              <span className={`preview-dot ${s.running ? "" : "off"}`} />
+              <span className="preview-svc-name">{s.name}</span>
+              <span className="preview-svc-port">:{s.port}</span>
+              <span className={`preview-svc-state ${s.running ? "on" : ""}`}>
+                {s.running ? "running" : "stopped"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {running || anyRunning ? (
+        <button className="preview-stop" onClick={stop} disabled={!anyRunning || stopping}>
+          {stopping ? "Stopping…" : "Stop dev server"}
+        </button>
+      ) : isStarting ? (
+        <button className="preview-stop" onClick={stop} disabled={stopping}>
+          {stopping ? "Cancelling…" : "Cancel startup"}
+        </button>
+      ) : (
+        <button className="preview-stop" onClick={start}>
+          Start dev server
+        </button>
+      )}
+      {variant === "header" && running && (
+        <button className="preview-stop preview-snap-row" onClick={snap} disabled={snapping}>
+          {snapping ? "Capturing…" : "Snapshot preview"}
+        </button>
+      )}
+      <div className="preview-hint">
+        {running || anyRunning
+          ? "Stops this worktree's dev process group only."
+          : "Runs just dev in this worktree (first build ~1 min)."}
+      </div>
+    </div>
+  );
+
+  // Header mode: a single ▶ icon, color-coded by state (dim=off, amber=starting,
+  // green=live), sized to sit next to the panel-toggle icon. Left-click does the
+  // primary action; right-click opens the services popover (stop / snapshot).
+  if (variant === "header") {
+    const openMenu = (e: React.MouseEvent) => {
+      e.preventDefault();
+      setOpen((v) => !v);
+    };
+    return (
+      <div className="viewer-code-icon-wrap" ref={wrapRef}>
+        {running ? (
+          <a
+            className="viewer-code-icon preview-icon is-live"
+            href={url}
+            target="_blank"
+            rel="noopener"
+            onContextMenu={openMenu}
+            title={`Preview is live — open the webapp (${url}). Right-click for dev services.`}
+          >
+            <IconPlay size={22} />
+          </a>
+        ) : isStarting ? (
+          <button
+            className="viewer-code-icon preview-icon is-starting"
+            onClick={stop}
+            onContextMenu={openMenu}
+            disabled={stopping}
+            title={stopping ? "Cancelling…" : "Starting Tella Local — click to cancel"}
+          >
+            <span className="preview-spinner" />
+          </button>
+        ) : (
+          <button
+            className="viewer-code-icon preview-icon is-off"
+            onClick={start}
+            onContextMenu={openMenu}
+            title="Start Tella Local and preview this session. Right-click for dev services."
+          >
+            <IconPlay size={22} />
+          </button>
+        )}
+        {servicesPopover}
+        {snapshotModal}
+      </div>
+    );
+  }
+
   return (
     <div className={`preview-wrap ${running ? "running" : ""}`} ref={wrapRef}>
       {running ? (
@@ -155,18 +323,7 @@ export function PreviewButton({
       {running && (
         <button
           className="preview-caret preview-snap"
-          onClick={async () => {
-            if (snapping) return;
-            setSnapping(true);
-            setShotError(null);
-            try {
-              setShot(await capturePreviewShot(session.id));
-            } catch (e: any) {
-              setShotError(e.message);
-              setShot(null);
-            }
-            setSnapping(false);
-          }}
+          onClick={snap}
           disabled={snapping}
           title="Snapshot the preview (headless Chrome screenshot)"
         >
@@ -182,99 +339,8 @@ export function PreviewButton({
         <IconChevronDown size={16} />
       </button>
 
-      {(shot || shotError) && (
-        <div
-          className="fixed inset-0 z-[300] bg-black/60 flex items-center justify-center p-6"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) {
-              setShot(null);
-              setShotError(null);
-            }
-          }}
-        >
-          <div className="bg-raised border border-line rounded-panel shadow-2xl p-3 max-w-[90vw] max-h-[90vh] flex flex-col gap-2.5">
-            {shotError ? (
-              <div className="text-red text-[13px] px-2 py-4">{shotError}</div>
-            ) : (
-              <img
-                src={shot!}
-                alt="Preview screenshot"
-                className="max-w-full max-h-[75vh] object-contain rounded-md border border-line"
-              />
-            )}
-            <div className="flex items-center gap-2 justify-end">
-              {shot && onAttachImage && (
-                <button
-                  className="btn-create"
-                  style={{ padding: "6px 14px" }}
-                  onClick={() => {
-                    onAttachImage(shot);
-                    setShot(null);
-                  }}
-                >
-                  Attach to chat
-                </button>
-              )}
-              {shot && (
-                <a className="btn-small" href={shot} download={`preview-${session.id}.png`}>
-                  Download
-                </a>
-              )}
-              <button
-                className="btn-small"
-                onClick={() => {
-                  setShot(null);
-                  setShotError(null);
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {open && (
-        <div className="preview-popover">
-          <div className="preview-popover-title">Dev services</div>
-          {status.services.length === 0 ? (
-            <div className="preview-empty">
-              {isStarting ? "Starting up…" : "Not started yet"}
-            </div>
-          ) : (
-            <ul className="preview-services">
-              {status.services.map((s) => (
-                <li key={s.key}>
-                  <span className={`preview-dot ${s.running ? "" : "off"}`} />
-                  <span className="preview-svc-name">{s.name}</span>
-                  <span className="preview-svc-port">:{s.port}</span>
-                  <span className={`preview-svc-state ${s.running ? "on" : ""}`}>
-                    {s.running ? "running" : "stopped"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {running || anyRunning ? (
-            <button className="preview-stop" onClick={stop} disabled={!anyRunning || stopping}>
-              {stopping ? "Stopping…" : "Stop dev server"}
-            </button>
-          ) : isStarting ? (
-            <button className="preview-stop" onClick={stop} disabled={stopping}>
-              {stopping ? "Cancelling…" : "Cancel startup"}
-            </button>
-          ) : (
-            <button className="preview-stop" onClick={start}>
-              Start dev server
-            </button>
-          )}
-          <div className="preview-hint">
-            {running || anyRunning
-              ? "Stops this worktree's dev process group only."
-              : "Runs just dev in this worktree (first build ~1 min)."}
-          </div>
-        </div>
-      )}
+      {snapshotModal}
+      {servicesPopover}
     </div>
   );
 }
