@@ -4592,6 +4592,20 @@ body.resizing-x .panel-resize::after {
 .pr-num-copy:active {
 	background: color-mix(in srgb, currentColor 18%, transparent);
 }
+/* In the panel's PR strip the chip sits next to the primary action button
+   (Merge/Push/…) — size it to the same height so the two read as a matched
+   pair, the way .pr-head already does for the header variant. */
+.pr-bar .pr-num-split {
+	min-height: 30px;
+	border-radius: 8px;
+}
+.pr-bar .pr-num-open {
+	padding: 0 10px;
+	font-size: 13px;
+}
+.pr-bar .pr-num-copy {
+	width: 30px;
+}
 
 .pr-bar-state {
 	background: none;
