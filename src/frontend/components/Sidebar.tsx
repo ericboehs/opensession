@@ -1512,7 +1512,10 @@ export function Sidebar({
 					}}
 					title={row.name}
 				>
-				<WsStatusMark row={row} />
+				{/* 22px slot — same as the group-header pin/eye icon (a 22px box at
+				    6px pad, center 17/27px) so a row's PR/merge mark sits on the exact
+				    icon column of its lane header, not 1px left in a smaller box. */}
+				<WsStatusMark row={row} size={22} />
 				{row.unread &&
 					!waiting &&
 					!row.running &&
