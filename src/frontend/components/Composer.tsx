@@ -457,6 +457,12 @@ export function Composer({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (mentions.handleKeyDown(e)) return;
     if ((e.nativeEvent as any).isComposing) return;
+    // Esc while a run is busy = the stop button: interrupt the current turn.
+    if (e.key === "Escape" && busy && onStop && !disabled) {
+      e.preventDefault();
+      onStop();
+      return;
+    }
     // Inside an unclosed ``` fence, plain Enter inserts a newline instead of
     // sending — you can't type a multi-line code block otherwise. Closing the
     // fence (or ⌘/Ctrl+Enter, or the send button) sends as usual.
