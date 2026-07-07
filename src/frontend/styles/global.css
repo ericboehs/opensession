@@ -1039,7 +1039,12 @@ body.resizing-x {
 .sidebar-list {
 	flex: 1;
 	overflow-y: auto;
-	padding: 1px 14px 24px 10px;
+	/* Tight horizontal padding so the active/hover pill sits close to the
+	   sidebar edges (it "overflows" past the content inset, Conductor-style),
+	   and so row content lands on the shared columns: leading icons under the
+	   group-header icons, trailing times/numbers flush-right under the header's
+	   filter/＋ buttons. */
+	padding: 1px 10px 24px 10px;
 }
 
 /* "Archived" — an icon-led row styled as a peer of the My-sessions status buckets
@@ -1308,10 +1313,12 @@ body.resizing-x {
 	background: none;
 	border: none;
 	border-radius: 12px;
-	/* Roomier rows: a taller hit target that's easier to click/tap. The extra
-	   left padding indents rows under their group header (whose dot + name start
-	   ~22px in), so the list reads as nested groups rather than one flat column. */
-	padding: 11px 11px 11px 22px;
+	/* Roomier rows: a taller hit target that's easier to click/tap. The left
+	   padding lands the leading icon on the same column as the group-header
+	   icons above it (list pad-left 10 + 6 = 16), so a row's status mark sits
+	   directly under its lane's icon; the right padding lands the trailing
+	   time/number flush under the header's filter/＋ buttons. */
+	padding: 11px 8px 11px 6px;
 	color: var(--text);
 	position: relative;
 }
@@ -10064,10 +10071,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   interactive controls approach the 44pt minimum tap target. Everything
 	   here is scoped to phones; desktop keeps its tighter density. */
 
-	/* Session list (the primary nav) — larger titles + meta. Keep the left
-	   indent (see the base rule) so rows stay nested under their group header. */
+	/* Session list (the primary nav) — larger titles + meta. Taller rows for
+	   touch, but the same tight horizontal insets as the base rule so leading
+	   icons align under their group header and trailing times land flush right. */
 	.sidebar-item {
-		padding: 13px 11px 13px 22px;
+		padding: 13px 8px 13px 6px;
 	}
 	.sidebar-item-title,
 	.sidebar-item-rename {
