@@ -31,7 +31,9 @@ export function readMcpConfig(): { mcpServers: Record<string, any> } {
   if (cachedMcpConfig) return cachedMcpConfig;
 
   try {
-    cachedMcpConfig = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+    cachedMcpConfig = JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as {
+      mcpServers: Record<string, any>;
+    };
   } catch {
     cachedMcpConfig = { mcpServers: {} };
   }
