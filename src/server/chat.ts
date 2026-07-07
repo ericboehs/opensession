@@ -13,23 +13,103 @@
  * frontend, ignored by mention pushes.
  */
 
-import { existsSync, mkdirSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CHAT_DIR = `${HOME}/.backstage-chat`;
+// Attached images live here permanently (unlike the transient session-upload
+// staging dir), served back by id via GET /backstage/api/chat/image/:id.
+const CHAT_IMG_DIR = `${CHAT_DIR}/images`;
 
 // Keep each channel's store bounded — the UI only ever loads the recent tail.
 const MAX_STORED = 5000;
 const MAX_TEXT_LEN = 8000;
+const MAX_IMAGES_PER_MSG = 10;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
+/** An image attached to a chat message. Stored on disk by `id`; the bytes never
+ *  ride the message JSON (kept small) — the client fetches them by id. */
+export interface ChatImage {
+	id: string;
+	/** Original filename, for alt text / download. */
+	name: string;
+	/** MIME type, used as the Content-Type when serving the bytes back. */
+	mime: string;
+}
 
 export interface ChatMessage {
 	id: string;
 	/** Sender's self-selected backstage-user display name ("Michiel"). */
 	user: string;
 	text: string;
+	/** Attached images (may be empty/absent). */
+	images?: ChatImage[];
 	/** ms epoch */
 	ts: number;
+}
+
+// Raster types only — SVG is deliberately excluded: it can carry scripts and
+// serving it from our own origin (via the image link) would be an XSS vector.
+const IMAGE_MIME_EXT: Record<string, true> = {
+	"image/png": true,
+	"image/jpeg": true,
+	"image/gif": true,
+	"image/webp": true,
+	"image/avif": true,
+};
+
+/** Persist uploaded image bytes and return its reference. Throws on a
+ *  non-image MIME or oversized payload — the caller surfaces the error. */
+export function saveChatImage(
+	bytes: Uint8Array,
+	name: string,
+	mime: string,
+): ChatImage {
+	if (!IMAGE_MIME_EXT[mime]) throw new Error(`Unsupported image type: ${mime}`);
+	if (bytes.byteLength > MAX_IMAGE_BYTES)
+		throw new Error(
+			`Image too large (max ${Math.floor(MAX_IMAGE_BYTES / (1024 * 1024))} MB)`,
+		);
+	if (!existsSync(CHAT_IMG_DIR)) mkdirSync(CHAT_IMG_DIR, { recursive: true });
+	const id = crypto.randomUUID();
+	writeFileSync(`${CHAT_IMG_DIR}/${id}`, bytes);
+	// Sidecar so the serving route can set an accurate Content-Type from the
+	// validated MIME rather than sniffing or trusting a query param.
+	writeFileSync(`${CHAT_IMG_DIR}/${id}.type`, mime);
+	return { id, name: name.trim().slice(0, 200) || "image", mime };
+}
+
+/** Resolve a stored image's path + MIME by id (ids are uuids from
+ *  `saveChatImage`; reject anything that isn't so path traversal is impossible). */
+export function getChatImage(id: string): { path: string; mime: string } | null {
+	if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+	const path = `${CHAT_IMG_DIR}/${id}`;
+	if (!existsSync(path)) return null;
+	let mime = "application/octet-stream";
+	try {
+		const t = readFileSync(`${path}.type`, "utf8").trim();
+		if (IMAGE_MIME_EXT[t]) mime = t;
+	} catch {}
+	return { path, mime };
+}
+
+/** Validate + normalize a client-supplied image list against what's on disk. */
+function sanitizeImages(raw: unknown): ChatImage[] {
+	if (!Array.isArray(raw)) return [];
+	const out: ChatImage[] = [];
+	for (const img of raw.slice(0, MAX_IMAGES_PER_MSG)) {
+		if (!img || typeof img !== "object") continue;
+		const id = typeof (img as any).id === "string" ? (img as any).id : "";
+		const name = typeof (img as any).name === "string" ? (img as any).name : "";
+		const mime = typeof (img as any).mime === "string" ? (img as any).mime : "";
+		if (!/^[0-9a-f-]{36}$/i.test(id)) continue;
+		if (!IMAGE_MIME_EXT[mime]) continue;
+		// Only keep refs whose bytes actually landed on disk.
+		if (!existsSync(`${CHAT_IMG_DIR}/${id}`)) continue;
+		out.push({ id, name: name.slice(0, 200) || "image", mime });
+	}
+	return out;
 }
 
 // Mentionable teammates. Keep in sync with TEAM in
@@ -73,6 +153,7 @@ function readAll(channel: string): ChatMessage[] {
 				typeof (m as any).text === "string" &&
 				typeof (m as any).ts === "number",
 		);
+		// Older records predate `images`; the field is optional so they load fine.
 	} catch {
 		return [];
 	}
@@ -84,16 +165,26 @@ export function getChatMessages(channel: string, limit = 200): ChatMessage[] {
 	return readAll(channel).slice(-capped);
 }
 
-/** Append a message to the channel's store and return the stored record. */
+/**
+ * Append a message to the channel's store and return the stored record — or
+ * `null` if, after sanitizing images, the message would be empty (no text and
+ * no image that actually landed on disk). That keeps a bogus image ref with no
+ * text from persisting a blank message.
+ */
 export function addChatMessage(
 	channel: string,
 	user: string,
 	text: string,
-): ChatMessage {
+	images?: unknown,
+): ChatMessage | null {
+	const imgs = sanitizeImages(images);
+	const trimmed = text.trim().slice(0, MAX_TEXT_LEN);
+	if (!trimmed && imgs.length === 0) return null;
 	const message: ChatMessage = {
 		id: crypto.randomUUID(),
 		user: user.trim().slice(0, 64),
-		text: text.trim().slice(0, MAX_TEXT_LEN),
+		text: trimmed,
+		...(imgs.length ? { images: imgs } : {}),
 		ts: Date.now(),
 	};
 	const all = readAll(channel);

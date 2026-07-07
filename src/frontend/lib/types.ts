@@ -54,11 +54,21 @@ export interface SlackMessage {
  * "watercooler" (team-wide room) or "session:<id>" (a session's Chat tab).
  * Text may carry `@Name` teammate mentions and `@session:<id>` session tags.
  */
+export interface ChatImage {
+	id: string;
+	/** Original filename (alt text / download). */
+	name: string;
+	/** MIME type, e.g. "image/png". */
+	mime: string;
+}
+
 export interface ChatMessage {
 	id: string;
 	/** Sender's self-selected backstage-user display name ("Michiel"). */
 	user: string;
 	text: string;
+	/** Attached images (absent/empty on text-only messages). */
+	images?: ChatImage[];
 	/** ms epoch */
 	ts: number;
 }

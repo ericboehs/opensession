@@ -5,10 +5,21 @@ import type {
 	WSClientMessage,
 	WSServerMessage,
 } from "../lib/types";
-import { fetchChatMessagesApi, postChatMessageApi } from "../lib/api";
+import type { ChatImage } from "../lib/types";
+import {
+	fetchChatMessagesApi,
+	postChatMessageApi,
+	uploadChatImageApi,
+	chatImageUrl,
+} from "../lib/api";
+import { imageFilesFromPaste } from "../lib/images";
 import { TEAM } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
-import { IconArrowUp, IconMessage } from "./icons";
+import { IconArrowUp, IconMessage, IconImage, IconX } from "./icons";
+import {
+	PlainContentEditable,
+	type PlainCEHandle,
+} from "../ui/plain-content-editable";
 import { cn } from "../ui/cn";
 
 /**
@@ -167,6 +178,8 @@ export function TeamChat({
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [text, setText] = useState("");
+	const [images, setImages] = useState<ChatImage[]>([]);
+	const [uploading, setUploading] = useState(0);
 	const [posting, setPosting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	// user → expiry stamp of their "typing…" signal.
@@ -177,8 +190,27 @@ export function TeamChat({
 	} | null>(null);
 	const [mentionIdx, setMentionIdx] = useState(0);
 	const bodyRef = useRef<HTMLDivElement | null>(null);
-	const inputRef = useRef<HTMLTextAreaElement | null>(null);
+	const inputRef = useRef<PlainCEHandle | null>(null);
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const lastTypingSentRef = useRef(0);
+
+	// Upload picked/pasted/dropped images and stage them as pending attachments.
+	async function addImages(files: File[] | FileList) {
+		const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
+		if (!imgs.length) return;
+		setError(null);
+		setUploading((n) => n + imgs.length);
+		for (const f of imgs) {
+			try {
+				const ref = await uploadChatImageApi(f);
+				setImages((prev) => [...prev, ref]);
+			} catch (e: any) {
+				setError(e?.message || "Image upload failed");
+			} finally {
+				setUploading((n) => n - 1);
+			}
+		}
+	}
 
 	const sessionTitles = useMemo(
 		() => new Map(sessions.map((s) => [s.id, s.title])),
@@ -229,26 +261,25 @@ export function TeamChat({
 	function syncMention() {
 		const el = inputRef.current;
 		if (!el) return;
-		setMention(mentionAt(el.value, el.selectionStart ?? el.value.length));
+		const val = el.getText();
+		setMention(mentionAt(val, el.getCaret()));
 		setMentionIdx(0);
 	}
 
 	function applySuggestion(s: Suggestion) {
-		if (!mention) return;
+		const el = inputRef.current;
+		if (!mention || !el) return;
+		const val = el.getText();
 		const insert = s.kind === "person" ? `@${s.name}` : `@session:${s.id}`;
-		const before = text.slice(0, mention.start);
-		const after = text.slice(
-			(inputRef.current?.selectionStart ?? text.length) as number,
-		);
-		setText(`${before}${insert} ${after}`);
+		const before = val.slice(0, mention.start);
+		const after = val.slice(el.getCaret());
+		const next = `${before}${insert} ${after}`;
+		setText(next);
 		setMention(null);
 		const caret = before.length + insert.length + 1;
 		requestAnimationFrame(() => {
-			const el = inputRef.current;
-			if (el) {
-				el.focus();
-				el.setSelectionRange(caret, caret);
-			}
+			el.focus();
+			el.setCaret(caret);
 		});
 	}
 
@@ -337,12 +368,13 @@ export function TeamChat({
 
 	async function submit() {
 		const t = text.trim();
-		if (!t || posting) return;
+		if ((!t && images.length === 0) || posting || uploading > 0) return;
 		setPosting(true);
 		setError(null);
 		try {
-			const msg = await postChatMessageApi(channel, t, user);
+			const msg = await postChatMessageApi(channel, t, user, images);
 			setText("");
+			setImages([]);
 			setMention(null);
 			setMessages((prev) =>
 				prev.some((m) => m.id === msg.id) ? prev : [...prev, msg],
@@ -430,14 +462,36 @@ export function TeamChat({
 													</span>
 												</div>
 											)}
-											<div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-fg">
-												<MessageText
-													text={m.text}
-													me={user}
-													sessionTitles={sessionTitles}
-													onOpenSession={onOpenSession}
-												/>
-											</div>
+											{m.text && (
+												<div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-fg">
+													<MessageText
+														text={m.text}
+														me={user}
+														sessionTitles={sessionTitles}
+														onOpenSession={onOpenSession}
+													/>
+												</div>
+											)}
+											{m.images && m.images.length > 0 && (
+												<div className="mt-1 flex flex-wrap gap-1.5">
+													{m.images.map((img) => (
+														<a
+															key={img.id}
+															href={chatImageUrl(img.id)}
+															target="_blank"
+															rel="noreferrer"
+															className="block overflow-hidden rounded-md border border-line"
+														>
+															<img
+																src={chatImageUrl(img.id)}
+																alt={img.name}
+																className="max-h-60 max-w-[min(20rem,100%)] object-cover"
+																loading="lazy"
+															/>
+														</a>
+													))}
+												</div>
+											)}
 										</div>
 									</div>
 								</React.Fragment>
@@ -499,69 +553,148 @@ export function TeamChat({
 								))}
 							</div>
 						)}
-						<div className="flex items-end gap-2 rounded-lg border border-line bg-panel p-2 focus-within:border-line-strong">
-							<textarea
-								ref={inputRef}
-								className="max-h-40 min-h-[38px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-[13px] font-medium leading-snug text-fg shadow-none outline-none placeholder:text-faint"
-								placeholder={
-									isPage
-										? `Message the team as ${user} — @ to tag`
-										: "Chat about this session — @ to tag"
+						<div
+							className="rounded-lg border border-line bg-panel p-2 focus-within:border-line-strong"
+							onDrop={(e) => {
+								if (e.dataTransfer?.files?.length) {
+									e.preventDefault();
+									void addImages(e.dataTransfer.files);
 								}
-								rows={1}
-								value={text}
-								disabled={posting}
-								onChange={(e) => {
-									setText(e.target.value);
-									if (e.target.value.trim()) noteTyping();
-									requestAnimationFrame(syncMention);
-								}}
-								onClick={syncMention}
-								onKeyUp={(e) => {
-									if (
-										!["Enter", "ArrowUp", "ArrowDown", "Tab"].includes(e.key)
-									)
-										syncMention();
-								}}
-								onKeyDown={(e) => {
-									if (mention && suggestions.length > 0) {
-										if (e.key === "ArrowDown") {
-											e.preventDefault();
-											setMentionIdx((i) => (i + 1) % suggestions.length);
-											return;
-										}
-										if (e.key === "ArrowUp") {
-											e.preventDefault();
-											setMentionIdx(
-												(i) =>
-													(i - 1 + suggestions.length) % suggestions.length,
-											);
-											return;
-										}
-										if (e.key === "Enter" || e.key === "Tab") {
-											e.preventDefault();
-											applySuggestion(suggestions[mentionIdx]);
-											return;
-										}
-										if (e.key === "Escape") {
-											setMention(null);
-											return;
-										}
+							}}
+							onDragOver={(e) => {
+								if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
+							}}
+						>
+							{/* Pending image attachments (uploaded, not yet sent). */}
+							{(images.length > 0 || uploading > 0) && (
+								<div className="mb-2 flex flex-wrap gap-1.5 px-1">
+									{images.map((img, i) => (
+										<div
+											key={img.id}
+											className="group relative h-14 w-14 overflow-hidden rounded-md border border-line"
+										>
+											<img
+												src={chatImageUrl(img.id)}
+												alt={img.name}
+												className="h-full w-full object-cover"
+											/>
+											<button
+												type="button"
+												className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+												onClick={() =>
+													setImages((prev) => prev.filter((_, idx) => idx !== i))
+												}
+												aria-label={`Remove ${img.name}`}
+											>
+												<IconX size={11} />
+											</button>
+										</div>
+									))}
+									{Array.from({ length: uploading }).map((_, i) => (
+										<div
+											key={`up:${i}`}
+											className="grid h-14 w-14 place-items-center rounded-md border border-dashed border-line text-[10px] font-medium text-faint"
+										>
+											…
+										</div>
+									))}
+								</div>
+							)}
+							<div className="flex items-end gap-2">
+								<button
+									type="button"
+									className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-dim hover:bg-hover hover:text-fg disabled:opacity-40"
+									onClick={() => fileInputRef.current?.click()}
+									disabled={posting}
+									aria-label="Attach image"
+								>
+									<IconImage size={20} />
+								</button>
+								<input
+									ref={fileInputRef}
+									type="file"
+									accept="image/*"
+									multiple
+									hidden
+									onChange={(e) => {
+										if (e.target.files?.length) void addImages(e.target.files);
+										e.target.value = "";
+									}}
+								/>
+								<PlainContentEditable
+									ref={inputRef}
+									className="max-h-40 min-h-[38px] flex-1 overflow-y-auto px-1 py-2 text-[13px] font-medium leading-snug text-fg"
+									aria-label="Message"
+									placeholder={
+										isPage
+											? `Message the team as ${user} — @ to tag`
+											: "Chat about this session — @ to tag"
 									}
-									if (e.key === "Enter" && !e.shiftKey) {
-										e.preventDefault();
-										submit();
+									value={text}
+									disabled={posting}
+									onChange={(v) => {
+										setText(v);
+										if (v.trim()) noteTyping();
+										requestAnimationFrame(syncMention);
+									}}
+									onClick={syncMention}
+									onPaste={(e) => {
+										const pasted = imageFilesFromPaste(e);
+										if (pasted.length) {
+											e.preventDefault();
+											void addImages(pasted);
+										}
+									}}
+									onKeyUp={(e) => {
+										if (
+											!["Enter", "ArrowUp", "ArrowDown", "Tab"].includes(e.key)
+										)
+											syncMention();
+									}}
+									onKeyDown={(e) => {
+										if (mention && suggestions.length > 0) {
+											if (e.key === "ArrowDown") {
+												e.preventDefault();
+												setMentionIdx((i) => (i + 1) % suggestions.length);
+												return;
+											}
+											if (e.key === "ArrowUp") {
+												e.preventDefault();
+												setMentionIdx(
+													(i) =>
+														(i - 1 + suggestions.length) % suggestions.length,
+												);
+												return;
+											}
+											if (e.key === "Enter" || e.key === "Tab") {
+												e.preventDefault();
+												applySuggestion(suggestions[mentionIdx]);
+												return;
+											}
+											if (e.key === "Escape") {
+												setMention(null);
+												return;
+											}
+										}
+										if (e.key === "Enter" && !e.shiftKey) {
+											e.preventDefault();
+											submit();
+										}
+									}}
+								/>
+								<button
+									className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-accent text-white disabled:opacity-40"
+									onClick={submit}
+									disabled={
+										posting ||
+										uploading > 0 ||
+										(!text.trim() && images.length === 0)
 									}
-								}}
-							/>
-							<button
-								className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-accent text-white disabled:opacity-40"
-								onClick={submit}
-								disabled={posting || !text.trim()}
-								aria-label="Send"
-							>
-								<IconArrowUp size={20} />
-							</button>
+									aria-label="Send"
+								>
+									<IconArrowUp size={20} />
+								</button>
+							</div>
 						</div>
 					</div>
 					{error && (

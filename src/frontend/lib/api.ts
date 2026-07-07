@@ -3,6 +3,7 @@ import type {
 	SlackChannelLink,
 	SlackMessage,
 	ChatMessage,
+	ChatImage,
 	PlainThread,
 	SupportThread,
 	Project,
@@ -660,13 +661,35 @@ export async function postChatMessageApi(
 	channel: string,
 	text: string,
 	user: string,
+	images?: ChatImage[],
 ): Promise<ChatMessage> {
 	const body = await request<{ message: ChatMessage }>("/chat/messages", {
 		method: "POST",
-		body: { channel, text, user },
+		body: { channel, text, user, images: images ?? [] },
 		label: "Failed to send",
 	});
 	return body.message;
+}
+
+/** Stream an image to permanent chat storage; resolves to its {id,name,mime} ref. */
+export async function uploadChatImageApi(file: File): Promise<ChatImage> {
+	const res = await fetch("/backstage/api/chat/upload", {
+		method: "POST",
+		headers: {
+			"x-file-name": encodeURIComponent(file.name),
+			"content-type": file.type || "application/octet-stream",
+		},
+		body: file,
+	});
+	const body = await res.json().catch(() => ({}));
+	if (!res.ok || !body?.ok || !body?.id)
+		throw new Error(body?.error || `Upload failed (${res.status})`);
+	return { id: body.id, name: body.name || file.name, mime: body.mime };
+}
+
+/** URL that serves a stored chat image's bytes. */
+export function chatImageUrl(id: string): string {
+	return `/backstage/api/chat/image/${id}`;
 }
 
 export async function fetchWorktrees(repo?: string) {
