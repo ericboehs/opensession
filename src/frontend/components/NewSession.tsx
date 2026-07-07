@@ -6,7 +6,7 @@ import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
-import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections } from "./icons";
+import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections, IconReturn } from "./icons";
 import type { WSServerMessage } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -628,7 +628,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 disabled={!canCreate}
               >
                 {creating ? "Creating…" : createMore ? "Create more" : "Create"}
-                <span className="palette-create-kbd">↵</span>
+                <IconReturn className="palette-create-kbd" size={20} />
               </button>
               <button
                 type="button"

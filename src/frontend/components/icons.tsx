@@ -162,6 +162,17 @@ export function IconCheck(p: IconProps) {
   );
 }
 
+// Enter/return key glyph: a corner-down-left arrow. Used as the keyboard hint
+// on the Create button (replaces the bare ↵ character).
+export function IconReturn(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M17.25 8.25V10.5C17.25 11.88 16.13 13 14.75 13H7" />
+      <path {...stroke} d="M10.25 16.5L6.75 13L10.25 9.5" />
+    </Svg>
+  );
+}
+
 export function IconBolt(p: IconProps) {
   return (
     <Svg {...p}>
