@@ -2066,9 +2066,27 @@ export function SessionViewer({
 				headerModelEl &&
 				(hasWorkspace || models.length > 0) &&
 				createPortal(
-					<span className="header-chatbar">
+					<span
+						className="header-chatbar session-settings-trigger"
+						role="button"
+						tabIndex={0}
+						title="Workspace & chat settings"
+						onClick={() =>
+							// The metadata line is a React portal, so its clicks bubble
+							// through this component's tree — not App's title button. Fire
+							// the same event so tapping repo/model/cost opens the info page.
+							window.dispatchEvent(
+								new Event("backstage:toggle-session-settings"),
+							)
+						}
+					>
 						{hasWorkspace && (
 							<RepoTile name={session.repo || "tella-fusion"} size={15} />
+						)}
+						{hasWorkspace && models.length > 0 && (
+							<span className="header-chatbar-sep" aria-hidden="true">
+								·
+							</span>
 						)}
 						{models.length > 0 && (
 							<span className="header-chatbar-model truncate">
@@ -2087,7 +2105,7 @@ export function SessionViewer({
 								<span className="header-chatbar-sep" aria-hidden="true">
 									·
 								</span>
-								<UsageMeter usage={usage} />
+								<UsageMeter usage={usage} className="chatbar-usage" />
 							</>
 						)}
 					</span>,

@@ -9177,8 +9177,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		padding-top: 0;
 	}
 	.header-chatbar-sep {
-		color: var(--text-faint);
 		flex-shrink: 0;
+		/* Bigger middot between repo · model · cost. */
+		font-size: 16px;
+		line-height: 1;
+		color: var(--text-dim);
 	}
 	/* Repo chip: tile + name, sized to the thin subtitle line. */
 	.header-chatbar-repo {
@@ -9191,6 +9194,23 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.header-chatbar-model {
 		min-width: 0;
 		max-width: 45vw;
+		font-size: 12px;
+		font-weight: 500;
+		color: var(--text-dim);
+	}
+	/* Cost meter in the metadata row matches the model's dim subtitle — same
+	   size + color — with a smaller context ring and no button padding. */
+	.header-chatbar .chatbar-usage {
+		font-size: 12px;
+		padding: 0;
+		gap: 4px;
+	}
+	.header-chatbar .chatbar-usage span {
+		color: var(--text-dim);
+	}
+	.header-chatbar .chatbar-usage svg {
+		width: 10px;
+		height: 10px;
 	}
 	/* Model line as a tap target: a compact label + chevron with a full-bleed
 	   transparent native <select> over it (opens the OS picker). Kept tiny to
