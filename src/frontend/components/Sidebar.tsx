@@ -3753,31 +3753,34 @@ function WsStatusMark({
 	row: { status: MineStatus; running: boolean; chats: UnifiedSession[] };
 	size?: number;
 }) {
-	// Dots are only 8px wide while the PR/merge icons are `size` (20px). Center
-	// the dot in a `size`-wide slot so every row's #number/title lines up at the
-	// same x whichever mark the row carries.
-	const dot = (cls: string) => (
+	// Every mark rides in the same `size`-wide (20px) flex slot so #number/title
+	// line up at one x whichever mark the row carries. It also gives the icons a
+	// real CSS box: an SVG sized only by its width/height *attributes* collapses
+	// to a 0 flex-basis in iOS Safari and paints on top of the title — the slot's
+	// inline-styled span dodges that (the dots were always immune for this reason).
+	const slot = (child: React.ReactNode) => (
 		<span
 			className="flex shrink-0 items-center justify-center"
 			style={{ width: size, height: size }}
 		>
-			<span className={`sidebar-item-status ${cls}`} />
+			{child}
 		</span>
 	);
+	const dot = (cls: string) => slot(<span className={`sidebar-item-status ${cls}`} />);
 	if (row.status === "needsinput") return dot("sidebar-status-waiting");
 	if (row.running) return dot("sidebar-status-running");
 	if (row.status === "review") {
 		const open = row.chats.filter((c) => c.prState === "OPEN");
 		const allDraft = open.length > 0 && open.every((c) => c.prIsDraft);
-		return (
+		return slot(
 			<IconPullRequest
 				size={size}
-				className={`shrink-0 ${allDraft ? "text-faint" : "text-green"}`}
-			/>
+				className={allDraft ? "text-faint" : "text-green"}
+			/>,
 		);
 	}
 	if (row.status === "merged")
-		return <IconGitMerge size={size} className="shrink-0 text-purple" />;
+		return slot(<IconGitMerge size={size} className="text-purple" />);
 	return null;
 }
 
