@@ -1198,8 +1198,13 @@ export function Sidebar({
 		const hadOrigin = wsPressOrigin.current !== null;
 		const wasSwiping = wsSwiping.current;
 		const rowWidth = wsSwipeOrigin.current?.width ?? e.currentTarget.clientWidth;
-		const swipeOffset =
-			isPhone && wsSwipe?.key === row.key ? wsSwipeOffset.current : 0;
+		// Read the committed distance straight off the ref (like SessionRow),
+		// gated on the `wasSwiping` ref — NOT the `wsSwipe` state. Touch events are
+		// continuous, so React can batch the last touchmove's setWsSwipe and not
+		// re-render before touchend; a `wsSwipe?.key === row.key` gate would then
+		// read stale state, collapse the offset to 0, and silently drop the swipe
+		// (the intermittent "slide didn't archive"). The ref is always current.
+		const swipeOffset = isPhone && wasSwiping ? wsSwipeOffset.current : 0;
 		clearWsPress();
 		wsSwipeOrigin.current = null;
 		wsSwiping.current = false;
