@@ -338,6 +338,19 @@ function App() {
 		localStorage.setItem("backstage-chat-read", String(Date.now()));
 		setChatUnread(0);
 	}, [route.view]);
+	// Mirror the unread count onto the app-icon badge (iOS/macOS installed PWA,
+	// Chrome taskbar). While the app is open this is the source of truth,
+	// overwriting whatever notification count sw.js left; no-op where the
+	// Badging API is missing.
+	useEffect(() => {
+		const nav = navigator as Navigator & {
+			setAppBadge?: (n?: number) => Promise<void>;
+			clearAppBadge?: () => Promise<void>;
+		};
+		if (!nav.setAppBadge) return;
+		if (chatUnread > 0) nav.setAppBadge(chatUnread).catch(() => {});
+		else nav.clearAppBadge?.().catch(() => {});
+	}, [chatUnread]);
 	// On phones the layout is an iOS-style page stack: the sidebar is the root
 	// page and any non-home route is a page pushed over it. `mobileDetail` drives
 	// that (see the `.mobile-detail` CSS and the back button below). It's inert on
