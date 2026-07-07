@@ -1112,7 +1112,12 @@ body.resizing-x {
 }
 .sidebar-repo-lanes {
 	margin-top: 2px;
-	margin-left: 11px;
+	/* Center the rail under the shared leading-icon column (the repo tile / group
+	   icons above it), not just left of it. That column's center sits at
+	   --sidebar-icon-left (16px) + 11px (half the 22px icon box) = 27px from the
+	   sidebar-container edge; the lanes start 10px in (.sidebar-list pad-left), so
+	   margin-left 16.5px + half the 1px border lands the rail's center on 27px. */
+	margin-left: 16.5px;
 	padding-left: 9px;
 	border-left: 1px solid var(--border);
 }
