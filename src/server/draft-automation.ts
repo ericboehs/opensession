@@ -44,7 +44,7 @@ Rules:
 - prompt: the full instructions for each run, written to the agent in second person. Be specific: what to look at, what to produce, what NOT to do. Each run is a fresh session with no memory — the prompt must be self-contained. 3-8 sentences, use numbered steps when there's a sequence.
 - schedule: 5-field cron in UTC (the server runs UTC; 9am Amsterdam ≈ 7-8 UTC, 9am PT = 16 UTC). "" if the automation is event- or webhook-triggered rather than time-based.
 - mode: "ask" = read-only investigation/reporting. "code" = the run gets a git worktree and can edit code and open PRs. Pick "code" only if the description involves changing code.
-- mcpServers: least privilege — ONLY servers the runs genuinely need, from this list: ${mcpNames.join(", ")}. Use [] when the task only needs the repo and gh CLI. Rough guide: plain = support tickets, workos = user/org accounts, stripe = billing, sentry = errors, grafana = logs/metrics, tinybird = product analytics, linear = issues, slack = team chat.
+- mcpServers: least privilege — ONLY servers the runs genuinely need, from this list: ${mcpNames.join(", ")}. Use [] when the task only needs the repo and gh CLI. Rough guide: plain = support tickets, workos = user/org accounts, stripe = billing, sentry = errors, grafana = logs/metrics, tinybird = product analytics, linear = issues, slack = team chat, dub = short links / click analytics.
 - eventKey: null unless the description says "when/whenever X happens" and X matches one of: ${KNOWN_EVENT_KEYS.join(", ")}. When eventKey is set, schedule is usually "".
 - Runs that touch support tickets must never reply to the customer — they leave internal notes with a suggested reply, written in English.
 

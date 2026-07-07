@@ -28,6 +28,13 @@
     "circle": {
       "type": "http",
       "url": "https://app.circle.so/api/mcp"
+    },
+    "dub": {
+      "type": "http",
+      "url": "https://mcp.dub.sh/mcp/dub-links",
+      "headers": {
+        "Mcp-Dub-Token": "<your-dub-api-key>"
+      }
     }
   }
 }
