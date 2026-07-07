@@ -9,6 +9,9 @@
 	   as inset wells instead of blending in. */
 	--bg: #1b1b1b;
 	--bg-raised: #212121;
+	/* Surface for the session top bar + tab strip. Matches --bg-raised in dark;
+	   in light it's pulled a touch toward white so the bar reads cleaner. */
+	--topbar-bg: #212121;
 	--bg-panel: #262626;
 	--bg-hover: #2e2e2e;
 	--bg-active: #363636;
@@ -57,6 +60,7 @@
 html[data-theme="light"] {
 	--bg: #ffffff;
 	--bg-raised: #f7f6f4;
+	--topbar-bg: #fcfbfa;
 	--bg-panel: #f2f0ec;
 	--bg-hover: #ece9e4;
 	--bg-active: #e4e0d9;
@@ -585,7 +589,7 @@ a {
 	align-items: center;
 	justify-content: space-between;
 	gap: 8px;
-	height: 48px;
+	height: 54px;
 	/* The brand trigger carries its own 8px left padding, so pull the row's in
 	   to keep the logo aligned with the list icons at --sidebar-icon-left. */
 	padding: 0 12px 0 calc(var(--sidebar-icon-left) - 8px);
@@ -651,9 +655,9 @@ a {
    desktop sidebar is collapsed (see the sidebar-collapsed rules below). */
 .sidebar-reopen {
 	position: absolute;
-	/* Center the 34px control on the 48px header row so it lines up with the
-	   right-panel toggle across the bar ((48 - 34) / 2 = 7). */
-	top: 7px;
+	/* Center the 34px control on the 54px header row so it lines up with the
+	   right-panel toggle across the bar ((54 - 34) / 2 = 10). */
+	top: 10px;
 	left: 9px;
 	z-index: 20;
 	display: none;
@@ -1920,13 +1924,13 @@ body.resizing-x {
 .detail-topbar-title {
 	display: flex;
 	align-items: center;
-	/* Same 48px as .viewer-header / the sidebar brand row. */
-	height: 48px;
+	/* Same 54px as .viewer-header / the sidebar brand row. */
+	height: 54px;
 	padding: 0 16px;
 	font-size: 14px;
 	font-weight: 600;
 	color: var(--text);
-	background: var(--bg-raised);
+	background: var(--topbar-bg);
 	border-bottom: 1px solid var(--border);
 }
 /* When the tab strip follows the top bar they read as one block: drop the
@@ -1942,7 +1946,7 @@ body.resizing-x {
 	align-items: stretch;
 	gap: 3px;
 	padding: 0 8px 0;
-	background: var(--bg-raised);
+	background: var(--topbar-bg);
 	border-bottom: 1px solid var(--border);
 	flex-shrink: 0;
 	min-width: 0;
@@ -2310,13 +2314,13 @@ body.resizing-x {
 	align-items: center;
 	justify-content: space-between;
 	gap: 12px;
-	/* Fixed height so the bar lines up with the sidebar's 48px brand row
+	/* Fixed height so the bar lines up with the sidebar's 54px brand row
 	   (28px controls + 10px padding) instead of growing with its tallest
 	   button. */
-	height: 48px;
+	height: 54px;
 	padding: 0 16px;
 	border-bottom: 1px solid var(--border);
-	background: var(--bg-raised);
+	background: var(--topbar-bg);
 	flex-shrink: 0;
 	min-width: 0;
 }
@@ -4459,9 +4463,9 @@ body.resizing-x .panel-resize::after {
 	gap: 10px;
 	padding: 8px 12px;
 	border-bottom: 1px solid var(--border);
-	/* 48px to match the chat header row (.detail-topbar / .viewer-header) so the
+	/* 54px to match the chat header row (.detail-topbar / .viewer-header) so the
 	   panel's first divider lines up with it. */
-	min-height: 48px;
+	min-height: 54px;
 }
 .pr-bar-green {
 	background: var(--green-soft);
