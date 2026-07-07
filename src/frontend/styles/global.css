@@ -2522,12 +2522,14 @@ body.resizing-x {
 	display: flex;
 	flex-direction: column;
 	align-items: stretch;
-	gap: 6px;
+	gap: 2px;
+	min-width: 200px;
 	padding: 8px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 16px;
-	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+	border-radius: 14px;
+	corner-shape: squircle;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
 	/* iOS-style pop: scale up from the ⋯ it's anchored to. */
 	transform-origin: top right;
 	animation: overflow-menu-in 0.16s cubic-bezier(0.32, 0.72, 0, 1);
@@ -2552,22 +2554,34 @@ body.resizing-x {
 .viewer-overflow-menu > .viewer-delete-confirm {
 	width: 100%;
 }
+/* Rows read like Base UI Menu.Item (ui/menu.tsx): borderless, full-strength
+   text at rest, a soft rounded highlight on hover — not individually bordered
+   pills. The per-item border/pill styling from the base button rules is
+   overridden here so the menu matches every other dropdown in the app. */
 .viewer-overflow-menu > button,
 .viewer-overflow-menu > a,
 .viewer-overflow-menu > .spinoff > .btn-panel-toggle {
 	justify-content: flex-start;
 	text-align: left;
+	gap: 8px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	padding: 8px 10px;
+	font-size: 13px;
+	color: var(--text);
+	background: none;
+}
+.viewer-overflow-menu > button:hover,
+.viewer-overflow-menu > a:hover,
+.viewer-overflow-menu > .spinoff > .btn-panel-toggle:hover {
+	color: var(--text);
+	border-color: transparent;
+	background: var(--bg-hover);
 }
 .viewer-overflow-menu > .viewer-delete-confirm {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
-}
-
-/* The pin (star) row lives in the ⋯ menu with a text label — the base rule's
-   glyph-sized 16px would blow the label up. */
-.viewer-overflow-menu > .btn-viewer-pin {
-	font-size: 13px;
 }
 
 /* Squircle user picture (GitHub avatar, initial fallback) — see UserAvatar.tsx.
@@ -2825,7 +2839,6 @@ body.resizing-x {
    hover (not red), keeping Delete as the only alarming item in the menu. */
 .btn-viewer-archive:hover:not(:disabled) {
 	color: var(--text);
-	border-color: var(--border-strong);
 	background: var(--bg-hover);
 }
 .btn-viewer-archive:disabled {
@@ -3172,15 +3185,14 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 }
 .btn-viewer-pin:hover {
 	color: var(--text);
-	border-color: var(--text-faint);
 }
 .btn-viewer-pin.active {
 	color: var(--yellow);
-	border-color: var(--yellow);
 }
-.btn-viewer-delete:hover {
+/* Destructive cue stays (red text + soft red wash) but borderless, so Delete
+   reads as a row like the rest — not a boxed-in button. */
+.viewer-overflow-menu > .btn-viewer-delete:hover {
 	color: var(--red);
-	border-color: var(--red);
 	background: var(--red-soft);
 }
 
