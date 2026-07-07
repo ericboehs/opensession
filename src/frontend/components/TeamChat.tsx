@@ -104,12 +104,13 @@ const TAG_RE = /(@session:[A-Za-z0-9._-]+|@[A-Za-z][\w.-]*)/g;
 function MessageText({
 	text,
 	me,
-	sessionTitles,
+	sessionLabels,
 	onOpenSession,
 }: {
 	text: string;
 	me: string;
-	sessionTitles: Map<string, string>;
+	/** id → sidebar-style label (workspace name when it has one, else title). */
+	sessionLabels: Map<string, { label: string; title: string }>;
 	onOpenSession: (id: string) => void;
 }) {
 	const parts = text.split(TAG_RE);
@@ -118,19 +119,19 @@ function MessageText({
 			{parts.map((p, i) => {
 				if (p.startsWith("@session:")) {
 					const id = p.slice("@session:".length);
-					const title = sessionTitles.get(id);
+					const s = sessionLabels.get(id);
 					return (
 						<button
 							key={i}
 							className="mx-0.5 inline-flex max-w-60 items-baseline gap-1 rounded-sm border border-line bg-panel px-1.5 align-baseline text-[12px] font-medium text-fg hover:border-line-strong hover:bg-hover"
 							onClick={() => onOpenSession(id)}
-							title={title ? `Open “${title}”` : "Open session"}
+							title={s ? `Open “${s.title}”` : "Open session"}
 						>
 							<span className="translate-y-0.5 self-center text-dim">
 								<IconMessage size={13} />
 							</span>
 							<span className="truncate">
-								{title || `${id.slice(0, 8)}…`}
+								{s?.label || `${id.slice(0, 8)}…`}
 							</span>
 						</button>
 					);
@@ -208,14 +209,22 @@ export function TeamChat({
 		}
 	}
 
-	const sessionTitles = useMemo(
-		() => new Map(sessions.map((s) => [s.id, s.title])),
-		[sessions],
-	);
-
 	const workspaceNames = useMemo(
 		() => new Map((projects || []).map((p) => [p.id, p.name])),
 		[projects],
+	);
+
+	// Chip labels mirror the left sidebar: the workspace name is what people
+	// recognize, the chat's own (often auto-generated) title is secondary.
+	const sessionLabels = useMemo(
+		() =>
+			new Map(
+				sessions.map((s) => {
+					const ws = (s.projectId && workspaceNames.get(s.projectId)) || "";
+					return [s.id, { label: ws || s.title, title: s.title }];
+				}),
+			),
+		[sessions, workspaceNames],
 	);
 
 	const suggestions = useMemo<Suggestion[]>(() => {
@@ -248,6 +257,7 @@ export function TeamChat({
 		const chats: Suggestion[] = matched.slice(0, 6).map((s) => ({
 			kind: "session",
 			id: s.id,
+			// Sidebar-style hierarchy: workspace name first, chat title second.
 			title: s.title,
 			workspace: (s.projectId && workspaceNames.get(s.projectId)) || undefined,
 		}));
@@ -464,7 +474,7 @@ export function TeamChat({
 													<MessageText
 														text={m.text}
 														me={user}
-														sessionTitles={sessionTitles}
+														sessionLabels={sessionLabels}
 														onOpenSession={onOpenSession}
 													/>
 												</div>
@@ -540,10 +550,14 @@ export function TeamChat({
 												<span className="grid h-5 w-5 shrink-0 place-items-center text-dim">
 													<IconMessage size={16} />
 												</span>
-												<span className="truncate">{s.title}</span>
-												<span className="ml-auto max-w-24 shrink-0 truncate text-[11px] text-faint">
-													{s.workspace || "session"}
+												<span className="truncate">
+													{s.workspace || s.title}
 												</span>
+												{s.workspace && (
+													<span className="ml-auto max-w-32 shrink-0 truncate text-[11px] text-faint">
+														{s.title}
+													</span>
+												)}
 											</>
 										)}
 									</div>
