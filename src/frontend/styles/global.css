@@ -2049,8 +2049,7 @@ body.resizing-x {
 		height: 44px;
 		/* Overlay the messages below instead of pushing them down. */
 		margin-bottom: -44px;
-		/* Small top inset keeps the pills tucked right under the header. */
-		padding: 3px 8px 0;
+		padding: 0 8px;
 		position: relative;
 		z-index: 6;
 		/* No opaque fill: header supplies the solid edge, pills float, transcript
@@ -2061,6 +2060,14 @@ body.resizing-x {
 	}
 	.session-tabs .session-tab {
 		pointer-events: auto;
+	}
+	/* The horizontal scroller clips overflow on BOTH axes (overflow-x:auto forces
+	   overflow-y to clip), which would shear the pill drop-shadow at the strip's
+	   bottom edge. Pad the clip box so the shadow renders in full; the top inset
+	   still tucks the pills right under the header. */
+	.session-tabs-scroll,
+	.session-tabs-actions {
+		padding: 3px 3px 9px;
 	}
 	.viewer-messages {
 		/* Clear the pills at rest (bar height + a little air), then scroll under. */
@@ -2396,7 +2403,10 @@ body.resizing-x {
 	height: 54px;
 	padding: 0 16px;
 	border-bottom: 1px solid var(--border);
-	background: var(--topbar-bg);
+	/* Match the chat body (white in light) rather than the lifted topbar tint, so
+	   the whole top region reads as one clean surface the transcript dissolves
+	   into under the floating pills. */
+	background: var(--bg);
 	flex-shrink: 0;
 	min-width: 0;
 }
