@@ -23,7 +23,13 @@ import {
   type StreamEvent,
   type ImageInput,
 } from "./claude-runner";
-import { runCodex, isCodexSessionBusy, cancelCodexRun, activeCodexRunCount } from "./codex-runner";
+import { isCodexSessionBusy, cancelCodexRun, activeCodexRunCount } from "./codex-runner";
+import {
+  runCodexAuto,
+  codexSteerRun,
+  codexInterruptAndSteerRun,
+  codexStopRunTurn,
+} from "./codex-appserver";
 import {
   providerFor,
   fallbackModelChain,
@@ -129,7 +135,10 @@ export interface RunAgentOpts {
 
 function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerator<StreamEvent> {
   if (providerFor(model) === "codex") {
-    return runCodex({
+    // Transport-aware (file/env toggle): "app-server" drives the codex
+    // app-server JSON-RPC API — same threads/rollouts as exec, plus mid-turn
+    // steering and interrupts. Default stays the exec SDK.
+    return runCodexAuto({
       prompt: opts.prompt,
       sessionId: opts.sessionId,
       cwd: opts.cwd,
@@ -297,9 +306,10 @@ export function activeAgentRunCount(): number {
 }
 
 /**
- * Steer a message into an in-flight Claude run (merged in at the next turn
- * boundary, same query). False = nothing steerable (codex runs, external
- * processes, or the run is finishing) — caller should queue instead.
+ * Steer a message into an in-flight run: Claude runs merge it at the next turn
+ * boundary (same query); app-server Codex runs fold it into the RUNNING turn
+ * via turn/steer. False = nothing steerable (exec-transport codex runs,
+ * external processes, or the run is finishing) — caller should queue instead.
  */
 export function steerAgentRun(
   ids: Array<string | null | undefined>,
@@ -312,6 +322,7 @@ export function steerAgentRun(
     // text-only, so a send with images falls through (caller queues it —
     // the queue drain delivers images).
     if (steerRun(id, text, images)) return true;
+    if (codexSteerRun(id, text, images)) return true;
     if (!images?.length && hostSteer(id, text)) return true;
   }
   return false;
@@ -334,10 +345,11 @@ export function interruptAgentRun(
 }
 
 /**
- * Esc-style stop on an in-flight Claude run: discard undelivered steers and
- * abort the current turn so the run winds down gracefully at the boundary.
- * False = nothing Esc-stoppable (codex runs, external processes) — caller
- * falls back to the hard cancel.
+ * Esc-style stop on an in-flight run: discard undelivered steers and abort the
+ * current turn so the run winds down gracefully (Claude at the boundary,
+ * app-server Codex via turn/interrupt). False = nothing Esc-stoppable
+ * (exec-transport codex runs, external processes) — caller falls back to the
+ * hard cancel.
  */
 export function stopAgentRunTurn(
   ids: Array<string | null | undefined>
@@ -345,14 +357,17 @@ export function stopAgentRunTurn(
   for (const id of ids) {
     if (!id) continue;
     if (stopRunTurn(id)) return true;
+    if (codexStopRunTurn(id)) return true;
   }
   return false;
 }
 
 /**
- * Esc-style redirect on an in-flight Claude run: abort the current turn but
- * keep the query alive, continuing immediately with the given message.
- * False = nothing interruptible — caller should fall back to steer/queue.
+ * Esc-style redirect on an in-flight run: abort the current turn but keep the
+ * run alive, continuing immediately with the given message (Claude keeps the
+ * query; app-server Codex interrupts the turn and starts the next one in the
+ * same run). False = nothing interruptible — caller should fall back to
+ * steer/queue.
  */
 export function interruptAndSteerAgentRun(
   ids: Array<string | null | undefined>,
@@ -362,6 +377,7 @@ export function interruptAndSteerAgentRun(
   for (const id of ids) {
     if (!id) continue;
     if (interruptAndSteerRun(id, text, images)) return true;
+    if (codexInterruptAndSteerRun(id, text, images)) return true;
     if (!images?.length && hostInterruptSteer(id, text)) return true;
   }
   return false;

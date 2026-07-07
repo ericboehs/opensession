@@ -77,7 +77,7 @@ export function cancelCodexRun(id: string): boolean {
   return false;
 }
 
-function isCodexUsageLimitError(message: string): boolean {
+export function isCodexUsageLimitError(message: string): boolean {
   const s = message.toLowerCase();
   return (
     s.includes("rate limit") ||
@@ -104,7 +104,7 @@ function parseProjectMcpServerNames(configToml: string): Set<string> {
   return names;
 }
 
-function projectMcpServerNames(cwd: string): Set<string> {
+export function projectMcpServerNames(cwd: string): Set<string> {
   const names = new Set<string>();
   let dir = cwd;
   for (;;) {
@@ -144,7 +144,7 @@ export function buildCodexMcpNameMap(
   return aliases;
 }
 
-function formatMcpAliasNote(aliases: Map<string, string>): string | undefined {
+export function formatMcpAliasNote(aliases: Map<string, string>): string | undefined {
   if (!aliases.size) return undefined;
   const lines = [...aliases.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -157,7 +157,7 @@ function formatMcpAliasNote(aliases: Map<string, string>): string | undefined {
   ].join("\n");
 }
 
-function buildCodexMcpConfig(
+export function buildCodexMcpConfig(
   allowlist: string[] | undefined,
   disabledToolNames: string[],
   user: string | undefined,
@@ -228,7 +228,7 @@ function accountCanResume(threadId: string, account?: CodexAccount): boolean {
 }
 
 /** Minimal env for the codex child process (mirrors claude-runner childEnv). */
-function codexEnv(account?: CodexAccount, author?: GitIdentity | null): Record<string, string> {
+export function codexEnv(account?: CodexAccount, author?: GitIdentity | null): Record<string, string> {
   const env: Record<string, string> = {
     PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
     HOME,
@@ -240,7 +240,7 @@ function codexEnv(account?: CodexAccount, author?: GitIdentity | null): Record<s
   return env;
 }
 
-function proxyMcpConfigs(
+export function proxyMcpConfigs(
   inProcessMcp: Record<string, unknown> | undefined,
   rpcToken: string | undefined
 ): Record<string, Record<string, unknown>> {
@@ -748,6 +748,9 @@ export async function* runCodex(opts: {
                 outputTokens: outTok,
                 cacheReadTokens: cacheReadTok,
                 cacheCreationTokens: 0,
+                // Turn-total prompt tokens, NOT the current window fill — the
+                // codex-sdk only reports per-turn sums (no last-call usage),
+                // so this overstates context on multi-call turns.
                 contextTokens: inTok + cacheReadTok,
               },
             };

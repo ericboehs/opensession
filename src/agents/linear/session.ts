@@ -8,7 +8,7 @@ import {
   STRIPE_CONFIRM_TOOLS,
 } from "../../server/claude-runner";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";
-import { runCodex } from "../../server/codex-runner";
+import { runCodexAuto } from "../../server/codex-appserver";
 import { DEFAULT_FALLBACK_MODEL, resolveModel, getDefaultModel } from "../../server/models";
 import { cleanPlainToolInput } from "../../server/shared/note-style";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
@@ -586,7 +586,7 @@ export async function runClaudeHeadless(
       }).catch(() => {});
       try {
         let fallbackResult = "";
-        for await (const event of runCodex({
+        for await (const event of runCodexAuto({
           prompt:
             prompt +
             "\n\n[Note: a previous attempt on another model may have left partial work in this worktree — review what's already done before continuing.]",

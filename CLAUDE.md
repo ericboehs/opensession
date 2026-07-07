@@ -152,6 +152,16 @@ How to delegate from a Fable/Claude Backstage session:
   summary, diff, tests, and assumptions; rerun, steer, or escalate to a smarter
   model if the result misses the bar.
 
+Codex transport: codex runs go through the exec SDK by default, or the
+`codex app-server` JSON-RPC transport (src/server/codex-appserver.ts) when
+`~/.backstage-codex-transport.json` is `{"transport": "app-server"}` (or
+MICHAEL_CODEX_TRANSPORT=app-server). Both transports share the same threads/
+rollouts, so the toggle is safe mid-session. App-server adds mid-turn steering
+(`turn/steer`) and Esc-interrupt (`turn/interrupt`) — with it, busy sends to
+Codex sessions steer/interrupt like Claude ones instead of queueing. All codex
+entry points (interactive, Slack, Linear) route through `runCodexAuto`.
+Transport code is runner internals — changes need a real restart.
+
 Priority rule for shipped work: intelligence > taste > cost. Cost is only a
 tie-breaker. Do not ship mediocre output just because it was cheaper to produce.
 

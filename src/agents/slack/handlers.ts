@@ -47,7 +47,7 @@ import type { QueuedMessage, SessionQueue } from "./queue";
 import { sessionQueues } from "./queue";
 import { isStopMessage, cancelSession } from "./cancel";
 import { pollForVercelPreview } from "./github-reviews";
-import { runCodex } from "../../server/codex-runner";
+import { runCodexAuto } from "../../server/codex-appserver";
 import { gitIdentityFor } from "../../server/shared/user-mappings";
 import { sessionForChannel } from "../../server/slack-links";
 import { tryGetSessionControl } from "../../server/session-control";
@@ -504,7 +504,7 @@ async function processCodexMessage(
   abortController.signal.addEventListener("abort", onAbort, { once: true });
 
   try {
-    for await (const event of runCodex({
+    for await (const event of runCodexAuto({
       prompt: msg.prompt,
       sessionId: session.codexThreadId || undefined,
       cwd,
