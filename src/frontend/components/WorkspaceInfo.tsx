@@ -107,21 +107,21 @@ function statusChips(pr: PrDetails | null): StatusChip[] {
 			key: "checks",
 			label: `${c.failed} check${c.failed === 1 ? "" : "s"} failing`,
 			tone: "red",
-			icon: <IconX size={14} />,
+			icon: <IconX size={20} />,
 		});
 	else if (c.pending > 0)
 		chips.push({
 			key: "checks",
 			label: "Checks running",
 			tone: "yellow",
-			icon: <IconClock size={14} />,
+			icon: <IconClock size={20} />,
 		});
 	else if (c.passed > 0)
 		chips.push({
 			key: "checks",
 			label: "Checks passing",
 			tone: "green",
-			icon: <IconCheck size={14} />,
+			icon: <IconCheck size={20} />,
 		});
 
 	if (pr.mergeable === "CONFLICTING")
@@ -532,10 +532,10 @@ function ReviewerChip({
 				}
 			>
 				{req ? (
-					<UserAvatar name={req.to} size={15} />
+					<UserAvatar name={req.to} size={20} />
 				) : (
 					<span className="wi-chip-icon">
-						<IconBell size={14} />
+						<IconBell size={20} />
 					</span>
 				)}
 				{req ? `Review: ${req.to}` : "Request review"}
@@ -543,9 +543,9 @@ function ReviewerChip({
 			<Menu.Popup align="start" sideOffset={6} className="min-w-[200px]">
 				{TEAM.map((name) => (
 					<Menu.Item key={name} onClick={() => pick(name)}>
-						<UserAvatar name={name} size={20} />
+						<UserAvatar name={name} size={22} />
 						<span className="min-w-0 flex-1 truncate">{name}</span>
-						{req?.to === name && <IconCheck size={16} className="text-dim" />}
+						{req?.to === name && <IconCheck size={20} className="text-dim" />}
 					</Menu.Item>
 				))}
 				{req && (

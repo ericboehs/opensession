@@ -591,13 +591,13 @@ export function TeamChat({
 											/>
 											<button
 												type="button"
-												className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+												className="absolute right-0.5 top-0.5 grid h-6 w-6 place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
 												onClick={() =>
 													setImages((prev) => prev.filter((_, idx) => idx !== i))
 												}
 												aria-label={`Remove ${img.name}`}
 											>
-												<IconX size={11} />
+												<IconX size={20} />
 											</button>
 										</div>
 									))}

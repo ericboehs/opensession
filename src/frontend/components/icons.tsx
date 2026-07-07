@@ -20,11 +20,18 @@ import React from "react";
  */
 type IconProps = React.SVGProps<SVGSVGElement> & { size?: number };
 
+// Hard floor at the scale's smallest step: these 24-grid glyphs only draw
+// ~60% of their box, so anything below 20px renders as a speck. Sub-20 sizes
+// kept sneaking in (11–17px) — clamp them here; if a spot can't fit a 20px
+// icon, rework the container, don't shrink the icon.
+const MIN_SIZE = 20;
+
 function Svg({ size = 22, children, ...rest }: IconProps & { children: React.ReactNode }) {
+  const px = Math.max(size, MIN_SIZE);
   return (
     <svg
-      width={size}
-      height={size}
+      width={px}
+      height={px}
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"
