@@ -2767,6 +2767,50 @@ body.resizing-x {
 	background: var(--bg-hover);
 }
 
+/* Session name titling the phone ⋯ menu (WhatsApp/ChatGPT-style header). It's a
+   label, not an action — dimmed, with a hairline rule under it. */
+.viewer-menu-title {
+	padding: 2px 6px 8px;
+	margin-bottom: 2px;
+	border-bottom: 1px solid var(--border);
+	color: var(--text-dim);
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* The workspace side panel (changes / terminal / PR / Plain) is reached from the
+   ⋯ menu on phones, as a deeper page — a full-width row with a trailing chevron
+   marking "opens another panel". It's the menu's primary destination, so it
+   reads at full strength (accent glyph, real text). */
+.btn-viewer-panelrow {
+	display: inline-flex;
+	align-items: center;
+	gap: 9px;
+	white-space: nowrap;
+	background: none;
+	border: 1px solid var(--border-strong);
+	border-radius: 10px;
+	color: var(--text);
+	padding: 8px 12px;
+	font-size: 13.5px;
+	font-weight: 500;
+}
+.btn-viewer-panelrow > svg:first-child {
+	color: var(--accent);
+	flex-shrink: 0;
+}
+.btn-viewer-panelrow-caret {
+	margin-left: auto;
+	color: var(--text-faint);
+}
+.btn-viewer-panelrow:hover {
+	background: var(--bg-hover);
+}
+
 /* Preview (local dev server) control — a segmented split button:
    [ Preview ] [ 📷 ] [ ⌄ ]. The segments share single hairline dividers
    (collapsed via -1px margins) inside one rounded outline, and the hovered/
@@ -8799,6 +8843,31 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		display: block;
 	}
 
+	/* Chevron-back at the top of the workspace panel on phones — the panel is a
+	   deeper page reached from the ⋯ menu, so it carries its own way back to the
+	   chat (matching the top-bar back chevron, no "Back" word). */
+	.panel-back {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		margin: 6px 0 0 6px;
+		padding: 0;
+		background: none;
+		border: none;
+		color: var(--accent);
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+		touch-action: manipulation;
+	}
+	.panel-back svg {
+		margin-left: -1px;
+	}
+	.panel-back:active {
+		opacity: 0.4;
+	}
+
 	.wiki-nav {
 		position: fixed;
 		top: var(--header-h);
@@ -8862,23 +8931,36 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		display: none;
 	}
 
-	/* Back chevron that replaces the brand on a pushed page. */
+	/* Back control on a pushed page: a floating circular bubble carrying just the
+	   chevron (no "Back" word) — matches the ⋯ / search bubbles so the pushed-page
+	   chrome reads as a row of floating controls, iOS/WhatsApp-style. */
 	.mobile-back {
 		display: inline-flex;
 		align-items: center;
-		gap: 3px;
-		background: none;
-		border: none;
-		padding: 6px 6px 6px 2px;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		padding: 0;
 		margin: 0;
+		background: var(--bg-panel);
+		border: 1px solid var(--border);
+		border-radius: 50%;
 		color: var(--accent);
-		font-size: 15px;
-		font-weight: 500;
-		letter-spacing: -0.01em;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
 		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+		touch-action: manipulation;
+		transition: opacity 0.18s ease;
 	}
 	.mobile-back svg {
 		flex-shrink: 0;
+		/* Nudge the chevron off dead-center so it sits optically centered in the
+		   circle (the glyph's mass leans right). */
+		margin-left: -1px;
+	}
+	.mobile-back:active {
+		opacity: 0.4;
+		transition-duration: 0s;
 	}
 
 	/* Mobile puts the brand + user back in the top bar; the sidebar's own brand
@@ -8888,6 +8970,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		position: relative;
 		/* 12px edges match the content column below (top cards, list). */
 		padding: env(safe-area-inset-top, 0px) 12px 0;
+	}
+
+	/* Pushed pages (a session, PR, etc.): the bar itself goes invisible so its
+	   controls read as floating bubbles over the page — the Back bubble, the
+	   centered title, and the ⋯ bubble. No solid chrome band, no divider. */
+	.app-header-detail {
+		background: transparent;
+		border-bottom-color: transparent;
 	}
 
 	/* Centered page title, iOS-sheet style: the Back chevron keeps the left
@@ -9079,6 +9169,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		background: var(--bg-panel);
 		/* Nav-bar controls share the app tint, like the Back chevron. */
 		color: var(--accent);
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
 		cursor: pointer;
 		border-radius: 50%;
 		-webkit-tap-highlight-color: transparent;
@@ -9143,10 +9234,17 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		border-color: var(--border);
 		background: var(--bg-panel);
 		color: var(--accent);
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
 	}
 	.viewer-header-actions .btn-viewer-overflow.active {
 		background: var(--accent-soft);
 		border-color: var(--accent-soft);
+	}
+	/* The ⋯ menu is the phone's single action sheet — give it a comfortable,
+	   bounded width so the rows read as a tidy list, not a hairline column. */
+	.viewer-overflow-menu {
+		min-width: 236px;
+		max-width: min(300px, calc(100vw - 24px));
 	}
 	/* Icon-only workspace toggle on phones — the label is kept on desktop */
 	.btn-panel-toggle-label {

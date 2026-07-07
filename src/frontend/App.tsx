@@ -1049,7 +1049,7 @@ function App() {
 				<header
 					className={`app-header${
 						!mobileDetail && rootListScrolled ? " app-header-scrolled" : ""
-					}`}
+					}${mobileDetail ? " app-header-detail" : ""}`}
 				>
 					<div className="app-header-left">
 						{mobileDetail ? (
@@ -1062,12 +1062,11 @@ function App() {
 									<path
 										d="M9 1.5L2 9l7 7.5"
 										stroke="currentColor"
-										strokeWidth="2"
+										strokeWidth="2.25"
 										strokeLinecap="round"
 										strokeLinejoin="round"
 									/>
 								</svg>
-								<span>Back</span>
 							</button>
 						) : (
 							<>

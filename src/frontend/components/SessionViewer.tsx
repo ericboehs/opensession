@@ -56,6 +56,7 @@ import {
 	IconTrash,
 	IconArchive,
 	IconChevronDown,
+	IconChevronRight,
 	IconPlus,
 	IconPencil,
 	IconArrowUp,
@@ -1870,6 +1871,36 @@ export function SessionViewer({
 						</button>
 						{overflowOpen && (
 							<div className="viewer-overflow-menu">
+								{/* Native-sheet feel on phones: the session name titles the
+								    menu (WhatsApp/ChatGPT-style), and the workspace side panel
+								    is reached from here as a deeper page — one ⋯ gateway holds
+								    every action, no separate toggle beside it. */}
+								{isPhone && (
+									<div className="viewer-menu-title">
+										{workspaceName || session.title}
+									</div>
+								)}
+								{isPhone && panelAvailable && (
+									<button
+										className="btn-viewer-panelrow"
+										onClick={() => {
+											setOverflowOpen(false);
+											setSubagentStack([]);
+											setPanelOpen(true);
+										}}
+									>
+										<IconSidebarRight size={20} />
+										<span>
+											{hasWorkspace
+												? "Changes, terminal & PR"
+												: "Plain conversation"}
+										</span>
+										<IconChevronRight
+											className="btn-viewer-panelrow-caret"
+											size={18}
+										/>
+									</button>
+								)}
 								{isPhone && secondaryActions}
 								{(compactHeader || isPhone) && collapsibleActions}
 								{/* Repo switch/attach also lives here so it's reachable on a
@@ -1913,7 +1944,7 @@ export function SessionViewer({
 							variant="header"
 						/>
 					)}
-					{panelAvailable && (
+					{!isPhone && panelAvailable && (
 						<Tooltip
 							label={
 								hasWorkspace
@@ -2299,6 +2330,26 @@ export function SessionViewer({
 				) : panelAvailable && panelOpen ? (
 					<div className="viewer-panel" style={panelStyle}>
 						{panelResizeHandle}
+						{/* Phones reach this panel as a deeper page from the ⋯ menu, so
+						    give it its own chevron-back to the chat (the desktop toggle
+						    button is hidden there). */}
+						{isPhone && (
+							<button
+								className="panel-back"
+								onClick={() => setPanelOpen(false)}
+								aria-label="Back to chat"
+							>
+								<svg width="11" height="18" viewBox="0 0 11 18" fill="none">
+									<path
+										d="M9 1.5L2 9l7 7.5"
+										stroke="currentColor"
+										strokeWidth="2.25"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+									/>
+								</svg>
+							</button>
+						)}
 						{hasWorkspace && (
 							<PrStatusBar
 								sessionId={session.id}
