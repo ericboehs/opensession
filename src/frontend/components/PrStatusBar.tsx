@@ -9,12 +9,14 @@ import {
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
+import { ContextMenu } from "../ui/menu";
 import {
 	IconArrowUp,
+	IconArrowUpRight,
 	IconPullRequest,
 	IconGitMerge,
-	IconArrowUpRight,
-	IconLink,
+	IconCopy,
+	IconHash,
 	IconCheck,
 } from "./icons";
 
@@ -154,53 +156,69 @@ function PrBarButton({
 }
 
 /**
- * The PR chip as a segmented split button (Tella's Share pattern): the wide
- * segment opens the PR in a new tab, the trailing segment copies its URL to the
- * clipboard (flipping to a check for a beat). One rounded outline, a single
- * hairline divider between the halves.
+ * The PR chip: a single linked pill — `#1234 ↗`. Left-click opens the PR on
+ * GitHub (the trailing arrow marks it as an outbound link); right-click opens a
+ * context menu with the secondary actions (Open in GitHub / Copy link / Copy
+ * number). This replaced the old segmented split button — one target, no
+ * divider, and the less-common copy actions tuck into the menu.
  */
-function PrNumberSplit({
+function PrNumberChip({
 	pr,
 	tone,
 }: {
 	pr: PrDetails;
 	tone: PrHeadline["tone"];
 }) {
-	const [copied, setCopied] = useState(false);
+	const [copied, setCopied] = useState<"link" | "number" | null>(null);
 
-	const copy = useCallback(
-		(e: React.MouseEvent) => {
-			e.preventDefault();
-			e.stopPropagation();
-			navigator.clipboard?.writeText(pr.url).then(() => {
-				setCopied(true);
-				setTimeout(() => setCopied(false), 1500);
-			});
-		},
-		[pr.url],
-	);
+	const copy = useCallback((kind: "link" | "number", text: string) => {
+		navigator.clipboard?.writeText(text).then(() => {
+			setCopied(kind);
+			setTimeout(() => setCopied(null), 1500);
+		});
+	}, []);
 
 	return (
-		<span className={`pr-num-split pr-num-split-${tone}`}>
-			<a
-				className="pr-num-open"
-				href={pr.url}
-				target="_blank"
-				rel="noopener"
-				title={`#${pr.number} ${pr.title}`}
+		<ContextMenu.Root>
+			<ContextMenu.Trigger
+				render={
+					<a
+						className={`pr-num-chip pr-num-chip-${tone}`}
+						href={pr.url}
+						target="_blank"
+						rel="noopener"
+						title={`#${pr.number} ${pr.title}`}
+					/>
+				}
 			>
 				#{pr.number}
-				<IconArrowUpRight size={13} className="pr-num-ext" />
-			</a>
-			<button
-				type="button"
-				className="pr-num-copy"
-				onClick={copy}
-				title={copied ? "Link copied" : "Copy PR link"}
-			>
-				{copied ? <IconCheck size={18} /> : <IconLink size={18} />}
-			</button>
-		</span>
+				<IconArrowUpRight size={20} className="pr-num-chip-arrow" />
+			</ContextMenu.Trigger>
+			<ContextMenu.Popup>
+				<ContextMenu.Item
+					render={<a href={pr.url} target="_blank" rel="noopener" />}
+				>
+					<IconArrowUpRight size={20} />
+					<span className="grow">Open in GitHub</span>
+				</ContextMenu.Item>
+				<ContextMenu.Item
+					closeOnClick={false}
+					onClick={() => copy("link", pr.url)}
+				>
+					{copied === "link" ? <IconCheck size={20} /> : <IconCopy size={20} />}
+					<span className="grow">{copied === "link" ? "Copied" : "Copy link"}</span>
+				</ContextMenu.Item>
+				<ContextMenu.Item
+					closeOnClick={false}
+					onClick={() => copy("number", `#${pr.number}`)}
+				>
+					{copied === "number" ? <IconCheck size={20} /> : <IconHash size={20} />}
+					<span className="grow">
+						{copied === "number" ? "Copied" : "Copy number"}
+					</span>
+				</ContextMenu.Item>
+			</ContextMenu.Popup>
+		</ContextMenu.Root>
 	);
 }
 
@@ -375,7 +393,7 @@ export function PrStatusBar({
 	if (variant === "header") {
 		return (
 			<div className="pr-head">
-				<PrNumberSplit pr={pr!} tone={headline.tone} />
+				<PrNumberChip pr={pr!} tone={headline.tone} />
 				{error && (
 					<span className="pr-bar-error" title={error}>
 						{error}
@@ -389,7 +407,7 @@ export function PrStatusBar({
 	return (
 		<div className={`pr-bar pr-bar-${headline.tone}`}>
 			{leading}
-			{pr && <PrNumberSplit pr={pr} tone={headline.tone} />}
+			{pr && <PrNumberChip pr={pr} tone={headline.tone} />}
 			{headline.key !== "no-pr" && (
 				<Tooltip label="Open the PR tab">
 					<button

@@ -201,6 +201,18 @@ export function IconArrowUpRight(p: IconProps) {
   );
 }
 
+// Hash / number sign — the "Copy number" affordance on the PR chip menu.
+export function IconHash(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M9.5 4.75L7.5 19.25" />
+      <path {...stroke} d="M16.5 4.75L14.5 19.25" />
+      <path {...stroke} d="M5 8.75H18.5" />
+      <path {...stroke} d="M4.5 15.25H18" />
+    </Svg>
+  );
+}
+
 // Filled play triangle — starts Tella Local (replaces the raw "▶" glyph). The
 // round linejoin softens the tips so it matches the stroke set's rounding.
 export function IconPlay(p: IconProps) {

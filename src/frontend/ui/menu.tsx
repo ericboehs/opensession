@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Menu as BaseMenu } from "@base-ui/react/menu";
+import { ContextMenu as BaseContextMenu } from "@base-ui/react/context-menu";
 import { cn } from "./cn";
 
 /**
@@ -21,6 +22,15 @@ function Trigger({
 }) {
 	return <BaseMenu.Trigger {...props} className={cn(className)} />;
 }
+
+// Shared popup chrome for both the click-menu and the right-click context menu:
+// overflow-hidden keeps the inner scrollbar's ends clipped to the rounded corner
+// instead of poking past it; the transition rides Base UI's lifecycle attrs.
+const popupClasses =
+	"min-w-[180px] overflow-hidden rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0";
+
+const popupInnerClasses =
+	"max-h-[min(60vh,420px)] overflow-y-auto overscroll-contain p-2";
 
 function Popup({
 	className,
@@ -44,23 +54,34 @@ function Popup({
 				collisionPadding={8}
 				className="z-[10001] outline-none"
 			>
-				<BaseMenu.Popup
-					className={cn(
-						// overflow-hidden keeps the inner scrollbar's ends clipped to the
-						// rounded corner instead of poking past it.
-						"min-w-[180px] overflow-hidden rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
-						"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",
-						"data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0",
-						"data-[ending-style]:opacity-0",
-						className,
-					)}
-				>
-					<div className="max-h-[min(60vh,420px)] overflow-y-auto overscroll-contain p-2">
-						{children}
-					</div>
+				<BaseMenu.Popup className={cn(popupClasses, className)}>
+					<div className={popupInnerClasses}>{children}</div>
 				</BaseMenu.Popup>
 			</BaseMenu.Positioner>
 		</BaseMenu.Portal>
+	);
+}
+
+/** Right-click context-menu popup. Anchors to the cursor (Base UI positions it
+ * from the contextmenu event), reusing the same chrome + Item styling as Menu. */
+function ContextPopup({
+	className,
+	children,
+}: {
+	className?: string;
+	children: React.ReactNode;
+}) {
+	return (
+		<BaseContextMenu.Portal>
+			<BaseContextMenu.Positioner
+				collisionPadding={8}
+				className="z-[10001] outline-none"
+			>
+				<BaseContextMenu.Popup className={cn(popupClasses, className)}>
+					<div className={popupInnerClasses}>{children}</div>
+				</BaseContextMenu.Popup>
+			</BaseContextMenu.Positioner>
+		</BaseContextMenu.Portal>
 	);
 }
 
@@ -129,6 +150,17 @@ function GroupLabel({ className, ...props }: { className?: string; children?: Re
 		/>
 	);
 }
+
+/** Right-click context menu. Trigger wraps the target (render it as the anchor);
+ * left-click passes through, contextmenu opens the popup at the cursor. Reuses
+ * Menu's Item/Separator — Base UI's ContextMenu.Item is the same MenuItem. */
+export const ContextMenu = {
+	Root: BaseContextMenu.Root,
+	Trigger: BaseContextMenu.Trigger,
+	Popup: ContextPopup,
+	Item,
+	Separator,
+};
 
 export const Menu = {
 	Root: BaseMenu.Root,

@@ -322,7 +322,7 @@ button {
 	.btn-viewer-archive,
 	.btn-viewer-newchat,
 	.btn-viewer-share,
-	.pr-num-split,
+	.pr-num-chip,
 	.btn-viewer-pin,
 	.sidebar-nav-item,
 	.sidebar-toggle-btn,
@@ -4629,84 +4629,64 @@ body.resizing-x .panel-resize::after {
 	background: var(--topbar-bg);
 }
 
-/* PR chip as a segmented split button (Tella's Share pattern): the wide half
-   opens the PR, the trailing half copies its link. One rounded outline, one
-   hairline divider; the tone colour flows to text, border, divider and the
-   hover tint via currentColor. */
-.pr-num-split {
+/* PR chip: one linked pill — "#1234 ↗". Left-click opens the PR on GitHub (the
+   trailing arrow marks the outbound link); right-click opens the actions menu
+   (Open in GitHub / Copy link / Copy number). The tone colour flows to text,
+   border and the hover tint via currentColor. */
+.pr-num-chip {
 	display: inline-flex;
-	align-items: stretch;
+	align-items: center;
+	gap: 2px;
+	padding: 3px 8px;
 	border: 1px solid var(--border);
 	border-radius: 7px;
-	overflow: hidden;
 	color: var(--text-dim);
 	background: var(--control-surface);
 	box-shadow: var(--control-shadow);
-	white-space: nowrap;
-}
-.pr-num-split-green {
-	color: var(--green);
-	border-color: color-mix(in srgb, var(--green) 40%, transparent);
-}
-.pr-num-split-purple {
-	color: var(--purple);
-	border-color: color-mix(in srgb, var(--purple) 40%, transparent);
-}
-.pr-num-split-red {
-	color: var(--red);
-	border-color: color-mix(in srgb, var(--red) 40%, transparent);
-}
-.pr-num-split-yellow {
-	color: var(--yellow);
-	border-color: color-mix(in srgb, var(--yellow) 40%, transparent);
-}
-.pr-num-open {
-	display: inline-flex;
-	align-items: center;
-	gap: 3px;
-	padding: 3px 8px;
 	font-size: 12.5px;
 	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 	text-decoration: none;
-	color: inherit;
-}
-.pr-num-ext {
-	opacity: 0.75;
-}
-.pr-num-copy {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 27px;
-	padding: 0;
-	border: none;
-	border-left: 1px solid color-mix(in srgb, currentColor 32%, transparent);
-	background: transparent;
-	color: inherit;
+	white-space: nowrap;
 	cursor: pointer;
 	transition: background-color 120ms ease;
 }
-.pr-num-open:hover,
-.pr-num-copy:hover {
+.pr-num-chip:hover {
 	background: color-mix(in srgb, currentColor 12%, transparent);
 }
-.pr-num-copy:active {
+.pr-num-chip:active {
 	background: color-mix(in srgb, currentColor 18%, transparent);
+}
+.pr-num-chip-arrow {
+	width: 15px;
+	height: 15px;
+	margin-right: -2px;
+	opacity: 0.7;
+}
+.pr-num-chip-green {
+	color: var(--green);
+	border-color: color-mix(in srgb, var(--green) 40%, transparent);
+}
+.pr-num-chip-purple {
+	color: var(--purple);
+	border-color: color-mix(in srgb, var(--purple) 40%, transparent);
+}
+.pr-num-chip-red {
+	color: var(--red);
+	border-color: color-mix(in srgb, var(--red) 40%, transparent);
+}
+.pr-num-chip-yellow {
+	color: var(--yellow);
+	border-color: color-mix(in srgb, var(--yellow) 40%, transparent);
 }
 /* In the panel's PR strip the chip sits next to the primary action button
    (Merge/Push/…) — size it to the same height so the two read as a matched
    pair, the way .pr-head already does for the header variant. */
-.pr-bar .pr-num-split {
+.pr-bar .pr-num-chip {
 	min-height: 30px;
 	border-radius: 8px;
-}
-.pr-bar .pr-num-open {
 	padding: 0 10px;
 	font-size: 13px;
-}
-.pr-bar .pr-num-copy {
-	width: 30px;
 }
 
 .pr-bar-state {
@@ -4856,16 +4836,11 @@ body.resizing-x .panel-resize::after {
 	gap: 8px;
 	min-width: 0;
 }
-.pr-head .pr-num-split {
+.pr-head .pr-num-chip {
 	min-height: 32px;
 	border-radius: 8px;
-}
-.pr-head .pr-num-open {
 	padding: 0 11px;
 	font-size: 13px;
-}
-.pr-head .pr-num-copy {
-	width: 32px;
 }
 .pr-head .pr-bar-btn {
 	min-height: 32px;
