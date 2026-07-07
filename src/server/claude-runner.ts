@@ -46,6 +46,7 @@ export interface StreamEvent {
     | "text_chunk"
     | "tool_use"
     | "tool_result"
+    | "usage_snapshot"
     | "done"
     | "error"
     | "model_switch";
@@ -75,7 +76,12 @@ export interface StreamEvent {
   provider?: "claude" | "codex";
   /** Effective model for the run (set on init/done). */
   model?: string;
-  /** Cumulative token/cost accounting for the run (set on the terminal done). */
+  /**
+   * Cumulative token/cost accounting for the run. Set on the terminal `done`
+   * (authoritative) and on every `usage_snapshot` (live mid-run figures —
+   * always run-cumulative, so consumers fold a snapshot onto the pre-run base
+   * rather than onto the previous snapshot).
+   */
   usage?: TurnUsage;
   /**
    * Set on a terminal done/error when the run died on usage limits with no
@@ -598,6 +604,47 @@ export async function* runClaude(opts: {
     cacheReadTokens: 0,
     cacheCreationTokens: 0,
     contextTokens: 0,
+  };
+  // Live mid-turn accounting, folded from each assistant message's API usage
+  // (deduped by message id — the SDK re-emits the same message once per content
+  // block). Powers `usage_snapshot` events so viewers see cost/context move
+  // during a long turn instead of only at result boundaries. Discarded at each
+  // result (the result's authoritative usage covers the same tokens); committed
+  // into runUsage when an account rotation kills the turn mid-flight (those
+  // tokens were still billed, and no result will ever report them).
+  const liveTurn = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  let liveTurnMsgId = "";
+  let liveContextTokens = 0;
+  const resetLiveTurn = () => {
+    liveTurn.input = liveTurn.output = liveTurn.cacheRead = liveTurn.cacheWrite = 0;
+    liveTurnMsgId = "";
+    liveContextTokens = 0;
+  };
+  const liveTurnCostUsd = () =>
+    priceUsageUsd(model, {
+      input: liveTurn.input,
+      output: liveTurn.output,
+      cacheRead: liveTurn.cacheRead,
+      cacheWrite: liveTurn.cacheWrite,
+    }) || 0;
+  const liveSnapshot = (): TurnUsage => ({
+    costUsd: (runUsage.costUsd || 0) + liveTurnCostUsd(),
+    inputTokens: runUsage.inputTokens + liveTurn.input,
+    outputTokens: runUsage.outputTokens + liveTurn.output,
+    cacheReadTokens: runUsage.cacheReadTokens + liveTurn.cacheRead,
+    cacheCreationTokens: runUsage.cacheCreationTokens + liveTurn.cacheWrite,
+    contextTokens: liveContextTokens || runUsage.contextTokens,
+  });
+  const commitLiveTurn = () => {
+    if (!liveTurn.input && !liveTurn.output && !liveTurn.cacheRead && !liveTurn.cacheWrite)
+      return;
+    runUsage.costUsd = (runUsage.costUsd || 0) + liveTurnCostUsd();
+    runUsage.inputTokens += liveTurn.input;
+    runUsage.outputTokens += liveTurn.output;
+    runUsage.cacheReadTokens += liveTurn.cacheRead;
+    runUsage.cacheCreationTokens += liveTurn.cacheWrite;
+    runUsage.contextTokens = liveContextTokens || runUsage.contextTokens;
+    resetLiveTurn();
   };
   // Fork happens once, on the first attempt; after the SDK hands back the new
   // forked session id (init) we just resume that id on any rotation retry.
@@ -1122,6 +1169,26 @@ export async function* runClaude(opts: {
         yield { type: "init", sessionId: resultSessionId, provider: "claude", model };
       }
 
+      // Each assistant message carries the API call's usage — fold it into the
+      // live accumulator and push a snapshot so viewers' cost/context meters
+      // move during the turn. One fold per API call: the SDK re-emits the same
+      // message (same id, same usage) once per content block.
+      if (msg.type === "assistant") {
+        const am = (msg as any).message;
+        if (am?.usage && am.id && am.id !== liveTurnMsgId) {
+          liveTurnMsgId = am.id;
+          liveTurn.input += am.usage.input_tokens || 0;
+          liveTurn.output += am.usage.output_tokens || 0;
+          liveTurn.cacheRead += am.usage.cache_read_input_tokens || 0;
+          liveTurn.cacheWrite += am.usage.cache_creation_input_tokens || 0;
+          liveContextTokens =
+            (am.usage.input_tokens || 0) +
+            (am.usage.cache_read_input_tokens || 0) +
+            (am.usage.cache_creation_input_tokens || 0);
+          yield { type: "usage_snapshot", usage: liveSnapshot() };
+        }
+      }
+
       if (msg.type === "assistant" && (msg as any).message?.content) {
         const content = (msg as any).message.content;
         if (Array.isArray(content)) {
@@ -1253,6 +1320,12 @@ export async function* runClaude(opts: {
         if (typeof turnCost === "number")
           runUsage.costUsd = (runUsage.costUsd || 0) + turnCost;
         runUsage.contextTokens = inTok + cacheReadTok + cacheCreateTok;
+        // The result's authoritative figures cover the same tokens the live
+        // accumulator approximated — drop the approximation and push a
+        // corrected snapshot (matters when the run continues past this
+        // boundary via steer-release or a bg-task hold).
+        resetLiveTurn();
+        yield { type: "usage_snapshot", usage: { ...runUsage } };
 
         let limitExhausted = false;
         if (isClaudeUsageLimitError(resultText, rm.subtype !== "success")) {
@@ -1328,6 +1401,10 @@ export async function* runClaude(opts: {
         ) {
           const nextAccount = rotateAfterLimit();
           if (nextAccount) {
+            // The interrupted turn never reaches a result message, so its
+            // partial tokens (already billed) would vanish — fold the live
+            // accumulator into the run totals before retrying.
+            commitLiveTurn();
             turnEvent({ direction: "out", kind: "account_switch", account: nextAccount });
             yield {
               type: "text_chunk",

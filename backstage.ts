@@ -2030,8 +2030,12 @@ async function runSessionPromptInner(
 	let effectiveProvider = provider;
 	let effectiveModel = session.model;
 	// Cumulative token/cost accounting — seeded from the session's stored total,
-	// folded per completed run, persisted + broadcast live (see the `done` case).
+	// folded per run, persisted + broadcast live (see the `usage_snapshot` and
+	// `done` cases). `usageBase` is the total as of the last *completed* run:
+	// snapshots are run-cumulative, so each fold recomputes base+run rather than
+	// stacking onto the previous snapshot (which would double-count).
 	let latestUsage: SessionUsage | undefined = session.usage;
+	let usageBase: SessionUsage | undefined = latestUsage;
 	const engineSessionId =
 		provider === "codex" ? session.codexThreadId : session.claudeSessionId;
 	// A claude session with no engine id yet is a *fresh* chat (e.g. a new sibling
@@ -2354,6 +2358,23 @@ async function runSessionPromptInner(
 					},
 				});
 				break;
+			case "usage_snapshot":
+				// Live mid-run cost/context — same fold as `done`, recomputed from
+				// the pre-run base (snapshots are cumulative for the run). Broadcast
+				// only; persistence waits for the end of the run.
+				if (event.usage) {
+					latestUsage = foldSessionUsage(
+						usageBase,
+						event.usage,
+						effectiveModel,
+					);
+					broadcastToSession(sessionId, {
+						type: "usage_update",
+						sessionId,
+						usage: latestUsage,
+					});
+				}
+				break;
 			case "done":
 				finalSessionId = event.sessionId || finalSessionId;
 				if (event.provider) effectiveProvider = event.provider;
@@ -2367,10 +2388,11 @@ async function runSessionPromptInner(
 				// to viewers (persisted below with the rest of the session patch).
 				if (event.usage) {
 					latestUsage = foldSessionUsage(
-						latestUsage,
+						usageBase,
 						event.usage,
 						event.model || effectiveModel,
 					);
+					usageBase = latestUsage;
 					broadcastToSession(sessionId, {
 						type: "usage_update",
 						sessionId,
@@ -7170,6 +7192,18 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									};
 									emit({ type: "stream_tool_result", entry });
 								}
+								if (event.type === "usage_snapshot" && event.usage) {
+									// Live mid-run cost/context. Snapshots are run-cumulative and
+									// this is the session's only run, so the fold base is empty —
+									// each snapshot recomputes the total from scratch (folding
+									// onto latestUsage would double-count).
+									latestUsage = foldSessionUsage(
+										undefined,
+										event.usage,
+										effectiveModel,
+									);
+									emit({ type: "usage_update", usage: latestUsage });
+								}
 								if (event.type === "done") {
 									engineSessionId = event.sessionId || engineSessionId;
 									if (event.provider) effectiveProvider = event.provider;
@@ -7179,7 +7213,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 											event.result || "Usage limit reached on every account";
 									if (event.usage) {
 										latestUsage = foldSessionUsage(
-											latestUsage,
+											undefined,
 											event.usage,
 											event.model || effectiveModel,
 										);
@@ -7708,6 +7742,22 @@ registerSessionControl({
 							},
 						});
 					}
+					if (event.type === "usage_snapshot" && event.usage) {
+						// Live mid-run cost/context. Snapshots are run-cumulative and this
+						// is the session's only run, so the fold base is empty — each
+						// snapshot recomputes the total from scratch (folding onto
+						// latestUsage would double-count).
+						latestUsage = foldSessionUsage(
+							undefined,
+							event.usage,
+							effectiveModel,
+						);
+						broadcastToSession(bksId, {
+							type: "usage_update",
+							sessionId: bksId,
+							usage: latestUsage,
+						});
+					}
 					if (event.type === "done") {
 						engineSessionId = event.sessionId || engineSessionId;
 						if (event.provider) effectiveProvider = event.provider;
@@ -7717,7 +7767,7 @@ registerSessionControl({
 								event.result || "Usage limit reached on every account";
 						if (event.usage) {
 							latestUsage = foldSessionUsage(
-								latestUsage,
+								undefined,
 								event.usage,
 								event.model || effectiveModel,
 							);
