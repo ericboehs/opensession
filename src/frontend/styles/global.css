@@ -2295,10 +2295,12 @@ body.resizing-x {
    chrome to match the tab look, then reveal on hover of the strip (desktop);
    always shown on touch where there's nothing to hover. */
 .session-tab-new {
-	padding: 7px 12px;
-	font-size: 15px;
-	line-height: 1;
+	/* Icon button: same vertical box as a tab pill so it doesn't tower over the
+	   tabs, and the glyph is optically centered by the SVG (not a text baseline). */
+	justify-content: center;
+	padding: 6px 8px;
 	font-family: inherit;
+	color: var(--text-dim);
 }
 .session-tab-new:hover {
 	color: var(--text);

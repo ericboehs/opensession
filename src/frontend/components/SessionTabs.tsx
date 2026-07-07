@@ -4,7 +4,7 @@ import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { relativeTime } from "../lib/api";
 import { Menu } from "../ui/menu";
-import { IconHistory, IconPencil, IconRestore } from "./icons";
+import { IconHistory, IconPencil, IconPlus, IconRestore } from "./icons";
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling chats of the
@@ -182,7 +182,7 @@ export function SessionTabs({
 						setNewMenu({ x: e.clientX, y: e.clientY });
 					}}
 				>
-					+
+					<IconPlus size={18} />
 				</button>
 			</div>
 			<div className="session-tabs-actions">
