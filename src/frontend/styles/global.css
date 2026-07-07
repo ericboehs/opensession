@@ -1093,8 +1093,8 @@ body.resizing-x {
 }
 
 /* "Group by: Repo" — one band per repo (a RepoTile + name header) holding that
-   repo's status lanes. The lanes indent slightly under the repo header, with a
-   faint rail, so the nesting reads at a glance. */
+   repo's status lanes. The lanes indent slightly under the repo header so the
+   nesting reads at a glance. */
 .sidebar-repo-group + .sidebar-repo-group {
 	margin-top: 10px;
 }
@@ -1142,14 +1142,17 @@ body.resizing-x {
 }
 .sidebar-repo-lanes {
 	margin-top: 2px;
-	/* Center the rail under the shared leading-icon column (the repo tile / group
-	   icons above it), not just left of it. That column's center sits at
-	   --sidebar-icon-left (16px) + 11px (half the 22px icon box) = 27px from the
-	   sidebar-container edge; the lanes start 10px in (.sidebar-list pad-left), so
-	   margin-left 16.5px + half the 1px border lands the rail's center on 27px. */
-	margin-left: 16.5px;
-	padding-left: 9px;
-	border-left: 1px solid var(--border);
+}
+/* The nesting reads through an inset alone — the old 1px rail was one more
+   line of chrome than the grouping needs. And the inset lives in the rows'
+   own left padding (base 10px + 26.5px), not a container margin, so a row's
+   hover/selection pill still runs the sidebar's full width — only the icons
+   and text sit indented under the repo header. */
+.sidebar-repo-lanes .sidebar-group-header {
+	padding-left: 36.5px;
+}
+.sidebar-repo-lanes .sidebar-item {
+	padding-left: 36.5px;
 }
 
 /* People and Automations render one collapsed row per group, so the 14px
