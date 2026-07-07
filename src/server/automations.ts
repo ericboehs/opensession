@@ -9,6 +9,7 @@ import { mkdirSync, readdirSync, readFileSync, unlinkSync, existsSync } from "fs
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { parseCron, cronMatches, nextRun } from "./cron";
 import { STRIPE_CONFIRM_TOOLS } from "./claude-runner";
+import { getAccountById } from "./claude-accounts";
 import { runAgent } from "./agent-runner";
 import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
 import { createWorktree, listWorktrees } from "./worktree";
@@ -116,6 +117,21 @@ export interface Automation {
    * Unset = no fallback; "none" also disables fallback.
    */
   fallbackModel?: string;
+  /**
+   * Pinned Claude subscription (claude-accounts id) — a HARD pin: runs use
+   * only that account, and when it's exhausted they fall to `fallbackModel`
+   * instead of the shared pool. That makes the account's limits (and its
+   * usage-credits monthly cap) this automation's cost ceiling. Unset =
+   * shared-pool rotation as before. Claude models only; Codex runs ignore it.
+   */
+  accountId?: string;
+  /**
+   * Allow runs to keep going on usage-credits once the account's subscription
+   * limits are spent (only works on accounts with extra usage enabled at
+   * claude.ai and credit headroom left). Off/unset = never intentionally
+   * spend paid credits; the run rotates/falls back instead.
+   */
+  usageCredits?: boolean;
   lastRunAt?: string;
   lastRunSessionId?: string;
   lastRunStatus?: "running" | "ok" | "error";
@@ -223,6 +239,16 @@ function generateSecret(): string {
   ).join("");
 }
 
+/** Validate a pinned claude-accounts id; ""/nullish clears the pin. */
+function sanitizeAccountId(v?: unknown): string | { error: string } | undefined {
+  if (v === undefined || v === null || v === "") return undefined;
+  if (typeof v !== "string") return { error: "accountId must be a string" };
+  const id = v.trim();
+  if (!id) return undefined;
+  if (!getAccountById(id)) return { error: `Unknown Claude account id "${id}"` };
+  return id;
+}
+
 function sanitizeModel(model?: unknown, allowNone = false): string | { error: string } | undefined {
   if (typeof model !== "string" || !model.trim()) return undefined;
   if (allowNone && model.trim().toLowerCase() === "none") return "none";
@@ -243,6 +269,8 @@ export function createAutomation(input: {
   mcpServers?: string[];
   model?: string;
   fallbackModel?: string;
+  accountId?: string;
+  usageCredits?: boolean;
   grafanaPoll?: GrafanaPollConfig;
   slackWatch?: SlackWatchConfig;
 }): Automation | { error: string } {
@@ -259,6 +287,8 @@ export function createAutomation(input: {
   if (model && typeof model === "object") return model;
   const fallbackModel = sanitizeModel(input.fallbackModel, true);
   if (fallbackModel && typeof fallbackModel === "object") return fallbackModel;
+  const accountId = sanitizeAccountId(input.accountId);
+  if (accountId && typeof accountId === "object") return accountId;
   const grafanaPoll = sanitizeGrafanaPoll(input.grafanaPoll);
   if (grafanaPoll && "error" in grafanaPoll) return grafanaPoll;
   const slackWatch = sanitizeSlackWatch(input.slackWatch);
@@ -279,6 +309,8 @@ export function createAutomation(input: {
     mcpServers: sanitizeMcpList(input.mcpServers),
     model,
     fallbackModel,
+    accountId,
+    usageCredits: input.usageCredits === true || undefined,
     grafanaPoll,
     slackWatch,
   };
@@ -288,7 +320,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "grafanaPoll" | "slackWatch">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "accountId" | "usageCredits" | "grafanaPoll" | "slackWatch">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -322,6 +354,14 @@ export function updateAutomation(
     const fallbackModel = sanitizeModel(patch.fallbackModel, true);
     if (fallbackModel && typeof fallbackModel === "object") return fallbackModel;
     next.fallbackModel = fallbackModel;
+  }
+  if ("accountId" in patch) {
+    const accountId = sanitizeAccountId(patch.accountId);
+    if (accountId && typeof accountId === "object") return accountId;
+    next.accountId = accountId;
+  }
+  if ("usageCredits" in patch) {
+    next.usageCredits = patch.usageCredits === true || undefined;
   }
   // Backfill secrets for automations created before webhook support
   if (!next.webhookSecret) next.webhookSecret = generateSecret();
@@ -541,6 +581,9 @@ export async function runAutomation(
           : {}),
         ...(effectiveModel ? { model: effectiveModel } : {}),
         ...(modelHistory.length ? { modelHistory } : {}),
+        // Keep the automation's account pin on the session so interactive
+        // resumes of this session run on the same subscription.
+        ...(automation.accountId ? { accountId: automation.accountId } : {}),
         branch,
         worktreeDir: cwd,
         createdBy: `${automation.name} (automation)`,
@@ -572,6 +615,12 @@ export async function runAutomation(
       // (on codex models they're disabled outright — see codex-runner.ts)
       confirmTools: STRIPE_CONFIRM_TOOLS,
       aws: true, // automation runs get short-lived instance-role read creds
+      // Cost controls: a pinned account is a HARD pin for automation runs
+      // (exhaustion falls to fallbackModel, never the shared pool), and
+      // usage-credits spend is only allowed when explicitly enabled.
+      accountId: automation.accountId,
+      accountStrict: !!automation.accountId,
+      usageCredits: automation.usageCredits,
       fallbackModel:
         automation.fallbackModel === "none"
           ? undefined

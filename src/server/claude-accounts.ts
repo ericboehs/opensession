@@ -17,7 +17,12 @@ import { writeFileAtomic } from "./shared/atomic-write";
 import { userMatchesAny } from "./shared/user-mappings";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const STORE_PATH = `${HOME}/.backstage-claude-accounts.json`;
+// The env override is a test seam — bun tests point it at a temp store so they
+// never read (or clobber) the real account pool. Resolved per call, not at
+// module load, so the override works regardless of import order.
+function storePath(): string {
+  return process.env.BACKSTAGE_CLAUDE_ACCOUNTS_PATH || `${HOME}/.backstage-claude-accounts.json`;
+}
 // Keep this conservative: the usage endpoint rate-limits per token with
 // ~hour-long lockouts (observed Retry-After of ~50m after 10-minute polling).
 const POLL_INTERVAL_MS = 60 * 60 * 1000;
@@ -123,9 +128,9 @@ function fetchWithTimeout(url: string, token: string, timeoutMs = 10_000): Promi
 }
 
 function readStore(): ClaudeAccount[] {
-  if (!existsSync(STORE_PATH)) return [];
+  if (!existsSync(storePath())) return [];
   try {
-    const parsed = JSON.parse(readFileSync(STORE_PATH, "utf-8"));
+    const parsed = JSON.parse(readFileSync(storePath(), "utf-8"));
     return Array.isArray(parsed.accounts) ? parsed.accounts : [];
   } catch (e) {
     console.error("[claude-accounts] Failed to read store:", e);
@@ -134,8 +139,8 @@ function readStore(): ClaudeAccount[] {
 }
 
 function writeStore(accounts: ClaudeAccount[]): void {
-  writeFileAtomic(STORE_PATH, JSON.stringify({ accounts }, null, 2) + "\n");
-  chmodSync(STORE_PATH, 0o600);
+  writeFileAtomic(storePath(), JSON.stringify({ accounts }, null, 2) + "\n");
+  chmodSync(storePath(), 0o600);
 }
 
 export function maskToken(token: string): string {
@@ -433,6 +438,17 @@ function isModelExhausted(id: string, model?: string): boolean {
   return true;
 }
 
+/**
+ * Whether this account can keep running past its subscription limits by
+ * billing usage-credits: extra usage is turned on (at claude.ai) and the
+ * monthly credit cap isn't spent yet. A monthlyLimit of 0 counts as no
+ * headroom — this gate exists to bound spend, so it fails closed.
+ */
+function hasCreditHeadroom(a: ClaudeAccount): boolean {
+  const extra = usageCache.get(a.id)?.extraUsage;
+  return !!extra?.enabled && extra.monthlyLimit > 0 && extra.usedCredits < extra.monthlyLimit;
+}
+
 function scopedLimitForModel(usage: AccountUsage | undefined, model?: string): number | null {
   if (!usage || !model) return null;
   if (model === "claude-fable-5" || model.toLowerCase().includes("fable")) {
@@ -449,9 +465,17 @@ function accountUtilization(a: ClaudeAccount, model?: string): number {
   return scoped === null ? fiveHour : Math.max(fiveHour, scoped);
 }
 
-function isAccountUsableFor(a: ClaudeAccount, model?: string): boolean {
+/**
+ * `allowExtraUsage` (per-run policy, e.g. an automation's usageCredits flag)
+ * lets an account stay usable past the utilization ceiling as long as it has
+ * usage-credits headroom — that's what "keep running on credits" means at the
+ * picker layer. Run-observed exhaustion (a limit error from an actual run)
+ * still sidelines it: that error only happens when credits are unavailable too.
+ */
+function isAccountUsableFor(a: ClaudeAccount, model?: string, allowExtraUsage?: boolean): boolean {
   if (isExhausted(a.id) || isModelExhausted(a.id, model)) return false;
-  return accountUtilization(a, model) < EXHAUSTED_UTILIZATION;
+  if (accountUtilization(a, model) < EXHAUSTED_UTILIZATION) return true;
+  return !!allowExtraUsage && hasCreditHeadroom(a);
 }
 
 function toPublic(a: ClaudeAccount): ClaudeAccountPublic {
@@ -488,10 +512,17 @@ export function listAccountsPublic(): ClaudeAccountPublic[] {
  */
 export function getUsableAccountById(
   id: string,
-  model?: string
+  model?: string,
+  allowExtraUsage?: boolean
 ): ClaudeAccount | undefined {
   const a = readStore().find((x) => x.id === id);
-  return a && isAccountUsableFor(a, model) ? a : undefined;
+  return a && isAccountUsableFor(a, model, allowExtraUsage) ? a : undefined;
+}
+
+/** The raw account record, usable or not — for validating pins and telling a
+ *  deleted account apart from an exhausted one. */
+export function getAccountById(id: string): ClaudeAccount | undefined {
+  return readStore().find((x) => x.id === id);
 }
 
 export function hasAccounts(): boolean {
@@ -616,10 +647,11 @@ export function removeAccount(id: string): boolean {
 export function pickAccount(
   exclude?: Set<string>,
   user?: string,
-  model?: string
+  model?: string,
+  allowExtraUsage?: boolean
 ): ClaudeAccount | undefined {
   const eligible = readStore().filter(
-    (a) => !exclude?.has(a.id) && isAccountUsableFor(a, model)
+    (a) => !exclude?.has(a.id) && isAccountUsableFor(a, model, allowExtraUsage)
   );
   const best = (list: ClaudeAccount[]): ClaudeAccount | undefined =>
     list
@@ -628,7 +660,9 @@ export function pickAccount(
         bucket: Math.floor(accountUtilization(a, model) / 10),
         picked: lastPickedAt.get(a.id) ?? 0,
       }))
-      .filter(({ bucket }) => bucket * 10 < EXHAUSTED_UTILIZATION)
+      // Credit-headroom accounts sort by their (high) utilization bucket, so
+      // subscription capacity is always drained before paid credits.
+      .filter(({ a, bucket }) => bucket * 10 < EXHAUSTED_UTILIZATION || (!!allowExtraUsage && hasCreditHeadroom(a)))
       .sort((x, y) => x.bucket - y.bucket || x.picked - y.picked)[0]?.a;
   const personal = user
     ? best(eligible.filter((a) => a.owner && userMatchesAny(user, [a.owner])))
@@ -636,6 +670,11 @@ export function pickAccount(
   const picked = personal ?? best(eligible.filter((a) => !a.owner));
   if (picked) lastPickedAt.set(picked.id, Date.now());
   return picked;
+}
+
+/** Test seam: inject a usage snapshot for an account (bun tests only). */
+export function __setUsageCacheForTest(id: string, usage: AccountUsage): void {
+  usageCache.set(id, usage);
 }
 
 /**

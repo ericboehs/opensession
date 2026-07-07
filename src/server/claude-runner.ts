@@ -7,6 +7,7 @@ import { audit, summarizeText } from "./audit";
 import {
   pickAccount,
   getUsableAccountById,
+  getAccountById,
   markExhausted,
   type ClaudeAccount,
 } from "./claude-accounts";
@@ -257,7 +258,10 @@ export interface ActiveRunRecord {
   confirmTools?: Record<string, string>; // per-run human-confirmed tools, preserved across resume
   aws?: boolean; // whether to inject AWS creds, preserved across resume
   model?: string; // per-session model, preserved across resume (decides the provider)
+  effort?: string; // reasoning effort, preserved across resume
   accountId?: string; // pinned Claude subscription, preserved across resume
+  accountStrict?: boolean; // hard pin: never rotate into the pool (automation cost cap)
+  usageCredits?: boolean; // may run on accounts spending usage-credits past their limits
   fallbackModel?: string; // usage-limit fallback policy, preserved across resume
   kind?: string;
   startedAt: string;
@@ -529,6 +533,22 @@ export async function* runClaude(opts: {
    * the pool on exhaustion. Journaled so a resume keeps the pin.
    */
   accountId?: string;
+  /**
+   * Makes the accountId pin hard: the run uses ONLY that account, never the
+   * pool — when the pin is exhausted the run dies with usageLimitExhausted so
+   * the model-fallback chain takes over instead of spending other accounts'
+   * capacity. This is what makes a per-automation account a cost cap. A pin
+   * whose account record was deleted falls open to the pool (with a warning)
+   * rather than wedging the automation.
+   */
+  accountStrict?: boolean;
+  /**
+   * Allow this run to use accounts that are past their subscription limits but
+   * can bill usage-credits (extra usage enabled at claude.ai, monthly credit
+   * cap not yet spent). Off/omitted = such accounts are treated as exhausted,
+   * so the run never intentionally spends paid credits.
+   */
+  usageCredits?: boolean;
   journal?: { bksSessionId?: string; kind?: string };
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
@@ -583,6 +603,9 @@ export async function* runClaude(opts: {
     confirmTools,
     aws,
     model: opts.model,
+    accountId: opts.accountId,
+    accountStrict: opts.accountStrict,
+    usageCredits: opts.usageCredits,
     fallbackModel: opts.fallbackModel,
     kind: journal?.kind,
     startedAt: new Date().toISOString(),
@@ -839,19 +862,56 @@ export async function* runClaude(opts: {
     // one until nothing eligible is left. With no pool configured, fall back
     // to the legacy one-shot credentials-file switch (~/.claude/accounts).
     const triedAccountIds = new Set<string>();
+    const allowCredits = opts.usageCredits === true;
+    // A hard pin only holds while the pinned account record still exists — a
+    // deleted account falls open to the pool instead of wedging every run.
+    const strictPin =
+      opts.accountStrict === true && !!opts.accountId && !!getAccountById(opts.accountId);
+    if (opts.accountStrict && opts.accountId && !strictPin) {
+      console.warn(
+        `[runner] Pinned Claude account ${opts.accountId} no longer exists — falling back to the pool`
+      );
+    }
     // A session-pinned subscription wins the first pick when it's usable; the
     // normal pool pick (personal-first, shared fallback) covers the unpinned
-    // case and takes over once the pin is exhausted (rotateAfterLimit below).
+    // case and takes over once the pin is exhausted (rotateAfterLimit below) —
+    // unless the pin is strict, in which case the run dies on the limit so the
+    // model-fallback chain decides what happens next.
     let account: ClaudeAccount | undefined =
-      (opts.accountId ? getUsableAccountById(opts.accountId, model) : undefined) ??
-      pickAccount(triedAccountIds, user, model);
+      (opts.accountId ? getUsableAccountById(opts.accountId, model, allowCredits) : undefined) ??
+      (strictPin ? undefined : pickAccount(triedAccountIds, user, model, allowCredits));
     let legacySwitched = false;
+
+    if (strictPin && !account) {
+      // The pinned account is currently exhausted/sidelined for this model.
+      // Surface it exactly like a drained pool so a dispatcher with a
+      // fallback model can take over.
+      turnEvent({
+        direction: "out",
+        kind: "result",
+        result_subtype: "usage_limit",
+        is_error: true,
+        ...summarizeText("pinned account exhausted"),
+      });
+      yield {
+        type: "done",
+        sessionId: resultSessionId,
+        result:
+          "Claude usage limit reached: this run is pinned to a single subscription account and it is currently out of usage.",
+        provider: "claude",
+        model,
+        usageLimitExhausted: true,
+        usage: runUsage,
+      };
+      return;
+    }
 
     const rotateAfterLimit = (): string | undefined => {
       if (account) {
         triedAccountIds.add(account.id);
         markExhausted(account.id, model);
-        const next = pickAccount(triedAccountIds, user, model);
+        if (strictPin) return undefined; // hard pin: never spill into the pool
+        const next = pickAccount(triedAccountIds, user, model, allowCredits);
         if (!next) return undefined;
         account = next;
         return next.name;
@@ -1163,6 +1223,9 @@ export async function* runClaude(opts: {
           aws,
           model: opts.model,
           accountId: opts.accountId,
+          accountStrict: opts.accountStrict,
+          usageCredits: opts.usageCredits,
+          fallbackModel: opts.fallbackModel,
           kind: journal?.kind,
           startedAt: new Date().toISOString(),
         });

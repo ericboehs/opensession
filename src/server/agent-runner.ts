@@ -102,6 +102,18 @@ export interface RunAgentOpts {
    * Claude only — Codex has its own account pool. Journaled for resume.
    */
   accountId?: string;
+  /**
+   * Hard accountId pin (automation cost cap): the run only ever uses that
+   * account — an exhausted pin kills the run with usageLimitExhausted so the
+   * fallback-model chain takes over instead of the shared pool. Claude only.
+   */
+  accountStrict?: boolean;
+  /**
+   * Allow runs to keep going on accounts billing usage-credits past their
+   * subscription limits (extra usage enabled with credit headroom). Off =
+   * never intentionally spend paid credits. Claude only.
+   */
+  usageCredits?: boolean;
   journal?: { bksSessionId?: string; kind?: string };
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
@@ -426,6 +438,8 @@ export function resumeInterruptedRuns(
             aws: run.aws,
             fallbackModel: run.fallbackModel,
             accountId: run.accountId,
+            accountStrict: run.accountStrict,
+            usageCredits: run.usageCredits,
             journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-rerun` },
             onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
           })) {
@@ -463,6 +477,8 @@ export function resumeInterruptedRuns(
           aws: run.aws,
           fallbackModel: run.fallbackModel,
           accountId: run.accountId,
+          accountStrict: run.accountStrict,
+          usageCredits: run.usageCredits,
           journal: { bksSessionId: run.bksSessionId, kind: `${run.kind || "run"}-resume` },
           onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
         })) {

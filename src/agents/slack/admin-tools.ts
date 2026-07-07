@@ -173,6 +173,18 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
             .string()
             .optional()
             .describe("Optional model id (e.g. 'claude-opus-4-8', 'gpt-5.5')."),
+          accountId: z
+            .string()
+            .optional()
+            .describe(
+              "Optional claude-accounts id to HARD-pin runs to one subscription (cost cap: exhaustion falls to the fallback model, never the shared pool)."
+            ),
+          usageCredits: z
+            .boolean()
+            .optional()
+            .describe(
+              "Allow runs to spend usage-credits past subscription limits (needs extra usage enabled on the account). Default false."
+            ),
         },
         async (args: {
           name: string;
@@ -181,6 +193,8 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           mode?: "ask" | "code";
           mcpServers?: string[];
           model?: string;
+          accountId?: string;
+          usageCredits?: boolean;
         }) => {
           const res = createAutomation({
             name: args.name,
@@ -190,6 +204,8 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
             createdBy: ctx.createdBy,
             mcpServers: args.mcpServers,
             model: args.model,
+            accountId: args.accountId,
+            usageCredits: args.usageCredits,
           });
           if ("error" in res) return text(`Couldn't create it: ${res.error}`);
           return text(
@@ -211,6 +227,14 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           enabled: z.boolean().optional(),
           mcpServers: z.array(z.string()).optional(),
           model: z.string().optional(),
+          accountId: z
+            .string()
+            .optional()
+            .describe("Hard-pin runs to this claude-accounts id; '' clears the pin."),
+          usageCredits: z
+            .boolean()
+            .optional()
+            .describe("Allow spending usage-credits past subscription limits."),
         },
         async (args: {
           id: string;
@@ -221,6 +245,8 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           enabled?: boolean;
           mcpServers?: string[];
           model?: string;
+          accountId?: string;
+          usageCredits?: boolean;
         }) => {
           const { id, ...patch } = args;
           const res = updateAutomation(id, patch);

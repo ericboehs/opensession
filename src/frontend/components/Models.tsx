@@ -30,6 +30,8 @@ interface ClaudeAccountInfo {
 		fiveHour: UsageWindow | null;
 		sevenDay: UsageWindow | null;
 		scopedLimits?: { label: string; utilization: number | null; resetsAt: string | null }[];
+		/** Pay-as-you-go spend past the subscription limits; credits are cents. */
+		extraUsage?: { enabled: boolean; usedCredits: number; monthlyLimit: number } | null;
 		error?: string;
 		errorStatus?: number;
 	} | null;
@@ -274,6 +276,40 @@ function UsageBar({ label, window: w }: { label: string; window: UsageWindow | n
 	);
 }
 
+/**
+ * Usage-credits (extra usage) spend for one account: what's been billed past
+ * the subscription's included limits this month, against the account's monthly
+ * credit cap. Values from the OAuth usage endpoint are cents. Hidden when the
+ * account has extra usage off and nothing spent — most accounts, most months.
+ */
+function ExtraUsageRow({
+	extra,
+}: {
+	extra: { enabled: boolean; usedCredits: number; monthlyLimit: number } | null | undefined;
+}) {
+	if (!extra || (!extra.enabled && extra.usedCredits <= 0)) return null;
+	const usd = (cents: number) =>
+		`$${(cents / 100).toLocaleString([], { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+	const pct = extra.monthlyLimit > 0 ? (extra.usedCredits / extra.monthlyLimit) * 100 : null;
+	const tone = pct === null ? "gray" : pct >= 90 ? "red" : pct >= 70 ? "yellow" : "green";
+	return (
+		<div className="acct-usage-row" title="Usage-credits — pay-as-you-go spend past the subscription limits, against this account's monthly credit cap (set at claude.ai)">
+			<span className="acct-usage-label">Credits</span>
+			<div className="acct-usage-bar">
+				<div
+					className={`acct-usage-fill acct-usage-${tone}`}
+					style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
+				/>
+			</div>
+			<span className="acct-usage-pct">{usd(extra.usedCredits)}</span>
+			<span className="acct-usage-reset">
+				{extra.monthlyLimit > 0 ? `of ${usd(extra.monthlyLimit)}/mo` : "no monthly cap set"}
+				{extra.enabled ? "" : " · off"}
+			</span>
+		</div>
+	);
+}
+
 // ── Claude accounts ────────────────────────────────────────────────────────
 
 /** The one pill that matters most — never stacked, so nothing collides. */
@@ -450,6 +486,7 @@ function ClaudeAccountsSection() {
 										{(a.usage?.scopedLimits ?? []).map((s) => (
 											<UsageBar key={s.label} label={s.label} window={s} />
 										))}
+										<ExtraUsageRow extra={a.usage?.extraUsage} />
 										{a.usage?.error && (
 											<div className="text-red text-[11.5px] mt-1.5">{a.usage.error}</div>
 										)}

@@ -40,6 +40,8 @@ interface Automation {
   slackWatch?: { channel: string };
   model?: string;
   fallbackModel?: string;
+  accountId?: string;
+  usageCredits?: boolean;
   lastRunAt?: string;
   lastRunSessionId?: string;
   lastRunStatus?: "running" | "ok" | "error";
@@ -76,10 +78,29 @@ const EVENT_OPTIONS: Array<{ key: string; label: string }> = [
 
 const WEBHOOK_BASE = "https://michael.tella.dev";
 
+/** Claude subscription accounts, for the account-pin select + chips. */
+interface ClaudeAccountOption {
+  id: string;
+  name: string;
+  owner?: string;
+}
+
+function useClaudeAccounts(): ClaudeAccountOption[] {
+  const [accounts, setAccounts] = useState<ClaudeAccountOption[]>([]);
+  useEffect(() => {
+    fetch("/backstage/api/claude-accounts")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => body && setAccounts(body.accounts))
+      .catch(() => {});
+  }, []);
+  return accounts;
+}
+
 export function Automations({ onOpenSession }: Props) {
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [loading, setLoading] = useState(true);
+  const claudeAccounts = useClaudeAccounts();
 
   useEffect(() => {
     fetchModels()
@@ -212,6 +233,22 @@ export function Automations({ onOpenSession }: Props) {
                     title="Fallback — used only when every account for the primary model has hit its usage limit"
                   >
                     ↯ {a.fallbackModel}
+                  </span>
+                )}
+                {a.accountId && (
+                  <span
+                    className="source-chip"
+                    title="Hard account pin — runs use only this Claude subscription; when it's out of usage they fall to the fallback model, never the shared pool"
+                  >
+                    {claudeAccounts.find((x) => x.id === a.accountId)?.name || "pinned account"} only
+                  </span>
+                )}
+                {a.usageCredits && (
+                  <span
+                    className="source-chip"
+                    title="May keep running on paid usage-credits once the account's subscription limits are spent (needs extra usage enabled on the account)"
+                  >
+                    +credits
                   </span>
                 )}
                 {(a.isRunning || a.lastRunStatus === "running") && (
@@ -805,8 +842,11 @@ function AutomationForm({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [model, setModel] = useState(initial?.model || "");
   const [fallbackModel, setFallbackModel] = useState(initial?.fallbackModel || "");
+  const [accountId, setAccountId] = useState(initial?.accountId || "");
+  const [usageCredits, setUsageCredits] = useState(!!initial?.usageCredits);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
+  const claudeAccounts = useClaudeAccounts();
 
   useEffect(() => {
     fetchModels()
@@ -842,6 +882,8 @@ function AutomationForm({
           eventKey: isWatch ? "" : eventKey,
           model,
           fallbackModel,
+          accountId,
+          usageCredits,
           mcpServers: mcpServers ?? null,
           slackWatch,
         });
@@ -854,6 +896,8 @@ function AutomationForm({
           eventKey: (!isWatch && eventKey) || undefined,
           model: model || undefined,
           fallbackModel: fallbackModel || undefined,
+          accountId: accountId || undefined,
+          usageCredits: usageCredits || undefined,
           mcpServers,
           slackWatch,
           createdBy: getCurrentUser(),
@@ -1012,6 +1056,33 @@ function AutomationForm({
                   {m.label} ({m.provider === "codex" ? "OpenAI Codex" : "Claude"})
                 </option>
               ))}
+            </select>
+          </label>
+
+          <label title="Hard pin: runs use only this subscription. When it's out of usage they switch to the fallback model — never the shared pool — so this account's limits are the automation's cost ceiling.">
+            Claude account
+            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+              <option value="">Auto — shared pool rotation</option>
+              {claudeAccounts.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                  {x.owner ? ` — ${x.owner}'s` : ""}
+                </option>
+              ))}
+            </select>
+            <span className="text-faint text-[11.5px] leading-snug mt-1">
+              Only applies to Claude models; Codex runs use the Codex pool.
+            </span>
+          </label>
+
+          <label title="Usage-credits are pay-as-you-go spend past the subscription's included limits. Only takes effect on accounts with extra usage enabled at claude.ai — and their monthly credit cap still bounds the spend.">
+            Usage credits
+            <select
+              value={usageCredits ? "allow" : "never"}
+              onChange={(e) => setUsageCredits(e.target.value === "allow")}
+            >
+              <option value="never">Never — stop / fall back at the limit</option>
+              <option value="allow">Allowed — keep going on paid credits</option>
             </select>
           </label>
         </div>
