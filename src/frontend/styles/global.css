@@ -606,12 +606,24 @@ a {
 	min-width: 0;
 }
 
-/* Right-side icon buttons on the brand row (search + collapse toggle). */
+/* Right-side icon buttons on the brand row (search + collapse toggle). The
+   cluster mirrors the session header's code affordances (play/globe/panel
+   toggle) so the two top bars read as one system: same 8px rhythm and the
+   same padding-based hit box below. */
 .sidebar-brand-actions {
 	display: flex;
 	align-items: center;
-	gap: 2px;
+	gap: 8px;
 	flex-shrink: 0;
+}
+/* Match .viewer-code-icon exactly — padding-based box (not the base
+   .sidebar-toggle-btn's fixed 34x34, which stays for the floating
+   .sidebar-reopen control that centers on the collapsed header). */
+.sidebar-brand-actions .sidebar-toggle-btn {
+	width: auto;
+	height: auto;
+	padding: 3px 5px;
+	border-radius: 10px;
 }
 
 /* Smaller logo tile for the brand trigger (the KITT scanner scales via % so it
@@ -2518,8 +2530,8 @@ body.resizing-x {
 	border: 1px solid transparent;
 	border-radius: 10px;
 	color: var(--text-dim);
-	padding: 4px 6px;
-	font-size: 22px;
+	padding: 3px 5px;
+	font-size: 24px;
 	line-height: 1;
 }
 .btn-viewer-overflow.active,
