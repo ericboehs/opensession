@@ -9900,6 +9900,12 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.composer {
 		padding-right: 16px;
 	}
+	/* No accent focus highlight on phones — the red active border + ring reads
+	   as an error state on the small composer. Keep the resting border only. */
+	.composer:focus-within {
+		border-color: var(--border-strong);
+		box-shadow: none;
+	}
 	.composer-send {
 		width: 36px;
 		height: 36px;
