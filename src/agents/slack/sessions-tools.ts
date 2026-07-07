@@ -241,7 +241,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
       ),
       tool(
         "create_session",
-        "Spin up a visible Backstage session and start it on a prompt. Use this as the sub-session primitive: Claude/Fable can create Codex workers, Codex can create Claude workers, and either can report back to this parent session. mode 'ask' (default) runs read-only on the selected repo checkout; mode 'code' creates or reuses a worktree on `branch` and can edit files / open PRs (never merges). Pass repo when the worker should run outside the default tella-fusion repo, for example repo: 'backstage'. Pass model 'gpt-5.5'/'codex' for a Codex worker or a Claude model id for a Claude worker. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. When called from a session, the worker defaults to the same workspace and is instructed to report back here; set standalone true or reportBack false to opt out.",
+        "Spin up a visible Backstage session and start it on a prompt. Use this as the sub-session primitive: Claude/Fable can create Codex workers, Codex can create Claude workers, and either can report back to this parent session. mode 'ask' (default) runs read-only on the selected repo checkout; mode 'code' can edit files / open PRs (never merges). A code worker created from a session joins that session's workspace and SHARES its worktree and branch (same workspace = same worktree); `branch` is only used when there is nothing to share — a standalone worker, or a worker targeting a different repo than the parent. Repo defaults to the parent session's repo (tella-fusion when standalone); pass repo to override, for example repo: 'backstage'. Pass model 'gpt-5.5'/'codex' for a Codex worker or a Claude model id for a Claude worker. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. When called from a session, the worker defaults to the same workspace and is instructed to report back here; set standalone true or reportBack false to opt out.",
         {
           prompt: z.string().describe("The task/prompt to start the session on."),
           repo: z
@@ -255,7 +255,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           branch: z
             .string()
             .optional()
-            .describe("Branch for the worktree (required for code mode; ignored for ask)."),
+            .describe("Fallback branch for code mode (required); only used when the worker can't share the parent workspace's worktree (standalone or different repo). Ignored for ask."),
           model: z.string().optional().describe("Optional model id (e.g. 'claude-opus-4-8')."),
           mcpServers: z
             .array(z.string())

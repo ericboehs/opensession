@@ -1309,7 +1309,14 @@ function App() {
 									navigate({ view: "session", id: chats[0].id });
 								} else {
 									const p = projects.find((x) => x.id === id);
-									setPalette({ open: true, projectId: id, repo: p?.repo });
+									// Default the new chat onto the workspace's own branch (share
+									// its worktree) when it has one — e.g. all chats archived.
+									setPalette({
+										open: true,
+										projectId: id,
+										repo: p?.repo,
+										branch: p?.branch,
+									});
 								}
 							}}
 							onRenameProject={async (id, name) => {

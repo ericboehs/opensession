@@ -463,9 +463,39 @@ startRunRpcServer();
  * `@<project>:path` mentions resolve. Returns undefined for single-repo sessions
  * so the prompt stays clean.
  */
+/**
+ * Branch discipline for interactive code sessions in isolated worktrees. Chats
+ * in one workspace share a single worktree + branch, so each agent must treat
+ * that branch as THE branch — sibling commits included. Without this, each
+ * sibling chat decided the extra commits on the shared branch weren't its own
+ * and cherry-picked onto a fresh branch, producing one PR per chat instead of
+ * one per workspace (tella-fusion PRs #4529–#4531).
+ */
+function buildBranchNote(session: {
+	mode?: "ask" | "code";
+	branch?: string | null;
+	worktreeDir?: string | null;
+}): string | undefined {
+	if (session.mode === "ask" || !session.branch || !session.worktreeDir)
+		return undefined;
+	const repo = repoForPath(session.worktreeDir);
+	// Shared-checkout repos (backstage) and main-checkout cwds have their own
+	// rules; this note is for isolated per-branch worktrees only.
+	if (repo.sharedCheckout || session.worktreeDir === repo.repo)
+		return undefined;
+	return [
+		"## Branch discipline (shared worktree)",
+		`You are working in \`${session.worktreeDir}\` on branch \`${session.branch}\`. Other chats in this workspace share this exact worktree and branch — commits you don't recognize are their work, not noise.`,
+		`Stay on \`${session.branch}\`: never create or switch branches, and never rebase away, reset, or cherry-pick around sibling commits. Commit your changes on this branch and push with \`git push origin ${session.branch}\`.`,
+		`This workspace keeps ONE pull request: if an open PR for \`${session.branch}\` already exists, pushing updates it — do not open another. Only run \`gh pr create\` when the branch has no open PR. Never merge.`,
+		"Only deviate from this (separate branch or separate PR) when the user explicitly asks for it.",
+	].join("\n");
+}
+
 function buildReposNote(session: UnifiedSession): string | undefined {
+	const branchNote = buildBranchNote(session);
 	const attached = session.attachedRepos || [];
-	if (!attached.length) return undefined;
+	if (!attached.length) return branchNote;
 	const primaryRepo =
 		session.repo ||
 		(session.worktreeDir
@@ -481,7 +511,7 @@ function buildReposNote(session: UnifiedSession): string | undefined {
 	lines.push(
 		"A file mentioned from an attached repo arrives as `@<project>:<path>` — resolve it under that repo's worktree dir above.",
 	);
-	return lines.join("\n");
+	return [branchNote, lines.join("\n")].filter(Boolean).join("\n\n");
 }
 
 /**
@@ -4591,6 +4621,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				let branch = src.branch || "";
 				let worktreeDir = src.worktreeDir || "";
 				let mode: "ask" | "code" = src.mode || "code";
+				let repoId = src.repo;
 				if (chatMode === "ask") {
 					branch = "";
 					worktreeDir = "";
@@ -4603,6 +4634,17 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							base: src.branch,
 						});
 						mode = "code";
+					}
+				} else if (chatMode === "share" && !worktreeDir && src.projectId) {
+					// Same workspace ⇒ same worktree: even when the source chat has no
+					// worktree of its own (e.g. + from an ask tab), a share sibling
+					// joins the workspace's owned worktree instead of starting bare.
+					const ws = getWorkspace(src.projectId);
+					if (ws?.worktreeDir && existsSync(ws.worktreeDir)) {
+						branch = ws.branch || "";
+						worktreeDir = ws.worktreeDir;
+						mode = "code";
+						repoId = repoForPath(ws.worktreeDir).id;
 					}
 				}
 				// A workspace-less backstage source (e.g. an ask chat from before the
@@ -4628,7 +4670,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					claudeSessionId: "",
 					branch,
 					worktreeDir,
-					...(src.repo ? { repo: src.repo } : {}),
+					...(repoId ? { repo: repoId } : {}),
 					...(workspaceId ? { projectId: workspaceId } : {}),
 					createdBy: body.user || "Anonymous",
 					createdAt: new Date().toISOString(),
@@ -6816,13 +6858,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								}
 							}
 							// First code chat materializes the workspace's owned worktree so
-							// later share-mode chats inherit it. Stacked chats keep their own.
+							// later share-mode chats inherit it. Stacked chats keep their own —
+							// except a "stack" in a workspace with no branch yet, which has no
+							// base to stack on and is really the workspace's first worktree.
 							if (
 								workspace &&
 								!workspace.worktreeDir &&
 								!isAsk &&
 								!repo.sharedCheckout &&
-								chatMode !== "stack"
+								(chatMode !== "stack" || !workspace.branch)
 							) {
 								updateWorkspace(workspace.id, {
 									worktreeDir: wtPath,
@@ -6830,6 +6874,18 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								});
 								workspace = { ...workspace, worktreeDir: wtPath, branch };
 							}
+							// The branch this session actually works on (also persisted below).
+							const sessionBranch = forkSource
+								? forkSource.branch || ""
+								: fromPr
+									? branch
+									: isAsk
+										? ""
+										: repo.sharedCheckout
+											? repo.defaultBranch
+											: workspace?.worktreeDir === wtPath
+												? workspace.branch || branch
+												: branch;
 
 							const bksId = `bks-${randomUUIDv7()}`;
 							const title = prompt.trim().split("\n")[0].slice(0, 80);
@@ -6933,17 +6989,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										: {}),
 									...(effectiveModel ? { model: effectiveModel } : {}),
 									...(modelHistory.length ? { modelHistory } : {}),
-									branch: forkSource
-										? forkSource.branch || ""
-										: fromPr
-											? branch
-											: isAsk
-												? ""
-												: repo.sharedCheckout
-													? repo.defaultBranch
-													: workspace?.worktreeDir === wtPath
-														? workspace.branch || branch
-														: branch,
+									branch: sessionBranch,
 									worktreeDir: wtPath,
 									repo: repoForPath(wtPath).id,
 									...(workspace
@@ -7014,6 +7060,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								model,
 								fallbackModel: interactiveFallbackModel(model),
 								mcpServers: createMcpServers,
+								reposNote: buildBranchNote({
+									mode: isAsk ? "ask" : "code",
+									branch: sessionBranch,
+									worktreeDir: wtPath,
+								}),
 								images,
 								// Fork: resume the source engine session into a new branch,
 								// optionally from a specific past message.
@@ -7446,16 +7497,42 @@ registerSessionControl({
 	}) => {
 		const isAsk = mode !== "code";
 		const model = modelInput ? resolveModel(String(modelInput))?.id : undefined;
-		const repo = getRepo(repoInput);
 		const parentSession = parentSessionId ? findSession(parentSessionId) : null;
+		// A child session defaults to its parent's repo (not tella-fusion), so
+		// same-workspace workers land in the same checkout family.
+		const repo = getRepo(repoInput || parentSession?.repo);
+		const parentWorkspace = parentSession?.projectId
+			? getWorkspace(parentSession.projectId)
+			: null;
 
 		let wtPath: string;
+		let sessionBranch = branch || "";
 		if (isAsk) {
 			wtPath = repo.repo;
 		} else {
-			const worktrees = await listWorktrees(repo.id);
-			wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
-			if (!wtPath) wtPath = await createWorktree(branch!, repo.id);
+			// Same workspace ⇒ same worktree: a code child joining the parent's
+			// workspace shares its worktree/branch instead of creating a fresh one.
+			// Only when the repo matches — a child explicitly targeting another
+			// repo still gets its own isolated worktree there.
+			const shared =
+				parentWorkspace?.worktreeDir &&
+				repoForPath(parentWorkspace.worktreeDir).id === repo.id &&
+				existsSync(parentWorkspace.worktreeDir)
+					? { dir: parentWorkspace.worktreeDir, branch: parentWorkspace.branch }
+					: parentSession?.worktreeDir &&
+							parentSession.mode !== "ask" &&
+							repoForPath(parentSession.worktreeDir).id === repo.id &&
+							existsSync(parentSession.worktreeDir)
+						? { dir: parentSession.worktreeDir, branch: parentSession.branch }
+						: null;
+			if (shared) {
+				wtPath = shared.dir;
+				sessionBranch = shared.branch || sessionBranch;
+			} else {
+				const worktrees = await listWorktrees(repo.id);
+				wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
+				if (!wtPath) wtPath = await createWorktree(branch!, repo.id);
+			}
 		}
 
 		const bksId = `bks-${randomUUIDv7()}`;
@@ -7498,7 +7575,7 @@ registerSessionControl({
 					: {}),
 				...(effectiveModel ? { model: effectiveModel } : {}),
 				...(modelHistory.length ? { modelHistory } : {}),
-				branch: isAsk ? "" : branch || "",
+				branch: isAsk ? "" : sessionBranch,
 				worktreeDir: wtPath,
 				repo: repo.id,
 				...(projectId ? { projectId } : {}),
@@ -7534,6 +7611,11 @@ registerSessionControl({
 					model,
 					fallbackModel: interactiveFallbackModel(model),
 					mcpServers,
+					reposNote: buildBranchNote({
+						mode: isAsk ? "ask" : "code",
+						branch: sessionBranch,
+						worktreeDir: wtPath,
+					}),
 					inProcessMcp: interactiveMcpServers(user, bksId),
 					confirmTools: STRIPE_CONFIRM_TOOLS,
 					aws: true,
