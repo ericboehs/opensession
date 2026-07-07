@@ -1964,17 +1964,20 @@ body.resizing-x {
 /* Pinned sessions as tabs, above the session title (mobile + desktop) */
 .session-tabs {
 	display: flex;
-	align-items: stretch;
+	align-items: center;
 	gap: 3px;
-	padding: 0 8px 0;
-	background: var(--topbar-bg);
-	border-bottom: 1px solid var(--border);
+	padding: 6px 8px;
+	/* No hard divider under the strip. Instead the elevated topbar background
+	   fades down into the chat body across the strip, so the whole top region
+	   reads as one block that dissolves into the conversation. The pills float
+	   over that fade. */
+	background: linear-gradient(to bottom, var(--topbar-bg), var(--bg));
 	flex-shrink: 0;
 	min-width: 0;
 }
 .session-tabs-scroll {
 	display: flex;
-	align-items: stretch;
+	align-items: center;
 	gap: 3px;
 	min-width: 0;
 	flex: 1 1 auto;
@@ -1987,7 +1990,7 @@ body.resizing-x {
 }
 .session-tabs-actions {
 	display: flex;
-	align-items: stretch;
+	align-items: center;
 	gap: 3px;
 	flex: 0 0 auto;
 	margin-left: auto;
@@ -1999,15 +2002,20 @@ body.resizing-x {
 	gap: 6px;
 	flex-shrink: 0;
 	max-width: 200px;
-	padding: 7px 10px;
+	padding: 6px 10px;
+	/* Floating pill (matches the panel tabs): transparent until hovered/active,
+	   fully rounded, no chrome-tab top corners or bottom seam into the body. The
+	   transparent ring stays so colored/waiting tabs can tint it. */
 	border: 1px solid transparent;
-	border-bottom: none;
-	border-radius: 8px 8px 0 0;
-	background: var(--bg-panel);
+	border-radius: 8px;
+	background: transparent;
 	color: var(--text-dim);
 	font-size: 12.5px;
 	cursor: pointer;
 	white-space: nowrap;
+	transition:
+		background 0.14s ease,
+		color 0.14s ease;
 }
 .session-tab:hover {
 	color: var(--text);
@@ -2015,8 +2023,8 @@ body.resizing-x {
 }
 .session-tab-active {
 	color: var(--text);
-	background: var(--bg);
-	border-color: var(--border);
+	background: var(--bg-active);
+	border-color: transparent;
 }
 
 .session-tab-title {
@@ -2077,17 +2085,17 @@ body.resizing-x {
    apart at a glance. The active colored tab leans into the tint a touch more.
    The waiting accent (border-color) still wins over the colored border. */
 .session-tab-colored {
-	border-top-color: var(--tab-color);
-	border-top-width: 2px;
-	background: color-mix(in srgb, var(--tab-color) 12%, var(--bg-panel));
+	/* Colored pill: a tinted fill plus a colored ring, in place of the old
+	   colored top edge. Mixed against transparent so it floats over the fade. */
+	border-color: color-mix(in srgb, var(--tab-color) 50%, transparent);
+	background: color-mix(in srgb, var(--tab-color) 14%, transparent);
 }
 .session-tab-colored:hover {
-	background: color-mix(in srgb, var(--tab-color) 18%, var(--bg-panel));
+	background: color-mix(in srgb, var(--tab-color) 22%, transparent);
 }
 .session-tab-colored.session-tab-active {
-	background: color-mix(in srgb, var(--tab-color) 16%, var(--bg));
-	border-color: var(--border);
-	border-top-color: var(--tab-color);
+	background: color-mix(in srgb, var(--tab-color) 26%, var(--bg-active));
+	border-color: color-mix(in srgb, var(--tab-color) 60%, transparent);
 }
 /* Keep the dashed top edge readable on a transient colored tab. */
 .session-tab-colored.session-tab-transient {
