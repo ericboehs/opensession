@@ -1986,8 +1986,6 @@ export function SessionViewer({
 											<IconChevronRight className="btn-viewer-panelrow-caret" size={18} />
 										</button>
 									)}
-									{secondaryActions}
-									{collapsibleActions}
 									{hasWorkspace && (
 										<RepoBar
 											sessionId={session.id}
@@ -2361,6 +2359,7 @@ export function SessionViewer({
 									onSetGoal={
 										session.source === "backstage" ? handleSetGoal : undefined
 									}
+									usage={usage}
 									mentionFetch={(q) => fetchFileMentions(q, session.id)}
 									skillsFetch={(q) => fetchSkillMentions(q, session.id)}
 									textareaRef={composerRef}
@@ -2378,11 +2377,6 @@ export function SessionViewer({
 											: undefined
 									}
 								/>
-								{usage && usage.turns > 0 && (
-									<div className="viewer-usage-row">
-										<UsageMeter usage={usage} />
-									</div>
-								)}
 							</>
 						)}
 					</div>

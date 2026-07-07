@@ -4,11 +4,13 @@ import { Popover } from "../ui/popover";
 import { cn } from "../ui/cn";
 
 /**
- * Compact live cost + context pill for the composer footer. Shows the running
- * API-equivalent USD spend for the conversation and how full the model's context
- * window is; click for a per-token breakdown. Cost is authoritative for Claude
- * runs (the SDK's total_cost_usd — what subscription usage-credits are billed at)
- * and approximate for Codex (marked with ~). Hidden until the first run reports
+ * Compact live cost + context readout that rides inside the composer toolbar
+ * (right of the model pill on desktop, in the mobile chat bar otherwise). Shows
+ * the running API-equivalent USD spend for the conversation and a ring gauge of
+ * how full the model's context window is; hover (or tap on touch) for a
+ * per-token breakdown. Cost is authoritative for Claude runs (the SDK's
+ * total_cost_usd — what subscription usage-credits are billed at) and
+ * approximate for Codex (marked with ~). Hidden until the first run reports
  * usage.
  */
 
@@ -29,10 +31,55 @@ function fmtTokens(n: number): string {
 	return compact.format(n);
 }
 
-/** Fill-level color: neutral under 75%, red once the window is nearly full. */
-function fillTone(frac: number): { bar: string; text: string } {
-	if (frac >= 0.85) return { bar: "bg-red", text: "text-red" };
-	return { bar: "bg-accent", text: "text-dim" };
+/** Fill-level color: neutral under 85%, red once the window is nearly full. */
+function fillTone(frac: number): { stroke: string; text: string } {
+	if (frac >= 0.85) return { stroke: "stroke-red", text: "text-red" };
+	return { stroke: "stroke-accent", text: "text-dim" };
+}
+
+/** SVG progress ring for how full the context window is. */
+function ContextRing({
+	frac,
+	tone,
+	size = 14,
+}: {
+	frac: number;
+	tone: string;
+	size?: number;
+}) {
+	const sw = 2;
+	const r = (size - sw) / 2;
+	const circ = 2 * Math.PI * r;
+	const offset = circ * (1 - Math.min(Math.max(frac, 0), 1));
+	return (
+		<svg
+			width={size}
+			height={size}
+			viewBox={`0 0 ${size} ${size}`}
+			className="-rotate-90"
+			aria-hidden
+		>
+			<circle
+				cx={size / 2}
+				cy={size / 2}
+				r={r}
+				fill="none"
+				strokeWidth={sw}
+				className="stroke-line"
+			/>
+			<circle
+				cx={size / 2}
+				cy={size / 2}
+				r={r}
+				fill="none"
+				strokeWidth={sw}
+				strokeLinecap="round"
+				strokeDasharray={circ}
+				strokeDashoffset={offset}
+				className={cn("transition-[stroke-dashoffset] duration-300", tone)}
+			/>
+		</svg>
+	);
 }
 
 function Row({
@@ -52,7 +99,13 @@ function Row({
 	);
 }
 
-export function UsageMeter({ usage }: { usage: SessionUsage | undefined }) {
+export function UsageMeter({
+	usage,
+	className,
+}: {
+	usage: SessionUsage | undefined;
+	className?: string;
+}) {
 	if (!usage || usage.turns === 0) return null;
 
 	const window = usage.contextWindow || 0;
@@ -68,33 +121,22 @@ export function UsageMeter({ usage }: { usage: SessionUsage | undefined }) {
 	return (
 		<Popover.Root>
 			<Popover.Trigger
+				openOnHover
+				delay={200}
+				closeDelay={100}
 				className={cn(
-					"group flex items-center gap-2 rounded-md px-2 py-1 text-xs font-medium",
-					"text-dim hover:bg-accent-soft hover:text-fg transition-colors outline-none",
-					"cursor-pointer select-none",
+					"group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium",
+					"text-dim hover:bg-accent-soft hover:text-fg data-[popup-open]:text-fg",
+					"cursor-pointer select-none outline-none transition-colors",
+					className,
 				)}
-				title="Conversation cost & context — click for a breakdown"
+				aria-label="Conversation cost & context"
 			>
-				<span className={cn("tabular-nums", "text-fg")}>
+				<span className="tabular-nums text-fg">
 					{approx ? "~" : ""}
 					{fmtUsd(usage.costUsd)}
 				</span>
-				{window > 0 && (
-					<span className="flex items-center gap-1.5">
-						<span
-							className="h-1.5 w-10 overflow-hidden rounded-full bg-line"
-							aria-hidden
-						>
-							<span
-								className={cn("block h-full rounded-full transition-[width]", tone.bar)}
-								style={{ width: `${Math.max(frac * 100, 2)}%` }}
-							/>
-						</span>
-						<span className={cn("tabular-nums", tone.text)}>
-							{fmtTokens(ctx)}/{fmtTokens(window)}
-						</span>
-					</span>
-				)}
+				{window > 0 && <ContextRing frac={frac} tone={tone.stroke} />}
 			</Popover.Trigger>
 			<Popover.Popup side="top" align="end" className="w-64 p-3 text-xs">
 				<div className="mb-2 flex items-baseline justify-between">

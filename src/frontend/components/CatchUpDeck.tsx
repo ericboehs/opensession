@@ -27,7 +27,7 @@ import { getReads, isUnread, markRead } from "../lib/reads";
 import { TranscriptBlocks } from "./TranscriptBlocks";
 import { Composer } from "./Composer";
 import { useCurrentUser } from "./UserPicker";
-import { shortTime } from "../lib/time";
+import { shortTime, elapsedClock } from "../lib/time";
 
 /** Does this model id route to Codex (mirrors SessionViewer)? Codex sessions
  *  have their own account pool, so the subscription pill is hidden for them. */
@@ -82,6 +82,8 @@ interface Props {
 	onArchive: (chats: UnifiedSession[]) => void;
 	/** Open the real session behind a card. */
 	onOpenSession: (id: string) => void;
+	/** Start a fresh workspace (opens the new-session palette). */
+	onNewWorkspace: () => void;
 	/** Leave the deck (back / done). */
 	onExit: () => void;
 }
@@ -93,6 +95,7 @@ export function CatchUpDeck({
 	connected,
 	onArchive,
 	onOpenSession,
+	onNewWorkspace,
 	onExit,
 }: Props) {
 	const currentUser = useCurrentUser();
@@ -221,15 +224,17 @@ export function CatchUpDeck({
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col items-center bg-surface">
-			{/* Header: back + "N Left" counter (Slack-style). */}
-			<div className="flex w-full items-center justify-between px-4 py-3">
+			{/* Header: back + "N Left" counter + new-workspace (Slack-style). This is
+			    the deck's only top bar — the app's mobile back bar is suppressed for
+			    the catch-up view — so it carries the safe-area top inset itself. */}
+			<div className="flex w-full items-center justify-between px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
 				<button
-					className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-dim hover:bg-panel hover:text-fg"
+					className="flex h-10 w-10 items-center justify-center rounded-md bg-transparent text-dim hover:bg-panel hover:text-fg"
 					onClick={onExit}
 					title="Back"
 					aria-label="Back"
 				>
-					<svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+					<svg width="26" height="26" viewBox="0 0 16 16" fill="none">
 						<path
 							d="M10 3.5 5.5 8l4.5 4.5"
 							stroke="currentColor"
@@ -242,13 +247,28 @@ export function CatchUpDeck({
 				<div className="text-sm font-semibold text-fg">
 					{done ? "All caught up" : `${remaining} Left`}
 				</div>
-				<div className="h-8 w-8" />
+				<button
+					className="flex h-10 w-10 items-center justify-center rounded-md bg-transparent text-dim hover:bg-panel hover:text-fg"
+					onClick={onNewWorkspace}
+					title="New workspace"
+					aria-label="New workspace"
+				>
+					<svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+						<path
+							d="M12 5.75V18.25M18.25 12H5.75"
+							stroke="currentColor"
+							strokeWidth="1.6"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					</svg>
+				</button>
 			</div>
 
 			{done ? (
 				<CaughtUp total={total} onExit={onExit} />
 			) : (
-				<div className="relative flex w-full max-w-[560px] flex-1 items-center justify-center px-4 pb-4">
+				<div className="relative flex w-full max-w-[860px] flex-1 items-center justify-center px-4 pb-4">
 					{/* Peek of the next card behind the top one, for depth. */}
 					{next && (
 						<div
@@ -278,7 +298,7 @@ export function CatchUpDeck({
 
 			{/* Action bar (works without gestures; mirrors the screenshot). */}
 			{!done && (
-				<div className="flex w-full max-w-[560px] items-stretch gap-2.5 px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
+				<div className="flex w-full max-w-[860px] items-stretch gap-2.5 px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
 					<button
 						className="flex-1 rounded-lg border border-line bg-panel px-4 py-3 text-sm font-semibold text-dim hover:bg-surface hover:text-fg"
 						onClick={() => act("keep")}
@@ -451,7 +471,7 @@ function CardBody({
 	useEffect(() => {
 		if (entries && scrollRef.current)
 			scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-	}, [entries]);
+	}, [entries, target.isRunning]);
 
 	const meta = [
 		card.repo,
@@ -492,6 +512,10 @@ function CardBody({
 				) : (
 					<TranscriptBlocks entries={entries} owner={card.owner} />
 				)}
+				{/* Live "still working" ticker: while the chat we're reading is mid-run,
+				    show a pulsing dot + elapsed clock at the bottom of the transcript so
+				    the card reads as in-progress (mirrors SessionViewer's busy row). */}
+				{target.isRunning && <CatchupWorking target={target} />}
 			</div>
 
 			<CatchUpComposer
@@ -662,6 +686,32 @@ function CatchUpComposer({
 				mentionFetch={(q) => fetchFileMentions(q, target.id)}
 				skillsFetch={(q) => fetchSkillMentions(q, target.id)}
 			/>
+		</div>
+	);
+}
+
+/**
+ * Live "still working" ticker shown at the tail of a card's transcript while the
+ * chat is mid-run. Self-ticks once a second so the re-render stays inside this
+ * tiny node. Anchors to the run's start (runStartedAt, which survives a refresh),
+ * falling back to lastActivity for external runs that never stamped one.
+ */
+function CatchupWorking({ target }: { target: UnifiedSession }) {
+	const since = useMemo(() => {
+		const raw = target.runStartedAt || target.lastActivity;
+		const t = raw ? Date.parse(raw) : NaN;
+		return Number.isNaN(t) ? Date.now() : t;
+	}, [target.runStartedAt, target.lastActivity]);
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		const id = setInterval(() => setNow(Date.now()), 1000);
+		return () => clearInterval(id);
+	}, []);
+	return (
+		<div className="mt-2 flex items-center gap-2 px-1 text-xs text-faint">
+			<span className="pulse-dot" />
+			<span>Working</span>
+			<span className="tabular-nums">{elapsedClock(since, now)}</span>
 		</div>
 	);
 }

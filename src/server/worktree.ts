@@ -1,6 +1,7 @@
 import { $ } from "bun";
 import { existsSync } from "fs";
 import type { UnifiedSession } from "./types";
+import { stopPreview } from "./preview";
 
 const TELLA_FUSION = "/home/ubuntu/projects/tella-fusion";
 const WORKTREES_DIR = "/home/ubuntu/worktrees";
@@ -125,6 +126,10 @@ export async function removeWorktree(branch: string, repoId?: string): Promise<v
   const repo = getRepo(repoId);
   try {
     const wtPath = `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
+    // Stop any running dev server before removing the directory — reads the
+    // PGID from .ports/dev-pgid (written by ensure-up.sh) so it works even
+    // after a backstage restart or when the server was started by an agent.
+    try { await stopPreview(wtPath); } catch {}
     // Use the wt delete script for tella-fusion when available, otherwise plain
     // git worktree remove (the wt script is tella-fusion-specific).
     if (repo.id === "tella-fusion" && (await Bun.file("/home/ubuntu/bin/wt").exists())) {

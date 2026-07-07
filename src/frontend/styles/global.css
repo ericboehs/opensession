@@ -1070,6 +1070,11 @@ body.resizing-x {
 }
 .sidebar-repo-head .repo-tile {
 	flex-shrink: 0;
+	/* The 18px tile rides in a 22px slot so it shares the leading-icon rail with
+	   the nav icons and the status/Pinned group icons (both 22px, box-left 16px).
+	   Without this the smaller solid tile sits flush-left of that rail and reads
+	   as misaligned against the icons above it. */
+	margin: 0 2px;
 }
 .sidebar-repo-head .sidebar-group-name {
 	font-weight: 600;
@@ -3220,6 +3225,13 @@ body.resizing-x .panel-resize::after {
 	   divider lines up with it across the panel seam. */
 	padding: 12px 10px 0;
 	border-bottom: 1px solid var(--border);
+	/* When the tabs don't fit (narrow panel, many tabs), scroll horizontally
+	   rather than wrap or clip. Scrollbar hidden — the strip stays 44px. */
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+.panel-tabs::-webkit-scrollbar {
+	display: none;
 }
 
 .panel-tab {
@@ -3233,6 +3245,9 @@ body.resizing-x .panel-resize::after {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
+	/* Don't let tabs squish when the strip overflows — scroll instead. */
+	flex-shrink: 0;
+	white-space: nowrap;
 }
 .panel-tab:hover {
 	color: var(--text);
@@ -3294,7 +3309,7 @@ body.resizing-x .panel-resize::after {
 .workspace-info-kicker,
 .workspace-info-label {
 	color: var(--text-faint);
-	font-size: 10.5px;
+	font-size: 12px;
 	font-weight: 650;
 	letter-spacing: -0.01em;
 }
@@ -3498,19 +3513,17 @@ body.resizing-x .panel-resize::after {
 	background: var(--bg-hover);
 }
 
-/* PR comments — latest few, each drilling into the PR tab. */
+/* PR comments — rendered like the chat's code card: an author/time header bar
+   over a markdown body. Clamped by default; hovering expands it in place. */
 .workspace-info-comments {
 	display: grid;
-	gap: 6px;
+	gap: 8px;
 }
 .workspace-info-comment {
-	position: relative;
-	display: grid;
-	gap: 3px;
-	padding: 9px 11px;
 	border: 1px solid var(--border);
 	border-radius: 8px;
-	background: var(--bg-surface);
+	background: var(--bg-panel);
+	overflow: hidden;
 	text-align: left;
 	cursor: pointer;
 	min-width: 0;
@@ -3518,11 +3531,29 @@ body.resizing-x .panel-resize::after {
 .workspace-info-comment:hover {
 	border-color: var(--border-strong);
 }
-/* Hover "Add to chat" — floats over the top-right of the card. */
+.workspace-info-comment-head {
+	position: relative;
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	padding: 7px 10px;
+	background: var(--bg-surface);
+	border-bottom: 1px solid var(--border);
+}
+.workspace-info-comment-author {
+	color: var(--text);
+	font-size: 12px;
+	font-weight: 650;
+}
+.workspace-info-comment-time {
+	color: var(--text-faint);
+	font-size: 11px;
+}
+/* Hover "Add to chat" — floats at the right of the header bar. */
 .workspace-info-comment-add {
 	position: absolute;
-	top: 6px;
-	right: 6px;
+	top: 4px;
+	right: 5px;
 	padding: 3px 8px;
 	border-radius: 6px;
 	border: 1px solid var(--border-strong);
@@ -3542,28 +3573,91 @@ body.resizing-x .panel-resize::after {
 	border-color: var(--text-faint);
 	background: var(--bg-hover);
 }
-.workspace-info-comment-head {
+/* Markdown body — clamped preview; the fade signals there's more (the full
+   text opens in the hover popover, never by resizing this card). */
+.workspace-info-comment-md {
+	position: relative;
+	max-height: 92px;
+	overflow: hidden;
+	padding: 8px 11px;
+}
+.workspace-info-comment-md.is-clamped::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 40px;
+	background: linear-gradient(transparent, var(--bg-panel));
+	pointer-events: none;
+}
+
+/* Hover popover — the full comment floated on top of the list. */
+.workspace-info-comment-pop {
+	position: fixed;
+	z-index: 60;
 	display: flex;
-	align-items: baseline;
-	gap: 6px;
+	flex-direction: column;
+	border: 1px solid var(--border-strong);
+	border-radius: 10px;
+	background: var(--bg-panel);
+	overflow: hidden;
+	cursor: pointer;
+	box-shadow:
+		0 12px 40px -8px rgba(0, 0, 0, 0.5),
+		0 0 0 1px var(--border);
 }
-.workspace-info-comment-author {
-	color: var(--text);
-	font-size: 12px;
-	font-weight: 650;
+.workspace-info-comment-pop-body {
+	padding: 10px 12px;
+	overflow-y: auto;
 }
-.workspace-info-comment-time {
-	color: var(--text-faint);
-	font-size: 11px;
-}
-.workspace-info-comment-body {
-	color: var(--text-dim);
+
+/* Compact markdown scale (base .markdown is sized for chat) — shared by the
+   inline card body and the popover body. */
+:is(.workspace-info-comment-md, .workspace-info-comment-pop-body) .markdown {
 	font-size: 13px;
 	line-height: 1.45;
-	display: -webkit-box;
-	-webkit-line-clamp: 4;
-	-webkit-box-orient: vertical;
-	overflow: hidden;
+	color: var(--text-dim);
+}
+:is(.workspace-info-comment-md, .workspace-info-comment-pop-body)
+	.markdown
+	> :first-child {
+	margin-top: 0;
+}
+:is(.workspace-info-comment-md, .workspace-info-comment-pop-body)
+	.markdown
+	> :last-child {
+	margin-bottom: 0;
+}
+:is(.workspace-info-comment-md, .workspace-info-comment-pop-body)
+	.markdown
+	:where(h1, h2, h3, h4, h5, h6) {
+	font-size: 12.5px;
+	font-weight: 700;
+	color: var(--text);
+	margin: 9px 0 3px;
+	letter-spacing: -0.01em;
+}
+:is(.workspace-info-comment-md, .workspace-info-comment-pop-body)
+	.markdown
+	:where(p) {
+	margin: 5px 0;
+}
+:is(.workspace-info-comment-md, .workspace-info-comment-pop-body)
+	.markdown
+	:where(ul, ol) {
+	margin: 5px 0;
+	padding-left: 18px;
+}
+:is(.workspace-info-comment-md, .workspace-info-comment-pop-body)
+	.markdown
+	:where(li) {
+	margin: 2px 0;
+}
+:is(.workspace-info-comment-md, .workspace-info-comment-pop-body)
+	.markdown
+	:where(table) {
+	font-size: 12px;
 }
 
 .workspace-info-section {
@@ -4836,11 +4930,11 @@ body.resizing-x .panel-resize::after {
 	align-items: center;
 	gap: 8px;
 	padding: 7px 6px;
-	border-top: 0;
+	border: 1px solid transparent;
 	border-radius: 8px;
 }
 .pr-comment-row:hover {
-	background: var(--bg-hover);
+	border-color: var(--border-strong);
 }
 .pr-comment-select {
 	width: 11px;
@@ -7406,7 +7500,11 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	display: flex;
 	align-items: center;
 	gap: 4px;
-	padding: 4px 6px;
+	/* Even 4px on all sides: the 40px +/mic/send/stop buttons are the same
+	   height as the pill's inner box, so equal inset lets the round buttons sit
+	   flush in the corners instead of the old 6px horizontal / 4px vertical
+	   mismatch. */
+	padding: 4px;
 	/* Inset the resting pill from the screen edges so it clears the iPhone's
 	   rounded bottom corners (Motion animates this away as it expands). */
 	margin: 0 6px;
@@ -7426,6 +7524,12 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 .composer.composer-min .composer-pop-wrap:has(.composer-add-btn) {
 	order: 1;
 }
+/* Round the + button's target area in the minimized pill so its hover circle
+   matches the round mic/send buttons and nestles into the pill's rounded left
+   corner (the full toolbar keeps the 8px square). */
+.composer.composer-min .composer-add-btn {
+	border-radius: 50%;
+}
 .composer.composer-min .composer-voice-wrap {
 	order: 3;
 }
@@ -7434,6 +7538,12 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 }
 .composer.composer-min .composer-send-split {
 	order: 5;
+}
+/* Without an explicit order the stop button defaults to 0 and jumps to the far
+   left of the minimized row; seat it with the right-side cluster, just before
+   send (order 5), so it reads "… mic · stop · send". */
+.composer.composer-min .composer-stop {
+	order: 4;
 }
 .composer.composer-min .composer-spacer {
 	display: none;
@@ -9019,7 +9129,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		gap: 7px;
 		min-width: 0;
 		max-width: 100%;
-		font-size: 16px;
+		font-size: 14px;
 		font-weight: 600;
 	}
 	.app-header-title .working-dot {
@@ -9823,13 +9933,33 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		overflow-y: visible;
 	}
 
+	/* One horizontally-scrollable line of tap cards (Slack-home style) rather
+	   than a wrapping grid, so all four tools sit on a single row and the rest
+	   peek in from the right edge to signal the scroll. */
 	.sidebar-nav {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		display: flex;
+		/* flex:none so the sidebar's column layout can't shrink this scroll
+		   container down to its padding (it would clip the 84px cards). */
+		flex: none;
+		flex-direction: row;
+		flex-wrap: nowrap;
 		gap: 8px;
-		padding: 12px 12px 10px;
+		/* Left edge aligns with the Workspaces header / list content (16px). */
+		padding: 12px 12px 10px 16px;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scroll-snap-type: x proximity;
+		-webkit-overflow-scrolling: touch;
+		scrollbar-width: none;
+		overscroll-behavior-x: contain;
+	}
+	.sidebar-nav::-webkit-scrollbar {
+		display: none;
 	}
 	.sidebar-nav-item {
+		flex: 0 0 auto;
+		width: 132px;
+		scroll-snap-align: start;
 		flex-direction: column;
 		align-items: flex-start;
 		justify-content: space-between;

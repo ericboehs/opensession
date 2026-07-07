@@ -42,6 +42,7 @@ export function Tooltip({
 	side = "top",
 	offset = 8,
 	shortcut,
+	multiline,
 	children,
 }: {
 	label: React.ReactNode;
@@ -49,6 +50,8 @@ export function Tooltip({
 	offset?: number;
 	/** Optional keyboard-shortcut badges, e.g. ["⌘", "S"]. */
 	shortcut?: string[];
+	/** Wrap long content instead of the default single nowrap line. */
+	multiline?: boolean;
 	children: React.ReactElement;
 }) {
 	if (!label) return children;
@@ -76,15 +79,26 @@ export function Tooltip({
 							/>
 						}
 						className={cn(
-							"pointer-events-none flex max-w-[280px] items-center gap-2",
+							"pointer-events-none flex items-center gap-2",
 							// Sized after tella-fusion's UI__Tooltip3: 13px medium text
 							// (Tella overrides text-xs to 13px) on a near-black chip with
 							// its soft `shadow-popup` + our theme ring.
-							"rounded-panel bg-tooltip px-2 py-1 text-[13px] leading-snug font-medium whitespace-nowrap text-tooltip-fg",
+							"rounded-panel bg-tooltip px-2 py-1 text-[13px] leading-snug font-medium text-tooltip-fg",
 							"shadow-[0px_10px_38px_-10px_rgba(14,18,22,0.35),0px_10px_20px_-15px_rgba(14,18,22,0.2),0_0_0_1px_var(--tooltip-ring)]",
+							multiline
+								? "max-w-[360px] items-start whitespace-pre-wrap"
+								: "max-w-[280px] whitespace-nowrap",
 						)}
 					>
-						<span className="overflow-hidden text-ellipsis">{label}</span>
+						<span
+							className={cn(
+								multiline
+									? "max-h-[50vh] overflow-y-auto"
+									: "overflow-hidden text-ellipsis",
+							)}
+						>
+							{label}
+						</span>
 						{shortcut && shortcut.length > 0 && (
 							<span className="inline-flex items-center gap-[3px]">
 								{shortcut.map((k, i) => (

@@ -240,7 +240,7 @@ export function SettingsMenu({
 			) : top ? (
 				<Menu.Trigger
 					aria-label="Account menu"
-					className="group flex items-center gap-1.5 rounded-md border-none bg-transparent py-1 pl-1.5 pr-1.5 text-fg hover:bg-hover data-[popup-open]:bg-hover"
+					className="group flex items-center gap-[9px] rounded-md border-none bg-transparent py-1 pl-1.5 pr-1.5 text-fg hover:bg-hover data-[popup-open]:bg-hover"
 				>
 					<span className="relative inline-flex shrink-0">
 						<span className="app-logo app-logo--sm">B</span>

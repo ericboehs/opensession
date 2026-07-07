@@ -1549,6 +1549,9 @@ export function Sidebar({
 				{runStartMs !== null ? (
 					<RunTicker startMs={runStartMs} />
 				) : (
+					// On phones the idle "time since" is noise — only the live
+					// working ticker (above) earns the spot. Desktop keeps it.
+					!isPhone &&
 					row.lastActivity && (
 						<span
 							className="sidebar-ws-time"
@@ -1890,6 +1893,19 @@ export function Sidebar({
 			    Settings now. */}
 			<nav className="sidebar-nav">
 				<button
+					className={`sidebar-nav-item ${watercoolerActive ? "active" : ""}`}
+					onClick={onOpenWatercooler}
+					title="Team chat — @ tags a teammate (they get a ping) or a session"
+				>
+					<span className="sidebar-nav-icon">
+						<IconWatercooler />
+					</span>
+					Watercooler
+					{watercoolerUnread > 0 && (
+						<span className="sidebar-nav-count">{watercoolerUnread}</span>
+					)}
+				</button>
+				<button
 					className={`sidebar-nav-item ${catchUpActive ? "active" : ""}`}
 					onClick={onOpenCatchUp}
 					title="Swipe through your unread workspaces"
@@ -1923,19 +1939,6 @@ export function Sidebar({
 						<IconFlame />
 					</span>
 					PR Tinder
-				</button>
-				<button
-					className={`sidebar-nav-item ${watercoolerActive ? "active" : ""}`}
-					onClick={onOpenWatercooler}
-					title="Team chat — @ tags a teammate (they get a ping) or a session"
-				>
-					<span className="sidebar-nav-icon">
-						<IconWatercooler />
-					</span>
-					Watercooler
-					{watercoolerUnread > 0 && (
-						<span className="sidebar-nav-count">{watercoolerUnread}</span>
-					)}
 				</button>
 			</nav>
 

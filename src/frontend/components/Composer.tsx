@@ -32,6 +32,8 @@ import { useIsPhone } from "../hooks/useIsPhone";
 import { motion, AnimatePresence } from "motion/react";
 import { composerMorph, composerChipMotion } from "../ui/motion";
 import { ModelEffortSelect, shortModelLabel } from "./ModelEffortSelect";
+import { UsageMeter } from "./UsageMeter";
+import type { SessionUsage } from "../lib/types";
 
 interface Props {
   /**
@@ -89,6 +91,12 @@ interface Props {
    */
   goal?: string | null;
   onSetGoal?: (goal: string | null) => void;
+  /**
+   * Live per-conversation usage (cost + context fill). When present, a compact
+   * cost/ring meter rides the toolbar just right of the model pill on desktop;
+   * on phones it's surfaced in the top-bar chat bar instead (won't fit here).
+   */
+  usage?: SessionUsage;
   /** Extra control rendered in the toolbar, left of the send button. */
   leftExtra?: React.ReactNode;
   /** Content visually attached to the composer above the draft field. */
@@ -239,6 +247,7 @@ export function Composer({
   onAccountChange,
   goal,
   onSetGoal,
+  usage,
   leftExtra,
   attached,
   prefill,
@@ -695,6 +704,21 @@ export function Composer({
             )}
           </AnimatePresence>
 
+          {/* Live cost + context ring, right of the model pill. Phones surface it
+              in the top-bar chat bar instead (the toolbar is too cramped). */}
+          <AnimatePresence initial={false}>
+            {!minimized && !isPhone && usage && (
+              <motion.div
+                key="usage"
+                layout="position"
+                {...composerChipMotion}
+                className="composer-pop-wrap"
+              >
+                <UsageMeter usage={usage} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <motion.div layout="position" transition={composerMorph} className="composer-voice-wrap">
             <VoiceInput onText={insertDictation} disabled={disabled} />
           </motion.div>
@@ -739,7 +763,7 @@ export function Composer({
                 >
                   {busy ? (
                     busySendMode === "steer" ? (
-                      <IconCrosshair size={24} />
+                      <IconArrowUp size={24} />
                     ) : (
                       <IconArrowDownRight size={24} />
                     )

@@ -1045,7 +1045,10 @@ function App() {
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
 				    on a pushed page (a session or other view) the brand is replaced by
 				    a Back chevron that pops back to the root, iOS-style. On desktop the
-				    brand/user live in the sidebar and this bar is hidden. */}
+				    brand/user live in the sidebar and this bar is hidden. The catch-up
+				    deck renders its own header (back + "N Left" + new-workspace), so we
+				    suppress this one there to avoid a duplicate back bar. */}
+				{route.view !== "catchup" && (
 				<header
 					className={`app-header${
 						!mobileDetail && rootListScrolled ? " app-header-scrolled" : ""
@@ -1138,6 +1141,7 @@ function App() {
 						)}
 					</div>
 				</header>
+				)}
 
 				{settingsActive && (
 					<Settings
@@ -1613,6 +1617,7 @@ function App() {
 									refresh();
 								}}
 								onOpenSession={(id) => navigate({ view: "session", id })}
+								onNewWorkspace={() => openPalette()}
 								onExit={goBack}
 							/>
 						) : route.view === "session" ? (

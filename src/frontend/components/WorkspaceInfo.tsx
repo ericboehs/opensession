@@ -1,4 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { createPortal } from "react-dom";
 import {
 	fetchChannelHistoryApi,
 	fetchDiff,
@@ -13,6 +20,8 @@ import type {
 	SlackMessage,
 } from "../lib/types";
 import { formatPrCommentPrompt } from "./PrPanel";
+import { renderMarkdown } from "../lib/markdown";
+import { MarkdownBody } from "./MarkdownBody";
 import {
 	loadOverview,
 	overviewCache,
@@ -142,6 +151,23 @@ function plainComment(body: string): string {
 		.trim();
 }
 
+/** Clean a GitHub comment body for markdown rendering: drop bot markers and
+    link-ref noise, and downgrade raw HTML to equivalent markdown (our renderer
+    escapes raw tags for safety, so <h3>/<br>/etc. would otherwise show as
+    literal text) — while KEEPING real markdown structure (headings, lists,
+    tables, code fences, line breaks). */
+function cleanCommentMarkdown(body: string): string {
+	return body
+		.replace(/<!--[\s\S]*?-->/g, "") // HTML comments (bot markers)
+		.replace(/^\s*\[[^\]]+\]:\s*\S+.*$/gm, "") // link-ref defs (Vercel [vc]: #…)
+		.replace(/<h([1-6])[^>]*>\s*([\s\S]*?)<\/h\1>/gi, (_m, _n, t) => `\n### ${t.trim()}\n`)
+		.replace(/<br\s*\/?>/gi, "\n") // explicit line breaks
+		.replace(/<\/(p|div|li|tr|table|ul|ol|details)>/gi, "\n") // block ends → break
+		.replace(/<[^>]+>/g, "") // remaining tags → keep inner text
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
+}
+
 const STATUS_CHAR: Record<DiffFile["status"], string> = {
 	added: "A",
 	untracked: "A",
@@ -171,6 +197,161 @@ function relTime(iso?: string): string {
 // the drill-down tab.
 const FILE_PREVIEW = 6;
 const COMMENT_PREVIEW = 3;
+
+/** Where to float the hover popover, computed from the card's viewport rect.
+    Prefers the space to the LEFT of the card (the comments live in the right
+    panel) so the popover never covers the list; falls back to overlaying the
+    card only when there isn't room on the left. */
+function popoverPosition(rect: DOMRect): {
+	left: number;
+	top: number;
+	width: number;
+	maxHeight: number;
+} {
+	const margin = 12;
+	const gap = 10;
+	const vw = window.innerWidth;
+	const vh = window.innerHeight;
+	const maxHeight = Math.min(Math.round(vh * 0.7), 560);
+	const spaceLeft = rect.left - margin - gap;
+
+	let width: number;
+	let left: number;
+	if (spaceLeft >= 300) {
+		width = Math.min(440, spaceLeft);
+		left = rect.left - gap - width;
+	} else {
+		width = Math.min(Math.max(rect.width, 380), vw - margin * 2);
+		left = Math.max(margin, Math.min(rect.left, vw - width - margin));
+	}
+	// Align to the card's top, but lift up if it would spill past the bottom.
+	const top = Math.max(
+		margin,
+		Math.min(rect.top, vh - margin - Math.min(maxHeight, vh - margin * 2)),
+	);
+	return { left, top, width, maxHeight };
+}
+
+/** One PR comment rendered as a code-card: an author/time header bar over a
+    markdown body, clamped to a few lines. Hovering a clamped card floats the
+    full comment in a popover on top (never shifting the list). A hover "Add to
+    chat" drops it into the composer; clicking opens the PR tab. */
+function CommentCard({
+	comment,
+	pr,
+	onOpenTab,
+	onAddToInput,
+}: {
+	comment: { author: string; body: string; url?: string; createdAt?: string };
+	pr: PrDetails;
+	onOpenTab?: (tab: PanelTab) => void;
+	onAddToInput?: (text: string) => void;
+}) {
+	const cardRef = useRef<HTMLDivElement>(null);
+	const bodyRef = useRef<HTMLDivElement>(null);
+	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [clamped, setClamped] = useState(false);
+	const [pop, setPop] = useState<DOMRect | null>(null);
+	const html = useMemo(
+		() => renderMarkdown(cleanCommentMarkdown(comment.body)),
+		[comment.body],
+	);
+	useLayoutEffect(() => {
+		const el = bodyRef.current;
+		if (el) setClamped(el.scrollHeight > el.clientHeight + 2);
+	}, [html]);
+	useEffect(
+		() => () => {
+			if (closeTimer.current) clearTimeout(closeTimer.current);
+		},
+		[],
+	);
+
+	function openPop() {
+		if (closeTimer.current) clearTimeout(closeTimer.current);
+		if (cardRef.current) setPop(cardRef.current.getBoundingClientRect());
+	}
+	function closePop() {
+		if (closeTimer.current) clearTimeout(closeTimer.current);
+		closeTimer.current = setTimeout(() => setPop(null), 90);
+	}
+
+	const addBtn = onAddToInput && (
+		<button
+			type="button"
+			className="workspace-info-comment-add"
+			onClick={(e) => {
+				e.stopPropagation();
+				onAddToInput(formatPrCommentPrompt(comment, pr));
+			}}
+			title="Add this comment to the chat composer"
+		>
+			Add to chat
+		</button>
+	);
+	const head = (
+		<div className="workspace-info-comment-head">
+			<span className="workspace-info-comment-author">{comment.author}</span>
+			{comment.createdAt && (
+				<span className="workspace-info-comment-time">
+					{relTime(comment.createdAt)}
+				</span>
+			)}
+			{addBtn}
+		</div>
+	);
+
+	const showPop = pop && clamped;
+	const pos = showPop ? popoverPosition(pop) : null;
+
+	return (
+		<>
+			<div
+				ref={cardRef}
+				className="workspace-info-comment"
+				role="button"
+				tabIndex={0}
+				onClick={() => onOpenTab?.("pr")}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") onOpenTab?.("pr");
+				}}
+				onMouseEnter={openPop}
+				onMouseLeave={closePop}
+				title="Open the Checks / PR tab"
+			>
+				{head}
+				<div
+					ref={bodyRef}
+					className={`workspace-info-comment-md ${clamped ? "is-clamped" : ""}`}
+				>
+					<MarkdownBody html={html} className="markdown" />
+				</div>
+			</div>
+			{showPop &&
+				pos &&
+				createPortal(
+					<div
+						className="workspace-info-comment-pop"
+						style={{
+							left: pos.left,
+							top: pos.top,
+							width: pos.width,
+							maxHeight: pos.maxHeight,
+						}}
+						onMouseEnter={openPop}
+						onMouseLeave={closePop}
+						onClick={() => onOpenTab?.("pr")}
+					>
+						{head}
+						<div className="workspace-info-comment-pop-body">
+							<MarkdownBody html={html} className="markdown" />
+						</div>
+					</div>,
+					document.body,
+				)}
+		</>
+	);
+}
 
 export function WorkspaceInfo({
 	sessionId,
@@ -310,9 +491,11 @@ export function WorkspaceInfo({
 		.join(" · ");
 
 	const chips = statusChips(pr);
-	// Clean each body up front and drop ones that reduce to nothing (Vercel
-	// link-ref markers, pure HTML-comment bot pings) so no blank cards show.
+	// Clean each body up front and drop the noise: Vercel deploy bots and
+	// anything that reduces to nothing (link-ref markers, pure HTML-comment
+	// bot pings) so no blank/useless cards show.
 	const comments = (pr?.comments ?? [])
+		.filter((c) => !/vercel/i.test(c.author || ""))
 		.map((c) => ({ ...c, preview: plainComment(c.body) }))
 		.filter((c) => c.preview.length > 0);
 	const changed = files ?? [];
@@ -393,44 +576,13 @@ export function WorkspaceInfo({
 									.slice(-COMMENT_PREVIEW)
 									.reverse()
 									.map((c, i) => (
-										<div
+										<CommentCard
 											key={c.url || `${c.author}:${i}`}
-											className="workspace-info-comment"
-											role="button"
-											tabIndex={0}
-											onClick={() => onOpenTab?.("pr")}
-											onKeyDown={(e) => {
-												if (e.key === "Enter" || e.key === " ") onOpenTab?.("pr");
-											}}
-											title="Open the Checks / PR tab"
-										>
-											<span className="workspace-info-comment-head">
-												<span className="workspace-info-comment-author">
-													{c.author}
-												</span>
-												{c.createdAt && (
-													<span className="workspace-info-comment-time">
-														{relTime(c.createdAt)}
-													</span>
-												)}
-											</span>
-											<span className="workspace-info-comment-body">
-												{c.preview}
-											</span>
-											{onAddToInput && (
-												<button
-													type="button"
-													className="workspace-info-comment-add"
-													onClick={(e) => {
-														e.stopPropagation();
-														onAddToInput(formatPrCommentPrompt(c, pr!));
-													}}
-													title="Add this comment to the chat composer"
-												>
-													Add to chat
-												</button>
-											)}
-										</div>
+											comment={c}
+											pr={pr!}
+											onOpenTab={onOpenTab}
+											onAddToInput={onAddToInput}
+										/>
 									))}
 								{comments.length > COMMENT_PREVIEW && (
 									<button

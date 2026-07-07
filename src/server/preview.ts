@@ -333,6 +333,16 @@ export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
   // startPreview) so cancelling mid-start actually stops the build/dev server.
   const startPgid = startPgids.get(worktreeDir);
   if (startPgid && startPgid > 1) pgids.add(startPgid);
+  // Also pick up any PGID written to disk by ensure-up.sh — covers the agent-
+  // invoked path (where startPgids has no entry) and restarted backstage
+  // (in-memory map is empty after restart).
+  const pgidFile = join(worktreeDir, ".ports", "dev-pgid");
+  if (existsSync(pgidFile)) {
+    try {
+      const pgid = parseInt(readFileSync(pgidFile, "utf8").trim(), 10);
+      if (!isNaN(pgid) && pgid > 1) pgids.add(pgid);
+    } catch {}
+  }
   for (const { port } of ports) {
     for (const pid of await listenersOnPort(port)) {
       let cwd = "";
@@ -358,6 +368,7 @@ export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
       process.kill(-pgid, "SIGKILL");
     } catch {}
   }
+  try { unlinkSync(join(worktreeDir, ".ports", "dev-pgid")); } catch {}
 
   return getPreviewStatus(worktreeDir);
 }
