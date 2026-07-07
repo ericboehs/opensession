@@ -8,6 +8,7 @@ import {
 } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
 import { withPreviewPath } from "../lib/preview-url";
+import { Tooltip } from "../ui/tooltip";
 import {
   IconArrowUpRight,
   IconCamera,
@@ -253,35 +254,41 @@ export function PreviewButton({
     return (
       <div className="viewer-code-icon-wrap" ref={wrapRef}>
         {running ? (
-          <a
-            className="viewer-code-icon preview-icon is-live"
-            href={url}
-            target="_blank"
-            rel="noopener"
-            onContextMenu={openMenu}
-            title={`Preview is live — open the webapp (${url}). Right-click for dev services.`}
-          >
-            <IconPlayOutline size={22} />
-          </a>
+          <Tooltip label="Open the running app — right-click for dev services" side="bottom">
+            <a
+              className="viewer-code-icon preview-icon is-live"
+              href={url}
+              target="_blank"
+              rel="noopener"
+              onContextMenu={openMenu}
+            >
+              <IconPlayOutline size={26} />
+            </a>
+          </Tooltip>
         ) : isStarting ? (
-          <button
-            className="viewer-code-icon preview-icon is-starting"
-            onClick={stop}
-            onContextMenu={openMenu}
-            disabled={stopping}
-            title={stopping ? "Cancelling…" : "Starting Tella Local — click to cancel"}
+          <Tooltip
+            label={stopping ? "Cancelling…" : "Starting Tella Local — click to cancel"}
+            side="bottom"
           >
-            <span className="preview-spinner" />
-          </button>
+            <button
+              className="viewer-code-icon preview-icon is-starting"
+              onClick={stop}
+              onContextMenu={openMenu}
+              disabled={stopping}
+            >
+              <span className="preview-spinner" />
+            </button>
+          </Tooltip>
         ) : (
-          <button
-            className="viewer-code-icon preview-icon is-off"
-            onClick={start}
-            onContextMenu={openMenu}
-            title="Start Tella Local and preview this session. Right-click for dev services."
-          >
-            <IconPlayOutline size={22} />
-          </button>
+          <Tooltip label="Run — start Tella Local (right-click for dev services)" side="bottom">
+            <button
+              className="viewer-code-icon preview-icon is-off"
+              onClick={start}
+              onContextMenu={openMenu}
+            >
+              <IconPlayOutline size={26} />
+            </button>
+          </Tooltip>
         )}
         {servicesPopover}
         {snapshotModal}

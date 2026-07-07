@@ -2800,8 +2800,8 @@ body.resizing-x {
 /* The header preview icon's cancel-spinner sits in the same 22px box as the
    glyph so the row doesn't jump between states. */
 .preview-icon .preview-spinner {
-	width: 14px;
-	height: 14px;
+	width: 16px;
+	height: 16px;
 }
 /* Snapshot action reached from the header popover (no caret to host it). */
 .preview-snap-row {

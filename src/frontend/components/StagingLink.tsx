@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchPr } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
 import { withPreviewPath } from "../lib/preview-url";
+import { Tooltip } from "../ui/tooltip";
 import { IconArrowUpRight, IconGlobe } from "./icons";
 
 /**
@@ -63,19 +64,23 @@ export function StagingLink({
 
 	if (variant === "header") {
 		return (
-			<a
-				href={href}
-				target="_blank"
-				rel="noopener"
-				className={`viewer-code-icon staging-icon ${building ? "is-building" : "is-ready"}`}
-				title={
+			<Tooltip
+				label={
 					building
-						? `Staging deploy ${staging.status.toLowerCase()}… — ${href}`
-						: `Test this PR on staging — ${href}`
+						? `Staging deploy ${staging.status.toLowerCase()}…`
+						: "Open staging deploy — test this PR on real infra"
 				}
+				side="bottom"
 			>
-				<IconGlobe size={22} />
-			</a>
+				<a
+					href={href}
+					target="_blank"
+					rel="noopener"
+					className={`viewer-code-icon staging-icon ${building ? "is-building" : "is-ready"}`}
+				>
+					<IconGlobe size={26} />
+				</a>
+			</Tooltip>
 		);
 	}
 
