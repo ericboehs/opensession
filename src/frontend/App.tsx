@@ -1006,9 +1006,16 @@ function App() {
 		}
 	};
 	const handleSessionRunningChange = (id: string, isRunning: boolean) => {
+		// Keep the existing run-start stamp when the session was already running:
+		// the viewer relays a session_status on every (re)open, and re-stamping
+		// here reset the sidebar's elapsed ticker to zero on each session switch.
+		const prev = sessionsRef.current.find((s) => s.id === id);
 		patch(id, {
 			isRunning,
-			runStartedAt: isRunning ? new Date().toISOString() : undefined,
+			runStartedAt: isRunning
+				? (prev?.isRunning ? prev.runStartedAt : undefined) ||
+					new Date().toISOString()
+				: undefined,
 		});
 	};
 

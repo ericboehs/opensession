@@ -565,9 +565,11 @@ export function SessionViewer({
 
 	// Anchor for the "Michael is working…" elapsed timer. A run that starts
 	// while we're watching anchors to now; opening a session mid-run anchors to
-	// the user prompt that started the turn (from the transcript) so the timer
-	// shows the run's real age, not time-since-I-opened-the-tab. The ref tracks
-	// which case we're in: it stays true until we've observed the session idle.
+	// the server's journaled run start (runStartedAt — survives switches and
+	// refreshes), falling back to the turn's user prompt in the transcript, so
+	// the timer shows the run's real age, not time-since-I-opened-the-tab. The
+	// ref tracks which case we're in: it stays true until we've observed the
+	// session idle.
 	const [busySince, setBusySince] = useState<number | null>(null);
 	const anchorFromTranscript = useRef(session.isRunning);
 	useEffect(() => {
@@ -579,6 +581,17 @@ export function SessionViewer({
 			anchorFromTranscript.current = false;
 			setBusySince(null);
 			return;
+		}
+		// The journaled run start is authoritative whenever we have it — for a
+		// run that starts while watching it's ~now anyway (App stamps it on the
+		// status flip), and mid-run it's the real start even when a stale
+		// isRunning=false at mount already flipped the anchor ref.
+		if (session.runStartedAt) {
+			const t = Date.parse(session.runStartedAt);
+			if (Number.isFinite(t)) {
+				setBusySince((prev) => prev ?? t);
+				return;
+			}
 		}
 		// Mid-run open: wait for the transcript so we can find the turn's prompt.
 		if (anchorFromTranscript.current && loading) return;
@@ -594,7 +607,7 @@ export function SessionViewer({
 			}
 			return Date.now();
 		});
-	}, [isBusy, loading, entries]);
+	}, [isBusy, loading, entries, session.runStartedAt]);
 
 	// Ctrl+R focuses the composer (overrides browser reload while in a session)
 	const composerRef = useRef<HTMLTextAreaElement | null>(null);

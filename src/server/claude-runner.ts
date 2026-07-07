@@ -1380,9 +1380,7 @@ export async function* runClaude(opts: {
         // billing model), NOT the SDK's total_cost_usd: subscription (OAuth)
         // runs report total_cost_usd = 0, but the whole point here is the
         // API-equivalent cost that usage-credits will charge. Fall back to the
-        // SDK figure only for unpriced (passthrough) models. Context size = this
-        // turn's full prompt (input + both cache buckets), overwritten each turn
-        // so it reflects the current window fill, not a running sum.
+        // SDK figure only for unpriced (passthrough) models.
         const inTok = rm.usage?.input_tokens || 0;
         const outTok = rm.usage?.output_tokens || 0;
         const cacheReadTok = rm.usage?.cache_read_input_tokens || 0;
@@ -1403,7 +1401,17 @@ export async function* runClaude(opts: {
             : undefined;
         if (typeof turnCost === "number")
           runUsage.costUsd = (runUsage.costUsd || 0) + turnCost;
-        runUsage.contextTokens = inTok + cacheReadTok + cacheCreateTok;
+        // Context fill = the LAST API call's prompt size (tracked live per
+        // assistant message). The result's usage is summed across every API
+        // call in the run, so deriving context from it overstates the window
+        // fill by orders of magnitude on long tool-heavy runs (a 316k context
+        // once showed as "22.1M / 1M"). Fall back to the result sum only when
+        // no assistant usage was seen — then the run was a single API call and
+        // the sum IS that call's prompt.
+        runUsage.contextTokens =
+          liveContextTokens ||
+          runUsage.contextTokens ||
+          inTok + cacheReadTok + cacheCreateTok;
         // The result's authoritative figures cover the same tokens the live
         // accumulator approximated — drop the approximation and push a
         // corrected snapshot (matters when the run continues past this
