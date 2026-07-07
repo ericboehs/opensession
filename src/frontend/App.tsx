@@ -377,6 +377,9 @@ function App() {
 	// on phones, so the session viewer portals a compact tap-to-switch model
 	// selector into this slot — the only place a session's model surfaces there.
 	const [headerModelEl, setHeaderModelEl] = useState<HTMLElement | null>(null);
+	// Leading slot of the mobile title pill: the session viewer portals the repo
+	// tile here so it sits in front of the name (Slack-header style).
+	const [headerRepoEl, setHeaderRepoEl] = useState<HTMLElement | null>(null);
 	// Right slot of the mobile top bar. On phones the session viewer portals its
 	// header actions here (single iOS-style nav bar); desktop hides the bar and
 	// the actions render in the topbar slot above instead.
@@ -1115,28 +1118,33 @@ function App() {
 									}
 									: {})}
 						>
-							{/* Name only; the metadata line under it (repo tile · model ·
-							    cost) shares this one tap target that opens the session's
-							    deeper info page. No chevron — the tappable block carries
-							    the "opens more" affordance. */}
-							<span className="app-header-title-row">
-								{route.view === "session" && currentSession?.isRunning && (
-									<span className="working-dot" />
-								)}
-								<span className="app-header-title-text">
-									{route.view === "session"
-										? (activeProjectId
-											? projects.find((p) => p.id === activeProjectId)?.name
-											: undefined) ||
-										currentSession?.title ||
-										""
-									: topbarTitle}
-								</span>
-							</span>
+							{/* Slack-header layout: the repo tile leads the pill (portaled in
+							    by SessionViewer), with the name on top and the model · cost
+							    metadata below it in a stacked column. The whole pill is one
+							    tap target that opens the session's deeper info page. */}
 							{route.view === "session" && currentSession && (
-								// Filled by SessionViewer's portal (compact model selector).
-								<span className="app-header-model" ref={setHeaderModelEl} />
+								<span className="app-header-repo" ref={setHeaderRepoEl} />
 							)}
+							<span className="app-header-title-col">
+								<span className="app-header-title-row">
+									{route.view === "session" && currentSession?.isRunning && (
+										<span className="working-dot" />
+									)}
+									<span className="app-header-title-text">
+										{route.view === "session"
+											? (activeProjectId
+												? projects.find((p) => p.id === activeProjectId)?.name
+												: undefined) ||
+											currentSession?.title ||
+											""
+										: topbarTitle}
+									</span>
+								</span>
+								{route.view === "session" && currentSession && (
+									// Filled by SessionViewer's portal (compact model selector).
+									<span className="app-header-model" ref={setHeaderModelEl} />
+								)}
+							</span>
 						</span>
 					)}
 					<div className="app-header-actions" ref={setHeaderActionsEl}>
@@ -1657,6 +1665,7 @@ function App() {
 									topbarEl={topbarEl}
 									headerActionsEl={headerActionsEl}
 									headerModelEl={headerModelEl}
+									headerRepoEl={headerRepoEl}
 									rightPanelEl={rightPanelEl}
 									newChatSeq={newChatSeq}
 									autoFocusComposer={focusComposerOnOpen}

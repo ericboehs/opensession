@@ -110,6 +110,10 @@ interface Props {
 	    model pill is hidden, so a compact tap-to-switch model selector portals
 	    here instead. Desktop ignores it. */
 	headerModelEl?: HTMLElement | null;
+	/** Leading slot inside the mobile top-bar title pill. The repo tile portals
+	    here so it sits in front of the title (Slack-header style), rather than
+	    inline in the metadata line below. Desktop ignores it. */
+	headerRepoEl?: HTMLElement | null;
 	/** App-level right-column node (sibling of the left sidebar); when present the
 	    workspace/sub-agent panel portals here so it spans the full height from the
 	    top, instead of opening only below the chat. */
@@ -230,6 +234,7 @@ export function SessionViewer({
 	connected,
 	initialPending,
 	topbarEl,
+	headerRepoEl,
 	headerActionsEl,
 	headerModelEl,
 	rightPanelEl,
@@ -2053,9 +2058,19 @@ export function SessionViewer({
 				);
 			})()}
 
+			{/* Repo tile leads the mobile title pill (Slack-header style) — it
+			    portals into the pill's leading slot in front of the name. */}
+			{isPhone &&
+				headerRepoEl &&
+				hasWorkspace &&
+				createPortal(
+					<RepoTile name={session.repo || "tella-fusion"} size={26} />,
+					headerRepoEl,
+				)}
+
 			{/* Compact "chat bar" under the mobile top-bar title: it just *shows*
-			    the session's repo and model (no per-item dropdowns) — tapping it (or
-			    the title above) opens the settings menu where they, and every other
+			    the session's model (no per-item dropdowns) — tapping it (or the
+			    title above) opens the settings menu where they, and every other
 			    workspace/chat setting, can be changed. */}
 			{isPhone &&
 				headerModelEl &&
@@ -2075,14 +2090,8 @@ export function SessionViewer({
 							)
 						}
 					>
-						{hasWorkspace && (
-							<RepoTile name={session.repo || "tella-fusion"} size={15} />
-						)}
-						{hasWorkspace && models.length > 0 && (
-							<span className="header-chatbar-sep" aria-hidden="true">
-								·
-							</span>
-						)}
+						{/* Repo now leads the pill (portaled into headerRepoEl in front of
+						    the title), so the metadata line is just model · cost. */}
 						{models.length > 0 && (
 							<span className="header-chatbar-model truncate">
 								{/* Drop the "Claude " prefix — "Opus 4.8" reads fine in the
