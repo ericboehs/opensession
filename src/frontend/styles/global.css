@@ -3346,11 +3346,11 @@ body.resizing-x .panel-resize::after {
 	display: flex;
 	align-items: center;
 	gap: 2px;
-	/* Height mirrors the main chat's .session-tabs strip (38px) so the tab
-	   divider lines up with it across the panel seam — kept tight rather than
-	   letting the top padding balloon the strip past the header. */
-	padding: 6px 10px 0;
-	border-bottom: 1px solid var(--border);
+	/* Floating pill nav (no bottom divider): the active tab is a filled pill
+	   rather than an underline, so the strip reads as a free-standing control
+	   group over the panel body. Left inset lands the first pill's label at the
+	   panel body's 22px content edge (10px strip + 12px pill padding). */
+	padding: 8px 10px;
 	/* When the tabs don't fit (narrow panel, many tabs), scroll horizontally
 	   rather than wrap or clip. Scrollbar hidden — the strip stays compact. */
 	overflow-x: auto;
@@ -3363,24 +3363,38 @@ body.resizing-x .panel-resize::after {
 .panel-tab {
 	background: none;
 	border: none;
-	border-bottom: 2px solid transparent;
+	border-radius: 8px;
 	color: var(--text-dim);
 	font-size: 13px;
 	font-weight: 500;
-	padding: 6px 12px 8px;
+	padding: 5px 12px;
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
 	/* Don't let tabs squish when the strip overflows — scroll instead. */
 	flex-shrink: 0;
 	white-space: nowrap;
+	transition:
+		background 0.14s ease,
+		color 0.14s ease;
 }
 .panel-tab:hover {
 	color: var(--text);
+	background: var(--bg-hover);
 }
 .panel-tab.active {
 	color: var(--text);
-	border-bottom-color: var(--accent);
+	background: var(--bg-active);
+}
+/* Count suffix on a tab (e.g. "Changes 10") — dimmer than the label, tabular
+   so the strip doesn't jitter as the number changes. */
+.panel-tab-count {
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+.panel-tab:hover .panel-tab-count,
+.panel-tab.active .panel-tab-count {
+	color: var(--text-dim);
 }
 
 .panel-tab-dot {
@@ -10149,7 +10163,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   move around a session on a phone. Taller rows, bigger labels. */
 	.panel-tab {
 		font-size: 14px;
-		padding: 10px 14px 12px;
+		padding: 8px 14px;
 	}
 	.reviews-tab {
 		font-size: 14px;

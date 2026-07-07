@@ -10,11 +10,30 @@ interface Props {
   isRunning: boolean;
   canSend: boolean;
   send: (msg: any) => void;
+  /** Shared diff state (lifted so the Changes tab badge and this panel poll
+   *  once, not twice). When omitted, the panel fetches on its own. */
+  diff?: SessionDiffState;
 }
 
-export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
+export interface SessionDiffState {
+  repos: RepoDiff[] | null;
+  loading: boolean;
+  error: string | null;
+  reload: () => Promise<void>;
+}
+
+/**
+ * Fetch + poll a session's live worktree diff. Used both by the DiffPanel and
+ * by SessionViewer (to show the changed-file count on the Changes tab) — sharing
+ * one hook means one poll instead of two racing fetches of the same big patch.
+ * `enabled: false` parks it (no fetch) so callers can gate on panel visibility.
+ */
+export function useSessionDiff(
+  sessionId: string,
+  opts: { enabled?: boolean; isRunning: boolean },
+): SessionDiffState {
+  const { enabled = true, isRunning } = opts;
   const [repos, setRepos] = useState<RepoDiff[] | null>(null);
-  const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -39,17 +58,35 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
     }
   }, [sessionId]);
 
+  // Switching sessions: drop the previous session's diff so a stale count/patch
+  // doesn't flash before the new fetch lands.
   useEffect(() => {
+    setRepos(null);
+    setError(null);
+    setLoading(true);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!enabled) return;
     load();
     // Keep the diff fresh while the agent is working
     const interval = setInterval(load, isRunning ? 8000 : 30000);
     return () => clearInterval(interval);
-  }, [load, isRunning]);
+  }, [load, isRunning, enabled]);
+
+  return { repos, loading, error, reload: load };
+}
+
+export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) {
+  const [active, setActive] = useState(0);
+  // Use the caller's shared diff state when given; otherwise self-poll.
+  const self = useSessionDiff(sessionId, { enabled: !diff, isRunning });
+  const { repos, loading, error, reload } = diff ?? self;
 
   async function handleDiscard(repo: string, path: string, oldPath?: string) {
     await discardDiffFile(sessionId, path, repo, oldPath);
     // Reflect the reverted file immediately (don't wait for the poll).
-    await load();
+    await reload();
   }
 
   async function handleComment(repo: string, target: CommentTarget, text: string) {
@@ -111,7 +148,7 @@ export function DiffPanel({ sessionId, isRunning, canSend, send }: Props) {
         <span className="diff-del">−{d.totalDeletions}</span>
         {d.truncated && <span className="diff-truncated">truncated</span>}
         <Tooltip label="Refresh diff">
-          <button className="btn-icon" onClick={load}>↻</button>
+          <button className="btn-icon" onClick={reload}>↻</button>
         </Tooltip>
       </div>
 

@@ -37,7 +37,7 @@ import { UsageMeter } from "./UsageMeter";
 import { SchedulePromptButton } from "./SchedulePrompt";
 import type { FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
-import { DiffPanel } from "./DiffPanel";
+import { DiffPanel, useSessionDiff } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
 import { RepoTile } from "./RepoTile";
 import { ModelMenuRow } from "./ModelMenuRow";
@@ -540,6 +540,24 @@ export function SessionViewer({
 		: "";
 	const panelAvailable = hasWorkspace || hasPlain;
 	const isBusy = isRunningLive || isStreaming;
+
+	// Live worktree diff, shared between the Changes-tab file-count badge and the
+	// DiffPanel (passed in as `diff=` below so they poll once, not twice). Parked
+	// unless the panel is open on a code session.
+	const diffState = useSessionDiff(session.id, {
+		enabled: hasWorkspace && panelOpen,
+		isRunning: isBusy,
+	});
+	const changesFileCount = React.useMemo(
+		() =>
+			diffState.repos
+				? diffState.repos.reduce(
+						(n, r) => n + (r.diff.files?.length || 0),
+						0,
+					)
+				: null,
+		[diffState.repos],
+	);
 
 	// Anchor for the "Michael is working…" elapsed timer. A run that starts
 	// while we're watching anchors to now; opening a session mid-run anchors to
@@ -2494,6 +2512,11 @@ export function SessionViewer({
 										onClick={() => selectPanelTab("changes")}
 									>
 										Changes
+										{changesFileCount ? (
+											<span className="panel-tab-count">
+												{changesFileCount}
+											</span>
+										) : null}
 									</button>
 									<button
 										className={`panel-tab ${panelTab === "terminal" ? "active" : ""}`}
@@ -2579,6 +2602,7 @@ export function SessionViewer({
 									isRunning={isBusy}
 									canSend={connected && !isBusy && !noEngine}
 									send={send}
+									diff={diffState}
 								/>
 							) : panelTab === "terminal" ? (
 								<TerminalPanel
