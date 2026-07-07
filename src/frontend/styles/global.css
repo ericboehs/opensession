@@ -3329,12 +3329,13 @@ body.resizing-x .panel-resize::after {
 	display: flex;
 	align-items: center;
 	gap: 2px;
-	/* Height mirrors the main chat's .session-tabs strip (44px) so the tab
-	   divider lines up with it across the panel seam. */
-	padding: 12px 10px 0;
+	/* Height mirrors the main chat's .session-tabs strip (38px) so the tab
+	   divider lines up with it across the panel seam — kept tight rather than
+	   letting the top padding balloon the strip past the header. */
+	padding: 6px 10px 0;
 	border-bottom: 1px solid var(--border);
 	/* When the tabs don't fit (narrow panel, many tabs), scroll horizontally
-	   rather than wrap or clip. Scrollbar hidden — the strip stays 44px. */
+	   rather than wrap or clip. Scrollbar hidden — the strip stays compact. */
 	overflow-x: auto;
 	scrollbar-width: none;
 }
