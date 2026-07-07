@@ -195,11 +195,13 @@ export function IconPlay(p: IconProps) {
 
 // Outlined play triangle — same glyph, stroke-only so it reads like the rest of
 // the icon set (used for the session-header preview affordance, where the state
-// color carries the meaning and a filled wedge looked heavy).
+// color carries the meaning and a filled wedge looked heavy). Drawn large in the
+// 24-grid so it carries the same visual weight as the globe beside it (a plain
+// triangle occupies less of its box than a circle at the same `size`).
 export function IconPlayOutline(p: IconProps) {
   return (
     <Svg {...p}>
-      <path {...stroke} d="M8.5 6.75L17.5 12L8.5 17.25V6.75Z" />
+      <path {...stroke} d="M6.5 4.5L19.5 12L6.5 19.5V4.5Z" />
     </Svg>
   );
 }
