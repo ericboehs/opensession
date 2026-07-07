@@ -12163,15 +12163,23 @@ html[data-theme="light"] .palette-card .palette-create {
 	background: var(--bg-active);
 	box-shadow: -6px 0 5px -2px var(--bg-active);
 }
-.sidebar-ws-row:hover .sidebar-ws-actions {
-	display: inline-flex;
-}
-.sidebar-swipe-row.is-open .sidebar-ws-row:hover .sidebar-ws-actions {
-	display: none;
-}
-.sidebar-ws-row:hover .sidebar-group-count,
-.sidebar-ws-row:hover .sidebar-ws-unread {
-	display: none;
+/* Hover-only reveal: swap the count/time cluster for the pin/archive actions
+   when the pointer is over the row. Gated to real hover devices — on touch the
+   sticky first-tap :hover would otherwise expose the actions (which live only
+   behind the swipe gesture there). This must be @media-gated rather than left
+   unconditional: it sits after the mobile override blocks in source order, so
+   an equal-specificity mobile `display: none` would lose the source-order tie. */
+@media (hover: hover) {
+	.sidebar-ws-row:hover .sidebar-ws-actions {
+		display: inline-flex;
+	}
+	.sidebar-swipe-row.is-open .sidebar-ws-row:hover .sidebar-ws-actions {
+		display: none;
+	}
+	.sidebar-ws-row:hover .sidebar-group-count,
+	.sidebar-ws-row:hover .sidebar-ws-unread {
+		display: none;
+	}
 }
 .sidebar-ws-action {
 	display: inline-flex;
@@ -12207,8 +12215,10 @@ html[data-theme="light"] .palette-card .palette-create {
 .sidebar-group-count + .sidebar-ws-time {
 	margin-left: 6px;
 }
-.sidebar-ws-row:hover .sidebar-ws-time {
-	display: none;
+@media (hover: hover) {
+	.sidebar-ws-row:hover .sidebar-ws-time {
+		display: none;
+	}
 }
 
 /* Live "in progress" elapsed ticker — sits where the time badge would, in the
@@ -12226,8 +12236,10 @@ html[data-theme="light"] .palette-card .palette-create {
 .sidebar-group-count + .sidebar-ws-ticker {
 	margin-left: 6px;
 }
-.sidebar-ws-row:hover .sidebar-ws-ticker {
-	display: none;
+@media (hover: hover) {
+	.sidebar-ws-row:hover .sidebar-ws-ticker {
+		display: none;
+	}
 }
 
 /* Unsent-draft pencil (Slack-style) on sidebar rows and workspace tabs: typed
@@ -12242,8 +12254,10 @@ html[data-theme="light"] .palette-card .palette-create {
 	margin-left: 6px;
 	color: var(--text-dim);
 }
-.sidebar-ws-row:hover .sidebar-ws-draft {
-	display: none;
+@media (hover: hover) {
+	.sidebar-ws-row:hover .sidebar-ws-draft {
+		display: none;
+	}
 }
 .session-tab-draft {
 	display: inline-flex;
