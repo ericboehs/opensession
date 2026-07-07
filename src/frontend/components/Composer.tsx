@@ -411,18 +411,36 @@ export function Composer({
   }
 
   // Once the draft grows past the composer's max-height the textarea scrolls
-  // internally; without help the clipped text ends in a hard horizontal cut.
-  // We fade the edge instead: a scroll-aware mask that softens the top once
-  // you've scrolled down, and the bottom while there's still text below. Only
-  // the active edges fade (a resting first line never dims). Phone-only — the
-  // tall desktop field rarely clips.
-  const [fade, setFade] = useState({ top: false, bottom: false });
+  // internally; without help the clipped text ends in a hard horizontal cut at
+  // the container edge. We fade the edge instead: a scroll-aware mask on the
+  // input region that softens the top once you've scrolled down, and the bottom
+  // while there's still text below. Only the active edges dim, so a resting
+  // first line never fades. Phone-only — the tall desktop field rarely clips.
+  //
+  // Driven imperatively (write the mask straight onto the wrapper) rather than
+  // through React state: a state-round-trip lags the scroll by a render, so the
+  // mask is a frame stale during momentum scroll and reads as a flicker (or, if
+  // a scroll event coalesces, never updates at all). The mask must track
+  // scrollTop exactly, so we set it in the same handler that observes the scroll.
+  const FADE_PX = 26;
   function updateFade(el: HTMLTextAreaElement) {
-    const top = el.scrollTop > 1;
-    const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
-    setFade((prev) =>
-      prev.top === top && prev.bottom === bottom ? prev : { top, bottom },
-    );
+    const wrap = el.parentElement; // .composer-input-wrap (masks textarea + hl mirror as one)
+    if (!wrap) return;
+    const top = isPhone && el.scrollTop > 1;
+    const bottom =
+      isPhone && el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+    const mask =
+      top || bottom
+        ? `linear-gradient(to bottom, ${
+            top ? "transparent 0, #000 " + FADE_PX + "px" : "#000 0"
+          }, ${
+            bottom
+              ? "#000 calc(100% - " + FADE_PX + "px), transparent 100%"
+              : "#000 100%"
+          })`
+        : "";
+    wrap.style.setProperty("-webkit-mask-image", mask);
+    wrap.style.setProperty("mask-image", mask);
   }
 
   // Auto-grow between a resting floor and the CSS max-height. Phones get a
@@ -436,22 +454,9 @@ export function Composer({
     const floor = minimized ? 0 : isPhone ? 44 : 120;
     el.style.height = "auto";
     el.style.height = `${Math.min(Math.max(el.scrollHeight, floor), 320)}px`;
+    // Height (and thus clip state) just changed — re-evaluate the edge fades.
     updateFade(el);
   }, [text, isPhone, minimized]);
-
-  // Fade edge sizes match the composer's inner padding so the softening reads
-  // as "text slipping under the container edge", not a band floating in the box.
-  const FADE_PX = 26;
-  const fadeMask =
-    isPhone && (fade.top || fade.bottom)
-      ? `linear-gradient(to bottom, ${
-          fade.top ? "transparent 0, #000 " + FADE_PX + "px" : "#000 0"
-        }, ${
-          fade.bottom
-            ? "#000 calc(100% - " + FADE_PX + "px), transparent 100%"
-            : "#000 100%"
-        })`
-      : undefined;
 
   // Live code styling: when the draft contains a backtick, a metrics-identical
   // mirror div paints `inline` / ```fence``` tints behind a transparent-text
@@ -554,14 +559,6 @@ export function Composer({
           transition={composerMorph}
           className="composer-input-wrap"
           ref={mentions.inputWrapRef}
-          // Masks the textarea (and the highlight mirror it wraps) as one, so
-          // scrolled-past text fades under the composer's edge instead of a
-          // hard cut. Idle when nothing's clipped (see fadeMask).
-          style={
-            fadeMask
-              ? { WebkitMaskImage: fadeMask, maskImage: fadeMask }
-              : undefined
-          }
         >
           {mentions.popup}
           {hlActive && (
