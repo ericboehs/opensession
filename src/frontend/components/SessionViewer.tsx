@@ -1429,7 +1429,10 @@ export function SessionViewer({
 	const [overflowOpen, setOverflowOpen] = useState(false);
 	const overflowRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
-		if (!overflowOpen) return;
+		// On phones the settings live in a full-screen info page with its own back
+		// chevron + scrim, so outside-click-to-close doesn't apply (and would fire
+		// on every tap inside the page, which is portaled outside overflowRef).
+		if (!overflowOpen || isPhone) return;
 		const onDoc = (e: MouseEvent) => {
 			if (overflowRef.current?.contains(e.target as Node)) return;
 			// The Spin off flavor picker is a Base UI popup portaled to <body> —
@@ -1860,16 +1863,18 @@ export function SessionViewer({
 					    Spin off and Delete live only in there. */}
 					{!compactHeader && !isPhone && collapsibleActions}
 					<div className="viewer-overflow" ref={overflowRef}>
-						<button
-							className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
-							onClick={() => setOverflowOpen((o) => !o)}
-							title="More actions"
-							aria-label="More actions"
-							aria-expanded={overflowOpen}
-						>
-							⋯
-						</button>
-						{overflowOpen && (
+						{!isPhone && (
+							<button
+								className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
+								onClick={() => setOverflowOpen((o) => !o)}
+								title="More actions"
+								aria-label="More actions"
+								aria-expanded={overflowOpen}
+							>
+								⋯
+							</button>
+						)}
+						{!isPhone && overflowOpen && (
 							<div className="viewer-overflow-menu">
 								{/* Native-sheet feel on phones: the session name titles the
 								    menu (WhatsApp/ChatGPT-style), and the workspace side panel
@@ -1977,11 +1982,102 @@ export function SessionViewer({
 				// Phones: the whole header rides in the top bar's right slot (the
 				// title row is CSS-hidden there — the centered bar title replaces
 				// it), giving one iOS-style nav bar instead of a second chrome row.
-				return isPhone && headerActionsEl
-					? createPortal(header, headerActionsEl)
-					: topbarEl
-						? createPortal(header, topbarEl)
-						: header;
+				const phoneInfoPage =
+					isPhone && overflowOpen ? (
+						createPortal(
+							<div className="session-info-page">
+								<div className="session-info-topbar">
+									<button
+										className="panel-back"
+										onClick={() => setOverflowOpen(false)}
+										aria-label="Back to chat"
+									>
+										<svg width="11" height="18" viewBox="0 0 11 18" fill="none">
+											<path
+												d="M9 1.5L2 9l7 7.5"
+												stroke="currentColor"
+												strokeWidth="2.25"
+												strokeLinecap="round"
+												strokeLinejoin="round"
+											/>
+										</svg>
+									</button>
+								</div>
+								<div className="session-info-hero">
+									<RepoTile name={session.repo || "tella-fusion"} size={40} />
+									<div className="session-info-name">
+										{workspaceName || session.title}
+									</div>
+									<div className="session-info-sub">
+										{[
+											session.repo || "tella-fusion",
+											models.length > 0
+												? models.find((m) => m.id === effectiveModel)?.label ||
+													prettyModel(effectiveModel)
+												: null,
+										]
+										.filter(Boolean)
+										.join("  ·  ")}
+									</div>
+								</div>
+								<div className="viewer-overflow-menu session-info-list">
+									{panelAvailable && (
+										<button
+											className="btn-viewer-panelrow"
+											onClick={() => {
+												setOverflowOpen(false);
+												setSubagentStack([]);
+												setPanelOpen(true);
+											}}
+										>
+											<IconSidebarRight size={20} />
+											<span>
+												{hasWorkspace ? "Changes, terminal & PR" : "Plain conversation"}
+											</span>
+											<IconChevronRight className="btn-viewer-panelrow-caret" size={18} />
+										</button>
+									)}
+									{secondaryActions}
+									{collapsibleActions}
+									{hasWorkspace && (
+										<RepoBar
+											sessionId={session.id}
+											primaryRepo={session.repo || "tella-fusion"}
+											branch={session.branch}
+											initialAttached={session.attachedRepos || []}
+											variant="menu-row"
+										/>
+									)}
+									{session.source === "backstage" && models.length > 0 && (
+										<ModelMenuRow
+											models={models}
+											model={model}
+											defaultModel={defaultModel}
+											onChange={handleModelChange}
+											prettyLabel={prettyModel}
+										/>
+									)}
+									{newChatAction}
+									{overflowActions}
+									{archiveAction}
+									{deleteAction}
+								</div>
+							</div>,
+							document.body,
+						)
+					) : null;
+				const placedHeader =
+					isPhone && headerActionsEl
+						? createPortal(header, headerActionsEl)
+						: topbarEl
+							? createPortal(header, topbarEl)
+							: header;
+				return (
+					<>
+						{placedHeader}
+						{phoneInfoPage}
+					</>
+				);
 			})()}
 
 			{/* Compact "chat bar" under the mobile top-bar title: it just *shows*
@@ -1992,33 +2088,22 @@ export function SessionViewer({
 				headerModelEl &&
 				(hasWorkspace || models.length > 0) &&
 				createPortal(
-					<span
-						className="header-chatbar session-settings-trigger"
-						role="button"
-						tabIndex={0}
-						title="Workspace & chat settings"
-						onClick={() => setOverflowOpen((o) => !o)}
-					>
-						{hasWorkspace && (
-							<>
-								<span className="header-chatbar-repo">
-									<RepoTile name={session.repo || "tella-fusion"} size={14} />
-									<span className="truncate">
-										{session.repo || "tella-fusion"}
-									</span>
-								</span>
-								{models.length > 0 && (
-									<span className="header-chatbar-sep" aria-hidden="true">
-										·
-									</span>
-								)}
-							</>
-						)}
+					<span className="header-chatbar">
 						{models.length > 0 && (
 							<span className="header-chatbar-model truncate">
 								{models.find((m) => m.id === effectiveModel)?.label ||
 									prettyModel(effectiveModel)}
 							</span>
+						)}
+						{/* The composer's cost/context meter can't fit in the toolbar on
+						    phones, so it rides here after the model. */}
+						{usage && usage.turns > 0 && (
+							<>
+								<span className="header-chatbar-sep" aria-hidden="true">
+									·
+								</span>
+								<UsageMeter usage={usage} />
+							</>
 						)}
 					</span>,
 					headerModelEl,

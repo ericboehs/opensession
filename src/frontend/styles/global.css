@@ -9065,6 +9065,87 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.header-chatbar:active {
 		opacity: 0.6;
 	}
+
+	/* Repo tile sits in front of the session name in the top-bar title. */
+	.app-header-title-row .repo-tile {
+		flex-shrink: 0;
+	}
+
+	/* ── Session info page (phone) ──────────────────────────────
+	   Tapping the top-bar title opens this as a deeper page, WhatsApp-style:
+	   a full-screen sheet with the session identity up top and every action
+	   below. Its own chevron-back returns to the chat. */
+	.session-info-page {
+		position: fixed;
+		inset: 0;
+		z-index: 60;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		background: var(--bg);
+		padding: env(safe-area-inset-top, 0px) 0
+			max(16px, env(safe-area-inset-bottom, 0px));
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		animation: session-info-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+	}
+	@keyframes session-info-in {
+		from {
+			opacity: 0;
+			transform: translateY(8px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+	.session-info-topbar {
+		display: flex;
+		align-items: center;
+		padding: 6px 8px 0;
+	}
+	.session-info-hero {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 9px;
+		padding: 2px 20px 20px;
+		text-align: center;
+	}
+	.session-info-hero .repo-tile {
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+	}
+	.session-info-name {
+		font-size: 20px;
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		line-height: 1.2;
+		color: var(--text);
+		max-width: 100%;
+		word-break: break-word;
+	}
+	.session-info-sub {
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--text-dim);
+	}
+
+	/* Reuse the ⋯ menu row styles, but as a static, full-width card list on
+	   the page instead of a floating dropdown. */
+	.viewer-overflow-menu.session-info-list {
+		position: static;
+		inset: auto;
+		width: auto;
+		min-width: 0;
+		max-width: none;
+		margin: 0 12px;
+		padding: 6px;
+		background: var(--bg-panel);
+		border: 1px solid var(--border);
+		border-radius: 16px;
+		box-shadow: none;
+		gap: 4px;
+	}
 	.header-chatbar-sep {
 		color: var(--text-faint);
 		flex-shrink: 0;

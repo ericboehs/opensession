@@ -25,7 +25,8 @@ import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdatePill } from "./components/UpdatePill";
-import { IconSearch, IconSidebarLeft, IconChevronDown } from "./components/icons";
+import { IconSearch, IconSidebarLeft } from "./components/icons";
+import { RepoTile } from "./components/RepoTile";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useBackSwipe } from "./hooks/useBackSwipe";
@@ -1082,45 +1083,45 @@ function App() {
 					    working dot while the engine runs; other views show their plain
 					    title. Desktop hides the whole bar. */}
 					{mobileDetail && (
-						<span className="app-header-title">
-							{/* On a session the whole heading is the tap target for the
-							    workspace/chat settings menu (repo, model, actions) —
-							    SessionViewer listens for the toggle event. */}
-							<span
-								className={`app-header-title-row ${
-									route.view === "session" && currentSession
-										? "session-settings-trigger app-header-title-tappable"
-										: ""
+						<span
+							className={`app-header-title ${
+								route.view === "session" && currentSession
+									? "session-settings-trigger app-header-title-tappable"
+									: ""
 								}`}
 								{...(route.view === "session" && currentSession
 									? {
-											role: "button",
-											tabIndex: 0,
-											onClick: () =>
-												window.dispatchEvent(
-													new Event("backstage:toggle-session-settings"),
-												),
-										}
+										role: "button",
+										tabIndex: 0,
+										onClick: () =>
+											window.dispatchEvent(
+												new Event("backstage:toggle-session-settings"),
+											),
+									}
 									: {})}
-							>
+						>
+							{/* Repo tile + name; the metadata line under it shares this one tap
+							    target that opens the session's deeper info page. No chevron —
+							    the tile + tappable block carry the "opens more" affordance. */}
+							<span className="app-header-title-row">
+								{route.view === "session" && currentSession && (
+									<RepoTile
+										name={currentSession.repo || "tella-fusion"}
+										size={18}
+									/>
+								)}
 								{route.view === "session" && currentSession?.isRunning && (
 									<span className="working-dot" />
 								)}
 								<span className="app-header-title-text">
 									{route.view === "session"
 										? (activeProjectId
-												? projects.find((p) => p.id === activeProjectId)?.name
-												: undefined) ||
-											currentSession?.title ||
-											""
-										: topbarTitle}
+											? projects.find((p) => p.id === activeProjectId)?.name
+											: undefined) ||
+										currentSession?.title ||
+										""
+									: topbarTitle}
 								</span>
-								{route.view === "session" && currentSession && (
-									<IconChevronDown
-										className="app-header-title-caret"
-										size={15}
-									/>
-								)}
 							</span>
 							{route.view === "session" && currentSession && (
 								// Filled by SessionViewer's portal (compact model selector).
