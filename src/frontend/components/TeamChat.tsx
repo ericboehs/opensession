@@ -500,7 +500,7 @@ export function TeamChat({
 
 			<div
 				className={cn(
-					"border-t border-line px-4 pb-2 pt-2",
+					"chat-input-bar border-t border-line px-4 pb-2 pt-2",
 					isPage && "px-5",
 				)}
 			>
