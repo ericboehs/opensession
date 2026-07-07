@@ -89,6 +89,8 @@ export interface UnifiedSession {
   plainThreadId?: string;
   /** Model id for runs in this session; unset = default (MICHAEL_MODEL). */
   model?: string;
+  /** Reasoning effort for runs in this session (low|medium|high); unset = backend default. */
+  effort?: string;
   /**
    * Pinned Claude subscription (claude-accounts id) for runs in this session.
    * Unset = auto (personal-sub-first, shared-pool fallback). Claude models only;
@@ -220,6 +222,7 @@ export interface BackstageSessionFile {
 
   plainThreadId?: string; // Plain thread this session is triaging
   model?: string; // model id for this session's runs; unset = default
+  effort?: string; // reasoning effort for this session's runs (low|medium|high); unset = backend default
   accountId?: string; // pinned Claude subscription (claude-accounts id); unset = auto pool
   codexThreadId?: string; // codex thread id once the session has run on a codex model
   /** Provider whose engine last actually drove a run in this session. Lets the

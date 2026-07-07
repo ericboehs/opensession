@@ -130,8 +130,8 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [model, setModel] = useState(""); // "" = default
-  // Footer controls from the palette design. effort is sent through
-  // create_session but not yet consumed server-side (forward-compatible).
+  // Footer controls from the palette design. effort is persisted on the new
+  // session and enforced per run (Claude effort / Codex modelReasoningEffort).
   const [effort, setEffort] = useState("high");
   // Keep the palette open after a create to fire off another task. Chosen from
   // the Create split-button's dropdown; the primary button reflects the mode.

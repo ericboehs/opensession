@@ -53,6 +53,11 @@ async function rpc(path: string, body: Record<string, unknown>, timeoutMs = 120_
         data = await res.json();
       } catch {}
       if (!res.ok) throw new RpcError(data?.error || `backstage RPC ${res.status}`);
+      // Long tool calls stream a 200 with heartbeat padding and report failures
+      // in the body instead of the status — treat those as answered errors too.
+      if (data && typeof data === "object" && typeof data.error === "string" && data.error) {
+        throw new RpcError(data.error);
+      }
       return data;
     } catch (e) {
       if (e instanceof RpcError) throw e;
@@ -79,10 +84,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   try {
-    const data = await rpc("/mcp/call", {
-      tool: req.params.name,
-      args: req.params.arguments ?? {},
-    });
+    // Tool calls may block for many minutes (e.g. ask_human/ask_user waiting on
+    // a teammate) — allow reconnect retries well past the backstage side's
+    // 30-minute per-call ceiling (run-rpc.ts) instead of the default 2 minutes.
+    const data = await rpc(
+      "/mcp/call",
+      {
+        tool: req.params.name,
+        args: req.params.arguments ?? {},
+      },
+      32 * 60_000
+    );
     return data.result;
   } catch (e: any) {
     return {

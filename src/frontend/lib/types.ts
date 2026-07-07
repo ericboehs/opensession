@@ -154,6 +154,8 @@ export interface UnifiedSession {
 	};
 	aliasIds?: string[];
 	model?: string;
+	/** Reasoning effort for this session's runs (low|medium|high); unset = default (high). */
+	effort?: string;
 	/** Pinned Claude subscription (claude-accounts id); unset = auto pool. */
 	accountId?: string;
 	codexThreadId?: string;
@@ -324,7 +326,7 @@ export type WSClientMessage =
 			images?: string[];
 			files?: unknown;
 			busyMode?: "queue" | "steer";
-			/** Reasoning effort for this turn — forward-compatible, not yet enforced. */
+			/** Reasoning effort — persisted on the session and enforced per run. */
 			effort?: "low" | "medium" | "high" | string;
 	  }
 	| {
@@ -384,10 +386,7 @@ export type WSClientMessage =
 			/** Optional MCP server allowlist for the opening run. [] means no external MCP servers. */
 			mcpServers?: string[];
 			images?: string[];
-			/**
-			 * Reasoning effort — accepted but not yet consumed server-side (see
-			 * NewSession.tsx). Wire into the runners when ready.
-			 */
+			/** Reasoning effort — persisted on the new session and enforced per run. */
 			effort?: "low" | "medium" | "high";
 			/** Fork an existing session, keeping its real conversation history. */
 			forkFrom?: { sourceId: string; messageId?: string };

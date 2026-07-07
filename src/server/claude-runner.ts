@@ -456,6 +456,17 @@ export interface ImageInput {
   data: string;
 }
 
+const CLAUDE_EFFORTS = new Set(["low", "medium", "high", "max"]);
+
+/** Map a UI/session effort value onto the Claude SDK's scale; undefined = SDK default. */
+export function normalizeClaudeEffort(
+  effort?: string
+): "low" | "medium" | "high" | "max" | undefined {
+  const s = (effort || "").trim().toLowerCase();
+  if (s === "xhigh") return "max"; // Codex's top tier name, mapped over
+  return CLAUDE_EFFORTS.has(s) ? (s as any) : undefined;
+}
+
 export async function* runClaude(opts: {
   prompt: string;
   sessionId?: string;
@@ -473,6 +484,8 @@ export async function* runClaude(opts: {
   resumeSessionAt?: string;
   /** Claude model id for this run; falls back to the global default (getDefaultModel). */
   model?: string;
+  /** Reasoning effort (low | medium | high | max); unset = SDK default (high). */
+  effort?: string;
   /**
    * MCP server allowlist for this run — only the named servers from
    * mcp-config.json are made available. Omitted = all configured servers
@@ -558,6 +571,11 @@ export async function* runClaude(opts: {
   const { prompt, sessionId, cwd, mode, mcpServers, deniedTools, confirmTools, aws, author, user, journal, onAskUser } = opts;
   const model = opts.model || getDefaultModel();
   const isAsk = mode === "ask";
+  const effort = normalizeClaudeEffort(opts.effort);
+  // michael-ask is the Codex-only AskUserQuestion bridge — Claude has the
+  // native tool (routed through onAskUser below), so drop the duplicate.
+  const { "michael-ask": _codexOnlyAsk, ...inProcessServers } = (opts.inProcessMcp ||
+    {}) as Record<string, unknown>;
 
   // Test hook: pretend the whole Claude account pool is exhausted, so the
   // usage-limit fallback chain can be verified without burning real limits.
@@ -603,6 +621,7 @@ export async function* runClaude(opts: {
     confirmTools,
     aws,
     model: opts.model,
+    effort: opts.effort,
     accountId: opts.accountId,
     accountStrict: opts.accountStrict,
     usageCredits: opts.usageCredits,
@@ -944,6 +963,7 @@ export async function* runClaude(opts: {
           : {}),
         cwd,
         model,
+        ...(effort ? { effort } : {}),
         allowedTools: isAsk
           ? [
               "Bash", "Read", "Grep", "Glob",
@@ -1070,7 +1090,7 @@ export async function* runClaude(opts: {
         },
         // Read per run so MCP servers added/removed in the UI apply immediately;
         // merge any in-process SDK servers (michael-sessions/-admin) on top.
-        mcpServers: { ...filterMcpServers(mcpServers, user), ...(opts.inProcessMcp || {}) } as any,
+        mcpServers: { ...filterMcpServers(mcpServers, user), ...inProcessServers } as any,
         strictMcpConfig: true,
         env: childEnv(awsEnv, account?.token, author),
         pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
@@ -1222,6 +1242,7 @@ export async function* runClaude(opts: {
           confirmTools,
           aws,
           model: opts.model,
+          effort: opts.effort,
           accountId: opts.accountId,
           accountStrict: opts.accountStrict,
           usageCredits: opts.usageCredits,

@@ -56,6 +56,12 @@ export interface RunAgentOpts {
   mode?: "ask" | "code";
   /** Model id; decides the backend. Omitted = default Claude model. */
   model?: string;
+  /**
+   * Reasoning effort for this run (UI scale: low | medium | high). Each runner
+   * normalizes it onto its own scale (Claude: low..max, Codex: minimal..xhigh);
+   * unset = the backend's default.
+   */
+  effort?: string;
   mcpServers?: string[];
   /**
    * In-process SDK MCP servers (michael-sessions / michael-admin) for trusted
@@ -67,8 +73,8 @@ export interface RunAgentOpts {
   /**
    * System-prompt note describing the session's repos (primary + attached) and
    * their worktree paths, so the agent works in the right isolated checkout for
-   * cross-repo sessions. Claude receives it as system context; Codex receives it
-   * prepended to the prompt because the SDK has no system-prompt hook.
+   * cross-repo sessions. Claude receives it as system context; Codex via the
+   * developer_instructions config channel.
    */
   reposNote?: string;
   /** Images attached to the opening message. */
@@ -129,6 +135,7 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerat
       cwd: opts.cwd,
       mode: opts.mode,
       model: model || DEFAULT_CODEX_MODEL,
+      effort: opts.effort,
       mcpServers: opts.mcpServers,
       images: opts.images,
       reposNote: opts.reposNote,
@@ -427,6 +434,7 @@ export function resumeInterruptedRuns(
             cwd: run.cwd,
             mode: run.mode,
             model: run.model,
+            effort: run.effort,
             mcpServers: run.mcpServers,
             inProcessMcp: run.bksSessionId
               ? inProcessMcpFor?.(run.bksSessionId, run.user)
@@ -466,6 +474,7 @@ export function resumeInterruptedRuns(
           cwd: run.cwd,
           mode: run.mode,
           model: run.model,
+          effort: run.effort,
           mcpServers: run.mcpServers,
           inProcessMcp: run.bksSessionId
             ? inProcessMcpFor?.(run.bksSessionId, run.user)

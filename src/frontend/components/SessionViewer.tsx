@@ -473,8 +473,9 @@ export function SessionViewer({
 	// the `usage_update` broadcast. Powers the composer cost/context pill.
 	const [usage, setUsage] = useState(session.usage);
 	// Reasoning effort — a composer control mirroring the new-session palette.
-	// Threaded through to the runner (forward-compatible; not yet enforced).
-	const [effort, setEffort] = useState("high");
+	// Persisted on the session server-side and enforced per run (Claude effort /
+	// Codex modelReasoningEffort), so seed from the session's stored value.
+	const [effort, setEffort] = useState(session.effort || "high");
 	// Optimistic goal: reflects a just-set/cleared goal instantly (the /goal
 	// command persists server-side but doesn't broadcast a live session update).
 	// `undefined` = defer to session.goal; a string/null = the pending override.
@@ -502,6 +503,9 @@ export function SessionViewer({
 	useEffect(() => {
 		setAccountId(session.accountId || "");
 	}, [session.id, session.accountId]);
+	useEffect(() => {
+		setEffort(session.effort || "high");
+	}, [session.id, session.effort]);
 	useEffect(() => {
 		setUsage(session.usage);
 	}, [session.id, session.usage]);

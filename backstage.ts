@@ -159,6 +159,7 @@ import {
 import { createSessionsMcpServer } from "./src/agents/slack/sessions-tools";
 import { createAdminMcpServer } from "./src/agents/slack/admin-tools";
 import { createHumansMcpServer } from "./src/agents/slack/humans-tools";
+import { createAskUserMcpServer } from "./src/agents/slack/ask-tools";
 import { createReposMcpServer } from "./src/agents/slack/repos-tools";
 import { createPreviewMcpServer } from "./src/agents/slack/preview-tools";
 import {
@@ -447,6 +448,13 @@ function interactiveMcpServers(
 							}),
 						current: () => findSession(sessionId)?.previewPath ?? null,
 					}),
+					// AskUserQuestion for engines without a canUseTool hook (Codex):
+					// blocks on the same UI question card + Slack escalation as the
+					// native Claude tool. claude-runner strips this server so Claude
+					// keeps using the native AskUserQuestion instead of a duplicate.
+					"michael-ask": createAskUserMcpServer({
+						ask: makeAskHandler(sessionId),
+					}),
 				}
 			: {}),
 	};
@@ -628,6 +636,23 @@ function touchBackstageSession(
 	} catch (e) {
 		console.error(`Failed to update backstage session ${bksId}:`, e);
 	}
+}
+
+// Reasoning-effort values the composer/new-session pill can send. Persisted on
+// the session file so queued drains, loops, and restart resumes all run at the
+// effort the pill shows; each runner maps it onto its backend's own scale.
+const SESSION_EFFORTS = new Set(["low", "medium", "high"]);
+
+/** Persist a composer-sent effort change on a backstage session (no-op otherwise). */
+function maybePersistEffort(
+	session: UnifiedSession | undefined,
+	effort?: string,
+): void {
+	if (!session || session.source !== "backstage" || !effort) return;
+	const e = effort.trim().toLowerCase();
+	if (!SESSION_EFFORTS.has(e) || session.effort === e) return;
+	touchBackstageSession(session.id, { effort: e });
+	session.effort = e; // keep the in-hand snapshot current for this turn
 }
 
 /**
@@ -2240,6 +2265,8 @@ async function runSessionPromptInner(
 		cwd,
 		mode: session.mode,
 		model: session.model,
+		// Reasoning effort from the composer pill, persisted on the session.
+		effort: session.effort,
 		// Pinned subscription for this session (claude-runner prefers it, pool
 		// fallback on exhaustion). Ignored by Codex models.
 		accountId: session.accountId,
@@ -6599,6 +6626,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							return;
 						}
 
+						// The composer's effort pill rides every send; persist a change so
+						// this and future runs (queue drains, resumes) honor it.
+						maybePersistEffort(session, msg.effort);
+
 						// Slash commands are handled by backstage itself
 						const notice = handleSlashCommand(
 							session,
@@ -6704,6 +6735,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							);
 							return;
 						}
+						maybePersistEffort(session, msg.effort);
 						const attributed = user ? `[${user}] ${content}` : content;
 						// Files can't ride the interrupt/steer content-block channel — a send
 						// carrying files falls through to the queue (drain delivers images +
@@ -6929,6 +6961,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							? forkSource.model
 							: msg.model
 								? resolveModel(String(msg.model))?.id
+								: undefined;
+						// Reasoning effort from the New-session palette (forks inherit).
+						const createEffort = forkSource
+							? forkSource.effort
+							: typeof msg.effort === "string" &&
+									SESSION_EFFORTS.has(msg.effort.trim().toLowerCase())
+								? msg.effort.trim().toLowerCase()
 								: undefined;
 						const createMcpServers = Array.isArray(msg.mcpServers)
 							? msg.mcpServers.map(String)
@@ -7180,6 +7219,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										? { lastEngineProvider: effectiveProvider }
 										: {}),
 									...(effectiveModel ? { model: effectiveModel } : {}),
+									...(createEffort ? { effort: createEffort } : {}),
 									...(modelHistory.length ? { modelHistory } : {}),
 									branch: sessionBranch,
 									worktreeDir: wtPath,
@@ -7250,6 +7290,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								cwd: wtPath,
 								mode: isAsk ? "ask" : "code",
 								model,
+								effort: createEffort,
 								fallbackModel: interactiveFallbackModel(model),
 								mcpServers: createMcpServers,
 								reposNote: buildBranchNote({

@@ -18,6 +18,13 @@
  *  - The Codex CLI sandbox is disabled in this service environment because
  *    bwrap cannot initialize here; Backstage still controls cwd, mode,
  *    network, MCP allowlists, and session creation.
+ *
+ * System-prompt channel: session context (ask-mode guardrails, repos note,
+ * managing-Michael notes, …) rides the `developer_instructions` config key —
+ * a real instructions channel the model treats as system-level — instead of
+ * being fenced into the user turn (the pre-0.139 workaround). Conversation
+ * content that belongs to the turn (cross-engine handoff notes, upload notes)
+ * still arrives on the prompt, wrapped by prompt-context fencing upstream.
  */
 
 import { Codex, type ThreadEvent, type ThreadItem } from "@openai/codex-sdk";
@@ -35,7 +42,6 @@ import {
 import { journalSet, journalClear, type StreamEvent, type ImageInput } from "./claude-runner";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
-import { wrapContext } from "./prompt-context";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { extractBackstageVideos } from "./jsonl-parser";
@@ -197,12 +203,16 @@ export function codexMcpEntryFromServer(server: Record<string, any>): Record<str
   const entry: Record<string, unknown> = {};
   if (server.type === "http") {
     entry.url = server.url;
-    return entry;
+  } else {
+    entry.command = server.command;
+    if (server.args) entry.args = server.args;
+    if (server.env) entry.env = server.env;
   }
-
-  entry.command = server.command;
-  if (server.args) entry.args = server.args;
-  if (server.env) entry.env = server.env;
+  // Codex kills MCP tool calls at 60s by default — too tight for real tools
+  // (Tinybird queries, screenshot/browse helpers). Allow per-server overrides
+  // from mcp-config.json; default to 10 minutes.
+  entry.tool_timeout_sec = server.tool_timeout_sec ?? 600;
+  if (server.startup_timeout_sec) entry.startup_timeout_sec = server.startup_timeout_sec;
   return entry;
 }
 
@@ -245,9 +255,24 @@ function proxyMcpConfigs(
         BKS_RPC_TOKEN: rpcToken,
         BKS_MCP_SERVER: name,
       },
+      startup_timeout_sec: 30,
+      // michael-* tools can block for many minutes (ask_human/ask_user waiting
+      // on a teammate) — Codex's default 60s tool timeout would kill them.
+      tool_timeout_sec: 30 * 60,
     };
   }
   return out;
+}
+
+const CODEX_EFFORTS = new Set(["minimal", "low", "medium", "high", "xhigh"]);
+
+/** Map a UI/session effort value onto Codex's scale; undefined = model default. */
+export function normalizeCodexEffort(
+  effort?: string
+): "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
+  const s = (effort || "").trim().toLowerCase();
+  if (s === "max") return "xhigh"; // Claude's top tier name, mapped over
+  return CODEX_EFFORTS.has(s) ? (s as any) : undefined;
 }
 
 function codexImageExt(mediaType: string): string {
@@ -289,15 +314,20 @@ export function writeCodexImages(images: ImageInput[] | undefined): {
   }
 }
 
-export function buildCodexPrompt(input: {
-  prompt: string;
+/**
+ * Session context for a Codex run, delivered via the `developer_instructions`
+ * config key — codex ≥0.139's real system-prompt channel (the model treats it
+ * as system-level instructions, and it never pollutes the user turn in the
+ * rollout). Returns undefined when there's nothing to say.
+ */
+export function buildCodexDeveloperInstructions(input: {
   isAsk: boolean;
   reposNote?: string;
   inProcessMcp?: Record<string, unknown>;
   bksSessionId?: string;
   confirmTools?: Record<string, string>;
   mcpAliasNote?: string;
-}): string {
+}): string | undefined {
   const parts: string[] = [];
   if (input.isAsk) {
     parts.push(
@@ -328,6 +358,16 @@ export function buildCodexPrompt(input: {
         "michael-repos when those servers are available. Use these tools when asked to " +
         "inspect, steer, or coordinate sessions rather than only describing how."
     );
+    if ((input.inProcessMcp as Record<string, unknown>)["michael-ask"]) {
+      parts.push(
+        "## Asking the human a question\nWhen you genuinely need the human's decision to " +
+          "proceed (a real fork in the work, a consequential irreversible choice), call " +
+          "michael-ask's `ask_user` tool. It pauses this run on a question card in the " +
+          "Backstage UI (escalating to Slack if nobody answers there) and returns their " +
+          "answer, so you can continue in the same turn. Prefer 2-4 concrete options; " +
+          "don't ask for confirmations a reasonable default covers."
+      );
+    }
     parts.push(
       "## Model routing and Codex delegation\nUse Fable/Claude as the orchestrator for taste, " +
         "planning, judgment, review, and user-facing decisions. Use Codex/gpt-5.5 for clear-spec " +
@@ -353,11 +393,7 @@ export function buildCodexPrompt(input: {
         "output for a human to execute."
     );
   }
-  // Codex has no system-prompt channel, so all of the above rides on the user
-  // turn. Fence it so the transcript renders only the human's message, not this
-  // preamble (see prompt-context.ts). The engine still receives the full text.
-  const preamble = parts.join("\n\n");
-  return preamble ? `${wrapContext(preamble)}\n\n${input.prompt}` : input.prompt;
+  return parts.length ? parts.join("\n\n") : undefined;
 }
 
 function describeToolUse(item: ThreadItem): { toolName: string; toolInput: unknown } | null {
@@ -411,8 +447,10 @@ export async function* runCodex(opts: {
   mcpServers?: string[];
   /** Images to attach to the opening message. */
   images?: ImageInput[];
-  /** Repo context note; prepended to the Codex prompt because Codex has no systemPrompt hook. */
+  /** Repo context note; delivered via developer_instructions (Codex's system-prompt channel). */
   reposNote?: string;
+  /** Reasoning effort for this run (low | medium | high | xhigh); unset = model default. */
+  effort?: string;
   /** Enforced as per-server disabled_tools — the agent never sees them. */
   deniedTools?: Record<string, string>;
   /** No approval bridge on Codex: treated like deniedTools. */
@@ -436,6 +474,7 @@ export async function* runCodex(opts: {
   const { prompt, sessionId, cwd, mode, mcpServers, images, reposNote, deniedTools, confirmTools, fallbackModel, journal, busyKeys, author, user, inProcessMcp } = opts;
   const model = resolveConcreteModel(opts.model);
   const isAsk = mode === "ask";
+  const effort = normalizeCodexEffort(opts.effort);
 
   const runKey = sessionId || journal?.bksSessionId || busyKeys?.[0] || crypto.randomUUID();
   if (activeCodexRuns.has(runKey)) {
@@ -470,6 +509,7 @@ export async function* runCodex(opts: {
       confirmTools,
       aws: false,
       model,
+      effort: opts.effort,
       fallbackModel,
       kind: journal.kind,
       startedAt: new Date().toISOString(),
@@ -500,8 +540,7 @@ export async function* runCodex(opts: {
   const configuredMcp = withDynamicCredentials(readMcpConfig().mcpServers) as Record<string, any>;
   const requestedMcpNames = mcpServers ?? Object.keys(configuredMcp);
   const mcpAliases = buildCodexMcpNameMap(requestedMcpNames, projectMcpServerNames(cwd));
-  const effectivePrompt = buildCodexPrompt({
-    prompt,
+  const developerInstructions = buildCodexDeveloperInstructions({
     isAsk,
     reposNote,
     inProcessMcp,
@@ -549,6 +588,10 @@ export async function* runCodex(opts: {
         env: codexEnv(account, author),
         ...(account?.kind === "api_key" ? { apiKey: account.value } : {}),
         config: {
+          // Session context as real system-level instructions (see module doc).
+          ...(developerInstructions
+            ? { developer_instructions: developerInstructions }
+            : {}),
           mcp_servers: {
             ...buildCodexMcpConfig(mcpServers, disabledToolNames, user, mcpAliases),
             ...proxyMcpConfigs(inProcessMcp, rpcToken),
@@ -567,6 +610,10 @@ export async function* runCodex(opts: {
         sandboxMode: "danger-full-access" as const,
         approvalPolicy: "never" as const,
         networkAccessEnabled: !isAsk,
+        // Parity with Claude's WebSearch tool (server-side search, not local
+        // network access — safe in ask mode too).
+        webSearchEnabled: true,
+        ...(effort ? { modelReasoningEffort: effort } : {}),
       };
 
       const thread = resultSessionId
@@ -579,10 +626,10 @@ export async function* runCodex(opts: {
         const input =
           codexImages.paths.length > 0
             ? [
-                { type: "text" as const, text: effectivePrompt },
+                { type: "text" as const, text: prompt },
                 ...codexImages.paths.map((path) => ({ type: "local_image" as const, path })),
               ]
-            : effectivePrompt;
+            : prompt;
         const { events } = await thread.runStreamed(input, {
           signal: abortController.signal,
         });
@@ -610,6 +657,7 @@ export async function* runCodex(opts: {
                 confirmTools,
                 aws: false,
                 model,
+                effort: opts.effort,
                 fallbackModel,
                 kind: journal.kind,
                 startedAt: new Date().toISOString(),

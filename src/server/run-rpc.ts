@@ -29,6 +29,14 @@ import { rpcSocketPath } from "./run-rpc-protocol";
 
 const g = globalThis as any;
 
+// Proxied tool calls can legitimately block for many minutes (michael-humans
+// ask_human in block mode waits ~20 min for a teammate; michael-ask's ask_user
+// waits on the UI question card + Slack escalation). The MCP SDK's default
+// request timeout is 60s, which killed those mid-wait — pass an explicit long
+// ceiling instead. Bun.serve gets idleTimeout: 0 below for the same reason
+// (its default silently closes any response slower than 10s).
+const RPC_TOOL_CALL_TIMEOUT_MS = 30 * 60 * 1000;
+
 export interface RunTokenContext {
   sessionId: string;
   user?: string;
@@ -91,30 +99,74 @@ async function handleRpc(req: Request): Promise<Response> {
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "backstage-run-rpc", version: "1.0.0" });
-  try {
-    await cfg.instance.connect(serverTransport);
-    await client.connect(clientTransport);
-    if (path === "/mcp/list") {
-      const res = await client.listTools();
-      return json({ tools: res.tools });
-    }
-    if (path === "/mcp/call") {
-      const res = await client.callTool({
-        name: String(body?.tool || ""),
-        arguments: body?.args ?? {},
-      });
-      return json({ result: res });
-    }
-    return json({ error: `unknown path ${path}` }, 404);
-  } catch (e: any) {
-    return json({ error: e?.message || String(e) }, 500);
-  } finally {
+  const cleanup = async () => {
     try {
       await client.close();
     } catch {}
     try {
       await cfg.instance.close();
     } catch {}
+  };
+  try {
+    await cfg.instance.connect(serverTransport);
+    await client.connect(clientTransport);
+    if (path === "/mcp/list") {
+      const res = await client.listTools();
+      await cleanup();
+      return json({ tools: res.tools });
+    }
+    if (path === "/mcp/call") {
+      // Long tool calls stream heartbeat whitespace while the call runs: Bun's
+      // fetch client aborts any response idle for 300s (hard-coded — a signal
+      // doesn't override it), which would kill legitimately-blocking tools
+      // like ask_human/ask_user mid-wait. JSON.parse skips leading whitespace,
+      // so the proxy's res.json() sees only the final body. Errors ride the
+      // body as { error } (the stream is already 200 by then) — the proxy
+      // treats a body-level error like a non-OK status.
+      const done: Promise<Record<string, unknown>> = client
+        .callTool(
+          {
+            name: String(body?.tool || ""),
+            arguments: body?.args ?? {},
+          },
+          undefined,
+          { timeout: RPC_TOOL_CALL_TIMEOUT_MS }
+        )
+        .then(
+          (res) => ({ result: res }),
+          (e: any) => ({ error: e?.message || String(e) })
+        );
+      const enc = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const heartbeat = setInterval(() => {
+            try {
+              controller.enqueue(enc.encode(" "));
+            } catch {}
+          }, 30_000);
+          void done.then(async (respBody) => {
+            clearInterval(heartbeat);
+            try {
+              controller.enqueue(enc.encode(JSON.stringify(respBody)));
+              controller.close();
+            } catch {}
+            await cleanup();
+          });
+        },
+        cancel() {
+          // Caller went away mid-call — release the transports.
+          void cleanup();
+        },
+      });
+      return new Response(stream, {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    await cleanup();
+    return json({ error: `unknown path ${path}` }, 404);
+  } catch (e: any) {
+    await cleanup();
+    return json({ error: e?.message || String(e) }, 500);
   }
 }
 
@@ -129,8 +181,14 @@ export function startRunRpcServer(): void {
   } catch {}
   g.__runRpcServer = Bun.serve({
     unix: sock,
-    fetch: (req) => (g.__runRpcHandler as typeof handleRpc)(req),
-  });
+    // Bun.serve's default idleTimeout (10s) closes the socket under any
+    // response slower than that — proxied tool calls routinely block longer
+    // (worktree prep, blocking human asks). 0 = no idle limit; the call-level
+    // timeout above is the real ceiling. (Supported at runtime on unix
+    // servers; Bun's types only allow it for TCP, hence the cast.)
+    idleTimeout: 0,
+    fetch: (req: Request) => (g.__runRpcHandler as typeof handleRpc)(req),
+  } as unknown as Parameters<typeof Bun.serve>[0]);
   try {
     chmodSync(sock, 0o600);
   } catch {}
