@@ -2518,6 +2518,19 @@ body.resizing-x {
 	border: 1px solid var(--border-strong);
 	border-radius: 16px;
 	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+	/* iOS-style pop: scale up from the ⋯ it's anchored to. */
+	transform-origin: top right;
+	animation: overflow-menu-in 0.16s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes overflow-menu-in {
+	from {
+		opacity: 0;
+		transform: scale(0.92) translateY(-4px);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1) translateY(0);
+	}
 }
 /* Stack the collapsed actions as a tidy full-width list. On phones the
    secondary controls (Linear/Plain links, Preview, PR) fold in here too. */
@@ -9145,6 +9158,23 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		border-radius: 16px;
 		box-shadow: none;
 		gap: 4px;
+		/* It's part of the page (which animates in) — no popover entrance. */
+		animation: none;
+		transform: none;
+	}
+
+	/* The workspace overview (Info-tab content) embedded below the actions:
+	   opening prompt, summary, files changed, chats — the whole-workspace view. */
+	.session-info-overview {
+		padding: 8px 12px 0;
+	}
+	/* Its title/meta duplicate the page hero — drop the title; the meta
+	   (chats · author) and PR status chips still add detail. */
+	.session-info-overview .workspace-info-title {
+		display: none;
+	}
+	.session-info-overview .workspace-info-panel {
+		padding-top: 0;
 	}
 	.header-chatbar-sep {
 		color: var(--text-faint);

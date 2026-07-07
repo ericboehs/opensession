@@ -1428,11 +1428,11 @@ export function SessionViewer({
 
 	const [overflowOpen, setOverflowOpen] = useState(false);
 	const overflowRef = useRef<HTMLDivElement>(null);
+	// The title (repo tile + name) opens a deeper full-screen info page — a
+	// separate surface from the ⋯ quick-actions menu (overflowOpen).
+	const [infoPageOpen, setInfoPageOpen] = useState(false);
 	useEffect(() => {
-		// On phones the settings live in a full-screen info page with its own back
-		// chevron + scrim, so outside-click-to-close doesn't apply (and would fire
-		// on every tap inside the page, which is portaled outside overflowRef).
-		if (!overflowOpen || isPhone) return;
+		if (!overflowOpen) return;
 		const onDoc = (e: MouseEvent) => {
 			if (overflowRef.current?.contains(e.target as Node)) return;
 			// The Spin off flavor picker is a Base UI popup portaled to <body> —
@@ -1452,7 +1452,7 @@ export function SessionViewer({
 	// same settings menu — it toggles via a window event so it doesn't need a prop
 	// thread through App's render.
 	useEffect(() => {
-		const toggle = () => setOverflowOpen((o) => !o);
+		const toggle = () => setInfoPageOpen((o) => !o);
 		window.addEventListener("backstage:toggle-session-settings", toggle);
 		return () =>
 			window.removeEventListener("backstage:toggle-session-settings", toggle);
@@ -1460,11 +1460,12 @@ export function SessionViewer({
 	// Closing the menu disarms a half-finished delete confirm — reopening it
 	// later shouldn't present the destructive choices without a fresh click.
 	useEffect(() => {
-		if (!overflowOpen) setShowDeleteConfirm(false);
-	}, [overflowOpen]);
+		if (!overflowOpen && !infoPageOpen) setShowDeleteConfirm(false);
+	}, [overflowOpen, infoPageOpen]);
 	// The menu's contents change across the breakpoint — don't leave it stuck open.
 	useEffect(() => {
 		setOverflowOpen(false);
+		setInfoPageOpen(false);
 	}, [compactHeader]);
 
 	const me = getCurrentUser();
@@ -1863,73 +1864,21 @@ export function SessionViewer({
 					    Spin off and Delete live only in there. */}
 					{!compactHeader && !isPhone && collapsibleActions}
 					<div className="viewer-overflow" ref={overflowRef}>
-						{!isPhone && (
-							<button
-								className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
-								onClick={() => setOverflowOpen((o) => !o)}
-								title="More actions"
-								aria-label="More actions"
-								aria-expanded={overflowOpen}
-							>
-								⋯
-							</button>
-						)}
-						{!isPhone && overflowOpen && (
+						<button
+							className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
+							onClick={() => setOverflowOpen((o) => !o)}
+							title="More actions"
+							aria-label="More actions"
+							aria-expanded={overflowOpen}
+						>
+							⋯
+						</button>
+						{overflowOpen && (
 							<div className="viewer-overflow-menu">
-								{/* Native-sheet feel on phones: the session name titles the
-								    menu (WhatsApp/ChatGPT-style), and the workspace side panel
-								    is reached from here as a deeper page — one ⋯ gateway holds
-								    every action, no separate toggle beside it. */}
-								{isPhone && (
-									<div className="viewer-menu-title">
-										{workspaceName || session.title}
-									</div>
-								)}
-								{isPhone && panelAvailable && (
-									<button
-										className="btn-viewer-panelrow"
-										onClick={() => {
-											setOverflowOpen(false);
-											setSubagentStack([]);
-											setPanelOpen(true);
-										}}
-									>
-										<IconSidebarRight size={20} />
-										<span>
-											{hasWorkspace
-												? "Changes, terminal & PR"
-												: "Plain conversation"}
-										</span>
-										<IconChevronRight
-											className="btn-viewer-panelrow-caret"
-											size={18}
-										/>
-									</button>
-								)}
+								{/* iOS-style quick-actions menu. The workspace overview + repo/model
+								    settings live on the title’s info page instead; this stays lean. */}
 								{isPhone && secondaryActions}
 								{(compactHeader || isPhone) && collapsibleActions}
-								{/* Repo switch/attach also lives here so it's reachable on a
-								    phone even when the top-bar chat bar is cramped. */}
-								{isPhone && hasWorkspace && (
-									<RepoBar
-										sessionId={session.id}
-										primaryRepo={session.repo || "tella-fusion"}
-										branch={session.branch}
-										initialAttached={session.attachedRepos || []}
-										variant="menu-row"
-									/>
-								)}
-								{/* Model is changeable from here too on phones — the composer's model
-								    pill is hidden and the header's native picker is fiddly. */}
-								{isPhone && session.source === "backstage" && models.length > 0 && (
-									<ModelMenuRow
-										models={models}
-										model={model}
-										defaultModel={defaultModel}
-										onChange={handleModelChange}
-										prettyLabel={prettyModel}
-									/>
-								)}
 								{newChatAction}
 								{overflowActions}
 								{archiveAction}
@@ -1983,13 +1932,13 @@ export function SessionViewer({
 				// title row is CSS-hidden there — the centered bar title replaces
 				// it), giving one iOS-style nav bar instead of a second chrome row.
 				const phoneInfoPage =
-					isPhone && overflowOpen ? (
+					isPhone && infoPageOpen ? (
 						createPortal(
 							<div className="session-info-page">
 								<div className="session-info-topbar">
 									<button
 										className="panel-back"
-										onClick={() => setOverflowOpen(false)}
+										onClick={() => setInfoPageOpen(false)}
 										aria-label="Back to chat"
 									>
 										<svg width="11" height="18" viewBox="0 0 11 18" fill="none">
@@ -2025,7 +1974,7 @@ export function SessionViewer({
 										<button
 											className="btn-viewer-panelrow"
 											onClick={() => {
-												setOverflowOpen(false);
+												setInfoPageOpen(false);
 												setSubagentStack([]);
 												setPanelOpen(true);
 											}}
@@ -2057,10 +2006,39 @@ export function SessionViewer({
 											prettyLabel={prettyModel}
 										/>
 									)}
-									{newChatAction}
-									{overflowActions}
-									{archiveAction}
-									{deleteAction}
+								</div>
+								<div className="session-info-overview">
+									<WorkspaceInfo
+										sessionId={session.id}
+										workspaceId={session.projectId || null}
+										workspaceName={workspaceName}
+										chats={(workspaceChats?.length ? workspaceChats : [session]).map(
+											(s) => ({
+												id: s.id,
+												title: s.title,
+												createdAt: s.createdAt || "",
+												startedBy: s.startedBy,
+											}),
+										)}
+										repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
+										prState={hasWorkspace ? session.prState : undefined}
+										slackChannel={session.slackChannel}
+										onOpenTab={(tab) => {
+											setInfoPageOpen(false);
+											setSubagentStack([]);
+											selectPanelTab(tab);
+											setPanelOpen(true);
+										}}
+										onAddToInput={(text) => {
+											setInfoPageOpen(false);
+											setComposerPrefill((prev) => ({
+												seq: (prev?.seq ?? 0) + 1,
+												text,
+											}));
+										}}
+										liveMediaCount={liveMediaCount}
+										liveMedia={liveOverviewMedia}
+									/>
 								</div>
 							</div>,
 							document.body,
