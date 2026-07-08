@@ -58,6 +58,15 @@ export function IconArrowUp(p: IconProps) {
   );
 }
 
+export function IconArrowDown(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M17.25 13.75L12 19.25L6.75 13.75" />
+      <path {...stroke} d="M12 4.75v13.5" />
+    </Svg>
+  );
+}
+
 export function IconMic(p: IconProps) {
   return (
     <Svg {...p}>

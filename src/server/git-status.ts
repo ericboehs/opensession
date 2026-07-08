@@ -41,7 +41,11 @@ export async function getGitStatus(
   dir: string,
   baseBranch = "main"
 ): Promise<GitStatusInfo> {
-  await refreshBase(dir, baseBranch);
+  // Fire-and-forget: the fetch is only there to keep origin/<base> current for
+  // the NEXT poll. Awaiting it made every TTL-expired status call block on a
+  // network round-trip — the status header polls every 45s, so counts computed
+  // from refs one poll old are an honest trade for an instant response.
+  void refreshBase(dir, baseBranch);
 
   let branch: string | null = null;
   try {
@@ -86,6 +90,34 @@ export async function getGitStatus(
   } catch {}
 
   return { branch, hasUpstream, ahead, behind, behindBase, baseBranch, uncommittedFiles };
+}
+
+/**
+ * Fast-forward the worktree — the Pull action in the status header. Plain
+ * `git pull --ff-only` from the branch's upstream; with `fromBase` set it pulls
+ * origin/<base> instead (a fresh worktree branch behind main has no meaningful
+ * upstream delta — catching it up to base IS the pull). --ff-only means it can
+ * never mint a merge commit or touch diverged history: anything non-trivial
+ * fails loudly for the session to reconcile with judgment.
+ */
+export async function gitPull(
+  dir: string,
+  fromBase?: string
+): Promise<{ ok: true } | { error: string }> {
+  return audited(
+    { context: "sessions", action: "git_pull", args: { dir, fromBase: fromBase || null } },
+    async () => {
+      const args = ["git", "-C", dir, "pull", "--ff-only"];
+      if (fromBase) args.push("origin", fromBase);
+      const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+      const [err, code] = await Promise.all([
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      if (code !== 0) return { error: (err || "git pull failed").slice(0, 300) } as const;
+      return { ok: true } as const;
+    }
+  );
 }
 
 /**

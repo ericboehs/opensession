@@ -762,6 +762,22 @@ export async function gitPushApi(sessionId: string, repo?: string) {
 	);
 }
 
+/** Fast-forward the session's checkout (`git pull --ff-only`); `fromBase` pulls
+ * origin/<default branch> instead of the branch's upstream. */
+export async function gitPullApi(
+	sessionId: string,
+	repo?: string,
+	fromBase?: boolean,
+) {
+	return request<{ ok: true }>(
+		`/sessions/${encodeURIComponent(sessionId)}/git-pull`,
+		{
+			method: "POST",
+			body: { ...(repo ? { repo } : {}), ...(fromBase ? { base: true } : {}) },
+		},
+	);
+}
+
 export async function fetchPrDiff(sessionId: string, repo?: string) {
 	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
 	return request<any>(

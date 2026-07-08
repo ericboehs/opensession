@@ -4993,6 +4993,23 @@ body.resizing-x .panel-resize::after {
 	background: var(--bg-active);
 	color: var(--text-dim);
 }
+/* First-load placeholder line ("Checking status…") — the strip holds its place
+   immediately instead of popping in once /pr + /git-status resolve. */
+.pr-bar-checking {
+	font-size: 13.5px;
+	font-weight: 650;
+	color: var(--text-dim);
+	animation: pr-bar-checking-pulse 1.6s ease-in-out infinite;
+}
+@keyframes pr-bar-checking-pulse {
+	0%,
+	100% {
+		opacity: 0.45;
+	}
+	50% {
+		opacity: 0.85;
+	}
+}
 
 .pr-number {
 	color: var(--text-dim);

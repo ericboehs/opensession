@@ -4,6 +4,7 @@ import {
 	archiveSessionApi,
 	fetchGitStatus,
 	fetchPr,
+	gitPullApi,
 	gitPushApi,
 	mergePrApi,
 } from "../lib/api";
@@ -11,6 +12,7 @@ import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu } from "../ui/menu";
 import {
+	IconArrowDown,
 	IconArrowUp,
 	IconArrowUpRight,
 	IconPullRequest,
@@ -43,7 +45,8 @@ interface PrHeadline {
 		| "changes-requested"
 		| "ready"
 		| "ahead"
-		| "behind"
+		| "behind" // behind the branch's own upstream → Pull
+		| "behind-base" // clean tree, no PR, behind origin/<base> → Pull
 		| "no-pr"
 		| "clean";
 	label: string;
@@ -56,6 +59,7 @@ function deriveHeadline(
 	git: GitStatusInfo | null,
 ): PrHeadline {
 	const ahead = git?.ahead ?? 0;
+	const behind = git?.behind ?? 0;
 	if (pr) {
 		if (pr.state === "MERGED") return { key: "merged", label: "Merged", tone: "purple" };
 		if (pr.state === "CLOSED") return { key: "closed", label: "Closed", tone: "muted" };
@@ -63,6 +67,14 @@ function deriveHeadline(
 			return {
 				key: "ahead",
 				label: `Ahead by ${ahead} commit${ahead === 1 ? "" : "s"}`,
+				tone: "yellow",
+			};
+		// Local checkout is stale vs the PR branch (someone else pushed) — the
+		// PR data below would describe commits this worktree doesn't have yet.
+		if (behind > 0)
+			return {
+				key: "behind",
+				label: `Behind by ${behind} commit${behind === 1 ? "" : "s"}`,
 				tone: "yellow",
 			};
 		if (pr.mergeable === "CONFLICTING")
@@ -76,15 +88,21 @@ function deriveHeadline(
 			return { key: "changes-requested", label: "Changes requested", tone: "red" };
 		return { key: "ready", label: "Ready to merge", tone: "green" };
 	}
+	if (behind > 0)
+		return {
+			key: "behind",
+			label: `Behind by ${behind} commit${behind === 1 ? "" : "s"}`,
+			tone: "yellow",
+		};
 	if (ahead > 0 || (git?.uncommittedFiles ?? 0) > 0)
 		return { key: "no-pr", label: "No PR open", tone: "muted" };
 	if ((git?.behindBase ?? 0) > 0)
 		return {
-			key: "behind",
+			key: "behind-base",
 			label: `${git!.behindBase} commit${git!.behindBase === 1 ? "" : "s"} behind ${git!.baseBranch}`,
 			tone: "muted",
 		};
-	return { key: "clean", label: "", tone: "muted" };
+	return { key: "clean", label: "Up to date", tone: "muted" };
 }
 
 export function summarizeChecks(pr: PrDetails | null): {
@@ -222,6 +240,15 @@ function PrNumberChip({
 	);
 }
 
+/** Last-known state per session+repo, so a remount (tab switch, panel toggle)
+ * paints the previous status instantly and revalidates behind it instead of
+ * blanking for a fresh round-trip. Module-level: survives unmounts, dies with
+ * the page (a reload starts honest). */
+const lastKnown = new Map<
+	string,
+	{ pr: PrDetails | null; git: GitStatusInfo | null }
+>();
+
 export function PrStatusBar({
 	sessionId,
 	repo,
@@ -250,12 +277,16 @@ export function PrStatusBar({
 		setPr(prData);
 		setGit(gitData);
 		setLoaded(true);
+		lastKnown.set(`${sessionId}\0${repo || ""}`, { pr: prData, git: gitData });
 	}, [sessionId, repo]);
 
 	useEffect(() => {
-		setLoaded(false);
-		setPr(null);
-		setGit(null);
+		// Session/repo switch on a mounted component: fall back to that target's
+		// last-known state (or the checking placeholder) while the fetch runs.
+		const cached = lastKnown.get(`${sessionId}\0${repo || ""}`);
+		setPr(cached?.pr ?? null);
+		setGit(cached?.git ?? null);
+		setLoaded(!!cached);
 		load();
 		const interval = setInterval(load, 45000);
 		return () => clearInterval(interval);
@@ -297,9 +328,21 @@ export function PrStatusBar({
 		setTimeout(() => setPrompted(null), 6000);
 	}
 
-	// No flash of an empty strip while loading; nothing to say once loaded
-	// (no PR, no local commits, clean tree) also keeps the chrome quiet.
-	if (!loaded || headline.key === "clean") return null;
+	// The strip is a permanent fixture of the panel (Kent: a topbar that blinks
+	// in and out of existence shouldn't exist). First visit with nothing known
+	// yet holds its place with a quiet checking line instead of popping the bar
+	// in seconds late (the PR fetch can take a GitHub round-trip); a clean
+	// session reads "Up to date" rather than vanishing.
+	if (!loaded && variant !== "header") {
+		return (
+			<div className="pr-bar pr-bar-muted">
+				{leading}
+				<span className="pr-bar-checking">Checking status…</span>
+			</div>
+		);
+	}
+	if (!loaded || (headline.key === "clean" && variant === "header"))
+		return null;
 
 	// Header mode: only once a PR exists — the chip is the anchor; a bare
 	// Create PR/Push button in the chrome would just be noise.
@@ -334,6 +377,27 @@ export function PrStatusBar({
 						onClick={() => run("push", () => gitPushApi(sessionId, repo))}
 					>
 						{busy === "push" ? "Pushing…" : "Push"}
+					</PrBarButton>
+				);
+			case "behind":
+			case "behind-base":
+				return (
+					<PrBarButton
+						tone="solid"
+						icon={<IconArrowDown size={18} />}
+						disabled={!!busy}
+						title={
+							headline.key === "behind-base"
+								? `Fast-forward to origin/${git?.baseBranch || "main"}`
+								: "Fast-forward to the branch's upstream"
+						}
+						onClick={() =>
+							run("pull", () =>
+								gitPullApi(sessionId, repo, headline.key === "behind-base"),
+							)
+						}
+					>
+						{busy === "pull" ? "Pulling…" : "Pull"}
 					</PrBarButton>
 				);
 			case "conflicts":

@@ -204,7 +204,7 @@ import {
 	deleteTinderComment,
 	labelTinderPr,
 } from "./src/server/pr-tinder";
-import { getGitStatus, gitPush } from "./src/server/git-status";
+import { getGitStatus, gitPull, gitPush } from "./src/server/git-status";
 import {
 	listAutomations,
 	getAutomation,
@@ -4135,6 +4135,45 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						{ status: 400 },
 					);
 				const result = await gitPush(dir, session.branch || "HEAD");
+				if ("error" in result) return Response.json(result, { status: 502 });
+				return Response.json(result);
+			}
+
+			// Fast-forward the session's checkout (git pull --ff-only) — the Pull
+			// action in the status header. `body.base` pulls origin/<default branch>
+			// instead of the branch's upstream (fresh worktree branches behind base
+			// have no upstream to pull from). Audited in git-status.ts.
+			if (
+				path.match(/^\/backstage\/api\/sessions\/(.+)\/git-pull$/) &&
+				req.method === "POST"
+			) {
+				const sessionId = decodeURIComponent(
+					path.match(/^\/backstage\/api\/sessions\/(.+)\/git-pull$/)![1],
+				);
+				const session = findSession(sessionId);
+				if (!session)
+					return Response.json({ error: "Session not found" }, { status: 404 });
+				const body = await req.json().catch(() => ({}));
+				const repoId = typeof body?.repo === "string" ? body.repo : null;
+				const primaryRepo =
+					session.repo ||
+					(session.worktreeDir
+						? repoForPath(session.worktreeDir).id
+						: "tella-fusion");
+				const dir =
+					!repoId || repoId === primaryRepo
+						? session.worktreeDir
+						: (session.attachedRepos || []).find((r) => r.repo === repoId)
+								?.dir;
+				if (!dir || !existsSync(dir))
+					return Response.json(
+						{ error: "Session has no worktree" },
+						{ status: 400 },
+					);
+				const result = await gitPull(
+					dir,
+					body?.base ? getRepo(repoId || primaryRepo).defaultBranch : undefined,
+				);
 				if ("error" in result) return Response.json(result, { status: 502 });
 				return Response.json(result);
 			}
