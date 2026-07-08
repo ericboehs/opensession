@@ -70,6 +70,32 @@
  *    to a random loopback host port at create time (docker -p 127.0.0.1::p);
  *    `ports()` reads the live mapping for preview.ts's Caddy routing.
  *
+ * Snapshots (config `snapshots: { enabled: true, … }` — background-agents'
+ * warm-restore pattern adapted to Docker; default OFF):
+ *  - On the idle-stop sweep (and only while no run is active), the container is
+ *    `docker commit`ed to `bks-snap-<sessionId>:t<millis>` + `:latest` BEFORE
+ *    the stop; a snapshot failure logs and never blocks the stop. At most
+ *    `maxPerSession` timestamped snapshots are kept per session (older ones
+ *    deleted right after each commit).
+ *  - ensure() for a session whose container is GONE (docker rm'd, host reboot
+ *    with pruning, …) creates the new container FROM the newest snapshot image
+ *    instead of the base image — same mounts/volumes logic, different image.
+ *  - **What a snapshot actually captures — read this before expecting more:**
+ *    `docker commit` records the container LAYER only. Engine state (~/.claude,
+ *    ~/.codex) lives on named volumes and the workspace is a bind mount (bind
+ *    mode) or the `-ws` named volume (volume mode) — none of that is in the
+ *    image. The snapshot mainly captures installed deps, apt packages, and
+ *    global caches written to the container layer between runs. Never expect
+ *    workspace or session state in a snapshot; volumes carry those across the
+ *    rm/recreate exactly as before.
+ *  - Volume-mode workspaces get a "quick sync" after a snapshot restore
+ *    (`git fetch origin` + `git status` inside — NEVER a reset/checkout; refs
+ *    freshen, work is untouched) when `quickSyncOnRestore` (default true).
+ *  - destroy() also removes the session's snapshot images, and the idle sweep
+ *    prunes `bks-snap-*` images orphaned by sessions deleted while their
+ *    sandbox was already gone (state file + container + session file all
+ *    absent). `docker image prune` is deliberately NOT run here.
+ *
  * Known Phase 1 caveats (documented, not chased):
  *  - External MCP servers from mcp-config.json now spawn INSIDE the container;
  *    ones with host-only deps won't start there.
@@ -102,7 +128,13 @@ import { registerRunWsHost, unregisterRunWsHost, runWsConnector } from "../run-w
 import { getTranscriptPath } from "../sessions";
 import { REPOS, getRepo, worktreePathFor, type Repo } from "../worktree";
 import { LocalProvider } from "./local";
-import { sandboxConfig, sandboxTransport, sandboxCallbackBaseUrl, type SandboxTransport } from "./config";
+import {
+  sandboxConfig,
+  sandboxSnapshots,
+  sandboxTransport,
+  sandboxCallbackBaseUrl,
+  type SandboxTransport,
+} from "./config";
 import {
   HOST_SPEC_NAME,
   HOST_META_NAME,
@@ -172,6 +204,18 @@ function sanitizeName(s: string): string {
 
 export function containerNameFor(sessionId: string): string {
   return `${CONTAINER_PREFIX}${sanitizeName(sessionId)}`.slice(0, 100);
+}
+
+/** Snapshot image repo for a sandbox: `bks-snap-<sessionId>` (image repos must
+ *  be lowercase, unlike container names). Derived from the container name so
+ *  destroy() can clean images even when the state file is already gone. */
+const SNAPSHOT_PREFIX = "bks-snap-";
+
+export function snapshotRepoForSandbox(sandboxId: string): string {
+  const sessionPart = sandboxId.startsWith(CONTAINER_PREFIX)
+    ? sandboxId.slice(CONTAINER_PREFIX.length)
+    : sanitizeName(sandboxId);
+  return `${SNAPSHOT_PREFIX}${sessionPart.toLowerCase()}`.slice(0, 100);
 }
 
 function statePath(sandboxId: string): string {
@@ -255,6 +299,127 @@ async function ensureStarted(name: string): Promise<void> {
   }
 }
 
+// ── Snapshots (see the "Snapshots" header section for the semantics) ──────────
+
+async function listSnapshotTags(repo: string): Promise<string[]> {
+  const r = await docker(["image", "ls", repo, "--format", "{{.Tag}}"]);
+  if (r.exitCode !== 0) return [];
+  return r.stdout
+    .split("\n")
+    .map((s) => s.trim())
+    .filter((t) => t && t !== "<none>");
+}
+
+/** `<repo>:latest` when the sandbox has a snapshot image, else null. */
+async function latestSnapshotImage(sandboxId: string): Promise<string | null> {
+  const repo = snapshotRepoForSandbox(sandboxId);
+  const r = await docker(["image", "inspect", "-f", "{{.Id}}", `${repo}:latest`]);
+  return r.exitCode === 0 ? `${repo}:latest` : null;
+}
+
+/**
+ * `docker commit` the sandbox container to `bks-snap-<sessionId>:t<millis>`
+ * (+ `:latest`), labeled with the session id and timestamp, then prune older
+ * timestamped snapshots beyond `maxPerSession`. Skipped (returns null) while a
+ * run is active for the session — never snapshot a mid-run container — or when
+ * the container/state is gone. Throws on a failed commit; the idle sweep
+ * catches and stops the container anyway. Exported for the verify suite.
+ *
+ * Remember what this captures: the container LAYER only (installed deps, apt,
+ * global caches) — engine state and workspaces live on volumes/bind mounts and
+ * are NOT in the image (see header).
+ */
+export async function snapshotSandboxImage(sandboxId: string): Promise<string | null> {
+  const state = readState(sandboxId);
+  if (!state) return null;
+  if (hostRunBusy(state.sessionId)) {
+    console.log(`[sandbox] skipping snapshot of ${sandboxId}: a run is active`);
+    return null;
+  }
+  if ((await containerStatus(sandboxId)) === "gone") return null;
+  const repo = snapshotRepoForSandbox(sandboxId);
+  const tag = `t${Date.now()}`;
+  const r = await docker(
+    [
+      "commit",
+      "-c", `LABEL backstage.snapshot="1"`,
+      "-c", `LABEL backstage.session="${state.sessionId}"`,
+      "-c", `LABEL backstage.snapshotAt="${new Date().toISOString()}"`,
+      "-m", `backstage sandbox snapshot of ${sandboxId}`,
+      sandboxId,
+      `${repo}:${tag}`,
+    ],
+    { timeoutMs: 300_000 },
+  );
+  if (r.exitCode !== 0) {
+    throw new Error(`docker commit ${sandboxId} → ${repo}:${tag} failed: ${r.stderr.trim().slice(0, 300)}`);
+  }
+  await docker(["tag", `${repo}:${tag}`, `${repo}:latest`]);
+  // Strict maxPerSession: `t<millis>` tags sort lexicographically = by time
+  // (fixed digit count until 2286). `-f` because a live container restored
+  // from an old snapshot, or a newer snapshot layered on top of it, still
+  // references its layers: -f drops the TAG now (that's the quota we enforce)
+  // and docker keeps shared layer data alive only as long as dependents do.
+  const keep = Math.max(1, sandboxSnapshots().maxPerSession);
+  const tTags = (await listSnapshotTags(repo))
+    .filter((t) => /^t\d+$/.test(t))
+    .sort()
+    .reverse();
+  for (const old of tTags.slice(keep)) {
+    await docker(["rmi", "-f", `${repo}:${old}`]);
+  }
+  return `${repo}:${tag}`;
+}
+
+/** Remove every snapshot image of a sandbox (destroy + orphan sweep). */
+async function removeSnapshotImages(sandboxId: string): Promise<void> {
+  const repo = snapshotRepoForSandbox(sandboxId);
+  for (const t of await listSnapshotTags(repo)) {
+    await docker(["rmi", "-f", `${repo}:${t}`]);
+  }
+}
+
+/**
+ * Sweep `bks-snap-*` images orphaned by sessions deleted while their sandbox
+ * was already gone (so destroy() never saw them): no provider state file, no
+ * container, and no session file left. Sessions that still exist keep their
+ * snapshots — that's the warm-restore path. Fail-safe: images whose session
+ * label is unreadable are left alone. Throttled to once an hour (it lists
+ * images); runs piggybacked on the idle sweep. NOTE: the 14-day archived-
+ * session sweep lives in backstage.ts and funnels through destroy(), which
+ * cleans snapshots itself — this covers only the already-gone-sandbox gap.
+ */
+async function sweepOrphanSnapshots(): Promise<void> {
+  const g = globalThis as { __sandboxSnapOrphanSweepAt?: number };
+  if (g.__sandboxSnapOrphanSweepAt && Date.now() - g.__sandboxSnapOrphanSweepAt < 60 * 60_000) {
+    return;
+  }
+  g.__sandboxSnapOrphanSweepAt = Date.now();
+  const r = await docker([
+    "images", "--filter", `reference=${SNAPSHOT_PREFIX}*`, "--format", "{{.Repository}}",
+  ]);
+  if (r.exitCode !== 0) return;
+  for (const repo of new Set(r.stdout.split("\n").map((s) => s.trim()).filter(Boolean))) {
+    try {
+      const tags = await listSnapshotTags(repo);
+      if (!tags.length) continue;
+      const lbl = await docker([
+        "image", "inspect", "-f", `{{index .Config.Labels "backstage.session"}}`, `${repo}:${tags[0]}`,
+      ]);
+      const sessionId = lbl.exitCode === 0 ? lbl.stdout.trim() : "";
+      if (!sessionId) continue; // unknown provenance — keep
+      const container = containerNameFor(sessionId);
+      if (readState(container)) continue; // still tracked → destroy() cleans
+      if ((await containerStatus(container)) !== "gone") continue;
+      if (existsSync(`${BACKSTAGE_CHATS_DIR}/${sessionId}.json`)) continue; // session alive — keep
+      console.log(`[sandbox] removing orphaned snapshot images ${repo} (session ${sessionId} deleted, sandbox gone)`);
+      await removeSnapshotImages(container);
+    } catch (e) {
+      console.warn(`[sandbox] orphan snapshot sweep failed for ${repo}:`, e);
+    }
+  }
+}
+
 /** Paths that end up inside a `sh -c` log-redirect line must be boring. They
  *  are always provider-constructed (BACKSTAGE_CHATS_DIR + sanitized ids), so
  *  this is an assertion, not an escape. */
@@ -313,6 +478,8 @@ interface CreateContainerOpts {
   repo?: Repo;
   /** Run transport (see DockerSandboxState.transport). */
   transport: SandboxTransport;
+  /** Image to create from (snapshot restore); default = config/base image. */
+  image?: string;
 }
 
 async function createContainer(
@@ -322,7 +489,7 @@ async function createContainer(
   opts: CreateContainerOpts,
 ): Promise<void> {
   const cfg = sandboxConfig();
-  const image = cfg.image || DEFAULT_IMAGE;
+  const image = opts.image || cfg.image || DEFAULT_IMAGE;
   const cpus = cfg.cpus || DEFAULT_CPUS;
   const memory = cfg.memory || DEFAULT_MEMORY;
 
@@ -761,7 +928,11 @@ function makeDockerSandbox(
 
 // ── Idle-stop sweep ───────────────────────────────────────────────────────────
 
-async function sweepIdleSandboxes(): Promise<void> {
+/** Exported for the verify suite, which backdates a state file and calls it
+ *  directly to exercise the real snapshot-then-stop ordering. `onlySandboxId`
+ *  scopes the sweep to one sandbox (verify must never snapshot/stop the live
+ *  server's sandboxes with its scratch config) and skips the orphan sweep. */
+export async function sweepIdleSandboxes(onlySandboxId?: string): Promise<void> {
   const cfg = sandboxConfig();
   const idleMs = (cfg.idleStopMinutes || DEFAULT_IDLE_STOP_MINUTES) * 60_000;
   let states: string[] = [];
@@ -774,6 +945,7 @@ async function sweepIdleSandboxes(): Promise<void> {
     if (!f.endsWith(".json")) continue;
     const state = readState(f.slice(0, -5));
     if (!state) continue;
+    if (onlySandboxId && state.sandboxId !== onlySandboxId) continue;
     try {
       if ((await containerStatus(state.sandboxId)) !== "running") continue;
       // Idle = no active run for the session (host-registry has a live control
@@ -781,12 +953,27 @@ async function sweepIdleSandboxes(): Promise<void> {
       if (hostRunBusy(state.sessionId)) continue;
       const last = Date.parse(state.lastActivityAt || state.createdAt) || 0;
       if (Date.now() - last < idleMs) continue;
+      // Snapshot BEFORE the stop (warm-restore pattern). A failure logs and
+      // never blocks the stop; snapshotSandboxImage itself refuses while a run
+      // is active (defense — the busy check above already covered it).
+      const snaps = sandboxSnapshots();
+      if (snaps.enabled && snaps.onIdle) {
+        try {
+          const img = await snapshotSandboxImage(state.sandboxId);
+          if (img) console.log(`[sandbox] snapshotted ${state.sandboxId} → ${img} before idle-stop`);
+        } catch (e) {
+          console.warn(`[sandbox] idle snapshot of ${state.sandboxId} failed (stopping anyway):`, e);
+        }
+        // A run may have started during the (slow) commit — don't stop it now.
+        if (hostRunBusy(state.sessionId)) continue;
+      }
       console.log(`[sandbox] stopping idle container ${state.sandboxId} (idle > ${idleMs / 60_000}m)`);
       await docker(["stop", "-t", "10", state.sandboxId], { timeoutMs: 60_000 });
     } catch (e) {
       console.warn(`[sandbox] idle sweep failed for ${state.sandboxId}:`, e);
     }
   }
+  if (!onlySandboxId) await sweepOrphanSnapshots();
 }
 
 /** Arm the idle-stop sweep once per process; parked on globalThis like the
@@ -914,24 +1101,53 @@ export class DockerProvider implements SandboxProvider {
       await docker(["rm", "-f", name]);
       status = "gone";
     }
+    // Image the container runs. A GONE container with a snapshot image
+    // (snapshots enabled) is restored FROM the snapshot — container-layer
+    // state (installed deps/apt/caches) comes back; volumes/bind mounts carry
+    // engine + workspace state regardless (see the "Snapshots" header).
+    let image = existing?.image || sandboxConfig().image || DEFAULT_IMAGE;
+    let restoredFromSnapshot = false;
     if (status === "gone") {
+      image = sandboxConfig().image || DEFAULT_IMAGE;
+      if (sandboxSnapshots().enabled) {
+        const snapImage = await latestSnapshotImage(name);
+        if (snapImage) {
+          image = snapImage;
+          restoredFromSnapshot = true;
+          console.log(`[sandbox] ${name}: creating container from snapshot ${snapImage}`);
+        }
+      }
       await createContainer(name, spec.sessionId, cwd, {
         workspace,
         attachedDirs,
         repo: workspace === "volume" ? repo : undefined,
         transport,
+        image,
       });
     }
     await ensureStarted(name);
     if (workspace === "volume") {
       await setupVolumeWorkspace(name, cwd, repo, branch!);
+      if (restoredFromSnapshot && sandboxSnapshots().quickSyncOnRestore) {
+        // Quick sync after a snapshot restore: freshen refs only — NEVER a
+        // reset/checkout; un-pushed work in the volume stays untouched.
+        const f = await docker(
+          ["exec", "-w", assertSafePath(cwd), name, "git", "fetch", "origin"],
+          { timeoutMs: 120_000 },
+        );
+        if (f.exitCode !== 0) {
+          console.warn(`[sandbox] ${name}: quick-sync git fetch failed (continuing): ${f.stderr.trim().slice(0, 200)}`);
+        } else {
+          await docker(["exec", "-w", cwd, name, "git", "status", "--porcelain"]);
+        }
+      }
     }
     await setupContainer(name, cwd);
     writeState({
       sandboxId: name,
       sessionId: spec.sessionId,
       cwd,
-      image: sandboxConfig().image || DEFAULT_IMAGE,
+      image,
       createdAt: existing?.createdAt || new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
       workspace,
@@ -986,16 +1202,18 @@ export class DockerProvider implements SandboxProvider {
     );
   }
 
-  /** Tear down container + its named volumes + provider state. A bind-mode
-   *  worktree is untouched (it belongs to the host's worktree lifecycle); a
-   *  volume-mode WORKSPACE is deleted with its `-ws` volume — that data loss
-   *  is the mode's documented contract (push your work). */
+  /** Tear down container + its named volumes + snapshot images + provider
+   *  state. A bind-mode worktree is untouched (it belongs to the host's
+   *  worktree lifecycle); a volume-mode WORKSPACE is deleted with its `-ws`
+   *  volume — that data loss is the mode's documented contract (push your
+   *  work). */
   async destroy(sandboxId: string): Promise<void> {
     await docker(["rm", "-f", sandboxId]);
     await docker([
       "volume", "rm", "-f",
       `${sandboxId}-claude`, `${sandboxId}-codex`, `${sandboxId}-ws`,
     ]);
+    await removeSnapshotImages(sandboxId);
     const state = readState(sandboxId);
     try {
       unlinkSync(statePath(sandboxId));

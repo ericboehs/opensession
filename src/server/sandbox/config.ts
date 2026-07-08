@@ -51,6 +51,31 @@ export interface SandboxCloneCredential {
   token?: string;
 }
 
+/** Snapshot-based warm restores for the docker provider (background-agents
+ *  pattern, adapted): on idle-stop the container is `docker commit`ed to a
+ *  per-session image, and a later ensure() for a GONE container starts from
+ *  that image instead of the base one — preserving container-layer state
+ *  (installed deps/apt/global caches), NOT workspace or engine state (those
+ *  live on volumes/bind mounts). See docker.ts's "Snapshots" header section. */
+export interface SandboxSnapshotsConfig {
+  /** Master switch. Default false — no snapshot is ever taken or restored. */
+  enabled: boolean;
+  /** Snapshot on the idle-stop sweep, right before the container stops. Default true. */
+  onIdle: boolean;
+  /** Keep at most this many snapshot images per session (older ones deleted). Default 2. */
+  maxPerSession: number;
+  /** After restoring a volume-mode workspace from a snapshot, freshen refs with
+   *  a non-destructive `git fetch origin` + `git status` inside. Default true. */
+  quickSyncOnRestore: boolean;
+}
+
+export const SNAPSHOT_DEFAULTS: SandboxSnapshotsConfig = {
+  enabled: false,
+  onIdle: true,
+  maxPerSession: 2,
+  quickSyncOnRestore: true,
+};
+
 export interface SandboxDaytonaConfig {
   /** Falls back to DAYTONA_API_KEY. */
   apiKey?: string;
@@ -85,6 +110,8 @@ export interface SandboxConfig {
    *  (requires the image to carry the repo's dev toolchain). Default false:
    *  only the port-mapping + Caddy layer is active. */
   devServerInSandbox?: boolean;
+  /** Snapshot-based warm restores (docker provider only). Absent = disabled. */
+  snapshots?: SandboxSnapshotsConfig;
   /** Per-repo overrides keyed by repo id (worktree.ts REPOS). */
   perRepo?: Record<string, SandboxRepoOverride>;
   /** Run-stream + MCP-RPC transport for NEW sandbox launches. Default "socket".
@@ -164,6 +191,19 @@ export function sandboxConfig(): SandboxConfig {
         workspace: raw?.workspace === "volume" ? "volume" : undefined,
         previewPorts: previewPorts.length ? previewPorts : undefined,
         devServerInSandbox: raw?.devServerInSandbox === true || undefined,
+        snapshots:
+          raw?.snapshots && typeof raw.snapshots === "object"
+            ? {
+                enabled: raw.snapshots.enabled === true,
+                onIdle: raw.snapshots.onIdle !== false,
+                maxPerSession:
+                  typeof raw.snapshots.maxPerSession === "number" &&
+                  raw.snapshots.maxPerSession >= 1
+                    ? Math.floor(raw.snapshots.maxPerSession)
+                    : SNAPSHOT_DEFAULTS.maxPerSession,
+                quickSyncOnRestore: raw.snapshots.quickSyncOnRestore !== false,
+              }
+            : undefined,
         perRepo: Object.keys(perRepo).length ? perRepo : undefined,
         transport: raw?.transport === "ws" ? "ws" : undefined,
         callbackBaseUrl: str(raw?.callbackBaseUrl),
@@ -202,6 +242,12 @@ export function effectiveSandboxProvider(repoId?: string): SandboxProviderId {
   if (!sandboxesEnabled()) return "local";
   const cfg = sandboxConfig();
   return (repoId && cfg.perRepo?.[repoId]?.provider) || cfg.provider || "local";
+}
+
+/** Effective snapshot settings — the config's `snapshots` block over the
+ *  defaults; a missing block = the defaults with `enabled: false`. */
+export function sandboxSnapshots(): SandboxSnapshotsConfig {
+  return sandboxConfig().snapshots || SNAPSHOT_DEFAULTS;
 }
 
 /** Effective run transport (docker honors the config; remote providers pass

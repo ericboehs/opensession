@@ -19,6 +19,14 @@
  * published loopback port), the stopped-container host-exec fallback, and
  * the destroy-removes-the-workspace-volume contract.
  *
+ * SNAPSHOTS section: a fourth sbxtest session (bind mode, snapshots enabled
+ * in the scratch config) writes a marker into the CONTAINER LAYER, is
+ * idle-snapshotted by the real sweep (scoped to itself — the scratch config
+ * must never touch live sandboxes), has its container removed, and is then
+ * ensure()d again: the new container must come FROM the snapshot image
+ * (marker present) with the bind-mounted workspace still correct. Also
+ * checks maxPerSession pruning and that destroy() removes the images.
+ *
  * WS-TRANSPORT section (Phase 3): a third sbxtest session runs with
  * `transport: "ws"` — the in-container run host DIALS BACK to a scratch WS
  * server in this process (the same run-ws module backstage.ts wires) instead
@@ -41,15 +49,22 @@ const SCRATCH = `${process.env.HOME || "/home/ubuntu"}/.sandbox-verify-scratch`;
 // ~/.backstage-sandbox.json.
 process.env.BACKSTAGE_RUN_JOURNAL = `${SCRATCH}/active-runs.json`;
 process.env.BACKSTAGE_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
+// The repo registry is config-driven now (REPOS is a read-only Proxy over
+// configuredRepos() — see worktree.ts/config.ts): the scratch sbxtest repo is
+// registered through a scratch ~/.backstage/config.json, written below. The
+// live box has no config.json, so this only ADDS the scratch repo over the
+// built-in defaults.
+process.env.BACKSTAGE_CONFIG = `${SCRATCH}/backstage-config.json`;
 
 import { existsSync, mkdirSync, rmSync } from "fs";
 
-const { DockerProvider, containerNameFor } = await import("../../src/server/sandbox/docker");
+const { DockerProvider, containerNameFor, snapshotRepoForSandbox, snapshotSandboxImage, sweepIdleSandboxes } =
+  await import("../../src/server/sandbox/docker");
 const { workspaceExecFor } = await import("../../src/server/sandbox/workspace-exec");
 const { searchRepoFiles } = await import("../../src/server/file-index");
 const { getSessionDiff } = await import("../../src/server/git-diff");
 const { getGitStatus } = await import("../../src/server/git-status");
-const { REPOS, worktreePathFor } = await import("../../src/server/worktree");
+const { worktreePathFor } = await import("../../src/server/worktree");
 const { rpcSocketPath } = await import("../../src/runner-host/protocol");
 const { BACKSTAGE_CHATS_DIR } = await import("../../src/server/paths");
 type RunHostSpec = import("../../src/runner-host/protocol").RunHostSpec;
@@ -69,6 +84,10 @@ const PREVIEW_PORT = 18734;
 // WS-transport section resources (own session/container; also sbxtest-*).
 const WS_SESSION_ID = `sbxtest-wst-${Date.now().toString(36)}`;
 const WS_CONTAINER = containerNameFor(WS_SESSION_ID);
+
+// Snapshots section resources (own session/container; also sbxtest-*).
+const SNAP_SESSION_ID = `sbxtest-snap-${Date.now().toString(36)}`;
+const SNAP_CONTAINER = containerNameFor(SNAP_SESSION_ID);
 
 // Scratch sandbox config: docker provider, volume workspaces, one preview
 // port. Read fresh per call by sandbox/config.ts via the env override above.
@@ -109,18 +128,22 @@ async function cleanup(): Promise<void> {
     [CONTAINER, SESSION_ID],
     [VOL_CONTAINER, VOL_SESSION_ID],
     [WS_CONTAINER, WS_SESSION_ID],
+    [SNAP_CONTAINER, SNAP_SESSION_ID],
   ]) {
     await sh(["docker", "rm", "-f", container]);
     await sh([
       "docker", "volume", "rm", "-f",
       `${container}-claude`, `${container}-codex`, `${container}-ws`,
     ]);
+    // Snapshot images (rm -f by id drops every tag of the repo at once).
+    const imgIds = (await sh(["docker", "image", "ls", snapshotRepoForSandbox(container), "-q"]))
+      .out.split("\n").map((s) => s.trim()).filter(Boolean);
+    for (const id of new Set(imgIds)) await sh(["docker", "rmi", "-f", id]);
     try {
       rmSync(`${BACKSTAGE_CHATS_DIR}/sandboxes/${container}.json`, { force: true });
       rmSync(`${BACKSTAGE_CHATS_DIR}/sandbox-runs/${session}`, { recursive: true, force: true });
     } catch {}
   }
-  delete REPOS["sbxtest"];
   // Transcript dirs the container-create mkdir'd for the scratch cwds.
   for (const dir of [WT, VOL_CWD]) {
     const munged = `-${dir.replaceAll("/", "-").replace(/^-/, "")}`;
@@ -155,15 +178,17 @@ ok("scratch worktree created", wtAdd.code === 0 && existsSync(`${WT}/.git`), WT)
 // repoOriginUrl resolves it.
 await sh(["git", "clone", "-q", "--bare", MAIN, BARE]);
 await sh(["git", "remote", "add", "origin", BARE], MAIN);
-// Register the scratch repo in the (in-process) REPOS registry so the volume
-// path can resolve clone source + default branch. sbxtest-only, in-memory.
-REPOS["sbxtest"] = {
-  id: "sbxtest",
-  repo: MAIN,
-  wtPrefix: "sbxtest",
-  defaultBranch: "main",
-  ghRepo: "sbxtest/sbxtest",
-};
+// Register the scratch repo through the config-driven registry (BACKSTAGE_CONFIG
+// points at this scratch file) so getRepo/worktreePathFor/repoOriginUrl can
+// resolve clone source + default branch. sbxtest-only, scratch-dir-only.
+await Bun.write(
+  process.env.BACKSTAGE_CONFIG!,
+  JSON.stringify({
+    repos: {
+      sbxtest: { repo: MAIN, wtPrefix: "sbxtest", defaultBranch: "main", ghRepo: "sbxtest/sbxtest" },
+    },
+  }),
+);
 const VOL_CWD = worktreePathFor(VOL_BRANCH, "sbxtest", { isolated: true });
 
 const provider = new DockerProvider();
@@ -582,6 +607,64 @@ try {
   const wsGone = await sh(["docker", "inspect", WS_CONTAINER]);
   ok("ws-transport container removed", wsGone.code !== 0);
   wsSrv.stop(true);
+
+  // ══ SNAPSHOTS ══════════════════════════════════════════════════════════
+  // Warm-restore pattern: idle-stop commits the container layer to a
+  // bks-snap-* image; a later ensure() for the GONE container starts from it.
+  // Volumes/bind mounts (engine state, workspace) are NOT in the image — the
+  // marker below goes to the container layer specifically to prove the image
+  // path, and sandbox-file.txt (bind-mounted worktree) proves the workspace
+  // is mount-carried, not snapshot-carried.
+  console.log("\n══ snapshots ══");
+  await Bun.write(
+    process.env.BACKSTAGE_SANDBOX_CONFIG!,
+    JSON.stringify({ provider: "docker", snapshots: { enabled: true, maxPerSession: 2 } }),
+  );
+  const snapRepo = snapshotRepoForSandbox(SNAP_CONTAINER);
+  const snapSbx = await provider.ensure({ sessionId: SNAP_SESSION_ID, cwd: WT });
+  ok("ensure() created the snapshots-section container", snapSbx.id === SNAP_CONTAINER, snapSbx.id);
+  const mark = await snapSbx.exec(["sh", "-c", "echo snap-layer-state > /home/ubuntu/sbx-snap-marker"]);
+  ok("wrote a container-layer marker", mark.exitCode === 0, mark.stderr.trim());
+
+  // Backdate the state file, then run the REAL sweep scoped to this sandbox:
+  // it must snapshot first, then stop.
+  const snapStatePath = `${BACKSTAGE_CHATS_DIR}/sandboxes/${SNAP_CONTAINER}.json`;
+  const snapState = JSON.parse(await Bun.file(snapStatePath).text());
+  snapState.lastActivityAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+  snapState.createdAt = snapState.lastActivityAt;
+  await Bun.write(snapStatePath, JSON.stringify(snapState));
+  await sweepIdleSandboxes(SNAP_CONTAINER);
+  const snapImg = await sh(["docker", "image", "inspect", "-f", "{{.Id}}", `${snapRepo}:latest`]);
+  ok("idle sweep snapshotted before stopping", snapImg.code === 0, `${snapRepo}:latest`);
+  ok("idle sweep stopped the container", (await snapSbx.status()) === "stopped");
+
+  // Remove the container entirely (docker rm — NOT destroy, which would drop
+  // the snapshot too); ensure() must recreate FROM the snapshot image.
+  await sh(["docker", "rm", "-f", SNAP_CONTAINER]);
+  const restored = await provider.ensure({ sessionId: SNAP_SESSION_ID, cwd: WT });
+  const marker = await restored.exec(["cat", "/home/ubuntu/sbx-snap-marker"]);
+  ok("restored container came from the snapshot (container-layer marker present)",
+    marker.exitCode === 0 && marker.stdout.includes("snap-layer-state"),
+    (marker.stdout || marker.stderr).trim());
+  const fromImage = await sh(["docker", "inspect", "-f", "{{.Config.Image}}", SNAP_CONTAINER]);
+  ok("container image is the snapshot", fromImage.out.trim() === `${snapRepo}:latest`, fromImage.out.trim());
+  const snapGit = await restored.exec(["git", "status", "--porcelain"]);
+  const snapWs = await restored.exec(["cat", "sandbox-file.txt"]);
+  ok("workspace still correct after restore (bind mounts intact)",
+    snapGit.exitCode === 0 && snapWs.exitCode === 0, snapWs.stdout.trim());
+
+  // maxPerSession pruning: two more snapshots → at most 2 timestamped tags.
+  await snapshotSandboxImage(SNAP_CONTAINER);
+  await snapshotSandboxImage(SNAP_CONTAINER);
+  const tTags = (await sh(["docker", "image", "ls", snapRepo, "--format", "{{.Tag}}"]))
+    .out.split("\n").map((s) => s.trim()).filter((t) => /^t\d+$/.test(t));
+  ok("maxPerSession enforced (≤2 timestamped snapshots)", tTags.length >= 1 && tTags.length <= 2, tTags.join(","));
+
+  // destroy() removes the snapshot images with the container/volumes.
+  await provider.destroy(SNAP_CONTAINER);
+  ok("snapshots-section container removed", (await sh(["docker", "inspect", SNAP_CONTAINER])).code !== 0);
+  const imgsLeft = await sh(["docker", "image", "ls", snapRepo, "--format", "{{.Tag}}"]);
+  ok("destroy removed the snapshot images", !imgsLeft.out.trim(), imgsLeft.out.trim() || "none");
 } finally {
   await cleanup();
 }
