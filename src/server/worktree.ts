@@ -3,8 +3,14 @@ import { existsSync } from "fs";
 import type { UnifiedSession } from "./types";
 import { stopPreview } from "./preview";
 
-const TELLA_FUSION = "/home/ubuntu/projects/tella-fusion";
-const WORKTREES_DIR = "/home/ubuntu/worktrees";
+// Main tella-fusion checkout and the root all per-branch worktrees live under.
+// Env-overridable (BACKSTAGE_TELLA_FUSION / BACKSTAGE_WORKTREES_DIR) for
+// self-hosted or sandboxed layouts (docs/sandboxes-plan.md Phase 0 de-hardcoding);
+// the defaults are this VPS's paths — unchanged behavior when unset.
+const TELLA_FUSION =
+  process.env.BACKSTAGE_TELLA_FUSION || "/home/ubuntu/projects/tella-fusion";
+const WORKTREES_DIR =
+  process.env.BACKSTAGE_WORKTREES_DIR || "/home/ubuntu/worktrees";
 
 // Repos a chat can run against. Worktrees live at
 // <WORKTREES_DIR>/<wtPrefix>-<branch>; defaultBranch is the base they branch

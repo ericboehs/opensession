@@ -245,6 +245,12 @@ export interface BackstageSessionFile {
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   slackChannel?: SlackChannelLink; // Slack channel linked for in-context discussion
   mcpServers?: string[]; // External MCP servers to load for this session; empty = none (minimal context)
+  /** Sandbox opt-in (docs/sandboxes-plan.md): recorded at create time when the
+   *  creator asked for a sandbox. `provider` is the effective provider id at
+   *  creation ("local" until a real provider is configured); `sandboxId` is
+   *  set once a provider materializes a sandbox for the session (Phase 1+).
+   *  Nothing acts on this field yet. */
+  sandbox?: { provider: string; sandboxId?: string };
 }
 
 export interface TranscriptEntry {

@@ -246,6 +246,12 @@ const ACTIVE_RUNS_PATH =
 const UI_BASE =
   process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
 
+/** Claude Code CLI binary the SDK spawns. Env-overridable (BACKSTAGE_CLAUDE_BIN)
+ *  so sandbox images / other host layouts can point at their own install;
+ *  the default is this VPS's path — unchanged behavior when unset. */
+const CLAUDE_CODE_BIN =
+  process.env.BACKSTAGE_CLAUDE_BIN || "/home/ubuntu/.local/bin/claude";
+
 export interface ActiveRunRecord {
   runKey: string;
   bksSessionId?: string;
@@ -264,6 +270,10 @@ export interface ActiveRunRecord {
   accountStrict?: boolean; // hard pin: never rotate into the pool (automation cost cap)
   usageCredits?: boolean; // may run on accounts spending usage-credits past their limits
   fallbackModel?: string; // usage-limit fallback policy, preserved across resume
+  /** Sandbox the run executes in (docs/sandboxes-plan.md Phase 1+); absent = host process (today's only case) */
+  sandboxId?: string;
+  /** Provider owning sandboxId, so resume-after-restart can reattach via provider.get() */
+  sandboxProvider?: string;
   kind?: string;
   startedAt: string;
 }
@@ -1094,7 +1104,7 @@ export async function* runClaude(opts: {
         mcpServers: { ...filterMcpServers(mcpServers, user), ...inProcessServers } as any,
         strictMcpConfig: true,
         env: childEnv(awsEnv, account?.token, author),
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
         abortController,
         systemPrompt: {
