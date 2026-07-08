@@ -150,6 +150,7 @@ import {
 	registerInteractiveMcpBuilder,
 	startRunRpcServer,
 	registerRunToken,
+	unregisterRunToken,
 } from "./src/server/run-rpc";
 import {
 	startTerminal,
@@ -2274,6 +2275,9 @@ async function maybeLaunchSandboxedRun(
 		console.warn(`[sandbox] ${session.id}: automation sessions are not sandboxed in Phase 1 — running on host`);
 		return null;
 	}
+	// Hoisted so the catch below can unregister it — a failed launch must not
+	// leak the run token (spawnHostRun's error path does the same cleanup).
+	let rpcToken: string | undefined;
 	try {
 		const provider = getSandboxProvider("docker");
 		const sandbox = await provider.ensure({
@@ -2312,7 +2316,7 @@ async function maybeLaunchSandboxedRun(
 			...Object.keys(interactiveMcpServers(opts.user, session.id)),
 			...(session.goalId ? ["michael-goal-self"] : []),
 		];
-		const rpcToken = crypto.randomUUID();
+		rpcToken = crypto.randomUUID();
 		registerRunToken(rpcToken, { sessionId: session.id, user: opts.user });
 		const spec: RunHostSpec = {
 			hostId: `rh-${randomUUIDv7()}`,
@@ -2355,11 +2359,25 @@ async function maybeLaunchSandboxedRun(
 		console.log(`[sandbox] ${session.id}: running in ${sandbox.id} (${sandbox.cwd})`);
 		return handle.events();
 	} catch (e: any) {
-		console.error(`[sandbox] ${session.id}: launch failed — falling back to host run:`, e);
-		broadcastToSession(session.id, {
-			type: "notice",
-			message: `Sandbox unavailable (${String(e?.message || e).slice(0, 200)}) — running on the host this turn.`,
-		});
+		// The token was registered mid-try; the failed run will never consume it.
+		unregisterRunToken(rpcToken);
+		const reason = String(e?.message || e).slice(0, 200);
+		if (hasRemoteWorkspace(session)) {
+			// Volume-mode workspaces live only inside the sandbox — there is no
+			// host checkout to fall back to (the caller ends the turn with an
+			// explicit error), so don't promise a host run.
+			console.error(`[sandbox] ${session.id}: launch failed (volume workspace — no host fallback):`, e);
+			broadcastToSession(session.id, {
+				type: "notice",
+				message: `Sandbox unavailable (${reason}) — this workspace lives in the sandbox and has no host fallback. Retry when Docker is healthy.`,
+			});
+		} else {
+			console.error(`[sandbox] ${session.id}: launch failed — falling back to host run:`, e);
+			broadcastToSession(session.id, {
+				type: "notice",
+				message: `Sandbox unavailable (${reason}) — running on the host this turn.`,
+			});
+		}
 		return null;
 	}
 }

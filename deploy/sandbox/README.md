@@ -107,6 +107,10 @@ first); `aws: true` can't mint creds inside (IMDS blocked).
   is gated behind `"devServerInSandbox": true` (default off — the image
   doesn't carry the tella-fusion dev toolchain yet); without it, preview
   start is a no-op and only status/ports/Caddy routing are active.
+  **Latent collision:** sandbox and host previews both key the Caddy https
+  port as webapp port + 6000, and the host port allocator (ss-based) can't
+  see in-container listeners — the sandbox https-port range must be
+  namespaced before enabling `devServerInSandbox` broadly.
 
 ## Host setup + verification
 

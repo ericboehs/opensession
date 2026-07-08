@@ -426,6 +426,18 @@ export async function getSandboxPreviewStatus(
       // CONTAINER port (stable across restarts), the upstream dials the
       // published loopback port (may change when the container is recreated —
       // ensurePreviewRoute re-points an existing route on mismatch).
+      //
+      // TODO(sandbox-preview-collision): LATENT — sandbox and host previews
+      // share one https keyspace: both derive httpsPortFor(webappPort) =
+      // port + 6000. Host uniqueness of webapp ports (3100-3999) is enforced
+      // by an ss-based allocator that CANNOT see in-container listeners, so a
+      // host session can allocate the same webapp port a sandbox container
+      // already uses internally — both then claim the same Caddy https port
+      // and ensurePreviewRoute silently re-points the route back and forth.
+      // Harmless while devServerInSandbox stays off (no in-sandbox dev
+      // servers); the sandbox https-port range must be namespaced (e.g. a
+      // separate offset/range for sandbox routes) before enabling
+      // devServerInSandbox broadly.
       const httpsPort = httpsPortFor(webapp.port);
       const host = await previewHost();
       if (await ensurePreviewRoute(httpsPort, published, host)) {

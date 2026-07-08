@@ -267,6 +267,36 @@ try {
     ok("engine transcript visible host-side", existsSync(transcriptDir), transcriptDir);
   }
 
+  // ── failed launch must not wedge the session busy ───────────────────────────
+  // The HostHandle ctor registers a host-registry control keyed by the bks
+  // session id; a connect failure (socket never appears) must drop it via
+  // abandon() — the cleanup launchRunEager/spawnHostRun run in their catch —
+  // or hostRunBusy() stays true forever and every future prompt reads busy.
+  console.log("\n── failed-launch cleanup (host-registry) ──");
+  const { HostHandle } = await import("../../src/server/host-client");
+  const { hostRunBusy } = await import("../../src/server/host-registry");
+  const failSession = `sbxtest-fail-${Date.now().toString(36)}`;
+  const failDir = `${SCRATCH}/fail-run`;
+  mkdirSync(failDir, { recursive: true });
+  const failHandle = new HostHandle(
+    failDir,
+    { hostId: "rh-sbxtest-fail", bksSessionId: failSession, prompt: "x", cwd: WT,
+      mode: "ask", model: "claude-haiku-4-5", mcpServers: [], journalKind: "sandbox-verify" },
+    {},
+    // Launcher that "succeeds" but never brings up a socket = unreachable host.
+    { alive: () => false, newRunDir: () => failDir, launch: async () => {} },
+  );
+  ok("HostHandle ctor registers the run (session reads busy)", hostRunBusy(failSession));
+  let connectThrew = false;
+  try {
+    await failHandle.connectWithWait(700);
+  } catch {
+    connectThrew = true;
+  }
+  ok("connectWithWait throws on an unreachable socket", connectThrew);
+  failHandle.abandon();
+  ok("abandon() clears the busy registration after a failed connect", !hostRunBusy(failSession));
+
   // ── stop/start lifecycle ────────────────────────────────────────────────────
   console.log("\n── lifecycle ──");
   await sh(["docker", "stop", "-t", "5", CONTAINER]);

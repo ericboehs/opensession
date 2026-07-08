@@ -175,15 +175,19 @@ async function spawnHostRun(opts: HostedRunOpts): Promise<HostHandle> {
   writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
   if (rpcToken) registerRunToken(rpcToken, { sessionId: opts.bksSessionId, user: opts.user });
 
+  let handle: HostHandle | undefined;
   try {
     await launchHostUnit(hostId, dir);
-    const handle = new HostHandle(dir, spec, {
+    handle = new HostHandle(dir, spec, {
       onAskUser: opts.onAskUser,
       onSteerFailed: opts.onSteerFailed,
     });
     await handle.connectWithWait(20_000);
     return handle;
   } catch (e) {
+    // The HostHandle ctor registered its host-registry control — drop it on a
+    // connect failure or hostRunBusy() wedges the session busy forever.
+    handle?.abandon();
     unregisterRunToken(rpcToken);
     try {
       rmSync(dir, { recursive: true, force: true });
@@ -486,6 +490,21 @@ export class HostHandle {
       this.handlingAsks.delete(askId);
       this.send({ t: "ask_answer", askId, result });
     })();
+  }
+
+  /**
+   * Failed-launch cleanup. The constructor registers this handle's control in
+   * the host-registry (and its run token may be registered too), so a connect
+   * failure after construction MUST drop both — otherwise hostRunBusy() stays
+   * true forever and the session is wedged busy. Mirrors finish() minus the
+   * shutdown message and run-dir removal (the failing caller owns the dir).
+   */
+  abandon(): void {
+    if (this.endedClean) return;
+    this.endedClean = true;
+    this.queue.end();
+    unregisterHostRun(this.ctl);
+    unregisterRunToken(this.spec.rpcToken);
   }
 
   /** Clean end: ack the host, close out the generator, drop registrations + files. */

@@ -95,7 +95,7 @@ import {
 import { RESUME_CONTINUATION_PROMPT } from "../agent-runner";
 import { providerFor } from "../models";
 import { hostRunBusy, hostSteer, hostInterruptSteer, hostCancel } from "../host-registry";
-import { registerRunToken } from "../run-rpc";
+import { registerRunToken, unregisterRunToken } from "../run-rpc";
 import { writeJsonAtomic } from "../shared/atomic-write";
 import { HostHandle, type HandleCallbacks, type HostLauncher } from "../host-client";
 import { getTranscriptPath } from "../sessions";
@@ -466,7 +466,10 @@ async function setupVolumeWorkspace(
   const cloned = await docker(["exec", name, "test", "-d", `${cwd}/.git`]);
   if (cloned.exitCode !== 0) {
     const originUrl = await repoOriginUrl(repo.repo);
-    console.log(`[sandbox] ${name}: cloning ${originUrl} into workspace volume at ${cwd}`);
+    // Redact credentials before logging — https origins can carry a token in
+    // the userinfo part (https://x-access-token:ghp_…@github.com/…).
+    const loggedUrl = originUrl.replace(/^(https?:\/\/)[^@/]+@/, "$1");
+    console.log(`[sandbox] ${name}: cloning ${loggedUrl} into workspace volume at ${cwd}`);
     const clone = await docker(
       ["exec", name, "git", "clone", "--", originUrl, cwd],
       { timeoutMs: 600_000 },
@@ -637,12 +640,18 @@ function makeDockerSandbox(
       const record = recordForSpec(spec, sandboxId);
       mkdirSync(dir, { recursive: true });
       writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
-      let handle: HostHandle;
+      let handle: HostHandle | undefined;
       try {
         await launcher.launch(spec.hostId, dir);
         handle = new HostHandle(dir, spec, callbacks, launcher);
         await handle.connectWithWait(30_000);
       } catch (e) {
+        // The HostHandle ctor registered its control in the host-registry —
+        // drop it (and the caller-registered run token) on any launch failure,
+        // or hostRunBusy(bksSessionId) stays true forever: every future prompt
+        // reads busy and the idle-stop sweep skips the container.
+        handle?.abandon();
+        unregisterRunToken(spec.rpcToken);
         try {
           rmSync(dir, { recursive: true, force: true });
         } catch {}
@@ -997,7 +1006,16 @@ export async function resumeDockerSandboxRun(
       }
       console.log(`[sandbox] reattaching to live run ${run.runKey} in ${run.sandboxId}`);
       const handle = new HostHandle(oldDir, oldSpec, cb, launcher);
-      await handle.connectWithWait(15_000);
+      try {
+        await handle.connectWithWait(15_000);
+      } catch (e) {
+        // Drop the host-registry control the ctor registered (and the run
+        // token registered just above) — a failed reattach must not leave
+        // hostRunBusy() true forever. Keep oldDir: the in-container host may
+        // still be alive, and a later resume attempt needs the spec.
+        handle.abandon();
+        throw e;
+      }
       return withRunJournal(handle.events(), { ...run, startedAt: run.startedAt });
     }
   }
