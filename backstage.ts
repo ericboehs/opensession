@@ -56,6 +56,7 @@ import {
 	worktreeHasWork,
 	REPOS,
 } from "./src/server/worktree";
+import { defaultRepo } from "./src/server/config";
 import { effectiveSandboxProvider, sandboxesEnabled, sandboxConfig } from "./src/server/sandbox/config";
 import {
 	getSandboxProvider,
@@ -2461,7 +2462,7 @@ async function runSessionPromptInner(
 			lastProvider === "codex" ? session.codexThreadId : session.claudeSessionId;
 		const prevTranscriptPath = prevEngineId
 			? getEngineTranscriptPath(
-					session.worktreeDir || `${HOME}/projects/tella-fusion`,
+					session.worktreeDir || defaultRepo().repo,
 					prevEngineId,
 					lastProvider,
 				)
@@ -2497,7 +2498,7 @@ async function runSessionPromptInner(
 	// sandbox workspaces are exempt: their dir never exists host-side — the
 	// sandbox provider materializes it in-container, so reviving a host
 	// worktree at the same path would shadow (and fork) the real workspace.
-	let cwd = session.worktreeDir || `${HOME}/projects/tella-fusion`;
+	let cwd = session.worktreeDir || defaultRepo().repo;
 	if (
 		session.worktreeDir &&
 		!existsSync(session.worktreeDir) &&
@@ -3310,7 +3311,7 @@ async function runGoal(goal: Goal): Promise<void> {
 	try {
 		// Code goals keep ONE persistent worktree so the engine session (keyed on
 		// cwd) resumes cleanly across wakes; ask goals read the main checkout.
-		let cwd = `${HOME}/projects/tella-fusion`;
+		let cwd = defaultRepo().repo;
 		let branch = goal.branch || "";
 		if (goal.mode === "code") {
 			const repo = getRepo(goal.repo);
