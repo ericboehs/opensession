@@ -644,6 +644,21 @@ export function IconStack(p: IconProps) {
   );
 }
 
+// Isometric cube (a sealed container) — the sandbox glyph: the session-create
+// "Run in sandbox" toggle and the sandbox badge on sandboxed sessions.
+export function IconBox(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M12 4.75L18.75 8.5V15.5L12 19.25L5.25 15.5V8.5L12 4.75Z"
+      />
+      <path {...stroke} d="M5.5 8.75L12 12.25L18.5 8.75" />
+      <path {...stroke} d="M12 12.5V19" />
+    </Svg>
+  );
+}
+
 // Archive box (lidded crate with a pull slot), redrawn to this set's 24×24
 // grammar — the reversible sibling of IconTrash.
 export function IconArchive(p: IconProps) {

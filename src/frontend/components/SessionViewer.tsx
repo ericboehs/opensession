@@ -41,6 +41,7 @@ import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { DiffPanel, useSessionDiff } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
 import { RepoTile } from "./RepoTile";
+import { SandboxBadge } from "./SandboxBadge";
 import { ModelMenuRow } from "./ModelMenuRow";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
@@ -2059,6 +2060,10 @@ export function SessionViewer({
 							{workspaceName || session.title}
 						</span>
 					)}
+					{/* Sandbox badge: this session's runs execute inside an isolated
+					    container (docker/daytona/e2b). Renders nothing for host sessions
+					    — purely from session fields, no container polling. */}
+					<SandboxBadge sandbox={session.sandbox} />
 					{/* Lone-chat "+ New tab": when the workspace has a single chat the
 					    tab strip is hidden, so the affordance to spawn a sibling chat
 					    lives here beside the title (⌘T does the same). With 2+ chats the
@@ -2311,6 +2316,7 @@ export function SessionViewer({
 										repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
 										prState={hasWorkspace ? session.prState : undefined}
 										slackChannel={session.slackChannel}
+										sandbox={session.sandbox}
 										reviewRequest={effectiveReview?.req ?? null}
 										reviewRequestSessionId={effectiveReview?.ownerId}
 										onOpenTab={(tab) => {
@@ -2932,6 +2938,7 @@ export function SessionViewer({
 									}
 									prState={hasWorkspace ? session.prState : undefined}
 									slackChannel={session.slackChannel}
+									sandbox={session.sandbox}
 									reviewRequest={effectiveReview?.req ?? null}
 									reviewRequestSessionId={effectiveReview?.ownerId}
 									onOpenTab={(tab) => selectPanelTab(tab)}

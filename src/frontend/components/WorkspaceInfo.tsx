@@ -35,6 +35,7 @@ import {
 } from "../lib/workspace-overview";
 import { summarizeChecks } from "./PrStatusBar";
 import { openLightbox } from "./MediaLightbox";
+import { SandboxBadge } from "./SandboxBadge";
 import { IconBell, IconCheck, IconClock, IconPlay, IconX } from "./icons";
 
 /**
@@ -74,6 +75,9 @@ interface Props {
 	prState?: string | null;
 	/** Linked Slack channel, when one exists — gates the Slack fetch. */
 	slackChannel?: SlackChannelLink | null;
+	/** The open chat's sandbox opt-in — renders a provider/mode badge in the
+	    status row (from session fields only; no container polling). */
+	sandbox?: { provider: string; sandboxId?: string; workspace?: "bind" | "volume" };
 	/** Pending review request for this workspace — the open chat's, or a sibling
 	    chat's (the request is per-chat but the band groups by workspace). */
 	reviewRequest?: ReviewRequestInfo | null;
@@ -1003,6 +1007,7 @@ export function WorkspaceInfo({
 	repo,
 	prState,
 	slackChannel,
+	sandbox,
 	reviewRequest,
 	reviewRequestSessionId,
 	onOpenTab,
@@ -1218,6 +1223,7 @@ export function WorkspaceInfo({
 					reviewRequest={reviewRequest}
 					requestSessionId={reviewRequestSessionId}
 				/>
+					<SandboxBadge sandbox={sandbox} />
 				</div>
 				{pr?.number && repo === "tella-fusion" && (
 					<PrAgentActions

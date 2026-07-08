@@ -6,7 +6,7 @@ import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
-import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections, IconReturn, IconTerminal } from "./icons";
+import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections, IconReturn, IconTerminal, IconBox } from "./icons";
 import { Modal } from "../ui/modal";
 import { Tooltip } from "../ui/tooltip";
 import type { WSServerMessage } from "../lib/types";
@@ -145,6 +145,15 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const isPhone = useIsPhone();
   const [showOptions, setShowOptions] = useState(false);
   const optionsVisible = !isPhone || showOptions;
+
+  // Sandbox opt-in (docs/sandboxes-plan.md): run this session's agent inside
+  // an isolated per-session container instead of on the host. Default off.
+  // The flag is recorded on the session at create; it only takes effect when
+  // the server has a sandbox provider configured (~/.backstage-sandbox.json)
+  // — without one it's recorded but inert (runs stay local). There's no
+  // config-status API yet, so the toggle is always offered; the tooltip is
+  // honest about the requirement.
+  const [sandbox, setSandbox] = useState(false);
 
   // MCP servers: empty by default (minimal context), users can opt in for
   // specific ones. The list comes from mcp-config.json via the connections
@@ -367,6 +376,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       user: getCurrentUser(),
       ...(model ? { model } : {}),
       effort,
+      ...(sandbox ? { sandbox: true } : {}),
       ...(selectedMcpServers.length ? { mcpServers: selectedMcpServers } : {}),
       ...(images.length ? { images } : {}),
       ...(files.length
@@ -632,6 +642,25 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 aria-label="View system prompt"
               >
                 <IconTerminal size={24} />
+              </button>
+            </Tooltip>
+            <Tooltip
+              multiline
+              label={
+                sandbox
+                  ? "Run in sandbox: on — the agent runs inside an isolated per-session container. Needs a sandbox provider configured on the server; without one the choice is recorded but runs stay on the host."
+                  : "Run in sandbox — run this session's agent inside an isolated per-session container instead of on the host. Needs a sandbox provider configured on the server."
+              }
+            >
+              <button
+                type="button"
+                className={`palette-icon-btn ${sandbox ? "is-on" : ""}`}
+                onClick={() => setSandbox((v) => !v)}
+                disabled={creating}
+                aria-pressed={sandbox}
+                aria-label="Run in sandbox"
+              >
+                <IconBox size={24} />
               </button>
             </Tooltip>
           </div>
