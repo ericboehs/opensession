@@ -67,6 +67,11 @@ export interface CreateSessionOpts {
   reportBack?: boolean;
   /** Display name credited as the creator. */
   user?: string;
+  /**
+   * Ask for a sandboxed session (docs/sandboxes-plan.md). Phase 0: recorded on
+   * the session file only — nothing acts on it until a real provider ships.
+   */
+  sandbox?: boolean;
 }
 
 /**

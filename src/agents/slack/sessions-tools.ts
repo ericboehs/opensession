@@ -273,6 +273,10 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
             .boolean()
             .optional()
             .describe("Create an unrelated standalone session instead of a child of the current session."),
+          sandbox: z
+            .boolean()
+            .optional()
+            .describe("Ask for a sandboxed session. Currently recorded on the session only — runs stay on the host until a sandbox provider is configured."),
         },
         async (args: {
           prompt: string;
@@ -284,6 +288,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           parentSessionId?: string;
           reportBack?: boolean;
           standalone?: boolean;
+          sandbox?: boolean;
         }) => {
           if (!args.prompt?.trim()) return text("Need a prompt to start a session.");
           if (args.mode === "code" && !args.branch?.trim()) {
@@ -310,6 +315,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
             parentSessionId,
             reportBack: shouldReportBack,
             user: ctx.createdBy,
+            sandbox: args.sandbox,
           });
           return text(
             [

@@ -56,6 +56,7 @@ import {
 	worktreeHasWork,
 	REPOS,
 } from "./src/server/worktree";
+import { effectiveSandboxProvider } from "./src/server/sandbox/config";
 import {
 	STRIPE_CONFIRM_TOOLS,
 	activeRunRecords,
@@ -5058,6 +5059,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const body = (await req.json().catch(() => ({}))) as {
 					user?: string;
 					mode?: "share" | "stack" | "ask";
+					/** Sandbox opt-in (docs/sandboxes-plan.md Phase 0): recorded on the
+					 *  session file only — nothing acts on it yet. */
+					sandbox?: boolean;
 				};
 				// share (default): reuse the workspace's worktree/branch (parallel chats,
 				// one branch). stack: a new worktree branched off it (stacked PRs). ask:
@@ -5131,6 +5135,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					lastActivity: new Date().toISOString(),
 					title: "New chat",
 					mode,
+					...(body.sandbox === true
+						? { sandbox: { provider: effectiveSandboxProvider(repoId) } }
+						: {}),
 				};
 				writeJsonAtomic(`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`, data);
 				sessionsCache = null;
@@ -7262,6 +7269,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						const createMcpServers = Array.isArray(msg.mcpServers)
 							? msg.mcpServers.map(String)
 							: undefined;
+						// Sandbox opt-in (docs/sandboxes-plan.md Phase 0): recorded on the
+						// session file only — nothing acts on it until a real provider
+						// ships, and the effective provider is "local" until configured.
+						const createSandbox = msg.sandbox === true;
 						// Which repo this session works in (tella-fusion by default).
 						const repo = getRepo(
 							typeof msg.repo === "string" ? msg.repo : undefined,
@@ -7529,6 +7540,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									mode: isAsk ? "ask" : "code",
 									...(plainThreadId ? { plainThreadId } : {}),
 									...(createMcpServers && createMcpServers.length ? { mcpServers: createMcpServers } : {}),
+									...(createSandbox
+										? { sandbox: { provider: effectiveSandboxProvider(repo.id) } }
+										: {}),
 								};
 								writeJsonAtomic(
 									`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
@@ -8042,6 +8056,7 @@ registerSessionControl({
 		mcpServers,
 		parentSessionId,
 		user,
+		sandbox,
 	}) => {
 		const isAsk = mode !== "code";
 		const model = modelInput ? resolveModel(String(modelInput))?.id : undefined;
@@ -8143,6 +8158,11 @@ registerSessionControl({
 				lastActivity: new Date().toISOString(),
 				title,
 				mode: isAsk ? "ask" : "code",
+				// Sandbox opt-in (docs/sandboxes-plan.md Phase 0): recorded only —
+				// nothing acts on it until a real provider ships.
+				...(sandbox
+					? { sandbox: { provider: effectiveSandboxProvider(repo.id) } }
+					: {}),
 			};
 			writeJsonAtomic(`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`, sessionData);
 			sessionsCache = null;
