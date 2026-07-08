@@ -112,6 +112,34 @@ first); `aws: true` can't mint creds inside (IMDS blocked).
   see in-container listeners — the sandbox https-port range must be
   namespaced before enabling `devServerInSandbox` broadly.
 
+## Phase 3 — WS transport + remote adapters
+
+- **WS transport** (`~/.backstage-sandbox.json` → `"transport": "ws"` +
+  `"callbackBaseUrl": "ws://<reachable-host>:3850"`): the in-sandbox run host
+  DIALS OUT to backstage's `/backstage/run-ws/<hostId>` route (token-authed,
+  same NDJSON protocol, one JSON message per WS text frame) instead of
+  serving a unix socket, and the michael-* MCP proxies dial
+  `/backstage/rpc-ws`. Docker containers created in ws mode don't mount the
+  rpc socket. `callbackBaseUrl` must be reachable FROM the sandbox (Tailscale
+  URL for self-hosters; 127.0.0.1 never works). Transport code is runner
+  internals — restart + image rebuild to take effect.
+- **Remote adapters** (`provider: "daytona"` / `"e2b"`,
+  src/server/sandbox/adapters/): always volume-style workspaces cloned
+  in-sandbox over https (`cloneCredential`), always ws transport, runner
+  payload installed on first ensure by `bootstrapRemoteSandbox` (bun + repo
+  clone/tarball + bun install + claude CLI — minutes cold; provider
+  snapshots/templates as a prebaked fast path are a follow-up). Daytona
+  idle-stops natively (`autoStopInterval`); E2B lives on a countdown that
+  activity extends — expiry KILLS the sandbox and its workspace. NOTE:
+  Daytona Tier 1/2 orgs restrict sandbox egress, which blocks the WS
+  dial-back entirely — launchRun there needs a Tier 3 org or self-hosted
+  Daytona.
+- `deploy/sandbox/conformance.ts` — the provider conformance matrix
+  (`bun run deploy/sandbox/conformance.ts [docker-socket|docker-ws|daytona|e2b]`):
+  verify.ts's checks parameterized over providers. Docker entries always run
+  and must stay green; daytona/e2b run only with credentials (else
+  `SKIPPED: no credentials`) and leave zero sandboxes behind.
+
 ## Host setup + verification
 
 - `deploy/sandbox/setup-host.sh` — idempotently installs the DOCKER-USER

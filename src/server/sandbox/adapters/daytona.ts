@@ -179,11 +179,13 @@ export class DaytonaProvider implements SandboxProvider {
     if (sbx && stateOf(sbx) === "gone") sbx = null;
     if (!sbx) {
       console.log(`[sandbox:daytona] creating sandbox for ${spec.sessionId}`);
+      // Default snapshot (custom `resources` are rejected when creating from a
+      // snapshot — live-API behavior 2026-07; size the sandbox via a custom
+      // snapshot/image in the daytona config instead when needed).
       sbx = await client.create(
         {
           labels: { [SESSION_LABEL]: spec.sessionId, "backstage.sandbox": "1" },
           autoStopInterval: cfg.idleStopMinutes || DEFAULT_IDLE_STOP_MINUTES,
-          resources: { cpu: 2, memory: 4, disk: 10 },
         } as any,
         { timeout: 300 },
       );
