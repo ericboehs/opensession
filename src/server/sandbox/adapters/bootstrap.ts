@@ -369,14 +369,48 @@ export async function bootstrapRemoteSandbox(
         "runner repo clone",
       );
     }
-    if (cfg.runnerSha) {
-      need(
-        await driver.exec(
-          `git -C ${REMOTE_REPO} fetch --depth 1 origin ${shellQuoteWord(cfg.runnerSha)} 2>/dev/null; git -C ${REMOTE_REPO} checkout --detach ${shellQuoteWord(cfg.runnerSha)}`,
-          { timeoutMs: 300_000 },
-        ),
-        `checkout of pinned runnerSha ${cfg.runnerSha}`,
-      );
+  }
+
+  // Reconcile the checkout with the pinned runnerSha — OUTSIDE the clone block,
+  // so it also runs when the repo already exists. (A runnerSha bump used to be
+  // silently skipped on an already-bootstrapped sandbox: the `test -f
+  // package.json` guard short-circuited the fetch/checkout, yet the signature
+  // marker below was rewritten, freezing the old code forever.) The marker is
+  // only written after the checkout verifiably matches the pin.
+  if (cfg.runnerSha) {
+    const isGit = await driver.exec(`test -d ${REMOTE_REPO}/.git`);
+    if (isGit.exitCode !== 0) {
+      // Tarball payload (runnerBundleUrl) — no git history to reconcile; the
+      // signature marker keys on the sha, so a bump with a stale bundle keeps
+      // re-running bootstrap loudly instead of pretending it applied.
+      log(`runnerSha ${cfg.runnerSha} pinned but ${REMOTE_REPO} is not a git checkout — skipping reconcile`);
+    } else {
+      const head = async () =>
+        (await driver.exec(`git -C ${REMOTE_REPO} rev-parse HEAD`)).stdout.trim();
+      const resolvePin = async () =>
+        (
+          await driver.exec(
+            `git -C ${REMOTE_REPO} rev-parse --verify --quiet ${shellQuoteWord(`${cfg.runnerSha}^{commit}`)}`,
+          )
+        ).stdout.trim();
+      let pin = await resolvePin();
+      if (!pin || (await head()) !== pin) {
+        log(`checking out pinned runnerSha ${cfg.runnerSha}…`);
+        need(
+          await driver.exec(
+            `git -C ${REMOTE_REPO} fetch --depth 1 origin ${shellQuoteWord(cfg.runnerSha)} 2>/dev/null; git -C ${REMOTE_REPO} checkout --detach ${shellQuoteWord(cfg.runnerSha)}`,
+            { timeoutMs: 300_000 },
+          ),
+          `checkout of pinned runnerSha ${cfg.runnerSha}`,
+        );
+        pin = await resolvePin();
+        const now = await head();
+        if (!pin || now !== pin) {
+          throw new Error(
+            `remote sandbox bootstrap failed: checkout landed on ${now || "unknown"}, not pinned runnerSha ${cfg.runnerSha}`,
+          );
+        }
+      }
     }
   }
 
