@@ -1,6 +1,9 @@
 # Sandboxes: self-hostable isolated execution for Backstage sessions
 
-**Status:** plan (2026-07-08, written by Michael with Michiel)
+**Status:** plan written 2026-07-08 (Michael with Michiel); **Phases 0–3,
+Workstream E (engine), and Workstream S (snapshots) are DONE** as of
+2026-07-08 — per-phase commit ranges are on each heading below, remaining
+work is in §8 Backlog. Operator docs: `docs/self-hosting-sandboxes.md`.
 **End goal served:** open-sourcing Backstage. Companies must be able to fully
 self-host, so the *default* sandbox backend is plain Docker on the host —
 no third-party compute. Daytona and E2B are optional adapters (both
@@ -203,7 +206,7 @@ container. Consequences per engine:
 
 ## 5. Phases
 
-### Phase 0 — Seams, zero behavior change  (~2–3 sessions)
+### Phase 0 — Seams, zero behavior change  — **DONE** (5bec62af, 99de3dbb, 8f12737b, a10baa27)
 
 1. Introduce `SandboxProvider`/`Sandbox` interfaces + `LocalProvider` that
    wraps existing behavior (worktree resolution from `prepareWorktree` in
@@ -223,7 +226,7 @@ container. Consequences per engine:
 automations, goals, Slack, resume-after-restart) behave identically with
 the local provider. One restart at the end.
 
-### Phase 1 — Docker provider, bind-mount mode  (~4–6 sessions)
+### Phase 1 — Docker provider, bind-mount mode  — **DONE** (8d60b13e, b2ba6e94, ffedd1f8, fd66c839, f8a16d08, f400fee3)
 
 The trick that keeps this phase small: the container **bind-mounts the
 existing host worktree at the identical path**. Execution is isolated
@@ -259,7 +262,7 @@ container with identical UX; killing backstage mid-run and restarting
 reattaches; flipping the kill-switch instantly reverts new runs to local.
 Restart required; announce it.
 
-### Phase 2 — Exec-based workspace surfaces  (~3–4 sessions)
+### Phase 2 — Exec-based workspace surfaces  — **DONE** (244741c4, fbaead99, abf58883, a45e76d8, f86412fe, 7f1ba764)
 
 Prep for remote providers + full isolation. Replace direct host `$ git -C`
 calls with `sandbox.exec()` in: `file-index.ts`, `git-diff.ts`,
@@ -274,7 +277,7 @@ per sandbox (`getPreviewStatus` reads `sandbox.ports()`).
 volume-only Docker session; worktree-disk-cleanup problem disappears for
 sandboxed sessions.
 
-### Phase 3 — Remote adapters: Daytona, then E2B  (~3–5 sessions)
+### Phase 3 — Remote adapters: Daytona, then E2B  — **DONE** (13745145, e06c7eae, fe843109, e650d370, fe33a6be, 7d1436af, 4a37cd31, 22f55b7d, 5206c669; Daytona live-certified via the conformance suite, E2B implemented but uncertified — see docs/self-hosting-sandboxes.md)
 
 1. Transport upgrade: run stream + MCP RPC over token-authed WS to the
    backstage server (which already binds Tailscale) instead of unix
@@ -290,7 +293,7 @@ sandboxed sessions.
 by config. Core has zero imports from adapter SDKs except in
 `src/server/sandbox/adapters/`.
 
-### Workstream E — OpenCode engine  (parallel, after Phase 1)
+### Workstream E — OpenCode engine  — engine **DONE** (7b3075d4, b7816045, 5e908d59; direction update a1cdb8b7 — staged migration itself is backlog)
 
 DIRECTION UPDATE 2026-07-08 (late, Michiel): **OpenCode is the destination —
 "fully move over to opencode only."** Staged migration: (1) opencode-first
@@ -323,32 +326,61 @@ self-hosters and model experiments.
 3. Sandbox synergy: in Docker sandboxes, run the opencode server inside
    the container and talk HTTP — no stdio proxying. Add the binary to the
    `backstage-runner` image.
-4. Max-subscription bridge (decided 2026-07-08): support Claude models in
-   the OpenCode engine via a Meridian-style local proxy — an
-   Anthropic-compatible HTTP endpoint backed by the **official Claude
-   Agent SDK** + our accounts layer (reference implementation:
-   github.com/ianjwhite99/opencode-with-claude). Build ours in-repo so
-   calls go through account selection, usage-credit gating, and the audit
-   log. Containment: interactive sessions only (never automations),
-   designated accounts only (not the pool), direct Agent SDK stays the
-   default engine for Claude models. Known gray zone under Anthropic's
-   Feb-2026 subscription terms — account-flag risk accepted by Michiel;
-   if enforcement tightens, the bridge is removed and nothing else
-   depends on it.
+4. Max-subscription bridge — decided 2026-07-08, built in-repo
+   (src/server/anthropic-bridge.ts: Anthropic-compatible HTTP endpoint
+   backed by the official Claude Agent SDK + our accounts layer, audit +
+   rate limits in 5e908d59). **Verified billing reality (live-tested
+   2026-07-08, supersedes earlier readings):**
+   - Our in-repo bridge hits the extra-usage 400 because it deliberately
+     does **not** scrub opencode fingerprints (anti-evasion stance,
+     unchanged).
+   - The **literal opencode-with-claude plugin** (1.6.14, Meridian 1.45.0)
+     was live-tested 2026-07-08 and DOES complete turns on flat Max quota
+     (haiku verified, HTTP 200). Mechanism: its bundled scrub plugin strips
+     opencode's duplicated env preamble + powered-by line; per the scrub
+     author's bisection the billing gate is **opus-specific** (sonnet/haiku
+     pass even unscrubbed).
+   - **Adopted direction:** wrap the literal Meridian as the bridge process
+     behind our accounts/audit/containment layer (the already-authorized
+     fallback path) rather than porting scrub logic in-repo. Opus/Fable-tier
+     via the plugin is being tested; enforcement is a moving target —
+     designated accounts + audit remain mandatory. Extra-usage credits are
+     explicitly NOT used (Michiel decision).
+   - Containment unchanged: interactive sessions only (never automations),
+     designated accounts only (not the pool), direct Agent SDK stays the
+     default engine for Claude models; if enforcement tightens, the bridge
+     is removed and nothing else depends on it. June-15 policy context:
+     github.com/ianjwhite99/opencode-with-claude issue #154.
 5. Still NOT in scope: OAuth spoofing / reverse-engineered auth of any
    kind (ToS-violating and server-side blocked).
 
-### Phase 4 — Product layer + open-source polish  (ongoing)
+### Workstream S — Snapshot warm restores  — **DONE** (a40c65cd)
 
-- Sandbox status in the UI (SessionViewer/WorkspaceInfo badge: provider,
-  state, resources) and per-session preview links from sandbox ports.
-- Warm pool / snapshotting for fast starts (prebaked deps image; provider
-  snapshots where supported) — this is Ramp's "last 20%".
-- Self-hoster docs: `docs/self-hosting-sandboxes.md` (Docker default,
-  Daytona/E2B guides, licensing notes: Daytona AGPL-3.0 is API-consumed,
-  E2B SDK Apache-2.0).
+Docker-provider snapshotting (background-agents pattern, adapted): on
+idle-stop the container is `docker commit`ed to a per-session image, and a
+later ensure() for a GONE container restores from it — preserving
+container-layer state (installed deps, apt, global caches), not workspace
+or engine state (those live on volumes/bind mounts). Off by default
+(`snapshots.enabled` in `~/.backstage-sandbox.json`); warm-on-typing (start
+restoring while the user is still writing the prompt) is backlog.
+
+### Phase 4 — Product layer + open-source polish  (ongoing; UI + docs landed 01247795, a210fb08 + this doc)
+
+- ~~Sandbox status in the UI~~ DONE: session-create "Run in sandbox" toggle
+  (recorded via the Phase-0 `sandbox` create param), SessionViewer header +
+  WorkspaceInfo badge (provider · bind/volume, rendered from session
+  fields), engine-grouped model picker for opencode/<provider>/<model> ids.
+  Still open: live container state / resources on the badge (needs a small
+  status API), and a config-status read so the toggle only shows when a
+  provider is configured (today it's always offered and inert without one).
+- Warm pool / snapshotting for fast starts — base snapshots DONE
+  (Workstream S); warm-on-typing + prebaked-deps images are backlog.
+- ~~Self-hoster docs~~ DONE: `docs/self-hosting-sandboxes.md` (Docker
+  default, full config schema, Daytona/E2B guides + certification via the
+  conformance suite, licensing, path parity, kill switch, restart rules).
 - Optional hook: pluggable clone-credential source per repo (where a
-  code.storage-style scoped token would slot in later).
+  code.storage-style scoped token would slot in later) — the global
+  `cloneCredential` config exists; per-repo is backlog.
 
 ---
 
@@ -364,7 +396,37 @@ self-hosters and model experiments.
 - Journal fields are additive/optional so old `active-runs.json` records
   always resume.
 
-## 7. Open questions (decide during Phase 0/1)
+## 7. Backlog (post Phases 0–3 + E + S, 2026-07-08)
+
+Not scheduled; roughly ordered by how hard they block open-sourcing.
+
+- **Secrets vault**: a real per-run secret store (scoped injection into
+  sandboxes/runs, rotation, audit) instead of ro-mounted host files +
+  minimal-env discipline.
+- **OAuth / allowlist auth layer**: today Backstage is Tailscale- +
+  team-gated at the network layer; open-sourcing needs a first-class login
+  (OAuth/OIDC) with a user allowlist so `backstage-user` isn't just a
+  localStorage string.
+- **opensession TUI**: engine-agnostic session TUI (attach to any Backstage
+  session from a terminal) + opencode attach for opencode-engine sessions.
+- **Workstream E staged migration**: opencode-first defaults → automations
+  → engine consolidation, gated on confirm-tool parity + the billing
+  reality above (a1cdb8b7 has the stages).
+- ~~ws-buffer-ack~~ **DONE** (e650d370): seq/ack replay on the WS run
+  transport closed the frame-loss window flagged in 0ee1bbd1.
+- **Snapshot warm-on-typing**: kick the sandbox restore while the prompt is
+  still being typed (Workstream S left the hook).
+- **Portability batches 2–4** (docs/portability-audit.md sizing): batch 1
+  (config loader, repos registry, paths, identity table — b3fd72d7,
+  ec36ba98, c04735d8, 56546e17, 6b3035f2) is done; still open: channel
+  IDs / OAuth redirect / publicBaseUrl consolidation, deploy pipeline
+  genericization, integration fail-closed gating, gh-repo templating in
+  prompts, persona/company config.
+- **Sandbox UI follow-ups**: config-status read to gate the create toggle;
+  live container state/resources on the badge; per-repo clone-credential
+  hook.
+
+## 8. Open questions (decide during Phase 0/1)
 
 1. Idle policy: stop containers after N minutes idle vs keep warm — cost of
    `docker start` (~1s) vs RAM of dozens of live sandboxes on the VPS.
