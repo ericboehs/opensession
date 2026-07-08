@@ -20,7 +20,13 @@ FROM ubuntu:24.04
 ARG BUN_VERSION=1.3.14
 ARG CLAUDE_VERSION=2.1.204
 ARG NODE_MAJOR=20
+ARG OPENCODE_VERSION=1.17.15
 
+# Locale parity note: the host runs a full en_US.UTF-8 locale; the image uses
+# C.UTF-8 (no `locales` package) on the assumption that nothing in the runner
+# path is locale-sensitive beyond UTF-8 text handling (collation/formatting
+# differences are accepted). If a tool ever misbehaves on collation, install
+# `locales` and generate en_US.UTF-8 instead of chasing it.
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
@@ -28,6 +34,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # --- system packages ---
 # ripgrep lives in universe (enabled by default in the ubuntu image). python3 +
 # build-essential are for worktrees whose `bun install` builds native deps.
+# just + direnv + lsof are the tella-local ensure-up.sh / `just dev` chain
+# (dev-services.sh probes ports with lsof; ensure-up hard-depends on
+# `direnv exec`); the aws CLI is deliberately NOT installed — tella-fusion's
+# ensure-aws-sso.sh preflight self-skips without it, and the WASM S3 install
+# scripts use the JS SDK (see deploy/sandbox/README.md "Previews in sandboxes").
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -39,12 +50,25 @@ RUN apt-get update \
         python3 \
         build-essential \
         ripgrep \
+        just \
+        direnv \
+        lsof \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Node.js LTS (NodeSource) ---
+# Node major must track the host's (host: v20.x via nvm) — native-module ABI
+# and `next dev` behavior are assumed host-equivalent at the same major.
 RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# --- opencode (pinned to host; opencode-first direction needs it in-sandbox) ---
+# npm -g as root → /usr/bin/opencode (on PATH for uid 1000 too). The npm
+# package pulls the platform binary via optionalDependencies.
+RUN npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
+    && npm cache clean --force \
+    && installed="$(opencode --version)" \
+    && { [ "$installed" = "${OPENCODE_VERSION}" ] || { echo "opencode version mismatch: got '$installed', want ${OPENCODE_VERSION}"; exit 1; }; }
 
 # --- GitHub CLI (official apt repo) ---
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -81,8 +105,14 @@ USER ubuntu
 # --- Claude Code CLI (pinned to host version, installed at the identical host path) ---
 # The official installer drops the binary under ~/.local/share/claude and symlinks
 # ~/.local/bin/claude -> it, matching /home/ubuntu/.local/bin/claude on the host.
+# The build FAILS on a version mismatch (an installer that silently serves a
+# different build would break host session-resume parity).
 RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_VERSION}" \
-    && /home/ubuntu/.local/bin/claude --version
+    && installed="$(/home/ubuntu/.local/bin/claude --version)" \
+    && case "$installed" in \
+         "${CLAUDE_VERSION}"|"${CLAUDE_VERSION} "*) echo "claude ${installed} OK" ;; \
+         *) echo "claude version mismatch: got '$installed', want ${CLAUDE_VERSION}"; exit 1 ;; \
+       esac
 
 # --- backstage runner bundle ---
 # Deps first for layer caching: only re-installs when package.json / bun.lock change.

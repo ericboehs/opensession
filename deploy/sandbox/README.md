@@ -14,7 +14,9 @@ session's git worktree **bind-mounted at its identical host path**.
 | `git`, `gh` | clone / status / diff / push / PR | apt latest |
 | `ripgrep` | @-mention file search | apt |
 | `python3`, `build-essential` | worktree `bun install` native deps | apt |
-| Claude Code CLI | Claude Agent SDK spawns it as a child | `2.1.204` (host) |
+| `just`, `direnv`, `lsof` | tella-local `ensure-up.sh` → `just dev` chain (in-sandbox previews) | apt |
+| Claude Code CLI | Claude Agent SDK spawns it as a child | `2.1.204` (host); build FAILS on version mismatch |
+| `opencode` | opencode-first engine direction — runs in-sandbox | `1.17.15` (host), npm -g, build asserts version |
 | runner bundle | `/home/ubuntu/projects/tella-backstage` (`src/`, `backstage.ts`, `tsconfig.json`) + `node_modules` | from lockfile |
 | vendored codex binary | `@openai/codex-linux-x64` (musl, ~223 MB) — Codex exec/app-server | via `bun.lock` |
 | `@anthropic-ai/claude-agent-sdk` | Claude engine | via `bun.lock` |
@@ -100,17 +102,100 @@ first); `aws: true` can't mint creds inside (IMDS blocked).
 - **Attached repos (bind mode)**: `attachedRepos[].dir` + each repo's common
   `.git` are now bind-mounted rw at identical paths; changing the attach set
   recreates the container on the next ensure (mounts are create-time).
-- **Preview ports** (`"previewPorts": [3300, …]`): each listed container
-  port is published to a random **loopback** host port at container create;
-  `sandbox.ports()` reads the live map and preview.ts routes the same Caddy
-  tailnet-HTTPS front at the published port. In-container dev-server start
-  is gated behind `"devServerInSandbox": true` (default off — the image
-  doesn't carry the tella-fusion dev toolchain yet); without it, preview
-  start is a no-op and only status/ports/Caddy routing are active.
-  **Latent collision:** sandbox and host previews both key the Caddy https
-  port as webapp port + 6000, and the host port allocator (ss-based) can't
-  see in-container listeners — the sandbox https-port range must be
-  namespaced before enabling `devServerInSandbox` broadly.
+- **Preview ports** (`"previewPorts": [3300, …]`, default `[3300, 3301,
+  3302]`): each container port in the set is published to a random
+  **loopback** host port at container create; `sandbox.ports()` reads the
+  live map and preview.ts routes the same Caddy tailnet-HTTPS front at the
+  published port. In-container dev-server start is gated behind
+  `"devServerInSandbox": true` (default off); without it, preview start is a
+  no-op and only status/ports/Caddy routing are active. See "Previews in
+  sandboxes" below for the full Phase 4A flow (port namespace, lifecycle
+  scripts, `.tunnels.env`).
+
+## Previews in sandboxes (Phase 4A)
+
+The session Preview button works for sandboxed sessions: `startSandboxPreview`
+(preview.ts) brings the dev server up INSIDE the container and fronts it with
+the same Caddy tailnet-HTTPS origin as host previews.
+
+**HTTPS-port namespace (the old collision TODO, fixed).** Host previews key
+their Caddy route as `webappPort + 6000` (9100-9999) — safe on the host
+because the tella-fusion port allocator enforces webapp-port uniqueness with
+lsof, but blind to container netns: a sandbox and a host session (or two
+sandboxes) can hold the same webapp port number. Sandbox routes therefore use
+a dedicated allocated range **[20000, 28000)**, keyed by
+`(sandboxId, containerPort)` and persisted in
+`~/.backstage-chats/sandbox-preview-ports.json`
+(src/server/sandbox/preview-ports.ts): host-vs-sandbox collisions are
+impossible by range disjointness, sandbox-vs-sandbox by the allocator's
+uniqueness probe. Allocations survive restarts/recreations (stable preview
+URL) and are released by `destroy()`.
+
+**Pre-published port range.** Docker port publishing is create-time-only, so
+every sandbox container publishes the `previewPorts` set (default 3 ports,
+3300-3302) at create. `startSandboxPreview` picks the worktree's existing
+`.ports.conf` WEBAPP_PORT when it's one of them, else the first published
+port nothing listens on, and seeds/rewrites `.ports.conf` so the dev flow
+adopts it (tella-fusion's dev-services.sh sources an existing `.ports.conf`
+and keeps free ports — inside the fresh netns ours always are). **Range
+exhaustion** (every published port busy) refuses to start; the fallback is
+widening `previewPorts` in `~/.backstage-sandbox.json` and letting the
+container be recreated (stop it or change the attach set — mounts/ports are
+create-time).
+
+**Bring-up resolution (repo-local lifecycle scripts, background-agents
+convention):**
+
+1. `<worktree>/.backstage/start.sh` when present — run detached in-container
+   with `WEBAPP_PORT` (the allocated, published port), `PREVIEW_URL`, and
+   `BACKSTAGE_BOOT_MODE` (`fresh` | `snapshot-restore`) in its env. It should
+   bring the dev server up on `$WEBAPP_PORT` (exec your server so stop's
+   process-group kill reaches it).
+2. else the repo's configured `previewCommand` (config.json `repos` entry;
+   tella-fusion's is the tella-local `ensure-up.sh`), invoked with the
+   worktree path as `$1`.
+3. else the tella-local `ensure-up.sh` if the image/mounts carry it.
+
+`<worktree>/.backstage/setup.sh` is the sibling one-shot hook: it runs once
+per workspace materialization (first ensure of the sandbox, cwd = workspace,
+same `BACKSTAGE_BOOT_MODE` env), is **skipped on snapshot restore** (the
+restored container layer already carries its effects), is never retried once
+settled (log: `~/.backstage-chats/sandbox-runs/<session>/workspace-setup.log`),
+and never blocks the session on failure. Keep both scripts convention-level:
+no framework, no arguments beyond env.
+
+**`.tunnels.env` contract** (adopted from background-agents): when a preview
+starts, backstage writes `<worktree>/.tunnels.env` — dotenv, consumable by
+in-container dev processes:
+
+```
+PREVIEW_URL=https://<host>:<httpsPort>     # the primary (webapp) URL
+PREVIEW_URL_<containerPort>=https://…      # one var per exposed port
+```
+
+Stale files are removed whenever ensure() (re)starts the container and on
+preview stop; each start rewrites the file whole. It's kept out of session
+diffs via the repo's `.git/info/exclude`.
+
+**tella-local `ensure-up.sh` in-container.** The skill dir
+(`~/.claude/skills/tella-local`, or `TELLA_LOCAL_ENSURE_UP`'s dir) is mounted
+read-only at its identical path in every sandbox. Dependency audit of the
+script + `just dev` chain: bash/coreutils/curl/python3/git (baked), `just`,
+`direnv` (hard dep — `direnv exec . just dev`), `lsof` (dev-services port
+probes) now baked. Deliberately NOT installed: the **aws CLI**
+(`ensure-aws-sso.sh` self-skips without it) and **temporal** (`just dev` =
+webapp only; temporal/instant services are Postgres/Redis-class — out of
+image scope, the webapp points at whatever its bind-mounted `.env.local`
+points at, seeded host-side). Caveat: the prebuilt-WASM S3 install
+(`install-*-wasm*.mjs`, JS SDK) needs AWS creds the container doesn't have
+(minimal env, IMDS blocked) — for tella-fusion, run the WASM install
+host-side once per worktree (any host preview does it) before relying on an
+in-sandbox bring-up.
+
+**Post-prompt snapshots.** When `snapshots.enabled`, a successfully completed
+sandboxed run schedules a `docker commit` snapshot (same helper as the
+idle-stop path; deduped, delayed past the run-teardown busy window) — the
+background-agents "snapshot after every turn" warm-restore behavior.
 
 ## Phase 3 — WS transport + remote adapters
 
@@ -149,14 +234,18 @@ first); `aws: true` can't mint creds inside (IMDS blocked).
 - `deploy/sandbox/verify.ts` — manual end-to-end suite
   (`bun run deploy/sandbox/verify.ts`): ensure/reuse, in-container git
   commit through the mounts, claude CLI, RPC socket, IMDS block, a minimal
-  real agent run via launchRun, stop/start/get/destroy. Uses only
-  `sbxtest-*` scratch resources and a redirected run journal; safe next to
-  the live server.
+  real agent run via launchRun, stop/start/get/destroy, volume workspaces,
+  WS transport, snapshots, and the sandboxed preview/lifecycle flow. Uses
+  only `sbxtest-*` scratch resources and a redirected run journal; safe next
+  to the live server.
 
 ## When to rebuild
 
 - **Claude CLI bump** on the host (`claude --version` changes) → bump
-  `CLAUDE_VERSION`. The in-container CLI must match host session-resume behavior.
+  `CLAUDE_VERSION`. The in-container CLI must match host session-resume behavior
+  (the build asserts the installed version and fails on drift).
+- **opencode bump** on the host (`opencode --version` changes) → bump
+  `OPENCODE_VERSION` (same parity rule; build asserts it).
 - **Codex SDK bump** (`@openai/codex-sdk` in `package.json`, which pulls a new
   vendored codex binary) → rebuild so the new binary is baked.
 - **Lockfile change** (`bun.lock`) — any dependency add/upgrade, incl. the Claude
