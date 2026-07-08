@@ -49,11 +49,15 @@ export const TurnBlock = React.memo(function TurnBlock({
     const r = it.toolUseId ? toolResults.get(it.toolUseId) : undefined;
     return (r?.images?.length ?? 0) > 0 || (r?.videos?.length ?? 0) > 0;
   });
-  const [expanded, setExpanded] = useState(hasMedia);
+  // Open while the turn is still working (thinking / tool steps in flight, no
+  // final answer yet) so you can watch it run; collapse the moment it settles
+  // and the end message appears — the chat then reads question → answer. Media
+  // pins it open regardless so a screenshot/recording stays visible.
+  const [expanded, setExpanded] = useState(live || hasMedia);
 
   useEffect(() => {
-    if (hasMedia) setExpanded(true);
-  }, [hasMedia]);
+    setExpanded(live || hasMedia);
+  }, [live, hasMedia]);
 
   const duration = blockDuration(items, toolResults);
   const failures = tools.filter(

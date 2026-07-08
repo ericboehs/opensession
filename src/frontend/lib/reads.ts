@@ -46,6 +46,21 @@ export function markRead(id: string, activity: string): void {
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
+/**
+ * Force a session to read as unread: park its mark at the epoch so any real
+ * `lastActivity` is newer (see isUnread). Used by the sidebar's "Mark as unread"
+ * — the inverse of markRead. If the session is currently open the viewer will
+ * re-mark it read on the next activity tick, which is the expected behavior.
+ */
+export function markUnread(id: string): void {
+  const map = read();
+  const epoch = "1970-01-01T00:00:00.000Z";
+  if (map[id] === epoch) return;
+  map[id] = epoch;
+  localStorage.setItem(KEY, JSON.stringify(map));
+  window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
 /** True when the session has activity newer than the last read mark. */
 export function isUnread(
   id: string,

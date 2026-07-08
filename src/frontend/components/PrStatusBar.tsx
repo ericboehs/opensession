@@ -82,7 +82,11 @@ function deriveHeadline(
 		const checks = summarizeChecks(pr);
 		if (checks.failed > 0) return { key: "failing", label: "Checks failed", tone: "red" };
 		if (checks.pending > 0)
-			return { key: "running", label: "Checks running", tone: "yellow" };
+			return {
+				key: "running",
+				label: `${checks.pending} check${checks.pending === 1 ? "" : "s"} pending…`,
+				tone: "yellow",
+			};
 		if (pr.isDraft) return { key: "draft", label: "Draft", tone: "muted" };
 		if (pr.reviewDecision === "CHANGES_REQUESTED")
 			return { key: "changes-requested", label: "Changes requested", tone: "red" };
@@ -221,7 +225,14 @@ function PrNumberChip({
 			</ContextMenu.Trigger>
 			<ContextMenu.Popup>
 				<ContextMenu.Item
-					render={<a href={pr.url} target="_blank" rel="noopener" />}
+					render={
+						<a
+							href={pr.url}
+							target="_blank"
+							rel="noopener"
+							className="no-underline"
+						/>
+					}
 				>
 					<IconArrowUpRight size={20} />
 					<span className="grow">Open in GitHub</span>
@@ -267,9 +278,11 @@ export function PrStatusBar({
 	running,
 	refreshTick,
 }: Props) {
-	const [pr, setPr] = useState<PrDetails | null>(null);
-	const [git, setGit] = useState<GitStatusInfo | null>(null);
-	const [loaded, setLoaded] = useState(false);
+	const cacheId = `${sessionId}\0${repo || ""}`;
+	const seed = lastKnown.get(cacheId);
+	const [pr, setPr] = useState<PrDetails | null>(seed?.pr ?? null);
+	const [git, setGit] = useState<GitStatusInfo | null>(seed?.git ?? null);
+	const [loaded, setLoaded] = useState(!!seed);
 	const [busy, setBusy] = useState<string | null>(null);
 	const [confirmMerge, setConfirmMerge] = useState(false);
 	const [error, setError] = useState<string | null>(null);

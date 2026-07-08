@@ -69,7 +69,7 @@ export async function highlightToHtml(
   });
 }
 
-function useResolvedTheme(): "dark" | "light" {
+export function useResolvedTheme(): "dark" | "light" {
   const [theme, setTheme] = useState<"dark" | "light">(getResolvedTheme);
 
   useEffect(() => {

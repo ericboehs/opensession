@@ -9,6 +9,7 @@ import {
   type AttachedRepo,
 } from "../lib/api";
 import { Menu } from "../ui/menu";
+import { Modal } from "../ui/modal";
 import { IconCheck, IconPlus, IconX, IconChevronRight } from "./icons";
 import { RepoTile } from "./RepoTile";
 
@@ -52,6 +53,11 @@ export function RepoBar({
   const [hasWork, setHasWork] = useState(false); // already has edits/commits → confirm on switch
   const [busy, setBusy] = useState<string | null>(null); // trigger label while an action runs
   const [error, setError] = useState<string | null>(null);
+  // Switch-with-work confirmation. `confirmTarget` is the repo whose label the
+  // dialog shows; `confirmOpen` drives visibility separately so the label
+  // survives the exit animation (clearing the target would flash it to null).
+  const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Keep in sync if the session prop changes (e.g. the agent attached one, or a
   // switch landed and the parent re-fetched).
@@ -103,21 +109,22 @@ export function RepoBar({
     }
   }
 
-  async function switchPrimary(repo: string) {
+  function switchPrimary(repo: string) {
     if (repo === primary) return;
     // Switching just repoints the session at another worktree — the current one
     // (branch, commits, edits) stays on disk. Confirm when there's work so the
-    // move to a different codebase is a deliberate choice, not a surprise.
-    if (
-      hasWork &&
-      !window.confirm(
-        `Switch this workspace from ${primary} to ${repo}?\n\n` +
-          `Your current changes stay in the ${primary} worktree${
-            branch ? ` (branch ${branch})` : ""
-          } — they won't move to ${repo}. You can reopen them from that branch.`,
-      )
-    )
+    // move to a different codebase is a deliberate choice, not a surprise; a
+    // fresh worktree switches straight through.
+    if (hasWork) {
+      setConfirmTarget(repo);
+      setConfirmOpen(true);
       return;
+    }
+    void doSwitch(repo);
+  }
+
+  async function doSwitch(repo: string) {
+    setConfirmOpen(false);
     setBusy("Switching…");
     setError(null);
     try {
@@ -269,6 +276,43 @@ export function RepoBar({
           {error}
         </span>
       )}
+      {/* Switch-with-work confirmation — a real choice (the move leaves the
+          current changes behind), so an explicit, non-dismissible dialog rather
+          than a native confirm(). */}
+      <Modal.Root open={confirmOpen} onOpenChange={setConfirmOpen} disablePointerDismissal>
+        <Modal.Content widthClassName="max-w-[26rem]">
+          <Modal.Header
+            title={`Switch this workspace to ${confirmTarget}?`}
+            description={
+              <>
+                Your current changes stay in the {primary} worktree
+                {branch ? ` (branch ${branch})` : ""} — they won't move to{" "}
+                {confirmTarget}. You can reopen them from that branch.
+              </>
+            }
+          />
+          <Modal.Footer>
+            <div className="flex-1" />
+            <Modal.Close
+              render={
+                <button
+                  type="button"
+                  className="rounded-md px-3 py-2 text-[13.5px] font-medium text-dim hover:bg-hover hover:text-fg"
+                >
+                  Cancel
+                </button>
+              }
+            />
+            <button
+              type="button"
+              className="rounded-md bg-accent px-5 py-2 text-[13.5px] font-semibold text-white outline-none hover:brightness-105"
+              onClick={() => confirmTarget && doSwitch(confirmTarget)}
+            >
+              Switch to {confirmTarget}
+            </button>
+          </Modal.Footer>
+        </Modal.Content>
+      </Modal.Root>
       {/* Breadcrumb separator between the repo and the session title — only in
           the desktop header, not the compact/menu-row phone variants. */}
       {variant === "breadcrumb" && (

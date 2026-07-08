@@ -726,13 +726,13 @@ body.resizing-x {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	padding: 10px 14px 8px;
+	padding: 10px 18px 8px;
 }
 
 /* Workspace header: "My sessions" title row (+ optional repo chip + action
    icons), with the session search bar directly below it. */
 .sidebar-workspace {
-	padding: 12px 14px 2px 16px;
+	padding: 12px 18px 2px 20px;
 	/* Transparent by default so toggling the color on scroll never shifts layout;
 	   turns into a visible divider under the header once the list scrolls. */
 	border-bottom: 1px solid transparent;
@@ -1216,6 +1216,10 @@ body.resizing-x {
 	border: none;
 	border-radius: 8px;
 	padding: 6px 8px;
+	/* Reserve the on-hover chevron's height (18px + 12px vertical padding) so
+	   revealing it via display-toggle can't grow the row and nudge the list
+	   below. The label's own line-box is shorter than the chevron. */
+	min-height: 30px;
 	margin: 0;
 	font: inherit;
 	color: inherit;
@@ -1232,16 +1236,18 @@ body.resizing-x {
 	text-overflow: ellipsis;
 	min-width: 0;
 }
-/* Chevron appears just after the label on hover. display-toggle (not opacity)
-   so it reserves no space at rest — the label stays put and the auto-margin
-   before the trail absorbs it, so nothing shifts. Rotate = collapsed state. */
+/* Chevron reveals on hover. It stays in layout at all times (visibility, not
+   display) so it always reserves its box — otherwise its 18px height, taller
+   than the 12px label line, would grow the row the moment it appears and nudge
+   the whole list below. Reserved-but-hidden costs only trailing space at the
+   row's right edge, which is invisible. Rotate = collapsed state. */
 .sidebar-band-chevron {
 	color: var(--text-faint);
 	flex-shrink: 0;
-	display: none;
+	visibility: hidden;
 }
 .sidebar-band-toggle:hover .sidebar-band-chevron {
-	display: inline-flex;
+	visibility: visible;
 	color: var(--text-dim);
 }
 /* Count sits right after the heading (not pinned right). Any future actions can
@@ -1290,6 +1296,7 @@ body.resizing-x {
 }
 .sidebar-group-header:hover {
 	color: var(--text);
+	background: var(--bg-hover);
 }
 
 .sidebar-group-chevron {
@@ -1333,6 +1340,19 @@ body.resizing-x {
 	font-size: 12px;
 	font-weight: 500;
 }
+/* In the status lanes the count rides directly behind its label (like the repo
+   heads) rather than being pinned to the far right edge. The chevron that
+   follows takes the trailing space instead. */
+.sidebar-status-group .sidebar-group-count,
+.sidebar-group--pinned .sidebar-group-count,
+.sidebar-archived-row .sidebar-group-count {
+	margin-left: 0;
+	padding-right: 0;
+}
+.sidebar-status-group .sidebar-group-chevron,
+.sidebar-group--pinned .sidebar-group-chevron {
+	margin-left: auto;
+}
 
 .sidebar-item {
 	display: block;
@@ -1349,6 +1369,18 @@ body.resizing-x {
 	padding: 11px 8px 11px 10px;
 	color: var(--text);
 	position: relative;
+}
+
+/* 2px of breathing room between list rows — covers both the swipe-wrapped
+   rows (workspace + chat) and the bare rows (PR / support). The inner
+   .sidebar-item of a swipe row must not add its own margin, or wrapped rows
+   would gap twice. */
+.sidebar-swipe-row,
+.sidebar-item {
+	margin-top: 2px;
+}
+.sidebar-swipe-row > .sidebar-item {
+	margin-top: 0;
 }
 
 /* Other people's sessions stack a "name · time" meta line under the title, so
@@ -1533,6 +1565,40 @@ body.resizing-x {
 	.sidebar-ws-row:hover .sidebar-ws-ticker,
 	.sidebar-ws-row:hover .sidebar-ws-draft {
 		display: inline-flex;
+	}
+	/* The sidebar header already reads as the "Workspaces" section on mobile, so
+	   drop the redundant in-header title (its filter/new actions stay). */
+	.sidebar-workspace-title {
+		display: none;
+	}
+	/* Flatten the nesting indent under each status lane — that extra left inset is
+	   a desktop-only affordance; on mobile the rows sit flush under the status, and
+	   their leading column lines up 1:1 with the group header's. The header icon is
+	   a 22px box at 6px padding (center 17px); match it exactly — same 6px padding,
+	   and a 9px gap so the title lands where the header name does. WsStatusMark is
+	   bumped to a 22px slot on phones (in renderWsRow) so the icon/dot centers land
+	   on 17px too, rather than 4px to the right of the status/repo icons above. The
+	   Pinned group carries the same rows (workspace rows + loose chats), so it gets
+	   the identical flattening — its rows align under the Pinned header the same way. */
+	.sidebar-status-group .sidebar-item,
+	.sidebar-group--pinned .sidebar-item {
+		padding-left: 6px;
+	}
+	.sidebar-status-group .sidebar-ws-row,
+	.sidebar-group--pinned .sidebar-ws-row {
+		gap: 9px;
+	}
+	/* Under "Group by: Repo", drop the lane inset entirely on mobile so the
+	   repo head, its status lanes, and the workspace rows all share one left
+	   edge. The desktop indent is a nice nesting cue but it eats scarce
+	   horizontal space on a phone; the repo band + collapse already conveys
+	   the grouping. (These out-specificity the base mobile header/item
+	   padding rules, so restate their values.) */
+	.sidebar-repo-lanes .sidebar-group-header {
+		padding-left: 6px;
+	}
+	.sidebar-repo-lanes .sidebar-item {
+		padding-left: 6px;
 	}
 }
 /* On touch, the full action set (Rename / Move / Archive) is still reached by
@@ -2063,9 +2129,11 @@ body.resizing-x {
 }
 .session-tab-active {
 	color: var(--text);
-	background: var(--bg-active);
+	/* Keep the same floating-pill shadow as inactive tabs so the active one
+	   doesn't read as smaller/pressed-in — the darker fill alone marks it as
+	   selected. Nudged a touch past --bg-active for a clear selected read. */
+	background: color-mix(in srgb, var(--bg-active) 94%, var(--text));
 	border-color: transparent;
-	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 /* The trailing + / history controls stay quiet chrome — no pill fill or shadow;
    they light up on hover like before. */
@@ -2075,42 +2143,72 @@ body.resizing-x {
 	box-shadow: none;
 }
 
-/* Desktop: a solid tab band in normal flow (not floating). A hairline divider
-   top and bottom frames the strip between the header and the transcript, and the
-   tabs read as outlined "stroke" chips (--tab-stroke) rather than shadowed
-   floating pills — the active tab fills in. (Phones keep their own floating
+/* Desktop: a flat tab bar in normal flow — plain text tabs sitting on the
+   transcript's OWN background (no separate-colored band), closed off by a single
+   bottom hairline that the active tab's underline rests flush on. The whole strip
+   stretches to the band height so that underline lands exactly on the hairline —
+   a real tab-with-underline, not a floating pill. (Phones keep their own floating
    version in the max-width block below, where the top bar is an overlay.) */
 @media (min-width: 721px) {
 	.session-tabs {
 		height: 44px;
 		padding: 0 8px;
-		/* Solid, same fill as the header so header+strip read as one block; the
-		   strip's own top/bottom hairlines are the only dividers. */
-		background: var(--topbar-bg);
-		border-top: 1px solid var(--border);
+		/* Same fill as the transcript body so the strip is NOT a differently-
+		   coloured bar — just tabs sitting on the conversation. The bottom hairline
+		   is the only divider; the tone step up to the header reads as the top one. */
+		background: var(--bg);
 		border-bottom: 1px solid var(--border);
-		/* Uncolored tabs get a visible hairline outline; colored/waiting/active
-		   variants override their own border-color, so they're unaffected. */
-		--tab-stroke: var(--border);
+		/* Stretch so the tabs (and their bottom underline) reach the band's bottom
+		   hairline instead of floating centered above it. */
+		align-items: stretch;
 	}
-	/* Hug the tab content (don't grow) so the pinned "+" sits right after the
-	   last tab instead of being pushed to the far right; it still shrinks and
-	   scrolls internally when the tabs overflow a narrow pane. */
+	/* Hug the tab content (don't grow) so the pinned "+" sits right after the last
+	   tab instead of being pushed to the far right; it still shrinks and scrolls
+	   internally when the tabs overflow. Full-height so its tabs can stretch to the
+	   bottom hairline. */
 	.session-tabs-scroll {
 		flex: 0 1 auto;
+		align-items: stretch;
 	}
-	/* Not floating anymore → drop the pill shadow; the outline carries the tab. */
-	.session-tabs .session-tab {
-		box-shadow: none;
+	/* Plain text tabs — no fill, outline, shadow, or rounding. Just the label, with
+	   a transparent underline reserved so the active/inactive swap never shifts the
+	   row. Real tabs only — the trailing +/history controls keep their own
+	   centered-button footprint. */
+	.session-tabs .session-tab:not(.session-tab-new):not(.session-tab-history) {
+		background: transparent;
+		border: none;
+		border-radius: 0;
+		box-shadow: inset 0 -2px 0 transparent;
 	}
-	.session-tabs .session-tab:hover {
-		--tab-stroke: var(--border-strong);
+	/* Hover only lifts the label to full-strength text (and reveals the × via its
+	   own rule) — no background, so a tab never reads as a pill. */
+	.session-tabs .session-tab:not(.session-tab-new):not(.session-tab-history):hover {
+		background: transparent;
+		color: var(--text);
+	}
+	/* Active tab: a straight accent underline flush on the bottom hairline, label
+	   at full strength. Held through hover so the line reads cleanly. */
+	.session-tabs .session-tab-active:not(.session-tab-new):not(.session-tab-history),
+	.session-tabs .session-tab-active:not(.session-tab-new):not(.session-tab-history):hover {
+		color: var(--text);
+		background: transparent;
+		box-shadow: inset 0 -2px 0 var(--accent);
+	}
+	/* Colored / waiting states have no pill to tint in the flat layout, so their
+	   cue moves to the underline: the swatch color, or the accent for a waiting
+	   tab. The active accent line still wins for the selected tab. */
+	.session-tabs .session-tab-colored:not(.session-tab-active) {
+		box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--tab-color) 70%, transparent);
+	}
+	.session-tabs .session-tab-waiting:not(.session-tab-active) {
+		color: var(--text);
+		box-shadow: inset 0 -2px 0 var(--accent);
 	}
 	/* New-tab "+" as a real control on the same footprint/weight as the header
-	   ⋯ menu (btn-viewer-overflow): quiet borderless square, always visible (no
-	   hover-reveal), that just lights up on hover — no boxed hairline that reads
-	   heavier than the flat text tabs beside it. */
+	   ⋯ menu (btn-viewer-overflow): quiet borderless square, centered in the band,
+	   always visible (no hover-reveal), that just lights up on hover. */
 	.session-tabs .session-tab-new {
+		align-self: center;
 		opacity: 1;
 		pointer-events: auto;
 		width: auto;
@@ -2548,9 +2646,9 @@ body.resizing-x {
 /* Double-clickable to rename — hint it on hover without shifting layout. */
 .viewer-branch-editable {
 	cursor: text;
-	border-radius: 8px;
-	padding: 0 3px;
-	margin: 0 -3px;
+	border-radius: 6px;
+	padding: 5px 8px;
+	margin: -5px -8px;
 }
 .viewer-branch-editable:hover {
 	background: var(--bg-hover, rgba(127, 127, 127, 0.12));
@@ -2656,7 +2754,7 @@ body.resizing-x {
 	border-radius: 10px;
 	color: var(--text-dim);
 	padding: 3px 5px;
-	font-size: 24px;
+	font-size: 22px;
 	line-height: 1;
 }
 .btn-viewer-overflow.active,
@@ -2845,10 +2943,71 @@ body.resizing-x {
 .staging-link:hover {
 	background: rgba(210, 153, 34, 0.12);
 }
-/* Deploy still building — link works (Vercel shows build progress) but reads
-   as not-ready-yet. */
+/* Deploy still building — not testable yet, so a plain click is swallowed
+   (see StagingLink.onClick) and the pill reads as not-ready with a spinning
+   globe; ⌘-click still copies the link. */
 .staging-link-building {
 	opacity: 0.55;
+	cursor: default;
+}
+
+/* Spinning ring around the globe while the staging deploy is still building.
+   currentColor picks up the amber/green icon tone; the ring sits just outside
+   the thin globe circle so it reads as a halo, not a second outline. */
+.staging-globe-wrap {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.staging-spinner {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 22px;
+	height: 22px;
+	margin: -11px 0 0 -11px;
+	border-radius: 50%;
+	border: 1.5px solid transparent;
+	border-top-color: currentColor;
+	opacity: 0.9;
+	pointer-events: none;
+	animation: preview-spin 0.7s linear infinite;
+}
+/* The bar variant's globe is only 15px — shrink the ring to hug it. */
+.staging-link .staging-spinner {
+	width: 16px;
+	height: 16px;
+	margin: -8px 0 0 -8px;
+	border-width: 1.25px;
+}
+
+/* Deploy is on its way but butler hasn't posted the preview URL yet — there's
+   nothing to link to, so the globe just breathes (a skeleton-style shimmer) in
+   a muted tone to read as "loading" until the amber Building link takes over. */
+@keyframes staging-shimmer {
+	0%,
+	100% {
+		opacity: 0.35;
+	}
+	50% {
+		opacity: 0.85;
+	}
+}
+.staging-shimmer {
+	animation: staging-shimmer 1.4s ease-in-out infinite;
+}
+.staging-icon.is-pending,
+.staging-link-pending {
+	color: var(--text-dim);
+	cursor: default;
+}
+.staging-link-pending {
+	border-color: var(--line);
+}
+.staging-icon.is-pending:hover,
+.staging-link-pending:hover {
+	background: none;
 }
 
 .btn-panel-toggle {
@@ -2877,10 +3036,11 @@ body.resizing-x {
 	   .btn-panel-toggle is text-dim, which read a shade darker than its mirror. */
 	color: var(--text-faint);
 }
-/* The Workspace toggle's affordance is neutral, not the red accent — hover/
-   active lean toward the text color over a plain row-hover wash (same as the
-   ⋯ overflow button), so only genuinely alarming controls wear red. */
-.btn-panel-toggle.btn-workspace.active,
+/* The Workspace toggle's affordance is neutral, not the red accent — hover
+   leans toward the text color over a plain row-hover wash (same as the ⋯
+   overflow button), so only genuinely alarming controls wear red. Note: no
+   .active rule — an open panel is already visible beside the toggle, so
+   highlighting the button too is redundant; only hover gets the wash. */
 .btn-panel-toggle.btn-workspace:hover {
 	border-color: transparent;
 	color: var(--text);
@@ -2949,10 +3109,18 @@ body.resizing-x {
 	color: var(--green);
 	background: var(--green-soft);
 }
+/* Staging globe rides a touch smaller than the other code icons — trim its
+   hitarea to match the reduced glyph so the box hugs it rather than floating. */
+.staging-icon {
+	padding: 2px 4px;
+}
 /* Staging: amber (dimmed) while the deploy builds, green once Ready. */
 .staging-icon.is-building {
 	color: var(--yellow);
 	opacity: 0.72;
+	/* Not testable yet — a plain click is swallowed (see StagingLink.onClick),
+	   so don't imply it opens. ⌘-click still copies. */
+	cursor: default;
 }
 .staging-icon.is-building:hover {
 	color: var(--yellow);
@@ -3568,7 +3736,7 @@ body.resizing-x .panel-resize::after {
 	display: flex;
 	flex-direction: column;
 	gap: 20px;
-	padding: 14px 14px 20px;
+	padding: 20px 22px 28px;
 }
 
 .workspace-info-head {
@@ -3603,7 +3771,7 @@ body.resizing-x .panel-resize::after {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
-	margin-top: 4px;
+	margin-top: 10px;
 }
 
 .wi-chip {
@@ -3623,6 +3791,7 @@ body.resizing-x .panel-resize::after {
 	border: 1px solid transparent;
 	cursor: pointer;
 	white-space: nowrap;
+	transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 .wi-chip-icon {
 	display: inline-flex;
@@ -3664,6 +3833,29 @@ body.resizing-x .panel-resize::after {
 	color: var(--text-dim);
 	background: var(--bg-surface);
 	border-color: var(--border);
+}
+
+/* Hover feedback: deepen the tint a touch and pull the border in. */
+.wi-chip-green:hover {
+	background: color-mix(in srgb, var(--green, #16a34a) 20%, transparent);
+	border-color: color-mix(in srgb, var(--green, #16a34a) 40%, transparent);
+}
+.wi-chip-red:hover {
+	background: color-mix(in srgb, var(--red, #dc2626) 20%, transparent);
+	border-color: color-mix(in srgb, var(--red, #dc2626) 40%, transparent);
+}
+.wi-chip-yellow:hover {
+	background: color-mix(in srgb, var(--yellow, #ca8a04) 22%, transparent);
+	border-color: color-mix(in srgb, var(--yellow, #ca8a04) 44%, transparent);
+}
+.wi-chip-purple:hover {
+	background: color-mix(in srgb, var(--purple, #7c3aed) 20%, transparent);
+	border-color: color-mix(in srgb, var(--purple, #7c3aed) 40%, transparent);
+}
+.wi-chip-muted:hover {
+	color: var(--text);
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
 }
 
 .workspace-info-body {
@@ -3804,48 +3996,106 @@ body.resizing-x .panel-resize::after {
 	background: var(--bg-hover);
 }
 
-/* PR comments — rendered like the chat's code card: an author/time header bar
-   over a markdown body. Clamped by default; hovering expands it in place. */
+/* PR comments — an avatar beside a markdown body with a muted source/time
+   footer. Clamped by default; hovering floats the full comment in a popover. */
 .workspace-info-comments {
 	display: grid;
 	gap: 8px;
 }
+/* Comments heading + its right-aligned "Fix" button. */
+.workspace-info-comments-label {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.workspace-info-fix {
+	flex: none;
+	padding: 2px 10px;
+	border-radius: 999px;
+	border: 1px solid var(--border-strong);
+	background: var(--bg-surface);
+	color: var(--text-dim);
+	font-size: 11.5px;
+	font-weight: 650;
+	letter-spacing: -0.01em;
+	cursor: pointer;
+	transition:
+		color 0.12s ease,
+		border-color 0.12s ease,
+		background 0.12s ease;
+}
+.workspace-info-fix:hover {
+	color: var(--text);
+	border-color: var(--text-faint);
+	background: var(--bg-hover);
+}
+/* One-line row: avatar · title · time. Dense list — the full comment opens in
+   the hover popover, never by growing the row. */
+/* Clean text rows — no outline/box. Avatar · title · time, aligned flush with
+   the section heading above. Hovering floats the full comment popover. */
 .workspace-info-comment {
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	background: var(--bg-panel);
-	overflow: hidden;
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 3px 0;
 	text-align: left;
 	cursor: pointer;
 	min-width: 0;
 }
-.workspace-info-comment:hover {
-	border-color: var(--border-strong);
+.workspace-info-comment:hover .workspace-info-comment-time {
+	color: var(--text-dim);
 }
-.workspace-info-comment-head {
-	position: relative;
-	display: flex;
-	align-items: baseline;
-	gap: 6px;
-	padding: 7px 10px;
-	background: var(--bg-surface);
-	border-bottom: 1px solid var(--border);
+.workspace-info-comment-avatar {
+	flex: none;
+	width: 18px;
+	height: 18px;
+	border-radius: 5px;
+	display: grid;
+	place-items: center;
+	color: #fff;
+	font-size: 10px;
+	font-weight: 680;
 }
-.workspace-info-comment-author {
+/* Real GitHub avatar variant (author's logo) — fill the same 18px tile. */
+img.workspace-info-comment-avatar {
+	object-fit: cover;
+	background: var(--bg-active);
+}
+.workspace-info-comment-title {
+	flex: 1;
+	min-width: 0;
 	color: var(--text);
-	font-size: 12px;
-	font-weight: 650;
+	font-size: 12.5px;
+	font-weight: 550;
+	line-height: 1.35;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 .workspace-info-comment-time {
+	flex: none;
 	color: var(--text-faint);
-	font-size: 11px;
+	font-size: 11.5px;
 }
-/* Hover "Add to chat" — floats at the right of the header bar. */
+.workspace-info-comment-author {
+	color: var(--text-faint);
+	font-size: 11.5px;
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
+}
+/* Hover "Add to chat" — floats over the right end of the row (covers time). */
 .workspace-info-comment-add {
 	position: absolute;
-	top: 4px;
-	right: 5px;
-	padding: 3px 8px;
+	top: 50%;
+	right: 6px;
+	transform: translateY(-50%);
+	z-index: 1;
+	padding: 2px 8px;
 	border-radius: 6px;
 	border: 1px solid var(--border-strong);
 	background: var(--bg-panel);
@@ -3864,27 +4114,86 @@ body.resizing-x .panel-resize::after {
 	border-color: var(--text-faint);
 	background: var(--bg-hover);
 }
-/* Markdown body — clamped preview; the fade signals there's more (the full
-   text opens in the hover popover, never by resizing this card). */
-.workspace-info-comment-md {
+/* Popover-only: author/time header above the full markdown body. */
+.workspace-info-comment-main {
 	position: relative;
-	max-height: 92px;
-	overflow: hidden;
-	padding: 8px 11px;
+	min-width: 0;
+	flex: 1;
 }
-.workspace-info-comment-md.is-clamped::after {
-	content: "";
-	position: absolute;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	height: 40px;
-	background: linear-gradient(transparent, var(--bg-panel));
-	pointer-events: none;
+.workspace-info-comment-pop-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+	min-width: 0;
+	margin-bottom: 6px;
 }
 
 /* Hover popover — the full comment floated on top of the list. */
 .workspace-info-comment-pop {
+	position: fixed;
+	z-index: 60;
+	display: flex;
+	align-items: stretch;
+	gap: 9px;
+	padding: 11px 12px;
+	border: 1px solid var(--border-strong);
+	border-radius: 12px;
+	background: var(--bg-panel);
+	overflow: hidden;
+	cursor: pointer;
+	box-shadow:
+		0 12px 40px -8px rgba(0, 0, 0, 0.5),
+		0 0 0 1px var(--border);
+}
+.workspace-info-comment-pop .workspace-info-comment-main {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+.workspace-info-comment-pop-body {
+	flex: 1;
+	overflow-y: auto;
+	min-height: 0;
+	margin-bottom: 5px;
+}
+
+/* Hover popover for a "file changed" row — the file's actual diff floated on
+   top of the list, mirroring the comment popover's floated-card chrome. */
+.workspace-info-file-pop {
+	position: fixed;
+	z-index: 60;
+	display: flex;
+	flex-direction: column;
+	padding: 10px 12px;
+	border: 1px solid var(--border-strong);
+	border-radius: 12px;
+	background: var(--bg-panel);
+	overflow: hidden;
+	cursor: pointer;
+	box-shadow:
+		0 12px 40px -8px rgba(0, 0, 0, 0.5),
+		0 0 0 1px var(--border);
+}
+.workspace-info-file-pop-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+	min-width: 0;
+	margin-bottom: 8px;
+}
+.workspace-info-file-pop-body {
+	flex: 1;
+	overflow: auto;
+	min-height: 0;
+	font-size: 12px;
+}
+
+/* Checks hover overview — the full per-check list floated off the checks chip
+   (GitHub-style: status icon · name · outcome word). Shares the comment-pop's
+   floated-card chrome. */
+.workspace-info-checks-pop {
 	position: fixed;
 	z-index: 60;
 	display: flex;
@@ -3893,14 +4202,102 @@ body.resizing-x .panel-resize::after {
 	border-radius: 10px;
 	background: var(--bg-panel);
 	overflow: hidden;
-	cursor: pointer;
 	box-shadow:
 		0 12px 40px -8px rgba(0, 0, 0, 0.5),
 		0 0 0 1px var(--border);
 }
-.workspace-info-comment-pop-body {
-	padding: 10px 12px;
+.workspace-info-checks-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 9px 12px;
+	border-bottom: 1px solid var(--border);
+	background: var(--bg-surface);
+}
+.workspace-info-checks-title {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text);
+}
+.workspace-info-checks-summary {
+	display: inline-flex;
+	gap: 8px;
+	font-size: 11.5px;
+	font-weight: 600;
+}
+.workspace-info-checks-list {
 	overflow-y: auto;
+	padding: 4px;
+}
+.workspace-info-check-row {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 6px 8px;
+	border-radius: 6px;
+	color: var(--text);
+	text-decoration: none;
+}
+a.workspace-info-check-row {
+	cursor: pointer;
+}
+.workspace-info-check-row:hover {
+	background: var(--bg-surface);
+}
+.workspace-info-check-name {
+	flex: 1;
+	min-width: 0;
+	font-size: 13px;
+	font-weight: 500;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.workspace-info-check-status {
+	flex-shrink: 0;
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-dim);
+}
+.wi-check-icon {
+	flex-shrink: 0;
+	display: inline-flex;
+	width: 16px;
+	height: 16px;
+}
+.wi-check-ico {
+	display: block;
+	width: 16px;
+	height: 16px;
+}
+.wi-check-success {
+	color: var(--green, #16a34a);
+}
+.wi-check-failure {
+	color: var(--red, #dc2626);
+}
+.wi-check-pending {
+	color: var(--yellow, #ca8a04);
+}
+.wi-check-skipped,
+.wi-check-neutral {
+	color: var(--text-dim);
+}
+/* Indeterminate running spinner (no determinate SVG) — centered in the 16px slot. */
+.wi-check-spin {
+	width: 13px;
+	height: 13px;
+	margin: 1.5px;
+	border-radius: 999px;
+	border: 1.6px solid color-mix(in srgb, currentColor 28%, transparent);
+	border-top-color: currentColor;
+	animation: wi-check-spin 0.7s linear infinite;
+}
+@keyframes wi-check-spin {
+	to {
+		transform: rotate(360deg);
+	}
 }
 
 /* Compact markdown scale (base .markdown is sized for chat) — shared by the
@@ -4701,6 +5098,23 @@ body.resizing-x .panel-resize::after {
 	   rather than a heavier gray block that looks shorter/misaligned. */
 	background: var(--topbar-bg);
 }
+/* First-load placeholder line ("Checking status…") — the strip holds its place
+   immediately instead of popping in once /pr + /git-status resolve. */
+.pr-bar-checking {
+	font-size: 13.5px;
+	font-weight: 650;
+	color: var(--text-dim);
+	animation: pr-bar-checking-pulse 1.6s ease-in-out infinite;
+}
+@keyframes pr-bar-checking-pulse {
+	0%,
+	100% {
+		opacity: 0.45;
+	}
+	50% {
+		opacity: 0.85;
+	}
+}
 
 /* PR chip: one linked pill — "#1234 ↗". Left-click opens the PR on GitHub (the
    trailing arrow marks the outbound link); right-click opens the actions menu
@@ -4731,10 +5145,10 @@ body.resizing-x .panel-resize::after {
 	background: color-mix(in srgb, currentColor 18%, transparent);
 }
 .pr-num-chip-arrow {
-	width: 15px;
-	height: 15px;
+	width: 20px;
+	height: 20px;
 	margin-right: -2px;
-	opacity: 0.7;
+	opacity: 0.8;
 }
 /* Toned chips get a soft tinted fill (not the neutral white control surface) so
    the pill reads as its status colour — e.g. a green "Ready to merge" chip sits
@@ -5015,23 +5429,6 @@ body.resizing-x .panel-resize::after {
 .pr-pill-draft {
 	background: var(--bg-active);
 	color: var(--text-dim);
-}
-/* First-load placeholder line ("Checking status…") — the strip holds its place
-   immediately instead of popping in once /pr + /git-status resolve. */
-.pr-bar-checking {
-	font-size: 13.5px;
-	font-weight: 650;
-	color: var(--text-dim);
-	animation: pr-bar-checking-pulse 1.6s ease-in-out infinite;
-}
-@keyframes pr-bar-checking-pulse {
-	0%,
-	100% {
-		opacity: 0.45;
-	}
-	50% {
-		opacity: 0.85;
-	}
 }
 
 .pr-number {
@@ -7657,7 +8054,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	position: relative;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 34px;
+	border-radius: 40px;
 	padding: 14px 14px 10px 16px;
 	transition:
 		border-color 0.15s,
@@ -9638,6 +10035,12 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		flex-shrink: 0;
 	}
 
+	/* The running dot moved down from the title into the metadata line — keep it
+	   from shrinking and give it a hair of trailing room before the model label. */
+	.header-chatbar .working-dot {
+		flex-shrink: 0;
+	}
+
 	/* ── Session info page (phone) ──────────────────────────────
 	   Tapping the top-bar title opens this as a deeper page, WhatsApp-style:
 	   a full-screen sheet with the session identity up top and every action
@@ -9733,7 +10136,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.header-chatbar-sep {
 		flex-shrink: 0;
 		/* Bigger middot between repo · model · cost. */
-		font-size: 16px;
+		font-size: 20px;
 		line-height: 1;
 		color: var(--text-dim);
 	}
@@ -10562,7 +10965,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		padding: 12px 12px 10px 16px;
 		overflow-x: auto;
 		overflow-y: hidden;
-		-webkit-overflow-scrolling: touch;
+		/* No `-webkit-overflow-scrolling: touch`: on iOS it promotes this strip to
+		   its own composited layer, which then paints ABOVE the sidebar's vertical
+		   overlay scrollbar — the scrollbar vanishes "under" the horizontal cards as
+		   it passes over them. Momentum scroll is on by default on modern iOS, so
+		   dropping it keeps the feel and lets the scrollbar sit above this section. */
 		scrollbar-width: none;
 		overscroll-behavior-x: contain;
 	}
@@ -13109,7 +13516,11 @@ html[data-theme="light"] .palette-card .palette-create {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	padding: 3px 5px;
+	/* Tighter than the 3px 5px of its ▶/▐ row-mates: the plus glyph is drawn
+	   larger (size 28 — see SessionViewer) to match their visible weight, so the
+	   box is trimmed to keep the hover pill the same ~34px height as the sidebar
+	   toggle rather than ballooning taller. */
+	padding: 2px 4px;
 	border-radius: 10px;
 	border: 1px solid transparent;
 	background: none;

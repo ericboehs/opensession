@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Sidebar } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
+import { ToastHost, toast } from "./ui/toast";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
 import { SessionSearch } from "./components/SessionSearch";
@@ -48,6 +49,12 @@ import {
 import type { Project } from "./lib/types";
 import { pushRecent } from "./lib/recents";
 import { markRead } from "./lib/reads";
+import {
+	chatPath,
+	prPath,
+	absoluteLink,
+	copyToClipboard,
+} from "./lib/share-link";
 import {
 	getPins,
 	togglePin,
@@ -268,21 +275,13 @@ function App() {
 			{ content: string; user: string; sentAt: number; images?: string[] }
 		>
 	>({});
-	// Transient bottom toast (e.g. "Archived · stopped the running turn"). One at
-	// a time; a fresh message resets the auto-dismiss timer.
-	const [toast, setToast] = useState<string | null>(null);
-	const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// Transient toasts (e.g. "Link copied", "Archived · stopped the running
+	// turn") route through the global toast store — stacked, animated, and
+	// firable from anywhere without threading a prop. This wrapper keeps the
+	// existing `onToast`/`showToast` call sites working.
 	const showToast = useCallback((message: string) => {
-		if (toastTimer.current) clearTimeout(toastTimer.current);
-		setToast(message);
-		toastTimer.current = setTimeout(() => setToast(null), 3200);
+		toast(message);
 	}, []);
-	useEffect(
-		() => () => {
-			if (toastTimer.current) clearTimeout(toastTimer.current);
-		},
-		[],
-	);
 	// Watercooler unread badge: messages newer than the locally-stored
 	// last-read stamp (own messages never count). Live chat_message events bump
 	// it; having the Watercooler open marks read continuously.
@@ -615,7 +614,8 @@ function App() {
 			);
 		},
 		isMyReview: (s) =>
-			s.reviewRequest?.to?.toLowerCase() === getCurrentUser().toLowerCase(),
+			s.reviewRequest?.to?.toLowerCase() === getCurrentUser().toLowerCase() &&
+			!s.reviewRequest?.accepted,
 		onOpen: (id) => navigate({ view: "session", id }),
 	});
 
@@ -688,9 +688,15 @@ function App() {
 		return () => window.removeEventListener("popstate", onPop);
 	}, []);
 
-	// ⌘K toggles the session-search palette; ⌘N the new-session palette. Esc
-	// closes whichever is open (search's own input also handles Esc, but this
-	// covers the case where focus has left it).
+	// The link ⌘⇧C copies: the open chat/workspace, or the open PR preview.
+	// Assigned during render (below, once currentSession is known); null when
+	// the current view has nothing linkable.
+	const copyLinkPathRef = useRef<string | null>(null);
+
+	// ⌘K toggles the session-search palette; ⌘N the new-session palette; ⌘⇧C
+	// copies a link to the open chat/PR. Esc closes whichever palette is open
+	// (search's own input also handles Esc, but this covers the case where focus
+	// has left it).
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			const k = e.key.toLowerCase();
@@ -704,6 +710,16 @@ function App() {
 				paletteOpenRef.current ? closePalette() : openPalette();
 				return;
 			}
+			if ((e.metaKey || e.ctrlKey) && e.shiftKey && k === "c") {
+				// Let a real text selection copy normally; only hijack ⌘⇧C when
+				// there's a linkable view and nothing is selected.
+				if (window.getSelection?.()?.toString()) return;
+				const path = copyLinkPathRef.current;
+				if (!path) return;
+				e.preventDefault();
+				copyToClipboard(absoluteLink(path), () => showToast("Link copied"));
+				return;
+			}
 			if (e.key === "Escape") {
 				if (searchOpenRef.current) setSearchOpen(false);
 				else if (paletteOpenRef.current) closePalette();
@@ -711,7 +727,7 @@ function App() {
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [openPalette, closePalette]);
+	}, [openPalette, closePalette, showToast]);
 
 	// Remember the last session so a cold relaunch can restore it (see above);
 	// clear it when the user deliberately goes home so we don't force them back in.
@@ -907,6 +923,15 @@ function App() {
 	// via + shows up next to its slack source. Failing that, the open chat alone
 	// still gets a strip (one tab + the + button).
 	const activeProjectId = currentSession?.projectId || null;
+
+	// Feed the ⌘⇧C copy-link shortcut: the open chat (workspace-scoped when it
+	// has one), the open PR preview, or nothing linkable.
+	copyLinkPathRef.current =
+		route.view === "session" && currentSession
+			? chatPath(currentSession)
+			: route.view === "pr"
+				? prPath(route.repo, route.branch)
+				: null;
 
 	// Canonicalize the open chat's URL to /workspace/<wsId>/chat/<chatId> once
 	// its workspace is known (replaceState: same history depth, so Back and the
@@ -1162,24 +1187,13 @@ function App() {
 	// (IconSidebarRight) in the session header, and to carry the same visual
 	// weight as the fuller play/globe glyphs there (a framed rectangle reads a
 	// hair lighter than a filled triangle / globe at the same nominal size).
-	const panelIcon = <IconSidebarLeft size={28} />;
+	const panelIcon = <IconSidebarLeft size={26} />;
 
 	return (
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
 			<MediaLightboxHost />
-			{toast && (
-				<div className="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4">
-					<button
-						type="button"
-						role="status"
-						onClick={() => setToast(null)}
-						className="pointer-events-auto flex items-center gap-2 rounded-lg border border-line-strong bg-panel px-4 py-2.5 text-sm text-fg shadow-[0_6px_20px_rgba(0,0,0,0.35)]"
-					>
-						{toast}
-					</button>
-				</div>
-			)}
+			<ToastHost />
 			<div className="app">
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
 				    on a pushed page (a session or other view) the brand is replaced by
@@ -1254,9 +1268,6 @@ function App() {
 							)}
 							<span className="app-header-title-col">
 								<span className="app-header-title-row">
-									{route.view === "session" && currentSession?.isRunning && (
-										<span className="working-dot" />
-									)}
 									<span className="app-header-title-text">
 										{route.view === "session"
 											? (activeProjectId
@@ -1394,7 +1405,7 @@ function App() {
 										    magnifier is a small circle + thin handle, so it needs more
 										    nominal size to carry the same weight as the globe/play/panel
 										    icons in the session header. */}
-										<IconSearch size={30} />
+										<IconSearch size={28} />
 									</button>
 								</Tooltip>
 								<Tooltip label="Hide sidebar" side="bottom">
@@ -1488,14 +1499,7 @@ function App() {
 									console.error("Delete project failed:", e);
 								}
 							}}
-							onSetProjectColor={async (id, color) => {
-								try {
-									await updateProjectApi(id, { color });
-									refreshProjects();
-								} catch (e) {
-									console.error("Set project color failed:", e);
-								}
-							}}
+							onToast={showToast}
 							onOpenNote={(id) =>
 								navigate({ view: "notes", sel: { kind: "note", id } })
 							}

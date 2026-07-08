@@ -397,13 +397,14 @@ export function IconSparkle(p: IconProps) {
   );
 }
 
-export function IconStar(p: IconProps) {
+export function IconPin(p: IconProps) {
   return (
     <Svg {...p}>
       <path
         {...stroke}
-        d="M12 4.75L14.214 9.235L19.164 9.954L15.582 13.446L16.427 18.375L12 16.047L7.573 18.375L8.418 13.446L4.836 9.954L9.786 9.235L12 4.75Z"
+        d="M8.75 7.75L7.75 4.75H16.25L15.25 7.75V10C18.25 11 18.25 14.25 18.25 14.25H5.75C5.75 14.25 5.75 11 8.75 10V7.75Z"
       />
+      <path {...stroke} d="M12 14.5V19.25" />
     </Svg>
   );
 }
@@ -729,6 +730,19 @@ export function IconReviewNodes(p: IconProps) {
   );
 }
 
+// An eye — "needs your eyes" / review. Distinct from the git-node PR glyphs.
+export function IconEye(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M3.25 12C3.25 12 7 5.75 12 5.75C17 5.75 20.75 12 20.75 12C20.75 12 17 18.25 12 18.25C7 18.25 3.25 12 3.25 12Z"
+      />
+      <circle {...stroke} cx="12" cy="12" r="2.25" />
+    </Svg>
+  );
+}
+
 export function IconFlame(p: IconProps) {
   return (
     <Svg {...p}>
@@ -768,6 +782,31 @@ export function IconLink(p: IconProps) {
       <path
         {...stroke}
         d="M13.25 10.75C12.56 10.06 11.66 9.72 10.76 9.72C9.86 9.72 8.96 10.06 8.27 10.75L5.5 13.52C4.13 14.89 4.13 17.11 5.5 18.48C6.87 19.85 9.09 19.85 10.46 18.48L11.18 17.76"
+      />
+    </Svg>
+  );
+}
+
+// Envelope — "mark as unread".
+export function IconMail(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="3.75" y="5.75" width="16.5" height="12.5" rx="2.5" />
+      <path {...stroke} d="M4.5 7.5l6.6 4.9a1.5 1.5 0 0 0 1.8 0l6.6-4.9" />
+    </Svg>
+  );
+}
+
+// Dashed ring — "set status" (the status-lane dot, unfilled).
+export function IconStatusRing(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle
+        {...stroke}
+        cx="12"
+        cy="12"
+        r="7.25"
+        strokeDasharray="2.6 2.6"
       />
     </Svg>
   );

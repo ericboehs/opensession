@@ -262,7 +262,7 @@ export function PreviewButton({
               rel="noopener"
               onContextMenu={openMenu}
             >
-              <IconPlayOutline size={26} />
+              <IconPlayOutline size={24} />
             </a>
           </Tooltip>
         ) : isStarting ? (
@@ -286,7 +286,7 @@ export function PreviewButton({
               onClick={start}
               onContextMenu={openMenu}
             >
-              <IconPlayOutline size={26} />
+              <IconPlayOutline size={24} />
             </button>
           </Tooltip>
         )}

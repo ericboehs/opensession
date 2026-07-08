@@ -33,8 +33,8 @@ import { IconX } from "../components/icons";
 
 /** Portal + backdrop + centered, squircle-cornered popup. Children are the
  *  dialog body; pair with Modal.Header / Modal.Footer for the standard shape.
- *  (Backdrop-dismiss is on by default; pass `dismissible={false}` to Modal.Root
- *  for confirmations that demand an explicit choice.) */
+ *  (Backdrop-dismiss is on by default; pass `disablePointerDismissal` to
+ *  Modal.Root for confirmations that demand an explicit choice.) */
 function Content({
 	className,
 	children,

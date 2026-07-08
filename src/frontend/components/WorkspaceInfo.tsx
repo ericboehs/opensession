@@ -1,16 +1,15 @@
-import React, {
-	useEffect,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { parsePatchFiles } from "@pierre/diffs";
+import type { FileDiffMetadata } from "@pierre/diffs";
+import { FileDiff } from "@pierre/diffs/react";
+import { useResolvedTheme } from "./CodeHighlight";
 import {
 	fetchChannelHistoryApi,
 	fetchDiff,
 	fetchPr,
 	setSessionReviewerApi,
+	acceptReviewApi,
 	triggerPrActionApi,
 	type PrAgentAction,
 	type WorkspaceMediaItem,
@@ -21,6 +20,7 @@ import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
 import type {
 	DiffFile,
+	PrCheck,
 	PrDetails,
 	SlackChannelLink,
 	SlackMessage,
@@ -35,7 +35,7 @@ import {
 } from "../lib/workspace-overview";
 import { summarizeChecks } from "./PrStatusBar";
 import { openLightbox } from "./MediaLightbox";
-import { IconBell, IconCheck, IconClock, IconX } from "./icons";
+import { IconBell, IconCheck, IconClock, IconPlay, IconX } from "./icons";
 
 /**
  * Workspace info block at the top of the right side panel (the "Info" tab): a
@@ -53,6 +53,13 @@ import { IconBell, IconCheck, IconClock, IconX } from "./icons";
 
 type PanelTab = "changes" | "terminal" | "pr" | "slack";
 
+type ReviewRequestInfo = {
+	to: string;
+	by: string;
+	at: string;
+	accepted?: { by: string; at: string };
+};
+
 interface Props {
 	/** The open chat's session id — anchors the PR + Slack fetches. */
 	sessionId: string;
@@ -69,7 +76,7 @@ interface Props {
 	slackChannel?: SlackChannelLink | null;
 	/** Pending review request for this workspace — the open chat's, or a sibling
 	    chat's (the request is per-chat but the band groups by workspace). */
-	reviewRequest?: { to: string; by: string; at: string } | null;
+	reviewRequest?: ReviewRequestInfo | null;
 	/** The chat that owns `reviewRequest` (may be a sibling, not the open one). */
 	reviewRequestSessionId?: string;
 	/** Jump to a sibling tab when a status chip / reply row is clicked. */
@@ -118,7 +125,7 @@ function statusChips(pr: PrDetails | null): StatusChip[] {
 	else if (c.pending > 0)
 		chips.push({
 			key: "checks",
-			label: "Checks running",
+			label: `${c.pending} check${c.pending === 1 ? "" : "s"} pending`,
 			tone: "yellow",
 			icon: <IconClock size={20} />,
 		});
@@ -232,24 +239,33 @@ const COMMENT_PREVIEW = 3;
     Prefers the space to the LEFT of the card (the comments live in the right
     panel) so the popover never covers the list; falls back to overlaying the
     card only when there isn't room on the left. */
-function popoverPosition(rect: DOMRect): {
+function popoverPosition(
+	rect: DOMRect,
+	opts: { maxWidth?: number; maxHeightPx?: number; heightFrac?: number } = {},
+): {
 	left: number;
 	top: number;
 	width: number;
 	maxHeight: number;
 } {
+	const { maxWidth = 440, maxHeightPx = 560, heightFrac = 0.7 } = opts;
 	const margin = 12;
 	const gap = 10;
 	const vw = window.innerWidth;
 	const vh = window.innerHeight;
-	const maxHeight = Math.min(Math.round(vh * 0.7), 560);
+	const maxHeight = Math.min(Math.round(vh * heightFrac), maxHeightPx);
 	const spaceLeft = rect.left - margin - gap;
 
 	let width: number;
 	let left: number;
 	if (spaceLeft >= 300) {
-		width = Math.min(440, spaceLeft);
-		left = rect.left - gap - width;
+		// Prefer floating left, but when there's no room for the wider card fall
+		// back to overlaying the panel (so a code diff isn't squeezed to a sliver).
+		width = spaceLeft >= maxWidth ? maxWidth : Math.min(maxWidth, vw - margin * 2);
+		left =
+			spaceLeft >= maxWidth
+				? rect.left - gap - width
+				: Math.max(margin, Math.min(rect.left, vw - width - margin));
 	} else {
 		width = Math.min(Math.max(rect.width, 380), vw - margin * 2);
 		left = Math.max(margin, Math.min(rect.left, vw - width - margin));
@@ -262,10 +278,42 @@ function popoverPosition(rect: DOMRect): {
 	return { left, top, width, maxHeight };
 }
 
-/** One PR comment rendered as a code-card: an author/time header bar over a
-    markdown body, clamped to a few lines. Hovering a clamped card floats the
-    full comment in a popover on top (never shifting the list). A hover "Add to
-    chat" drops it into the composer; clicking opens the PR tab. */
+/** The author's real GitHub avatar (Greptile, Tella Butler, Vercel, a human…),
+    served at github.com/<login>.png. Falls back to a lettered brand tile if the
+    image 404s or the author isn't a plausible login (e.g. a display name). */
+function CommentAvatar({ author }: { author: string }) {
+	const login = (author || "").trim();
+	// GitHub usernames/app slugs: alphanumerics with single interior hyphens,
+	// ≤39 chars — skips display names with spaces so we don't 404 on those.
+	const canAvatar = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i.test(login);
+	const [failed, setFailed] = useState(false);
+	if (canAvatar && !failed) {
+		return (
+			<img
+				className="workspace-info-comment-avatar"
+				src={`https://github.com/${login}.png?size=48`}
+				alt=""
+				aria-hidden
+				loading="lazy"
+				onError={() => setFailed(true)}
+			/>
+		);
+	}
+	return (
+		<span
+			className="workspace-info-comment-avatar"
+			style={{ background: `hsl(${hueFor(login || "?")} 52% 42%)` }}
+			aria-hidden
+		>
+			{initial(login || "?")}
+		</span>
+	);
+}
+
+/** One PR comment as a single dense row: avatar · one-line title · time. The
+    title is the flattened first slice of the body, ellipsised. Hovering floats
+    the full markdown comment in a popover on top (never shifting the list); a
+    hover "Add to chat" drops it into the composer; clicking opens the PR tab. */
 function CommentCard({
 	comment,
 	pr,
@@ -278,18 +326,14 @@ function CommentCard({
 	onAddToInput?: (text: string) => void;
 }) {
 	const cardRef = useRef<HTMLDivElement>(null);
-	const bodyRef = useRef<HTMLDivElement>(null);
 	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const [clamped, setClamped] = useState(false);
 	const [pop, setPop] = useState<DOMRect | null>(null);
 	const html = useMemo(
 		() => renderMarkdown(cleanCommentMarkdown(comment.body)),
 		[comment.body],
 	);
-	useLayoutEffect(() => {
-		const el = bodyRef.current;
-		if (el) setClamped(el.scrollHeight > el.clientHeight + 2);
-	}, [html]);
+	// The one-line label: lead with the comment's title/first words, flattened.
+	const title = useMemo(() => plainComment(comment.body), [comment.body]);
 	useEffect(
 		() => () => {
 			if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -319,20 +363,9 @@ function CommentCard({
 			Add to chat
 		</button>
 	);
-	const head = (
-		<div className="workspace-info-comment-head">
-			<span className="workspace-info-comment-author">{comment.author}</span>
-			{comment.createdAt && (
-				<span className="workspace-info-comment-time">
-					{relTime(comment.createdAt)}
-				</span>
-			)}
-			{addBtn}
-		</div>
-	);
+	const avatar = <CommentAvatar author={comment.author} />;
 
-	const showPop = pop && clamped;
-	const pos = showPop ? popoverPosition(pop) : null;
+	const pos = pop ? popoverPosition(pop) : null;
 
 	return (
 		<>
@@ -347,17 +380,16 @@ function CommentCard({
 				}}
 				onMouseEnter={openPop}
 				onMouseLeave={closePop}
-				title="Open the Checks / PR tab"
+				title={comment.author}
 			>
-				{head}
-				<div
-					ref={bodyRef}
-					className={`workspace-info-comment-md ${clamped ? "is-clamped" : ""}`}
-				>
-					<MarkdownBody html={html} className="markdown" />
-				</div>
+				{avatar}
+				<span className="workspace-info-comment-title">{title}</span>
+				<span className="workspace-info-comment-time">
+					{relTime(comment.createdAt)}
+				</span>
+				{addBtn}
 			</div>
-			{showPop &&
+			{pop &&
 				pos &&
 				createPortal(
 					<div
@@ -372,9 +404,348 @@ function CommentCard({
 						onMouseLeave={closePop}
 						onClick={() => onOpenTab?.("pr")}
 					>
-						{head}
-						<div className="workspace-info-comment-pop-body">
-							<MarkdownBody html={html} className="markdown" />
+						{avatar}
+						<div className="workspace-info-comment-main">
+							<div className="workspace-info-comment-pop-head">
+								<span className="workspace-info-comment-author">
+									{comment.author}
+								</span>
+								{comment.createdAt && (
+									<span className="workspace-info-comment-time">
+										{relTime(comment.createdAt)}
+									</span>
+								)}
+							</div>
+							<div className="workspace-info-comment-pop-body">
+								<MarkdownBody html={html} className="markdown" />
+							</div>
+						</div>
+					</div>,
+					document.body,
+				)}
+		</>
+	);
+}
+
+/** Read-only render options for the hover diff — no line selection, our own
+    header owns the file name, unified view themed to the app appearance. */
+const PREVIEW_DIFF_OPTIONS = {
+	diffStyle: "unified" as const,
+	disableFileHeader: true,
+	overflow: "scroll" as const,
+	enableLineSelection: false,
+};
+
+/**
+ * One "file changed" row. Hovering reveals a floated card with the file's actual
+ * diff (parsed from the primary repo's patch), mirroring the PR-comment hover in
+ * the same panel; clicking still jumps to the full Changes tab. Rows whose file
+ * isn't in the parsed patch (binary, or a not-yet-loaded/truncated patch) simply
+ * don't open a popover.
+ */
+function FileRow({
+	file,
+	meta,
+	theme,
+	onOpenTab,
+}: {
+	file: DiffFile;
+	meta: FileDiffMetadata | undefined;
+	theme: "light" | "dark";
+	onOpenTab?: (tab: PanelTab) => void;
+}) {
+	const rowRef = useRef<HTMLButtonElement>(null);
+	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [pop, setPop] = useState<DOMRect | null>(null);
+	useEffect(
+		() => () => {
+			if (closeTimer.current) clearTimeout(closeTimer.current);
+		},
+		[],
+	);
+
+	function openPop() {
+		if (closeTimer.current) clearTimeout(closeTimer.current);
+		if (meta && rowRef.current) setPop(rowRef.current.getBoundingClientRect());
+	}
+	function closePop() {
+		if (closeTimer.current) clearTimeout(closeTimer.current);
+		closeTimer.current = setTimeout(() => setPop(null), 90);
+	}
+
+	const slash = file.path.lastIndexOf("/");
+	const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
+	const base = slash >= 0 ? file.path.slice(slash + 1) : file.path;
+	const options = useMemo(
+		() => ({
+			...PREVIEW_DIFF_OPTIONS,
+			theme: theme === "light" ? "pierre-light" : "pierre-dark",
+			themeType: theme,
+		}),
+		[theme],
+	);
+	// Wider + taller than the comment popover — this is code, so give it room.
+	const pos = pop
+		? popoverPosition(pop, { maxWidth: 720, maxHeightPx: 720, heightFrac: 0.82 })
+		: null;
+
+	const stats = (
+		<span className="diff-file-stats">
+			{file.additions > 0 && <span className="diff-add">+{file.additions}</span>}
+			{file.deletions > 0 && <span className="diff-del">−{file.deletions}</span>}
+		</span>
+	);
+	const path = (
+		<span className="workspace-info-file-path">
+			{dir && <span className="workspace-info-file-dir">{dir}</span>}
+			<span className="workspace-info-file-base">{base}</span>
+		</span>
+	);
+
+	return (
+		<>
+			<button
+				ref={rowRef}
+				type="button"
+				className="workspace-info-file"
+				onClick={() => onOpenTab?.("changes")}
+				onMouseEnter={openPop}
+				onMouseLeave={closePop}
+				title={`${file.path} — open in Changes`}
+			>
+				<span className={`diff-status diff-status-${statusClass(file.status)}`}>
+					{STATUS_CHAR[file.status]}
+				</span>
+				{path}
+				{stats}
+			</button>
+			{pop &&
+				pos &&
+				meta &&
+				createPortal(
+					<div
+						className="workspace-info-file-pop"
+						style={{
+							left: pos.left,
+							top: pos.top,
+							width: pos.width,
+							maxHeight: pos.maxHeight,
+						}}
+						onMouseEnter={openPop}
+						onMouseLeave={closePop}
+						onClick={() => onOpenTab?.("changes")}
+					>
+						<div className="workspace-info-file-pop-head">
+							{path}
+							{stats}
+						</div>
+						<div className="workspace-info-file-pop-body">
+							<FileDiff fileDiff={meta} options={options} disableWorkerPool />
+						</div>
+					</div>,
+					document.body,
+				)}
+		</>
+	);
+}
+
+type CheckVisual = "success" | "failure" | "pending" | "skipped" | "neutral";
+
+/** Map a PR check's raw status/conclusion to a visual kind + the word shown at
+    the right of its row (GitHub-style: "Succeeded", "Skipped", "Failed"…).
+    CheckRuns report `status` until COMPLETED; StatusContexts (Vercel deploys)
+    leave `status` empty and carry the outcome in `conclusion`. */
+function checkStatusMeta(check: PrCheck): { kind: CheckVisual; label: string } {
+	const running = check.status !== "COMPLETED" && check.status !== "";
+	if (running || check.conclusion === "PENDING" || check.conclusion === "EXPECTED")
+		return { kind: "pending", label: running ? "Running" : "Queued" };
+	switch (check.conclusion) {
+		case "SUCCESS":
+			return { kind: "success", label: "Succeeded" };
+		case "FAILURE":
+			return { kind: "failure", label: "Failed" };
+		case "TIMED_OUT":
+			return { kind: "failure", label: "Timed out" };
+		case "ERROR":
+			return { kind: "failure", label: "Error" };
+		case "ACTION_REQUIRED":
+			return { kind: "failure", label: "Action required" };
+		case "CANCELLED":
+			return { kind: "neutral", label: "Cancelled" };
+		case "SKIPPED":
+			return { kind: "skipped", label: "Skipped" };
+		case "NEUTRAL":
+			return { kind: "neutral", label: "Neutral" };
+		default:
+			return { kind: "neutral", label: check.conclusion || "Pending" };
+	}
+}
+
+/** The small leading status glyph — a filled green check / red ✕, a spinner
+    while running, or a dashed ring for skipped/neutral. Color comes from the
+    row's `wi-check-<kind>` class. */
+function CheckStatusIcon({ kind }: { kind: CheckVisual }) {
+	if (kind === "pending") return <span className="wi-check-spin" aria-hidden />;
+	if (kind === "success")
+		return (
+			<svg className="wi-check-ico" viewBox="0 0 16 16" aria-hidden>
+				<circle cx="8" cy="8" r="8" fill="currentColor" />
+				<path
+					d="M4.4 8.3l2.3 2.3 4.9-4.9"
+					fill="none"
+					stroke="#fff"
+					strokeWidth="1.7"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			</svg>
+		);
+	if (kind === "failure")
+		return (
+			<svg className="wi-check-ico" viewBox="0 0 16 16" aria-hidden>
+				<circle cx="8" cy="8" r="8" fill="currentColor" />
+				<path
+					d="M5.4 5.4l5.2 5.2M10.6 5.4l-5.2 5.2"
+					stroke="#fff"
+					strokeWidth="1.7"
+					strokeLinecap="round"
+				/>
+			</svg>
+		);
+	// skipped / neutral — a dashed outline ring
+	return (
+		<svg className="wi-check-ico" viewBox="0 0 16 16" aria-hidden>
+			<circle
+				cx="8"
+				cy="8"
+				r="7"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+				strokeDasharray="2.4 2.2"
+			/>
+		</svg>
+	);
+}
+
+/** The checks status chip in the info panel's status row. Clicking opens the PR
+    tab; hovering floats a GitHub-style overview of every individual check —
+    icon · name · outcome — off to the side of the panel (never covering it). */
+function ChecksChip({
+	pr,
+	chip,
+	onOpenTab,
+}: {
+	pr: PrDetails;
+	chip: StatusChip;
+	onOpenTab?: (tab: PanelTab) => void;
+}) {
+	const btnRef = useRef<HTMLButtonElement>(null);
+	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [pop, setPop] = useState<DOMRect | null>(null);
+	useEffect(
+		() => () => {
+			if (closeTimer.current) clearTimeout(closeTimer.current);
+		},
+		[],
+	);
+
+	function openPop() {
+		if (closeTimer.current) clearTimeout(closeTimer.current);
+		if (btnRef.current) setPop(btnRef.current.getBoundingClientRect());
+	}
+	function closePop() {
+		if (closeTimer.current) clearTimeout(closeTimer.current);
+		closeTimer.current = setTimeout(() => setPop(null), 120);
+	}
+
+	// Failing first, then running, successes, and skipped/neutral last — the
+	// same triage order the PR panel's expanded list uses.
+	const order: Record<CheckVisual, number> = {
+		failure: 0,
+		pending: 1,
+		success: 2,
+		skipped: 3,
+		neutral: 3,
+	};
+	const checks = [...(pr.checks || [])].sort(
+		(a, b) => order[checkStatusMeta(a).kind] - order[checkStatusMeta(b).kind],
+	);
+	const sum = summarizeChecks(pr);
+	const pos = pop ? popoverPosition(pop) : null;
+
+	return (
+		<>
+			<button
+				ref={btnRef}
+				type="button"
+				className={`wi-chip wi-chip-${chip.tone}`}
+				onClick={() => onOpenTab?.("pr")}
+				onMouseEnter={openPop}
+				onMouseLeave={closePop}
+			>
+				{chip.icon && <span className="wi-chip-icon">{chip.icon}</span>}
+				{chip.label}
+			</button>
+			{pop &&
+				pos &&
+				checks.length > 0 &&
+				createPortal(
+					<div
+						className="workspace-info-checks-pop"
+						style={{
+							left: pos.left,
+							top: pos.top,
+							width: pos.width,
+							maxHeight: pos.maxHeight,
+						}}
+						onMouseEnter={openPop}
+						onMouseLeave={closePop}
+					>
+						<div className="workspace-info-checks-head">
+							<span className="workspace-info-checks-title">
+								{checks.length} check{checks.length === 1 ? "" : "s"}
+							</span>
+							<span className="workspace-info-checks-summary">
+								{sum.passed > 0 && (
+									<span className="check-success-text">{sum.passed} passed</span>
+								)}
+								{sum.failed > 0 && (
+									<span className="check-failure-text">{sum.failed} failed</span>
+								)}
+								{sum.pending > 0 && (
+									<span className="check-pending-text">{sum.pending} running</span>
+								)}
+							</span>
+						</div>
+						<div className="workspace-info-checks-list">
+							{checks.map((check, i) => {
+								const m = checkStatusMeta(check);
+								const inner = (
+									<>
+										<span className={`wi-check-icon wi-check-${m.kind}`}>
+											<CheckStatusIcon kind={m.kind} />
+										</span>
+										<span className="workspace-info-check-name">{check.name}</span>
+										<span className="workspace-info-check-status">{m.label}</span>
+									</>
+								);
+								return check.url ? (
+									<a
+										key={`${check.name}:${i}`}
+										className="workspace-info-check-row"
+										href={check.url}
+										target="_blank"
+										rel="noopener"
+									>
+										{inner}
+									</a>
+								) : (
+									<div key={`${check.name}:${i}`} className="workspace-info-check-row">
+										{inner}
+									</div>
+								);
+							})}
 						</div>
 					</div>,
 					document.body,
@@ -522,7 +893,7 @@ function ReviewerChip({
 	requestSessionId,
 }: {
 	sessionId: string;
-	reviewRequest?: { to: string; by: string; at: string } | null;
+	reviewRequest?: ReviewRequestInfo | null;
 	/** The chat that actually holds the request — a workspace's request may live
 	    on a sibling chat, not the open one. Clear/re-assign target this so the
 	    chip stays consistent with the sidebar's workspace-level band; a brand-new
@@ -530,41 +901,80 @@ function ReviewerChip({
 	requestSessionId?: string;
 }) {
 	const [req, setReq] = useState(reviewRequest ?? null);
-	// Follow the polled session as it refreshes (another viewer may re-assign).
+	// Follow the polled session as it refreshes (another viewer may re-assign or
+	// sign off). Track accepted's timestamp too so the sign-off lands live.
 	useEffect(() => {
 		setReq(reviewRequest ?? null);
-	}, [reviewRequest?.to, reviewRequest?.at]);
+	}, [reviewRequest?.to, reviewRequest?.at, reviewRequest?.accepted?.at]);
+
+	// The chat that owns an existing request; a brand-new one anchors to the open chat.
+	const owner = (req && requestSessionId) || sessionId;
+	const accepted = req?.accepted ?? null;
 
 	function pick(name: string | null) {
 		const prev = req;
 		const me = getCurrentUser();
-		// Update the chat that owns the request when one exists; otherwise the
-		// open chat becomes the owner of the new request.
-		const target = (req && requestSessionId) || sessionId;
+		// Re-assigning drops any prior sign-off (a fresh reviewer, fresh review).
 		setReq(name ? { to: name, by: me, at: new Date().toISOString() } : null);
-		setSessionReviewerApi(target, name, me).catch(() => setReq(prev));
+		setSessionReviewerApi(owner, name, me).catch(() => setReq(prev));
+	}
+
+	function accept(value: boolean) {
+		if (!req) return;
+		const prev = req;
+		const me = getCurrentUser();
+		setReq({
+			...req,
+			accepted: value ? { by: me, at: new Date().toISOString() } : undefined,
+		});
+		acceptReviewApi(owner, value, me).catch(() => setReq(prev));
 	}
 
 	return (
 		<Menu.Root>
 			<Menu.Trigger
-				className={`wi-chip ${req ? "wi-chip-yellow" : "wi-chip-muted"}`}
+				className={`wi-chip ${
+					accepted ? "wi-chip-green" : req ? "wi-chip-yellow" : "wi-chip-muted"
+				}`}
 				title={
-					req
-						? `Review requested by ${req.by}`
-						: "Ask a teammate to review this session"
+					accepted
+						? `Reviewed by ${accepted.by}`
+						: req
+							? `Review requested by ${req.by}`
+							: "Ask a teammate to review this session"
 				}
 			>
-				{req ? (
+				{accepted ? (
+					<span className="wi-chip-icon">
+						<IconCheck size={20} />
+					</span>
+				) : req ? (
 					<UserAvatar name={req.to} size={20} />
 				) : (
 					<span className="wi-chip-icon">
 						<IconBell size={20} />
 					</span>
 				)}
-				{req ? `Review: ${req.to}` : "Request review"}
+				{accepted
+					? `Reviewed by ${accepted.by}`
+					: req
+						? `Review: ${req.to}`
+						: "Request review"}
 			</Menu.Trigger>
 			<Menu.Popup align="start" sideOffset={6} className="min-w-[200px]">
+				{req &&
+					(accepted ? (
+						<Menu.Item onClick={() => accept(false)}>
+							<IconBell size={20} className="text-dim" />
+							<span className="min-w-0 flex-1 truncate">Reopen review</span>
+						</Menu.Item>
+					) : (
+						<Menu.Item onClick={() => accept(true)}>
+							<IconCheck size={20} className="text-dim" />
+							<span className="min-w-0 flex-1 truncate">Mark as reviewed</span>
+						</Menu.Item>
+					))}
+				{req && <Menu.Separator />}
 				{TEAM.map((name) => (
 					<Menu.Item key={name} onClick={() => pick(name)}>
 						<UserAvatar name={name} size={22} />
@@ -610,6 +1020,9 @@ export function WorkspaceInfo({
 	const [pr, setPr] = useState<PrDetails | null>(null);
 	const [latestHuman, setLatestHuman] = useState<SlackMessage | null>(null);
 	const [files, setFiles] = useState<DiffFile[] | null>(null);
+	// The primary repo's raw patch, kept so the file rows can hover-reveal the
+	// actual diff for that file (parsed lazily below).
+	const [rawPatch, setRawPatch] = useState<string>("");
 
 	// The chats array is re-created every App render — read it through a ref so
 	// the fetch effect keys on the stable chatsKey instead.
@@ -667,6 +1080,7 @@ export function WorkspaceInfo({
 	useEffect(() => {
 		if (!repo) {
 			setFiles(null);
+			setRawPatch("");
 			return;
 		}
 		let alive = true;
@@ -677,6 +1091,7 @@ export function WorkspaceInfo({
 					const primary =
 						res.repos.find((r) => r.primary) || res.repos[0] || null;
 					setFiles(primary?.diff.files ?? []);
+					setRawPatch(primary?.diff.rawPatch ?? "");
 				})
 				.catch(() => {});
 		load();
@@ -736,6 +1151,20 @@ export function WorkspaceInfo({
 	const changed = files ?? [];
 	const totalAdd = changed.reduce((n, f) => n + (f.additions || 0), 0);
 	const totalDel = changed.reduce((n, f) => n + (f.deletions || 0), 0);
+	// Parse the raw patch once into a path→file-diff map so each file row can
+	// hover-reveal its own hunks (same @pierre/diffs parse the Changes tab uses).
+	const diffTheme = useResolvedTheme();
+	const diffByPath = useMemo(() => {
+		const m = new Map<string, FileDiffMetadata>();
+		if (!rawPatch.trim()) return m;
+		try {
+			for (const p of parsePatchFiles(rawPatch))
+				for (const f of p.files) m.set(f.name, f);
+		} catch {
+			/* malformed patch — rows just fall back to a plain click. */
+		}
+		return m;
+	}, [rawPatch]);
 	const title = workspaceName || oldest?.title || "Untitled chat";
 	const media = [...liveMedia, ...(data?.media || [])].filter(
 		(m, i, all) =>
@@ -752,7 +1181,7 @@ export function WorkspaceInfo({
 			latestHuman ||
 			comments.length > 0 ||
 			changed.length > 0 ||
-			(data && (data.prompt || data.lastMessage)) ||
+			(data && data.prompt) ||
 			media.length > 0,
 	);
 
@@ -762,19 +1191,28 @@ export function WorkspaceInfo({
 				<div className="workspace-info-title">{title}</div>
 				{meta && <div className="workspace-info-meta">{meta}</div>}
 				<div className="workspace-info-status">
-					{chips.map((chip) => (
-						<button
-							key={chip.key}
-							type="button"
-							className={`wi-chip wi-chip-${chip.tone}`}
-							onClick={() => onOpenTab?.("pr")}
-						>
-							{chip.icon && (
-								<span className="wi-chip-icon">{chip.icon}</span>
-							)}
-							{chip.label}
-						</button>
-					))}
+					{chips.map((chip) =>
+						chip.key === "checks" && pr ? (
+							<ChecksChip
+								key={chip.key}
+								pr={pr}
+								chip={chip}
+								onOpenTab={onOpenTab}
+							/>
+						) : (
+							<button
+								key={chip.key}
+								type="button"
+								className={`wi-chip wi-chip-${chip.tone}`}
+								onClick={() => onOpenTab?.("pr")}
+							>
+								{chip.icon && (
+									<span className="wi-chip-icon">{chip.icon}</span>
+								)}
+								{chip.label}
+							</button>
+						),
+					)}
 					<ReviewerChip
 					sessionId={sessionId}
 					reviewRequest={reviewRequest}
@@ -817,8 +1255,22 @@ export function WorkspaceInfo({
 					)}
 					{comments.length > 0 && (
 						<div className="workspace-info-section">
-							<div className="workspace-info-label">
-								{comments.length} PR comment{comments.length === 1 ? "" : "s"}
+							<div className="workspace-info-label workspace-info-comments-label">
+								<span>
+									{comments.length} PR comment{comments.length === 1 ? "" : "s"}
+								</span>
+								{onAddToInput && (
+									<button
+										type="button"
+										className="workspace-info-fix"
+										onClick={() =>
+											onAddToInput(formatFixCommentsPrompt(comments, pr!))
+										}
+										title="Add every comment to the composer as a fix task"
+									>
+										Fix
+									</button>
+								)}
 							</div>
 							<div className="workspace-info-comments">
 								{comments
@@ -866,14 +1318,6 @@ export function WorkspaceInfo({
 							</div>
 						</div>
 					)}
-					{data?.lastMessage && (
-						<div className="workspace-info-section">
-							<div className="workspace-info-label">Summary</div>
-							<div className="workspace-info-text selectable line-clamp-4 whitespace-pre-wrap">
-								{data.lastMessage.content}
-							</div>
-						</div>
-					)}
 					{changed.length > 0 && (
 						<div className="workspace-info-section">
 							<div className="workspace-info-label workspace-info-files-label">
@@ -887,42 +1331,13 @@ export function WorkspaceInfo({
 							</div>
 							<div className="workspace-info-files">
 								{changed.slice(0, FILE_PREVIEW).map((f) => (
-									<button
+									<FileRow
 										key={f.path}
-										type="button"
-										className="workspace-info-file"
-										onClick={() => onOpenTab?.("changes")}
-										title={`${f.path} — open in Changes`}
-									>
-										<span
-											className={`diff-status diff-status-${statusClass(f.status)}`}
-										>
-											{STATUS_CHAR[f.status]}
-										</span>
-										<span className="workspace-info-file-path">
-											{(() => {
-												const slash = f.path.lastIndexOf("/");
-												const dir = slash >= 0 ? f.path.slice(0, slash + 1) : "";
-												const base = slash >= 0 ? f.path.slice(slash + 1) : f.path;
-												return (
-													<>
-														{dir && (
-															<span className="workspace-info-file-dir">{dir}</span>
-														)}
-														<span className="workspace-info-file-base">{base}</span>
-													</>
-												);
-											})()}
-										</span>
-										<span className="diff-file-stats">
-											{f.additions > 0 && (
-												<span className="diff-add">+{f.additions}</span>
-											)}
-											{f.deletions > 0 && (
-												<span className="diff-del">−{f.deletions}</span>
-											)}
-										</span>
-									</button>
+										file={f}
+										meta={diffByPath.get(f.path)}
+										theme={diffTheme}
+										onOpenTab={onOpenTab}
+									/>
 								))}
 								{changed.length > FILE_PREVIEW && (
 									<button
@@ -962,14 +1377,22 @@ export function WorkspaceInfo({
 										) : (
 											<>
 												<video
-													src={m.src}
+													// #t=0.1 makes the browser seek to the first
+													// frame and paint it as a poster — without it
+													// preload="metadata" leaves the tile blank.
+													src={`${m.src}#t=0.1`}
 													muted
 													playsInline
 													preload="metadata"
 													className="h-full w-full object-cover"
 												/>
-												<span className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-white drop-shadow">
-													▶
+												{/* Dark translucent disc so the wedge reads on any
+												    frame (a bare white glyph vanishes on light
+												    footage). */}
+												<span className="pointer-events-none absolute inset-0 grid place-items-center">
+													<span className="grid size-8 place-items-center rounded-full bg-black/45 text-white backdrop-blur-sm">
+														<IconPlay size={18} />
+													</span>
 												</span>
 											</>
 										)}
@@ -984,4 +1407,24 @@ export function WorkspaceInfo({
 			)}
 		</div>
 	);
+}
+
+/** Bundle every surfaced PR comment into one "please fix these" composer prompt
+    — the Fix button next to the comments heading. Bodies are cleaned to plain
+    text and trimmed so the prompt stays readable. */
+function formatFixCommentsPrompt(
+	comments: Array<{ author: string; body: string; url?: string }>,
+	pr: PrDetails,
+): string {
+	const items = comments
+		.map((c, i) => {
+			const by = c.author ? ` (${c.author})` : "";
+			const link = c.url ? `\n   ${c.url}` : "";
+			const body = plainComment(c.body).slice(0, 600);
+			return `${i + 1}.${by} ${body}${link}`;
+		})
+		.join("\n\n");
+	return `Please fix the issues raised in these ${comments.length} review comment${
+		comments.length === 1 ? "" : "s"
+	} on PR #${pr.number} (${pr.title}).\n\n${items}`;
 }

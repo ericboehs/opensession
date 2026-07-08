@@ -6,7 +6,7 @@ import { relativeTime } from "../lib/api";
 import { Menu, ContextMenu } from "../ui/menu";
 import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { copySessionTranscript } from "../lib/transcript-copy";
-import { IconHistory, IconPencil, IconRestore } from "./icons";
+import { IconHistory, IconPencil, IconPlus, IconRestore } from "./icons";
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling chats of the
@@ -270,7 +270,7 @@ export function SessionTabs({
 						setNewMenu({ x: e.clientX, y: e.clientY });
 					}}
 				>
-					+
+					<IconPlus size={22} />
 				</button>
 			<div className="session-tabs-actions">
 

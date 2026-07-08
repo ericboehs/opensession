@@ -4,6 +4,7 @@ import { FileDiff } from "@pierre/diffs/react";
 import type { SelectedLineRange, FileDiffMetadata, DiffLineAnnotation } from "@pierre/diffs";
 import { IconChevronRight, IconUndo } from "./icons";
 import { Tooltip } from "../ui/tooltip";
+import { useResolvedTheme } from "./CodeHighlight";
 
 export interface CommentTarget {
   path: string;
@@ -48,9 +49,9 @@ interface Draft {
 
 type Meta = { kind: "draft" } | { kind: "pending"; comment: PendingComment };
 
+// `theme`/`themeType` are applied per-row from the app's resolved appearance
+// (see FileDiffRow) so the diff isn't pinned dark in light mode.
 const BASE_OPTIONS = {
-  theme: "pierre-dark",
-  themeType: "dark" as const,
   diffStyle: "unified" as const,
   // Our own collapsible row owns the file header (name + stats + caret), so
   // suppress @pierre/diffs' built-in one to avoid a double header.
@@ -97,6 +98,7 @@ export function CommentableDiff({
   onDiscard,
 }: Props) {
   const reviewMode = pendingComments !== undefined;
+  const theme = useResolvedTheme();
   const files = useMemo<FileDiffMetadata[]>(() => {
     try {
       return parsePatchFiles(patch).flatMap((p) => p.files);
@@ -369,8 +371,10 @@ export function CommentableDiff({
             </div>
             {isOpen && (
               <FileDiffRow
+                key={theme}
                 file={file}
                 fileIndex={i}
+                theme={theme}
                 annotations={annotations}
                 selectedLines={isDraftFile ? draft!.range : null}
                 onSelect={handleSelect}
@@ -477,6 +481,7 @@ const CommentForm = React.memo(function CommentForm({
 const FileDiffRow = React.memo(function FileDiffRow({
   file,
   fileIndex,
+  theme,
   annotations,
   selectedLines,
   onSelect,
@@ -484,6 +489,7 @@ const FileDiffRow = React.memo(function FileDiffRow({
 }: {
   file: FileDiffMetadata;
   fileIndex: number;
+  theme: "light" | "dark";
   annotations: DiffLineAnnotation<Meta>[];
   selectedLines: SelectedLineRange | null;
   onSelect: (fileIndex: number, path: string, range: SelectedLineRange | null) => void;
@@ -492,9 +498,11 @@ const FileDiffRow = React.memo(function FileDiffRow({
   const options = useMemo(
     () => ({
       ...BASE_OPTIONS,
+      theme: theme === "light" ? "pierre-light" : "pierre-dark",
+      themeType: theme,
       onLineSelected: (range: SelectedLineRange | null) => onSelect(fileIndex, file.name, range),
     }),
-    [fileIndex, file.name, onSelect],
+    [fileIndex, file.name, onSelect, theme],
   );
 
   return (

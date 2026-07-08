@@ -19,14 +19,15 @@ import { openLightbox } from "./MediaLightbox";
 import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged, togglePin } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
-import { getReads, isUnread, onReadsChanged } from "../lib/reads";
+import { getReads, isUnread, markUnread, onReadsChanged } from "../lib/reads";
+import { chatPath, prPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { getWsTimePref, onWsTimeChanged } from "../lib/workspace-time";
 import { UserAvatar } from "./UserAvatar";
 import { shortTime, elapsedClock } from "../lib/time";
-import { colorHex, TAB_COLORS } from "../lib/tab-colors";
 import {
 	IconChevronDown,
+	IconChevronRight,
 	IconArchive,
 	IconBell,
 	IconFilter,
@@ -39,9 +40,13 @@ import {
 	IconPencil,
 	IconPlus,
 	IconPullRequest,
-	IconReviewNodes,
+	IconEye,
 	IconStack,
-	IconStar,
+	IconPin,
+	IconLink,
+	IconMail,
+	IconStatusRing,
+	IconTrash,
 	IconWatercooler,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
@@ -171,8 +176,6 @@ interface Props {
 	onRenameProject: (id: string, name: string) => void;
 	/** Delete a project folder (its chats become standalone). */
 	onDeleteProject: (id: string) => void;
-	/** Set a project's swatch color (null clears it). */
-	onSetProjectColor: (id: string, color: string | null) => void;
 	/** Open a note (pinned-note row click). */
 	onOpenNote: (id: string) => void;
 	onOpenArchived: () => void;
@@ -219,6 +222,8 @@ interface Props {
 	headerActionsEl?: HTMLElement | null;
 	/** True once the scrollable workspace list has moved under its header. */
 	onListScrolledChange?: (scrolled: boolean) => void;
+	/** Show a transient toast (e.g. "Link copied"). */
+	onToast?: (message: string) => void;
 }
 
 // Groups are rendered in three visually separated bands (spacing between each):
@@ -263,6 +268,237 @@ const MINE_STATUS_META: Array<{
 	{ key: "pending", label: "Backlog", dotColor: "var(--text-faint)" },
 ];
 
+// ── Right-click context menu (workspace / chat / PR rows) ──────────────────
+// A single presentational menu shared by every sidebar row that has one. Rows
+// pass a flat list of entries; a `status` entry renders the "Set status" row
+// with a hover flyout (the sub-panel is a sibling of the menu, not a child, so
+// the menu's own overflow can't clip it).
+type CtxEntry =
+	| {
+			kind: "item";
+			icon?: React.ReactNode;
+			label: string;
+			shortcut?: string;
+			danger?: boolean;
+			onClick: () => void;
+	  }
+	| { kind: "sep" }
+	| {
+			kind: "status";
+			current: MineStatus | null;
+			onPick: (status: MineStatus | null) => void;
+	  };
+
+function CtxItem({
+	icon,
+	label,
+	shortcut,
+	danger,
+	trailing,
+	onClick,
+	onMouseEnter,
+}: {
+	icon?: React.ReactNode;
+	label: string;
+	shortcut?: string;
+	danger?: boolean;
+	trailing?: React.ReactNode;
+	onClick?: () => void;
+	onMouseEnter?: (e: React.MouseEvent) => void;
+}) {
+	return (
+		<button
+			type="button"
+			style={{
+				...CTX_ITEM_STYLE,
+				display: "flex",
+				alignItems: "center",
+				gap: 11,
+				...(danger ? { color: "var(--red, #e5534b)" } : {}),
+			}}
+			onClick={onClick}
+			onMouseEnter={onMouseEnter}
+		>
+			{icon !== undefined && (
+				<span
+					style={{
+						width: 20,
+						display: "inline-flex",
+						justifyContent: "center",
+						flexShrink: 0,
+						color: danger ? "inherit" : "var(--text-dim)",
+					}}
+				>
+					{icon}
+				</span>
+			)}
+			<span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
+				{label}
+			</span>
+			{shortcut && (
+				<span
+					style={{
+						color: "var(--text-faint)",
+						fontSize: 12,
+						flexShrink: 0,
+						marginLeft: 12,
+					}}
+				>
+					{shortcut}
+				</span>
+			)}
+			{trailing}
+		</button>
+	);
+}
+
+function SidebarCtxMenu({
+	x,
+	y,
+	entries,
+	onClose,
+}: {
+	x: number;
+	y: number;
+	entries: CtxEntry[];
+	onClose: () => void;
+}) {
+	// Status flyout state + hover grace so the pointer can cross the gap.
+	const [sub, setSub] = useState<DOMRect | null>(null);
+	const closeT = useRef<ReturnType<typeof setTimeout> | null>(null);
+	function cancelClose() {
+		if (closeT.current) clearTimeout(closeT.current);
+		closeT.current = null;
+	}
+	function scheduleClose() {
+		cancelClose();
+		closeT.current = setTimeout(() => setSub(null), 160);
+	}
+	useEffect(() => cancelClose, []);
+
+	const statusEntry = entries.find(
+		(e): e is Extract<CtxEntry, { kind: "status" }> => e.kind === "status",
+	);
+	const check = (on: boolean) =>
+		on ? <IconCheck size={20} style={{ color: "var(--text-dim)" }} /> : undefined;
+
+	const SUB_W = 210;
+	const subLeft = sub
+		? sub.right + SUB_W + 8 > window.innerWidth
+			? sub.left - SUB_W - 4
+			: sub.right + 4
+		: 0;
+	const subTop = sub ? Math.min(sub.top - 6, window.innerHeight - 280) : 0;
+
+	return createPortal(
+		<>
+			<div
+				className="sidebar-ctx-menu"
+				style={{ ...CTX_MENU_STYLE, left: x, top: y }}
+				onClick={(e) => e.stopPropagation()}
+			>
+				{entries.map((entry, i) => {
+					if (entry.kind === "sep")
+						return <div key={i} style={CTX_SEP_STYLE} />;
+					if (entry.kind === "status")
+						return (
+							<button
+								key={i}
+								type="button"
+								style={{
+									...CTX_ITEM_STYLE,
+									display: "flex",
+									alignItems: "center",
+									gap: 11,
+								}}
+								onMouseEnter={(e) => {
+									cancelClose();
+									setSub(e.currentTarget.getBoundingClientRect());
+								}}
+								onMouseLeave={scheduleClose}
+								onClick={(e) => {
+									cancelClose();
+									setSub(e.currentTarget.getBoundingClientRect());
+								}}
+							>
+								<span
+									style={{
+										width: 20,
+										display: "inline-flex",
+										justifyContent: "center",
+										flexShrink: 0,
+										color: "var(--text-dim)",
+									}}
+								>
+									<IconStatusRing size={20} />
+								</span>
+								<span style={{ flex: 1 }}>Set status</span>
+								<IconChevronRight
+									size={20}
+									style={{ color: "var(--text-faint)", marginRight: -4 }}
+								/>
+							</button>
+						);
+					return (
+						<CtxItem
+							key={i}
+							icon={entry.icon}
+							label={entry.label}
+							shortcut={entry.shortcut}
+							danger={entry.danger}
+							onMouseEnter={scheduleClose}
+							onClick={() => {
+								entry.onClick();
+								onClose();
+							}}
+						/>
+					);
+				})}
+			</div>
+			{sub && statusEntry && (
+				<div
+					className="sidebar-ctx-menu"
+					style={{
+						...CTX_MENU_STYLE,
+						left: subLeft,
+						top: subTop,
+						minWidth: SUB_W,
+					}}
+					onClick={(e) => e.stopPropagation()}
+					onMouseEnter={cancelClose}
+					onMouseLeave={scheduleClose}
+				>
+					{MINE_STATUS_META.map((m) => (
+						<CtxItem
+							key={m.key}
+							icon={statusMenuIcon(m.key, m.dotColor)}
+							label={m.label}
+							trailing={check(statusEntry.current === m.key)}
+							onClick={() => {
+								statusEntry.onPick(
+									statusEntry.current === m.key ? null : m.key,
+								);
+								onClose();
+							}}
+						/>
+					))}
+					<div style={CTX_SEP_STYLE} />
+					<CtxItem
+						icon={<span />}
+						label="Auto (default)"
+						trailing={check(statusEntry.current === null)}
+						onClick={() => {
+							statusEntry.onPick(null);
+							onClose();
+						}}
+					/>
+				</div>
+			)}
+		</>,
+		document.body,
+	);
+}
+
 function SidebarGroupIcon({
 	status,
 	color,
@@ -277,10 +513,22 @@ function SidebarGroupIcon({
 	if (status === "inprogress")
 		return <IconClock className={className} style={style} />;
 	if (status === "review")
-		return <IconPullRequest className={className} style={style} />;
+		return <IconEye className={className} style={style} />;
 	if (status === "merged")
 		return <IconCheck className={className} style={style} />;
 	return <IconInbox className={className} style={style} />;
+}
+
+// The same status glyphs, sized + colored for a menu row (no group className,
+// so the menu controls sizing) — used by the "Set status" flyout.
+function statusMenuIcon(status: MineStatus, color: string) {
+	const style = { color };
+	if (status === "needsinput")
+		return <IconMessageQuestion size={20} style={style} />;
+	if (status === "inprogress") return <IconClock size={20} style={style} />;
+	if (status === "review") return <IconEye size={20} style={style} />;
+	if (status === "merged") return <IconCheck size={20} style={style} />;
+	return <IconInbox size={20} style={style} />;
 }
 
 // A run that died on a terminal failure (usage limits/credits exhausted, API
@@ -316,6 +564,7 @@ const DEFAULT_EXPANDED = [
 	"pinned",
 	"needsreview",
 	"awaitingreview",
+	"reviewed",
 	"status:needsinput",
 	"status:merged",
 	"status:pending",
@@ -404,7 +653,6 @@ export function Sidebar({
 	onOpenProject,
 	onRenameProject,
 	onDeleteProject,
-	onSetProjectColor,
 	onOpenNote,
 	onOpenArchived,
 	archivedActive,
@@ -419,6 +667,7 @@ export function Sidebar({
 	onToggleFollow,
 	headerActionsEl = null,
 	onListScrolledChange,
+	onToast,
 }: Props) {
 	const isPhone = useIsPhone();
 	const [search, setSearch] = useState("");
@@ -501,10 +750,17 @@ export function Sidebar({
 	const [wsTimePref, setWsTimePref] = useState(getWsTimePref);
 	useEffect(() => onWsTimeChanged(() => setWsTimePref(getWsTimePref())), []);
 
-	// Right-click menu on a Project header (rename / color / delete), and inline
-	// rename (double-click the project name).
+	// Right-click menu on a workspace row (mark unread / pin / status / rename /
+	// copy link / delete), and inline rename (double-click the project name).
 	const [projectMenu, setProjectMenu] = useState<{
 		id: string;
+		x: number;
+		y: number;
+	} | null>(null);
+	// Right-click menu on a PR-lane row (copy link / open on GitHub) — PR rows
+	// that no chat represents yet, so they have no workspace menu.
+	const [prMenu, setPrMenu] = useState<{
+		pr: PrRow;
 		x: number;
 		y: number;
 	} | null>(null);
@@ -527,6 +783,16 @@ export function Sidebar({
 			window.removeEventListener("scroll", close, true);
 		};
 	}, [projectMenu]);
+	useEffect(() => {
+		if (!prMenu) return;
+		const close = () => setPrMenu(null);
+		window.addEventListener("click", close);
+		window.addEventListener("scroll", close, true);
+		return () => {
+			window.removeEventListener("click", close);
+			window.removeEventListener("scroll", close, true);
+		};
+	}, [prMenu]);
 
 	// The Archived row counts *my* archived sessions (Michiel's scope), and honors
 	// the active repo filter — same lens as the archived page it opens.
@@ -1019,7 +1285,11 @@ export function Sidebar({
 	const needsReviewRows = useMemo(() => {
 		const me = currentUser.toLowerCase();
 		return wsRows.filter((r) =>
-			r.chats.some((c) => c.reviewRequest?.to?.toLowerCase() === me),
+			r.chats.some(
+				(c) =>
+					c.reviewRequest?.to?.toLowerCase() === me &&
+					!c.reviewRequest?.accepted,
+			),
 		);
 	}, [wsRows, currentUser]);
 	// The mirror of "Needs review": workspaces where YOU asked a teammate to
@@ -1034,18 +1304,40 @@ export function Sidebar({
 		return wsRows.filter(
 			(r) =>
 				!needsKeys.has(r.key) &&
-				r.chats.some((c) => c.reviewRequest?.by?.toLowerCase() === me),
+				r.chats.some(
+					(c) =>
+						c.reviewRequest?.by?.toLowerCase() === me &&
+						!c.reviewRequest?.accepted,
+				),
 		);
 	}, [wsRows, currentUser, needsReviewRows]);
-	// Every workspace pulled into a review band (Needs review + Awaiting review) —
+	// Reviewed: the request landed — the reviewer signed off (info panel's "Mark
+	// as reviewed"). Shown to both parties (asker or reviewer) so a session you
+	// sent out reads as done instead of vanishing back into the status lanes, and
+	// the reviewer sees their sign-off confirmed. Accepted rows leave Needs /
+	// Awaiting (both gate on `!accepted`) and land here instead.
+	const reviewedRows = useMemo(() => {
+		const me = currentUser.toLowerCase();
+		return wsRows.filter((r) =>
+			r.chats.some((c) => {
+				const rq = c.reviewRequest;
+				return (
+					rq?.accepted &&
+					(rq.by.toLowerCase() === me || rq.to.toLowerCase() === me)
+				);
+			}),
+		);
+	}, [wsRows, currentUser]);
+	// Every workspace pulled into a review band (Needs / Awaiting / Reviewed) —
 	// excluded from the pinned/status lanes below so it lives in exactly one place.
 	const reviewBandKeys = useMemo(
 		() =>
 			new Set([
 				...needsReviewRows.map((r) => r.key),
 				...awaitingReviewRows.map((r) => r.key),
+				...reviewedRows.map((r) => r.key),
 			]),
-		[needsReviewRows, awaitingReviewRows],
+		[needsReviewRows, awaitingReviewRows, reviewedRows],
 	);
 	const pinnedWsRows = useMemo(() => {
 		const pinSet = new Set(pins);
@@ -1075,18 +1367,20 @@ export function Sidebar({
 		() => [
 			...needsReviewRows,
 			...awaitingReviewRows,
+			...reviewedRows,
 			...pinnedWsRows,
 			...MINE_STATUS_META.flatMap((meta) =>
 				focusWsRows.filter((r) => r.status === meta.key),
 			),
 		],
-		[needsReviewRows, awaitingReviewRows, pinnedWsRows, focusWsRows],
+		[needsReviewRows, awaitingReviewRows, reviewedRows, pinnedWsRows, focusWsRows],
 	);
 	const hasWorkspaceFilter =
 		!!search || filter.repo !== "all" || filter.person !== "me";
 	const workspaceListEmpty =
 		needsReviewRows.length === 0 &&
 		awaitingReviewRows.length === 0 &&
+		reviewedRows.length === 0 &&
 		pinnedWsRows.length === 0 &&
 		focusWsRows.length === 0 &&
 		prLaneRows.length === 0;
@@ -1491,8 +1785,8 @@ export function Sidebar({
 						}}
 						title={pinned ? "Unpin workspace" : "Pin workspace"}
 					>
-						<IconStar size={22} fill={pinned ? "currentColor" : "none"} />
-						<span>{pinned ? "Unpin" : "Star"}</span>
+						<IconPin size={22} fill={pinned ? "currentColor" : "none"} />
+						<span>{pinned ? "Unpin" : "Pin"}</span>
 					</button>
 				)}
 				<button
@@ -1544,15 +1838,28 @@ export function Sidebar({
 				>
 				{/* 22px slot — same as the group-header pin/eye icon (a 22px box at
 				    6px pad, center 17/27px) so a row's PR/merge mark sits on the exact
-				    icon column of its lane header, not 1px left in a smaller box. */}
-				<WsStatusMark row={row} size={22} />
-				{row.unread &&
-					!waiting &&
-					!row.running &&
-					row.status !== "review" &&
-					row.status !== "merged" && (
-						<span className="sidebar-item-status sidebar-status-unread" />
-					)}
+				    icon column of its lane header, not 1px left in a smaller box.
+				    Backlog/pending rows carry no mark: they show the unread dot in
+				    that slot when unread, else an empty placeholder — either way the
+				    title lines up with the iconned rows (a left indent). */}
+				{(() => {
+					const showUnreadDot =
+						row.unread &&
+						!waiting &&
+						!row.running &&
+						row.status !== "review" &&
+						row.status !== "merged";
+					if (showUnreadDot)
+						return (
+							<span
+								className="flex shrink-0 items-center justify-center"
+								style={{ width: 22, height: 22 }}
+							>
+								<span className="sidebar-item-status sidebar-status-unread" />
+							</span>
+						);
+					return <WsStatusMark row={row} size={22} placeholder />;
+				})()}
 				{editing ? (
 					<input
 						className="sidebar-item-rename"
@@ -1633,7 +1940,7 @@ export function Sidebar({
 							}
 						}}
 					>
-						<IconStar size={21} fill={pinned ? "currentColor" : "none"} />
+						<IconPin size={21} fill={pinned ? "currentColor" : "none"} />
 					</span>
 					{row.chats.length > 0 && (
 						<span
@@ -1683,6 +1990,11 @@ export function Sidebar({
 				onClick={() => {
 					if (r.session) onSelect(r.session);
 					else onOpenPr(r.repo, r.branch);
+				}}
+				onContextMenu={(e) => {
+					e.preventDefault();
+					setProjectMenu(null);
+					setPrMenu({ pr: r, x: e.clientX, y: e.clientY });
 				}}
 				title={`${r.number ? `#${r.number} ` : ""}${r.title} — ${r.repo}`}
 			>
@@ -1813,14 +2125,15 @@ export function Sidebar({
 					>
 						<SidebarGroupIcon status={meta.key} color={meta.dotColor} />
 						<span className="sidebar-group-name">{meta.label}</span>
+						{/* Count rides directly behind the lane name, not pinned right. */}
+						<span className="sidebar-group-count">
+							{items.length + lanePrRows.length}
+						</span>
 						<IconChevronDown
 							className="sidebar-group-chevron"
 							size={22}
 							style={{ transform: open ? "none" : "rotate(-90deg)" }}
 						/>
-						<span className="sidebar-group-count">
-							{items.length + lanePrRows.length}
-						</span>
 					</button>
 					{items
 						.filter((r) => open || r.chats.some((c) => c.id === selectedId))
@@ -1961,7 +2274,7 @@ export function Sidebar({
 					onClick={onOpenReviews}
 				>
 					<span className="sidebar-nav-icon">
-						<IconReviewNodes />
+						<IconEye />
 					</span>
 					Reviews
 					{openPrCount > 0 && (
@@ -2096,223 +2409,171 @@ export function Sidebar({
 			)}
 
 			{projectMenu &&
-				createPortal(
-					(() => {
-						// The menu id is a real workspace id, or a solo chat's session id
-						// (pre-migration standalone rows). Solo rows get pin/archive only.
-						const ws = projects.find((p) => p.id === projectMenu.id);
-						const soloChat = ws
-							? null
-							: sessions.find((s) => s.id === projectMenu.id);
-						const pinKey = ws ? `workspace:${ws.id}` : projectMenu.id;
-						// Match the row pin icon: a row can be pinned via its own key or a
-						// legacy pin on any member chat (incl. alias ids) — unpin clears all.
-						const menuRow = wsRows.find((r) =>
-							ws ? r.workspace?.id === ws.id : r.key === projectMenu.id,
-						);
-						const pinnedKeys = [
-							pinKey,
-							...(menuRow
-								? [
-										menuRow.key,
-										...menuRow.chats.flatMap((c) => [
-											c.id,
-											...(c.aliasIds || []),
-										]),
-									]
-								: []),
-						].filter((k, i, a) => pins.includes(k) && a.indexOf(k) === i);
-						const pinned = pinnedKeys.length > 0;
-						return (
-							<div
-								className="sidebar-ctx-menu"
-								style={{ ...CTX_MENU_STYLE, left: projectMenu.x, top: projectMenu.y }}
-								onClick={(e) => e.stopPropagation()}
-							>
-								<button
-									style={CTX_ITEM_STYLE}
-									onClick={() => {
-										if (pinned) {
-											let next = pins;
-											for (const k of pinnedKeys) next = togglePin(k);
-											setPins(next);
-										} else {
-											setPins(togglePin(pinKey));
-										}
-										setProjectMenu(null);
-									}}
-								>
-									{pinned ? "Unpin" : "Pin"}
-								</button>
-								<div style={CTX_SEP_STYLE} />
-{/* Move the workspace into a lane manually. Applies the pin to every
-								    chat so the aggregated row lands there; "Auto" clears it back
-								    to the derived lane. */}
-								{menuRow &&
-									menuRow.chats.length > 0 &&
-									(() => {
-										const statusChats = menuRow.chats;
-										const anyManual = statusChats.some((c) => c.manualStatus);
-										const sharedManual =
-											anyManual &&
-											statusChats.every(
-												(c) =>
-													c.manualStatus === statusChats[0].manualStatus,
-											)
-												? (statusChats[0].manualStatus ?? null)
-												: null;
-										const check = (on: boolean) => (
-											<span
-												style={{
-													width: 14,
-													display: "inline-flex",
-													justifyContent: "center",
-													color: "var(--text-dim)",
-												}}
-											>
-												{on ? "✓" : ""}
-											</span>
-										);
-										return (
-											<>
-												<div
-													style={{
-														fontSize: 11,
-														fontWeight: 600,
-														color: "var(--text-faint)",
-														padding: "3px 11px 2px",
-													}}
-												>
-													Move to
-												</div>
-												{MINE_STATUS_META.map((m) => (
-													<button
-														key={m.key}
-														style={{
-															...CTX_ITEM_STYLE,
-															display: "flex",
-															alignItems: "center",
-															gap: 8,
-														}}
-														onClick={() => {
-															onSetStatus(
-																statusChats,
-																sharedManual === m.key ? null : m.key,
-															);
-															setProjectMenu(null);
-														}}
-													>
-														<span
-															style={{
-																width: 8,
-																height: 8,
-																borderRadius: "50%",
-																background: m.dotColor,
-																flexShrink: 0,
-															}}
-														/>
-														<span style={{ flex: 1 }}>{m.label}</span>
-														{check(sharedManual === m.key)}
-													</button>
-												))}
-												<button
-													style={{
-														...CTX_ITEM_STYLE,
-														display: "flex",
-														alignItems: "center",
-														gap: 8,
-													}}
-													onClick={() => {
-														onSetStatus(statusChats, null);
-														setProjectMenu(null);
-													}}
-												>
-													<span style={{ width: 8, flexShrink: 0 }} />
-													<span style={{ flex: 1 }}>Auto (default)</span>
-													{check(!anyManual)}
-												</button>
-												<div style={CTX_SEP_STYLE} />
-											</>
-										);
-									})()}
-								{ws && (
-									<>
-										<div
-											style={{
-												display: "flex",
-												flexWrap: "wrap",
-												gap: 8,
-												padding: "5px 8px 3px",
-											}}
-										>
-											{TAB_COLORS.map((c) => (
-												<button
-													key={c.key}
-													type="button"
-													className="tab-color-swatch"
-													style={{ background: c.hex }}
-													aria-label={c.label}
-													title={c.label}
-													onClick={() => {
-														onSetProjectColor(projectMenu.id, c.key);
-														setProjectMenu(null);
-													}}
-												/>
-											))}
-											<button
-												type="button"
-												className="tab-color-swatch tab-color-swatch-none"
-												aria-label="No color"
-												title="No color"
-												onClick={() => {
-													onSetProjectColor(projectMenu.id, null);
-													setProjectMenu(null);
-												}}
-											/>
-										</div>
-										<div style={CTX_SEP_STYLE} />
-										<button
-											style={CTX_ITEM_STYLE}
-											onClick={() => {
-												setProjectDraft(ws.name);
-												setEditingProjectId(ws.id);
-												setProjectMenu(null);
-											}}
-										>
-											Rename
-										</button>
-										<button
-											style={{ ...CTX_ITEM_STYLE, color: "var(--red, #e5534b)" }}
-											onClick={() => {
-												if (
-													window.confirm(
-														`Delete workspace "${ws.name}"? Its chats become standalone.`,
-													)
-												)
-													onDeleteProject(projectMenu.id);
-												setProjectMenu(null);
-											}}
-										>
-											Delete workspace
-										</button>
-									</>
-								)}
-								{soloChat && (
-									<button
-										style={CTX_ITEM_STYLE}
-										onClick={() => {
-											onArchive(soloChat, null);
-											setProjectMenu(null);
-										}}
-									>
-										Archive
-									</button>
-								)}
-							</div>
-						);
-					})(),
-					document.body,
-				)}
+				(() => {
+					// The menu id is a real workspace id, or a row key for a
+					// workspace-less row (solo chat / shared-worktree group).
+					const ws = projects.find((p) => p.id === projectMenu.id);
+					const menuRow = wsRows.find((r) =>
+						ws ? r.workspace?.id === ws.id : r.key === projectMenu.id,
+					);
+					const chats = menuRow?.chats ?? [];
+					const first = chats[0];
+					const pinKey = ws ? `workspace:${ws.id}` : projectMenu.id;
+					// A row can be pinned via its own key or a legacy pin on any member
+					// chat (incl. alias ids) — unpin clears all of them.
+					const pinnedKeys = [
+						pinKey,
+						...(menuRow
+							? [
+									menuRow.key,
+									...menuRow.chats.flatMap((c) => [
+										c.id,
+										...(c.aliasIds || []),
+									]),
+								]
+							: []),
+					].filter((k, i, a) => pins.includes(k) && a.indexOf(k) === i);
+					const pinned = pinnedKeys.length > 0;
+					const togglePinNow = () => {
+						if (pinned) {
+							let next = pins;
+							for (const k of pinnedKeys) next = togglePin(k);
+							setPins(next);
+						} else {
+							setPins(togglePin(pinKey));
+						}
+					};
+					const anyManual = chats.some((c) => c.manualStatus);
+					const sharedManual =
+						anyManual &&
+						chats.every((c) => c.manualStatus === chats[0].manualStatus)
+							? (chats[0].manualStatus ?? null)
+							: null;
+
+					const entries: CtxEntry[] = [];
+					if (chats.length > 0)
+						entries.push({
+							kind: "item",
+							icon: <IconMail size={20} />,
+							label: "Mark as unread",
+							onClick: () => chats.forEach((c) => markUnread(c.id)),
+						});
+					entries.push({
+						kind: "item",
+						icon: (
+							<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
+						),
+						label: pinned ? "Unpin" : "Pin",
+						onClick: togglePinNow,
+					});
+					if (chats.length > 0)
+						entries.push({
+							kind: "status",
+							current: sharedManual,
+							// Applies the pin to every chat so the aggregated row lands
+							// in the chosen lane; "Auto" clears it back to the derived one.
+							onPick: (s) => onSetStatus(chats, s),
+						});
+					if (ws)
+						entries.push({
+							kind: "item",
+							icon: <IconPencil size={20} />,
+							label: "Rename",
+							onClick: () => {
+								setProjectDraft(ws.name);
+								setEditingProjectId(ws.id);
+							},
+						});
+					else if (first)
+						entries.push({
+							kind: "item",
+							icon: <IconPencil size={20} />,
+							label: "Rename",
+							onClick: () => {
+								const t = window.prompt("Rename chat", first.title)?.trim();
+								if (t !== undefined) onRename(first, t);
+							},
+						});
+					if (first)
+						entries.push({
+							kind: "item",
+							icon: <IconLink size={20} />,
+							label: "Copy link",
+							shortcut: "⌘⇧C",
+							onClick: () =>
+								copyToClipboard(absoluteLink(chatPath(first)), () =>
+									onToast?.("Link copied"),
+								),
+						});
+					// Archive is the removal action here (a chat/workspace is finished
+					// by archiving, never inferred-deleted). A chatless workspace has
+					// nothing to archive, so it keeps Delete as its only removal.
+					if (menuRow && chats.length > 0) {
+						entries.push({ kind: "sep" });
+						entries.push({
+							kind: "item",
+							icon: <IconArchive size={20} />,
+							label: "Archive",
+							onClick: () => archiveWorkspaceWithNext(menuRow),
+						});
+					} else if (ws) {
+						entries.push({ kind: "sep" });
+						entries.push({
+							kind: "item",
+							icon: <IconTrash size={20} />,
+							danger: true,
+							label: "Delete workspace",
+							onClick: () => {
+								if (
+									window.confirm(
+										`Delete workspace "${ws.name}"? Its chats become standalone.`,
+									)
+								)
+									onDeleteProject(ws.id);
+							},
+						});
+					}
+
+					return (
+						<SidebarCtxMenu
+							x={projectMenu.x}
+							y={projectMenu.y}
+							entries={entries}
+							onClose={() => setProjectMenu(null)}
+						/>
+					);
+				})()}
+			{prMenu &&
+				(() => {
+					const r = prMenu.pr;
+					const link = r.session
+						? absoluteLink(chatPath(r.session))
+						: absoluteLink(prPath(r.repo, r.branch));
+					const entries: CtxEntry[] = [
+						{
+							kind: "item",
+							icon: <IconLink size={20} />,
+							label: "Copy link",
+							shortcut: "⌘⇧C",
+							onClick: () =>
+								copyToClipboard(link, () => onToast?.("Link copied")),
+						},
+						{
+							kind: "item",
+							icon: <IconPullRequest size={20} />,
+							label: "Open PR on GitHub",
+							onClick: () => window.open(r.url, "_blank", "noopener"),
+						},
+					];
+					return (
+						<SidebarCtxMenu
+							x={prMenu.x}
+							y={prMenu.y}
+							entries={entries}
+							onClose={() => setPrMenu(null)}
+						/>
+					);
+				})()}
 
 			<div
 				className="sidebar-list"
@@ -2403,6 +2664,41 @@ export function Sidebar({
 						);
 					})()}
 
+				{/* ── Reviewed: the request landed — the reviewer signed off. Shown to
+				    both the asker and the reviewer so a session sent out for review
+				    reads as done rather than dropping back into the status lanes. ── */}
+				{reviewedRows.length > 0 &&
+					(() => {
+						const open = isOpen("reviewed");
+						return (
+							<div className="sidebar-group sidebar-group--review">
+								<button
+									className="sidebar-group-header"
+									onClick={() => toggleGroup("reviewed")}
+								>
+									<IconCheck
+										className="sidebar-group-icon"
+										style={{ color: "var(--green)" }}
+									/>
+									<span className="sidebar-group-name">Reviewed</span>
+									<span className="sidebar-group-count">
+										{reviewedRows.length}
+									</span>
+									<IconChevronDown
+										className="sidebar-group-chevron"
+										size={22}
+										style={{ transform: open ? "none" : "rotate(-90deg)" }}
+									/>
+								</button>
+								{reviewedRows
+									.filter(
+										(r) => open || r.chats.some((c) => c.id === selectedId),
+									)
+									.map(renderWsRow)}
+							</div>
+						);
+					})()}
+
 				{/* ── Pinned (workspaces + notes, mixed) ── */}
 				{(() => {
 					const pinnedRows = pinnedWsRows;
@@ -2439,23 +2735,23 @@ export function Sidebar({
 					const pinnedCount =
 						pinnedRows.length + pinnedLoose.length + pinnedNotes.length;
 					return (
-						<div className="sidebar-group">
+						<div className="sidebar-group sidebar-group--pinned">
 							{/* Same header treatment as the status lanes below. */}
 							<button
 								className="sidebar-group-header"
 								onClick={() => toggleGroup("pinned")}
 							>
-								<IconStar
+								<IconPin
 									className="sidebar-group-icon"
 									style={{ color: "var(--text-faint)" }}
 								/>
 								<span className="sidebar-group-name">Pinned</span>
+								<span className="sidebar-group-count">{pinnedCount}</span>
 								<IconChevronDown
 									className="sidebar-group-chevron"
 									size={22}
 									style={{ transform: pinnedOpen ? "none" : "rotate(-90deg)" }}
 								/>
-								<span className="sidebar-group-count">{pinnedCount}</span>
 							</button>
 							{pinnedOpen && pinnedRows.map(renderWsRow)}
 							{pinnedOpen &&
@@ -2752,8 +3048,19 @@ export function Sidebar({
 										onRename(row.chats[0], title);
 								}
 							}}
-							onSetColor={
-								ws ? (color) => onSetProjectColor(ws.id, color) : null
+							onMarkUnread={
+								row.chats.length > 0
+									? () => row.chats.forEach((c) => markUnread(c.id))
+									: null
+							}
+							onCopyLink={
+								row.chats[0]
+									? () =>
+											copyToClipboard(
+												absoluteLink(chatPath(row.chats[0])),
+												() => onToast?.("Link copied"),
+											)
+									: null
 							}
 							onDelete={
 								ws
@@ -3379,8 +3686,8 @@ function SidebarItem({
 					}}
 					title={pinned ? "Unpin session" : "Pin session"}
 				>
-					<IconStar size={22} fill={pinned ? "currentColor" : "none"} />
-					<span>{pinned ? "Unpin" : "Star"}</span>
+					<IconPin size={22} fill={pinned ? "currentColor" : "none"} />
+					<span>{pinned ? "Unpin" : "Pin"}</span>
 				</button>
 			)}
 		<button
@@ -3422,21 +3729,29 @@ function SidebarItem({
 			}}
 		>
 			<div className="sidebar-item-top">
-				{(waiting || running) && (
-					<span
-						className={`sidebar-item-status ${
-							waiting
-								? "sidebar-status-waiting"
-								: "sidebar-status-running"
-						}`}
-					/>
-				)}
-				{/* Unread dot — only when there's no live status dot already drawing
-				    the eye (a running/waiting session isn't "unread" in the same
-				    sense). */}
-				{unread && !waiting && !running && (
-					<span className="sidebar-item-status sidebar-status-unread" />
-				)}
+				{/* Leading 22px slot — the same status-icon column the workspace rows
+				    use, so a chat row's #number/title line up under them (and under the
+				    lane header) instead of sitting flush-left when it carries no dot.
+				    The live/unread dot rides centered in it; empty otherwise. */}
+				<span
+					className="flex shrink-0 items-center justify-center"
+					style={{ width: 22 }}
+				>
+					{waiting || running ? (
+						<span
+							className={`sidebar-item-status ${
+								waiting
+									? "sidebar-status-waiting"
+									: "sidebar-status-running"
+							}`}
+						/>
+					) : unread ? (
+						/* Unread dot — only when there's no live status dot already
+						   drawing the eye (a running/waiting session isn't "unread" in
+						   the same sense). */
+						<span className="sidebar-item-status sidebar-status-unread" />
+					) : null}
+				</span>
 				{editing ? (
 					<input
 						className="sidebar-item-rename"
@@ -3482,7 +3797,7 @@ function SidebarItem({
 				)}
 			</div>
 			{!mine && (
-				<div className="sidebar-item-meta">
+				<div className="sidebar-item-meta pl-[28px]">
 					{metaParts.map((part, i) => (
 						<React.Fragment key={i}>
 							{i > 0 && <span className="sidebar-meta-sep">·</span>}
@@ -3866,9 +4181,14 @@ function stripPrTitlePrefix(name: string): string {
 function WsStatusMark({
 	row,
 	size = 20,
+	placeholder = false,
 }: {
 	row: { status: MineStatus; running: boolean; chats: UnifiedSession[] };
 	size?: number;
+	/** When a row carries no status icon (Backlog/pending), still occupy the
+	    icon-width slot so its title lines up with the iconned rows and the lane
+	    header above — a left indent, Conductor-style, instead of flush-left. */
+	placeholder?: boolean;
 }) {
 	// Every mark rides in the same `size`-wide (20px) flex slot so #number/title
 	// line up at one x whichever mark the row carries. It also gives the icons a
@@ -3898,7 +4218,7 @@ function WsStatusMark({
 	}
 	if (row.status === "merged")
 		return slot(<IconGitMerge size={size} className="text-purple" />);
-	return null;
+	return placeholder ? slot(null) : null;
 }
 
 // Footer action button base — the color variant carries the status meaning
@@ -4244,7 +4564,8 @@ function WsMobileSheet({
 	onSetStatus,
 	onOpen,
 	onRename,
-	onSetColor,
+	onMarkUnread,
+	onCopyLink,
 	onDelete,
 }: {
 	row: WsCardRow;
@@ -4256,8 +4577,10 @@ function WsMobileSheet({
 	onSetStatus: (status: MineStatus | null) => void;
 	onOpen: (chat: UnifiedSession) => void;
 	onRename: () => void;
-	/** Real workspaces only — solo rows have no color/delete. */
-	onSetColor: ((color: string | null) => void) | null;
+	/** Mark every chat in the row unread; null for chatless rows. */
+	onMarkUnread: (() => void) | null;
+	/** Copy a link to the row's first chat; null for chatless rows. */
+	onCopyLink: (() => void) | null;
 	onDelete: (() => void) | null;
 }) {
 	const ov = useWsOverview(row);
@@ -4375,8 +4698,17 @@ function WsMobileSheet({
 						Open PR{prChat.prNumber != null ? ` #${prChat.prNumber}` : ""}
 					</button>
 				)}
+				{onMarkUnread && (
+					<button
+						className="mobile-sheet-item"
+						onClick={closing(onMarkUnread)}
+					>
+						<IconMail size={22} />
+						Mark as unread
+					</button>
+				)}
 				<button className="mobile-sheet-item" onClick={closing(onTogglePin)}>
-					<IconStar size={22} fill={pinned ? "currentColor" : "none"} />
+					<IconPin size={22} fill={pinned ? "currentColor" : "none"} />
 					{pinned ? "Unpin" : "Pin"}
 				</button>
 				<button className="mobile-sheet-item" onClick={closing(onRename)}>
@@ -4392,6 +4724,12 @@ function WsMobileSheet({
 					</svg>
 					Rename
 				</button>
+				{onCopyLink && (
+					<button className="mobile-sheet-item" onClick={closing(onCopyLink)}>
+						<IconLink size={22} />
+						Copy link
+					</button>
+				)}
 				{/* Pin the workspace into a lane manually — tap a chip to move it there
 				    (tap the active one, or Auto, to release it back to the derived lane). */}
 				{row.chats.length > 0 &&
@@ -4458,28 +4796,6 @@ function WsMobileSheet({
 							</div>
 						);
 					})()}
-				{onSetColor && (
-					<div className="flex flex-wrap items-center gap-2 px-4 py-2">
-						{TAB_COLORS.map((c) => (
-							<button
-								key={c.key}
-								type="button"
-								className="tab-color-swatch"
-								style={{ background: c.hex }}
-								aria-label={c.label}
-								title={c.label}
-								onClick={closing(() => onSetColor(c.key))}
-							/>
-						))}
-						<button
-							type="button"
-							className="tab-color-swatch tab-color-swatch-none"
-							aria-label="No color"
-							title="No color"
-							onClick={closing(() => onSetColor(null))}
-						/>
-					</div>
-				)}
 				{((row.status !== "merged" && row.chats.length > 0) || onDelete) && (
 					<div className="mobile-sheet-sep" />
 				)}

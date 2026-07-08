@@ -63,16 +63,21 @@ import {
 	IconPencil,
 	IconArrowUp,
 	IconCrosshair,
-	IconStar,
+	IconPin,
 	IconPullRequest,
 	IconLink,
 	IconSparkle,
 	IconTerminal,
+	IconCopy,
+	IconFile,
 } from "./icons";
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
 import { PixelSpinner } from "./PixelSpinner";
 import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
+import { CopyCheck, useCopy } from "../ui/copy";
+import { toast } from "../ui/toast";
+import { copySessionTranscript } from "../lib/transcript-copy";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
 import {
@@ -379,7 +384,7 @@ export function SessionViewer({
 		questionId: string;
 		questions: AskQuestion[];
 	} | null>(null);
-	const [copied, setCopied] = useState(false);
+	const { copied, copy: copyLink } = useCopy();
 	// Inline rename of the header title (double-click), mirroring the tab strip.
 	// `null` = not editing; a string = the working draft.
 	const [renameDraft, setRenameDraft] = useState<string | null>(null);
@@ -1518,18 +1523,8 @@ export function SessionViewer({
 			? `/backstage/workspace/${encodeURIComponent(session.projectId)}/chat/${encodeURIComponent(session.id)}`
 			: `/backstage/session/${encodeURIComponent(session.id)}`;
 		const link = `${location.origin}${path}`;
-		const flash = () => {
-			setCopied(true);
-			setTimeout(() => setCopied(false), 1600);
-		};
-		// navigator.clipboard needs a secure context; fall back to a temp textarea
-		if (navigator.clipboard?.writeText) {
-			navigator.clipboard
-				.writeText(link)
-				.then(flash, () => fallbackCopy(link, flash));
-		} else {
-			fallbackCopy(link, flash);
-		}
+		// Inline check on the button + a floating "Link copied" toast.
+		copyLink(link, { toast: "Link copied" });
 	}
 
 	function commitRename() {
@@ -1816,7 +1811,9 @@ export function SessionViewer({
 						onClick={handleShare}
 						title="Copy a link to this session"
 					>
-						{inMenu && <IconLink size={20} />}
+						{inMenu && (
+							<CopyCheck copied={copied} idle={<IconLink size={20} />} size={20} />
+						)}
 						{copied ? "Copied" : "Share"}
 					</button>
 				);
@@ -1837,6 +1834,41 @@ export function SessionViewer({
 						New chat in workspace
 					</button>
 				);
+				// Copy transcript. These normally live on a tab's right-click menu,
+				// but a lone-chat workspace has no tab strip (and phones hide it at
+				// every count), so the only place to grab this chat's full text is the
+				// ⋯ menu — surface both modes here when the strip isn't offering them.
+				const showTranscriptActions =
+					isPhone || (workspaceChats?.length ?? 1) <= 1;
+				const transcriptActions = showTranscriptActions && (
+					<>
+						<button
+							className="btn-viewer-newchat"
+							onClick={() => {
+								setOverflowOpen(false);
+								void copySessionTranscript(session, "concise", toast);
+							}}
+							title="Copy a trimmed transcript of this chat"
+						>
+							<IconCopy size={20} />
+							Copy concise transcript
+							<span className="btn-viewer-shortcut">
+								{isApple ? "⌘⌥C" : "Ctrl+Alt+C"}
+							</span>
+						</button>
+						<button
+							className="btn-viewer-newchat"
+							onClick={() => {
+								setOverflowOpen(false);
+								void copySessionTranscript(session, "full", toast);
+							}}
+							title="Copy the complete transcript of this chat"
+						>
+							<IconFile size={20} />
+							Copy full transcript
+						</button>
+					</>
+				);
 				// Star (pin) and Spin off live in the ⋯ menu at every width,
 				// alongside Delete — occasional actions, not header chrome.
 				const overflowActions = (
@@ -1846,7 +1878,7 @@ export function SessionViewer({
 							onClick={() => togglePin(session.id)}
 							aria-pressed={pinned}
 						>
-							<IconStar size={20} fill={pinned ? "currentColor" : "none"} />
+							<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
 							{pinned ? "Unpin tab" : "Pin as tab"}
 						</button>
 						<SpinOffMenu
@@ -2043,7 +2075,13 @@ export function SessionViewer({
 								onClick={() => onNewChat("share")}
 								aria-label="New tab"
 							>
-								<IconPlus size={22} />
+								{/* 25, not the menu-row 22: the IconPlus path only fills ~52%
+								    of its box (vs ~60% for the play/sidebar glyphs beside it),
+								    so at 22 it read a touch small. 25 nudges it up without the
+								    28 that read too big beside the compact ▶ play / ▐ panel
+								    toggle — the thin full-box cross carries more optical width
+								    than those glyphs at the same size. */}
+								<IconPlus size={25} />
 							</button>
 						</Tooltip>
 					)}
@@ -2111,6 +2149,7 @@ export function SessionViewer({
 								{isPhone && secondaryActions}
 								{(compactHeader || isPhone) && shareAction(true)}
 								{newChatAction}
+								{transcriptActions}
 								{overflowActions}
 								{archiveAction}
 								{deleteAction}
@@ -2157,7 +2196,7 @@ export function SessionViewer({
 							}
 						>
 							<button
-								className={`btn-panel-toggle btn-workspace ${panelOpen && subagentStack.length === 0 ? "active" : ""}`}
+								className="btn-panel-toggle btn-workspace"
 								onClick={() => {
 									// The sub-agent panel and Workspace share the right slot; opening
 									// Workspace closes the sub-agent view.
@@ -2172,7 +2211,7 @@ export function SessionViewer({
 							>
 								{/* Iconic sidebar-right glyph — reads as "right side panel".
 								    28 to sit level with the play/globe weight beside it. */}
-								<IconSidebarRight className="btn-panel-toggle-icon" size={28} />
+								<IconSidebarRight className="btn-panel-toggle-icon" size={26} />
 							</button>
 						</Tooltip>
 					)}
@@ -2345,6 +2384,10 @@ export function SessionViewer({
 							)
 						}
 					>
+						{/* The engine-running status dot rides the metadata line on
+						    phones (it used to sit next to the title) so the name stays
+						    steady and the working state reads alongside model · cost. */}
+						{isRunningLive && <span className="working-dot" />}
 						{/* Repo now leads the pill (portaled into headerRepoEl in front of
 						    the title), so the metadata line is just model · cost. */}
 						{models.length > 0 && (
@@ -2438,7 +2481,7 @@ export function SessionViewer({
 								) : !hasLiveConversation && contextChatOptions.length > 0 ? (
 									// Top padding clears the floating tab pills on desktop; phones
 									// already pad .viewer-messages for them.
-									<div className="pt-10 max-md:pt-1">
+									<div className="pt-10 max-md:pt-1 w-full max-w-[var(--chat-col)] mx-auto">
 										<div className="text-dim mb-3">
 											New chat in{" "}
 											<span className="text-fg font-medium">
@@ -3052,22 +3095,4 @@ function dedupeViewers(
 	// Others first, you last (nearest Share) — the Figma/Notion facepile order.
 	if (me) list.sort((a, b) => Number(a.name === me) - Number(b.name === me));
 	return list;
-}
-
-// Clipboard fallback for non-secure contexts (where navigator.clipboard is absent)
-function fallbackCopy(text: string, onDone: () => void) {
-	try {
-		const ta = document.createElement("textarea");
-		ta.value = text;
-		ta.style.position = "fixed";
-		ta.style.opacity = "0";
-		document.body.appendChild(ta);
-		ta.select();
-		document.execCommand("copy");
-		document.body.removeChild(ta);
-		onDone();
-	} catch {
-		// Last resort: show the link so it can be copied by hand
-		window.prompt("Copy this session link:", text);
-	}
 }
