@@ -7094,8 +7094,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			}
 
 			// Sandbox WS transport (Phase 3): run hosts + MCP proxies inside
-			// sandboxes dial back here instead of sharing unix sockets. Token-
-			// authed per run BEFORE the upgrade — see src/server/run-ws.ts.
+			// sandboxes dial back here instead of sharing unix sockets. BOTH
+			// routes are gated BEFORE the upgrade on the run's per-launch
+			// wsToken (hostId-keyed, registered only by ws-transport launches —
+			// docker-ws / remote adapters), constant-time compared; rpc-ws
+			// additionally needs ?host=<hostId>. Plain run-rpc tokens are NOT
+			// network credentials: on a sandbox-less deployment the registry is
+			// empty and every upgrade here is a 403. See src/server/run-ws.ts.
 			if (path.startsWith("/backstage/run-ws/") || path === "/backstage/rpc-ws") {
 				return handleSandboxWsUpgrade(req, server, path);
 			}
