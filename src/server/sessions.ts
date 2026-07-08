@@ -97,6 +97,25 @@ function findTranscriptPath(
   for (const path of fallbacks) {
     if (existsSync(path)) return path;
   }
+  // Last resort: the recorded worktreeDir can drift from the cwd the run
+  // actually used (e.g. a session migrated between repos), so the hashed
+  // path above misses even though Claude did write a transcript. The session
+  // id is globally unique, so scan every project folder for <id>.jsonl and
+  // take the match. Only reached when the direct lookups all fail.
+  return findTranscriptBySessionId(sessionId);
+}
+
+function findTranscriptBySessionId(sessionId: string): string | null {
+  let projectDirs: string[];
+  try {
+    projectDirs = readdirSync(CLAUDE_PROJECTS_DIR);
+  } catch {
+    return null;
+  }
+  for (const dir of projectDirs) {
+    const path = `${CLAUDE_PROJECTS_DIR}/${dir}/${sessionId}.jsonl`;
+    if (existsSync(path)) return path;
+  }
   return null;
 }
 
