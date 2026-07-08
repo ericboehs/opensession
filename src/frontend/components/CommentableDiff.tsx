@@ -2,7 +2,8 @@ import React, { useMemo, useState, useRef, useCallback, useEffect } from "react"
 import { parsePatchFiles } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import type { SelectedLineRange, FileDiffMetadata, DiffLineAnnotation } from "@pierre/diffs";
-import { IconChevronRight, IconTrash } from "./icons";
+import { IconChevronRight, IconUndo } from "./icons";
+import { Tooltip } from "../ui/tooltip";
 
 export interface CommentTarget {
   path: string;
@@ -337,29 +338,34 @@ export function CommentableDiff({
                 <span className="diff-file-base">{base}</span>
               </span>
               {pend.length > 0 && <span className="diff-file-comments">{pend.length}</span>}
+              {onDiscard && (
+                <Tooltip
+                  label={
+                    discarding === file.name
+                      ? "Discarding…"
+                      : armed === file.name
+                        ? "Click again to discard"
+                        : "Discard changes"
+                  }
+                >
+                  <button
+                    type="button"
+                    className={`diff-file-discard ${armed === file.name ? "diff-file-discard-armed" : ""}`}
+                    disabled={discarding === file.name}
+                    aria-label="Discard this file's changes (reset to base)"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDiscard(file);
+                    }}
+                  >
+                    <IconUndo size={20} />
+                  </button>
+                </Tooltip>
+              )}
               <span className="diff-file-stats">
                 {s.add > 0 && <span className="diff-add">+{s.add}</span>}
                 {s.del > 0 && <span className="diff-del">−{s.del}</span>}
               </span>
-              {onDiscard && (
-                <button
-                  type="button"
-                  className={`diff-file-discard ${armed === file.name ? "diff-file-discard-armed" : ""}`}
-                  disabled={discarding === file.name}
-                  title="Discard this file's changes (reset to base)"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDiscard(file);
-                  }}
-                >
-                  <IconTrash size={15} />
-                  {discarding === file.name
-                    ? "Discarding…"
-                    : armed === file.name
-                      ? "Discard changes?"
-                      : "Discard"}
-                </button>
-              )}
             </div>
             {isOpen && (
               <FileDiffRow

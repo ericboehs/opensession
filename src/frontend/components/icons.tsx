@@ -684,6 +684,16 @@ export function IconHistory(p: IconProps) {
   );
 }
 
+// Revert / undo: a curved arrow doubling back on itself.
+export function IconUndo(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M9 14.25L5.75 11L9 7.75" />
+      <path {...stroke} d="M5.75 11H14.25a4 4 0 0 1 0 8H12" />
+    </Svg>
+  );
+}
+
 // Octicon-style git-merge: branch line curving into the merge target.
 export function IconGitMerge(p: IconProps) {
   return (
