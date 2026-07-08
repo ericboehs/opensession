@@ -68,10 +68,12 @@ export interface CreateSessionOpts {
   /** Display name credited as the creator. */
   user?: string;
   /**
-   * Ask for a sandboxed session (docs/sandboxes-plan.md). Phase 0: recorded on
-   * the session file only — nothing acts on it until a real provider ships.
+   * Ask for a sandboxed session (docs/sandboxes-plan.md). `true` = the config
+   * default provider; a provider id ("docker" | "daytona" | "e2b") picks one
+   * explicitly and must be configured (~/.backstage-sandbox.json), else the
+   * create fails with a clear error.
    */
-  sandbox?: boolean;
+  sandbox?: boolean | "docker" | "daytona" | "e2b";
 }
 
 /**

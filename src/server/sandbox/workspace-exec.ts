@@ -31,7 +31,7 @@
  */
 
 import { $ } from "bun";
-import { sandboxesEnabled, effectiveSandboxProvider } from "./config";
+import { sandboxesEnabled, sandboxProviderConfigured } from "./config";
 import { dockerContainerStatus, rawDockerExec } from "./docker";
 import type { ExecOpts, ExecResult } from "./provider";
 
@@ -96,7 +96,9 @@ export async function workspaceExecFor(
   if (!cwd || sb?.provider !== "docker" || !sb.sandboxId) return host;
   try {
     if (!sandboxesEnabled()) return host; // kill-switch — reads go host-side too
-    if (effectiveSandboxProvider(session?.repo) !== "docker") return host;
+    // Provider-configured, not config-default: a session may have picked
+    // docker explicitly while the config default is another provider.
+    if (!sandboxProviderConfigured("docker")) return host;
     if ((await dockerContainerStatus(sb.sandboxId)) !== "running") return host;
     const exec = rawDockerExec(sb.sandboxId, cwd);
     return Object.assign(

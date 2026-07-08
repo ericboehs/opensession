@@ -57,12 +57,21 @@ import {
 	REPOS,
 } from "./src/server/worktree";
 import { defaultRepo } from "./src/server/config";
-import { effectiveSandboxProvider, sandboxesEnabled, sandboxConfig } from "./src/server/sandbox/config";
+import {
+	sandboxesEnabled,
+	sandboxConfig,
+	sandboxCapabilityStatus,
+	sandboxProviderConfigured,
+	resolveRequestedSandbox,
+	isRunnableSandboxProvider,
+	isRemoteSandboxProvider,
+} from "./src/server/sandbox/config";
 import {
 	getSandboxProvider,
 	workspaceExecFor,
 	hasRemoteWorkspace,
 	type Sandbox,
+	type SandboxProviderId,
 } from "./src/server/sandbox";
 import { dockerContainerStatus } from "./src/server/sandbox/docker";
 import type { RunHostSpec } from "./src/runner-host/protocol";
@@ -2240,7 +2249,9 @@ async function activeSandboxFor(session: UnifiedSession): Promise<Sandbox | null
 	const sb = session.sandbox;
 	if (sb?.provider !== "docker" || !sb.sandboxId) return null;
 	if (!sandboxesEnabled()) return null;
-	if (effectiveSandboxProvider(session.repo) !== "docker") return null;
+	// Provider-configured, not config-default: a session may have picked
+	// docker explicitly while the config default is another provider.
+	if (!sandboxProviderConfigured("docker")) return null;
 	try {
 		if ((await dockerContainerStatus(sb.sandboxId)) !== "running") return null;
 		return await getSandboxProvider("docker").get(sb.sandboxId);
@@ -2250,18 +2261,22 @@ async function activeSandboxFor(session: UnifiedSession): Promise<Sandbox | null
 }
 
 /**
- * Docker-sandbox routing for runSessionPromptInner (docs/sandboxes-plan.md
- * Phase 1). Returns the run's event stream when the session opted into a
- * docker sandbox at create time AND the config + kill-switch currently allow
- * it — otherwise null, and the caller's existing in-process runAgent path
- * runs completely unchanged (sessions without a `sandbox` field can never
- * reach any of this).
+ * Sandbox routing for runSessionPromptInner (docs/sandboxes-plan.md Phase 1;
+ * generalized to every registry provider — docker/daytona/e2b). Returns the
+ * run's event stream when the session opted into a sandbox at create time AND
+ * the kill-switch + provider config currently allow it — otherwise null, and
+ * the caller's existing in-process runAgent path runs completely unchanged
+ * (sessions without a `sandbox` field can never reach any of this).
  *
  * Every failure mode falls back to null (in-process on the host): that is
  * exactly today's trust level for interactive sessions, and a session must
- * never lose a prompt to sandbox infrastructure. Automation-owned sessions
- * are refused outright — Phase 1 sandboxes carry interactive-parity mounts
- * (~/.ssh, gh, account pool) that untrusted prompt text must not reach.
+ * never lose a prompt to sandbox infrastructure. The exception is volume
+ * workspaces (docker volume mode, and remote providers — always volume):
+ * they have no host checkout, so the CALLER turns a null into a clean turn
+ * error instead of a host run. Automation-owned sessions are refused
+ * outright — sandboxes carry interactive-parity credentials (~/.ssh, gh,
+ * account pool / scoped OAuth upload) that untrusted prompt text must not
+ * reach.
  */
 async function maybeLaunchSandboxedRun(
 	session: UnifiedSession,
@@ -2275,9 +2290,16 @@ async function maybeLaunchSandboxedRun(
 		isAutomationSession: boolean;
 	},
 ): Promise<AsyncGenerator<StreamEvent> | null> {
-	if (session.sandbox?.provider !== "docker") return null;
+	const sbProvider = session.sandbox?.provider;
+	if (!isRunnableSandboxProvider(sbProvider)) return null; // "local"/absent/unknown = host
 	if (!sandboxesEnabled()) return null; // kill-switch file — instant revert
-	if (effectiveSandboxProvider(session.repo) !== "docker") return null;
+	if (!sandboxProviderConfigured(sbProvider)) {
+		// Config gone / API key removed since create — same instant-revert
+		// semantics as the kill switch (volume workspaces get the caller's
+		// no-host-fallback turn error instead of a silent host run).
+		console.warn(`[sandbox] ${session.id}: provider "${sbProvider}" is no longer configured — not sandboxing`);
+		return null;
+	}
 	if (opts.isAutomationSession) {
 		console.warn(`[sandbox] ${session.id}: automation sessions are not sandboxed in Phase 1 — running on host`);
 		return null;
@@ -2286,7 +2308,7 @@ async function maybeLaunchSandboxedRun(
 	// leak the run token (spawnHostRun's error path does the same cleanup).
 	let rpcToken: string | undefined;
 	try {
-		const provider = getSandboxProvider("docker");
+		const provider = getSandboxProvider(sbProvider);
 		const sandbox = await provider.ensure({
 			sessionId: session.id,
 			repo: session.repo,
@@ -2306,7 +2328,7 @@ async function maybeLaunchSandboxedRun(
 		) {
 			touchBackstageSession(session.id, {
 				sandbox: {
-					provider: "docker",
+					provider: sbProvider,
 					sandboxId: sandbox.id,
 					// Record how the workspace materialized ("volume" = it lives only
 					// inside the sandbox; host existsSync guards must not gate it).
@@ -2369,6 +2391,12 @@ async function maybeLaunchSandboxedRun(
 		// The token was registered mid-try; the failed run will never consume it.
 		unregisterRunToken(rpcToken);
 		const reason = String(e?.message || e).slice(0, 200);
+		// Daytona's WS dial-back is the launch step that fails when egress is
+		// blocked (lower org tiers) or callbackBaseUrl isn't sandbox-reachable.
+		const dialBackHint =
+			sbProvider === "daytona"
+				? " If the sandbox could not dial back, check callbackBaseUrl and your Daytona org tier's egress — see docs/self-hosting-sandboxes.md."
+				: "";
 		if (hasRemoteWorkspace(session)) {
 			// Volume-mode workspaces live only inside the sandbox — there is no
 			// host checkout to fall back to (the caller ends the turn with an
@@ -2376,7 +2404,7 @@ async function maybeLaunchSandboxedRun(
 			console.error(`[sandbox] ${session.id}: launch failed (volume workspace — no host fallback):`, e);
 			broadcastToSession(session.id, {
 				type: "notice",
-				message: `Sandbox unavailable (${reason}) — this workspace lives in the sandbox and has no host fallback. Retry when Docker is healthy.`,
+				message: `Sandbox unavailable (${reason}) — this workspace lives in the sandbox and has no host fallback. Retry when the ${sbProvider} sandbox is healthy.${dialBackHint}`,
 			});
 		} else {
 			console.error(`[sandbox] ${session.id}: launch failed — falling back to host run:`, e);
@@ -2630,9 +2658,10 @@ async function runSessionPromptInner(
 	});
 
 	// Sandbox routing (docs/sandboxes-plan.md Phase 1): a session that opted
-	// into a docker sandbox runs this prompt inside its per-session container;
-	// null (the default for every session without the opt-in field, plus every
-	// failure/kill-switch case) = the unchanged in-process path below.
+	// into a sandbox (docker/daytona/e2b) runs this prompt inside its
+	// per-session sandbox; null (the default for every session without the
+	// opt-in field, plus every failure/kill-switch case) = the unchanged
+	// in-process path below.
 	const sandboxRun = await maybeLaunchSandboxedRun(session, {
 		prompt,
 		engineSessionId: engineSessionId || undefined,
@@ -2643,14 +2672,18 @@ async function runSessionPromptInner(
 		isAutomationSession,
 	});
 
-	// A volume-mode workspace exists ONLY inside its sandbox — there is no
-	// host fallback (runAgent on the nonexistent host path would just ENOENT,
-	// and running in the main checkout instead would be worse). End the turn
-	// with an explicit error; the kill-switch/config flip that caused this is
-	// an operator action, not a transient.
+	// A volume-mode workspace (docker volume mode, or any remote provider)
+	// exists ONLY inside its sandbox — there is no host fallback (runAgent on
+	// the nonexistent host path would just ENOENT, and running in the main
+	// checkout instead would be worse). End the turn with an explicit error;
+	// the kill-switch/config flip that caused this is an operator action, not
+	// a transient.
 	if (!sandboxRun && hasRemoteWorkspace(session)) {
 		const msg =
-			"This session's workspace lives in its sandbox volume, but the sandbox is unavailable (disabled by config/kill-switch, or it failed to start) — the prompt was not run. Re-enable sandboxes and try again.";
+			"This session's workspace lives in its sandbox volume, but the sandbox is unavailable (disabled by config/kill-switch, or it failed to start) — the prompt was not run. Re-enable sandboxes and try again." +
+			(session.sandbox?.provider === "daytona"
+				? " Daytona: if the launch failed because the sandbox could not dial back, check callbackBaseUrl and your org tier's egress (docs/self-hosting-sandboxes.md)."
+				: "");
 		broadcastToSession(sessionId, { type: "error", sessionId, message: msg });
 		recordRunOutcome(session.id, msg);
 		broadcastToSession(sessionId, { type: "stream_done", sessionId });
@@ -5423,9 +5456,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const body = (await req.json().catch(() => ({}))) as {
 					user?: string;
 					mode?: "share" | "stack" | "ask";
-					/** Sandbox opt-in (docs/sandboxes-plan.md Phase 0): recorded on the
-					 *  session file only — nothing acts on it yet. */
-					sandbox?: boolean;
+					/** Sandbox opt-in: true = config default provider, or an explicit
+					 *  provider id ("docker" | "daytona" | "e2b" — must be configured).
+					 *  Recorded on the session file; the first prompt launches it. */
+					sandbox?: boolean | string;
 				};
 				// share (default): reuse the workspace's worktree/branch (parallel chats,
 				// one branch). stack: a new worktree branched off it (stacked PRs). ask:
@@ -5498,6 +5532,12 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						workspaceId = ws.id;
 					}
 				}
+				// Sandbox opt-in: boolean true = config default provider; a string
+				// must name a configured provider. A sibling chat's first prompt
+				// launches the sandbox through the normal prompt path.
+				const sandboxResolved = resolveRequestedSandbox(body.sandbox, repoId);
+				if (!sandboxResolved.ok)
+					return Response.json({ error: sandboxResolved.error }, { status: 400 });
 				const data: BackstageSessionFile = {
 					id: bksId,
 					claudeSessionId: "",
@@ -5510,8 +5550,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					lastActivity: new Date().toISOString(),
 					title: "New chat",
 					mode,
-					...(body.sandbox === true
-						? { sandbox: { provider: effectiveSandboxProvider(repoId) } }
+					...(sandboxResolved.provider
+						? {
+								sandbox: {
+									provider: sandboxResolved.provider,
+									// Remote providers are always volume-style (no host mounts).
+									...(isRemoteSandboxProvider(sandboxResolved.provider)
+										? { workspace: "volume" as const }
+										: {}),
+								},
+							}
 						: {}),
 				};
 				writeJsonAtomic(`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`, data);
@@ -6817,6 +6865,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				});
 			}
 
+			// Sandbox capability status for the session-create provider picker:
+			// {enabled, defaultProvider, providers: [{id, configured, note?}],
+			// killSwitch}. Read fresh from ~/.backstage-sandbox.json + the
+			// kill-switch file on every call, so a config flip shows up on the
+			// next fetch. Behavior is unit-tested via sandboxCapabilityStatus()
+			// (src/server/sandbox/capability-status.test.ts).
+			if (path === "/backstage/api/sandbox/status" && req.method === "GET") {
+				return Response.json(sandboxCapabilityStatus());
+			}
+
 			// What an interactive session will be told on top of the claude_code
 			// preset — previewed in the New Session modal. Same builder the runner
 			// uses (src/server/system-prompt.ts), so this can't drift from reality.
@@ -7660,14 +7718,29 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						const createMcpServers = Array.isArray(msg.mcpServers)
 							? msg.mcpServers.map(String)
 							: undefined;
-						// Sandbox opt-in (docs/sandboxes-plan.md Phase 0): recorded on the
-						// session file only — nothing acts on it until a real provider
-						// ships, and the effective provider is "local" until configured.
-						const createSandbox = msg.sandbox === true;
 						// Which repo this session works in (tella-fusion by default).
 						const repo = getRepo(
 							typeof msg.repo === "string" ? msg.repo : undefined,
 						);
+						// Sandbox opt-in (docs/sandboxes-plan.md): boolean true = the
+						// config's default provider (legacy toggle behavior); a string
+						// names an explicit provider ("docker" | "daytona" | "e2b"),
+						// validated against the current config. Forks never sandbox —
+						// they share/fork the source session's engine state and cwd.
+						const sandboxResolved = resolveRequestedSandbox(
+							forkSource ? undefined : (msg.sandbox as boolean | string | undefined),
+							repo.id,
+						);
+						if (!sandboxResolved.ok) {
+							ws.send(
+								JSON.stringify({ type: "error", message: sandboxResolved.error }),
+							);
+							return;
+						}
+						// null = host (no sandbox recorded on the session).
+						const createSandboxProvider = sandboxResolved.provider;
+						// Remote providers have no host mounts — always volume-style.
+						const remoteSandbox = isRemoteSandboxProvider(createSandboxProvider);
 						// Workspace linkage. The New modal creates a Workspace + first Chat
 						// together (createWorkspace); the tab/sidebar + adds a Chat to an
 						// existing workspace (workspaceId) that either shares the workspace's
@@ -7780,14 +7853,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									wtPath = worktreePathFor(branch, repo.id);
 									// Volume-mode sandbox (docs/sandboxes-plan.md Phase 2): the
 									// workspace is cloned into a per-session volume INSIDE the
-									// container — skip host createWorktree entirely. The session
-									// keeps the canonical path; DockerProvider.ensure
-									// materializes it on the opening run below.
+									// sandbox — skip host createWorktree entirely. The session
+									// keeps the canonical path; the provider's ensure()
+									// materializes it on the opening run below. Docker only in
+									// volume config; remote providers (daytona/e2b) always.
 									if (
-										createSandbox &&
+										createSandboxProvider &&
 										sandboxesEnabled() &&
-										effectiveSandboxProvider(repo.id) === "docker" &&
-										sandboxConfig().workspace === "volume"
+										(remoteSandbox ||
+											(createSandboxProvider === "docker" &&
+												sandboxConfig().workspace === "volume"))
 									) {
 										volumeWorkspace = true;
 									} else {
@@ -7949,14 +8024,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									mode: isAsk ? "ask" : "code",
 									...(plainThreadId ? { plainThreadId } : {}),
 									...(createMcpServers && createMcpServers.length ? { mcpServers: createMcpServers } : {}),
-									...(createSandbox
+									...(createSandboxProvider
 										? {
 												sandbox: {
-													provider: effectiveSandboxProvider(repo.id),
+													provider: createSandboxProvider,
 													// Volume intent is recorded up front so the prompt
 													// paths know the workspace never exists host-side
 													// (hasRemoteWorkspace) even before the first ensure.
-													...(volumeWorkspace
+													// Remote providers are ALWAYS volume — no host mounts.
+													...(volumeWorkspace || remoteSandbox
 														? { workspace: "volume" as const }
 														: {}),
 												},
@@ -8017,19 +8093,21 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									}
 								}
 
-							// Volume-mode sandbox session: the workspace exists only inside
-							// the container, so the opening turn MUST run there - route it
-							// through the same sandbox launcher the prompt path uses (the
-							// session file was persisted above, so it resolves). No host
-							// fallback is possible for a workspace with no host dir: a
-							// failed launch errors the stream (announcedId is set, so the
-							// catch below closes it out). Bind-mode sandbox sessions keep
-							// Phase 1 behavior - first turn on the host worktree, sandboxed
-							// from the second prompt on.
-							let volumeSandboxRun: AsyncGenerator<StreamEvent> | null = null;
-							if (volumeWorkspace) {
+							// Sandbox session: route the OPENING turn through the same
+							// launcher the prompt path uses (the session file was persisted
+							// above, so it resolves) — bind mode included, so the first turn
+							// runs in the sandbox like every later one (the worktree was
+							// created above, so the bind mounts are ready; ensure() is
+							// idempotent + per-session locked, and later prompts are held
+							// behind markSessionStarting, so there's no double-ensure race).
+							// Volume workspaces (docker volume mode / remote providers) have
+							// no host dir: a failed launch errors the stream (announcedId is
+							// set, so the catch below closes it out). Bind mode keeps the
+							// host fallback — a failed launch runs this turn on the worktree.
+							let sandboxOpeningRun: AsyncGenerator<StreamEvent> | null = null;
+							if (createSandboxProvider) {
 								const created = findSession(bksId);
-								volumeSandboxRun = created
+								sandboxOpeningRun = created
 									? await maybeLaunchSandboxedRun(created, {
 											prompt: openingPrompt,
 											cwd: wtPath,
@@ -8039,14 +8117,14 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 											isAutomationSession: false,
 										})
 									: null;
-								if (!volumeSandboxRun) {
+								if (!sandboxOpeningRun && (volumeWorkspace || remoteSandbox)) {
 									throw new Error(
 										"Sandbox unavailable for this volume-workspace session - the opening prompt was not run. Check sandbox config/kill-switch and retry.",
 									);
 								}
 							}
 
-							for await (const event of volumeSandboxRun ?? runAgent({
+							for await (const event of sandboxOpeningRun ?? runAgent({
 								prompt: openingPrompt,
 								cwd: wtPath,
 								mode: isAsk ? "ask" : "code",
@@ -8513,6 +8591,13 @@ registerSessionControl({
 		// A child session defaults to its parent's repo (not tella-fusion), so
 		// same-workspace workers land in the same checkout family.
 		const repo = getRepo(repoInput || parentSession?.repo);
+		// Sandbox opt-in: true = config default provider, or an explicit
+		// provider id validated against the config — an unconfigured pick fails
+		// the create loudly instead of silently running on the host.
+		const sandboxResolved = resolveRequestedSandbox(sandbox, repo.id);
+		if (!sandboxResolved.ok) throw new Error(sandboxResolved.error);
+		const sandboxProvider = sandboxResolved.provider;
+		const remoteSandbox = isRemoteSandboxProvider(sandboxProvider);
 		const parentWorkspace = parentSession?.projectId
 			? getWorkspace(parentSession.projectId)
 			: null;
@@ -8607,10 +8692,16 @@ registerSessionControl({
 				lastActivity: new Date().toISOString(),
 				title,
 				mode: isAsk ? "ask" : "code",
-				// Sandbox opt-in (docs/sandboxes-plan.md Phase 0): recorded only —
-				// nothing acts on it until a real provider ships.
-				...(sandbox
-					? { sandbox: { provider: effectiveSandboxProvider(repo.id) } }
+				// Sandbox opt-in: the opening run below and every later prompt
+				// route through maybeLaunchSandboxedRun for this provider.
+				...(sandboxProvider
+					? {
+							sandbox: {
+								provider: sandboxProvider,
+								// Remote providers are always volume-style (no host mounts).
+								...(remoteSandbox ? { workspace: "volume" as const } : {}),
+							},
+						}
 					: {}),
 			};
 			writeJsonAtomic(`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`, sessionData);
@@ -8631,7 +8722,44 @@ registerSessionControl({
 		// a UI-created session. The tool returns the id immediately.
 		void (async () => {
 			try {
-				for await (const event of runAgent({
+				// Sandbox session: the OPENING turn routes through the same launcher
+				// the prompt path uses (persist first so the session file resolves;
+				// the worktree already exists — created above — so bind mounts are
+				// ready). Bind mode falls back to a host run on launch failure;
+				// remote providers (always volume) have no host fallback — fail the
+				// opening turn with a clear error instead.
+				let sandboxOpeningRun: AsyncGenerator<StreamEvent> | null = null;
+				if (sandboxProvider) {
+					if (!persisted) persist();
+					const created = findSession(bksId);
+					sandboxOpeningRun = created
+						? await maybeLaunchSandboxedRun(created, {
+								prompt: openingPrompt,
+								cwd: wtPath,
+								user,
+								mcpServers,
+								isAutomationSession: false,
+							})
+						: null;
+					if (!sandboxOpeningRun && remoteSandbox) {
+						runFailure =
+							"Sandbox unavailable for this remote-sandbox session — the opening prompt was not run. Check sandbox config/kill-switch and retry.";
+						broadcastToSession(bksId, {
+							type: "error",
+							sessionId: bksId,
+							message: runFailure,
+						});
+						recordRunOutcome(bksId, runFailure);
+						broadcastToSession(bksId, { type: "stream_done", sessionId: bksId });
+						broadcastToSession(bksId, {
+							type: "session_status",
+							sessionId: bksId,
+							isRunning: false,
+						});
+						return;
+					}
+				}
+				for await (const event of sandboxOpeningRun ?? runAgent({
 					prompt: openingPrompt,
 					cwd: wtPath,
 					mode: isAsk ? "ask" : "code",
@@ -8654,7 +8782,15 @@ registerSessionControl({
 						engineSessionId = event.sessionId || "";
 						if (event.provider) effectiveProvider = event.provider;
 						if (event.model) effectiveModel = event.model;
-						persist();
+						// A sandbox session was persisted before launch and its file has
+						// since been touched with the materialized sandboxId — a full
+						// persist() here would rebuild from closure vars and wipe that.
+						if (persisted)
+							touchBackstageSession(bksId, {
+								...engineSessionPatch(effectiveProvider, engineSessionId),
+								...(effectiveModel ? { model: effectiveModel } : {}),
+							});
+						else persist();
 						// Attach anyone already viewing this fresh chat to its brand-new
 						// transcript file so the first turn streams live (see
 						// attachSessionWatchersToTranscript).
