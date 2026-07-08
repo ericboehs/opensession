@@ -3587,6 +3587,15 @@ body.resizing-x .panel-resize::after {
 	   space below than above), so geometric centering leaves it riding high
 	   next to the label. Nudge it down onto the text's optical center. */
 	margin-top: 0.5px;
+	/* De-emphasize the glyph so the label stays the dominant read (ported from
+	   tella-fusion's ButtonWithIcon, which dims leading icons to ~50-70%). */
+	opacity: 0.65;
+}
+/* Leading icon: pull the icon-side padding in 2px. Iconic glyphs only draw
+   ~60% of their box, so with symmetric padding the icon side looks padded
+   out — tella-fusion's buttons do the same px-3 → pl-2.5 tightening. */
+.wi-chip:has(> .wi-chip-icon:first-child) {
+	padding-left: 9px;
 }
 .wi-chip-icon svg {
 	display: block;

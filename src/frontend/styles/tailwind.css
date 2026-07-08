@@ -64,6 +64,11 @@
 	--color-tooltip-fg: var(--tooltip-fg);
 	--color-tooltip-ring: var(--tooltip-ring);
 
+	/* Control chrome (buttons, inputs): the raised white/graphite surface with
+	   its soft key shadow — pairs with border-line. */
+	--color-control: var(--control-surface);
+	--shadow-control: var(--control-shadow);
+
 	/* Type + shape */
 	--font-sans: var(--sans);
 	--font-mono: var(--mono);
