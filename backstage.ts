@@ -7192,6 +7192,14 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				// are not UI clients — run-ws.ts owns them entirely.
 				if (sandboxWsOpen(ws)) return;
 				allClients.add(ws);
+				// Hello frame: hands the client this process's bootId so a reconnect
+				// can tell a real restart (bootId changed → "restarted" toast) from a
+				// transient socket blip (unchanged → clear the reconnecting pill
+				// silently). Clients on servers without this frame fall back to
+				// polling /api/health, which also carries bootId.
+				try {
+					ws.send(JSON.stringify({ type: "hello", bootId: BOOT_ID }));
+				} catch {}
 				console.log("WebSocket client connected");
 			},
 
