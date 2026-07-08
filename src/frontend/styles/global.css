@@ -1147,12 +1147,17 @@ body.resizing-x {
    line of chrome than the grouping needs. And the inset lives in the rows'
    own left padding (base 10px + a gentle Notion-ish 14px step), not a
    container margin, so a row's hover/selection pill still runs the sidebar's
-   full width — only the icons and text sit indented under the repo header. */
+   full width — only the icons and text sit indented under the repo header.
+   Two levels of nesting on desktop: the status-lane header takes one 14px step
+   under the repo header, and the workspace rows take a second step under their
+   lane — so a row reads as a child of its lane (repo → status → workspace),
+   not a sibling of the lane header. The mobile block (max-width:720px) flattens
+   all of this back to one shared edge. */
 .sidebar-repo-lanes .sidebar-group-header {
 	padding-left: 24px;
 }
 .sidebar-repo-lanes .sidebar-item {
-	padding-left: 24px;
+	padding-left: 38px;
 }
 
 /* People and Automations render one collapsed row per group, so the 14px
