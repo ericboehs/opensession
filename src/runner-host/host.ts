@@ -41,7 +41,6 @@ const {
   ndjsonReader,
   HOST_SOCK_NAME,
   HOST_META_NAME,
-  BUN_BIN,
   MCP_PROXY_ENTRY,
   rpcSocketPath,
 } = await import("./protocol");
@@ -202,7 +201,10 @@ function proxyMcpConfigs(): Record<string, unknown> | undefined {
   const out: Record<string, unknown> = {};
   for (const name of names) {
     out[name] = {
-      command: BUN_BIN,
+      // The bun running THIS process — resolves correctly both on the host
+      // (~/.bun/bin/bun) and inside a sandbox container (/usr/local/bin/bun),
+      // where protocol.ts's BUN_BIN host path doesn't exist.
+      command: process.execPath,
       args: ["run", MCP_PROXY_ENTRY],
       env: {
         BKS_RPC_SOCKET: rpcSocketPath(BACKSTAGE_CHATS_DIR),
@@ -242,6 +244,10 @@ try {
     author: spec.author,
     user: spec.user,
     fallbackModel: spec.fallbackModel,
+    effort: spec.effort,
+    accountId: spec.accountId,
+    accountStrict: spec.accountStrict,
+    usageCredits: spec.usageCredits,
     journal: { bksSessionId: spec.bksSessionId, kind: spec.journalKind || "prompt" },
     onAskUser,
   })) {

@@ -53,6 +53,14 @@ export interface RunHostSpec {
   author?: GitIdentity | null;
   user?: string;
   fallbackModel?: string;
+  /** Reasoning effort for the run (UI scale; each runner normalizes it). */
+  effort?: string;
+  /** Pinned Claude subscription (claude-accounts id); pool fallback applies. */
+  accountId?: string;
+  /** Hard accountId pin — never rotate into the shared pool (cost cap). */
+  accountStrict?: boolean;
+  /** Allow accounts spending usage-credits past their subscription limits. */
+  usageCredits?: boolean;
   journalKind?: string;
 }
 

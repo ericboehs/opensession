@@ -232,6 +232,40 @@ async function launchHostUnit(hostId: string, dir: string): Promise<void> {
 
 // ── The handle: socket client + StreamEvent generator ─────────────────────────
 
+/**
+ * How a HostHandle's host process is launched/checked — the only part of the
+ * handle that differs between backends. The default (systemd transient units)
+ * is this module's launchHostUnit; the Docker sandbox provider
+ * (src/server/sandbox/docker.ts) supplies a `docker exec` launcher and reuses
+ * everything else: NDJSON protocol, ask proxying, reconnect, respawn-to-resume,
+ * host-registry steer/cancel registration.
+ */
+export interface HostLauncher {
+  /** Is the host process still alive? (`dir` is the host's run dir, `meta` its
+   *  meta.json if readable.) Used to decide reconnect vs respawn. */
+  alive(dir: string, meta: RunHostMeta | null): boolean | Promise<boolean>;
+  /** Run dir for a respawned host id (spec.json is written there before launch). */
+  newRunDir(hostId: string): string;
+  /** Launch the host entry for the spec already written at `<dir>/spec.json`. */
+  launch(hostId: string, dir: string): Promise<void>;
+}
+
+/** Default launcher: transient systemd units on this host. */
+const systemdHostLauncher: HostLauncher = {
+  alive(dir) {
+    const meta = readJsonSafe<RunHostMeta>(`${dir}/${HOST_META_NAME}`);
+    if (!meta?.pid) return false;
+    try {
+      process.kill(meta.pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  newRunDir: (hostId) => `${HOSTS_DIR}/${hostId}`,
+  launch: launchHostUnit,
+};
+
 /** Unbounded push queue bridging socket callbacks to an async generator. */
 class AsyncEventQueue {
   private items: StreamEvent[] = [];
@@ -267,12 +301,12 @@ class AsyncEventQueue {
   }
 }
 
-interface HandleCallbacks {
+export interface HandleCallbacks {
   onAskUser?: RunAgentOpts["onAskUser"];
   onSteerFailed?: (text: string) => void;
 }
 
-class HostHandle {
+export class HostHandle {
   private queue = new AsyncEventQueue();
   private sock: any = null;
   private up = false;
@@ -286,7 +320,8 @@ class HostHandle {
   constructor(
     private dir: string,
     private spec: RunHostSpec,
-    private cb: HandleCallbacks
+    private cb: HandleCallbacks,
+    private launcher: HostLauncher = systemdHostLauncher
   ) {
     this.ctl = {
       hostId: spec.hostId,
@@ -466,15 +501,9 @@ class HostHandle {
     } catch {}
   }
 
-  private hostAlive(): boolean {
+  private async hostAlive(): Promise<boolean> {
     const meta = readJsonSafe<RunHostMeta>(`${this.dir}/${HOST_META_NAME}`);
-    if (!meta?.pid) return false;
-    try {
-      process.kill(meta.pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
+    return this.launcher.alive(this.dir, meta);
   }
 
   /** Socket dropped without a clean end: reconnect while the host lives, else
@@ -483,7 +512,7 @@ class HostHandle {
     while (!this.endedClean) {
       await new Promise((r) => setTimeout(r, 2000));
       if (this.endedClean) return;
-      if (!this.hostAlive()) break;
+      if (!(await this.hostAlive())) break;
       try {
         await this.connectOnce();
         return;
@@ -529,7 +558,7 @@ class HostHandle {
   private async respawn(engineId: string): Promise<void> {
     const oldDir = this.dir;
     const hostId = `rh-${Bun.randomUUIDv7()}`;
-    const dir = `${HOSTS_DIR}/${hostId}`;
+    const dir = this.launcher.newRunDir(hostId);
     mkdirSync(dir, { recursive: true });
     const spec: RunHostSpec = {
       ...this.spec,
@@ -542,7 +571,7 @@ class HostHandle {
       journalKind: `${this.spec.journalKind || "prompt"}-resume`,
     };
     writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
-    await launchHostUnit(hostId, dir);
+    await this.launcher.launch(hostId, dir);
     this.dir = dir;
     this.spec = spec;
     this.ctl.hostId = hostId;
