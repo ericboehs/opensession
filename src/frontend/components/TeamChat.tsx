@@ -1,4 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { createPortal } from "react-dom";
 import type {
 	ChatMessage,
 	UnifiedSession,
@@ -186,6 +193,13 @@ export function TeamChat({
 		query: string;
 	} | null>(null);
 	const [mentionIdx, setMentionIdx] = useState(0);
+	// The popup is portaled to <body> with fixed viewport coords measured from
+	// the input wrapper — otherwise the session-viewer tab panel's overflow
+	// clips it (it grows upward past the panel's top edge). Null until measured.
+	const mentionWrapRef = useRef<HTMLDivElement | null>(null);
+	const [mentionPos, setMentionPos] = useState<React.CSSProperties | null>(
+		null,
+	);
 	const bodyRef = useRef<HTMLDivElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -272,6 +286,47 @@ export function TeamChat({
 		}));
 		return [...people, ...chats].slice(0, 9);
 	}, [mention, sessions, workspaceNames]);
+
+	const mentionOpen = !!mention && suggestions.length > 0;
+
+	// Position the portaled popup against the input wrapper: opens upward by
+	// default, flips down when there isn't room above, and caps its height so it
+	// scrolls internally instead of overrunning (and being clipped by) the panel.
+	useLayoutEffect(() => {
+		if (!mentionOpen) {
+			setMentionPos(null);
+			return;
+		}
+		const measure = () => {
+			const el = mentionWrapRef.current;
+			if (!el) return;
+			const rect = el.getBoundingClientRect();
+			const POPUP_MAX = 260;
+			const spaceAbove = rect.top;
+			const spaceBelow = window.innerHeight - rect.bottom;
+			const down = spaceAbove < POPUP_MAX && spaceBelow > spaceAbove;
+			setMentionPos({
+				left: rect.left,
+				width: Math.min(288, rect.width),
+				...(down
+					? {
+							top: rect.bottom + 6,
+							maxHeight: Math.min(POPUP_MAX, spaceBelow - 12),
+						}
+					: {
+							bottom: window.innerHeight - rect.top + 6,
+							maxHeight: Math.min(POPUP_MAX, spaceAbove - 12),
+						}),
+			});
+		};
+		measure();
+		window.addEventListener("resize", measure);
+		window.addEventListener("scroll", measure, true);
+		return () => {
+			window.removeEventListener("resize", measure);
+			window.removeEventListener("scroll", measure, true);
+		};
+	}, [mentionOpen, suggestions.length]);
 
 	function syncMention() {
 		const el = inputRef.current;
@@ -533,10 +588,16 @@ export function TeamChat({
 							</>
 						)}
 					</div>
-					<div className="relative">
-						{mention && suggestions.length > 0 && (
-							<div className="absolute bottom-full left-0 z-10 mb-1.5 w-72 overflow-hidden rounded-md border border-line-strong bg-panel py-1 shadow-lg">
-								{suggestions.map((s, i) => (
+					<div className="relative" ref={mentionWrapRef}>
+						{mentionOpen &&
+							mentionPos &&
+							createPortal(
+								<div
+									role="listbox"
+									className="fixed z-[7000] overflow-y-auto rounded-md border border-line-strong bg-panel py-1 shadow-lg"
+									style={mentionPos}
+								>
+									{suggestions.map((s, i) => (
 									<div
 										key={s.kind === "person" ? `p:${s.name}` : `s:${s.id}`}
 										className={cn(
@@ -571,7 +632,8 @@ export function TeamChat({
 										)}
 									</div>
 								))}
-							</div>
+							</div>,
+								document.body,
 						)}
 						<div
 							className="rounded-lg border border-line bg-panel p-2 focus-within:border-line-strong"
@@ -643,7 +705,7 @@ export function TeamChat({
 								/>
 								<textarea
 									ref={inputRef}
-									className="max-h-40 min-h-[38px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-[13px] font-medium leading-snug text-fg shadow-none outline-none placeholder:text-faint"
+									className="max-h-40 min-h-[32px] flex-1 resize-none border-0 bg-transparent px-1 py-[7px] text-[13px] font-medium leading-snug text-fg shadow-none outline-none placeholder:text-faint"
 									aria-label="Message"
 									rows={1}
 									placeholder={
