@@ -55,6 +55,7 @@ import {
 	IconSidebarRight,
 	IconTrash,
 	IconArchive,
+	IconCheck,
 	IconChevronDown,
 	IconChevronRight,
 	IconPlus,
@@ -64,6 +65,8 @@ import {
 	IconStar,
 	IconPullRequest,
 	IconLink,
+	IconSparkle,
+	IconTerminal,
 } from "./icons";
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
 import { Tooltip } from "../ui/tooltip";
@@ -1021,6 +1024,37 @@ export function SessionViewer({
 		[onOpenSession],
 	);
 
+	// "Add chat transcripts" chips on a fresh chat's blank canvas: sibling
+	// workspace chats the user can attach as context — selected ids ride the
+	// first send as `contextChats` and the server inlines a fenced transcript
+	// digest of each. One-shot: cleared once a send consumes them.
+	const [contextChats, setContextChats] = useState<string[]>([]);
+	const [showAllContextChats, setShowAllContextChats] = useState(false);
+	const contextChatOptions = useMemo(() => {
+		// Whole workspace, archived chats included — the common case is exactly a
+		// closed (archived-after-merge) sibling whose context the new chat needs.
+		// workspaceChats (the live tab strip) is the fallback when the chat has no
+		// workspace id of its own.
+		const siblings = session.projectId
+			? (allSessions || []).filter((c) => c.projectId === session.projectId)
+			: workspaceChats || [];
+		return siblings
+			.filter(
+				(c) =>
+					c.id !== session.id &&
+					// Only chats with something to hand over — a transcript or at
+					// least a started engine thread.
+					(c.transcriptPath || c.claudeSessionId || c.codexThreadId),
+			)
+			.sort((a, b) =>
+				(b.lastActivity || "").localeCompare(a.lastActivity || ""),
+			);
+	}, [allSessions, workspaceChats, session.id, session.projectId]);
+	useEffect(() => {
+		setContextChats([]);
+		setShowAllContextChats(false);
+	}, [session.id]);
+
 	// Returns true when the message was consumed, so the (uncontrolled)
 	// Composer knows to clear its draft; false keeps it for a retry.
 	// `opts.interrupt` is the per-send override (⌘/Ctrl+Enter while busy):
@@ -1095,6 +1129,9 @@ export function SessionViewer({
 						effort,
 						...(imgs.length ? { images: imgs } : {}),
 						...(fls.length ? { files: filePayload } : {}),
+						// Attached sibling-chat transcripts (fresh chats are idle, so the
+						// chips' selection always leaves through this branch).
+						...(contextChats.length ? { contextChats } : {}),
 					},
 		);
 		if (!isBusy || steerNow) {
@@ -1130,6 +1167,7 @@ export function SessionViewer({
 		}
 		setImages([]);
 		setFiles([]);
+		setContextChats([]);
 		return true;
 	}
 
@@ -2214,10 +2252,81 @@ export function SessionViewer({
 							) : entries.length === 0 && !session.transcriptPath ? (
 								// A fresh chat with no run yet is just an empty conversation —
 								// blank canvas, the composer below is the UI. Only a session
-								// that *ran* but has no transcript file gets the notice.
+								// that *ran* but has no transcript file gets the notice. When
+								// the workspace has sibling chats, the canvas offers their
+								// transcripts as attachable context for the first message.
 								session.claudeSessionId || session.codexThreadId ? (
 									<div className="empty">
 										No transcript available for this session
+									</div>
+								) : !hasLiveConversation && contextChatOptions.length > 0 ? (
+									// Top padding clears the floating tab pills on desktop; phones
+									// already pad .viewer-messages for them.
+									<div className="pt-10 max-md:pt-1">
+										<div className="text-dim mb-3">
+											New chat in{" "}
+											<span className="text-fg font-medium">
+												{workspaceName || session.branch || "this workspace"}
+											</span>
+											.
+										</div>
+										<div className="text-dim mb-2.5">Add chat transcripts:</div>
+										<div className="flex flex-wrap items-center gap-2">
+											{(showAllContextChats
+												? contextChatOptions
+												: contextChatOptions.slice(0, 4)
+											).map((c) => {
+												const selected = contextChats.includes(c.id);
+												const codex =
+													(c.model || "").startsWith("gpt") ||
+													(c.model || "").startsWith("codex");
+												const ChipIcon = selected
+													? IconCheck
+													: codex
+														? IconTerminal
+														: IconSparkle;
+												return (
+													<button
+														key={c.id}
+														type="button"
+														onClick={() =>
+															setContextChats((prev) =>
+																prev.includes(c.id)
+																	? prev.filter((id) => id !== c.id)
+																	: [...prev, c.id],
+															)
+														}
+														title={
+															selected
+																? "Attached — its transcript rides along with your first message"
+																: "Attach this chat's transcript as context"
+														}
+														className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium transition-colors ${
+															selected
+																? "border-line-strong bg-active text-fg"
+																: "border-line bg-panel text-dim hover:text-fg"
+														}`}
+													>
+														<ChipIcon
+															size={14}
+															className={`shrink-0 ${selected ? "text-green" : "text-faint"}`}
+														/>
+														<span className="max-w-[200px] truncate">
+															{c.title || "Untitled chat"}
+														</span>
+													</button>
+												);
+											})}
+											{!showAllContextChats && contextChatOptions.length > 4 && (
+												<button
+													type="button"
+													className="cursor-pointer px-1 font-medium text-dim hover:text-fg"
+													onClick={() => setShowAllContextChats(true)}
+												>
+													+{contextChatOptions.length - 4} more
+												</button>
+											)}
+										</div>
 									</div>
 								) : null
 							) : entries.length === 0 && !hasLiveConversation ? (

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	buildForkHandoffNote,
 	buildEngineSwitchHandoffNote,
+	buildChatContextNote,
 } from "./fork-handoff";
 import type { TranscriptEntry } from "./types";
 
@@ -50,6 +51,52 @@ describe("buildForkHandoffNote", () => {
 		expect(note).toContain("before");
 		expect(note).toContain("fork here");
 		expect(note).not.toContain("after");
+	});
+});
+
+describe("buildChatContextNote", () => {
+	it("sections each attached chat with its id, title, model and conversational turns", () => {
+		const note = buildChatContextNote([
+			{
+				id: "bks-one",
+				title: "Lighten tab background",
+				model: "gpt-5.5",
+				entries: [
+					entry("u1", "user", "Make the active tab lighter."),
+					entry("t1", "tool_use", "Using Edit"),
+					entry("a1", "assistant", "Done — bumped the token."),
+				],
+			},
+			{
+				id: "bks-two",
+				title: null,
+				entries: [],
+			},
+		]);
+
+		expect(note).toContain("## Attached chat transcripts");
+		expect(note).toContain("### Lighten tab background — @session:bks-one (gpt-5.5)");
+		expect(note).toContain("- User: Make the active tab lighter.");
+		expect(note).toContain("- Assistant: Done — bumped the token.");
+		expect(note).not.toContain("Using Edit");
+		// A chat with no transcript still gets a section, marked empty.
+		expect(note).toContain("### Untitled chat — @session:bks-two");
+		expect(note).toContain("(no transcript yet)");
+		// Points at the tool that fetches the full history beyond the excerpt.
+		expect(note).toContain("get_session");
+	});
+
+	it("keeps only the newest entries per chat", () => {
+		const entries = Array.from({ length: 40 }, (_, i) =>
+			entry(`u${i}`, "user", `turn ${i}`),
+		);
+		const note = buildChatContextNote(
+			[{ id: "bks-long", title: "Long chat", entries }],
+			5,
+		);
+		expect(note).toContain("turn 39");
+		expect(note).toContain("turn 35");
+		expect(note).not.toContain("turn 34");
 	});
 });
 

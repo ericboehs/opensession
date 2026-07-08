@@ -328,6 +328,9 @@ export type WSClientMessage =
 			busyMode?: "queue" | "steer";
 			/** Reasoning effort — persisted on the session and enforced per run. */
 			effort?: "low" | "medium" | "high" | string;
+			/** Sibling-chat ids whose transcripts ride along as context (the
+			    fresh-chat "Add chat transcripts" chips). */
+			contextChats?: string[];
 	  }
 	| {
 			type: "interrupt_prompt";

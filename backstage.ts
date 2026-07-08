@@ -29,6 +29,7 @@ import {
 import {
 	buildForkHandoffNote,
 	buildEngineSwitchHandoffNote,
+	buildChatContextNote,
 } from "./src/server/fork-handoff";
 import { wrapContext } from "./src/server/prompt-context";
 import {
@@ -1761,8 +1762,9 @@ async function runSessionPromptAndDrain(
 	user?: string,
 	images?: ImageInput[],
 	rawFiles?: unknown,
+	contextChats?: string[],
 ): Promise<void> {
-	await runSessionPrompt(sessionId, content, user, images, rawFiles);
+	await runSessionPrompt(sessionId, content, user, images, rawFiles, contextChats);
 	await drainQueue(sessionId);
 }
 
@@ -2041,6 +2043,7 @@ async function runSessionPrompt(
 	user?: string,
 	images?: ImageInput[],
 	rawFiles?: unknown,
+	contextChats?: string[],
 ): Promise<void> {
 	// Any explicit new run lifts a user stop — the queue may drain again.
 	stoppedSessions.delete(sessionId);
@@ -2050,7 +2053,7 @@ async function runSessionPrompt(
 	// dropped as a "Session is busy" error toast.
 	markSessionStarting(sessionId);
 	try {
-		await runSessionPromptInner(sessionId, content, user, images, rawFiles);
+		await runSessionPromptInner(sessionId, content, user, images, rawFiles, contextChats);
 	} finally {
 		unmarkSessionStarting(sessionId);
 	}
@@ -2062,6 +2065,7 @@ async function runSessionPromptInner(
 	user?: string,
 	images?: ImageInput[],
 	rawFiles?: unknown,
+	contextChats?: string[],
 ): Promise<void> {
 	const session = findSession(sessionId);
 	if (!session) return;
@@ -2185,6 +2189,24 @@ async function runSessionPromptInner(
 	// transcript shows only the human's message — the model-switch divider already
 	// marks the engine change; the handoff itself is plumbing (see prompt-context).
 	if (switchHandoff) prompt = `${wrapContext(switchHandoff)}\n\n${prompt}`;
+	// Sibling-chat transcripts attached from the fresh-chat "Add chat
+	// transcripts" chips: inline a bounded digest of each attached chat, fenced
+	// so the rendered transcript shows only the human's message. UI-only field,
+	// but skip automation sessions anyway (their prompts are untrusted text).
+	if (contextChats?.length && !session.automation) {
+		const attachedChats = [...new Set(contextChats)]
+			.filter((id) => id !== sessionId)
+			.map((id) => findSession(id))
+			.filter((s): s is UnifiedSession => !!s)
+			.map((s) => ({
+				id: s.id,
+				title: s.title,
+				model: s.model,
+				entries: s.transcriptPath ? parseTranscript(s.transcriptPath) : [],
+			}));
+		if (attachedChats.length)
+			prompt = `${wrapContext(buildChatContextNote(attachedChats))}\n\n${prompt}`;
+	}
 	// Non-image attachments: stage to disk and tell the agent where they landed.
 	prompt = withUploadsNote(prompt, stageFileAttachments(sessionId, rawFiles));
 	if (session.goal) {
@@ -6717,7 +6739,20 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							return;
 						}
 
-						await runSessionPromptAndDrain(sessionId, content, user, images, msg.files);
+						// Sibling-chat transcripts attached via the fresh-chat chips.
+						const contextChats = Array.isArray(msg.contextChats)
+							? msg.contextChats.filter(
+									(id: unknown): id is string => typeof id === "string",
+								)
+							: undefined;
+						await runSessionPromptAndDrain(
+							sessionId,
+							content,
+							user,
+							images,
+							msg.files,
+							contextChats,
+						);
 						break;
 					}
 

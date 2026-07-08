@@ -59,6 +59,40 @@ export function buildForkHandoffNote(input: {
 }
 
 /**
+ * Transcript context attached from sibling chats — the fresh-chat "Add chat
+ * transcripts" chips. Unlike a fork (which *continues* one source thread),
+ * these are parallel conversations the user pulled in as background reading:
+ * the digest per chat is bigger than a fork handoff, but each excerpt is
+ * bounded so several attached chats can't blow up the prompt.
+ */
+export function buildChatContextNote(
+	chats: Array<{
+		id: string;
+		title?: string | null;
+		model?: string | null;
+		entries: TranscriptEntry[];
+	}>,
+	maxEntriesPerChat = 30,
+): string {
+	const sections = chats.map((chat) => {
+		const useful = chat.entries
+			.filter((e) => ["user", "assistant", "system"].includes(e.type))
+			.slice(-maxEntriesPerChat);
+		const lines = useful.map(
+			(e) => `- ${roleLabel(e.type)}: ${clip(e.content, 700)}`,
+		);
+		const head = `### ${chat.title || "Untitled chat"} — @session:${chat.id}${chat.model ? ` (${chat.model})` : ""}`;
+		return `${head}\n${lines.length ? lines.join("\n") : "(no transcript yet)"}`;
+	});
+
+	return [
+		"## Attached chat transcripts",
+		"The user attached transcripts of other chats from this workspace as background context for this conversation. They are reference material from parallel conversations — the user's own message is the actual instruction. Excerpts are truncated; for the full history of any of them, use the michael-sessions `get_session` tool with the session id shown.",
+		...sections,
+	].join("\n\n");
+}
+
+/**
  * Context bridge for an *in-place* engine switch: the same Backstage session
  * flipped its model from one provider to another (e.g. a Fable orchestrator
  * handing the wheel to a gpt-5.5 executor, or vice versa). The new engine has
