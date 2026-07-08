@@ -74,8 +74,39 @@ Mounts (rationale in the docker.ts header):
 
 Known Phase 1 caveats: external MCP servers now spawn inside the container
 (host-only deps won't start); codex account homes aren't mounted (Claude
-first); `aws: true` can't mint creds inside (IMDS blocked); attached repos
-aren't mounted (don't sandbox multi-repo sessions).
+first); `aws: true` can't mint creds inside (IMDS blocked).
+
+## Phase 2 — exec-routed surfaces, volume workspaces, preview ports
+
+- **workspace-exec choke point** (`src/server/sandbox/workspace-exec.ts`):
+  @-mention file search, the Changes diff/discard, and git status/pull/push
+  take an optional exec from `workspaceExecFor(session, dir)` — host Bun `$`
+  unless the session's sandbox is ACTIVE (materialized + config docker +
+  kill-switch absent + container **running**; a stopped container is never
+  started for a read). With bind mounts this is redundant by design — it's
+  the seam volume workspaces and Phase 3 remote providers run through.
+- **Volume workspaces** (`~/.backstage-sandbox.json` → `"workspace":
+  "volume"`, default `"bind"`): new sandboxes whose canonical worktree path
+  has no host dir get a per-session `<name>-ws` volume mounted at that path
+  and cloned **inside** the container from the repo's origin (ro-mounted
+  creds do the auth; a local-path origin is mounted ro — that's the verify
+  suite's scratch case). No host worktree is created at all; the mode is
+  sticky per sandbox (state file), and the session records
+  `sandbox.workspace: "volume"`. **Contract: `destroy()` (session delete,
+  archive sweep) deletes the workspace volume — un-pushed work is gone.
+  Push your work.** While the container is idle-stopped, the read surfaces
+  go quiet (empty diff/status) rather than waking it. Attached repos and
+  sibling chats are rejected for volume-mode sessions.
+- **Attached repos (bind mode)**: `attachedRepos[].dir` + each repo's common
+  `.git` are now bind-mounted rw at identical paths; changing the attach set
+  recreates the container on the next ensure (mounts are create-time).
+- **Preview ports** (`"previewPorts": [3300, …]`): each listed container
+  port is published to a random **loopback** host port at container create;
+  `sandbox.ports()` reads the live map and preview.ts routes the same Caddy
+  tailnet-HTTPS front at the published port. In-container dev-server start
+  is gated behind `"devServerInSandbox": true` (default off — the image
+  doesn't carry the tella-fusion dev toolchain yet); without it, preview
+  start is a no-op and only status/ports/Caddy routing are active.
 
 ## Host setup + verification
 

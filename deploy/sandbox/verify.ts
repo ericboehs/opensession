@@ -1,31 +1,47 @@
 /**
- * Docker sandbox verification suite (Phase 1) — run MANUALLY:
+ * Docker sandbox verification suite (Phases 1 + 2) — run MANUALLY:
  *
  *   bun run deploy/sandbox/verify.ts
  *
- * Exercises the DockerProvider end-to-end against a scratch git repo +
- * worktree (never a real session, never a real worktree): container
- * ensure/reuse, git status+commit THROUGH the bind-mounted worktree + common
- * .git, exec, RPC-socket reachability, the claude CLI, and — when the account
- * pool is available — a minimal real agent run through launchRun (cheapest
- * Claude model, "reply with OK", hard timeout). Degrades to a dry-run notice
- * when no account token exists. Cleans up its container/volumes/scratch at
- * the end (sbxtest-* resources only).
+ * BIND section (Phase 1): exercises the DockerProvider end-to-end against a
+ * scratch git repo + worktree (never a real session, never a real worktree):
+ * container ensure/reuse, git status+commit THROUGH the bind-mounted worktree
+ * + common .git, exec, RPC-socket reachability, the claude CLI, and — when
+ * the account pool is available — a minimal real agent run through launchRun
+ * (cheapest Claude model, "reply with OK", hard timeout). Degrades to a
+ * dry-run notice when no account token exists.
  *
- * Safe to run next to the live server: the run journal is redirected to the
- * scratch dir BEFORE any module import, so nothing this script journals can
- * leak into ~/.backstage-chats/active-runs.json (and thus into the live
- * boot-resume sweep).
+ * VOLUME section (Phase 2): a second sbxtest session materializes a
+ * volume-only workspace (cloned in-container from a scratch LOCAL BARE repo —
+ * no real GitHub repo involved), then drives the exec-routed surfaces
+ * (workspaceExecFor → searchRepoFiles/getSessionDiff/getGitStatus), the
+ * preview port publishing (in-container Bun.serve reached through the
+ * published loopback port), the stopped-container host-exec fallback, and
+ * the destroy-removes-the-workspace-volume contract.
+ *
+ * Everything is sbxtest-prefixed and cleaned up at the end. Safe to run next
+ * to the live server: the run journal AND the sandbox config are redirected
+ * to the scratch dir BEFORE any module import, so nothing here can leak into
+ * ~/.backstage-chats/active-runs.json or flip the live sandbox config.
  */
 
 const SCRATCH = `${process.env.HOME || "/home/ubuntu"}/.sandbox-verify-scratch`;
 // MUST happen before importing any src/server module — claude-runner resolves
-// the journal path at module load.
+// the journal path at module load, and sandbox/config.ts resolves its config
+// PATH at module load. The scratch config (written below) turns on the docker
+// provider + volume workspace mode + a preview port WITHOUT touching the live
+// ~/.backstage-sandbox.json.
 process.env.BACKSTAGE_RUN_JOURNAL = `${SCRATCH}/active-runs.json`;
+process.env.BACKSTAGE_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
 
 import { existsSync, mkdirSync, rmSync } from "fs";
 
 const { DockerProvider, containerNameFor } = await import("../../src/server/sandbox/docker");
+const { workspaceExecFor } = await import("../../src/server/sandbox/workspace-exec");
+const { searchRepoFiles } = await import("../../src/server/file-index");
+const { getSessionDiff } = await import("../../src/server/git-diff");
+const { getGitStatus } = await import("../../src/server/git-status");
+const { REPOS, worktreePathFor } = await import("../../src/server/worktree");
 const { rpcSocketPath } = await import("../../src/runner-host/protocol");
 const { BACKSTAGE_CHATS_DIR } = await import("../../src/server/paths");
 type RunHostSpec = import("../../src/runner-host/protocol").RunHostSpec;
@@ -34,6 +50,21 @@ const SESSION_ID = `sbxtest-${Date.now().toString(36)}`;
 const CONTAINER = containerNameFor(SESSION_ID);
 const MAIN = `${SCRATCH}/main-repo`;
 const WT = `${SCRATCH}/wt-sbxtest`;
+const BARE = `${SCRATCH}/origin.git`;
+
+// Volume-mode section resources (own session/container; also sbxtest-*).
+const VOL_SESSION_ID = `sbxtest-vol-${Date.now().toString(36)}`;
+const VOL_CONTAINER = containerNameFor(VOL_SESSION_ID);
+const VOL_BRANCH = "sbxtest-vol-branch";
+const PREVIEW_PORT = 18734;
+
+// Scratch sandbox config: docker provider, volume workspaces, one preview
+// port. Read fresh per call by sandbox/config.ts via the env override above.
+mkdirSync(SCRATCH, { recursive: true });
+await Bun.write(
+  process.env.BACKSTAGE_SANDBOX_CONFIG!,
+  JSON.stringify({ provider: "docker", workspace: "volume", previewPorts: [PREVIEW_PORT] }),
+);
 
 let pass = 0;
 let fail = 0;
@@ -62,24 +93,37 @@ async function sh(cmd: string[], cwd?: string): Promise<{ code: number; out: str
 
 async function cleanup(): Promise<void> {
   console.log("\n── cleanup ──");
-  await sh(["docker", "rm", "-f", CONTAINER]);
-  await sh(["docker", "volume", "rm", "-f", `${CONTAINER}-claude`, `${CONTAINER}-codex`]);
-  try {
-    rmSync(`${BACKSTAGE_CHATS_DIR}/sandboxes/${CONTAINER}.json`, { force: true });
-    rmSync(`${BACKSTAGE_CHATS_DIR}/sandbox-runs/${SESSION_ID}`, { recursive: true, force: true });
-  } catch {}
-  // Transcript dir the bind mount created for the scratch cwd.
-  const munged = `-${WT.replaceAll("/", "-").replace(/^-/, "")}`;
-  try {
-    rmSync(`${process.env.HOME}/.claude/projects/${munged}`, { recursive: true, force: true });
-  } catch {}
+  for (const [container, session] of [
+    [CONTAINER, SESSION_ID],
+    [VOL_CONTAINER, VOL_SESSION_ID],
+  ]) {
+    await sh(["docker", "rm", "-f", container]);
+    await sh([
+      "docker", "volume", "rm", "-f",
+      `${container}-claude`, `${container}-codex`, `${container}-ws`,
+    ]);
+    try {
+      rmSync(`${BACKSTAGE_CHATS_DIR}/sandboxes/${container}.json`, { force: true });
+      rmSync(`${BACKSTAGE_CHATS_DIR}/sandbox-runs/${session}`, { recursive: true, force: true });
+    } catch {}
+  }
+  delete REPOS["sbxtest"];
+  // Transcript dirs the container-create mkdir'd for the scratch cwds.
+  for (const dir of [WT, VOL_CWD]) {
+    const munged = `-${dir.replaceAll("/", "-").replace(/^-/, "")}`;
+    try {
+      rmSync(`${process.env.HOME}/.claude/projects/${munged}`, { recursive: true, force: true });
+    } catch {}
+  }
   rmSync(SCRATCH, { recursive: true, force: true });
-  console.log("  removed container, volumes, state, scratch");
+  console.log("  removed containers, volumes, state, scratch");
 }
 
 // ── scratch repo + worktree ───────────────────────────────────────────────────
 console.log("── setup: scratch repo + worktree ──");
-rmSync(SCRATCH, { recursive: true, force: true });
+// Selective clean (NOT rmSync(SCRATCH) — the sandbox config written above
+// lives there); cleanup() removes the whole scratch dir at the end.
+for (const p of [MAIN, WT, BARE]) rmSync(p, { recursive: true, force: true });
 mkdirSync(MAIN, { recursive: true });
 for (const c of [
   ["git", "init", "-q", "-b", "main"],
@@ -91,6 +135,23 @@ await sh(["git", "add", "README.md"], MAIN);
 await sh(["git", "commit", "-q", "-m", "init"], MAIN);
 const wtAdd = await sh(["git", "worktree", "add", "-q", WT, "-b", "sbxtest-branch"], MAIN);
 ok("scratch worktree created", wtAdd.code === 0 && existsSync(`${WT}/.git`), WT);
+
+// Local BARE origin for the volume-mode section: the in-container clone
+// source (a local-path origin gets mounted ro by the provider — real repos
+// clone over ssh/https instead). MAIN's `origin` remote points at it so
+// repoOriginUrl resolves it.
+await sh(["git", "clone", "-q", "--bare", MAIN, BARE]);
+await sh(["git", "remote", "add", "origin", BARE], MAIN);
+// Register the scratch repo in the (in-process) REPOS registry so the volume
+// path can resolve clone source + default branch. sbxtest-only, in-memory.
+REPOS["sbxtest"] = {
+  id: "sbxtest",
+  repo: MAIN,
+  wtPrefix: "sbxtest",
+  defaultBranch: "main",
+  ghRepo: "sbxtest/sbxtest",
+};
+const VOL_CWD = worktreePathFor(VOL_BRANCH, "sbxtest", { isolated: true });
 
 const provider = new DockerProvider();
 
@@ -223,6 +284,102 @@ try {
   ok("container removed", goneC.code !== 0);
   ok("volumes removed", goneV.code !== 0);
   ok("worktree untouched by destroy", existsSync(`${WT}/sandbox-file.txt`));
+
+  // ══ VOLUME MODE (Phase 2) ═════════════════════════════════════════════════
+  // The workspace lives ONLY in a per-session volume: ensure() clones the
+  // scratch bare origin inside the container; nothing appears host-side. The
+  // read surfaces are exercised exec-routed (workspaceExecFor), exactly the
+  // way backstage.ts routes them for such a session.
+  console.log("\n══ volume-mode workspace ══");
+  const vol = await provider.ensure({
+    sessionId: VOL_SESSION_ID,
+    repo: "sbxtest",
+    branch: VOL_BRANCH,
+    mode: "code",
+  });
+  ok("ensure() materialized a volume workspace", vol.workspace === "volume", `${vol.id} cwd=${vol.cwd}`);
+  ok("cwd is the canonical worktree path", vol.cwd === VOL_CWD, vol.cwd);
+  ok("no host dir was created", !existsSync(VOL_CWD));
+  const wsVol = await sh(["docker", "volume", "inspect", `${VOL_CONTAINER}-ws`]);
+  ok("workspace volume exists", wsVol.code === 0, `${VOL_CONTAINER}-ws`);
+  const volStatus = await vol.exec(["git", "status", "--porcelain"]);
+  ok("git works in the cloned volume", volStatus.exitCode === 0, volStatus.stderr.trim());
+  const volBranch = await vol.exec(["git", "branch", "--show-current"]);
+  ok("checked out the session branch", volBranch.stdout.trim() === VOL_BRANCH, volBranch.stdout.trim());
+  const idem = await provider.ensure({
+    sessionId: VOL_SESSION_ID,
+    repo: "sbxtest",
+    branch: VOL_BRANCH,
+    mode: "code",
+    cwd: VOL_CWD,
+  });
+  ok("ensure() is idempotent for volume workspaces", idem.id === vol.id && idem.workspace === "volume");
+
+  // Exec-routed surfaces against the volume workspace, via the same session
+  // shape backstage.ts derives the exec from.
+  console.log("\n── exec-routed surfaces (volume) ──");
+  const volSession = {
+    sandbox: { provider: "docker", sandboxId: vol.id, workspace: "volume" },
+    worktreeDir: VOL_CWD,
+    repo: "sbxtest",
+  };
+  const exec = await workspaceExecFor(volSession);
+  ok("workspaceExecFor routes into the sandbox", exec.sandboxed && exec.remote,
+    `sandboxed=${exec.sandboxed} remote=${exec.remote}`);
+  const hits = await searchRepoFiles(VOL_CWD, "readme", 20, exec);
+  ok("searchRepoFiles (git ls-files in-container)", hits.includes("README.md"), hits.join(","));
+  // Dirty the workspace: modify a tracked file + add an untracked one.
+  await exec(["sh", "-c", "echo volume-edit >> README.md && echo new-untracked > sbx-vol-new.txt"]);
+  const diff = await getSessionDiff(VOL_CWD, "main", exec);
+  ok("getSessionDiff sees the tracked edit",
+    diff.files.some((f) => f.path === "README.md" && f.status === "modified"),
+    diff.files.map((f) => `${f.path}:${f.status}`).join(","));
+  ok("getSessionDiff synthesizes the untracked file (remote fs reads)",
+    diff.files.some((f) => f.path === "sbx-vol-new.txt" && f.status === "untracked") &&
+      diff.rawPatch.includes("+new-untracked"),
+    `rawPatch ${diff.rawPatch.length} chars`);
+  const gs = await getGitStatus(VOL_CWD, "main", exec);
+  ok("getGitStatus reads branch + dirty count in-container",
+    gs.branch === VOL_BRANCH && gs.uncommittedFiles >= 2,
+    `branch=${gs.branch} dirty=${gs.uncommittedFiles}`);
+
+  // ── preview port publishing ─────────────────────────────────────────────────
+  console.log("\n── preview ports ──");
+  const portMap = await vol.ports();
+  const hostPort = portMap[PREVIEW_PORT];
+  ok("configured preview port is published to a loopback host port", !!hostPort,
+    JSON.stringify(portMap));
+  if (hostPort) {
+    // Trivial static server INSIDE the container on the published port (the
+    // tella-fusion dev-server flow needs toolchain the image doesn't carry
+    // yet — gated behind devServerInSandbox; this proves the port+map layer).
+    await sh(["docker", "exec", "-d", vol.id, "bun", "-e",
+      `Bun.serve({ port: ${PREVIEW_PORT}, hostname: "0.0.0.0", fetch: () => new Response("sbx-preview-ok") });`]);
+    let body = "";
+    for (let i = 0; i < 20 && !body.includes("sbx-preview-ok"); i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      try {
+        body = await (await fetch(`http://127.0.0.1:${hostPort}/`)).text();
+      } catch {}
+    }
+    ok("host reaches the in-container server through the published port",
+      body.includes("sbx-preview-ok"), JSON.stringify(body.slice(0, 40)));
+  }
+
+  // ── stopped container: reads fall back to host exec (never docker start) ──
+  console.log("\n── stopped-container read fallback ──");
+  await sh(["docker", "stop", "-t", "5", vol.id]);
+  const execStopped = await workspaceExecFor(volSession);
+  ok("stopped sandbox → host exec (no wake for reads)", !execStopped.sandboxed);
+  ok("container was not started by the read path", (await vol.status()) === "stopped");
+
+  // ── volume destroy contract ─────────────────────────────────────────────────
+  console.log("\n── volume destroy ──");
+  await provider.destroy(vol.id);
+  const volGoneC = await sh(["docker", "inspect", vol.id]);
+  const volGoneWs = await sh(["docker", "volume", "inspect", `${VOL_CONTAINER}-ws`]);
+  ok("volume container removed", volGoneC.code !== 0);
+  ok("workspace volume removed (documented data loss)", volGoneWs.code !== 0);
 } finally {
   await cleanup();
 }
