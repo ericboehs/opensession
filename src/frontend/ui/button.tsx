@@ -50,7 +50,8 @@ const variants: Record<Variant, string> = {
 	// The raised control look of the newest chrome (viewer Share button).
 	default:
 		"bg-control border-line text-dim shadow-control hover:text-fg hover:border-line-strong",
-	primary: "bg-accent border-transparent text-white hover:brightness-110",
+	primary:
+		"bg-accent border-transparent text-white shadow-control hover:brightness-110",
 	ghost: "border-transparent text-dim hover:bg-hover hover:text-fg",
 	// Outline red, like the delete-worktree confirm buttons.
 	danger: "border-red text-red hover:bg-red-soft",

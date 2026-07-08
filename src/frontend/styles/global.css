@@ -4801,11 +4801,11 @@ body.resizing-x .panel-resize::after {
 	white-space: nowrap;
 	cursor: pointer;
 	color: #fff;
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+	/* Same whisper as every other button — one shadow across the tool. */
+	box-shadow: var(--control-shadow);
 	transition:
 		background-color 150ms ease,
 		border-color 150ms ease,
-		box-shadow 150ms ease,
 		color 150ms ease,
 		filter 150ms ease,
 		transform 150ms ease;
@@ -4860,7 +4860,6 @@ body.resizing-x .panel-resize::after {
 }
 .pr-bar-btn:hover:not(:disabled) {
 	filter: brightness(1.08);
-	box-shadow: 0 2px 5px rgba(0, 0, 0, 0.16);
 }
 .pr-bar-btn-secondary:hover:not(:disabled) {
 	background: var(--bg-hover);
@@ -4868,7 +4867,6 @@ body.resizing-x .panel-resize::after {
 }
 .pr-bar-btn:active:not(:disabled) {
 	filter: brightness(0.98);
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 	transform: translateY(0) scale(0.98);
 }
 .pr-bar-btn:focus-visible {
@@ -6426,19 +6424,17 @@ body.resizing-x .panel-resize::after {
 	background: var(--bg-raised);
 	border: 1px solid var(--border);
 	border-radius: 8px;
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+	box-shadow: var(--control-shadow);
 	cursor: pointer;
 	z-index: 5;
 	animation: jump-rise 0.18s ease-out;
 	transition:
 		background 0.12s,
-		border-color 0.12s,
-		box-shadow 0.12s;
+		border-color 0.12s;
 }
 .jump-latest:hover {
 	border-color: var(--accent);
 	background: var(--bg-hover);
-	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .jump-latest-arrow {
 	font-size: 14px;
