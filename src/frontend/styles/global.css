@@ -2090,7 +2090,14 @@ body.resizing-x {
 	.session-tabs-actions {
 		padding: 3px 3px 9px;
 	}
-	.viewer-messages {
+	/* Only when the floating tab strip is actually present (project sessions —
+	   SessionTabs renders nothing for standalone chats). Gating on :has() keeps
+	   standalone chats at their normal 18px top instead of an empty gap, and the
+	   descendant selector's higher specificity wins the cascade over the later
+	   unconditional `.viewer-messages { padding: … }` rule, whose `padding`
+	   shorthand would otherwise reset padding-top back to 18px and tuck the top
+	   row under the strip. */
+	.detail-pane:has(.session-tabs) .viewer-messages {
 		/* Clear the pills at rest (bar height + air), then scroll under. Enough
 		   that the first row sits fully below the floating strip on load, not
 		   tucked under the pills. */
