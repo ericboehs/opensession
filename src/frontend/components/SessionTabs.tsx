@@ -3,7 +3,9 @@ import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { relativeTime } from "../lib/api";
-import { Menu } from "../ui/menu";
+import { Menu, ContextMenu } from "../ui/menu";
+import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
+import { copySessionTranscript } from "../lib/transcript-copy";
 import { IconHistory, IconPencil, IconRestore } from "./icons";
 
 /**
@@ -14,9 +16,10 @@ import { IconHistory, IconPencil, IconRestore } from "./icons";
  * (a single tab plus the + button).
  *
  * There is no pinning here anymore (pinning moved to the sidebar). Right-click
- * colors a tab; double-click the title renames the chat. The + button starts a
- * new chat in this workspace sharing its worktree; right-clicking + offers the
- * other modes (stacked worktree / ask).
+ * opens a context menu (rename / copy concise or full transcript / copy link /
+ * tab color / close); double-click the title also renames the chat. The +
+ * button starts a new chat in this workspace sharing its worktree;
+ * right-clicking + offers the other modes (stacked worktree / ask).
  */
 interface Props {
 	/** Sibling chats in the current workspace, in display order. */
@@ -41,10 +44,18 @@ interface Props {
 	onClose: (session: UnifiedSession) => void;
 	/** Un-archive a chat from the history menu, back into the strip. */
 	onRestore: (session: UnifiedSession) => void;
+	/** Report a copy action's outcome ("Link copied", …). */
+	onToast: (message: string) => void;
 }
 
-type Menu = { key: string; x: number; y: number };
 type NewMenu = { x: number; y: number };
+
+const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+
+/** Right-aligned keyboard-shortcut hint on a menu row. */
+function MenuHint({ label }: { label: string }) {
+	return <span className="shrink-0 pl-4 text-[12px] text-faint">{label}</span>;
+}
 
 export function SessionTabs({
 	tabs,
@@ -57,8 +68,8 @@ export function SessionTabs({
 	onRename,
 	onClose,
 	onRestore,
+	onToast,
 }: Props) {
-	const [menu, setMenu] = useState<Menu | null>(null);
 	const [newMenu, setNewMenu] = useState<NewMenu | null>(null);
 	const [editKey, setEditKey] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
@@ -73,11 +84,8 @@ export function SessionTabs({
 	}
 
 	useEffect(() => {
-		if (!menu && !newMenu) return;
-		const close = () => {
-			setMenu(null);
-			setNewMenu(null);
-		};
+		if (!newMenu) return;
+		const close = () => setNewMenu(null);
 		const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
 		window.addEventListener("click", close);
 		window.addEventListener("scroll", close, true);
@@ -87,7 +95,7 @@ export function SessionTabs({
 			window.removeEventListener("scroll", close, true);
 			window.removeEventListener("keydown", onKey);
 		};
-	}, [menu, newMenu]);
+	}, [newMenu]);
 
 	// No project (standalone chat) → no tab strip.
 	if (tabs.length === 0) return null;
@@ -100,23 +108,25 @@ export function SessionTabs({
 					const waiting = !!session.waitingForInput;
 					const hex = colorHex(colors[key]);
 					return (
-						<div
-							key={key}
-							role="tab"
-							aria-selected={key === activeId}
-							className={`session-tab ${key === activeId ? "session-tab-active" : ""} ${
-								waiting ? "session-tab-waiting" : ""
-							} ${hex ? "session-tab-colored" : ""}`}
-							style={
-								hex ? ({ "--tab-color": hex } as React.CSSProperties) : undefined
-							}
-							onClick={() => onSelect(session)}
-							onContextMenu={(e) => {
-								e.preventDefault();
-								setMenu({ key, x: e.clientX, y: e.clientY });
-							}}
-							title={session.title}
-						>
+						<ContextMenu.Root key={key}>
+							<ContextMenu.Trigger
+								render={
+									<div
+										role="tab"
+										aria-selected={key === activeId}
+										className={`session-tab ${key === activeId ? "session-tab-active" : ""} ${
+											waiting ? "session-tab-waiting" : ""
+										} ${hex ? "session-tab-colored" : ""}`}
+										style={
+											hex
+												? ({ "--tab-color": hex } as React.CSSProperties)
+												: undefined
+										}
+										onClick={() => onSelect(session)}
+										title={session.title}
+									/>
+								}
+							>
 							{waiting ? (
 								<span className="session-tab-dot session-tab-dot-waiting" />
 							) : (
@@ -156,19 +166,90 @@ export function SessionTabs({
 									<IconPencil size={20} />
 								</span>
 							)}
-							<button
-								type="button"
-								className="session-tab-close"
-								aria-label="Close chat"
-								title="Close chat"
-								onClick={(e) => {
-									e.stopPropagation();
-									onClose(session);
-								}}
-							>
-								×
-							</button>
-						</div>
+								<button
+									type="button"
+									className="session-tab-close"
+									aria-label="Close chat"
+									title="Close chat"
+									onClick={(e) => {
+										e.stopPropagation();
+										onClose(session);
+									}}
+								>
+									×
+								</button>
+							</ContextMenu.Trigger>
+							{/* finalFocus=false: "Rename chat" mounts the inline rename
+							    input (autoFocus) — the closing menu must not steal focus
+							    back to the tab. */}
+							<ContextMenu.Popup className="min-w-[250px]" finalFocus={false}>
+								<ContextMenu.Item
+									onClick={() => {
+										setDraft(session.title);
+										setEditKey(key);
+									}}
+								>
+									<span className="grow">Rename chat</span>
+								</ContextMenu.Item>
+								<ContextMenu.Separator />
+								<ContextMenu.Item
+									onClick={() =>
+										void copySessionTranscript(session, "concise", onToast)
+									}
+								>
+									<span className="grow">Copy concise transcript</span>
+									{key === activeId && (
+										<MenuHint label={isApple ? "⌘ ⌥ C" : "Ctrl+Alt+C"} />
+									)}
+								</ContextMenu.Item>
+								<ContextMenu.Item
+									onClick={() =>
+										void copySessionTranscript(session, "full", onToast)
+									}
+								>
+									<span className="grow">Copy full transcript</span>
+								</ContextMenu.Item>
+								<ContextMenu.Item
+									onClick={() =>
+										copyToClipboard(absoluteLink(chatPath(session)), () =>
+											onToast("Link copied"),
+										)
+									}
+								>
+									<span className="grow">Copy link</span>
+								</ContextMenu.Item>
+								<ContextMenu.Separator />
+								{/* Tab color. A swatch click bubbles to the Item, which
+								    closes the menu — the Item itself does nothing. */}
+								<ContextMenu.Item className="data-[highlighted]:bg-transparent">
+									{TAB_COLORS.map((c) => (
+										<button
+											key={c.key}
+											type="button"
+											className={`tab-color-swatch ${colors[key] === c.key ? "tab-color-swatch-on" : ""}`}
+											style={{ background: c.hex }}
+											aria-label={c.label}
+											title={c.label}
+											onClick={() => onSetColor(key, c.key)}
+										/>
+									))}
+									<button
+										type="button"
+										className="tab-color-swatch tab-color-swatch-none"
+										aria-label="No color"
+										title="No color"
+										onClick={() => onSetColor(key, null)}
+									/>
+								</ContextMenu.Item>
+								<ContextMenu.Separator />
+								<ContextMenu.Item onClick={() => onClose(session)}>
+									<span className="grow">Close tab</span>
+									{key === activeId && (
+										<MenuHint label={isApple ? "⌘ W" : "Ctrl+W"} />
+									)}
+								</ContextMenu.Item>
+							</ContextMenu.Popup>
+						</ContextMenu.Root>
 						);
 					})}
 				<button
@@ -264,38 +345,6 @@ export function SessionTabs({
 				</div>
 			)}
 
-			{menu && (
-				<div
-					className="tab-color-menu"
-					style={{ left: menu.x, top: menu.y }}
-					onClick={(e) => e.stopPropagation()}
-				>
-					{TAB_COLORS.map((c) => (
-						<button
-							key={c.key}
-							type="button"
-							className={`tab-color-swatch ${colors[menu.key] === c.key ? "tab-color-swatch-on" : ""}`}
-							style={{ background: c.hex }}
-							aria-label={c.label}
-							title={c.label}
-							onClick={() => {
-								onSetColor(menu.key, c.key);
-								setMenu(null);
-							}}
-						/>
-					))}
-					<button
-						type="button"
-						className="tab-color-swatch tab-color-swatch-none"
-						aria-label="No color"
-						title="No color"
-						onClick={() => {
-							onSetColor(menu.key, null);
-							setMenu(null);
-						}}
-					/>
-				</div>
-			)}
 		</div>
 	);
 }

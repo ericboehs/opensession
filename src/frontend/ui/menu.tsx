@@ -66,9 +66,13 @@ function Popup({
  * from the contextmenu event), reusing the same chrome + Item styling as Menu. */
 function ContextPopup({
 	className,
+	finalFocus,
 	children,
 }: {
 	className?: string;
+	/** Where focus goes on close — pass `false` when the menu opens an inline
+	 * editor that autofocuses itself (default restores focus to the trigger). */
+	finalFocus?: React.ComponentProps<typeof BaseContextMenu.Popup>["finalFocus"];
 	children: React.ReactNode;
 }) {
 	return (
@@ -77,7 +81,10 @@ function ContextPopup({
 				collisionPadding={8}
 				className="z-[10001] outline-none"
 			>
-				<BaseContextMenu.Popup className={cn(popupClasses, className)}>
+				<BaseContextMenu.Popup
+					className={cn(popupClasses, className)}
+					finalFocus={finalFocus}
+				>
 					<div className={popupInnerClasses}>{children}</div>
 				</BaseContextMenu.Popup>
 			</BaseContextMenu.Positioner>

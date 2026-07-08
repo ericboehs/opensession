@@ -63,6 +63,7 @@ import {
 	setTabColor,
 	onTabColorsChanged,
 } from "./lib/tab-colors";
+import { copySessionTranscript } from "./lib/transcript-copy";
 import type { UnifiedSession } from "./lib/types";
 import "./styles/global.css";
 
@@ -880,6 +881,11 @@ function App() {
 				) || null
 			: null;
 
+	// The open chat, read by the mount-once tab-shortcut handler (⌘⌥C / ⌘W —
+	// see the effect next to closeChat below).
+	const currentSessionRef = useRef<UnifiedSession | null>(null);
+	currentSessionRef.current = currentSession;
+
 	// Mark the open session read up to its latest activity — both when it's first
 	// opened and as new activity streams in while it stays open — so the sidebar's
 	// unread flag clears for whatever you're currently looking at.
@@ -1019,6 +1025,89 @@ function App() {
 			console.error("New chat failed:", e);
 		}
 	};
+
+	// Close a tab = archive the chat: it leaves the strip and the active list,
+	// but stays recoverable from Archived. An empty chat that never ran has
+	// nothing to recover, so it's deleted outright instead of cluttering
+	// Archived. The local list updates before the request returns so closing
+	// feels instant. Shared by the tab ×, the tab context menu, and ⌘W.
+	const closeChat = async (s: UnifiedSession) => {
+		const neverRan =
+			s.source === "backstage" &&
+			!s.claudeSessionId &&
+			!s.codexThreadId &&
+			!s.transcriptPath &&
+			!s.isRunning &&
+			!s.queuedCount;
+		const wasOpen = currentSession?.id === s.id;
+		const next = wasOpen ? projectChats.find((c) => c.id !== s.id) : null;
+		let replacementId: string | null = null;
+		if (wasOpen && !next) {
+			try {
+				replacementId = await createNewChatFrom(s, "share");
+			} catch (e) {
+				console.error("Replacement chat failed:", e);
+				return;
+			}
+		}
+		if (neverRan) {
+			remove(s.id);
+		} else {
+			patch(s.id, { archived: true, archivedReason: "manual" });
+		}
+		if (wasOpen) {
+			if (next) navigate({ view: "session", id: next.id });
+		}
+		try {
+			if (neverRan) await deleteSessionApi(s.id, false);
+			else {
+				const { stoppedRun } = await archiveSessionApi(s.id, true);
+				if (stoppedRun) showToast("Archived · stopped the running turn");
+			}
+		} catch (e) {
+			console.error("Close failed:", e);
+			if (neverRan) {
+				inject(s);
+			} else {
+				patch(s.id, { archived: false, archivedReason: undefined });
+			}
+			if (replacementId) {
+				remove(replacementId);
+				void deleteSessionApi(replacementId, false).catch((cleanupError) =>
+					console.error("Replacement cleanup failed:", cleanupError),
+				);
+			}
+			if (wasOpen) navigate({ view: "session", id: s.id });
+			return;
+		}
+		refresh();
+	};
+	const closeChatRef = useRef(closeChat);
+	closeChatRef.current = closeChat;
+
+	// Tab shortcuts for the open chat, matching its context-menu hints: ⌘⌥C
+	// copies the concise transcript, ⌘W closes (archives) the tab. Refs keep
+	// this mount-once listener reading fresh state. A browser that reserves
+	// ⌘W for itself (Chrome) never delivers the keydown — there the browser
+	// tab closes as always; where the event does arrive (Safari), we take it.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+			const s = currentSessionRef.current;
+			if (!s) return;
+			// e.code, not e.key: on macOS ⌥C types "ç".
+			if (e.altKey && e.code === "KeyC") {
+				e.preventDefault();
+				void copySessionTranscript(s, "concise", showToast);
+			} else if (!e.altKey && e.key.toLowerCase() === "w") {
+				e.preventDefault();
+				void closeChatRef.current(s);
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [showToast]);
+
 	const handleSessionRunningChange = (id: string, isRunning: boolean) => {
 		// Keep the existing run-start stamp when the session was already running:
 		// the viewer relays a session_status on every (re)open, and re-stamping
@@ -1540,68 +1629,8 @@ function App() {
 								}
 								refresh();
 							}}
-							onClose={async (s) => {
-								// Closing a tab archives the chat: it leaves the strip and the
-								// active list, but stays recoverable from Archived. An empty
-								// chat that never ran has nothing to recover, so it's deleted
-								// outright instead of cluttering Archived. Update the local
-								// list before the request returns so closing feels instant.
-								const neverRan =
-									s.source === "backstage" &&
-									!s.claudeSessionId &&
-									!s.codexThreadId &&
-									!s.transcriptPath &&
-									!s.isRunning &&
-									!s.queuedCount;
-								const wasOpen = currentSession?.id === s.id;
-								const next = wasOpen
-									? projectChats.find((c) => c.id !== s.id)
-									: null;
-								let replacementId: string | null = null;
-								if (wasOpen && !next) {
-									try {
-										replacementId = await createNewChatFrom(s, "share");
-									} catch (e) {
-										console.error("Replacement chat failed:", e);
-										return;
-									}
-								}
-								if (neverRan) {
-									remove(s.id);
-								} else {
-									patch(s.id, { archived: true, archivedReason: "manual" });
-								}
-								if (wasOpen) {
-									if (next) navigate({ view: "session", id: next.id });
-								}
-								try {
-									if (neverRan) await deleteSessionApi(s.id, false);
-									else {
-										const { stoppedRun } = await archiveSessionApi(s.id, true);
-										if (stoppedRun)
-											showToast("Archived · stopped the running turn");
-									}
-								} catch (e) {
-									console.error("Close failed:", e);
-									if (neverRan) {
-										inject(s);
-									} else {
-										patch(s.id, { archived: false, archivedReason: undefined });
-									}
-									if (replacementId) {
-										remove(replacementId);
-										void deleteSessionApi(replacementId, false).catch((cleanupError) =>
-											console.error(
-												"Replacement cleanup failed:",
-												cleanupError,
-											),
-										);
-									}
-									if (wasOpen) navigate({ view: "session", id: s.id });
-									return;
-								}
-								refresh();
-							}}
+							onClose={closeChat}
+							onToast={showToast}
 							onRestore={async (s) => {
 								try {
 									await archiveSessionApi(s.id, false);
