@@ -3576,7 +3576,12 @@ body.resizing-x .panel-resize::after {
 	display: inline-flex;
 	align-items: center;
 	gap: 5px;
-	padding: 5px 11px 6px;
+	/* Symmetric vertical padding — an earlier 5px/6px split shifted every
+	   icon/avatar 0.5px above the pill's center, which read as "riding high"
+	   and invited per-glyph margin nudges to compensate. Keep it symmetric and
+	   let flex centering do the work: iconic glyphs are drawn centered in
+	   their viewbox (sub-¼px offsets at most), so no nudges are needed. */
+	padding: 5.5px 11px;
 	border-radius: 8px;
 	font-size: 12.5px;
 	font-weight: 600;
@@ -3588,10 +3593,6 @@ body.resizing-x .panel-resize::after {
 .wi-chip-icon {
 	display: inline-flex;
 	align-items: center;
-	/* The bell glyph sits slightly high in its own 24-viewbox (more empty
-	   space below than above), so geometric centering leaves it riding high
-	   next to the label. Nudge it down onto the text's optical center. */
-	margin-top: 0.5px;
 	/* De-emphasize the glyph so the label stays the dominant read (ported from
 	   tella-fusion's ButtonWithIcon, which dims leading icons to ~50-70%). */
 	opacity: 0.65;
