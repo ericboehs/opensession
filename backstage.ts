@@ -31,7 +31,7 @@ import {
 	buildEngineSwitchHandoffNote,
 	buildChatContextNote,
 } from "./src/server/fork-handoff";
-import { wrapContext } from "./src/server/prompt-context";
+import { wrapContext, stripContext } from "./src/server/prompt-context";
 import {
 	buildWorkspaceOverview,
 	resolveTranscriptImage,
@@ -2587,6 +2587,11 @@ async function runSessionPromptInner(
  * Interactive sessions only: automations don't get michael-sessions.
  */
 function sessionMentionsNote(content: string): string | null {
+	// Only the human's visible message counts: fenced <backstage:context> blocks
+	// (attached chat transcripts, handoffs) name sessions as @session:<id> too,
+	// and those must not grow a redundant — and unfenced, so user-visible —
+	// mentions footer.
+	content = stripContext(content);
 	const ids = [
 		...new Set(
 			[...content.matchAll(/@session:(bks-[0-9a-f-]+)/g)].map((m) => m[1]),
