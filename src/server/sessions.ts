@@ -12,6 +12,12 @@ import { getReviewRequest } from "./review-requests";
 import { getGeneratedTitle } from "./generated-titles";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
+import { parseTranscript } from "./jsonl-parser";
+import {
+  isOpencodeSessionId,
+  readOpencodeTranscript,
+  existingOpencodeTranscriptPath,
+} from "./opencode-transcript";
 import { configuredRepos, defaultRepo } from "./config";
 import type {
   UnifiedSession,
@@ -19,6 +25,7 @@ import type {
   LinearSessionFile,
   CLISessionFile,
   BackstageSessionFile,
+  TranscriptEntry,
 } from "./types";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -62,26 +69,97 @@ export function getEngineTranscriptPath(
   if (provider === "codex") {
     return findCodexRollout(engineSessionId)?.path || null;
   }
-  // OpenCode keeps its transcripts in its own storage (~/.local/share/opencode);
-  // not integrated here yet — no tail/handoff for opencode engine sessions.
-  if (provider === "opencode") return null;
+  // OpenCode's own storage is SQLite (no tailable file), but the opencode
+  // runner persists a claude-shape jsonl per session precisely so the watcher
+  // and reload paths work unchanged. Null until the session's first persisted
+  // run (the runner creates the file before yielding init).
+  if (provider === "opencode") return existingOpencodeTranscriptPath(engineSessionId);
   return getTranscriptPath(worktreeDir, engineSessionId);
 }
 
+/**
+ * A session's engine transcript as entries, whatever the engine: claude jsonl
+ * and codex rollouts parse from their transcript file; opencode reads straight
+ * out of OpenCode's SQLite store. This is the source for cross-engine handoff
+ * notes (buildEngineSwitchHandoffNote) in BOTH directions — including the
+ * previously-stubbed opencode→claude/codex direction.
+ */
+export function readEngineTranscript(
+  worktreeDir: string,
+  engineSessionId: string,
+  provider: "claude" | "codex" | "opencode"
+): TranscriptEntry[] {
+  if (provider === "opencode") return readOpencodeTranscript(engineSessionId);
+  const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
+  return path ? parseTranscript(path) : [];
+}
+
+/**
+ * Full UI transcript for a session that may span engines: the claude/codex
+ * transcript file (turns before a migration to opencode, or the whole history
+ * for single-engine sessions) merged with the opencode store's entries (turns
+ * after), ordered by timestamp. Also covers legacy session files where the
+ * opencode id rides the claude slot (pre-`opencodeSessionId` runs) — those
+ * previously rendered as an empty transcript after a reload.
+ */
+export function mergedSessionTranscript(
+  session: Pick<
+    UnifiedSession,
+    "transcriptPath" | "opencodeSessionId" | "claudeSessionId"
+  >
+): TranscriptEntry[] {
+  const fileEntries = session.transcriptPath
+    ? parseTranscript(session.transcriptPath)
+    : [];
+  const ocId =
+    session.opencodeSessionId ||
+    (isOpencodeSessionId(session.claudeSessionId) ? session.claudeSessionId : null);
+  if (!ocId) return fileEntries;
+  // Prefer the persisted claude-shape file (it is seeded/backfilled to be
+  // self-contained); fall back to reading OpenCode's SQLite store for legacy
+  // sessions whose next run hasn't backfilled a file yet.
+  const ocPath = existingOpencodeTranscriptPath(ocId);
+  if (ocPath && ocPath === session.transcriptPath) return fileEntries;
+  const ocEntries = ocPath ? parseTranscript(ocPath) : readOpencodeTranscript(ocId);
+  if (!ocEntries.length) return fileEntries;
+  if (!fileEntries.length) return ocEntries;
+  // A seeded opencode file repeats the prior engine's entries (same ids) —
+  // dedupe by id, keeping the first occurrence, then order by time.
+  const seen = new Set<string>();
+  const merged = [...fileEntries, ...ocEntries].filter((e) => {
+    if (seen.has(e.id)) return false;
+    seen.add(e.id);
+    return true;
+  });
+  return merged.sort((a, b) =>
+    (a.timestamp || "").localeCompare(b.timestamp || "")
+  );
+}
+
 export function engineSessionPatch(
-  // opencode session ids ride the claude slot (same as the run journal).
   provider: "claude" | "codex" | "opencode",
   engineSessionId: string
 ): Partial<BackstageSessionFile> {
-  return provider === "codex"
-    ? { codexThreadId: engineSessionId || undefined }
-    : { claudeSessionId: engineSessionId || undefined };
+  if (provider === "codex") return { codexThreadId: engineSessionId || undefined };
+  // OpenCode ids get their own slot (readers prefer it) AND still mirror into
+  // the claude slot, the historical ride every pre-existing code path — and
+  // any not-yet-reloaded closure during a hot-reload window — reads and
+  // writes. Readers recognize the ride by the `ses_` id shape. The mirror is
+  // transitional: dropping it requires no `ses_…`-riding session files and no
+  // pre-opencodeSessionId code paths left.
+  if (provider === "opencode")
+    return {
+      opencodeSessionId: engineSessionId || undefined,
+      claudeSessionId: engineSessionId || undefined,
+    };
+  return { claudeSessionId: engineSessionId || undefined };
 }
 
 function sessionEngineKeys(session: UnifiedSession): string[] {
   return [
     session.claudeSessionId ? `claude:${session.claudeSessionId}` : null,
     session.codexThreadId ? `codex:${session.codexThreadId}` : null,
+    session.opencodeSessionId ? `opencode:${session.opencodeSessionId}` : null,
   ].filter((key): key is string => !!key);
 }
 
@@ -90,6 +168,9 @@ function findTranscriptPath(
   sessionId: string | null
 ): string | null {
   if (!sessionId) return null;
+  // Legacy files where an opencode id rides the claude slot: there is no
+  // claude jsonl for a `ses_…` id — skip the (project-dir-wide) scan.
+  if (isOpencodeSessionId(sessionId)) return null;
   if (worktreeDir) {
     const path = getTranscriptPath(worktreeDir, sessionId);
     if (existsSync(path)) return path;
@@ -134,13 +215,18 @@ function findTranscriptBySessionId(sessionId: string): string | null {
 function resolveTranscriptPath(
   claudePath: string | null,
   codexThreadId: string | null | undefined,
-  model: string | null | undefined
+  model: string | null | undefined,
+  opencodeSessionId?: string | null
 ): string | null {
   const codexPath = codexThreadId ? findCodexRollout(codexThreadId)?.path || null : null;
+  const ocPath = existingOpencodeTranscriptPath(opencodeSessionId);
+  // An opencode-model session's persisted file is self-contained (seeded with
+  // any pre-migration history), so it wins while the session runs on opencode.
+  if (ocPath && providerFor(model) === "opencode") return ocPath;
   if (codexThreadId && providerFor(model) === "codex") {
-    return codexPath || claudePath;
+    return codexPath || claudePath || ocPath;
   }
-  return claudePath || codexPath;
+  return claudePath || codexPath || ocPath;
 }
 
 function readJsonSafe<T>(path: string): T | null {
@@ -313,6 +399,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       effort: data.effort,
       accountId: data.accountId,
       codexThreadId: data.codexThreadId,
+      opencodeSessionId: data.opencodeSessionId,
       lastEngineProvider: data.lastEngineProvider,
       modelHistory: data.modelHistory,
       usage: data.usage,
@@ -328,7 +415,9 @@ function scanBackstageSessions(): UnifiedSession[] {
       transcriptPath: resolveTranscriptPath(
         findTranscriptPath(data.worktreeDir, data.claudeSessionId),
         data.codexThreadId,
-        data.model
+        data.model,
+        data.opencodeSessionId ||
+          (isOpencodeSessionId(data.claudeSessionId) ? data.claudeSessionId : null)
       ),
     });
   }

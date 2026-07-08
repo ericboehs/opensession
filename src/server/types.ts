@@ -104,6 +104,12 @@ export interface UnifiedSession {
   accountId?: string;
   /** Codex thread id, when this session has run on a codex-provider model. */
   codexThreadId?: string;
+  /** OpenCode session id (`ses_…`), when this session has run on an
+   *  opencode/* model. Its own slot (not the claude slot) so a migration to
+   *  the opencode engine keeps the claude history resumable/readable. Legacy
+   *  session files from before this field may still carry a `ses_…` id in
+   *  claudeSessionId — readers fall back on the id shape. */
+  opencodeSessionId?: string;
   /** Provider whose engine last drove a run — lets the next run detect an
    *  in-place cross-provider switch and bridge context. */
   lastEngineProvider?: "claude" | "codex" | "opencode";
@@ -243,6 +249,7 @@ export interface BackstageSessionFile {
   effort?: string; // reasoning effort for this session's runs (low|medium|high); unset = backend default
   accountId?: string; // pinned Claude subscription (claude-accounts id); unset = auto pool
   codexThreadId?: string; // codex thread id once the session has run on a codex model
+  opencodeSessionId?: string; // opencode session id (ses_…) once the session has run on an opencode/* model
   /** Provider whose engine last actually drove a run in this session. Lets the
    *  next run detect an in-place cross-provider switch (Claude↔Codex) and hand
    *  the incoming engine a transcript bridge so context carries over. */

@@ -117,6 +117,14 @@ import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { isCodexUsageLimitError } from "./codex-runner";
+import {
+  appendOpencodeTranscript,
+  ensureOpencodeTranscriptFile,
+  transcriptLineUser,
+  transcriptLineAssistantText,
+  transcriptLineToolUse,
+  transcriptLineToolResult,
+} from "./opencode-transcript";
 import { ensureAnthropicBridge } from "./anthropic-bridge";
 import {
   pickOpenaiAccount,
@@ -953,6 +961,7 @@ export async function* runOpencode(
     const client = clientFor(entry);
 
     // Resolve/create the opencode session.
+    let createdFresh = false;
     if (ocSessionId) {
       const existing = await client.session.get({ path: { id: ocSessionId } });
       if (!existing.data) {
@@ -966,11 +975,23 @@ export async function* runOpencode(
       });
       if (!created.data) throw new Error(`Failed to create opencode session: ${JSON.stringify(created.error ?? "")}`);
       ocSessionId = created.data.id;
+      createdFresh = true;
     }
     if (!registeredKeys.has(ocSessionId)) {
       registeredKeys.add(ocSessionId);
       activeOpencodeRuns.set(ocSessionId, abortController);
     }
+
+    // Persist this run to the session's claude-shape jsonl transcript file —
+    // OpenCode's own storage is SQLite (nothing tailable), and without a file
+    // every reload rendered "No transcript available". Fresh cross-engine
+    // handoffs seed the file with the prior engine's history; legacy sessions
+    // (runs from before persistence existed) backfill from SQLite here.
+    ensureOpencodeTranscriptFile(
+      ocSessionId,
+      createdFresh ? opts.seedTranscriptEntries : undefined
+    );
+    appendOpencodeTranscript(ocSessionId, [transcriptLineUser(prompt)]);
 
     if (journal) {
       journalSet({
@@ -1037,6 +1058,9 @@ export async function* runOpencode(
           if (part.type === "text" && !part.synthetic && part.time?.end && !emittedText.has(part.id)) {
             emittedText.add(part.id);
             turnEvent({ direction: "out", kind: "assistant_text", ...summarizeText(part.text) });
+            appendOpencodeTranscript(ocSessionId, [
+              transcriptLineAssistantText(part.text, part.id),
+            ]);
             push({ type: "text_chunk", text: part.text });
           }
           if (part.type === "reasoning" && part.time?.end && !emittedText.has(part.id)) {
@@ -1054,6 +1078,9 @@ export async function* runOpencode(
                 tool_use_id: part.id,
                 ...summarizeText(JSON.stringify(state?.input ?? {}), 500),
               });
+              appendOpencodeTranscript(ocSessionId, [
+                transcriptLineToolUse(part.id, part.tool || "tool", state?.input),
+              ]);
               push({ type: "tool_use", toolName: part.tool, toolInput: state?.input, toolUseId: part.id });
             }
             if ((state?.status === "completed" || state?.status === "error") && !finishedTools.has(part.id)) {
@@ -1066,6 +1093,9 @@ export async function* runOpencode(
                 is_error: state.status === "error",
                 ...summarizeText(result),
               });
+              appendOpencodeTranscript(ocSessionId, [
+                transcriptLineToolResult(part.id, result, state.status === "error"),
+              ]);
               push({
                 type: "tool_result",
                 toolUseId: part.id,
@@ -1230,6 +1260,9 @@ export async function* runOpencode(
       .map((pt) => {
         if (!emittedText.has(pt.id)) {
           emittedText.add(pt.id);
+          appendOpencodeTranscript(ocSessionId, [
+            transcriptLineAssistantText(pt.text, pt.id),
+          ]);
           pending.push({ type: "text_chunk", text: pt.text });
         }
         return pt.text;

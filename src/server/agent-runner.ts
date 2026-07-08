@@ -54,10 +54,10 @@ import {
 } from "./host-registry";
 import { buildEngineSwitchHandoffNote } from "./fork-handoff";
 import { personaName } from "./config";
-import { parseTranscript } from "./jsonl-parser";
 import { wrapContext } from "./prompt-context";
-import { getEngineTranscriptPath } from "./sessions";
+import { readEngineTranscript } from "./sessions";
 import type { GitIdentity } from "./shared/user-mappings";
+import type { TranscriptEntry } from "./types";
 
 export type { StreamEvent };
 
@@ -92,6 +92,14 @@ export interface RunAgentOpts {
   reposNote?: string;
   /** Images attached to the opening message. */
   images?: ImageInput[];
+  /**
+   * Prior-engine transcript entries accompanying a cross-engine handoff (the
+   * same entries the handoff note was built from). The opencode runner seeds a
+   * freshly-created session's persisted transcript file with them, so the UI
+   * transcript stays continuous across the engine switch. Other runners ignore
+   * this (their engines own their transcript files).
+   */
+  seedTranscriptEntries?: TranscriptEntry[];
   /** Fork the resumed session into a new id (optionally from `resumeSessionAt`). Claude only. */
   forkSession?: boolean;
   resumeSessionAt?: string;
@@ -239,11 +247,14 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     };
 
     let prompt = currentOpts.prompt;
+    let handoffEntries: TranscriptEntry[] = [];
     if (sawInit && crossProvider) {
-      const handoffPath = currentEngineId
-        ? getEngineTranscriptPath(currentOpts.cwd, currentEngineId, providerFor(currentModel))
-        : null;
-      const entries = handoffPath ? parseTranscript(handoffPath) : [];
+      // Entry-based read so all three engines can hand off: claude/codex from
+      // their transcript files, opencode from OpenCode's SQLite store.
+      const entries = currentEngineId
+        ? readEngineTranscript(currentOpts.cwd, currentEngineId, providerFor(currentModel))
+        : [];
+      handoffEntries = entries;
       if (entries.length) {
         prompt =
           `${wrapContext(
@@ -267,6 +278,12 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
       prompt,
       // Same provider can resume the partial session; cross-provider starts fresh
       sessionId: crossProvider ? undefined : currentEngineId,
+      // A cross-provider fallback INTO opencode seeds the fresh opencode
+      // session's persisted transcript with the history the handoff covers.
+      seedTranscriptEntries:
+        crossProvider && fallback.provider === "opencode" && handoffEntries.length
+          ? handoffEntries
+          : undefined,
       journal: opts.journal
         ? { ...opts.journal, kind: `${opts.journal.kind || "run"}-fallback` }
         : undefined,
