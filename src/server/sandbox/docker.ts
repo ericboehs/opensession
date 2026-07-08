@@ -51,6 +51,25 @@
  *  - ~/.backstage-audit is mounted rw so in-container runs land in the same
  *    audit log stream as host runs (appendFileSync, O_APPEND).
  *
+ * Phase 2 additions (docs/sandboxes-plan.md §5 Phase 2):
+ *  - VOLUME workspaces (config `workspace: "volume"`, new sandboxes only): the
+ *    workspace is a per-session named volume (`<name>-ws`) mounted at the
+ *    session's canonical worktree path, cloned from the repo's origin INSIDE
+ *    the container (host creds mounted ro do the auth) — no host worktree at
+ *    all. The mode is sticky per sandbox (recorded in the state file; a later
+ *    config flip never re-mounts an existing workspace). destroy() removes the
+ *    workspace volume — that data loss is the mode's contract: push your work.
+ *    Host-side reads (diff/status/@-mentions) reach it through the
+ *    workspace-exec choke point. A local-path origin URL (scratch/test repos)
+ *    is mounted ro so the in-container clone can read it; real repos clone
+ *    over ssh/https. Attached repos are rejected in volume mode.
+ *  - Attached-repo mounts (bind mode): each attachedDirs entry is bind-mounted
+ *    rw at its identical path plus its repo's common .git — a changed set
+ *    recreates the container on the next ensure (mounts are create-time).
+ *  - Preview ports: config `previewPorts` publishes each listed container port
+ *    to a random loopback host port at create time (docker -p 127.0.0.1::p);
+ *    `ports()` reads the live mapping for preview.ts's Caddy routing.
+ *
  * Known Phase 1 caveats (documented, not chased):
  *  - External MCP servers from mcp-config.json now spawn INSIDE the container;
  *    ones with host-only deps won't start there.
@@ -59,7 +78,6 @@
  *  - `aws: true` runs can't mint creds inside the container (IMDS is blocked
  *    by the DOCKER-USER rule — deploy/sandbox/setup-host.sh); getAgentAwsEnv
  *    degrades to no AWS env.
- *  - Attached repos (multi-repo sessions) are not mounted; don't sandbox them.
  *
  * Runner internals: nothing here hot-reloads meaningfully into live runs —
  * wire-ups need a real restart (see CLAUDE.md "Hot reload & restarts").
@@ -81,7 +99,7 @@ import { registerRunToken } from "../run-rpc";
 import { writeJsonAtomic } from "../shared/atomic-write";
 import { HostHandle, type HandleCallbacks, type HostLauncher } from "../host-client";
 import { getTranscriptPath } from "../sessions";
-import { REPOS } from "../worktree";
+import { REPOS, getRepo, worktreePathFor, type Repo } from "../worktree";
 import { LocalProvider } from "./local";
 import { sandboxConfig } from "./config";
 import {
@@ -128,6 +146,16 @@ interface DockerSandboxState {
   createdAt: string;
   /** Last run start/end — drives the idle-stop sweep. */
   lastActivityAt: string;
+  /** How the workspace is materialized. Sticky for the sandbox's lifetime;
+   *  absent (pre-Phase-2 state files) = "bind". */
+  workspace?: "bind" | "volume";
+  /** Repo id + branch, recorded so get() can recreate a volume workspace's
+   *  container (the clone source and checkout) after a docker rm. */
+  repoId?: string;
+  branch?: string;
+  /** Attached-repo dirs mounted at create time (bind mode) — a differing set
+   *  on the next ensure() recreates the container with fresh mounts. */
+  attachedDirs?: string[];
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
@@ -253,37 +281,104 @@ function isMainCheckout(cwd: string): boolean {
   return Object.values(REPOS).some((r) => r.repo === cwd);
 }
 
-async function createContainer(name: string, sessionId: string, cwd: string): Promise<void> {
+/** Host-side resolution of a repo's origin URL — the clone source for
+ *  volume-mode workspaces. */
+async function repoOriginUrl(repoDir: string): Promise<string> {
+  const proc = Bun.spawn(["git", "-C", repoDir, "remote", "get-url", "origin"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [out, err, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0 || !out.trim()) {
+    throw new Error(`cannot resolve origin URL for ${repoDir}: ${err.trim() || "no origin"}`);
+  }
+  return out.trim();
+}
+
+interface CreateContainerOpts {
+  workspace: "bind" | "volume";
+  /** Attached-repo worktrees to mount (bind mode only). */
+  attachedDirs: string[];
+  /** Repo backing a volume workspace (clone source + default branch). */
+  repo?: Repo;
+}
+
+async function createContainer(
+  name: string,
+  sessionId: string,
+  cwd: string,
+  opts: CreateContainerOpts,
+): Promise<void> {
   const cfg = sandboxConfig();
   const image = cfg.image || DEFAULT_IMAGE;
   const cpus = cfg.cpus || DEFAULT_CPUS;
   const memory = cfg.memory || DEFAULT_MEMORY;
 
-  const commonGit = await gitCommonDir(cwd);
-  if (commonGit === `${cwd}/.git`) {
-    // Standalone checkout (not a linked worktree) — only ever legitimate for
-    // scratch/test repos; main checkouts were already refused in ensure().
-    console.warn(`[sandbox] ${name}: ${cwd} is a standalone checkout (no separate common .git)`);
+  const vol = (host: string, container: string, ro = false) => [
+    "-v",
+    `${host}:${container}${ro ? ":ro" : ""}`,
+  ];
+
+  // Workspace mounts. Bind mode: the host worktree + its git common dir, rw at
+  // identical paths. Volume mode: a per-session named volume at the canonical
+  // worktree path (cloned by setupVolumeWorkspace after start) — plus the
+  // origin repo itself mounted ro when it's a local path (scratch/test repos),
+  // since the in-container clone must be able to read its source.
+  const workspaceMounts: string[] = [];
+  if (opts.workspace === "volume") {
+    workspaceMounts.push(...vol(`${name}-ws`, cwd));
+    const originUrl = opts.repo ? await repoOriginUrl(opts.repo.repo) : "";
+    if (originUrl.startsWith("/") && existsSync(originUrl)) {
+      workspaceMounts.push(...vol(originUrl, originUrl, true));
+    }
+  } else {
+    const commonGit = await gitCommonDir(cwd);
+    if (commonGit === `${cwd}/.git`) {
+      // Standalone checkout (not a linked worktree) — only ever legitimate for
+      // scratch/test repos; main checkouts were already refused in ensure().
+      console.warn(`[sandbox] ${name}: ${cwd} is a standalone checkout (no separate common .git)`);
+    }
+    workspaceMounts.push(
+      ...vol(cwd, cwd),
+      ...(commonGit !== `${cwd}/.git` ? vol(commonGit, commonGit) : []),
+    );
+    // Attached repos (multi-repo sessions): each worktree + its repo's common
+    // .git, rw at identical paths — same trust as the primary workspace.
+    const mounted = new Set([cwd, commonGit]);
+    for (const dir of opts.attachedDirs) {
+      if (mounted.has(dir)) continue;
+      mounted.add(dir);
+      workspaceMounts.push(...vol(dir, dir));
+      try {
+        const attCommon = await gitCommonDir(dir);
+        if (attCommon !== `${dir}/.git` && !mounted.has(attCommon)) {
+          mounted.add(attCommon);
+          workspaceMounts.push(...vol(attCommon, attCommon));
+        }
+      } catch (e) {
+        console.warn(`[sandbox] ${name}: could not resolve common .git for attached ${dir}:`, e);
+      }
+    }
   }
 
   const runsDir = sessionRunsDir(sessionId);
   mkdirSync(runsDir, { recursive: true });
   // Engine transcript dir for this cwd, host-side (see mount design above).
+  // Volume mode keeps it too: transcripts are engine state, not workspace —
+  // mounting them host-side keeps the session viewer's tail working.
   const transcriptDir = dirname(getTranscriptPath(cwd, "x"));
   mkdirSync(transcriptDir, { recursive: true });
 
-  const vol = (host: string, container: string, ro = false) => [
-    "-v",
-    `${host}:${container}${ro ? ":ro" : ""}`,
-  ];
   const mounts: string[] = [
     // Named volumes ONLY at ~/.claude and ~/.codex — never at /home/ubuntu
     // (a $HOME volume would shadow the image's claude install + repo bundle).
     ...vol(`${name}-claude`, `${HOME}/.claude`),
     ...vol(`${name}-codex`, `${HOME}/.codex`),
-    // Workspace + its git common dir, rw at identical paths.
-    ...vol(cwd, cwd),
-    ...(commonGit !== `${cwd}/.git` ? vol(commonGit, commonGit) : []),
+    ...workspaceMounts,
     // Host-visible engine transcripts for this cwd (over the .claude volume).
     ...vol(transcriptDir, transcriptDir),
     // Per-session run dirs: spec/meta/journal/host.sock/log for every run.
@@ -325,6 +420,12 @@ async function createContainer(name: string, sessionId: string, cwd: string): Pr
     "claude account pool",
   );
 
+  // Preview ports: publish each configured container port on a random
+  // LOOPBACK host port (Caddy fronts them with the tailnet HTTPS origin —
+  // see preview.ts; nothing is exposed off-host). Create-time only: adding
+  // ports to the config affects new/recreated containers.
+  const portArgs = (cfg.previewPorts || []).flatMap((p) => ["-p", `127.0.0.1::${p}`]);
+
   const r = await docker([
     "create",
     "--name", name,
@@ -334,11 +435,56 @@ async function createContainer(name: string, sessionId: string, cwd: string): Pr
     "--restart", "no",
     "--cpus", String(cpus),
     "--memory", memory,
+    ...portArgs,
     ...mounts,
     image,
   ]);
   if (r.exitCode !== 0) {
     throw new Error(`docker create ${name} failed: ${r.stderr.trim().slice(0, 500)}`);
+  }
+}
+
+/**
+ * Materialize a volume workspace after (re)start: clone from origin (host
+ * creds are mounted ro; local-path origins are mounted ro by createContainer)
+ * and check out the session's branch — tracking origin/<branch> when it
+ * exists, else cut from origin/<defaultBranch>, mirroring createWorktree.
+ * Idempotent: an already-cloned volume only re-verifies the checkout.
+ */
+async function setupVolumeWorkspace(
+  name: string,
+  cwd: string,
+  repo: Repo,
+  branch: string,
+): Promise<void> {
+  // A fresh named volume's mountpoint is root-owned (the path doesn't exist
+  // in the image, so there's no ownership to copy) — chown before cloning.
+  const own = await docker(["exec", "-u", "0", name, "chown", "1000:1000", assertSafePath(cwd)]);
+  if (own.exitCode !== 0) {
+    throw new Error(`sandbox ${name}: chown of workspace volume failed: ${own.stderr.trim().slice(0, 300)}`);
+  }
+  const cloned = await docker(["exec", name, "test", "-d", `${cwd}/.git`]);
+  if (cloned.exitCode !== 0) {
+    const originUrl = await repoOriginUrl(repo.repo);
+    console.log(`[sandbox] ${name}: cloning ${originUrl} into workspace volume at ${cwd}`);
+    const clone = await docker(
+      ["exec", name, "git", "clone", "--", originUrl, cwd],
+      { timeoutMs: 600_000 },
+    );
+    if (clone.exitCode !== 0) {
+      throw new Error(`sandbox ${name}: in-container clone failed: ${clone.stderr.trim().slice(0, 500)}`);
+    }
+  }
+  const cur = await docker(["exec", "-w", assertSafePath(cwd), name, "git", "branch", "--show-current"]);
+  if (cur.exitCode === 0 && cur.stdout.trim() === branch) return;
+  const hasRemote = await docker([
+    "exec", "-w", cwd, name,
+    "git", "rev-parse", "--verify", "--quiet", `origin/${branch}`,
+  ]);
+  const startPoint = hasRemote.exitCode === 0 ? `origin/${branch}` : `origin/${repo.defaultBranch}`;
+  const co = await docker(["exec", "-w", cwd, name, "git", "checkout", "-B", branch, startPoint]);
+  if (co.exitCode !== 0) {
+    throw new Error(`sandbox ${name}: checkout -B ${branch} ${startPoint} failed: ${co.stderr.trim().slice(0, 300)}`);
   }
 }
 
@@ -458,12 +604,18 @@ async function* withRunJournal(
 
 // ── Sandbox handle ────────────────────────────────────────────────────────────
 
-function makeDockerSandbox(sandboxId: string, sessionId: string, cwd: string): Sandbox {
+function makeDockerSandbox(
+  sandboxId: string,
+  sessionId: string,
+  cwd: string,
+  workspace: "bind" | "volume" = "bind",
+): Sandbox {
   const launcher = makeDockerLauncher(sandboxId, sessionId);
   const sandboxHandle: Sandbox = {
     id: sandboxId,
     provider: "docker",
     cwd,
+    workspace,
 
     async exec(cmd: string[], opts?: ExecOpts): Promise<ExecResult> {
       await ensureStarted(sandboxId);
@@ -535,10 +687,20 @@ function makeDockerSandbox(sandboxId: string, sessionId: string, cwd: string): S
       };
     },
 
-    // Phase 2: container port mapping for previews. Bridge network, no
-    // published ports yet.
+    // Live published-port mapping (container port → loopback host port).
+    // Empty when the container isn't running or no previewPorts are
+    // configured. preview.ts routes Caddy at the host side of this map.
     async ports(): Promise<PortMap> {
-      return {};
+      const r = await docker(["port", sandboxId]);
+      if (r.exitCode !== 0) return {};
+      const map: PortMap = {};
+      for (const line of r.stdout.split("\n")) {
+        const m = line.match(/^(\d+)\/tcp -> (?:\[[^\]]*\]|[0-9.]+):(\d+)\s*$/);
+        if (!m) continue;
+        const inner = parseInt(m[1], 10);
+        if (!(inner in map)) map[inner] = parseInt(m[2], 10);
+      }
+      return map;
     },
 
     status: () => containerStatus(sandboxId),
@@ -632,7 +794,36 @@ export class DockerProvider implements SandboxProvider {
 
   private async ensureInner(spec: SandboxSessionSpec): Promise<Sandbox> {
     ensureIdleSweep();
-    const cwd = (await localResolver.ensure(spec)).cwd;
+    const name = containerNameFor(spec.sessionId);
+    const existing = readState(name);
+
+    // Workspace mode. Sticky per sandbox: the state file's recorded mode wins
+    // over a later config flip (a volume workspace's data lives in its volume
+    // — re-binding it to a host path would orphan the work, and vice versa).
+    // Volume applies only to workspaces with no host dir: an existing host
+    // worktree (pre-existing session, shared workspace) stays bind-mounted.
+    const repo = getRepo(spec.repo || existing?.repoId);
+    const branch = spec.branch || existing?.branch;
+    const canonical =
+      spec.cwd || (branch ? worktreePathFor(branch, repo.id, { isolated: true }) : undefined);
+    const wantVolume = existing?.workspace
+      ? existing.workspace === "volume"
+      : sandboxConfig().workspace === "volume";
+    let workspace: "bind" | "volume";
+    let cwd: string;
+    if (wantVolume && canonical && !existsSync(canonical) && spec.mode !== "ask") {
+      if (!branch) {
+        throw new Error("volume-mode sandbox needs a branch to clone/check out");
+      }
+      workspace = "volume";
+      cwd = canonical;
+    } else {
+      // Bind mode resolves the workspace HOST-SIDE first (worktree creation,
+      // .env seeding, bun install all stay on the host — the container only
+      // ever sees the finished dir).
+      workspace = "bind";
+      cwd = (await localResolver.ensure(spec)).cwd;
+    }
     // A main checkout must never be bind-mounted rw into a sandbox as its
     // workspace: shared checkouts (backstage self-hosting) and repo mainlines
     // stay host-only forever (docs/sandboxes-plan.md §7.2). This also catches
@@ -642,22 +833,41 @@ export class DockerProvider implements SandboxProvider {
         `refusing to sandbox ${cwd}: it is a shared main checkout — docker sandboxes only run isolated worktrees`,
       );
     }
-    const name = containerNameFor(spec.sessionId);
+    const attachedDirs = [...new Set(spec.attachedDirs || existing?.attachedDirs || [])]
+      .filter((d) => existsSync(d))
+      .sort();
+    if (workspace === "volume" && attachedDirs.length) {
+      throw new Error(
+        "attached repos are not supported in volume-mode sandboxes — detach them or use bind mode",
+      );
+    }
 
-    const existing = readState(name);
     let status = await containerStatus(name);
-    if (status !== "gone" && existing && existing.cwd !== cwd) {
-      // The session's workspace moved (branch/worktree changed) — the old
-      // container's mounts are stale. Recreate it; the named volumes (and so
-      // engine state) survive `docker rm`.
-      console.warn(`[sandbox] ${name}: workspace moved ${existing.cwd} → ${cwd}; recreating container`);
+    if (
+      status !== "gone" &&
+      existing &&
+      (existing.cwd !== cwd ||
+        (existing.attachedDirs || []).join("\n") !== attachedDirs.join("\n"))
+    ) {
+      // The session's workspace moved (branch/worktree changed) or its
+      // attached-repo set changed — the old container's mounts are stale.
+      // Recreate it; the named volumes (engine state AND a volume-mode
+      // workspace) survive `docker rm`.
+      console.warn(`[sandbox] ${name}: mounts changed (${existing.cwd} → ${cwd}); recreating container`);
       await docker(["rm", "-f", name]);
       status = "gone";
     }
     if (status === "gone") {
-      await createContainer(name, spec.sessionId, cwd);
+      await createContainer(name, spec.sessionId, cwd, {
+        workspace,
+        attachedDirs,
+        repo: workspace === "volume" ? repo : undefined,
+      });
     }
     await ensureStarted(name);
+    if (workspace === "volume") {
+      await setupVolumeWorkspace(name, cwd, repo, branch!);
+    }
     await setupContainer(name, cwd);
     writeState({
       sandboxId: name,
@@ -666,8 +876,12 @@ export class DockerProvider implements SandboxProvider {
       image: sandboxConfig().image || DEFAULT_IMAGE,
       createdAt: existing?.createdAt || new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
+      workspace,
+      repoId: repo.id,
+      ...(branch ? { branch } : {}),
+      ...(attachedDirs.length ? { attachedDirs } : {}),
     });
-    return makeDockerSandbox(name, spec.sessionId, cwd);
+    return makeDockerSandbox(name, spec.sessionId, cwd, workspace);
   }
 
   /**
@@ -682,7 +896,13 @@ export class DockerProvider implements SandboxProvider {
     if (status === "gone") {
       if (!state) return null;
       try {
-        return await this.ensure({ sessionId: state.sessionId, cwd: state.cwd });
+        return await this.ensure({
+          sessionId: state.sessionId,
+          cwd: state.cwd,
+          repo: state.repoId,
+          branch: state.branch,
+          attachedDirs: state.attachedDirs,
+        });
       } catch (e) {
         console.warn(`[sandbox] could not recreate ${sandboxId}:`, e);
         return null;
@@ -698,14 +918,19 @@ export class DockerProvider implements SandboxProvider {
       console.warn(`[sandbox] ${sandboxId} has no state file — exec-only reattach (mounts: ${runs.stdout.split("\n")[0] || "?"})`);
       return null;
     }
-    return makeDockerSandbox(sandboxId, state.sessionId, state.cwd);
+    return makeDockerSandbox(sandboxId, state.sessionId, state.cwd, state.workspace || "bind");
   }
 
-  /** Tear down container + its two named volumes + provider state. The
-   *  worktree is untouched — it belongs to the host's worktree lifecycle. */
+  /** Tear down container + its named volumes + provider state. A bind-mode
+   *  worktree is untouched (it belongs to the host's worktree lifecycle); a
+   *  volume-mode WORKSPACE is deleted with its `-ws` volume — that data loss
+   *  is the mode's documented contract (push your work). */
   async destroy(sandboxId: string): Promise<void> {
     await docker(["rm", "-f", sandboxId]);
-    await docker(["volume", "rm", "-f", `${sandboxId}-claude`, `${sandboxId}-codex`]);
+    await docker([
+      "volume", "rm", "-f",
+      `${sandboxId}-claude`, `${sandboxId}-codex`, `${sandboxId}-ws`,
+    ]);
     const state = readState(sandboxId);
     try {
       unlinkSync(statePath(sandboxId));
