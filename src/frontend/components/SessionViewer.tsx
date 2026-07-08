@@ -1997,8 +1997,7 @@ export function SessionViewer({
 								onClick={() => onNewChat("share")}
 								aria-label="New tab"
 							>
-								<IconPlus size={18} />
-								New tab
+								<IconPlus size={22} />
 							</button>
 						</Tooltip>
 					)}
