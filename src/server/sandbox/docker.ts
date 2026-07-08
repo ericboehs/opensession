@@ -268,7 +268,12 @@ async function createContainer(name: string, sessionId: string, cwd: string): Pr
     ...vol(transcriptDir, transcriptDir),
     // Per-session run dirs: spec/meta/journal/host.sock/log for every run.
     ...vol(runsDir, runsDir),
-    // Audit log parity (append-only jsonl stream).
+    // Audit log parity (append-only jsonl stream). Deliberately rw where the
+    // other trust mounts are ro: in-container runs must land in the SAME audit
+    // stream as host runs (append-only writes via O_APPEND), and host runs can
+    // already write here today — so this is parity with host-run trust, not an
+    // escalation. Worst case a hostile run scribbles on its own audit trail;
+    // it gains no credentials or control surface from it.
     ...vol(`${HOME}/.backstage-audit`, `${HOME}/.backstage-audit`),
   ];
   mkdirSync(`${HOME}/.backstage-audit`, { recursive: true });
@@ -435,7 +440,7 @@ async function* withRunJournal(
 
 function makeDockerSandbox(sandboxId: string, sessionId: string, cwd: string): Sandbox {
   const launcher = makeDockerLauncher(sandboxId, sessionId);
-  return {
+  const sandboxHandle: Sandbox = {
     id: sandboxId,
     provider: "docker",
     cwd,
@@ -446,40 +451,64 @@ function makeDockerSandbox(sandboxId: string, sessionId: string, cwd: string): S
       return docker(["exec", "-w", cwd, ...envArgs, sandboxId, ...cmd]);
     },
 
-    launchRun(spec: RunHostSpec, cb?: RunHandleCallbacks): RunHandle {
+    /**
+     * Eager variant: awaits the docker exec + socket connect and THROWS on any
+     * launch failure, so callers with a fallback (maybeLaunchSandboxedRun →
+     * host run) can catch it before committing the turn to the sandbox.
+     */
+    async launchRunEager(spec: RunHostSpec, cb?: RunHandleCallbacks): Promise<RunHandle> {
       const dir = launcher.newRunDir(spec.hostId);
       const callbacks: HandleCallbacks = {
         onAskUser: cb?.onAskUser,
         onSteerFailed: cb?.onSteerFailed,
       };
       const record = recordForSpec(spec, sandboxId);
-      // Setup is async but RunHandle is sync — do the launch inside the
-      // generator (consumed exactly once, like every runner entry point).
-      const gen = (async function* (): AsyncGenerator<StreamEvent> {
-        mkdirSync(dir, { recursive: true });
-        writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
-        let handle: HostHandle;
+      mkdirSync(dir, { recursive: true });
+      writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
+      let handle: HostHandle;
+      try {
+        await launcher.launch(spec.hostId, dir);
+        handle = new HostHandle(dir, spec, callbacks, launcher);
+        await handle.connectWithWait(30_000);
+      } catch (e) {
         try {
-          await launcher.launch(spec.hostId, dir);
-          handle = new HostHandle(dir, spec, callbacks, launcher);
-          await handle.connectWithWait(30_000);
+          rmSync(dir, { recursive: true, force: true });
+        } catch {}
+        throw e;
+      }
+      const gen = withRunJournal(handle.events(), record);
+      return {
+        events: () => gen,
+        steerable: providerFor(spec.model) !== "codex",
+        // HostHandle registers its control in host-registry keyed by the bks
+        // session id — route through the same helpers the WS handlers use.
+        steer: (text) => hostSteer(spec.bksSessionId, text),
+        interruptSteer: (text) => hostInterruptSteer(spec.bksSessionId, text),
+        cancel: () => hostCancel(spec.bksSessionId),
+      };
+    },
+
+    launchRun(spec: RunHostSpec, cb?: RunHandleCallbacks): RunHandle {
+      // Setup is async but RunHandle is sync — do the launch inside the
+      // generator (consumed exactly once, like every runner entry point) and
+      // degrade a launch failure to an error event. Callers that can fall back
+      // to another backend should prefer launchRunEager above.
+      const gen = (async function* (): AsyncGenerator<StreamEvent> {
+        let eager: RunHandle;
+        try {
+          eager = await sandboxHandle.launchRunEager!(spec, cb);
         } catch (e: any) {
-          try {
-            rmSync(dir, { recursive: true, force: true });
-          } catch {}
           yield {
             type: "error",
             content: `Sandbox run failed to start: ${e?.message || e}`,
           };
           return;
         }
-        yield* withRunJournal(handle.events(), record);
+        yield* eager.events();
       })();
       return {
         events: () => gen,
         steerable: providerFor(spec.model) !== "codex",
-        // HostHandle registers its control in host-registry keyed by the bks
-        // session id — route through the same helpers the WS handlers use.
         steer: (text) => hostSteer(spec.bksSessionId, text),
         interruptSteer: (text) => hostInterruptSteer(spec.bksSessionId, text),
         cancel: () => hostCancel(spec.bksSessionId),
@@ -494,6 +523,7 @@ function makeDockerSandbox(sandboxId: string, sessionId: string, cwd: string): S
 
     status: () => containerStatus(sandboxId),
   };
+  return sandboxHandle;
 }
 
 // ── Idle-stop sweep ───────────────────────────────────────────────────────────
@@ -543,6 +573,31 @@ function ensureIdleSweep(): void {
 // paths' own resolution, which passes an already-resolved cwd in `spec.cwd`).
 const localResolver = new LocalProvider();
 
+/**
+ * Serialize ensure() per session: two simultaneous ensures (e.g. a prompt and
+ * a queued drain racing after a restart) would both see status "gone" and race
+ * `docker create --name` — the loser errors and its turn falls back to the
+ * host. Same in-process chain pattern as worktree.ts's withGitLock, parked on
+ * globalThis so `bun --hot` reloads don't fork the chains.
+ */
+function withEnsureLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
+  const g = globalThis as unknown as {
+    __sandboxEnsureChains?: Map<string, Promise<unknown>>;
+  };
+  const chains = (g.__sandboxEnsureChains ??= new Map());
+  const prev = chains.get(sessionId) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.then(
+    () => {},
+    () => {},
+  );
+  chains.set(sessionId, tail);
+  void tail.finally(() => {
+    if (chains.get(sessionId) === tail) chains.delete(sessionId);
+  });
+  return run;
+}
+
 export class DockerProvider implements SandboxProvider {
   readonly id = "docker" as const;
 
@@ -551,7 +606,11 @@ export class DockerProvider implements SandboxProvider {
    * HOST-SIDE first (worktree creation, .env seeding, bun install all stay on
    * the host in Phase 1 — the container only ever sees the finished dir).
    */
-  async ensure(spec: SandboxSessionSpec): Promise<Sandbox> {
+  ensure(spec: SandboxSessionSpec): Promise<Sandbox> {
+    return withEnsureLock(spec.sessionId, () => this.ensureInner(spec));
+  }
+
+  private async ensureInner(spec: SandboxSessionSpec): Promise<Sandbox> {
     ensureIdleSweep();
     const cwd = (await localResolver.ensure(spec)).cwd;
     // A main checkout must never be bind-mounted rw into a sandbox as its

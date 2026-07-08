@@ -119,6 +119,15 @@ export interface Sandbox {
   exec(cmd: string[], opts?: ExecOpts): Promise<ExecResult>;
   /** Start a long-lived agent run (NDJSON-stream semantics; see RunHandle). */
   launchRun(spec: RunHostSpec, cb?: RunHandleCallbacks): RunHandle;
+  /**
+   * Like `launchRun`, but the sandbox-side setup (container exec, socket
+   * connect) is awaited HERE and a failure THROWS instead of surfacing as an
+   * error event on the stream — so a caller with a fallback path (e.g. run on
+   * the host instead) can catch it before committing to the sandbox. Optional:
+   * only backends whose launch can fail out-of-process implement it; the local
+   * provider's in-process launch has nothing to await.
+   */
+  launchRunEager?(spec: RunHostSpec, cb?: RunHandleCallbacks): Promise<RunHandle>;
   /** Preview ports (sandbox port → host port). */
   ports(): Promise<PortMap>;
   status(): Promise<SandboxStatus>;

@@ -474,10 +474,17 @@ function interactiveMcpServers(
 
 // Codex cannot consume Claude SDK in-process MCP servers directly. Expose the
 // same interactive michael-* tools through the run-rpc stdio proxy so Codex
-// sessions can inspect/create/steer Backstage sessions too.
-registerInteractiveMcpBuilder((sessionId, user) =>
-	interactiveMcpServers(user, sessionId),
-);
+// sessions can inspect/create/steer Backstage sessions too. Goal-driven
+// sessions additionally get michael-goal-self (next-wake/ledger/pause tools),
+// matching what the in-process path hands them at the runAgent call sites.
+registerInteractiveMcpBuilder((sessionId, user) => {
+	const servers = interactiveMcpServers(user, sessionId);
+	const goalId = sessionId ? findSession(sessionId)?.goalId : undefined;
+	if (goalId)
+		(servers as Record<string, unknown>)["michael-goal-self"] =
+			createGoalSelfMcpServer(goalId);
+	return servers;
+});
 startRunRpcServer();
 
 /**
@@ -2157,6 +2164,40 @@ async function autoPushSessionBranches(session: UnifiedSession): Promise<void> {
 }
 
 /**
+ * Tear down a session's sandbox (container + engine-state volumes; in
+ * volume-workspace mode also the workspace volume — documented data loss).
+ * Best-effort and detached so a docker hiccup never blocks the caller
+ * (session delete, archive sweep). `clearSandboxId` drops the stale id from
+ * the session file so later sweeps don't re-destroy — only for sessions that
+ * keep existing (the archive sweep); a deleted session has no file to touch.
+ */
+function destroySessionSandbox(
+	session: UnifiedSession,
+	why: string,
+	clearSandboxId = false,
+): void {
+	const sb = session.sandbox;
+	if (!sb?.sandboxId) return;
+	void (async () => {
+		try {
+			await getSandboxProvider(sb.provider).destroy(sb.sandboxId!);
+			console.log(
+				`[sandbox] destroyed ${sb.sandboxId} for ${session.id} (${why})`,
+			);
+			if (clearSandboxId && session.source === "backstage")
+				touchBackstageSession(session.id, {
+					sandbox: { ...sb, sandboxId: undefined },
+				});
+		} catch (e) {
+			console.warn(
+				`[sandbox] destroy ${sb.sandboxId} for ${session.id} (${why}) failed:`,
+				e,
+			);
+		}
+	})();
+}
+
+/**
  * Docker-sandbox routing for runSessionPromptInner (docs/sandboxes-plan.md
  * Phase 1). Returns the run's event stream when the session opted into a
  * docker sandbox at create time AND the config + kill-switch currently allow
@@ -2205,8 +2246,13 @@ async function maybeLaunchSandboxedRun(
 		}
 		// michael-* tools reach the container as stdio proxies over the run-rpc
 		// socket — same path Codex and hosted runs use. The names must match
-		// what the registered InteractiveMcpBuilder can build for this session.
-		const proxyMcpServers = Object.keys(interactiveMcpServers(opts.user, session.id));
+		// what the registered InteractiveMcpBuilder can build for this session —
+		// including michael-goal-self for goal-driven sessions (the builder adds
+		// it from the session's goalId, mirroring the in-process path below).
+		const proxyMcpServers = [
+			...Object.keys(interactiveMcpServers(opts.user, session.id)),
+			...(session.goalId ? ["michael-goal-self"] : []),
+		];
 		const rpcToken = crypto.randomUUID();
 		registerRunToken(rpcToken, { sessionId: session.id, user: opts.user });
 		const spec: RunHostSpec = {
@@ -2231,15 +2277,22 @@ async function maybeLaunchSandboxedRun(
 			accountId: session.accountId,
 			journalKind: "prompt",
 		};
-		const handle = sandbox.launchRun(spec, {
+		const runCallbacks = {
 			onAskUser: makeAskHandler(session.id),
 			// A steer that reached the in-container run too late must not
 			// evaporate — queue it like the busy-path does.
-			onSteerFailed: (text) => {
+			onSteerFailed: (text: string) => {
 				enqueuePrompt(session.id, { content: text, user: opts.user });
 				watchExternalRunAndDrain(session.id);
 			},
-		});
+		};
+		// Launch EAGERLY (docker exec + socket connect awaited here) so a failure
+		// is caught by this try/catch and falls back to the host run — a lazy
+		// launch would only surface the failure as an error bubble mid-stream,
+		// after the fallback window has closed.
+		const handle = sandbox.launchRunEager
+			? await sandbox.launchRunEager(spec, runCallbacks)
+			: sandbox.launchRun(spec, runCallbacks);
 		console.log(`[sandbox] ${session.id}: running in ${sandbox.id} (${sandbox.cwd})`);
 		return handle.events();
 	} catch (e: any) {
@@ -4957,6 +5010,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				try {
 					deleteSession(session);
 					sessionsCache = null;
+					// Tear down the session's sandbox (container + engine-state volumes —
+					// and in volume-workspace mode the workspace volume itself; that data
+					// loss is the mode's documented contract). Best-effort and detached:
+					// a docker hiccup must never block the delete.
+					destroySessionSandbox(session, "delete");
 					// If that was the workspace's last chat, delete the workspace too —
 					// otherwise auto-wrapped 1:1 workspaces linger as undeletable empty
 					// sidebar rows. PR-backed workspaces (`key`) stay: they regroup new
@@ -8740,6 +8798,22 @@ if (!g.__backstageBooted) {
 				}
 			} catch (e) {
 				console.error("[worktree-sweep] Sweep failed:", e);
+			}
+			// Sandboxes of long-idle archived sessions, same cadence as the
+			// worktree sweep: containers + engine-state volumes are provider-owned
+			// and safe to drop (bind-mode worktrees belong to the sweep above and
+			// are untouched). Volume-mode workspaces die with the sandbox — the
+			// documented contract of that mode (push your work). A revived session
+			// just re-ensures a fresh container on its next prompt.
+			try {
+				const cutoff = Date.now() - 14 * 86_400_000;
+				for (const s of getAllSessions()) {
+					if (!s.sandbox?.sandboxId || !s.archived || s.isRunning) continue;
+					if (new Date(s.lastActivity).getTime() >= cutoff) continue;
+					destroySessionSandbox(s, "archive-sweep", true);
+				}
+			} catch (e) {
+				console.error("[sandbox-sweep] Sweep failed:", e);
 			}
 		},
 		6 * 60 * 60 * 1000,
