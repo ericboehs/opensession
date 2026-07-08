@@ -70,6 +70,7 @@ import {
 	IconTerminal,
 } from "./icons";
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
+import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
@@ -2334,9 +2335,14 @@ export function SessionViewer({
 														? IconTerminal
 														: IconSparkle;
 												return (
-													<button
+													<Button
 														key={c.id}
-														type="button"
+														icon={
+															<ChipIcon
+																size={16}
+																className={selected ? "text-green" : undefined}
+															/>
+														}
 														onClick={() =>
 															setContextChats((prev) =>
 																prev.includes(c.id)
@@ -2349,30 +2355,25 @@ export function SessionViewer({
 																? "Attached — its transcript rides along with your first message"
 																: "Attach this chat's transcript as context"
 														}
-														className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium transition-colors ${
+														className={
 															selected
 																? "border-line-strong bg-active text-fg"
-																: "border-line bg-panel text-dim hover:text-fg"
-														}`}
+																: undefined
+														}
 													>
-														<ChipIcon
-															size={14}
-															className={`shrink-0 ${selected ? "text-green" : "text-faint"}`}
-														/>
 														<span className="max-w-[200px] truncate">
 															{c.title || "Untitled chat"}
 														</span>
-													</button>
+													</Button>
 												);
 											})}
 											{!showAllContextChats && contextChatOptions.length > 4 && (
-												<button
-													type="button"
-													className="cursor-pointer px-1 font-medium text-dim hover:text-fg"
+												<Button
+													variant="ghost"
 													onClick={() => setShowAllContextChats(true)}
 												>
 													+{contextChatOptions.length - 4} more
-												</button>
+												</Button>
 											)}
 										</div>
 									</div>
