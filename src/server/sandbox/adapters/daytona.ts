@@ -132,6 +132,64 @@ function daytonaDriver(sbx: DaytonaSandbox): RemoteDriver {
   };
 }
 
+/** How long a Shell-tab SSH token lives. Generous (a shell can sit open all
+ *  day) but bounded; the token is additionally revoked the moment the shell
+ *  closes, so expiry only matters for tokens orphaned by a backstage crash. */
+const TERMINAL_SSH_EXPIRY_MINUTES = 12 * 60;
+
+/**
+ * Interactive terminal access for a Daytona sandbox (the session viewer's
+ * Shell tab — see src/server/terminals.ts): wake the sandbox, mint an SSH
+ * gateway token (`createSshAccess`), and return the ssh argv the host PTY
+ * spawns plus a revoke() for teardown when the shell closes.
+ *
+ * Transport: `ssh <token>@ssh.app.daytona.io` (the DTO's own sshCommand),
+ * verified reachable from this host 2026-07-08 (bare sandbox, exit 0, user
+ * `daytona`). The gateway fronts many sandboxes behind rotating infra, so
+ * host keys are not pinned (StrictHostKeyChecking=no) — the per-shell token
+ * is the authentication, and everything the browser sees still flows over
+ * backstage's tailnet-gated WS, never a public URL.
+ */
+export async function daytonaTerminalAccess(
+  sandboxId: string,
+  cwd: string,
+): Promise<{ argv: string[]; revoke: () => Promise<void> }> {
+  const client = await daytonaClient();
+  const sbx = await client.get(sandboxId);
+  if (!sbx || stateOf(sbx) === "gone") {
+    throw new Error(`daytona sandbox ${sandboxId} is gone`);
+  }
+  await daytonaDriver(sbx).ensureStarted();
+  const access = await (sbx as any).createSshAccess(TERMINAL_SSH_EXPIRY_MINUTES);
+  const target = String(access?.sshCommand || "")
+    .replace(/^ssh\s+/, "")
+    .trim();
+  if (!target || !access?.token) {
+    throw new Error("daytona createSshAccess returned no usable sshCommand/token");
+  }
+  return {
+    argv: [
+      "ssh", "-tt",
+      "-o", "StrictHostKeyChecking=no",
+      "-o", "UserKnownHostsFile=/dev/null",
+      "-o", "LogLevel=ERROR",
+      "-o", "ServerAliveInterval=30",
+      "-o", "ConnectTimeout=15",
+      ...target.split(/\s+/),
+      // Land in the workspace when it exists (bare/unbootstrapped sandboxes
+      // won't have it yet); always end in a login shell.
+      `cd ${shellQuoteWord(cwd)} 2>/dev/null; exec bash -l`,
+    ],
+    revoke: async () => {
+      try {
+        await (sbx as any).revokeSshAccess(access.token);
+      } catch (e) {
+        console.warn(`[sandbox:daytona] revokeSshAccess(${sandboxId}) failed:`, e);
+      }
+    },
+  };
+}
+
 function stateOf(sbx: DaytonaSandbox): SandboxStatus {
   const s = String((sbx as any).state || "");
   if (s === "started") return "running";

@@ -259,6 +259,13 @@ function touchStateActivity(sandboxId: string): void {
   }
 }
 
+/** Activity touch for callers outside this module (the Shell tab's terminal
+ *  start counts as interaction — it resets the idle-stop clock like a run
+ *  does; an OPEN shell deliberately doesn't hold the container awake). */
+export function touchSandboxActivity(sandboxId: string): void {
+  touchStateActivity(sandboxId);
+}
+
 function sessionRunsDir(sessionId: string): string {
   return `${RUNS_BASE}/${sanitizeName(sessionId)}`;
 }
