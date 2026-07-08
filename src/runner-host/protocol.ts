@@ -46,6 +46,15 @@ export interface RunHostSpec {
   proxyMcpServers?: string[];
   /** Per-run bearer for the RPC socket; maps to {sessionId, user} on the backstage side. */
   rpcToken?: string;
+  /**
+   * Per-run bearer for the WS transport (Phase 3). Present = this run's host
+   * dials backstage's /backstage/run-ws/<hostId> WS route instead of serving a
+   * unix socket in its run dir; the launcher passes it to the host process as
+   * BKS_RUN_WS_TOKEN and registers it (keyed by hostId) so the route can
+   * validate the dial-back. Persisted in spec.json so a restarted backstage
+   * re-registers it on reattach (the host's WS reconnect must keep working).
+   */
+  wsToken?: string;
   reposNote?: string;
   deniedTools?: Record<string, string>;
   confirmTools?: Record<string, string>;
@@ -107,7 +116,14 @@ export type HostToClientMsg =
    */
   | { t: "steer_failed"; text: string }
   /** Run generator finished; meta.done is written. Client should ack with shutdown. */
-  | { t: "end"; done?: StreamEvent };
+  | { t: "end"; done?: StreamEvent }
+  /**
+   * WS-transport keepalive (host → backstage every 30s). A unix socket never
+   * idles out, but WS intermediaries (and Bun.serve's per-socket idle timer)
+   * close quiet connections — e.g. during a minutes-long tool call with no
+   * stream events. Answered with `pong`; the socket transport never sends it.
+   */
+  | { t: "ping" };
 
 export type ClientToHostMsg =
   | { t: "ask_answer"; askId: string; result: AskResult }
@@ -115,7 +131,9 @@ export type ClientToHostMsg =
   | { t: "interrupt_steer"; text: string }
   | { t: "cancel" }
   /** Ack of `end`: everything consumed, host may exit and the client cleans up the dir. */
-  | { t: "shutdown" };
+  | { t: "shutdown" }
+  /** WS keepalive answer (see `ping`). */
+  | { t: "pong" };
 
 /**
  * Line-buffered NDJSON reader. Feed it raw socket chunks; it invokes onMsg per

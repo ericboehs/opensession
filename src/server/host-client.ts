@@ -252,6 +252,104 @@ export interface HostLauncher {
   newRunDir(hostId: string): string;
   /** Launch the host entry for the spec already written at `<dir>/spec.json`. */
   launch(hostId: string, dir: string): Promise<void>;
+  /**
+   * Transport override: how the handle reaches the launched host. Default
+   * (undefined return) = the unix socket at `<dir>/host.sock`. The WS
+   * transport (src/server/run-ws.ts) returns a connector that waits for the
+   * host's dial-back instead — sandboxes that can't share a unix socket.
+   * Called per host id (again after a respawn, with the new spec).
+   */
+  connector?(dir: string, spec: RunHostSpec): HostConnector | undefined;
+  /**
+   * Write `spec.json` for a respawned host. Default = host-side
+   * mkdir + writeJsonAtomic into `dir`; remote sandbox launchers override it
+   * to place the spec INSIDE the sandbox (no host filesystem involved).
+   */
+  writeSpec?(dir: string, spec: RunHostSpec): Promise<void>;
+}
+
+// ── Transport seam: socket and WS are two impls of one small interface ───────
+// HostHandle used to own a Bun.connect unix socket directly; everything above
+// the wire (reconnect policy, respawn, ask proxying, registry bookkeeping)
+// was already transport-agnostic. The seam extracts exactly the wire bits:
+// one connection attempt, message-in callback, closed callback, message-out.
+
+export interface HostConnectionHandlers {
+  onMsg(msg: HostToClientMsg): void;
+  /** The connection dropped (any reason). Fired at most once per connection. */
+  onClose(): void;
+}
+
+export interface HostConnection {
+  /** Send one protocol message; false = not deliverable right now. */
+  send(msg: ClientToHostMsg): boolean;
+  close(): void;
+}
+
+export interface HostConnector {
+  /** One connection attempt; rejects when the host isn't reachable yet
+   *  (caller retries — connectWithWait / the reconnect loop own the cadence). */
+  connect(handlers: HostConnectionHandlers): Promise<HostConnection>;
+  /** Release connector-owned resources (WS tokens/registrations) at run end. */
+  dispose?(): void;
+}
+
+/** The default transport: backstage dials the host's unix socket. Behavior is
+ *  identical to the pre-seam inline code — the existsSync guard preserves the
+ *  old "poll for the socket file" cadence, and open/close/error map 1:1. */
+export function unixSocketConnector(sockPath: string): HostConnector {
+  return {
+    connect(handlers: HostConnectionHandlers): Promise<HostConnection> {
+      if (!existsSync(sockPath)) {
+        return Promise.reject(new Error(`socket ${sockPath} not present yet`));
+      }
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const read = ndjsonReader((m) => handlers.onMsg(m), "host-client");
+        Bun.connect({
+          unix: sockPath,
+          socket: {
+            open: (s: any) => {
+              if (!settled) {
+                settled = true;
+                resolve({
+                  send: (msg) => {
+                    try {
+                      s.write(JSON.stringify(msg) + "\n");
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  },
+                  close: () => {
+                    try {
+                      s.end();
+                    } catch {}
+                  },
+                });
+              }
+            },
+            data: (_s: any, d: Buffer) => read(d),
+            close: () => handlers.onClose(),
+            error: (_s: any, e: unknown) => {
+              console.warn(`[host-client] socket error (${sockPath}):`, e);
+            },
+            connectError: (_s: any, e: unknown) => {
+              if (!settled) {
+                settled = true;
+                reject(e);
+              }
+            },
+          },
+        }).catch((e) => {
+          if (!settled) {
+            settled = true;
+            reject(e);
+          }
+        });
+      });
+    },
+  };
 }
 
 /** Default launcher: transient systemd units on this host. */
@@ -312,7 +410,8 @@ export interface HandleCallbacks {
 
 export class HostHandle {
   private queue = new AsyncEventQueue();
-  private sock: any = null;
+  private conn: HostConnection | null = null;
+  private connector: HostConnector;
   private up = false;
   private endedClean = false;
   private sawTerminal = false;
@@ -327,6 +426,9 @@ export class HostHandle {
     private cb: HandleCallbacks,
     private launcher: HostLauncher = systemdHostLauncher
   ) {
+    this.connector =
+      launcher.connector?.(dir, spec) ??
+      unixSocketConnector(`${dir}/${HOST_SOCK_NAME}`);
     this.ctl = {
       hostId: spec.hostId,
       bksSessionId: spec.bksSessionId,
@@ -344,80 +446,44 @@ export class HostHandle {
     return this.queue[Symbol.asyncIterator]();
   }
 
-  private get sockPath(): string {
-    return `${this.dir}/${HOST_SOCK_NAME}`;
-  }
-
   private send(msg: ClientToHostMsg): boolean {
-    if (!this.sock) return false;
-    try {
-      this.sock.write(JSON.stringify(msg) + "\n");
-      return true;
-    } catch {
-      return false;
-    }
+    return this.conn ? this.conn.send(msg) : false;
   }
 
-  /** Poll for the socket file, then connect; used for fresh spawns and boot reattach. */
+  /** Retry-connect until the host is reachable; used for fresh spawns and boot
+   *  reattach. (The socket connector rejects while the socket file is absent,
+   *  the WS connector while the host's dial-back hasn't arrived — either way
+   *  the 300ms poll below preserves the old "wait for the socket" cadence.) */
   async connectWithWait(timeoutMs: number): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     let lastErr: unknown = null;
     for (;;) {
-      if (existsSync(this.sockPath)) {
-        try {
-          await this.connectOnce();
-          return;
-        } catch (e) {
-          lastErr = e;
-        }
+      try {
+        await this.connectOnce();
+        return;
+      } catch (e) {
+        lastErr = e;
       }
       if (Date.now() >= deadline) {
         throw new Error(
-          `run host ${this.spec.hostId} socket never became connectable: ${lastErr}`
+          `run host ${this.spec.hostId} never became connectable: ${lastErr}`
         );
       }
       await new Promise((r) => setTimeout(r, 300));
     }
   }
 
-  private connectOnce(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const read = ndjsonReader((m) => this.handleMsg(m), "host-client");
-      Bun.connect({
-        unix: this.sockPath,
-        socket: {
-          open: (s: any) => {
-            this.sock = s;
-            this.up = true;
-            if (!settled) {
-              settled = true;
-              resolve();
-            }
-          },
-          data: (_s: any, d: Buffer) => read(d),
-          close: () => {
-            this.up = false;
-            this.sock = null;
-            void this.onDisconnect();
-          },
-          error: (_s: any, e: unknown) => {
-            console.warn(`[host-client] ${this.spec.hostId} socket error:`, e);
-          },
-          connectError: (_s: any, e: unknown) => {
-            if (!settled) {
-              settled = true;
-              reject(e);
-            }
-          },
-        },
-      }).catch((e) => {
-        if (!settled) {
-          settled = true;
-          reject(e);
-        }
-      });
+  private async connectOnce(): Promise<void> {
+    const conn = await this.connector.connect({
+      onMsg: (m) => this.handleMsg(m),
+      onClose: () => {
+        this.up = false;
+        this.conn = null;
+        void this.onDisconnect();
+      },
     });
+    this.conn = conn;
+    this.up = true;
   }
 
   private noteEngineId(id: string): void {
@@ -505,6 +571,7 @@ export class HostHandle {
     this.queue.end();
     unregisterHostRun(this.ctl);
     unregisterRunToken(this.spec.rpcToken);
+    this.connector.dispose?.();
   }
 
   /** Clean end: ack the host, close out the generator, drop registrations + files. */
@@ -515,6 +582,7 @@ export class HostHandle {
     this.queue.end();
     unregisterHostRun(this.ctl);
     unregisterRunToken(this.spec.rpcToken);
+    this.connector.dispose?.();
     try {
       rmSync(this.dir, { recursive: true, force: true });
     } catch {}
@@ -578,7 +646,6 @@ export class HostHandle {
     const oldDir = this.dir;
     const hostId = `rh-${Bun.randomUUIDv7()}`;
     const dir = this.launcher.newRunDir(hostId);
-    mkdirSync(dir, { recursive: true });
     const spec: RunHostSpec = {
       ...this.spec,
       hostId,
@@ -589,11 +656,23 @@ export class HostHandle {
       resumeSessionAt: undefined,
       journalKind: `${this.spec.journalKind || "prompt"}-resume`,
     };
-    writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
+    if (this.launcher.writeSpec) {
+      await this.launcher.writeSpec(dir, spec);
+    } else {
+      mkdirSync(dir, { recursive: true });
+      writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
+    }
     await this.launcher.launch(hostId, dir);
     this.dir = dir;
     this.spec = spec;
     this.ctl.hostId = hostId;
+    // The old host id's transport registration (WS token/conn) is dead with
+    // the old host — swap in a connector for the new id (same wsToken; the
+    // launcher re-registered it under the new host id in launch()).
+    this.connector.dispose?.();
+    this.connector =
+      this.launcher.connector?.(dir, spec) ??
+      unixSocketConnector(`${dir}/${HOST_SOCK_NAME}`);
     try {
       rmSync(oldDir, { recursive: true, force: true });
     } catch {}

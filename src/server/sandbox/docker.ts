@@ -98,10 +98,11 @@ import { hostRunBusy, hostSteer, hostInterruptSteer, hostCancel } from "../host-
 import { registerRunToken, unregisterRunToken } from "../run-rpc";
 import { writeJsonAtomic } from "../shared/atomic-write";
 import { HostHandle, type HandleCallbacks, type HostLauncher } from "../host-client";
+import { registerRunWsHost, unregisterRunWsHost, runWsConnector } from "../run-ws";
 import { getTranscriptPath } from "../sessions";
 import { REPOS, getRepo, worktreePathFor, type Repo } from "../worktree";
 import { LocalProvider } from "./local";
-import { sandboxConfig } from "./config";
+import { sandboxConfig, sandboxTransport, sandboxCallbackBaseUrl, type SandboxTransport } from "./config";
 import {
   HOST_SPEC_NAME,
   HOST_META_NAME,
@@ -156,6 +157,11 @@ interface DockerSandboxState {
   /** Attached-repo dirs mounted at create time (bind mode) — a differing set
    *  on the next ensure() recreates the container with fresh mounts. */
   attachedDirs?: string[];
+  /** Run transport the container was created for. "ws" containers don't mount
+   *  the run-rpc socket (proxies dial /backstage/rpc-ws instead); a config
+   *  flip recreates the container on the next ensure (mounts are create-time).
+   *  Absent (pre-Phase-3 state files) = "socket". */
+  transport?: SandboxTransport;
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
@@ -305,6 +311,8 @@ interface CreateContainerOpts {
   attachedDirs: string[];
   /** Repo backing a volume workspace (clone source + default branch). */
   repo?: Repo;
+  /** Run transport (see DockerSandboxState.transport). */
+  transport: SandboxTransport;
 }
 
 async function createContainer(
@@ -393,14 +401,19 @@ async function createContainer(
   ];
   mkdirSync(`${HOME}/.backstage-audit`, { recursive: true });
 
-  // run-rpc socket (michael-* proxies). Guard: mounting a MISSING host path
-  // would make docker create a directory there and break run-rpc's bind.
-  const rpcSock = rpcSocketPath(BACKSTAGE_CHATS_DIR);
-  try {
-    if (statSync(rpcSock).isSocket()) mounts.push(...vol(rpcSock, rpcSock));
-    else console.warn(`[sandbox] ${rpcSock} exists but is not a socket — michael-* proxies disabled`);
-  } catch {
-    console.warn(`[sandbox] ${rpcSock} missing — michael-* proxies will be unavailable in ${name}`);
+  // run-rpc socket (michael-* proxies). WS transport skips it — the proxies
+  // dial /backstage/rpc-ws instead, which also removes the stale-inode caveat
+  // (a rebound socket needed a container restart to re-resolve). Guard:
+  // mounting a MISSING host path would make docker create a directory there
+  // and break run-rpc's bind.
+  if (opts.transport !== "ws") {
+    const rpcSock = rpcSocketPath(BACKSTAGE_CHATS_DIR);
+    try {
+      if (statSync(rpcSock).isSocket()) mounts.push(...vol(rpcSock, rpcSock));
+      else console.warn(`[sandbox] ${rpcSock} exists but is not a socket — michael-* proxies disabled`);
+    } catch {
+      console.warn(`[sandbox] ${rpcSock} missing — michael-* proxies will be unavailable in ${name}`);
+    }
   }
 
   // Read-only trust mounts (interactive parity — see header).
@@ -523,7 +536,12 @@ function makeDockerLauncher(container: string, sessionId: string): HostLauncher 
       return r.exitCode === 0;
     },
     newRunDir: (hostId) => `${sessionRunsDir(sessionId)}/${sanitizeName(hostId)}`,
-    async launch(_hostId, dir) {
+    // WS-transport runs (spec.wsToken present) attach through the run-ws
+    // dial-back instead of the run dir's unix socket. Socket runs return
+    // undefined = HostHandle's default unix connector.
+    connector: (_dir, spec) =>
+      spec.wsToken ? runWsConnector(spec.hostId) : undefined,
+    async launch(hostId, dir) {
       await ensureStarted(container);
       const specPath = assertSafePath(`${dir}/${HOST_SPEC_NAME}`);
       const logPath = assertSafePath(`${dir}/${HOST_LOG_NAME}`);
@@ -534,18 +552,34 @@ function makeDockerLauncher(container: string, sessionId: string): HostLauncher 
       // the container gets no ambient credentials; MCP servers carry their own
       // env via mcp-config.json, and the account pool file is mounted ro.
       const env = (kv: string) => ["-e", kv];
+      // WS transport: register the run's dial-back token (spec.json was just
+      // written to `dir` — respawns included) and point the host at the run-ws
+      // + rpc-ws routes instead of socket paths.
+      const spec = readJsonSafe<RunHostSpec>(`${dir}/${HOST_SPEC_NAME}`);
+      const wsEnv: string[] = [];
+      if (spec?.wsToken) {
+        const base = sandboxCallbackBaseUrl();
+        registerRunWsHost(hostId, spec.wsToken);
+        wsEnv.push(
+          ...env(`BKS_RUN_WS_URL=${base}/backstage/run-ws/${hostId}`),
+          ...env(`BKS_RUN_WS_TOKEN=${spec.wsToken}`),
+          ...env(`BKS_RPC_WS_URL=${base}/backstage/rpc-ws`),
+        );
+      }
       const args = [
         "exec", "-d",
         ...env(`BACKSTAGE_RUN_JOURNAL=${dir}/journal.json`),
         ...env("NODE_ENV=production"),
         ...(process.env.MICHAEL_MODEL ? env(`MICHAEL_MODEL=${process.env.MICHAEL_MODEL}`) : []),
         ...(process.env.MICHAEL_UI_BASE ? env(`MICHAEL_UI_BASE=${process.env.MICHAEL_UI_BASE}`) : []),
+        ...wsEnv,
         container,
         "sh", "-c",
         `exec bun run ${assertSafePath(HOST_ENTRY)} ${specPath} >> ${logPath} 2>&1`,
       ];
       const r = await docker(args);
       if (r.exitCode !== 0) {
+        if (spec?.wsToken) unregisterRunWsHost(hostId);
         throw new Error(`docker exec (run host) failed: ${r.stderr.trim().slice(0, 400)}`);
       }
     },
@@ -612,6 +646,7 @@ function makeDockerSandbox(
   sessionId: string,
   cwd: string,
   workspace: "bind" | "volume" = "bind",
+  transport: SandboxTransport = "socket",
 ): Sandbox {
   const launcher = makeDockerLauncher(sandboxId, sessionId);
   const sandboxHandle: Sandbox = {
@@ -637,6 +672,10 @@ function makeDockerSandbox(
         onAskUser: cb?.onAskUser,
         onSteerFailed: cb?.onSteerFailed,
       };
+      // WS transport: mint the dial-back token BEFORE the spec is written —
+      // launch() reads it back from spec.json (fresh launches and respawns
+      // alike) and registers it with the run-ws route.
+      if (transport === "ws") spec.wsToken ??= crypto.randomUUID();
       const record = recordForSpec(spec, sandboxId);
       mkdirSync(dir, { recursive: true });
       writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
@@ -652,6 +691,9 @@ function makeDockerSandbox(
         // reads busy and the idle-stop sweep skips the container.
         handle?.abandon();
         unregisterRunToken(spec.rpcToken);
+        // abandon() disposes the handle's connector (which unregisters the ws
+        // token); cover the pre-handle failure path too. Idempotent.
+        if (spec.wsToken) unregisterRunWsHost(spec.hostId);
         try {
           rmSync(dir, { recursive: true, force: true });
         } catch {}
@@ -851,18 +893,24 @@ export class DockerProvider implements SandboxProvider {
       );
     }
 
+    // Transport follows the CURRENT config (not sticky): a flip changes the
+    // mount set (rpc socket vs none), so a mismatched container is recreated
+    // below — that's the safe migration path, volumes survive the rm.
+    const transport = sandboxTransport();
+
     let status = await containerStatus(name);
     if (
       status !== "gone" &&
       existing &&
       (existing.cwd !== cwd ||
+        (existing.transport || "socket") !== transport ||
         (existing.attachedDirs || []).join("\n") !== attachedDirs.join("\n"))
     ) {
-      // The session's workspace moved (branch/worktree changed) or its
-      // attached-repo set changed — the old container's mounts are stale.
-      // Recreate it; the named volumes (engine state AND a volume-mode
-      // workspace) survive `docker rm`.
-      console.warn(`[sandbox] ${name}: mounts changed (${existing.cwd} → ${cwd}); recreating container`);
+      // The session's workspace moved (branch/worktree changed), the run
+      // transport flipped, or the attached-repo set changed — the old
+      // container's mounts are stale. Recreate it; the named volumes (engine
+      // state AND a volume-mode workspace) survive `docker rm`.
+      console.warn(`[sandbox] ${name}: mounts changed (${existing.cwd} → ${cwd}, transport ${existing.transport || "socket"} → ${transport}); recreating container`);
       await docker(["rm", "-f", name]);
       status = "gone";
     }
@@ -871,6 +919,7 @@ export class DockerProvider implements SandboxProvider {
         workspace,
         attachedDirs,
         repo: workspace === "volume" ? repo : undefined,
+        transport,
       });
     }
     await ensureStarted(name);
@@ -887,10 +936,11 @@ export class DockerProvider implements SandboxProvider {
       lastActivityAt: new Date().toISOString(),
       workspace,
       repoId: repo.id,
+      transport,
       ...(branch ? { branch } : {}),
       ...(attachedDirs.length ? { attachedDirs } : {}),
     });
-    return makeDockerSandbox(name, spec.sessionId, cwd, workspace);
+    return makeDockerSandbox(name, spec.sessionId, cwd, workspace, transport);
   }
 
   /**
@@ -927,7 +977,13 @@ export class DockerProvider implements SandboxProvider {
       console.warn(`[sandbox] ${sandboxId} has no state file — exec-only reattach (mounts: ${runs.stdout.split("\n")[0] || "?"})`);
       return null;
     }
-    return makeDockerSandbox(sandboxId, state.sessionId, state.cwd, state.workspace || "bind");
+    return makeDockerSandbox(
+      sandboxId,
+      state.sessionId,
+      state.cwd,
+      state.workspace || "bind",
+      state.transport || "socket",
+    );
   }
 
   /** Tear down container + its named volumes + provider state. A bind-mode
@@ -1004,6 +1060,10 @@ export async function resumeDockerSandboxRun(
       if (oldSpec.rpcToken) {
         registerRunToken(oldSpec.rpcToken, { sessionId: oldSpec.bksSessionId, user: oldSpec.user });
       }
+      // WS-transport run: re-register the dial-back token so the still-alive
+      // host's reconnect loop can get back in (it's been retrying since the
+      // restart dropped the route).
+      if (oldSpec.wsToken) registerRunWsHost(oldSpec.hostId, oldSpec.wsToken);
       console.log(`[sandbox] reattaching to live run ${run.runKey} in ${run.sandboxId}`);
       const handle = new HostHandle(oldDir, oldSpec, cb, launcher);
       try {

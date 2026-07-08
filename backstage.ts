@@ -153,6 +153,12 @@ import {
 	unregisterRunToken,
 } from "./src/server/run-rpc";
 import {
+	handleSandboxWsUpgrade,
+	sandboxWsOpen,
+	sandboxWsMessage,
+	sandboxWsClose,
+} from "./src/server/run-ws";
+import {
 	startTerminal,
 	writeTerminal,
 	resizeTerminal,
@@ -7086,6 +7092,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return undefined;
 			}
 
+			// Sandbox WS transport (Phase 3): run hosts + MCP proxies inside
+			// sandboxes dial back here instead of sharing unix sockets. Token-
+			// authed per run BEFORE the upgrade — see src/server/run-ws.ts.
+			if (path.startsWith("/backstage/run-ws/") || path === "/backstage/rpc-ws") {
+				return handleSandboxWsUpgrade(req, server, path);
+			}
+
 			// SPA fallback: any unmatched GET under /backstage/ that isn't an API
 			// path serves the app shell, so client-side routes deep-link correctly
 			// even when they're missing from the explicit `routes` map above (which
@@ -7111,11 +7124,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			// which would otherwise drop the frame (close 1009) before staging. See above.
 			maxPayloadLength: WS_MAX_PAYLOAD_BYTES,
 			open(ws) {
+				// Sandbox transport sockets (run hosts / MCP proxies dialing back)
+				// are not UI clients — run-ws.ts owns them entirely.
+				if (sandboxWsOpen(ws)) return;
 				allClients.add(ws);
 				console.log("WebSocket client connected");
 			},
 
 			async message(ws, message) {
+				if (sandboxWsMessage(ws, message as any)) return;
 				let msg: any;
 				try {
 					msg = JSON.parse(String(message));
@@ -8324,6 +8341,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			},
 
 			close(ws) {
+				if (sandboxWsClose(ws)) return;
 				allClients.delete(ws);
 				stopAllWatchesForClient(ws);
 				leaveSession(ws);

@@ -19,6 +19,14 @@
  * published loopback port), the stopped-container host-exec fallback, and
  * the destroy-removes-the-workspace-volume contract.
  *
+ * WS-TRANSPORT section (Phase 3): a third sbxtest session runs with
+ * `transport: "ws"` — the in-container run host DIALS BACK to a scratch WS
+ * server in this process (the same run-ws module backstage.ts wires) instead
+ * of serving a unix socket, and the rpc socket isn't mounted at all. Checks:
+ * upgrade auth (bad token → 403), a real agent run streaming over WS (only
+ * when the socket-mode run above ran — same account gating), steer delivery
+ * + cancel over WS, and the in-container rpc-ws bridge.
+ *
  * Everything is sbxtest-prefixed and cleaned up at the end. Safe to run next
  * to the live server: the run journal AND the sandbox config are redirected
  * to the scratch dir BEFORE any module import, so nothing here can leak into
@@ -58,6 +66,10 @@ const VOL_CONTAINER = containerNameFor(VOL_SESSION_ID);
 const VOL_BRANCH = "sbxtest-vol-branch";
 const PREVIEW_PORT = 18734;
 
+// WS-transport section resources (own session/container; also sbxtest-*).
+const WS_SESSION_ID = `sbxtest-wst-${Date.now().toString(36)}`;
+const WS_CONTAINER = containerNameFor(WS_SESSION_ID);
+
 // Scratch sandbox config: docker provider, volume workspaces, one preview
 // port. Read fresh per call by sandbox/config.ts via the env override above.
 mkdirSync(SCRATCH, { recursive: true });
@@ -96,6 +108,7 @@ async function cleanup(): Promise<void> {
   for (const [container, session] of [
     [CONTAINER, SESSION_ID],
     [VOL_CONTAINER, VOL_SESSION_ID],
+    [WS_CONTAINER, WS_SESSION_ID],
   ]) {
     await sh(["docker", "rm", "-f", container]);
     await sh([
@@ -224,6 +237,7 @@ try {
   const accountsPath = process.env.BACKSTAGE_CLAUDE_ACCOUNTS_PATH ||
     `${process.env.HOME}/.backstage-claude-accounts.json`;
   let hasAccounts = false;
+  let socketRunOk = false; // gates the WS-section agent runs (same cost rule)
   try {
     const store = JSON.parse(await Bun.file(accountsPath).text());
     hasAccounts = Array.isArray(store.accounts) && store.accounts.length > 0;
@@ -262,6 +276,7 @@ try {
     ok("run emitted init (engine session started in-container)", sawInit, events.slice(0, 6).join(","));
     ok("run finished with done", result?.type === "done",
       result ? `${result.type}: ${(result.result || result.content || "").slice(0, 120)}` : "timed out after 180s");
+    socketRunOk = result?.type === "done";
     ok("model replied", /\bOK\b/i.test(doneText) || /\bOK\b/i.test(result?.result || ""), JSON.stringify(doneText.slice(0, 80)));
     const transcriptDir = `${process.env.HOME}/.claude/projects/-${WT.replaceAll("/", "-").replace(/^-/, "")}`;
     ok("engine transcript visible host-side", existsSync(transcriptDir), transcriptDir);
@@ -410,6 +425,163 @@ try {
   const volGoneWs = await sh(["docker", "volume", "inspect", `${VOL_CONTAINER}-ws`]);
   ok("volume container removed", volGoneC.code !== 0);
   ok("workspace volume removed (documented data loss)", volGoneWs.code !== 0);
+
+  // ══ WS TRANSPORT (Phase 3) ═══════════════════════════════════════════════
+  // The run host dials back to a scratch WS server in THIS process (same
+  // run-ws module backstage.ts wires), bound on 0.0.0.0 so the container can
+  // reach it via the docker bridge gateway. No rpc-socket mount, no host.sock.
+  console.log("\n══ ws transport ══");
+  const runWs = await import("../../src/server/run-ws");
+  const { registerRunToken: rpcRegister, unregisterRunToken: rpcUnregister } =
+    await import("../../src/server/run-rpc");
+  const gwRaw = await sh([
+    "docker", "network", "inspect", "bridge",
+    "-f", "{{(index .IPAM.Config 0).Gateway}}",
+  ]);
+  const gateway = gwRaw.out.trim() || "172.17.0.1";
+  const wsSrv = Bun.serve({
+    port: 0,
+    hostname: "0.0.0.0",
+    fetch(req, server) {
+      return (
+        runWs.handleSandboxWsUpgrade(req, server, new URL(req.url).pathname) ??
+        undefined
+      );
+    },
+    websocket: {
+      open(ws) {
+        runWs.sandboxWsOpen(ws);
+      },
+      message(ws, m) {
+        runWs.sandboxWsMessage(ws, m as any);
+      },
+      close(ws) {
+        runWs.sandboxWsClose(ws);
+      },
+    },
+  });
+  const wsBase = `ws://${gateway}:${wsSrv.port}`;
+  await Bun.write(
+    process.env.BACKSTAGE_SANDBOX_CONFIG!,
+    JSON.stringify({ provider: "docker", transport: "ws", callbackBaseUrl: wsBase }),
+  );
+  console.log(`  scratch run-ws server at ${wsBase}`);
+
+  const wsSbx = await provider.ensure({ sessionId: WS_SESSION_ID, cwd: WT });
+  ok("ensure() created a ws-transport container", wsSbx.id === WS_CONTAINER, wsSbx.id);
+  const wsMounts = await sh(["docker", "inspect", "-f", "{{range .Mounts}}{{.Destination}}\n{{end}}", WS_CONTAINER]);
+  ok("rpc socket NOT mounted (ws transport)",
+    !wsMounts.out.includes("backstage-rpc.sock"),
+    "mounts: " + wsMounts.out.trim().split("\n").length + " entries");
+
+  // Upgrade auth: an unknown host id / bad token must be refused pre-upgrade.
+  const badAuth = await fetch(`http://127.0.0.1:${wsSrv.port}/backstage/run-ws/rh-nope`, {
+    headers: { authorization: "Bearer wrong" },
+  });
+  ok("run-ws upgrade refuses a bad token (403)", badAuth.status === 403, String(badAuth.status));
+  const badRpc = await fetch(`http://127.0.0.1:${wsSrv.port}/backstage/rpc-ws`);
+  ok("rpc-ws upgrade refuses a missing token (403)", badRpc.status === 403, String(badRpc.status));
+
+  // rpc-ws bridge from INSIDE the container: register a scratch run token,
+  // dial the route, send a list frame, expect an {id,status} answer (503
+  // "builder not registered" in this scratch process — auth+bridge proven).
+  const scratchToken = crypto.randomUUID();
+  rpcRegister(scratchToken, { sessionId: WS_SESSION_ID });
+  const rpcProbe = await wsSbx.exec(["bun", "-e", `
+    const ws = new WebSocket("${wsBase}/backstage/rpc-ws", { headers: { authorization: "Bearer ${scratchToken}" } });
+    const bail = setTimeout(() => { console.log("TIMEOUT"); process.exit(1); }, 10000);
+    ws.onopen = () => ws.send(JSON.stringify({ id: "p1", path: "/mcp/list", token: "${scratchToken}", server: "michael-sessions" }));
+    ws.onmessage = (ev) => { console.log(String(ev.data)); clearTimeout(bail); process.exit(0); };
+    ws.onclose = () => { console.log("CLOSED"); clearTimeout(bail); process.exit(1); };
+  `]);
+  ok("rpc-ws bridge answers from inside the container",
+    rpcProbe.exitCode === 0 && rpcProbe.stdout.includes('"status"'),
+    (rpcProbe.stdout || rpcProbe.stderr).trim().slice(0, 120));
+  rpcUnregister(scratchToken);
+
+  // Agent runs over WS — same cost gating as the socket section, plus "only
+  // if the socket-mode run actually worked" (no point burning tokens into a
+  // broken pool twice).
+  if (!hasAccounts || !socketRunOk) {
+    console.log("  (dry-run: skipping ws agent runs —",
+      !hasAccounts ? "no account pool" : "socket-mode run did not pass", ")");
+  } else {
+    const wsSpec: RunHostSpec = {
+      hostId: `rh-wsverify-${Date.now().toString(36)}`,
+      bksSessionId: WS_SESSION_ID,
+      prompt: "Reply with exactly: OK",
+      cwd: WT,
+      mode: "ask",
+      model: "claude-haiku-4-5",
+      mcpServers: [],
+      journalKind: "sandbox-verify",
+    };
+    const wsHandle = wsSbx.launchRun(wsSpec, {});
+    const wsEvents: string[] = [];
+    let wsText = "";
+    let wsInit = false;
+    const wsConsume = (async () => {
+      for await (const ev of wsHandle.events()) {
+        wsEvents.push(ev.type);
+        if (ev.type === "init") wsInit = true;
+        if (ev.type === "text_chunk") wsText += ev.text || "";
+        if (ev.type === "done" || ev.type === "error") return ev;
+      }
+      return null;
+    })();
+    const wsResult = await Promise.race([
+      wsConsume,
+      new Promise<null>((r) => setTimeout(() => r(null), 180_000)),
+    ]);
+    if (!wsResult) wsHandle.cancel();
+    ok("ws run emitted init (events streamed over the dial-back)", wsInit, wsEvents.slice(0, 6).join(","));
+    ok("ws run finished with done", wsResult?.type === "done",
+      wsResult ? `${wsResult.type}: ${(wsResult.result || wsResult.content || "").slice(0, 120)}` : "timed out after 180s");
+    ok("ws run model replied", /\bOK\b/i.test(wsText) || /\bOK\b/i.test(wsResult?.result || ""), JSON.stringify(wsText.slice(0, 80)));
+
+    // Steer delivery + cancel over WS: a long generation we steer, then kill.
+    console.log("\n── ws steer / cancel ──");
+    const { hostRunBusy: wsBusy } = await import("../../src/server/host-registry");
+    const cancelSpec: RunHostSpec = {
+      hostId: `rh-wscancel-${Date.now().toString(36)}`,
+      bksSessionId: WS_SESSION_ID,
+      prompt: "Count from 1 to 400, one number per line. Do not stop early.",
+      cwd: WT,
+      mode: "ask",
+      model: "claude-haiku-4-5",
+      mcpServers: [],
+      journalKind: "sandbox-verify",
+    };
+    const cancelHandle = wsSbx.launchRun(cancelSpec, {});
+    let cSawInit = false;
+    let cTerminal: string | null = null;
+    const cConsume = (async () => {
+      for await (const ev of cancelHandle.events()) {
+        if (ev.type === "init") cSawInit = true;
+        if (ev.type === "done" || ev.type === "error") cTerminal = ev.type;
+      }
+    })();
+    // Wait for the run to actually be going, then steer + cancel.
+    const cDeadline = Date.now() + 60_000;
+    while (!cSawInit && Date.now() < cDeadline) await new Promise((r) => setTimeout(r, 500));
+    ok("cancel-run started (init over ws)", cSawInit);
+    const steered = cancelHandle.steer("Nudge: you may stop early.");
+    ok("steer delivered over ws", steered);
+    const cancelled = cancelHandle.cancel();
+    ok("cancel delivered over ws", cancelled);
+    const cDone = await Promise.race([
+      cConsume.then(() => true),
+      new Promise<false>((r) => setTimeout(() => r(false), 60_000)),
+    ]);
+    ok("cancelled run's stream terminated", cDone === true, `terminal=${cTerminal}`);
+    ok("session no longer busy after cancel", !wsBusy(WS_SESSION_ID));
+  }
+
+  // ws sandbox teardown (scratch WS server stops in cleanup below).
+  await provider.destroy(wsSbx.id);
+  const wsGone = await sh(["docker", "inspect", WS_CONTAINER]);
+  ok("ws-transport container removed", wsGone.code !== 0);
+  wsSrv.stop(true);
 } finally {
   await cleanup();
 }

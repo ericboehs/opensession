@@ -37,6 +37,34 @@ export interface SandboxRepoOverride {
  *  (that data loss is the mode's contract; push your work). */
 export type SandboxWorkspaceMode = "bind" | "volume";
 
+/** How a sandboxed run's host process talks to backstage (Phase 3):
+ *  "socket" (default) = unix socket in a shared run dir (docker bind mounts
+ *  it); "ws" = the host DIALS OUT to backstage's /backstage/run-ws route —
+ *  required for remote providers (daytona/e2b force it), dogfooded by docker. */
+export type SandboxTransport = "socket" | "ws";
+
+/** How remote providers authenticate `git clone` inside the sandbox (they
+ *  can't mount host creds). "none" = public clone; "https-token" injects the
+ *  token into the https URL (GitHub PAT / x-access-token). */
+export interface SandboxCloneCredential {
+  type: "none" | "https-token";
+  token?: string;
+}
+
+export interface SandboxDaytonaConfig {
+  /** Falls back to DAYTONA_API_KEY. */
+  apiKey?: string;
+  apiUrl?: string;
+  target?: string;
+}
+
+export interface SandboxE2bConfig {
+  /** Falls back to E2B_API_KEY. */
+  apiKey?: string;
+  /** Sandbox template id/name (default "base"). */
+  template?: string;
+}
+
 export interface SandboxConfig {
   provider: SandboxProviderId;
   /** Container image for the docker provider (Phase 1). */
@@ -59,6 +87,32 @@ export interface SandboxConfig {
   devServerInSandbox?: boolean;
   /** Per-repo overrides keyed by repo id (worktree.ts REPOS). */
   perRepo?: Record<string, SandboxRepoOverride>;
+  /** Run-stream + MCP-RPC transport for NEW sandbox launches. Default "socket".
+   *  Remote providers always use "ws" regardless of this value. */
+  transport?: SandboxTransport;
+  /**
+   * Base URL sandboxes dial back to for the WS transport, e.g.
+   * "ws://100.65.135.7:3850" (or https://… — normalized to wss). Default is
+   * derived from the server's bind (HOST:PORT env). MUST be reachable FROM the
+   * sandbox: for remote providers that means a publicly/tailnet-reachable URL
+   * (self-hosters: your Tailscale ts.net URL or a tunnel); a 127.0.0.1 bind
+   * only works for host-local sandboxes.
+   */
+  callbackBaseUrl?: string;
+  /** Daytona adapter (provider "daytona"). */
+  daytona?: SandboxDaytonaConfig;
+  /** E2B adapter (provider "e2b"). */
+  e2b?: SandboxE2bConfig;
+  /** Clone auth for remote-provider workspaces + runner bootstrap. */
+  cloneCredential?: SandboxCloneCredential;
+  /** Tarball URL of the backstage runner bundle for remote bootstrap (takes
+   *  precedence over the git-clone fallback). */
+  runnerBundleUrl?: string;
+  /** Git URL of the backstage repo for remote bootstrap (default: this
+   *  checkout's origin). */
+  runnerRepoUrl?: string;
+  /** Pinned sha/ref the remote bootstrap checks out (default: origin default). */
+  runnerSha?: string;
 }
 
 const PROVIDER_IDS = new Set<string>(["local", "docker", "daytona", "e2b"]);
@@ -93,6 +147,8 @@ export function sandboxConfig(): SandboxConfig {
               typeof p === "number" && Number.isInteger(p) && p > 0 && p < 65536,
           )
         : [];
+      const str = (v: unknown): string | undefined =>
+        typeof v === "string" && v.trim() ? v.trim() : undefined;
       return {
         provider: asProviderId(raw?.provider) || "local",
         image: typeof raw?.image === "string" ? raw.image : undefined,
@@ -109,6 +165,28 @@ export function sandboxConfig(): SandboxConfig {
         previewPorts: previewPorts.length ? previewPorts : undefined,
         devServerInSandbox: raw?.devServerInSandbox === true || undefined,
         perRepo: Object.keys(perRepo).length ? perRepo : undefined,
+        transport: raw?.transport === "ws" ? "ws" : undefined,
+        callbackBaseUrl: str(raw?.callbackBaseUrl),
+        daytona:
+          raw?.daytona && typeof raw.daytona === "object"
+            ? {
+                apiKey: str(raw.daytona.apiKey),
+                apiUrl: str(raw.daytona.apiUrl),
+                target: str(raw.daytona.target),
+              }
+            : undefined,
+        e2b:
+          raw?.e2b && typeof raw.e2b === "object"
+            ? { apiKey: str(raw.e2b.apiKey), template: str(raw.e2b.template) }
+            : undefined,
+        cloneCredential:
+          raw?.cloneCredential?.type === "https-token" ||
+          raw?.cloneCredential?.type === "none"
+            ? { type: raw.cloneCredential.type, token: str(raw.cloneCredential.token) }
+            : undefined,
+        runnerBundleUrl: str(raw?.runnerBundleUrl),
+        runnerRepoUrl: str(raw?.runnerRepoUrl),
+        runnerSha: str(raw?.runnerSha),
       };
     }
   } catch {}
@@ -124,4 +202,27 @@ export function effectiveSandboxProvider(repoId?: string): SandboxProviderId {
   if (!sandboxesEnabled()) return "local";
   const cfg = sandboxConfig();
   return (repoId && cfg.perRepo?.[repoId]?.provider) || cfg.provider || "local";
+}
+
+/** Effective run transport (docker honors the config; remote providers pass
+ *  their own "ws" regardless). */
+export function sandboxTransport(): SandboxTransport {
+  return sandboxConfig().transport === "ws" ? "ws" : "socket";
+}
+
+/**
+ * The base URL sandboxes dial back to (run-ws / rpc-ws routes). Config value
+ * wins; the fallback derives from the server's bind env (HOST:PORT — the same
+ * defaults backstage.ts uses). http(s) schemes are normalized to ws(s).
+ * NOTE: a 127.0.0.1 default is unreachable from any sandbox — ws-transport
+ * setups should set callbackBaseUrl explicitly (Tailscale URL for remote
+ * providers; the docker bridge can reach the host's tailnet/LAN bind).
+ */
+export function sandboxCallbackBaseUrl(): string {
+  const cfg = sandboxConfig();
+  let base =
+    cfg.callbackBaseUrl ||
+    `ws://${process.env.HOST || "127.0.0.1"}:${process.env.PORT || "3850"}`;
+  base = base.replace(/^http(s?):\/\//, "ws$1://").replace(/\/+$/, "");
+  return base;
 }

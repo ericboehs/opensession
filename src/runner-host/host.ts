@@ -69,10 +69,23 @@ saveMeta();
 const log = (...args: unknown[]) =>
   console.log(`[host ${spec.hostId.slice(0, 11)}]`, ...args);
 
-// ── Socket server (single client: the backstage process) ─────────────────────
+// ── Transport (single client: the backstage process) ─────────────────────────
+// Two modes, same protocol:
+//  - default: serve a unix socket in the run dir; backstage dials in (NDJSON).
+//  - BKS_RUN_WS_URL set: DIAL OUT to backstage's /backstage/run-ws/<hostId>
+//    WebSocket route (one JSON message per text frame) — for sandboxes that
+//    can't share a unix socket with the host (remote providers; docker
+//    dogfoods it). Reconnects with backoff on drop, mirroring the socket
+//    path's tolerance: the run never stops, events are simply unobserved
+//    until backstage (re)attaches.
 
-let client: any = null; // Bun socket of the currently attached backstage
+const RUN_WS_URL = process.env.BKS_RUN_WS_URL || "";
+const RUN_WS_TOKEN = process.env.BKS_RUN_WS_TOKEN || "";
+
+/** The currently attached backstage, whichever transport carried it. */
+let client: { write: (line: string) => void; raw: unknown } | null = null;
 let ended = false;
+let exiting = false; // stops the WS redial loop once we're done
 let terminal: StreamEvent | undefined;
 let shutdownAcked: (() => void) | null = null;
 
@@ -145,39 +158,93 @@ function handleClientMsg(msg: ClientToHostMsg): void {
       shutdownAcked?.();
       break;
     }
+    case "pong": {
+      break; // WS keepalive answer — nothing to do
+    }
   }
 }
 
-if (existsSync(sockPath)) unlinkSync(sockPath); // stale socket from a crashed twin
-Bun.listen({
-  unix: sockPath,
-  socket: {
-    open(socket) {
-      if (client) {
-        try {
-          client.end();
-        } catch {}
-      }
-      client = socket;
-      (socket as any).__read = ndjsonReader(handleClientMsg, "host");
-      log("backstage attached");
+if (RUN_WS_URL) {
+  // ── WS mode: dial out to backstage and keep redialing until we exit ────────
+  let backoff = 500;
+  const redial = (): void => {
+    if (exiting) return;
+    setTimeout(dialWs, backoff);
+    backoff = Math.min(backoff * 2, 5_000);
+  };
+  const dialWs = (): void => {
+    if (exiting) return;
+    let sock: WebSocket;
+    try {
+      // Bun extension: custom headers on the client handshake.
+      sock = new WebSocket(RUN_WS_URL, {
+        headers: { authorization: `Bearer ${RUN_WS_TOKEN}` },
+      } as unknown as string[]);
+    } catch (e) {
+      log("ws dial failed:", e);
+      redial();
+      return;
+    }
+    sock.onopen = () => {
+      backoff = 500;
+      client = { write: (line) => sock.send(line), raw: sock };
+      log("backstage attached (ws)");
       sendHello();
-    },
-    data(socket, data) {
-      (socket as any).__read?.(data);
-    },
-    close(socket) {
-      if (client === socket) {
-        client = null;
-        log("backstage detached");
+    };
+    sock.onmessage = (ev) => {
+      try {
+        handleClientMsg(JSON.parse(String(ev.data)));
+      } catch (e) {
+        log("dropping malformed ws message:", e);
       }
+    };
+    sock.onclose = () => {
+      if (client?.raw === sock) {
+        client = null;
+        log("backstage detached (ws)");
+      }
+      redial();
+    };
+    sock.onerror = () => {}; // onclose follows and owns the redial
+  };
+  dialWs();
+  // Keepalive: WS paths have idle timers (Bun.serve's per-socket idleTimeout,
+  // proxies); a long quiet tool call must not look like a dead peer.
+  setInterval(() => send({ t: "ping" }), 30_000);
+  log(`dialing ${RUN_WS_URL}`);
+} else {
+  if (existsSync(sockPath)) unlinkSync(sockPath); // stale socket from a crashed twin
+  Bun.listen({
+    unix: sockPath,
+    socket: {
+      open(socket) {
+        if (client?.raw === socket) return;
+        if (client) {
+          try {
+            (client.raw as any)?.end?.();
+          } catch {}
+        }
+        client = { write: (line) => socket.write(line), raw: socket };
+        (socket as any).__read = ndjsonReader(handleClientMsg, "host");
+        log("backstage attached");
+        sendHello();
+      },
+      data(socket, data) {
+        (socket as any).__read?.(data);
+      },
+      close(socket) {
+        if (client?.raw === socket) {
+          client = null;
+          log("backstage detached");
+        }
+      },
+      error(socket, error) {
+        log("socket error:", error);
+      },
     },
-    error(socket, error) {
-      log("socket error:", error);
-    },
-  },
-});
-log(`listening on ${sockPath}`);
+  });
+  log(`listening on ${sockPath}`);
+}
 
 // ── Ask proxy: block the run on a human answer delivered over the socket ─────
 // No timeout here — the timeout/Slack-escalation policy lives in backstage's
@@ -198,6 +265,12 @@ function onAskUser(input: Record<string, unknown>): Promise<AskResult> {
 function proxyMcpConfigs(): Record<string, unknown> | undefined {
   const names = spec.proxyMcpServers || [];
   if (!names.length || !spec.rpcToken) return undefined;
+  // WS transport: the proxies dial backstage's /backstage/rpc-ws route instead
+  // of the unix RPC socket (which isn't shareable across a remote boundary).
+  const rpcWsUrl = process.env.BKS_RPC_WS_URL || "";
+  const transportEnv = rpcWsUrl
+    ? { BKS_RPC_WS_URL: rpcWsUrl }
+    : { BKS_RPC_SOCKET: rpcSocketPath(BACKSTAGE_CHATS_DIR) };
   const out: Record<string, unknown> = {};
   for (const name of names) {
     out[name] = {
@@ -207,7 +280,7 @@ function proxyMcpConfigs(): Record<string, unknown> | undefined {
       command: process.execPath,
       args: ["run", MCP_PROXY_ENTRY],
       env: {
-        BKS_RPC_SOCKET: rpcSocketPath(BACKSTAGE_CHATS_DIR),
+        ...transportEnv,
         BKS_RPC_TOKEN: spec.rpcToken,
         BKS_MCP_SERVER: name,
       },
@@ -279,8 +352,11 @@ await new Promise<void>((resolveWait) => {
   setTimeout(resolveWait, 5 * 60_000);
 });
 
-try {
-  unlinkSync(sockPath);
-} catch {}
+exiting = true; // stop the WS redial loop
+if (!RUN_WS_URL) {
+  try {
+    unlinkSync(sockPath);
+  } catch {}
+}
 log("exiting");
 process.exit(0);
