@@ -27,6 +27,7 @@ import {
 } from "../../server/session-control";
 import { BACKSTAGE_CHATS_DIR } from "../../server/paths";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import { migrateSessionEngine } from "../../server/migrate-engine";
 import type { BackstageSessionFile, TranscriptEntry } from "../../server/types";
 
 export interface SessionsToolContext {
@@ -572,6 +573,36 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
                 ? `It is linked to \`${parentSessionId}\` and has instructions to report back there.`
                 : "",
             ].filter(Boolean).join(" ")
+          );
+        }
+      ),
+      tool(
+        "migrate_session_engine",
+        "Migrate an existing session onto the OpenCode engine by flipping its model to an opencode/* id (e.g. opencode/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh OpenCode session — file, workspace, branch, title and UI history all stay. Refuses automation-owned sessions (the opencode engine hard-gates automations off) and sessions that are mid-run.",
+        {
+          sessionId: z.string().describe("The backstage session id to migrate, e.g. 'bks-…'."),
+          model: z
+            .string()
+            .describe("Target opencode model id: opencode/<provider>/<model>, e.g. opencode/anthropic/claude-sonnet-5."),
+        },
+        async (args: { sessionId: string; model: string }) => {
+          // Belt-and-braces busy check through the live registry (the helper
+          // re-checks via the run journal): a running/queued session's model
+          // must not be flipped under its in-flight turn.
+          try {
+            const s = getSessionControl().getSession(args.sessionId);
+            if (s && (s.state === "running" || s.state === "waiting_question")) {
+              return text(
+                `\`${args.sessionId}\` is ${s.state} — let the run finish (or cancel it) before migrating.`
+              );
+            }
+          } catch {}
+          const res = migrateSessionEngine(args.sessionId, args.model, ctx.createdBy);
+          if (!res.ok) return text(res.error);
+          return text(
+            `Migrated \`${res.sessionId}\` to ${res.to}` +
+              (res.from ? ` (was ${res.from})` : "") +
+              ". The next prompt hands its history to the OpenCode engine and continues there."
           );
         }
       ),

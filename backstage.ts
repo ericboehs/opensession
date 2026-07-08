@@ -19,8 +19,11 @@ import {
 	deleteSession,
 	getTranscriptPath,
 	getEngineTranscriptPath,
+	readEngineTranscript,
+	mergedSessionTranscript,
 	engineSessionPatch,
 } from "./src/server/sessions";
+import { isOpencodeSessionId } from "./src/server/opencode-transcript";
 import {
 	parseTranscript,
 	parseTranscriptTail,
@@ -336,6 +339,7 @@ import type {
 	BackstageSessionFile,
 	AttachedRepo,
 	SessionUsage,
+	TranscriptEntry,
 } from "./src/server/types";
 import type { TurnUsage } from "./src/server/claude-runner";
 
@@ -2464,8 +2468,21 @@ async function runSessionPromptInner(
 	// stacking onto the previous snapshot (which would double-count).
 	let latestUsage: SessionUsage | undefined = session.usage;
 	let usageBase: SessionUsage | undefined = latestUsage;
+	// Opencode ids live in their own slot (with a transitional mirror in the
+	// claude slot — recognizable by the ses_ shape; see engineSessionPatch).
+	// A claude run never resumes a ses_-shaped id: that ride was written by an
+	// opencode run, and handing it to the Claude SDK would fail the resume.
 	const engineSessionId =
-		provider === "codex" ? session.codexThreadId : session.claudeSessionId;
+		provider === "codex"
+			? session.codexThreadId
+			: provider === "opencode"
+				? session.opencodeSessionId ||
+					(isOpencodeSessionId(session.claudeSessionId)
+						? session.claudeSessionId
+						: undefined)
+				: isOpencodeSessionId(session.claudeSessionId)
+					? undefined
+					: session.claudeSessionId;
 	// A claude session with no engine id yet is a *fresh* chat (e.g. a new sibling
 	// chat opened from the tab strip's +): its first prompt starts a new claude
 	// conversation, and finalSessionId is persisted below — same as codex, which
@@ -2485,20 +2502,31 @@ async function runSessionPromptInner(
 	// bridge.) Recorded provider is set after every run below.
 	const lastProvider = session.lastEngineProvider;
 	let switchHandoff: string | null = null;
+	// Prior-engine entries backing the handoff note — also passed to the runner
+	// so a fresh opencode session's persisted transcript is seeded with them
+	// (keeps the UI transcript continuous across an engine migration).
+	let switchHandoffEntries: TranscriptEntry[] = [];
 	if (lastProvider && lastProvider !== provider) {
 		const prevEngineId =
-			lastProvider === "codex" ? session.codexThreadId : session.claudeSessionId;
-		const prevTranscriptPath = prevEngineId
-			? getEngineTranscriptPath(
+			lastProvider === "codex"
+				? session.codexThreadId
+				: lastProvider === "opencode"
+					? session.opencodeSessionId ||
+						(isOpencodeSessionId(session.claudeSessionId)
+							? session.claudeSessionId
+							: undefined)
+					: isOpencodeSessionId(session.claudeSessionId)
+						? undefined
+						: session.claudeSessionId;
+		const prevEntries = prevEngineId
+			? readEngineTranscript(
 					session.worktreeDir || defaultRepo().repo,
 					prevEngineId,
 					lastProvider,
 				)
-			: null;
-		const prevEntries = prevTranscriptPath
-			? parseTranscript(prevTranscriptPath)
 			: [];
 		if (prevEntries.length) {
+			switchHandoffEntries = prevEntries;
 			// Claude coming back to a thread it already ran (engineSessionId set)
 			// remembers everything up to the switch and only needs the interim
 			// turns; a fresh target treats the transcript as the whole conversation.
@@ -2722,6 +2750,13 @@ async function runSessionPromptInner(
 		// usage exhaustion stops the run so the human can choose what to do.
 		fallbackModel: interactiveFallbackModel(session.model),
 		images,
+		// Cross-engine switch INTO opencode: seed the fresh opencode session's
+		// persisted transcript with the prior engine's history (same entries the
+		// handoff note was built from) so the UI transcript stays continuous.
+		seedTranscriptEntries:
+			provider === "opencode" && switchHandoff && switchHandoffEntries.length
+				? switchHandoffEntries
+				: undefined,
 		mcpServers,
 		// Self-management tools for normal sessions; withheld from automation
 		// sessions (and their interactive resumes) — same gate as deniedTools above.
@@ -4221,8 +4256,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const session = findSession(sessionId);
 				if (!session)
 					return Response.json({ error: "Session not found" }, { status: 404 });
-				if (!session.transcriptPath) return Response.json([]);
-				return Response.json(parseTranscript(session.transcriptPath));
+				// Engine-spanning read: the transcript file plus, for sessions with
+				// opencode history, the opencode store (covers legacy opencode
+				// sessions from before transcript persistence, and migrated
+				// sessions whose history spans engines).
+				return Response.json(mergedSessionTranscript(session));
 			}
 
 			// Workspace overview: the opening prompt + all media (screenshots,
@@ -8478,8 +8516,10 @@ registerSessionControl({
 
 	transcriptTail: (id, n) => {
 		const s = findSession(id);
-		if (!s?.transcriptPath) return [];
-		return parseTranscript(s.transcriptPath).slice(-Math.max(0, n));
+		if (!s) return [];
+		// Engine-spanning read (file + opencode store) — same as the transcript
+		// route, so get_session works on opencode/migrated sessions too.
+		return mergedSessionTranscript(s).slice(-Math.max(0, n));
 	},
 
 	answerQuestion: (id, answers) => {
