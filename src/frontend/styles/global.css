@@ -2023,8 +2023,10 @@ body.resizing-x {
 	/* Floating pill: a real little chip with a soft shadow so it reads cleanly
 	   as the topmost layer while the transcript scrolls up underneath it. Fully
 	   rounded, no chrome-tab top corners or bottom seam into the body. The
-	   transparent ring stays so colored/waiting tabs can tint it. */
-	border: 1px solid transparent;
+	   transparent ring stays so colored/waiting tabs can tint it. --tab-stroke is
+	   transparent by default; the desktop solid-band layout sets it to a visible
+	   hairline so uncolored tabs read as outlined "stroke" chips. */
+	border: 1px solid var(--tab-stroke, transparent);
 	border-radius: 8px;
 	/* Solid fill so the transcript scrolling underneath never shows through. */
 	background: var(--bg-panel);
@@ -2055,58 +2057,60 @@ body.resizing-x {
 	box-shadow: none;
 }
 
-/* Desktop: float the tab strip over the transcript so the chat scrolls up under
-   the pills and dissolves into the top bar — the same effect the phone layout
-   already has. The header above stays the solid top edge; the strip itself is
-   see-through, the pills float, and the transcript fades under them via a mask.
-   (Phones keep their own version in the max-width block below.) */
+/* Desktop: a solid tab band in normal flow (not floating). A hairline divider
+   top and bottom frames the strip between the header and the transcript, and the
+   tabs read as outlined "stroke" chips (--tab-stroke) rather than shadowed
+   floating pills — the active tab fills in. (Phones keep their own floating
+   version in the max-width block below, where the top bar is an overlay.) */
 @media (min-width: 721px) {
 	.session-tabs {
-		align-items: flex-start;
 		height: 44px;
-		/* Overlay the messages below instead of pushing them down. */
-		margin-bottom: -44px;
-		/* Tuck the pills up into the header's empty bottom padding (its buttons are
-		   centered in the 54px row) so they sit close under the header instead of
-		   floating with a wide gap above them. */
-		margin-top: -8px;
 		padding: 0 8px;
-		position: relative;
-		z-index: 6;
-		/* No opaque fill: header supplies the solid edge, pills float, transcript
-		   fades under them (mask on .viewer-messages). */
-		background: transparent;
-		/* Transcript scrolls/clicks through the strip; only the pills catch input. */
-		pointer-events: none;
+		/* Solid, same fill as the header so header+strip read as one block; the
+		   strip's own top/bottom hairlines are the only dividers. */
+		background: var(--topbar-bg);
+		border-top: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+		/* Uncolored tabs get a visible hairline outline; colored/waiting/active
+		   variants override their own border-color, so they're unaffected. */
+		--tab-stroke: var(--border);
 	}
+	/* Hug the tab content (don't grow) so the pinned "+" sits right after the
+	   last tab instead of being pushed to the far right; it still shrinks and
+	   scrolls internally when the tabs overflow a narrow pane. */
+	.session-tabs-scroll {
+		flex: 0 1 auto;
+	}
+	/* Not floating anymore → drop the pill shadow; the outline carries the tab. */
 	.session-tabs .session-tab {
+		box-shadow: none;
+	}
+	.session-tabs .session-tab:hover {
+		--tab-stroke: var(--border-strong);
+	}
+	/* New-tab "+" as a real control — a square button on the same footprint as
+	   the header icon buttons (⋯, run, panel toggle), always visible (no
+	   hover-reveal) with a bigger glyph. */
+	.session-tabs .session-tab-new {
+		opacity: 1;
 		pointer-events: auto;
+		width: 32px;
+		height: 32px;
+		padding: 0;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 20px;
 	}
-	/* The horizontal scroller clips overflow on BOTH axes (overflow-x:auto forces
-	   overflow-y to clip), which would shear the pill drop-shadow at the strip's
-	   bottom edge. Pad the clip box so the shadow renders in full; the top inset
-	   still tucks the pills right under the header. */
-	.session-tabs-scroll,
-	.session-tabs-actions {
-		padding: 3px 3px 9px;
+	.session-tabs .session-tab-new:hover {
+		background: var(--bg-hover);
+		border-color: var(--border-strong);
+		color: var(--text);
 	}
-	/* Only when the floating tab strip is actually present (project sessions —
-	   SessionTabs renders nothing for standalone chats). Gating on :has() keeps
-	   standalone chats at their normal 18px top instead of an empty gap, and the
-	   descendant selector's higher specificity wins the cascade over the later
-	   unconditional `.viewer-messages { padding: … }` rule, whose `padding`
-	   shorthand would otherwise reset padding-top back to 18px and tuck the top
-	   row under the strip. */
+	/* Strip is in flow now, so the transcript just starts below it — no overlay
+	   padding, no mask. (Higher specificity than the later unconditional
+	   `.viewer-messages { padding: … }` so the top inset isn't reset.) */
 	.detail-pane:has(.session-tabs) .viewer-messages {
-		/* Clear the pills at rest (bar height + air), then scroll under. Enough
-		   that the first row sits fully below the floating strip on load, not
-		   tucked under the pills. */
-		padding-top: 68px;
-		/* Dissolve the transcript into the bar as it scrolls up behind the pills so
-		   text never bleeds sharply above them — the pills stay the top, legible
-		   layer. (The bottom is handled by the composer backdrop.) */
-		-webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 44px);
-		mask-image: linear-gradient(to bottom, transparent 0, #000 44px);
+		padding-top: 18px;
 	}
 }
 

@@ -254,6 +254,11 @@ export function SessionTabs({
 						</ContextMenu.Root>
 						);
 					})}
+				</div>
+				{/* New-tab "+" sits OUTSIDE the scroll so it's pinned and always
+				    visible — never scrolled off when the tabs overflow a narrow pane.
+				    Plain-click shares the workspace worktree; right-click offers the
+				    stacked/ask modes. */}
 				<button
 					type="button"
 					className="session-tab session-tab-new"
@@ -267,7 +272,6 @@ export function SessionTabs({
 				>
 					+
 				</button>
-			</div>
 			<div className="session-tabs-actions">
 
 				{/* History: every archived (closed) chat of this workspace, in one
