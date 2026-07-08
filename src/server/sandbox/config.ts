@@ -19,10 +19,13 @@ import { BACKSTAGE_CHATS_DIR } from "../paths";
 import type { SandboxProviderId } from "./provider";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-// Env-overridable so the verify suite can point a scratch config at a scratch
-// docker setup without touching the live file (which is read fresh per run).
-const CONFIG_PATH =
-  process.env.BACKSTAGE_SANDBOX_CONFIG || `${HOME}/.backstage-sandbox.json`;
+// Env-overridable so the verify suite (and unit tests) can point a scratch
+// config at a scratch docker setup without touching the live file (which is
+// read fresh per run). Read per call, not at module load, so a test can flip
+// the env var without re-importing this module.
+function configPath(): string {
+  return process.env.BACKSTAGE_SANDBOX_CONFIG || `${HOME}/.backstage-sandbox.json`;
+}
 const DISABLE_FILE = `${BACKSTAGE_CHATS_DIR}/disable-sandboxes`;
 
 export interface SandboxRepoOverride {
@@ -158,8 +161,9 @@ export function sandboxesEnabled(): boolean {
 /** Current config, read fresh per call. Never throws; falls back to local. */
 export function sandboxConfig(): SandboxConfig {
   try {
-    if (existsSync(CONFIG_PATH)) {
-      const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+    const path = configPath();
+    if (existsSync(path)) {
+      const raw = JSON.parse(readFileSync(path, "utf-8"));
       const perRepo: Record<string, SandboxRepoOverride> = {};
       if (raw?.perRepo && typeof raw.perRepo === "object") {
         for (const [repoId, o] of Object.entries<any>(raw.perRepo)) {
@@ -254,6 +258,140 @@ export function sandboxSnapshots(): SandboxSnapshotsConfig {
  *  their own "ws" regardless). */
 export function sandboxTransport(): SandboxTransport {
   return sandboxConfig().transport === "ws" ? "ws" : "socket";
+}
+
+// ── Provider capability status (per-session provider picker) ────────────────
+
+/** The providers a session can explicitly pick ("local" = no sandbox). */
+export const RUNNABLE_SANDBOX_PROVIDERS = ["docker", "daytona", "e2b"] as const;
+export type RunnableSandboxProviderId = (typeof RUNNABLE_SANDBOX_PROVIDERS)[number];
+
+export function isRunnableSandboxProvider(v: unknown): v is RunnableSandboxProviderId {
+  return (
+    typeof v === "string" &&
+    (RUNNABLE_SANDBOX_PROVIDERS as readonly string[]).includes(v)
+  );
+}
+
+/** Remote providers have no host mounts — their workspaces are ALWAYS
+ *  volume-style (cloned inside the sandbox; no host fallback for runs). */
+export function isRemoteSandboxProvider(v: unknown): v is "daytona" | "e2b" {
+  return v === "daytona" || v === "e2b";
+}
+
+/** True when a sandbox config file exists and parses — the operator has set
+ *  sandboxing up at all. Without it every provider is unconfigured. */
+export function sandboxConfigPresent(): boolean {
+  try {
+    const path = configPath();
+    if (!existsSync(path)) return false;
+    JSON.parse(readFileSync(path, "utf-8"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface SandboxProviderStatusEntry {
+  id: RunnableSandboxProviderId;
+  configured: boolean;
+  /** Human caveat for a configured-but-unproven provider (e.g. daytona's WS
+   *  dial-back can't be verified without creating a real sandbox). */
+  note?: string;
+}
+
+/** Shape served by GET /backstage/api/sandbox/status (read fresh per call). */
+export interface SandboxCapabilityStatus {
+  /** A sandbox config file exists — the control surface is worth showing. */
+  enabled: boolean;
+  /** What `sandbox: true` resolves to (the config's default provider). */
+  defaultProvider: SandboxProviderId;
+  providers: SandboxProviderStatusEntry[];
+  /** disable-sandboxes kill-switch file present — runs stay on the host. */
+  killSwitch: boolean;
+}
+
+/**
+ * Whether an explicit per-session provider is currently usable. Kept simple
+ * (docs: "Sandbox provider dropdown"): docker is available whenever a sandbox
+ * config exists; daytona/e2b additionally need their API key (config block or
+ * env). This is the same gate `maybeLaunchSandboxedRun` re-checks per run.
+ */
+export function sandboxProviderConfigured(id: RunnableSandboxProviderId): boolean {
+  if (!sandboxConfigPresent()) return false;
+  const cfg = sandboxConfig();
+  if (id === "docker") return true;
+  if (id === "daytona") return Boolean(cfg.daytona?.apiKey || process.env.DAYTONA_API_KEY);
+  return Boolean(cfg.e2b?.apiKey || process.env.E2B_API_KEY);
+}
+
+/** Full provider-capability snapshot, read fresh from config + kill switch. */
+export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
+  const enabled = sandboxConfigPresent();
+  const cfg = sandboxConfig();
+  const daytonaConfigured =
+    enabled && Boolean(cfg.daytona?.apiKey || process.env.DAYTONA_API_KEY);
+  const providers: SandboxProviderStatusEntry[] = [
+    { id: "docker", configured: enabled },
+    {
+      id: "daytona",
+      configured: daytonaConfigured,
+      // Dial-back can only be proven by a real run, so a configured daytona
+      // always carries the caveat (the UI renders it as a dim hint line).
+      ...(daytonaConfigured
+        ? {
+            note: "dial-back unverified — the sandbox must reach callbackBaseUrl (org-tier egress applies); see docs/self-hosting-sandboxes.md",
+          }
+        : {}),
+    },
+    {
+      id: "e2b",
+      configured: enabled && Boolean(cfg.e2b?.apiKey || process.env.E2B_API_KEY),
+    },
+  ];
+  return {
+    enabled,
+    defaultProvider: cfg.provider || "local",
+    providers,
+    killSwitch: !sandboxesEnabled(),
+  };
+}
+
+/**
+ * Resolve a create-path `sandbox` request (boolean | provider string) to the
+ * provider to persist on the session, validating explicit picks against the
+ * current config. `true` keeps today's behavior (config default provider);
+ * a string must name a configured provider or the create fails with a clear
+ * error. Returns `provider: null` for "no sandbox".
+ */
+export function resolveRequestedSandbox(
+  requested: boolean | string | undefined | null,
+  repoId?: string,
+): { ok: true; provider: SandboxProviderId | null } | { ok: false; error: string } {
+  if (!requested) return { ok: true, provider: null };
+  if (requested === true)
+    return { ok: true, provider: effectiveSandboxProvider(repoId) };
+  const id = String(requested).trim().toLowerCase();
+  if (id === "local") return { ok: true, provider: null }; // explicit "host"
+  if (!isRunnableSandboxProvider(id)) {
+    return {
+      ok: false,
+      error: `Unknown sandbox provider "${requested}" — valid values: docker, daytona, e2b (or true for the configured default).`,
+    };
+  }
+  if (!sandboxProviderConfigured(id)) {
+    const hint =
+      id === "docker"
+        ? "create ~/.backstage-sandbox.json (see docs/self-hosting-sandboxes.md)"
+        : id === "daytona"
+          ? 'set {"daytona":{"apiKey":"…"}} in ~/.backstage-sandbox.json (or DAYTONA_API_KEY)'
+          : 'set {"e2b":{"apiKey":"…"}} in ~/.backstage-sandbox.json (or E2B_API_KEY)';
+    return {
+      ok: false,
+      error: `Sandbox provider "${id}" is not configured — ${hint}.`,
+    };
+  }
+  return { ok: true, provider: id };
 }
 
 /**
