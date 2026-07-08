@@ -1147,17 +1147,35 @@ body.resizing-x {
    line of chrome than the grouping needs. And the inset lives in the rows'
    own left padding (base 10px + a gentle Notion-ish 14px step), not a
    container margin, so a row's hover/selection pill still runs the sidebar's
-   full width — only the icons and text sit indented under the repo header.
-   Two levels of nesting on desktop: the status-lane header takes one 14px step
-   under the repo header, and the workspace rows take a second step under their
-   lane — so a row reads as a child of its lane (repo → status → workspace),
-   not a sibling of the lane header. The mobile block (max-width:720px) flattens
-   all of this back to one shared edge. */
+   full width — only the icons and text sit indented under the repo header. */
 .sidebar-repo-lanes .sidebar-group-header {
 	padding-left: 24px;
 }
 .sidebar-repo-lanes .sidebar-item {
-	padding-left: 38px;
+	padding-left: 24px;
+}
+
+/* The same nesting cue for the status-grouping (and Pinned / review) view:
+   workspace rows step in one gentle 14px inset under their band header (the
+   header stays at the list's 10px edge), so a row reads as a child of its lane
+   rather than a sibling of the header. Scoped to the workspace-bearing bands;
+   the inset lives in the row's own left padding so its hover/selection pill
+   still runs the sidebar's full width — only the icons and text indent. */
+.sidebar-status-group .sidebar-item,
+.sidebar-group--pinned .sidebar-item,
+.sidebar-group--review .sidebar-item {
+	padding-left: 24px;
+}
+/* …but flush on phones — horizontal space is scarce there, so the rows share
+   one left edge with their header (the desktop indent is a nicety, the band +
+   collapse already conveys the grouping). Its own media block, kept beside the
+   desktop rule so the pair reads together. */
+@media (max-width: 720px) {
+	.sidebar-status-group .sidebar-item,
+	.sidebar-group--pinned .sidebar-item,
+	.sidebar-group--review .sidebar-item {
+		padding-left: 6px;
+	}
 }
 
 /* People and Automations render one collapsed row per group, so the 14px
