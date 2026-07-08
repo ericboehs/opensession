@@ -2078,6 +2078,74 @@ function foldSessionUsage(
 	};
 }
 
+/**
+ * Silent auto-push: when a session's turn ends idle, publish any local commits
+ * that are ahead of an already-tracked upstream. This is the real "sessions push
+ * automatically" mechanism — the agent's prompt-level `git push` is best-effort
+ * and silently misses whenever a turn ends between commit and push (or the
+ * commits landed outside a turn), leaving the status header parked on a stale
+ * "Ahead by N commits". We only touch a branch that:
+ *   - is NOT the repo's default branch — never auto-push main/master (this also
+ *     excludes the backstage shared checkout, which pushes master by hand), and
+ *   - already has an upstream (published once, so pushing follow-up commits is
+ *     the expected sync; an un-pushed branch with no PR goes via Create PR), and
+ *   - is strictly ahead (behind === 0) — a diverged branch needs a human/agent
+ *     to reconcile, and a plain push would be rejected anyway.
+ * Never forces. A failed push is swallowed (logged) — it just leaves the Push
+ * button as the visible fallback. Fire-and-forget from the turn-end path so it
+ * never delays draining the queue; a `git_pushed` broadcast nudges the header to
+ * refetch the instant the push lands.
+ */
+async function autoPushSessionBranches(session: UnifiedSession): Promise<void> {
+	const targets: Array<{ dir: string; branch: string; repoId: string }> = [];
+	const primaryRepoId =
+		session.repo ||
+		(session.worktreeDir ? repoForPath(session.worktreeDir).id : "tella-fusion");
+	if (session.worktreeDir && session.branch)
+		targets.push({
+			dir: session.worktreeDir,
+			branch: session.branch,
+			repoId: primaryRepoId,
+		});
+	for (const att of session.attachedRepos || [])
+		if (att.dir && att.branch)
+			targets.push({ dir: att.dir, branch: att.branch, repoId: att.repo });
+
+	for (const { dir, branch, repoId } of targets) {
+		if (!existsSync(dir)) continue;
+		let repo;
+		try {
+			repo = getRepo(repoId);
+		} catch {
+			continue;
+		}
+		// Never auto-push the repo's mainline (covers the backstage shared master).
+		if (branch === repo.defaultBranch) continue;
+		let git;
+		try {
+			git = await getGitStatus(dir, repo.defaultBranch);
+		} catch {
+			continue;
+		}
+		if (!git.hasUpstream || git.ahead <= 0 || git.behind > 0) continue;
+		const result = await gitPush(dir, branch);
+		if ("error" in result) {
+			console.warn(
+				`[auto-push] ${session.id} ${repoId}/${branch}: ${result.error}`,
+			);
+		} else {
+			console.log(
+				`[auto-push] ${session.id} ${repoId}/${branch}: pushed ${git.ahead} commit(s)`,
+			);
+			broadcastToSession(session.id, {
+				type: "git_pushed",
+				sessionId: session.id,
+				repo: repoId,
+			});
+		}
+	}
+}
+
 /** Run a prompt against an existing session, broadcasting to all watchers. */
 async function runSessionPrompt(
 	sessionId: string,
@@ -2580,7 +2648,13 @@ async function runSessionPromptInner(
 
 	// The session just finished a turn; if nothing's queued it's idle now, so fire
 	// any "when_done" / "on_pr" human asks waiting on this session. Idempotent.
-	if (!promptQueues.get(sessionId)?.length) onHumanAsksSessionIdle(sessionId);
+	if (!promptQueues.get(sessionId)?.length) {
+		onHumanAsksSessionIdle(sessionId);
+		// Publish any commits the turn left unpushed so the status header doesn't
+		// linger on "Ahead by N commits" (see autoPushSessionBranches). Only on a
+		// clean finish — an errored/aborted turn may be mid-work. Fire-and-forget.
+		if (!endedWithError) void autoPushSessionBranches(session);
+	}
 }
 
 /**

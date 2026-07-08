@@ -293,6 +293,9 @@ export function SessionViewer({
 	const [forkFrom, setForkFrom] = useState<string | null>(null);
 	const [isStreaming, setIsStreaming] = useState(false);
 	const [isRunningLive, setIsRunningLive] = useState(session.isRunning);
+	// Bumped on a `git_pushed` broadcast (server-side auto-push) so the PR status
+	// header refetches immediately and drops "Ahead by N commits".
+	const [gitRefreshTick, setGitRefreshTick] = useState(0);
 	const [streamText, setStreamText] = useState("");
 	const [streamBy, setStreamBy] = useState<string | null>(null);
 	// Bumped on every stream_start; lets the delayed stream_done cleanup verify
@@ -776,6 +779,9 @@ export function SessionViewer({
 				case "session_status":
 					setIsRunningLive(msg.isRunning);
 					onRunningChange?.(session.id, msg.isRunning);
+					break;
+				case "git_pushed":
+					if (msg.sessionId === session.id) setGitRefreshTick((t) => t + 1);
 					break;
 				case "workspace_status":
 					if (msg.sessionId === session.id)
@@ -2081,6 +2087,8 @@ export function SessionViewer({
 							archived={session.archived}
 							send={connected ? send : undefined}
 							variant="header"
+							running={isRunningLive}
+							refreshTick={gitRefreshTick}
 						/>
 					)}
 					{!isPhone && panelAvailable && (
@@ -2715,6 +2723,8 @@ export function SessionViewer({
 								archived={session.archived}
 								send={connected ? send : undefined}
 								onOpenPrTab={() => setPanelTab("pr")}
+								running={isRunningLive}
+								refreshTick={gitRefreshTick}
 								// Globe (staging deploy) rides inside the strip, left of the
 								// PR chip, so it shares the strip's tone background — it's
 								// pulled out of the header while the panel is open. On phones

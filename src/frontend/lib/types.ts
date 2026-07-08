@@ -459,6 +459,9 @@ export type WSServerMessage =
 	  }
 	// The create run finished (or failed) preparing the session's worktree.
 	| { type: "workspace_status"; sessionId: string; ready: boolean }
+	// A silent server-side auto-push published the session's local commits (repo
+	// id for multi-repo sessions) — the PR status header refetches on this.
+	| { type: "git_pushed"; sessionId: string; repo?: string }
 	| { type: "notice"; sessionId?: string; message: string }
 	| { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string }
 	| {

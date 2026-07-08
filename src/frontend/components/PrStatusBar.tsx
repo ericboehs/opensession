@@ -145,6 +145,13 @@ interface Props {
 	    variant only) so it shares the strip's tone background — e.g. the globe
 	    staging-deploy icon in the Workspace panel. */
 	leading?: React.ReactNode;
+	/** Live run state — when it falls from running→idle the header refetches, so
+	    it reflects the just-finished turn (and any auto-push) without waiting on
+	    the 45s poll. */
+	running?: boolean;
+	/** Bumped by the viewer on a `git_pushed` broadcast — an immediate refetch so
+	    a server-side auto-push clears "Ahead by N commits" the moment it lands. */
+	refreshTick?: number;
 }
 
 interface PrBarButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -257,6 +264,8 @@ export function PrStatusBar({
 	onOpenPrTab,
 	variant = "bar",
 	leading,
+	running,
+	refreshTick,
 }: Props) {
 	const [pr, setPr] = useState<PrDetails | null>(null);
 	const [git, setGit] = useState<GitStatusInfo | null>(null);
@@ -291,6 +300,21 @@ export function PrStatusBar({
 		const interval = setInterval(load, 45000);
 		return () => clearInterval(interval);
 	}, [load]);
+
+	// Refetch the instant a turn ends (running→idle) or an auto-push lands
+	// (refreshTick bump), so "Ahead by N commits" clears without waiting on the
+	// 45s poll. Skip the initial mount/true edges — those are already covered by
+	// the load() above. Track the previous run state so only the falling edge
+	// triggers (a turn *starting* can't change the pushed/ahead state).
+	const prevRunning = React.useRef(running);
+	useEffect(() => {
+		const fell = prevRunning.current && !running;
+		prevRunning.current = running;
+		if (fell) load();
+	}, [running, load]);
+	useEffect(() => {
+		if (refreshTick) load();
+	}, [refreshTick, load]);
 
 	const headline = useMemo(() => deriveHeadline(pr, git), [pr, git]);
 
