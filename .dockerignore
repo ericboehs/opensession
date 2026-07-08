@@ -1,0 +1,20 @@
+# Build context for deploy/sandbox/Dockerfile is the repo root. Trim it to keep
+# the context small and to keep secrets/large restorable artifacts out of the image.
+# node_modules is rebuilt inside the image via `bun install --frozen-lockfile`.
+.git
+node_modules
+.frontend-dist
+
+# Secrets / local config — must never be baked into an image.
+mcp-config.json
+mcp-config.json.bak
+*.env
+.env*
+*.key
+*.crt
+
+# Caches / logs / scratch
+.users_cache.json
+.channels_cache.json
+.channels_cache_v2.json
+*.log
