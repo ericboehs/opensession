@@ -950,9 +950,13 @@ function App() {
 	): Promise<string> {
 		const { id, session } = await newChatApi(src.id, getCurrentUser(), mode);
 		// Inject the created session so the viewer renders the new chat immediately
-		// — no "Loading session…" flash while the sessions poll catches up. If the
+		// — no "Starting…" flash while the sessions poll catches up. If the
 		// server didn't return it, synthesize a close-enough copy from the source
-		// chat; the next poll replaces it with the real one either way.
+		// chat. Sticky: a poll that was already in flight when the chat was created
+		// resolves with a list that predates it and would drop a plain inject —
+		// flashing the "Starting…" placeholder until the next poll. The server
+		// persisted the chat before responding, so the sticky copy is reconciled
+		// away by the first fresh poll either way.
 		const now = new Date().toISOString();
 		inject(
 			session ?? {
@@ -984,8 +988,18 @@ function App() {
 						}
 					: {}),
 			},
+			{ sticky: true },
 		);
 		setPendingSessionId(id);
+		// This create adds a chat to an existing workspace — clear a stale flag
+		// from an earlier workspace create so any residual pending state words
+		// itself as "chat", not "workspace".
+		setPendingNewWorkspace(false);
+		clearTimeout(pendingTimer.current);
+		pendingTimer.current = setTimeout(() => {
+			setPendingSessionId(null);
+			unstick(id);
+		}, 30000);
 		refresh();
 		navigate({ view: "session", id });
 		return id;
