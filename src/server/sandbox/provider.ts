@@ -1,0 +1,129 @@
+/**
+ * Sandbox seam (Phase 0 of docs/sandboxes-plan.md): the interfaces every
+ * execution backend implements. A "sandbox" is where a session's work happens —
+ * today that's a git worktree on this host (LocalProvider, src/server/sandbox/
+ * local.ts); later it can be a Docker container per session, or a remote
+ * Daytona/E2B sandbox, all behind these two interfaces.
+ *
+ * Deliberately small, mirroring the existing run-host layer's idioms:
+ *  - `launchRun` takes the same serializable `RunHostSpec` the detached
+ *    run-host processes consume (src/runner-host/protocol.ts) and yields the
+ *    same `StreamEvent` generator shape as runAgent / runAgentHosted.
+ *  - `RunHandle`'s control surface mirrors host-registry's `HostRunControl`
+ *    (steer / interruptSteer / cancel returning booleans, `steerable` flag).
+ *
+ * Phase 0 is zero behavior change: nothing in backstage.ts threads a Sandbox
+ * handle yet — `runSessionPromptInner` still computes a bare `cwd` itself.
+ * Threading the handle through the prompt/create paths is the documented
+ * Phase 1 TODO (see docs/sandboxes-plan.md §5 Phase 1).
+ */
+
+import type { StreamEvent } from "../claude-runner";
+import type { RunAgentOpts } from "../agent-runner";
+import type { RunHostSpec } from "../../runner-host/protocol";
+
+/** The provider ids the registry knows. Only "local" is wired in Phase 0. */
+export type SandboxProviderId = "local" | "docker" | "daytona" | "e2b";
+
+/**
+ * Everything a provider needs to create-or-reuse the sandbox for a session.
+ * For the local provider this resolves to a worktree path via the existing
+ * worktree.ts helpers; container providers additionally key their
+ * container/volume names off `sessionId`.
+ */
+export interface SandboxSessionSpec {
+  /** Backstage session id (bks-…). Container providers name resources by it. */
+  sessionId: string;
+  /** Registered repo id (worktree.ts REPOS). Defaults to tella-fusion. */
+  repo?: string;
+  /** Branch for code-mode worktrees. Required unless ask/sharedCheckout/cwd. */
+  branch?: string;
+  mode?: "ask" | "code";
+  /**
+   * Already-resolved workspace dir (an existing session's `worktreeDir`).
+   * When set, providers reuse it (reviving a cleaned-up worktree from
+   * `branch` when the dir is gone) instead of resolving a fresh one.
+   */
+  cwd?: string;
+  /** Stack base: branch the new worktree branches off (createWorktree opts.base). */
+  base?: string;
+}
+
+export interface ExecOpts {
+  /** Extra env for the command (merged over the provider's baseline). */
+  env?: Record<string, string>;
+}
+
+export interface ExecResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+/** Preview port mapping: port inside the sandbox → port reachable on the host.
+ *  Local sandboxes run on the host network, so theirs is always empty. */
+export type PortMap = Record<number, number>;
+
+export type SandboxStatus = "running" | "stopped" | "gone";
+
+/**
+ * Callbacks a caller attaches to a launched run — the non-serializable
+ * counterpart of RunHostSpec, matching host-client's HandleCallbacks /
+ * HostedRunOpts split (asks are proxied back to whoever can answer them).
+ */
+export interface RunHandleCallbacks {
+  onAskUser?: RunAgentOpts["onAskUser"];
+  /**
+   * Builds the in-process SDK MCP servers (michael-sessions/-admin/…) for
+   * runs executing inside this process. Hosted/containerized runs ignore it —
+   * they reach the same tools via the stdio→RPC proxy path
+   * (RunHostSpec.proxyMcpServers + rpcToken).
+   */
+  inProcessMcp?: () => Record<string, unknown> | undefined;
+}
+
+/**
+ * A long-lived agent run inside a sandbox. `events()` is the same
+ * AsyncGenerator<StreamEvent> shape every runner entry point yields — consume
+ * it exactly once. The control methods mirror HostRunControl and return false
+ * when the run can't honor the request (caller queues instead).
+ */
+export interface RunHandle {
+  events(): AsyncGenerator<StreamEvent>;
+  /** Whether the run's backend supports mid-run steering (claude yes, exec-codex no). */
+  steerable: boolean;
+  steer(text: string): boolean;
+  interruptSteer(text: string): boolean;
+  cancel(): boolean;
+}
+
+/**
+ * One session's execution environment. `id` is journaled on ActiveRunRecord
+ * (`sandboxId`) and the session file so a restarted backstage can reattach via
+ * `SandboxProvider.get()`.
+ */
+export interface Sandbox {
+  id: string;
+  provider: SandboxProviderId;
+  /** Workspace path *inside* the sandbox (== host path for local + bind-mount Docker). */
+  cwd: string;
+  /** One-shot commands in the workspace (git status, ls-files, …). Never throws
+   *  on non-zero exit — inspect `exitCode`. */
+  exec(cmd: string[], opts?: ExecOpts): Promise<ExecResult>;
+  /** Start a long-lived agent run (NDJSON-stream semantics; see RunHandle). */
+  launchRun(spec: RunHostSpec, cb?: RunHandleCallbacks): RunHandle;
+  /** Preview ports (sandbox port → host port). */
+  ports(): Promise<PortMap>;
+  status(): Promise<SandboxStatus>;
+}
+
+export interface SandboxProvider {
+  id: SandboxProviderId;
+  /** Create-or-reuse the sandbox for a session. Idempotent. */
+  ensure(spec: SandboxSessionSpec): Promise<Sandbox>;
+  /** Reattach to a known sandbox after a restart; null when it's gone. */
+  get(sandboxId: string): Promise<Sandbox | null>;
+  /** Tear the sandbox down (session delete/archive). Workspace data outlives
+   *  it where the provider stores it on the host (local worktrees always do). */
+  destroy(sandboxId: string): Promise<void>;
+}
