@@ -20,9 +20,15 @@
  */
 import { $ } from "bun";
 import { closeSync, existsSync, openSync, readFileSync, readlinkSync, unlinkSync } from "fs";
-import { basename, join } from "path";
+import { basename, dirname, join } from "path";
 import { sandboxConfig } from "./sandbox/config";
+import {
+  lookupSandboxHttpsPort,
+  releaseSandboxPreviewPorts,
+  sandboxHttpsPortFor,
+} from "./sandbox/preview-ports";
 import type { Sandbox } from "./sandbox/provider";
+import { repoForPath } from "./worktree";
 
 export interface PreviewService {
   /** Friendly label, e.g. "Webapp". */
@@ -51,6 +57,13 @@ export interface PreviewStatus {
 const ENSURE_UP =
   process.env.TELLA_LOCAL_ENSURE_UP ||
   "/home/ubuntu/.claude/skills/tella-local/ensure-up.sh";
+
+/** Directory of the tella-local skill (ensure-up.sh + CDP helpers) — the
+ *  docker provider mounts it read-only at the identical path so the Preview
+ *  button's bring-up works inside sandboxes too. */
+export function tellaLocalSkillDir(): string {
+  return dirname(ENSURE_UP);
+}
 
 // Worktrees with an in-flight `startPreview` (worktreeDir -> started-at ms).
 // Parked on globalThis so it survives --hot reloads. Entries are cleared when
@@ -382,7 +395,7 @@ export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
   return getPreviewStatus(worktreeDir);
 }
 
-// ── Sandboxed previews (docs/sandboxes-plan.md Phase 2) ───────────────────────
+// ── Sandboxed previews (docs/sandboxes-plan.md Phase 2 + 4A) ──────────────────
 // A sandboxed session's dev server runs INSIDE its container, so the host-side
 // mechanics above can't see it: `ss` can't observe container listeners, and
 // signaling host process groups can't stop them. These variants keep the same
@@ -393,6 +406,22 @@ export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
 // stays previewUrl-less — add it to previewPorts and let the container be
 // recreated. Callers route here only when the session's sandbox container is
 // actually running (the same active check as workspace-exec).
+//
+// The https route key is NAMESPACED away from host previews: host routes use
+// webappPort + 6000 (9100-9999), sandbox routes use an allocated port from
+// [20000, 28000) keyed by (sandboxId, containerPort) and persisted — see
+// sandbox/preview-ports.ts for why deriving it from the webapp port number
+// (the old TODO(sandbox-preview-collision)) could collide with host previews
+// and with other sandboxes.
+
+/** Only ever called with provider-constructed paths; mirror docker.ts's
+ *  assertion so nothing surprising reaches an in-container `sh -c`. */
+function assertSafePath(p: string): string {
+  if (!/^[A-Za-z0-9_\/.@:-]+$/.test(p)) {
+    throw new Error(`refusing unsafe path for in-container exec: ${p}`);
+  }
+  return p;
+}
 
 /** True when a TCP connect to 127.0.0.1:<port> succeeds INSIDE the sandbox. */
 async function sandboxPortListening(sandbox: Sandbox, port: number): Promise<boolean> {
@@ -430,23 +459,14 @@ export async function getSandboxPreviewStatus(
       // sandboxes) are the operator's provider-side setting.
       previewUrl = directUrl;
     } else if (published) {
-      // Same Caddy route as host previews; the https port is keyed by the
-      // CONTAINER port (stable across restarts), the upstream dials the
-      // published loopback port (may change when the container is recreated —
-      // ensurePreviewRoute re-points an existing route on mismatch).
-      //
-      // TODO(sandbox-preview-collision): LATENT — sandbox and host previews
-      // share one https keyspace: both derive httpsPortFor(webappPort) =
-      // port + 6000. Host uniqueness of webapp ports (3100-3999) is enforced
-      // by an ss-based allocator that CANNOT see in-container listeners, so a
-      // host session can allocate the same webapp port a sandbox container
-      // already uses internally — both then claim the same Caddy https port
-      // and ensurePreviewRoute silently re-points the route back and forth.
-      // Harmless while devServerInSandbox stays off (no in-sandbox dev
-      // servers); the sandbox https-port range must be namespaced (e.g. a
-      // separate offset/range for sandbox routes) before enabling
-      // devServerInSandbox broadly.
-      const httpsPort = httpsPortFor(webapp.port);
+      // Same Caddy route machinery as host previews, but the https port comes
+      // from the sandbox allocator (stable per sandbox+container-port across
+      // restarts AND collision-free by construction against host previews and
+      // other sandboxes — see sandbox/preview-ports.ts). The upstream dials
+      // the published loopback port, which may change when the container is
+      // recreated — ensurePreviewRoute re-points an existing route on
+      // mismatch.
+      const httpsPort = sandboxHttpsPortFor(sandbox.id, webapp.port);
       const host = await previewHost();
       if (await ensurePreviewRoute(httpsPort, published, host)) {
         previewUrl = `https://${host}:${httpsPort}`;
@@ -457,7 +477,8 @@ export async function getSandboxPreviewStatus(
       );
     }
   } else if (webapp) {
-    await removePreviewRoute(httpsPortFor(webapp.port));
+    const allocated = lookupSandboxHttpsPort(sandbox.id, webapp.port);
+    if (allocated != null) await removePreviewRoute(allocated);
   }
 
   if (webapp?.running) starting.delete(worktreeDir);
@@ -473,11 +494,91 @@ export async function getSandboxPreviewStatus(
 }
 
 /**
+ * Seed `<worktree>/.ports.conf` so the in-container dev flow adopts the
+ * chosen (pre-published) webapp port instead of allocating a random one that
+ * isn't published. tella-fusion's dev-services.sh SOURCES an existing
+ * .ports.conf and keeps any port that's free — inside the container's fresh
+ * netns ours always is. When the file already exists we rewrite only the
+ * WEBAPP_PORT line; when it's absent we write the full six-key file in
+ * dev-services.sh's format (harmless for repos that ignore it — a lifecycle
+ * start.sh just reads $WEBAPP_PORT from its env).
+ */
+async function seedSandboxPortsConf(
+  sandbox: Sandbox,
+  worktreeDir: string,
+  webappPort: number,
+): Promise<void> {
+  const conf = assertSafePath(`${worktreeDir}/.ports.conf`);
+  const rand = (min: number, max: number) => min + Math.floor(Math.random() * (max - min + 1));
+  const fresh = [
+    "# Port configuration for development services",
+    "# Seeded by backstage (sandbox preview): WEBAPP_PORT is a container port",
+    "# pre-published to the host at create time — do not hand-edit it.",
+    `WEBAPP_PORT=${webappPort}`,
+    `INSTANT_PORT=${rand(5100, 5999)}`,
+    `WEBAPP_WORKFLOW_PORT=${rand(6100, 6999)}`,
+    `WEBAPP_EMAILS_PREVIEW_PORT=${rand(6100, 6999)}`,
+    `TEMPORAL_PORT=${rand(7200, 7999)}`,
+    `TEMPORAL_UI_PORT=${rand(8200, 8999)}`,
+    "",
+  ].join("\\n");
+  await sandbox.exec([
+    "sh", "-c",
+    `if [ -f ${conf} ]; then sed -i 's/^WEBAPP_PORT=.*/WEBAPP_PORT=${webappPort}/' ${conf}; ` +
+      `else printf '${fresh}' > ${conf}; fi`,
+  ]);
+}
+
+/**
+ * `.tunnels.env` contract (adopted from background-agents): when a sandbox
+ * preview starts, backstage writes `<worktree>/.tunnels.env` — a dotenv file
+ * in-container dev processes can source/read to learn their public URLs:
+ *
+ *   PREVIEW_URL=https://<host>:<httpsPort>          # the primary (webapp) URL
+ *   PREVIEW_URL_<containerPort>=https://…           # one var per exposed port
+ *
+ * Stale files are removed on container (re)start (docker.ts's ensure) and on
+ * preview stop; each preview start rewrites it whole.
+ */
+async function writeSandboxTunnelsEnv(
+  sandbox: Sandbox,
+  worktreeDir: string,
+  vars: Record<string, string>,
+): Promise<void> {
+  const file = assertSafePath(`${worktreeDir}/.tunnels.env`);
+  const body = Object.entries(vars)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\\n");
+  await sandbox.exec(["sh", "-c", `printf '${body}\\n' > ${file}`]);
+  // Keep it out of the session diff: one idempotent line in the repo's shared
+  // info/exclude (tella-fusion doesn't gitignore .tunnels.env yet).
+  await sandbox.exec([
+    "sh", "-c",
+    `ex="$(git rev-parse --git-path info/exclude 2>/dev/null)" && [ -n "$ex" ] && ` +
+      `{ grep -qxF ".tunnels.env" "$ex" 2>/dev/null || echo ".tunnels.env" >> "$ex"; } || true`,
+  ]);
+}
+
+/**
  * Bring the dev server up INSIDE the sandbox. Gated behind config
- * `devServerInSandbox` (default off): the bring-up script and the repo's dev
- * toolchain must exist in the container for this to work — until the image
- * carries them, only the status/port/Caddy layer above is active and this is
- * a no-op that returns current status.
+ * `devServerInSandbox` (default off). The flow (docs in
+ * deploy/sandbox/README.md "Previews in sandboxes"):
+ *
+ *  1. Pick a webapp port from the container's PRE-PUBLISHED preview range
+ *     (docker -p at create; config `previewPorts`, default 3300-3302) —
+ *     preferring the worktree's existing .ports.conf entry when it's one of
+ *     them, else the first published port nothing listens on. All busy =
+ *     range exhausted; we refuse with a warning (fallback: raise
+ *     `previewPorts` in ~/.backstage-sandbox.json and let the container be
+ *     recreated — mounts/ports are create-time).
+ *  2. Seed .ports.conf with that port and write the .tunnels.env contract
+ *     (PREVIEW_URL against the allocated sandbox https port).
+ *  3. Run the bring-up, detached in-container, with WEBAPP_PORT/PREVIEW_URL/
+ *     BACKSTAGE_BOOT_MODE in its env. Command resolution (lifecycle
+ *     convention): `<worktree>/.backstage/start.sh` when present, else the
+ *     repo's configured `previewCommand` (tella-fusion's is the tella-local
+ *     ensure-up.sh, mounted ro into every sandbox), else the tella-local
+ *     script if the image carries it.
  */
 export async function startSandboxPreview(
   sandbox: Sandbox,
@@ -491,27 +592,92 @@ export async function startSandboxPreview(
     );
     return status;
   }
-  const probe = await sandbox.exec(["test", "-r", ENSURE_UP]);
-  if (probe.exitCode !== 0) {
-    console.warn(`[preview] ${sandbox.id}: ${ENSURE_UP} not present in the sandbox — cannot start`);
+
+  // 1. Allocate a webapp port from the pre-published range.
+  const portMap = await sandbox.ports();
+  const publishedPorts = Object.keys(portMap).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!publishedPorts.length) {
+    console.warn(
+      `[preview] ${sandbox.id}: no preview ports are published — configure previewPorts and recreate the container`,
+    );
     return status;
   }
+  let port: number | null =
+    status.webappPort != null && publishedPorts.includes(status.webappPort)
+      ? status.webappPort
+      : null;
+  if (port == null) {
+    for (const p of publishedPorts) {
+      if (!(await sandboxPortListening(sandbox, p))) {
+        port = p;
+        break;
+      }
+    }
+  }
+  if (port == null) {
+    console.warn(
+      `[preview] ${sandbox.id}: preview port range exhausted (${publishedPorts.join(",")} all busy) — ` +
+        `stop one, or widen previewPorts in ~/.backstage-sandbox.json and recreate the container`,
+    );
+    return status;
+  }
+
+  // 2. Resolve the bring-up command (lifecycle convention; see docstring).
+  const startSh = `${worktreeDir}/.backstage/start.sh`;
+  const repo = repoForPath(worktreeDir);
+  let cmd: string | null = null;
+  if ((await sandbox.exec(["test", "-f", startSh])).exitCode === 0) {
+    cmd = `bash ${assertSafePath(startSh)}`;
+  } else if (repo.previewCommand) {
+    if (repo.previewCommand.startsWith("/") &&
+        (await sandbox.exec(["test", "-r", repo.previewCommand])).exitCode !== 0) {
+      console.warn(
+        `[preview] ${sandbox.id}: previewCommand ${repo.previewCommand} not present in the sandbox — cannot start`,
+      );
+      return status;
+    }
+    cmd = `${repo.previewCommand} ${assertSafePath(worktreeDir)}`;
+  } else if ((await sandbox.exec(["test", "-r", ENSURE_UP])).exitCode === 0) {
+    cmd = `bash ${ENSURE_UP} ${assertSafePath(worktreeDir)}`;
+  } else {
+    console.warn(
+      `[preview] ${sandbox.id}: no .backstage/start.sh, no repo previewCommand, ${ENSURE_UP} not in the sandbox — cannot start`,
+    );
+    return status;
+  }
+
+  // 3. Seed ports + tunnels, then launch detached in its own session (setsid
+  //    → pgid recorded so stop can kill the whole tree; ensure-up.sh's inner
+  //    `just dev` overwrites .ports/dev-pgid with its own group, which is the
+  //    one that outlives the bring-up — either way the file points at the
+  //    right group).
+  await seedSandboxPortsConf(sandbox, worktreeDir, port);
+  const httpsPort = sandboxHttpsPortFor(sandbox.id, port);
+  const host = await previewHost();
+  const previewUrl = `https://${host}:${httpsPort}`;
+  await writeSandboxTunnelsEnv(sandbox, worktreeDir, {
+    PREVIEW_URL: previewUrl,
+    [`PREVIEW_URL_${port}`]: previewUrl,
+  });
+
   starting.set(worktreeDir, Date.now());
-  // Detach inside the container; the container is the session's process scope,
-  // so there's no host pgid bookkeeping to do.
+  const bootMode = sandbox.bootMode || "fresh";
   const r = await sandbox.exec([
     "sh", "-c",
-    `nohup bash ${ENSURE_UP} ${worktreeDir} >> /tmp/backstage-preview.log 2>&1 &`,
+    `mkdir -p .ports && nohup setsid env WEBAPP_PORT=${port} PREVIEW_URL=${previewUrl} ` +
+      `BACKSTAGE_BOOT_MODE=${bootMode} ` +
+      `bash -c 'echo $$ > .ports/dev-pgid; exec ${cmd}' >> /tmp/backstage-preview.log 2>&1 &`,
   ]);
   if (r.exitCode !== 0) starting.delete(worktreeDir);
   return { ...status, starting: r.exitCode === 0 };
 }
 
 /**
- * Stop a sandboxed session's dev server: drop the Caddy route(s) and signal
- * the dev processes in-container. pkill by pattern is safe HERE (unlike on
- * the host, where it was the "kills every session's webapp" trap) because the
- * container only ever hosts this one session's processes.
+ * Stop a sandboxed session's dev server: drop the Caddy route(s), signal the
+ * bring-up's process group (.ports/dev-pgid, in-container), and clear the
+ * .tunnels.env contract. pkill by pattern is safe HERE (unlike on the host,
+ * where it was the "kills every session's webapp" trap) because the container
+ * only ever hosts this one session's processes.
  */
 export async function stopSandboxPreview(
   sandbox: Sandbox,
@@ -521,8 +687,33 @@ export async function stopSandboxPreview(
   const conf = await sandbox.exec(["cat", ".ports.conf"]);
   const ports = conf.exitCode === 0 ? parsePortsText(conf.stdout) : [];
   const webapp = ports.find((p) => p.key === "WEBAPP_PORT");
-  if (webapp) await removePreviewRoute(httpsPortFor(webapp.port));
+  if (webapp) {
+    const allocated = lookupSandboxHttpsPort(sandbox.id, webapp.port);
+    if (allocated != null) await removePreviewRoute(allocated);
+  }
+  await sandbox.exec([
+    "bash", "-c",
+    `[ -f .ports/dev-pgid ] && kill -TERM -- "-$(cat .ports/dev-pgid)" 2>/dev/null; true`,
+  ]);
   await sandbox.exec(["pkill", "-f", "next dev"]);
-  await sandbox.exec(["sh", "-c", "rm -f .ports/dev-pgid"]);
+  await sandbox.exec(["pkill", "-f", ".backstage/start.sh"]);
+  await sandbox.exec(["sh", "-c", "rm -f .ports/dev-pgid .tunnels.env"]);
   return getSandboxPreviewStatus(sandbox, worktreeDir);
+}
+
+/**
+ * Teardown hook for DockerProvider.destroy(): release the sandbox's https
+ * allocations and drop any Caddy routes still pointing at them.
+ */
+export async function dropSandboxPreviewRoutes(sandboxId: string): Promise<void> {
+  for (const httpsPort of releaseSandboxPreviewPorts(sandboxId)) {
+    // removePreviewRoute only touches routes this process cached — a destroy
+    // right after a restart may miss the cache, so delete unconditionally.
+    previewRoutes.delete(httpsPort);
+    try {
+      await fetch(`${CADDY_ADMIN}/config/apps/http/servers/preview_${httpsPort}`, {
+        method: "DELETE",
+      });
+    } catch {}
+  }
 }
