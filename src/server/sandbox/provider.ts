@@ -47,6 +47,13 @@ export interface SandboxSessionSpec {
   cwd?: string;
   /** Stack base: branch the new worktree branches off (createWorktree opts.base). */
   base?: string;
+  /**
+   * Attached-repo worktree dirs (multi-repo sessions). Bind-mode docker
+   * sandboxes mount each at its identical path (plus its repo's common .git)
+   * so the agent can cd into them; a change to this set recreates the
+   * container on the next ensure. Volume-mode workspaces reject attachments.
+   */
+  attachedDirs?: string[];
 }
 
 export interface ExecOpts {
@@ -114,6 +121,10 @@ export interface Sandbox {
   provider: SandboxProviderId;
   /** Workspace path *inside* the sandbox (== host path for local + bind-mount Docker). */
   cwd: string;
+  /** How the workspace is materialized (docker only): "bind" = host worktree
+   *  bind-mounted at the identical path; "volume" = cloned into a per-session
+   *  volume, no host copy. Undefined for local (the host dir IS the workspace). */
+  workspace?: "bind" | "volume";
   /** One-shot commands in the workspace (git status, ls-files, …). Never throws
    *  on non-zero exit — inspect `exitCode`. */
   exec(cmd: string[], opts?: ExecOpts): Promise<ExecResult>;

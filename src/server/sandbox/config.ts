@@ -19,13 +19,23 @@ import { BACKSTAGE_CHATS_DIR } from "../paths";
 import type { SandboxProviderId } from "./provider";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const CONFIG_PATH = `${HOME}/.backstage-sandbox.json`;
+// Env-overridable so the verify suite can point a scratch config at a scratch
+// docker setup without touching the live file (which is read fresh per run).
+const CONFIG_PATH =
+  process.env.BACKSTAGE_SANDBOX_CONFIG || `${HOME}/.backstage-sandbox.json`;
 const DISABLE_FILE = `${BACKSTAGE_CHATS_DIR}/disable-sandboxes`;
 
 export interface SandboxRepoOverride {
   provider?: SandboxProviderId;
   image?: string;
 }
+
+/** Where a docker sandbox's workspace lives (docs/sandboxes-plan.md Phase 2):
+ *  "bind" (default) bind-mounts the existing host worktree at its identical
+ *  path; "volume" clones the repo into a per-session volume INSIDE the
+ *  container — no host worktree at all, so destroy() deletes the workspace
+ *  (that data loss is the mode's contract; push your work). */
+export type SandboxWorkspaceMode = "bind" | "volume";
 
 export interface SandboxConfig {
   provider: SandboxProviderId;
@@ -37,6 +47,16 @@ export interface SandboxConfig {
   cpus?: number;
   /** Memory limit per container (docker --memory, e.g. "8g"); unset = default ("8g"). */
   memory?: string;
+  /** Workspace mode for NEW docker sandboxes (existing sandboxes keep the mode
+   *  they were created with — recorded in their state file). Default "bind". */
+  workspace?: SandboxWorkspaceMode;
+  /** Container ports to publish for previews (docker -p 127.0.0.1::<port>,
+   *  random loopback host port, set at container create). Default none. */
+  previewPorts?: number[];
+  /** Allow startPreview to launch the dev-server bring-up INSIDE the sandbox
+   *  (requires the image to carry the repo's dev toolchain). Default false:
+   *  only the port-mapping + Caddy layer is active. */
+  devServerInSandbox?: boolean;
   /** Per-repo overrides keyed by repo id (worktree.ts REPOS). */
   perRepo?: Record<string, SandboxRepoOverride>;
 }
@@ -67,6 +87,12 @@ export function sandboxConfig(): SandboxConfig {
           if (provider || image) perRepo[repoId] = { provider, image };
         }
       }
+      const previewPorts = Array.isArray(raw?.previewPorts)
+        ? raw.previewPorts.filter(
+            (p: unknown): p is number =>
+              typeof p === "number" && Number.isInteger(p) && p > 0 && p < 65536,
+          )
+        : [];
       return {
         provider: asProviderId(raw?.provider) || "local",
         image: typeof raw?.image === "string" ? raw.image : undefined,
@@ -79,6 +105,9 @@ export function sandboxConfig(): SandboxConfig {
           typeof raw?.memory === "string" && /^\d+(\.\d+)?[kmg]b?$/i.test(raw.memory.trim())
             ? raw.memory.trim()
             : undefined,
+        workspace: raw?.workspace === "volume" ? "volume" : undefined,
+        previewPorts: previewPorts.length ? previewPorts : undefined,
+        devServerInSandbox: raw?.devServerInSandbox === true || undefined,
         perRepo: Object.keys(perRepo).length ? perRepo : undefined,
       };
     }

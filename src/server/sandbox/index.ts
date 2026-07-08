@@ -31,7 +31,15 @@ export {
   sandboxesEnabled,
   effectiveSandboxProvider,
   type SandboxConfig,
+  type SandboxWorkspaceMode,
 } from "./config";
+export {
+  workspaceExecFor,
+  hostWorkspaceExec,
+  hasRemoteWorkspace,
+  type WorkspaceExec,
+  type WorkspaceExecSession,
+} from "./workspace-exec";
 export { LocalProvider } from "./local";
 
 // Shared instances — both providers keep their state on disk/docker, not here.

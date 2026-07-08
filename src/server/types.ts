@@ -150,8 +150,10 @@ export interface UnifiedSession {
   mcpServers?: string[]; // External MCP servers loaded for this session
   /** Sandbox opt-in (docs/sandboxes-plan.md): mirrors the session file's field.
    *  Runs route through the named provider when config + kill-switch allow;
-   *  `sandboxId` is set once a provider materializes the sandbox (Phase 1+). */
-  sandbox?: { provider: string; sandboxId?: string };
+   *  `sandboxId` is set once a provider materializes the sandbox (Phase 1+).
+   *  `workspace` records how the workspace was materialized: "volume" means it
+   *  lives ONLY inside the sandbox (no host worktree — Phase 2). */
+  sandbox?: { provider: string; sandboxId?: string; workspace?: "bind" | "volume" };
 }
 
 // Slack session file format (two variants exist)
@@ -252,9 +254,10 @@ export interface BackstageSessionFile {
   /** Sandbox opt-in (docs/sandboxes-plan.md): recorded at create time when the
    *  creator asked for a sandbox. `provider` is the effective provider id at
    *  creation ("local" until a real provider is configured); `sandboxId` is
-   *  set once a provider materializes a sandbox for the session (Phase 1+).
-   *  Nothing acts on this field yet. */
-  sandbox?: { provider: string; sandboxId?: string };
+   *  set once a provider materializes a sandbox for the session (Phase 1+);
+   *  `workspace` records the materialized mode — "volume" workspaces live only
+   *  inside the sandbox (no host worktree; Phase 2). */
+  sandbox?: { provider: string; sandboxId?: string; workspace?: "bind" | "volume" };
 }
 
 export interface TranscriptEntry {

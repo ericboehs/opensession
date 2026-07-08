@@ -191,6 +191,26 @@ async function containerStatus(name: string): Promise<SandboxStatus> {
   return r.stdout.trim() === "running" ? "running" : "stopped";
 }
 
+/** Container status by name, for callers outside this module (the
+ *  workspace-exec choke point checks "actually running" without starting). */
+export function dockerContainerStatus(name: string): Promise<SandboxStatus> {
+  return containerStatus(name);
+}
+
+/**
+ * A raw in-container exec bound to `cwd` that NEVER starts a stopped
+ * container (unlike Sandbox.exec) — the workspace-exec choke point uses it
+ * for read surfaces, where waking a stopped sandbox just to run `git status`
+ * would defeat the idle-stop policy. A container that stops between the
+ * caller's status check and the exec simply returns a non-zero exit.
+ */
+export function rawDockerExec(container: string, cwd: string) {
+  return (cmd: string[], opts?: ExecOpts): Promise<ExecResult> => {
+    const envArgs = Object.entries(opts?.env || {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+    return docker(["exec", "-w", cwd, ...envArgs, container, ...cmd]);
+  };
+}
+
 async function ensureStarted(name: string): Promise<void> {
   const st = await containerStatus(name);
   if (st === "running") return;
