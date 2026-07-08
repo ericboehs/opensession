@@ -455,6 +455,10 @@ export type WSServerMessage =
 	  }
 	| { type: "term_data"; data: string }
 	| { type: "term_exit"; code?: number }
+	// Where the Shell tab's PTY landed (sandboxed sessions run their shell
+	// inside the sandbox) + optional fallback explanation.
+	| { type: "term_ready"; target: "host" | "docker" | "daytona"; cwd?: string }
+	| { type: "term_notice"; message: string }
 	| { type: "stream_start"; sessionId: string; by?: string }
 	| { type: "stream_text"; sessionId?: string; text: string }
 	| { type: "stream_tool_use"; sessionId?: string; entry: TranscriptEntry }

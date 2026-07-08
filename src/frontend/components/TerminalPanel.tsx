@@ -16,6 +16,9 @@ interface Props {
  * - Shell: a real interactive terminal (xterm.js over a server-side PTY) in
  *   the session's worktree — poke at the agent's checkout without leaving
  *   the browser. The PTY lives per-WebSocket and dies on disconnect.
+ *   Sandboxed sessions get the shell INSIDE their sandbox (docker exec /
+ *   Daytona SSH — see src/server/terminals.ts); a dim banner says where it
+ *   landed.
  */
 export function TerminalPanel({ entries, sessionId, send, addHandler }: Props) {
   const [mode, setMode] = useState<"commands" | "shell">("commands");
@@ -32,7 +35,7 @@ export function TerminalPanel({ entries, sessionId, send, addHandler }: Props) {
         <button
           className={`btn-small ${mode === "shell" ? "!bg-active !text-fg" : ""}`}
           onClick={() => setMode("shell")}
-          title="Interactive shell in this session's worktree"
+          title="Interactive shell in this session's workspace (inside its sandbox when sandboxed)"
         >
           Shell
         </button>
@@ -165,6 +168,13 @@ function ShellView({
       );
       const offMsg = addHandler((msg) => {
         if (msg.type === "term_data") term.write(b64decode(msg.data));
+        else if (msg.type === "term_ready" && msg.target !== "host")
+          // Sandboxed sessions get their shell INSIDE the sandbox.
+          term.write(
+            `\x1b[2m[shell inside ${msg.target} sandbox — ${msg.cwd || ""}]\x1b[0m\r\n`,
+          );
+        else if (msg.type === "term_notice")
+          term.write(`\x1b[2m[${msg.message}]\x1b[0m\r\n`);
         else if (msg.type === "term_exit")
           term.write("\r\n\x1b[2m[shell exited — switch tabs to restart]\x1b[0m\r\n");
       });
