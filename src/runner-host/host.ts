@@ -78,6 +78,16 @@ const log = (...args: unknown[]) =>
 //    dogfoods it). Reconnects with backoff on drop, mirroring the socket
 //    path's tolerance: the run never stops, events are simply unobserved
 //    until backstage (re)attaches.
+//
+// FRAME-LOSS WINDOW (both modes, deliberate): the stream is live-only — no
+// event buffering or replay. `send()` drops messages while no client is
+// attached, and a reconnect resumes from "now"; `hello` carries the catch-up
+// state (engine session id, pending asks, terminal event), the transcript
+// jsonl is the durable copy of everything else, and meta.done + the journal
+// cover a run that FINISHES while disconnected. For docker sandboxes the
+// transcript is host-visible (bind-mounted), so nothing is truly lost; for
+// REMOTE sandboxes the transcript lives in-sandbox only, so mid-run stream
+// events emitted during a disconnect never reach the live viewer.
 
 const RUN_WS_URL = process.env.BKS_RUN_WS_URL || "";
 const RUN_WS_TOKEN = process.env.BKS_RUN_WS_TOKEN || "";
@@ -166,6 +176,13 @@ function handleClientMsg(msg: ClientToHostMsg): void {
 
 if (RUN_WS_URL) {
   // ── WS mode: dial out to backstage and keep redialing until we exit ────────
+  // TODO(ws-buffer-ack): reconnect currently resumes streaming WITHOUT
+  // replaying frames sent while disconnected (see the frame-loss window note
+  // above). For mid-run event fidelity on flaky remote links, buffer outbound
+  // frames here with a monotonic seq, have the client ack last-seen-seq in
+  // `hello`, and replay unacked frames on reconnect (no loss, no
+  // double-apply). Correctness is already covered by hello/meta.done/journal
+  // — see docs/sandboxes-plan.md §5 Phase 3.
   let backoff = 500;
   const redial = (): void => {
     if (exiting) return;
