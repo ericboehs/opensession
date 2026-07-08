@@ -172,7 +172,7 @@ import {
 	sandboxWsClose,
 } from "./src/server/run-ws";
 import {
-	startTerminal,
+	startSessionTerminal,
 	writeTerminal,
 	resizeTerminal,
 	stopTerminal,
@@ -7681,13 +7681,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 
 					// ── Interactive shell (Shell tab) — one PTY per socket ──
 					case "term_start": {
-						const session = findSession(msg.sessionId);
-						const cwd =
-							session?.worktreeDir && existsSync(session.worktreeDir)
-								? session.worktreeDir
-								: HOME;
-						startTerminal(ws, {
-							cwd,
+						// Sandbox-aware: docker/daytona sessions get the shell INSIDE
+						// their sandbox; host worktree shell otherwise (terminals.ts).
+						void startSessionTerminal(ws, findSession(msg.sessionId), {
 							cols: Number(msg.cols) || undefined,
 							rows: Number(msg.rows) || undefined,
 							send: (m) => {
