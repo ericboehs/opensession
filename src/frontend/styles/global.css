@@ -9989,24 +9989,20 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		   (see .viewer-input) — the row stays full-strength; only rows scrolled
 		   down behind the composer fade, and they fade in the composer's backdrop,
 		   not here. */
-		/* --strip-clearance is 0 by default and the tab-strip height on a
+		/* --strip-clearance is 0 by default and the docked tab bar's height on a
 		   multi-chat workspace (set on .detail-pane below), so the first row
-		   clears the floating tab pills too when they're present. */
+		   starts just below the bar rather than under it. */
 		padding: calc(var(--header-h) + var(--strip-clearance, 0px) + 8px) 12px
 			var(--chat-under);
-		/* Dissolve the transcript into the bar as it scrolls up under the pills,
-		   so text never bleeds sharply above them — the pills stay the topmost,
-		   cleanly-legible layer. (The bottom is handled by the composer backdrop.) */
+		/* Dissolve the transcript into the header as it scrolls up under the
+		   floating pills; below them the docked tab bar (when shown) is opaque
+		   and clips the rest under its soft shadow. */
 		-webkit-mask-image: linear-gradient(
 			to bottom,
 			transparent 0,
-			#000 calc(var(--header-h) + var(--strip-clearance, 0px))
+			#000 var(--header-h)
 		);
-		mask-image: linear-gradient(
-			to bottom,
-			transparent 0,
-			#000 calc(var(--header-h) + var(--strip-clearance, 0px))
-		);
+		mask-image: linear-gradient(to bottom, transparent 0, #000 var(--header-h));
 	}
 
 	.viewer-input {
@@ -10209,11 +10205,12 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 
 	/* When the strip DOES show (2+ chats), the phone top bar is a fixed
-	   transparent overlay (.app-header-overlay) that floats over the pane — so
-	   the strip must drop BELOW the floating Back/title/⋯ pills instead of
-	   hiding under them. Pull it out of flow and pin it just under the header,
-	   transparent (its own tab pills are solid chips with a shadow), overlaying
-	   the transcript that scrolls beneath — mirroring the desktop treatment. */
+	   transparent overlay (.app-header-overlay) whose Back/title/⋯ pills float
+	   over the pane — so the strip drops to a SOLID bar docked directly under
+	   those pills. Pulled out of flow and pinned at the header's bottom edge, it
+	   reads as fixed chrome; the transcript starts below it (its padding-top adds
+	   --strip-clearance) rather than scrolling under floating pills. A hairline +
+	   soft shadow lift the opaque bar over the transcript scrolling beneath. */
 	.session-tabs {
 		position: absolute;
 		top: var(--header-h);
@@ -10221,24 +10218,20 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		right: 0;
 		z-index: 6;
 		margin: 0;
-		padding: 3px 8px 0;
-		background: transparent;
-		/* Let the transcript scroll/tap through the gaps; only the pills catch
-		   input (re-enabled below). */
-		pointer-events: none;
+		padding: 5px 8px;
+		background: var(--bg);
+		border-bottom: 1px solid var(--border);
+		box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.22);
 	}
-	.session-tabs .session-tab {
-		pointer-events: auto;
-	}
-	/* Tell the transcript how much extra top room the floating strip needs so
-	   the newest/first row and the fade both clear it (see .viewer-messages).
-	   Only set when a multi-chat strip is actually shown. */
+	/* Tell the transcript how much extra top room the docked bar takes so the
+	   first row starts just below it (see .viewer-messages). Only set when a
+	   multi-chat strip is actually shown. */
 	.detail-pane:has(
 			.session-tabs-scroll
 				> .session-tab:not(.session-tab-new):not(.session-tab-history)
 				~ .session-tab:not(.session-tab-new):not(.session-tab-history)
 		) {
-		--strip-clearance: 44px;
+		--strip-clearance: 46px;
 	}
 
 	/* Brand logo in the top bar. */
