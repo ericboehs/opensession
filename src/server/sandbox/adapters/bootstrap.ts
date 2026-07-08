@@ -37,12 +37,17 @@
  *    (engine session preserved) instead of having its terminal event
  *    consumed.
  *
- * Credential trust note: `~/.backstage-claude-accounts.json` (Claude OAuth
- * pool) is uploaded into the sandbox at bootstrap when present — the exact
- * parity of the docker provider's ro mount, but on third-party compute; a
- * self-hoster who doesn't accept that runs these adapters against their OWN
- * Daytona/E2B deployment (both are self-hostable). Automations are refused
- * sandboxing elsewhere in the stack, so only interactive-trust runs get here.
+ * Credential trust note: a SCOPED slice of `~/.backstage-claude-accounts.json`
+ * (Claude OAuth pool) is uploaded into the sandbox per LAUNCH (not at
+ * bootstrap): only the run's pinned account when spec.accountId is set, else
+ * the shared pool accounts plus the run user's own personal accounts — never
+ * another user's personal subscription (accountsForRemoteUpload,
+ * claude-accounts.ts). That's deliberately narrower than the docker
+ * provider's ro mount of the full store, because this is third-party compute;
+ * a self-hoster who doesn't accept even the scoped upload runs these adapters
+ * against their OWN Daytona/E2B deployment (both are self-hostable).
+ * Automations are refused sandboxing elsewhere in the stack, so only
+ * interactive-trust runs get here.
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync } from "fs";
@@ -55,6 +60,7 @@ import {
   type StreamEvent,
 } from "../../claude-runner";
 import { RESUME_CONTINUATION_PROMPT } from "../../agent-runner";
+import { accountsForRemoteUpload } from "../../claude-accounts";
 import { providerFor } from "../../models";
 import { hostSteer, hostInterruptSteer, hostCancel } from "../../host-registry";
 import { registerRunToken, unregisterRunToken } from "../../run-rpc";
@@ -78,8 +84,6 @@ import type {
   SandboxProviderId,
   SandboxStatus,
 } from "../provider";
-
-const HOME = process.env.HOME || "/home/ubuntu";
 
 /** Absolute paths INSIDE the sandbox — kept byte-identical to the host/docker
  *  layout so the runner's hardcoded paths resolve (do not "tidy" these). */
@@ -437,17 +441,11 @@ export async function bootstrapRemoteSandbox(
     "~/.claude seed",
   );
 
-  // Claude account pool (interactive-trust parity with docker's ro mount —
-  // see the module header's credential note).
-  const accountsPath =
-    process.env.BACKSTAGE_CLAUDE_ACCOUNTS_PATH || `${HOME}/.backstage-claude-accounts.json`;
-  if (existsSync(accountsPath)) {
-    log("uploading claude account pool…");
-    await driver.writeFile(
-      `${REMOTE_HOME}/.backstage-claude-accounts.json`,
-      readFileSync(accountsPath, "utf-8"),
-    );
-  }
+  // NOTE: the Claude account pool is NOT uploaded here. Bootstrap is per
+  // sandbox and knows nothing about the run, so it used to ship the FULL
+  // store — including other users' personal subscriptions — to third-party
+  // compute. The scoped upload now happens per launch in makeRemoteLauncher
+  // (see the module header's credential note).
 
   need(
     await driver.exec(`printf '%s' ${shellQuoteWord(signature)} > ${BOOTSTRAP_MARKER}`),
@@ -543,6 +541,16 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
         throw new Error(`remote launch of ${hostId}: spec.json (with wsToken) missing from ${dir}`);
       }
       await driver.ensureStarted();
+      // Scoped Claude account upload — only what THIS run may use (pinned
+      // account, else pool + the run user's own personal accounts; see the
+      // module header). Rewritten every launch so pin/user changes apply and
+      // a previously-uploaded wider file never lingers.
+      const accounts = accountsForRemoteUpload(spec.user, spec.accountId);
+      await driver.writeFile(
+        `${REMOTE_HOME}/.backstage-claude-accounts.json`,
+        JSON.stringify({ accounts }, null, 2) + "\n",
+      );
+      await driver.exec(`chmod 600 ${REMOTE_HOME}/.backstage-claude-accounts.json`);
       const base = sandboxCallbackBaseUrl();
       registerRunWsHost(hostId, spec.wsToken);
       try {
