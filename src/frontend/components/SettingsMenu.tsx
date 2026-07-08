@@ -7,6 +7,7 @@ import { IconCheck, IconChevronRight, IconGear } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { TEAM, setCurrentUser, useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
+import { PRODUCT_NAME } from "../lib/brand";
 
 // The "Michael menu": the account switcher (who you're acting as), the live
 // connection status, and an entry into the full Settings page (theme,
@@ -252,7 +253,7 @@ export function SettingsMenu({
 						/>
 					</span>
 					<span className="text-[15px] font-semibold leading-none tracking-[-0.01em]">
-						Backstage
+						{PRODUCT_NAME}
 					</span>
 					{/* A smaller chevron, hugged to the wordmark and vertically centered.
 					    Only shows on hover or while the menu is open. */}

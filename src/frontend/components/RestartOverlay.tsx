@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { WSServerMessage } from "../lib/types";
+import { PRODUCT_NAME } from "../lib/brand";
 
 const HEALTH_URL = "/backstage/api/health";
 
@@ -103,7 +104,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
       <div className="restart-card">
         <div className={`restart-spinner ${backOnline ? "restart-spinner-done" : ""}`} />
         <div className="restart-title">
-          {backOnline ? "Back online" : "Backstage is restarting"}
+          {backOnline ? "Back online" : `${PRODUCT_NAME} is restarting`}
         </div>
         <div className="restart-sub">
           {backOnline

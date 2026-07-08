@@ -23,6 +23,7 @@ import {
 } from "../lib/api";
 import type { WSClientMessage, WSServerMessage } from "../lib/types";
 import type { MentionKind } from "./NoteEditor";
+import { PRODUCT_NAME, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 const NoteEditor = lazy(() => import("./NoteEditor"));
 
@@ -161,12 +162,12 @@ export function Notes({
 	useEffect(() => {
 		const note = selNoteId ? notes.find((n) => n.id === selNoteId) : null;
 		document.title = note
-			? `${note.title} — Notes — Backstage`
+			? `${note.title} — Notes — ${PRODUCT_NAME}`
 			: selDocPath
-				? `${selDocPath.split("/").pop()} — Docs — Backstage`
-				: "Notes — Backstage";
+				? `${selDocPath.split("/").pop()} — Docs — ${PRODUCT_NAME}`
+				: `Notes — ${PRODUCT_NAME}`;
 		return () => {
-			document.title = "Backstage — Tella";
+			document.title = DEFAULT_DOC_TITLE;
 		};
 	}, [selNoteId, selDocPath, notes]);
 

@@ -118,6 +118,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"autoArchive",
 	"composer",
 	"appearance",
+	"workspace",
 	"model",
 	"connections",
 	"audit",

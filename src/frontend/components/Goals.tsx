@@ -13,6 +13,7 @@ import {
   type ModelOption,
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
+import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 type GoalStatus = "active" | "paused" | "done" | "failed";
 
@@ -75,12 +76,12 @@ export function Goals({ onOpenSession }: Props) {
   }, []);
 
   useEffect(() => {
-    document.title = "Goals — Backstage";
+    document.title = docTitle("Goals");
     load();
     const id = setInterval(load, 10000);
     return () => {
       clearInterval(id);
-      document.title = "Backstage — Tella";
+      document.title = DEFAULT_DOC_TITLE;
     };
   }, [load]);
 

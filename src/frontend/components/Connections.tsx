@@ -3,6 +3,7 @@ import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { IconDotsHorizontal, IconTrash, IconSliders, IconHistory, IconPlus } from "./icons";
 import { IconTile, displayName } from "./BrandTile";
+import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 interface McpConnection {
   name: string;
@@ -102,10 +103,10 @@ export function Connections() {
   }, []);
 
   useEffect(() => {
-    document.title = "Connections — Backstage";
+    document.title = docTitle("Connections");
     load();
     return () => {
-      document.title = "Backstage — Tella";
+      document.title = DEFAULT_DOC_TITLE;
     };
   }, [load]);
 

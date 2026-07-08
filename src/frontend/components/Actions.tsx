@@ -11,6 +11,7 @@ import {
   type ActionInputType,
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
+import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 interface Props {
   onOpenSession: (sessionId: string) => void;
@@ -39,10 +40,10 @@ export function Actions({ onOpenSession }: Props) {
   }, []);
 
   useEffect(() => {
-    document.title = "Actions — Backstage";
+    document.title = docTitle("Actions");
     load();
     return () => {
-      document.title = "Backstage — Tella";
+      document.title = DEFAULT_DOC_TITLE;
     };
   }, [load]);
 

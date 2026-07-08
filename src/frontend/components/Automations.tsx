@@ -15,6 +15,7 @@ import {
   type AutomationDraft,
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
+import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 interface AutomationRun {
   at: string;
@@ -121,12 +122,12 @@ export function Automations({ onOpenSession }: Props) {
   }, []);
 
   useEffect(() => {
-    document.title = "Automations — Backstage";
+    document.title = docTitle("Automations");
     load();
     const id = setInterval(load, 10000);
     return () => {
       clearInterval(id);
-      document.title = "Backstage — Tella";
+      document.title = DEFAULT_DOC_TITLE;
     };
   }, [load]);
 

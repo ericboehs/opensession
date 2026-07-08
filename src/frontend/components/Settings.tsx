@@ -58,6 +58,8 @@ import { useIsPhone } from "../hooks/useIsPhone";
 import { BottomSheet } from "../ui/sheet";
 import { cn } from "../ui/cn";
 import { IconChevronLeft, IconChevronRight, IconX } from "./icons";
+import { Tooltip } from "../ui/tooltip";
+import { AGENT_NAME, PRODUCT_NAME } from "../lib/brand";
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
 // from the "Settings" item in the Michael menu. Designed to grow — each area is
@@ -82,6 +84,7 @@ export type SettingsSectionKey =
 	| "autoArchive"
 	| "composer"
 	| "appearance"
+	| "workspace"
 	| "model"
 	| "connections"
 	| "audit"
@@ -299,6 +302,24 @@ const SECTIONS: {
 		),
 	},
 	{
+		key: "workspace",
+		label: "General",
+		group: "Workspace",
+		icon: (
+			<svg
+				width="20"
+				height="20"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<circle cx="8" cy="5.5" r="2.5" />
+				<path d="M3.5 13.5c.6-2.4 2.4-3.6 4.5-3.6s3.9 1.2 4.5 3.6" strokeLinecap="round" />
+			</svg>
+		),
+	},
+	{
 		key: "model",
 		label: "Models",
 		group: "Workspace",
@@ -379,6 +400,7 @@ function SectionPanel({
 			{section === "autoArchive" && <AutoArchivePanel />}
 			{section === "composer" && <ComposerPanel />}
 			{section === "appearance" && <AppearancePanel />}
+			{section === "workspace" && <WorkspacePanel />}
 			{section === "audit" && <AuditPanel />}
 			{section === "model" && <ModelsPanel />}
 			{section === "connections" && <Connections />}
@@ -1372,6 +1394,80 @@ function ComposerPanel() {
 						/>
 					}
 				/>
+			</div>
+		</div>
+	);
+}
+
+// ── Workspace · General ─────────────────────────────────────────────────────
+
+const IDENTITY_INPUT_CLASS =
+	"w-[140px] rounded-md border border-line bg-surface px-2 py-1 text-[13px] font-medium text-dim opacity-70";
+
+/**
+ * Instance identity. The source of truth is ~/.backstage/config.json
+ * (persona.name / branding.productName) on the server — there is no
+ * settings-write API for the config file yet, so the fields render the
+ * built-in defaults, disabled, until a read/write endpoint exists (the
+ * needed backend change is documented in docs/rename-opensession-plan.md).
+ */
+function WorkspacePanel() {
+	return (
+		<div className="settings-panel">
+			<h1 className="settings-title">General</h1>
+			<div className="settings-group-label">Identity</div>
+			<div className="setting-card">
+				<SettingRow
+					title="Agent name"
+					desc={
+						<>
+							What the agent calls itself in prompts, Slack messages, and the
+							UI. Configured via <code>persona.name</code> in{" "}
+							<code>~/.backstage/config.json</code> on the server.
+						</>
+					}
+					control={
+						<Tooltip label="Wire-up pending — edit ~/.backstage/config.json for now">
+							{/* Disabled inputs swallow hover events, so the tooltip
+							    hangs off a wrapping span. */}
+							<span className="inline-flex">
+								<input
+									className={IDENTITY_INPUT_CLASS}
+									value={AGENT_NAME}
+									disabled
+									readOnly
+									aria-label="Agent name"
+								/>
+							</span>
+						</Tooltip>
+					}
+				/>
+				<SettingRow
+					title="Product name"
+					desc={
+						<>
+							What this app calls itself in titles and headers. Configured via{" "}
+							<code>branding.productName</code> in the same config file.
+						</>
+					}
+					control={
+						<Tooltip label="Wire-up pending — edit ~/.backstage/config.json for now">
+							<span className="inline-flex">
+								<input
+									className={IDENTITY_INPUT_CLASS}
+									value={PRODUCT_NAME}
+									disabled
+									readOnly
+									aria-label="Product name"
+								/>
+							</span>
+						</Tooltip>
+					}
+				/>
+			</div>
+			<div className="settings-hint">
+				Changes to the config file apply to new runs without a restart; a
+				settings-write API for these fields is pending.
 			</div>
 		</div>
 	);

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { relativeTime, archiveSessionApi } from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
+import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 interface Props {
   sessions: UnifiedSession[];
@@ -49,9 +50,9 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
   const [reason, setReason] = useState<ReasonFilter>("all");
 
   useEffect(() => {
-    document.title = "Archived — Backstage";
+    document.title = docTitle("Archived");
     return () => {
-      document.title = "Backstage — Tella";
+      document.title = DEFAULT_DOC_TITLE;
     };
   }, []);
 
