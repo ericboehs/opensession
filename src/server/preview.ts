@@ -21,6 +21,8 @@
 import { $ } from "bun";
 import { closeSync, existsSync, openSync, readFileSync, readlinkSync, unlinkSync } from "fs";
 import { basename, join } from "path";
+import { sandboxConfig } from "./sandbox/config";
+import type { Sandbox } from "./sandbox/provider";
 
 export interface PreviewService {
   /** Friendly label, e.g. "Webapp". */
@@ -92,16 +94,21 @@ function friendly(key: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Parse `<worktree>/.ports.conf` into ordered {key, port} entries. */
-function readPorts(worktreeDir: string): { key: string; port: number }[] {
-  const file = join(worktreeDir, ".ports.conf");
-  if (!existsSync(file)) return [];
+/** Parse .ports.conf text into ordered {key, port} entries. */
+function parsePortsText(text: string): { key: string; port: number }[] {
   const out: { key: string; port: number }[] = [];
-  for (const line of readFileSync(file, "utf8").split("\n")) {
+  for (const line of text.split("\n")) {
     const m = line.match(/^\s*([A-Z0-9_]+_PORT)\s*=\s*(\d+)\s*$/);
     if (m) out.push({ key: m[1], port: parseInt(m[2], 10) });
   }
   return out;
+}
+
+/** Parse `<worktree>/.ports.conf` into ordered {key, port} entries. */
+function readPorts(worktreeDir: string): { key: string; port: number }[] {
+  const file = join(worktreeDir, ".ports.conf");
+  if (!existsSync(file)) return [];
+  return parsePortsText(readFileSync(file, "utf8"));
 }
 
 /**
@@ -371,4 +378,129 @@ export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
   try { unlinkSync(join(worktreeDir, ".ports", "dev-pgid")); } catch {}
 
   return getPreviewStatus(worktreeDir);
+}
+
+// ── Sandboxed previews (docs/sandboxes-plan.md Phase 2) ───────────────────────
+// A sandboxed session's dev server runs INSIDE its container, so the host-side
+// mechanics above can't see it: `ss` can't observe container listeners, and
+// signaling host process groups can't stop them. These variants keep the same
+// PreviewStatus shape and reuse the identical Caddy plumbing — the only change
+// is the upstream: instead of dialing the dev port directly, Caddy dials the
+// container port's PUBLISHED loopback host port (docker -p at container
+// create, config `previewPorts`; see docker.ts). A port that isn't published
+// stays previewUrl-less — add it to previewPorts and let the container be
+// recreated. Callers route here only when the session's sandbox container is
+// actually running (the same active check as workspace-exec).
+
+/** True when a TCP connect to 127.0.0.1:<port> succeeds INSIDE the sandbox. */
+async function sandboxPortListening(sandbox: Sandbox, port: number): Promise<boolean> {
+  const r = await sandbox.exec([
+    "timeout", "2", "bash", "-c", `exec 3<>/dev/tcp/127.0.0.1/${port}`,
+  ]);
+  return r.exitCode === 0;
+}
+
+export async function getSandboxPreviewStatus(
+  sandbox: Sandbox,
+  worktreeDir: string,
+): Promise<PreviewStatus> {
+  // .ports.conf via the sandbox exec — works for bind mounts and is the only
+  // way for volume-mode workspaces (no host copy).
+  const conf = await sandbox.exec(["cat", ".ports.conf"]);
+  const ports = conf.exitCode === 0 ? parsePortsText(conf.stdout) : [];
+  const services: PreviewService[] = [];
+  for (const { key, port } of ports) {
+    const running = await sandboxPortListening(sandbox, port);
+    // PIDs are container-internal — meaningless to the host UI; leave empty.
+    services.push({ name: friendly(key), key, port, running, pids: [] });
+  }
+  const webapp = services.find((s) => s.key === "WEBAPP_PORT");
+
+  let previewUrl: string | null = null;
+  if (webapp?.running) {
+    const published = (await sandbox.ports())[webapp.port];
+    if (published) {
+      // Same Caddy route as host previews; the https port is keyed by the
+      // CONTAINER port (stable across restarts), the upstream dials the
+      // published loopback port (may change when the container is recreated —
+      // ensurePreviewRoute re-points an existing route on mismatch).
+      const httpsPort = httpsPortFor(webapp.port);
+      const host = await previewHost();
+      if (await ensurePreviewRoute(httpsPort, published, host)) {
+        previewUrl = `https://${host}:${httpsPort}`;
+      }
+    } else {
+      console.warn(
+        `[preview] ${sandbox.id}: webapp on ${webapp.port} is up in-container but the port isn't published — add it to sandbox previewPorts`,
+      );
+    }
+  } else if (webapp) {
+    await removePreviewRoute(httpsPortFor(webapp.port));
+  }
+
+  if (webapp?.running) starting.delete(worktreeDir);
+
+  return {
+    hasPortsConf: ports.length > 0,
+    webappPort: webapp?.port ?? null,
+    running: !!webapp?.running,
+    starting: !webapp?.running && isStarting(worktreeDir),
+    previewUrl,
+    services,
+  };
+}
+
+/**
+ * Bring the dev server up INSIDE the sandbox. Gated behind config
+ * `devServerInSandbox` (default off): the bring-up script and the repo's dev
+ * toolchain must exist in the container for this to work — until the image
+ * carries them, only the status/port/Caddy layer above is active and this is
+ * a no-op that returns current status.
+ */
+export async function startSandboxPreview(
+  sandbox: Sandbox,
+  worktreeDir: string,
+): Promise<PreviewStatus> {
+  const status = await getSandboxPreviewStatus(sandbox, worktreeDir);
+  if (status.running || status.starting) return status;
+  if (!sandboxConfig().devServerInSandbox) {
+    console.log(
+      `[preview] ${sandbox.id}: in-sandbox dev-server start is gated off (devServerInSandbox) — not starting`,
+    );
+    return status;
+  }
+  const probe = await sandbox.exec(["test", "-r", ENSURE_UP]);
+  if (probe.exitCode !== 0) {
+    console.warn(`[preview] ${sandbox.id}: ${ENSURE_UP} not present in the sandbox — cannot start`);
+    return status;
+  }
+  starting.set(worktreeDir, Date.now());
+  // Detach inside the container; the container is the session's process scope,
+  // so there's no host pgid bookkeeping to do.
+  const r = await sandbox.exec([
+    "sh", "-c",
+    `nohup bash ${ENSURE_UP} ${worktreeDir} >> /tmp/backstage-preview.log 2>&1 &`,
+  ]);
+  if (r.exitCode !== 0) starting.delete(worktreeDir);
+  return { ...status, starting: r.exitCode === 0 };
+}
+
+/**
+ * Stop a sandboxed session's dev server: drop the Caddy route(s) and signal
+ * the dev processes in-container. pkill by pattern is safe HERE (unlike on
+ * the host, where it was the "kills every session's webapp" trap) because the
+ * container only ever hosts this one session's processes.
+ */
+export async function stopSandboxPreview(
+  sandbox: Sandbox,
+  worktreeDir: string,
+): Promise<PreviewStatus> {
+  starting.delete(worktreeDir);
+  const conf = await sandbox.exec(["cat", ".ports.conf"]);
+  const ports = conf.exitCode === 0 ? parsePortsText(conf.stdout) : [];
+  const webapp = ports.find((p) => p.key === "WEBAPP_PORT");
+  if (webapp) await removePreviewRoute(httpsPortFor(webapp.port));
+  await sandbox.exec(["pkill", "-f", "next dev"]);
+  await sandbox.exec(["sh", "-c", "rm -f .ports/dev-pgid"]);
+  return getSandboxPreviewStatus(sandbox, worktreeDir);
 }
