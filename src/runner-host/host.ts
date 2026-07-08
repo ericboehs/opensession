@@ -44,6 +44,7 @@ const {
   MCP_PROXY_ENTRY,
   rpcSocketPath,
 } = await import("./protocol");
+const { WsFrameBuffer, replayStartFor } = await import("./ws-buffer");
 const { BACKSTAGE_CHATS_DIR } = await import("../server/paths");
 
 type RunHostSpec = import("./protocol").RunHostSpec;
@@ -79,15 +80,24 @@ const log = (...args: unknown[]) =>
 //    path's tolerance: the run never stops, events are simply unobserved
 //    until backstage (re)attaches.
 //
-// FRAME-LOSS WINDOW (both modes, deliberate): the stream is live-only — no
-// event buffering or replay. `send()` drops messages while no client is
-// attached, and a reconnect resumes from "now"; `hello` carries the catch-up
-// state (engine session id, pending asks, terminal event), the transcript
-// jsonl is the durable copy of everything else, and meta.done + the journal
-// cover a run that FINISHES while disconnected. For docker sandboxes the
-// transcript is host-visible (bind-mounted), so nothing is truly lost; for
-// REMOTE sandboxes the transcript lives in-sandbox only, so mid-run stream
-// events emitted during a disconnect never reach the live viewer.
+// FRAME-LOSS WINDOW:
+//  - unix-socket mode (deliberately unchanged): the stream is live-only — no
+//    buffering or replay. `send()` drops messages while no client is attached
+//    and a reconnect resumes from "now"; `hello` carries the catch-up state
+//    (engine session id, pending asks, terminal event), the transcript jsonl
+//    is the durable copy of everything else, and meta.done + the journal
+//    cover a run that FINISHES while disconnected. Fine there: for docker
+//    bind-mode the transcript is host-visible anyway.
+//  - WS mode: outbound frames now carry a monotonic seq and sit in a bounded
+//    ring buffer (ws-buffer.ts: 5k frames / 5MB) until backstage acks its
+//    consumed watermark; a reconnect replays everything after the ack, and
+//    the server dedupes by seq — so frames emitted during a disconnect DO
+//    reach the live viewer once the link is back. Remaining edges: (a) ring
+//    overflow while disconnected drops the oldest frames — the replay then
+//    reports a `gap` and the server logs it (transcript still has it all);
+//    (b) a full backstage RESTART mints a new server epoch, so pre-restart
+//    frames are not replayed (they may already have been applied) — the old
+//    hello/meta.done/journal catch-up covers that case, exactly as before.
 
 const RUN_WS_URL = process.env.BKS_RUN_WS_URL || "";
 const RUN_WS_TOKEN = process.env.BKS_RUN_WS_TOKEN || "";
@@ -99,12 +109,21 @@ let exiting = false; // stops the WS redial loop once we're done
 let terminal: StreamEvent | undefined;
 let shutdownAcked: (() => void) | null = null;
 
+/** WS mode's sequenced sender (buffer + replay); null on the socket path. */
+let wsSequencedSend: ((msg: HostToClientMsg) => void) | null = null;
+
 const pendingAsks = new Map<
   string,
   { input: Record<string, unknown>; resolve: (r: AskResult) => void }
 >();
 
 function send(msg: HostToClientMsg): void {
+  // hello/ping are per-connection transport chatter — never sequenced,
+  // never replayed; everything else goes through the WS buffer in WS mode.
+  if (wsSequencedSend && msg.t !== "hello" && msg.t !== "ping") {
+    wsSequencedSend(msg);
+    return;
+  }
   if (!client) return;
   try {
     client.write(JSON.stringify(msg) + "\n");
@@ -176,13 +195,25 @@ function handleClientMsg(msg: ClientToHostMsg): void {
 
 if (RUN_WS_URL) {
   // ── WS mode: dial out to backstage and keep redialing until we exit ────────
-  // TODO(ws-buffer-ack): reconnect currently resumes streaming WITHOUT
-  // replaying frames sent while disconnected (see the frame-loss window note
-  // above). For mid-run event fidelity on flaky remote links, buffer outbound
-  // frames here with a monotonic seq, have the client ack last-seen-seq in
-  // `hello`, and replay unacked frames on reconnect (no loss, no
-  // double-apply). Correctness is already covered by hello/meta.done/journal
-  // — see docs/sandboxes-plan.md §5 Phase 3.
+  // Outbound frames are sequenced + ring-buffered (ws-buffer.ts) and replayed
+  // after the server's consumed-watermark ack on every (re)connect — see the
+  // FRAME-LOSS WINDOW note above for the exact semantics and remaining edges.
+  const buf = new WsFrameBuffer();
+  let lastEpoch: string | null = null; // server-side seq record we last streamed to
+  let streaming = false; // current socket finished its ack handshake + replay
+  let liveSock: WebSocket | null = null;
+  wsSequencedSend = (msg) => {
+    // Always buffered (that's the replay source); only written through once
+    // the handshake settled, so replay order is preserved.
+    const line = buf.stamp(msg as unknown as Record<string, unknown>);
+    if (streaming && liveSock?.readyState === WebSocket.OPEN) {
+      try {
+        liveSock.send(line);
+      } catch (e) {
+        log("ws send failed (frame stays buffered):", e);
+      }
+    }
+  };
   let backoff = 500;
   const redial = (): void => {
     if (exiting) return;
@@ -202,20 +233,64 @@ if (RUN_WS_URL) {
       redial();
       return;
     }
+    let openSeq = 0;
+    let ackTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Replay everything after `after`, then open the live tap. */
+    const beginStream = (after: number): void => {
+      const { gap, lines } = buf.replayFrom(after);
+      try {
+        if (gap) {
+          log(`replay gap: frames ${gap.from}..${gap.to} were dropped (buffer overflow)`);
+          sock.send(JSON.stringify({ t: "gap", ...gap }));
+        }
+        for (const line of lines) sock.send(line);
+      } catch (e) {
+        log("ws replay failed (frames stay buffered):", e);
+      }
+      buf.ack(after); // the watermark below `after` will never be replayed again
+      streaming = true;
+      if (lines.length) log(`replayed ${lines.length} frame(s) after seq ${after}`);
+    };
     sock.onopen = () => {
       backoff = 500;
+      liveSock = sock;
+      streaming = false;
       client = { write: (line) => sock.send(line), raw: sock };
       log("backstage attached (ws)");
       sendHello();
+      openSeq = buf.lastSeq;
+      // A pre-ack backstage never acks: fall back to live-only streaming from
+      // this connection onward (the old semantics) so mixed versions still run.
+      ackTimer = setTimeout(() => beginStream(openSeq), 3_000);
     };
     sock.onmessage = (ev) => {
+      let msg: any;
       try {
-        handleClientMsg(JSON.parse(String(ev.data)));
+        msg = JSON.parse(String(ev.data));
       } catch (e) {
         log("dropping malformed ws message:", e);
+        return;
       }
+      if (msg?.t === "ack") {
+        const ack = { seq: Number(msg.seq) || 0, epoch: typeof msg.epoch === "string" ? msg.epoch : undefined };
+        if (!streaming) {
+          if (ackTimer) clearTimeout(ackTimer);
+          const from = replayStartFor(ack, lastEpoch, openSeq);
+          lastEpoch = ack.epoch ?? null;
+          beginStream(from);
+        } else {
+          buf.ack(ack.seq); // periodic watermark — release delivered frames
+        }
+        return;
+      }
+      handleClientMsg(msg);
     };
     sock.onclose = () => {
+      if (ackTimer) clearTimeout(ackTimer);
+      if (liveSock === sock) {
+        liveSock = null;
+        streaming = false;
+      }
       if (client?.raw === sock) {
         client = null;
         log("backstage detached (ws)");

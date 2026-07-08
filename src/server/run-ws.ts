@@ -11,7 +11,11 @@
  *    are bridged into the SAME HostHandle machinery as the unix-socket path:
  *    `runWsConnector(hostId)` implements host-client's HostConnector, so
  *    reconnect tolerance, respawn-to-resume, ask proxying and host-registry
- *    steer/cancel all carry over untouched.
+ *    steer/cancel all carry over untouched. Host frames carry a monotonic
+ *    `seq`; this side acks its consumed watermark (on open + periodically)
+ *    and dedupes by it, so a reconnecting host replays the disconnect window
+ *    without double-applying (see ws-buffer.ts; the unix-socket path stays
+ *    live-only).
  *  - `/backstage/rpc-ws` — the michael-* MCP proxy channel. mcp-proxy.ts
  *    (BKS_RPC_WS_URL) dials it with its existing per-run rpc token; each
  *    request frame `{id, path, token, server, tool?, args?}` goes through the
@@ -51,6 +55,49 @@ type UpgradableServer = {
 /** hostId → expected bearer for the run's dial-back. */
 const wsTokens: Map<string, string> = (g.__runWsTokens ??= new Map());
 
+// ── Seq/ack state (host-side buffering + replay; ws-buffer.ts is the peer) ───
+// Host→server frames carry a monotonic `seq` (WS transport only). `seq` here
+// is the CONSUMED watermark — the highest seq delivered to an attached
+// HostHandle (frames parked in a pre-attach buffer don't count until flushed),
+// which is exactly what we ack: the host keeps everything above it and
+// replays it on reconnect; anything at/under it is a duplicate and dropped.
+// `epoch` identifies this registration's watermark across sockets — it
+// survives `bun --hot` (globalThis) but not a real restart, so a restarted
+// backstage (whose consumers may have already applied pre-restart frames)
+// presents a fresh epoch and the host skips the replay (old live-only
+// semantics; hello/meta.done/journal cover catch-up).
+
+interface HostSeqRec {
+  epoch: string;
+  seq: number;
+  unacked: number;
+  lastAckAt: number;
+}
+
+/** hostId → consumed-watermark record (lives for the registration, not the socket). */
+const wsSeqs: Map<string, HostSeqRec> = (g.__runWsSeqs ??= new Map());
+
+const ACK_EVERY_N_FRAMES = 50;
+const ACK_MIN_INTERVAL_MS = 2_000;
+
+function seqRecFor(hostId: string): HostSeqRec {
+  let rec = wsSeqs.get(hostId);
+  if (!rec) {
+    rec = { epoch: crypto.randomUUID(), seq: 0, unacked: 0, lastAckAt: 0 };
+    wsSeqs.set(hostId, rec);
+  }
+  return rec;
+}
+
+function sendAck(st: RunWsState): void {
+  const rec = seqRecFor(st.hostId);
+  rec.unacked = 0;
+  rec.lastAckAt = Date.now();
+  try {
+    st.ws.send(JSON.stringify({ t: "ack", seq: rec.seq, epoch: rec.epoch }));
+  } catch {}
+}
+
 interface RunWsState {
   ws: any; // ServerWebSocket
   hostId: string;
@@ -79,6 +126,7 @@ export function registerRunWsHost(hostId: string, token: string): void {
 
 export function unregisterRunWsHost(hostId: string): void {
   wsTokens.delete(hostId);
+  wsSeqs.delete(hostId);
   const st = wsConns.get(hostId);
   if (st) {
     wsConns.delete(hostId);
@@ -156,6 +204,9 @@ function wsOpen(ws: any): boolean {
     };
     (ws as any).__runWsState = st;
     wsConns.set(data.hostId, st);
+    // Hello-ack: tell the (re)dialing host our consumed watermark + epoch so
+    // it knows exactly what to replay (ws-buffer.ts replayStartFor).
+    sendAck(st);
     console.log(`[run-ws] host ${data.hostId.slice(0, 11)} dialed in`);
     return true;
   }
@@ -177,14 +228,41 @@ function wsMessage(ws: any, message: string | Buffer): boolean {
     }
     if (msg?.t === "ping") {
       // Answer keepalives here — they must work even while no HostHandle is
-      // attached (backstage mid-reattach).
+      // attached (backstage mid-reattach). Piggyback an ack: on a quiet link
+      // this is the periodic watermark refresh that lets the host trim its
+      // replay buffer.
       try {
         ws.send('{"t":"pong"}');
       } catch {}
+      sendAck(st);
       return true;
     }
-    if (st.consumer) st.consumer.onMsg(msg);
-    else st.buffer.push(msg);
+    if (msg?.t === "gap") {
+      // The host's replay buffer overflowed while we were unreachable — those
+      // frames are gone from the stream (the transcript jsonl still has them).
+      console.warn(
+        `[run-ws] host ${st.hostId.slice(0, 11)} lost frames ${msg.from}..${msg.to} to buffer overflow`,
+      );
+      return true;
+    }
+    const rec = seqRecFor(st.hostId);
+    if (typeof msg?.seq === "number" && msg.seq <= rec.seq) {
+      return true; // replay overlap — already consumed, never double-apply
+    }
+    if (st.consumer) {
+      st.consumer.onMsg(msg);
+      if (typeof msg?.seq === "number") {
+        rec.seq = msg.seq;
+        if (++rec.unacked >= ACK_EVERY_N_FRAMES || Date.now() - rec.lastAckAt >= ACK_MIN_INTERVAL_MS) {
+          sendAck(st);
+        }
+      }
+    } else {
+      // No HostHandle yet — park it. Deliberately NOT counted as consumed:
+      // if this socket dies before a consumer attaches, the un-acked frames
+      // are replayed on the next dial instead of vanishing with the buffer.
+      st.buffer.push(msg);
+    }
     return true;
   }
   if (data?.sandboxWs === "rpc") {
@@ -248,7 +326,19 @@ function makeRunWsConnector(hostId: string): HostConnector {
         throw new Error(`no live run-ws connection for ${hostId} yet`);
       }
       st.consumer = handlers;
-      for (const m of st.buffer.splice(0)) handlers.onMsg(m as any);
+      // Flushing the pre-attach buffer is the consumption moment — advance the
+      // watermark now and ack it, so the host can trim its replay buffer.
+      const rec = seqRecFor(hostId);
+      let advanced = false;
+      for (const m of st.buffer.splice(0)) {
+        handlers.onMsg(m as any);
+        const s = (m as any)?.seq;
+        if (typeof s === "number" && s > rec.seq) {
+          rec.seq = s;
+          advanced = true;
+        }
+      }
+      if (advanced) sendAck(st);
       return {
         send: (msg) => {
           if (st.closed) return false;
@@ -313,4 +403,26 @@ export function sandboxWsClose(ws: any): boolean {
 /** HostConnector for a run whose host dials back over WS (spec.wsToken set). */
 export function runWsConnector(hostId: string): HostConnector {
   return live().makeRunWsConnector(hostId);
+}
+
+// ── Test/verification helpers (conformance/verify suites) ─────────────────────
+
+/** Is there a live dialed-in connection for this host right now? */
+export function hasLiveRunWsConnection(hostId: string): boolean {
+  const st = wsConns.get(hostId);
+  return !!st && !st.closed;
+}
+
+/**
+ * Force-close a host's live connection WITHOUT unregistering its token — the
+ * host redials with backoff and replays unacked frames, exactly as after a
+ * network drop. Used by the conformance suite's disconnect/replay check.
+ */
+export function dropRunWsConnection(hostId: string): boolean {
+  const st = wsConns.get(hostId);
+  if (!st || st.closed) return false;
+  try {
+    st.ws.close();
+  } catch {}
+  return true;
 }

@@ -12,11 +12,15 @@
  * Framing: newline-delimited JSON, both directions. JSON.stringify never emits
  * raw newlines, so a line is always exactly one message.
  *
- * The stream is LIVE-ONLY by design — no event replay. A reattaching backstage
- * missed some stream events, but the transcript jsonl on disk is the durable
- * copy (viewers re-sync from it on watch), and everything else a consumer needs
- * to catch up is carried in `hello`: the engine session id, any asks still
- * blocked waiting for a human, and the terminal event if the run already ended.
+ * The UNIX-SOCKET stream is LIVE-ONLY by design — no event replay. A
+ * reattaching backstage missed some stream events, but the transcript jsonl on
+ * disk is the durable copy (viewers re-sync from it on watch), and everything
+ * else a consumer needs to catch up is carried in `hello`: the engine session
+ * id, any asks still blocked waiting for a human, and the terminal event if
+ * the run already ended. The WS transport (remote sandboxes) layers seq/ack
+ * replay on top — see `seq` below and src/runner-host/ws-buffer.ts — because
+ * there the transcript is NOT host-visible, so a flaky link would otherwise
+ * lose mid-run events for good.
  */
 
 import type { StreamEvent, ImageInput } from "../server/claude-runner";
@@ -95,7 +99,15 @@ export type AskResult =
   | { behavior: "allow"; updatedInput: Record<string, unknown> }
   | { behavior: "deny"; message: string };
 
-export type HostToClientMsg =
+/**
+ * WS transport only: host→server frames (except `hello`/`ping`, which are
+ * per-connection transport chatter) carry a monotonic per-host `seq`. The
+ * server acks its consumed watermark and dedupes replayed frames by it; the
+ * unix-socket transport never sets it. See src/runner-host/ws-buffer.ts.
+ */
+export type HostToClientMsg = HostToClientPayload & { seq?: number };
+
+type HostToClientPayload =
   | {
       t: "hello";
       hostId: string;
@@ -123,7 +135,14 @@ export type HostToClientMsg =
    * close quiet connections — e.g. during a minutes-long tool call with no
    * stream events. Answered with `pong`; the socket transport never sends it.
    */
-  | { t: "ping" };
+  | { t: "ping" }
+  /**
+   * WS transport only: the host's replay buffer overflowed while backstage
+   * was unreachable — frames `from..to` are gone from the stream (the
+   * transcript jsonl still has everything). Sent once at replay time; the
+   * server logs it.
+   */
+  | { t: "gap"; from: number; to: number };
 
 export type ClientToHostMsg =
   | { t: "ask_answer"; askId: string; result: AskResult }
@@ -133,7 +152,13 @@ export type ClientToHostMsg =
   /** Ack of `end`: everything consumed, host may exit and the client cleans up the dir. */
   | { t: "shutdown" }
   /** WS keepalive answer (see `ping`). */
-  | { t: "pong" };
+  | { t: "pong" }
+  /**
+   * WS transport only: server→host consumed-watermark ack (sent on socket
+   * open, then periodically). `epoch` identifies the server-side seq record —
+   * the host only replays into a matching epoch (src/runner-host/ws-buffer.ts).
+   */
+  | { t: "ack"; seq: number; epoch: string };
 
 /**
  * Line-buffered NDJSON reader. Feed it raw socket chunks; it invokes onMsg per
