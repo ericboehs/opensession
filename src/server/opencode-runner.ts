@@ -9,9 +9,34 @@
  * (e.g. opencode/anthropic/claude-sonnet-5, opencode/openai/gpt-5.5) reach
  * this runner — nothing defaults to it. Provider auth is OpenCode's own
  * (`opencode auth login` → ~/.local/share/opencode/auth.json; HOME is passed
- * through), except `opencode/anthropic/*`, which routes through the local
- * Max-subscription bridge (anthropic-bridge.ts) and fails with a clear error
- * when that bridge isn't enabled in ~/.backstage-opencode.json.
+ * through), except `opencode/anthropic/*`, which runs on Claude-subscription
+ * capacity via one of two bridges selected by `bridge.mode` in
+ * ~/.backstage-opencode.json (see opencode-config.ts):
+ *
+ *  - "meridian" (the default when enabled; Michiel's 2026-07-08 directive):
+ *    the literal opencode-with-claude + @rynfar/meridian stack, bundled as
+ *    exact-pinned npm deps and injected as an OpenCode plugin into the
+ *    session's server config. The plugin starts Meridian in-process inside
+ *    `opencode serve` (ephemeral loopback port, per-server MERIDIAN_API_KEY
+ *    auth) and Meridian drives the official Claude Agent SDK. Completes turns
+ *    on flat subscription quota (verified live 2026-07-08) — its bundled
+ *    scrub plugin removes the opencode prompt fingerprints Anthropic's
+ *    third-party-billing classifier keys on. Per-run account selection is
+ *    ours: pool + the run user's own personal accounts (optionally restricted
+ *    to bridge.accounts), pinned into the server via CLAUDE_CONFIG_DIR
+ *    isolation + CLAUDE_CODE_OAUTH_TOKEN (see meridianAccountEnv).
+ *  - "native": our own anthropic-bridge.ts (Agent SDK reimplementation with
+ *    per-request HTTP audit and NO fingerprint scrubbing — Anthropic bills it
+ *    to extra-usage credits). Kept selectable as the anti-evasion fallback.
+ *  - "off" / config missing / enabled:false: anthropic models fail with a
+ *    clear error.
+ *
+ * Audit granularity differs by mode: the native bridge audits EVERY HTTP
+ * request (anthropic_bridge_request in/out); meridian runs inside the opencode
+ * server process where we have no per-request hook, so we emit RUN-level
+ * events instead (`opencode_meridian_run` start/end with session, model,
+ * account, versions) — per-request detail exists only in opencode's own log
+ * (~/.local/share/opencode/log/).
  *
  * Server lifecycle: one `opencode serve` process per backstage session (keyed
  * by bks session id, falling back to cwd), bound to 127.0.0.1 on an ephemeral
@@ -19,9 +44,16 @@
  * a minimal env (PATH/HOME/LANG + git identity — mirrors codexEnv; no
  * backstage tokens). Parked on globalThis so `bun --hot` reloads keep servers
  * alive; killed after 30 minutes idle. Config (permissions, MCP servers,
- * bridge provider override) is injected via OPENCODE_CONFIG_CONTENT at spawn;
- * a config change respawns the server (sessions persist in OpenCode's own
- * storage, so this is safe between runs).
+ * bridge provider override, meridian plugin) is injected via
+ * OPENCODE_CONFIG_CONTENT at spawn; a config OR per-server-env change (e.g. a
+ * different meridian account was picked) respawns the server (sessions persist
+ * in OpenCode's own storage, so this is safe between runs). In meridian mode
+ * the Meridian proxy + its Agent SDK children live inside/under the opencode
+ * server process, so killing the server reaps them too — but the meridian
+ * plugin installs SIGTERM/SIGINT handlers that swallow the default terminate
+ * action (verified live 2026-07-08: a meridian-enabled server survives
+ * SIGTERM), so killServer escalates to SIGKILL after a short grace. The
+ * 30-min idle kill and shutdown paths go through the same killServer.
  *
  * Permission model vs the Claude runner:
  *  - mode "ask" ⇒ read-only permission config: edit denied, bash restricted to
@@ -64,7 +96,8 @@
  * permission asks.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import type { Subprocess } from "bun";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import type { RunAgentOpts } from "./agent-runner";
@@ -72,17 +105,24 @@ import {
   journalSet,
   journalClear,
   filterMcpServers,
+  CLAUDE_CODE_BIN,
   type StreamEvent,
   type ImageInput,
 } from "./claude-runner";
 import { audit, summarizeText } from "./audit";
-import { gitIdentityEnv, type GitIdentity } from "./shared/user-mappings";
+import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { isCodexUsageLimitError } from "./codex-runner";
 import { ensureAnthropicBridge } from "./anthropic-bridge";
-import { opencodeTurnTimeoutMs } from "./opencode-config";
+import { opencodeTurnTimeoutMs, readOpencodeBridgeConfig } from "./opencode-config";
+import {
+  pickAccount,
+  getUsableAccountById,
+  getAccountById,
+  type ClaudeAccount,
+} from "./claude-accounts";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
@@ -145,6 +185,121 @@ export function opencodeGateReason(opts: {
           "deny by default; interactive sessions only.";
   }
   return null;
+}
+
+// ── Meridian bridge (opencode/anthropic/* default path) ──────────────────────
+//
+// VERSION PINNING (package.json): opencode-with-claude 1.6.14 +
+// @rynfar/meridian 1.45.0 + @rynfar/meridian-plugin-opencode-scrub 0.2.0 are
+// pinned EXACT. These versions chase Anthropic's third-party billing-gate
+// behavior (the scrub plugin exists to keep turns on flat subscription quota);
+// bump deliberately after watching the repos' releases, and re-run
+// scripts/verify-opencode.ts against a scratch config before shipping a bump.
+
+interface MeridianStackInfo {
+  /** Absolute path to the plugin entry, injected into OPENCODE_CONFIG_CONTENT `plugin`. */
+  pluginPath: string;
+  pluginVersion: string;
+  meridianVersion: string;
+}
+
+let cachedMeridianStack: MeridianStackInfo | undefined;
+
+function pkgVersionNear(entryPath: string): string {
+  try {
+    // dist/index.js → ../package.json (both packages ship dist/ at the root).
+    return JSON.parse(readFileSync(join(dirname(entryPath), "..", "package.json"), "utf-8")).version || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Resolve the bundled opencode-with-claude plugin (throws a clear error when
+ *  the packages are missing — e.g. a checkout without `bun install`). */
+export function meridianStackInfo(): MeridianStackInfo {
+  if (cachedMeridianStack) return cachedMeridianStack;
+  let pluginPath: string;
+  let meridianEntry: string;
+  try {
+    pluginPath = Bun.resolveSync("opencode-with-claude", import.meta.dir);
+    meridianEntry = Bun.resolveSync("@rynfar/meridian", import.meta.dir);
+  } catch (e: any) {
+    throw new Error(
+      "The meridian bridge packages are not installed (opencode-with-claude / @rynfar/meridian) — " +
+        `run \`bun install\` in the backstage checkout. (${e?.message || e})`
+    );
+  }
+  cachedMeridianStack = {
+    pluginPath,
+    pluginVersion: pkgVersionNear(pluginPath),
+    meridianVersion: pkgVersionNear(meridianEntry),
+  };
+  return cachedMeridianStack;
+}
+
+/** Per-account Claude config dirs for Meridian's SDK subprocesses. Isolating
+ *  CLAUDE_CONFIG_DIR is what actually pins the account: with the host HOME
+ *  passed through, the claude CLI silently falls back to ~/.claude/
+ *  .credentials.json (the host login) even when CLAUDE_CODE_OAUTH_TOKEN is
+ *  set — verified live 2026-07-08 (an invalid env token still completed via
+ *  the host store; with an isolated CLAUDE_CONFIG_DIR it hard-fails instead).
+ *  So each account gets an empty config dir + the env token: the selected
+ *  account is the only reachable credential, and a bad token fails closed
+ *  instead of burning the host login's quota. */
+const MERIDIAN_CFG_ROOT = `${HOME}/.backstage-opencode/meridian-cfg`;
+
+/**
+ * Env for a meridian-mode `opencode serve` process. The Meridian proxy runs
+ * in-process in that server (the plugin calls startProxyServer) and passes its
+ * process env through to the Agent SDK subprocess, so this is the per-session
+ * account-auth channel. Note the token is therefore visible to the session's
+ * own shell tools via `env` — the same exposure class as claude-runner, whose
+ * SDK subprocess (and its Bash children) carry CLAUDE_CODE_OAUTH_TOKEN today.
+ */
+export function meridianAccountEnv(account: ClaudeAccount, meridianKey: string): Record<string, string> {
+  const cfgDir = `${MERIDIAN_CFG_ROOT}/${account.id}`;
+  mkdirSync(cfgDir, { recursive: true, mode: 0o700 });
+  return {
+    CLAUDE_CODE_OAUTH_TOKEN: account.token,
+    CLAUDE_CONFIG_DIR: cfgDir,
+    // Loopback-only is Meridian's default bind; MERIDIAN_API_KEY additionally
+    // requires x-api-key on every /v1/* request (verified live: 401 without
+    // it), so another local process can't ride the proxy. The same key is set
+    // as the opencode anthropic provider apiKey.
+    MERIDIAN_API_KEY: meridianKey,
+    // Always take an OS-assigned port (never the shared 3456 default) — one
+    // Meridian per opencode server, no cross-server port contention.
+    CLAUDE_PROXY_PORT: "0",
+    // Deterministic SDK executable (same binary claude-runner uses) instead of
+    // Meridian's bundled/platform/PATH probing.
+    MERIDIAN_CLAUDE_PATH: CLAUDE_CODE_BIN,
+  };
+}
+
+/**
+ * Pick the account a meridian run authenticates as. `ids` (bridge.accounts)
+ * restricts to designated accounts in list order; otherwise the normal
+ * accounts-layer pick (personal-first for the run user, then shared pool).
+ * Either way another user's personal account is never used — same rule as
+ * accountsForRemoteUpload (fail closed).
+ */
+export function pickMeridianAccount(
+  user: string | undefined,
+  model: string,
+  ids?: string[]
+): ClaudeAccount | { error: string } {
+  const allowedOwner = (a: ClaudeAccount) => !a.owner || (!!user && userMatchesAny(user, [a.owner]));
+  if (ids?.length) {
+    for (const id of ids) {
+      const a = getUsableAccountById(id, model);
+      if (a && allowedOwner(a)) return a;
+    }
+    const known = ids.map((id) => getAccountById(id)?.name || id).join(", ");
+    return { error: `no designated meridian bridge account is currently usable (tried: ${known})` };
+  }
+  const picked = pickAccount(undefined, user, model);
+  if (picked) return picked;
+  return { error: "no usable Claude account for the meridian bridge (pool exhausted or none configured)" };
 }
 
 // ── OpenCode config generation ───────────────────────────────────────────────
@@ -304,6 +459,9 @@ interface OpencodeServerEntry {
   configHash: string;
   /** Stable per-server run-rpc token for the michael-* stdio proxies. */
   rpcToken: string;
+  /** Stable per-server Meridian proxy API key (meridian-mode servers only) —
+   *  reused across runs so the config hash (and thus the server) stays put. */
+  meridianKey?: string;
   lastUsed: number;
   activeRuns: number;
   idleTimer?: ReturnType<typeof setTimeout>;
@@ -350,11 +508,31 @@ export function killAllOpencodeServers(reason = "shutdown"): void {
   for (const [key, entry] of [...servers.entries()]) killServer(key, entry, reason);
 }
 
+/** Grace before SIGTERM escalates to SIGKILL: the meridian plugin installs
+ *  SIGTERM/SIGINT handlers inside `opencode serve` that swallow the default
+ *  terminate action (verified live 2026-07-08 — plain opencode exits on
+ *  SIGTERM, a meridian-enabled one survives it), so every kill path escalates.
+ *  Meridian itself is in-process and its Agent SDK children are per-request
+ *  (none linger between turns — verified), so killing the server reaps the
+ *  whole stack. */
+const KILL_ESCALATION_MS = 5_000;
+
 function killServer(key: string, entry: OpencodeServerEntry, reason: string): void {
   if (entry.idleTimer) clearTimeout(entry.idleTimer);
+  const proc = entry.proc;
   try {
-    entry.proc.kill();
+    proc.kill();
   } catch {}
+  const escalate = setTimeout(() => {
+    if (proc.exitCode === null) {
+      console.warn(`[opencode-runner] server for ${key} ignored SIGTERM — escalating to SIGKILL`);
+      try {
+        proc.kill(9);
+      } catch {}
+    }
+  }, KILL_ESCALATION_MS);
+  (escalate as unknown as { unref?: () => void }).unref?.();
+  void proc.exited.then(() => clearTimeout(escalate));
   servers.delete(key);
   console.log(`[opencode-runner] server for ${key} stopped (${reason})`);
 }
@@ -379,7 +557,8 @@ async function spawnOpencodeServer(
   cwd: string,
   config: Record<string, unknown>,
   configHash: string,
-  author?: GitIdentity | null
+  author?: GitIdentity | null,
+  extraEnv?: Record<string, string>
 ): Promise<OpencodeServerEntry> {
   if (!existsSync(OPENCODE_BIN)) {
     throw new Error(
@@ -393,6 +572,7 @@ async function spawnOpencodeServer(
     cwd,
     env: {
       ...opencodeEnv(author),
+      ...(extraEnv || {}),
       OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
       OPENCODE_SERVER_PASSWORD: password,
     },
@@ -461,16 +641,21 @@ async function ensureOpencodeServer(
   key: string,
   cwd: string,
   config: Record<string, unknown>,
-  author?: GitIdentity | null
+  author?: GitIdentity | null,
+  extraEnv?: Record<string, string>
 ): Promise<OpencodeServerEntry> {
-  const configHash = Bun.hash(JSON.stringify(config) + "\n" + cwd).toString(16);
+  // extraEnv is part of the identity: a different meridian account/token must
+  // respawn the server (env only applies at spawn).
+  const configHash = Bun.hash(
+    JSON.stringify(config) + "\n" + cwd + "\n" + JSON.stringify(extraEnv || {})
+  ).toString(16);
   const existing = servers.get(key);
   if (existing) {
     const alive = existing.proc.exitCode === null && !existing.proc.killed;
     if (alive && existing.configHash === configHash) return existing;
     killServer(key, existing, alive ? "config changed" : "process died");
   }
-  return spawnOpencodeServer(key, cwd, config, configHash, author);
+  return spawnOpencodeServer(key, cwd, config, configHash, author, extraEnv);
 }
 
 function clientFor(entry: OpencodeServerEntry): OpencodeClient {
@@ -555,15 +740,75 @@ export async function* runOpencode(
   let runFailure: string | undefined;
   let runEnded = false;
   let failRun: () => void = () => {};
+  // Run-level meridian audit closer (see module doc: meridian audits per run,
+  // not per HTTP request). First call wins; the finally backstop covers
+  // cancellation/crashes.
+  let meridianEnd: (status: string, detail?: string) => void = () => {};
 
   try {
-    // Bridge for Anthropic models — throws a clear config error when disabled.
+    // Bridge for Anthropic models — dispatched on bridge.mode in
+    // ~/.backstage-opencode.json; throws a clear config error when off.
     let providerOverride: Record<string, unknown> | undefined;
+    let serverExtraEnv: Record<string, string> | undefined;
+    let meridianPlugin: string[] | undefined;
     if (parsed.providerID === "anthropic") {
-      const bridge = ensureAnthropicBridge();
-      providerOverride = {
-        anthropic: { options: { baseURL: `${bridge.url}/v1`, apiKey: bridge.key } },
-      };
+      const cfg = readOpencodeBridgeConfig();
+      const bridgeMode = cfg?.enabled ? cfg.bridgeMode : "off";
+      if (bridgeMode === "meridian") {
+        const stack = meridianStackInfo();
+        const picked = pickMeridianAccount(user, parsed.modelID, cfg!.bridgeAccountIds);
+        if ("error" in picked) throw new Error(`meridian bridge: ${picked.error}`);
+        // Stable per-server proxy key so the config hash — and the server —
+        // survive across runs; a fresh key is minted only with a fresh server.
+        const meridianKey = servers.get(serverKey)?.meridianKey || crypto.randomUUID();
+        serverExtraEnv = meridianAccountEnv(picked, meridianKey);
+        meridianPlugin = [stack.pluginPath];
+        // The plugin rewrites baseURL to its live proxy URL at startup; the
+        // placeholder guarantees a hard connection failure (never a real
+        // Anthropic endpoint) if the plugin ever fails to load. apiKey is the
+        // proxy key — Meridian requires it on every request.
+        providerOverride = {
+          anthropic: { options: { baseURL: "http://127.0.0.1:1", apiKey: meridianKey } },
+        };
+        const auditBase = {
+          msg: "opencode_meridian_run",
+          turn_id: turnId,
+          run_key: runKey,
+          bks_session_id: journal?.bksSessionId,
+          run_kind: journal?.kind,
+          model,
+          account: picked.name,
+          account_id: picked.id.slice(0, 8),
+          meridian_version: stack.meridianVersion,
+          plugin_version: stack.pluginVersion,
+        };
+        const startedAt = Date.now();
+        audit({ ...auditBase, phase: "start" });
+        let ended = false;
+        meridianEnd = (status, detail) => {
+          if (ended) return;
+          ended = true;
+          audit({
+            ...auditBase,
+            phase: "end",
+            status,
+            duration_ms: Date.now() - startedAt,
+            ...(detail ? { error: detail } : {}),
+          });
+        };
+      } else if (bridgeMode === "native") {
+        const bridge = ensureAnthropicBridge();
+        providerOverride = {
+          anthropic: { options: { baseURL: `${bridge.url}/v1`, apiKey: bridge.key } },
+        };
+      } else {
+        throw new Error(
+          "opencode/anthropic/* models are disabled: ~/.backstage-opencode.json is missing, " +
+            'has "enabled": false, or sets bridge.mode "off". Enable it with ' +
+            '{"enabled": true} (bridge.mode defaults to "meridian") — or use an API-key ' +
+            "provider configured via `opencode auth login` instead."
+        );
+      }
     }
 
     const { mcp: externalMcp, droppedForConfirm } = buildOpencodeMcpConfig(
@@ -601,6 +846,7 @@ export async function* runOpencode(
       },
       instructions: [instructionsPath],
       autoshare: false,
+      ...(meridianPlugin ? { plugin: meridianPlugin } : {}),
       ...(providerOverride ? { provider: providerOverride } : {}),
       ...(isAsk
         ? {
@@ -615,8 +861,9 @@ export async function* runOpencode(
         : {}),
     };
 
-    entry = await ensureOpencodeServer(serverKey, cwd, ocConfig, author);
+    entry = await ensureOpencodeServer(serverKey, cwd, ocConfig, author, serverExtraEnv);
     entry.rpcToken = rpcToken;
+    if (serverExtraEnv?.MERIDIAN_API_KEY) entry.meridianKey = serverExtraEnv.MERIDIAN_API_KEY;
     entry.activeRuns++;
     entry.lastUsed = Date.now();
 
@@ -882,6 +1129,7 @@ export async function* runOpencode(
     // server) and let the finally cleanup release the session.
     if (runFailure) {
       turnEvent({ direction: "out", kind: "error", error: runFailure });
+      meridianEnd("error", runFailure);
       yield { type: "error", content: runFailure, provider: PROVIDER, model };
       return;
     }
@@ -910,6 +1158,7 @@ export async function* runOpencode(
     if (errMessage && info?.error?.name !== "MessageAbortedError") {
       const limit = isCodexUsageLimitError(errMessage);
       turnEvent({ direction: "out", kind: "error", error: errMessage });
+      meridianEnd("error", errMessage);
       yield {
         type: "error",
         content: errMessage,
@@ -933,6 +1182,7 @@ export async function* runOpencode(
       total_cost_usd: info?.cost,
       ...summarizeText(textOut),
     });
+    meridianEnd("success");
     yield {
       type: "done",
       sessionId: ocSessionId,
@@ -956,6 +1206,7 @@ export async function* runOpencode(
     if (!abortController.signal.aborted) {
       const message = e?.message || String(e);
       turnEvent({ direction: "out", kind: "error", error: message });
+      meridianEnd("error", message);
       yield {
         type: "error",
         content: message,
@@ -969,6 +1220,9 @@ export async function* runOpencode(
     if (abortController.signal.aborted) {
       turnEvent({ direction: "out", kind: "cancelled" });
     }
+    // Backstop for paths that never reached an explicit close (cancel, early
+    // return, generator torn down mid-drain) — no-op if already ended.
+    meridianEnd(abortController.signal.aborted ? "cancelled" : "abandoned");
     for (const key of registeredKeys) activeOpencodeRuns.delete(key);
     if (rpcTokenRegistered && entry) unregisterRunToken(entry.rpcToken);
     if (entry) {
