@@ -10,6 +10,7 @@
  * a bad reply can never produce an invalid or over-privileged config.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { CLAUDE_CODE_BIN } from "./claude-runner";
 import { parseCron } from "./cron";
 import { readMcpConfig } from "./connections";
 
@@ -75,7 +76,7 @@ export async function draftAutomation(description: string): Promise<AutomationDr
         systemPrompt: systemPrompt(mcpNames),
         settingSources: [],
         env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
       },
     });

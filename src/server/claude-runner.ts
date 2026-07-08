@@ -248,8 +248,10 @@ const UI_BASE =
 
 /** Claude Code CLI binary the SDK spawns. Env-overridable (BACKSTAGE_CLAUDE_BIN)
  *  so sandbox images / other host layouts can point at their own install;
- *  the default is this VPS's path — unchanged behavior when unset. */
-const CLAUDE_CODE_BIN =
+ *  the default is this VPS's path — unchanged behavior when unset. Exported for
+ *  every other direct `query()` call site (agents, title/branch generators) so
+ *  the path lives in exactly one place. */
+export const CLAUDE_CODE_BIN =
   process.env.BACKSTAGE_CLAUDE_BIN || "/home/ubuntu/.local/bin/claude";
 
 export interface ActiveRunRecord {

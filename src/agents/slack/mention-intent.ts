@@ -12,6 +12,7 @@
  * back to the default worktree (code) flow, so a hiccup never blocks Michael.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
 
 const INTENT_MODEL = process.env.SLACK_MENTION_INTENT_MODEL || "claude-haiku-4-5";
 
@@ -79,7 +80,7 @@ export async function classifyPrActionIntent(message: string): Promise<PrIntentA
         systemPrompt: PR_ACTION_SYSTEM,
         settingSources: [],
         env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
       },
     });
@@ -120,7 +121,7 @@ export async function classifyMention(message: string): Promise<MentionIntent | 
           HOME: process.env.HOME,
           LANG: process.env.LANG,
         },
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
       },
     });

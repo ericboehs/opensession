@@ -3,6 +3,7 @@
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import {
+  CLAUDE_CODE_BIN,
   isClaudeUsageLimitError,
   filterMcpServers,
   STRIPE_CONFIRM_TOOLS,
@@ -480,7 +481,7 @@ export async function runClaudeHeadless(
         ) as any,
         strictMcpConfig: true,
         model: session?.model || getDefaultModel(),
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
         abortController,
         systemPrompt: {

@@ -8,6 +8,7 @@
  * (caller surfaces a friendly error). Fail-closed: any hiccup returns null.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
 
 const WHEN_MODEL = process.env.SCHEDULE_WHEN_MODEL || "claude-haiku-4-5";
 
@@ -42,7 +43,7 @@ Respond with ONLY a JSON object: {"iso": "<ISO8601 UTC, e.g. 2026-07-06T16:00:00
         systemPrompt: system,
         settingSources: [],
         env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
       },
     });

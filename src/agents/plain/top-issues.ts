@@ -9,6 +9,7 @@
  * links" window is derived from the weekday (Mon looks back over the weekend).
  */
 import { readFileSync } from "fs";
+import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 
@@ -228,7 +229,7 @@ async function pickQuotes(issues: IssueRollup[]): Promise<string[]> {
         systemPrompt: QUOTE_SYSTEM,
         settingSources: [],
         env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
       },
     });

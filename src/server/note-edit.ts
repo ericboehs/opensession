@@ -9,6 +9,7 @@
  * content is untrusted data to edit, never instructions to follow.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { CLAUDE_CODE_BIN } from "./claude-runner";
 
 const NOTE_EDIT_MODEL = process.env.NOTE_EDIT_MODEL || "claude-haiku-4-5";
 
@@ -63,7 +64,7 @@ export async function editNote(
 					HOME: process.env.HOME,
 					LANG: process.env.LANG,
 				},
-				pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+				pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
 				executable: "bun",
 			},
 		});

@@ -20,6 +20,7 @@
  * code so prompt tweaks can't break parsing.
  */
 import { existsSync, readFileSync } from "fs";
+import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { resolveModel } from "../../server/models";
@@ -129,7 +130,7 @@ export async function classifyTicketRoute(ticketContent: string): Promise<RouteV
           HOME: process.env.HOME,
           LANG: process.env.LANG,
         },
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
       },
     });

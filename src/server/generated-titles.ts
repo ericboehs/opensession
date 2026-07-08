@@ -9,6 +9,7 @@
  * background at session creation so it never blocks the create path.
  */
 import { readFileSync, existsSync } from "fs";
+import { CLAUDE_CODE_BIN } from "./claude-runner";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -84,7 +85,7 @@ export async function ensureGeneratedTitle(
 				maxTurns: 1,
 				cwd: "/home/ubuntu/projects/tella-fusion",
 				allowedTools: [],
-				pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+				pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
 				executable: "bun",
 				env: {
 					PATH: process.env.PATH,

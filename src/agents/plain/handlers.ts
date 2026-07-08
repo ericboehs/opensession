@@ -15,7 +15,7 @@ import {
 } from "./api";
 import { buildMentionPrompt, buildWorkPrompt, buildRefundExecutionPrompt } from "./prompts";
 import { getDefaultModel } from "../../server/models";
-import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "../../server/claude-runner";
+import { CLAUDE_CODE_BIN, STRIPE_CONFIRM_TOOLS, filterMcpServers } from "../../server/claude-runner";
 import { classifyRefundApproval } from "./refund-intent";
 
 const TELLA_FUSION_DIR = "/home/ubuntu/projects/tella-fusion";
@@ -146,7 +146,7 @@ async function runClaude(
         mcpServers: filterMcpServers(undefined, undefined) as any,
         strictMcpConfig: true,
         model: getDefaultModel(),
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
         systemPrompt: {
           type: "preset" as const,

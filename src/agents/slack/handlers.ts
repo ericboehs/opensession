@@ -52,6 +52,7 @@ import { gitIdentityFor } from "../../server/shared/user-mappings";
 import { sessionForChannel } from "../../server/slack-links";
 import { tryGetSessionControl } from "../../server/session-control";
 import {
+  CLAUDE_CODE_BIN,
   isClaudeUsageLimitError,
   filterMcpServers,
   STRIPE_CONFIRM_TOOLS,
@@ -969,7 +970,7 @@ export async function processMessage(
         mcpServers: { ...mcpServers, ...adminMcpServers },
         strictMcpConfig: true,
         model: session.model || getDefaultModel(),
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
         abortController,
         systemPrompt: {

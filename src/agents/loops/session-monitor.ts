@@ -19,6 +19,7 @@
  * restart`, hot reload won't swap a running interval (see CLAUDE.md).
  */
 import { mkdirSync, readFileSync, existsSync } from "fs";
+import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import {
@@ -178,7 +179,7 @@ async function decideAnswer(
         systemPrompt: ANSWER_SYSTEM,
         settingSources: [],
         env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
       },
     });

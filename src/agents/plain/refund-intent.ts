@@ -7,6 +7,7 @@
  * A no-tools Haiku call — it only reads, never acts.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
 
 const MODEL = process.env.PLAIN_REFUND_INTENT_MODEL || "claude-haiku-4-5";
 
@@ -54,7 +55,7 @@ export async function classifyRefundApproval(
           HOME: process.env.HOME,
           LANG: process.env.LANG,
         },
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
       },
     });

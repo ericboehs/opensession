@@ -10,6 +10,7 @@
  * re-sanitized here so a bad reply can never produce an invalid branch name.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { CLAUDE_CODE_BIN } from "./claude-runner";
 
 const SUGGEST_MODEL = process.env.SUGGEST_BRANCH_MODEL || "claude-haiku-4-5";
 
@@ -57,7 +58,7 @@ export async function suggestBranchName(prompt: string): Promise<string | null> 
         systemPrompt: SYSTEM_PROMPT,
         settingSources: [],
         env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: "/home/ubuntu/.local/bin/claude",
+        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
       },
     });
