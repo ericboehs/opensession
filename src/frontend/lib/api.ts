@@ -882,7 +882,7 @@ export async function triggerPrActionApi(
 
 export interface ModelOption {
 	id: string;
-	provider: "claude" | "codex";
+	provider: "claude" | "codex" | "opencode";
 	label: string;
 	aliases: string[];
 }
