@@ -290,6 +290,30 @@ sandboxed sessions.
 by config. Core has zero imports from adapter SDKs except in
 `src/server/sandbox/adapters/`.
 
+### Workstream E — OpenCode as a third engine  (parallel, after Phase 1)
+
+Decision 2026-07-08: OpenCode joins as a **third engine**, not a replacement.
+Anthropic's April 2026 policy change blocks subscription OAuth tokens in
+third-party harnesses, so Claude models via OpenCode are API-key-only —
+the Claude Agent SDK path (subscription-priced, plus our canUseTool /
+confirm-tools / skills stack) stays primary for Anthropic models. OpenCode
+(MIT, 75+ providers, `opencode serve` headless HTTP+SSE server,
+`@opencode-ai/sdk`) is the "bring any LLM" engine for open-source
+self-hosters and model experiments.
+
+1. `src/server/opencode-runner.ts`: spawn/manage `opencode serve` (per
+   session), map its event stream to `StreamEvent`s, thread
+   prompt/steer/interrupt/resume. Wire into `runOnModel`'s provider
+   dispatch (the same seam Codex used); model ids like `opencode/<provider>/<model>`.
+2. Permissions parity: map `deniedTools`/`confirmTools`/ask flows onto
+   OpenCode's permission + plugin hooks; automation least-privilege must
+   hold before any automation may select this engine.
+3. Sandbox synergy: in Docker sandboxes, run the opencode server inside
+   the container and talk HTTP — no stdio proxying. Add the binary to the
+   `backstage-runner` image.
+4. NOT in scope: any rebuilt subscription-auth plugins (ToS-violating and
+   server-side blocked).
+
 ### Phase 4 — Product layer + open-source polish  (ongoing)
 
 - Sandbox status in the UI (SessionViewer/WorkspaceInfo badge: provider,
