@@ -915,6 +915,22 @@ export async function fetchModels(): Promise<{
 	});
 }
 
+/** One append block of the session system prompt (claude_code preset + these). */
+export interface SystemPromptPart {
+	title: string;
+	text: string;
+}
+
+export async function fetchSystemPrompt(mode: "ask" | "code"): Promise<{
+	preset: string;
+	settingSources: string[];
+	parts: SystemPromptPart[];
+}> {
+	return request(`/system-prompt?mode=${mode}`, {
+		label: "Failed to fetch system prompt",
+	});
+}
+
 /** Trimmed Claude subscription shape for the per-session subscription picker. */
 export interface ClaudeAccountOption {
 	id: string;

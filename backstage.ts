@@ -60,6 +60,7 @@ import {
 	STRIPE_CONFIRM_TOOLS,
 	activeRunRecords,
 } from "./src/server/claude-runner";
+import { buildSystemPromptParts } from "./src/server/system-prompt";
 import {
 	runAgent,
 	isAgentSessionBusy,
@@ -6242,6 +6243,24 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					models: KNOWN_MODELS,
 					default: getDefaultModel(),
 					autoFallback: getModelFallbackAuto(),
+				});
+			}
+
+			// What an interactive session will be told on top of the claude_code
+			// preset — previewed in the New Session modal. Same builder the runner
+			// uses (src/server/system-prompt.ts), so this can't drift from reality.
+			if (path === "/backstage/api/system-prompt" && req.method === "GET") {
+				const isAsk = url.searchParams.get("mode") === "ask";
+				return Response.json({
+					preset: "claude_code",
+					settingSources: ["user", "project"],
+					parts: buildSystemPromptParts({
+						isAsk,
+						sessionLink: isAsk
+							? undefined
+							: `${process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage"}/session/<this-session>`,
+						interactiveTools: true,
+					}),
 				});
 			}
 

@@ -15,6 +15,7 @@ import { cleanPlainToolInput } from "./shared/note-style";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { getDefaultModel, hasPricing, priceUsageUsd } from "./models";
+import { buildSystemPromptParts } from "./system-prompt";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
@@ -1100,66 +1101,16 @@ export async function* runClaude(opts: {
           type: "preset" as const,
           preset: "claude_code" as const,
           ...(() => {
-            const parts: string[] = [];
-            if (isAsk) {
-              parts.push(
-                "You are Michael in Ask mode: answer questions about the current checkout. " +
-                  "This is a READ-ONLY session on the main checkout — never modify, create, or delete " +
-                  "files, never commit, never run state-changing commands. Explore with Read/Grep/Glob " +
-                  "and read-only git commands, then answer clearly and concisely."
-              );
-            }
-            if (opts.reposNote) {
-              parts.push(opts.reposNote);
-            }
-            if (!isAsk && journal?.bksSessionId) {
-              const link = `${UI_BASE}/session/${journal.bksSessionId}`;
-              parts.push(
-                "## Session link in PRs\nWhenever you open a pull request (any repo, via `gh pr " +
-                  "create` or otherwise), always include a link back to this Michael session in the " +
-                  "PR body so a human can open it to see how the change was made. Add a line like:\n\n" +
-                  `🤖 Created by [this Michael session](${link})\n\n` +
-                  "Put it at the end of the PR body. Use exactly this session URL."
-              );
-            }
-            if (opts.inProcessMcp && Object.keys(opts.inProcessMcp).length) {
-              parts.push(
-                "## Managing Michael\nYou can see and steer your other Backstage sessions via the " +
-                  "michael-sessions MCP tools (list_sessions — filter 'waiting' for sessions blocked on a " +
-                  "question; get_session; send_to_session; answer_session_question; cancel_session; " +
-                  "create_session) and manage your own setup via michael-admin (automations, MCP " +
-                  "connections, channel memory). Use these tools when asked to inspect or steer sessions, " +
-                  "or to change configuration, rather than only describing how."
-              );
-              parts.push(
-                "## Model routing and Codex delegation\nUse Fable/Claude as the orchestrator for taste, " +
-                  "planning, judgment, review, and user-facing decisions. Do not burn Fable tokens on bulk " +
-                  "mechanical work when a cheaper worker can do it well. For clear-spec implementation, broad " +
-                  "read-only codebase analysis, migrations, test-log analysis, data crunching, or computer-use " +
-                  "style chores, use michael-sessions `create_session` to create a visible worker sub-session. " +
-                  "Use a Codex/GPT model for mechanical work, or a Claude model when the worker needs stronger " +
-                  "taste/review/judgment; Codex sessions can likewise create Claude workers. When called from this " +
-                  "session, the worker is linked in the same Backstage workspace and instructed to report back here. " +
-                  "For workers that only need filesystem/code access, keep `mcpServers: []` so " +
-                  "unrelated external MCP startup does not slow or block them. Set `repo` to the " +
-                  "registered repo id the worker should inspect or edit, such as `backstage` or `tella-fusion`. Use ask mode for " +
-                  "read-only investigation and code mode with a branch for implementation. Give the worker a self-contained prompt with scope, repo/path, " +
-                  "acceptance criteria, and what to report back. Keep the final judgment with this orchestrator: " +
-                  "inspect the worker's summary/diff/results, rerun or escalate if the output is not good enough, " +
-                  "and use Fable/Opus/Sonnet for reviews, UI/UX, copy, API design, and anything ambiguous or " +
-                  "user-facing. Cost is only a tie-breaker; for shipped work prioritize intelligence, then taste, " +
-                  "then cost."
-              );
-              if (!isAsk) {
-                parts.push(
-                  "## Deep-link the change for testing\nWhen your change is viewable at a specific route " +
-                    "(a settings page, an editor screen, etc.), call michael-preview's `set_preview_path` with that " +
-                    "root-relative path (e.g. `/settings/tags`). It makes the human's Preview and Staging buttons open " +
-                    "directly on the feature under test instead of the app root, so they can verify in one click. Update " +
-                    "it if the relevant route changes; pass an empty string to clear it."
-                );
-              }
-            }
+            const parts = buildSystemPromptParts({
+              isAsk,
+              reposNote: opts.reposNote,
+              sessionLink: journal?.bksSessionId
+                ? `${UI_BASE}/session/${journal.bksSessionId}`
+                : undefined,
+              interactiveTools: !!(
+                opts.inProcessMcp && Object.keys(opts.inProcessMcp).length
+              ),
+            }).map((p) => p.text);
             return parts.length ? { append: parts.join("\n\n") } : {};
           })(),
         },
