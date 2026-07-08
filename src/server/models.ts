@@ -8,8 +8,9 @@
 
 import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import { opencodePickerModels } from "./opencode-config";
 
-export type Provider = "claude" | "codex";
+export type Provider = "claude" | "codex" | "opencode";
 
 export interface ModelInfo {
   id: string;
@@ -30,6 +31,22 @@ export const KNOWN_MODELS: ModelInfo[] = [
   { id: "gpt-5.4-mini", provider: "codex", label: "GPT-5.4 mini (Codex)", aliases: ["mini"] },
   { id: "gpt-5.3-codex-spark", provider: "codex", label: "GPT-5.3 Codex Spark", aliases: ["spark"] },
 ];
+
+// OpenCode engine models are opt-in only: `pickerModels` from
+// ~/.backstage-opencode.json (and only while `enabled` is true) surface in
+// the UI picker; any other opencode/<provider>/<model> id still resolves via
+// the prefix passthrough in resolveModel below, it's just not advertised.
+// Folded in at module load — a config change needs a reload to show up.
+try {
+  for (const id of opencodePickerModels()) {
+    KNOWN_MODELS.push({
+      id,
+      provider: "opencode",
+      label: `${id.slice("opencode/".length)} (OpenCode)`,
+      aliases: [],
+    });
+  }
+} catch {}
 
 /** Per-provider defaults: claude-fable-5 for Anthropic, gpt-5.5 for OpenAI. */
 export const DEFAULT_CLAUDE_MODEL = "claude-fable-5";
@@ -260,6 +277,11 @@ export function resolveModel(input: string): ModelInfo | null {
   if (s.startsWith("claude-")) return { id: s, provider: "claude", label: s, aliases: [] };
   if (s.startsWith("gpt-") || s.startsWith("codex-")) {
     return { id: s, provider: "codex", label: s, aliases: [] };
+  }
+  // OpenCode engine: explicit opencode/<provider>/<model> ids pass through —
+  // the only way a session lands on the opencode runner (nothing defaults to it).
+  if (s.startsWith("opencode/") && s.slice("opencode/".length).includes("/")) {
+    return { id: s, provider: "opencode", label: s, aliases: [] };
   }
   return null;
 }

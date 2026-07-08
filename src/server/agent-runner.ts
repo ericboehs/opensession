@@ -25,6 +25,12 @@ import {
 } from "./claude-runner";
 import { isCodexSessionBusy, cancelCodexRun, activeCodexRunCount } from "./codex-runner";
 import {
+  runOpencode,
+  isOpencodeSessionBusy,
+  cancelOpencodeRun,
+  activeOpencodeRunCount,
+} from "./opencode-runner";
+import {
   runCodexAuto,
   codexSteerRun,
   codexInterruptAndSteerRun,
@@ -134,6 +140,12 @@ export interface RunAgentOpts {
 }
 
 function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerator<StreamEvent> {
+  // OpenCode engine: only explicit opencode/<provider>/<model> ids route here
+  // (resolveModel's prefix passthrough) — interactive sessions only; the
+  // runner hard-gates automations off the engine.
+  if (providerFor(model) === "opencode" && model) {
+    return runOpencode(opts, model);
+  }
   if (providerFor(model) === "codex") {
     // Transport-aware (file/env toggle): "app-server" drives the codex
     // app-server JSON-RPC API — same threads/rollouts as exec, plus mid-turn
@@ -289,6 +301,7 @@ export function isAgentSessionBusy(...ids: Array<string | null | undefined>): bo
       pendingStarts.has(id) ||
       isSessionBusy(id) ||
       isCodexSessionBusy(id) ||
+      isOpencodeSessionBusy(id) ||
       hostRunBusy(id)
     )
       return true;
@@ -302,7 +315,7 @@ export function isAgentSessionBusy(...ids: Array<string | null | undefined>): bo
  * exiting. (Does not count external CLI/tmux runs — we can't drain those.)
  */
 export function activeAgentRunCount(): number {
-  return activeRunCount() + activeCodexRunCount();
+  return activeRunCount() + activeCodexRunCount() + activeOpencodeRunCount();
 }
 
 /**
@@ -390,6 +403,7 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
     if (!id) continue;
     if (cancelRun(id)) cancelled = true;
     if (cancelCodexRun(id)) cancelled = true;
+    if (cancelOpencodeRun(id)) cancelled = true;
     if (hostCancel(id)) cancelled = true;
   }
   return cancelled;

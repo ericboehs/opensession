@@ -1736,7 +1736,9 @@ function attachSessionWatchersToTranscript(
 
 function attachSessionWatchersToEngineTranscript(
 	sessionId: string,
-	provider: "claude" | "codex",
+	// "opencode" resolves to no transcript path (opencode keeps its own storage);
+	// those sessions stream through run events only, so this attaches nothing.
+	provider: "claude" | "codex" | "opencode",
 	cwd: string,
 	engineSessionId: string,
 	attempt = 0,

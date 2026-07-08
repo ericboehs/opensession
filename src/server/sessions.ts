@@ -56,16 +56,20 @@ export function getTranscriptPath(
 export function getEngineTranscriptPath(
   worktreeDir: string,
   engineSessionId: string,
-  provider: "claude" | "codex"
+  provider: "claude" | "codex" | "opencode"
 ): string | null {
   if (provider === "codex") {
     return findCodexRollout(engineSessionId)?.path || null;
   }
+  // OpenCode keeps its transcripts in its own storage (~/.local/share/opencode);
+  // not integrated here yet — no tail/handoff for opencode engine sessions.
+  if (provider === "opencode") return null;
   return getTranscriptPath(worktreeDir, engineSessionId);
 }
 
 export function engineSessionPatch(
-  provider: "claude" | "codex",
+  // opencode session ids ride the claude slot (same as the run journal).
+  provider: "claude" | "codex" | "opencode",
   engineSessionId: string
 ): Partial<BackstageSessionFile> {
   return provider === "codex"

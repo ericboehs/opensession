@@ -105,8 +105,8 @@ export function buildChatContextNote(
  */
 export function buildEngineSwitchHandoffNote(input: {
 	fromModel?: string | null;
-	fromProvider: "claude" | "codex";
-	toProvider: "claude" | "codex";
+	fromProvider: "claude" | "codex" | "opencode";
+	toProvider: "claude" | "codex" | "opencode";
 	/** True when the target engine is resuming its own earlier thread (Claude
 	 *  coming back to a session it ran before) — then it already remembers the
 	 *  turns up to the switch and only needs the other engine's turns since. */

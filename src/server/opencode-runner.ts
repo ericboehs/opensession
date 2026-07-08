@@ -84,9 +84,7 @@ const OPENCODE_STATE_DIR = `${BACKSTAGE_CHATS_DIR}/opencode`;
 const SERVER_START_TIMEOUT_MS = 30_000;
 const IDLE_KILL_MS = 30 * 60 * 1000;
 
-// StreamEvent.provider gains "opencode" in the dispatcher wiring commit; the
-// cast keeps this file typecheck-clean standalone (and stays truthful after).
-const PROVIDER = "opencode" as unknown as NonNullable<StreamEvent["provider"]>;
+const PROVIDER = "opencode" as const;
 
 export const OPENCODE_MODEL_PREFIX = "opencode/";
 

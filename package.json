@@ -18,6 +18,7 @@
     "@codemirror/state": "^6.7.0",
     "@codemirror/view": "^6.43.4",
     "@openai/codex-sdk": "^0.139.0",
+    "@opencode-ai/sdk": "^1.17.15",
     "@pierre/diffs": "1.2.8",
     "@pierre/trees": "^1.0.0-beta.4",
     "@team-plain/typescript-sdk": "^5.12.1",
