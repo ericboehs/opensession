@@ -2,60 +2,49 @@ import { $ } from "bun";
 import { existsSync } from "fs";
 import type { UnifiedSession } from "./types";
 import { stopPreview } from "./preview";
+import { configuredPaths, configuredRepos, defaultRepo, type Repo } from "./config";
 
-// Main tella-fusion checkout and the root all per-branch worktrees live under.
-// Env-overridable (BACKSTAGE_TELLA_FUSION / BACKSTAGE_WORKTREES_DIR) for
-// self-hosted or sandboxed layouts (docs/sandboxes-plan.md Phase 0 de-hardcoding);
-// the defaults are this VPS's paths — unchanged behavior when unset.
-const TELLA_FUSION =
-  process.env.BACKSTAGE_TELLA_FUSION || "/home/ubuntu/projects/tella-fusion";
-const WORKTREES_DIR =
-  process.env.BACKSTAGE_WORKTREES_DIR || "/home/ubuntu/worktrees";
+// The Repo type + registry defaults live in config.ts now (the registry is
+// config-driven: `repos` in ~/.backstage/config.json merges over the built-in
+// Tella map — see docs/portability-audit.md). Re-exported so existing
+// `import { type Repo } from "./worktree"` call sites keep working.
+export type { Repo } from "./config";
 
-// Repos a chat can run against. Worktrees live at
-// <WORKTREES_DIR>/<wtPrefix>-<branch>; defaultBranch is the base they branch
-// from. tella-fusion is the default for every existing caller.
-//
-// NOTE: this is the *repo* concept. A "Project" in the UI is a separate thing —
-// an optional folder that groups chats (see src/server/projects.ts). A chat's
-// worktree lives on the chat and belongs to one of these repos.
-export interface Repo {
-  id: string;
-  repo: string;
-  wtPrefix: string;
-  defaultBranch: string;
-  /** GitHub `owner/name` for PR operations (gh CLI). */
-  ghRepo: string;
-  // When true, code sessions run directly in the main checkout on the default
-  // branch instead of an isolated worktree. Backstage is self-hosting — the live
-  // server runs `bun --hot` from its main checkout, so editing there is the only
-  // way a change is testable without a second instance. Sessions share one tree
-  // and commit straight to the default branch (see "Backstage dev workflow" in
-  // CLAUDE.md: add → commit → push, never reset/discard the shared repo).
-  sharedCheckout?: boolean;
-}
+// Root all per-branch worktrees live under. Env-overridable
+// (BACKSTAGE_WORKTREES_DIR) → config `paths.worktreesDir` → this VPS's path.
+const worktreesDir = () => configuredPaths().worktreesDir;
 
-export const REPOS: Record<string, Repo> = {
-  "tella-fusion": { id: "tella-fusion", repo: TELLA_FUSION, wtPrefix: "tella-fusion", defaultBranch: "main", ghRepo: "tellahq/tella-fusion" },
-  backstage: { id: "backstage", repo: "/home/ubuntu/projects/tella-backstage", wtPrefix: "backstage", defaultBranch: "master", ghRepo: "tellahq/backstage", sharedCheckout: true },
-  // Infra / GitOps / media repos — normal worktree + PR flow (none self-host).
-  gitops: { id: "gitops", repo: "/home/ubuntu/projects/gitops", wtPrefix: "gitops", defaultBranch: "main", ghRepo: "tellahq/gitops" },
-  infra: { id: "infra", repo: "/home/ubuntu/projects/infra", wtPrefix: "infra", defaultBranch: "main", ghRepo: "tellahq/infra" },
-  "shared-infra": { id: "shared-infra", repo: "/home/ubuntu/projects/shared-infra", wtPrefix: "shared-infra", defaultBranch: "main", ghRepo: "tellahq/shared-infra" },
-  gstreamer: { id: "gstreamer", repo: "/home/ubuntu/projects/gstreamer", wtPrefix: "gstreamer", defaultBranch: "tla_main", ghRepo: "tellahq/gstreamer" },
-  "gst-plugins-rs": { id: "gst-plugins-rs", repo: "/home/ubuntu/projects/gst-plugins-rs", wtPrefix: "gst-plugins-rs", defaultBranch: "tla_main", ghRepo: "tellahq/gst-plugins-rs" },
-};
+/**
+ * Repos a chat can run against — the merged registry, read fresh from config
+ * per access. Kept as a `Record`-shaped Proxy (not a plain snapshot) so the
+ * many existing `REPOS[id]` / `Object.values(REPOS)` call sites — including
+ * ones this module can't touch — stay correct when config adds or overrides
+ * a repo without a restart. New code should prefer `configuredRepos()`.
+ */
+export const REPOS: Record<string, Repo> = new Proxy({} as Record<string, Repo>, {
+  get: (_t, prop) =>
+    typeof prop === "string" ? configuredRepos()[prop] : undefined,
+  has: (_t, prop) => typeof prop === "string" && prop in configuredRepos(),
+  ownKeys: () => Object.keys(configuredRepos()),
+  getOwnPropertyDescriptor: (_t, prop) => {
+    if (typeof prop !== "string") return undefined;
+    const repo = configuredRepos()[prop];
+    return repo
+      ? { value: repo, enumerable: true, configurable: true, writable: true }
+      : undefined;
+  },
+});
 
 export function getRepo(id?: string): Repo {
-  return (id && REPOS[id]) || REPOS["tella-fusion"];
+  return (id && configuredRepos()[id]) || defaultRepo();
 }
 
 /** Infer the repo that owns a checkout/worktree path. */
 export function repoForPath(p: string): Repo {
-  for (const r of Object.values(REPOS)) {
-    if (p === r.repo || p.startsWith(`${WORKTREES_DIR}/${r.wtPrefix}-`)) return r;
+  for (const r of Object.values(configuredRepos())) {
+    if (p === r.repo || p.startsWith(`${worktreesDir()}/${r.wtPrefix}-`)) return r;
   }
-  return REPOS["tella-fusion"];
+  return defaultRepo();
 }
 
 // Serialize git operations that mutate the shared repo's worktrees. Concurrent
@@ -86,7 +75,9 @@ export interface WorktreeInfo {
  * destination doesn't.
  */
 async function seedWebappEnv(webappDir: string): Promise<void> {
-  const src = `${TELLA_FUSION}/packages/core/webapp/.env.local`;
+  const tellaFusionMain = configuredRepos()["tella-fusion"]?.repo;
+  if (!tellaFusionMain) return;
+  const src = `${tellaFusionMain}/packages/core/webapp/.env.local`;
   const dest = `${webappDir}/.env.local`;
   try {
     if (existsSync(src) && !existsSync(dest)) {
@@ -98,9 +89,36 @@ async function seedWebappEnv(webappDir: string): Promise<void> {
   }
 }
 
+/**
+ * Best-effort dependency install in a fresh worktree — sessions can always run
+ * `bun install` themselves. Honors the repo's configured `depsInstall` command
+ * (run with cwd = the worktree); unset = the historical behavior: tella-fusion
+ * installs (and seeds dev-auth env) under packages/core/webapp, other repos
+ * install from the repo root when a package.json exists.
+ */
+async function installWorktreeDeps(repo: Repo, wtPath: string, branchLabel: string): Promise<void> {
+  try {
+    if (repo.id === "tella-fusion") {
+      await seedWebappEnv(`${wtPath}/packages/core/webapp`);
+    }
+    if (repo.depsInstall) {
+      await $`sh -c ${repo.depsInstall}`.cwd(wtPath).quiet();
+    } else if (repo.id === "tella-fusion") {
+      const webappDir = `${wtPath}/packages/core/webapp`;
+      if (await Bun.file(`${webappDir}/package.json`).exists()) {
+        await $`cd ${webappDir} && bun install`.quiet();
+      }
+    } else if (await Bun.file(`${wtPath}/package.json`).exists()) {
+      await $`cd ${wtPath} && bun install`.quiet();
+    }
+  } catch (e) {
+    console.warn(`[worktree] bun install failed for ${branchLabel} (continuing):`, e);
+  }
+}
+
 export async function listWorktrees(repoId?: string): Promise<WorktreeInfo[]> {
   const repo = getRepo(repoId);
-  const prefix = `${WORKTREES_DIR}/${repo.wtPrefix}-`;
+  const prefix = `${worktreesDir()}/${repo.wtPrefix}-`;
   try {
     const result = await $`git -C ${repo.repo} worktree list --porcelain`.text();
     const worktrees: WorktreeInfo[] = [];
@@ -131,15 +149,16 @@ export async function listWorktrees(repoId?: string): Promise<WorktreeInfo[]> {
 export async function removeWorktree(branch: string, repoId?: string): Promise<void> {
   const repo = getRepo(repoId);
   try {
-    const wtPath = `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
+    const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${branch}`;
     // Stop any running dev server before removing the directory — reads the
     // PGID from .ports/dev-pgid (written by ensure-up.sh) so it works even
     // after a backstage restart or when the server was started by an agent.
     try { await stopPreview(wtPath); } catch {}
     // Use the wt delete script for tella-fusion when available, otherwise plain
     // git worktree remove (the wt script is tella-fusion-specific).
-    if (repo.id === "tella-fusion" && (await Bun.file("/home/ubuntu/bin/wt").exists())) {
-      await $`/home/ubuntu/bin/wt delete ${branch}`.quiet();
+    const wtScript = configuredPaths().wtScript;
+    if (repo.id === "tella-fusion" && (await Bun.file(wtScript).exists())) {
+      await $`${wtScript} delete ${branch}`.quiet();
     } else {
       await $`git -C ${repo.repo} worktree remove ${wtPath} --force`.quiet();
     }
@@ -234,7 +253,7 @@ export async function sweepArchivedWorktrees(
  */
 export async function reviveWorktree(branch: string, repoId?: string): Promise<string> {
   const repo = getRepo(repoId);
-  const wtPath = `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
+  const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${branch}`;
   if (existsSync(wtPath)) return wtPath;
 
   return withGitLock(async () => {
@@ -260,31 +279,24 @@ export async function reviveWorktree(branch: string, repoId?: string): Promise<s
  * `git push origin HEAD:<headRef>`.
  */
 export async function createWorktreeForPrBranch(headRef: string): Promise<string> {
-  const wtPath = `${WORKTREES_DIR}/tella-fusion-${headRef}-michael`;
+  const repo = defaultRepo();
+  const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael`;
 
   const reused = await withGitLock(async () => {
-    await $`git -C ${TELLA_FUSION} fetch origin ${headRef} --quiet`;
+    await $`git -C ${repo.repo} fetch origin ${headRef} --quiet`;
     if (existsSync(wtPath)) {
       await $`git -C ${wtPath} fetch origin ${headRef} --quiet`.nothrow();
       await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet().nothrow();
       return true;
     }
-    await $`git -C ${TELLA_FUSION} worktree prune`.quiet();
-    await $`git -C ${TELLA_FUSION} worktree add ${wtPath} -B ${headRef}-michael origin/${headRef}`;
+    await $`git -C ${repo.repo} worktree prune`.quiet();
+    await $`git -C ${repo.repo} worktree add ${wtPath} -B ${headRef}-michael origin/${headRef}`;
     return false;
   });
   if (reused) return wtPath;
 
   // Best-effort dep install so checks/builds the agent runs have deps available.
-  const webappDir = `${wtPath}/packages/core/webapp`;
-  await seedWebappEnv(webappDir);
-  try {
-    if (await Bun.file(`${webappDir}/package.json`).exists()) {
-      await $`cd ${webappDir} && bun install`.quiet();
-    }
-  } catch (e) {
-    console.warn(`[worktree] bun install failed for ${headRef} (continuing):`, e);
-  }
+  await installWorktreeDeps(repo, wtPath, headRef);
 
   return wtPath;
 }
@@ -301,32 +313,25 @@ export async function createWorktreeForFollowup(
   branch: string,
   baseRef: string,
 ): Promise<string> {
-  const existing = (await listWorktrees("tella-fusion")).find((w) => w.branch === branch);
+  const repo = defaultRepo();
+  const existing = (await listWorktrees(repo.id)).find((w) => w.branch === branch);
   if (existing) return existing.path;
 
-  const wtPath = `${WORKTREES_DIR}/tella-fusion-${branch}`;
+  const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${branch}`;
   await withGitLock(async () => {
-    await $`git -C ${TELLA_FUSION} worktree prune`.quiet();
+    await $`git -C ${repo.repo} worktree prune`.quiet();
     if (existsSync(wtPath)) return; // pruned stale registration; dir already usable
-    await $`git -C ${TELLA_FUSION} fetch origin ${baseRef} --quiet`.nothrow();
+    await $`git -C ${repo.repo} fetch origin ${baseRef} --quiet`.nothrow();
     const startPoint =
-      (await $`git -C ${TELLA_FUSION} rev-parse --verify --quiet origin/${baseRef}`.nothrow())
+      (await $`git -C ${repo.repo} rev-parse --verify --quiet origin/${baseRef}`.nothrow())
         .exitCode === 0
         ? `origin/${baseRef}`
-        : "origin/main";
-    await $`git -C ${TELLA_FUSION} worktree add -b ${branch} ${wtPath} ${startPoint}`;
+        : `origin/${repo.defaultBranch}`;
+    await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} ${startPoint}`;
   });
 
   // Best-effort dep install so the follow-up run can build/test, same as siblings.
-  const webappDir = `${wtPath}/packages/core/webapp`;
-  await seedWebappEnv(webappDir);
-  try {
-    if (await Bun.file(`${webappDir}/package.json`).exists()) {
-      await $`cd ${webappDir} && bun install`.quiet();
-    }
-  } catch (e) {
-    console.warn(`[worktree] bun install failed for ${branch} (continuing):`, e);
-  }
+  await installWorktreeDeps(repo, wtPath, branch);
 
   return wtPath;
 }
@@ -351,7 +356,7 @@ export async function createWorktreeForExistingBranch(
   const existing = (await listWorktrees(repo.id)).find((w) => w.branch === branch);
   if (existing) return existing.path;
 
-  const wtPath = `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
+  const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${branch}`;
   await withGitLock(async () => {
     await $`git -C ${repo.repo} worktree prune`.quiet();
     if (existsSync(wtPath)) return; // pruned stale registration; dir already usable
@@ -367,19 +372,7 @@ export async function createWorktreeForExistingBranch(
   });
 
   // Best-effort dep install, same as createWorktree.
-  try {
-    if (repo.id === "tella-fusion") {
-      const webappDir = `${wtPath}/packages/core/webapp`;
-      await seedWebappEnv(webappDir);
-      if (await Bun.file(`${webappDir}/package.json`).exists()) {
-        await $`cd ${webappDir} && bun install`.quiet();
-      }
-    } else if (await Bun.file(`${wtPath}/package.json`).exists()) {
-      await $`cd ${wtPath} && bun install`.quiet();
-    }
-  } catch (e) {
-    console.warn(`[worktree] bun install failed for ${branch} (continuing):`, e);
-  }
+  await installWorktreeDeps(repo, wtPath, branch);
 
   return wtPath;
 }
@@ -419,7 +412,7 @@ export function worktreePathFor(
   const repo = getRepo(repoId);
   return repo.sharedCheckout && !opts?.isolated
     ? repo.repo
-    : `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
+    : `${worktreesDir()}/${repo.wtPrefix}-${branch}`;
 }
 
 /**
@@ -441,7 +434,7 @@ export async function createWorktree(
   // session stays on the default branch and commits there.
   if (repo.sharedCheckout) return repo.repo;
 
-  const wtPath = `${WORKTREES_DIR}/${repo.wtPrefix}-${branch}`;
+  const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${branch}`;
   const base = opts?.base;
 
   await withGitLock(async () => {
@@ -458,20 +451,8 @@ export async function createWorktree(
 
   // Best-effort dep install — sessions can always run `bun install` themselves.
   // tella-fusion's deps + dev-auth env live under the webapp; other repos
-  // (e.g. backstage) install from the repo root.
-  try {
-    if (repo.id === "tella-fusion") {
-      const webappDir = `${wtPath}/packages/core/webapp`;
-      await seedWebappEnv(webappDir);
-      if (await Bun.file(`${webappDir}/package.json`).exists()) {
-        await $`cd ${webappDir} && bun install`.quiet();
-      }
-    } else if (await Bun.file(`${wtPath}/package.json`).exists()) {
-      await $`cd ${wtPath} && bun install`.quiet();
-    }
-  } catch (e) {
-    console.warn(`[worktree] bun install failed for ${branch} (continuing):`, e);
-  }
+  // (e.g. backstage) install from the repo root. Config `depsInstall` overrides.
+  await installWorktreeDeps(repo, wtPath, branch);
 
   return wtPath;
 }
