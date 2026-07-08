@@ -290,9 +290,21 @@ sandboxed sessions.
 by config. Core has zero imports from adapter SDKs except in
 `src/server/sandbox/adapters/`.
 
-### Workstream E — OpenCode as a third engine  (parallel, after Phase 1)
+### Workstream E — OpenCode engine  (parallel, after Phase 1)
 
-Decision 2026-07-08: OpenCode joins as a **third engine**, not a replacement.
+DIRECTION UPDATE 2026-07-08 (late, Michiel): **OpenCode is the destination —
+"fully move over to opencode only."** Staged migration: (1) opencode-first
+(default engine for new interactive sessions; parity work: permission-asks →
+ask/confirm cards restoring Stripe approvals, transcript tail, opencode in the
+runner image, steer ergonomics); (2) automations once confirm-parity is proven;
+(3) rip out claude-runner/codex-runner when parity holds and the metered Claude
+billing is accepted. claude-fable-5 via the direct SDK stays in the picker
+through stages 1–2 (subscription economics). opensession-the-product ships
+opencode-native from day one. The section below built the engine and remains
+accurate; its "third engine, not a replacement" framing is superseded as
+end-state but its constraints (Jun-15 billing, confirm-tool gap) gate the stages.
+
+Original decision 2026-07-08: OpenCode joins as a **third engine**, not a replacement.
 Anthropic's April 2026 policy change blocks subscription OAuth tokens in
 third-party harnesses, so Claude models via OpenCode are API-key-only —
 the Claude Agent SDK path (subscription-priced, plus our canUseTool /
