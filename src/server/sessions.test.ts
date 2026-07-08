@@ -6,18 +6,30 @@ import type { UnifiedSession } from "./types";
 
 let home: string;
 let priorHome: string | undefined;
+let priorChatsDir: string | undefined;
 
-beforeAll(() => {
+beforeAll(async () => {
 	priorHome = process.env.HOME;
 	home = join(tmpdir(), `backstage-sessions-test-${crypto.randomUUID()}`);
 	process.env.HOME = home;
 	mkdirSync(join(home, ".backstage-chats"), { recursive: true });
 	mkdirSync(join(home, ".slack-sessions"), { recursive: true });
+	// The HOME override only reaches paths.ts if nothing evaluated it yet —
+	// and bun test file order guarantees nothing (another test file importing
+	// the server graph poisons the cached BACKSTAGE_CHATS_DIR with the real
+	// store, which then leaks live sessions into these assertions). The live-
+	// binding seam repoints it regardless of who loaded paths.ts first; the
+	// cache-busted sessions.ts imports below re-read it at their load.
+	const paths = await import("./paths");
+	priorChatsDir = paths.__setChatsDirForTest(join(home, ".backstage-chats"));
 });
 
-afterAll(() => {
+afterAll(async () => {
 	if (priorHome === undefined) delete process.env.HOME;
 	else process.env.HOME = priorHome;
+	if (priorChatsDir !== undefined) {
+		(await import("./paths")).__setChatsDirForTest(priorChatsDir);
+	}
 	rmSync(home, { recursive: true, force: true });
 });
 

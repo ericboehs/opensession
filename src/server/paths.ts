@@ -22,6 +22,22 @@ const CHATS_LEGACY = `${HOME}/.backstage-sessions`;
  *  suites point it at a scratch dir so sbxtest state files, run dirs and
  *  kill-switch checks never touch the live store — set it BEFORE importing
  *  any src/server module), else the new name if present, else legacy. */
-export const BACKSTAGE_CHATS_DIR =
+export let BACKSTAGE_CHATS_DIR =
   process.env.BACKSTAGE_CHATS_DIR ||
   (existsSync(CHATS_NEW) || !existsSync(CHATS_LEGACY) ? CHATS_NEW : CHATS_LEGACY);
+
+/**
+ * Test seam (bun tests only): repoint the chat store AFTER this module has
+ * been evaluated. ES module bindings are live, so consumers that read
+ * `BACKSTAGE_CHATS_DIR` at THEIR load time (e.g. sessions.ts, which the tests
+ * re-import cache-busted) pick the new value up — the env override above only
+ * works when it's set before the first import of this module, which a bun
+ * test file can't guarantee (file execution order is not alphabetical, and
+ * any earlier test file importing the server graph evaluates this module).
+ * Returns the previous value so afterAll can restore it.
+ */
+export function __setChatsDirForTest(dir: string): string {
+  const prev = BACKSTAGE_CHATS_DIR;
+  BACKSTAGE_CHATS_DIR = dir;
+  return prev;
+}

@@ -8,42 +8,55 @@
  * integration-ish test files.
  */
 
-import { afterAll, describe, expect, test } from "bun:test";
-import * as runWs from "./run-ws";
-import {
-  registerRunToken,
-  unregisterRunToken,
-  registerInteractiveMcpBuilder,
-} from "./run-rpc";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+// ws-buffer has no src/server deps — safe to import at load time.
 import { WsFrameBuffer, replayStartFor } from "../runner-host/ws-buffer";
+
+// run-ws → run-rpc → paths resolves BACKSTAGE_CHATS_DIR (and HOME) at module
+// load. bun test evaluates every test file's module graph BEFORE running any
+// tests, so a static import here would pin the live paths under tests (like
+// sessions.test) that override HOME in their own beforeAll. Deferred imports
+// keep this file's graph out of the shared module cache until zz- runtime.
+let runWs: typeof import("./run-ws");
+let registerRunToken: typeof import("./run-rpc").registerRunToken;
+let unregisterRunToken: typeof import("./run-rpc").unregisterRunToken;
+let registerInteractiveMcpBuilder: typeof import("./run-rpc").registerInteractiveMcpBuilder;
 
 // ── scratch server (same wiring as backstage.ts / the verify suites) ─────────
 
-const srv = Bun.serve({
-  port: 0,
-  hostname: "127.0.0.1",
-  fetch(req, server) {
-    return (
-      runWs.handleSandboxWsUpgrade(req, server, new URL(req.url).pathname) ??
-      undefined
-    );
-  },
-  websocket: {
-    open(ws) {
-      runWs.sandboxWsOpen(ws);
+let srv: ReturnType<typeof Bun.serve>;
+let BASE = "";
+
+beforeAll(async () => {
+  runWs = await import("./run-ws");
+  ({ registerRunToken, unregisterRunToken, registerInteractiveMcpBuilder } =
+    await import("./run-rpc"));
+  srv = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(req, server) {
+      return (
+        runWs.handleSandboxWsUpgrade(req, server, new URL(req.url).pathname) ??
+        undefined
+      );
     },
-    message(ws, m) {
-      runWs.sandboxWsMessage(ws, m as any);
+    websocket: {
+      open(ws) {
+        runWs.sandboxWsOpen(ws);
+      },
+      message(ws, m) {
+        runWs.sandboxWsMessage(ws, m as any);
+      },
+      close(ws) {
+        runWs.sandboxWsClose(ws);
+      },
     },
-    close(ws) {
-      runWs.sandboxWsClose(ws);
-    },
-  },
+  });
+  BASE = `127.0.0.1:${srv.port}`;
 });
-const BASE = `127.0.0.1:${srv.port}`;
 
 afterAll(() => {
-  srv.stop(true);
+  srv?.stop(true);
 });
 
 async function until<T>(fn: () => T | undefined | false, timeoutMs = 5_000): Promise<T> {
