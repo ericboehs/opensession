@@ -25,24 +25,40 @@
  *   `cloneCredential` — the suite auto-wires a GitHub token from
  *   GITHUB_API_TOKEN or ~/.slack-agent.env when present.
  *
- * Everything is sbxtest-prefixed; the run journal AND sandbox config are
- * redirected to a scratch dir BEFORE any src/server import, so nothing here
- * touches the live server's config or active-runs.json. API keys are read
- * from the live config file but only ever written into the scratch config —
- * never logged.
+ * Everything is sbxtest-prefixed; the run journal, sandbox config, chat-store
+ * dir AND repo-registry config are redirected to a scratch dir BEFORE any
+ * src/server import, so nothing here touches the live server's config,
+ * active-runs.json, or ~/.backstage-chats (state files, sandbox-runs, and the
+ * disable-* kill switches all resolve under the scratch dir). API keys are
+ * read from the live config file but only ever written into the scratch
+ * config — never logged.
  */
 
 const SCRATCH = `${process.env.HOME || "/home/ubuntu"}/.sandbox-conformance-scratch`;
 process.env.BACKSTAGE_RUN_JOURNAL = `${SCRATCH}/active-runs.json`;
 process.env.BACKSTAGE_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
+// Provider state files + sandbox-runs dirs land under BACKSTAGE_CHATS_DIR —
+// point it at the scratch dir so sbxtest state never lands in the live store.
+process.env.BACKSTAGE_CHATS_DIR = `${SCRATCH}/chats`;
+// The repo registry is config-driven (REPOS is a read-only Proxy over
+// configuredRepos() — worktree.ts/config.ts): scratch repos are registered
+// through a scratch ~/.backstage/config.json written below, same pattern as
+// verify.ts. The live box has no config.json, so this only ADDS the scratch
+// repos over the built-in defaults.
+process.env.BACKSTAGE_CONFIG = `${SCRATCH}/backstage-config.json`;
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 
 const { getSandboxProvider } = await import("../../src/server/sandbox/index");
-const { REPOS, worktreePathFor } = await import("../../src/server/worktree");
 const runWs = await import("../../src/server/run-ws");
 const { hostRunBusy } = await import("../../src/server/host-registry");
 const { BACKSTAGE_CHATS_DIR } = await import("../../src/server/paths");
+// The orphan-snapshot sweep (docker.ts, piggybacked on the idle sweep) reads
+// session/state files through the — now scratch-redirected — chats dir, so it
+// would see every LIVE session as gone. Arm its once-an-hour throttle up
+// front so it never runs inside this suite.
+(globalThis as unknown as { __sandboxSnapOrphanSweepAt?: number }).__sandboxSnapOrphanSweepAt =
+  Date.now();
 type RunHostSpec = import("../../src/runner-host/protocol").RunHostSpec;
 type Sandbox = import("../../src/server/sandbox/provider").Sandbox;
 type PortMap = import("../../src/server/sandbox/provider").PortMap;
@@ -139,22 +155,25 @@ await sh(["git", "commit", "-q", "-m", "init"], MAIN);
 await sh(["git", "clone", "-q", "--bare", MAIN, BARE]);
 await sh(["git", "remote", "add", "origin", BARE], MAIN);
 await sh(["git", "worktree", "add", "-q", WT, "-b", "sbxtest-conf-branch"], MAIN);
-REPOS["sbxtest"] = {
-  id: "sbxtest",
-  repo: MAIN,
-  wtPrefix: "sbxtest",
-  defaultBranch: "main",
-  ghRepo: "sbxtest/sbxtest",
-};
-// Remote workspace source: tiny public repo; repo.repo points at a dir with
-// no git so remoteCloneUrl falls through to ghRepo's https URL.
-REPOS[PUB_REPO_ID] = {
-  id: PUB_REPO_ID,
-  repo: `${SCRATCH}/no-local-checkout`,
-  wtPrefix: PUB_REPO_ID,
-  defaultBranch: "master",
-  ghRepo: "octocat/Hello-World",
-};
+// Register the scratch repos through the config-driven registry (REPOS is a
+// read-only Proxy now; BACKSTAGE_CONFIG points at this scratch file — same
+// pattern as verify.ts). sbxpub is the remote workspace source: tiny public
+// repo whose `repo` path has no git checkout, so remoteCloneUrl falls through
+// to ghRepo's https URL.
+await Bun.write(
+  process.env.BACKSTAGE_CONFIG!,
+  JSON.stringify({
+    repos: {
+      sbxtest: { repo: MAIN, wtPrefix: "sbxtest", defaultBranch: "main", ghRepo: "sbxtest/sbxtest" },
+      [PUB_REPO_ID]: {
+        repo: `${SCRATCH}/no-local-checkout`,
+        wtPrefix: PUB_REPO_ID,
+        defaultBranch: "master",
+        ghRepo: "octocat/Hello-World",
+      },
+    },
+  }),
+);
 
 // ── shared dial-back WS server (docker-ws + remote entries) ──────────────────
 
@@ -486,7 +505,33 @@ async function runEntry(entry: Entry): Promise<void> {
       const cDeadline = Date.now() + 90_000;
       while (!cInit && Date.now() < cDeadline) await new Promise((r) => setTimeout(r, 500));
       ok("second run started (for steer/cancel)", cInit);
-      ok("steer delivered", cHandle.steer("Nudge: you may stop early."));
+
+      // WS transport resilience: kill the dialed-in connection server-side
+      // mid-run. The host must redial (≤5s backoff), replay the disconnect
+      // window (seq/ack — ws-buffer.ts), and the handle must reattach so
+      // steer/cancel below still land. Replay-exactly-once semantics are
+      // unit-tested in src/server/zz-run-ws.test.ts; this proves the live
+      // wiring end-to-end on a real run.
+      if (wsTransport) {
+        ok("ws connection dropped server-side (mid-run)", runWs.dropRunWsConnection(cancelSpec.hostId));
+        let redialed = false;
+        const wsDeadline = Date.now() + 30_000;
+        while (!redialed && Date.now() < wsDeadline) {
+          await new Promise((r) => setTimeout(r, 500));
+          redialed = runWs.hasLiveRunWsConnection(cancelSpec.hostId);
+        }
+        ok("host redialed after the drop", redialed);
+      }
+
+      // The handle reconnects on its own cadence (2s polls) after a ws drop —
+      // retry the steer until it lands instead of asserting the first attempt.
+      let steered = cHandle.steer("Nudge: you may stop early.");
+      const steerDeadline = Date.now() + 30_000;
+      while (!steered && Date.now() < steerDeadline) {
+        await new Promise((r) => setTimeout(r, 1000));
+        steered = cHandle.steer("Nudge: you may stop early.");
+      }
+      ok("steer delivered", steered);
       ok("cancel delivered", cHandle.cancel());
       const cEnded = await Promise.race([
         cConsume.then(() => true),
@@ -558,6 +603,49 @@ async function auditDaytonaLeftovers(): Promise<void> {
   }
 }
 
+async function auditE2bLeftovers(): Promise<void> {
+  if (!e2bKey) return;
+  section = "e2b";
+  try {
+    const { Sandbox } = await import("e2b");
+    const listLeftovers = async (): Promise<string[]> => {
+      // Same paginator dance as the adapter's findSandboxId — the SDK's list
+      // return shape varies across versions.
+      const paginator: any = (Sandbox as any).list({
+        apiKey: e2bKey,
+        query: { metadata: { backstageSandbox: "1" } },
+      });
+      const infos: any[] = Array.isArray(paginator)
+        ? paginator
+        : typeof paginator?.nextItems === "function"
+          ? await paginator.nextItems()
+          : await paginator;
+      return (infos || []).map((s: any) => String(s.sandboxId || s.id || "")).filter(Boolean);
+    };
+    let leftovers = await listLeftovers();
+    if (leftovers.length) {
+      // Kills are async server-side — give in-flight teardowns a moment.
+      await new Promise((r) => setTimeout(r, 15_000));
+      leftovers = await listLeftovers();
+    }
+    ok(
+      "no backstage-labeled e2b sandboxes left behind",
+      leftovers.length === 0,
+      leftovers.join(",") || "none",
+    );
+    for (const id of leftovers) {
+      console.warn(`  cleaning up leftover e2b sandbox ${id}`);
+      try {
+        await (Sandbox as any).kill(id, { apiKey: e2bKey });
+      } catch (e) {
+        console.warn(`  cleanup of ${id} failed:`, String(e).slice(0, 200));
+      }
+    }
+  } catch (e) {
+    ok("e2b leftovers audit ran", false, String(e).slice(0, 200));
+  }
+}
+
 // ── run the matrix ────────────────────────────────────────────────────────────
 
 try {
@@ -569,6 +657,7 @@ try {
     }
   }
   await auditDaytonaLeftovers();
+  await auditE2bLeftovers();
 } finally {
   console.log("\n── cleanup ──");
   // Docker scratch containers/volumes/state for both docker entries.
@@ -585,8 +674,7 @@ try {
       force: true,
     });
   }
-  delete REPOS["sbxtest"];
-  delete REPOS[PUB_REPO_ID];
+  // (scratch repo registrations die with the scratch BACKSTAGE_CONFIG below)
   for (const dir of [WT]) {
     const munged = `-${dir.replaceAll("/", "-").replace(/^-/, "")}`;
     rmSync(`${HOME}/.claude/projects/${munged}`, { recursive: true, force: true });

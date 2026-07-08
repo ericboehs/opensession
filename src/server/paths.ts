@@ -18,6 +18,10 @@ const HOME = process.env.HOME || "/home/ubuntu";
 const CHATS_NEW = `${HOME}/.backstage-chats`;
 const CHATS_LEGACY = `${HOME}/.backstage-sessions`;
 
-/** The active chat-store dir: new name if present, else the legacy name. */
+/** The active chat-store dir: env override first (test/verify/conformance
+ *  suites point it at a scratch dir so sbxtest state files, run dirs and
+ *  kill-switch checks never touch the live store — set it BEFORE importing
+ *  any src/server module), else the new name if present, else legacy. */
 export const BACKSTAGE_CHATS_DIR =
-  existsSync(CHATS_NEW) || !existsSync(CHATS_LEGACY) ? CHATS_NEW : CHATS_LEGACY;
+  process.env.BACKSTAGE_CHATS_DIR ||
+  (existsSync(CHATS_NEW) || !existsSync(CHATS_LEGACY) ? CHATS_NEW : CHATS_LEGACY);
