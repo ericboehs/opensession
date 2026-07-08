@@ -311,8 +311,20 @@ self-hosters and model experiments.
 3. Sandbox synergy: in Docker sandboxes, run the opencode server inside
    the container and talk HTTP — no stdio proxying. Add the binary to the
    `backstage-runner` image.
-4. NOT in scope: any rebuilt subscription-auth plugins (ToS-violating and
-   server-side blocked).
+4. Max-subscription bridge (decided 2026-07-08): support Claude models in
+   the OpenCode engine via a Meridian-style local proxy — an
+   Anthropic-compatible HTTP endpoint backed by the **official Claude
+   Agent SDK** + our accounts layer (reference implementation:
+   github.com/ianjwhite99/opencode-with-claude). Build ours in-repo so
+   calls go through account selection, usage-credit gating, and the audit
+   log. Containment: interactive sessions only (never automations),
+   designated accounts only (not the pool), direct Agent SDK stays the
+   default engine for Claude models. Known gray zone under Anthropic's
+   Feb-2026 subscription terms — account-flag risk accepted by Michiel;
+   if enforcement tightens, the bridge is removed and nothing else
+   depends on it.
+5. Still NOT in scope: OAuth spoofing / reverse-engineered auth of any
+   kind (ToS-violating and server-side blocked).
 
 ### Phase 4 — Product layer + open-source polish  (ongoing)
 
