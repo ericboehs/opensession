@@ -298,6 +298,7 @@ function scanBackstageSessions(): UnifiedSession[] {
         data.projectId ??
         null,
       parentSessionId: data.parentSessionId,
+      spawnDepth: data.spawnDepth,
       attachedRepos: data.attachedRepos,
       previewPath: data.previewPath,
       automation:

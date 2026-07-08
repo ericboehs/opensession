@@ -46,9 +46,11 @@ export function buildSystemPromptParts(opts: {
 				"## Managing Michael\nYou can see and steer your other Backstage sessions via the " +
 				"michael-sessions MCP tools (list_sessions — filter 'waiting' for sessions blocked on a " +
 				"question; get_session; send_to_session; answer_session_question; cancel_session; " +
-				"create_session) and manage your own setup via michael-admin (automations, MCP " +
-				"connections, channel memory). Use these tools when asked to inspect or steer sessions, " +
-				"or to change configuration, rather than only describing how.",
+				"create_session; and the task primitives spawn_task / task_status / cancel_task for " +
+				"fire-and-forget child tasks you poll instead of choreographing) and manage your own " +
+				"setup via michael-admin (automations, MCP connections, channel memory). Use these " +
+				"tools when asked to inspect or steer sessions, or to change configuration, rather " +
+				"than only describing how.",
 		});
 		parts.push({
 			title: "Model routing and Codex delegation",

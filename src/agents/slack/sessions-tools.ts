@@ -12,17 +12,22 @@
  * be able to puppet other sessions).
  *
  * Gating: the read tools (list/get) are available to any whitelisted user who
- * can talk to Michael; the control tools (answer/send/cancel/create) are gated
- * to the trusted user via `isAdmin`, matching michael-admin.
+ * can talk to Michael; the control tools (answer/send/cancel/create, and the
+ * spawn_task/task_status/cancel_task task primitives) are gated to the trusted
+ * user via `isAdmin`, matching michael-admin.
  */
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+import { existsSync, readFileSync } from "fs";
 import {
   getSessionControl,
+  type SessionControl,
   type SessionState,
   type SessionSummary,
 } from "../../server/session-control";
-import type { TranscriptEntry } from "../../server/types";
+import { BACKSTAGE_CHATS_DIR } from "../../server/paths";
+import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import type { BackstageSessionFile, TranscriptEntry } from "../../server/types";
 
 export interface SessionsToolContext {
   /** Display name credited when this session messages/creates others. */
@@ -122,6 +127,248 @@ export function buildChildSessionPrompt(input: {
     );
   }
   return parts.join("\n\n");
+}
+
+// ---------------------------------------------------------------------------
+// spawn_task / task_status / cancel_task — the fire-and-forget child-task
+// primitive (background-agents' spawn-task pattern). spawn_task rides the SAME
+// SessionControl.createSession code path as create_session (never a parallel
+// implementation); what it adds is the task contract: return {taskId, url}
+// immediately, poll with task_status, stop with cancel_task — plus a spawn-
+// depth loop guard and an automation refusal (defense-in-depth: michael-
+// sessions is never wired into automation runs in the first place; backstage.ts
+// gates inProcessMcp on !isAutomationSession and admin-tools/handlers wire it
+// only for interactive Slack runs).
+// ---------------------------------------------------------------------------
+
+/** A session at this spawn depth may not spawn further (root = 0, so one
+ *  spawned child may spawn one grandchild; the grandchild is the floor). */
+export const MAX_SPAWN_DEPTH = 2;
+
+/** Injection seam so the depth guard / automation refusal / file stamping are
+ *  unit-testable without a live server or real session files. */
+export interface SpawnTaskDeps {
+  control: SessionControl;
+  /** Read a backstage session file by id; null when absent/unreadable. */
+  readSessionFile: (id: string) => Partial<BackstageSessionFile> | null;
+  /** Persist spawnDepth onto the child's session file (async, best-effort). */
+  stampSpawnDepth: (id: string, depth: number) => void | Promise<void>;
+}
+
+function defaultReadSessionFile(id: string): Partial<BackstageSessionFile> | null {
+  try {
+    const path = `${BACKSTAGE_CHATS_DIR}/${id}.json`;
+    if (!existsSync(path)) return null;
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persist spawnDepth on the child's session file. The file is first written at
+ * the opening run's `init` event (backstage.ts persist(), which builds it from
+ * scratch — anything written earlier would be clobbered), so poll until it
+ * exists and then MERGE the field; every later update goes through
+ * touchBackstageSession-style merges, so it sticks. The in-memory depth map
+ * (below) covers the guard in the meantime.
+ */
+async function defaultStampSpawnDepth(id: string, depth: number): Promise<void> {
+  const path = `${BACKSTAGE_CHATS_DIR}/${id}.json`;
+  for (let i = 0; i < 240; i++) {
+    if (existsSync(path)) {
+      try {
+        const data = JSON.parse(readFileSync(path, "utf-8"));
+        if (data?.id) {
+          if (data.spawnDepth !== depth) writeJsonAtomic(path, { ...data, spawnDepth: depth });
+          return;
+        }
+      } catch {}
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  console.warn(`[spawn_task] could not stamp spawnDepth on ${id} — session file never appeared`);
+}
+
+function defaultSpawnDeps(): SpawnTaskDeps {
+  return {
+    control: getSessionControl(),
+    readSessionFile: defaultReadSessionFile,
+    stampSpawnDepth: defaultStampSpawnDepth,
+  };
+}
+
+/** Depths of children spawned by THIS process, so the guard holds in the
+ *  window before the child's session file exists (parked on globalThis to
+ *  survive `bun --hot` reloads, capped so it never grows unbounded). */
+function spawnDepthMap(): Map<string, number> {
+  const g = globalThis as { __bksSpawnDepths?: Map<string, number> };
+  return (g.__bksSpawnDepths ??= new Map());
+}
+
+/** A session's spawn depth: session file first (authoritative + fresh), then
+ *  the in-process map (pre-init window), then the control registry's summary. */
+export function resolveSpawnDepth(
+  sessionId: string | undefined,
+  deps: Pick<SpawnTaskDeps, "control" | "readSessionFile">,
+): number {
+  if (!sessionId) return 0;
+  const file = deps.readSessionFile(sessionId);
+  if (typeof file?.spawnDepth === "number") return file.spawnDepth;
+  const mem = spawnDepthMap().get(sessionId);
+  if (typeof mem === "number") return mem;
+  try {
+    const s = deps.control.getSession(sessionId);
+    if (typeof s?.spawnDepth === "number") return s.spawnDepth;
+  } catch {}
+  return 0;
+}
+
+function isAutomationOwned(
+  sessionId: string,
+  deps: Pick<SpawnTaskDeps, "control" | "readSessionFile">,
+): boolean {
+  const file = deps.readSessionFile(sessionId);
+  if (file?.automation) return true;
+  if (file?.createdBy?.endsWith(" (automation)")) return true;
+  try {
+    return Boolean(deps.control.getSession(sessionId)?.automation);
+  } catch {
+    return false;
+  }
+}
+
+export interface SpawnTaskArgs {
+  prompt: string;
+  repo?: string;
+  branch?: string;
+  model?: string;
+  mode?: "ask" | "code";
+  sandbox?: boolean;
+}
+
+export type SpawnTaskResult =
+  | { ok: true; taskId: string; url: string }
+  | { ok: false; error: string };
+
+export async function spawnTaskImpl(
+  args: SpawnTaskArgs,
+  ctx: SessionsToolContext,
+  deps: SpawnTaskDeps = defaultSpawnDeps(),
+): Promise<SpawnTaskResult> {
+  if (!args.prompt?.trim()) return { ok: false, error: "Need a prompt to spawn a task." };
+  const mode = args.mode || "code";
+  const caller = ctx.currentSessionId;
+  // Defense-in-depth: michael-sessions is withheld from automation runs at the
+  // wiring layer already; refuse anyway if the calling session is
+  // automation-owned (interactive resumes of automation sessions included).
+  if (caller && isAutomationOwned(caller, deps)) {
+    return { ok: false, error: "spawn_task is not available from automation sessions." };
+  }
+  const myDepth = resolveSpawnDepth(caller, deps);
+  if (myDepth >= MAX_SPAWN_DEPTH) {
+    return {
+      ok: false,
+      error:
+        `spawn_task refused: this session is already ${myDepth} spawn hops from a human-created session ` +
+        `(max ${MAX_SPAWN_DEPTH}). Do the work here, or report back to your parent instead of delegating further.`,
+    };
+  }
+  // Code mode needs somewhere to work: an explicit branch, or a parent code
+  // session whose worktree the child will share (createSession's same-
+  // workspace = same-worktree rule; only when the repo matches).
+  if (mode === "code" && !args.branch?.trim()) {
+    let sharable = false;
+    if (caller) {
+      try {
+        const parent = deps.control.getSession(caller);
+        sharable = Boolean(
+          parent && parent.mode === "code" && parent.worktreeDir &&
+            (!args.repo || args.repo === parent.repo),
+        );
+      } catch {}
+    }
+    if (!sharable) {
+      return { ok: false, error: "Code-mode task needs a `branch` (no parent code worktree to share)." };
+    }
+  }
+  const prompt = buildChildSessionPrompt({
+    prompt: args.prompt,
+    parentSessionId: caller,
+    reportBack: Boolean(caller),
+  });
+  const { id } = await deps.control.createSession({
+    prompt,
+    repo: args.repo,
+    mode,
+    branch: args.branch,
+    model: args.model,
+    parentSessionId: caller,
+    reportBack: Boolean(caller),
+    user: ctx.createdBy,
+    sandbox: args.sandbox,
+  });
+  const depth = myDepth + 1;
+  const map = spawnDepthMap();
+  map.set(id, depth);
+  if (map.size > 500) map.delete(map.keys().next().value!);
+  void Promise.resolve(deps.stampSpawnDepth(id, depth)).catch((e) =>
+    console.warn(`[spawn_task] stamping spawnDepth on ${id} failed:`, e),
+  );
+  const base = process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+  return { ok: true, taskId: id, url: `${base}/session/${id}` };
+}
+
+/** Task-facing state view: running / waiting (blocked on a question) / done /
+ *  error (last run died on a terminal failure). */
+export function taskStateOf(s: SessionSummary): "running" | "waiting" | "done" | "error" {
+  if (s.state === "running" || s.state === "queued") return "running";
+  if (s.state === "waiting_question") return "waiting";
+  return s.lastRunError ? "error" : "done";
+}
+
+export async function taskStatusImpl(
+  args: { taskId: string; transcript_lines?: number },
+  deps: SpawnTaskDeps = defaultSpawnDeps(),
+): Promise<string> {
+  const s = deps.control.getSession(args.taskId);
+  if (!s) return `No task/session with id \`${args.taskId}\`.`;
+  const state = taskStateOf(s);
+  const parts = [`Task \`${s.id}\` — *${state}* (${s.state})`, oneLine(s)];
+  if (state === "error" && s.lastRunError) parts.push(`*Error:* ${s.lastRunError.message}`);
+  if (s.state === "waiting_question" && s.pendingQuestion) {
+    parts.push(
+      `*Waiting on:* ${questionHeaders(s.pendingQuestion.questions)} — answer with answer_session_question (questionId \`${s.pendingQuestion.questionId}\`).`,
+    );
+  }
+  if (s.prUrl) parts.push(`*PR:* ${s.prState || ""} ${s.prUrl}`.trim());
+  // Diff stat — host-side worktrees only (a volume-mode sandbox workspace has
+  // no host dir; skip rather than wake its container for a status read).
+  if (s.mode === "code" && s.worktreeDir && existsSync(s.worktreeDir)) {
+    try {
+      const [{ getSessionDiff }, { getRepo }] = await Promise.all([
+        import("../../server/git-diff"),
+        import("../../server/worktree"),
+      ]);
+      const diff = await getSessionDiff(s.worktreeDir, getRepo(s.repo).defaultBranch);
+      if (diff.files.length) {
+        parts.push(`*Diff:* ${diff.files.length} file(s) changed, +${diff.totalAdditions}/-${diff.totalDeletions}`);
+      }
+    } catch {}
+  }
+  const tail = deps.control.transcriptTail(args.taskId, args.transcript_lines ?? 12);
+  parts.push(`*Recent transcript:*\n${fmtTranscriptTail(tail)}`);
+  return parts.join("\n");
+}
+
+export function cancelTaskImpl(
+  args: { taskId: string },
+  deps: SpawnTaskDeps = defaultSpawnDeps(),
+): string {
+  const ok = deps.control.cancelSession(args.taskId);
+  return ok
+    ? `Cancelled task \`${args.taskId}\`.`
+    : `Nothing to cancel on \`${args.taskId}\` (idle, done, or an external run this server doesn't own).`;
 }
 
 export function createSessionsMcpServer(ctx: SessionsToolContext) {
@@ -326,6 +573,44 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
             ].filter(Boolean).join(" ")
           );
         }
+      ),
+      // ---------------------------------------------------------------------
+      // Tasks — fire-and-forget child sessions (spawn / poll / cancel)
+      // ---------------------------------------------------------------------
+      tool(
+        "spawn_task",
+        "Delegate a self-contained task to a child session and return IMMEDIATELY with {taskId, url} — the lightweight alternative to create_session + send_to_session choreography when you just want work done and a handle to poll. The child is created through the same code path as create_session (it shares this session's worktree in code mode when repos match, inherits your user, is linked as a child, and is told to report back here); poll it with task_status and stop it with cancel_task. Mode defaults to 'code' (pass a branch unless the child can share this session's code worktree); use 'ask' for read-only investigation. Loop guard: spawned children may delegate one further level, then spawn_task refuses (depth ≥ 2). Not available from automation sessions.",
+        {
+          prompt: z.string().describe("Self-contained task prompt: scope, relevant files, constraints, acceptance criteria, and what to report."),
+          repo: z.string().optional().describe("Registered repo id, e.g. 'tella-fusion' or 'backstage'. Defaults to this session's repo."),
+          branch: z.string().optional().describe("Branch for code mode when the child can't share this session's worktree (standalone or different repo)."),
+          model: z.string().optional().describe("Optional model id (e.g. 'gpt-5.5' for a Codex worker, or a Claude model id)."),
+          mode: z.enum(["ask", "code"]).optional().describe("'code' (default) can edit files / open PRs; 'ask' is read-only."),
+          sandbox: z.boolean().optional().describe("Ask for a sandboxed child session (docker provider when configured)."),
+        },
+        async (args: SpawnTaskArgs) => {
+          const res = await spawnTaskImpl(args, ctx);
+          if (!res.ok) return text(res.error);
+          return text(
+            `Spawned task \`${res.taskId}\` — ${res.url}\nIt runs in the background; poll with task_status(taskId), answer questions with answer_session_question, stop with cancel_task.`
+          );
+        }
+      ),
+      tool(
+        "task_status",
+        "Status of a spawned task (or any session id): running / waiting (blocked on a question) / done / error, plus the recent transcript tail, a diff stat when it changed code, and its PR when one exists.",
+        {
+          taskId: z.string().describe("The task/session id returned by spawn_task."),
+          transcript_lines: z.number().optional().describe("Trailing transcript entries to include (default 12)."),
+        },
+        async (args: { taskId: string; transcript_lines?: number }) =>
+          text(await taskStatusImpl(args))
+      ),
+      tool(
+        "cancel_task",
+        "Cancel a spawned task's in-flight run (drops queued messages too). Same as cancel_session — only runs this server owns.",
+        { taskId: z.string().describe("The task/session id returned by spawn_task.") },
+        async (args: { taskId: string }) => text(cancelTaskImpl(args))
       )
     );
   }

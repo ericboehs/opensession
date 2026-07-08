@@ -353,8 +353,9 @@ export function buildCodexDeveloperInstructions(input: {
     parts.push(
       "## Managing Michael\nYou can see and steer your other Backstage sessions via the " +
         "michael-sessions MCP tools (list_sessions, get_session, send_to_session, " +
-        "answer_session_question, cancel_session, create_session), manage setup via " +
-        "michael-admin, ask teammates via michael-humans, and attach/switch repos via " +
+        "answer_session_question, cancel_session, create_session, plus spawn_task / " +
+        "task_status / cancel_task for fire-and-forget child tasks you poll), manage setup " +
+        "via michael-admin, ask teammates via michael-humans, and attach/switch repos via " +
         "michael-repos when those servers are available. Use these tools when asked to " +
         "inspect, steer, or coordinate sessions rather than only describing how."
     );

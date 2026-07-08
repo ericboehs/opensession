@@ -1,5 +1,16 @@
 import { describe, expect, it } from "bun:test";
-import { buildChildSessionPrompt } from "./sessions-tools";
+import {
+	buildChildSessionPrompt,
+	cancelTaskImpl,
+	resolveSpawnDepth,
+	spawnTaskImpl,
+	taskStateOf,
+	taskStatusImpl,
+	MAX_SPAWN_DEPTH,
+	type SpawnTaskDeps,
+	type SessionsToolContext,
+} from "./sessions-tools";
+import type { SessionControl, SessionSummary } from "../../server/session-control";
 
 describe("buildChildSessionPrompt", () => {
 	it("adds parent report-back instructions for visible worker sessions", () => {
@@ -24,5 +35,236 @@ describe("buildChildSessionPrompt", () => {
 
 		expect(prompt).toContain("Run a standalone investigation.");
 		expect(prompt).not.toContain("send_to_session");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// spawn_task / task_status / cancel_task
+// ---------------------------------------------------------------------------
+
+interface Harness {
+	deps: SpawnTaskDeps;
+	created: Parameters<SessionControl["createSession"]>[0][];
+	files: Map<string, Record<string, unknown>>;
+	sessions: Map<string, Partial<SessionSummary>>;
+	stamped: Array<{ id: string; depth: number }>;
+	cancelled: string[];
+}
+
+let uniq = 0;
+
+/** Fully stubbed deps: no live server, no real session files, no real runs.
+ *  createSession resolves instantly with a fresh id and NEVER signals run
+ *  completion — spawnTaskImpl resolving at all proves it doesn't wait. */
+function makeHarness(childId?: string): Harness {
+	const created: Harness["created"] = [];
+	const files = new Map<string, Record<string, unknown>>();
+	const sessions = new Map<string, Partial<SessionSummary>>();
+	const stamped: Harness["stamped"] = [];
+	const cancelled: string[] = [];
+	const id = childId ?? `bks-test-child-${++uniq}`;
+	const control = {
+		listSessions: () => [],
+		getSession: (sid: string) => sessions.get(sid) as SessionSummary | undefined,
+		transcriptTail: () => [],
+		answerQuestion: () => false,
+		deliverToSession: async () => ({ status: "started" as const, message: "" }),
+		cancelSession: (sid: string) => {
+			cancelled.push(sid);
+			return true;
+		},
+		createSession: async (opts: Harness["created"][0]) => {
+			created.push(opts);
+			return { id };
+		},
+	} satisfies SessionControl;
+	return {
+		deps: {
+			control,
+			readSessionFile: (sid) => files.get(sid) ?? null,
+			stampSpawnDepth: (sid, depth) => {
+				stamped.push({ id: sid, depth });
+			},
+		},
+		created,
+		files,
+		sessions,
+		stamped,
+		cancelled,
+	};
+}
+
+const ctx = (currentSessionId?: string): SessionsToolContext => ({
+	createdBy: "Michiel",
+	isAdmin: true,
+	currentSessionId,
+});
+
+async function settle() {
+	// stampSpawnDepth is fired without being awaited; let microtasks drain.
+	await new Promise((r) => setTimeout(r, 0));
+}
+
+describe("spawnTaskImpl", () => {
+	it("returns {taskId, url} immediately via the createSession code path, without waiting for the run", async () => {
+		const h = makeHarness();
+		const parent = `bks-test-parent-${++uniq}`;
+		h.files.set(parent, { id: parent });
+		const started = Date.now();
+		const res = await spawnTaskImpl(
+			{ prompt: "Investigate the flaky test.", mode: "ask" },
+			ctx(parent),
+			h.deps,
+		);
+		expect(res.ok).toBe(true);
+		if (!res.ok) return;
+		expect(Date.now() - started).toBeLessThan(500);
+		expect(res.taskId).toStartWith("bks-test-child-");
+		expect(res.url).toContain(`/session/${res.taskId}`);
+		// Same code path as create_session: worker preamble + report-back, child
+		// linked to the parent, user inherited.
+		expect(h.created).toHaveLength(1);
+		expect(h.created[0].prompt).toContain("Investigate the flaky test.");
+		expect(h.created[0].prompt).toContain("worker session delegated by another Michael session");
+		expect(h.created[0].prompt).toContain(`report back to the parent/orchestrator session \`${parent}\``);
+		expect(h.created[0].parentSessionId).toBe(parent);
+		expect(h.created[0].user).toBe("Michiel");
+		expect(h.created[0].mode).toBe("ask");
+	});
+
+	it("tags the child with spawnDepth = parent depth + 1", async () => {
+		const h = makeHarness();
+		const parent = `bks-test-parent-${++uniq}`;
+		h.files.set(parent, { id: parent, spawnDepth: 1 });
+		const res = await spawnTaskImpl({ prompt: "Do a thing.", mode: "ask" }, ctx(parent), h.deps);
+		expect(res.ok).toBe(true);
+		await settle();
+		expect(h.stamped).toEqual([{ id: (res as { taskId: string }).taskId, depth: 2 }]);
+	});
+
+	it(`refuses at depth ≥ ${MAX_SPAWN_DEPTH} (loop guard)`, async () => {
+		const h = makeHarness();
+		const grandchild = `bks-test-grandchild-${++uniq}`;
+		h.files.set(grandchild, { id: grandchild, spawnDepth: MAX_SPAWN_DEPTH });
+		const res = await spawnTaskImpl({ prompt: "Delegate further.", mode: "ask" }, ctx(grandchild), h.deps);
+		expect(res.ok).toBe(false);
+		if (res.ok) return;
+		expect(res.error).toContain("spawn_task refused");
+		expect(res.error).toContain("spawn hops");
+		expect(h.created).toHaveLength(0);
+	});
+
+	it("bounds depth through the in-memory map before the child's file exists", async () => {
+		// parent (depth 0) → child (1) → grandchild (2) → refused, with NO child
+		// session files at all: the in-process map alone must carry the guard.
+		const h1 = makeHarness(`bks-test-c1-${++uniq}`);
+		const parent = `bks-test-root-${++uniq}`;
+		const r1 = await spawnTaskImpl({ prompt: "level 1", mode: "ask" }, ctx(parent), h1.deps);
+		expect(r1.ok).toBe(true);
+		const child = (r1 as { taskId: string }).taskId;
+		expect(resolveSpawnDepth(child, h1.deps)).toBe(1);
+
+		const h2 = makeHarness(`bks-test-c2-${++uniq}`);
+		const r2 = await spawnTaskImpl({ prompt: "level 2", mode: "ask" }, ctx(child), h2.deps);
+		expect(r2.ok).toBe(true);
+		const grandchild = (r2 as { taskId: string }).taskId;
+		expect(resolveSpawnDepth(grandchild, h2.deps)).toBe(2);
+
+		const h3 = makeHarness();
+		const r3 = await spawnTaskImpl({ prompt: "level 3", mode: "ask" }, ctx(grandchild), h3.deps);
+		expect(r3.ok).toBe(false);
+		expect(h3.created).toHaveLength(0);
+	});
+
+	it("refuses when the calling session is automation-owned (all three detection paths)", async () => {
+		// automation field on the session file
+		const h1 = makeHarness();
+		const a1 = `bks-test-auto-${++uniq}`;
+		h1.files.set(a1, { id: a1, automation: "plain-triage" });
+		const r1 = await spawnTaskImpl({ prompt: "x", mode: "ask" }, ctx(a1), h1.deps);
+		expect(r1.ok).toBe(false);
+		expect((r1 as { error: string }).error).toContain("automation");
+
+		// legacy createdBy "(automation)" suffix
+		const h2 = makeHarness();
+		const a2 = `bks-test-auto-${++uniq}`;
+		h2.files.set(a2, { id: a2, createdBy: "triage (automation)" });
+		const r2 = await spawnTaskImpl({ prompt: "x", mode: "ask" }, ctx(a2), h2.deps);
+		expect(r2.ok).toBe(false);
+
+		// automation on the registry summary (non-file sources)
+		const h3 = makeHarness();
+		const a3 = `bks-test-auto-${++uniq}`;
+		h3.sessions.set(a3, { id: a3, automation: "sweeper" });
+		const r3 = await spawnTaskImpl({ prompt: "x", mode: "ask" }, ctx(a3), h3.deps);
+		expect(r3.ok).toBe(false);
+		expect(h1.created.length + h2.created.length + h3.created.length).toBe(0);
+	});
+
+	it("requires a branch for code mode unless the parent's code worktree is sharable", async () => {
+		const h = makeHarness();
+		const parent = `bks-test-parent-${++uniq}`;
+		h.files.set(parent, { id: parent });
+		// ask-mode parent → no worktree to share → refuse without a branch
+		h.sessions.set(parent, { id: parent, mode: "ask" });
+		const r1 = await spawnTaskImpl({ prompt: "x" }, ctx(parent), h.deps);
+		expect(r1.ok).toBe(false);
+		expect((r1 as { error: string }).error).toContain("branch");
+		// code-mode parent in the same repo → sharable → allowed without a branch
+		h.sessions.set(parent, {
+			id: parent,
+			mode: "code",
+			worktreeDir: "/home/ubuntu/worktrees/x",
+			repo: "tella-fusion",
+		});
+		const r2 = await spawnTaskImpl({ prompt: "x" }, ctx(parent), h.deps);
+		expect(r2.ok).toBe(true);
+		expect(h.created[0].mode).toBe("code");
+		// explicit branch always works
+		const r3 = await spawnTaskImpl({ prompt: "x", branch: "task/foo" }, ctx(parent), h.deps);
+		expect(r3.ok).toBe(true);
+	});
+});
+
+describe("task_status / cancel_task", () => {
+	const summary = (over: Partial<SessionSummary>): Partial<SessionSummary> => ({
+		id: "bks-test-task",
+		title: "Test task",
+		state: "idle",
+		queuedCount: 0,
+		controllable: true,
+		lastActivity: new Date().toISOString(),
+		...over,
+	});
+
+	it("maps session states onto task states", () => {
+		expect(taskStateOf(summary({ state: "running" }) as SessionSummary)).toBe("running");
+		expect(taskStateOf(summary({ state: "queued" }) as SessionSummary)).toBe("running");
+		expect(taskStateOf(summary({ state: "waiting_question" }) as SessionSummary)).toBe("waiting");
+		expect(taskStateOf(summary({ state: "idle" }) as SessionSummary)).toBe("done");
+		expect(
+			taskStateOf(
+				summary({ state: "idle", lastRunError: { message: "boom", at: "" } }) as SessionSummary,
+			),
+		).toBe("error");
+	});
+
+	it("reports state, PR and transcript tail; unknown ids are a clear miss", async () => {
+		const h = makeHarness();
+		h.sessions.set(
+			"bks-test-task",
+			summary({ state: "running", prUrl: "https://github.com/x/y/pull/1", prState: "OPEN" }),
+		);
+		const out = await taskStatusImpl({ taskId: "bks-test-task" }, h.deps);
+		expect(out).toContain("*running*");
+		expect(out).toContain("https://github.com/x/y/pull/1");
+		expect(out).toContain("Recent transcript");
+		expect(await taskStatusImpl({ taskId: "bks-nope" }, h.deps)).toContain("No task/session");
+	});
+
+	it("cancel_task cancels through the registry", () => {
+		const h = makeHarness();
+		expect(cancelTaskImpl({ taskId: "bks-test-task" }, h.deps)).toContain("Cancelled");
+		expect(h.cancelled).toEqual(["bks-test-task"]);
 	});
 });
