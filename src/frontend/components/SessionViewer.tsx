@@ -491,6 +491,52 @@ export function SessionViewer({
 		onScroll,
 	} = useChatScroll();
 
+	// Immersive reading on phones (Safari-style): scrolling down through the
+	// transcript slides the top bar, docked tabs and composer off-screen to
+	// maximize the reading area; scrolling back up — or reaching the very top or
+	// the live edge — brings them back. Toggles body.chrome-collapsed, which the
+	// mobile CSS animates with transforms (inert on desktop / when unscrollable).
+	useEffect(() => {
+		const el = messagesRef.current;
+		if (!el) return;
+		const mq = window.matchMedia("(max-width: 720px)");
+		let lastY = el.scrollTop;
+		let collapsed = false;
+		let ticking = false;
+		const set = (v: boolean) => {
+			if (v === collapsed) return;
+			collapsed = v;
+			document.body.classList.toggle("chrome-collapsed", v);
+		};
+		const onDir = () => {
+			if (ticking) return;
+			ticking = true;
+			requestAnimationFrame(() => {
+				ticking = false;
+				if (!mq.matches) {
+					set(false);
+					lastY = el.scrollTop;
+					return;
+				}
+				const y = el.scrollTop;
+				const max = el.scrollHeight - el.clientHeight;
+				const dy = y - lastY;
+				lastY = y;
+				// Keep the chrome up near the top and the live edge so the controls
+				// stay reachable; otherwise follow the scroll direction (with a small
+				// dead-zone so tiny jitters don't flip it).
+				if (y < 48 || max - y < 64) set(false);
+				else if (dy > 6) set(true);
+				else if (dy < -6) set(false);
+			});
+		};
+		el.addEventListener("scroll", onDir, { passive: true });
+		return () => {
+			el.removeEventListener("scroll", onDir);
+			document.body.classList.remove("chrome-collapsed");
+		};
+	}, [messagesRef, session.id]);
+
 	// Per-session model (switchable from the composer; "" = default)
 	const [model, setModel] = useState(session.model || "");
 	const [models, setModels] = useState<ModelOption[]>([]);
