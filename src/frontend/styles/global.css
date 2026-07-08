@@ -2106,22 +2106,22 @@ body.resizing-x {
 	.session-tabs .session-tab:hover {
 		--tab-stroke: var(--border-strong);
 	}
-	/* New-tab "+" as a real control — a square button on the same footprint as
-	   the header icon buttons (⋯, run, panel toggle), always visible (no
-	   hover-reveal) with a bigger glyph. */
+	/* New-tab "+" as a real control on the same footprint/weight as the header
+	   ⋯ menu (btn-viewer-overflow): quiet borderless square, always visible (no
+	   hover-reveal), that just lights up on hover — no boxed hairline that reads
+	   heavier than the flat text tabs beside it. */
 	.session-tabs .session-tab-new {
 		opacity: 1;
 		pointer-events: auto;
-		width: 32px;
-		height: 32px;
-		padding: 0;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		font-size: 20px;
+		width: auto;
+		height: auto;
+		padding: 3px 5px;
+		border: 1px solid transparent;
+		border-radius: 10px;
+		font-size: 22px;
 	}
 	.session-tabs .session-tab-new:hover {
 		background: var(--bg-hover);
-		border-color: var(--border-strong);
 		color: var(--text);
 	}
 	/* Strip is in flow now, so the transcript just starts below it — no overlay
