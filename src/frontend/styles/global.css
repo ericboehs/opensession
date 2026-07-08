@@ -13022,6 +13022,30 @@ html[data-theme="light"] .palette-card .palette-create {
 	cursor: default;
 }
 
+/* Lone-chat "+ New tab" beside the session title — the tab strip's + relocated
+   here while the workspace has a single chat. A quiet ghost pill that lights up
+   on hover, kept lighter than the title so it reads as a secondary action. */
+.viewer-newtab-btn {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	font-weight: 500;
+	padding: 3px 8px 3px 6px;
+	border-radius: 6px;
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+	white-space: nowrap;
+}
+.viewer-newtab-btn:hover {
+	color: var(--text);
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+}
+
 /* Short per-message timestamp in the label row (hover for the full time). */
 .msg-time {
 	margin-left: 6px;

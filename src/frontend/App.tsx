@@ -1028,6 +1028,8 @@ function App() {
 			console.error("New chat failed:", e);
 		}
 	};
+	const handleNewChatRef = useRef(handleNewChat);
+	handleNewChatRef.current = handleNewChat;
 
 	// Close a tab = archive the chat: it leaves the strip and the active list,
 	// but stays recoverable from Archived. An empty chat that never ran has
@@ -1089,10 +1091,11 @@ function App() {
 	closeChatRef.current = closeChat;
 
 	// Tab shortcuts for the open chat, matching its context-menu hints: ⌘⌥C
-	// copies the concise transcript, ⌘W closes (archives) the tab. Refs keep
-	// this mount-once listener reading fresh state. A browser that reserves
-	// ⌘W for itself (Chrome) never delivers the keydown — there the browser
-	// tab closes as always; where the event does arrive (Safari), we take it.
+	// copies the concise transcript, ⌘W closes (archives) the tab, ⌘T opens a
+	// new tab (sibling chat) in the workspace. Refs keep this mount-once listener
+	// reading fresh state. A browser that reserves ⌘W/⌘T for itself (Chrome)
+	// never delivers the keydown — there the browser tab opens/closes as always;
+	// where the event does arrive (Safari), we take it.
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
@@ -1105,6 +1108,9 @@ function App() {
 			} else if (!e.altKey && e.key.toLowerCase() === "w") {
 				e.preventDefault();
 				void closeChatRef.current(s);
+			} else if (!e.altKey && e.key.toLowerCase() === "t") {
+				e.preventDefault();
+				void handleNewChatRef.current("share");
 			}
 		};
 		window.addEventListener("keydown", onKey);

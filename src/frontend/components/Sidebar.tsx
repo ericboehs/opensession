@@ -1978,7 +1978,14 @@ export function Sidebar({
 							<IconFilter size={24} />
 						</button>
 						</Tooltip>
-						<Tooltip label="New session">
+						<Tooltip
+							label="New session"
+							shortcut={
+								/Mac|iPhone|iPad|iPod/.test(navigator.platform)
+									? ["⌘", "N"]
+									: ["Ctrl", "N"]
+							}
+						>
 						<button
 							className="sidebar-new-btn inline-flex items-center justify-center"
 							onClick={onNewSession}

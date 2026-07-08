@@ -250,7 +250,7 @@ export function CatchUpDeck({
 				<button
 					className="flex h-10 w-10 items-center justify-center rounded-md bg-transparent text-dim hover:bg-panel hover:text-fg"
 					onClick={onNewWorkspace}
-					title="New workspace"
+					title="New workspace (⌘N)"
 					aria-label="New workspace"
 				>
 					<svg width="26" height="26" viewBox="0 0 24 24" fill="none">

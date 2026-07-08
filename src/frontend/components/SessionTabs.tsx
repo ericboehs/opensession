@@ -10,10 +10,11 @@ import { IconHistory, IconPencil, IconRestore } from "./icons";
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling chats of the
- * currently-open chat (every session sharing its `projectId`/workspace). A
- * pre-migration standalone chat renders no strip — the parent passes an empty
- * list; post-migration every chat has a workspace, so the strip always shows
- * (a single tab plus the + button).
+ * currently-open chat (every session sharing its `projectId`/workspace). It
+ * only renders once a workspace has TWO or more chats — a lone chat needs no
+ * strip, so the "+ New tab" affordance moves next to the session title in
+ * SessionViewer's header instead (and ⌘T does the same thing). A pre-migration
+ * standalone chat (empty list) likewise renders nothing.
  *
  * There is no pinning here anymore (pinning moved to the sidebar). Right-click
  * opens a context menu (rename / copy concise or full transcript / copy link /
@@ -97,8 +98,9 @@ export function SessionTabs({
 		};
 	}, [newMenu]);
 
-	// No project (standalone chat) → no tab strip.
-	if (tabs.length === 0) return null;
+	// One chat (or a standalone chat) → no tab strip. The lone workspace's
+	// "+ New tab" button lives next to the session title in the header instead.
+	if (tabs.length <= 1) return null;
 
 	return (
 		<div className="session-tabs" role="tablist">

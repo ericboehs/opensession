@@ -175,6 +175,8 @@ type PanelTab =
 	| "chat"
 	| "plain";
 
+const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+
 /** Workspace of the Plain app the tickets live in (for the "jump into Plain" link). */
 const PLAIN_WORKSPACE_ID = "w_01J7WXJG68TFDV9RD1C4JE3W6F";
 function plainThreadUrl(threadId: string): string {
@@ -1960,6 +1962,27 @@ export function SessionViewer({
 						>
 							{workspaceName || session.title}
 						</span>
+					)}
+					{/* Lone-chat "+ New tab": when the workspace has a single chat the
+					    tab strip is hidden, so the affordance to spawn a sibling chat
+					    lives here beside the title (⌘T does the same). With 2+ chats the
+					    strip's own + takes over and this disappears. Phone uses the ⋯
+					    menu's newChatAction instead. */}
+					{!isPhone && onNewChat && workspaceChats?.length === 1 && (
+						<Tooltip
+							label="New tab in this workspace"
+							shortcut={isApple ? ["⌘", "T"] : ["Ctrl", "T"]}
+						>
+							<button
+								type="button"
+								className="viewer-newtab-btn"
+								onClick={() => onNewChat("share")}
+								aria-label="New tab"
+							>
+								<IconPlus size={18} />
+								New tab
+							</button>
+						</Tooltip>
 					)}
 					{onOpenSession && (parentSession || (workerSessions && workerSessions.length > 0)) && (
 						<SessionRelations
