@@ -6335,7 +6335,10 @@ body.resizing-x .panel-resize::after {
 .load-history {
 	display: flex;
 	justify-content: center;
-	padding: 4px 0 14px;
+	/* As the first row it lands directly under the floating tab strip, so give
+	   it extra top air to clear the pills (the strip overlays the transcript;
+	   .viewer-messages padding-top only just clears it). */
+	padding: 18px 0 14px;
 	overflow-anchor: none;
 }
 .load-history-btn {
