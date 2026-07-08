@@ -67,9 +67,20 @@ export interface ExecResult {
   stderr: string;
 }
 
-/** Preview port mapping: port inside the sandbox → port reachable on the host.
+/** One published sandbox port. Docker publishes to a loopback host port
+ *  (Caddy fronts it); remote providers only hand out a preview URL on their
+ *  own domain — either field may be present. */
+export interface PortEntry {
+  /** Host loopback port the sandbox port is published on (docker). */
+  hostPort?: number;
+  /** Direct preview URL (remote providers' port-forward domains). */
+  url?: string;
+}
+
+/** Preview port mapping: port inside the sandbox → where to reach it. A bare
+ *  number is shorthand for `{hostPort}` (the docker provider's shape).
  *  Local sandboxes run on the host network, so theirs is always empty. */
-export type PortMap = Record<number, number>;
+export type PortMap = Record<number, number | PortEntry>;
 
 export type SandboxStatus = "running" | "stopped" | "gone";
 

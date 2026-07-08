@@ -442,17 +442,25 @@ export function resumeInterruptedRuns(
     if (run.kind?.startsWith("github-")) {
       continue;
     }
-    // Docker-sandboxed runs (docs/sandboxes-plan.md Phase 1): the container —
-    // and often the in-container run host itself — outlives a backstage
-    // restart. Reattach/relaunch through the provider instead of running
-    // in-process; the sandbox module is imported lazily so the docker path
-    // stays completely out of processes that never touch it.
-    if (run.sandboxProvider === "docker" && run.sandboxId) {
+    // Sandboxed runs (docs/sandboxes-plan.md Phases 1+3): the sandbox — and
+    // often the in-sandbox run host itself — outlives a backstage restart.
+    // Reattach/relaunch through the provider instead of running in-process;
+    // the sandbox modules are imported lazily so these paths stay completely
+    // out of processes that never touch them.
+    if (
+      run.sandboxId &&
+      (run.sandboxProvider === "docker" ||
+        run.sandboxProvider === "daytona" ||
+        run.sandboxProvider === "e2b")
+    ) {
+      const isDocker = run.sandboxProvider === "docker";
       if (run.bksSessionId) resumed.push(run.bksSessionId);
       void (async () => {
         try {
-          const { resumeDockerSandboxRun } = await import("./sandbox/docker");
-          const events = await resumeDockerSandboxRun(run, {
+          const resume = isDocker
+            ? (await import("./sandbox/docker")).resumeDockerSandboxRun
+            : (await import("./sandbox/adapters/bootstrap")).resumeRemoteSandboxRun;
+          const events = await resume(run, {
             onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
           });
           if (!events) {

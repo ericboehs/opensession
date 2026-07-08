@@ -420,8 +420,16 @@ export async function getSandboxPreviewStatus(
 
   let previewUrl: string | null = null;
   if (webapp?.running) {
-    const published = (await sandbox.ports())[webapp.port];
-    if (published) {
+    const entry = (await sandbox.ports())[webapp.port];
+    const published = typeof entry === "number" ? entry : entry?.hostPort;
+    const directUrl = typeof entry === "object" ? entry?.url : undefined;
+    if (directUrl) {
+      // Remote providers (daytona/e2b) hand out a URL on their own preview
+      // domain — no Caddy hop needed (or possible: the upstream isn't a local
+      // port). Auth caveats (e.g. Daytona's preview token for non-public
+      // sandboxes) are the operator's provider-side setting.
+      previewUrl = directUrl;
+    } else if (published) {
       // Same Caddy route as host previews; the https port is keyed by the
       // CONTAINER port (stable across restarts), the upstream dials the
       // published loopback port (may change when the container is recreated —

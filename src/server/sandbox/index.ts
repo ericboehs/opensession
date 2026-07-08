@@ -11,6 +11,8 @@
 
 import { LocalProvider } from "./local";
 import { DockerProvider } from "./docker";
+import { DaytonaProvider } from "./adapters/daytona";
+import { E2bProvider } from "./adapters/e2b";
 import { effectiveSandboxProvider } from "./config";
 import type { SandboxProvider, SandboxProviderId } from "./provider";
 
@@ -42,13 +44,19 @@ export {
 } from "./workspace-exec";
 export { LocalProvider } from "./local";
 
-// Shared instances — both providers keep their state on disk/docker, not here.
+// Shared instances — every provider keeps its state on disk / at the
+// provider, not here. The remote adapters import their SDKs lazily inside
+// methods, so constructing them is free at boot.
 const localProvider = new LocalProvider();
 const dockerProvider = new DockerProvider();
+const daytonaProvider = new DaytonaProvider();
+const e2bProvider = new E2bProvider();
 
 /**
  * Resolve a SandboxProvider. `spec` (a provider id, e.g. from a session file's
  * `sandbox.provider`) overrides the config; omitted = effective config value.
+ * Remote adapters (daytona/e2b) fail loudly at ensure-time when their API key
+ * isn't configured — a premature config flip never silently runs unsandboxed.
  */
 export function getSandboxProvider(
   spec?: SandboxProviderId | string,
@@ -60,10 +68,9 @@ export function getSandboxProvider(
     case "docker":
       return dockerProvider;
     case "daytona":
+      return daytonaProvider;
     case "e2b":
-      throw new Error(
-        `sandbox provider "${id}" is not yet wired — only "local" and "docker" exist (see docs/sandboxes-plan.md)`,
-      );
+      return e2bProvider;
     default:
       throw new Error(`unknown sandbox provider "${id}"`);
   }
