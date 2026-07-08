@@ -1356,6 +1356,40 @@ function updateQueuedPrompt(
 	return true;
 }
 
+/**
+ * Reorder a session's queue to match `order` (queue-item ids in their new send
+ * order). Items named in `order` are placed first in that order; any queued item
+ * not named — one that arrived after the client took its snapshot — keeps its
+ * relative position at the tail, so a racing enqueue is never dropped. No-ops
+ * (unknown session, <2 items, or an order that doesn't change anything) return
+ * false without a broadcast.
+ */
+function reorderQueuedPrompt(sessionId: string, order: string[]): boolean {
+	const queue = promptQueues.get(sessionId);
+	if (!queue || queue.length < 2) return false;
+	const byId = new Map(
+		queue.filter((it) => it.id).map((it) => [it.id!, it] as const),
+	);
+	const placed = new Set<string>();
+	const next: QueueItem[] = [];
+	for (const id of order) {
+		const item = byId.get(id);
+		if (item && !placed.has(id)) {
+			next.push(item);
+			placed.add(id);
+		}
+	}
+	for (const item of queue) {
+		if (!item.id || !placed.has(item.id)) next.push(item);
+	}
+	// Same references in the same slots ⇒ nothing moved.
+	if (next.every((item, i) => item === queue[i])) return false;
+	promptQueues.set(sessionId, next);
+	persistQueues();
+	broadcastQueue(sessionId);
+	return true;
+}
+
 function steerQueuedPrompt(
 	sessionId: string,
 	queueId?: string,
@@ -6869,6 +6903,14 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										"Could not interrupt with that message right now. It is still queued.",
 								}),
 							);
+						}
+						break;
+					}
+
+					case "reorder_queued_prompt": {
+						const { sessionId, order } = msg;
+						if (Array.isArray(order) && order.every((x) => typeof x === "string")) {
+							reorderQueuedPrompt(sessionId, order);
 						}
 						break;
 					}

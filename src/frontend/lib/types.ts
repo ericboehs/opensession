@@ -366,6 +366,13 @@ export type WSClientMessage =
 			queueId?: string;
 			queueIndex?: number;
 	  }
+	| {
+			// Drag-to-reorder: `order` is the queued items' ids in their new send
+			// order. The server reconciles its queue array to match.
+			type: "reorder_queued_prompt";
+			sessionId: string;
+			order: string[];
+	  }
 	| { type: "cancel" }
 	| {
 			type: "create_session";

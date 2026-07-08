@@ -7631,6 +7631,11 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	font-size: 12px;
 	font-weight: 650;
 }
+.composer-queue-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
 .composer-queue-item {
 	position: relative;
 	min-height: calc(13px * 1.45);
@@ -7638,6 +7643,15 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 .composer-queue-item + .composer-queue-item {
 	border-top: 1px solid var(--border);
 	padding-top: 8px;
+}
+/* Drag-to-reorder: the whole row is the grab surface (the action buttons still
+   take clicks — a drag only starts once the pointer actually moves). */
+.composer-queue-item.is-draggable {
+	cursor: grab;
+	touch-action: none;
+}
+.composer-queue-item.is-draggable:active {
+	cursor: grabbing;
 }
 /* Actions hover over the message's top-right corner; the clamped text runs
    behind them, fading out under a gradient of the flap's own background. */

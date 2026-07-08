@@ -7,6 +7,7 @@ import React, {
 	useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { Reorder } from "motion/react";
 import { renderMarkdown } from "../lib/markdown";
 import { isGitHubAttribution, parseHumanReply } from "../lib/humanReply";
 import type {
@@ -295,6 +296,13 @@ export function SessionViewer({
 	const streamSeqRef = useRef(0);
 	const [viewers, setViewers] = useState<string[]>([]);
 	const [queued, setQueued] = useState<QueueReceipt[]>([]);
+	// Drag-to-reorder bookkeeping. onReorder fires continuously during a drag, so
+	// we only reorder locally then flush the final order to the server on drop —
+	// broadcasting mid-drag would swap the item references out from under Motion
+	// and drop the gesture. draggingQueueRef gates the incoming queue_update the
+	// same way, so an unrelated broadcast can't yank the list while dragging.
+	const draggingQueueRef = useRef(false);
+	const pendingReorderRef = useRef<QueueReceipt[] | null>(null);
 	// Steered messages routed into the live run — shown as a steering receipt
 	// until their turn writes to the transcript (then reconciled away below).
 	const [steered, setSteered] = useState<QueueReceipt[]>([]);
@@ -725,7 +733,10 @@ export function SessionViewer({
 					break;
 				case "queue_update":
 					if (msg.sessionId === session.id) {
-						setQueued(msg.queued);
+						// Don't let a broadcast rewrite the list mid-drag (see
+						// draggingQueueRef) — the drop will send our order and the
+						// server's echo reconciles it right after.
+						if (!draggingQueueRef.current) setQueued(msg.queued);
 						setSteered(msg.steered || []);
 					}
 					break;
@@ -1224,6 +1235,24 @@ export function SessionViewer({
 		setComposerPrefill((p) => ({ seq: (p?.seq ?? 0) + 1, text: q.content }));
 	}
 
+	function handleQueueReorder(next: QueueReceipt[]) {
+		pendingReorderRef.current = next;
+		setQueued(next);
+	}
+
+	function commitQueueReorder() {
+		draggingQueueRef.current = false;
+		const next = pendingReorderRef.current;
+		pendingReorderRef.current = null;
+		if (!next) return;
+		const order = next
+			.map((q) => q.id)
+			.filter((id): id is string => typeof id === "string");
+		if (order.length > 1) {
+			send({ type: "reorder_queued_prompt", sessionId: session.id, order });
+		}
+	}
+
 	// Busy sends live in the flap from the moment of the send; idle sends are
 	// optimistic transcript bubbles. Both reconcile through the same effect.
 	const pendingQueue = pending.filter((p) => p.busyMode);
@@ -1273,16 +1302,34 @@ export function SessionViewer({
 					);
 				})}
 
+				<Reorder.Group
+					as="div"
+					axis="y"
+					values={queued}
+					onReorder={handleQueueReorder}
+					className="composer-queue-list"
+				>
 				{queued.map((q, i) => {
 					const hr = parseHumanReply(q.content);
 					const isGitHub = isGitHubAttribution(q.user);
 					const id = q.id;
 					const key = id || `queued-${i}`;
 					const canSteer = !isGitHub && !queueHasFiles(q);
+					// A one-item queue has nothing to reorder — leave drag off so the
+					// lone message still selects/clicks normally.
+					const canReorder = queued.length > 1;
 					return (
-						<div
+						<Reorder.Item
+							as="div"
 							key={key}
-							className={`composer-queue-item ${hr ? "is-human" : ""} ${isGitHub ? "is-github" : ""}`}
+							value={q}
+							dragListener={canReorder}
+							onDragStart={() => {
+								draggingQueueRef.current = true;
+							}}
+							onDragEnd={commitQueueReorder}
+							whileDrag={{ scale: 1.01, zIndex: 2 }}
+							className={`composer-queue-item ${canReorder ? "is-draggable" : ""} ${hr ? "is-human" : ""} ${isGitHub ? "is-github" : ""}`}
 						>
 							<div className="composer-queue-actions">
 								{isGitHub ? (
@@ -1345,9 +1392,10 @@ export function SessionViewer({
 								)}
 							</div>
 							{renderQueueContent(q, { human: hr, github: isGitHub })}
-						</div>
+						</Reorder.Item>
 					);
 				})}
+				</Reorder.Group>
 
 				{/* Just-sent while busy: already visually in the queue, awaiting the
 				    server's echo (which swaps in the real item with actions). */}
