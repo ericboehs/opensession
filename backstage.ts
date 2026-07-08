@@ -274,7 +274,11 @@ import {
 } from "./src/server/auto-archive";
 import { setTitleOverride, getTitleOverride } from "./src/server/title-overrides";
 import { setStatusOverride, isManualStatus } from "./src/server/status-overrides";
-import { setReviewRequest, getReviewRequest } from "./src/server/review-requests";
+import {
+	setReviewRequest,
+	getReviewRequest,
+	setReviewAccepted,
+} from "./src/server/review-requests";
 import { ensureGeneratedTitle } from "./src/server/generated-titles";
 import {
 	getConnections,
@@ -4736,11 +4740,49 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				if (!session)
 					return Response.json({ error: "Session not found" }, { status: 404 });
 				const body = await req.json().catch(() => ({}));
+				const by = typeof body?.by === "string" ? body.by.trim().slice(0, 40) : "";
+
+				// Accept / reopen the current request (the reviewer signing off). Keeps
+				// the reviewer assignment intact but flips it to a "Reviewed" state that
+				// the asker sees in their sidebar. Distinct from setting/clearing a
+				// reviewer below, so it never touches GitHub's Reviewers list.
+				if (typeof body?.accept === "boolean") {
+					const existing = getReviewRequest(sessionId);
+					if (!existing)
+						return Response.json(
+							{ error: "No review request to accept" },
+							{ status: 400 },
+						);
+					setReviewAccepted(
+						sessionId,
+						body.accept ? { by: by || "someone", at: new Date().toISOString() } : null,
+					);
+					sessionsCache = null;
+					// Buzz whoever asked for the review that it landed (not on self-review).
+					if (
+						body.accept &&
+						existing.by &&
+						existing.by.toLowerCase() !== (by || "").toLowerCase()
+					) {
+						void (async () => {
+							try {
+								const { sendPushToUser } = await import("./src/server/push");
+								await sendPushToUser(existing.by, {
+									title: "Review complete",
+									body: `${by || "Someone"} reviewed ${session.title || sessionId}`.slice(0, 180),
+									url: `/backstage/session/${encodeURIComponent(sessionId)}`,
+									tag: `review-${sessionId}`,
+								});
+							} catch {}
+						})();
+					}
+					return Response.json({ ok: true });
+				}
+
 				const reviewer =
 					typeof body?.reviewer === "string"
 						? body.reviewer.trim().slice(0, 40)
 						: "";
-				const by = typeof body?.by === "string" ? body.by.trim().slice(0, 40) : "";
 				const prevReviewer = getReviewRequest(sessionId)?.to;
 				setReviewRequest(
 					sessionId,

@@ -193,7 +193,12 @@ export interface UnifiedSession {
 	 * panel's Reviewer picker. Surfaces the session in a "Needs review" band at
 	 * the top of the reviewer's sidebar until cleared or re-assigned.
 	 */
-	reviewRequest?: { to: string; by: string; at: string };
+	reviewRequest?: {
+		to: string;
+		by: string;
+		at: string;
+		accepted?: { by: string; at: string };
+	};
 }
 
 /** A Project — an optional folder that groups chats (sessions). */

@@ -1654,6 +1654,19 @@ export async function setSessionReviewerApi(
 	});
 }
 
+/** Mark the session's review request accepted (reviewer signed off) or reopen it. */
+export async function acceptReviewApi(
+	sessionId: string,
+	accept: boolean,
+	by: string,
+): Promise<void> {
+	await request<void>(`/sessions/${encodeURIComponent(sessionId)}/review`, {
+		method: "PUT",
+		body: { accept, by },
+		label: "Failed to update review",
+	});
+}
+
 export function getWebSocketUrl(): string {
 	const proto = location.protocol === "https:" ? "wss:" : "ws:";
 	return `${proto}//${location.host}/backstage/ws`;

@@ -131,7 +131,12 @@ export interface UnifiedSession {
    * the top of the reviewer's sidebar. Set from the review-request registry in
    * getAllSessions; cleared by picking "No reviewer" (or re-assigning).
    */
-  reviewRequest?: { to: string; by: string; at: string };
+  reviewRequest?: {
+    to: string;
+    by: string;
+    at: string;
+    accepted?: { by: string; at: string };
+  };
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   // Other IDs that resolve to this session. The same Claude session can be
   // tracked by multiple files (e.g. a Slack run writes both <branch>.json and

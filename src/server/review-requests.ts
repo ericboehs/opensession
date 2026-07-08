@@ -20,6 +20,10 @@ export interface ReviewRequest {
 	by: string;
 	/** ISO timestamp of the request. */
 	at: string;
+	/** Set once the reviewer signs off. The request stays in place (so the asker
+	 * still sees who reviewed it) but flips to an accepted/green state and moves
+	 * into the sidebar's "Reviewed" band. Cleared on reopen or a re-assign. */
+	accepted?: { by: string; at: string };
 }
 
 const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/review-requests.json`;
@@ -52,5 +56,21 @@ export function setReviewRequest(id: string, req: ReviewRequest | null): void {
 	const registry = { ...load() };
 	if (req) registry[id] = req;
 	else delete registry[id];
+	save(registry);
+}
+
+/** Mark the current request accepted (reviewer signed off) or reopen it (null),
+ * preserving the original `to`/`by`/`at`. No-op if there's no request for `id`. */
+export function setReviewAccepted(
+	id: string,
+	accepted: { by: string; at: string } | null,
+): void {
+	const registry = { ...load() };
+	const existing = registry[id];
+	if (!existing) return;
+	const next: ReviewRequest = { ...existing };
+	if (accepted) next.accepted = accepted;
+	else delete next.accepted;
+	registry[id] = next;
 	save(registry);
 }
