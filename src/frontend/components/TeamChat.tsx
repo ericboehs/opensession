@@ -191,6 +191,15 @@ export function TeamChat({
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const lastTypingSentRef = useRef(0);
 
+	// Auto-grow the single-row textarea with the draft — without this a
+	// Shift+Enter newline lands invisibly (the box stays one line tall).
+	useEffect(() => {
+		const el = inputRef.current;
+		if (!el) return;
+		el.style.height = "auto";
+		el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+	}, [text]);
+
 	// Upload picked/pasted/dropped images and stage them as pending attachments.
 	async function addImages(files: File[] | FileList) {
 		const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));

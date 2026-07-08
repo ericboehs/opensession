@@ -650,7 +650,14 @@ function NotePane({
 							className="note-prompt-input"
 							placeholder="Ask Haiku to update this note… (↵ to run)"
 							value={prompt}
-							onChange={(e) => setPrompt(e.target.value)}
+							onChange={(e) => {
+								setPrompt(e.target.value);
+								// Auto-grow with the draft — the CSS height is a fixed single
+								// row, so a Shift+Enter newline would otherwise land invisibly.
+								const el = e.target;
+								el.style.height = "auto";
+								el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+							}}
 							onKeyDown={(e) => {
 								if (e.key === "Enter" && !e.shiftKey) {
 									e.preventDefault();
