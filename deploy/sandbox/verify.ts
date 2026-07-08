@@ -31,9 +31,18 @@
  * `transport: "ws"` — the in-container run host DIALS BACK to a scratch WS
  * server in this process (the same run-ws module backstage.ts wires) instead
  * of serving a unix socket, and the rpc socket isn't mounted at all. Checks:
- * upgrade auth (bad token → 403), a real agent run streaming over WS (only
- * when the socket-mode run above ran — same account gating), steer delivery
- * + cancel over WS, and the in-container rpc-ws bridge.
+ * upgrade auth (bad token → 403; plain run-rpc tokens refused), a real agent
+ * run streaming over WS (only when the socket-mode run above ran — same
+ * account gating), steer delivery + cancel over WS, and the in-container
+ * rpc-ws bridge via the hostId+wsToken handshake.
+ *
+ * PREVIEW + LIFECYCLE section (Phase 4A): a fifth sbxtest session exercises
+ * the sandboxed Preview flow end-to-end — `.backstage/setup.sh` one-shot,
+ * `.backstage/start.sh` bring-up on a port allocated from the pre-published
+ * range, the namespaced Caddy https route (live Caddy admin; asserted
+ * collision-free against the host webapp+6000 scheme AND a second sandbox on
+ * the same webapp port), the `.tunnels.env` contract, stop/route teardown,
+ * published-range exhaustion refusal, and destroy releasing the allocations.
  *
  * Everything is sbxtest-prefixed and cleaned up at the end. Safe to run next
  * to the live server: the run journal AND the sandbox config are redirected
@@ -89,6 +98,14 @@ const WS_CONTAINER = containerNameFor(WS_SESSION_ID);
 const SNAP_SESSION_ID = `sbxtest-snap-${Date.now().toString(36)}`;
 const SNAP_CONTAINER = containerNameFor(SNAP_SESSION_ID);
 
+// Preview/lifecycle section resources (own session/container; also sbxtest-*).
+// Container-internal webapp-range ports; published to random loopback host
+// ports at create, so nothing here can collide with real host dev servers.
+const PRE_SESSION_ID = `sbxtest-pre-${Date.now().toString(36)}`;
+const PRE_CONTAINER = containerNameFor(PRE_SESSION_ID);
+const PRE_PORTS = [3311, 3312, 3313];
+const COLLISION_SBX_ID = "bks-sbx-sbxtest-collision-probe";
+
 // Scratch sandbox config: docker provider, volume workspaces, one preview
 // port. Read fresh per call by sandbox/config.ts via the env override above.
 mkdirSync(SCRATCH, { recursive: true });
@@ -124,11 +141,20 @@ async function sh(cmd: string[], cwd?: string): Promise<{ code: number; out: str
 
 async function cleanup(): Promise<void> {
   console.log("\n── cleanup ──");
+  // Preview https-port allocations + Caddy routes (live chats dir + live
+  // Caddy admin — must not leak sbxtest entries into either).
+  try {
+    const { dropSandboxPreviewRoutes } = await import("../../src/server/preview");
+    for (const id of [CONTAINER, VOL_CONTAINER, WS_CONTAINER, SNAP_CONTAINER, PRE_CONTAINER, COLLISION_SBX_ID]) {
+      await dropSandboxPreviewRoutes(id);
+    }
+  } catch {}
   for (const [container, session] of [
     [CONTAINER, SESSION_ID],
     [VOL_CONTAINER, VOL_SESSION_ID],
     [WS_CONTAINER, WS_SESSION_ID],
     [SNAP_CONTAINER, SNAP_SESSION_ID],
+    [PRE_CONTAINER, PRE_SESSION_ID],
   ]) {
     await sh(["docker", "rm", "-f", container]);
     await sh([
@@ -507,21 +533,34 @@ try {
   const badRpc = await fetch(`http://127.0.0.1:${wsSrv.port}/backstage/rpc-ws`);
   ok("rpc-ws upgrade refuses a missing token (403)", badRpc.status === 403, String(badRpc.status));
 
-  // rpc-ws bridge from INSIDE the container: register a scratch run token,
-  // dial the route, send a list frame, expect an {id,status} answer (503
-  // "builder not registered" in this scratch process — auth+bridge proven).
-  const scratchToken = crypto.randomUUID();
+  // rpc-ws bridge from INSIDE the container. The upgrade is gated on a
+  // WS-TRANSPORT run's hostId + wsToken (run-ws token registry) since the
+  // token-gating fix — a plain run-rpc token must be refused pre-upgrade;
+  // each FRAME still carries the rpc token that dispatchRunRpc resolves.
+  // Register scratch credentials for both layers, expect an {id,status}
+  // answer (503 "builder not registered" in this scratch process —
+  // auth+bridge proven).
+  const scratchToken = crypto.randomUUID(); // per-frame rpc token
+  const probeHostId = `rh-rpcprobe-${Date.now().toString(36)}`;
+  const probeWsToken = crypto.randomUUID(); // upgrade credential
   rpcRegister(scratchToken, { sessionId: WS_SESSION_ID });
+  runWs.registerRunWsHost(probeHostId, probeWsToken);
+  const oldShape = await fetch(`http://127.0.0.1:${wsSrv.port}/backstage/rpc-ws`, {
+    headers: { authorization: `Bearer ${scratchToken}` },
+  });
+  ok("rpc-ws refuses a plain run-rpc token without a host id (403)",
+    oldShape.status === 403, String(oldShape.status));
   const rpcProbe = await wsSbx.exec(["bun", "-e", `
-    const ws = new WebSocket("${wsBase}/backstage/rpc-ws", { headers: { authorization: "Bearer ${scratchToken}" } });
+    const ws = new WebSocket("${wsBase}/backstage/rpc-ws?host=${probeHostId}", { headers: { authorization: "Bearer ${probeWsToken}" } });
     const bail = setTimeout(() => { console.log("TIMEOUT"); process.exit(1); }, 10000);
     ws.onopen = () => ws.send(JSON.stringify({ id: "p1", path: "/mcp/list", token: "${scratchToken}", server: "michael-sessions" }));
     ws.onmessage = (ev) => { console.log(String(ev.data)); clearTimeout(bail); process.exit(0); };
     ws.onclose = () => { console.log("CLOSED"); clearTimeout(bail); process.exit(1); };
   `]);
-  ok("rpc-ws bridge answers from inside the container",
+  ok("rpc-ws bridge answers from inside the container (hostId+wsToken handshake)",
     rpcProbe.exitCode === 0 && rpcProbe.stdout.includes('"status"'),
     (rpcProbe.stdout || rpcProbe.stderr).trim().slice(0, 120));
+  runWs.unregisterRunWsHost(probeHostId);
   rpcUnregister(scratchToken);
 
   // Agent runs over WS — same cost gating as the socket section, plus "only
@@ -665,6 +704,133 @@ try {
   ok("snapshots-section container removed", (await sh(["docker", "inspect", SNAP_CONTAINER])).code !== 0);
   const imgsLeft = await sh(["docker", "image", "ls", snapRepo, "--format", "{{.Tag}}"]);
   ok("destroy removed the snapshot images", !imgsLeft.out.trim(), imgsLeft.out.trim() || "none");
+
+  // ══ PREVIEW + LIFECYCLE (Phase 4A) ═══════════════════════════════════════
+  // A bind-mode sandbox with the repo-local lifecycle hooks: setup.sh must run
+  // exactly once; startSandboxPreview must allocate a webapp port from the
+  // pre-published range, run .backstage/start.sh with the port/URL env, route
+  // Caddy at a NAMESPACED https port (never the host's webapp+6000 scheme),
+  // and write the .tunnels.env contract. Uses the LIVE Caddy admin API — all
+  // routes/allocations are cleaned up here and in cleanup().
+  console.log("\n══ preview + lifecycle ══");
+  const previewMod = await import("../../src/server/preview");
+  const previewPortsMod = await import("../../src/server/sandbox/preview-ports");
+  await Bun.write(
+    process.env.BACKSTAGE_SANDBOX_CONFIG!,
+    JSON.stringify({ provider: "docker", devServerInSandbox: true, previewPorts: PRE_PORTS }),
+  );
+  mkdirSync(`${WT}/.backstage`, { recursive: true });
+  await Bun.write(
+    `${WT}/.backstage/setup.sh`,
+    `#!/usr/bin/env bash\necho "setup boot=$BACKSTAGE_BOOT_MODE" >> .backstage-setup-runs\n`,
+  );
+  await Bun.write(
+    `${WT}/.backstage/start.sh`,
+    `#!/usr/bin/env bash
+echo "start boot=$BACKSTAGE_BOOT_MODE port=$WEBAPP_PORT url=$PREVIEW_URL" > .backstage-start-ran
+exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0.0", fetch: () => new Response("lifecycle-preview-ok") })'
+`,
+  );
+
+  const pre = await provider.ensure({ sessionId: PRE_SESSION_ID, cwd: WT });
+  ok("ensure() created the preview-section container", pre.id === PRE_CONTAINER, pre.id);
+  await provider.ensure({ sessionId: PRE_SESSION_ID, cwd: WT }); // second ensure — setup must not re-run
+  const setupRuns = await sh(["cat", `${WT}/.backstage-setup-runs`]);
+  ok("setup.sh ran exactly once with boot mode (one-shot per materialization)",
+    setupRuns.out.trim() === "setup boot=fresh", JSON.stringify(setupRuns.out.trim()));
+  const preMap = await pre.ports();
+  ok("pre-published preview range mapped to loopback host ports",
+    PRE_PORTS.every((p) => typeof preMap[p] === "number"), JSON.stringify(preMap));
+
+  const started = await previewMod.startSandboxPreview(pre, WT);
+  ok("startSandboxPreview reports starting", started.starting === true,
+    JSON.stringify({ running: started.running, starting: started.starting }));
+  let pst = started;
+  for (let i = 0; i < 40 && !pst.running; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    pst = await previewMod.getSandboxPreviewStatus(pre, WT);
+  }
+  ok("webapp came up in-container via .backstage/start.sh", pst.running,
+    pst.services.map((s) => `${s.key}=${s.port}:${s.running}`).join(","));
+  ok("allocated webapp port came from the published range",
+    pst.webappPort != null && PRE_PORTS.includes(pst.webappPort), String(pst.webappPort));
+  const startMarker = await sh(["cat", `${WT}/.backstage-start-ran`]);
+  ok("start.sh received WEBAPP_PORT / PREVIEW_URL / boot mode env",
+    startMarker.out.includes(`port=${pst.webappPort}`) &&
+      startMarker.out.includes("url=https://") &&
+      startMarker.out.includes("boot=fresh"),
+    startMarker.out.trim());
+
+  // Namespaced https route: sandbox range only, disjoint from the host scheme.
+  const httpsPort = pst.previewUrl ? Number(new URL(pst.previewUrl).port) : 0;
+  ok("previewUrl allocated from the sandbox https range [20000,28000)",
+    httpsPort >= previewPortsMod.SANDBOX_HTTPS_BASE &&
+      httpsPort < previewPortsMod.SANDBOX_HTTPS_BASE + previewPortsMod.SANDBOX_HTTPS_RANGE,
+    pst.previewUrl || "no previewUrl");
+  const hostSchemePort = (pst.webappPort || 0) + 6000; // what a HOST preview of the same webapp port would claim
+  ok("no collision with a simulated host preview on the same webapp port number",
+    hostSchemePort < previewPortsMod.SANDBOX_HTTPS_BASE && hostSchemePort !== httpsPort,
+    `host would use ${hostSchemePort}, sandbox got ${httpsPort}`);
+  const collisionPort = previewPortsMod.sandboxHttpsPortFor(COLLISION_SBX_ID, pst.webappPort!);
+  ok("a second sandbox on the SAME webapp port allocates a different https port",
+    collisionPort !== httpsPort, `${collisionPort} vs ${httpsPort}`);
+
+  const routeRes = await fetch(`http://localhost:2019/config/apps/http/servers/preview_${httpsPort}`);
+  const routeJson = routeRes.ok ? JSON.stringify(await routeRes.json()) : "";
+  const publishedWebapp = preMap[pst.webappPort!];
+  ok("Caddy route exists and dials the published loopback port",
+    routeJson.includes(`127.0.0.1:${publishedWebapp}`), routeJson.slice(0, 120) || `status ${routeRes.status}`);
+  const viaCaddy = await sh(["curl", "-ks", "--max-time", "10", pst.previewUrl || "https://invalid"]);
+  ok("preview URL serves the in-container server through Caddy",
+    viaCaddy.out.includes("lifecycle-preview-ok"), JSON.stringify(viaCaddy.out.slice(0, 40)));
+
+  // .tunnels.env contract (bind mount → host-visible).
+  const tunnels = await sh(["cat", `${WT}/.tunnels.env`]);
+  ok(".tunnels.env written with PREVIEW_URL + per-port var",
+    tunnels.out.includes(`PREVIEW_URL=${pst.previewUrl}`) &&
+      tunnels.out.includes(`PREVIEW_URL_${pst.webappPort}=${pst.previewUrl}`),
+    tunnels.out.trim().split("\n").join(" | "));
+
+  // Stop: route dropped, dev process group dead, contract cleared.
+  let stopped = await previewMod.stopSandboxPreview(pre, WT);
+  for (let i = 0; i < 20 && stopped.running; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    stopped = await previewMod.getSandboxPreviewStatus(pre, WT);
+  }
+  ok("stopSandboxPreview took the dev server down", !stopped.running);
+  const routeGone = await fetch(`http://localhost:2019/config/apps/http/servers/preview_${httpsPort}`);
+  const routeGoneBody = routeGone.ok ? await routeGone.text() : "";
+  ok("Caddy route removed on stop", !routeGone.ok || routeGoneBody.trim() === "null",
+    `status ${routeGone.status}`);
+  ok(".tunnels.env cleared on stop", !existsSync(`${WT}/.tunnels.env`));
+
+  // Range exhaustion: with every published port busy (and no .ports.conf to
+  // reuse), start must refuse rather than pick an unroutable port — the
+  // documented fallback is widening previewPorts + recreating the container.
+  await pre.exec(["sh", "-c", "rm -f .ports.conf"]);
+  for (const p of PRE_PORTS) {
+    await sh(["docker", "exec", "-d", pre.id, "bun", "-e",
+      `Bun.serve({ port: ${p}, hostname: "0.0.0.0", fetch: () => new Response("busy") });`]);
+  }
+  let occupied = 0;
+  for (let i = 0; i < 20 && occupied < PRE_PORTS.length; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    occupied = 0;
+    for (const p of PRE_PORTS) {
+      if ((await pre.exec(["timeout", "2", "bash", "-c", `exec 3<>/dev/tcp/127.0.0.1/${p}`])).exitCode === 0) occupied++;
+    }
+  }
+  const exhausted = await previewMod.startSandboxPreview(pre, WT);
+  ok("published-range exhaustion refuses to start (recreate-with-wider-range fallback)",
+    !exhausted.starting && !exhausted.running, JSON.stringify({ starting: exhausted.starting }));
+  await pre.exec(["pkill", "-f", "bun -e"]);
+
+  // Destroy releases the sandbox's https allocations.
+  await provider.destroy(pre.id);
+  ok("preview-section container removed", (await sh(["docker", "inspect", PRE_CONTAINER])).code !== 0);
+  ok("https allocations released on destroy",
+    previewPortsMod.lookupSandboxHttpsPort(pre.id, pst.webappPort!) === null);
+  previewPortsMod.releaseSandboxPreviewPorts(COLLISION_SBX_ID);
 } finally {
   await cleanup();
 }
