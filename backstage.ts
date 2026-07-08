@@ -56,7 +56,9 @@ import {
 	worktreeHasWork,
 	REPOS,
 } from "./src/server/worktree";
-import { effectiveSandboxProvider } from "./src/server/sandbox/config";
+import { effectiveSandboxProvider, sandboxesEnabled } from "./src/server/sandbox/config";
+import { getSandboxProvider } from "./src/server/sandbox";
+import type { RunHostSpec } from "./src/runner-host/protocol";
 import {
 	STRIPE_CONFIRM_TOOLS,
 	activeRunRecords,
@@ -134,6 +136,7 @@ import {
 import {
 	registerInteractiveMcpBuilder,
 	startRunRpcServer,
+	registerRunToken,
 } from "./src/server/run-rpc";
 import {
 	startTerminal,
@@ -2153,6 +2156,102 @@ async function autoPushSessionBranches(session: UnifiedSession): Promise<void> {
 	}
 }
 
+/**
+ * Docker-sandbox routing for runSessionPromptInner (docs/sandboxes-plan.md
+ * Phase 1). Returns the run's event stream when the session opted into a
+ * docker sandbox at create time AND the config + kill-switch currently allow
+ * it — otherwise null, and the caller's existing in-process runAgent path
+ * runs completely unchanged (sessions without a `sandbox` field can never
+ * reach any of this).
+ *
+ * Every failure mode falls back to null (in-process on the host): that is
+ * exactly today's trust level for interactive sessions, and a session must
+ * never lose a prompt to sandbox infrastructure. Automation-owned sessions
+ * are refused outright — Phase 1 sandboxes carry interactive-parity mounts
+ * (~/.ssh, gh, account pool) that untrusted prompt text must not reach.
+ */
+async function maybeLaunchSandboxedRun(
+	session: UnifiedSession,
+	opts: {
+		prompt: string;
+		engineSessionId?: string;
+		cwd: string;
+		user?: string;
+		images?: ImageInput[];
+		mcpServers?: string[];
+		isAutomationSession: boolean;
+	},
+): Promise<AsyncGenerator<StreamEvent> | null> {
+	if (session.sandbox?.provider !== "docker") return null;
+	if (!sandboxesEnabled()) return null; // kill-switch file — instant revert
+	if (effectiveSandboxProvider(session.repo) !== "docker") return null;
+	if (opts.isAutomationSession) {
+		console.warn(`[sandbox] ${session.id}: automation sessions are not sandboxed in Phase 1 — running on host`);
+		return null;
+	}
+	try {
+		const provider = getSandboxProvider("docker");
+		const sandbox = await provider.ensure({
+			sessionId: session.id,
+			repo: session.repo,
+			branch: session.branch || undefined,
+			mode: session.mode,
+			cwd: opts.cwd,
+		});
+		if (session.source === "backstage" && session.sandbox?.sandboxId !== sandbox.id) {
+			touchBackstageSession(session.id, {
+				sandbox: { provider: "docker", sandboxId: sandbox.id },
+			});
+		}
+		// michael-* tools reach the container as stdio proxies over the run-rpc
+		// socket — same path Codex and hosted runs use. The names must match
+		// what the registered InteractiveMcpBuilder can build for this session.
+		const proxyMcpServers = Object.keys(interactiveMcpServers(opts.user, session.id));
+		const rpcToken = crypto.randomUUID();
+		registerRunToken(rpcToken, { sessionId: session.id, user: opts.user });
+		const spec: RunHostSpec = {
+			hostId: `rh-${randomUUIDv7()}`,
+			bksSessionId: session.id,
+			prompt: opts.prompt,
+			engineSessionId: opts.engineSessionId || undefined,
+			cwd: sandbox.cwd,
+			mode: session.mode,
+			model: session.model,
+			images: opts.images,
+			mcpServers: opts.mcpServers,
+			proxyMcpServers,
+			rpcToken,
+			reposNote: buildReposNote(session),
+			confirmTools: STRIPE_CONFIRM_TOOLS,
+			aws: true,
+			author: gitIdentityFor(opts.user),
+			user: opts.user,
+			fallbackModel: interactiveFallbackModel(session.model),
+			effort: session.effort,
+			accountId: session.accountId,
+			journalKind: "prompt",
+		};
+		const handle = sandbox.launchRun(spec, {
+			onAskUser: makeAskHandler(session.id),
+			// A steer that reached the in-container run too late must not
+			// evaporate — queue it like the busy-path does.
+			onSteerFailed: (text) => {
+				enqueuePrompt(session.id, { content: text, user: opts.user });
+				watchExternalRunAndDrain(session.id);
+			},
+		});
+		console.log(`[sandbox] ${session.id}: running in ${sandbox.id} (${sandbox.cwd})`);
+		return handle.events();
+	} catch (e: any) {
+		console.error(`[sandbox] ${session.id}: launch failed — falling back to host run:`, e);
+		broadcastToSession(session.id, {
+			type: "notice",
+			message: `Sandbox unavailable (${String(e?.message || e).slice(0, 200)}) — running on the host this turn.`,
+		});
+		return null;
+	}
+}
+
 /** Run a prompt against an existing session, broadcasting to all watchers. */
 async function runSessionPrompt(
 	sessionId: string,
@@ -2386,6 +2485,20 @@ async function runSessionPromptInner(
 		isRunning: true,
 	});
 
+	// Sandbox routing (docs/sandboxes-plan.md Phase 1): a session that opted
+	// into a docker sandbox runs this prompt inside its per-session container;
+	// null (the default for every session without the opt-in field, plus every
+	// failure/kill-switch case) = the unchanged in-process path below.
+	const sandboxRun = await maybeLaunchSandboxedRun(session, {
+		prompt,
+		engineSessionId: engineSessionId || undefined,
+		cwd,
+		user,
+		images,
+		mcpServers,
+		isAutomationSession,
+	});
+
 	let finalSessionId = engineSessionId || "";
 	let endedWithError = false;
 	// Terminal failure this run died on (usage limits with no account left,
@@ -2398,7 +2511,7 @@ async function runSessionPromptInner(
 	// they don't spam the channel).
 	let assistantText = "";
 
-	for await (const event of runAgent({
+	for await (const event of sandboxRun ?? runAgent({
 		prompt,
 		sessionId: engineSessionId || undefined,
 		cwd,

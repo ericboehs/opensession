@@ -315,6 +315,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       lastRunError: data.lastRunError,
       loop: data.loop,
       slackChannel: data.slackChannel,
+      sandbox: data.sandbox,
       lastActivity: data.lastActivity,
       createdAt: data.createdAt,
       isRunning: false,

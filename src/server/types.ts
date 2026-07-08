@@ -148,6 +148,10 @@ export interface UnifiedSession {
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
   mcpServers?: string[]; // External MCP servers loaded for this session
+  /** Sandbox opt-in (docs/sandboxes-plan.md): mirrors the session file's field.
+   *  Runs route through the named provider when config + kill-switch allow;
+   *  `sandboxId` is set once a provider materializes the sandbox (Phase 1+). */
+  sandbox?: { provider: string; sandboxId?: string };
 }
 
 // Slack session file format (two variants exist)
