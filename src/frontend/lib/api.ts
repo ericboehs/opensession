@@ -1027,6 +1027,25 @@ export async function fetchConnections(): Promise<{
 	return res.json();
 }
 
+/** Sandbox capability status for the New-session provider picker
+ *  (GET /api/sandbox/status — read fresh server-side per call). */
+export interface SandboxStatusInfo {
+	enabled: boolean;
+	defaultProvider: string;
+	providers: Array<{
+		id: "docker" | "daytona" | "e2b";
+		configured: boolean;
+		note?: string;
+	}>;
+	killSwitch: boolean;
+}
+
+export async function fetchSandboxStatus(): Promise<SandboxStatusInfo> {
+	const res = await fetch(`${BASE}/sandbox/status`);
+	if (!res.ok) throw new Error(`Failed to fetch sandbox status: ${res.status}`);
+	return res.json();
+}
+
 export async function createAutomationApi(input: {
 	name: string;
 	prompt: string;

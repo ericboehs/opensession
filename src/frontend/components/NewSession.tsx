@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, fetchSystemPrompt, suggestBranch, type ModelOption, type SystemPromptPart } from "../lib/api";
+import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, fetchSandboxStatus, fetchSystemPrompt, suggestBranch, type ModelOption, type SandboxStatusInfo, type SystemPromptPart } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
@@ -146,14 +146,23 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const [showOptions, setShowOptions] = useState(false);
   const optionsVisible = !isPhone || showOptions;
 
-  // Sandbox opt-in (docs/sandboxes-plan.md): run this session's agent inside
-  // an isolated per-session container instead of on the host. Default off.
-  // The flag is recorded on the session at create; it only takes effect when
-  // the server has a sandbox provider configured (~/.backstage-sandbox.json)
-  // — without one it's recorded but inert (runs stay local). There's no
-  // config-status API yet, so the toggle is always offered; the tooltip is
-  // honest about the requirement.
-  const [sandbox, setSandbox] = useState(false);
+  // Sandbox provider picker (docs/sandboxes-plan.md): run this session's
+  // agent inside an isolated per-session sandbox instead of on the host.
+  // "" = Host (no sandbox, the default); otherwise an explicit provider id
+  // sent as the create's `sandbox` string. Options come from
+  // /api/sandbox/status (fetched once when the palette opens) — only
+  // configured providers are offered, and the whole control hides when the
+  // server has no sandbox config or the kill switch is on.
+  const [sandboxProvider, setSandboxProvider] = useState("");
+  const [sandboxStatus, setSandboxStatus] = useState<SandboxStatusInfo | null>(null);
+  useEffect(() => {
+    fetchSandboxStatus().then(setSandboxStatus).catch(() => {});
+  }, []);
+  const sandboxChoices = (sandboxStatus?.providers || []).filter((p) => p.configured);
+  const showSandboxPicker =
+    !!sandboxStatus?.enabled && !sandboxStatus.killSwitch && sandboxChoices.length > 0;
+  const sandboxLabel = (id: string) =>
+    id === "" ? "Host" : id === "docker" ? "Docker" : id === "daytona" ? "Daytona" : id === "e2b" ? "E2B" : id;
 
   // MCP servers: empty by default (minimal context), users can opt in for
   // specific ones. The list comes from mcp-config.json via the connections
@@ -376,7 +385,8 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       user: getCurrentUser(),
       ...(model ? { model } : {}),
       effort,
-      ...(sandbox ? { sandbox: true } : {}),
+      // Explicit provider id; omitted entirely for Host (= no sandbox).
+      ...(sandboxProvider ? { sandbox: sandboxProvider } : {}),
       ...(selectedMcpServers.length ? { mcpServers: selectedMcpServers } : {}),
       ...(images.length ? { images } : {}),
       ...(files.length
@@ -644,25 +654,56 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 <IconTerminal size={24} />
               </button>
             </Tooltip>
-            <Tooltip
-              multiline
-              label={
-                sandbox
-                  ? "Run in sandbox: on — the agent runs inside an isolated per-session container. Needs a sandbox provider configured on the server; without one the choice is recorded but runs stay on the host."
-                  : "Run in sandbox — run this session's agent inside an isolated per-session container instead of on the host. Needs a sandbox provider configured on the server."
-              }
-            >
-              <button
-                type="button"
-                className={`palette-icon-btn ${sandbox ? "is-on" : ""}`}
-                onClick={() => setSandbox((v) => !v)}
-                disabled={creating}
-                aria-pressed={sandbox}
-                aria-label="Run in sandbox"
-              >
-                <IconBox size={24} />
-              </button>
-            </Tooltip>
+            {showSandboxPicker && (
+              <Menu.Root>
+                <Menu.Trigger
+                  type="button"
+                  className={`palette-icon-btn !w-auto gap-1.5 px-2.5 text-[13px] font-medium ${sandboxProvider ? "is-on" : ""}`}
+                  disabled={creating}
+                  title="Where this session's agent runs — on the host, or inside an isolated per-session sandbox"
+                  aria-label="Run environment"
+                >
+                  <IconBox size={22} />
+                  <span>{sandboxLabel(sandboxProvider)}</span>
+                  <IconChevronDown size={17} className="text-faint" />
+                </Menu.Trigger>
+                <Menu.Popup align="start" sideOffset={6} className="max-w-[min(340px,calc(100vw-1rem))]">
+                  <Menu.Group>
+                    <Menu.GroupLabel className="pt-1.5">Run environment</Menu.GroupLabel>
+                    {[{ id: "", note: undefined as string | undefined }, ...sandboxChoices].map(
+                      (opt) => {
+                        const selected = sandboxProvider === opt.id;
+                        return (
+                          <Menu.Item
+                            key={opt.id || "host"}
+                            onClick={() => setSandboxProvider(opt.id)}
+                            className="items-start"
+                          >
+                            <IconCheck
+                              size={17}
+                              className={`mt-0.5 shrink-0 text-dim ${selected ? "" : "invisible"}`}
+                            />
+                            <span className="flex min-w-0 flex-col gap-0.5">
+                              <span>
+                                {sandboxLabel(opt.id)}
+                                {opt.id === "" && (
+                                  <span className="text-faint"> — no sandbox</span>
+                                )}
+                              </span>
+                              {opt.note && (
+                                <span className="whitespace-normal text-[11px] font-medium leading-snug text-faint">
+                                  {opt.note}
+                                </span>
+                              )}
+                            </span>
+                          </Menu.Item>
+                        );
+                      },
+                    )}
+                  </Menu.Group>
+                </Menu.Popup>
+              </Menu.Root>
+            )}
           </div>
 
           <div className="palette-footer-right">
