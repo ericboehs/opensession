@@ -10,6 +10,7 @@
  */
 
 import { LocalProvider } from "./local";
+import { DockerProvider } from "./docker";
 import { effectiveSandboxProvider } from "./config";
 import type { SandboxProvider, SandboxProviderId } from "./provider";
 
@@ -33,8 +34,9 @@ export {
 } from "./config";
 export { LocalProvider } from "./local";
 
-// One shared instance — the local provider is stateless.
+// Shared instances — both providers keep their state on disk/docker, not here.
 const localProvider = new LocalProvider();
+const dockerProvider = new DockerProvider();
 
 /**
  * Resolve a SandboxProvider. `spec` (a provider id, e.g. from a session file's
@@ -48,12 +50,13 @@ export function getSandboxProvider(
     case "local":
       return localProvider;
     case "docker":
+      return dockerProvider;
     case "daytona":
     case "e2b":
       throw new Error(
-        `sandbox provider "${id}" is not yet wired — only "local" exists (see docs/sandboxes-plan.md)`,
+        `sandbox provider "${id}" is not yet wired — only "local" and "docker" exist (see docs/sandboxes-plan.md)`,
       );
     default:
-      throw new Error(`unknown sandbox provider "${spec}"`);
+      throw new Error(`unknown sandbox provider "${id}"`);
   }
 }

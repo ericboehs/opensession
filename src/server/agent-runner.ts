@@ -428,6 +428,38 @@ export function resumeInterruptedRuns(
     if (run.kind?.startsWith("github-")) {
       continue;
     }
+    // Docker-sandboxed runs (docs/sandboxes-plan.md Phase 1): the container —
+    // and often the in-container run host itself — outlives a backstage
+    // restart. Reattach/relaunch through the provider instead of running
+    // in-process; the sandbox module is imported lazily so the docker path
+    // stays completely out of processes that never touch it.
+    if (run.sandboxProvider === "docker" && run.sandboxId) {
+      if (run.bksSessionId) resumed.push(run.bksSessionId);
+      void (async () => {
+        try {
+          const { resumeDockerSandboxRun } = await import("./sandbox/docker");
+          const events = await resumeDockerSandboxRun(run, {
+            onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
+          });
+          if (!events) {
+            console.warn(
+              `[runner] Sandbox ${run.sandboxId} for interrupted run ${run.runKey} is gone — the session's next prompt recreates it`
+            );
+            onResumed?.(run.bksSessionId);
+            return;
+          }
+          for await (const event of events) {
+            if (run.bksSessionId) onEvent?.(run.bksSessionId, event);
+            if (event.type === "done" || event.type === "error") {
+              onResumed?.(run.bksSessionId);
+            }
+          }
+        } catch (e) {
+          console.error(`[runner] Sandbox resume failed for ${run.runKey}:`, e);
+        }
+      })();
+      continue;
+    }
     if (!run.claudeSessionId) {
       // No engine session id means the run died before the model produced its
       // first turn (e.g. during MCP startup) — so nothing actually ran and no

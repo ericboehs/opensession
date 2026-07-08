@@ -131,6 +131,14 @@ export interface Automation {
   /** false = soft pin (pool fallback); unset/true = hard pin (cost cap). */
   accountStrict?: boolean;
   /**
+   * Run this automation's sessions inside a sandbox (docs/sandboxes-plan.md).
+   * Schema-only for now: create/update REJECT `sandbox: true` — automation
+   * sandboxing lands in a later phase (interactive sessions dogfood first,
+   * and the Phase 1 mount set carries interactive-level ambient trust that
+   * untrusted automation prompts must not get).
+   */
+  sandbox?: boolean;
+  /**
    * Allow runs to keep going on usage-credits once the account's subscription
    * limits are spent (only works on accounts with extra usage enabled at
    * claude.ai and credit headroom left). Off/unset = never intentionally
@@ -277,11 +285,15 @@ export function createAutomation(input: {
   accountId?: string;
   accountStrict?: boolean;
   usageCredits?: boolean;
+  sandbox?: boolean;
   grafanaPoll?: GrafanaPollConfig;
   slackWatch?: SlackWatchConfig;
 }): Automation | { error: string } {
   if (!input.name.trim()) return { error: "Name is required" };
   if (!input.prompt.trim()) return { error: "Prompt is required" };
+  if (input.sandbox === true) {
+    return { error: "automation sandboxing lands in a later phase — remove `sandbox` (interactive sessions only for now)" };
+  }
   const runOnceAt = sanitizeRunOnceAt(input.runOnceAt);
   if (runOnceAt && typeof runOnceAt === "object") return runOnceAt;
   // A one-off and a recurring cron are mutually exclusive — the one-off wins.
@@ -328,10 +340,13 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "accountId" | "accountStrict" | "usageCredits" | "grafanaPoll" | "slackWatch">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "accountId" | "accountStrict" | "usageCredits" | "sandbox" | "grafanaPoll" | "slackWatch">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
+  if (patch.sandbox === true) {
+    return { error: "automation sandboxing lands in a later phase — remove `sandbox` (interactive sessions only for now)" };
+  }
   if (patch.schedule !== undefined && patch.schedule.trim() && !parseCron(patch.schedule)) {
     return { error: `Invalid cron expression: "${patch.schedule}"` };
   }

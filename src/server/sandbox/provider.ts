@@ -80,6 +80,13 @@ export interface RunHandleCallbacks {
    * (RunHostSpec.proxyMcpServers + rpcToken).
    */
   inProcessMcp?: () => Record<string, unknown> | undefined;
+  /**
+   * A steer reached the run too late (already finishing) or the backend can't
+   * steer — the caller should queue the text for delivery after the run
+   * instead of dropping it. Mirrors host-client's HandleCallbacks. Only fires
+   * for out-of-process runs; in-process steers report failure synchronously.
+   */
+  onSteerFailed?: (text: string) => void;
 }
 
 /**

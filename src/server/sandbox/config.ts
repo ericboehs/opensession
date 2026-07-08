@@ -31,8 +31,12 @@ export interface SandboxConfig {
   provider: SandboxProviderId;
   /** Container image for the docker provider (Phase 1). */
   image?: string;
-  /** Stop idle sandboxes after this many minutes; unset = provider default. */
+  /** Stop idle sandboxes after this many minutes; unset = provider default (30). */
   idleStopMinutes?: number;
+  /** CPU limit per container (docker --cpus); unset = provider default (4). */
+  cpus?: number;
+  /** Memory limit per container (docker --memory, e.g. "8g"); unset = default ("8g"). */
+  memory?: string;
   /** Per-repo overrides keyed by repo id (worktree.ts REPOS). */
   perRepo?: Record<string, SandboxRepoOverride>;
 }
@@ -69,6 +73,11 @@ export function sandboxConfig(): SandboxConfig {
         idleStopMinutes:
           typeof raw?.idleStopMinutes === "number" && raw.idleStopMinutes > 0
             ? raw.idleStopMinutes
+            : undefined,
+        cpus: typeof raw?.cpus === "number" && raw.cpus > 0 ? raw.cpus : undefined,
+        memory:
+          typeof raw?.memory === "string" && /^\d+(\.\d+)?[kmg]b?$/i.test(raw.memory.trim())
+            ? raw.memory.trim()
             : undefined,
         perRepo: Object.keys(perRepo).length ? perRepo : undefined,
       };
