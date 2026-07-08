@@ -8,10 +8,11 @@
  *
  * Precedence per key: existing env var → config.json → built-in default.
  *
- * Sections `server`, `paths`, `repos`, `identity` are consumed today;
- * `integrations`, `policy`, `persona` are parsed and typed but not yet wired
- * (next batches of the portability workstream). See config.example.json at the
- * repo root for the full schema.
+ * Sections `server`, `paths`, `repos`, `identity`, `persona.name` (personaName())
+ * and `branding` (productName()/productMark()) are consumed today;
+ * `integrations`, `policy`, and the rest of `persona` are parsed and typed but
+ * not yet wired (next batches of the portability workstream). See
+ * config.example.json at the repo root for the full schema.
  */
 
 import { readFileSync, statSync } from "fs";
@@ -99,11 +100,23 @@ export interface PolicySection {
   automationDeniedTools?: string[];
 }
 
-/** Parsed but not yet consumed — persona/company copy in prompt builders. */
+/** Persona copy in prompt builders. `name` is consumed (personaName());
+ *  `company`/`product` are parsed but not yet wired (persona batch 2). */
 export interface PersonaSection {
   name?: string;
   company?: string;
   product?: string;
+}
+
+/** Instance branding — what the *platform itself* is called in the UI
+ *  (distinct from persona: `persona.name` is the agent, `persona.product`
+ *  is the company's product the agent supports). */
+export interface BrandingSection {
+  /** Product name rendered in titles/headers, e.g. "Backstage". */
+  productName?: string;
+  /** Short visual monogram for brand-mark contexts (logo chip, favicon);
+   *  defaults to productName. */
+  productMark?: string;
 }
 
 export interface BackstageConfig {
@@ -114,6 +127,7 @@ export interface BackstageConfig {
   integrations?: IntegrationsSection;
   policy?: PolicySection;
   persona?: PersonaSection;
+  branding?: BrandingSection;
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +383,13 @@ function parseConfig(text: string): BackstageConfig {
         product: str(persona.product),
       });
     }
+    const branding = obj(raw.branding);
+    if (branding) {
+      cfg.branding = defined({
+        productName: str(branding.productName),
+        productMark: str(branding.productMark),
+      });
+    }
 
     return cfg;
   } catch {
@@ -473,6 +494,32 @@ export function defaultRepo(): Repo {
     repos["tella-fusion"] ||
     Object.values(repos)[0]
   );
+}
+
+/**
+ * The agent's name as rendered to users and models (system prompts, Slack
+ * greetings, confirm cards, health payloads). NOT for protocol identifiers —
+ * `michael-*` MCP server ids, MICHAEL_* env vars, ===MICHAEL-SUMMARY===
+ * markers stay literal (renaming those breaks running sessions).
+ */
+export function personaName(): string {
+  return getConfig().persona?.name || "Michael";
+}
+
+/**
+ * What the platform itself is called in user-facing copy (page titles,
+ * headers). NOT for paths/ids: `~/.backstage-*` dirs, BACKSTAGE_* env vars,
+ * `bks-` prefixes, service/socket names stay literal until the rename
+ * migration (docs/rename-opensession-plan.md).
+ */
+export function productName(): string {
+  return getConfig().branding?.productName || "Backstage";
+}
+
+/** Short brand monogram for visual brand-mark contexts (logo chip, favicon);
+ *  falls back to the full product name. */
+export function productMark(): string {
+  return getConfig().branding?.productMark || productName();
 }
 
 /**

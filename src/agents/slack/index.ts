@@ -39,6 +39,7 @@ import {
 import { cancelSession } from "./cancel";
 import { cancelAgentRun } from "../../server/agent-runner";
 import { worktreePathFor } from "../../server/worktree";
+import { personaName } from "../../server/config";
 import {
   slackApiCall,
   sendSlackMessage,
@@ -871,7 +872,7 @@ Please address this feedback:
 
     return {
       status: "operational",
-      agent: "Michael (Slack)",
+      agent: `${personaName()} (Slack)`,
       activeSessions: activeSessions.size,
       activeQueues: sessionQueues.size,
       pendingQuestions: pendingAnswers.size,

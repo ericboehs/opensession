@@ -32,6 +32,7 @@ import {
   postSlackBlocks,
   sendSlackMessage,
 } from "../agents/slack/slack-api";
+import { personaName } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const STORE = `${BACKSTAGE_CHATS_DIR}/human-asks.json`;
@@ -220,7 +221,7 @@ const firstName = (full: string) => full.split(" ")[0] || full;
 function deliveryBlocks(a: HumanAsk): { fallback: string; blocks: any[] } {
   const link = `${UI_BASE}/session/${a.sessionId}`;
   const intro =
-    `Hey ${firstName(a.person.name)} — it's *Michael* :robot_face:. ` +
+    `Hey ${firstName(a.person.name)} — it's *${personaName()}* :robot_face:. ` +
     `${a.createdBy} has me working on something and needs your input:`;
   const blocks: any[] = [
     { type: "section", text: { type: "mrkdwn", text: intro } },
@@ -255,7 +256,7 @@ function deliveryBlocks(a: HumanAsk): { fallback: string; blocks: any[] } {
     type: "context",
     elements: [{ type: "mrkdwn", text: `<${link}|Open the session in Backstage>` }],
   });
-  return { fallback: `Michael needs your input: ${a.question}`, blocks };
+  return { fallback: `${personaName()} needs your input: ${a.question}`, blocks };
 }
 
 /** Open a DM with the teammate and post the question. Marks the ask delivered. */
@@ -496,7 +497,7 @@ export function cancelAsk(id: string): boolean {
   if (a.slack) {
     void sendSlackMessage(
       a.slack.channel,
-      ":heavy_multiplication_x: _Never mind — Michael no longer needs an answer to that one._",
+      `:heavy_multiplication_x: _Never mind — ${personaName()} no longer needs an answer to that one._`,
       a.slack.rootTs
     ).catch(() => {});
   }

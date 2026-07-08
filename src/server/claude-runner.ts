@@ -15,7 +15,7 @@ import { cleanPlainToolInput } from "./shared/note-style";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { getDefaultModel, hasPricing, priceUsageUsd } from "./models";
-import { configuredPaths } from "./config";
+import { configuredPaths, personaName } from "./config";
 import { buildSystemPromptParts } from "./system-prompt";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -1023,12 +1023,12 @@ export async function* runClaude(opts: {
                 questions: [
                   {
                     question:
-                      `Michael wants to: ${confirmTools[toolName]} (${toolName})\n\n` +
+                      `${personaName()} wants to: ${confirmTools[toolName]} (${toolName})\n\n` +
                       JSON.stringify(input, null, 2),
                     header: "Stripe",
                     options: [
                       { label: "Approve", description: "Execute this action against live Stripe" },
-                      { label: "Deny", description: "Block it — Michael continues without executing" },
+                      { label: "Deny", description: `Block it — ${personaName()} continues without executing` },
                     ],
                     multiSelect: false,
                   },

@@ -9,6 +9,9 @@ import {
   configuredServer,
   configuredIdentity,
   defaultRepo,
+  personaName,
+  productName,
+  productMark,
 } from "./config";
 
 // Each case writes its config to a fresh path (the loader caches by
@@ -166,6 +169,34 @@ describe("config loader", () => {
     const identity = configuredIdentity();
     expect(identity.team).toEqual([]);
     expect(identity.slackNames).toEqual({});
+  });
+
+  test("persona/branding: defaults with no config file", () => {
+    withConfig(null);
+    expect(personaName()).toBe("Michael");
+    expect(productName()).toBe("Backstage");
+    expect(productMark()).toBe("Backstage");
+  });
+
+  test("persona/branding: config overrides apply", () => {
+    withConfig(
+      JSON.stringify({
+        persona: { name: "Ava" },
+        branding: { productName: "OpenSession", productMark: "OS" },
+      }),
+    );
+    expect(personaName()).toBe("Ava");
+    expect(productName()).toBe("OpenSession");
+    expect(productMark()).toBe("OS");
+  });
+
+  test("branding: productMark falls back to productName", () => {
+    withConfig(JSON.stringify({ branding: { productName: "OpenSession" } }));
+    expect(productMark()).toBe("OpenSession");
+    // Empty/whitespace strings are treated as unset, not honored.
+    withConfig(JSON.stringify({ persona: { name: "  " }, branding: { productName: "" } }));
+    expect(personaName()).toBe("Michael");
+    expect(productName()).toBe("Backstage");
   });
 
   test("identity: custom roster is parsed and validated", () => {

@@ -53,6 +53,7 @@ import {
   hostCancel,
 } from "./host-registry";
 import { buildEngineSwitchHandoffNote } from "./fork-handoff";
+import { personaName } from "./config";
 import { parseTranscript } from "./jsonl-parser";
 import { wrapContext } from "./prompt-context";
 import { getEngineTranscriptPath } from "./sessions";
@@ -579,7 +580,9 @@ export function resumeInterruptedRuns(
  *  graceful-shutdown snapshot path can wake sessions that finished their turn
  *  during the drain (and so were cleared from the journal) with one consistent
  *  message. */
+// Note: personaName() is read at module load (a persona rename needs a restart
+// to reach this string — fine, runner internals need one anyway).
 export const RESUME_CONTINUATION_PROMPT =
-  "This session was interrupted by a Michael service restart mid-run. " +
+  `This session was interrupted by a ${personaName()} service restart mid-run. ` +
   "Review what you had already done, pick up where you left off, and finish the task. " +
   "If the work was actually complete, just post the final summary/answer.";

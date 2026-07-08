@@ -2,6 +2,12 @@
 // claude_code preset. Extracted from claude-runner so the New Session
 // modal can preview exactly what a session will be told (GET
 // /backstage/api/system-prompt) without the two ever drifting apart.
+//
+// The agent's display name comes from config (persona.name, default
+// "Michael"); the `michael-*` MCP server ids referenced in the text are
+// protocol identifiers and stay literal regardless of the persona name.
+
+import { personaName } from "./config";
 
 export type SystemPromptPart = { title: string; text: string };
 
@@ -14,12 +20,13 @@ export function buildSystemPromptParts(opts: {
 	/** Whether the run gets the in-process michael-admin/sessions/repos MCP tools. */
 	interactiveTools: boolean;
 }): SystemPromptPart[] {
+	const name = personaName();
 	const parts: SystemPromptPart[] = [];
 	if (opts.isAsk) {
 		parts.push({
 			title: "Ask mode",
 			text:
-				"You are Michael in Ask mode: answer questions about the current checkout. " +
+				`You are ${name} in Ask mode: answer questions about the current checkout. ` +
 				"This is a READ-ONLY session on the main checkout — never modify, create, or delete " +
 				"files, never commit, never run state-changing commands. Explore with Read/Grep/Glob " +
 				"and read-only git commands, then answer clearly and concisely.",
@@ -33,17 +40,17 @@ export function buildSystemPromptParts(opts: {
 			title: "Session link in PRs",
 			text:
 				"## Session link in PRs\nWhenever you open a pull request (any repo, via `gh pr " +
-				"create` or otherwise), always include a link back to this Michael session in the " +
+				`create\` or otherwise), always include a link back to this ${name} session in the ` +
 				"PR body so a human can open it to see how the change was made. Add a line like:\n\n" +
-				`🤖 Created by [this Michael session](${opts.sessionLink})\n\n` +
+				`🤖 Created by [this ${name} session](${opts.sessionLink})\n\n` +
 				"Put it at the end of the PR body. Use exactly this session URL.",
 		});
 	}
 	if (opts.interactiveTools) {
 		parts.push({
-			title: "Managing Michael",
+			title: `Managing ${name}`,
 			text:
-				"## Managing Michael\nYou can see and steer your other Backstage sessions via the " +
+				`## Managing ${name}\nYou can see and steer your other Backstage sessions via the ` +
 				"michael-sessions MCP tools (list_sessions — filter 'waiting' for sessions blocked on a " +
 				"question; get_session; send_to_session; answer_session_question; cancel_session; " +
 				"create_session; and the task primitives spawn_task / task_status / cancel_task for " +

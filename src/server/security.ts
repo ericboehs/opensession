@@ -18,6 +18,7 @@ import { mkdirSync, readdirSync, readFileSync, existsSync, unlinkSync } from "fs
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { runAgent } from "./agent-runner";
 import { createWorktree, listWorktrees, REPOS, getRepo, type Repo } from "./worktree";
+import { personaName } from "./config";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { providerFor, modelLabel } from "./models";
 import { engineSessionPatch } from "./sessions";
@@ -195,7 +196,7 @@ export function buildScanPrompt(
   instructions?: string,
 ): string {
   const isFusion = repo.id === "tella-fusion";
-  return `You are Michael running an on-demand deepsec security scan on ${repo.id} (${repo.ghRepo}). Sweep the repo for vulnerabilities and open one PR per CONFIRMED finding of severity MEDIUM or higher. NEVER merge anything; never push to ${repo.defaultBranch}.
+  return `You are ${personaName()} running an on-demand deepsec security scan on ${repo.id} (${repo.ghRepo}). Sweep the repo for vulnerabilities and open one PR per CONFIRMED finding of severity MEDIUM or higher. NEVER merge anything; never push to ${repo.defaultBranch}.
 
 deepsec = vercel-labs/deepsec, an AI vuln scanner. It reuses the logged-in \`claude\` CLI (no API key needed). Use \`corepack pnpm\` — there is no global pnpm on this host. Node 22 is present.
 
@@ -243,7 +244,7 @@ Then summarize the agreed threat model back to me for confirmation, and offer to
 
 Once confirmed, run the scan in this session, following the standard procedure below — but adjust it to whatever we agreed in the interview (the interview outcome overrides these defaults):
 
-${buildScanPrompt(repo, profile, instructions).replace(/^You are Michael[^\n]*\n\n/, "")}`;
+${buildScanPrompt(repo, profile, instructions).replace(/^You are [^\n]*\n\n/, "")}`;
 }
 
 // ── Headless scan execution ──────────────────────────────────

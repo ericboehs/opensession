@@ -5,7 +5,9 @@
     "Precedence per key: env var -> config.json -> built-in default. Env overrides: HOST, PORT, WEBHOOK_PORT, MICHAEL_UI_BASE (publicBaseUrl), PREVIEW_HOST, BACKSTAGE_CLAUDE_BIN, BACKSTAGE_OPENCODE_BIN, BACKSTAGE_WORKTREES_DIR, BACKSTAGE_MCP_CONFIG, BACKSTAGE_TELLA_FUSION (repos.tella-fusion.repo).",
     "repos: an entry whose id matches a built-in overrides just the fields it sets; a new id (needs at least `repo`) adds a repo. `default: true` marks the repo sessions target when none is specified (falls back to tella-fusion). `previewCommand` is the dev-server bring-up script; `depsInstall` is a shell command run in a fresh worktree to install dependencies (unset = built-in behavior).",
     "identity.team derives commit attribution, per-user MCP gating, and human-ask routing. Omit `identity` entirely to keep the built-in roster; an empty team disables those features (they no-op). `linearEmails` are the person's Linear account emails; `githubToSlack: false` keeps someone out of GitHub-event Slack pings. `identity.slackNames` adds Slack id -> display name entries for bots/legacy ids that aren't full team members.",
-    "The `integrations`, `policy`, and `persona` sections are parsed but NOT applied yet (upcoming portability batches); they are documented here so configs written now keep working."
+    "The `integrations` and `policy` sections are parsed but NOT applied yet (upcoming portability batches); they are documented here so configs written now keep working.",
+    "persona.name IS applied: it is the agent's name as rendered to users and models (system prompts, Slack greetings, confirm cards, health payloads). Protocol identifiers (michael-* MCP server ids, MICHAEL_* env vars, ===MICHAEL-SUMMARY=== markers) are NOT affected. persona.company/persona.product are parsed but not yet wired.",
+    "branding.productName/productMark name the platform itself in user-facing copy (page titles, headers; mark = short monogram for the logo chip). Paths and ids (~/.backstage-*, BACKSTAGE_*, bks-, service names) are NOT affected — see docs/rename-opensession-plan.md."
   ],
   "server": {
     "host": "127.0.0.1",
@@ -75,5 +77,9 @@
     "name": "Michael",
     "company": "Tella",
     "product": "a screen-recording product"
+  },
+  "branding": {
+    "productName": "Backstage",
+    "productMark": "Backstage"
   }
 }

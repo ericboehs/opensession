@@ -46,6 +46,7 @@ import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { extractBackstageVideos } from "./jsonl-parser";
 import { markCodexModelExhausted, priceUsageUsd, resolveConcreteModel } from "./models";
+import { personaName } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
@@ -328,10 +329,11 @@ export function buildCodexDeveloperInstructions(input: {
   confirmTools?: Record<string, string>;
   mcpAliasNote?: string;
 }): string | undefined {
+  const name = personaName();
   const parts: string[] = [];
   if (input.isAsk) {
     parts.push(
-      "You are Michael in Ask mode: answer questions about the current checkout. " +
+      `You are ${name} in Ask mode: answer questions about the current checkout. ` +
         "This is a READ-ONLY session on the main checkout — never modify, create, or delete " +
         "files, never commit, never run state-changing commands. Explore with read-only shell " +
         "and git commands, then answer clearly and concisely."
@@ -343,15 +345,15 @@ export function buildCodexDeveloperInstructions(input: {
     const link = `${UI_BASE}/session/${input.bksSessionId}`;
     parts.push(
       "## Session link in PRs\nWhenever you open a pull request (any repo, via `gh pr " +
-        "create` or otherwise), always include a link back to this Michael session in the " +
+        `create\` or otherwise), always include a link back to this ${name} session in the ` +
         "PR body so a human can open it to see how the change was made. Add a line like:\n\n" +
-        `Created by [this Michael session](${link})\n\n` +
+        `Created by [this ${name} session](${link})\n\n` +
         "Put it at the end of the PR body. Use exactly this session URL."
     );
   }
   if (input.inProcessMcp && Object.keys(input.inProcessMcp).length) {
     parts.push(
-      "## Managing Michael\nYou can see and steer your other Backstage sessions via the " +
+      `## Managing ${name}\nYou can see and steer your other Backstage sessions via the ` +
         "michael-sessions MCP tools (list_sessions, get_session, send_to_session, " +
         "answer_session_question, cancel_session, create_session, plus spawn_task / " +
         "task_status / cancel_task for fire-and-forget child tasks you poll), manage setup " +
