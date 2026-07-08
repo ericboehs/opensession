@@ -244,7 +244,8 @@ export interface SpawnTaskArgs {
   branch?: string;
   model?: string;
   mode?: "ask" | "code";
-  sandbox?: boolean;
+  /** true = config default provider; or an explicit configured provider id. */
+  sandbox?: boolean | "docker" | "daytona" | "e2b";
 }
 
 export type SpawnTaskResult =
@@ -521,9 +522,9 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
             .optional()
             .describe("Create an unrelated standalone session instead of a child of the current session."),
           sandbox: z
-            .boolean()
+            .union([z.boolean(), z.enum(["docker", "daytona", "e2b"])])
             .optional()
-            .describe("Ask for a sandboxed session. Currently recorded on the session only — runs stay on the host until a sandbox provider is configured."),
+            .describe("Run the session in an isolated sandbox: true = the server's default provider, or an explicit provider id (must be configured server-side, else the create fails with a clear error). Omit for a host run."),
         },
         async (args: {
           prompt: string;
@@ -535,7 +536,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           parentSessionId?: string;
           reportBack?: boolean;
           standalone?: boolean;
-          sandbox?: boolean;
+          sandbox?: boolean | "docker" | "daytona" | "e2b";
         }) => {
           if (!args.prompt?.trim()) return text("Need a prompt to start a session.");
           if (args.mode === "code" && !args.branch?.trim()) {
@@ -586,7 +587,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           branch: z.string().optional().describe("Branch for code mode when the child can't share this session's worktree (standalone or different repo)."),
           model: z.string().optional().describe("Optional model id (e.g. 'gpt-5.5' for a Codex worker, or a Claude model id)."),
           mode: z.enum(["ask", "code"]).optional().describe("'code' (default) can edit files / open PRs; 'ask' is read-only."),
-          sandbox: z.boolean().optional().describe("Ask for a sandboxed child session (docker provider when configured)."),
+          sandbox: z.union([z.boolean(), z.enum(["docker", "daytona", "e2b"])]).optional().describe("Run the child in an isolated sandbox: true = the server's default provider, or an explicit configured provider id."),
         },
         async (args: SpawnTaskArgs) => {
           const res = await spawnTaskImpl(args, ctx);
