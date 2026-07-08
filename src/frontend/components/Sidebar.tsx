@@ -314,6 +314,7 @@ const DEFAULT_EXPANDED = [
 	"recently",
 	"pinned",
 	"needsreview",
+	"awaitingreview",
 	"status:needsinput",
 	"status:merged",
 	"status:pending",
@@ -1017,28 +1018,51 @@ export function Sidebar({
 			r.chats.some((c) => c.reviewRequest?.to?.toLowerCase() === me),
 		);
 	}, [wsRows, currentUser]);
-	const pinnedWsRows = useMemo(() => {
-		const pinSet = new Set(pins);
-		const reviewKeys = new Set(needsReviewRows.map((r) => r.key));
+	// The mirror of "Needs review": workspaces where YOU asked a teammate to
+	// review (the info panel's Reviewer picker, `reviewRequest.by === me`). They
+	// get their own band so a session you've sent out for review moves out of the
+	// status lanes and into one place you can track what you're waiting on. A row
+	// where you're also the reviewer stays in Needs review (a direct ask of you
+	// wins), so we exclude those keys.
+	const awaitingReviewRows = useMemo(() => {
+		const me = currentUser.toLowerCase();
+		const needsKeys = new Set(needsReviewRows.map((r) => r.key));
 		return wsRows.filter(
 			(r) =>
-				!reviewKeys.has(r.key) &&
+				!needsKeys.has(r.key) &&
+				r.chats.some((c) => c.reviewRequest?.by?.toLowerCase() === me),
+		);
+	}, [wsRows, currentUser, needsReviewRows]);
+	// Every workspace pulled into a review band (Needs review + Awaiting review) —
+	// excluded from the pinned/status lanes below so it lives in exactly one place.
+	const reviewBandKeys = useMemo(
+		() =>
+			new Set([
+				...needsReviewRows.map((r) => r.key),
+				...awaitingReviewRows.map((r) => r.key),
+			]),
+		[needsReviewRows, awaitingReviewRows],
+	);
+	const pinnedWsRows = useMemo(() => {
+		const pinSet = new Set(pins);
+		return wsRows.filter(
+			(r) =>
+				!reviewBandKeys.has(r.key) &&
 				(pinSet.has(r.key) || r.chats.some((c) => pinSet.has(c.id))),
 		);
-	}, [wsRows, pins, needsReviewRows]);
+	}, [wsRows, pins, reviewBandKeys]);
 	const focusWsRows = useMemo(() => {
 		const pinSet = new Set(pins);
-		const reviewKeys = new Set(needsReviewRows.map((r) => r.key));
 		const focus =
 			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
 		return wsRows.filter(
 			(r) =>
 				(focus === "everyone" || r.owner === focus) &&
-				!reviewKeys.has(r.key) &&
+				!reviewBandKeys.has(r.key) &&
 				!pinSet.has(r.key) &&
 				!r.chats.some((c) => pinSet.has(c.id)),
 		);
-	}, [wsRows, pins, filter.person, currentUser, needsReviewRows]);
+	}, [wsRows, pins, filter.person, currentUser, reviewBandKeys]);
 
 	// Workspace rows in the sidebar's visual order (Pinned band first, then the
 	// status lanes) — archiveWorkspaceWithNext walks this to pick the row that
@@ -1046,17 +1070,19 @@ export function Sidebar({
 	const wsRowOrder = useMemo(
 		() => [
 			...needsReviewRows,
+			...awaitingReviewRows,
 			...pinnedWsRows,
 			...MINE_STATUS_META.flatMap((meta) =>
 				focusWsRows.filter((r) => r.status === meta.key),
 			),
 		],
-		[needsReviewRows, pinnedWsRows, focusWsRows],
+		[needsReviewRows, awaitingReviewRows, pinnedWsRows, focusWsRows],
 	);
 	const hasWorkspaceFilter =
 		!!search || filter.repo !== "all" || filter.person !== "me";
 	const workspaceListEmpty =
 		needsReviewRows.length === 0 &&
+		awaitingReviewRows.length === 0 &&
 		pinnedWsRows.length === 0 &&
 		focusWsRows.length === 0 &&
 		prLaneRows.length === 0;
@@ -2318,6 +2344,41 @@ export function Sidebar({
 									/>
 								</button>
 								{needsReviewRows
+									.filter(
+										(r) => open || r.chats.some((c) => c.id === selectedId),
+									)
+									.map(renderWsRow)}
+							</div>
+						);
+					})()}
+
+				{/* ── Awaiting review: sessions YOU asked a teammate to review (the
+				    mirror of Needs review). Grouped here so a session you've sent out
+				    for review moves out of the status lanes into one place. ── */}
+				{awaitingReviewRows.length > 0 &&
+					(() => {
+						const open = isOpen("awaitingreview");
+						return (
+							<div className="sidebar-group sidebar-group--review">
+								<button
+									className="sidebar-group-header"
+									onClick={() => toggleGroup("awaitingreview")}
+								>
+									<IconEye
+										className="sidebar-group-icon"
+										style={{ color: "var(--yellow)" }}
+									/>
+									<span className="sidebar-group-name">Awaiting review</span>
+									<span className="sidebar-group-count">
+										{awaitingReviewRows.length}
+									</span>
+									<IconChevronDown
+										className="sidebar-group-chevron"
+										size={22}
+										style={{ transform: open ? "none" : "rotate(-90deg)" }}
+									/>
+								</button>
+								{awaitingReviewRows
 									.filter(
 										(r) => open || r.chats.some((c) => c.id === selectedId),
 									)
