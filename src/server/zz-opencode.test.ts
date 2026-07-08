@@ -14,6 +14,7 @@ import {
 import {
   opencodeTurnTimeoutMs,
   bridgeMaxRequestsPerHour,
+  normalizeOpencodeConfig,
   DEFAULT_TURN_TIMEOUT_MINUTES,
   DEFAULT_BRIDGE_MAX_REQUESTS_PER_HOUR,
 } from "./opencode-config";
@@ -164,6 +165,41 @@ describe("anthropic-bridge rate limiting", () => {
     for (let i = 0; i < limit; i++) admitBridgeRequest(a, 1, t0);
     expect(admitBridgeRequest(a, 1, t0 + 1).allowed).toBe(false);
     expect(admitBridgeRequest(b, 1, t0 + 1).allowed).toBe(true);
+  });
+});
+
+describe("normalizeOpencodeConfig (bridge.mode / accounts)", () => {
+  test("enabled with no bridge block defaults to meridian, no account restriction", () => {
+    const cfg = normalizeOpencodeConfig({ enabled: true })!;
+    expect(cfg.bridgeMode).toBe("meridian");
+    expect(cfg.bridgeAccountIds).toBeUndefined();
+  });
+  test("disabled or missing enabled is always off, regardless of bridge.mode", () => {
+    expect(normalizeOpencodeConfig({ enabled: false, bridge: { mode: "meridian" } })!.bridgeMode).toBe("off");
+    expect(normalizeOpencodeConfig({ bridge: { mode: "native" } })!.bridgeMode).toBe("off");
+  });
+  test("explicit native and off modes are honored", () => {
+    expect(normalizeOpencodeConfig({ enabled: true, bridge: { mode: "native" } })!.bridgeMode).toBe("native");
+    expect(normalizeOpencodeConfig({ enabled: true, bridge: { mode: "off" } })!.bridgeMode).toBe("off");
+  });
+  test("unknown mode falls back to the meridian default", () => {
+    expect(normalizeOpencodeConfig({ enabled: true, bridge: { mode: "banana" } })!.bridgeMode).toBe("meridian");
+  });
+  test("bridge.accounts wins; legacy bridgeAccountIds folds in when absent", () => {
+    expect(
+      normalizeOpencodeConfig({ enabled: true, bridge: { accounts: ["a"] }, bridgeAccountIds: ["b"] })!
+        .bridgeAccountIds
+    ).toEqual(["a"]);
+    expect(
+      normalizeOpencodeConfig({ enabled: true, bridgeAccountIds: ["b", ""] })!.bridgeAccountIds
+    ).toEqual(["b"]);
+  });
+  test("malformed shapes are rejected or sanitized", () => {
+    expect(normalizeOpencodeConfig(null)).toBeNull();
+    expect(normalizeOpencodeConfig("x")).toBeNull();
+    expect(normalizeOpencodeConfig([])).toBeNull();
+    const cfg = normalizeOpencodeConfig({ enabled: true, bridge: { accounts: "not-array" } })!;
+    expect(cfg.bridgeAccountIds).toBeUndefined();
   });
 });
 
