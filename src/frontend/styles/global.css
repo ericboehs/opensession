@@ -2521,6 +2521,9 @@ body.resizing-x {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	min-width: 0;
+	/* Cap the title so a long workspace name truncates instead of eating the
+	   whole top bar; it still shrinks below this when the row runs out of room. */
+	max-width: 420px;
 	font-size: 14px;
 }
 
