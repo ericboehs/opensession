@@ -10233,6 +10233,20 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		) {
 		--strip-clearance: 46px;
 	}
+	/* …and when the docked bar is present, the floating header above it goes
+	   solid too so the whole top block reads as one opaque bar — otherwise the
+	   transcript ghosts through behind the pills above a solid tab bar, which
+	   looks broken. The header is a sibling of the pane, so key it off the
+	   nearest common ancestor. min-height pins the fill flush to the bar's top
+	   edge (var(--header-h)) even when the pills are a hair shorter. */
+	.app:has(
+			.session-tabs-scroll
+				> .session-tab:not(.session-tab-new):not(.session-tab-history)
+				~ .session-tab:not(.session-tab-new):not(.session-tab-history)
+		) .app-header-overlay {
+		background: var(--bg);
+		min-height: var(--header-h);
+	}
 
 	/* Brand logo in the top bar. */
 	.app-brand .app-title-wrap {
