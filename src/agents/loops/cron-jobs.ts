@@ -9,8 +9,9 @@
  * tool), backup-ami + cleanup-closed-worktrees (infra).
  */
 import { listAutomations, createAutomation } from "../../server/automations";
+import { defaultRepo } from "../../server/config";
 
-const REPO = "tellahq/tella-fusion";
+const REPO = defaultRepo().ghRepo;
 const CHAT = "C01ED50A2KG"; // #chat
 const DOCS_CHANNEL = "C09BAFFK8F8";
 const JOHNNY = "U0866D7PCCU"; // Johnny Lin

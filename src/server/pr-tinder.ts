@@ -11,8 +11,9 @@ import { $ } from "bun";
 import { readFileSync, existsSync } from "fs";
 import { audited } from "./audit";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import { defaultRepo } from "./config";
 
-const REPO = "tellahq/tella-fusion";
+const REPO = defaultRepo().ghRepo;
 const HOME = process.env.HOME || "/home/ubuntu";
 const STATE_PATH = `${HOME}/.backstage-prtinder.json`;
 const SEEN_TTL_MS = 14 * 24 * 60 * 60 * 1000;

@@ -7,6 +7,7 @@
 
 import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import { configuredPaths, defaultRepo } from "../../server/config";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,10 +48,11 @@ export const CANCELLED_ANSWER = "__CANCELLED__";
 // ---------------------------------------------------------------------------
 
 export const SESSION_DIR = `${process.env.HOME}/.slack-sessions`;
-export const DEFAULT_CWD = "/home/ubuntu/projects/tella-fusion";
-export const MCP_CONFIG_PATH =
-  "/home/ubuntu/projects/tella-backstage/mcp-config.json";
-export const GITHUB_REPO = "tellahq/tella-fusion";
+// Config-driven (repos registry / paths in ~/.backstage/config.json); the
+// zero-config values are the historical tella-fusion literals.
+export const DEFAULT_CWD = defaultRepo().repo;
+export const MCP_CONFIG_PATH = configuredPaths().mcpConfig;
+export const GITHUB_REPO = defaultRepo().ghRepo;
 
 // ---------------------------------------------------------------------------
 // Runtime state

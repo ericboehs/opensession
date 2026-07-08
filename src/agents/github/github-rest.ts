@@ -7,9 +7,11 @@
  * Auth: the same `GITHUB_API_TOKEN` PAT the Slack agent uses (Bearer).
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
+import { defaultRepo } from "../../server/config";
 
 const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
-export const GITHUB_REPO = "tellahq/tella-fusion";
+/** The PR agent's target — the instance's default repo (config-driven). */
+export const GITHUB_REPO = defaultRepo().ghRepo;
 /** The bot account our token posts as — used to recognise our own comments/events. */
 export const BOT_LOGIN = process.env.GITHUB_BOT_LOGIN || "tella-butler";
 /** Hidden markers Michael stamps on the comments it posts (one per behavior). */
@@ -325,7 +327,7 @@ export async function listReviewThreads(prNumber: number): Promise<ReviewThread[
         }
       }
     }`,
-    { owner: "tellahq", name: GITHUB_REPO.split("/")[1], number: prNumber },
+    { owner: GITHUB_REPO.split("/")[0], name: GITHUB_REPO.split("/")[1], number: prNumber },
   );
   const nodes = data?.repository?.pullRequest?.reviewThreads?.nodes;
   if (!Array.isArray(nodes)) return [];

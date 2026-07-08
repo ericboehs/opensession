@@ -5,14 +5,12 @@
  */
 import { existsSync, readFileSync, copyFileSync, watchFile } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
+import { configuredPaths } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-// mcp-config.json location. Env-overridable (BACKSTAGE_MCP_CONFIG) so
-// self-hosted installs / sandbox images can relocate it (docs/sandboxes-plan.md
-// Phase 0 de-hardcoding); default = this repo's checkout — unchanged when unset.
-const CONFIG_PATH =
-  process.env.BACKSTAGE_MCP_CONFIG ||
-  `${HOME}/projects/tella-backstage/mcp-config.json`;
+// mcp-config.json location. BACKSTAGE_MCP_CONFIG env → config
+// `paths.mcpConfig` → this repo's checkout — unchanged when neither is set.
+const CONFIG_PATH = configuredPaths().mcpConfig;
 
 // Cache the parsed MCP config with file-watcher invalidation
 let cachedMcpConfig: { mcpServers: Record<string, any> } | null = null;

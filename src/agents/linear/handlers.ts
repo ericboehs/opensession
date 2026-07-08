@@ -2,6 +2,7 @@
  * Linear agent webhook handlers for AgentSession and Issue events.
  */
 import { linearEmailToGithubUsername } from "../../server/shared/user-mappings";
+import { worktreePathFor } from "../../server/worktree";
 import {
   createAgentActivity,
   fetchLinearUser,
@@ -667,7 +668,7 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
   const issueDetails = await getIssueDetails(accessToken, issue.id);
 
   const branch = await generateBranchName(issue.title, issue.identifier);
-  const worktreeDir = `/home/ubuntu/worktrees/tella-fusion-${branch}`;
+  const worktreeDir = worktreePathFor(branch);
 
   const session: ActiveSession = {
     branch,

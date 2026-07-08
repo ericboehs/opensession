@@ -21,9 +21,9 @@ import {
   BOT_LOGIN,
   type ReviewInlineComment,
 } from "./github-rest";
+import { defaultRepo } from "../../server/config";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const TELLA_FUSION = `${HOME}/projects/tella-fusion`;
+const TELLA_FUSION = defaultRepo().repo;
 
 export interface PrRef {
   number: number;

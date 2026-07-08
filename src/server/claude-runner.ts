@@ -15,6 +15,7 @@ import { cleanPlainToolInput } from "./shared/note-style";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { getDefaultModel, hasPricing, priceUsageUsd } from "./models";
+import { configuredPaths } from "./config";
 import { buildSystemPromptParts } from "./system-prompt";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -246,13 +247,11 @@ const ACTIVE_RUNS_PATH =
 const UI_BASE =
   process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
 
-/** Claude Code CLI binary the SDK spawns. Env-overridable (BACKSTAGE_CLAUDE_BIN)
- *  so sandbox images / other host layouts can point at their own install;
- *  the default is this VPS's path — unchanged behavior when unset. Exported for
- *  every other direct `query()` call site (agents, title/branch generators) so
- *  the path lives in exactly one place. */
-export const CLAUDE_CODE_BIN =
-  process.env.BACKSTAGE_CLAUDE_BIN || "/home/ubuntu/.local/bin/claude";
+/** Claude Code CLI binary the SDK spawns. BACKSTAGE_CLAUDE_BIN env →
+ *  config `paths.claudeBin` → this VPS's path (unchanged behavior when
+ *  neither is set). Exported for every other direct `query()` call site
+ *  (agents, title/branch generators) so the path lives in exactly one place. */
+export const CLAUDE_CODE_BIN = configuredPaths().claudeBin;
 
 export interface ActiveRunRecord {
   runKey: string;

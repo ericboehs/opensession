@@ -49,6 +49,7 @@ import { isStopMessage, cancelSession } from "./cancel";
 import { pollForVercelPreview } from "./github-reviews";
 import { runCodexAuto } from "../../server/codex-appserver";
 import { gitIdentityFor } from "../../server/shared/user-mappings";
+import { worktreePathFor } from "../../server/worktree";
 import { sessionForChannel } from "../../server/slack-links";
 import { tryGetSessionControl } from "../../server/session-control";
 import {
@@ -147,7 +148,7 @@ function branchExists(branch: string): boolean {
   try {
     const { spawnSync } = require("child_process");
     // Check if worktree directory exists
-    const worktreeDir = `/home/ubuntu/worktrees/tella-fusion-${branch}`;
+    const worktreeDir = worktreePathFor(branch);
     const dirCheck = spawnSync("test", ["-d", worktreeDir]);
     if (dirCheck.status === 0) return true;
     // Check if branch exists in git (local or registered worktree)
@@ -191,7 +192,7 @@ function createWorktree(
   userId: string,
   message: string
 ): string {
-  const worktreeDir = `/home/ubuntu/worktrees/tella-fusion-${branch}`;
+  const worktreeDir = worktreePathFor(branch);
 
   try {
     const { spawnSync } = require("child_process");

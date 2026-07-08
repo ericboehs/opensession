@@ -5,9 +5,10 @@
  */
 import { readdirSync, readFileSync, statSync, existsSync, realpathSync } from "fs";
 import { join, resolve, relative } from "path";
+import { defaultRepo } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const DOCS_ROOT = `${HOME}/projects/tella-fusion/docs`;
+const DOCS_ROOT = `${defaultRepo().repo}/docs`;
 
 export interface WikiNode {
   name: string;

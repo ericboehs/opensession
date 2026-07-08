@@ -7,8 +7,9 @@
  * Seeded create-if-absent on startup so UI edits (schedule/channel/prompt) are kept.
  */
 import { listAutomations, createAutomation } from "../../server/automations";
+import { defaultRepo } from "../../server/config";
 
-const REPO = "tellahq/tella-fusion";
+const REPO = defaultRepo().ghRepo;
 // #engineering — repointable via the Automations UI.
 const ALARM_CHANNEL = "C047JD2KX8B";
 const EVENT_KEY = "monitor:stale-prs";

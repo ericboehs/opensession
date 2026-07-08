@@ -38,6 +38,7 @@ import {
 } from "./queue";
 import { cancelSession } from "./cancel";
 import { cancelAgentRun } from "../../server/agent-runner";
+import { worktreePathFor } from "../../server/worktree";
 import {
   slackApiCall,
   sendSlackMessage,
@@ -694,7 +695,7 @@ Please address this feedback:
         await inviteBotToChannel(channelId);
 
         // Set topic
-        const worktreeDir = `/home/ubuntu/worktrees/tella-fusion-${branch}`;
+        const worktreeDir = worktreePathFor(branch);
         const ghCompareUrl = `https://github.com/${GITHUB_REPO}/compare/main...${encodeURIComponent(branch)}`;
         await setChannelTopic(
           channelId,

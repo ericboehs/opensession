@@ -13,6 +13,7 @@
  * are preserved.
  */
 import { listAutomations, createAutomation } from "../../server/automations";
+import { defaultRepo } from "../../server/config";
 
 export interface SweepConfig {
   /** Stable seed key (so we don't re-create it every startup). */
@@ -30,7 +31,7 @@ export interface SweepConfig {
   task: string;
 }
 
-const REPO = "tellahq/tella-fusion";
+const REPO = defaultRepo().ghRepo;
 
 export function buildSweepPrompt(cfg: SweepConfig): string {
   return `You are Michael, running the "${cfg.name}" sweep on ${REPO}.

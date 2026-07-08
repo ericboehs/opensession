@@ -22,13 +22,14 @@ import { buildAutoFixPrompt } from "./prompts";
 import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, resolveAddressedThreads, BOT_LOGIN } from "./github-rest";
 import { LABEL_AUTOFIX } from "./constants";
 import type { PrRef, ReviewResult } from "./review";
+import { defaultRepo } from "../../server/config";
 
 const MAX_ITERATIONS = 5;
 const WALL_CLOCK_MS = 60 * 60 * 1000; // abandon a loop running longer than an hour
 const CHECK_POLL_MS = 30 * 1000;
 const CHECK_TIMEOUT_MS = 15 * 60 * 1000;
 
-const REPO = "tellahq/tella-fusion";
+const REPO = defaultRepo().ghRepo;
 
 async function headSha(headRef: string): Promise<string> {
   try {

@@ -14,6 +14,7 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { pickAccount } from "./claude-accounts";
+import { defaultRepo } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/generated-titles.json`;
@@ -83,7 +84,7 @@ export async function ensureGeneratedTitle(
 			options: {
 				model: "haiku",
 				maxTurns: 1,
-				cwd: "/home/ubuntu/projects/tella-fusion",
+				cwd: defaultRepo().repo,
 				allowedTools: [],
 				pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
 				executable: "bun",

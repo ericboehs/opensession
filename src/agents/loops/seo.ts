@@ -18,8 +18,9 @@
  */
 import { mkdirSync, appendFileSync, existsSync } from "fs";
 import { listAutomations, createAutomation } from "../../server/automations";
+import { defaultRepo } from "../../server/config";
 
-const REPO = "tellahq/tella-fusion";
+const REPO = defaultRepo().ghRepo;
 export const SEO_LABEL = "seo-sweep";
 const HOME = process.env.HOME || "/home/ubuntu";
 export const SEO_DIR = `${HOME}/.backstage-seo`;

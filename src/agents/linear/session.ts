@@ -13,6 +13,7 @@ import { runCodexAuto } from "../../server/codex-appserver";
 import { DEFAULT_FALLBACK_MODEL, resolveModel, getDefaultModel } from "../../server/models";
 import { cleanPlainToolInput } from "../../server/shared/note-style";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import { worktreePathFor } from "../../server/worktree";
 import { spawn, spawnSync, execSync } from "child_process";
 import { unlinkSync } from "fs";
 import { linearEmailToGithubUsername, gitIdentityFor, gitIdentityEnv } from "../../server/shared/user-mappings";
@@ -155,7 +156,7 @@ export function createWorktree(
   description: string,
   url: string
 ): string {
-  const worktreeDir = `/home/ubuntu/worktrees/tella-fusion-${branch}`;
+  const worktreeDir = worktreePathFor(branch);
 
   const { spawnSync } = require("child_process");
   const result = spawnSync(

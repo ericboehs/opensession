@@ -22,19 +22,14 @@ import { STRIPE_CONFIRM_TOOLS } from "./claude-runner";
 import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
 import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
+import { defaultRepo } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const ACTIONS_DIR = `${HOME}/.backstage-actions`;
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
-const TELLA_FUSION = `${HOME}/projects/tella-fusion`;
 
 /** Fast/cheap model for action runs (the LLM only orchestrates one Bash call). */
 const ACTION_MODEL = "claude-haiku-4-5";
-
-/** Repos an action's script can live in, mapped to their checkout path. */
-const REPO_PATHS: Record<string, string> = {
-  "tella-fusion": TELLA_FUSION,
-};
 
 export type ActionInputType = "text" | "number" | "select" | "boolean";
 
@@ -65,7 +60,7 @@ export interface Action {
    *    sandboxed AWS creds. Omitted = "repo" (back-compat).
    */
   kind?: "repo" | "mcp";
-  /** repo: the repo the script lives in (key of REPO_PATHS). v1: always "tella-fusion". */
+  /** repo: the repo the script lives in. v1: always the default repo (repoPathFor). */
   repo?: string;
   /** repo: script path relative to the repo root, e.g. "packages/scripts/make_michiel_editor.sh". */
   scriptPath?: string;
@@ -137,8 +132,11 @@ export function deleteAction(id: string): boolean {
 
 // ── Validation + creation ────────────────────────────────────
 
+/** Repos an action's script can live in, mapped to their checkout path.
+ *  v1: only the instance's default repo (config-driven; tella-fusion by default). */
 function repoPathFor(repo: string): string | undefined {
-  return REPO_PATHS[repo];
+  const def = defaultRepo();
+  return repo === def.id ? def.repo : undefined;
 }
 
 function sanitizeInputs(raw: unknown): ActionInput[] | { error: string } {
@@ -203,7 +201,7 @@ export function createAction(
     return action;
   }
 
-  const repo = String(body.repo || "tella-fusion");
+  const repo = String(body.repo || defaultRepo().id);
   const repoRoot = repoPathFor(repo);
   if (!repoRoot) return { error: `unknown repo "${repo}"` };
   const scriptPath = String(body.scriptPath || "").trim();
@@ -340,7 +338,7 @@ export function runAction(
   // Build the run prompt + the cwd + the MCP allowlist per execution kind.
   let prompt: string;
   let mcpServers: string[] | undefined;
-  let cwd = TELLA_FUSION;
+  let cwd = defaultRepo().repo;
   let useAws = false;
   if (action.kind === "mcp") {
     if (!action.mcpServer || !action.toolName)
@@ -348,7 +346,7 @@ export function runAction(
     prompt = buildMcpPrompt(action, resolved);
     mcpServers = [action.mcpServer]; // least privilege: only the server it needs
   } else {
-    const repoRoot = repoPathFor(action.repo || "tella-fusion");
+    const repoRoot = repoPathFor(action.repo || defaultRepo().id);
     if (!repoRoot) return { error: `unknown repo "${action.repo}"` };
     if (!action.scriptPath || !existsSync(`${repoRoot}/${action.scriptPath}`))
       return { error: `script no longer exists: ${action.scriptPath}` };

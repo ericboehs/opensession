@@ -19,6 +19,8 @@ import {
   GITHUB_REPO,
   activeSessions,
 } from "./state";
+import { worktreePathFor } from "../../server/worktree";
+import { defaultRepo } from "../../server/config";
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const WORKTREE_CHANNELS_FILE = `${SESSION_DIR}/worktree-channels.json`;
@@ -83,7 +85,7 @@ export function isWorktreeChannel(channelId: string): boolean {
 export function getWorktreeDirForChannel(channelId: string): string | null {
   const branch = worktreeChannels.get(channelId);
   if (!branch) return null;
-  return `/home/ubuntu/worktrees/tella-fusion-${branch}`;
+  return worktreePathFor(branch);
 }
 
 // ---------------------------------------------------------------------------
@@ -253,12 +255,12 @@ export async function cleanupWorktrees(): Promise<void> {
       .filter((p: string) => p !== DEFAULT_CWD); // skip main repo
 
     for (const wtPath of worktreePaths) {
-      const branch = wtPath.split("/").pop()?.replace("tella-fusion-", "");
+      const branch = wtPath.split("/").pop()?.replace(`${defaultRepo().wtPrefix}-`, "");
       if (!branch) continue;
 
       // Check if PR for this branch is merged
       const prs = await githubApi(
-        `/repos/${GITHUB_REPO}/pulls?head=tellahq:${branch}&state=closed&per_page=1`
+        `/repos/${GITHUB_REPO}/pulls?head=${GITHUB_REPO.split("/")[0]}:${branch}&state=closed&per_page=1`
       );
       const hasMergedPR =
         prs && Array.isArray(prs) && prs.length > 0 && prs[0].merged_at;

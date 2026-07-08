@@ -106,7 +106,7 @@ export async function findGitHubUsersForBranch(
 
   // Find PRs where this branch is the head
   const prs = await githubApi(
-    `/repos/${GITHUB_REPO}/pulls?head=tellahq:${branch}&state=all&per_page=1`
+    `/repos/${GITHUB_REPO}/pulls?head=${GITHUB_REPO.split("/")[0]}:${branch}&state=all&per_page=1`
   );
   if (prs && prs.length > 0) {
     const pr = prs[0];

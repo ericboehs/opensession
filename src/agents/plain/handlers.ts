@@ -17,8 +17,10 @@ import { buildMentionPrompt, buildWorkPrompt, buildRefundExecutionPrompt } from 
 import { getDefaultModel } from "../../server/models";
 import { CLAUDE_CODE_BIN, STRIPE_CONFIRM_TOOLS, filterMcpServers } from "../../server/claude-runner";
 import { classifyRefundApproval } from "./refund-intent";
+import { worktreePathFor } from "../../server/worktree";
+import { defaultRepo } from "../../server/config";
 
-const TELLA_FUSION_DIR = "/home/ubuntu/projects/tella-fusion";
+const TELLA_FUSION_DIR = defaultRepo().repo;
 
 // --- State ---
 
@@ -179,7 +181,7 @@ async function runClaude(
 // --- Worktree creation ---
 
 function createWorktree(branch: string, ticketId: string, title: string, description: string): string {
-  const worktreeDir = `/home/ubuntu/worktrees/tella-fusion-${branch}`;
+  const worktreeDir = worktreePathFor(branch);
 
   const { spawnSync } = require("child_process");
   const result = spawnSync(

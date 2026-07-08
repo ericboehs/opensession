@@ -12,6 +12,7 @@ import { getReviewRequest } from "./review-requests";
 import { getGeneratedTitle } from "./generated-titles";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
+import { configuredRepos, defaultRepo } from "./config";
 import type {
   UnifiedSession,
   SlackSessionFile,
@@ -383,10 +384,18 @@ interface PrInfo {
 // Open PRs section and Reviews table surface. Fusion carries 200+ open PRs and
 // GitHub's GraphQL 504s on wide statusCheckRollup queries there, so limits are
 // per-repo. Repos not listed here fall back to session-derived PR info only.
-const PR_REPOS = [
-	{ id: "tella-fusion", ghRepo: "tellahq/tella-fusion", openLimit: 500, recentLimit: 200, rollupLimit: 60 },
-	{ id: "backstage", ghRepo: "tellahq/backstage", openLimit: 100, recentLimit: 100, rollupLimit: 30 },
+// The ghRepo target resolves through the config-driven registry (worktree.ts
+// REPOS), so a config override of either repo's GitHub target flows through.
+const PR_REPO_LIMITS = [
+	{ id: "tella-fusion", openLimit: 500, recentLimit: 200, rollupLimit: 60 },
+	{ id: "backstage", openLimit: 100, recentLimit: 100, rollupLimit: 30 },
 ] as const;
+function prRepos() {
+	return PR_REPO_LIMITS.flatMap((limits) => {
+		const repo = configuredRepos()[limits.id];
+		return repo?.ghRepo ? [{ ...limits, ghRepo: repo.ghRepo }] : [];
+	});
+}
 
 // repo id → branch → PR info. Keyed per repo so the same branch name in two
 // repos (multi-repo sessions share branch names) never collides.
@@ -462,7 +471,7 @@ async function refreshPrCache(): Promise<void> {
     // PRs, so the CI rollup stays a small scoped call over the most recent open
     // PRs (the ones a reviewer actually triages); others show no checks column.
     const next = new Map<string, Map<string, PrInfo>>();
-    await Promise.all(PR_REPOS.map(async (repo) => {
+    await Promise.all(prRepos().map(async (repo) => {
       const [openPrs, recentAll, rollups] = await Promise.all([
         ghJson<BulkPr[]>([
           "pr", "list", "--repo", repo.ghRepo, "--state", "open",
@@ -532,7 +541,7 @@ async function refreshPrCache(): Promise<void> {
 }
 
 /**
- * Every open PR across the covered repos (PR_REPOS — from the same batched
+ * Every open PR across the covered repos (prRepos() — from the same batched
  * cache the session enrichment uses), each attributed to a teammate when its
  * GitHub author maps to one via the identity table. Bot-authored PRs
  * (tella-butler — the ones Michael opens from sessions) come back with
@@ -633,7 +642,7 @@ export function getAllSessions(): UnifiedSession[] {
   const prsByRepo = getPrsByRepo();
   for (const session of allSessions) {
     if (session.branch) {
-      const pr = prsByRepo.get(session.repo || "tella-fusion")?.get(session.branch);
+      const pr = prsByRepo.get(session.repo || defaultRepo().id)?.get(session.branch);
       if (pr) {
         session.prUrl = pr.url;
         session.prState = pr.state;
