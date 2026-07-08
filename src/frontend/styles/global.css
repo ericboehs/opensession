@@ -2091,8 +2091,10 @@ body.resizing-x {
 		padding: 3px 3px 9px;
 	}
 	.viewer-messages {
-		/* Clear the pills at rest (bar height + a little air), then scroll under. */
-		padding-top: 56px;
+		/* Clear the pills at rest (bar height + air), then scroll under. Enough
+		   that the first row sits fully below the floating strip on load, not
+		   tucked under the pills. */
+		padding-top: 68px;
 		/* Dissolve the transcript into the bar as it scrolls up behind the pills so
 		   text never bleeds sharply above them — the pills stay the top, legible
 		   layer. (The bottom is handled by the composer backdrop.) */
@@ -6335,10 +6337,9 @@ body.resizing-x .panel-resize::after {
 .load-history {
 	display: flex;
 	justify-content: center;
-	/* As the first row it lands directly under the floating tab strip, so give
-	   it extra top air to clear the pills (the strip overlays the transcript;
-	   .viewer-messages padding-top only just clears it). */
-	padding: 18px 0 14px;
+	/* .viewer-messages already pads its top to clear the floating tab strip, so
+	   this only needs its own small breathing room as the first row. */
+	padding: 4px 0 14px;
 	overflow-anchor: none;
 }
 .load-history-btn {
