@@ -4,8 +4,14 @@
 // `git status` would show) and fuzzy-filters them against a query. The full
 // file list per directory is cached briefly so a burst of keystrokes doesn't
 // re-shell `git ls-files` on every character — only the in-memory filter runs.
+//
+// Sandbox-aware (docs/sandboxes-plan.md Phase 2): callers may pass a
+// WorkspaceExec (workspaceExecFor) so `git ls-files` runs inside the
+// session's sandbox — required for volume-mode workspaces, which have no
+// host copy of the worktree. Omitted = the host path, unchanged.
 
 import { $ } from "bun";
+import type { WorkspaceExec } from "./sandbox/workspace-exec";
 
 const CACHE_TTL_MS = 15_000;
 const cache = new Map<string, { files: string[]; at: number }>();
@@ -17,14 +23,20 @@ function now(): number {
   return performance.now();
 }
 
-async function loadFiles(dir: string): Promise<string[]> {
+async function loadFiles(dir: string, exec?: WorkspaceExec): Promise<string[]> {
   const hit = cache.get(dir);
   if (hit && now() - hit.at < CACHE_TTL_MS) return hit.files;
   // --cached: tracked, --others --exclude-standard: untracked but not gitignored.
   // -z: NUL-separated so paths with spaces/newlines survive.
-  const out = await $`git -C ${dir} ls-files --cached --others --exclude-standard -z`
-    .quiet()
-    .text();
+  const args = ["ls-files", "--cached", "--others", "--exclude-standard", "-z"];
+  let out: string;
+  if (exec) {
+    const r = await exec(["git", ...args]);
+    if (r.exitCode !== 0) throw new Error(r.stderr.trim() || `git ls-files failed in ${dir}`);
+    out = r.stdout;
+  } else {
+    out = await $`git -C ${dir} ${args}`.quiet().text();
+  }
   // Drop vendored dependency trees — they're tracked in some repos (backstage
   // commits node_modules) but are never useful "@"-mention targets and only
   // crowd out source files in the results.
@@ -87,8 +99,15 @@ function cacheSync(dir: string): string[] | undefined {
   return cache.get(dir)?.files;
 }
 
-/** Resolve, fuzzy-filter and cap the file list for a directory (async-safe). */
-export async function searchRepoFiles(dir: string, query: string, limit = 20): Promise<string[]> {
-  await loadFiles(dir);
+/** Resolve, fuzzy-filter and cap the file list for a directory (async-safe).
+ *  `exec` routes the git listing through a sandbox (see header); omitted =
+ *  host, exactly as before. */
+export async function searchRepoFiles(
+  dir: string,
+  query: string,
+  limit = 20,
+  exec?: WorkspaceExec,
+): Promise<string[]> {
+  await loadFiles(dir, exec);
   return listRepoFiles(dir, query, limit);
 }

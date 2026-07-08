@@ -5,9 +5,27 @@
  *
  * origin/<base> is refreshed with a throttled fetch so "behind main" is honest
  * without hammering the remote from every open panel.
+ *
+ * Sandbox-aware (docs/sandboxes-plan.md Phase 2): callers may pass a
+ * WorkspaceExec (workspaceExecFor) so every git command — including fetch,
+ * pull and push, which then use the sandbox's mounted read-only creds — runs
+ * inside the session's sandbox. Omitted = the host path, unchanged.
  */
 import { $ } from "bun";
 import { audited } from "./audit";
+import type { WorkspaceExec } from "./sandbox/workspace-exec";
+
+/** `git -C <dir> <args>` on the host (Bun $) or through the workspace exec.
+ *  Throws on non-zero exit, matching the Bun $ .text() call sites here. */
+async function gitText(dir: string, args: string[], exec?: WorkspaceExec): Promise<string> {
+  const argv = ["git", "-C", dir, ...args];
+  if (exec) {
+    const r = await exec(argv);
+    if (r.exitCode !== 0) throw new Error(r.stderr.trim() || `git ${args[0]} failed`);
+    return r.stdout;
+  }
+  return await $`${argv}`.quiet().text();
+}
 
 export interface GitStatusInfo {
   branch: string | null;
@@ -26,12 +44,12 @@ export interface GitStatusInfo {
 const FETCH_TTL = 90_000;
 const lastFetch = new Map<string, number>();
 
-async function refreshBase(dir: string, baseBranch: string): Promise<void> {
+async function refreshBase(dir: string, baseBranch: string, exec?: WorkspaceExec): Promise<void> {
   const last = lastFetch.get(dir) || 0;
   if (Date.now() - last < FETCH_TTL) return;
   lastFetch.set(dir, Date.now());
   try {
-    await $`git -C ${dir} fetch origin ${baseBranch} --no-tags --quiet`.quiet();
+    await gitText(dir, ["fetch", "origin", baseBranch, "--no-tags", "--quiet"], exec);
   } catch {
     // Offline or no remote — counts fall back to the last-known tracking refs.
   }
@@ -39,17 +57,18 @@ async function refreshBase(dir: string, baseBranch: string): Promise<void> {
 
 export async function getGitStatus(
   dir: string,
-  baseBranch = "main"
+  baseBranch = "main",
+  exec?: WorkspaceExec,
 ): Promise<GitStatusInfo> {
   // Fire-and-forget: the fetch is only there to keep origin/<base> current for
   // the NEXT poll. Awaiting it made every TTL-expired status call block on a
   // network round-trip — the status header polls every 45s, so counts computed
   // from refs one poll old are an honest trade for an instant response.
-  void refreshBase(dir, baseBranch);
+  void refreshBase(dir, baseBranch, exec);
 
   let branch: string | null = null;
   try {
-    branch = (await $`git -C ${dir} branch --show-current`.quiet().text()).trim() || null;
+    branch = (await gitText(dir, ["branch", "--show-current"], exec)).trim() || null;
   } catch {}
 
   let hasUpstream = false;
@@ -57,7 +76,7 @@ export async function getGitStatus(
   let behind = 0;
   try {
     const counts = (
-      await $`git -C ${dir} rev-list --left-right --count @{upstream}...HEAD`.quiet().text()
+      await gitText(dir, ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"], exec)
     ).trim();
     const [b, a] = counts.split(/\s+/).map((n) => parseInt(n) || 0);
     hasUpstream = true;
@@ -68,9 +87,7 @@ export async function getGitStatus(
     try {
       ahead =
         parseInt(
-          (
-            await $`git -C ${dir} rev-list --count origin/${baseBranch}..HEAD`.quiet().text()
-          ).trim()
+          (await gitText(dir, ["rev-list", "--count", `origin/${baseBranch}..HEAD`], exec)).trim()
         ) || 0;
     } catch {}
   }
@@ -79,13 +96,13 @@ export async function getGitStatus(
   try {
     behindBase =
       parseInt(
-        (await $`git -C ${dir} rev-list --count HEAD..origin/${baseBranch}`.quiet().text()).trim()
+        (await gitText(dir, ["rev-list", "--count", `HEAD..origin/${baseBranch}`], exec)).trim()
       ) || 0;
   } catch {}
 
   let uncommittedFiles = 0;
   try {
-    const status = await $`git -C ${dir} status --porcelain`.quiet().text();
+    const status = await gitText(dir, ["status", "--porcelain"], exec);
     uncommittedFiles = status.split("\n").filter((l) => l.trim()).length;
   } catch {}
 
@@ -102,18 +119,31 @@ export async function getGitStatus(
  */
 export async function gitPull(
   dir: string,
-  fromBase?: string
+  fromBase?: string,
+  exec?: WorkspaceExec,
 ): Promise<{ ok: true } | { error: string }> {
   return audited(
-    { context: "sessions", action: "git_pull", args: { dir, fromBase: fromBase || null } },
+    {
+      context: "sessions",
+      action: "git_pull",
+      args: { dir, fromBase: fromBase || null, sandboxed: exec?.sandboxed || undefined },
+    },
     async () => {
       const args = ["git", "-C", dir, "pull", "--ff-only"];
       if (fromBase) args.push("origin", fromBase);
-      const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
-      const [err, code] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
+      let err: string;
+      let code: number;
+      if (exec) {
+        const r = await exec(args);
+        err = r.stderr;
+        code = r.exitCode;
+      } else {
+        const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+        [err, code] = await Promise.all([
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+      }
       if (code !== 0) return { error: (err || "git pull failed").slice(0, 300) } as const;
       return { ok: true } as const;
     }
@@ -127,19 +157,30 @@ export async function gitPull(
  */
 export async function gitPush(
   dir: string,
-  branch: string
+  branch: string,
+  exec?: WorkspaceExec,
 ): Promise<{ ok: true } | { error: string }> {
   return audited(
-    { context: "sessions", action: "git_push", args: { dir, branch } },
+    {
+      context: "sessions",
+      action: "git_push",
+      args: { dir, branch, sandboxed: exec?.sandboxed || undefined },
+    },
     async () => {
-      const proc = Bun.spawn(["git", "-C", dir, "push", "-u", "origin", "HEAD"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const [err, code] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
+      const args = ["git", "-C", dir, "push", "-u", "origin", "HEAD"];
+      let err: string;
+      let code: number;
+      if (exec) {
+        const r = await exec(args);
+        err = r.stderr;
+        code = r.exitCode;
+      } else {
+        const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+        [err, code] = await Promise.all([
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+      }
       if (code !== 0) return { error: (err || "git push failed").slice(0, 300) } as const;
       return { ok: true } as const;
     }
