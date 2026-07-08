@@ -1097,6 +1097,18 @@ export function SessionViewer({
 		setShowAllContextChats(false);
 	}, [session.id]);
 
+	// The review request is stored per chat, but the sidebar's "Awaiting/Needs
+	// review" bands group by workspace — so a request set on a sibling chat lit
+	// the band while the open chat's Reviewer chip read empty. Surface the
+	// workspace's request in the chip: the open chat's own if it has one, else a
+	// sibling's, carrying the owner id so clear/re-assign target the right chat.
+	const effectiveReview = useMemo(() => {
+		if (session.reviewRequest)
+			return { req: session.reviewRequest, ownerId: session.id };
+		const sib = (workspaceChats || []).find((c) => c.reviewRequest);
+		return sib ? { req: sib.reviewRequest!, ownerId: sib.id } : null;
+	}, [session.reviewRequest, session.id, workspaceChats]);
+
 	// Returns true when the message was consumed, so the (uncontrolled)
 	// Composer knows to clear its draft; false keeps it for a retry.
 	// `opts.interrupt` is the per-send override (⌘/Ctrl+Enter while busy):
@@ -2215,7 +2227,8 @@ export function SessionViewer({
 										repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
 										prState={hasWorkspace ? session.prState : undefined}
 										slackChannel={session.slackChannel}
-										reviewRequest={session.reviewRequest}
+										reviewRequest={effectiveReview?.req ?? null}
+										reviewRequestSessionId={effectiveReview?.ownerId}
 										onOpenTab={(tab) => {
 											setInfoPageOpen(false);
 											setSubagentStack([]);
@@ -2831,7 +2844,8 @@ export function SessionViewer({
 									}
 									prState={hasWorkspace ? session.prState : undefined}
 									slackChannel={session.slackChannel}
-									reviewRequest={session.reviewRequest}
+									reviewRequest={effectiveReview?.req ?? null}
+									reviewRequestSessionId={effectiveReview?.ownerId}
 									onOpenTab={(tab) => selectPanelTab(tab)}
 									onAddToInput={(text) =>
 										setComposerPrefill((p) => ({

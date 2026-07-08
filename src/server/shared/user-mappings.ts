@@ -102,6 +102,19 @@ export function linearEmailToGithubUsername(email: string | null): string | null
   return LINEAR_EMAIL_TO_GITHUB[email] || null;
 }
 
+/**
+ * Resolve a teammate reference (a web-picker first name like "Kent", a full
+ * name, an alias, a Slack id, or an email) to their GitHub login — for turning
+ * a Backstage review request into a real GitHub reviewer assignment. Reuses the
+ * same identity table as commit attribution. Returns null for anyone without a
+ * known GitHub account.
+ */
+export function githubLoginFor(ref?: string | null): string | null {
+  const id = gitIdentityFor(ref);
+  if (!id) return null;
+  return TEAM_GIT_IDENTITY.find((p) => p.name === id.name)?.github ?? null;
+}
+
 /** A git author/committer identity. */
 export interface GitIdentity {
   name: string;

@@ -157,6 +157,7 @@ import {
 import {
 	gitIdentityFor,
 	resolveTeammate,
+	githubLoginFor,
 } from "./src/server/shared/user-mappings";
 import { createSessionsMcpServer } from "./src/agents/slack/sessions-tools";
 import { createAdminMcpServer } from "./src/agents/slack/admin-tools";
@@ -191,6 +192,7 @@ import {
 	postPrComment,
 	submitPrReview,
 	mergePr,
+	editPrReviewers,
 } from "./src/server/pr-info";
 import {
 	listTinderPrs,
@@ -272,7 +274,7 @@ import {
 } from "./src/server/auto-archive";
 import { setTitleOverride, getTitleOverride } from "./src/server/title-overrides";
 import { setStatusOverride, isManualStatus } from "./src/server/status-overrides";
-import { setReviewRequest } from "./src/server/review-requests";
+import { setReviewRequest, getReviewRequest } from "./src/server/review-requests";
 import { ensureGeneratedTitle } from "./src/server/generated-titles";
 import {
 	getConnections,
@@ -4739,6 +4741,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						? body.reviewer.trim().slice(0, 40)
 						: "";
 				const by = typeof body?.by === "string" ? body.by.trim().slice(0, 40) : "";
+				const prevReviewer = getReviewRequest(sessionId)?.to;
 				setReviewRequest(
 					sessionId,
 					reviewer
@@ -4746,6 +4749,25 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						: null,
 				);
 				sessionsCache = null;
+				// Mirror the request onto GitHub's own Reviewers list (best-effort):
+				// setting a reviewer adds them, re-assigning swaps, clearing removes.
+				// Only for sessions with a branch/PR whose reviewer maps to a GitHub
+				// login — a phone buzz always fires below regardless.
+				{
+					const addLogin = reviewer ? githubLoginFor(reviewer) : null;
+					const removeLogin =
+						prevReviewer && prevReviewer !== reviewer
+							? githubLoginFor(prevReviewer)
+							: null;
+					const target = resolvePrTarget(session, body?.repo);
+					if (target && (addLogin || removeLogin)) {
+						void editPrReviewers(
+							target.branch,
+							{ add: addLogin, remove: removeLogin },
+							target.ghRepo,
+						).catch(() => {});
+					}
+				}
 				if (reviewer) {
 					// Best-effort phone buzz — never let a push hiccup fail the request.
 					void (async () => {

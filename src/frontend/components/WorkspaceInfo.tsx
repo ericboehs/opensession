@@ -67,8 +67,11 @@ interface Props {
 	prState?: string | null;
 	/** Linked Slack channel, when one exists — gates the Slack fetch. */
 	slackChannel?: SlackChannelLink | null;
-	/** Pending review request on the open chat — the Reviewer chip's state. */
+	/** Pending review request for this workspace — the open chat's, or a sibling
+	    chat's (the request is per-chat but the band groups by workspace). */
 	reviewRequest?: { to: string; by: string; at: string } | null;
+	/** The chat that owns `reviewRequest` (may be a sibling, not the open one). */
+	reviewRequestSessionId?: string;
 	/** Jump to a sibling tab when a status chip / reply row is clicked. */
 	onOpenTab?: (tab: PanelTab) => void;
 	/** Prefill the composer (the per-comment "Add to chat" hover action). */
@@ -516,9 +519,15 @@ function PrAgentActions({
 function ReviewerChip({
 	sessionId,
 	reviewRequest,
+	requestSessionId,
 }: {
 	sessionId: string;
 	reviewRequest?: { to: string; by: string; at: string } | null;
+	/** The chat that actually holds the request — a workspace's request may live
+	    on a sibling chat, not the open one. Clear/re-assign target this so the
+	    chip stays consistent with the sidebar's workspace-level band; a brand-new
+	    request (none exists) targets the open `sessionId`. */
+	requestSessionId?: string;
 }) {
 	const [req, setReq] = useState(reviewRequest ?? null);
 	// Follow the polled session as it refreshes (another viewer may re-assign).
@@ -529,8 +538,11 @@ function ReviewerChip({
 	function pick(name: string | null) {
 		const prev = req;
 		const me = getCurrentUser();
+		// Update the chat that owns the request when one exists; otherwise the
+		// open chat becomes the owner of the new request.
+		const target = (req && requestSessionId) || sessionId;
 		setReq(name ? { to: name, by: me, at: new Date().toISOString() } : null);
-		setSessionReviewerApi(sessionId, name, me).catch(() => setReq(prev));
+		setSessionReviewerApi(target, name, me).catch(() => setReq(prev));
 	}
 
 	return (
@@ -582,6 +594,7 @@ export function WorkspaceInfo({
 	prState,
 	slackChannel,
 	reviewRequest,
+	reviewRequestSessionId,
 	onOpenTab,
 	onAddToInput,
 	onOpenSession,
@@ -762,7 +775,11 @@ export function WorkspaceInfo({
 							{chip.label}
 						</button>
 					))}
-					<ReviewerChip sessionId={sessionId} reviewRequest={reviewRequest} />
+					<ReviewerChip
+					sessionId={sessionId}
+					reviewRequest={reviewRequest}
+					requestSessionId={reviewRequestSessionId}
+				/>
 				</div>
 				{pr?.number && repo === "tella-fusion" && (
 					<PrAgentActions
