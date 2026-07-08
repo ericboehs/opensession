@@ -44,6 +44,11 @@
  * the same webapp port), the `.tunnels.env` contract, stop/route teardown,
  * published-range exhaustion refusal, and destroy releasing the allocations.
  *
+ * TERMINAL section: the sandbox-aware Shell tab PTY (src/server/terminals.ts)
+ * — docker exec shell inside the container (workspace cwd), wake-on-demand of
+ * a stopped container, host-shell fallback for a gone sandbox, and (with
+ * daytona credentials) a live SSH-gateway shell into a bare daytona sandbox.
+ *
  * Everything is sbxtest-prefixed and cleaned up at the end. Safe to run next
  * to the live server: the run journal AND the sandbox config are redirected
  * to the scratch dir BEFORE any module import, so nothing here can leak into
@@ -65,7 +70,7 @@ process.env.BACKSTAGE_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
 // built-in defaults.
 process.env.BACKSTAGE_CONFIG = `${SCRATCH}/backstage-config.json`;
 
-import { existsSync, mkdirSync, rmSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 
 const { DockerProvider, containerNameFor, snapshotRepoForSandbox, snapshotSandboxImage, sweepIdleSandboxes } =
   await import("../../src/server/sandbox/docker");
@@ -824,6 +829,120 @@ exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0
   ok("published-range exhaustion refuses to start (recreate-with-wider-range fallback)",
     !exhausted.starting && !exhausted.running, JSON.stringify({ starting: exhausted.starting }));
   await pre.exec(["pkill", "-f", "bun -e"]);
+
+  // ══ TERMINAL (sandbox-aware Shell tab — src/server/terminals.ts) ══════════
+  // The Shell tab's PTY must land INSIDE a docker sandbox (docker exec), wake
+  // a stopped container on open, and degrade to a host shell (with a notice)
+  // when the sandbox is gone. Daytona: same entry point over the SSH gateway,
+  // exercised against a cheap BARE sandbox (the terminal needs no runner
+  // payload) only when credentials are present.
+  console.log("\n══ terminal ══");
+  const termMod = await import("../../src/server/terminals");
+  const termCollect = () => {
+    const st = { out: "", notices: 0, exited: false, ready: null as any };
+    return {
+      st,
+      send: (m: any) => {
+        if (m.type === "term_data") st.out += Buffer.from(m.data, "base64").toString();
+        if (m.type === "term_notice") st.notices++;
+        if (m.type === "term_ready") st.ready = m;
+        if (m.type === "term_exit") st.exited = true;
+      },
+    };
+  };
+  const waitTerm = async (cond: () => boolean, ms = 20_000) => {
+    for (let i = 0; i < ms / 250 && !cond(); i++) await new Promise((r) => setTimeout(r, 250));
+    return cond();
+  };
+  const typeInto = (ws: unknown, line: string) =>
+    termMod.writeTerminal(ws, Buffer.from(`${line}\n`).toString("base64"));
+  const termSession = { worktreeDir: WT, sandbox: { provider: "docker", sandboxId: pre.id } };
+
+  const term1 = termCollect();
+  const tws1 = {};
+  await termMod.startSessionTerminal(tws1, termSession, { cols: 100, rows: 30, send: term1.send });
+  ok("terminal targets the docker sandbox", term1.st.ready?.target === "docker",
+    JSON.stringify(term1.st.ready));
+  await new Promise((r) => setTimeout(r, 1200)); // let bash -il settle
+  typeInto(tws1, "echo T_$([ -f /.dockerenv ] && echo IN)_SBX; pwd; exit");
+  await waitTerm(() => term1.st.exited);
+  ok("shell ran inside the container in the workspace cwd",
+    term1.st.out.includes("T_IN_SBX") && term1.st.out.includes(WT),
+    JSON.stringify(term1.st.out.slice(-120)));
+  termMod.stopTerminal(tws1);
+
+  // Wake-on-demand: opening a terminal is an interactive gesture — it starts
+  // a stopped container (unlike the read surfaces, which never wake one).
+  await sh(["docker", "stop", "-t", "2", pre.id]);
+  const term2 = termCollect();
+  const tws2 = {};
+  await termMod.startSessionTerminal(tws2, termSession, { cols: 80, rows: 24, send: term2.send });
+  await new Promise((r) => setTimeout(r, 1200));
+  typeInto(tws2, "echo WAKE_OK; exit");
+  const wokeExited = await waitTerm(() => term2.st.exited);
+  ok("terminal wakes a stopped container and gets a live shell",
+    term2.st.ready?.target === "docker" && wokeExited && term2.st.out.includes("WAKE_OK"),
+    JSON.stringify({ ready: term2.st.ready?.target, exited: wokeExited }));
+  termMod.stopTerminal(tws2);
+
+  // Gone sandbox → host shell fallback with a notice (fail-open, never a
+  // dead tab).
+  const term3 = termCollect();
+  const tws3 = {};
+  await termMod.startSessionTerminal(
+    tws3,
+    { worktreeDir: WT, sandbox: { provider: "docker", sandboxId: "bks-sbx-sbxtest-gone-p" } },
+    { cols: 80, rows: 24, send: term3.send },
+  );
+  ok("gone sandbox falls back to a host shell with a notice",
+    term3.st.ready?.target === "host" && term3.st.notices > 0 && term3.st.ready?.cwd === WT,
+    JSON.stringify(term3.st.ready));
+  termMod.stopTerminal(tws3);
+
+  // Daytona terminal (SSH gateway) — bare sandbox, only with credentials.
+  const daytonaKey =
+    process.env.DAYTONA_API_KEY ||
+    (() => {
+      try {
+        return JSON.parse(
+          readFileSync(`${process.env.HOME}/.backstage-sandbox.json`, "utf-8"),
+        )?.daytona?.apiKey as string | undefined;
+      } catch {
+        return undefined;
+      }
+    })();
+  if (!daytonaKey) {
+    console.log("  daytona terminal: SKIPPED (no credentials)");
+  } else {
+    process.env.DAYTONA_API_KEY ||= daytonaKey;
+    const { Daytona } = await import("@daytonaio/sdk");
+    const dclient = new Daytona({ apiKey: daytonaKey });
+    console.log("  creating bare daytona sandbox (terminal needs no runner payload)…");
+    const dsbx = await dclient.create(
+      { labels: { "backstage.sandbox": "1", "backstage.probe": "terminal-verify" } } as any,
+      { timeout: 300 },
+    );
+    try {
+      const term4 = termCollect();
+      const tws4 = {};
+      await termMod.startSessionTerminal(
+        tws4,
+        { worktreeDir: "/home/daytona", sandbox: { provider: "daytona", sandboxId: dsbx.id } },
+        { cols: 100, rows: 30, send: term4.send },
+      );
+      ok("terminal targets the daytona sandbox (SSH gateway)",
+        term4.st.ready?.target === "daytona", JSON.stringify(term4.st.ready));
+      await new Promise((r) => setTimeout(r, 2000)); // gateway + bash settle
+      typeInto(tws4, "echo DT_$(whoami)_OK; exit");
+      await waitTerm(() => term4.st.exited, 30_000);
+      ok("daytona shell ran in-sandbox as the sandbox user",
+        term4.st.out.includes("DT_daytona_OK"), JSON.stringify(term4.st.out.slice(-120)));
+      termMod.stopTerminal(tws4);
+    } finally {
+      await dclient.delete(dsbx, 120).catch((e: any) =>
+        console.warn("  daytona sandbox delete failed:", e?.message || e));
+    }
+  }
 
   // Destroy releases the sandbox's https allocations.
   await provider.destroy(pre.id);

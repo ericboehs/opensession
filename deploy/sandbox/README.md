@@ -197,6 +197,41 @@ sandboxed run schedules a `docker commit` snapshot (same helper as the
 idle-stop path; deduped, delayed past the run-teardown busy window) — the
 background-agents "snapshot after every turn" warm-restore behavior.
 
+## Terminals in sandboxes (Shell tab)
+
+The session viewer's **Shell tab** (xterm.js ↔ server-side PTY over the
+tailnet-gated session WS — `src/server/terminals.ts`) is sandbox-aware:
+`startSessionTerminal` lands the PTY where the session's work actually
+happens.
+
+- **Docker**: `docker exec -it -w <workspace> <container> bash -il` under the
+  host PTY. Works for bind AND volume workspaces (volume ones have no host
+  copy at all). Opening a terminal is an interactive gesture, so unlike the
+  read surfaces it **wakes a stopped container** (`docker start` first) and
+  resets the idle-stop clock; an idle-stop while a shell is open simply ends
+  it (`term_exit` in the tab) — reopen to wake again. Works on every existing
+  container: no image change, no published port, no Caddy route.
+- **Daytona**: a host `ssh` through Daytona's SSH gateway — `createSshAccess`
+  mints a per-shell token (`ssh <token>@ssh.app.daytona.io`, 12 h expiry)
+  that is **revoked the moment the shell closes**. Host keys aren't pinned
+  (their gateway fronts rotating infra); the token is the authentication.
+  Works against a bare, un-bootstrapped sandbox — the terminal needs no
+  runner payload.
+- **Anything else / any failure** (kill-switch, gone container, provider
+  unconfigured, e2b): host login shell in the worktree with a dim fallback
+  notice — the pre-sandbox behavior.
+
+Deliberately NOT ttyd-in-the-sandbox: both providers already have an
+interactive exec transport that plugs into the existing PTY plumbing, so the
+browser only ever speaks the existing tailnet- + team-gated session WS — no
+extra HTTPS listener, no basic-auth credential to store, no public-ish
+preview-domain URL, no preview-port slot consumed, and no image rebuild /
+container recreation to roll it out. The UI signals where a shell landed via
+`term_ready` (dim `[shell inside docker sandbox — <cwd>]` banner).
+
+Terminal code is reached through backstage.ts's WS handlers, which do NOT
+hot-apply — a real restart is needed after changing it.
+
 ## Phase 3 — WS transport + remote adapters
 
 - **WS transport** (`~/.backstage-sandbox.json` → `"transport": "ws"` +
