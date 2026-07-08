@@ -27,6 +27,12 @@
  *           // REQUIRED for native mode: only these designated subscriptions
  *           //   ever serve native-bridge traffic — never the general pool —
  *           //   and they need extra usage enabled at claude.ai/settings/usage.
+ *       "openaiAccounts": ["<codex-accounts id>", ...]
+ *           // Optional: restrict which codex accounts serve opencode/openai/*
+ *           //   runs, in preference order. Absent = the normal codex pool pick.
+ *           //   Independent of `enabled` — opencode/openai keys off the codex
+ *           //   accounts pool (ChatGPT-subscription auth), see
+ *           //   opencode-openai-auth.ts.
  *     },
  *     "bridgeAccountIds": ["..."],  // LEGACY alias for bridge.accounts (used
  *         // only when bridge.accounts is absent); kept so existing configs and
@@ -76,6 +82,12 @@ export interface OpencodeBridgeConfig {
   turnTimeoutMinutes?: number;
   /** Per-account rolling request ceiling on the native bridge (default 300/h). */
   bridgeMaxRequestsPerHour?: number;
+  /** Optional restriction of which codex accounts (codex-accounts.ts ids) serve
+   *  opencode/openai/* runs, in preference order (read from bridge.openaiAccounts).
+   *  Absent = the normal codex pool pick. Independent of `enabled` (that flag
+   *  only gates the Anthropic bridge); opencode/openai auth keys off the codex
+   *  accounts pool, not this file — see opencode-openai-auth.ts. */
+  openaiAccounts?: string[];
 }
 
 function stringArray(v: unknown): string[] | undefined {
@@ -112,6 +124,7 @@ export function normalizeOpencodeConfig(raw: unknown): OpencodeBridgeConfig | nu
       typeof r.bridgeMaxRequestsPerHour === "number" && r.bridgeMaxRequestsPerHour > 0
         ? r.bridgeMaxRequestsPerHour
         : undefined,
+    openaiAccounts: stringArray(bridge?.openaiAccounts),
   };
 }
 
