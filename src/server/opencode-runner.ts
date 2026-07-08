@@ -35,9 +35,20 @@
  *    money-moving tools). The instructions note tells the agent to propose
  *    such actions for a human instead.
  *  - Automations (and interactive resumes of automation sessions) are HARD
- *    GATED off this engine: a run with a non-interactive journal kind or any
- *    `deniedTools` gets an immediate error event and nothing is started.
- *    Automation least-privilege therefore never depends on OpenCode config.
+ *    GATED off this engine, deny-by-default: only runs with an explicit
+ *    interactive journal kind (prompt/goal/create + resume/rerun/fallback
+ *    derivatives) or the explicit `allowOpencode` trusted-caller marker
+ *    (verify scripts) pass; any `deniedTools` or unknown/absent kind gets an
+ *    immediate error event and nothing is started. Automation least-privilege
+ *    therefore never depends on OpenCode config.
+ *
+ * Failure containment: each run watches `proc.exited` for its server, so a
+ * mid-turn `opencode serve` death emits a clean error event (instead of
+ * wedging the drain loop on `wake` forever and holding the session busy),
+ * removes the dead server from the pool, and lets normal cleanup run. Each
+ * turn also carries a hard wall-clock deadline (default 60 min,
+ * `turnTimeoutMinutes` in ~/.backstage-opencode.json) that aborts the turn
+ * with a clear error.
  *
  * Steering/interrupt: OpenCode has no mid-turn steer API, so steers fall back
  * to the caller's queue (same as exec-transport Codex); cancel maps to
@@ -71,6 +82,7 @@ import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { isCodexUsageLimitError } from "./codex-runner";
 import { ensureAnthropicBridge } from "./anthropic-bridge";
+import { opencodeTurnTimeoutMs } from "./opencode-config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
@@ -101,15 +113,22 @@ export function parseOpencodeModel(
 
 // ── Automation hard gate ─────────────────────────────────────────────────────
 
-/** Journal kinds minted by trusted interactive paths (backstage.ts). Everything
- *  else — automation, action, github-…, security-scan, and their -resume/
- *  -rerun/-fallback derivatives — is fail-closed off this engine. */
-const INTERACTIVE_KINDS = new Set(["", "prompt", "goal", "create"]);
+/** Journal kinds minted by trusted interactive paths (backstage.ts:
+ *  runSessionPromptInner "prompt", goal wakes "goal", both create paths
+ *  "create"; host/sandbox run specs default `journalKind || "prompt"`).
+ *  Everything else — automation, action, github-…, security-scan, their
+ *  -resume/-rerun/-fallback derivatives, AND runs with no journal kind at
+ *  all — is fail-closed off this engine (deny by default). */
+const INTERACTIVE_KINDS = new Set(["prompt", "goal", "create"]);
 
 /** Non-null = the reason this run may not use the opencode engine. */
 export function opencodeGateReason(opts: {
   deniedTools?: Record<string, string>;
   journal?: { kind?: string };
+  /** Explicit trusted-caller marker (scripts/verify-opencode.ts) for direct
+   *  runOpencode calls that deliberately pass no journal. Never set this from
+   *  request/automation data — the deniedTools check still applies. */
+  allowOpencode?: boolean;
 }): string | null {
   if (Object.keys(opts.deniedTools || {}).length > 0) {
     return (
@@ -117,9 +136,13 @@ export function opencodeGateReason(opts: {
       "the automation least-privilege set). Use a claude-* or gpt-* model instead."
     );
   }
+  if (opts.allowOpencode === true) return null;
   const base = (opts.journal?.kind || "").replace(/(-(resume|rerun|fallback))+$/, "");
   if (!INTERACTIVE_KINDS.has(base)) {
-    return `The opencode engine is not available to "${base}" runs — interactive sessions only.`;
+    return base
+      ? `The opencode engine is not available to "${base}" runs — interactive sessions only.`
+      : "The opencode engine requires an explicit interactive run kind (journal.kind) — " +
+          "deny by default; interactive sessions only.";
   }
   return null;
 }
@@ -469,7 +492,7 @@ function imageParts(images: ImageInput[] | undefined): Array<Record<string, unkn
 }
 
 export async function* runOpencode(
-  opts: RunAgentOpts,
+  opts: RunAgentOpts & { allowOpencode?: boolean },
   model: string
 ): AsyncGenerator<StreamEvent> {
   const { prompt, cwd, mode, mcpServers, confirmTools, journal, user, author } = opts;
@@ -527,6 +550,11 @@ export async function* runOpencode(
 
   let entry: OpencodeServerEntry | undefined;
   let rpcTokenRegistered = false;
+  // Set by the proc-exit watcher / turn deadline; checked after the drain loop
+  // so both failure modes surface as one clean error event.
+  let runFailure: string | undefined;
+  let runEnded = false;
+  let failRun: () => void = () => {};
 
   try {
     // Bridge for Anthropic models — throws a clear config error when disabled.
@@ -591,6 +619,19 @@ export async function* runOpencode(
     entry.rpcToken = rpcToken;
     entry.activeRuns++;
     entry.lastUsed = Date.now();
+
+    // Watch the server process for the duration of this run: a mid-turn death
+    // would otherwise leave the SSE pump reconnecting forever and the drain
+    // loop blocked on `wake` — holding the session busy indefinitely.
+    {
+      const watched = entry;
+      void watched.proc.exited.then((code) => {
+        if (runEnded) return;
+        runFailure ??= `opencode serve exited mid-run (code ${code}) — the turn was lost; send the prompt again to restart on a fresh server`;
+        if (servers.get(serverKey) === watched) killServer(serverKey, watched, "died mid-run");
+        failRun();
+      });
+    }
     if (hasInProcess && journal?.bksSessionId) {
       registerRunToken(rpcToken, { sessionId: journal.bksSessionId, user });
       rpcTokenRegistered = true;
@@ -670,6 +711,7 @@ export async function* runOpencode(
       idle = true;
       wake?.();
     };
+    failRun = signalDone;
 
     const handleEvent = async (ev: any) => {
       const p = ev?.properties;
@@ -786,6 +828,19 @@ export async function* runOpencode(
     }
     const sentAt = Date.now();
 
+    // Hard per-turn wall-clock deadline (default 60 min, turnTimeoutMinutes in
+    // ~/.backstage-opencode.json): a turn that never goes idle — model loop,
+    // server wedge the exit watcher can't see — ends with a clear error
+    // instead of holding the session busy forever.
+    const turnTimeout = opencodeTurnTimeoutMs();
+    const turnDeadline = setTimeout(() => {
+      runFailure ??=
+        `opencode turn exceeded the ${Math.round(turnTimeout / 60_000)}-minute wall-clock limit ` +
+        "(turnTimeoutMinutes in ~/.backstage-opencode.json) — aborting the turn";
+      void client.session.abort({ path: { id: ocSessionId } }).catch(() => {});
+      signalDone();
+    }, turnTimeout);
+
     const statusPoll = setInterval(() => {
       void (async () => {
         try {
@@ -817,8 +872,18 @@ export async function* runOpencode(
       while (pending.length) yield pending.shift()!;
     } finally {
       clearInterval(statusPoll);
+      clearTimeout(turnDeadline);
       pumpStopped = true;
       void pump.catch(() => {});
+    }
+
+    // Server died or the turn deadline hit — surface the clean error (the
+    // final-message fetch below would just throw a raw fetch error on a dead
+    // server) and let the finally cleanup release the session.
+    if (runFailure) {
+      turnEvent({ direction: "out", kind: "error", error: runFailure });
+      yield { type: "error", content: runFailure, provider: PROVIDER, model };
+      return;
     }
 
     // Turn finished — read the authoritative final assistant message.
@@ -900,6 +965,7 @@ export async function* runOpencode(
       };
     }
   } finally {
+    runEnded = true;
     if (abortController.signal.aborted) {
       turnEvent({ direction: "out", kind: "cancelled" });
     }

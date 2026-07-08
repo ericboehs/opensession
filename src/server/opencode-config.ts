@@ -17,9 +17,13 @@
  *         // Anthropic bills third-party-app traffic on subscription tokens to
  *         // extra-usage credits and 400s without them (see anthropic-bridge.ts).
  *     "port": 3456,                                        // loopback bridge port
- *     "pickerModels": ["opencode/anthropic/claude-sonnet-5"] // optional: surface
+ *     "pickerModels": ["opencode/anthropic/claude-sonnet-5"], // optional: surface
  *         // these ids in the UI model picker. Absent = opencode models are
  *         // type-in only (still routable, just not advertised).
+ *     "turnTimeoutMinutes": 60,      // optional: hard wall-clock cap per opencode
+ *         // turn (opencode-runner aborts past it). Default 60.
+ *     "bridgeMaxRequestsPerHour": 300 // optional: per-account rolling request
+ *         // ceiling on the Anthropic bridge (429 past it). Default 300.
  *   }
  *
  * Read fresh per call (tiny file) so edits apply without a restart — except
@@ -44,6 +48,10 @@ export interface OpencodeBridgeConfig {
   port?: number;
   /** Model ids (opencode/<provider>/<model>) to show in the UI picker. */
   pickerModels?: string[];
+  /** Hard wall-clock cap per opencode turn, minutes (default 60). */
+  turnTimeoutMinutes?: number;
+  /** Per-account rolling request ceiling on the Anthropic bridge (default 300/h). */
+  bridgeMaxRequestsPerHour?: number;
 }
 
 export function readOpencodeBridgeConfig(): OpencodeBridgeConfig | null {
@@ -61,6 +69,14 @@ export function readOpencodeBridgeConfig(): OpencodeBridgeConfig | null {
       pickerModels: Array.isArray(raw.pickerModels)
         ? raw.pickerModels.filter((x: unknown) => typeof x === "string" && x)
         : undefined,
+      turnTimeoutMinutes:
+        typeof raw.turnTimeoutMinutes === "number" && raw.turnTimeoutMinutes > 0
+          ? raw.turnTimeoutMinutes
+          : undefined,
+      bridgeMaxRequestsPerHour:
+        typeof raw.bridgeMaxRequestsPerHour === "number" && raw.bridgeMaxRequestsPerHour > 0
+          ? raw.bridgeMaxRequestsPerHour
+          : undefined,
     };
   } catch (e) {
     console.warn(`[opencode-config] Failed to parse ${path}:`, e);
@@ -77,6 +93,24 @@ export const DEFAULT_BRIDGE_PORT = 3456;
 
 export function bridgePort(): number {
   return readOpencodeBridgeConfig()?.port || DEFAULT_BRIDGE_PORT;
+}
+
+export const DEFAULT_TURN_TIMEOUT_MINUTES = 60;
+
+/** Per-turn wall-clock cap for the opencode runner, in ms. Applies regardless
+ *  of `enabled` (that flag only gates the Anthropic bridge). */
+export function opencodeTurnTimeoutMs(): number {
+  const mins = readOpencodeBridgeConfig()?.turnTimeoutMinutes || DEFAULT_TURN_TIMEOUT_MINUTES;
+  return mins * 60_000;
+}
+
+export const DEFAULT_BRIDGE_MAX_REQUESTS_PER_HOUR = 300;
+
+/** Rolling per-account request ceiling for the Anthropic bridge. */
+export function bridgeMaxRequestsPerHour(): number {
+  return (
+    readOpencodeBridgeConfig()?.bridgeMaxRequestsPerHour || DEFAULT_BRIDGE_MAX_REQUESTS_PER_HOUR
+  );
 }
 
 /** Opencode model ids to surface in the UI picker (empty when disabled). */

@@ -31,7 +31,19 @@
  *  - Binds 127.0.0.1 only, and every request must present the per-boot bridge
  *    key (x-api-key) that only the opencode-runner hands out — so another
  *    local process can't quietly burn subscription capacity through it.
- *  - Every request lands in the audit log (audit.ts) with session attribution.
+ *  - Every request lands in the audit log (audit.ts): accepted ones with
+ *    session attribution (`anthropic_bridge_request` in/out), rejected ones
+ *    (bad key, malformed body, size cap, rate limit, no usable account) as
+ *    `anthropic_bridge_rejected` with status + reason — never the presented
+ *    key — so local probing/hammering always leaves a trail.
+ *  - Request hygiene: bodies over 10MB are refused (413), and a per-boot
+ *    rolling per-account counter caps requests/hour (`bridgeMaxRequestsPerHour`
+ *    in ~/.backstage-opencode.json, default 300 → 429 past it; estimated
+ *    tokens are tracked alongside for the audit trail). The ultimate backstop
+ *    is Anthropic's own per-account extra-usage credit ceiling: bridge traffic
+ *    bills to the designated account's extra-usage credits (see below), so
+ *    even a runaway client can never spend past the credits that account has
+ *    enabled at claude.ai/settings/usage.
  *
  * Billing reality (verified live, 2026-07-08): Anthropic's server classifies
  * these requests as third-party-app traffic (it fingerprints the opencode
@@ -59,7 +71,7 @@ import { z } from "zod";
 import { audit, summarizeText } from "./audit";
 import { getAccountById, getUsableAccountById, type ClaudeAccount } from "./claude-accounts";
 import { CLAUDE_CODE_BIN } from "./claude-runner";
-import { bridgePort, readOpencodeBridgeConfig } from "./opencode-config";
+import { bridgePort, bridgeMaxRequestsPerHour, readOpencodeBridgeConfig } from "./opencode-config";
 import { mkdirSync } from "fs";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -243,6 +255,59 @@ function anthropicError(status: number, type: string, message: string): Response
   return Response.json({ type: "error", error: { type, message } }, { status });
 }
 
+/** Audit a rejected request (module doc: rejections leave a trail too). Never
+ *  include the presented key or other secrets in `fields`. */
+function auditReject(
+  requestId: string,
+  status: number,
+  reason: string,
+  fields: Record<string, unknown> = {}
+): void {
+  audit({
+    msg: "anthropic_bridge_rejected",
+    request_id: requestId,
+    status,
+    reason,
+    ...fields,
+  });
+}
+
+// ── Per-boot rolling rate limit (per designated account) ─────────────────────
+
+const BRIDGE_MAX_BODY_BYTES = 10 * 1024 * 1024;
+const RATE_WINDOW_MS = 60 * 60 * 1000;
+
+interface BridgeUsageEvent {
+  at: number;
+  estTokens: number;
+}
+
+// account id → request events in the trailing hour. Per-boot (parked on
+// globalThis for hot reloads); the extra-usage credit ceiling (module doc) is
+// the durable backstop.
+const bridgeUsage: Map<string, BridgeUsageEvent[]> = (g.__anthropicBridgeUsage ??= new Map());
+
+/** Admit-or-reject under the rolling per-account ceiling; admits record their
+ *  estimated input tokens so the audit trail can track spend pressure. */
+export function admitBridgeRequest(
+  accountId: string,
+  estTokens: number,
+  now = Date.now()
+): { allowed: boolean; requests: number; tokens: number; limit: number } {
+  const cutoff = now - RATE_WINDOW_MS;
+  const events = (bridgeUsage.get(accountId) || []).filter((e) => e.at > cutoff);
+  const limit = bridgeMaxRequestsPerHour();
+  const allowed = events.length < limit;
+  if (allowed) events.push({ at: now, estTokens });
+  bridgeUsage.set(accountId, events);
+  return {
+    allowed,
+    requests: events.length,
+    tokens: events.reduce((sum, e) => sum + e.estTokens, 0),
+    limit,
+  };
+}
+
 /** Session key: the reference plugin sends x-opencode-session; otherwise
  *  fingerprint the first message so retries of the same conversation reuse
  *  the SDK session. */
@@ -256,22 +321,50 @@ function sessionKeyFor(req: Request, messages: AnthropicMessage[]): string {
 async function handleBridgeRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname === "/health") return Response.json({ ok: true });
+  const requestId = crypto.randomUUID();
+  const ocSessionHeader = req.headers.get("x-opencode-session") || undefined;
   if (req.method !== "POST" || url.pathname !== "/v1/messages") {
     return anthropicError(404, "not_found_error", `no such endpoint: ${req.method} ${url.pathname}`);
   }
   const presented = req.headers.get("x-api-key") || (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   if (presented !== bridgeKey()) {
+    auditReject(requestId, 401, "invalid_bridge_key", {
+      key_presented: !!presented,
+      opencode_session: ocSessionHeader,
+    });
     return anthropicError(401, "authentication_error", "invalid bridge key");
   }
 
   let body: any;
+  let rawBody: string;
   try {
-    body = await req.json();
+    const declared = Number(req.headers.get("content-length") || 0);
+    if (declared > BRIDGE_MAX_BODY_BYTES) throw new RangeError("too large");
+    rawBody = await req.text();
+    if (rawBody.length > BRIDGE_MAX_BODY_BYTES) throw new RangeError("too large");
+  } catch (e) {
+    const tooLarge = e instanceof RangeError;
+    auditReject(requestId, tooLarge ? 413 : 400, tooLarge ? "body_too_large" : "unreadable_body", {
+      opencode_session: ocSessionHeader,
+    });
+    return tooLarge
+      ? anthropicError(413, "request_too_large", `request body exceeds ${BRIDGE_MAX_BODY_BYTES} bytes`)
+      : anthropicError(400, "invalid_request_error", "unreadable request body");
+  }
+  try {
+    body = JSON.parse(rawBody);
   } catch {
+    auditReject(requestId, 400, "invalid_json", { opencode_session: ocSessionHeader });
     return anthropicError(400, "invalid_request_error", "invalid JSON body");
   }
   const messages: AnthropicMessage[] = Array.isArray(body?.messages) ? body.messages : [];
-  if (!messages.length) return anthropicError(400, "invalid_request_error", "messages[] is required");
+  if (!messages.length) {
+    auditReject(requestId, 400, "empty_messages", {
+      opencode_session: ocSessionHeader,
+      model: typeof body?.model === "string" ? body.model : undefined,
+    });
+    return anthropicError(400, "invalid_request_error", "messages[] is required");
+  }
   const model: string = typeof body?.model === "string" ? body.model : "";
   const wantsStream = body?.stream === true;
   const requestTools: Array<{ name: string; description?: string; input_schema?: any }> =
@@ -284,7 +377,14 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
         : "";
 
   const account = pickBridgeAccount(model);
-  if ("error" in account) return anthropicError(529, "overloaded_error", `bridge: ${account.error}`);
+  if ("error" in account) {
+    auditReject(requestId, 529, "no_usable_account", {
+      opencode_session: ocSessionHeader,
+      model,
+      detail: account.error,
+    });
+    return anthropicError(529, "overloaded_error", `bridge: ${account.error}`);
+  }
 
   const key = sessionKeyFor(req, messages);
   const stored = sessions.get(key);
@@ -295,6 +395,26 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
   const prompt = isContinuation
     ? replayConversation(messages.slice(stored.messageCount))
     : replayConversation(messages);
+
+  // Rolling per-account ceiling (see module doc). Counted at admission — a
+  // request that later fails still spent an SDK attempt.
+  const estTokens = Math.ceil(rawBody.length / 4);
+  const rate = admitBridgeRequest(account.id, estTokens);
+  if (!rate.allowed) {
+    auditReject(requestId, 429, "rate_limited", {
+      opencode_session: ocSessionHeader,
+      model,
+      account: account.name,
+      requests_last_hour: rate.requests,
+      est_tokens_last_hour: rate.tokens,
+      limit_per_hour: rate.limit,
+    });
+    return anthropicError(
+      429,
+      "rate_limit_error",
+      `bridge: account "${account.name}" exceeded ${rate.limit} requests/hour (bridgeMaxRequestsPerHour)`
+    );
+  }
 
   const captured: CapturedToolUse[] = [];
   const passthroughTools = requestTools.map((t) =>
@@ -308,12 +428,11 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
       : {};
 
   const started = Date.now();
-  const requestId = crypto.randomUUID();
   const auditBase = {
     msg: "anthropic_bridge_request",
     request_id: requestId,
     session_key: key,
-    opencode_session: req.headers.get("x-opencode-session") || undefined,
+    opencode_session: ocSessionHeader,
     model,
     stream: wantsStream,
     tools: requestTools.length,
