@@ -56,26 +56,16 @@ export function unregisterRunToken(token: string | undefined): void {
 }
 
 /** Constant-time string compare (length mismatch short-circuits — the length
- *  of a random UUID token is not a secret). */
+ *  of a random UUID token is not a secret). Used by the WS upgrade checks in
+ *  src/server/run-ws.ts. NOTE: the tokens registry above is deliberately NOT
+ *  consulted by any network-reachable auth check — it stays local to the unix
+ *  RPC socket (frame-level context lookup); the WS routes authenticate against
+ *  their own per-launch wsToken registry. */
 export function timingSafeEqStr(a: string, b: string): boolean {
   const ba = Buffer.from(a);
   const bb = Buffer.from(b);
   if (ba.length !== bb.length) return false;
   return timingSafeEqual(ba, bb);
-}
-
-/**
- * Is `token` a registered run token? Constant-time over every entry so the
- * WS upgrade check (src/server/run-ws.ts) can't be timing-probed. The map is
- * small (one token per live proxied run).
- */
-export function hasRunTokenTimingSafe(token: string): boolean {
-  if (!token) return false;
-  let found = false;
-  for (const k of tokens.keys()) {
-    if (timingSafeEqStr(k, token)) found = true;
-  }
-  return found;
 }
 
 /**

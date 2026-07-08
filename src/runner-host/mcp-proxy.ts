@@ -8,11 +8,15 @@
  * consume external stdio MCP servers.
  *
  * Env (set in the injected MCP config by codex-runner.ts / host.ts):
- *   BKS_RPC_SOCKET — backstage's run-rpc unix socket path, OR
- *   BKS_RPC_WS_URL — backstage's /backstage/rpc-ws WebSocket route (remote
- *                    sandboxes, where a unix socket can't cross the boundary)
- *   BKS_RPC_TOKEN  — per-run bearer minted at spawn (maps to session + user)
- *   BKS_MCP_SERVER — which interactive server to proxy (e.g. michael-sessions)
+ *   BKS_RPC_SOCKET  — backstage's run-rpc unix socket path, OR
+ *   BKS_RPC_WS_URL  — backstage's /backstage/rpc-ws WebSocket route (remote
+ *                     sandboxes, where a unix socket can't cross the boundary)
+ *   BKS_RPC_WS_HOST — WS mode: this run's hostId (the rpc-ws upgrade is
+ *                     authenticated per ws-transport run, not per rpc token)
+ *   BKS_RPC_WS_AUTH — WS mode: the run's wsToken, the upgrade bearer
+ *   BKS_RPC_TOKEN   — per-run bearer sent IN each frame (maps to session +
+ *                     user via dispatchRunRpc; also the unix-socket bearer)
+ *   BKS_MCP_SERVER  — which interactive server to proxy (e.g. michael-sessions)
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -24,14 +28,21 @@ import {
 
 const SOCK = process.env.BKS_RPC_SOCKET || "";
 const WS_URL = process.env.BKS_RPC_WS_URL || "";
+const WS_HOST = process.env.BKS_RPC_WS_HOST || "";
+const WS_AUTH = process.env.BKS_RPC_WS_AUTH || "";
 const TOKEN = process.env.BKS_RPC_TOKEN || "";
 const SERVER_NAME = process.env.BKS_MCP_SERVER || "";
-if ((!SOCK && !WS_URL) || !TOKEN || !SERVER_NAME) {
+if ((!SOCK && !WS_URL) || !TOKEN || !SERVER_NAME || (WS_URL && (!WS_HOST || !WS_AUTH))) {
   console.error(
-    "mcp-proxy: BKS_RPC_SOCKET or BKS_RPC_WS_URL, plus BKS_RPC_TOKEN and BKS_MCP_SERVER are required",
+    "mcp-proxy: BKS_RPC_SOCKET or BKS_RPC_WS_URL (+ BKS_RPC_WS_HOST/BKS_RPC_WS_AUTH), plus BKS_RPC_TOKEN and BKS_MCP_SERVER are required",
   );
   process.exit(2);
 }
+/** The rpc-ws upgrade authenticates per ws-transport run: hostId in the URL,
+ *  wsToken as the bearer (src/server/run-ws.ts). Frames still carry TOKEN. */
+const WS_DIAL_URL = WS_URL
+  ? `${WS_URL}${WS_URL.includes("?") ? "&" : "?"}host=${encodeURIComponent(WS_HOST)}`
+  : "";
 
 /** An error the backstage side answered with — retrying won't change it. */
 class RpcError extends Error {}
@@ -57,8 +68,8 @@ function ensureWs(): Promise<WebSocket> {
     let sock: WebSocket;
     try {
       // Bun extension: custom headers on the client handshake.
-      sock = new WebSocket(WS_URL, {
-        headers: { authorization: `Bearer ${TOKEN}` },
+      sock = new WebSocket(WS_DIAL_URL, {
+        headers: { authorization: `Bearer ${WS_AUTH}` },
       } as unknown as string[]);
     } catch (e) {
       wsDialing = null;

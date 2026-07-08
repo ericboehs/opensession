@@ -16,16 +16,23 @@
  *    and dedupes by it, so a reconnecting host replays the disconnect window
  *    without double-applying (see ws-buffer.ts; the unix-socket path stays
  *    live-only).
- *  - `/backstage/rpc-ws` — the michael-* MCP proxy channel. mcp-proxy.ts
- *    (BKS_RPC_WS_URL) dials it with its existing per-run rpc token; each
- *    request frame `{id, path, token, server, tool?, args?}` goes through the
- *    same dispatchRunRpc core as the unix RPC socket and answers with
+ *  - `/backstage/rpc-ws?host=<hostId>` — the michael-* MCP proxy channel.
+ *    mcp-proxy.ts (BKS_RPC_WS_URL) dials it; each request frame
+ *    `{id, path, token, server, tool?, args?}` goes through the same
+ *    dispatchRunRpc core as the unix RPC socket and answers with
  *    `{id, status, body}`.
  *
  * Auth: per-run bearer tokens, validated BEFORE the upgrade with a
- * constant-time compare. run-ws tokens are minted at launch (spec.wsToken,
- * registered by the provider's launcher keyed by hostId); rpc-ws reuses the
- * run-rpc token registry. `{t:"ping"}` keepalive frames are answered here
+ * constant-time compare — and BOTH routes validate against the WS token
+ * registry only (spec.wsToken, minted at launch and registered by the
+ * provider's launcher keyed by hostId). rpc-ws used to accept ANY registered
+ * run-rpc token, which exposed the interactive-MCP RPC to the whole tailnet
+ * for every proxied run — systemd hosts, codex, opencode — even on a
+ * sandbox-less deployment where nothing should dial back at all. Now the
+ * upgrade requires the run's hostId + wsToken (only ws-transport launches
+ * register one; the global run-rpc token set stays unix-socket-local), while
+ * each FRAME still carries the rpc token that dispatchRunRpc resolves to the
+ * run's {sessionId, user}. `{t:"ping"}` keepalive frames are answered here
  * with `{t:"pong"}` so quiet connections survive idle timers.
  *
  * Wired into the EXISTING Bun.serve in backstage.ts (fetch route + early
@@ -36,11 +43,7 @@
  * real restart (routes don't hot-apply at all — CLAUDE.md).
  */
 
-import {
-  dispatchRunRpc,
-  hasRunTokenTimingSafe,
-  timingSafeEqStr,
-} from "./run-rpc";
+import { dispatchRunRpc, timingSafeEqStr } from "./run-rpc";
 import type { HostConnection, HostConnectionHandlers, HostConnector } from "./host-client";
 
 const g = globalThis as any;
@@ -157,8 +160,17 @@ function handleUpgrade(
   path: string,
 ): Response | undefined {
   if (path === "/backstage/rpc-ws") {
-    const token = bearerFrom(req);
-    if (!hasRunTokenTimingSafe(token)) {
+    // WS-transport runs ONLY: authenticate with the run's hostId + wsToken
+    // (the same registry as the run-ws route). A plain run-rpc token — which
+    // every proxied run has, sandboxed or not — is deliberately NOT accepted
+    // here; that registry stays local to the unix RPC socket.
+    let hostId = "";
+    try {
+      hostId = new URL(req.url).searchParams.get("host") || "";
+    } catch {}
+    const expected = hostId ? wsTokens.get(hostId) : undefined;
+    const presented = bearerFrom(req);
+    if (!expected || !presented || !timingSafeEqStr(expected, presented)) {
       return new Response("unauthorized", { status: 403 });
     }
     const data: SandboxWsData = { sandboxWs: "rpc" };

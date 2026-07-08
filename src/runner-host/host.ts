@@ -359,9 +359,16 @@ function proxyMcpConfigs(): Record<string, unknown> | undefined {
   if (!names.length || !spec.rpcToken) return undefined;
   // WS transport: the proxies dial backstage's /backstage/rpc-ws route instead
   // of the unix RPC socket (which isn't shareable across a remote boundary).
+  // The upgrade there authenticates with THIS run's hostId + wsToken (only
+  // ws-transport launches register one server-side); the per-frame rpc token
+  // stays what dispatchRunRpc resolves to the run's session/user.
   const rpcWsUrl = process.env.BKS_RPC_WS_URL || "";
   const transportEnv = rpcWsUrl
-    ? { BKS_RPC_WS_URL: rpcWsUrl }
+    ? {
+        BKS_RPC_WS_URL: rpcWsUrl,
+        BKS_RPC_WS_HOST: spec.hostId,
+        BKS_RPC_WS_AUTH: RUN_WS_TOKEN,
+      }
     : { BKS_RPC_SOCKET: rpcSocketPath(BACKSTAGE_CHATS_DIR) };
   const out: Record<string, unknown> = {};
   for (const name of names) {

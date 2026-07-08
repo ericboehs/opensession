@@ -10,6 +10,11 @@
 
 import { afterAll, describe, expect, test } from "bun:test";
 import * as runWs from "./run-ws";
+import {
+  registerRunToken,
+  unregisterRunToken,
+  registerInteractiveMcpBuilder,
+} from "./run-rpc";
 import { WsFrameBuffer, replayStartFor } from "../runner-host/ws-buffer";
 
 // ── scratch server (same wiring as backstage.ts / the verify suites) ─────────
@@ -264,5 +269,80 @@ describe("run-ws upgrade auth", () => {
     });
     expect(unknownHost.status).toBe(403);
     runWs.unregisterRunWsHost("rh-zz-auth");
+  });
+
+  test("a registered run-rpc token does NOT open the run-ws route", async () => {
+    const rpcToken = crypto.randomUUID();
+    registerRunToken(rpcToken, { sessionId: "bks-zz-rpc" });
+    runWs.registerRunWsHost("rh-zz-auth2", "ws-token-2");
+    const res = await fetch(`http://${BASE}/backstage/run-ws/rh-zz-auth2`, {
+      headers: { authorization: `Bearer ${rpcToken}` },
+    });
+    expect(res.status).toBe(403);
+    unregisterRunToken(rpcToken);
+    runWs.unregisterRunWsHost("rh-zz-auth2");
+  });
+});
+
+describe("rpc-ws upgrade auth (WS-transport opt-in only)", () => {
+  test("a normal run's rpcToken is rejected — only ws-transport tokens open rpc-ws", async () => {
+    // Every proxied run (systemd hosts, codex, opencode) registers one of
+    // these; it must NOT be a network credential.
+    const rpcToken = crypto.randomUUID();
+    registerRunToken(rpcToken, { sessionId: "bks-zz-rpcws" });
+    const asBearer = await fetch(`http://${BASE}/backstage/rpc-ws`, {
+      headers: { authorization: `Bearer ${rpcToken}` },
+    });
+    expect(asBearer.status).toBe(403);
+    // Even naming a live ws-transport host doesn't make an rpc token work.
+    runWs.registerRunWsHost("rh-zz-rpcws", "ws-token-3");
+    const withHost = await fetch(`http://${BASE}/backstage/rpc-ws?host=rh-zz-rpcws`, {
+      headers: { authorization: `Bearer ${rpcToken}` },
+    });
+    expect(withHost.status).toBe(403);
+    // And a valid wsToken presented for the WRONG host is refused.
+    const wrongHost = await fetch(`http://${BASE}/backstage/rpc-ws?host=rh-zz-nope`, {
+      headers: { authorization: "Bearer ws-token-3" },
+    });
+    expect(wrongHost.status).toBe(403);
+    const noHost = await fetch(`http://${BASE}/backstage/rpc-ws`, {
+      headers: { authorization: "Bearer ws-token-3" },
+    });
+    expect(noHost.status).toBe(403);
+    unregisterRunToken(rpcToken);
+    runWs.unregisterRunWsHost("rh-zz-rpcws");
+  });
+
+  test("a ws-transport run's hostId+wsToken opens rpc-ws; frames auth per rpc token", async () => {
+    const hostId = "rh-zz-rpcok";
+    const wsToken = crypto.randomUUID();
+    const rpcToken = crypto.randomUUID();
+    runWs.registerRunWsHost(hostId, wsToken);
+    registerRunToken(rpcToken, { sessionId: "bks-zz-rpcok" });
+    registerInteractiveMcpBuilder(() => ({})); // no servers — 404 proves dispatch ran
+
+    const inbox: any[] = [];
+    const sock = new WebSocket(`ws://${BASE}/backstage/rpc-ws?host=${hostId}`, {
+      headers: { authorization: `Bearer ${wsToken}` },
+    } as unknown as string[]);
+    let open = false;
+    sock.onopen = () => {
+      open = true;
+    };
+    sock.onmessage = (ev) => inbox.push(JSON.parse(String(ev.data)));
+    await until(() => open);
+
+    // Valid frame token → dispatch runs (404: no such server for this run).
+    sock.send(JSON.stringify({ id: "f1", path: "/mcp/list", token: rpcToken, server: "nope" }));
+    const ok = await until(() => inbox.find((m) => m.id === "f1"));
+    expect(ok.status).toBe(404);
+    // Unknown frame token → 403 from dispatchRunRpc even on an authed socket.
+    sock.send(JSON.stringify({ id: "f2", path: "/mcp/list", token: "bogus", server: "nope" }));
+    const bad = await until(() => inbox.find((m) => m.id === "f2"));
+    expect(bad.status).toBe(403);
+
+    sock.close();
+    unregisterRunToken(rpcToken);
+    runWs.unregisterRunWsHost(hostId);
   });
 });
