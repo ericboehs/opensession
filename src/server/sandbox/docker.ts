@@ -126,6 +126,7 @@ import { writeJsonAtomic } from "../shared/atomic-write";
 import { HostHandle, type HandleCallbacks, type HostLauncher } from "../host-client";
 import { registerRunWsHost, unregisterRunWsHost, runWsConnector } from "../run-ws";
 import { getTranscriptPath } from "../sessions";
+import { dropSandboxPreviewRoutes, tellaLocalSkillDir } from "../preview";
 import { REPOS, getRepo, worktreePathFor, type Repo } from "../worktree";
 import { LocalProvider } from "./local";
 import {
@@ -163,6 +164,14 @@ const DEFAULT_CPUS = 4;
 const DEFAULT_MEMORY = "8g";
 const DEFAULT_IDLE_STOP_MINUTES = 30;
 const SWEEP_INTERVAL_MS = 5 * 60_000;
+/** Pre-published preview range: every sandbox container publishes these
+ *  container ports to random loopback host ports at create, so a dev server
+ *  started AFTER creation (ports are create-time-only in docker) still has a
+ *  routable port — startSandboxPreview allocates from this set. Config
+ *  `previewPorts` overrides; exhaustion = widen it + recreate the container. */
+const DEFAULT_PREVIEW_PORTS = [3300, 3301, 3302];
+/** Cap for a `.backstage/setup.sh` lifecycle run (one-shot, per workspace). */
+const SETUP_TIMEOUT_MS = 10 * 60_000;
 
 /** Provider-owned state, one file per sandbox — lets get() reattach (or fully
  *  recreate a removed container with identical mounts) after any restart. */
@@ -194,6 +203,12 @@ interface DockerSandboxState {
    *  flip recreates the container on the next ensure (mounts are create-time).
    *  Absent (pre-Phase-3 state files) = "socket". */
   transport?: SandboxTransport;
+  /** Whether the `.backstage/setup.sh` lifecycle hook already ran (or was
+   *  skipped — snapshot restore / script absent). One-shot per sandbox. */
+  setupRan?: boolean;
+  /** How the current container came to exist: fresh create vs snapshot
+   *  restore. Lifecycle scripts receive it as BACKSTAGE_BOOT_MODE. */
+  bootMode?: "fresh" | "snapshot-restore";
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
@@ -599,12 +614,19 @@ async function createContainer(
     process.env.BACKSTAGE_CLAUDE_ACCOUNTS_PATH || `${HOME}/.backstage-claude-accounts.json`,
     "claude account pool",
   );
+  // The tella-local skill (ensure-up.sh + CDP helpers) at its identical host
+  // path, read-only — the Preview button's default bring-up for tella-fusion
+  // must work inside sandboxes (both bind and volume mode). Mounted over the
+  // ~/.claude volume like the transcript dir (more-specific mounts win).
+  roIfExists(tellaLocalSkillDir(), "tella-local skill");
 
-  // Preview ports: publish each configured container port on a random
-  // LOOPBACK host port (Caddy fronts them with the tailnet HTTPS origin —
-  // see preview.ts; nothing is exposed off-host). Create-time only: adding
-  // ports to the config affects new/recreated containers.
-  const portArgs = (cfg.previewPorts || []).flatMap((p) => ["-p", `127.0.0.1::${p}`]);
+  // Preview ports: publish each container port on a random LOOPBACK host
+  // port (Caddy fronts them with the tailnet HTTPS origin — see preview.ts;
+  // nothing is exposed off-host). Create-time only, hence the pre-published
+  // DEFAULT range: a dev server started later still lands on a routable port
+  // (startSandboxPreview allocates from this set).
+  const portArgs = (cfg.previewPorts?.length ? cfg.previewPorts : DEFAULT_PREVIEW_PORTS)
+    .flatMap((p) => ["-p", `127.0.0.1::${p}`]);
 
   const r = await docker([
     "create",
@@ -691,6 +713,50 @@ async function setupContainer(name: string, cwd: string): Promise<void> {
       `sandbox ${name}: git status failed inside the container (worktree/.git mounts broken?): ${git.stderr.trim().slice(0, 300)}`,
     );
   }
+}
+
+/**
+ * Repo-local lifecycle hook `.backstage/setup.sh` (the background-agents
+ * convention, kept minimal): run ONCE per workspace materialization, inside
+ * the container, cwd = the workspace — the place for repo-specific dep
+ * installs / codegen a sandboxed dev server needs. Skipped when the container
+ * was restored from a snapshot (its container layer already carries the
+ * setup's effects — that's what snapshots capture). Failure logs loudly but
+ * never blocks the session, and is NOT retried (one-shot semantics; the log
+ * lives in the session's bind-mounted run dir). `.backstage/start.sh` is the
+ * sibling hook — preview.ts runs it as the dev-server bring-up.
+ *
+ * Returns true when the hook is settled (ran / skipped / absent) so the
+ * caller records `setupRan` and never re-enters.
+ */
+async function runWorkspaceSetup(
+  name: string,
+  sessionId: string,
+  cwd: string,
+  bootMode: "fresh" | "snapshot-restore",
+): Promise<boolean> {
+  const script = `${cwd}/.backstage/setup.sh`;
+  const probe = await docker(["exec", name, "test", "-f", script]);
+  if (probe.exitCode !== 0) return true; // no hook — settled
+  if (bootMode === "snapshot-restore") {
+    console.log(`[sandbox] ${name}: skipping ${script} (snapshot restore carries its effects)`);
+    return true;
+  }
+  const log = assertSafePath(`${sessionRunsDir(sessionId)}/workspace-setup.log`);
+  console.log(`[sandbox] ${name}: running workspace setup hook ${script} (log: ${log})`);
+  const r = await docker(
+    [
+      "exec", "-w", assertSafePath(cwd), "-e", `BACKSTAGE_BOOT_MODE=${bootMode}`, name,
+      "sh", "-c", `bash ${assertSafePath(script)} >> ${log} 2>&1`,
+    ],
+    { timeoutMs: SETUP_TIMEOUT_MS },
+  );
+  if (r.exitCode !== 0) {
+    console.warn(
+      `[sandbox] ${name}: workspace setup hook failed (exit ${r.exitCode}) — continuing; see ${log}`,
+    );
+  }
+  return true;
 }
 
 // ── The docker HostLauncher: `docker exec` instead of systemd-run ─────────────
@@ -792,18 +858,46 @@ async function* withRunJournal(
 ): AsyncGenerator<StreamEvent> {
   journalSet(record);
   touchStateActivity(record.sandboxId!);
+  let sawDone = false;
   try {
     for await (const ev of events) {
       if (ev.type === "init" && ev.sessionId && ev.sessionId !== record.claudeSessionId) {
         record.claudeSessionId = ev.sessionId;
         journalSet(record);
       }
+      if (ev.type === "done") sawDone = true;
       yield ev;
     }
   } finally {
     journalClear(record.runKey);
     touchStateActivity(record.sandboxId!);
+    if (sawDone) schedulePostRunSnapshot(record.sandboxId!);
   }
+}
+
+/**
+ * Post-prompt snapshot (background-agents' "snapshot after every turn",
+ * adapted): after a sandboxed run completes SUCCESSFULLY, commit the
+ * container layer so a later docker-rm/reboot restores warm. Guarded by
+ * config `snapshots.enabled` (same switch as the idle-stop snapshot);
+ * delayed a few seconds so the run's host-registry control has deregistered
+ * (snapshotSandboxImage refuses while the session reads busy) and deduped
+ * per sandbox so back-to-back turns don't stack commits.
+ */
+function schedulePostRunSnapshot(sandboxId: string): void {
+  if (!sandboxSnapshots().enabled) return;
+  const g = globalThis as { __sandboxPostRunSnaps?: Set<string> };
+  const pending = (g.__sandboxPostRunSnaps ??= new Set());
+  if (pending.has(sandboxId)) return;
+  pending.add(sandboxId);
+  setTimeout(() => {
+    pending.delete(sandboxId);
+    snapshotSandboxImage(sandboxId)
+      .then((img) => {
+        if (img) console.log(`[sandbox] post-run snapshot of ${sandboxId} → ${img}`);
+      })
+      .catch((e) => console.warn(`[sandbox] post-run snapshot of ${sandboxId} failed:`, e));
+  }, 8_000);
 }
 
 // ── Sandbox handle ────────────────────────────────────────────────────────────
@@ -814,6 +908,7 @@ function makeDockerSandbox(
   cwd: string,
   workspace: "bind" | "volume" = "bind",
   transport: SandboxTransport = "socket",
+  bootMode: "fresh" | "snapshot-restore" = "fresh",
 ): Sandbox {
   const launcher = makeDockerLauncher(sandboxId, sessionId);
   const sandboxHandle: Sandbox = {
@@ -821,6 +916,7 @@ function makeDockerSandbox(
     provider: "docker",
     cwd,
     workspace,
+    bootMode,
 
     async exec(cmd: string[], opts?: ExecOpts): Promise<ExecResult> {
       await ensureStarted(sandboxId);
@@ -1086,6 +1182,10 @@ export class DockerProvider implements SandboxProvider {
     const transport = sandboxTransport();
 
     let status = await containerStatus(name);
+    // Whether this ensure() (re)started the container — drives the stale-
+    // .tunnels.env clear below (the supervisor-on-boot equivalent of the
+    // background-agents contract).
+    const wasRunning = status === "running";
     if (
       status !== "gone" &&
       existing &&
@@ -1107,6 +1207,7 @@ export class DockerProvider implements SandboxProvider {
     // engine + workspace state regardless (see the "Snapshots" header).
     let image = existing?.image || sandboxConfig().image || DEFAULT_IMAGE;
     let restoredFromSnapshot = false;
+    let bootMode: "fresh" | "snapshot-restore" = existing?.bootMode || "fresh";
     if (status === "gone") {
       image = sandboxConfig().image || DEFAULT_IMAGE;
       if (sandboxSnapshots().enabled) {
@@ -1117,6 +1218,7 @@ export class DockerProvider implements SandboxProvider {
           console.log(`[sandbox] ${name}: creating container from snapshot ${snapImage}`);
         }
       }
+      bootMode = restoredFromSnapshot ? "snapshot-restore" : "fresh";
       await createContainer(name, spec.sessionId, cwd, {
         workspace,
         attachedDirs,
@@ -1143,6 +1245,17 @@ export class DockerProvider implements SandboxProvider {
       }
     }
     await setupContainer(name, cwd);
+    // Container (re)start: clear a stale .tunnels.env — its URLs described the
+    // previous boot's preview; startSandboxPreview rewrites it fresh.
+    if (!wasRunning) {
+      await docker(["exec", name, "sh", "-c", `rm -f ${assertSafePath(cwd)}/.tunnels.env`]);
+    }
+    // One-shot `.backstage/setup.sh` lifecycle hook (skipped on snapshot
+    // restore; never retried once settled — see runWorkspaceSetup).
+    let setupRan = existing?.setupRan === true;
+    if (!setupRan) {
+      setupRan = await runWorkspaceSetup(name, spec.sessionId, cwd, bootMode);
+    }
     writeState({
       sandboxId: name,
       sessionId: spec.sessionId,
@@ -1153,10 +1266,12 @@ export class DockerProvider implements SandboxProvider {
       workspace,
       repoId: repo.id,
       transport,
+      bootMode,
+      ...(setupRan ? { setupRan } : {}),
       ...(branch ? { branch } : {}),
       ...(attachedDirs.length ? { attachedDirs } : {}),
     });
-    return makeDockerSandbox(name, spec.sessionId, cwd, workspace, transport);
+    return makeDockerSandbox(name, spec.sessionId, cwd, workspace, transport, bootMode);
   }
 
   /**
@@ -1199,6 +1314,7 @@ export class DockerProvider implements SandboxProvider {
       state.cwd,
       state.workspace || "bind",
       state.transport || "socket",
+      state.bootMode || "fresh",
     );
   }
 
@@ -1214,6 +1330,8 @@ export class DockerProvider implements SandboxProvider {
       `${sandboxId}-claude`, `${sandboxId}-codex`, `${sandboxId}-ws`,
     ]);
     await removeSnapshotImages(sandboxId);
+    // Release the sandbox's https-port allocations + their Caddy routes.
+    await dropSandboxPreviewRoutes(sandboxId).catch(() => {});
     const state = readState(sandboxId);
     try {
       unlinkSync(statePath(sandboxId));
