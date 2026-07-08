@@ -16,6 +16,12 @@ import {
 	type ThemePref,
 } from "../lib/theme";
 import {
+	getWsTimePref,
+	setWsTimePref,
+	onWsTimeChanged,
+	type WsTimePref,
+} from "../lib/workspace-time";
+import {
 	getSendKeyPref,
 	setSendKeyPref,
 	onSendKeyChanged,
@@ -1374,6 +1380,8 @@ function ComposerPanel() {
 function AppearancePanel() {
 	const [pref, setPref] = useState<ThemePref>(getThemePref);
 	useEffect(() => onThemeChanged(() => setPref(getThemePref())), []);
+	const [wsTime, setWsTime] = useState<WsTimePref>(getWsTimePref);
+	useEffect(() => onWsTimeChanged(() => setWsTime(getWsTimePref())), []);
 
 	return (
 		<div className="settings-panel">
@@ -1396,6 +1404,28 @@ function AppearancePanel() {
 				{pref === "system"
 					? "Matches your operating system."
 					: `Always ${pref} mode.`}
+			</div>
+
+			<div className="settings-group-label" style={{ marginTop: 22 }}>
+				Sidebar
+			</div>
+			<div className="setting-card">
+				<SettingRow
+					title="Show last used time"
+					desc="Show when each workspace was last active in the sidebar. A live run always shows its running time regardless."
+					control={
+						<Select
+							label="Show last used time"
+							value={wsTime}
+							options={[
+								{ value: "off", label: "Off" },
+								{ value: "always", label: "Always" },
+								{ value: "hover", label: "On hover" },
+							]}
+							onChange={setWsTimePref}
+						/>
+					}
+				/>
 			</div>
 		</div>
 	);

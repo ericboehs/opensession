@@ -21,6 +21,7 @@ import { getPins, onPinsChanged, togglePin } from "../lib/pins";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, onReadsChanged } from "../lib/reads";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
+import { getWsTimePref, onWsTimeChanged } from "../lib/workspace-time";
 import { UserAvatar } from "./UserAvatar";
 import { shortTime, elapsedClock } from "../lib/time";
 import { colorHex, TAB_COLORS } from "../lib/tab-colors";
@@ -496,6 +497,9 @@ export function Sidebar({
 	// during render to show the Slack-style "unsent draft" pencil.
 	const [, setDraftsRev] = useState(0);
 	useEffect(() => onDraftsChanged(() => setDraftsRev((v) => v + 1)), []);
+	// Opt-in "last used" time badge on workspace rows (off / always / on hover).
+	const [wsTimePref, setWsTimePref] = useState(getWsTimePref);
+	useEffect(() => onWsTimeChanged(() => setWsTimePref(getWsTimePref())), []);
 
 	// Right-click menu on a Project header (rename / color / delete), and inline
 	// rename (double-click the project name).
@@ -1588,10 +1592,24 @@ export function Sidebar({
 				{row.chats.length > 1 && (
 					<span className="sidebar-group-count">{row.chats.length}</span>
 				)}
-				{/* Only a live run earns a time badge — the idle "time since" was
-				    sidebar noise everywhere (the hovercard/sheet still show last
-				    activity for anyone who wants it). */}
-				{runStartMs !== null && <RunTicker startMs={runStartMs} />}
+				{/* A live run always earns its elapsed ticker. The idle "last used"
+				    time is opt-in (Settings → Appearance): off by default, else shown
+				    always or only on row hover (the --hover modifier). */}
+				{runStartMs !== null ? (
+					<RunTicker startMs={runStartMs} />
+				) : (
+					wsTimePref !== "off" &&
+					row.lastActivity && (
+						<span
+							className={`sidebar-ws-time${
+								wsTimePref === "hover" ? " sidebar-ws-time--hover" : ""
+							}`}
+							title={new Date(row.lastActivity).toLocaleString()}
+						>
+							{relativeTime(row.lastActivity)}
+						</span>
+					)
+				)}
 				{/* Slack-style pencil: a chat here holds an unsent draft — come back
 				    and finish it. Yields to the hover actions like the count/time. */}
 				{row.chats.some((c) => hasDraft(`chat:${c.id}`)) && (

@@ -13150,6 +13150,25 @@ html[data-theme="light"] .palette-card .palette-create {
 		display: none;
 	}
 }
+/* "On hover" mode: hidden until the pointer is on the row, then revealed left of
+   the pin/archive actions (absolutely positioned over the right edge — the
+   margin clears them). On touch there's no hover, so show it inline like the
+   "always" mode. The later source order wins the specificity tie against the
+   ".sidebar-ws-row:hover .sidebar-ws-time { display: none }" rule above. */
+.sidebar-ws-time--hover {
+	display: none;
+}
+@media (hover: hover) {
+	.sidebar-ws-row:hover .sidebar-ws-time--hover {
+		display: inline-flex;
+		margin-right: 80px;
+	}
+}
+@media (hover: none) {
+	.sidebar-ws-time--hover {
+		display: inline-flex;
+	}
+}
 
 /* Live "in progress" elapsed ticker — sits where the time badge would, in the
    in-progress color, with tabular figures so the digits don't jitter as they
