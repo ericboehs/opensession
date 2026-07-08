@@ -70,6 +70,7 @@ import {
 	IconTerminal,
 } from "./icons";
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
+import { PixelSpinner } from "./PixelSpinner";
 import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
@@ -296,6 +297,17 @@ export function SessionViewer({
 	// it isn't wiping a NEWER run's in-progress text.
 	const streamSeqRef = useRef(0);
 	const [viewers, setViewers] = useState<string[]>([]);
+	// The create run is still preparing this session's worktree (new workspaces
+	// announce the session before the slow git work). While true the transcript
+	// and workspace panels show "Waiting for workspace" and sends hold in the
+	// queue flap. Flipped off by the workspace_status event, kept in sync with
+	// the sessions poll otherwise.
+	const [workspacePreparing, setWorkspacePreparing] = useState(
+		!!session.workspacePreparing,
+	);
+	useEffect(() => {
+		setWorkspacePreparing(!!session.workspacePreparing);
+	}, [session.workspacePreparing]);
 	const [queued, setQueued] = useState<QueueReceipt[]>([]);
 	// Drag-to-reorder bookkeeping. onReorder fires continuously during a drag, so
 	// we only reorder locally then flush the final order to the server on drop —
@@ -556,6 +568,12 @@ export function SessionViewer({
 		: "";
 	const panelAvailable = hasWorkspace || hasPlain;
 	const isBusy = isRunningLive || isStreaming;
+	// Derived, not the raw flag: transcript content or streaming text means the
+	// opening run already started, so the worktree is done — this guards against
+	// a stale sessions poll re-asserting the flag after the workspace_status
+	// event already cleared it.
+	const waitingForWorkspace =
+		workspacePreparing && entries.length === 0 && !streamText;
 
 	// Live worktree diff, shared between the Changes-tab file-count badge and the
 	// DiffPanel (passed in as `diff=` below so they poll once, not twice). Parked
@@ -756,6 +774,10 @@ export function SessionViewer({
 				case "session_status":
 					setIsRunningLive(msg.isRunning);
 					onRunningChange?.(session.id, msg.isRunning);
+					break;
+				case "workspace_status":
+					if (msg.sessionId === session.id)
+						setWorkspacePreparing(!msg.ready);
 					break;
 				case "stream_start":
 					streamSeqRef.current++;
@@ -1256,8 +1278,12 @@ export function SessionViewer({
 
 	// Busy sends live in the flap from the moment of the send; idle sends are
 	// optimistic transcript bubbles. Both reconcile through the same effect.
-	const pendingQueue = pending.filter((p) => p.busyMode);
-	const pendingBubbles = pending.filter((p) => !p.busyMode);
+	// While the worktree is still being prepared, everything holds in the flap —
+	// including the create's own first message — until the workspace is ready.
+	const pendingQueue = pending.filter((p) => p.busyMode || waitingForWorkspace);
+	const pendingBubbles = pending.filter(
+		(p) => !p.busyMode && !waitingForWorkspace,
+	);
 	const hasLiveConversation =
 		pendingBubbles.length > 0 || !!streamText || isBusy || !!ask;
 
@@ -1266,7 +1292,9 @@ export function SessionViewer({
 		queueCount > 0 ? (
 			<div className="composer-queue" aria-label="Queued messages">
 				<div className="composer-queue-title">
-					{queueCount} queued {queueCount === 1 ? "message" : "messages"}
+					{waitingForWorkspace
+						? `Waiting for workspace · ${queueCount} queued`
+						: `${queueCount} queued ${queueCount === 1 ? "message" : "messages"}`}
 				</div>
 				{visibleSteered.map((s, i) => {
 					const hr = parseHumanReply(s.content);
@@ -1404,7 +1432,7 @@ export function SessionViewer({
 					<div key={p.id} className="composer-queue-item composer-queue-sending">
 						<div className="composer-queue-actions">
 							<span className="composer-queue-pill composer-queue-pill-sending">
-								Queueing…
+								{waitingForWorkspace ? "Queued" : "Queueing…"}
 							</span>
 						</div>
 						{renderQueueContent(p, {})}
@@ -2298,6 +2326,16 @@ export function SessionViewer({
 						>
 							{loading ? (
 								<div className="loading">Loading transcript…</div>
+							) : waitingForWorkspace ? (
+								// Worktree prep in flight — the first message waits in the
+								// queue flap below and sends the moment this clears.
+								<WorkspaceWaiting
+									detail={
+										session.branch
+											? `Creating a worktree for ${session.branch} — queued messages send when it's ready.`
+											: "Creating the worktree — queued messages send when it's ready."
+									}
+								/>
 							) : entries.length === 0 && !session.transcriptPath ? (
 								// A fresh chat with no run yet is just an empty conversation —
 								// blank canvas, the composer below is the UI. Only a session
@@ -2425,7 +2463,7 @@ export function SessionViewer({
 
 							{streamText && <StreamingMessage text={streamText} />}
 
-							{isBusy && (
+							{isBusy && !waitingForWorkspace && (
 								<BusyInline
 									since={busySince}
 								/>
@@ -2778,6 +2816,13 @@ export function SessionViewer({
 									threadId={session.plainThreadId!}
 									plainUrl={plainUrl}
 								/>
+							) : waitingForWorkspace &&
+							  (panelTab === "changes" ||
+									panelTab === "terminal" ||
+									panelTab === "pr") ? (
+								// These tabs all read the worktree — hold them behind the
+								// waiting state until the create run finishes preparing it.
+								<WorkspaceWaiting detail="Waiting for the workspace to be ready." />
 							) : panelTab === "changes" ? (
 								<DiffPanel
 									sessionId={session.id}
@@ -2840,6 +2885,23 @@ export function SessionViewer({
 				);
 				return rightPanelEl ? createPortal(rightRegion, rightPanelEl) : rightRegion;
 				})()}
+			</div>
+		</div>
+	);
+}
+
+// Placeholder for regions that need the session's worktree while the create
+// run is still preparing it (new-workspace creates announce the session before
+// the slow git work — see create_session in backstage.ts).
+function WorkspaceWaiting({ detail }: { detail: string }) {
+	return (
+		<div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-1 px-6 text-center">
+			<PixelSpinner className="mb-2 text-dim" />
+			<div className="text-[14px] font-semibold text-fg">
+				Waiting for workspace
+			</div>
+			<div className="max-w-[340px] text-[13px] font-medium leading-relaxed text-dim">
+				{detail}
 			</div>
 		</div>
 	);

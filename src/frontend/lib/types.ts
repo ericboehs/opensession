@@ -171,6 +171,12 @@ export interface UnifiedSession {
 	/** Number of prompts queued behind the current run. Set by /api/sessions. */
 	queuedCount?: number;
 	/**
+	 * The create run is still preparing this session's worktree (git fetch +
+	 * worktree add + dep install). The viewer shows "Waiting for workspace" and
+	 * holds sends in the queue until it flips off. Set by /api/sessions.
+	 */
+	workspacePreparing?: boolean;
+	/**
 	 * The last run died on a terminal failure (usage limits exhausted, credit/API
 	 * errors) — a human must act, so the session reads as "Needs input" rather
 	 * than Backlog. Cleared by the next run that ends cleanly. Set by /api/sessions.
@@ -448,7 +454,11 @@ export type WSServerMessage =
 			workspaceId?: string;
 			/** True when this create made a brand-new workspace (vs. adding a chat). */
 			newWorkspace?: boolean;
+			/** True while the session's worktree is still being created. */
+			preparingWorkspace?: boolean;
 	  }
+	// The create run finished (or failed) preparing the session's worktree.
+	| { type: "workspace_status"; sessionId: string; ready: boolean }
 	| { type: "notice"; sessionId?: string; message: string }
 	| { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string }
 	| {

@@ -783,6 +783,13 @@ interface WSClientData {
 const sessionWatchers: Map<string, Set<any>> = (g.__sessionWatchers ??=
 	new Map());
 
+// Sessions whose workspace (worktree) is still being prepared by their create
+// run — the create announces session_created BEFORE the slow git work, and this
+// set is what tells clients to show the "Waiting for workspace" state and hold
+// the first message in the queue. Cleared (and broadcast via workspace_status)
+// the moment the worktree lands or the create fails.
+const preparingWorkspaces: Set<string> = (g.__preparingWorkspaces ??= new Set());
+
 function joinSession(ws: any, sessionId: string) {
 	let set = sessionWatchers.get(sessionId);
 	if (!set) {
@@ -3701,6 +3708,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					...s,
 					waitingForInput: pendingAsks.has(s.id),
 					queuedCount: promptQueues.get(s.id)?.length || 0,
+					// Worktree still being created by this session's create run — the
+					// viewer shows "Waiting for workspace" and queues sends meanwhile.
+					...(preparingWorkspaces.has(s.id)
+						? { workspacePreparing: true }
+						: {}),
 					// Terminal failure of the last run (credits/limits/API) — persisted
 					// on backstage session files, in-memory for slack/linear sessions.
 					lastRunError: runErrors.get(s.id) || s.lastRunError,
@@ -7357,6 +7369,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							// window from double-starting a run (same race as
 							// runSessionPrompt).
 							markSessionStarting(bksId);
+							if (needsWorktree) preparingWorkspaces.add(bksId);
 							try {
 								persist();
 								ws.send(
@@ -7365,24 +7378,32 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										id: bksId,
 										...(workspace ? { workspaceId: workspace.id } : {}),
 										...(createdWorkspaceNow ? { newWorkspace: true } : {}),
+										...(needsWorktree ? { preparingWorkspace: true } : {}),
 									}),
 								);
 								announcedId = bksId;
 								emit({ type: "stream_start" });
 
 								if (needsWorktree) {
-									if (fromPr) {
-										await createWorktreeForExistingBranch(branch, repo.id);
-									} else {
-										const base =
-											chatMode === "stack" && workspace?.branch
-												? workspace.branch
-												: undefined;
-										await createWorktree(
-											branch,
-											repo.id,
-											base ? { base } : undefined,
-										);
+									try {
+										if (fromPr) {
+											await createWorktreeForExistingBranch(branch, repo.id);
+										} else {
+											const base =
+												chatMode === "stack" && workspace?.branch
+													? workspace.branch
+													: undefined;
+											await createWorktree(
+												branch,
+												repo.id,
+												base ? { base } : undefined,
+											);
+										}
+									} finally {
+										// Ready (or failed — the error surfaces separately): flip the
+										// viewer out of "Waiting for workspace" and let the queue go.
+										preparingWorkspaces.delete(bksId);
+										emit({ type: "workspace_status", ready: true });
 									}
 								}
 
@@ -7563,6 +7584,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							recordRunOutcome(bksId, runFailure);
 							} finally {
 								unmarkSessionStarting(bksId);
+								// Safety net for throws before the worktree block's own finally
+								// (persist/announce failures) — must never leak a session stuck
+								// in "Waiting for workspace".
+								preparingWorkspaces.delete(bksId);
 							}
 
 							emit({ type: "stream_done" });

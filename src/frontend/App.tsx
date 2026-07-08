@@ -779,6 +779,9 @@ function App() {
 						projectId: msg.workspaceId || draft?.projectId || null,
 						model: draft?.model,
 						archived: false,
+						// Worktree prep still running server-side — the viewer opens
+						// straight into its "Waiting for workspace" state.
+						workspacePreparing: !!msg.preparingWorkspace,
 						},
 						// Keep the optimistic copy alive across polls until the server
 						// registers it, so the new tab renders straight away instead of
