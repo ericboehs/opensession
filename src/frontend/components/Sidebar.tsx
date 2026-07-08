@@ -1593,22 +1593,20 @@ export function Sidebar({
 					<span className="sidebar-group-count">{row.chats.length}</span>
 				)}
 				{/* A live run always earns its elapsed ticker. The idle "last used"
-				    time is opt-in (Settings → Appearance): off by default, else shown
-				    always or only on row hover (the --hover modifier). */}
-				{runStartMs !== null ? (
-					<RunTicker startMs={runStartMs} />
-				) : (
-					wsTimePref !== "off" &&
-					row.lastActivity && (
-						<span
-							className={`sidebar-ws-time${
-								wsTimePref === "hover" ? " sidebar-ws-time--hover" : ""
-							}`}
-							title={new Date(row.lastActivity).toLocaleString()}
-						>
-							{relativeTime(row.lastActivity)}
-						</span>
-					)
+				    time is opt-in (Settings → Appearance): revealed on hover by
+				    default, or pinned always. It's shown on hover in every mode —
+				    including while a run is live (the --running modifier keeps it
+				    hidden until then, so the ticker owns the resting slot). */}
+				{runStartMs !== null && <RunTicker startMs={runStartMs} />}
+				{wsTimePref !== "off" && row.lastActivity && (
+					<span
+						className={`sidebar-ws-time${
+							wsTimePref === "hover" ? " sidebar-ws-time--hover" : ""
+						}${runStartMs !== null ? " sidebar-ws-time--running" : ""}`}
+						title={new Date(row.lastActivity).toLocaleString()}
+					>
+						{shortTime(row.lastActivity)}
+					</span>
 				)}
 				{/* Slack-style pencil: a chat here holds an unsent draft — come back
 				    and finish it. Yields to the hover actions like the count/time. */}

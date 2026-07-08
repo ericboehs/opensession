@@ -1,9 +1,9 @@
-// "Show last used time" on sidebar workspace rows — the compact relative time
-// ("3h", "2d") of a workspace's last activity. Off by default: the idle "time
-// since" was sidebar noise everywhere, so it was dropped (a live run still shows
-// its elapsed ticker regardless). This opt-in brings it back for anyone who
-// wants it — either always visible, or revealed only on row hover. Stored
-// per-browser in localStorage like the theme: a display habit, not cloud state.
+// "Show last used time" on sidebar workspace rows — the compact time ("3h",
+// "2d") of a workspace's last activity. Revealed on row hover by default (the
+// always-on badge was sidebar noise, so the resting state stays clean); "always"
+// pins it visible, "off" hides it entirely. A live run still shows its elapsed
+// ticker regardless. Stored per-browser in localStorage like the theme: a
+// display habit, not cloud state.
 
 export type WsTimePref = "off" | "always" | "hover";
 
@@ -12,12 +12,12 @@ const CHANGE_EVENT = "michael-ws-time-changed";
 
 export function getWsTimePref(): WsTimePref {
 	const v = localStorage.getItem(KEY);
-	return v === "always" || v === "hover" ? v : "off";
+	// "hover" is the default, so its absence is the stored form.
+	return v === "always" || v === "off" ? v : "hover";
 }
 
 export function setWsTimePref(pref: WsTimePref) {
-	// "off" is the default, so its absence is the stored form.
-	if (pref === "off") localStorage.removeItem(KEY);
+	if (pref === "hover") localStorage.removeItem(KEY);
 	else localStorage.setItem(KEY, pref);
 	window.dispatchEvent(new Event(CHANGE_EVENT));
 }

@@ -13163,27 +13163,24 @@ html[data-theme="light"] .palette-card .palette-create {
 .sidebar-group-count + .sidebar-ws-time {
 	margin-left: 6px;
 }
-@media (hover: hover) {
-	.sidebar-ws-row:hover .sidebar-ws-time {
-		display: none;
-	}
-}
-/* "On hover" mode: hidden until the pointer is on the row, then revealed left of
-   the pin/archive actions (absolutely positioned over the right edge — the
-   margin clears them). On touch there's no hover, so show it inline like the
-   "always" mode. The later source order wins the specificity tie against the
-   ".sidebar-ws-row:hover .sidebar-ws-time { display: none }" rule above. */
-.sidebar-ws-time--hover {
+/* The last-used time is revealed on row hover in every enabled mode — and the
+   "hover" mode (the default) shows it ONLY then. A running row hides the idle
+   badge too (its live ticker owns the resting slot until you hover). On touch
+   there's no hover, so the hover-mode badge shows inline like "always"; a
+   running row still keeps just its ticker. */
+.sidebar-ws-time--hover,
+.sidebar-ws-time--running {
 	display: none;
 }
 @media (hover: hover) {
-	.sidebar-ws-row:hover .sidebar-ws-time--hover {
+	.sidebar-ws-row:hover .sidebar-ws-time {
 		display: inline-flex;
+		/* Sit left of the pin/archive actions (absolute over the right edge). */
 		margin-right: 80px;
 	}
 }
 @media (hover: none) {
-	.sidebar-ws-time--hover {
+	.sidebar-ws-time--hover:not(.sidebar-ws-time--running) {
 		display: inline-flex;
 	}
 }
