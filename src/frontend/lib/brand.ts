@@ -18,11 +18,11 @@
  *   `backstage-user`, `/backstage/` routes, `bks-` prefixes) stay literal.
  */
 
-export const PRODUCT_NAME = "Backstage";
+export const PRODUCT_NAME = "OpenSession";
 
-/** Short brand monogram for visual brand-mark contexts; same as the full
- *  name until the rename ("OS" post-OpenSession). */
-export const PRODUCT_MARK = PRODUCT_NAME;
+/** Short brand monogram for visual brand-mark contexts (logo chip, favicon,
+ *  loading screen) — never in code identifiers, package names, or CLI/env. */
+export const PRODUCT_MARK = "OS";
 
 /** The agent's display name (server: personaName(), config persona.name). */
 export const AGENT_NAME = "Michael";
