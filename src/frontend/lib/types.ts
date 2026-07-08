@@ -510,6 +510,10 @@ export type WSServerMessage =
 	  }
 	| { type: "ask_resolved"; sessionId: string; questionId: string }
 	| { type: "server_restarting" }
+	// First frame on every socket: the server process's bootId, so a reconnect
+	// can tell a real restart (changed) from a transient blip (unchanged).
+	// Absent on old servers — clients fall back to /api/health's bootId.
+	| { type: "hello"; bootId: string }
 	| { type: "frontend_updated"; version: string }
 	// Collaborative notes.
 	| { type: "note_state"; noteId: string; update: string }
