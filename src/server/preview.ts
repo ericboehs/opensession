@@ -254,9 +254,11 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
  */
 export async function capturePreviewScreenshot(
   worktreeDir: string,
-  opts?: { width?: number; height?: number },
+  opts?: { width?: number; height?: number; status?: PreviewStatus },
 ): Promise<Buffer> {
-  const status = await getPreviewStatus(worktreeDir);
+  // Sandboxed sessions pass their own status (getSandboxPreviewStatus) — the
+  // host status below can't see in-container listeners.
+  const status = opts?.status ?? (await getPreviewStatus(worktreeDir));
   if (!status.running || !status.previewUrl) {
     throw new Error("Preview isn't running — start it first");
   }

@@ -56,8 +56,14 @@ import {
 	worktreeHasWork,
 	REPOS,
 } from "./src/server/worktree";
-import { effectiveSandboxProvider, sandboxesEnabled } from "./src/server/sandbox/config";
-import { getSandboxProvider } from "./src/server/sandbox";
+import { effectiveSandboxProvider, sandboxesEnabled, sandboxConfig } from "./src/server/sandbox/config";
+import {
+	getSandboxProvider,
+	workspaceExecFor,
+	hasRemoteWorkspace,
+	type Sandbox,
+} from "./src/server/sandbox";
+import { dockerContainerStatus } from "./src/server/sandbox/docker";
 import type { RunHostSpec } from "./src/runner-host/protocol";
 import {
 	STRIPE_CONFIRM_TOOLS,
@@ -126,7 +132,14 @@ import { searchRepoFiles } from "./src/server/file-index";
 import { searchSkills } from "./src/server/skills";
 import { suggestBranchName } from "./src/server/suggest-branch";
 import { transcribeAudio, MAX_AUDIO_BYTES } from "./src/server/transcribe";
-import { getPreviewStatus, startPreview, stopPreview } from "./src/server/preview";
+import {
+	getPreviewStatus,
+	startPreview,
+	stopPreview,
+	getSandboxPreviewStatus,
+	startSandboxPreview,
+	stopSandboxPreview,
+} from "./src/server/preview";
 import {
 	registerSessionControl,
 	getSessionControl,
@@ -706,6 +719,10 @@ async function attachRepo(
 	if (!session) throw new Error("Session not found");
 	if (session.mode === "ask")
 		throw new Error("Can't attach a repo to an Ask (read-only) session");
+	if (hasRemoteWorkspace(session))
+		throw new Error(
+			"This session's workspace lives inside its sandbox volume — attached repos aren't supported in volume mode yet (use a bind-mode sandbox or a plain worktree session for multi-repo work)",
+		);
 	if (!REPOS[repoId]) throw new Error(`Unknown repo "${repoId}"`);
 	if (session.repo === repoId)
 		throw new Error(`${repoId} is this session's primary repo`);
@@ -2129,7 +2146,11 @@ async function autoPushSessionBranches(session: UnifiedSession): Promise<void> {
 			targets.push({ dir: att.dir, branch: att.branch, repoId: att.repo });
 
 	for (const { dir, branch, repoId } of targets) {
-		if (!existsSync(dir)) continue;
+		// The primary dir of a volume-mode sandbox workspace exists only in the
+		// container — status/push route through the session's sandbox exec.
+		const isPrimary = dir === session.worktreeDir;
+		const remote = isPrimary && hasRemoteWorkspace(session);
+		if (!existsSync(dir) && !remote) continue;
 		let repo;
 		try {
 			repo = getRepo(repoId);
@@ -2138,14 +2159,15 @@ async function autoPushSessionBranches(session: UnifiedSession): Promise<void> {
 		}
 		// Never auto-push the repo's mainline (covers the backstage shared master).
 		if (branch === repo.defaultBranch) continue;
+		const exec = isPrimary ? await workspaceExecFor(session, dir) : undefined;
 		let git;
 		try {
-			git = await getGitStatus(dir, repo.defaultBranch);
+			git = await getGitStatus(dir, repo.defaultBranch, exec);
 		} catch {
 			continue;
 		}
 		if (!git.hasUpstream || git.ahead <= 0 || git.behind > 0) continue;
-		const result = await gitPush(dir, branch);
+		const result = await gitPush(dir, branch, exec);
 		if ("error" in result) {
 			console.warn(
 				`[auto-push] ${session.id} ${repoId}/${branch}: ${result.error}`,
@@ -2198,6 +2220,26 @@ function destroySessionSandbox(
 }
 
 /**
+ * The session's docker sandbox when it is ACTIVE right now — materialized,
+ * config + kill-switch still allow docker, and the container actually running
+ * (never started here; same gating as workspace-exec). Null = treat the
+ * session as host-local. Used by the preview routes to decide whether the dev
+ * server lives in-container.
+ */
+async function activeSandboxFor(session: UnifiedSession): Promise<Sandbox | null> {
+	const sb = session.sandbox;
+	if (sb?.provider !== "docker" || !sb.sandboxId) return null;
+	if (!sandboxesEnabled()) return null;
+	if (effectiveSandboxProvider(session.repo) !== "docker") return null;
+	try {
+		if ((await dockerContainerStatus(sb.sandboxId)) !== "running") return null;
+		return await getSandboxProvider("docker").get(sb.sandboxId);
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Docker-sandbox routing for runSessionPromptInner (docs/sandboxes-plan.md
  * Phase 1). Returns the run's event stream when the session opted into a
  * docker sandbox at create time AND the config + kill-switch currently allow
@@ -2238,10 +2280,25 @@ async function maybeLaunchSandboxedRun(
 			branch: session.branch || undefined,
 			mode: session.mode,
 			cwd: opts.cwd,
+			// Bind-mode containers mount attached repos too (a changed set
+			// recreates the container); volume mode rejects them in ensure().
+			attachedDirs: (session.attachedRepos || [])
+				.map((r) => r.dir)
+				.filter(Boolean),
 		});
-		if (session.source === "backstage" && session.sandbox?.sandboxId !== sandbox.id) {
+		if (
+			session.source === "backstage" &&
+			(session.sandbox?.sandboxId !== sandbox.id ||
+				session.sandbox?.workspace !== sandbox.workspace)
+		) {
 			touchBackstageSession(session.id, {
-				sandbox: { provider: "docker", sandboxId: sandbox.id },
+				sandbox: {
+					provider: "docker",
+					sandboxId: sandbox.id,
+					// Record how the workspace materialized ("volume" = it lives only
+					// inside the sandbox; host existsSync guards must not gate it).
+					workspace: sandbox.workspace,
+				},
 			});
 		}
 		// michael-* tools reach the container as stdio proxies over the run-rpc
@@ -2410,9 +2467,16 @@ async function runSessionPromptInner(
 
 	// A cleaned-up worktree makes the SDK spawn fail with a misleading "binary
 	// not found" (ENOENT on the missing cwd) — revive it first. Same path as
-	// before, so resuming the claude session keeps its history.
+	// before, so resuming the claude session keeps its history. Volume-mode
+	// sandbox workspaces are exempt: their dir never exists host-side — the
+	// sandbox provider materializes it in-container, so reviving a host
+	// worktree at the same path would shadow (and fork) the real workspace.
 	let cwd = session.worktreeDir || `${HOME}/projects/tella-fusion`;
-	if (session.worktreeDir && !existsSync(session.worktreeDir)) {
+	if (
+		session.worktreeDir &&
+		!existsSync(session.worktreeDir) &&
+		!hasRemoteWorkspace(session)
+	) {
 		const repo = session.repo
 			? getRepo(session.repo)
 			: repoForPath(session.worktreeDir);
@@ -2551,6 +2615,25 @@ async function runSessionPromptInner(
 		mcpServers,
 		isAutomationSession,
 	});
+
+	// A volume-mode workspace exists ONLY inside its sandbox — there is no
+	// host fallback (runAgent on the nonexistent host path would just ENOENT,
+	// and running in the main checkout instead would be worse). End the turn
+	// with an explicit error; the kill-switch/config flip that caused this is
+	// an operator action, not a transient.
+	if (!sandboxRun && hasRemoteWorkspace(session)) {
+		const msg =
+			"This session's workspace lives in its sandbox volume, but the sandbox is unavailable (disabled by config/kill-switch, or it failed to start) — the prompt was not run. Re-enable sandboxes and try again.";
+		broadcastToSession(sessionId, { type: "error", sessionId, message: msg });
+		recordRunOutcome(session.id, msg);
+		broadcastToSession(sessionId, { type: "stream_done", sessionId });
+		broadcastToSession(sessionId, {
+			type: "session_status",
+			sessionId,
+			isRunning: false,
+		});
+		return;
+	}
 
 	let finalSessionId = engineSessionId || "";
 	let endedWithError = false;
@@ -4234,11 +4317,17 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							totalDeletions: 0,
 							rawPatch: "",
 						};
-						if (t.dir && existsSync(t.dir)) {
+						// Volume-mode sandbox workspaces have no host dir — the primary
+						// repo's diff runs through the session's sandbox exec instead
+						// (workspaceExecFor; host exec when no active sandbox). Attached
+						// repos are always host worktrees.
+						const remote = t.primary && hasRemoteWorkspace(session);
+						if (t.dir && (existsSync(t.dir) || remote)) {
 							try {
 								diff = await getSessionDiff(
 									t.dir,
 									getRepo(t.repo).defaultBranch,
+									t.primary ? await workspaceExecFor(session, t.dir) : undefined,
 								);
 							} catch {}
 						}
@@ -4285,7 +4374,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					dir = att?.dir ?? null;
 					repoId = body.repo;
 				}
-				if (!dir || !existsSync(dir))
+				// Primary volume-mode workspaces exist only in the sandbox — route the
+				// discard through its exec instead of requiring a host dir.
+				const primaryRemote =
+					(!body.repo || body.repo === primaryRepo) && hasRemoteWorkspace(session);
+				if (!dir || (!existsSync(dir) && !primaryRemote))
 					return Response.json(
 						{ error: "No worktree for this repo" },
 						{ status: 400 },
@@ -4297,6 +4390,9 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						getRepo(repoId).defaultBranch,
 						body.path,
 						body.oldPath,
+						!body.repo || body.repo === primaryRepo
+							? await workspaceExecFor(session, dir)
+							: undefined,
 					);
 				} catch (e: any) {
 					return Response.json(
@@ -4342,14 +4438,22 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					(session.worktreeDir
 						? repoForPath(session.worktreeDir).id
 						: "tella-fusion");
-				const dir =
-					!repoId || repoId === primaryRepo
-						? session.worktreeDir
-						: (session.attachedRepos || []).find((r) => r.repo === repoId)
-								?.dir;
-				if (!dir || !existsSync(dir)) return Response.json(null);
+				const isPrimary = !repoId || repoId === primaryRepo;
+				const dir = isPrimary
+					? session.worktreeDir
+					: (session.attachedRepos || []).find((r) => r.repo === repoId)?.dir;
+				// Primary volume-mode workspaces have no host dir — status runs
+				// through the sandbox exec (host exec when no active sandbox).
+				const remote = isPrimary && hasRemoteWorkspace(session);
+				if (!dir || (!existsSync(dir) && !remote)) return Response.json(null);
 				const repoConf = getRepo(repoId || primaryRepo);
-				return Response.json(await getGitStatus(dir, repoConf.defaultBranch));
+				return Response.json(
+					await getGitStatus(
+						dir,
+						repoConf.defaultBranch,
+						isPrimary ? await workspaceExecFor(session, dir) : undefined,
+					),
+				);
 			}
 
 			// Push the session's branch (sets upstream on first push). Human-triggered
@@ -4371,17 +4475,20 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					(session.worktreeDir
 						? repoForPath(session.worktreeDir).id
 						: "tella-fusion");
-				const dir =
-					!repoId || repoId === primaryRepo
-						? session.worktreeDir
-						: (session.attachedRepos || []).find((r) => r.repo === repoId)
-								?.dir;
-				if (!dir || !existsSync(dir))
+				const isPrimary = !repoId || repoId === primaryRepo;
+				const dir = isPrimary
+					? session.worktreeDir
+					: (session.attachedRepos || []).find((r) => r.repo === repoId)?.dir;
+				if (!dir || (!existsSync(dir) && !(isPrimary && hasRemoteWorkspace(session))))
 					return Response.json(
 						{ error: "Session has no worktree" },
 						{ status: 400 },
 					);
-				const result = await gitPush(dir, session.branch || "HEAD");
+				const result = await gitPush(
+					dir,
+					session.branch || "HEAD",
+					isPrimary ? await workspaceExecFor(session, dir) : undefined,
+				);
 				if ("error" in result) return Response.json(result, { status: 502 });
 				return Response.json(result);
 			}
@@ -4407,12 +4514,11 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					(session.worktreeDir
 						? repoForPath(session.worktreeDir).id
 						: "tella-fusion");
-				const dir =
-					!repoId || repoId === primaryRepo
-						? session.worktreeDir
-						: (session.attachedRepos || []).find((r) => r.repo === repoId)
-								?.dir;
-				if (!dir || !existsSync(dir))
+				const isPrimary = !repoId || repoId === primaryRepo;
+				const dir = isPrimary
+					? session.worktreeDir
+					: (session.attachedRepos || []).find((r) => r.repo === repoId)?.dir;
+				if (!dir || (!existsSync(dir) && !(isPrimary && hasRemoteWorkspace(session))))
 					return Response.json(
 						{ error: "Session has no worktree" },
 						{ status: 400 },
@@ -4420,6 +4526,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const result = await gitPull(
 					dir,
 					body?.base ? getRepo(repoId || primaryRepo).defaultBranch : undefined,
+					isPrimary ? await workspaceExecFor(session, dir) : undefined,
 				);
 				if ("error" in result) return Response.json(result, { status: 502 });
 				return Response.json(result);
@@ -4471,6 +4578,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							{ error: "Session not found" },
 							{ status: 404 },
 						);
+					// Sandboxed session with a running container: the dev server (if
+					// any) lives in-container — status/ports/Caddy go through the
+					// sandbox. Otherwise the host path below, unchanged.
+					const sbx = session.worktreeDir
+						? await activeSandboxFor(session)
+						: null;
+					if (sbx)
+						return Response.json(
+							await getSandboxPreviewStatus(sbx, session.worktreeDir!),
+						);
 					if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
 						return Response.json({
 							hasPortsConf: false,
@@ -4497,7 +4614,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							{ error: "Session not found" },
 							{ status: 404 },
 						);
-					if (!session.worktreeDir || !existsSync(session.worktreeDir))
+					const sbx = session.worktreeDir
+						? await activeSandboxFor(session)
+						: null;
+					if (!session.worktreeDir || (!existsSync(session.worktreeDir) && !sbx))
 						return Response.json(
 							{ error: "Session has no worktree" },
 							{ status: 400 },
@@ -4506,7 +4626,19 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						const { capturePreviewScreenshot } = await import(
 							"./src/server/preview"
 						);
-						const png = await capturePreviewScreenshot(session.worktreeDir);
+						// Sandboxed previews: hand the capture the sandbox-derived status
+						// (host status can't see in-container listeners); the URL itself
+						// is an ordinary Caddy-fronted https origin either way.
+						const png = await capturePreviewScreenshot(session.worktreeDir, {
+							...(sbx
+								? {
+										status: await getSandboxPreviewStatus(
+											sbx,
+											session.worktreeDir,
+										),
+									}
+								: {}),
+						});
 						return new Response(new Uint8Array(png), {
 							headers: { "Content-Type": "image/png" },
 						});
@@ -4530,6 +4662,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						return Response.json(
 							{ error: "Session not found" },
 							{ status: 404 },
+						);
+					// In-container start is gated on config devServerInSandbox — see
+					// startSandboxPreview; without the gate it just reports status.
+					const sbx = session.worktreeDir
+						? await activeSandboxFor(session)
+						: null;
+					if (sbx)
+						return Response.json(
+							await startSandboxPreview(sbx, session.worktreeDir!),
 						);
 					if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
 						return Response.json({
@@ -4556,6 +4697,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						return Response.json(
 							{ error: "Session not found" },
 							{ status: 404 },
+						);
+					// Sandboxed dev servers are stopped in-container (host pgids can't
+					// reach them); also drops the Caddy route.
+					const sbx = session.worktreeDir
+						? await activeSandboxFor(session)
+						: null;
+					if (sbx)
+						return Response.json(
+							await stopSandboxPreview(sbx, session.worktreeDir!),
 						);
 					if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
 						return Response.json({
@@ -5058,7 +5208,12 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const repos: Array<{ repo: string; dir: string; primary: boolean }> =
 					[];
 				const session = sessionId ? findSession(sessionId) : undefined;
-				if (session?.worktreeDir && existsSync(session.worktreeDir)) {
+				// Volume-mode sandbox workspaces have no host dir — the primary
+				// repo's `git ls-files` runs through the sandbox exec below.
+				if (
+					session?.worktreeDir &&
+					(existsSync(session.worktreeDir) || hasRemoteWorkspace(session))
+				) {
 					repos.push({
 						repo: session.repo || repoForPath(session.worktreeDir).id,
 						dir: session.worktreeDir,
@@ -5073,13 +5228,24 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					const proj = getRepo(url.searchParams.get("repo") || undefined);
 					repos.push({ repo: proj.id, dir: proj.repo, primary: true });
 				}
+				// Sandbox exec only for the session's own workspace (never for the
+				// main-checkout fallback, which isn't mounted in the container).
+				const primaryExec =
+					session && repos[0]?.primary && repos[0].dir === session.worktreeDir
+						? await workspaceExecFor(session, repos[0].dir)
+						: undefined;
 				const multi = repos.length > 1;
 				const perRepo = multi ? Math.max(6, Math.floor(20 / repos.length)) : 20;
 				const out: Array<{ display: string; insert: string; repo?: string }> =
 					[];
 				for (const r of repos) {
 					try {
-						for (const f of await searchRepoFiles(r.dir, q, perRepo)) {
+						for (const f of await searchRepoFiles(
+							r.dir,
+							q,
+							perRepo,
+							r.primary ? primaryExec : undefined,
+						)) {
 							out.push({
 								display: f,
 								insert: r.primary ? f : `${r.repo}:${f}`,
@@ -5238,6 +5404,17 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				// one branch). stack: a new worktree branched off it (stacked PRs). ask:
 				// no worktree, read-only on main. Empty chat — first prompt starts the run.
 				const chatMode = body.mode || "share";
+				// Volume-mode sandbox workspaces live inside ONE session's container —
+				// share/stack siblings would either mint a divergent second clone at
+				// the same path or ENOENT on the host. Not supported yet.
+				if (hasRemoteWorkspace(src) && chatMode !== "ask")
+					return Response.json(
+						{
+							error:
+								"This chat's workspace lives inside its sandbox volume — sibling chats aren't supported for volume-mode sandboxes yet (open an Ask chat instead)",
+						},
+						{ status: 400 },
+					);
 				const bksId = `bks-${randomUUIDv7()}`;
 				let branch = src.branch || "";
 				let worktreeDir = src.worktreeDir || "";
@@ -7522,6 +7699,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							// announced on the deterministic path first and the worktree
 							// is created after session_created goes out (below).
 							let needsWorktree = false;
+							// Volume-mode sandbox workspace (Phase 2): no host worktree at
+							// all - the sandbox provider clones it in-container on the
+							// opening run below.
+							let volumeWorkspace = false;
 							if (forkSource) {
 								// Share the source's cwd so the fork sees the same code state.
 								wtPath = forkSource.worktreeDir || repo.repo;
@@ -7554,7 +7735,21 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
 								if (!wtPath) {
 									wtPath = worktreePathFor(branch, repo.id);
-									needsWorktree = true;
+									// Volume-mode sandbox (docs/sandboxes-plan.md Phase 2): the
+									// workspace is cloned into a per-session volume INSIDE the
+									// container — skip host createWorktree entirely. The session
+									// keeps the canonical path; DockerProvider.ensure
+									// materializes it on the opening run below.
+									if (
+										createSandbox &&
+										sandboxesEnabled() &&
+										effectiveSandboxProvider(repo.id) === "docker" &&
+										sandboxConfig().workspace === "volume"
+									) {
+										volumeWorkspace = true;
+									} else {
+										needsWorktree = true;
+									}
 								}
 							}
 							// First code chat materializes the workspace's owned worktree so
@@ -7712,7 +7907,17 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									...(plainThreadId ? { plainThreadId } : {}),
 									...(createMcpServers && createMcpServers.length ? { mcpServers: createMcpServers } : {}),
 									...(createSandbox
-										? { sandbox: { provider: effectiveSandboxProvider(repo.id) } }
+										? {
+												sandbox: {
+													provider: effectiveSandboxProvider(repo.id),
+													// Volume intent is recorded up front so the prompt
+													// paths know the workspace never exists host-side
+													// (hasRemoteWorkspace) even before the first ensure.
+													...(volumeWorkspace
+														? { workspace: "volume" as const }
+														: {}),
+												},
+											}
 										: {}),
 								};
 								writeJsonAtomic(
@@ -7769,7 +7974,36 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									}
 								}
 
-							for await (const event of runAgent({
+							// Volume-mode sandbox session: the workspace exists only inside
+							// the container, so the opening turn MUST run there - route it
+							// through the same sandbox launcher the prompt path uses (the
+							// session file was persisted above, so it resolves). No host
+							// fallback is possible for a workspace with no host dir: a
+							// failed launch errors the stream (announcedId is set, so the
+							// catch below closes it out). Bind-mode sandbox sessions keep
+							// Phase 1 behavior - first turn on the host worktree, sandboxed
+							// from the second prompt on.
+							let volumeSandboxRun: AsyncGenerator<StreamEvent> | null = null;
+							if (volumeWorkspace) {
+								const created = findSession(bksId);
+								volumeSandboxRun = created
+									? await maybeLaunchSandboxedRun(created, {
+											prompt: openingPrompt,
+											cwd: wtPath,
+											user,
+											images,
+											mcpServers: createMcpServers ?? [],
+											isAutomationSession: false,
+										})
+									: null;
+								if (!volumeSandboxRun) {
+									throw new Error(
+										"Sandbox unavailable for this volume-workspace session - the opening prompt was not run. Check sandbox config/kill-switch and retry.",
+									);
+								}
+							}
+
+							for await (const event of volumeSandboxRun ?? runAgent({
 								prompt: openingPrompt,
 								cwd: wtPath,
 								mode: isAsk ? "ask" : "code",
