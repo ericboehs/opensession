@@ -10213,7 +10213,9 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   soft shadow lift the opaque bar over the transcript scrolling beneath. */
 	.session-tabs {
 		position: absolute;
-		top: var(--header-h);
+		/* 6px below the header's bottom edge — the breathing room that makes the
+		   pill row and the tab row read as one integrated bar. */
+		top: calc(var(--header-h) + 6px);
 		left: 0;
 		right: 0;
 		z-index: 6;
@@ -10231,7 +10233,9 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 				> .session-tab:not(.session-tab-new):not(.session-tab-history)
 				~ .session-tab:not(.session-tab-new):not(.session-tab-history)
 		) {
-		--strip-clearance: 46px;
+		/* Tab bar drops 6px below the header (see .session-tabs `top`) for a
+		   little air between the two rows, so the transcript clears both. */
+		--strip-clearance: 52px;
 	}
 	/* …and when the docked bar is present, the floating header above it goes
 	   solid too so the whole top block reads as one opaque bar — otherwise the
@@ -10245,7 +10249,20 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 				~ .session-tab:not(.session-tab-new):not(.session-tab-history)
 		) .app-header-overlay {
 		background: var(--bg);
-		min-height: var(--header-h);
+		min-height: calc(var(--header-h) + 6px);
+	}
+	/* In that solid state the controls sit ON the bar, not floating over the
+	   transcript — so drop their white-bubble fill, border and shadow. The Back
+	   chevron, the title and the ⋯ read as flat bar controls instead of white
+	   chips on a white bar. (Single-chat keeps the floating bubbles.) */
+	.app:has(
+			.session-tabs-scroll
+				> .session-tab:not(.session-tab-new):not(.session-tab-history)
+				~ .session-tab:not(.session-tab-new):not(.session-tab-history)
+		) .app-header-overlay :is(.mobile-back, .app-header-title, .btn-viewer-overflow) {
+		background: transparent;
+		border-color: transparent;
+		box-shadow: none;
 	}
 
 	/* Brand logo in the top bar. */
