@@ -1,51 +1,90 @@
 /**
  * Consolidated user/email/ID mappings across GitHub, Slack, and Linear.
+ *
+ * The tables are DERIVED from `configuredIdentity()` (identity.team +
+ * identity.slackNames in ~/.backstage/config.json; built-in default = Tella's
+ * roster — see config.ts). Derivation happens once at module load; with no
+ * config file the derived tables are exactly the historical literals
+ * (user-mappings.test.ts pins that equality). An empty configured team means
+ * empty tables: attribution/gating/ask-routing become no-ops, never throws.
  */
+import { configuredIdentity, type TeamMember } from "../config";
+
+/** A git author/committer identity. */
+export interface GitIdentity {
+  name: string;
+  email: string;
+}
+
+type TeamGitIdentityEntry = GitIdentity & {
+  aliases: string[];
+  slackId?: string;
+  github?: string;
+};
+
+export interface DerivedIdentityTables {
+  githubToSlack: Record<string, string>;
+  linearEmailToGithub: Record<string, string>;
+  slackIdToName: Record<string, string>;
+  teamGitIdentity: TeamGitIdentityEntry[];
+}
+
+/**
+ * Build the four mapping tables from an identity roster. Exported for the
+ * derivation test; runtime code uses the module-level tables below.
+ * - githubToSlack: members with both ids, unless `githubToSlack: false`.
+ * - linearEmailToGithub: each member's linearEmails → their GitHub login.
+ * - slackIdToName: members' slackId → name, plus the extra slackNames map.
+ * - teamGitIdentity: members with a git email (aliases default to the
+ *   lowercased first name).
+ */
+export function deriveIdentityTables(
+  team: TeamMember[],
+  slackNames: Record<string, string> = {},
+): DerivedIdentityTables {
+  const githubToSlack: Record<string, string> = {};
+  const linearEmailToGithub: Record<string, string> = {};
+  const slackIdToName: Record<string, string> = {};
+  const teamGitIdentity: TeamGitIdentityEntry[] = [];
+
+  for (const m of team) {
+    if (m.github && m.slackId && m.githubToSlack !== false) {
+      githubToSlack[m.github] = m.slackId;
+    }
+    if (m.github) {
+      for (const email of m.linearEmails ?? []) {
+        linearEmailToGithub[email.toLowerCase()] = m.github;
+      }
+    }
+    if (m.slackId) slackIdToName[m.slackId] = m.name;
+    if (m.email) {
+      teamGitIdentity.push({
+        name: m.name,
+        email: m.email,
+        aliases: m.aliases?.length
+          ? m.aliases.map((a) => a.toLowerCase())
+          : [m.name.split(" ")[0].toLowerCase()],
+        ...(m.slackId ? { slackId: m.slackId } : {}),
+        ...(m.github ? { github: m.github } : {}),
+      });
+    }
+  }
+  Object.assign(slackIdToName, slackNames);
+
+  return { githubToSlack, linearEmailToGithub, slackIdToName, teamGitIdentity };
+}
+
+const identity = configuredIdentity();
+const tables = deriveIdentityTables(identity.team, identity.slackNames);
 
 /** GitHub username → Slack user ID */
-export const GITHUB_TO_SLACK: Record<string, string> = {
-  happylinks: "UT41L6GCC",       // Michiel Westerbeek
-  johnnylinsf: "U0866D7PCCU",    // Johnny Lin
-  "9ranty": "USU9S2YRF",         // Grant Shaddick
-  thiblahute: "U065GD4757C",     // Thibault Saunier
-  jfrolich: "U08EWERLX8D",       // Jaap Frolich
-  soutar: "U08CXTV7ML2",         // John Soutar
-  kentdebruin: "U08S8B3P83X",    // Kent de Bruin
-};
+export const GITHUB_TO_SLACK: Record<string, string> = tables.githubToSlack;
 
 /** Linear email → GitHub username (for PR reviewer assignment) */
-export const LINEAR_EMAIL_TO_GITHUB: Record<string, string> = {
-  "michiel@tella.tv": "happylinks",
-  "grant@tella.tv": "9ranty",
-  "johnny@tella.tv": "johnnylinsf",
-  "kent@tella.com": "kentdebruin",
-  "john@tella.com": "soutar",
-  "jaap@tella.com": "jfrolich",
-  "louise@tella.com": "louisedesadeleer",
-  "tsaunier@igalia.com": "thiblahute",
-};
+export const LINEAR_EMAIL_TO_GITHUB: Record<string, string> = tables.linearEmailToGithub;
 
 /** Slack user ID → full display name (single source of truth) */
-export const SLACK_ID_TO_NAME: Record<string, string> = {
-  UT41L6GCC: "Michiel Westerbeek",
-  U0866D7PCCU: "Johnny Lin",
-  USU9S2YRF: "Grant Shaddick",
-  U065GD4757C: "Thibault Saunier",
-  U066K2VRDHA: "Andres Gomez",
-  U08CXTV7ML2: "John Soutar",
-  U08EWERLX8D: "Jaap Frolich",
-  U08JGAT5KNK: "Louise de Sadeleer",
-  U08S8B3P83X: "Kent de Bruin",
-  U0A3CERFC57: "Connor",
-  U0A3PB2MJET: "Ankita Kulkarni",
-  U0A7T08405R: "Michael",
-  U03EACNTLA1: "Linear",
-  // Legacy workspace ids
-  U01D3KX3ATW: "Johnny",
-  U01E8UE6L15: "Louise",
-  U084XSXRQNB: "Kent",
-  U086HCZURPM: "Grant",
-};
+export const SLACK_ID_TO_NAME: Record<string, string> = tables.slackIdToName;
 
 export function slackIdToFirstName(id: string): string | null {
   const name = SLACK_ID_TO_NAME[id];
@@ -115,35 +154,18 @@ export function githubLoginFor(ref?: string | null): string | null {
   return TEAM_GIT_IDENTITY.find((p) => p.name === id.name)?.github ?? null;
 }
 
-/** A git author/committer identity. */
-export interface GitIdentity {
-  name: string;
-  email: string;
-}
-
 /**
- * Ground-truth git identities, mined from tella-fusion commit history: the exact
- * (name, email) each teammate's commits already use, so GitHub attributes commits
- * we author on their behalf to the right account. `noreply` addresses are used
- * where the person commits with one (guarantees linkage regardless of email
- * privacy); otherwise their current/most-recent author email.
+ * Ground-truth git identities — the exact (name, email) each teammate's
+ * commits already use, so GitHub attributes commits we author on their behalf
+ * to the right account (`noreply` addresses where the person commits with
+ * one). Derived from the configured roster; the built-in default was mined
+ * from tella-fusion commit history.
  *
  * `aliases` covers the web user-picker first names (UserPicker TEAM) and is matched
  * case-insensitively; `slackId`/`github` let us resolve Slack senders and Linear
  * issue creators to the same identity.
  */
-const TEAM_GIT_IDENTITY: Array<
-  GitIdentity & { aliases: string[]; slackId?: string; github?: string }
-> = [
-  { name: "Michiel Westerbeek", email: "happylinks@gmail.com", aliases: ["michiel"], slackId: "UT41L6GCC", github: "happylinks" },
-  { name: "Jaap Frolich", email: "jfrolich@gmail.com", aliases: ["jaap"], slackId: "U08EWERLX8D", github: "jfrolich" },
-  { name: "Kent de Bruin", email: "52224550+kentdebruin@users.noreply.github.com", aliases: ["kent"], slackId: "U08S8B3P83X", github: "kentdebruin" },
-  { name: "Grant Shaddick", email: "grant@tella.com", aliases: ["grant"], slackId: "USU9S2YRF", github: "9ranty" },
-  { name: "Johnny Lin", email: "67078496+johnnylinsf@users.noreply.github.com", aliases: ["johnny"], slackId: "U0866D7PCCU", github: "johnnylinsf" },
-  { name: "John Soutar", email: "john@tella.com", aliases: ["john"], slackId: "U08CXTV7ML2", github: "soutar" },
-  { name: "Louise de Sadeleer", email: "54376811+louisedesadeleer@users.noreply.github.com", aliases: ["louise"], slackId: "U08JGAT5KNK", github: "louisedesadeleer" },
-  { name: "Thibault Saunier", email: "tsaunier@igalia.com", aliases: ["thibault"], slackId: "U065GD4757C", github: "thiblahute" },
-];
+const TEAM_GIT_IDENTITY: TeamGitIdentityEntry[] = tables.teamGitIdentity;
 
 /**
  * Resolve a prompt author — a web user-picker name, a Slack user id, or an email
