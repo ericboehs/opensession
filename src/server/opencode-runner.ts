@@ -9,9 +9,11 @@
  * (e.g. opencode/anthropic/claude-sonnet-5, opencode/openai/gpt-5.5) reach
  * this runner — nothing defaults to it. Provider auth is OpenCode's own
  * (`opencode auth login` → ~/.local/share/opencode/auth.json; HOME is passed
- * through), except `opencode/anthropic/*`, which runs on Claude-subscription
- * capacity via one of two bridges selected by `bridge.mode` in
- * ~/.backstage-opencode.json (see opencode-config.ts):
+ * through), except two subscription paths: `opencode/openai/*` runs on our
+ * ChatGPT-subscription auth (the codex accounts pool, seeded per-account — see
+ * opencode-openai-auth.ts), and `opencode/anthropic/*`, which runs on
+ * Claude-subscription capacity via one of two bridges selected by `bridge.mode`
+ * in ~/.backstage-opencode.json (see opencode-config.ts):
  *
  *  - "meridian" (the default when enabled; Michiel's 2026-07-08 directive):
  *    the literal opencode-with-claude + @rynfar/meridian stack, bundled as
@@ -116,6 +118,11 @@ import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { isCodexUsageLimitError } from "./codex-runner";
 import { ensureAnthropicBridge } from "./anthropic-bridge";
+import {
+  pickOpenaiAccount,
+  bindOpenaiAccount,
+  maskOpenaiAccount,
+} from "./opencode-openai-auth";
 import { opencodeTurnTimeoutMs, readOpencodeBridgeConfig } from "./opencode-config";
 import {
   pickAccount,
@@ -740,10 +747,17 @@ export async function* runOpencode(
   let runFailure: string | undefined;
   let runEnded = false;
   let failRun: () => void = () => {};
-  // Run-level meridian audit closer (see module doc: meridian audits per run,
-  // not per HTTP request). First call wins; the finally backstop covers
+  // Run-level bridge audit closer (see module doc: subscription bridges —
+  // meridian for anthropic, ChatGPT-OAuth for openai — audit per run, not per
+  // HTTP request). First call wins; the finally backstop covers
   // cancellation/crashes.
-  let meridianEnd: (status: string, detail?: string) => void = () => {};
+  let bridgeRunEnd: (status: string, detail?: string) => void = () => {};
+  // Liveness guard: subscription-bridge runs (meridian / openai) that hang at
+  // an auth wall never produce output; the 60-min turn deadline is uselessly
+  // long for that. When set, a run that emits nothing within LIVENESS_MS aborts
+  // with a clear error. `bridgeAccountLabel` names the account in that error.
+  let bridgeLivenessGuard = false;
+  let bridgeAccountLabel = "";
 
   try {
     // Bridge for Anthropic models — dispatched on bridge.mode in
@@ -785,7 +799,7 @@ export async function* runOpencode(
         const startedAt = Date.now();
         audit({ ...auditBase, phase: "start" });
         let ended = false;
-        meridianEnd = (status, detail) => {
+        bridgeRunEnd = (status, detail) => {
           if (ended) return;
           ended = true;
           audit({
@@ -796,6 +810,8 @@ export async function* runOpencode(
             ...(detail ? { error: detail } : {}),
           });
         };
+        bridgeLivenessGuard = true;
+        bridgeAccountLabel = picked.name;
       } else if (bridgeMode === "native") {
         const bridge = ensureAnthropicBridge();
         providerOverride = {
@@ -809,6 +825,56 @@ export async function* runOpencode(
             "provider configured via `opencode auth login` instead."
         );
       }
+    } else if (parsed.providerID === "openai") {
+      // opencode/openai/* on our EXISTING ChatGPT-subscription auth (the codex
+      // accounts pool) — the OpenAI analog of the meridian bridge. Independent
+      // of the anthropic bridge's `enabled` flag: it keys off codex-accounts,
+      // not the bridge config (only the optional openaiAccounts restriction is
+      // read there). With no codex accounts we fall through to opencode's own
+      // host auth (`opencode auth login`) — unchanged behavior. See
+      // opencode-openai-auth.ts for the seed-access-only rotation-hazard fix.
+      const cfg = readOpencodeBridgeConfig();
+      const picked = pickOpenaiAccount(parsed.modelID, cfg?.openaiAccounts);
+      if (!("error" in picked)) {
+        const bound = bindOpenaiAccount(picked);
+        if ("error" in bound) throw new Error(`opencode/openai: ${bound.error}`);
+        serverExtraEnv = { ...(serverExtraEnv || {}), ...bound.extraEnv };
+        if (bound.providerOverride) providerOverride = bound.providerOverride;
+        const auditBase = {
+          msg: "opencode_openai_run",
+          turn_id: turnId,
+          run_key: runKey,
+          bks_session_id: journal?.bksSessionId,
+          run_kind: journal?.kind,
+          model,
+          account: maskOpenaiAccount(picked),
+          account_id: picked.id.slice(0, 8),
+          mechanism: bound.mechanism,
+        };
+        const startedAt = Date.now();
+        audit({ ...auditBase, phase: "start" });
+        let ended = false;
+        bridgeRunEnd = (status, detail) => {
+          if (ended) return;
+          ended = true;
+          audit({
+            ...auditBase,
+            phase: "end",
+            status,
+            duration_ms: Date.now() - startedAt,
+            ...(detail ? { error: detail } : {}),
+          });
+        };
+        // API-key runs authenticate synchronously (no OAuth wall to hang on);
+        // guard only the subscription path where an auth hang is possible.
+        if (bound.mechanism === "oauth-subscription") {
+          bridgeLivenessGuard = true;
+          bridgeAccountLabel = picked.name;
+        }
+      }
+      // picked.error (no codex accounts) ⇒ intentionally fall through to host
+      // auth; if opencode itself has no openai credential the turn errors
+      // normally with opencode's own "no auth" message.
     }
 
     const { mcp: externalMcp, droppedForConfirm } = buildOpencodeMcpConfig(
@@ -950,7 +1016,9 @@ export async function* runOpencode(
     const emittedText = new Set<string>();
     const startedTools = new Set<string>();
     const finishedTools = new Set<string>();
+    let sawFirstOutput = false;
     const push = (ev: StreamEvent) => {
+      sawFirstOutput = true;
       pending.push(ev);
       wake?.();
     };
@@ -1088,6 +1156,22 @@ export async function* runOpencode(
       signalDone();
     }, turnTimeout);
 
+    // Liveness guard (subscription-bridge runs only): an auth hang produces no
+    // output at all, and the 60-min turn deadline is uselessly long for it. If
+    // nothing has streamed within LIVENESS_MS, abort with a clear error naming
+    // the account, rather than holding the session busy for an hour.
+    const LIVENESS_MS = 90_000;
+    const livenessTimer = bridgeLivenessGuard
+      ? setTimeout(() => {
+          if (sawFirstOutput || idle || abortController.signal.aborted) return;
+          runFailure ??=
+            `opencode ${parsed.providerID} run produced no output within ${LIVENESS_MS / 1000}s — ` +
+            `likely an authentication hang on account "${bridgeAccountLabel}"; aborting`;
+          void client.session.abort({ path: { id: ocSessionId } }).catch(() => {});
+          signalDone();
+        }, LIVENESS_MS)
+      : undefined;
+
     const statusPoll = setInterval(() => {
       void (async () => {
         try {
@@ -1120,6 +1204,7 @@ export async function* runOpencode(
     } finally {
       clearInterval(statusPoll);
       clearTimeout(turnDeadline);
+      if (livenessTimer) clearTimeout(livenessTimer);
       pumpStopped = true;
       void pump.catch(() => {});
     }
@@ -1129,7 +1214,7 @@ export async function* runOpencode(
     // server) and let the finally cleanup release the session.
     if (runFailure) {
       turnEvent({ direction: "out", kind: "error", error: runFailure });
-      meridianEnd("error", runFailure);
+      bridgeRunEnd("error", runFailure);
       yield { type: "error", content: runFailure, provider: PROVIDER, model };
       return;
     }
@@ -1158,7 +1243,7 @@ export async function* runOpencode(
     if (errMessage && info?.error?.name !== "MessageAbortedError") {
       const limit = isCodexUsageLimitError(errMessage);
       turnEvent({ direction: "out", kind: "error", error: errMessage });
-      meridianEnd("error", errMessage);
+      bridgeRunEnd("error", errMessage);
       yield {
         type: "error",
         content: errMessage,
@@ -1182,7 +1267,7 @@ export async function* runOpencode(
       total_cost_usd: info?.cost,
       ...summarizeText(textOut),
     });
-    meridianEnd("success");
+    bridgeRunEnd("success");
     yield {
       type: "done",
       sessionId: ocSessionId,
@@ -1206,7 +1291,7 @@ export async function* runOpencode(
     if (!abortController.signal.aborted) {
       const message = e?.message || String(e);
       turnEvent({ direction: "out", kind: "error", error: message });
-      meridianEnd("error", message);
+      bridgeRunEnd("error", message);
       yield {
         type: "error",
         content: message,
@@ -1222,7 +1307,7 @@ export async function* runOpencode(
     }
     // Backstop for paths that never reached an explicit close (cancel, early
     // return, generator torn down mid-drain) — no-op if already ended.
-    meridianEnd(abortController.signal.aborted ? "cancelled" : "abandoned");
+    bridgeRunEnd(abortController.signal.aborted ? "cancelled" : "abandoned");
     for (const key of registeredKeys) activeOpencodeRuns.delete(key);
     if (rpcTokenRegistered && entry) unregisterRunToken(entry.rpcToken);
     if (entry) {

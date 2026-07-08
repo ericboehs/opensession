@@ -42,13 +42,25 @@ import {
   OPENCODE_BIN,
 } from "../src/server/opencode-runner";
 import { readOpencodeBridgeConfig } from "../src/server/opencode-config";
+import { listCodexAccounts } from "../src/server/codex-accounts";
 
 const argModel = process.argv[2];
 const prompt = process.argv[3] || "Reply with exactly: OK";
 
 const bridgeCfg = readOpencodeBridgeConfig();
+// A codex "home" account = a ChatGPT-subscription login (CODEX_HOME/auth.json),
+// which is what opencode/openai/* seeds from (opencode-openai-auth.ts).
+const hasCodexHome = listCodexAccounts().some((a) => a.kind === "home");
+// Model resolution: explicit arg wins; else the anthropic bridge default when
+// enabled; else the openai subscription path when a codex home account exists
+// (the cheapest ChatGPT-plan model verified live — gpt-5.4-mini).
 const model =
-  argModel || (bridgeCfg?.enabled ? "opencode/anthropic/claude-haiku-4-5" : "");
+  argModel ||
+  (bridgeCfg?.enabled
+    ? "opencode/anthropic/claude-haiku-4-5"
+    : hasCodexHome
+      ? "opencode/openai/gpt-5.4-mini"
+      : "");
 
 if (!existsSync(OPENCODE_BIN)) {
   console.error(`FAIL: opencode binary not found at ${OPENCODE_BIN}`);
@@ -126,7 +138,8 @@ if (!model) {
   console.error(
     "Basic-auth check passed, but no model to verify a run with: pass one " +
       "(bun scripts/verify-opencode.ts opencode/<provider>/<model>)\n" +
-      "or enable the Anthropic bridge (see header comment). API-key providers need `opencode auth login`."
+      "or enable the Anthropic bridge, or add a codex ChatGPT (home) account for the " +
+      "opencode/openai path (see header comment). API-key providers need `opencode auth login`."
   );
   process.exit(1);
 }
@@ -178,6 +191,23 @@ const treeSnap = (dir: string): string => {
 };
 const hostClaudeBefore = fileSnap(`${HOME_DIR}/.claude/.credentials.json`);
 const hostOpencodeCfgBefore = treeSnap(`${HOME_DIR}/.config/opencode`);
+
+// ── OpenAI-mode pre-state (rotation-hazard assertion) ───────────────────────
+// The core correctness guarantee (opencode-openai-auth.ts): opencode is seeded
+// access-token-only + a placeholder refresh, so it can NEVER rotate/invalidate
+// the codex refresh token. Snapshot every codex home account's live tokens now
+// and re-check them after the run — they must be byte-identical.
+const openaiMode = model.startsWith("opencode/openai/");
+const codexAuthBefore = new Map<string, string>();
+if (openaiMode) {
+  for (const a of listCodexAccounts()) {
+    if (a.kind !== "home") continue;
+    try {
+      const t = JSON.parse(readFileSync(`${a.value}/auth.json`, "utf-8"))?.tokens ?? {};
+      codexAuthBefore.set(a.id, `${t.access_token ?? ""}|${t.refresh_token ?? ""}`);
+    } catch {}
+  }
+}
 const startedAt = new Date();
 
 let sawDone = false;
@@ -274,8 +304,60 @@ if (meridianMode) {
   else console.log("host: ~/.config/opencode untouched");
 }
 
+if (openaiMode) {
+  console.log("\n── openai (ChatGPT subscription) assertions ──");
+
+  // 1. Run-level audit events (opencode_openai_run start + end).
+  const auditFile = `${HOME_DIR}/.backstage-audit/audit-${startedAt.toISOString().slice(0, 10)}.jsonl`;
+  let events: any[] = [];
+  try {
+    events = readFileSync(auditFile, "utf-8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => {
+        try {
+          return JSON.parse(l);
+        } catch {
+          return null;
+        }
+      })
+      .filter((e) => e && e.msg === "opencode_openai_run" && new Date(e.time) >= startedAt);
+  } catch {}
+  const startEv = events.find((e) => e.phase === "start");
+  const endEv = events.find((e) => e.phase === "end");
+  if (startEv && endEv) {
+    console.log(
+      `audit: start+end emitted (account=${startEv.account}, mechanism=${startEv.mechanism}, ` +
+        `end status=${endEv.status}, ${endEv.duration_ms}ms)`
+    );
+    if (endEv.status !== "success") failures.push(`openai end audit status "${endEv.status}" (want success)`);
+  } else {
+    failures.push(`openai audit events missing (start=${!!startEv}, end=${!!endEv}) in ${auditFile}`);
+  }
+
+  // 2. Rotation hazard held: no codex home account's tokens were rotated.
+  let rotated = false;
+  for (const a of listCodexAccounts()) {
+    if (a.kind !== "home" || !codexAuthBefore.has(a.id)) continue;
+    let after = "";
+    try {
+      const t = JSON.parse(readFileSync(`${a.value}/auth.json`, "utf-8"))?.tokens ?? {};
+      after = `${t.access_token ?? ""}|${t.refresh_token ?? ""}`;
+    } catch {}
+    if (after !== codexAuthBefore.get(a.id)) {
+      rotated = true;
+      failures.push(`codex account "${a.name}" auth.json tokens changed during the run (rotation hazard!)`);
+    }
+  }
+  if (!rotated) console.log("codex auth: all home-account tokens untouched (opencode never rotated the refresh family)");
+}
+
 if (!failures.length) {
-  console.log("\nPASS: opencode run completed" + (meridianMode ? " (meridian mode, all assertions held)" : ""));
+  console.log(
+    "\nPASS: opencode run completed" +
+      (meridianMode ? " (meridian mode, all assertions held)" : "") +
+      (openaiMode ? " (openai ChatGPT-subscription mode, all assertions held)" : "")
+  );
   process.exit(0);
 }
 console.error(`\nFAIL:\n- ${failures.join("\n- ")}`);
