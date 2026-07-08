@@ -3583,8 +3583,10 @@ body.resizing-x .panel-resize::after {
 .wi-chip-icon {
 	display: inline-flex;
 	align-items: center;
-	/* Nudge the glyph onto the text baseline so it doesn't ride high. */
-	margin-top: -0.5px;
+	/* The bell glyph sits slightly high in its own 24-viewbox (more empty
+	   space below than above), so geometric centering leaves it riding high
+	   next to the label. Nudge it down onto the text's optical center. */
+	margin-top: 0.5px;
 }
 .wi-chip-icon svg {
 	display: block;
