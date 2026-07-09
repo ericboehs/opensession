@@ -263,6 +263,19 @@ of the config. Hosted-Daytona reminder: the sandbox side of this dial-back
 needs **Tier 3 / self-hosted** egress — lower tiers block outbound traffic
 so no ingress URL is reachable from inside.
 
+## Known gaps (remote providers)
+
+- **Audit trail**: in-sandbox runs write their `claude_turn_event` audit
+  lines to the sandbox's own `~/.backstage-audit` — docker bind-mounts that
+  dir so they land in the host stream, but **daytona/e2b sandboxes keep them
+  local and they're lost when the sandbox is destroyed**. Host-side you still
+  get the launch/journal/run-ws lines; grep the sandbox itself (`exec`) while
+  it lives if you need a remote run's turn-level audit. (The persisted
+  opencode transcript had the same gap and is now mirrored host-side from the
+  dial-back stream — see `withOpencodeTranscriptMirror` in
+  `src/server/sandbox/adapters/bootstrap.ts`; audit mirroring is a possible
+  follow-up on the same hook.)
+
 ## Kill switch
 
 ```sh

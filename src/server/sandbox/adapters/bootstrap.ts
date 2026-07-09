@@ -62,6 +62,14 @@ import {
 import { RESUME_CONTINUATION_PROMPT } from "../../agent-runner";
 import { accountsForRemoteUpload } from "../../claude-accounts";
 import { providerFor } from "../../models";
+import {
+  appendOpencodeTranscript,
+  ensureOpencodeTranscriptFile,
+  transcriptLineUser,
+  transcriptLineAssistantText,
+  transcriptLineToolUse,
+  transcriptLineToolResult,
+} from "../../opencode-transcript";
 import { hostSteer, hostInterruptSteer, hostCancel } from "../../host-registry";
 import { registerRunToken, unregisterRunToken } from "../../run-rpc";
 import { registerRunWsHost, unregisterRunWsHost, runWsConnector } from "../../run-ws";
@@ -90,6 +98,11 @@ import type {
 export const REMOTE_HOME = "/home/ubuntu";
 export const REMOTE_BUN = `${REMOTE_HOME}/.bun/bin/bun`;
 export const REMOTE_CLAUDE = `${REMOTE_HOME}/.local/bin/claude`;
+export const REMOTE_OPENCODE = `${REMOTE_HOME}/.bun/bin/opencode`;
+/** Same pin as deploy/sandbox/Dockerfile's OPENCODE_VERSION (host runs this
+ *  too) — bump BOTH together. Part of bootstrapSignature, so a bump
+ *  invalidates existing sandboxes/prewarms and re-bootstraps them. */
+export const REMOTE_OPENCODE_VERSION = "1.17.15";
 export const REMOTE_REPO = REPO_ROOT; // /home/ubuntu/projects/tella-backstage
 const BOOTSTRAP_MARKER = `${REMOTE_HOME}/.bks-bootstrapped`;
 const REMOTE_PATH = `${REMOTE_HOME}/.bun/bin:${REMOTE_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
@@ -340,10 +353,14 @@ function need(r: ExecResult, what: string): void {
 }
 
 /** What the bootstrap marker records — a prewarmed sandbox is only adoptable
- *  while its recorded signature still matches this (prewarm.ts claim check). */
+ *  while its recorded signature still matches this (prewarm.ts claim check).
+ *  The opencode pin is part of it so sandboxes bootstrapped before opencode
+ *  was in the payload (or on an older pin) re-bootstrap instead of failing
+ *  every opencode/* run with a missing binary. */
 export function bootstrapSignature(): string {
   const cfg = sandboxConfig();
-  return cfg.runnerSha || cfg.runnerBundleUrl || "unpinned";
+  const base = cfg.runnerSha || cfg.runnerBundleUrl || "unpinned";
+  return `${base}+opencode@${REMOTE_OPENCODE_VERSION}`;
 }
 
 /**
@@ -474,6 +491,27 @@ export async function bootstrapRemoteSandbox(
       { timeoutMs: 300_000 },
     ),
     "claude CLI install",
+  );
+
+  // opencode: the third engine (opencode/<provider>/<model> runs) — without it
+  // resolveOpencodeBin finds nothing in-sandbox and every opencode run dies
+  // instantly (bks-019f46bd, 2026-07-09). bun's global install puts the
+  // platform binary at REMOTE_OPENCODE (~/.bun/bin, already first on
+  // REMOTE_PATH); BUN_INSTALL pins the global dir to the payload HOME.
+  log("installing opencode…");
+  need(
+    await driver.exec(
+      `test -x ${REMOTE_OPENCODE} || HOME=${REMOTE_HOME} BUN_INSTALL=${REMOTE_HOME}/.bun ${REMOTE_BUN} add -g opencode-ai@${REMOTE_OPENCODE_VERSION}`,
+      { timeoutMs: 300_000 },
+    ),
+    "opencode install",
+  );
+  need(
+    await driver.exec(
+      `v=$(HOME=${REMOTE_HOME} ${REMOTE_OPENCODE} --version) && { [ "$v" = "${REMOTE_OPENCODE_VERSION}" ] || { echo "opencode version mismatch: got '$v', want ${REMOTE_OPENCODE_VERSION}"; exit 1; }; }`,
+      { timeoutMs: 60_000 },
+    ),
+    "opencode version check",
   );
   need(
     await driver.exec(
@@ -628,6 +666,9 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
           HOME: REMOTE_HOME,
           PATH: REMOTE_PATH,
           NODE_ENV: "production",
+          // Deterministic opencode resolution (bootstrap installed it here) —
+          // don't depend on PATH probing inside the run host.
+          BACKSTAGE_OPENCODE_BIN: REMOTE_OPENCODE,
           BACKSTAGE_RUN_JOURNAL: `${dir}/journal.json`,
           BKS_RUN_WS_URL: `${base}/backstage/run-ws/${hostId}`,
           BKS_RUN_WS_TOKEN: spec.wsToken,
@@ -693,6 +734,53 @@ function recordForSpec(
     kind: spec.journalKind || "prompt",
     startedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Host-side mirror of the persisted opencode transcript for REMOTE runs.
+ * The in-sandbox runner writes its JSONL inside the sandbox, where nothing
+ * host-side can read it back (docker bind-mounts OPENCODE_TRANSCRIPTS_DIR;
+ * remote sandboxes have no mount), so a daytona/e2b opencode session would
+ * render "No transcript available" after a reload. Backstage already receives
+ * every stream event over the dial-back — rebuild the same claude-shape lines
+ * from them here. Applied ONLY on the remote adapters (this module): docker's
+ * bind mount already lands the in-sandbox writes on the host, and mirroring
+ * there would double every line.
+ */
+async function* withOpencodeTranscriptMirror(
+  events: AsyncGenerator<StreamEvent>,
+  spec: RunHostSpec,
+): AsyncGenerator<StreamEvent> {
+  if (providerFor(spec.model) !== "opencode") {
+    yield* events;
+    return;
+  }
+  let oc = spec.engineSessionId || "";
+  let wrotePrompt = false;
+  const mirror = (lines: Parameters<typeof appendOpencodeTranscript>[1]) => {
+    if (oc) appendOpencodeTranscript(oc, lines);
+  };
+  for await (const ev of events) {
+    try {
+      if (ev.type === "init" && ev.sessionId) {
+        oc = ev.sessionId;
+        ensureOpencodeTranscriptFile(oc);
+        if (!wrotePrompt && spec.prompt) {
+          mirror([transcriptLineUser(spec.prompt)]);
+          wrotePrompt = true;
+        }
+      } else if (ev.type === "text_chunk" && ev.text) {
+        mirror([transcriptLineAssistantText(ev.text)]);
+      } else if (ev.type === "tool_use" && ev.toolUseId) {
+        mirror([transcriptLineToolUse(ev.toolUseId, ev.toolName || "tool", ev.toolInput)]);
+      } else if (ev.type === "tool_result" && ev.toolUseId) {
+        mirror([transcriptLineToolResult(ev.toolUseId, ev.content || "", false)]);
+      }
+    } catch {
+      // Mirroring must never break the run stream.
+    }
+    yield ev;
+  }
 }
 
 async function* withRunJournal(
@@ -780,7 +868,11 @@ export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
         } catch {}
         throw e;
       }
-      const gen = withRunJournal(handle.events(), record, touch);
+      const gen = withRunJournal(
+        withOpencodeTranscriptMirror(handle.events(), spec),
+        record,
+        touch,
+      );
       return {
         events: () => gen,
         steerable: providerFor(spec.model) !== "codex",
@@ -873,7 +965,11 @@ export async function resumeRemoteSandboxRun(
         handle.abandon();
         throw e;
       }
-      return withRunJournal(handle.events(), { ...run, startedAt: run.startedAt }, () => {});
+      return withRunJournal(
+        withOpencodeTranscriptMirror(handle.events(), oldSpec),
+        { ...run, startedAt: run.startedAt },
+        () => {},
+      );
     }
   }
 
