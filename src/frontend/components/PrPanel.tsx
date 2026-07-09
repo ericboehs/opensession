@@ -142,8 +142,8 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
   const [merging, setMerging] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
-  const [checksOpen, setChecksOpen] = useState(true);
-  const [filesOpen, setFilesOpen] = useState(true);
+  const [checksOpen, setChecksOpen] = useState(false);
+  const [allFilesOpen, setAllFilesOpen] = useState(false);
   const [bodyOpen, setBodyOpen] = useState(false);
   const [bodyOverflows, setBodyOverflows] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -333,6 +333,9 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
   const status = deriveStatus(pr);
   const files = pr.files || [];
   const reviewers = pr.reviewers || [];
+  // Bot bookkeeping comments are pure HTML markers — hide them, and strip
+  // leading markers from real comments' previews.
+  const comments = (pr.comments || []).filter((c) => stripHtmlComments(c.body));
 
   return (
     <div className={`pr-panel ${split ? "pr-panel-split" : ""}`} ref={rootRef}>
@@ -358,6 +361,29 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
               </span>
             </div>
           </div>
+
+          {/* Compact action row — primary merge, quiet secondaries (Linear-style). */}
+          <div className="prc-actions">
+            {pr.state === "OPEN" && !pr.isDraft && (
+              <button
+                className={`prc-btn prc-btn-primary ${confirmMerge ? "prc-btn-confirm" : ""}`}
+                onClick={handleMerge}
+                disabled={merging}
+                title={`Squash and merge this ${provider.changeNoun} into its base branch`}
+              >
+                {merging ? "Merging…" : confirmMerge ? "Confirm squash & merge?" : "Squash & merge"}
+              </button>
+            )}
+            <a className="prc-btn" href={pr.url} target="_blank" rel="noopener">
+              Open on {provider.name} ↗
+            </a>
+            {onOpenSession && (
+              <button className="prc-btn" onClick={onOpenSession}>
+                Open session →
+              </button>
+            )}
+          </div>
+          {mergeError && <div className="pr-merge-error">{mergeError}</div>}
 
           {pr.body && (
             <div className="pr-body pr-body-top">
@@ -404,57 +430,62 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
             </PrCard>
           )}
 
-          {/* Checks card */}
+          {/* Checks card — one rollup row like Linear; the full list is opt-in. */}
           {pr.checks.length > 0 && (
-            <PrCard
-              title="Checks"
-              headExtra={
-                <button
-                  className="prc-card-toggle"
-                  onClick={() => setChecksOpen((o) => !o)}
-                  aria-expanded={checksOpen}
-                >
-                  <span
-                    className={`prc-checks-rollup ${
-                      checkSummary.failed > 0
-                        ? "prc-tone-red"
-                        : checkSummary.pending > 0
-                          ? "prc-tone-yellow"
-                          : "prc-tone-green"
-                    }`}
-                  >
-                    {checkSummary.failed > 0
-                      ? "Some checks failed"
+            <PrCard title="Checks">
+              <button
+                className="prc-summary-row"
+                onClick={() => setChecksOpen((o) => !o)}
+                aria-expanded={checksOpen}
+              >
+                <span
+                  className={`prc-summary-mark ${
+                    checkSummary.failed > 0
+                      ? "prc-tone-red"
                       : checkSummary.pending > 0
-                        ? "Checks running"
-                        : "All passed"}
-                  </span>
-                  <span className="prc-checks-counts">
-                    {checkSummary.passed > 0 && (
-                      <span className="check-success-text">✓ {checkSummary.passed}</span>
-                    )}
-                    {checkSummary.failed > 0 && (
-                      <span className="check-failure-text">✕ {checkSummary.failed}</span>
-                    )}
-                    {checkSummary.pending > 0 && (
-                      <span className="check-pending-text">● {checkSummary.pending}</span>
-                    )}
-                  </span>
-                  <span className="prc-chevron">{checksOpen ? "▾" : "▸"}</span>
-                </button>
-              }
-            >
-              {checksOpen && checkSummary.deployments.length > 0 && (
+                        ? "prc-tone-yellow prc-mark-pending"
+                        : "prc-tone-green"
+                  }`}
+                >
+                  {checkSummary.failed > 0 ? (
+                    <IconX size={15} />
+                  ) : checkSummary.pending > 0 ? (
+                    "●"
+                  ) : (
+                    <IconCheck size={15} />
+                  )}
+                </span>
+                <span className="prc-summary-label">
+                  {checkSummary.failed > 0
+                    ? "Some checks failed"
+                    : checkSummary.pending > 0
+                      ? "Checks running"
+                      : "All passed"}
+                </span>
+                <span className="prc-checks-counts">
+                  {checkSummary.passed > 0 && (
+                    <span className="check-success-text">✓ {checkSummary.passed}</span>
+                  )}
+                  {checkSummary.failed > 0 && (
+                    <span className="check-failure-text">✕ {checkSummary.failed}</span>
+                  )}
+                  {checkSummary.pending > 0 && (
+                    <span className="check-pending-text">● {checkSummary.pending}</span>
+                  )}
+                </span>
+                <span className="prc-chevron">{checksOpen ? "▾" : "▸"}</span>
+              </button>
+              {checksOpen && (
                 <>
-                  <div className="pr-checks-group">Deployments</div>
+                  {checkSummary.deployments.length > 0 && (
+                    <div className="pr-checks-group">Deployments</div>
+                  )}
                   {checkSummary.deployments.map((check, i) => (
                     <CheckRow key={`d${i}`} check={check} />
                   ))}
-                </>
-              )}
-              {checksOpen && checkSummary.checks.length > 0 && (
-                <>
-                  {checkSummary.deployments.length > 0 && <div className="pr-checks-group">Checks</div>}
+                  {checkSummary.deployments.length > 0 && checkSummary.checks.length > 0 && (
+                    <div className="pr-checks-group">Checks</div>
+                  )}
                   {checkSummary.checks.map((check, i) => (
                     <CheckRow key={`c${i}`} check={check} />
                   ))}
@@ -463,56 +494,53 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
             </PrCard>
           )}
 
-          {/* Files changed card */}
+          {/* Files changed card — rows visible by default, long lists capped. */}
           {files.length > 0 && (
             <PrCard
               title={`${files.length} file${files.length === 1 ? "" : "s"} changed`}
               headExtra={
-                <button
-                  className="prc-card-toggle"
-                  onClick={() => setFilesOpen((o) => !o)}
-                  aria-expanded={filesOpen}
-                >
-                  <span className="prc-meta-diffstat">
-                    <span className="prc-add">+{pr.additions}</span>
-                    <span className="prc-del">−{pr.deletions}</span>
-                  </span>
-                  <span className="prc-chevron">{filesOpen ? "▾" : "▸"}</span>
-                </button>
+                <span className="prc-meta-diffstat prc-head-diffstat">
+                  <span className="prc-add">+{pr.additions}</span>
+                  <span className="prc-del">−{pr.deletions}</span>
+                </span>
               }
             >
-              {filesOpen &&
-                files.map((f) => (
-                  <FileRow
-                    key={f.path}
-                    file={f}
-                    onClick={diff?.patch ? () => scrollToFile(f.path) : undefined}
-                  />
-                ))}
+              {(allFilesOpen ? files : files.slice(0, 8)).map((f) => (
+                <FileRow
+                  key={f.path}
+                  file={f}
+                  onClick={diff?.patch ? () => scrollToFile(f.path) : undefined}
+                />
+              ))}
+              {files.length > 8 && (
+                <button className="prc-show-more" onClick={() => setAllFilesOpen((o) => !o)}>
+                  {allFilesOpen ? "Show fewer" : `Show all ${files.length} files`}
+                </button>
+              )}
             </PrCard>
           )}
 
-          {(pr.comments?.length || 0) > 0 && (
+          {comments.length > 0 && (
             <PrCard
               title="Comments"
               headExtra={
                 onAddToInput ? (
                   <button
                     className="pr-comments-add-all"
-                    onClick={() => onAddToInput(formatPrCommentsPrompt(pr.comments || [], pr))}
+                    onClick={() => onAddToInput(formatPrCommentsPrompt(comments, pr))}
                   >
                     Add all to chat
                   </button>
                 ) : undefined
               }
             >
-              {(pr.comments || []).map((comment, i) => (
+              {comments.map((comment, i) => (
                 <div className="pr-comment-row" key={`${comment.url || comment.createdAt || i}`}>
                   <span className="pr-comment-select" aria-hidden />
                   <div className="pr-comment-meta">
                     <span className="pr-comment-author">{comment.author || "comment"}</span>
                   </div>
-                  <div className="pr-comment-body">{comment.body}</div>
+                  <div className="pr-comment-body">{stripHtmlComments(comment.body)}</div>
                   {comment.url && (
                     <a className="pr-comment-link" href={comment.url} target="_blank" rel="noopener">
                       ↗
@@ -531,27 +559,6 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
             </PrCard>
           )}
 
-          <div className="pr-actions">
-            <a className="btn-open-pr" href={pr.url} target="_blank" rel="noopener">
-              Open on {provider.name} ↗
-            </a>
-            {pr.state === "OPEN" && !pr.isDraft && (
-              <button
-                className={`btn-merge-pr ${confirmMerge ? "btn-merge-confirm" : ""}`}
-                onClick={handleMerge}
-                disabled={merging}
-                title={`Squash and merge this ${provider.changeNoun} into its base branch`}
-              >
-                {merging ? "Merging…" : confirmMerge ? "Confirm squash & merge" : "Squash & merge"}
-              </button>
-            )}
-            {onOpenSession && (
-              <button className="btn-open-session" onClick={onOpenSession}>
-                Open session →
-              </button>
-            )}
-          </div>
-          {mergeError && <div className="pr-merge-error">{mergeError}</div>}
         </div>
       </SelectionToSession>
 
@@ -774,6 +781,11 @@ function formatPendingCommentsPrompt(comments: PendingComment[], pr: PrDetails):
 
 function trimCommentBody(body: string): string {
   return body.trim().replace(/\n{3,}/g, "\n\n");
+}
+
+/** Bot comments hide bookkeeping in HTML comments (`<!-- marker -->`) — drop them from previews. */
+function stripHtmlComments(body: string): string {
+  return body.replace(/<!--[\s\S]*?-->/g, "").trim();
 }
 
 export function formatPrCommentPrompt(comment: PrComment, pr: PrDetails): string {
