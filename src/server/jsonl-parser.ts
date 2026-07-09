@@ -53,6 +53,9 @@ interface RawJsonlEntry {
   message?: {
     role?: string;
     content?: any;
+    // Assistant lines: the model that produced the message (Claude SDK writes
+    // this natively; our opencode transcript writer mirrors it).
+    model?: string;
   };
 }
 
@@ -246,6 +249,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
 
   if (raw.type === "assistant") {
     const content = raw.message.content;
+    const model = typeof raw.message.model === "string" ? raw.message.model : undefined;
     if (Array.isArray(content)) {
       for (const block of content) {
         if (block.type === "text" && block.text) {
@@ -255,6 +259,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
             content: block.text,
             timestamp: ts,
             requestId: raw.requestId,
+            ...(model ? { model } : {}),
           });
         }
         if (block.type === "tool_use") {
@@ -279,6 +284,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
           content: text,
           timestamp: ts,
           requestId: raw.requestId,
+          ...(model ? { model } : {}),
         });
       }
     }

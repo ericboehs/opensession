@@ -9,7 +9,9 @@ import {
   IconCheck,
   IconCopy,
   IconDotsHorizontal,
+  IconSparkle,
 } from "./icons";
+import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
 
 /** One change a tool made to a file: old text removed, new text added.
  * Writes have old: "" (the whole content is an addition). */
@@ -92,6 +94,15 @@ export const TurnFooter = React.memo(function TurnFooter({
             <IconCopy size={20} className="text-faint" />
             Copy message
           </Menu.Item>
+          {entry.model && (
+            <>
+              <Menu.Separator className="my-1" />
+              <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-faint">
+                <IconSparkle size={20} />
+                Written by {messageModelLabel(entry.model)}
+              </div>
+            </>
+          )}
         </Menu.Popup>
       </Menu.Root>
       {shown.map((f) => (
@@ -121,6 +132,14 @@ function turnFooterPropsEqual(prev: Props, next: Props): boolean {
 
 const BTN =
   "flex size-7 flex-shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-faint hover:bg-hover hover:text-dim";
+
+/** Friendly name for a per-message model id: opencode ids take their model
+ * part, raw API ids drop the date suffix — "opencode/anthropic/claude-sonnet-5"
+ * and "claude-sonnet-5-20250929" both read "Sonnet 5". */
+function messageModelLabel(id: string): string {
+  const slug = opencodeModelParts(id)?.model || id;
+  return friendlyModelSlug(slug.replace(/-\d{8}$/, ""));
+}
 
 const MAX_CHIPS = 4;
 

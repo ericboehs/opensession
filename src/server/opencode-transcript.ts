@@ -77,12 +77,23 @@ export function transcriptLineUser(text: string, id?: string, ts?: string): Json
   };
 }
 
-export function transcriptLineAssistantText(text: string, id?: string, ts?: string): JsonlLine {
+export function transcriptLineAssistantText(
+  text: string,
+  id?: string,
+  ts?: string,
+  model?: string
+): JsonlLine {
   return {
     type: "assistant",
     uuid: id || crypto.randomUUID(),
     timestamp: ts || new Date().toISOString(),
-    message: { role: "assistant", content: [{ type: "text", text }] },
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text }],
+      // Same slot the Claude SDK uses on its assistant lines, so the shared
+      // jsonl parser reads both without a special case.
+      ...(model ? { model } : {}),
+    },
   };
 }
 
@@ -136,7 +147,7 @@ export function transcriptLineForEntry(e: TranscriptEntry): JsonlLine | null {
     case "user":
       return transcriptLineUser(e.content, e.id, e.timestamp);
     case "assistant":
-      return transcriptLineAssistantText(e.content, e.id, e.timestamp);
+      return transcriptLineAssistantText(e.content, e.id, e.timestamp, e.model);
     case "tool_use":
       return transcriptLineToolUse(
         e.toolUseId || e.id,
@@ -213,6 +224,9 @@ interface MessageData {
   role?: string;
   time?: { created?: number };
   error?: { name?: string; data?: { message?: string } };
+  // Assistant messages carry the upstream provider/model that produced them.
+  providerID?: string;
+  modelID?: string;
 }
 
 interface PartData {
@@ -311,6 +325,11 @@ export function readOpencodeTranscript(
       }
       const role = data.role === "user" ? "user" : "assistant";
       const ts = toIso(data.time?.created ?? m.time_created, new Date(0).toISOString());
+      // Reconstruct our full model id shape from opencode's provider/model pair.
+      const model =
+        role === "assistant" && data.providerID && data.modelID
+          ? `opencode/${data.providerID}/${data.modelID}`
+          : undefined;
       for (const p of partsByMessage.get(m.id) || []) {
         let part: PartData;
         try {
@@ -322,7 +341,13 @@ export function readOpencodeTranscript(
           if (part.synthetic) continue;
           const text = role === "user" ? stripContext(part.text || "") : part.text || "";
           if (!text.trim()) continue;
-          entries.push({ id: p.id, type: role, content: text, timestamp: ts });
+          entries.push({
+            id: p.id,
+            type: role,
+            content: text,
+            timestamp: ts,
+            ...(model ? { model } : {}),
+          });
         } else if (part.type === "tool") {
           entries.push({
             id: p.id,
