@@ -59,7 +59,7 @@ import {
 	worktreeHasWork,
 	REPOS,
 } from "./src/server/worktree";
-import { defaultRepo } from "./src/server/config";
+import { defaultRepo, productName } from "./src/server/config";
 import {
 	sandboxesEnabled,
 	sandboxConfig,
@@ -432,7 +432,7 @@ function interactiveMcpServers(
 	user?: string,
 	sessionId?: string,
 ): Record<string, unknown> {
-	const createdBy = user || "Backstage";
+	const createdBy = user || productName();
 	return {
 		"michael-sessions": createSessionsMcpServer({
 			createdBy,
@@ -1182,15 +1182,14 @@ async function escalateAskToSlack(
 			createdBy: session?.startedBy || "Michael",
 			person,
 			question,
-			context:
-				"_Nobody picked this up in Backstage within 4 minutes, so I'm bringing it to you._",
+			context: `_Nobody picked this up in ${productName()} within 4 minutes, so I'm bringing it to you._`,
 			options,
 			mode: "block",
 			deliver: "now",
 		});
 		broadcastToSession(sessionId, {
 			type: "notice",
-			message: `No answer in Backstage — asked ${person.name} over Slack.`,
+			message: `No answer in ${productName()} — asked ${person.name} over Slack.`,
 		});
 		return { askId: ask.id, personName: person.name };
 	} catch (e) {
@@ -3079,7 +3078,7 @@ function handleSlashCommand(
 
 	if (text === "/help") {
 		return [
-			"Backstage commands:",
+			`${productName()} commands:`,
 			"/goal <text> — pin a goal, appended to every prompt until cleared",
 			"/goal clear — remove the goal",
 			"/loop <interval> <prompt> — re-run a prompt on an interval (e.g. /loop 30m check CI and fix failures)",
@@ -4008,8 +4007,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 			if (path === "/backstage/manifest.webmanifest") {
 				return Response.json(
 					{
-						name: "Backstage",
-						short_name: "Backstage",
+						name: productName(),
+						short_name: productName(),
 						start_url: "/backstage/",
 						display: "standalone",
 						background_color: "#0b0809",
