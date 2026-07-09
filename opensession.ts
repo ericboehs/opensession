@@ -343,6 +343,7 @@ import {
 	setAccountOwner,
 	refreshAllUsage,
 	startUsagePoller,
+	getAccountById,
 	type ClaudeAccountPublic,
 } from "./src/server/claude-accounts";
 import { startWebhookServer } from "./src/server/webhook-server";
@@ -7955,6 +7956,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									SESSION_EFFORTS.has(msg.effort.trim().toLowerCase())
 								? msg.effort.trim().toLowerCase()
 								: undefined;
+						// Pinned Claude subscription from the palette (forks inherit).
+						// Soft pin: the runner prefers it and falls back to the pool when
+						// it's exhausted. Unknown ids are dropped rather than erroring.
+						const createAccountId = forkSource
+							? forkSource.accountId
+							: typeof msg.accountId === "string" &&
+									msg.accountId &&
+									getAccountById(msg.accountId)
+								? msg.accountId
+								: undefined;
 						const createMcpServers = Array.isArray(msg.mcpServers)
 							? msg.mcpServers.map(String)
 							: undefined;
@@ -8246,6 +8257,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										: {}),
 									...(effectiveModel ? { model: effectiveModel } : {}),
 									...(createEffort ? { effort: createEffort } : {}),
+									...(createAccountId ? { accountId: createAccountId } : {}),
 									...(modelHistory.length ? { modelHistory } : {}),
 									branch: sessionBranch,
 									worktreeDir: wtPath,
@@ -8378,6 +8390,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 								mode: isAsk ? "ask" : "code",
 								model,
 								effort: createEffort,
+								accountId: createAccountId,
 								fallbackModel: interactiveFallbackModel(model),
 								mcpServers: createMcpServers,
 								reposNote: buildBranchNote({

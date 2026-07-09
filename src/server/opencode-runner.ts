@@ -402,18 +402,46 @@ export function meridianAccountEnv(account: ClaudeAccount, meridianKey: string):
 }
 
 /**
- * Pick the account a meridian run authenticates as. `ids` (bridge.accounts)
- * restricts to designated accounts in list order; otherwise the normal
- * accounts-layer pick (personal-first for the run user, then shared pool).
- * Either way another user's personal account is never used — same rule as
- * accountsForRemoteUpload (fail closed).
+ * Pick the account a meridian run authenticates as, most-specific first:
+ *
+ *  1. `pinnedId` — the session's pinned subscription (session.accountId).
+ *     Soft pin by default: an unusable/foreign pin falls through to the
+ *     normal pick. `strict` (automation cost cap) errors instead, so the
+ *     model-fallback chain takes over rather than the shared pool.
+ *  2. `stickyId` — the account this session's server is already running on.
+ *     Switching accounts mid-session respawns the opencode server (the env
+ *     is part of the config hash → full MCP/LSP/meridian cold boot) AND
+ *     forfeits Anthropic's prompt cache, so a session stays on its account
+ *     until it stops being usable (usage limit → markExhausted → re-pick).
+ *  3. `ids` (bridge.accounts) restricts to designated accounts in list
+ *     order; otherwise the normal accounts-layer pick (personal-first for
+ *     the run user, then shared pool, least-utilized first).
+ *
+ * In every path another user's personal account is never used — same rule
+ * as accountsForRemoteUpload (fail closed).
  */
 export function pickMeridianAccount(
   user: string | undefined,
   model: string,
-  ids?: string[]
+  ids?: string[],
+  pinnedId?: string,
+  strict?: boolean,
+  stickyId?: string
 ): ClaudeAccount | { error: string } {
   const allowedOwner = (a: ClaudeAccount) => !a.owner || (!!user && userMatchesAny(user, [a.owner]));
+  const designated = (id: string) => !ids?.length || ids.includes(id);
+  if (pinnedId) {
+    const pinned = getUsableAccountById(pinnedId, model);
+    if (pinned && allowedOwner(pinned) && designated(pinnedId)) return pinned;
+    if (strict) {
+      const name = getAccountById(pinnedId)?.name || pinnedId;
+      return { error: `pinned account ${name} is not currently usable (hard pin — not falling back to the pool)` };
+    }
+  }
+  if (stickyId && designated(stickyId)) {
+    const sticky = getUsableAccountById(stickyId, model);
+    if (sticky && allowedOwner(sticky)) return sticky;
+  }
   if (ids?.length) {
     for (const id of ids) {
       const a = getUsableAccountById(id, model);
@@ -426,6 +454,12 @@ export function pickMeridianAccount(
   if (picked) return picked;
   return { error: "no usable Claude account for the meridian bridge (pool exhausted or none configured)" };
 }
+
+// Sticky meridian account per server key (bks session id / cwd): parked on
+// globalThis so hot reloads keep live sessions on their account.
+const stickyMeridianAccounts: Map<string, string> = (
+  (globalThis as any).__stickyMeridianAccounts ??= new Map()
+);
 
 // ── OpenCode config generation ───────────────────────────────────────────────
 
@@ -1022,8 +1056,16 @@ async function* runOpencodeAttempt(
       const bridgeMode = cfg?.enabled ? cfg.bridgeMode : "off";
       if (bridgeMode === "meridian") {
         const stack = meridianStackInfo();
-        const picked = pickMeridianAccount(user, parsed.modelID, cfg!.bridgeAccountIds);
+        const picked = pickMeridianAccount(
+          user,
+          parsed.modelID,
+          cfg!.bridgeAccountIds,
+          opts.accountId,
+          opts.accountStrict,
+          stickyMeridianAccounts.get(serverKey)
+        );
         if ("error" in picked) throw new Error(`meridian bridge: ${picked.error}`);
+        stickyMeridianAccounts.set(serverKey, picked.id);
         // Stable per-server proxy key so the config hash — and the server —
         // survive across runs; a fresh key is minted only with a fresh server.
         const meridianKey = servers.get(serverKey)?.meridianKey || crypto.randomUUID();
@@ -1402,7 +1444,7 @@ async function* runOpencodeAttempt(
             emittedText.add(part.id);
             turnEvent({ direction: "out", kind: "assistant_text", ...summarizeText(part.text) });
             appendOpencodeTranscript(ocSessionId, [
-              transcriptLineAssistantText(part.text, part.id),
+              transcriptLineAssistantText(part.text, part.id, undefined, model),
             ]);
             push({ type: "text_chunk", text: part.text });
           }
@@ -1654,7 +1696,7 @@ async function* runOpencodeAttempt(
         if (!emittedText.has(pt.id)) {
           emittedText.add(pt.id);
           appendOpencodeTranscript(ocSessionId, [
-            transcriptLineAssistantText(pt.text, pt.id),
+            transcriptLineAssistantText(pt.text, pt.id, undefined, model),
           ]);
           pending.push({ type: "text_chunk", text: pt.text });
         }

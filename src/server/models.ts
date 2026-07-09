@@ -15,7 +15,12 @@
 
 import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
-import { opencodePickerModels, bridgeEnabled } from "./opencode-config";
+import {
+  opencodePickerModels,
+  bridgeEnabled,
+  opencodeProviders,
+  BRIDGE_PROVIDER_IDS,
+} from "./opencode-config";
 import { envAlias, stateDir } from "./rename-compat";
 
 export type Provider = "claude" | "codex" | "opencode";
@@ -86,7 +91,20 @@ export function refreshOpencodePickerModels(): void {
     if (KNOWN_MODELS[i].provider === "opencode") KNOWN_MODELS.splice(i, 1);
   }
   try {
+    // Third-party providers only surface once they have an API key (Settings →
+    // Model providers) — a keyless entry would just produce auth errors.
+    // anthropic/openai ride the subscription bridges, never raw keys.
+    const keyed = new Set(
+      Object.entries(opencodeProviders())
+        .filter(([, p]) => !!p.apiKey)
+        .map(([id]) => id)
+    );
+    const usable = (id: string) => {
+      const provider = id.split("/")[1] || "";
+      return BRIDGE_PROVIDER_IDS.has(provider) || keyed.has(provider);
+    };
     for (const id of opencodePickerModels()) {
+      if (!usable(id)) continue;
       KNOWN_MODELS.push({
         id,
         provider: "opencode",

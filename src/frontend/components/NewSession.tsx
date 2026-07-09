@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, fetchSandboxStatus, fetchSystemPrompt, requestSandboxPrewarm, suggestBranch, type ModelOption, type SandboxStatusInfo, type SystemPromptPart } from "../lib/api";
+import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, fetchSandboxStatus, fetchSystemPrompt, requestSandboxPrewarm, suggestBranch, fetchClaudeAccounts, type ClaudeAccountOption, type ModelOption, type SandboxStatusInfo, type SystemPromptPart } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
@@ -14,7 +14,7 @@ import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { PaletteSelect } from "./PaletteSelect";
 import { RepoTile } from "./RepoTile";
-import { ModelEffortSelect } from "./ModelEffortSelect";
+import { ModelEffortSelect, opencodeModelParts } from "./ModelEffortSelect";
 import { Menu } from "../ui/menu";
 import { IconTile, displayName } from "./BrandTile";
 
@@ -135,6 +135,23 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   // Footer controls from the palette design. effort is persisted on the new
   // session and enforced per run (Claude effort / Codex modelReasoningEffort).
   const [effort, setEffort] = useState("high");
+  // Pinned Claude subscription for the new session ("" = auto pool pick).
+  // Soft pin: the runner prefers it and falls back on exhaustion. Only
+  // meaningful for Anthropic-family models — hidden for OpenAI/third-party.
+  const [accountId, setAccountId] = useState("");
+  const [accounts, setAccounts] = useState<ClaudeAccountOption[]>([]);
+  useEffect(() => {
+    fetchClaudeAccounts().then(setAccounts).catch(() => {});
+  }, []);
+  const effectiveNewModel = model || defaultModel;
+  const isAnthropicModel =
+    opencodeModelParts(effectiveNewModel)?.provider === "anthropic" ||
+    effectiveNewModel.startsWith("claude");
+  // A pin only makes sense on a Claude subscription — drop it when the model
+  // moves to another family so a stale pin never rides along invisibly.
+  useEffect(() => {
+    if (!isAnthropicModel && accountId) setAccountId("");
+  }, [isAnthropicModel, accountId]);
   // Keep the palette open after a create to fire off another task. Chosen from
   // the Create split-button's dropdown; the primary button reflects the mode.
   const [createMore, setCreateMore] = useState(false);
@@ -456,6 +473,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       user: getCurrentUser(),
       ...(model ? { model } : {}),
       effort,
+      ...(isAnthropicModel && accountId ? { accountId } : {}),
       // Explicit provider id; omitted entirely for Host (= no sandbox).
       ...(sandboxProvider ? { sandbox: sandboxProvider } : {}),
       ...(selectedMcpServers.length ? { mcpServers: selectedMcpServers } : {}),
@@ -801,6 +819,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               onModelChange={setModel}
               effort={effort}
               onEffortChange={setEffort}
+              // Subscription pin — Claude subscriptions only, so the submenu
+              // hides for OpenAI/third-party models (they have their own auth).
+              accounts={isAnthropicModel && accounts.length > 0 ? accounts : undefined}
+              accountId={accountId}
+              onAccountChange={isAnthropicModel ? setAccountId : undefined}
               disabled={creating}
             />
             <VoiceInput
