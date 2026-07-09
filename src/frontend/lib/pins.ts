@@ -70,10 +70,13 @@ export function isPinned(id: string): boolean {
 	return cache.includes(id);
 }
 
-/** Add a pin if it isn't already set (never removes). Returns the new list. */
+/** Add a pin if it isn't already set (never removes). Returns the new list.
+    New pins go to the FRONT — the pins array is the Pinned band's display
+    order (drag-to-reorder rewrites it), and a fresh session should surface at
+    the top of the band, not sink under old pins. */
 export function pin(id: string): string[] {
 	if (cache.includes(id)) return cache;
-	const next = [...cache, id];
+	const next = [id, ...cache];
 	cache = next;
 	emit();
 	void savePinsApi(getCurrentUser(), next).catch(() => {});
@@ -144,9 +147,10 @@ export function unpin(ids: string[]): string[] {
 }
 
 export function togglePin(id: string): string[] {
+	// Adding prepends — same top-of-band rule as pin().
 	const next = cache.includes(id)
 		? cache.filter((p) => p !== id)
-		: [...cache, id];
+		: [id, ...cache];
 	cache = next;
 	emit();
 	void savePinsApi(getCurrentUser(), next).catch(() => {});

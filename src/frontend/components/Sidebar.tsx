@@ -17,7 +17,8 @@ import {
 import { loadOverview, overviewCache } from "../lib/workspace-overview";
 import { openLightbox } from "./MediaLightbox";
 import { useCurrentUser, TEAM } from "./UserPicker";
-import { getPins, onPinsChanged, togglePin } from "../lib/pins";
+import { getPins, onPinsChanged, togglePin, reorderPins } from "../lib/pins";
+import { Reorder } from "motion/react";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, markUnread, onReadsChanged } from "../lib/reads";
 import { chatPath, prPath, absoluteLink, copyToClipboard } from "../lib/share-link";
@@ -691,6 +692,15 @@ export function Sidebar({
 	// Groups are collapsed by default; the expanded set persists per browser
 	const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
 	const [pins, setPins] = useState<string[]>(getPins);
+	// Drag-to-reorder in the Pinned band. onReorder fires continuously during a
+	// drag, so the in-flight order lives in local state (pinOrderDraft) and only
+	// commits to the pins store on drop — mirroring the composer queue's pattern.
+	// pinDragKey marks the floating row (background + stacking); pinJustDragged
+	// swallows the click that lands on the row right after a drop.
+	const [pinOrderDraft, setPinOrderDraft] = useState<string[] | null>(null);
+	const pinOrderPending = useRef<string[] | null>(null);
+	const [pinDragKey, setPinDragKey] = useState<string | null>(null);
+	const pinJustDragged = useRef(false);
 	const [recents, setRecents] = useState<string[]>(getRecents);
 	// Per-session last-read marks, driving the unread dot. Kept in sync via the
 	// same event the viewer fires when it marks a session read.
@@ -1358,11 +1368,24 @@ export function Sidebar({
 	);
 	const pinnedWsRows = useMemo(() => {
 		const pinSet = new Set(pins);
-		return wsRows.filter(
-			(r) =>
-				!reviewBandKeys.has(r.key) &&
-				(pinSet.has(r.key) || r.chats.some((c) => pinSet.has(c.id))),
-		);
+		const pinIdx = new Map(pins.map((p, i) => [p, i] as const));
+		// A row's slot in the band = its first matching key's position in the
+		// pins array (rows can be pinned via their workspace key or a legacy
+		// member-chat pin) — pins order is user-controlled (drag-to-reorder), so
+		// it wins over wsRows' recency order.
+		const rowIdx = (r: WsRow) => {
+			const hits = [r.key, ...r.chats.map((c) => c.id)]
+				.map((k) => pinIdx.get(k))
+				.filter((i): i is number => i !== undefined);
+			return hits.length ? Math.min(...hits) : Infinity;
+		};
+		return wsRows
+			.filter(
+				(r) =>
+					!reviewBandKeys.has(r.key) &&
+					(pinSet.has(r.key) || r.chats.some((c) => pinSet.has(c.id))),
+			)
+			.sort((a, b) => rowIdx(a) - rowIdx(b));
 	}, [wsRows, pins, reviewBandKeys]);
 	const focusWsRows = useMemo(() => {
 		const pinSet = new Set(pins);
@@ -2856,8 +2879,128 @@ export function Sidebar({
 					if (!pinnedRows.length && !pinnedLoose.length && !pinnedNotes.length)
 						return null;
 					const pinnedOpen = isOpen("pinned");
-					const pinnedCount =
-						pinnedRows.length + pinnedLoose.length + pinnedNotes.length;
+
+					// One flat drag-to-reorder list: every pinned thing (workspace row,
+					// loose chat, note) becomes an entry slotted by its first key's
+					// position in the pins array, so reordering is just rewriting that
+					// array (reorderPins). `pinKeys` is everything in `pins` that maps
+					// to the entry — a workspace can be pinned via its own key AND
+					// legacy member-chat pins — so a drop moves them as one unit.
+					type PinEntry = {
+						key: string;
+						pinKeys: string[];
+						node: React.ReactNode;
+					};
+					const pinIdx = new Map(pins.map((p, i) => [p, i] as const));
+					const entries: PinEntry[] = [];
+					for (const row of pinnedRows) {
+						entries.push({
+							key: `ws:${row.key}`,
+							pinKeys: [row.key, ...row.chats.map((c) => c.id)].filter((k) =>
+								pinIdx.has(k),
+							),
+							node: renderWsRow(row),
+						});
+					}
+					const seenLoose = new Set<string>();
+					for (const s of pinnedLoose) {
+						// A chat pinned via both its id and an alias maps to the same
+						// session twice — render (and reorder) it once.
+						if (seenLoose.has(s.id)) continue;
+						seenLoose.add(s.id);
+						const pin = sessionPinState(s);
+						entries.push({
+							key: `chat:${s.id}`,
+							pinKeys: [s.id, ...(s.aliasIds ?? [])].filter((k) =>
+								pinIdx.has(k),
+							),
+							node: (
+								<SidebarItem
+									session={s}
+									selected={s.id === selectedId}
+									unread={
+										s.id !== selectedId &&
+										isUnread(s.id, s.lastActivity, reads)
+									}
+									mine={
+										!!s.startedBy &&
+										!s.automation &&
+										s.startedBy.toLowerCase() === currentUser.toLowerCase()
+									}
+									onClick={() => onSelect(s)}
+									onArchive={() => archiveWithNext(s)}
+									pinned={pin.pinned}
+									onTogglePin={pin.toggle}
+									onRename={(title) => onRename(s, title)}
+								/>
+							),
+						});
+					}
+					for (const n of pinnedNotes) {
+						entries.push({
+							key: `note:${n.id}`,
+							pinKeys: [`note:${n.id}`],
+							node: (
+								<button
+									className={`sidebar-item ${n.id === activeNoteId ? "sidebar-item-selected" : ""}`}
+									onClick={() => onOpenNote(n.id)}
+									title={n.title}
+								>
+									<span style={{ marginRight: 6, opacity: 0.9 }}>📝</span>
+									<span className="sidebar-item-title">{n.title}</span>
+								</button>
+							),
+						});
+					}
+					const firstIdx = (e: PinEntry) =>
+						e.pinKeys.length
+							? Math.min(...e.pinKeys.map((k) => pinIdx.get(k)!))
+							: Infinity;
+					entries.sort((a, b) => firstIdx(a) - firstIdx(b));
+					// Mid-drag, Motion's in-flight order wins until the drop commits it.
+					if (pinOrderDraft) {
+						const draftIdx = new Map(
+							pinOrderDraft.map((k, i) => [k, i] as const),
+						);
+						entries.sort(
+							(a, b) =>
+								(draftIdx.get(a.key) ?? Infinity) -
+								(draftIdx.get(b.key) ?? Infinity),
+						);
+					}
+					const entryMap = new Map(entries.map((e) => [e.key, e] as const));
+					// Whole-row y-drag would fight touch scrolling and the swipe
+					// gestures, so drag reorder is desktop-only; the order itself is
+					// per-user server state, so a desktop reorder shows up on the phone.
+					const canDragPins = !isPhone && entries.length > 1;
+					const commitPinReorder = () => {
+						setPinDragKey(null);
+						pinJustDragged.current = true;
+						// The drop's click fires synchronously after pointerup; clear the
+						// swallow flag right after so the next real click works.
+						setTimeout(() => {
+							pinJustDragged.current = false;
+						}, 0);
+						const orderKeys = pinOrderPending.current;
+						pinOrderPending.current = null;
+						setPinOrderDraft(null);
+						if (!orderKeys) return;
+						// New pins array: the visible entries' keys take the slots that
+						// visible keys already occupy (in the new order), so pins hidden
+						// from the band (archived, repo-filtered, review-band rows) keep
+						// their exact positions instead of getting shoved to the end.
+						const flat = orderKeys.flatMap(
+							(k) => entryMap.get(k)?.pinKeys ?? [],
+						);
+						const visible = new Set(flat);
+						const queue = [...flat];
+						setPins(
+							reorderPins(
+								pins.map((p) => (visible.has(p) ? (queue.shift() ?? p) : p)),
+							),
+						);
+					};
+					const pinnedCount = entries.length;
 					return (
 						<div className="sidebar-group sidebar-group--pinned">
 							{/* Same header treatment as the status lanes below. */}
@@ -2877,44 +3020,42 @@ export function Sidebar({
 									style={{ transform: pinnedOpen ? "none" : "rotate(-90deg)" }}
 								/>
 							</button>
-							{pinnedOpen && pinnedRows.map(renderWsRow)}
-							{pinnedOpen &&
-								pinnedLoose.map((s) => {
-									const pin = sessionPinState(s);
-									return (
-										<SidebarItem
-											key={`pin-${s.id}`}
-											session={s}
-											selected={s.id === selectedId}
-											unread={
-												s.id !== selectedId &&
-												isUnread(s.id, s.lastActivity, reads)
-											}
-											mine={
-												!!s.startedBy &&
-												!s.automation &&
-												s.startedBy.toLowerCase() === currentUser.toLowerCase()
-											}
-											onClick={() => onSelect(s)}
-											onArchive={() => archiveWithNext(s)}
-											pinned={pin.pinned}
-											onTogglePin={pin.toggle}
-											onRename={(title) => onRename(s, title)}
-										/>
-									);
-								})}
-							{pinnedOpen &&
-								pinnedNotes.map((n) => (
-									<button
-										key={`pin-note-${n.id}`}
-										className={`sidebar-item ${n.id === activeNoteId ? "sidebar-item-selected" : ""}`}
-										onClick={() => onOpenNote(n.id)}
-										title={n.title}
-									>
-										<span style={{ marginRight: 6, opacity: 0.9 }}>📝</span>
-										<span className="sidebar-item-title">{n.title}</span>
-									</button>
-								))}
+							{pinnedOpen && (
+								<Reorder.Group
+									as="div"
+									axis="y"
+									className={`sidebar-pin-list${pinDragKey ? " is-drag-active" : ""}`}
+									values={entries.map((e) => e.key)}
+									onReorder={(keys: string[]) => {
+										pinOrderPending.current = keys;
+										setPinOrderDraft(keys);
+									}}
+								>
+									{entries.map((e) => (
+										<Reorder.Item
+											as="div"
+											key={e.key}
+											value={e.key}
+											dragListener={canDragPins}
+											onDragStart={() => setPinDragKey(e.key)}
+											onDragEnd={commitPinReorder}
+											whileDrag={{ scale: 1.01 }}
+											className={`sidebar-pin-entry${pinDragKey === e.key ? " is-reordering" : ""}`}
+											onClickCapture={(ev: React.MouseEvent) => {
+												// Swallow the click that lands on the row when a drag
+												// is dropped — it would open the session under the
+												// cursor.
+												if (pinJustDragged.current) {
+													ev.preventDefault();
+													ev.stopPropagation();
+												}
+											}}
+										>
+											{e.node}
+										</Reorder.Item>
+									))}
+								</Reorder.Group>
+							)}
 						</div>
 					);
 				})()}

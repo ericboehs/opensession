@@ -1481,6 +1481,26 @@ body.resizing-x {
 	margin-top: 0;
 }
 
+/* Drag-to-reorder wrapper around each Pinned row (Motion Reorder.Item). While
+   a row is being dragged it floats over its neighbours, so it needs a solid
+   background (rows are transparent over the app bg) and to win the stacking
+   order; radius matches the row's own so the backdrop doesn't poke out. */
+.sidebar-pin-entry {
+	position: relative;
+}
+.sidebar-pin-entry.is-reordering {
+	z-index: 5;
+	background: var(--bg);
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+/* While a drag is in flight, rows sliding under the pointer would fire
+   mouseenter and pop their hover preview cards — mute the row content so only
+   the drag gesture sees the pointer. */
+.sidebar-pin-list.is-drag-active .sidebar-pin-entry > * {
+	pointer-events: none;
+}
+
 /* Other people's sessions stack a "name · time" meta line under the title, so
    the row is already two lines tall. Trim the vertical padding — otherwise the
    full 11px top/bottom on each row leaves a big gap between them. */
