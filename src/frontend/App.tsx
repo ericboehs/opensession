@@ -90,7 +90,7 @@ type Route =
 	| { view: "prtinder" }
 	// Tool surfaces (Automations/Security/Goals/Actions/Notes) render inside the
 	// Settings chrome but keep their own routes, so old links stay deep-linkable.
-	| { view: "automations" }
+	| { view: "automations"; id?: string }
 	| { view: "security" }
 	| { view: "goals" }
 	| { view: "actions" }
@@ -157,7 +157,15 @@ function parseRoute(pathname: string): Route {
 	if (supportMatch)
 		return { view: "support", threadId: decodeURIComponent(supportMatch[1]) };
 	if (pathname === "/new") return { view: "new" };
-	if (pathname === "/automations") return { view: "automations" };
+	// <base>/automations/<id-or-name>: the automations page with one selected
+	// (its detail drawer open). The segment accepts the automation id or name —
+	// the sidebar only knows names.
+	const autoMatch = pathname.match(/^\/automations(?:\/(.+))?$/);
+	if (autoMatch)
+		return {
+			view: "automations",
+			id: autoMatch[1] ? decodeURIComponent(autoMatch[1]) : undefined,
+		};
 	if (pathname === "/security") return { view: "security" };
 	if (pathname === "/goals") return { view: "goals" };
 	if (pathname === "/actions") return { view: "actions" };
@@ -224,7 +232,9 @@ function routePath(route: Route): string {
 				? `${BASE_PATH}/new?prompt=${encodeURIComponent(route.prompt)}`
 				: `${BASE_PATH}/new`;
 		case "automations":
-			return `${BASE_PATH}/automations`;
+			return route.id
+				? `${BASE_PATH}/automations/${encodeURIComponent(route.id)}`
+				: `${BASE_PATH}/automations`;
 		case "security":
 			return `${BASE_PATH}/security`;
 		case "goals":
@@ -1344,6 +1354,10 @@ function App() {
 						{route.view === "automations" ? (
 							<Automations
 								onOpenSession={(id) => navigate({ view: "session", id })}
+								selectedId={route.id}
+								onSelect={(id) =>
+									navigate({ view: "automations", id: id || undefined })
+								}
 							/>
 						) : route.view === "security" ? (
 							<Security
@@ -1460,6 +1474,9 @@ function App() {
 							activeNoteId={currentNoteId}
 							reviewsActive={route.view === "reviews"}
 							onOpenReviews={() => navigate({ view: "reviews" })}
+							onOpenAutomation={(name) =>
+								navigate({ view: "automations", id: name })
+							}
 							prTinderActive={route.view === "prtinder"}
 							onOpenPrTinder={() => navigate({ view: "prtinder" })}
 							watercoolerActive={route.view === "watercooler"}

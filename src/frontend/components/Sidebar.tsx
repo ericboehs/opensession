@@ -32,6 +32,7 @@ import {
 	IconArchive,
 	IconBell,
 	IconFilter,
+	IconGear,
 	IconGitMerge,
 	IconCheck,
 	IconClock,
@@ -166,6 +167,9 @@ interface Props {
 	reviewsActive: boolean;
 	/** Open the Checks view (the sidebar's one non-workspace area). */
 	onOpenReviews: () => void;
+	/** Open one automation's settings (list + detail). Called with the
+	    automation's NAME — session rows only carry the name, not the id. */
+	onOpenAutomation: (name: string) => void;
 	/** True while the PR Tinder deck is open — highlights its entry. */
 	prTinderActive: boolean;
 	/** Open PR Tinder (swipe triage of the repo's open PRs). */
@@ -656,6 +660,7 @@ export function Sidebar({
 	activeNoteId,
 	reviewsActive,
 	onOpenReviews,
+	onOpenAutomation,
 	prTinderActive,
 	onOpenPrTinder,
 	watercoolerActive,
@@ -3216,6 +3221,20 @@ export function Sidebar({
 											/>
 											<span className="sidebar-group-count">
 												{group.items.length}
+											</span>
+											{/* Hover swaps the count for a cog that jumps to this
+											    automation in Settings (span, not button — we're
+											    inside the header button). */}
+											<span
+												role="button"
+												className="sidebar-auto-cog"
+												title="Automation settings"
+												onClick={(e) => {
+													e.stopPropagation();
+													onOpenAutomation(group.label);
+												}}
+											>
+												<IconGear size={17} />
 											</span>
 										</button>
 										{/* When collapsed, still surface the actively selected

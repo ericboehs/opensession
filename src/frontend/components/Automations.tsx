@@ -57,6 +57,11 @@ interface Automation {
 
 interface Props {
   onOpenSession: (sessionId: string) => void;
+  /** Selected automation — its id, or its name for sidebar deep-links
+   *  (session rows only carry the automation's name). From the route. */
+  selectedId?: string;
+  /** Change the selection ("" closes the detail drawer). Routed by App. */
+  onSelect: (id: string) => void;
 }
 
 const CUSTOM = "__custom__";
@@ -99,7 +104,7 @@ function useClaudeAccounts(): ClaudeAccountOption[] {
   return accounts;
 }
 
-export function Automations({ onOpenSession }: Props) {
+export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [loading, setLoading] = useState(true);
@@ -112,7 +117,6 @@ export function Automations({ onOpenSession }: Props) {
   }, []);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Automation | null>(null);
-  const [expandedRuns, setExpandedRuns] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -132,6 +136,30 @@ export function Automations({ onOpenSession }: Props) {
     };
   }, [load]);
 
+  // The routed selection — matched by id, or by name for sidebar deep-links.
+  const sel = useMemo(
+    () =>
+      selectedId
+        ? automations.find((a) => a.id === selectedId || a.name === selectedId) ||
+          null
+        : null,
+    [automations, selectedId],
+  );
+
+  // Escape backs out of the detail drawer (the edit modal handles its own
+  // Escape — don't close both from one keypress).
+  useEffect(() => {
+    if (!sel || showModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      onSelect("");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [!!sel, showModal, onSelect]);
+
   async function handleToggle(a: Automation) {
     try {
       await updateAutomationApi(a.id, { enabled: !a.enabled });
@@ -145,6 +173,7 @@ export function Automations({ onOpenSession }: Props) {
     if (!confirm(`Delete automation "${a.name}"?`)) return;
     try {
       await deleteAutomationApi(a.id);
+      if (sel?.id === a.id) onSelect("");
       load();
     } catch (e: any) {
       setError(e.message);
@@ -161,7 +190,9 @@ export function Automations({ onOpenSession }: Props) {
   }
 
   return (
-    <div className="automations">
+    <div className={`automations-page ${sel ? "automations-page-has-detail" : ""}`}>
+    <div className="automations-page-main">
+    <div className="automations-page-inner">
       <div className="page-header">
         <div>
           <h2 className="page-title">Automations</h2>
@@ -187,17 +218,6 @@ export function Automations({ onOpenSession }: Props) {
         </div>
       )}
 
-      {showModal && (
-        <CreateAutomationModal
-          initial={editing}
-          onClose={() => setShowModal(false)}
-          onSaved={() => {
-            setShowModal(false);
-            load();
-          }}
-        />
-      )}
-
       {loading ? (
         <div className="loading">Loading…</div>
       ) : automations.length === 0 && !showModal ? (
@@ -209,157 +229,252 @@ export function Automations({ onOpenSession }: Props) {
           </p>
         </div>
       ) : (
-        <div className="automation-list">
-          {automations.map((a) => (
-            <div key={a.id} className={`automation-card ${a.enabled ? "" : "automation-disabled"}`}>
-              <div className="automation-top">
-                <button
+        <div className="automations-table">
+          {automations.map((a) => {
+            const running = a.isRunning || a.lastRunStatus === "running";
+            return (
+              <button
+                key={a.id}
+                className={`automations-row ${sel?.id === a.id ? "active" : ""} ${a.enabled ? "" : "automations-row-off"}`}
+                onClick={() => onSelect(a.id)}
+              >
+                {/* Inner controls are spans — the row itself is a button. */}
+                <span
+                  role="button"
                   className={`auto-toggle ${a.enabled ? "auto-toggle-on" : ""}`}
-                  onClick={() => handleToggle(a)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggle(a);
+                  }}
                   title={a.enabled ? "Disable" : "Enable"}
                 >
                   <span className="auto-toggle-knob" />
-                </button>
-                <span className="automation-name">{a.name}</span>
-                <span className={`source-chip ${a.mode === "ask" ? "source-ask" : "source-backstage"}`}>
-                  {a.mode}
                 </span>
-                <span
-                  className="source-chip"
-                  title={a.model ? "Model for this automation's runs" : "Default model (not overridden)"}
-                >
-                  {a.model || defaultModel || "default"}
+                <span className="automations-row-main">
+                  <span className="automations-row-name">{a.name}</span>
+                  <span className="automations-row-trigger">{triggerSummary(a)}</span>
                 </span>
-                {a.fallbackModel && a.fallbackModel !== "none" && (
-                  <span
-                    className="source-chip chip-fallback"
-                    title="Fallback — used only when every account for the primary model has hit its usage limit"
-                  >
-                    ↯ {a.fallbackModel}
-                  </span>
-                )}
-                {a.accountId && (
-                  <span
-                    className="source-chip"
-                    title={
-                      a.accountStrict === false
-                        ? "Soft account pin — runs prefer this Claude subscription and fall back to the shared pool when it's out of usage"
-                        : "Hard account pin — runs use only this Claude subscription; when it's out of usage they fall to the fallback model, never the shared pool"
-                    }
-                  >
-                    {claudeAccounts.find((x) => x.id === a.accountId)?.name || "pinned account"}
-                    {a.accountStrict === false ? " first" : " only"}
-                  </span>
-                )}
-                {a.usageCredits && (
-                  <span
-                    className="source-chip"
-                    title="May keep running on paid usage-credits once the account's subscription limits are spent (needs extra usage enabled on the account)"
-                  >
-                    +credits
-                  </span>
-                )}
-                {(a.isRunning || a.lastRunStatus === "running") && (
+                {running ? (
                   <span className="working-pill">
                     <span className="working-dot" /> Running
                   </span>
-                )}
-                <div className="automation-actions">
-                  {(a.runs?.length ?? 0) > 0 && (
-                    <button
-                      className="btn-small"
-                      onClick={() => setExpandedRuns(expandedRuns === a.id ? null : a.id)}
-                    >
-                      {expandedRuns === a.id ? "Hide runs" : `Runs (${a.runs!.length})`}
-                    </button>
-                  )}
-                  <button className="btn-small" onClick={() => handleRunNow(a)} disabled={a.isRunning}>
-                    Run now
-                  </button>
-                  <button
-                    className="btn-small"
-                    onClick={() => {
-                      setEditing(a);
-                      setShowModal(true);
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button className="btn-small btn-small-danger" onClick={() => handleDelete(a)}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-
-              <div className="automation-prompt">{a.prompt}</div>
-
-              {(a.runs?.length ?? 0) > 0 && <TriggerGraph runs={a.runs!} />}
-
-              <div className="automation-meta">
-                {a.slackWatch ? (
-                  <span className="automation-cron automation-event" title="Runs on every top-level message in this Slack channel">
-                    watching #{a.slackWatch.channel}
-                  </span>
-                ) : a.schedule ? (
-                  <span className="automation-cron" title="UTC">{a.schedule}</span>
-                ) : !a.eventKey ? (
-                  <span className="automation-cron">webhook / manual</span>
-                ) : null}
-                {a.eventKey && (
-                  <span className="automation-cron automation-event" title="Internal event trigger">
-                    on {a.eventKey}
-                  </span>
-                )}
-                {a.mcpServers && (
+                ) : a.lastRunStatus === "ok" ? (
                   <span
-                    className="automation-cron"
-                    title="MCP servers this automation's runs can use (least privilege)"
+                    className="auto-status-ok"
+                    title={`Last run ok${a.lastRunAt ? ` — ${relativeTime(a.lastRunAt)}` : ""}`}
                   >
-                    mcp: {a.mcpServers.length === 0 ? "none" : a.mcpServers.join(", ")}
+                    ✓
                   </span>
-                )}
-                {a.nextRunAt && a.enabled && (
-                  <span>next {formatNext(a.nextRunAt)}</span>
-                )}
-                {a.lastRunAt && (
-                  <span className="automation-lastrun">
-                    last run {relativeTime(a.lastRunAt)}
-                    {a.lastTrigger ? ` via ${a.lastTrigger}` : ""}
-                    {a.lastRunStatus === "ok" && <span className="auto-status-ok"> ✓</span>}
-                    {a.lastRunStatus === "error" && (
-                      <span className="auto-status-err" title={a.lastRunError}> ✗</span>
-                    )}
-                    {a.lastRunSessionId && (
-                      <>
-                        {" · "}
-                        <a
-                          className="automation-session-link"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            onOpenSession(a.lastRunSessionId!);
-                          }}
-                          href={`${BASE_PATH}/session/${a.lastRunSessionId}`}
-                        >
-                          view session
-                        </a>
-                      </>
-                    )}
+                ) : a.lastRunStatus === "error" ? (
+                  <span className="auto-status-err" title={a.lastRunError || "Last run failed"}>
+                    ✗
                   </span>
-                )}
-                <span className="automation-by">by {a.createdBy}</span>
-              </div>
-
-              {a.webhookSecret && <WebhookUrl id={a.id} secret={a.webhookSecret} />}
-
-              {expandedRuns === a.id && (a.runs?.length ?? 0) > 0 && (
-                <RunLedger runs={a.runs!} onOpenSession={onOpenSession} />
-              )}
-            </div>
-          ))}
+                ) : null}
+                <span className="automations-row-graph">
+                  {(a.runs?.length ?? 0) > 0 && <TriggerGraph runs={a.runs!} compact />}
+                </span>
+                <span className="automations-row-next">
+                  {!a.enabled ? "off" : a.nextRunAt ? `next ${formatNext(a.nextRunAt)}` : ""}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
+    </div>
+
+      {sel && (
+        <aside className="automations-drawer">
+          <div className="automations-drawer-head">
+            <button
+              className="automations-drawer-back"
+              onClick={() => onSelect("")}
+              title="Back to automations"
+            >
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 1 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
+              </svg>
+              Automations
+            </button>
+            <span className="automations-drawer-title">{sel.name}</span>
+            <div className="automations-drawer-actions">
+              <button
+                className="btn-small"
+                onClick={() => handleRunNow(sel)}
+                disabled={sel.isRunning}
+              >
+                Run now
+              </button>
+              <button
+                className="btn-small"
+                onClick={() => {
+                  setEditing(sel);
+                  setShowModal(true);
+                }}
+              >
+                Edit
+              </button>
+              <button className="btn-small btn-small-danger" onClick={() => handleDelete(sel)}>
+                Delete
+              </button>
+            </div>
+            <button
+              className="automations-drawer-close"
+              onClick={() => onSelect("")}
+              title="Close"
+            >
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.749.749 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.749.749 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+              </svg>
+            </button>
+          </div>
+          <div className="automations-drawer-body">
+            <div className="automations-drawer-chips">
+              <button
+                className={`auto-toggle ${sel.enabled ? "auto-toggle-on" : ""}`}
+                onClick={() => handleToggle(sel)}
+                title={sel.enabled ? "Disable" : "Enable"}
+              >
+                <span className="auto-toggle-knob" />
+              </button>
+              <span className={`source-chip ${sel.mode === "ask" ? "source-ask" : "source-backstage"}`}>
+                {sel.mode}
+              </span>
+              <span
+                className="source-chip"
+                title={sel.model ? "Model for this automation's runs" : "Default model (not overridden)"}
+              >
+                {sel.model || defaultModel || "default"}
+              </span>
+              {sel.fallbackModel && sel.fallbackModel !== "none" && (
+                <span
+                  className="source-chip chip-fallback"
+                  title="Fallback — used only when every account for the primary model has hit its usage limit"
+                >
+                  ↯ {sel.fallbackModel}
+                </span>
+              )}
+              {sel.accountId && (
+                <span
+                  className="source-chip"
+                  title={
+                    sel.accountStrict === false
+                      ? "Soft account pin — runs prefer this Claude subscription and fall back to the shared pool when it's out of usage"
+                      : "Hard account pin — runs use only this Claude subscription; when it's out of usage they fall to the fallback model, never the shared pool"
+                  }
+                >
+                  {claudeAccounts.find((x) => x.id === sel.accountId)?.name || "pinned account"}
+                  {sel.accountStrict === false ? " first" : " only"}
+                </span>
+              )}
+              {sel.usageCredits && (
+                <span
+                  className="source-chip"
+                  title="May keep running on paid usage-credits once the account's subscription limits are spent (needs extra usage enabled on the account)"
+                >
+                  +credits
+                </span>
+              )}
+              {(sel.isRunning || sel.lastRunStatus === "running") && (
+                <span className="working-pill">
+                  <span className="working-dot" /> Running
+                </span>
+              )}
+            </div>
+
+            <div className="automation-prompt automations-drawer-prompt">{sel.prompt}</div>
+
+            {(sel.runs?.length ?? 0) > 0 && <TriggerGraph runs={sel.runs!} />}
+
+            <div className="automation-meta">
+              {sel.slackWatch ? (
+                <span className="automation-cron automation-event" title="Runs on every top-level message in this Slack channel">
+                  watching #{sel.slackWatch.channel}
+                </span>
+              ) : sel.schedule ? (
+                <span className="automation-cron" title="UTC">{sel.schedule}</span>
+              ) : !sel.eventKey ? (
+                <span className="automation-cron">webhook / manual</span>
+              ) : null}
+              {sel.eventKey && (
+                <span className="automation-cron automation-event" title="Internal event trigger">
+                  on {sel.eventKey}
+                </span>
+              )}
+              {sel.mcpServers && (
+                <span
+                  className="automation-cron"
+                  title="MCP servers this automation's runs can use (least privilege)"
+                >
+                  mcp: {sel.mcpServers.length === 0 ? "none" : sel.mcpServers.join(", ")}
+                </span>
+              )}
+              {sel.nextRunAt && sel.enabled && (
+                <span>next {formatNext(sel.nextRunAt)}</span>
+              )}
+              {sel.lastRunAt && (
+                <span className="automation-lastrun">
+                  last run {relativeTime(sel.lastRunAt)}
+                  {sel.lastTrigger ? ` via ${sel.lastTrigger}` : ""}
+                  {sel.lastRunStatus === "ok" && <span className="auto-status-ok"> ✓</span>}
+                  {sel.lastRunStatus === "error" && (
+                    <span className="auto-status-err" title={sel.lastRunError}> ✗</span>
+                  )}
+                  {sel.lastRunSessionId && (
+                    <>
+                      {" · "}
+                      <a
+                        className="automation-session-link"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onOpenSession(sel.lastRunSessionId!);
+                        }}
+                        href={`${BASE_PATH}/session/${sel.lastRunSessionId}`}
+                      >
+                        view session
+                      </a>
+                    </>
+                  )}
+                </span>
+              )}
+              <span className="automation-by">by {sel.createdBy}</span>
+            </div>
+
+            {sel.webhookSecret && <WebhookUrl id={sel.id} secret={sel.webhookSecret} />}
+
+            {(sel.runs?.length ?? 0) > 0 && (
+              <div>
+                <div className="automations-drawer-section-label">Run history</div>
+                <RunLedger runs={sel.runs!} onOpenSession={onOpenSession} />
+              </div>
+            )}
+          </div>
+        </aside>
+      )}
+
+      {showModal && (
+        <CreateAutomationModal
+          initial={editing}
+          onClose={() => setShowModal(false)}
+          onSaved={() => {
+            setShowModal(false);
+            load();
+          }}
+        />
+      )}
+    </div>
   );
+}
+
+/** One-line trigger summary for the list rows. */
+function triggerSummary(a: Automation): string {
+  if (a.slackWatch) return `watching #${a.slackWatch.channel}`;
+  const parts: string[] = [];
+  if (a.schedule) parts.push(a.schedule);
+  if (a.eventKey) parts.push(`on ${a.eventKey}`);
+  if (!parts.length) parts.push("webhook / manual");
+  return parts.join(" · ");
 }
 
 // ── Trigger history graph ────────────────────────────────────
@@ -371,7 +486,7 @@ const PLOT_H = 26;
 /** Runs-per-day bar strip for the last 30 days. Status is state, so it uses
  *  the reserved status tokens (green/yellow/red); per-bar tooltips carry the
  *  counts in text and the expanded run ledger is the table view. */
-function TriggerGraph({ runs }: { runs: AutomationRun[] }) {
+function TriggerGraph({ runs, compact }: { runs: AutomationRun[]; compact?: boolean }) {
   const buckets = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -393,7 +508,7 @@ function TriggerGraph({ runs }: { runs: AutomationRun[] }) {
   if (total === 0) return null;
 
   return (
-    <div className="flex items-end gap-2 mt-2">
+    <div className={`flex items-end gap-2 ${compact ? "" : "mt-2"}`}>
       <svg
         width={GRAPH_DAYS * SLOT - 2}
         height={PLOT_H + 1}
@@ -427,9 +542,11 @@ function TriggerGraph({ runs }: { runs: AutomationRun[] }) {
           );
         })}
       </svg>
-      <span className="text-faint text-[10px] leading-none pb-px">
-        {total} run{total === 1 ? "" : "s"} · last {GRAPH_DAYS}d
-      </span>
+      {!compact && (
+        <span className="text-faint text-[10px] leading-none pb-px">
+          {total} run{total === 1 ? "" : "s"} · last {GRAPH_DAYS}d
+        </span>
+      )}
     </div>
   );
 }
