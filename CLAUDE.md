@@ -168,6 +168,18 @@ names, intent classifiers) go through `opencodeOneShot`
 (src/server/opencode-oneshot.ts) on a shared tool-less server. Runner code is
 runner internals — changes need a real restart.
 
+OpenCode server pools (since 2026-07-09): eligible interactive runs (kinds
+prompt/goal/create/linear/slack, no MCP allowlist, no prebuilt proxies, no
+michael-goal-self) multiplex onto ONE shared always-warm `opencode serve` per
+(bridge account × user), using per-session `?directory=` instances and
+per-prompt model/system/agent/tools; michael-* calls route per session via
+opencode-plugin-session-tag.js + run-rpc's ocSession registry. Automations and
+other unattended kinds keep per-session servers so their least-privilege MCP
+allowlist stays config-level. Full contract in opencode-runner.ts's module doc
+("Server lifecycle"); adding a new in-process michael-* server requires adding
+it to SHARED_INPROCESS_SERVERS or its sessions silently fall back to
+per-session servers.
+
 Priority rule for shipped work: intelligence > taste > cost. Cost is only a
 tie-breaker. Do not ship mediocre output just because it was cheaper to produce.
 
