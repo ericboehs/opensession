@@ -3579,10 +3579,11 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	min-width: 0;
 	min-height: 0;
 	/* Depth the transcript scrolls up behind the composer. Shared by the
-	   composer's negative margin + backdrop, the transcript's bottom inset, and
-	   the jump-to-latest offset so they always line up. The mobile media query
-	   inherits this; both viewports get the "chat scrolls under the input" fade. */
-	--chat-under: 44px;
+	   composer's negative margin + backdrop and the transcript's bottom inset so
+	   they always line up. The mobile media query inherits this; both viewports
+	   get the "chat scrolls under the input" fade. Kept snug so the newest row
+	   sits just above the composer rather than floating well clear of it. */
+	--chat-under: 20px;
 }
 
 /* The panel portals into this app-level slot. `display: contents` dissolves the
@@ -6842,9 +6843,9 @@ a.workspace-info-check-row {
 .jump-latest {
 	position: absolute;
 	left: 50%;
-	/* The messages region runs --chat-under px deeper (under the composer), so
-	   lift this floating pill by the same amount to keep it above the composer. */
-	bottom: calc(var(--chat-under, 0px) + 12px);
+	/* Sit the pill just above the composer's top edge — a small fixed lift, not
+	   keyed to --chat-under (that pushed it too far up over the transcript). */
+	bottom: 12px;
 	transform: translateX(-50%);
 	display: inline-flex;
 	align-items: center;
@@ -10385,13 +10386,12 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   composer's negative margin/backdrop and the transcript's bottom inset so
 	   they always line up. */
 	.viewer-chat {
-		--chat-under: 44px;
+		--chat-under: 20px;
 	}
-	/* The messages region now runs --chat-under px deeper (under the composer),
-	   so lift the floating jump-to-latest pill by the same amount to keep it
-	   above the composer instead of behind it. */
+	/* Sit the pill just above the composer's top edge — a small fixed lift, not
+	   keyed to --chat-under (that pushed it too far up over the transcript). */
 	.jump-latest {
-		bottom: calc(var(--chat-under) + 12px);
+		bottom: 12px;
 	}
 
 	.viewer-messages {
