@@ -1,0 +1,1530 @@
+/**
+ * Driving a session turn: runSessionPrompt(Inner) and everything that feeds it —
+ * the queue-coupled delivery ops (enqueue/steer/interrupt/drain), the sandbox
+ * run launch, restart resume (journal snapshot + drained-session wake-up),
+ * transcript watcher attachment, usage folding, auto-push, and the /loop ticker.
+ *
+ * Queue STATE lives in queue-state.ts; WS fan-out in ws-hub.ts; the session
+ * cache in session-cache.ts.
+ */
+
+import { randomUUIDv7 } from "bun";
+import { existsSync, readFileSync } from "fs";
+import {
+	runAgent,
+	isAgentSessionBusy,
+	markSessionStarting,
+	unmarkSessionStarting,
+	cancelAgentRun,
+	steerAgentRun,
+	interruptAgentRun,
+	stopAgentRunTurn,
+	interruptAndSteerAgentRun,
+	RESUME_CONTINUATION_PROMPT,
+	type StreamEvent,
+} from "./agent-runner";
+import {
+	automationDeniedTools,
+	automationMcpServersByName,
+} from "./automations";
+import { defaultRepo } from "./config";
+import {
+	buildChatContextNote,
+	buildEngineSwitchHandoffNote,
+} from "./fork-handoff";
+import { getGitStatus, gitPush } from "./git-status";
+import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
+import { parseTranscript } from "./jsonl-parser";
+import {
+	contextWindowFor,
+	interactiveFallbackModel,
+	modelLabel,
+	providerFor,
+} from "./models";
+import { isOpencodeSessionId } from "./opencode-transcript";
+import { wrapContext, stripContext } from "./prompt-context";
+import { activeRunRecords, type ActiveRunRecord } from "./run-journal";
+import { registerRunToken, unregisterRunToken } from "./run-rpc";
+import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
+import {
+	engineSessionPatch,
+	getEngineTranscriptPath,
+	readEngineTranscript,
+} from "./sessions";
+import {
+	getSandboxProvider,
+	hasRemoteWorkspace,
+	workspaceExecFor,
+} from "./sandbox";
+import {
+	isRunnableSandboxProvider,
+	sandboxesEnabled,
+	sandboxProviderConfigured,
+} from "./sandbox/config";
+import { getTitleOverride } from "./title-overrides";
+import { ensureGeneratedTitle } from "./generated-titles";
+import { gitIdentityFor } from "./shared/user-mappings";
+import { writeFileAtomic, writeJsonAtomic } from "./shared/atomic-write";
+import { startWatching } from "./file-watcher";
+import { getRepo, repoForPath, reviveWorktree } from "./worktree";
+import { createGoalSelfMcpServer } from "../agents/slack/goal-tools";
+import { sendSlackMessage } from "../agents/slack/slack-api";
+import type { RunHostSpec } from "../runner-host/protocol";
+import type { ImageInput, TurnUsage } from "./run-events";
+import type {
+	SessionUsage,
+	TranscriptEntry,
+	UnifiedSession,
+} from "./types";
+import {
+	findSession,
+	getCachedSessions,
+	invalidateSessionsCache,
+	recordRunOutcome,
+	touchBackstageSession,
+	SESSIONS_DIR,
+} from "./session-cache";
+import { broadcastToSession, sessionWatchers } from "./ws-hub";
+import {
+	broadcastQueue,
+	clearSteerReceipts,
+	isGitHubQueueItem,
+	persistQueues,
+	promptQueues,
+	queuedPromptIndex,
+	queueItem,
+	QUEUE_STORE,
+	recordSteer,
+	requeueSteerReceipts,
+	steeredReceipts,
+	stoppedSessions,
+	type QueueItem,
+} from "./queue-state";
+import {
+	parseImageDataUrls,
+	stageFileAttachments,
+	withUploadsNote,
+} from "./uploads";
+import { buildSessionNote } from "./session-repos";
+import { interactiveMcpServers } from "./interactive-mcp";
+import { makeAskHandler } from "./asks";
+
+const g = globalThis as any;
+
+/** Append a message to a session's drainable queue and persist + broadcast. */
+export function enqueuePrompt(sessionId: string, item: QueueItem): void {
+	const queue = promptQueues.get(sessionId) || [];
+	queue.push(queueItem(item));
+	promptQueues.set(sessionId, queue);
+	persistQueues();
+	broadcastQueue(sessionId);
+	// Queueing is a delivery promise, not just a UI state. Arm the idle watcher
+	// here so every queued message drains after the current run, even if a caller
+	// forgets to do that explicitly or the session becomes idle between checks.
+	watchExternalRunAndDrain(sessionId);
+}
+
+export function steerQueuedPrompt(
+	sessionId: string,
+	queueId?: string,
+	queueIndex?: number,
+): boolean {
+	const session = findSession(sessionId);
+	const queue = promptQueues.get(sessionId);
+	if (!session || !queue) return false;
+	const index = queuedPromptIndex(queue, queueId, queueIndex);
+	if (index < 0) return false;
+	const [item] = queue.splice(index, 1);
+	if (!item) return false;
+	if (isGitHubQueueItem(item) || (Array.isArray(item.files) && item.files.length > 0)) {
+		queue.splice(index, 0, item);
+		return false;
+	}
+	const attributed = item.user ? `[${item.user}] ${item.content}` : item.content;
+	const images = parseImageDataUrls(item.images || []);
+	if (
+		!isAgentSessionBusy(
+			session.claudeSessionId,
+			session.codexThreadId,
+			session.id,
+		) ||
+		!steerAgentRun(
+			[session.claudeSessionId, session.codexThreadId, session.id],
+			attributed,
+			images,
+		)
+	) {
+		queue.splice(index, 0, item);
+		return false;
+	}
+	if (queue.length > 0) promptQueues.set(sessionId, queue);
+	else promptQueues.delete(sessionId);
+	recordSteer(sessionId, item);
+	persistQueues();
+	broadcastQueue(sessionId);
+	return true;
+}
+
+/**
+ * Interrupt-deliver a waiting message: abort the run's current turn so the
+ * message lands right away instead of at the next natural stopping point.
+ * Two cases: an already-steered receipt just needs a bare interrupt (its text
+ * is in the run's steer buffer — the forced boundary releases it; pushing it
+ * again would double-deliver), while a queued item is folded in through the
+ * interrupt-and-steer path. False = still queued, nothing was interrupted.
+ */
+export function interruptQueuedPrompt(
+	sessionId: string,
+	queueId?: string,
+	queueIndex?: number,
+): boolean {
+	const session = findSession(sessionId);
+	if (!session) return false;
+	if (queueId && (steeredReceipts.get(sessionId) || []).some((s) => s.id === queueId)) {
+		// Receipt stays visible until the message lands in the transcript (the
+		// usual reconcile) — dropping it here would lose it if the interrupt
+		// fires between release and delivery.
+		return interruptAgentRun([
+			session.claudeSessionId,
+			session.codexThreadId,
+			session.id,
+		]);
+	}
+	const queue = promptQueues.get(sessionId);
+	if (!queue) return false;
+	const index = queuedPromptIndex(queue, queueId, queueIndex);
+	if (index < 0) return false;
+	const [item] = queue.splice(index, 1);
+	if (!item) return false;
+	if (isGitHubQueueItem(item) || (Array.isArray(item.files) && item.files.length > 0)) {
+		queue.splice(index, 0, item);
+		return false;
+	}
+	const attributed = item.user ? `[${item.user}] ${item.content}` : item.content;
+	const images = parseImageDataUrls(item.images || []);
+	if (
+		!isAgentSessionBusy(
+			session.claudeSessionId,
+			session.codexThreadId,
+			session.id,
+		)
+	) {
+		queue.splice(index, 0, item);
+		return false;
+	}
+	if (
+		!interruptAndSteerAgentRun(
+			[session.claudeSessionId, session.codexThreadId, session.id],
+			attributed,
+			images,
+		)
+	) {
+		// No in-band interrupt-and-steer (opencode): keep the item queued —
+		// it's the durable record — and abort the turn so the drain delivers
+		// it right away (moved to the front so it leads the drained batch).
+		queue.splice(0, 0, item);
+		promptQueues.set(sessionId, queue);
+		persistQueues();
+		broadcastQueue(sessionId);
+		return abortTurnAndDrain(sessionId, session);
+	}
+	// No steer receipt: an interrupt delivers almost immediately, so the
+	// transcript entry is the record (same treatment as a direct interrupt send).
+	if (queue.length > 0) promptQueues.set(sessionId, queue);
+	else promptQueues.delete(sessionId);
+	persistQueues();
+	broadcastQueue(sessionId);
+	return true;
+}
+
+/**
+ * Restore queued + steered messages a previous process left behind (a real
+ * restart/crash — hot reloads keep the in-memory maps). Drainable queue items
+ * are re-armed for delivery; unconfirmed steer receipts are folded back into the
+ * queue too (best-effort: we can't know whether their turn landed before the
+ * crash, and silently dropping the user's message is the worse failure). Call
+ * after resumeInterruptedRuns so a session being resumed reads as busy and the
+ * watcher waits it out instead of starting a colliding run.
+ */
+export function restorePromptQueues(): void {
+	if (!existsSync(QUEUE_STORE)) return;
+	let data: {
+		queued?: Record<string, QueueItem[]>;
+		steered?: Record<string, QueueItem[]>;
+	};
+	try {
+		data = JSON.parse(readFileSync(QUEUE_STORE, "utf-8"));
+	} catch (e) {
+		// Corrupt store — these are the user's queued messages, so don't just
+		// drop them: fall back to the .bak persistQueues keeps of the last copy.
+		console.error("[queue] Failed to read persisted queues:", e);
+		try {
+			data = JSON.parse(readFileSync(`${QUEUE_STORE}.bak`, "utf-8"));
+			console.warn("[queue] Recovered persisted queues from .bak");
+		} catch (e2) {
+			console.error(
+				"[queue] Backup queue store unreadable too — queued messages lost:",
+				e2,
+			);
+			return;
+		}
+	}
+	const merged = new Map<string, QueueItem[]>();
+	for (const [id, items] of Object.entries(data.queued || {})) {
+		if (items?.length) merged.set(id, [...items]);
+	}
+	for (const [id, items] of Object.entries(data.steered || {})) {
+		if (items?.length) merged.set(id, [...(merged.get(id) || []), ...items]);
+	}
+	steeredReceipts.clear();
+	let restored = 0;
+	for (const [id, items] of merged) {
+		if (!findSession(id)) continue; // session no longer exists — drop
+		promptQueues.set(id, items);
+		restored += items.length;
+		watchExternalRunAndDrain(id); // drains once idle; waits out a resumed run
+	}
+	persistQueues();
+	if (restored > 0) {
+		console.log(
+			`[queue] Restored ${restored} queued message(s) from before restart`,
+		);
+	}
+}
+
+// ── Wake-all-active-sessions on restart ──────────────────────────────────────
+// The run journal (active-runs.json) only retains runs that are STILL executing
+// when the process exits. During a graceful restart the 2-min drain lets runs
+// finish their current turn — which clears them from the journal — so a session
+// that stopped at a turn boundary mid-task was silently NOT resumed (the user had
+// to type "continue"). To fix that we snapshot every active session the moment
+// SIGTERM arrives (before the drain) and, on boot, nudge any that the journal
+// resume didn't already cover. Crash (no graceful shutdown) still falls back to
+// the journal, so both paths are covered.
+const RESUME_SNAPSHOT_PATH = `${SESSIONS_DIR}/active-at-shutdown.json`;
+
+/** Capture the sessions with an in-flight run, for boot-time wake-up. Called at
+ *  the very start of graceful shutdown, before the drain empties the journal. */
+export function snapshotActiveSessions(): void {
+	try {
+		const records = activeRunRecords();
+		if (records.length === 0) {
+			if (existsSync(RESUME_SNAPSHOT_PATH))
+				writeFileAtomic(RESUME_SNAPSHOT_PATH, "[]");
+			return;
+		}
+		writeJsonAtomic(RESUME_SNAPSHOT_PATH, records, false);
+		console.log(
+			`[resume] Snapshotted ${records.length} active session(s) for wake-up on restart`,
+		);
+	} catch (e) {
+		console.error("[resume] Failed to snapshot active sessions:", e);
+	}
+}
+
+/** Wake sessions that were active at the last graceful shutdown but finished
+ *  their turn during the drain (so they weren't in the journal to resume).
+ *  `alreadyResumed` are the bksSessionIds the journal resume already handled. */
+export function resumeDrainedSessions(alreadyResumed: Set<string>): void {
+	let records: ActiveRunRecord[] = [];
+	try {
+		if (!existsSync(RESUME_SNAPSHOT_PATH)) return;
+		records = JSON.parse(readFileSync(RESUME_SNAPSHOT_PATH, "utf-8"));
+	} catch (e) {
+		console.error("[resume] Failed to read active-session snapshot:", e);
+		return;
+	}
+	// Consume the snapshot so the next (non-graceful) boot doesn't replay it.
+	try {
+		writeFileAtomic(RESUME_SNAPSHOT_PATH, "[]");
+	} catch {}
+
+	let woken = 0;
+	for (const r of records) {
+		const id = r.bksSessionId;
+		if (!id || alreadyResumed.has(id)) continue; // journal already resumed it
+		if (r.kind?.startsWith("github-")) continue; // github agent owns its recovery
+		const session = findSession(id);
+		// Only interactive backstage sessions — never re-trigger automations/loops,
+		// which are one-shot and would re-run their whole task.
+		if (!session || session.source !== "backstage" || session.automation)
+			continue;
+		if (
+			isAgentSessionBusy(
+				session.claudeSessionId,
+				session.codexThreadId,
+				session.id,
+			)
+		)
+			continue;
+		if (providerFor(session.model) === "claude" && !session.claudeSessionId)
+			continue;
+		woken++;
+		console.log(
+			`[resume] Waking session ${id} that finished its turn during the drain`,
+		);
+		void runSessionPromptAndDrain(
+			id,
+			RESUME_CONTINUATION_PROMPT,
+			"system (restart)",
+		).catch((e) => console.error(`[resume] Wake failed for ${id}:`, e));
+	}
+	if (woken > 0)
+		console.log(
+			`[resume] Woke ${woken} drained session(s) from before restart`,
+		);
+}
+
+export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent): void {
+	const session = findSession(bksSessionId);
+	if (!session || session.source !== "backstage") return;
+
+	if (event.type === "model_switch") {
+		const to = event.toModel || "";
+		if (!to) return;
+		const reason = `auto-switch — ${modelLabel(event.fromModel)} out of credits`;
+		touchBackstageSession(bksSessionId, {
+			model: to,
+			modelHistory: [
+				...(session.modelHistory || []),
+				{ model: to, from: event.fromModel, at: new Date().toISOString(), by: reason },
+			],
+		});
+		invalidateSessionsCache();
+		return;
+	}
+
+	if (event.type !== "init" && event.type !== "done") return;
+	const engineSessionId = event.sessionId || "";
+	const model = event.model || session.model;
+	const provider = event.provider || providerFor(model);
+	touchBackstageSession(bksSessionId, {
+		...(engineSessionId ? engineSessionPatch(provider, engineSessionId) : {}),
+		...(model ? { model } : {}),
+	});
+	if (engineSessionId && session.worktreeDir) {
+		attachSessionWatchersToEngineTranscript(
+			bksSessionId,
+			provider,
+			session.worktreeDir,
+			engineSessionId,
+		);
+	}
+	invalidateSessionsCache();
+}
+
+/**
+ * Attach every socket viewing `sessionId` to a transcript file that only came
+ * into existence after they started watching — a fresh chat's first run (no
+ * transcriptPath existed at watch time), or an engine-id rotation forking to a
+ * new file mid-conversation. Without this the whole run is silent for viewers:
+ * the sent message sticks at "sending…" and the reply vanishes at stream_done,
+ * until a reload re-watches the right file. Streams from byte 0 — entry ids
+ * are the jsonl line uuids, so anything the client already has upserts
+ * instead of duplicating.
+ */
+export function attachSessionWatchersToTranscript(
+	sessionId: string,
+	path: string,
+): void {
+	const set = sessionWatchers.get(sessionId);
+	if (!set) return;
+	for (const ws of set) startWatching(path, ws, 0, sessionId);
+}
+
+export function attachSessionWatchersToEngineTranscript(
+	sessionId: string,
+	// "opencode" resolves to no transcript path (opencode keeps its own storage);
+	// those sessions stream through run events only, so this attaches nothing.
+	provider: "claude" | "codex" | "opencode",
+	cwd: string,
+	engineSessionId: string,
+	attempt = 0,
+): void {
+	const path = getEngineTranscriptPath(cwd, engineSessionId, provider);
+	if (path) {
+		attachSessionWatchersToTranscript(sessionId, path);
+		return;
+	}
+	if (provider === "codex" && attempt < 5) {
+		setTimeout(
+			() =>
+				attachSessionWatchersToEngineTranscript(
+					sessionId,
+					provider,
+					cwd,
+					engineSessionId,
+					attempt + 1,
+				),
+			250,
+		);
+	}
+}
+
+export async function drainQueue(sessionId: string): Promise<void> {
+	let queue;
+	while ((queue = promptQueues.get(sessionId)) && queue.length > 0) {
+		// The user pressed stop: leave the queue visible-but-parked until their
+		// next explicit action instead of restarting the run they just stopped.
+		if (stoppedSessions.has(sessionId)) return;
+		// A racing run can own the session by the time we loop again (e.g. our
+		// last batch lost the start race and got re-queued) — hand off to the
+		// idle-watcher instead of busy-spinning runs that immediately bounce.
+		const session = findSession(sessionId);
+		if (
+			session &&
+			isAgentSessionBusy(
+				session.claudeSessionId,
+				session.codexThreadId,
+				session.id,
+			)
+		) {
+			watchExternalRunAndDrain(sessionId);
+			return;
+		}
+		const batch = queue.splice(0, queue.length);
+		if (queue.length === 0) promptQueues.delete(sessionId);
+		persistQueues();
+		broadcastQueue(sessionId);
+		const combined = batch
+			.map((m) =>
+				batch.length > 1 && m.user ? `[${m.user}] ${m.content}` : m.content,
+			)
+			.join("\n\n");
+		// Attachments queued alongside the text ride the drained turn: images are
+		// decoded to ImageInput, files handed through as staged/inline refs.
+		const combinedImages = parseImageDataUrls(
+			batch.flatMap((m) => m.images ?? []),
+		);
+		const combinedFiles = batch.flatMap((m) =>
+			Array.isArray(m.files) ? m.files : [],
+		);
+		try {
+			await runSessionPrompt(
+				sessionId,
+				combined,
+				batch[0].user,
+				combinedImages,
+				combinedFiles.length ? combinedFiles : undefined,
+			);
+		} catch (e) {
+			// The batch was already spliced out and persisted away — put it back at
+			// the front of the queue so a throw doesn't lose the messages.
+			const current = promptQueues.get(sessionId) || [];
+			promptQueues.set(sessionId, [...batch, ...current]);
+			persistQueues();
+			broadcastQueue(sessionId);
+			throw e;
+		}
+	}
+}
+
+export async function runSessionPromptAndDrain(
+	sessionId: string,
+	content: string,
+	user?: string,
+	images?: ImageInput[],
+	rawFiles?: unknown,
+	contextChats?: string[],
+): Promise<void> {
+	await runSessionPrompt(sessionId, content, user, images, rawFiles, contextChats);
+	await drainQueue(sessionId);
+}
+
+// Messages queued while a run we didn't start is in flight (Slack runs, CLI
+// sessions in tmux, automations) have no drain loop of their own — watch the
+// busy state and deliver the queue once the external run finishes.
+const drainWatchers: Set<string> = (g.__drainWatchers ??= new Set());
+export function watchExternalRunAndDrain(sessionId: string): void {
+	if (drainWatchers.has(sessionId)) return;
+	drainWatchers.add(sessionId);
+	const timer = setInterval(async () => {
+		const session = findSession(sessionId);
+		if (!session || !(promptQueues.get(sessionId) || []).length) {
+			clearInterval(timer);
+			drainWatchers.delete(sessionId);
+			return;
+		}
+		if (
+			isAgentSessionBusy(
+				session.claudeSessionId,
+				session.codexThreadId,
+				session.id,
+			)
+		)
+			return;
+		clearInterval(timer);
+		drainWatchers.delete(sessionId);
+		try {
+			await drainQueue(sessionId);
+		} catch (e) {
+			console.error(
+				`[queue] Drain after external run failed for ${sessionId}:`,
+				e,
+			);
+		}
+	}, 3000);
+}
+
+/**
+ * Esc+Enter for engines with no in-band interrupt-and-steer (opencode): abort
+ * the run's current turn — the same abort the Esc/stop path uses — and let the
+ * drain watcher deliver the queue as the immediate next turn on the same
+ * engine session. The interrupting message must already be in promptQueues
+ * before calling (durability: nothing is lost if the abort races a crash).
+ * False = nothing abortable (external CLI/tmux run) — the message stays queued
+ * for the run's natural stopping point.
+ */
+export function abortTurnAndDrain(
+	sessionId: string,
+	session: {
+		claudeSessionId?: string | null;
+		codexThreadId?: string | null;
+		id: string;
+	},
+): boolean {
+	const ids = [session.claudeSessionId, session.codexThreadId, session.id];
+	const aborted = stopAgentRunTurn(ids) || cancelAgentRun(...ids);
+	if (!aborted) return false;
+	// The user explicitly asked for delivery now — unpark an earlier Stop, and
+	// fold any unconfirmed steer receipts back in ahead so nothing is dropped.
+	stoppedSessions.delete(sessionId);
+	requeueSteerReceipts(sessionId);
+	watchExternalRunAndDrain(sessionId);
+	return true;
+}
+
+/**
+ * Fold a completed run's usage into a session's cumulative totals. Cost and
+ * token counts accumulate; context size (contextTokens/contextWindow) reflects
+ * the latest turn rather than a sum — it's the current window fill, not lifetime
+ * throughput. `costApproximate` sticks once any Codex run contributes a
+ * table-priced (non-authoritative) figure.
+ */
+export function foldSessionUsage(
+	prev: SessionUsage | undefined,
+	turn: TurnUsage,
+	model?: string | null,
+): SessionUsage {
+	const base: SessionUsage = prev ?? {
+		costUsd: 0,
+		inputTokens: 0,
+		outputTokens: 0,
+		cacheReadTokens: 0,
+		cacheCreationTokens: 0,
+		contextTokens: 0,
+		contextWindow: 0,
+		turns: 0,
+		updatedAt: "",
+	};
+	return {
+		costUsd: base.costUsd + (turn.costUsd || 0),
+		...(base.costApproximate || turn.costApproximate
+			? { costApproximate: true }
+			: {}),
+		inputTokens: base.inputTokens + turn.inputTokens,
+		outputTokens: base.outputTokens + turn.outputTokens,
+		cacheReadTokens: base.cacheReadTokens + turn.cacheReadTokens,
+		cacheCreationTokens: base.cacheCreationTokens + turn.cacheCreationTokens,
+		contextTokens: turn.contextTokens || base.contextTokens,
+		contextWindow: contextWindowFor(model) || base.contextWindow,
+		turns: base.turns + 1,
+		updatedAt: new Date().toISOString(),
+	};
+}
+
+/**
+ * Silent auto-push: when a session's turn ends idle, publish any local commits
+ * that are ahead of an already-tracked upstream. This is the real "sessions push
+ * automatically" mechanism — the agent's prompt-level `git push` is best-effort
+ * and silently misses whenever a turn ends between commit and push (or the
+ * commits landed outside a turn), leaving the status header parked on a stale
+ * "Ahead by N commits". We only touch a branch that:
+ *   - is NOT the repo's default branch — never auto-push main/master (this also
+ *     excludes the backstage shared checkout, which pushes master by hand), and
+ *   - already has an upstream (published once, so pushing follow-up commits is
+ *     the expected sync; an un-pushed branch with no PR goes via Create PR), and
+ *   - is strictly ahead (behind === 0) — a diverged branch needs a human/agent
+ *     to reconcile, and a plain push would be rejected anyway.
+ * Never forces. A failed push is swallowed (logged) — it just leaves the Push
+ * button as the visible fallback. Fire-and-forget from the turn-end path so it
+ * never delays draining the queue; a `git_pushed` broadcast nudges the header to
+ * refetch the instant the push lands.
+ */
+export async function autoPushSessionBranches(session: UnifiedSession): Promise<void> {
+	const targets: Array<{ dir: string; branch: string; repoId: string }> = [];
+	const primaryRepoId =
+		session.repo ||
+		(session.worktreeDir ? repoForPath(session.worktreeDir).id : "tella-fusion");
+	if (session.worktreeDir && session.branch)
+		targets.push({
+			dir: session.worktreeDir,
+			branch: session.branch,
+			repoId: primaryRepoId,
+		});
+	for (const att of session.attachedRepos || [])
+		if (att.dir && att.branch)
+			targets.push({ dir: att.dir, branch: att.branch, repoId: att.repo });
+
+	for (const { dir, branch, repoId } of targets) {
+		// The primary dir of a volume-mode sandbox workspace exists only in the
+		// container — status/push route through the session's sandbox exec.
+		const isPrimary = dir === session.worktreeDir;
+		const remote = isPrimary && hasRemoteWorkspace(session);
+		if (!existsSync(dir) && !remote) continue;
+		let repo;
+		try {
+			repo = getRepo(repoId);
+		} catch {
+			continue;
+		}
+		// Never auto-push the repo's mainline (covers the backstage shared master).
+		if (branch === repo.defaultBranch) continue;
+		const exec = isPrimary ? await workspaceExecFor(session, dir) : undefined;
+		let git;
+		try {
+			git = await getGitStatus(dir, repo.defaultBranch, exec);
+		} catch {
+			continue;
+		}
+		if (!git.hasUpstream || git.ahead <= 0 || git.behind > 0) continue;
+		const result = await gitPush(dir, branch, exec);
+		if ("error" in result) {
+			console.warn(
+				`[auto-push] ${session.id} ${repoId}/${branch}: ${result.error}`,
+			);
+		} else {
+			console.log(
+				`[auto-push] ${session.id} ${repoId}/${branch}: pushed ${git.ahead} commit(s)`,
+			);
+			broadcastToSession(session.id, {
+				type: "git_pushed",
+				sessionId: session.id,
+				repo: repoId,
+			});
+		}
+	}
+}
+
+
+/**
+ * Sandbox routing for runSessionPromptInner (docs/sandboxes-plan.md Phase 1;
+ * generalized to every registry provider — docker/daytona/e2b). Returns the
+ * run's event stream when the session opted into a sandbox at create time AND
+ * the kill-switch + provider config currently allow it — otherwise null, and
+ * the caller's existing in-process runAgent path runs completely unchanged
+ * (sessions without a `sandbox` field can never reach any of this).
+ *
+ * Every failure mode falls back to null (in-process on the host): that is
+ * exactly today's trust level for interactive sessions, and a session must
+ * never lose a prompt to sandbox infrastructure. The exception is volume
+ * workspaces (docker volume mode, and remote providers — always volume):
+ * they have no host checkout, so the CALLER turns a null into a clean turn
+ * error instead of a host run. Automation-owned sessions are refused
+ * outright — sandboxes carry interactive-parity credentials (~/.ssh, gh,
+ * account pool / scoped OAuth upload) that untrusted prompt text must not
+ * reach.
+ */
+export async function maybeLaunchSandboxedRun(
+	session: UnifiedSession,
+	opts: {
+		prompt: string;
+		engineSessionId?: string;
+		cwd: string;
+		user?: string;
+		images?: ImageInput[];
+		mcpServers?: string[];
+		isAutomationSession: boolean;
+	},
+): Promise<AsyncGenerator<StreamEvent> | null> {
+	const sbProvider = session.sandbox?.provider;
+	if (!isRunnableSandboxProvider(sbProvider)) return null; // "local"/absent/unknown = host
+	if (!sandboxesEnabled()) return null; // kill-switch file — instant revert
+	if (!sandboxProviderConfigured(sbProvider)) {
+		// Config gone / API key removed since create — same instant-revert
+		// semantics as the kill switch (volume workspaces get the caller's
+		// no-host-fallback turn error instead of a silent host run).
+		console.warn(`[sandbox] ${session.id}: provider "${sbProvider}" is no longer configured — not sandboxing`);
+		return null;
+	}
+	if (opts.isAutomationSession) {
+		console.warn(`[sandbox] ${session.id}: automation sessions are not sandboxed in Phase 1 — running on host`);
+		return null;
+	}
+	// Hoisted so the catch below can unregister it — a failed launch must not
+	// leak the run token (spawnHostRun's error path does the same cleanup).
+	let rpcToken: string | undefined;
+	try {
+		const provider = getSandboxProvider(sbProvider);
+		const sandbox = await provider.ensure({
+			sessionId: session.id,
+			repo: session.repo,
+			branch: session.branch || undefined,
+			mode: session.mode,
+			cwd: opts.cwd,
+			// Bind-mode containers mount attached repos too (a changed set
+			// recreates the container); volume mode rejects them in ensure().
+			attachedDirs: (session.attachedRepos || [])
+				.map((r) => r.dir)
+				.filter(Boolean),
+		});
+		if (
+			session.source === "backstage" &&
+			(session.sandbox?.sandboxId !== sandbox.id ||
+				session.sandbox?.workspace !== sandbox.workspace)
+		) {
+			touchBackstageSession(session.id, {
+				sandbox: {
+					provider: sbProvider,
+					sandboxId: sandbox.id,
+					// Record how the workspace materialized ("volume" = it lives only
+					// inside the sandbox; host existsSync guards must not gate it).
+					workspace: sandbox.workspace,
+				},
+			});
+		}
+		// opensession-* tools reach the container as stdio proxies over the run-rpc
+		// socket — same path Codex and hosted runs use. The names must match
+		// what the registered InteractiveMcpBuilder can build for this session —
+		// including opensession-goal-self for goal-driven sessions (the builder adds
+		// it from the session's goalId, mirroring the in-process path below).
+		const proxyMcpServers = [
+			...Object.keys(interactiveMcpServers(opts.user, session.id)),
+			...(session.goalId ? ["opensession-goal-self"] : []),
+		];
+		rpcToken = crypto.randomUUID();
+		registerRunToken(rpcToken, { sessionId: session.id, user: opts.user });
+		const spec: RunHostSpec = {
+			hostId: `rh-${randomUUIDv7()}`,
+			bksSessionId: session.id,
+			prompt: opts.prompt,
+			engineSessionId: opts.engineSessionId || undefined,
+			cwd: sandbox.cwd,
+			mode: session.mode,
+			model: session.model,
+			images: opts.images,
+			mcpServers: opts.mcpServers,
+			proxyMcpServers,
+			rpcToken,
+			reposNote: await buildSessionNote(session, opts.user),
+			confirmTools: STRIPE_CONFIRM_TOOLS,
+			aws: true,
+			author: gitIdentityFor(opts.user),
+			user: opts.user,
+			fallbackModel: interactiveFallbackModel(session.model),
+			effort: session.effort,
+			accountId: session.accountId,
+			journalKind: "prompt",
+		};
+		const runCallbacks = {
+			onAskUser: makeAskHandler(session.id),
+			// A steer that reached the in-container run too late must not
+			// evaporate — queue it like the busy-path does.
+			onSteerFailed: (text: string) => {
+				enqueuePrompt(session.id, { content: text, user: opts.user });
+				watchExternalRunAndDrain(session.id);
+			},
+		};
+		// Launch EAGERLY (docker exec + socket connect awaited here) so a failure
+		// is caught by this try/catch and falls back to the host run — a lazy
+		// launch would only surface the failure as an error bubble mid-stream,
+		// after the fallback window has closed.
+		const handle = sandbox.launchRunEager
+			? await sandbox.launchRunEager(spec, runCallbacks)
+			: sandbox.launchRun(spec, runCallbacks);
+		console.log(`[sandbox] ${session.id}: running in ${sandbox.id} (${sandbox.cwd})`);
+		return handle.events();
+	} catch (e: any) {
+		// The token was registered mid-try; the failed run will never consume it.
+		unregisterRunToken(rpcToken);
+		const reason = String(e?.message || e).slice(0, 200);
+		// Daytona's WS dial-back is the launch step that fails when egress is
+		// blocked (lower org tiers) or callbackBaseUrl isn't sandbox-reachable.
+		const dialBackHint =
+			sbProvider === "daytona"
+				? " If the sandbox could not dial back, check callbackBaseUrl and your Daytona org tier's egress — see docs/self-hosting-sandboxes.md."
+				: "";
+		if (hasRemoteWorkspace(session)) {
+			// Volume-mode workspaces live only inside the sandbox — there is no
+			// host checkout to fall back to (the caller ends the turn with an
+			// explicit error), so don't promise a host run.
+			console.error(`[sandbox] ${session.id}: launch failed (volume workspace — no host fallback):`, e);
+			broadcastToSession(session.id, {
+				type: "notice",
+				message: `Sandbox unavailable (${reason}) — this workspace lives in the sandbox and has no host fallback. Retry when the ${sbProvider} sandbox is healthy.${dialBackHint}`,
+			});
+		} else {
+			console.error(`[sandbox] ${session.id}: launch failed — falling back to host run:`, e);
+			broadcastToSession(session.id, {
+				type: "notice",
+				message: `Sandbox unavailable (${reason}) — running on the host this turn.`,
+			});
+		}
+		return null;
+	}
+}
+
+
+/** Run a prompt against an existing session, broadcasting to all watchers. */
+export async function runSessionPrompt(
+	sessionId: string,
+	content: string,
+	user?: string,
+	images?: ImageInput[],
+	rawFiles?: unknown,
+	contextChats?: string[],
+): Promise<void> {
+	// Any explicit new run lifts a user stop — the queue may drain again.
+	stoppedSessions.delete(sessionId);
+	// Synchronously reserve the session BEFORE the awaits below (worktree revive,
+	// title gen, upload staging) register the run with the runner — otherwise two
+	// racing prompts both pass isAgentSessionBusy and the loser's message is
+	// dropped as a "Session is busy" error toast.
+	markSessionStarting(sessionId);
+	try {
+		await runSessionPromptInner(sessionId, content, user, images, rawFiles, contextChats);
+	} finally {
+		unmarkSessionStarting(sessionId);
+	}
+}
+
+async function runSessionPromptInner(
+	sessionId: string,
+	content: string,
+	user?: string,
+	images?: ImageInput[],
+	rawFiles?: unknown,
+	contextChats?: string[],
+): Promise<void> {
+	const session = findSession(sessionId);
+	if (!session) return;
+
+	// The engine session id depends on the session's model: codex models resume
+	// the codex thread, claude models the claude session. A missing engine id
+	// just means "first run on this provider" — a fresh thread/session starts.
+	const provider = providerFor(session.model);
+	let effectiveProvider = provider;
+	let effectiveModel = session.model;
+	// Cumulative token/cost accounting — seeded from the session's stored total,
+	// folded per run, persisted + broadcast live (see the `usage_snapshot` and
+	// `done` cases). `usageBase` is the total as of the last *completed* run:
+	// snapshots are run-cumulative, so each fold recomputes base+run rather than
+	// stacking onto the previous snapshot (which would double-count).
+	let latestUsage: SessionUsage | undefined = session.usage;
+	let usageBase: SessionUsage | undefined = latestUsage;
+	// Opencode ids live in their own slot (with a transitional mirror in the
+	// claude slot — recognizable by the ses_ shape; see engineSessionPatch).
+	// A claude run never resumes a ses_-shaped id: that ride was written by an
+	// opencode run, and handing it to the Claude SDK would fail the resume.
+	const engineSessionId =
+		provider === "codex"
+			? session.codexThreadId
+			: provider === "opencode"
+				? session.opencodeSessionId ||
+					(isOpencodeSessionId(session.claudeSessionId)
+						? session.claudeSessionId
+						: undefined)
+				: isOpencodeSessionId(session.claudeSessionId)
+					? undefined
+					: session.claudeSessionId;
+	// A claude session with no engine id yet is a *fresh* chat (e.g. a new sibling
+	// chat opened from the tab strip's +): its first prompt starts a new claude
+	// conversation, and finalSessionId is persisted below — same as codex, which
+	// already runs fresh with no thread id. (Previously this hard-errored, which
+	// blocked never-run sessions from ever receiving their first message.)
+	if (provider === "claude" && !engineSessionId) {
+		console.log(`[prompt] ${sessionId}: first claude run (no engine id yet)`);
+	}
+
+	// Cross-provider handoff: the session's model was switched to the other engine
+	// (Fable orchestrator → gpt-5.5 executor, or back) since the last run. The
+	// incoming engine has no memory of the conversation — its thread either never
+	// existed or is stale — so bridge it with the recent transcript from whichever
+	// engine last drove the session. Without this, a mid-session /model switch
+	// across providers drops the agent into a blank continuation. (Same-provider
+	// switches — opus↔sonnet, gpt-5.5↔codex — resume their own thread and need no
+	// bridge.) Recorded provider is set after every run below.
+	const lastProvider = session.lastEngineProvider;
+	let switchHandoff: string | null = null;
+	// Prior-engine entries backing the handoff note — also passed to the runner
+	// so a fresh opencode session's persisted transcript is seeded with them
+	// (keeps the UI transcript continuous across an engine migration).
+	let switchHandoffEntries: TranscriptEntry[] = [];
+	if (lastProvider && lastProvider !== provider) {
+		const prevEngineId =
+			lastProvider === "codex"
+				? session.codexThreadId
+				: lastProvider === "opencode"
+					? session.opencodeSessionId ||
+						(isOpencodeSessionId(session.claudeSessionId)
+							? session.claudeSessionId
+							: undefined)
+					: isOpencodeSessionId(session.claudeSessionId)
+						? undefined
+						: session.claudeSessionId;
+		const prevEntries = prevEngineId
+			? readEngineTranscript(
+					session.worktreeDir || defaultRepo().repo,
+					prevEngineId,
+					lastProvider,
+				)
+			: [];
+		if (prevEntries.length) {
+			switchHandoffEntries = prevEntries;
+			// Claude coming back to a thread it already ran (engineSessionId set)
+			// remembers everything up to the switch and only needs the interim
+			// turns; a fresh target treats the transcript as the whole conversation.
+			switchHandoff = buildEngineSwitchHandoffNote({
+				// The model that last drove the session is the second-to-last
+				// modelHistory entry (the last is the switch into the current model).
+				fromModel:
+					session.modelHistory && session.modelHistory.length >= 2
+						? session.modelHistory[session.modelHistory.length - 2].model
+						: undefined,
+				fromProvider: lastProvider,
+				toProvider: provider,
+				targetResuming: !!engineSessionId,
+				entries: prevEntries,
+			});
+			console.log(
+				`[prompt] ${sessionId}: cross-provider switch ${lastProvider}→${provider}; bridging ${prevEntries.length} transcript entries`,
+			);
+		}
+	}
+
+	// A cleaned-up worktree makes the SDK spawn fail with a misleading "binary
+	// not found" (ENOENT on the missing cwd) — revive it first. Same path as
+	// before, so resuming the claude session keeps its history. Volume-mode
+	// sandbox workspaces are exempt: their dir never exists host-side — the
+	// sandbox provider materializes it in-container, so reviving a host
+	// worktree at the same path would shadow (and fork) the real workspace.
+	let cwd = session.worktreeDir || defaultRepo().repo;
+	if (
+		session.worktreeDir &&
+		!existsSync(session.worktreeDir) &&
+		!hasRemoteWorkspace(session)
+	) {
+		const repo = session.repo
+			? getRepo(session.repo)
+			: repoForPath(session.worktreeDir);
+		if (session.branch) {
+			broadcastToSession(sessionId, {
+				type: "notice",
+				message: `This session's worktree was cleaned up — recreating it from branch ${session.branch}…`,
+			});
+			try {
+				cwd = await reviveWorktree(session.branch, repo.id);
+			} catch (e) {
+				broadcastToSession(sessionId, {
+					type: "notice",
+					message: `Couldn't recreate the worktree (${e}); running in the main checkout instead.`,
+				});
+				cwd = repo.repo;
+			}
+		} else {
+			broadcastToSession(sessionId, {
+				type: "notice",
+				message:
+					"This session's worktree is gone; running in the main checkout.",
+			});
+			cwd = repo.repo;
+		}
+	}
+	let prompt = content;
+	// A teammate sending into someone else's idle session gets the same
+	// "[Name] " attribution the steer path already applies — without it the
+	// message lands bare in the transcript and the viewer credits it to the
+	// session owner (startedBy). The owner's own turns stay bare (the common
+	// case), automation runs pass no user, and multi-message queue drains
+	// arrive pre-attributed — don't double-prefix those.
+	if (
+		user &&
+		user !== session.startedBy &&
+		!content.startsWith(`[${user}] `)
+	) {
+		prompt = `[${user}] ${prompt}`;
+	}
+	// Bridge a cross-provider engine switch (computed above) so the incoming
+	// engine continues the conversation instead of starting blank. Fenced so the
+	// transcript shows only the human's message — the model-switch divider already
+	// marks the engine change; the handoff itself is plumbing (see prompt-context).
+	if (switchHandoff) prompt = `${wrapContext(switchHandoff)}\n\n${prompt}`;
+	// Sibling-chat transcripts attached from the fresh-chat "Add chat
+	// transcripts" chips: inline a bounded digest of each attached chat, fenced
+	// so the rendered transcript shows only the human's message. UI-only field,
+	// but skip automation sessions anyway (their prompts are untrusted text).
+	if (contextChats?.length && !session.automation) {
+		const attachedChats = [...new Set(contextChats)]
+			.filter((id) => id !== sessionId)
+			.map((id) => findSession(id))
+			.filter((s): s is UnifiedSession => !!s)
+			.map((s) => ({
+				id: s.id,
+				title: s.title,
+				model: s.model,
+				entries: s.transcriptPath ? parseTranscript(s.transcriptPath) : [],
+			}));
+		if (attachedChats.length)
+			prompt = `${wrapContext(buildChatContextNote(attachedChats))}\n\n${prompt}`;
+	}
+	// Non-image attachments: stage to disk and tell the agent where they landed.
+	prompt = withUploadsNote(prompt, stageFileAttachments(sessionId, rawFiles));
+	if (session.goal) {
+		prompt += `\n\n[Pinned session goal — keep working toward it and note how this turn advanced it: ${session.goal}]`;
+	}
+
+	// Resuming an automation-owned session must keep that automation's scoping
+	// (MCP allowlist + tool denials) — otherwise a resume would silently hand it
+	// every MCP server and drop the customer/identity write denials.
+	const isAutomationSession = !!session.automation;
+	const mcpServers = isAutomationSession
+		? automationMcpServersByName(session.automation!)
+		: (session.mcpServers && session.mcpServers.length) ? session.mcpServers : [];
+	const deniedTools = isAutomationSession ? automationDeniedTools() : undefined;
+
+	// @session:<id> mentions → footer resolving them for the agent's
+	// opensession-sessions tools. Interactive sessions only (same gate as the tools).
+	if (!isAutomationSession) {
+		const mentionsNote = sessionMentionsNote(prompt);
+		if (mentionsNote) prompt += `\n\n${mentionsNote}`;
+	}
+
+	// Sidebar name: make sure this chat has a short generated summary title.
+	// Covers tab-strip "New chat" chats (never named at creation — this is
+	// their first prompt) and retries chats whose creation-time Haiku call
+	// failed (e.g. account exhaustion), which otherwise wear the raw first
+	// line of the prompt forever. Retries summarize the stored provisional
+	// title (the opening prompt's first line), not this turn's message, so a
+	// mid-conversation "yes, do it" never becomes the title source. Automation
+	// and goal sessions carry deliberate titles; a manual rename wins anyway.
+	if (
+		session.source === "backstage" &&
+		!isAutomationSession &&
+		!session.goalId &&
+		!getTitleOverride(session.id)
+	) {
+		const provisional = !session.title || session.title === "New chat";
+		const firstLine = content.trim().split("\n")[0].slice(0, 80);
+		if (provisional && firstLine)
+			touchBackstageSession(session.id, { title: firstLine });
+		void ensureGeneratedTitle(
+			session.id,
+			provisional ? content : session.title,
+			user || session.startedBy || undefined,
+			session.model || undefined,
+		).then((t) => {
+			if (t) invalidateSessionsCache();
+		});
+	}
+
+	// Everyone viewing this session sees the prompt and the live run
+	broadcastToSession(sessionId, {
+		type: "stream_start",
+		sessionId,
+		by: user || "Anonymous",
+	});
+	broadcastToSession(sessionId, {
+		type: "session_status",
+		sessionId,
+		isRunning: true,
+	});
+
+	// Sandbox routing (docs/sandboxes-plan.md Phase 1): a session that opted
+	// into a sandbox (docker/daytona/e2b) runs this prompt inside its
+	// per-session sandbox; null (the default for every session without the
+	// opt-in field, plus every failure/kill-switch case) = the unchanged
+	// in-process path below.
+	const sandboxRun = await maybeLaunchSandboxedRun(session, {
+		prompt,
+		engineSessionId: engineSessionId || undefined,
+		cwd,
+		user,
+		images,
+		mcpServers,
+		isAutomationSession,
+	});
+
+	// A volume-mode workspace (docker volume mode, or any remote provider)
+	// exists ONLY inside its sandbox — there is no host fallback (runAgent on
+	// the nonexistent host path would just ENOENT, and running in the main
+	// checkout instead would be worse). End the turn with an explicit error;
+	// the kill-switch/config flip that caused this is an operator action, not
+	// a transient.
+	if (!sandboxRun && hasRemoteWorkspace(session)) {
+		const msg =
+			"This session's workspace lives in its sandbox volume, but the sandbox is unavailable (disabled by config/kill-switch, or it failed to start) — the prompt was not run. Re-enable sandboxes and try again." +
+			(session.sandbox?.provider === "daytona"
+				? " Daytona: if the launch failed because the sandbox could not dial back, check callbackBaseUrl and your org tier's egress (docs/self-hosting-sandboxes.md)."
+				: "");
+		broadcastToSession(sessionId, { type: "error", sessionId, message: msg });
+		recordRunOutcome(session.id, msg);
+		broadcastToSession(sessionId, { type: "stream_done", sessionId });
+		broadcastToSession(sessionId, {
+			type: "session_status",
+			sessionId,
+			isRunning: false,
+		});
+		return;
+	}
+
+	let finalSessionId = engineSessionId || "";
+	let endedWithError = false;
+	// Terminal failure this run died on (usage limits with no account left,
+	// credit/API errors) — recorded on the session after the loop so the sidebar
+	// surfaces it as "Needs input"; null (a clean finish) clears an earlier one.
+	let runFailure: string | null = null;
+	// Accumulate the assistant reply so we can mirror it to a linked Slack channel
+	// (this path — queue drain / deliverToSession / loops — is where a channel
+	// @mention lands; web-typed prompts stream through the WS handler instead, so
+	// they don't spam the channel).
+	let assistantText = "";
+
+	for await (const event of sandboxRun ?? runAgent({
+		prompt,
+		sessionId: engineSessionId || undefined,
+		cwd,
+		mode: session.mode,
+		model: session.model,
+		// Reasoning effort from the composer pill, persisted on the session.
+		effort: session.effort,
+		// Pinned subscription for this session (claude-runner prefers it, pool
+		// fallback on exhaustion). Ignored by Codex models.
+		accountId: session.accountId,
+		// Only switch models when a fallback is explicitly configured. By default,
+		// usage exhaustion stops the run so the human can choose what to do.
+		fallbackModel: interactiveFallbackModel(session.model),
+		images,
+		// Cross-engine switch INTO opencode: seed the fresh opencode session's
+		// persisted transcript with the prior engine's history (same entries the
+		// handoff note was built from) so the UI transcript stays continuous.
+		seedTranscriptEntries:
+			provider === "opencode" && switchHandoff && switchHandoffEntries.length
+				? switchHandoffEntries
+				: undefined,
+		mcpServers,
+		// Self-management tools for normal sessions; withheld from automation
+		// sessions (and their interactive resumes) — same gate as deniedTools above.
+		// A goal-driven session also gets its own opensession-goal-self controls, so an
+		// interactive turn (a human steering it in the UI) can set the next wake,
+		// append to the ledger, or pause/finish — the same tools the headless wake has.
+		inProcessMcp: isAutomationSession
+			? undefined
+			: session.goalId
+				? {
+						...interactiveMcpServers(user, sessionId),
+						"opensession-goal-self": createGoalSelfMcpServer(session.goalId),
+					}
+				: interactiveMcpServers(user, sessionId),
+		reposNote: isAutomationSession
+			? undefined
+			: await buildSessionNote(session, user),
+		deniedTools,
+		confirmTools: STRIPE_CONFIRM_TOOLS,
+		aws: true, // sessions keep AWS read access (via injected creds)
+		// Attribute any commits this turn makes to whoever sent the prompt.
+		author: gitIdentityFor(user),
+		// Gate per-user MCP servers (allowedUsers) to the prompt's author. Automation
+		// sessions pass no user, so they never see a user-restricted server.
+		user: isAutomationSession ? undefined : user,
+		journal: { bksSessionId: session.id, kind: "prompt" },
+		onAskUser: makeAskHandler(sessionId),
+	})) {
+		switch (event.type) {
+			case "init":
+				if (event.provider) effectiveProvider = event.provider;
+				if (event.model) effectiveModel = event.model;
+				if (event.sessionId && event.sessionId !== finalSessionId) {
+					finalSessionId = event.sessionId;
+					// The engine session id just changed (first run of a fresh chat, or
+					// a rotation fork): the run writes to a transcript file nobody is
+					// watching yet. Persist + attach NOW — waiting for the run to end
+					// (the old behavior) left the entire turn invisible to viewers.
+					if (session.source === "backstage") {
+						touchBackstageSession(session.id, {
+							...engineSessionPatch(effectiveProvider, finalSessionId),
+							lastEngineProvider: effectiveProvider,
+							...(effectiveModel ? { model: effectiveModel } : {}),
+						});
+						invalidateSessionsCache(); // new watchers must see the new transcriptPath
+					}
+					attachSessionWatchersToEngineTranscript(
+						sessionId,
+						effectiveProvider,
+						cwd,
+						finalSessionId,
+					);
+				}
+				break;
+			case "text_chunk":
+				assistantText += event.text;
+				broadcastToSession(sessionId, {
+					type: "stream_text",
+					sessionId,
+					text: event.text,
+				});
+				break;
+			case "model_switch": {
+				// The primary model ran out of credits pool-wide and the runner
+				// switched this session to a fallback (auto-switch is on). Record it
+				// the same way a manual /model switch is recorded — a persisted
+				// modelHistory entry (durable inline divider on reload) plus a live
+				// model_changed broadcast (pill + divider now) — and move the session
+				// onto the fallback so later prompts don't re-hit the exhausted model.
+				const to = event.toModel || "";
+				const reason = `auto-switch — ${modelLabel(event.fromModel)} out of credits`;
+				if (to) {
+					effectiveModel = to;
+					effectiveProvider = providerFor(to);
+				}
+				if (to && session.source === "backstage") {
+					touchBackstageSession(session.id, {
+						model: to,
+						modelHistory: [
+							...(session.modelHistory || []),
+							{ model: to, from: event.fromModel, at: new Date().toISOString(), by: reason },
+						],
+					});
+					invalidateSessionsCache();
+				}
+				if (to)
+					broadcastToSession(sessionId, {
+						type: "model_changed",
+						sessionId,
+						model: to,
+						from: event.fromModel,
+						by: reason,
+					});
+				break;
+			}
+			case "tool_use":
+				broadcastToSession(sessionId, {
+					type: "stream_tool_use",
+					sessionId,
+					entry: {
+						id: event.toolUseId || crypto.randomUUID(),
+						type: "tool_use",
+						content: `Using ${event.toolName}`,
+						timestamp: new Date().toISOString(),
+						toolName: event.toolName,
+						toolInput: event.toolInput,
+						toolUseId: event.toolUseId,
+					},
+				});
+				break;
+			case "tool_result":
+				broadcastToSession(sessionId, {
+					type: "stream_tool_result",
+					sessionId,
+					entry: {
+						// Same id scheme as the jsonl tail so the full (untruncated)
+						// transcript entry upserts over this streamed copy
+						id: event.toolUseId ? `tr-${event.toolUseId}` : crypto.randomUUID(),
+						type: "tool_result",
+						content: event.content || "",
+						timestamp: new Date().toISOString(),
+						toolUseId: event.toolUseId,
+						...(event.images && event.images.length > 0
+							? { images: event.images }
+							: {}),
+						...(event.videos && event.videos.length > 0
+							? { videos: event.videos }
+							: {}),
+					},
+				});
+				break;
+			case "usage_snapshot":
+				// Live mid-run cost/context — same fold as `done`, recomputed from
+				// the pre-run base (snapshots are cumulative for the run). Broadcast
+				// only; persistence waits for the end of the run.
+				if (event.usage) {
+					latestUsage = foldSessionUsage(
+						usageBase,
+						event.usage,
+						effectiveModel,
+					);
+					broadcastToSession(sessionId, {
+						type: "usage_update",
+						sessionId,
+						usage: latestUsage,
+					});
+				}
+				break;
+			case "done":
+				finalSessionId = event.sessionId || finalSessionId;
+				if (event.provider) effectiveProvider = event.provider;
+				if (event.model) effectiveModel = event.model;
+				// Dying on usage limits with no account left reports as a `done`
+				// whose result is the limit notice (not an `error` event) — but it
+				// still needs a human, so treat it as a failure.
+				if (event.usageLimitExhausted)
+					runFailure = event.result || "Usage limit reached on every account";
+				// Fold this run's token/cost into the session total and push it live
+				// to viewers (persisted below with the rest of the session patch).
+				if (event.usage) {
+					latestUsage = foldSessionUsage(
+						usageBase,
+						event.usage,
+						event.model || effectiveModel,
+					);
+					usageBase = latestUsage;
+					broadcastToSession(sessionId, {
+						type: "usage_update",
+						sessionId,
+						usage: latestUsage,
+					});
+				}
+				invalidateSessionsCache();
+				break;
+			case "error":
+				// "Session is busy" = we lost the start race to a concurrent run (the
+				// pendingStarts guard closes most of that window; the runner's own
+				// check is the last line). Queue the message for delivery after the
+				// winning run instead of dropping it as an error toast. Return early:
+				// the tail below (steer-receipt clearing, stream_done) belongs to the
+				// run that actually owns the session.
+				if (event.content === "Session is busy") {
+					enqueuePrompt(sessionId, { content, user });
+					watchExternalRunAndDrain(sessionId);
+					broadcastToSession(sessionId, {
+						type: "notice",
+						message:
+							"Session was busy — message queued; it sends when the current run finishes.",
+					});
+					return;
+				}
+				endedWithError = true;
+				runFailure = event.content || "Run failed";
+				broadcastToSession(sessionId, {
+					type: "error",
+					sessionId,
+					message: event.content,
+				});
+				break;
+		}
+	}
+
+	// Persist activity on our own session store (slack/linear stores are read-only)
+	if (session.source === "backstage") {
+		touchBackstageSession(
+			session.id,
+			{
+				...engineSessionPatch(effectiveProvider, finalSessionId),
+				lastEngineProvider: effectiveProvider,
+				...(effectiveModel ? { model: effectiveModel } : {}),
+				...(latestUsage ? { usage: latestUsage } : {}),
+			},
+		);
+	}
+
+	// A terminal failure keeps the session in the "Needs input" bucket until a
+	// later run finishes cleanly (which clears it here too).
+	recordRunOutcome(session.id, runFailure);
+
+	// On a clean finish any steered messages already landed in the transcript, so
+	// drop their display-only receipts. But if the run ended in error/abort (e.g.
+	// a restart killed the SDK stream mid-turn), a steered message may NOT have
+	// been delivered yet — keep the receipt so persistQueues/restorePromptQueues
+	// can re-deliver it on the next boot instead of silently dropping it.
+	if (!endedWithError) clearSteerReceipts(sessionId);
+
+	broadcastToSession(sessionId, { type: "stream_done", sessionId });
+	broadcastToSession(sessionId, {
+		type: "session_status",
+		sessionId,
+		isRunning: false,
+	});
+
+	// Mirror Michael's reply into the session's linked Slack channel, so a channel
+	// @mention (which routes here via deliverToSession) gets answered in-channel.
+	if (session.slackChannel?.channelId && !endedWithError && assistantText.trim()) {
+		void sendSlackMessage(
+			session.slackChannel.channelId,
+			assistantText.trim().slice(0, 38000),
+		).catch(() => {});
+	}
+
+	// The session just finished a turn; if nothing's queued it's idle now, so fire
+	// any "when_done" / "on_pr" human asks waiting on this session. Idempotent.
+	if (!promptQueues.get(sessionId)?.length) {
+		onHumanAsksSessionIdle(sessionId);
+		// Publish any commits the turn left unpushed so the status header doesn't
+		// linger on "Ahead by N commits" (see autoPushSessionBranches). Only on a
+		// clean finish — an errored/aborted turn may be mid-work. Fire-and-forget.
+		if (!endedWithError) void autoPushSessionBranches(session);
+	}
+}
+
+/**
+ * Expand `@session:bks-…` mentions in a prompt into a footer the agent can act
+ * on with its opensession-sessions tools. The mention token itself stays in place
+ * (it carries the id); the footer resolves each id to a title/state and points
+ * at the tools — including slash commands over send_to_session (e.g. "/loop").
+ * Interactive sessions only: automations don't get opensession-sessions.
+ */
+export function sessionMentionsNote(content: string): string | null {
+	// Only the human's visible message counts: fenced <backstage:context> blocks
+	// (attached chat transcripts, handoffs) name sessions as @session:<id> too,
+	// and those must not grow a redundant — and unfenced, so user-visible —
+	// mentions footer.
+	content = stripContext(content);
+	const ids = [
+		...new Set(
+			[...content.matchAll(/@session:(bks-[0-9a-f-]+)/g)].map((m) => m[1]),
+		),
+	];
+	if (!ids.length) return null;
+	const lines = ids.map((id) => {
+		const s = findSession(id);
+		if (!s) return `- @session:${id} — (no session with this id)`;
+		const busy = isAgentSessionBusy(s.claudeSessionId, s.codexThreadId, s.id);
+		const bits = [
+			s.title || "Untitled",
+			s.branch ? `branch ${s.branch}` : null,
+			busy ? "running" : "idle",
+		].filter(Boolean);
+		return `- @session:${id} — ${bits.join(" · ")}`;
+	});
+	return (
+		`[The @session mentions above refer to other Backstage sessions:\n${lines.join("\n")}\n` +
+		`Use the opensession-sessions MCP tools with these ids: get_session (state, pending question, ` +
+		`transcript tail), send_to_session (a message — or a slash command handled by backstage ` +
+		`itself, e.g. "/loop 15m <prompt>" to set a recurring self-prompt on the target that fires ` +
+		`only while it is idle, "/loop stop" to clear it; this works on your own session id too), ` +
+		`answer_session_question, cancel_session.]`
+	);
+}
+
+// Loop ticker: fire due session loops (skips busy/archived sessions).
+// Guarded so a hot reload doesn't stack a second interval.
+if (!g.__backstageBooted) {
+	setInterval(() => {
+		for (const session of getCachedSessions()) {
+			const loop = session.loop;
+			if (!loop || session.archived || session.source !== "backstage") continue;
+			if (!session.claudeSessionId && !session.codexThreadId) continue;
+			if (
+				isAgentSessionBusy(
+					session.claudeSessionId,
+					session.codexThreadId,
+					session.id,
+				)
+			)
+				continue;
+			const last = loop.lastRunAt ? new Date(loop.lastRunAt).getTime() : 0;
+			if (Date.now() - last < loop.intervalMinutes * 60_000) continue;
+			touchBackstageSession(session.id, {
+				loop: { ...loop, lastRunAt: new Date().toISOString() },
+			});
+			console.log(
+				`[loop] Firing loop prompt for ${session.id} (every ${loop.intervalMinutes}m)`,
+			);
+			void runSessionPromptAndDrain(
+				session.id,
+				loop.prompt,
+				loop.setBy ? `${loop.setBy} (loop)` : "loop",
+			).catch((e) =>
+				console.error(`[loop] Loop prompt failed for ${session.id}:`, e),
+			);
+		}
+	}, 60_000);
+}

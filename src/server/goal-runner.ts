@@ -1,0 +1,287 @@
+/**
+ * Goals: long-running, self-pacing missions. A Goal drives ONE managed session
+ * across many wakes, resuming the engine session each time (so context carries
+ * and the SDK compacts rather than forgets), pacing itself via the
+ * opensession-goal-self MCP, and stopping when done. The store + validation live in
+ * goals.ts; this is the runner + ticker (they need the run/MCP wiring).
+ */
+
+import { randomUUIDv7 } from "bun";
+import { existsSync } from "fs";
+import {
+	createHumansMcpServer,
+} from "../agents/slack/humans-tools";
+import { createGoalSelfMcpServer } from "../agents/slack/goal-tools";
+import { runAgent, isAgentSessionBusy } from "./agent-runner";
+import { defaultRepo } from "./config";
+import { getGoal, listGoals, saveGoal, type Goal } from "./goals";
+import { DEFAULT_FALLBACK_MODEL, providerFor } from "./models";
+import { engineSessionPatch } from "./sessions";
+import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
+import { gitIdentityFor } from "./shared/user-mappings";
+import { writeJsonAtomic } from "./shared/atomic-write";
+import { createWorktree, getRepo, reviveWorktree } from "./worktree";
+import { invalidateSessionsCache, SESSIONS_DIR } from "./session-cache";
+import { attachSessionWatchersToEngineTranscript } from "./run-session";
+import type { BackstageSessionFile } from "./types";
+
+const g = globalThis as any;
+
+// ── Goals: long-running, self-pacing missions ───────────────────────────────
+// A Goal drives ONE managed session across many wakes, resuming the engine
+// session each time (so context carries and the SDK compacts rather than
+// forgets), pacing itself via the opensession-goal-self MCP, and stopping when done.
+// The store + validation live in src/server/goals.ts; this is the runner +
+// ticker (here because they need the interactive MCP wiring), mirroring how the
+// session loop ticker lives in this file.
+
+export const runningGoals: Set<string> = (g.__runningGoals ??= new Set());
+
+/** MCP surface for a goal's own run: pull-a-human-in + its self-cadence controls.
+ *  Deliberately excludes opensession-admin / opensession-sessions — an autonomous,
+ *  weeks-long run gets least privilege (can't reconfigure Michael or steer other
+ *  sessions); human sign-off goes through opensession-humans ask_human. */
+function goalMcpServers(
+	bksSessionId: string,
+	goalId: string,
+	createdBy: string,
+): Record<string, unknown> {
+	return {
+		"opensession-humans": createHumansMcpServer({
+			sessionId: bksSessionId,
+			createdBy,
+			isAdmin: true,
+		}),
+		"opensession-goal-self": createGoalSelfMcpServer(goalId),
+	};
+}
+
+function buildGoalWakePrompt(goal: Goal, wake: number, cwd: string): string {
+	const parts = [
+		`# Your mission (pinned)\n\n${goal.mission}`,
+		`---`,
+		`## This is wake #${wake} of your mission.`,
+		`Your durable fact ledger is at:\n    ${goal.stateFile}\nRead it FIRST every wake — it is the authoritative record of what you've baselined, decided, shipped, and measured. Your in-context memory may have been compacted; the ledger is not.`,
+		`Do ONE meaningful increment this wake. Then, before you finish, ALWAYS:\n` +
+			`- Append what you learned/did this wake (concrete numbers, PR URLs, decisions) to the ledger via the opensession-goal-self \`append_ledger\` tool.\n` +
+			`- Decide what happens next with opensession-goal-self: \`set_next_wake\` (e.g. "in 7 days" after shipping, so metrics can actually move before you re-measure), or \`mark_paused\` if you're blocked on a human decision, or \`mark_done\`/\`mark_failed\` when the mission is settled. If you set none, you'll be woken again in ~24h by default.\n` +
+			`- Keep \`update_phase\` current so progress is visible at a glance.`,
+		`Human gates: to get sign-off or a decision from a teammate, use the opensession-humans \`ask_human\` tool — it DMs them as Michael and folds their reply back into this session. Do NOT email or impersonate anyone.`,
+	];
+	if (goal.mode === "code") {
+		const repo = getRepo(goal.repo);
+		if (repo.sharedCheckout) {
+			// Shared-checkout repos (backstage) have NO isolated worktree — `cwd` is
+			// the live main checkout the running server and every other session share.
+			// A `git checkout -B`/`reset`/`pull` here yanks the working tree out from
+			// under everyone and orphans their un-pushed commits, so forbid it.
+			parts.push(
+				`Shipping code: you are in the SHARED, live main checkout at ${cwd} on \`${repo.defaultBranch}\` — the running server and other sessions use this exact working tree at the same time. NEVER create or switch branches, \`reset\`, \`pull\`, \`stash\`, or \`checkout\` (that rips the tree out from under everyone and orphans their commits). Just edit files, then \`git add <your specific files>\` → \`git commit\` → \`git push\` on \`${repo.defaultBranch}\`. Commit + push frequently. No feature branch and no PR — this repo ships directly from \`${repo.defaultBranch}\`.`,
+			);
+		} else {
+			parts.push(
+				`Shipping code: you are in a persistent worktree at ${cwd} (kept stable across wakes so your session resumes cleanly). For each change, start clean from the default branch (\`git fetch origin && git checkout -B <feature-branch> origin/${repo.defaultBranch}\`), make edits, follow the repo's AGENTS.md and run its checks/format, then open a PR with \`gh pr create --base ${repo.defaultBranch}\`. NEVER merge — a PR is the human gate.`,
+			);
+		}
+	}
+	return parts.join("\n\n");
+}
+
+/** Run one wake of a goal: resume (or create) its session, drive one increment,
+ *  then persist whatever cadence/status the run chose (with a 24h fallback). */
+export async function runGoal(goal: Goal): Promise<void> {
+	if (runningGoals.has(goal.id)) return;
+	runningGoals.add(goal.id);
+	const startedAt = new Date();
+	const wake = goal.wakeCount + 1;
+	const bksId = goal.bksSessionId || `bks-${randomUUIDv7()}`;
+	try {
+		// Code goals keep ONE persistent worktree so the engine session (keyed on
+		// cwd) resumes cleanly across wakes; ask goals read the main checkout.
+		let cwd = defaultRepo().repo;
+		let branch = goal.branch || "";
+		if (goal.mode === "code") {
+			const repo = getRepo(goal.repo);
+			branch = goal.branch || `goal-${goal.id.slice(-8)}`;
+			if (goal.worktreePath && existsSync(goal.worktreePath)) {
+				cwd = goal.worktreePath;
+			} else {
+				try {
+					cwd = await reviveWorktree(branch, repo.id);
+				} catch {
+					cwd = await createWorktree(branch, repo.id);
+				}
+			}
+		}
+
+		saveGoal({
+			...goal,
+			bksSessionId: bksId,
+			branch: branch || undefined,
+			worktreePath: goal.mode === "code" ? cwd : undefined,
+			lastRunAt: startedAt.toISOString(),
+			lastRunStatus: "running",
+			lastRunError: undefined,
+		});
+
+		const createdBy = `${goal.name} (goal)`;
+		let effectiveModel = goal.model;
+		let effectiveProvider = providerFor(effectiveModel);
+		const persistSession = (engineSessionId: string) => {
+			const data: BackstageSessionFile = {
+				id: bksId,
+				claudeSessionId: "",
+				...(engineSessionId
+					? engineSessionPatch(effectiveProvider, engineSessionId)
+					: {}),
+				...(engineSessionId
+					? { lastEngineProvider: effectiveProvider }
+					: {}),
+				...(effectiveModel ? { model: effectiveModel } : {}),
+				branch: goal.mode === "code" ? branch : "",
+				worktreeDir: cwd,
+				...(goal.mode === "code" ? { repo: getRepo(goal.repo).id } : {}),
+				createdBy,
+				createdAt: goal.createdAt,
+				lastActivity: new Date().toISOString(),
+				title: `${goal.name} — goal`,
+				mode: goal.mode,
+				goalId: goal.id,
+			};
+			writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
+			invalidateSessionsCache();
+		};
+
+		console.log(`[goals] Wake #${wake} of "${goal.name}" → ${bksId}`);
+
+		let engineSessionId = goal.engineSessionId || "";
+		let errorMsg = "";
+		for await (const event of runAgent({
+			prompt: buildGoalWakePrompt(goal, wake, cwd),
+			sessionId: goal.engineSessionId || undefined,
+			cwd,
+			mode: goal.mode,
+			model: goal.model,
+			mcpServers: goal.mcpServers,
+			inProcessMcp: goalMcpServers(bksId, goal.id, createdBy),
+			confirmTools: STRIPE_CONFIRM_TOOLS,
+			aws: true,
+			author: gitIdentityFor(goal.name),
+			// A goal runs on behalf of its creator; gate per-user MCP servers to them.
+			user: createdBy,
+			fallbackModel:
+				goal.fallbackModel === "none"
+					? undefined
+					: goal.fallbackModel || DEFAULT_FALLBACK_MODEL,
+			journal: { bksSessionId: bksId, kind: "goal" },
+			// Headless: no onAskUser. Human gates go through opensession-humans ask_human
+			// (async) and hard blocks through opensession-goal-self mark_paused.
+		})) {
+			if (event.type === "init") {
+				engineSessionId = event.sessionId || engineSessionId;
+				if (event.provider) effectiveProvider = event.provider;
+				if (event.model) effectiveModel = event.model;
+				persistSession(engineSessionId);
+				// A goal wake's transcript file is new each wake — attach anyone
+				// already viewing the goal session so the turn streams live.
+				if (engineSessionId) {
+					attachSessionWatchersToEngineTranscript(
+						bksId,
+						effectiveProvider,
+						cwd,
+						engineSessionId,
+					);
+				}
+			}
+			if (event.type === "model_switch") {
+				const to = event.toModel || "";
+				if (to) {
+					effectiveModel = to;
+					effectiveProvider = providerFor(to);
+				}
+			}
+			if (event.type === "done") {
+				engineSessionId = event.sessionId || engineSessionId;
+				if (event.provider) effectiveProvider = event.provider;
+				if (event.model) effectiveModel = event.model;
+			}
+			if (event.type === "error") errorMsg = event.content || "Unknown error";
+		}
+		persistSession(engineSessionId);
+
+		// The run may have rescheduled / paused / finished itself via
+		// opensession-goal-self — reload so we don't clobber those, then apply
+		// bookkeeping and a 24h fallback if it left no next wake.
+		const fresh = getGoal(goal.id) || goal;
+		const next: Goal = {
+			...fresh,
+			bksSessionId: bksId,
+			engineSessionId,
+			branch: branch || fresh.branch,
+			worktreePath: goal.mode === "code" ? cwd : fresh.worktreePath,
+			wakeCount: wake,
+			lastRunAt: startedAt.toISOString(),
+			lastRunStatus: errorMsg ? "error" : "ok",
+			lastRunError: errorMsg || undefined,
+		};
+		if (
+			next.status === "active" &&
+			Date.parse(next.nextWakeAt) <= startedAt.getTime()
+		) {
+			next.nextWakeAt = new Date(
+				startedAt.getTime() + 24 * 60 * 60 * 1000,
+			).toISOString();
+			console.log(`[goals] "${goal.name}" set no next wake — defaulting to +24h`);
+		}
+		saveGoal(next);
+		console.log(
+			`[goals] "${goal.name}" wake #${wake} ${errorMsg ? `error: ${errorMsg}` : "ok"} (status ${next.status})`,
+		);
+	} catch (e: any) {
+		console.error(`[goals] "${goal.name}" wake failed:`, e);
+		const fresh = getGoal(goal.id);
+		if (fresh) {
+			saveGoal({
+				...fresh,
+				lastRunAt: startedAt.toISOString(),
+				lastRunStatus: "error",
+				lastRunError: e?.message || String(e),
+				// Back off a day on a hard failure so it can't hot-loop crashing.
+				nextWakeAt:
+					fresh.status === "active" &&
+					Date.parse(fresh.nextWakeAt) <= startedAt.getTime()
+						? new Date(startedAt.getTime() + 24 * 60 * 60 * 1000).toISOString()
+						: fresh.nextWakeAt,
+			});
+		}
+	} finally {
+		runningGoals.delete(goal.id);
+	}
+}
+
+// Goals ticker: wake due goals (self-pacing, so this only fires them).
+// Guarded so a hot reload doesn't stack a second interval.
+if (!g.__backstageBooted) {
+	setInterval(() => {
+		const now = Date.now();
+		for (const goal of listGoals()) {
+			if (goal.status !== "active") continue;
+			if (Date.parse(goal.nextWakeAt) > now) continue;
+			if (runningGoals.has(goal.id)) continue;
+			// A prior process's run may still be resuming from the journal — don't
+			// double-drive the same engine session.
+			if (isAgentSessionBusy(goal.engineSessionId, goal.bksSessionId)) continue;
+			// Safety cap: stop an out-of-control mission until a human resumes it.
+			if (goal.maxWakes && goal.wakeCount >= goal.maxWakes) {
+				saveGoal({
+					...goal,
+					status: "paused",
+					pauseReason: `Hit safety cap of ${goal.maxWakes} wakes — resume to continue.`,
+				});
+				console.log(`[goals] "${goal.name}" hit maxWakes ${goal.maxWakes}; paused`);
+				continue;
+			}
+			void runGoal(goal);
+		}
+	}, 60_000);
+}
