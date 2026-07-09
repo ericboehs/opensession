@@ -119,7 +119,17 @@ export function StagingLink({
 		);
 	}
 
-	const building = staging.status !== "Ready";
+	// A push mid-review kicks off a *new* Vercel preview, but butler's
+	// preview-table comment still advertises the previous deploy as Ready — so
+	// trusting staging.status alone leaves the globe green and clickable while
+	// the link it points at is stale. When a deploy check is pending we know a
+	// rebuild is in flight, so treat it as building regardless of the comment;
+	// the globe tracks the live checks headline instead of the lagging comment.
+	const rebuilding = deployPending;
+	const building = staging.status !== "Ready" || rebuilding;
+	// Status word for the tooltip — "building" reads truer than the stale
+	// "ready" while a rebuild's deploy check is still pending.
+	const statusWord = rebuilding ? "building" : staging.status.toLowerCase();
 	// Deep-link to the agent-flagged route (set_preview_path) so the button
 	// opens the feature under test, not the app root.
 	const href = withPreviewPath(staging.url, session.previewPath);
@@ -162,7 +172,7 @@ export function StagingLink({
 					copied
 						? "Link copied"
 						: building
-							? `Staging deploy ${staging.status.toLowerCase()}… ⌘-click to copy the link`
+							? `Staging deploy ${statusWord}… ⌘-click to copy the link`
 							: "Open the staging deploy to test this PR on real infra (⌘-click to copy the link)"
 				}
 				side="bottom"
@@ -197,7 +207,7 @@ export function StagingLink({
 				copied
 					? "Link copied"
 					: building
-						? `Staging deploy ${staging.status.toLowerCase()}… ⌘-click to copy — ${href}`
+						? `Staging deploy ${statusWord}… ⌘-click to copy — ${href}`
 						: `Test this PR on staging (⌘-click to copy the link) — ${href}`
 			}
 		>
