@@ -1,10 +1,7 @@
 /**
  * Plain agent webhook and mention handlers.
  */
-import { envAlias } from "../../server/rename-compat";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import { SnoozeStatusDetail } from "@team-plain/typescript-sdk";
-import { cleanPlainToolInput } from "../../server/shared/note-style";
 import {
   getThreadWithMessages,
   postNote,
@@ -15,9 +12,9 @@ import {
   plain,
 } from "./api";
 import { buildMentionPrompt, buildWorkPrompt, buildRefundExecutionPrompt } from "./prompts";
-import { getDefaultModel } from "../../server/models";
-import { resolveDirectSdkModel } from "../../server/model-resolve";
-import { CLAUDE_CODE_BIN, STRIPE_CONFIRM_TOOLS, filterMcpServers } from "../../server/runner-shared";
+import { getDefaultModel, toOpencodeModel } from "../../server/models";
+import { runAgent } from "../../server/agent-runner";
+import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { classifyRefundApproval } from "./refund-intent";
 import { worktreePathFor } from "../../server/worktree";
 import { defaultRepo, productName } from "../../server/config";
@@ -92,9 +89,16 @@ export interface PlainWebhookPayload {
   };
 }
 
-// --- Claude runner (Agent SDK) ---
+// --- Agent runner (opencode engine) ---
 
-async function runClaude(
+/** Deny message for the money-moving Stripe tools on unattended Plain runs —
+ *  stripped from the tool list at the engine layer (opencodeRunPolicy). */
+const MONEY_TOOLS_DENY_MSG =
+  "Money-moving Stripe actions (refunds/cancellations) can't run from a normal @michael note. " +
+  "They must be proposed by triage and then approved with an explicit '@michael go ahead' on that proposal. " +
+  "Describe the proposed action instead.";
+
+async function runWorkTurn(
   prompt: string,
   cwd: string = TELLA_FUSION_DIR,
   resumeSessionId?: string,
@@ -103,85 +107,46 @@ async function runClaude(
   // @michael note ran with every tool — including Stripe writes — allowed.
   allowMoneyTools: boolean = false
 ): Promise<{ result: string; sessionId: string }> {
-  console.log(`[plain] Running Claude SDK in ${cwd}${resumeSessionId ? ` (resuming ${resumeSessionId})` : ""}${allowMoneyTools ? " [money tools UNLOCKED]" : ""}`);
+  console.log(`[plain] Running agent in ${cwd}${resumeSessionId ? ` (resuming ${resumeSessionId})` : ""}${allowMoneyTools ? " [money tools UNLOCKED]" : ""}`);
 
   let result = "";
   let sessionId = resumeSessionId || "";
 
   try {
-    const q = query({
+    for await (const event of runAgent({
       prompt,
-      options: {
-        resume: resumeSessionId || undefined,
-        cwd,
-        // Untrusted customer ticket text goes into this child — same minimal
-        // env as the Haiku classifier calls (ticket-router.ts), no tokens from
-        // ~/.backstage.env. MCP servers carry their own credentials.
-        env: {
-          PATH: process.env.PATH,
-          HOME: process.env.HOME,
-          LANG: process.env.LANG,
-          // New name primary, old alias along for external readers.
-          ...(envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")
-            ? {
-                OPENSESSION_MODEL: envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL"),
-                MICHAEL_MODEL: envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL"),
-              }
-            : {}),
-        },
-        allowedTools: [
-          "Bash", "Read", "Edit", "Write", "Grep", "Glob",
-          "Task", "TaskOutput", "WebFetch", "WebSearch",
-          "NotebookEdit", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
-          "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
-        ],
-        canUseTool: async (toolName: string, input: unknown) => {
-          if (!allowMoneyTools && toolName in STRIPE_CONFIRM_TOOLS) {
-            return {
-              behavior: "deny" as const,
-              message:
-                "Money-moving Stripe actions (refunds/cancellations) can't run from a normal @michael note. " +
-                "They must be proposed by triage and then approved with an explicit '@michael go ahead' on that proposal. " +
-                "Describe the proposed action instead.",
-            };
-          }
-          return {
-            behavior: "allow" as const,
-            updatedInput: cleanPlainToolInput(toolName, input as Record<string, unknown>),
-          };
-        },
-        // Runner-layer MCP gate with NO user: Plain runs are automation-like
-        // (they process untrusted ticket text), so any `allowedUsers`-restricted
-        // server is fail-closed invisible here.
-        mcpServers: filterMcpServers(undefined, undefined) as any,
-        strictMcpConfig: true,
-        // Direct Claude SDK call — peel any opencode/<provider>/ prefix off the
-        // fleet default down to the native id the CLI accepts.
-        model: resolveDirectSdkModel(getDefaultModel()),
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-        systemPrompt: {
-          type: "preset" as const,
-          preset: "claude_code" as const,
-        },
-        settingSources: ["user", "project"],
-      },
-    });
-
-    for await (const msg of q) {
-      if (msg.type === "system" && (msg as any).subtype === "init") {
-        sessionId = (msg as any).session_id || sessionId;
+      sessionId: resumeSessionId || undefined,
+      cwd,
+      mode: "code",
+      model: toOpencodeModel(getDefaultModel()),
+      // Kind "plain" = unattended on the opencode engine: untrusted customer
+      // ticket text, so the deny-set below is stripped at the tool-list layer.
+      // Kind-only journal (no bksSessionId) — this loop tracks its own engine
+      // session ids and must not be generically resumed after a restart.
+      journal: { kind: "plain" },
+      // Runner-layer MCP gate runs with NO user (runAgent passes user through
+      // filterMcpServers): Plain runs are automation-like, so any
+      // `allowedUsers`-restricted server stays fail-closed invisible here.
+      deniedTools: allowMoneyTools
+        ? undefined
+        : Object.fromEntries(
+            Object.keys(STRIPE_CONFIRM_TOOLS).map((name) => [name, MONEY_TOOLS_DENY_MSG])
+          ),
+    })) {
+      if (event.type === "init") {
+        sessionId = event.sessionId || sessionId;
       }
-
-      if (msg.type === "result") {
-        const rm = msg as any;
-        sessionId = rm.session_id || sessionId;
-        result = rm.subtype === "success" ? (rm.result || "") : `Error: ${rm.errors?.join(", ") || "Unknown"}`;
-        console.log(`[plain] Claude finished. Session ID: ${sessionId}`);
+      if (event.type === "done") {
+        sessionId = event.sessionId || sessionId;
+        result = event.result || "";
+        console.log(`[plain] Agent finished. Session ID: ${sessionId}`);
+      }
+      if (event.type === "error") {
+        result = `Error: ${event.content || "Unknown"}`;
       }
     }
   } catch (e: any) {
-    console.error(`[plain] Claude SDK error:`, e);
+    console.error(`[plain] agent run error:`, e);
     result = `Error: ${e.message || String(e)}`;
   }
 
@@ -269,7 +234,7 @@ async function handleMichaelMention(
   if (refundVerdict.approve) {
     console.log(`[plain] Refund go-ahead on thread ${threadId}: ${refundVerdict.reason}`);
     try {
-      const { result } = await runClaude(
+      const { result } = await runWorkTurn(
         buildRefundExecutionPrompt(request, threadContext),
         TELLA_FUSION_DIR,
         undefined,
@@ -308,7 +273,7 @@ async function handleMichaelMention(
   const prompt = buildMentionPrompt(request, threadContext);
 
   try {
-    const { result } = await runClaude(prompt);
+    const { result } = await runWorkTurn(prompt);
 
     console.log(`[plain] Claude response (first 500 chars): ${result.substring(0, 500)}`);
 
@@ -430,7 +395,7 @@ async function handleMichaelMention(
         await postNote(threadId, customerId, `Starting work: ${workDescription}\n\nI'll post updates as I make progress.`);
 
         const workPrompt = buildWorkPrompt(workDescription, threadContext);
-        const { result: workResult, sessionId } = await runClaude(workPrompt, session.worktreeDir, session.claudeSessionId || undefined);
+        const { result: workResult, sessionId } = await runWorkTurn(workPrompt, session.worktreeDir, session.claudeSessionId || undefined);
         session.claudeSessionId = sessionId;
 
         await postNote(

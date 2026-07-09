@@ -189,11 +189,13 @@ export function parseOpencodeModel(
 const INTERACTIVE_KINDS = new Set(["prompt", "goal", "create"]);
 
 /** Unattended kinds allowed on this engine — with the least-privilege policy
- *  (opencodeRunPolicy) enforced via stripped tools. Everything else — action,
- *  github-…, security-scan, their derivatives, AND runs with no journal kind
- *  at all — is fail-closed off this engine (deny by default) until it gets
- *  the same treatment. */
-const AUTOMATION_KINDS = new Set(["automation"]);
+ *  (opencodeRunPolicy) enforced via stripped tools. "automation" is the
+ *  automations engine; "plain" is the Plain support agent (untrusted ticket
+ *  text — always unattended, money tools stripped via deniedTools). Everything
+ *  else — action, github-…, security-scan, their derivatives, AND runs with no
+ *  journal kind at all — is fail-closed off this engine (deny by default)
+ *  until it gets the same treatment. */
+const AUTOMATION_KINDS = new Set(["automation", "plain"]);
 
 function baseJournalKind(kind?: string): string {
   return (kind || "").replace(/(-(resume|rerun|fallback))+$/, "");
@@ -1248,7 +1250,12 @@ async function* runOpencodeAttempt(
     );
     appendOpencodeTranscript(ocSessionId, [transcriptLineUser(prompt)]);
 
-    if (journal) {
+    // Kind-only journals ({kind} with no bksSessionId — the Plain/Linear/Slack
+    // agent loops) are a gate/policy marker, not a crash journal: those loops
+    // track their own engine session ids and redeliver on their own triggers,
+    // and a generic headless resume could DUPLICATE side effects they never
+    // had (e.g. re-creating a Linear issue). Only UI-owned runs journal.
+    if (journal?.bksSessionId) {
       journalSet({
         runKey,
         bksSessionId: journal.bksSessionId,
@@ -1702,6 +1709,6 @@ async function* runOpencodeAttempt(
     }
     // Keep the journal across an account-rotation retry (the wrapper reruns
     // the same runKey immediately); cleared for real on the final attempt.
-    if (journal && !rotation?.rotate) journalClear(runKey);
+    if (journal?.bksSessionId && !rotation?.rotate) journalClear(runKey);
   }
 }
