@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { resolvePreviewBoot } from "./preview";
 
 // The resolver is the ONE bring-up chain shared by host and sandbox previews:
-// repo-committed .backstage/start.sh → configured previewCommand → tella-local
-// fallback (tella-fusion only). `exists` abstracts host-fs vs in-container
-// checks, so these tests drive it with plain sets of paths.
+// repo-committed .opensession/start.sh (.backstage/ pre-rename fallback) →
+// configured previewCommand → tella-local fallback (tella-fusion only).
+// `exists` abstracts host-fs vs in-container checks, so these tests drive it
+// with plain sets of paths.
 
 const WT = "/home/ubuntu/worktrees/tella-fusion-some-branch";
 const ENSURE_UP = "/home/ubuntu/.claude/skills/tella-local/ensure-up.sh";
@@ -14,15 +15,15 @@ function existsIn(paths: string[]) {
 }
 
 describe("resolvePreviewBoot", () => {
-  test("repo-committed .backstage/start.sh wins over previewCommand", async () => {
+  test("repo-committed .opensession/start.sh wins over previewCommand", async () => {
     const boot = await resolvePreviewBoot(
       WT,
       { id: "tella-fusion", previewCommand: ENSURE_UP },
-      existsIn([`${WT}/.backstage/start.sh`, ENSURE_UP]),
+      existsIn([`${WT}/.opensession/start.sh`, ENSURE_UP]),
     );
     expect(boot).toEqual({
       kind: "repo-script",
-      cmd: `bash ${WT}/.backstage/start.sh`,
+      cmd: `bash ${WT}/.opensession/start.sh`,
       setupScript: undefined,
     });
   });
@@ -31,10 +32,10 @@ describe("resolvePreviewBoot", () => {
     const boot = await resolvePreviewBoot(
       WT,
       { id: "tella-fusion" },
-      existsIn([`${WT}/.backstage/start.sh`, `${WT}/.backstage/setup.sh`]),
+      existsIn([`${WT}/.opensession/start.sh`, `${WT}/.opensession/setup.sh`]),
     );
     expect(boot?.kind).toBe("repo-script");
-    expect(boot?.setupScript).toBe(`${WT}/.backstage/setup.sh`);
+    expect(boot?.setupScript).toBe(`${WT}/.opensession/setup.sh`);
   });
 
   test("previewCommand runs with the worktree as $1", async () => {
@@ -75,6 +76,30 @@ describe("resolvePreviewBoot", () => {
       existsIn([ENSURE_UP]),
     );
     expect(boot).toBeNull();
+  });
+
+  test(".backstage/ (pre-rename) still resolves, .opensession/ wins when both exist", async () => {
+    const legacy = await resolvePreviewBoot(
+      WT,
+      { id: "tella-fusion" },
+      existsIn([`${WT}/.backstage/start.sh`, `${WT}/.backstage/setup.sh`]),
+    );
+    expect(legacy?.cmd).toBe(`bash ${WT}/.backstage/start.sh`);
+    expect(legacy?.setupScript).toBe(`${WT}/.backstage/setup.sh`);
+
+    const both = await resolvePreviewBoot(
+      WT,
+      { id: "tella-fusion" },
+      // Only .backstage/ carries a setup.sh — the sibling must come from the
+      // SAME dir as the resolved start.sh, so it stays undefined here.
+      existsIn([
+        `${WT}/.opensession/start.sh`,
+        `${WT}/.backstage/start.sh`,
+        `${WT}/.backstage/setup.sh`,
+      ]),
+    );
+    expect(both?.cmd).toBe(`bash ${WT}/.opensession/start.sh`);
+    expect(both?.setupScript).toBeUndefined();
   });
 
   test("no mechanism at all resolves to null (UI: disabled Start)", async () => {

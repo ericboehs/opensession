@@ -149,8 +149,10 @@ sandboxed AND host previews (the Preview button on a plain non-sandboxed
 session resolves identically; only the existence checks and process plumbing
 differ):
 
-1. `<worktree>/.backstage/start.sh` when present — a script committed IN the
-   target repo. Run detached with `WEBAPP_PORT` (the allocated port —
+1. `<worktree>/.opensession/start.sh` when present — a script committed IN
+   the target repo (`.backstage/` is honored as the pre-rename fallback; when
+   both dirs exist, `.opensession/` wins and the setup sibling is taken from
+   the same dir). Run detached with `WEBAPP_PORT` (the allocated port —
    pre-published container port in sandboxes, a free host port for host
    previews, seeded into `.ports.conf` either way), `PREVIEW_URL`, and
    `BACKSTAGE_BOOT_MODE` (`fresh` | `snapshot-restore`; host previews always
@@ -169,7 +171,7 @@ short-lived instance-role AWS creds from aws-creds.ts into the bring-up: the
 backstage service cgroup denies IMDS (IPAddressDeny) for every child, which
 otherwise breaks tella-fusion's `aws` preflight and prebuilt-WASM install.
 
-`<worktree>/.backstage/setup.sh` is the sibling one-shot hook: it runs once
+`<worktree>/.opensession/setup.sh` is the sibling one-shot hook: it runs once
 per workspace materialization (first ensure of the sandbox, cwd = workspace,
 same `BACKSTAGE_BOOT_MODE` env), is **skipped on snapshot restore** (the
 restored container layer already carries its effects), is never retried once

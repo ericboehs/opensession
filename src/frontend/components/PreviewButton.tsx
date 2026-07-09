@@ -19,7 +19,7 @@ import {
 
 // Any worktree session gets the control; whether a repo can actually boot a
 // preview comes back on the status itself (`bootable` — repo-committed
-// .backstage/start.sh → configured previewCommand → tella-local fallback).
+// .opensession/start.sh → configured previewCommand → tella-local fallback).
 // Repos with no mechanism show a disabled button explaining what to add.
 function isPreviewable(session: UnifiedSession): boolean {
   return !!session.worktreeDir;
@@ -117,7 +117,7 @@ export function PreviewButton({
   // Absent on pre-field servers — treat as bootable so the button still works
   // against a not-yet-restarted backend.
   const bootable = status.bootable !== false;
-  const notBootableHint = `No preview boot mechanism for this repo — commit a .backstage/start.sh to the repo, or set previewCommand on its repos config entry`;
+  const notBootableHint = `No preview boot mechanism for this repo — commit an .opensession/start.sh to the repo, or set previewCommand on its repos config entry`;
 
   async function start() {
     setStarting(true);
