@@ -5,7 +5,7 @@ import { stopPreview } from "./preview";
 import { configuredPaths, configuredRepos, defaultRepo, type Repo } from "./config";
 
 // The Repo type + registry defaults live in config.ts now (the registry is
-// config-driven: `repos` in ~/.backstage/config.json merges over the built-in
+// config-driven: `repos` in ~/.opensession/config.json merges over the built-in
 // Tella map — see docs/portability-audit.md). Re-exported so existing
 // `import { type Repo } from "./worktree"` call sites keep working.
 export type { Repo } from "./config";

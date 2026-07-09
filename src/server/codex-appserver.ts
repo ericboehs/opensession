@@ -55,13 +55,14 @@ import {
 import { readMcpConfig, withDynamicCredentials } from "./connections";
 import { extractBackstageVideos } from "./jsonl-parser";
 import { markCodexModelExhausted, priceUsageUsd, resolveConcreteModel } from "./models";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { OPENSESSION_CHATS_DIR } from "./paths";
+import { envAlias, stateDir } from "./rename-compat";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import type { GitIdentity } from "./shared/user-mappings";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CODEX_BIN_FALLBACK = `${HOME}/projects/tella-backstage/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex`;
-const TRANSPORT_STORE = `${HOME}/.backstage-codex-transport.json`;
+const TRANSPORT_STORE = stateDir("codex-transport.json");
 
 /** Which transport codex runs use. File wins (togglable at runtime), env is the fallback. */
 export function codexTransport(): "exec" | "app-server" {
@@ -72,7 +73,7 @@ export function codexTransport(): "exec" | "app-server" {
       if (raw?.transport === "exec") return "exec";
     }
   } catch {}
-  return process.env.MICHAEL_CODEX_TRANSPORT === "app-server" ? "app-server" : "exec";
+  return envAlias("OPENSESSION_CODEX_TRANSPORT", "MICHAEL_CODEX_TRANSPORT") === "app-server" ? "app-server" : "exec";
 }
 
 /**

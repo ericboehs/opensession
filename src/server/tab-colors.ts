@@ -1,7 +1,7 @@
 /**
  * Per-user session tab colors. Like pins.ts, each user (the self-selected
  * `backstage-user` name from the UserPicker — not an auth identity) gets one
- * JSON file `~/.backstage-tab-colors/<user>.json` of shape
+ * JSON file `~/.opensession-tab-colors/<user>.json` of shape
  * `{ colors: { [sessionId]: colorKey } }`, where `colorKey` is one of the
  * named swatches in the frontend palette (see lib/tab-colors.ts). Colors are
  * a per-user view preference, so they live next to pins and sync across devices.
@@ -9,9 +9,9 @@
 
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import { stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const COLORS_DIR = `${HOME}/.backstage-tab-colors`;
+const COLORS_DIR = stateDir("tab-colors");
 
 /** Allowed swatch keys — keep in sync with TAB_COLORS in lib/tab-colors.ts. */
 const ALLOWED = new Set([

@@ -1,35 +1,48 @@
 /**
- * Shared on-disk paths for the chat store, with a dual-read fallback.
+ * Shared on-disk paths for the chat store, with a dual-read fallback chain.
  *
- * The store dir was renamed `~/.backstage-sessions` → `~/.backstage-chats` (see
- * scripts/migrate-workspaces.ts). This resolves the active dir once at load:
- * prefer the new name, fall back to the legacy name until the migration renames
- * it. Resolving once keeps every module (and reads/writes) on the same dir
- * whether or not the migration has run. The `bks-` id prefix stays opaque.
+ * Naming history: `~/.backstage-sessions` → `~/.backstage-chats` (see
+ * scripts/migrate-workspaces.ts) → `~/.opensession-chats` (the product rename,
+ * docs/rename-opensession-plan.md + scripts/migrate-opensession-state.sh).
+ * This resolves the active dir once at load: prefer the newest name that
+ * exists, fall back through the older ones until the migrations rename them.
+ * Resolving once keeps every module (and reads/writes) on the same dir
+ * whether or not a migration has run. The `bks-` id prefix stays opaque.
  *
- * Run the migration during a restart window (it renames the dir on disk); a
- * long-running process resolves this constant at boot and won't see a mid-flight
- * rename.
+ * Run migrations during a restart window (they rename dirs on disk); a
+ * long-running process resolves this constant at boot and won't see a
+ * mid-flight rename.
  */
 
 import { existsSync } from "fs";
+import { envAlias, stateDir } from "./rename-compat";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const CHATS_NEW = `${HOME}/.backstage-chats`;
 const CHATS_LEGACY = `${HOME}/.backstage-sessions`;
 
-/** The active chat-store dir: env override first (test/verify/conformance
- *  suites point it at a scratch dir so sbxtest state files, run dirs and
- *  kill-switch checks never touch the live store — set it BEFORE importing
- *  any src/server module), else the new name if present, else legacy. */
-export let BACKSTAGE_CHATS_DIR =
-  process.env.BACKSTAGE_CHATS_DIR ||
-  (existsSync(CHATS_NEW) || !existsSync(CHATS_LEGACY) ? CHATS_NEW : CHATS_LEGACY);
+function resolveChatsDir(): string {
+  // Env override first (test/verify/conformance suites point it at a scratch
+  // dir so sbxtest state files, run dirs and kill-switch checks never touch
+  // the live store — set it BEFORE importing any src/server module).
+  const fromEnv = envAlias("OPENSESSION_CHATS_DIR", "BACKSTAGE_CHATS_DIR");
+  if (fromEnv) return fromEnv;
+  // `~/.opensession-chats` → `~/.backstage-chats` dual-read, then the
+  // pre-workspaces legacy name, then create-new at the primary name.
+  const resolved = stateDir("chats");
+  if (existsSync(resolved) || !existsSync(CHATS_LEGACY)) return resolved;
+  return CHATS_LEGACY;
+}
+
+/** The active chat-store dir. */
+export let OPENSESSION_CHATS_DIR = resolveChatsDir();
+
+/** Deprecated alias (same live binding) — new code imports OPENSESSION_CHATS_DIR. */
+export { OPENSESSION_CHATS_DIR as BACKSTAGE_CHATS_DIR };
 
 /**
  * Test seam (bun tests only): repoint the chat store AFTER this module has
  * been evaluated. ES module bindings are live, so consumers that read
- * `BACKSTAGE_CHATS_DIR` at THEIR load time (e.g. sessions.ts, which the tests
+ * `OPENSESSION_CHATS_DIR` at THEIR load time (e.g. sessions.ts, which the tests
  * re-import cache-busted) pick the new value up — the env override above only
  * works when it's set before the first import of this module, which a bun
  * test file can't guarantee (file execution order is not alphabetical, and
@@ -37,7 +50,7 @@ export let BACKSTAGE_CHATS_DIR =
  * Returns the previous value so afterAll can restore it.
  */
 export function __setChatsDirForTest(dir: string): string {
-  const prev = BACKSTAGE_CHATS_DIR;
-  BACKSTAGE_CHATS_DIR = dir;
+  const prev = OPENSESSION_CHATS_DIR;
+  OPENSESSION_CHATS_DIR = dir;
   return prev;
 }

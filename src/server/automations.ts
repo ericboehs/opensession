@@ -1,6 +1,6 @@
 /**
  * Automations: cron-scheduled Michael sessions, Devin-style.
- * Records live in ~/.backstage-automations/<id>.json; each run creates a
+ * Records live in ~/.opensession-automations/<id>.json; each run creates a
  * normal backstage session so it shows up in the sessions list and UI.
  */
 import { randomUUIDv7 } from "bun";
@@ -15,9 +15,10 @@ import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from ".
 import { createWorktree, listWorktrees } from "./worktree";
 import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
+import { stateDir } from "./rename-compat";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const AUTOMATIONS_DIR = `${HOME}/.backstage-automations`;
+const AUTOMATIONS_DIR = stateDir("automations");
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 const TELLA_FUSION = `${HOME}/projects/tella-fusion`;
 

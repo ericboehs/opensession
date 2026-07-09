@@ -4,7 +4,7 @@
  * crash/OOM mid-write leaves either the old file or the new one — never a
  * truncated half-JSON that readers silently swallow as `{}`/null.
  *
- * Use this for every state file under ~/.backstage-* (queues, journals,
+ * Use this for every state file under ~/.opensession-* (queues, journals,
  * sessions, automations, goals…). Append-only JSONL logs (audit, ledgers)
  * don't need it — a torn line there loses one record, not the file.
  */

@@ -11,9 +11,9 @@
 import { randomUUIDv7 } from "bun";
 import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import { stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const STORE_PATH = `${HOME}/.backstage-scheduled-prompts.json`;
+const STORE_PATH = stateDir("scheduled-prompts.json");
 
 export interface ScheduledPrompt {
   id: string;

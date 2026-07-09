@@ -20,7 +20,8 @@
  *  - targets that don't resolve to the opencode provider.
  */
 import { existsSync, readFileSync } from "fs";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { OPENSESSION_CHATS_DIR } from "./paths";
+import { envAlias } from "./rename-compat";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { resolveModel } from "./models";
 import type { ActiveRunRecord } from "./claude-runner";
@@ -42,7 +43,8 @@ function readJson<T>(path: string): T | null {
  *  module stays import-light and usable from standalone scripts. */
 function journaledRuns(): ActiveRunRecord[] {
   const path =
-    process.env.BACKSTAGE_RUN_JOURNAL || `${BACKSTAGE_CHATS_DIR}/active-runs.json`;
+    envAlias("OPENSESSION_RUN_JOURNAL", "BACKSTAGE_RUN_JOURNAL") ||
+    `${OPENSESSION_CHATS_DIR}/active-runs.json`;
   const journal = readJson<Record<string, ActiveRunRecord>>(path);
   return journal ? Object.values(journal) : [];
 }
@@ -84,7 +86,7 @@ export function migrateSessionEngine(
   targetModel: string,
   by = "engine-migration"
 ): MigrateEngineResult {
-  const path = `${BACKSTAGE_CHATS_DIR}/${sessionId}.json`;
+  const path = `${OPENSESSION_CHATS_DIR}/${sessionId}.json`;
   const data = readJson<BackstageSessionFile>(path);
   if (!data?.id) {
     return { ok: false, error: `No backstage session file for "${sessionId}".` };

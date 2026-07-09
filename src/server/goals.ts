@@ -13,7 +13,7 @@
  * session loop ticker, because they need the interactive MCP wiring; the two MCP
  * surfaces (michael-goals management + michael-goal-self self-cadence) live in
  * src/agents/slack/goal-tools.ts. Records are one JSON file per goal at
- * ~/.backstage-goals/<id>.json, mirroring the automation store.
+ * ~/.opensession-goals/<id>.json, mirroring the automation store.
  */
 import { randomUUIDv7 } from "bun";
 import { writeJsonAtomic } from "./shared/atomic-write";
@@ -26,9 +26,9 @@ import {
   unlinkSync,
   existsSync,
 } from "fs";
+import { stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const GOALS_DIR = `${HOME}/.backstage-goals`;
+const GOALS_DIR = stateDir("goals");
 
 export type GoalStatus = "active" | "paused" | "done" | "failed";
 

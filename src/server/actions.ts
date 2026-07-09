@@ -9,7 +9,7 @@
  * the sessions list with a transcript and can be forked into a full session to
  * dig in. (Inline js/bash scripts authored in the UI come in a later version.)
  *
- * Records live in ~/.backstage-actions/<id>.json. The make_*_editor.sh family
+ * Records live in ~/.opensession-actions/<id>.json. The make_*_editor.sh family
  * is code-seeded (create-if-absent) so the actions exist without a data import
  * and UI edits are preserved.
  */
@@ -23,9 +23,9 @@ import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from ".
 import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
 import { defaultRepo } from "./config";
+import { stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const ACTIONS_DIR = `${HOME}/.backstage-actions`;
+const ACTIONS_DIR = stateDir("actions");
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 
 /** Fast/cheap model for action runs (the LLM only orchestrates one Bash call). */

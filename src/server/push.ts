@@ -12,9 +12,9 @@
 import { mkdirSync, readFileSync, existsSync } from "fs";
 import webpush from "web-push";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import { stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const PUSH_DIR = `${HOME}/.backstage-push`;
+const PUSH_DIR = stateDir("push");
 const VAPID_PATH = `${PUSH_DIR}/vapid.json`;
 const SUBS_PATH = `${PUSH_DIR}/subscriptions.json`;
 

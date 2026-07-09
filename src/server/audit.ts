@@ -7,16 +7,16 @@ import {
   readFileSync,
   unlinkSync,
 } from "node:fs";
+import { stateDir } from "./rename-compat";
 
 // Structured audit log, modeled on tellahq/incident-agent's src/audit.ts.
-// One JSON line per event into a daily file under ~/.backstage-audit/.
+// One JSON line per event into a daily file under ~/.opensession-audit/.
 // incident-agent ships stdout via Docker's awslogs driver; backstage runs as
 // a systemd unit that hard-denies IMDS (backstage.service), so it can never
 // hold AWS credentials itself — a separate amazon-cloudwatch-agent service
 // tails these files into CloudWatch Logs instead (see deploy/README-audit.md).
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const AUDIT_DIR = `${HOME}/.backstage-audit`;
+const AUDIT_DIR = stateDir("audit");
 
 // Match incident-agent's CloudWatch retention (400d) for the local files.
 const RETENTION_DAYS = 400;

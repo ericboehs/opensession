@@ -1,7 +1,9 @@
 /**
  * Backstage instance configuration (docs/portability-audit.md).
  *
- * Single `~/.backstage/config.json` (path overridable via BACKSTAGE_CONFIG),
+ * Single `~/.opensession/config.json` (dual-read fallback to `~/.backstage/
+ * config.json`; path overridable via OPENSESSION_CONFIG, or the deprecated
+ * BACKSTAGE_CONFIG),
  * read fresh per call with the sandbox/config.ts pattern: tolerant parse,
  * missing/invalid file → built-in defaults. The built-in defaults are today's
  * Tella values, so a host with no config file behaves byte-identically.
@@ -16,11 +18,15 @@
  */
 
 import { readFileSync, statSync } from "fs";
+import { envAlias, statePath } from "./rename-compat";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
 function configPath(): string {
-  return process.env.BACKSTAGE_CONFIG || `${HOME}/.backstage/config.json`;
+  return (
+    envAlias("OPENSESSION_CONFIG", "BACKSTAGE_CONFIG") ||
+    statePath(".opensession/config.json", ".backstage/config.json")
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -431,8 +437,13 @@ export function configuredServer(): ResolvedServer {
     host: process.env.HOST || s.host || "127.0.0.1",
     port: Number.isFinite(envPort) ? envPort : s.port ?? 3850,
     webhookPort: Number.isFinite(envWebhookPort) ? envWebhookPort : s.webhookPort ?? 3848,
+    // Built-in default stays on /backstage until the operator flips
+    // OPENSESSION_UI_BASE (or config publicBaseUrl) in the rename restart
+    // window — the /backstage alias path keeps every old link working forever.
     publicBaseUrl:
-      process.env.MICHAEL_UI_BASE || s.publicBaseUrl || "https://michael.taila5d766.ts.net/backstage",
+      envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+      s.publicBaseUrl ||
+      "https://michael.taila5d766.ts.net/backstage",
     previewHost: process.env.PREVIEW_HOST || s.previewHost || "michael.taila5d766.ts.net",
     caddyAdmin: s.caddyAdmin || "http://localhost:2019",
   };
@@ -441,19 +452,20 @@ export function configuredServer(): ResolvedServer {
 export function configuredPaths(): ResolvedPaths {
   const p = getConfig().paths || {};
   return {
-    claudeBin: process.env.BACKSTAGE_CLAUDE_BIN || p.claudeBin || "/home/ubuntu/.local/bin/claude",
-    opencodeBin: process.env.BACKSTAGE_OPENCODE_BIN || p.opencodeBin || null,
-    worktreesDir: process.env.BACKSTAGE_WORKTREES_DIR || p.worktreesDir || "/home/ubuntu/worktrees",
+    claudeBin: envAlias("OPENSESSION_CLAUDE_BIN", "BACKSTAGE_CLAUDE_BIN") || p.claudeBin || "/home/ubuntu/.local/bin/claude",
+    opencodeBin: envAlias("OPENSESSION_OPENCODE_BIN", "BACKSTAGE_OPENCODE_BIN") || p.opencodeBin || null,
+    worktreesDir: envAlias("OPENSESSION_WORKTREES_DIR", "BACKSTAGE_WORKTREES_DIR") || p.worktreesDir || "/home/ubuntu/worktrees",
     wtScript: p.wtScript || "/home/ubuntu/bin/wt",
-    mcpConfig: process.env.BACKSTAGE_MCP_CONFIG || p.mcpConfig || `${HOME}/projects/tella-backstage/mcp-config.json`,
+    mcpConfig: envAlias("OPENSESSION_MCP_CONFIG", "BACKSTAGE_MCP_CONFIG") || p.mcpConfig || `${HOME}/projects/tella-backstage/mcp-config.json`,
   };
 }
 
 /**
  * The repo registry: config `repos` merged over the built-in Tella map.
  * A config entry with a built-in id overrides just the fields it sets; a new
- * id (with at least `repo`) adds a repo. BACKSTAGE_TELLA_FUSION keeps env
- * precedence over both for the tella-fusion checkout path.
+ * id (with at least `repo`) adds a repo. OPENSESSION_TELLA_FUSION (or the
+ * deprecated BACKSTAGE_TELLA_FUSION) keeps env precedence over both for the
+ * tella-fusion checkout path.
  */
 export function configuredRepos(): Record<string, Repo> {
   const merged = builtinRepos();
@@ -478,7 +490,7 @@ export function configuredRepos(): Record<string, Repo> {
       };
     }
   }
-  const envTellaFusion = process.env.BACKSTAGE_TELLA_FUSION;
+  const envTellaFusion = envAlias("OPENSESSION_TELLA_FUSION", "BACKSTAGE_TELLA_FUSION");
   if (envTellaFusion && merged["tella-fusion"]) {
     merged["tella-fusion"] = { ...merged["tella-fusion"], repo: envTellaFusion };
   }
@@ -508,9 +520,9 @@ export function personaName(): string {
 
 /**
  * What the platform itself is called in user-facing copy (page titles,
- * headers). NOT for paths/ids: `~/.backstage-*` dirs, BACKSTAGE_* env vars,
- * `bks-` prefixes, service/socket names stay literal until the rename
- * migration (docs/rename-opensession-plan.md).
+ * headers). NOT for paths/ids: state dirs, env vars, `bks-` prefixes and
+ * service/socket names go through the rename-compat alias layer instead
+ * (docs/rename-opensession-plan.md).
  */
 export function productName(): string {
   return getConfig().branding?.productName || "Backstage";

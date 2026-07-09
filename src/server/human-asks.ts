@@ -24,7 +24,8 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { OPENSESSION_CHATS_DIR } from "./paths";
+import { envAlias } from "./rename-compat";
 import { audit } from "./audit";
 import { tryGetSessionControl } from "./session-control";
 import {
@@ -35,9 +36,12 @@ import {
 import { personaName, productName } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const STORE = `${BACKSTAGE_CHATS_DIR}/human-asks.json`;
+const STORE = `${OPENSESSION_CHATS_DIR}/human-asks.json`;
 const UI_BASE =
-  process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+  // Default stays on /backstage until the operator flips OPENSESSION_UI_BASE in
+  // the restart window (the alias path keeps old links working forever).
+  envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+  "https://michael.taila5d766.ts.net/backstage";
 
 /** How long a "block" ask holds the agent's turn before degrading to async. */
 const BLOCK_TIMEOUT_MS = 20 * 60 * 1000;

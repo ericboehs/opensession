@@ -1,5 +1,5 @@
 /**
- * Shared, real-time collaborative notes store at `~/.backstage-notes/`.
+ * Shared, real-time collaborative notes store at `~/.opensession-notes/`.
  *
  * Unlike the read-only wiki (src/server/wiki.ts), notes are writable and shared
  * between ALL users — there is no per-user scoping. Each note is a Yjs CRDT
@@ -26,9 +26,9 @@ import {
 	unlinkSync,
 } from "fs";
 import * as Y from "yjs";
+import { stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const NOTES_DIR = `${HOME}/.backstage-notes`;
+const NOTES_DIR = stateDir("notes");
 
 /** The single Y.Text field every note doc carries. */
 const TEXT_FIELD = "content";

@@ -34,7 +34,8 @@ import {
 import type { ActiveRunRecord, ImageInput } from "./claude-runner";
 import type { GitIdentity } from "./shared/user-mappings";
 import { providerFor } from "./models";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { OPENSESSION_CHATS_DIR } from "./paths";
+import { envAlias, statePath } from "./rename-compat";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import {
   registerHostRun,
@@ -61,9 +62,9 @@ import {
   type ClientToHostMsg,
 } from "../runner-host/protocol";
 
-const HOSTS_DIR = runHostsDir(BACKSTAGE_CHATS_DIR);
-const DISABLE_FILE = `${BACKSTAGE_CHATS_DIR}/disable-run-hosts`;
-const ENV_FILE = `${process.env.HOME || "/home/ubuntu"}/.backstage.env`;
+const HOSTS_DIR = runHostsDir(OPENSESSION_CHATS_DIR);
+const DISABLE_FILE = `${OPENSESSION_CHATS_DIR}/disable-run-hosts`;
+const ENV_FILE = statePath(".opensession.env", ".backstage.env");
 
 export function runHostsEnabled(): boolean {
   return !existsSync(DISABLE_FILE);
@@ -217,9 +218,22 @@ async function launchHostUnit(hostId: string, dir: string): Promise<void> {
     ...env(`HOME=${process.env.HOME || "/home/ubuntu"}`),
     ...env(`PATH=${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`),
     ...env("NODE_ENV=production"),
-    ...(process.env.MICHAEL_MODEL ? env(`MICHAEL_MODEL=${process.env.MICHAEL_MODEL}`) : []),
-    ...(process.env.MICHAEL_UI_BASE ? env(`MICHAEL_UI_BASE=${process.env.MICHAEL_UI_BASE}`) : []),
+    // New env names primary; the deprecated old names ride along so an
+    // un-migrated runner-host build (or external script) keeps working.
+    ...(envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")
+      ? [
+          ...env(`OPENSESSION_MODEL=${envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")}`),
+          ...env(`MICHAEL_MODEL=${envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")}`),
+        ]
+      : []),
+    ...(envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE")
+      ? [
+          ...env(`OPENSESSION_UI_BASE=${envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE")}`),
+          ...env(`MICHAEL_UI_BASE=${envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE")}`),
+        ]
+      : []),
     // Per-host journal — never read-modify-write the shared active-runs.json.
+    ...env(`OPENSESSION_RUN_JOURNAL=${dir}/${HOST_JOURNAL_NAME}`),
     ...env(`BACKSTAGE_RUN_JOURNAL=${dir}/${HOST_JOURNAL_NAME}`),
     // Mirror backstage.service: agent runs must not reach EC2 instance creds.
     "-p", "IPAddressDeny=169.254.169.254/32",

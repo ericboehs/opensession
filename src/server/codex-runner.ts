@@ -41,7 +41,8 @@ import {
 } from "./codex-accounts";
 import { journalSet, journalClear, type StreamEvent, type ImageInput } from "./claude-runner";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { OPENSESSION_CHATS_DIR } from "./paths";
+import { envAlias } from "./rename-compat";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { extractBackstageVideos } from "./jsonl-parser";
@@ -50,7 +51,8 @@ import { personaName } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
-  process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+  envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+  "https://michael.taila5d766.ts.net/backstage";
 
 // Active runs, keyed by codex thread id AND the backstage session id (both
 // resolve for busy checks / cancellation, since a brand-new thread has no
@@ -252,7 +254,7 @@ export function proxyMcpConfigs(
       command: BUN_BIN,
       args: ["run", MCP_PROXY_ENTRY],
       env: {
-        BKS_RPC_SOCKET: rpcSocketPath(BACKSTAGE_CHATS_DIR),
+        BKS_RPC_SOCKET: rpcSocketPath(OPENSESSION_CHATS_DIR),
         BKS_RPC_TOKEN: rpcToken,
         BKS_MCP_SERVER: name,
       },

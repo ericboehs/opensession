@@ -1,5 +1,6 @@
 import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { OPENSESSION_CHATS_DIR } from "./paths";
+import { envAlias } from "./rename-compat";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { readMcpConfig, withDynamicCredentials } from "./connections";
 import { getAgentAwsEnv } from "./aws-creds";
@@ -122,7 +123,9 @@ function childEnv(
     PATH: process.env.PATH,
     HOME: process.env.HOME,
     LANG: process.env.LANG,
-    MICHAEL_MODEL: process.env.MICHAEL_MODEL,
+    OPENSESSION_MODEL: envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL"),
+    // Deprecated alias — external scripts may still read the old name.
+    MICHAEL_MODEL: envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL"),
     // Attribute commits this run makes to the user who sent the prompt (empty for
     // unknown/automation authors → keeps the machine's default git identity).
     ...gitIdentityEnv(author),
@@ -241,11 +244,13 @@ export function filterMcpServers(
 // own per-host file instead of read-modify-writing the shared journal from
 // multiple processes concurrently.
 const ACTIVE_RUNS_PATH =
-  process.env.BACKSTAGE_RUN_JOURNAL || `${BACKSTAGE_CHATS_DIR}/active-runs.json`;
+  envAlias("OPENSESSION_RUN_JOURNAL", "BACKSTAGE_RUN_JOURNAL") ||
+  `${OPENSESSION_CHATS_DIR}/active-runs.json`;
 
 /** Backstage web UI base — used to give a session a link back to itself. */
 const UI_BASE =
-  process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+  envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+  "https://michael.taila5d766.ts.net/backstage";
 
 /** Claude Code CLI binary the SDK spawns. BACKSTAGE_CLAUDE_BIN env →
  *  config `paths.claudeBin` → this VPS's path (unchanged behavior when
@@ -592,7 +597,7 @@ export async function* runClaude(opts: {
   // Test hook: pretend the whole Claude account pool is exhausted, so the
   // usage-limit fallback chain can be verified without burning real limits.
   // Set MICHAEL_FORCE_LIMIT=1 on a dev process only — never the service env.
-  if (process.env.MICHAEL_FORCE_LIMIT === "1") {
+  if (envAlias("OPENSESSION_FORCE_LIMIT", "MICHAEL_FORCE_LIMIT") === "1") {
     yield {
       type: "done",
       result: "Claude AI usage limit reached|forced-by-MICHAEL_FORCE_LIMIT",
@@ -799,7 +804,7 @@ export async function* runClaude(opts: {
   let holdExpired = false; // deadline passed → next result finishes anyway
   let holdNudgeTimer: ReturnType<typeof setTimeout> | null = null;
   let holdDeadlineTimer: ReturnType<typeof setTimeout> | null = null;
-  const BG_HOLD_MAX_MS = Number(process.env.BACKSTAGE_BG_HOLD_MAX_MS || 20 * 60_000);
+  const BG_HOLD_MAX_MS = Number(envAlias("OPENSESSION_BG_HOLD_MAX_MS", "BACKSTAGE_BG_HOLD_MAX_MS") || 20 * 60_000);
   const clearHoldTimers = () => {
     if (holdNudgeTimer) clearTimeout(holdNudgeTimer);
     if (holdDeadlineTimer) clearTimeout(holdDeadlineTimer);

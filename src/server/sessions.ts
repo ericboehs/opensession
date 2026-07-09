@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync, unlinkSync } from "fs";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { OPENSESSION_CHATS_DIR } from "./paths";
 import { existsSync } from "fs";
 import {
 	slackIdToFirstName,
@@ -32,7 +32,7 @@ const HOME = process.env.HOME || "/home/ubuntu";
 const SLACK_SESSIONS_DIR = `${HOME}/.slack-sessions`;
 const LINEAR_SESSIONS_DIR = `${HOME}/.linear-sessions`;
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;
-const BACKSTAGE_SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
+const SESSIONS_DIR = OPENSESSION_CHATS_DIR;
 const CLAUDE_PROJECTS_DIR = `${HOME}/.claude/projects`;
 
 const SKIP_FILES = new Set([
@@ -354,13 +354,13 @@ function scanLinearSessions(): UnifiedSession[] {
 }
 
 function scanBackstageSessions(): UnifiedSession[] {
-  if (!existsSync(BACKSTAGE_SESSIONS_DIR)) return [];
+  if (!existsSync(SESSIONS_DIR)) return [];
   const sessions: UnifiedSession[] = [];
 
-  for (const file of readdirSync(BACKSTAGE_SESSIONS_DIR)) {
+  for (const file of readdirSync(SESSIONS_DIR)) {
     if (!file.endsWith(".json") || SKIP_FILES.has(file)) continue;
     const data = readJsonSafe<BackstageSessionFile>(
-      `${BACKSTAGE_SESSIONS_DIR}/${file}`
+      `${SESSIONS_DIR}/${file}`
     );
     // Skip non-session bookkeeping files in this dir (active-runs.json,
     // prompt-queues.json, active-at-shutdown.json, …) — a real session always
@@ -823,7 +823,7 @@ export function deleteSession(session: UnifiedSession): void {
       break;
     }
     case "backstage": {
-      const path = `${BACKSTAGE_SESSIONS_DIR}/${session.id}.json`;
+      const path = `${SESSIONS_DIR}/${session.id}.json`;
       if (existsSync(path)) unlinkSync(path);
       break;
     }

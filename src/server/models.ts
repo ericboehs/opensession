@@ -9,6 +9,7 @@
 import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { opencodePickerModels } from "./opencode-config";
+import { envAlias, stateDir } from "./rename-compat";
 
 export type Provider = "claude" | "codex" | "opencode";
 
@@ -33,7 +34,7 @@ export const KNOWN_MODELS: ModelInfo[] = [
 ];
 
 // OpenCode engine models are opt-in only: `pickerModels` from
-// ~/.backstage-opencode.json (and only while `enabled` is true) surface in
+// ~/.opensession-opencode.json (and only while `enabled` is true) surface in
 // the UI picker; any other opencode/<provider>/<model> id still resolves via
 // the prefix passthrough in resolveModel below, it's just not advertised.
 // Folded in at module load — a config change needs a reload to show up.
@@ -75,12 +76,12 @@ const FALLBACK_MODEL_ORDER = [
 /**
  * Persisted override for the global default model, set from the Connections UI
  * (PUT /api/models/default). Lets us switch what new sessions run on without a
- * code change or restart. Resolution order: this override → MICHAEL_MODEL env →
+ * code change or restart. Resolution order: this override → OPENSESSION_MODEL env
+ * (MICHAEL_MODEL accepted as a deprecated alias) →
  * DEFAULT_CLAUDE_MODEL. Stored as { model: "<id>" | null } in this file.
  */
-const HOME = process.env.HOME || "/home/ubuntu";
-const DEFAULT_MODEL_STORE = `${HOME}/.backstage-default-model.json`;
-const FALLBACK_AUTO_STORE = `${HOME}/.backstage-model-fallback.json`;
+const DEFAULT_MODEL_STORE = stateDir("default-model.json");
+const FALLBACK_AUTO_STORE = stateDir("model-fallback.json");
 const CODEX_MODEL_EXHAUST_MS = 60 * 60 * 1000;
 const codexModelExhaustedUntil = new Map<string, number>();
 
@@ -104,12 +105,12 @@ function loadOverride(): string | null {
 }
 
 /**
- * Global default when a session has no model set: UI override → MICHAEL_MODEL
+ * Global default when a session has no model set: UI override → OPENSESSION_MODEL
  * env → DEFAULT_CLAUDE_MODEL. Read fresh per call so UI changes take effect on
  * the next run without a restart.
  */
 export function getDefaultModel(): string {
-  return loadOverride() || process.env.MICHAEL_MODEL || DEFAULT_CLAUDE_MODEL;
+  return loadOverride() || envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL") || DEFAULT_CLAUDE_MODEL;
 }
 
 /**
@@ -139,7 +140,7 @@ export function setDefaultModel(input: string | null): string {
  * fallbackModel.
  */
 export const DEFAULT_FALLBACK_MODEL: string | undefined = (() => {
-  const v = (process.env.MICHAEL_FALLBACK_MODEL || "").trim().toLowerCase();
+  const v = (envAlias("OPENSESSION_FALLBACK_MODEL", "MICHAEL_FALLBACK_MODEL") || "").trim().toLowerCase();
   if (v === "none") return undefined;
   return v || undefined;
 })();

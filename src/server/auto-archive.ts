@@ -19,6 +19,7 @@ import { readFileSync, existsSync, mkdirSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { setArchived, unpinArchivedSessions } from "./archive";
 import type { UnifiedSession } from "./types";
+import { stateDir } from "./rename-compat";
 
 // `waitingForInput` is a live, in-process signal (pendingAsks) layered onto
 // UnifiedSession only at the API-response boundary (backstage.ts), never
@@ -26,8 +27,7 @@ import type { UnifiedSession } from "./types";
 // with it the same way before passing sessions in.
 type SweepSession = UnifiedSession & { waitingForInput?: boolean };
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const CONFIG_DIR = `${HOME}/.backstage-auto-archive`;
+const CONFIG_DIR = stateDir("auto-archive");
 const CONFIG_PATH = `${CONFIG_DIR}/config.json`;
 const DEFAULT_PROJECT = "tella-fusion";
 

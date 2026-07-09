@@ -3,7 +3,7 @@
  * across the registered repos, plus reusable "scan profiles" that tailor the
  * threat model. Devin-DeepSec-style, wrapped around vercel-labs/deepsec.
  *
- * Records live in ~/.backstage-security/{scans,profiles}/<id>.json. Each
+ * Records live in ~/.opensession-security/{scans,profiles}/<id>.json. Each
  * headless scan creates one normal backstage session per target repo (so runs
  * show up in the sessions list with live transcripts); interactive scans are
  * a single collaborative session created through the SessionControl registry.
@@ -23,9 +23,9 @@ import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { providerFor, modelLabel } from "./models";
 import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
+import { stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const SECURITY_DIR = `${HOME}/.backstage-security`;
+const SECURITY_DIR = stateDir("security");
 const SCANS_DIR = `${SECURITY_DIR}/scans`;
 const PROFILES_DIR = `${SECURITY_DIR}/profiles`;
 

@@ -5,7 +5,7 @@
  *   - "watercooler"      the team-wide room (left-sidebar entry)
  *   - "session:<id>"     a per-session room (the session panel's Chat tab)
  *
- * Messages persist per channel in `~/.backstage-chat/<channel>.json` (the
+ * Messages persist per channel in `~/.opensession-chat/<channel>.json` (the
  * flat-file pattern of pins.ts/push.ts); realtime delivery and typing
  * indicators ride the app WebSocket (wired in backstage.ts). An `@Name`
  * mention web-pushes the tagged teammate's devices via src/server/push.ts.
@@ -15,9 +15,9 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import { stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const CHAT_DIR = `${HOME}/.backstage-chat`;
+const CHAT_DIR = stateDir("chat");
 // Attached images live here permanently (unlike the transient session-upload
 // staging dir), served back by id via GET /backstage/api/chat/image/:id.
 const CHAT_IMG_DIR = `${CHAT_DIR}/images`;

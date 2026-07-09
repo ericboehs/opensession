@@ -18,9 +18,10 @@
 
 import { chmodSync, existsSync, readFileSync, readdirSync } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
+import { stateDir } from "./rename-compat";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const STORE_PATH = `${HOME}/.backstage-codex-accounts.json`;
+const STORE_PATH = stateDir("codex-accounts.json");
 const DEFAULT_EXHAUST_MS = 60 * 60 * 1000;
 
 export interface CodexAccount {

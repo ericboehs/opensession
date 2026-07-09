@@ -10,8 +10,8 @@
  * runner cwd); the workspace's worktree fields are the template a new share-mode
  * chat copies, and the flag for "does this workspace own a worktree yet".
  *
- * One JSON file per workspace at `~/.backstage-workspaces/<id>.json` (falling
- * back to the legacy `~/.backstage-projects/` until the data migration runs).
+ * One JSON file per workspace at `~/.opensession-workspaces/<id>.json` (dual-read
+ * fallback to the pre-rename/legacy dirs until the data migrations run).
  * Mirrors the flat-file pattern in pins.ts / models.ts. Team-internal, no auth.
  */
 
@@ -25,20 +25,23 @@ import {
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { randomUUID } from "crypto";
 import type { AttachedRepo } from "./types";
+import { stateDir } from "./rename-compat";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const WORKSPACES_DIR_NEW = `${HOME}/.backstage-workspaces`;
 const WORKSPACES_DIR_LEGACY = `${HOME}/.backstage-projects`;
 /**
- * Dual-read: prefer the new dir, but fall back to the legacy `.backstage-projects`
- * dir until the one-time migration renames it. Resolving once at module load keeps
- * reads and writes on the same dir (no split-brain) whether or not the migration
- * has run. Keeps the `prj-` id prefix opaque — see scripts/migrate-workspaces.ts.
+ * Dual-read chain: `~/.opensession-workspaces` (primary) → `~/.backstage-workspaces`
+ * (pre-rename) → legacy `~/.backstage-projects` — until the one-time migrations
+ * rename them. Resolving once at module load keeps reads and writes on the same
+ * dir (no split-brain) whether or not a migration has run. Keeps the `prj-` id
+ * prefix opaque — see scripts/migrate-workspaces.ts.
  */
-const WORKSPACES_DIR =
-  existsSync(WORKSPACES_DIR_NEW) || !existsSync(WORKSPACES_DIR_LEGACY)
-    ? WORKSPACES_DIR_NEW
+const WORKSPACES_DIR = (() => {
+  const resolved = stateDir("workspaces");
+  return existsSync(resolved) || !existsSync(WORKSPACES_DIR_LEGACY)
+    ? resolved
     : WORKSPACES_DIR_LEGACY;
+})();
 
 export interface Workspace {
   id: string;

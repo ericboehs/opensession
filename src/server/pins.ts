@@ -1,7 +1,7 @@
 /**
  * Per-user pinned tabs. Each user (the self-selected `backstage-user` name from
  * the frontend UserPicker — not an auth identity, team-internal only) gets one
- * JSON file `~/.backstage-pins/<user>.json` of shape `{ pins: string[] }`, where
+ * JSON file `~/.opensession-pins/<user>.json` of shape `{ pins: string[] }`, where
  * each entry is a session id. Mirrors the flat-file pattern in models.ts.
  *
  * Pins used to live in browser localStorage (per-device, shared by anyone on
@@ -10,9 +10,9 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import { stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const PINS_DIR = `${HOME}/.backstage-pins`;
+const PINS_DIR = stateDir("pins");
 
 /** Map a free-form user name to a safe filename; empty/odd input → Anonymous. */
 function sanitizeUser(user: string): string {

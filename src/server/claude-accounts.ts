@@ -15,13 +15,17 @@
 import { chmodSync, existsSync, readFileSync } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { userMatchesAny } from "./shared/user-mappings";
+import { envAlias, stateDir } from "./rename-compat";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 // The env override is a test seam — bun tests point it at a temp store so they
 // never read (or clobber) the real account pool. Resolved per call, not at
 // module load, so the override works regardless of import order.
 function storePath(): string {
-  return process.env.BACKSTAGE_CLAUDE_ACCOUNTS_PATH || `${HOME}/.backstage-claude-accounts.json`;
+  return (
+    envAlias("OPENSESSION_CLAUDE_ACCOUNTS_PATH", "BACKSTAGE_CLAUDE_ACCOUNTS_PATH") ||
+    stateDir("claude-accounts.json")
+  );
 }
 // Keep this conservative: the usage endpoint rate-limits per token with
 // ~hour-long lockouts (observed Retry-After of ~50m after 10-minute polling).
