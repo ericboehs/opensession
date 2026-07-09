@@ -9353,9 +9353,24 @@ if (!g.__backstageBooted) {
 		broadcastToAll({ type: "server_restarting" });
 		await new Promise((r) => setTimeout(r, 150));
 		// Stop agents from accepting new work (Slack socket, webhook intake, …).
+		// BOUNDED: an agent shutdown that awaits a flaky network call (e.g. the
+		// Slack socket close during a Slack outage) used to hang here for the
+		// whole TimeoutStopSec — the drain loop below never even started and
+		// systemd SIGKILLed everything at 140s (observed 2026-07-09 10:15).
 		for (const agent of agents) {
+			const t0 = Date.now();
 			try {
-				await agent.shutdown();
+				const r = await Promise.race([
+					Promise.resolve(agent.shutdown()).then(() => "ok" as const),
+					new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 10_000)),
+				]);
+				if (r === "timeout") {
+					console.warn(
+						`[shutdown] ${agent.name} shutdown still pending after 10s — moving on`,
+					);
+				} else {
+					console.log(`[shutdown] ${agent.name} stopped (${Date.now() - t0}ms)`);
+				}
 			} catch (e) {
 				console.error(`[shutdown] ${agent.name} shutdown error:`, e);
 			}
