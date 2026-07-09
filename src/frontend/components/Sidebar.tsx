@@ -23,6 +23,7 @@ import { Reorder } from "motion/react";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, markUnread, onReadsChanged } from "../lib/reads";
 import { chatPath, prPath, absoluteLink, copyToClipboard } from "../lib/share-link";
+import { providerFromUrl } from "../lib/provider";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { getWsTimePref, onWsTimeChanged } from "../lib/workspace-time";
 import { UserAvatar } from "./UserAvatar";
@@ -2172,7 +2173,7 @@ export function Sidebar({
 					role="button"
 					tabIndex={0}
 					className="ml-auto hidden group-hover:inline-flex items-center shrink-0 text-faint hover:text-fg"
-					title="Open PR on GitHub"
+					title={`Open PR on ${providerFromUrl(r.url).name}`}
 					onClick={(e) => {
 						e.stopPropagation();
 						window.open(r.url, "_blank", "noopener");
@@ -2741,7 +2742,7 @@ export function Sidebar({
 						{
 							kind: "item",
 							icon: <IconPullRequest size={20} />,
-							label: "Open PR on GitHub",
+							label: `Open PR on ${providerFromUrl(r.url).name}`,
 							onClick: () => window.open(r.url, "_blank", "noopener"),
 						},
 					];
@@ -4989,7 +4990,7 @@ function WsMobileSheet({
 						)}
 					>
 						<IconPullRequest size={22} />
-						{prReady ? "Merge on GitHub" : "Review PR"}
+						{prReady ? `Merge on ${providerFromUrl(prChat.prUrl).name}` : "Review PR"}
 						{prChat.prNumber != null && ` #${prChat.prNumber}`}
 					</button>
 				)}

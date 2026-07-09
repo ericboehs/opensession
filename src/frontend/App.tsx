@@ -92,8 +92,8 @@ type Route =
 	// Settings chrome but keep their own routes, so old links stay deep-linkable.
 	| { view: "automations"; id?: string }
 	| { view: "security" }
-	| { view: "goals" }
-	| { view: "actions" }
+	| { view: "goals"; id?: string }
+	| { view: "actions"; id?: string }
 	| { view: "notes"; sel: NotesSelection }
 	| { view: "settings"; section?: SettingsSectionKey }
 	| { view: "archived" }
@@ -168,8 +168,19 @@ function parseRoute(pathname: string): Route {
 			id: autoMatch[1] ? decodeURIComponent(autoMatch[1]) : undefined,
 		};
 	if (pathname === "/security") return { view: "security" };
-	if (pathname === "/goals") return { view: "goals" };
-	if (pathname === "/actions") return { view: "actions" };
+	// Goals/Actions mirror /automations/:id — one selected opens its drawer.
+	const goalsMatch = pathname.match(/^\/goals(?:\/(.+))?$/);
+	if (goalsMatch)
+		return {
+			view: "goals",
+			id: goalsMatch[1] ? decodeURIComponent(goalsMatch[1]) : undefined,
+		};
+	const actionsMatch = pathname.match(/^\/actions(?:\/(.+))?$/);
+	if (actionsMatch)
+		return {
+			view: "actions",
+			id: actionsMatch[1] ? decodeURIComponent(actionsMatch[1]) : undefined,
+		};
 	// Back-compat: Connections moved into Settings (a Workspace section).
 	if (pathname === "/connections")
 		return { view: "settings", section: "connections" };
@@ -239,9 +250,13 @@ function routePath(route: Route): string {
 		case "security":
 			return `${BASE_PATH}/security`;
 		case "goals":
-			return `${BASE_PATH}/goals`;
+			return route.id
+				? `${BASE_PATH}/goals/${encodeURIComponent(route.id)}`
+				: `${BASE_PATH}/goals`;
 		case "actions":
-			return `${BASE_PATH}/actions`;
+			return route.id
+				? `${BASE_PATH}/actions/${encodeURIComponent(route.id)}`
+				: `${BASE_PATH}/actions`;
 		case "settings":
 			return route.section
 				? `${BASE_PATH}/settings/${route.section}`
@@ -1367,10 +1382,18 @@ function App() {
 						) : route.view === "goals" ? (
 							<Goals
 								onOpenSession={(id) => navigate({ view: "session", id })}
+								selectedId={route.id}
+								onSelect={(id) =>
+									navigate({ view: "goals", id: id || undefined })
+								}
 							/>
 						) : route.view === "actions" ? (
 							<Actions
 								onOpenSession={(id) => navigate({ view: "session", id })}
+								selectedId={route.id}
+								onSelect={(id) =>
+									navigate({ view: "actions", id: id || undefined })
+								}
 							/>
 						) : route.view === "notes" ? (
 							<Notes

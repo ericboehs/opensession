@@ -1,5 +1,5 @@
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   fetchGoals,
   fetchGoal,
@@ -45,6 +45,10 @@ interface Goal {
 
 interface Props {
   onOpenSession: (sessionId: string) => void;
+  /** Selected goal id (or name) — from the route. */
+  selectedId?: string;
+  /** Change the selection ("" closes the detail drawer). Routed by App. */
+  onSelect: (id: string) => void;
 }
 
 const STATUS_COLOR: Record<GoalStatus, string> = {
@@ -54,14 +58,13 @@ const STATUS_COLOR: Record<GoalStatus, string> = {
   failed: "#e03131",
 };
 
-export function Goals({ onOpenSession }: Props) {
+export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<Goal | null>(null);
+  const [editMode, setEditMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     fetchModels()
@@ -86,6 +89,32 @@ export function Goals({ onOpenSession }: Props) {
     };
   }, [load]);
 
+  // The routed selection — matched by id, or by name for deep-links.
+  const sel = useMemo(
+    () =>
+      selectedId
+        ? goals.find((g) => g.id === selectedId || g.name === selectedId) || null
+        : null,
+    [goals, selectedId],
+  );
+
+  // Leaving the selection also leaves edit mode.
+  useEffect(() => setEditMode(false), [sel?.id]);
+
+  // Escape backs out one layer: inline edit → read view → closed.
+  useEffect(() => {
+    if (!sel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (editMode) setEditMode(false);
+      else onSelect("");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [!!sel, editMode, onSelect]);
+
   async function act(fn: () => Promise<unknown>, refreshDelay = 400) {
     try {
       await fn();
@@ -98,11 +127,14 @@ export function Goals({ onOpenSession }: Props) {
   async function handleDelete(g: Goal) {
     if (!confirm(`Delete goal "${g.name}" and its ledger? The session it created is left as-is.`))
       return;
+    if (sel?.id === g.id) onSelect("");
     await act(() => deleteGoalApi(g.id), 100);
   }
 
   return (
-    <div className="automations">
+    <div className={`automations-page ${sel ? "automations-page-has-detail" : ""}`}>
+    <div className="automations-page-main">
+    <div className="automations-page-inner">
       <div className="page-header">
         <div>
           <h2 className="page-title">Goals</h2>
@@ -114,10 +146,7 @@ export function Goals({ onOpenSession }: Props) {
         <button
           className="btn-new-session"
           style={{ marginTop: 0 }}
-          onClick={() => {
-            setEditing(null);
-            setShowForm(true);
-          }}
+          onClick={() => setShowForm(true)}
         >
           + New goal
         </button>
@@ -131,7 +160,7 @@ export function Goals({ onOpenSession }: Props) {
 
       {showForm && (
         <GoalForm
-          initial={editing}
+          initial={null}
           onClose={() => setShowForm(false)}
           onSaved={() => {
             setShowForm(false);
@@ -151,125 +180,256 @@ export function Goals({ onOpenSession }: Props) {
           </p>
         </div>
       ) : (
-        <div className="automation-list">
-          {goals.map((g) => (
-            <div
-              key={g.id}
-              className={`automation-card ${g.status !== "active" ? "automation-disabled" : ""}`}
-            >
-              <div className="automation-top">
+        <div className="automations-table">
+          {goals.map((g) => {
+            const running = g.isRunning || g.lastRunStatus === "running";
+            return (
+              <button
+                key={g.id}
+                className={`automations-row ${sel?.id === g.id ? "active" : ""} ${g.status === "active" ? "" : "automations-row-off"}`}
+                onClick={() => onSelect(g.id)}
+              >
                 <span
-                  className="source-chip"
-                  style={{ background: STATUS_COLOR[g.status], color: "#fff" }}
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ background: STATUS_COLOR[g.status] }}
                   title={g.pauseReason || g.doneReason || g.status}
-                >
-                  {g.status}
-                </span>
-                <span className="automation-name">{g.name}</span>
-                <span className={`source-chip ${g.mode === "ask" ? "source-ask" : "source-backstage"}`}>
-                  {g.mode}
-                </span>
-                <span className="source-chip" title="Model for this goal's runs">
-                  {g.model || defaultModel || "default"}
-                </span>
-                {g.phase && (
-                  <span className="source-chip goal-phase-chip" title={g.phase}>
-                    {g.phase}
+                />
+                <span className="automations-row-main">
+                  <span className="automations-row-name">{g.name}</span>
+                  <span className="automations-row-trigger">
+                    {g.status}
+                    {g.phase ? ` · ${g.phase}` : ""}
+                    {` · wake #${g.wakeCount}${g.maxWakes ? ` / ${g.maxWakes}` : ""}`}
                   </span>
-                )}
-                {(g.isRunning || g.lastRunStatus === "running") && (
+                </span>
+                {running ? (
                   <span className="working-pill">
                     <span className="working-dot" /> Running
                   </span>
-                )}
-                <div className="automation-actions">
-                  {g.status === "active" && (
-                    <button
-                      className="btn-small"
-                      onClick={() => act(() => runGoalApi(g.id))}
-                      disabled={g.isRunning}
-                    >
-                      Wake now
-                    </button>
-                  )}
-                  {g.status === "active" && (
-                    <button className="btn-small" onClick={() => act(() => pauseGoalApi(g.id))}>
-                      Pause
-                    </button>
-                  )}
-                  {g.status !== "active" && (
-                    <button className="btn-small" onClick={() => act(() => resumeGoalApi(g.id))}>
-                      Resume
-                    </button>
-                  )}
-                  <button
-                    className="btn-small"
-                    onClick={() => setExpanded(expanded === g.id ? null : g.id)}
+                ) : g.lastRunStatus === "ok" ? (
+                  <span
+                    className="auto-status-ok"
+                    title={`Last wake ok${g.lastRunAt ? ` — ${relativeTime(g.lastRunAt)}` : ""}`}
                   >
-                    {expanded === g.id ? "Hide" : "Ledger"}
-                  </button>
-                  <button
-                    className="btn-small"
-                    onClick={() => {
-                      setEditing(g);
-                      setShowForm(true);
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button className="btn-small btn-small-danger" onClick={() => handleDelete(g)}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-
-              <div className="automation-prompt">{g.mission}</div>
-
-              <div className="automation-meta">
-                <span>wake #{g.wakeCount}{g.maxWakes ? ` / ${g.maxWakes}` : ""}</span>
-                {g.status === "active" && g.nextWakeAt && (
-                  <span title={g.nextWakeAt}>next {formatNext(g.nextWakeAt)}</span>
-                )}
-                {g.status === "paused" && g.pauseReason && (
-                  <span className="automation-event" title={g.pauseReason}>
-                    paused — {g.pauseReason.slice(0, 60)}
+                    ✓
                   </span>
-                )}
-                {(g.status === "done" || g.status === "failed") && g.doneReason && (
-                  <span title={g.doneReason}>
-                    {g.status} — {g.doneReason.slice(0, 60)}
+                ) : g.lastRunStatus === "error" ? (
+                  <span className="auto-status-err" title={g.lastRunError || "Last wake failed"}>
+                    ✗
                   </span>
-                )}
-                {g.lastRunAt && (
-                  <span className="automation-lastrun">
-                    last wake {relativeTime(g.lastRunAt)}
-                    {g.lastRunStatus === "ok" && <span className="auto-status-ok"> ✓</span>}
-                    {g.lastRunStatus === "error" && (
-                      <span className="auto-status-err" title={g.lastRunError}> ✗</span>
-                    )}
-                  </span>
-                )}
-                {g.bksSessionId && (
-                  <a
-                    className="automation-session-link"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onOpenSession(g.bksSessionId!);
-                    }}
-                    href={`${BASE_PATH}/session/${g.bksSessionId}`}
-                  >
-                    open session
-                  </a>
-                )}
-                <span className="automation-by">by {g.createdBy}</span>
-              </div>
-
-              {expanded === g.id && <GoalLedger id={g.id} />}
-            </div>
-          ))}
+                ) : null}
+                <span className="automations-row-next">
+                  {g.status === "active" && g.nextWakeAt
+                    ? `next ${formatNext(g.nextWakeAt)}`
+                    : g.status}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
+    </div>
+
+      {sel && (
+        <aside className="automations-drawer">
+          <div className="automations-drawer-head">
+            <button
+              className="automations-drawer-back"
+              onClick={() => onSelect("")}
+              title="Back to goals"
+            >
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 1 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
+              </svg>
+              Goals
+            </button>
+            <span className="automations-drawer-title">
+              {editMode ? `Edit — ${sel.name}` : sel.name}
+            </span>
+            {!editMode && (
+              <div className="automations-drawer-actions">
+                {sel.status === "active" && (
+                  <button
+                    className="btn-small"
+                    onClick={() => act(() => runGoalApi(sel.id))}
+                    disabled={sel.isRunning}
+                  >
+                    Wake now
+                  </button>
+                )}
+                {sel.status === "active" ? (
+                  <button className="btn-small" onClick={() => act(() => pauseGoalApi(sel.id))}>
+                    Pause
+                  </button>
+                ) : (
+                  <button className="btn-small" onClick={() => act(() => resumeGoalApi(sel.id))}>
+                    Resume
+                  </button>
+                )}
+                <button className="btn-small" onClick={() => setEditMode(true)}>
+                  Edit
+                </button>
+                <button className="btn-small btn-small-danger" onClick={() => handleDelete(sel)}>
+                  Delete
+                </button>
+              </div>
+            )}
+            <button
+              className="automations-drawer-close"
+              onClick={() => onSelect("")}
+              title="Close"
+            >
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.749.749 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.749.749 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+              </svg>
+            </button>
+          </div>
+          <div className="automations-drawer-body">
+            {editMode ? (
+              <GoalForm
+                key={sel.id}
+                inline
+                initial={sel}
+                onClose={() => setEditMode(false)}
+                onSaved={() => {
+                  setEditMode(false);
+                  load();
+                }}
+              />
+            ) : (
+              <>
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className="source-chip"
+                    style={{ background: STATUS_COLOR[sel.status], color: "#fff" }}
+                  >
+                    {sel.status}
+                  </span>
+                  {(sel.isRunning || sel.lastRunStatus === "running") && (
+                    <span className="working-pill">
+                      <span className="working-dot" /> Running
+                    </span>
+                  )}
+                  {sel.status === "active" && sel.nextWakeAt && (
+                    <span className="text-faint text-[12px] ml-auto shrink-0" title={sel.nextWakeAt}>
+                      next wake {formatNext(sel.nextWakeAt)}
+                    </span>
+                  )}
+                </div>
+                {sel.status === "paused" && sel.pauseReason && (
+                  <div className="text-dim text-[12.5px] leading-snug">
+                    Paused — {sel.pauseReason}
+                  </div>
+                )}
+                {(sel.status === "done" || sel.status === "failed") && sel.doneReason && (
+                  <div className="text-dim text-[12.5px] leading-snug">
+                    {sel.status === "done" ? "Done" : "Failed"} — {sel.doneReason}
+                  </div>
+                )}
+
+                <div>
+                  <div className="automations-drawer-section-label mb-1.5">Mission</div>
+                  <div className="bg-surface border border-line rounded-panel px-3.5 py-3 text-[13px] leading-relaxed text-dim whitespace-pre-wrap">
+                    {sel.mission}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="automations-drawer-section-label mb-1.5">Configuration</div>
+                  <div className="grid grid-cols-[max-content_1fr] items-baseline gap-x-5 gap-y-2 text-[13px]">
+                    <DetailKey>Mode</DetailKey>
+                    <span className="text-dim">
+                      {sel.mode === "ask"
+                        ? "Ask — read-only research/measure"
+                        : `Code — persistent worktree${sel.repo ? ` in ${sel.repo}` : ""}, can open PRs`}
+                    </span>
+
+                    {sel.phase && (
+                      <>
+                        <DetailKey>Phase</DetailKey>
+                        <span className="text-dim min-w-0">{sel.phase}</span>
+                      </>
+                    )}
+
+                    <DetailKey>Model</DetailKey>
+                    <span className="text-dim">
+                      {sel.model || `${defaultModel || "default"} (default)`}
+                      {sel.fallbackModel && sel.fallbackModel !== "none" && (
+                        <span
+                          className="text-faint"
+                          title="Fallback — used only when every account for the primary model has hit its usage limit"
+                        >
+                          {" "}· falls back to {sel.fallbackModel}
+                        </span>
+                      )}
+                    </span>
+
+                    <DetailKey>Cadence</DetailKey>
+                    <span className="text-dim">
+                      at least {sel.minWakeMinutes}m between wakes
+                      {sel.maxWakes ? ` · capped at ${sel.maxWakes} wakes` : ""}
+                    </span>
+
+                    <DetailKey>MCPs</DetailKey>
+                    <span className="text-dim min-w-0">
+                      {sel.mcpServers?.length ? sel.mcpServers.join(", ") : "all connectors"}
+                    </span>
+
+                    {sel.bksSessionId && (
+                      <>
+                        <DetailKey>Session</DetailKey>
+                        <span className="min-w-0">
+                          <a
+                            className="automation-session-link"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              onOpenSession(sel.bksSessionId!);
+                            }}
+                            href={`${BASE_PATH}/session/${sel.bksSessionId}`}
+                          >
+                            open the goal's session
+                          </a>
+                        </span>
+                      </>
+                    )}
+
+                    <DetailKey>Created</DetailKey>
+                    <span className="text-dim">by {sel.createdBy}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="automations-drawer-section-label mb-1.5">Activity</div>
+                  <div className="text-dim text-[12.5px] mb-2">
+                    wake #{sel.wakeCount}
+                    {sel.maxWakes ? ` of ${sel.maxWakes}` : ""}
+                    {sel.lastRunAt && (
+                      <>
+                        {" · last wake "}
+                        {relativeTime(sel.lastRunAt)}
+                        {sel.lastRunStatus === "ok" && <span className="auto-status-ok"> ✓</span>}
+                        {sel.lastRunStatus === "error" && (
+                          <span className="auto-status-err" title={sel.lastRunError}> ✗</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <GoalLedger id={sel.id} />
+                </div>
+              </>
+            )}
+          </div>
+        </aside>
+      )}
+    </div>
+  );
+}
+
+/** Left column of the drawer's Configuration grid. */
+function DetailKey({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-faint text-[12px] leading-[1.7] whitespace-nowrap">{children}</span>
   );
 }
 
@@ -294,7 +454,7 @@ function GoalLedger({ id }: { id: string }) {
         wordBreak: "break-word",
         maxHeight: 360,
         overflow: "auto",
-        margin: "8px 0 2px",
+        margin: 0,
         padding: "10px 12px",
         background: "var(--bg-raised)",
         color: "var(--text)",
@@ -320,10 +480,13 @@ function formatNext(iso: string): string {
 
 function GoalForm({
   initial,
+  inline,
   onClose,
   onSaved,
 }: {
   initial: Goal | null;
+  /** Hosted in the detail drawer: drop the card chrome + redundant title. */
+  inline?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -382,10 +545,12 @@ function GoalForm({
   }
 
   return (
-    <div className="automation-form">
-      <div className="automation-form-title">
-        {initial ? `Edit "${initial.name}"` : "New goal"}
-      </div>
+    <div className={`automation-form ${inline ? "automation-form-inline" : ""}`}>
+      {!inline && (
+        <div className="automation-form-title">
+          {initial ? `Edit "${initial.name}"` : "New goal"}
+        </div>
+      )}
 
       <label>
         Name

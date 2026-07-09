@@ -1,5 +1,12 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import type { GitStatusInfo, PrCheck, PrComment, PrDetails } from "../lib/types";
+import type {
+  GitStatusInfo,
+  PrCheck,
+  PrComment,
+  PrDetails,
+  PrFile,
+  PrReviewer,
+} from "../lib/types";
 import {
   fetchPr,
   fetchPrDiff,
@@ -12,6 +19,16 @@ import { CommentableDiff, type CommentTarget, type PendingComment } from "./Comm
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
 import { renderMarkdown } from "../lib/markdown";
+import { providerFromUrl, avatarUrl, type Provider } from "../lib/provider";
+import {
+  IconArrowUp,
+  IconCheck,
+  IconGitMerge,
+  IconMessage,
+  IconClock,
+  IconX,
+  IconFile,
+} from "./icons";
 
 type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
@@ -43,6 +60,69 @@ interface PrDiffData {
   patch: string;
 }
 
+/** Provider-neutral PR-state glyph (open/draft share the branch icon). */
+export function PrStateIcon({ state, isDraft }: { state: string; isDraft?: boolean }) {
+  const common = { width: 15, height: 15, viewBox: "0 0 16 16", fill: "currentColor" as const };
+  if (state === "MERGED")
+    return (
+      <svg {...common} aria-hidden>
+        <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 2.122a2.25 2.25 0 1 0-1.5 0v5.256a2.251 2.251 0 1 0 1.5 0V7.5a3.5 3.5 0 0 0 3.5 3.5h1.128a2.251 2.251 0 1 0 0-1.5H8.5A2 2 0 0 1 6.5 7.5v-2.128ZM4.25 12a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5ZM12 9.25a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Z" />
+      </svg>
+    );
+  if (state === "CLOSED")
+    return (
+      <svg {...common} aria-hidden>
+        <path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.81-1.97 1.97a.75.75 0 1 1-1.06-1.06l1.97-1.97-1.97-1.97a.75.75 0 0 1 1.06-1.06l1.97 1.97 1.97-1.97a.75.75 0 1 1 1.06 1.06l-1.97 1.97 1.97 1.97a.75.75 0 1 1-1.06 1.06l-1.97-1.97ZM2.5 13.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 4a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" />
+      </svg>
+    );
+  return (
+    <svg {...common} aria-hidden>
+      <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
+    </svg>
+  );
+}
+
+/** One-line derived status: the state label + a tone + an optional qualifier. */
+interface StatusLine {
+  key: string;
+  label: string; // Open / Merged / Closed / Draft
+  qualifier: string | null; // Ready to merge / Blocked / Changes requested / …
+  tone: "green" | "purple" | "red" | "yellow" | "muted";
+}
+
+function deriveStatus(pr: PrDetails): StatusLine {
+  if (pr.state === "MERGED")
+    return { key: "merged", label: "Merged", qualifier: null, tone: "purple" };
+  if (pr.state === "CLOSED")
+    return { key: "closed", label: "Closed", qualifier: null, tone: "muted" };
+  if (pr.isDraft) return { key: "draft", label: "Draft", qualifier: null, tone: "muted" };
+  if (pr.mergeable === "CONFLICTING")
+    return { key: "conflicts", label: "Open", qualifier: "Merge conflicts", tone: "red" };
+  const checks = summarize(pr.checks);
+  if (checks.failed > 0)
+    return { key: "failing", label: "Open", qualifier: "Checks failed", tone: "red" };
+  if (pr.reviewDecision === "CHANGES_REQUESTED")
+    return { key: "changes", label: "Open", qualifier: "Changes requested", tone: "red" };
+  if (checks.pending > 0)
+    return { key: "running", label: "Open", qualifier: "Checks running", tone: "yellow" };
+  if (pr.reviewDecision === "REVIEW_REQUIRED")
+    return { key: "review", label: "Open", qualifier: "Review required", tone: "yellow" };
+  return { key: "ready", label: "Open", qualifier: "Ready to merge", tone: "green" };
+}
+
+function summarize(checks: PrCheck[]) {
+  let passed = 0,
+    failed = 0,
+    pending = 0;
+  for (const c of checks) {
+    const cls = checkClass(c.status, c.conclusion);
+    if (cls === "check-success") passed++;
+    else if (cls === "check-failure") failed++;
+    else if (cls === "check-pending") pending++;
+  }
+  return { passed, failed, pending, total: checks.length };
+}
+
 export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, send }: Props) {
   const repoList = repos && repos.length > 1 ? repos : null;
   const [activeRepo, setActiveRepo] = useState<string | undefined>(
@@ -63,9 +143,11 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
   const [confirmMerge, setConfirmMerge] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [checksOpen, setChecksOpen] = useState(true);
+  const [filesOpen, setFilesOpen] = useState(true);
   const [bodyOpen, setBodyOpen] = useState(false);
   const [bodyOverflows, setBodyOverflows] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -93,12 +175,9 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
   }, [load]);
 
   // Inline comments don't post one-by-one — they accumulate as pending and ship
-  // together when the reviewer finishes the review (GitHub's native flow).
+  // together when the reviewer finishes the review (the provider's native flow).
   async function handleAddPending(target: CommentTarget, text: string) {
-    setPending((prev) => [
-      ...prev,
-      { ...target, text, id: crypto.randomUUID() },
-    ]);
+    setPending((prev) => [...prev, { ...target, text, id: crypto.randomUUID() }]);
     setReviewDone(null);
   }
 
@@ -164,45 +243,44 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
   }
 
   // Roll the per-check list up into headline counts, and split deployments
-  // (Vercel previews & friends) from CI checks, Conductor-style — failing and
-  // running entries sort first within each group.
+  // (Vercel previews & friends) from CI checks — failing and running entries
+  // sort first within each group.
   const checkSummary = useMemo(() => {
     const checks = pr?.checks || [];
-    let passed = 0,
-      failed = 0,
-      pending = 0;
-    for (const c of checks) {
-      const cls = checkClass(c.status, c.conclusion);
-      if (cls === "check-success") passed++;
-      else if (cls === "check-failure") failed++;
-      else if (cls === "check-pending") pending++;
-    }
+    const s = summarize(checks);
     const rank = (c: PrCheck) => {
       const cls = checkClass(c.status, c.conclusion);
       return cls === "check-failure" ? 0 : cls === "check-pending" ? 1 : cls === "check-success" ? 3 : 2;
     };
     const sorted = [...checks].sort((a, b) => rank(a) - rank(b));
     return {
-      passed,
-      failed,
-      pending,
-      total: checks.length,
+      ...s,
       deployments: sorted.filter(isDeployment),
       checks: sorted.filter((c) => !isDeployment(c)),
     };
   }, [pr]);
 
   const bodyHtml = useMemo(() => (pr?.body ? renderMarkdown(pr.body) : ""), [pr?.body]);
+  const provider = useMemo(() => providerFromUrl(pr?.url), [pr?.url]);
 
   // Only offer the expand toggle when the clamped description is actually taller
   // than its collapsed height — a two-line PR body shouldn't get a "Show more".
   useEffect(() => {
-    // Measure against the clamped height; when expanded the toggle must stay
-    // visible to collapse again, so only recompute while collapsed.
     if (bodyOpen) return;
     const el = bodyRef.current;
     setBodyOverflows(!!el && el.scrollHeight - el.clientHeight > 4);
   }, [bodyHtml, bodyOpen]);
+
+  // Files card → diff: scroll the matching file section into view (and open it).
+  const scrollToFile = useCallback((path: string) => {
+    const root = rootRef.current;
+    if (!root) return;
+    const el = root.querySelector<HTMLElement>(`[data-diff-file="${CSS.escape(path)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    const header = el.querySelector<HTMLElement>(".diff-file-header");
+    if (header && header.getAttribute("aria-expanded") === "false") header.click();
+  }, []);
 
   const switcher = repoList ? (
     <div className="pr-repo-tabs">
@@ -223,267 +301,423 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
     return (
       <div className="pr-panel">
         {switcher}
-        <div className="panel-placeholder">Loading PR…</div>
+        <div className="panel-placeholder">Loading pull request…</div>
       </div>
     );
+
   if (!pr)
     return (
       <div className="pr-panel">
         {switcher}
         <div className="pr-panel-info">
-          <div className="pr-no-pr-title">PR title</div>
-          <div className="pr-no-pr-desc">PR description</div>
-          <GitStatusSection
-            git={git}
-            pr={null}
-            sessionId={sessionId}
-            repo={activeRepo}
-            send={send}
-            onRefresh={load}
-          />
+          <PrCard title="Status">
+            <div className="prc-status-row">
+              <span className="prc-state prc-state-muted">
+                <PrStateIcon state="OPEN" />
+                No pull request
+              </span>
+            </div>
+            <GitStatusRows
+              git={git}
+              pr={null}
+              sessionId={sessionId}
+              repo={activeRepo}
+              send={send}
+              onRefresh={load}
+            />
+          </PrCard>
         </div>
       </div>
     );
 
+  const status = deriveStatus(pr);
+  const files = pr.files || [];
+  const reviewers = pr.reviewers || [];
+
   return (
-    <div className={`pr-panel ${split ? "pr-panel-split" : ""}`}>
+    <div className={`pr-panel ${split ? "pr-panel-split" : ""}`} ref={rootRef}>
       {switcher}
-      <SelectionToSession sessionId={sessionId} label={`PR #${pr.number}`} send={send}>
-      <div className="pr-panel-info">
-      <a className="pr-title" href={pr.url} target="_blank" rel="noopener">
-        {pr.title}
-      </a>
-
-      {pr.body && (
-        <div className="pr-body pr-body-top">
-          <div
-            ref={bodyRef}
-            className={`pr-body-md markdown ${bodyOpen ? "" : "pr-body-clamped"}`}
-            dangerouslySetInnerHTML={{ __html: bodyHtml }}
-          />
-          {(bodyOverflows || bodyOpen) && (
-            <button className="pr-body-toggle" onClick={() => setBodyOpen((o) => !o)}>
-              {bodyOpen ? "Show less" : "Show more"}
-            </button>
-          )}
-        </div>
-      )}
-
-      <GitStatusSection
-        git={git}
-        pr={pr}
-        sessionId={sessionId}
-        repo={activeRepo}
-        send={send}
-        onRefresh={load}
-      />
-
-      {pr.checks.length > 0 && (
-        <div className="pr-checks">
-          <button
-            className="pr-checks-summary"
-            onClick={() => setChecksOpen((o) => !o)}
-            aria-expanded={checksOpen}
-          >
-            <span
-              className={`pr-checks-status ${
-                checkSummary.failed > 0
-                  ? "pr-sum-fail"
-                  : checkSummary.pending > 0
-                    ? "pr-sum-pending"
-                    : "pr-sum-pass"
-              }`}
-            >
-              {checkSummary.failed > 0
-                ? "Some checks failed"
-                : checkSummary.pending > 0
-                  ? "Checks running"
-                  : "All checks passed"}
-            </span>
-            <span className="pr-checks-counts">
-              {checkSummary.passed > 0 && (
-                <span className="pr-count check-success-text">✓ {checkSummary.passed}</span>
-              )}
-              {checkSummary.failed > 0 && (
-                <span className="pr-count check-failure-text">✕ {checkSummary.failed}</span>
-              )}
-              {checkSummary.pending > 0 && (
-                <span className="pr-count check-pending-text">● {checkSummary.pending}</span>
-              )}
-            </span>
-            <span className="pr-checks-chevron">{checksOpen ? "▾" : "▸"}</span>
-          </button>
-          {checksOpen && checkSummary.deployments.length > 0 && (
-            <>
-              <div className="pr-checks-group">Deployments</div>
-              {checkSummary.deployments.map((check, i) => (
-                <CheckRow key={`d${i}`} check={check} />
-              ))}
-            </>
-          )}
-          {checksOpen && checkSummary.checks.length > 0 && (
-            <>
-              {checkSummary.deployments.length > 0 && (
-                <div className="pr-checks-group">Checks</div>
-              )}
-              {checkSummary.checks.map((check, i) => (
-                <CheckRow key={`c${i}`} check={check} />
-              ))}
-            </>
-          )}
-        </div>
-      )}
-
-      {(pr.comments?.length || 0) > 0 && (
-        <div className="pr-comments">
-          <div className="pr-comments-head">
-            <span className="pr-checks-title pr-comments-title">Comments</span>
-            {onAddToInput && (
-              <button
-                className="pr-comments-add-all"
-                onClick={() => onAddToInput(formatPrCommentsPrompt(pr.comments || [], pr))}
-              >
-                Add all to chat
-              </button>
-            )}
+      <SelectionToSession sessionId={sessionId} label={`${provider.changeAbbr} #${pr.number}`} send={send}>
+        <div className="pr-panel-info">
+          {/* Header — title + meta line, Linear-style */}
+          <div className="prc-header">
+            <a className="prc-title" href={pr.url} target="_blank" rel="noopener">
+              {pr.title}
+            </a>
+            <div className="prc-meta">
+              {pr.author && <span className="prc-meta-author">{pr.author}</span>}
+              <span className="prc-meta-num">#{pr.number}</span>
+              <span className="prc-meta-branches" title={`${pr.baseRefName} ← ${pr.headRefName}`}>
+                <span className="prc-branch">{pr.baseRefName}</span>
+                <span className="prc-branch-arrow">←</span>
+                <span className="prc-branch">{pr.headRefName}</span>
+              </span>
+              <span className="prc-meta-diffstat">
+                <span className="prc-add">+{pr.additions}</span>
+                <span className="prc-del">−{pr.deletions}</span>
+              </span>
+            </div>
           </div>
-          {(pr.comments || []).map((comment, i) => (
-            <div className="pr-comment-row" key={`${comment.url || comment.createdAt || i}`}>
-              <span className="pr-comment-select" aria-hidden />
-              <div className="pr-comment-meta">
-                <span className="pr-comment-author">{comment.author || "comment"}</span>
-              </div>
-              <div className="pr-comment-body">{comment.body}</div>
-              {comment.url && (
-                <a className="pr-comment-link" href={comment.url} target="_blank" rel="noopener">
-                  ↗
-                </a>
-              )}
-              {onAddToInput && (
-                <button
-                  className="pr-comment-add"
-                  onClick={() => onAddToInput(formatPrCommentPrompt(comment, pr))}
-                >
-                  Add to chat
+
+          {pr.body && (
+            <div className="pr-body pr-body-top">
+              <div
+                ref={bodyRef}
+                className={`pr-body-md markdown ${bodyOpen ? "" : "pr-body-clamped"}`}
+                dangerouslySetInnerHTML={{ __html: bodyHtml }}
+              />
+              {(bodyOverflows || bodyOpen) && (
+                <button className="pr-body-toggle" onClick={() => setBodyOpen((o) => !o)}>
+                  {bodyOpen ? "Show less" : "Show more"}
                 </button>
               )}
             </div>
-          ))}
-        </div>
-      )}
+          )}
 
-      <div className="pr-actions">
-        <a className="btn-open-pr" href={pr.url} target="_blank" rel="noopener">
-          Open on GitHub ↗
-        </a>
-        {pr.state === "OPEN" && !pr.isDraft && (
-          <button
-            className={`btn-merge-pr ${confirmMerge ? "btn-merge-confirm" : ""}`}
-            onClick={handleMerge}
-            disabled={merging}
-            title="Squash and merge this PR into its base branch"
-          >
-            {merging ? "Merging…" : confirmMerge ? "Confirm squash & merge" : "Squash & merge"}
-          </button>
-        )}
-        {onOpenSession && (
-          <button className="btn-open-session" onClick={onOpenSession}>
-            Open session →
-          </button>
-        )}
-      </div>
-      {mergeError && <div className="pr-merge-error">{mergeError}</div>}
-      </div>
+          {/* Status card */}
+          <PrCard title="Status">
+            <div className="prc-status-row">
+              <span className={`prc-state prc-state-${status.tone}`}>
+                <PrStateIcon state={pr.state} isDraft={pr.isDraft} />
+                {status.label}
+              </span>
+              {status.qualifier && (
+                <span className={`prc-badge prc-badge-${status.tone}`}>{status.qualifier}</span>
+              )}
+            </div>
+            <GitStatusRows
+              git={git}
+              pr={pr}
+              sessionId={sessionId}
+              repo={activeRepo}
+              send={send}
+              onRefresh={load}
+            />
+          </PrCard>
+
+          {/* Reviewers card */}
+          {reviewers.length > 0 && (
+            <PrCard title="Reviewers">
+              {reviewers.map((r) => (
+                <ReviewerRow key={r.login} reviewer={r} provider={provider} />
+              ))}
+            </PrCard>
+          )}
+
+          {/* Checks card */}
+          {pr.checks.length > 0 && (
+            <PrCard
+              title="Checks"
+              headExtra={
+                <button
+                  className="prc-card-toggle"
+                  onClick={() => setChecksOpen((o) => !o)}
+                  aria-expanded={checksOpen}
+                >
+                  <span
+                    className={`prc-checks-rollup ${
+                      checkSummary.failed > 0
+                        ? "prc-tone-red"
+                        : checkSummary.pending > 0
+                          ? "prc-tone-yellow"
+                          : "prc-tone-green"
+                    }`}
+                  >
+                    {checkSummary.failed > 0
+                      ? "Some checks failed"
+                      : checkSummary.pending > 0
+                        ? "Checks running"
+                        : "All passed"}
+                  </span>
+                  <span className="prc-checks-counts">
+                    {checkSummary.passed > 0 && (
+                      <span className="check-success-text">✓ {checkSummary.passed}</span>
+                    )}
+                    {checkSummary.failed > 0 && (
+                      <span className="check-failure-text">✕ {checkSummary.failed}</span>
+                    )}
+                    {checkSummary.pending > 0 && (
+                      <span className="check-pending-text">● {checkSummary.pending}</span>
+                    )}
+                  </span>
+                  <span className="prc-chevron">{checksOpen ? "▾" : "▸"}</span>
+                </button>
+              }
+            >
+              {checksOpen && checkSummary.deployments.length > 0 && (
+                <>
+                  <div className="pr-checks-group">Deployments</div>
+                  {checkSummary.deployments.map((check, i) => (
+                    <CheckRow key={`d${i}`} check={check} />
+                  ))}
+                </>
+              )}
+              {checksOpen && checkSummary.checks.length > 0 && (
+                <>
+                  {checkSummary.deployments.length > 0 && <div className="pr-checks-group">Checks</div>}
+                  {checkSummary.checks.map((check, i) => (
+                    <CheckRow key={`c${i}`} check={check} />
+                  ))}
+                </>
+              )}
+            </PrCard>
+          )}
+
+          {/* Files changed card */}
+          {files.length > 0 && (
+            <PrCard
+              title={`${files.length} file${files.length === 1 ? "" : "s"} changed`}
+              headExtra={
+                <button
+                  className="prc-card-toggle"
+                  onClick={() => setFilesOpen((o) => !o)}
+                  aria-expanded={filesOpen}
+                >
+                  <span className="prc-meta-diffstat">
+                    <span className="prc-add">+{pr.additions}</span>
+                    <span className="prc-del">−{pr.deletions}</span>
+                  </span>
+                  <span className="prc-chevron">{filesOpen ? "▾" : "▸"}</span>
+                </button>
+              }
+            >
+              {filesOpen &&
+                files.map((f) => (
+                  <FileRow
+                    key={f.path}
+                    file={f}
+                    onClick={diff?.patch ? () => scrollToFile(f.path) : undefined}
+                  />
+                ))}
+            </PrCard>
+          )}
+
+          {(pr.comments?.length || 0) > 0 && (
+            <PrCard
+              title="Comments"
+              headExtra={
+                onAddToInput ? (
+                  <button
+                    className="pr-comments-add-all"
+                    onClick={() => onAddToInput(formatPrCommentsPrompt(pr.comments || [], pr))}
+                  >
+                    Add all to chat
+                  </button>
+                ) : undefined
+              }
+            >
+              {(pr.comments || []).map((comment, i) => (
+                <div className="pr-comment-row" key={`${comment.url || comment.createdAt || i}`}>
+                  <span className="pr-comment-select" aria-hidden />
+                  <div className="pr-comment-meta">
+                    <span className="pr-comment-author">{comment.author || "comment"}</span>
+                  </div>
+                  <div className="pr-comment-body">{comment.body}</div>
+                  {comment.url && (
+                    <a className="pr-comment-link" href={comment.url} target="_blank" rel="noopener">
+                      ↗
+                    </a>
+                  )}
+                  {onAddToInput && (
+                    <button
+                      className="pr-comment-add"
+                      onClick={() => onAddToInput(formatPrCommentPrompt(comment, pr))}
+                    >
+                      Add to chat
+                    </button>
+                  )}
+                </div>
+              ))}
+            </PrCard>
+          )}
+
+          <div className="pr-actions">
+            <a className="btn-open-pr" href={pr.url} target="_blank" rel="noopener">
+              Open on {provider.name} ↗
+            </a>
+            {pr.state === "OPEN" && !pr.isDraft && (
+              <button
+                className={`btn-merge-pr ${confirmMerge ? "btn-merge-confirm" : ""}`}
+                onClick={handleMerge}
+                disabled={merging}
+                title={`Squash and merge this ${provider.changeNoun} into its base branch`}
+              >
+                {merging ? "Merging…" : confirmMerge ? "Confirm squash & merge" : "Squash & merge"}
+              </button>
+            )}
+            {onOpenSession && (
+              <button className="btn-open-session" onClick={onOpenSession}>
+                Open session →
+              </button>
+            )}
+          </div>
+          {mergeError && <div className="pr-merge-error">{mergeError}</div>}
+        </div>
       </SelectionToSession>
 
       {diff?.patch && (
         <div className="pr-panel-diff">
-        <div className="pr-diff-section">
-          <div className="pr-checks-title">
-            Review — comments stay pending until you submit
-            {reviewDone && (
-              reviewDone === "submitted" ? (
-                <span className="pr-comment-link">review submitted ✓</span>
-              ) : (
-                <a className="pr-comment-link" href={reviewDone} target="_blank" rel="noopener">
-                  review submitted ↗
-                </a>
-              )
-            )}
+          <div className="pr-diff-section">
+            <div className="pr-checks-title">
+              Review — comments stay pending until you submit
+              {reviewDone &&
+                (reviewDone === "submitted" ? (
+                  <span className="pr-comment-link">review submitted ✓</span>
+                ) : (
+                  <a className="pr-comment-link" href={reviewDone} target="_blank" rel="noopener">
+                    review submitted ↗
+                  </a>
+                ))}
+            </div>
+            <CommentableDiff
+              patch={diff.patch}
+              submitLabel="Add comment"
+              placeholder={`Comment on #${diff.number} — added to your pending review…`}
+              pendingComments={pending}
+              onRemovePending={handleRemovePending}
+              onSubmit={handleAddPending}
+            />
           </div>
-          <CommentableDiff
-            patch={diff.patch}
-            submitLabel="Add comment"
-            placeholder={`Comment on #${diff.number} — added to your pending review…`}
-            pendingComments={pending}
-            onRemovePending={handleRemovePending}
-            onSubmit={handleAddPending}
-          />
-        </div>
 
-        {pending.length > 0 && (
-          <div className="pr-review-bar">
-            <div className="pr-review-bar-row">
-              <span className="pr-review-count">
-                {pending.length} pending comment{pending.length === 1 ? "" : "s"}
-              </span>
-              <button
-                className="pr-review-toggle"
-                onClick={() => setReviewOpen((o) => !o)}
-              >
-                {reviewOpen ? "Hide" : "Finish review"}
-              </button>
-              {onAddToInput && (
-                <button
-                  className="pr-review-toggle"
-                  onClick={() => onAddToInput(formatPendingCommentsPrompt(pending, pr))}
-                >
-                  Add to chat
+          {pending.length > 0 && (
+            <div className="pr-review-bar">
+              <div className="pr-review-bar-row">
+                <span className="pr-review-count">
+                  {pending.length} pending comment{pending.length === 1 ? "" : "s"}
+                </span>
+                <button className="pr-review-toggle" onClick={() => setReviewOpen((o) => !o)}>
+                  {reviewOpen ? "Hide" : "Finish review"}
                 </button>
+                {onAddToInput && (
+                  <button
+                    className="pr-review-toggle"
+                    onClick={() => onAddToInput(formatPendingCommentsPrompt(pending, pr))}
+                  >
+                    Add to chat
+                  </button>
+                )}
+              </div>
+
+              {reviewOpen && (
+                <div className="pr-review-form">
+                  <textarea
+                    className="pr-review-summary"
+                    rows={3}
+                    placeholder="Overall review summary (optional)…"
+                    value={summary}
+                    onChange={(e) => setSummary(e.target.value)}
+                  />
+                  <div className="pr-review-events">
+                    {(
+                      [
+                        ["COMMENT", "Comment"],
+                        ["APPROVE", "Approve"],
+                        ["REQUEST_CHANGES", "Request changes"],
+                      ] as Array<[ReviewEvent, string]>
+                    ).map(([key, label]) => (
+                      <button
+                        key={key}
+                        className={`pr-review-event ${reviewEvent === key ? "active" : ""}`}
+                        onClick={() => setReviewEvent(key)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {reviewError && <div className="diff-comment-error">{reviewError}</div>}
+                  <button className="pr-review-submit" onClick={handleSubmitReview} disabled={submitting}>
+                    {submitting ? "Submitting…" : `Submit review (${pending.length})`}
+                  </button>
+                </div>
               )}
             </div>
-
-            {reviewOpen && (
-              <div className="pr-review-form">
-                <textarea
-                  className="pr-review-summary"
-                  rows={3}
-                  placeholder="Overall review summary (optional)…"
-                  value={summary}
-                  onChange={(e) => setSummary(e.target.value)}
-                />
-                <div className="pr-review-events">
-                  {([
-                    ["COMMENT", "Comment"],
-                    ["APPROVE", "Approve"],
-                    ["REQUEST_CHANGES", "Request changes"],
-                  ] as Array<[ReviewEvent, string]>).map(([key, label]) => (
-                    <button
-                      key={key}
-                      className={`pr-review-event ${reviewEvent === key ? "active" : ""}`}
-                      onClick={() => setReviewEvent(key)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {reviewError && <div className="diff-comment-error">{reviewError}</div>}
-                <button
-                  className="pr-review-submit"
-                  onClick={handleSubmitReview}
-                  disabled={submitting}
-                >
-                  {submitting
-                    ? "Submitting…"
-                    : `Submit review (${pending.length})`}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+/** A Linear-style titled card: label row + a bordered body of rows. */
+function PrCard({
+  title,
+  headExtra,
+  children,
+}: {
+  title: string;
+  headExtra?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="prc-card">
+      <div className="prc-card-head">
+        <span className="prc-card-title">{title}</span>
+        {headExtra}
+      </div>
+      <div className="prc-card-body">{children}</div>
+    </div>
+  );
+}
+
+function ReviewerRow({ reviewer, provider }: { reviewer: PrReviewer; provider: Provider }) {
+  const src = reviewer.isTeam ? null : avatarUrl(reviewer.login, provider, 40);
+  const meta = reviewerStateMeta(reviewer.state);
+  return (
+    <div className="prc-reviewer">
+      {src ? (
+        <img className="prc-reviewer-avatar" src={src} alt="" loading="lazy" />
+      ) : (
+        <span className="prc-reviewer-avatar prc-reviewer-avatar-fallback" aria-hidden>
+          {reviewer.login.slice(0, 1).toUpperCase()}
+        </span>
+      )}
+      <span className="prc-reviewer-name">{reviewer.login}</span>
+      <span className={`prc-reviewer-state prc-tone-${meta.tone}`} title={meta.label}>
+        {meta.icon}
+      </span>
+    </div>
+  );
+}
+
+function reviewerStateMeta(state: PrReviewer["state"]): {
+  label: string;
+  tone: "green" | "red" | "muted" | "yellow";
+  icon: React.ReactNode;
+} {
+  switch (state) {
+    case "APPROVED":
+      return { label: "Approved", tone: "green", icon: <IconCheck size={16} /> };
+    case "CHANGES_REQUESTED":
+      return { label: "Requested changes", tone: "red", icon: <IconX size={16} /> };
+    case "COMMENTED":
+      return { label: "Commented", tone: "muted", icon: <IconMessage size={16} /> };
+    default:
+      return { label: "Awaiting review", tone: "yellow", icon: <IconClock size={16} /> };
+  }
+}
+
+function FileRow({ file, onClick }: { file: PrFile; onClick?: () => void }) {
+  const slash = file.path.lastIndexOf("/");
+  const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
+  const base = slash >= 0 ? file.path.slice(slash + 1) : file.path;
+  return (
+    <button
+      type="button"
+      className="prc-file"
+      onClick={onClick}
+      disabled={!onClick}
+      title={file.path}
+    >
+      <IconFile size={16} className="prc-file-icon" />
+      <span className="prc-file-name">
+        {dir && <span className="prc-file-dir">{dir}</span>}
+        {base}
+      </span>
+      <span className="prc-file-stat">
+        {file.additions > 0 && <span className="prc-add">+{file.additions}</span>}
+        {file.deletions > 0 && <span className="prc-del">−{file.deletions}</span>}
+      </span>
+    </button>
   );
 }
 
@@ -578,12 +812,12 @@ export function CheckRow({ check }: { check: PrCheck }) {
 }
 
 /**
- * Conductor-style "Git status" rows: each local/remote discrepancy gets a line
- * with one action on the right. Push is a direct server-side `git push`; the
- * judgment calls (create the PR, resolve conflicts, update from main, commit
- * stray changes) prompt the session — Michael does the work, not a bare button.
+ * Local/remote discrepancy rows for the Status card: each gets a line with one
+ * action on the right. Push is a direct server-side `git push`; the judgment
+ * calls (create the PR, resolve conflicts, update from base, commit stray
+ * changes) prompt the session — Michael does the work, not a bare button.
  */
-function GitStatusSection({
+function GitStatusRows({
   git,
   pr,
   sessionId,
@@ -625,15 +859,16 @@ function GitStatusSection({
     }
   }
 
-  const rows: Array<{ key: string; label: string; action?: React.ReactNode }> = [];
+  const rows: Array<{ key: string; label: string; tone: string; action?: React.ReactNode }> = [];
 
   if (!pr && git) {
     rows.push({
       key: "no-pr",
-      label: "No PR open",
+      label: "Not pushed as a PR yet",
+      tone: "muted",
       action: send && (
         <button
-          className="pr-git-action"
+          className="prc-action"
           onClick={() =>
             promptSession(
               "create a PR",
@@ -650,8 +885,9 @@ function GitStatusSection({
     rows.push({
       key: "ahead",
       label: `${git.ahead} commit${git.ahead === 1 ? "" : "s"} ahead of remote`,
+      tone: "yellow",
       action: (
-        <button className="pr-git-action" onClick={handlePush} disabled={pushing}>
+        <button className="prc-action" onClick={handlePush} disabled={pushing}>
           {pushing ? "Pushing…" : "Push"}
         </button>
       ),
@@ -661,9 +897,10 @@ function GitStatusSection({
     rows.push({
       key: "dirty",
       label: `${git.uncommittedFiles} uncommitted file${git.uncommittedFiles === 1 ? "" : "s"}`,
+      tone: "yellow",
       action: send && (
         <button
-          className="pr-git-action"
+          className="prc-action"
           onClick={() =>
             promptSession("commit the changes", "Commit and push the current work in the worktree.")
           }
@@ -676,10 +913,11 @@ function GitStatusSection({
   if (pr?.mergeable === "CONFLICTING") {
     rows.push({
       key: "conflicts",
-      label: "Merge conflicts detected",
+      label: "Resolve conflicts",
+      tone: "red",
       action: send && (
         <button
-          className="pr-git-action"
+          className="prc-action"
           onClick={() =>
             promptSession(
               "resolve the conflicts",
@@ -696,9 +934,10 @@ function GitStatusSection({
     rows.push({
       key: "behind",
       label: `${git.behindBase} commit${git.behindBase === 1 ? "" : "s"} behind ${base}`,
+      tone: "muted",
       action: send && (
         <button
-          className="pr-git-action"
+          className="prc-action"
           onClick={() =>
             promptSession(
               "update from " + base,
@@ -715,17 +954,16 @@ function GitStatusSection({
   if (rows.length === 0) return null;
 
   return (
-    <div className="pr-git">
-      <div className="pr-checks-title">Git status</div>
+    <>
       {rows.map((row) => (
-        <div key={row.key} className="pr-git-row">
-          <span className="pr-git-dot" />
-          <span className="pr-git-label">{row.label}</span>
+        <div key={row.key} className="prc-git-row">
+          <span className={`prc-git-dot prc-tone-${row.tone}`} />
+          <span className="prc-git-label">{row.label}</span>
           {row.action}
         </div>
       ))}
-      {prompted && <div className="pr-git-note">Asked Michael to {prompted} ✓</div>}
-      {error && <div className="pr-git-note pr-git-note-error">{error}</div>}
-    </div>
+      {prompted && <div className="prc-git-note">Asked Michael to {prompted} ✓</div>}
+      {error && <div className="prc-git-note prc-git-note-error">{error}</div>}
+    </>
   );
 }

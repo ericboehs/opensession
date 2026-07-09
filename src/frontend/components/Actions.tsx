@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchActions,
   createActionApi,
@@ -15,18 +15,22 @@ import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 interface Props {
   onOpenSession: (sessionId: string) => void;
+  /** Selected action id (or name) — from the route. */
+  selectedId?: string;
+  /** Change the selection ("" closes the detail drawer). Routed by App. */
+  onSelect: (id: string) => void;
 }
 
 /**
  * Actions: run a registered repo script behind a form. Each run spins up a real
  * (fast-model) session that executes the script — open it to watch the output,
- * fork it into a full session to dig in.
+ * fork it into a full session to dig in. Selecting an action opens the detail
+ * drawer, where its run form lives (no modal).
  */
-export function Actions({ onOpenSession }: Props) {
+export function Actions({ onOpenSession, selectedId, onSelect }: Props) {
   const [actions, setActions] = useState<Action[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [running, setRunning] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -47,10 +51,33 @@ export function Actions({ onOpenSession }: Props) {
     };
   }, [load]);
 
+  // The routed selection — matched by id, or by name for deep-links.
+  const sel = useMemo(
+    () =>
+      selectedId
+        ? actions.find((a) => a.id === selectedId || a.name === selectedId) || null
+        : null,
+    [actions, selectedId],
+  );
+
+  // Escape backs out of the detail drawer.
+  useEffect(() => {
+    if (!sel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      onSelect("");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [!!sel, onSelect]);
+
   async function handleDelete(a: Action) {
     if (!confirm(`Delete action "${a.name}"?`)) return;
     try {
       await deleteActionApi(a.id);
+      if (sel?.id === a.id) onSelect("");
       load();
     } catch (e: any) {
       setError(e.message || String(e));
@@ -58,7 +85,9 @@ export function Actions({ onOpenSession }: Props) {
   }
 
   return (
-    <div className="automations">
+    <div className={`automations-page ${sel ? "automations-page-has-detail" : ""}`}>
+    <div className="automations-page-main">
+    <div className="automations-page-inner">
       <div className="page-header">
         <div>
           <h2 className="page-title">Actions</h2>
@@ -87,18 +116,6 @@ export function Actions({ onOpenSession }: Props) {
         />
       )}
 
-      {running && (
-        <RunDialog
-          action={running}
-          onClose={() => setRunning(null)}
-          onRan={(sessionId) => {
-            setRunning(null);
-            load();
-            onOpenSession(sessionId);
-          }}
-        />
-      )}
-
       {loading ? (
         <div className="loading">Loading…</div>
       ) : actions.length === 0 ? (
@@ -109,71 +126,170 @@ export function Actions({ onOpenSession }: Props) {
           </p>
         </div>
       ) : (
-        <div className="automation-list">
+        <div className="automations-table">
           {actions.map((a) => (
-            <div key={a.id} className="automation-card">
-              <div className="automation-top">
-                <span className="automation-name">{a.name}</span>
-                <span className="source-chip source-backstage">
-                  {a.kind === "mcp" ? "mcp" : a.repo}
+            <button
+              key={a.id}
+              className={`automations-row ${sel?.id === a.id ? "active" : ""}`}
+              onClick={() => onSelect(a.id)}
+            >
+              <span className="automations-row-main">
+                <span className="automations-row-name">{a.name}</span>
+                <span className="automations-row-trigger">
+                  {a.kind === "mcp"
+                    ? `${a.mcpServer} · ${a.toolName}`
+                    : `${a.repo} · ${a.scriptPath}`}
                 </span>
-                {a.confirm && <span className="source-chip">confirm</span>}
-                <div className="automation-actions">
-                  <button className="btn-small" onClick={() => setRunning(a)}>
-                    Run
-                  </button>
-                  <button className="btn-small btn-small-danger" onClick={() => handleDelete(a)}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-              {a.description && <div className="automation-prompt">{a.description}</div>}
-              <div className="automation-meta">
-                <span
-                  className="automation-cron"
-                  title={a.kind === "mcp" ? "MCP tool" : "Script path"}
-                >
-                  {a.kind === "mcp" ? `${a.mcpServer} · ${a.toolName}` : a.scriptPath}
+              </span>
+              {a.confirm && (
+                <span className="source-chip" title="Asks for a confirm before running">
+                  confirm
                 </span>
-                {a.lastRunAt && (
-                  <span className="automation-lastrun">
-                    last run {relativeTime(a.lastRunAt)}
-                    {a.lastRunSessionId && (
-                      <>
-                        {" · "}
-                        <a
-                          className="automation-session-link"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            onOpenSession(a.lastRunSessionId!);
-                          }}
-                          href="#"
-                        >
-                          open session
-                        </a>
-                      </>
-                    )}
-                  </span>
-                )}
-                <span className="automation-by">by {a.createdBy}</span>
-              </div>
-            </div>
+              )}
+              <span className="automations-row-next">
+                {a.lastRunAt ? relativeTime(a.lastRunAt) : ""}
+              </span>
+            </button>
           ))}
         </div>
+      )}
+    </div>
+    </div>
+
+      {sel && (
+        <aside className="automations-drawer">
+          <div className="automations-drawer-head">
+            <button
+              className="automations-drawer-back"
+              onClick={() => onSelect("")}
+              title="Back to actions"
+            >
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 1 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
+              </svg>
+              Actions
+            </button>
+            <span className="automations-drawer-title">{sel.name}</span>
+            <div className="automations-drawer-actions">
+              <button className="btn-small btn-small-danger" onClick={() => handleDelete(sel)}>
+                Delete
+              </button>
+            </div>
+            <button
+              className="automations-drawer-close"
+              onClick={() => onSelect("")}
+              title="Close"
+            >
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.749.749 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.749.749 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+              </svg>
+            </button>
+          </div>
+          <div className="automations-drawer-body">
+            {sel.description && (
+              <div className="bg-surface border border-line rounded-panel px-3.5 py-3 text-[13px] leading-relaxed text-dim">
+                {sel.description}
+              </div>
+            )}
+
+            <div>
+              <div className="automations-drawer-section-label mb-1.5">Run</div>
+              <RunForm
+                key={sel.id}
+                action={sel}
+                onRan={(sessionId) => {
+                  load();
+                  onOpenSession(sessionId);
+                }}
+              />
+            </div>
+
+            <div>
+              <div className="automations-drawer-section-label mb-1.5">Configuration</div>
+              <div className="grid grid-cols-[max-content_1fr] items-baseline gap-x-5 gap-y-2 text-[13px]">
+                <DetailKey>Type</DetailKey>
+                <span className="text-dim">
+                  {sel.kind === "mcp"
+                    ? "MCP tool — runs on its own server with its own credentials"
+                    : "Repo script"}
+                </span>
+
+                <DetailKey>{sel.kind === "mcp" ? "Tool" : "Script"}</DetailKey>
+                <span className="text-dim min-w-0">
+                  <span className="automation-cron">
+                    {sel.kind === "mcp"
+                      ? `${sel.mcpServer} · ${sel.toolName}`
+                      : `${sel.repo}:${sel.scriptPath}`}
+                  </span>
+                </span>
+
+                {sel.kind !== "mcp" && sel.argMode && (
+                  <>
+                    <DetailKey>Args</DetailKey>
+                    <span className="text-dim">
+                      {sel.argMode === "positional"
+                        ? "positional ($1 $2 …)"
+                        : "env vars (NAME=…)"}
+                    </span>
+                  </>
+                )}
+
+                <DetailKey>Confirm</DetailKey>
+                <span className="text-dim">
+                  {sel.confirm ? "required before each run" : "not required"}
+                </span>
+
+                <DetailKey>Created</DetailKey>
+                <span className="text-dim">by {sel.createdBy}</span>
+              </div>
+            </div>
+
+            <div>
+              <div className="automations-drawer-section-label mb-1.5">Activity</div>
+              {sel.lastRunAt ? (
+                <div className="text-dim text-[12.5px]">
+                  last run {relativeTime(sel.lastRunAt)}
+                  {sel.lastRunSessionId && (
+                    <>
+                      {" · "}
+                      <a
+                        className="automation-session-link"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onOpenSession(sel.lastRunSessionId!);
+                        }}
+                        href="#"
+                      >
+                        open session
+                      </a>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="text-faint text-[12.5px]">No runs yet.</div>
+              )}
+            </div>
+          </div>
+        </aside>
       )}
     </div>
   );
 }
 
-// ── Run dialog: render the form from the action's inputs, then run ──
+/** Left column of the drawer's Configuration grid. */
+function DetailKey({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-faint text-[12px] leading-[1.7] whitespace-nowrap">{children}</span>
+  );
+}
 
-function RunDialog({
+// ── Run form: render the action's inputs inline in the drawer, then run ──
+
+function RunForm({
   action,
-  onClose,
   onRan,
 }: {
   action: Action;
-  onClose: () => void;
   onRan: (sessionId: string) => void;
 }) {
   const [values, setValues] = useState<Record<string, string>>(() => {
@@ -197,10 +313,7 @@ function RunDialog({
   }
 
   return (
-    <div className="automation-form">
-      <div className="automation-form-title">Run: {action.name}</div>
-      {action.description && <div className="automation-prompt">{action.description}</div>}
-
+    <div className="automation-form automation-form-inline">
       {action.inputs.length === 0 && (
         <div className="page-sub">This action takes no inputs.</div>
       )}
@@ -250,10 +363,7 @@ function RunDialog({
 
       {error && <div className="form-error">{error}</div>}
 
-      <div className="automation-form-actions">
-        <button className="btn-delete-cancel" onClick={onClose} disabled={busy}>
-          Cancel
-        </button>
+      <div className="automation-form-actions" style={{ justifyContent: "flex-start" }}>
         <button className="btn-create" style={{ padding: "8px 22px" }} onClick={run} disabled={busy}>
           {busy ? "Starting…" : action.confirm ? "Confirm & run" : "Run"}
         </button>

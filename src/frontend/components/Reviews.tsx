@@ -3,6 +3,7 @@ import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { PrPanel } from "./PrPanel";
 import { SlackChatPanel } from "./SlackChatPanel";
+import { providerFromUrl, avatarUrl } from "../lib/provider";
 
 interface Props {
   sessions: UnifiedSession[];
@@ -270,7 +271,7 @@ export function Reviews({
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search checks…"
+                placeholder="Search pull requests…"
                 spellCheck={false}
               />
             </div>
@@ -304,14 +305,14 @@ export function Reviews({
           <div className="reviews-empty">
             <div className="detail-empty-inner">
               <div className="detail-empty-title">
-                {prSessions.length === 0 ? "No checks yet" : "Nothing here"}
+                {prSessions.length === 0 ? "No pull requests yet" : "Nothing here"}
               </div>
               <div className="detail-empty-sub">
                 {prSessions.length === 0
-                  ? "PRs opened by Michael sessions show their checks here."
+                  ? "Pull requests opened by Michael sessions show up here."
                   : filter === "review"
                     ? "All caught up. Nothing needs review."
-                    : "No PRs match this filter."}
+                    : "No pull requests match this filter."}
               </div>
             </div>
           </div>
@@ -338,7 +339,7 @@ export function Reviews({
                       {s.prUrl && (
                         <span
                           className="rv-open-gh"
-                          title="Open on GitHub"
+                          title={`Open on ${providerFromUrl(s.prUrl).name}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             window.open(s.prUrl, "_blank", "noopener");
@@ -382,7 +383,7 @@ export function Reviews({
                       <>
                         <img
                           className="rv-avatar"
-                          src={`https://github.com/${s.prAuthor}.png?size=40`}
+                          src={avatarUrl(s.prAuthor, providerFromUrl(s.prUrl), 40) || ""}
                           alt=""
                           loading="lazy"
                         />
@@ -408,12 +409,12 @@ export function Reviews({
             <button
               className="reviews-drawer-back"
               onClick={() => onSelect("")}
-              title="Back to checks"
+              title="Back to pull requests"
             >
               <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                 <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 1 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
               </svg>
-              Checks
+              Pull requests
             </button>
             <button
               className="reviews-drawer-close"

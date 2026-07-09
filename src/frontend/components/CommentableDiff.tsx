@@ -313,7 +313,7 @@ export function CommentableDiff({
           : pend;
 
         return (
-          <div className="diff-file" key={`${file.name}-${i}`}>
+          <div className="diff-file" key={`${file.name}-${i}`} data-diff-file={file.name}>
             <div
               className="diff-file-header"
               role="button"

@@ -9,6 +9,7 @@ import {
 	mergePrApi,
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
+import { providerFromUrl } from "../lib/provider";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu } from "../ui/menu";
 import {
@@ -235,7 +236,7 @@ function PrNumberChip({
 					}
 				>
 					<IconArrowUpRight size={20} />
-					<span className="grow">Open in GitHub</span>
+					<span className="grow">Open on {providerFromUrl(pr.url).name}</span>
 				</ContextMenu.Item>
 				<ContextMenu.Item
 					closeOnClick={false}

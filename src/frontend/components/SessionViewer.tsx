@@ -2913,7 +2913,7 @@ export function SessionViewer({
 										className={`panel-tab ${panelTab === "pr" ? "active" : ""}`}
 										onClick={() => selectPanelTab("pr")}
 									>
-										Checks
+										Review
 										{session.prState && (
 											<span
 												className={`panel-tab-dot pr-dot-${session.prState.toLowerCase()}`}

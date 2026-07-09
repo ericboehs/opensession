@@ -18,6 +18,7 @@ import {
 	type TinderPr,
 } from "../lib/api";
 import { renderMarkdown } from "../lib/markdown";
+import { providerFromUrl } from "../lib/provider";
 import { useCurrentUser } from "./UserPicker";
 
 /**
@@ -583,9 +584,9 @@ export function PrTinder({ onExit }: Props) {
 					<button
 						className="flex-1 rounded-lg border border-line bg-panel px-3 py-3 text-sm font-semibold text-dim hover:bg-surface hover:text-fg"
 						onClick={() => card && window.open(card.url, "_blank", "noopener")}
-						title="Open on GitHub (o)"
+						title={`Open on ${providerFromUrl(card?.url).name} (o)`}
 					>
-						GitHub
+						{providerFromUrl(card?.url).name}
 					</button>
 					<button
 						className="flex-1 rounded-lg bg-green px-4 py-3 text-sm font-semibold text-white hover:opacity-90"

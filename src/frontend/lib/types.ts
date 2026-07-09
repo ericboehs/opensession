@@ -318,6 +318,18 @@ export interface PrComment {
 	createdAt?: string;
 }
 
+export interface PrFile {
+	path: string;
+	additions: number;
+	deletions: number;
+}
+
+export interface PrReviewer {
+	login: string;
+	state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING";
+	isTeam?: boolean;
+}
+
 export interface PrDetails {
 	number: number;
 	title: string;
@@ -334,7 +346,11 @@ export interface PrDetails {
 	body: string;
 	checks: PrCheck[];
 	comments?: PrComment[];
-	/** MERGEABLE | CONFLICTING | UNKNOWN — GitHub's conflict probe. */
+	/** Per-file line stats, biggest churn first. */
+	files?: PrFile[];
+	/** People/teams on the reviewer list with their latest review state. */
+	reviewers?: PrReviewer[];
+	/** MERGEABLE | CONFLICTING | UNKNOWN — the provider's conflict probe. */
 	mergeable?: string;
 	/** CLEAN | BEHIND | BLOCKED | DIRTY | UNSTABLE | … — merge-box state. */
 	mergeStateStatus?: string;
