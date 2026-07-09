@@ -75,7 +75,37 @@ interface TermTarget {
   displayCwd: string;
   /** Dim one-liner explaining a fallback (e.g. sandbox unreachable). */
   notice?: string;
+  /** Extra env for the spawned process (e.g. the shared ssh-agent sock). */
+  env?: Record<string, string>;
   dispose?: () => void;
+}
+
+/**
+ * ONE shared ssh-agent for every host-shell PTY. ~/.zshrc starts an agent
+ * whenever SSH_AUTH_SOCK is empty, and an `eval $(ssh-agent -s)` agent
+ * daemonizes past its shell — so every Shell tab leaked one into the service
+ * cgroup until shutdown SIGKILLed the pile (journal 2026-07-09 13:51:41).
+ * Handing each PTY a live SSH_AUTH_SOCK makes the profile guard skip the
+ * spawn entirely: at most one agent per backstage process, reused across
+ * shells, and reaped with the cgroup on service stop.
+ */
+async function sharedSshAgentEnv(): Promise<Record<string, string>> {
+  if (process.env.SSH_AUTH_SOCK) return {}; // service already has one — inherit
+  const cur: { sock: string; pid: number } | undefined = g.__backstageTermSshAgent;
+  if (cur && existsSync(cur.sock)) {
+    try {
+      process.kill(cur.pid, 0);
+      return { SSH_AUTH_SOCK: cur.sock, SSH_AGENT_PID: String(cur.pid) };
+    } catch {}
+  }
+  const proc = Bun.spawn(["ssh-agent", "-s"], { stdout: "pipe", stderr: "ignore" });
+  const out = await new Response(proc.stdout).text();
+  await proc.exited;
+  const sock = out.match(/SSH_AUTH_SOCK=([^;\s]+)/)?.[1];
+  const pid = Number(out.match(/SSH_AGENT_PID=(\d+)/)?.[1]);
+  if (!sock || !pid) return {}; // no agent — the profile spawns its own (old behavior)
+  g.__backstageTermSshAgent = { sock, pid };
+  return { SSH_AUTH_SOCK: sock, SSH_AGENT_PID: String(pid) };
 }
 
 function hostShellTarget(session: TerminalSessionInfo | null | undefined, notice?: string): TermTarget {
@@ -167,7 +197,32 @@ export async function startSessionTerminal(
   stopTerminal(ws); // one shell per socket
   const token = {};
   pendingStarts.set(ws, token);
-  const target = await resolveTarget(session);
+  // A silent hang here (e.g. a sandbox wake that never returns) used to leave
+  // the tab dead with zero feedback — say what we're waiting on. NOTE: in a
+  // timer-poisoned process (failed --hot reload — see run-ws.ts's tripwire)
+  // this notice can't fire either; the tripwire is the real alarm there.
+  const slow = setTimeout(() => {
+    try {
+      opts.send({
+        type: "term_notice",
+        message: "still connecting to the sandbox shell… (sandbox may be waking up)",
+      });
+    } catch {}
+  }, 8_000);
+  (slow as { unref?: () => void }).unref?.();
+  let target: TermTarget;
+  try {
+    target = await resolveTarget(session);
+  } finally {
+    clearTimeout(slow);
+  }
+  if (target.target === "host") {
+    // Keep the profile's ssh-agent guard satisfied so each PTY doesn't leak
+    // a daemonized agent (best effort — a failure just restores old behavior).
+    try {
+      target.env = { ...target.env, ...(await sharedSshAgentEnv()) };
+    } catch {}
+  }
   if (pendingStarts.get(ws) !== token) {
     // Stopped or superseded while resolving — release the transport.
     try {
@@ -194,7 +249,7 @@ export function startTerminal(
 function spawnPty(ws: unknown, target: TermTarget, opts: TerminalOpts): void {
   const proc = Bun.spawn(target.argv, {
     cwd: target.cwd,
-    env: { ...process.env, TERM: "xterm-256color" },
+    env: { ...process.env, TERM: "xterm-256color", ...target.env },
     terminal: {
       cols: Math.max(20, Math.min(500, opts.cols || 100)),
       rows: Math.max(5, Math.min(200, opts.rows || 30)),
