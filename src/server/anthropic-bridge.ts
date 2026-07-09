@@ -66,6 +66,7 @@
  *  - The SDK's own built-in tools are disallowed; only client tools exist.
  */
 
+import { stateDir } from "./rename-compat";
 import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { audit, summarizeText } from "./audit";
@@ -77,7 +78,7 @@ import { mkdirSync } from "fs";
 const HOME = process.env.HOME || "/home/ubuntu";
 // Empty, dedicated cwd for the SDK subprocess: the bridge never touches files
 // (every tool is a blocked passthrough), so no worktree must ever be visible.
-const BRIDGE_CWD = `${HOME}/.backstage-opencode/bridge-cwd`;
+const BRIDGE_CWD = `${stateDir("opencode")}/bridge-cwd`;
 
 const g = globalThis as any;
 
@@ -112,14 +113,14 @@ export function ensureAnthropicBridge(): BridgeInfo {
   const cfg = readOpencodeBridgeConfig();
   if (!cfg?.enabled) {
     throw new Error(
-      "The Anthropic bridge is disabled. opencode/anthropic/* models need ~/.backstage-opencode.json " +
+      "The Anthropic bridge is disabled. opencode/anthropic/* models need ~/.opensession-opencode.json " +
         'with {"enabled": true, "bridgeAccountIds": ["<claude-accounts id>"]} — or use an API-key ' +
         "provider configured via `opencode auth login` instead."
     );
   }
   if (!cfg.bridgeAccountIds?.length) {
     throw new Error(
-      "The Anthropic bridge has no designated accounts: set bridgeAccountIds in ~/.backstage-opencode.json " +
+      "The Anthropic bridge has no designated accounts: set bridgeAccountIds in ~/.opensession-opencode.json " +
         "to the claude-accounts id(s) that may serve bridge traffic (the general pool is never used)."
     );
   }

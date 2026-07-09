@@ -98,6 +98,7 @@
  * permission asks.
  */
 
+import { personaName, productName } from "./config";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import type { Subprocess } from "bun";
@@ -114,7 +115,8 @@ import {
 } from "./claude-runner";
 import { audit, summarizeText } from "./audit";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { OPENSESSION_CHATS_DIR } from "./paths";
+import { envAlias, stateDir } from "./rename-compat";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { isCodexUsageLimitError } from "./codex-runner";
@@ -144,13 +146,16 @@ import {
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
-  process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+  envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+  "https://michael.taila5d766.ts.net/backstage";
 
 /** opencode binary (installed user-level: `npm i -g opencode-ai`). */
 export const OPENCODE_BIN =
-  process.env.BACKSTAGE_OPENCODE_BIN || Bun.which("opencode") || `${HOME}/.nvm/versions/node/v20.20.0/bin/opencode`;
+  envAlias("OPENSESSION_OPENCODE_BIN", "BACKSTAGE_OPENCODE_BIN") ||
+  Bun.which("opencode") ||
+  `${HOME}/.nvm/versions/node/v20.20.0/bin/opencode`;
 
-const OPENCODE_STATE_DIR = `${BACKSTAGE_CHATS_DIR}/opencode`;
+const OPENCODE_STATE_DIR = `${OPENSESSION_CHATS_DIR}/opencode`;
 const SERVER_START_TIMEOUT_MS = 30_000;
 const IDLE_KILL_MS = 30 * 60 * 1000;
 
@@ -264,7 +269,7 @@ export function meridianStackInfo(): MeridianStackInfo {
  *  So each account gets an empty config dir + the env token: the selected
  *  account is the only reachable credential, and a bad token fails closed
  *  instead of burning the host login's quota. */
-const MERIDIAN_CFG_ROOT = `${HOME}/.backstage-opencode/meridian-cfg`;
+const MERIDIAN_CFG_ROOT = `${stateDir("opencode")}/meridian-cfg`;
 
 /**
  * Env for a meridian-mode `opencode serve` process. The Meridian proxy runs
@@ -399,7 +404,7 @@ export function proxyOpencodeMcpConfigs(
       type: "local",
       command: [BUN_BIN, "run", MCP_PROXY_ENTRY],
       environment: {
-        BKS_RPC_SOCKET: rpcSocketPath(BACKSTAGE_CHATS_DIR),
+        BKS_RPC_SOCKET: rpcSocketPath(OPENSESSION_CHATS_DIR),
         BKS_RPC_TOKEN: rpcToken,
         BKS_MCP_SERVER: name,
       },
@@ -454,7 +459,7 @@ export function buildOpencodeInstructions(input: {
   const parts: string[] = [];
   if (input.isAsk) {
     parts.push(
-      "You are Michael in Ask mode: answer questions about the current checkout. " +
+      `You are ${personaName()} in Ask mode: answer questions about the current checkout. ` +
         "This is a READ-ONLY session — never modify, create, or delete files, never commit, " +
         "never run state-changing commands (the permission config enforces this). Explore with " +
         "read-only shell and git commands, then answer clearly and concisely."
@@ -465,13 +470,13 @@ export function buildOpencodeInstructions(input: {
     const link = `${UI_BASE}/session/${input.bksSessionId}`;
     parts.push(
       "## Session link in PRs\nWhenever you open a pull request (any repo, via `gh pr create` " +
-        "or otherwise), include a link back to this Michael session at the end of the PR body:\n\n" +
-        `Created by [this Michael session](${link})`
+        `or otherwise), include a link back to this ${personaName()} session at the end of the PR body:\n\n` +
+        `Created by [this ${personaName()} session](${link})`
     );
   }
   if (input.inProcessMcp && Object.keys(input.inProcessMcp).length) {
     parts.push(
-      "## Managing Michael\nYou can see and steer your other Backstage sessions via the " +
+      `## Managing ${personaName()}\nYou can see and steer your other ${productName()} sessions via the ` +
         "michael-sessions MCP tools (list_sessions, get_session, send_to_session, " +
         "answer_session_question, cancel_session, create_session), manage setup via " +
         "michael-admin, ask teammates via michael-humans, and attach/switch repos via " +
@@ -481,7 +486,7 @@ export function buildOpencodeInstructions(input: {
       parts.push(
         "## Asking the human a question\nWhen you genuinely need the human's decision to " +
           "proceed, call michael-ask's `ask_user` tool. It pauses this run on a question card " +
-          "in the Backstage UI and returns their answer. Prefer 2-4 concrete options; don't " +
+          `in the ${productName()} UI and returns their answer. Prefer 2-4 concrete options; don't ` +
           "ask for confirmations a reasonable default covers."
       );
     }
@@ -925,7 +930,7 @@ async function* runOpencodeAttempt(
         };
       } else {
         throw new Error(
-          "opencode/anthropic/* models are disabled: ~/.backstage-opencode.json is missing, " +
+          "opencode/anthropic/* models are disabled: ~/.opensession-opencode.json is missing, " +
             'has "enabled": false, or sets bridge.mode "off". Enable it with ' +
             '{"enabled": true} (bridge.mode defaults to "meridian") — or use an API-key ' +
             "provider configured via `opencode auth login` instead."
@@ -1342,7 +1347,7 @@ async function* runOpencodeAttempt(
     const turnDeadline = setTimeout(() => {
       runFailure ??=
         `opencode turn exceeded the ${Math.round(turnTimeout / 60_000)}-minute wall-clock limit ` +
-        "(turnTimeoutMinutes in ~/.backstage-opencode.json) — aborting the turn";
+        "(turnTimeoutMinutes in ~/.opensession-opencode.json) — aborting the turn";
       void client.session.abort({ path: { id: ocSessionId } }).catch(() => {});
       signalDone();
     }, turnTimeout);

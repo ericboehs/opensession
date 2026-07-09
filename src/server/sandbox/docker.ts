@@ -852,9 +852,11 @@ function makeDockerLauncher(container: string, sessionId: string): HostLauncher 
         const base = sandboxCallbackBaseUrl();
         registerRunWsHost(hostId, spec.wsToken);
         wsEnv.push(
-          ...env(`BKS_RUN_WS_URL=${base}/backstage/run-ws/${hostId}`),
+          // Primary prefix — the server accepts /backstage too, so URLs baked
+          // into already-running containers stay valid.
+          ...env(`BKS_RUN_WS_URL=${base}/opensession/run-ws/${hostId}`),
           ...env(`BKS_RUN_WS_TOKEN=${spec.wsToken}`),
-          ...env(`BKS_RPC_WS_URL=${base}/backstage/rpc-ws`),
+          ...env(`BKS_RPC_WS_URL=${base}/opensession/rpc-ws`),
         );
       }
       const args = [

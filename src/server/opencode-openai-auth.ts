@@ -74,11 +74,12 @@
  * the key via provider.openai.options.apiKey (normal api.openai.com billing).
  */
 
+import { stateDir } from "./rename-compat";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { pickCodexAccount, listCodexAccounts, type CodexAccount } from "./codex-accounts";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const OPENAI_DATA_ROOT = `${HOME}/.backstage-opencode/openai-data`;
+const OPENAI_DATA_ROOT = `${stateDir("opencode")}/openai-data`;
 
 /** Deliberately invalid refresh token seeded into opencode's auth.json: it
  *  MUST never hold a usable refresh token (see module header — a successful

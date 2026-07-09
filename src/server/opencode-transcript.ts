@@ -17,6 +17,7 @@
  * schema drift after an opencode upgrade, corrupt rows) degrades to [] so a
  * transcript read can never take a prompt path down.
  */
+import { envAlias } from "./rename-compat";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
 import { Database } from "bun:sqlite";
 import type { TranscriptEntry } from "./types";
@@ -26,7 +27,8 @@ const HOME = process.env.HOME || "/home/ubuntu";
 
 /** The opencode SQLite store for the HOME opencode-runner passes through. */
 export const OPENCODE_DB_PATH =
-  process.env.BACKSTAGE_OPENCODE_DB || `${HOME}/.local/share/opencode/opencode.db`;
+  envAlias("OPENSESSION_OPENCODE_DB", "BACKSTAGE_OPENCODE_DB") ||
+  `${HOME}/.local/share/opencode/opencode.db`;
 
 /**
  * Where the runner PERSISTS a claude-shape JSONL transcript per opencode
@@ -40,8 +42,10 @@ export const OPENCODE_DB_PATH =
  * -cwd- convention and corresponds to no real checkout path.
  */
 export const OPENCODE_TRANSCRIPTS_DIR =
-  process.env.BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR ||
-  `${HOME}/.claude/projects/-opencode-engine`;
+  envAlias(
+    "OPENSESSION_OPENCODE_TRANSCRIPTS_DIR",
+    "BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR",
+  ) || `${HOME}/.claude/projects/-opencode-engine`;
 
 export function getOpencodeTranscriptPath(ocSessionId: string): string {
   const safe = ocSessionId.replace(/[^A-Za-z0-9._-]/g, "_");

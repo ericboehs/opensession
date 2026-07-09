@@ -52,7 +52,8 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync } from "fs";
 import { dirname } from "path";
-import { BACKSTAGE_CHATS_DIR } from "../../paths";
+import { OPENSESSION_CHATS_DIR } from "../../paths";
+import { envAlias } from "../../rename-compat";
 import {
   journalSet,
   journalClear,
@@ -108,8 +109,8 @@ export const REMOTE_REPO = REPO_ROOT; // /home/ubuntu/projects/tella-backstage
 const BOOTSTRAP_MARKER = `${REMOTE_HOME}/.bks-bootstrapped`;
 const REMOTE_PATH = `${REMOTE_HOME}/.bun/bin:${REMOTE_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
 
-const RUNS_BASE = `${BACKSTAGE_CHATS_DIR}/sandbox-runs`;
-const STATE_DIR = `${BACKSTAGE_CHATS_DIR}/sandboxes`;
+const RUNS_BASE = `${OPENSESSION_CHATS_DIR}/sandbox-runs`;
+const STATE_DIR = `${OPENSESSION_CHATS_DIR}/sandboxes`;
 
 // ── The wire each adapter implements ─────────────────────────────────────────
 
@@ -567,7 +568,7 @@ export async function setupRemoteWorkspace(
         full
           ? `remote workspace clone failed: sandbox disk is full (${df.stdout.trim()}). ` +
             `The sandbox is too small for this repo — configure a bigger snapshot ` +
-            `(daytona.snapshot in ~/.backstage-sandbox.json) and recreate the session.` +
+            `(daytona.snapshot in ~/.opensession-sandbox.json) and recreate the session.` +
             (detail ? ` git: ${detail}` : "")
           : `remote workspace clone failed: ${detail || "(no stderr)"}`,
       );
@@ -663,8 +664,11 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
       // launch so config edits apply, mirroring the mount's read-fresh
       // semantics. No secrets inside (mode/models/timeouts) — the account
       // tokens travel via the scoped accounts upload above.
+      // Source honors the compat env seam; the remote DESTINATION stays the
+      // legacy filename — that's the name that exists remotely, which the
+      // (dual-reading) in-sandbox build resolves.
       const ocCfgSrc =
-        process.env.BACKSTAGE_OPENCODE_CONFIG ||
+        envAlias("OPENSESSION_OPENCODE_CONFIG", "BACKSTAGE_OPENCODE_CONFIG") ||
         `${process.env.HOME || "/home/ubuntu"}/.backstage-opencode.json`;
       if (existsSync(ocCfgSrc)) {
         await driver.writeFile(
@@ -686,12 +690,23 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
           NODE_ENV: "production",
           // Deterministic opencode resolution (bootstrap installed it here) —
           // don't depend on PATH probing inside the run host.
+          // New env names primary; deprecated aliases ride along so a
+          // pinned/older remote runner bundle keeps working.
+          OPENSESSION_OPENCODE_BIN: REMOTE_OPENCODE,
           BACKSTAGE_OPENCODE_BIN: REMOTE_OPENCODE,
+          OPENSESSION_RUN_JOURNAL: `${dir}/journal.json`,
           BACKSTAGE_RUN_JOURNAL: `${dir}/journal.json`,
-          BKS_RUN_WS_URL: `${base}/backstage/run-ws/${hostId}`,
+          // Dial-back on the primary prefix — the ingress/main serve accept
+          // both, and URLs already baked into live sandboxes stay valid.
+          BKS_RUN_WS_URL: `${base}/opensession/run-ws/${hostId}`,
           BKS_RUN_WS_TOKEN: spec.wsToken,
-          BKS_RPC_WS_URL: `${base}/backstage/rpc-ws`,
-          ...(process.env.MICHAEL_MODEL ? { MICHAEL_MODEL: process.env.MICHAEL_MODEL } : {}),
+          BKS_RPC_WS_URL: `${base}/opensession/rpc-ws`,
+          ...(envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")
+            ? {
+                OPENSESSION_MODEL: envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")!,
+                MICHAEL_MODEL: envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")!,
+              }
+            : {}),
         };
         // BOUNDED await: provider SDK calls have stalled indefinitely here in
         // the wild (2026-07-09: a Daytona executeSessionCommand response never
