@@ -333,9 +333,13 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
       const path = route.startsWith("/") ? route : `/${route}`;
       const deadline = Date.now() + ROUTE_WARM_TIMEOUT_MS;
       let warmed = false;
+      // localhost, NOT 127.0.0.1: tella-fusion's middleware routes by Host
+      // header (custom-domain catch-all), and a bare IP host falls into the
+      // [domain] handler → HTML 404 — the route never compiles. localhost is
+      // the first-party host dev servers treat as their own.
       while (!warmed && Date.now() < deadline) {
         try {
-          const res = await fetch(`http://127.0.0.1:${status.webappPort}${path}`, {
+          const res = await fetch(`http://localhost:${status.webappPort}${path}`, {
             signal: AbortSignal.timeout(ROUTE_WARM_TIMEOUT_MS),
             redirect: "manual",
           });
