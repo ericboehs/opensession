@@ -95,6 +95,13 @@ async function seedWebappEnv(webappDir: string): Promise<void> {
  * (run with cwd = the worktree); unset = the historical behavior: tella-fusion
  * installs (and seeds dev-auth env) under packages/core/webapp, other repos
  * install from the repo root when a package.json exists.
+ *
+ * Interactive create paths fire this WITHOUT awaiting (a tella-fusion webapp
+ * `bun install` is ~20-25s — it was the bulk of the "Waiting for workspace"
+ * spinner) so the opening turn starts as soon as the git worktree exists; the
+ * agent-facing autofix/followup paths still await it because those runs build
+ * immediately. All failure paths are caught + logged here, so a dropped
+ * promise never surfaces as an unhandled rejection.
  */
 async function installWorktreeDeps(repo: Repo, wtPath: string, branchLabel: string): Promise<void> {
   try {
@@ -371,8 +378,9 @@ export async function createWorktreeForExistingBranch(
     }
   });
 
-  // Best-effort dep install, same as createWorktree.
-  await installWorktreeDeps(repo, wtPath, branch);
+  // Best-effort dep install, same as createWorktree — backgrounded so the
+  // opening turn isn't held behind a ~20s bun install (interactive path).
+  void installWorktreeDeps(repo, wtPath, branch);
 
   return wtPath;
 }
@@ -452,7 +460,9 @@ export async function createWorktree(
   // Best-effort dep install — sessions can always run `bun install` themselves.
   // tella-fusion's deps + dev-auth env live under the webapp; other repos
   // (e.g. backstage) install from the repo root. Config `depsInstall` overrides.
-  await installWorktreeDeps(repo, wtPath, branch);
+  // Backgrounded (not awaited): the opening turn shouldn't wait ~20s on a
+  // webapp bun install it usually doesn't need.
+  void installWorktreeDeps(repo, wtPath, branch);
 
   return wtPath;
 }

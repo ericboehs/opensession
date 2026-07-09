@@ -8128,6 +8128,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 												base ? { base } : undefined,
 											);
 										}
+										// Deps install runs in the background (worktree.ts) — say
+										// so, since builds/tests may not be ready for a beat.
+										emit({
+											type: "notice",
+											message:
+												"Workspace ready — installing dependencies in the background.",
+										});
 									} finally {
 										// Ready (or failed — the error surfaces separately): flip the
 										// viewer out of "Waiting for workspace" and let the queue go.
