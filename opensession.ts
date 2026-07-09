@@ -372,6 +372,95 @@ import type {
 } from "./src/server/types";
 import type { TurnUsage } from "./src/server/run-events";
 
+// ── Extracted app modules (see src/server/…) ───────────────────────────────
+import {
+	BOOT_ID,
+	allClients,
+	broadcastToAll,
+	sessionWatchers,
+	preparingWorkspaces,
+	joinSession,
+	leaveSession,
+	broadcastToSession,
+	broadcastPresence,
+	broadcastGlobalPresence,
+	joinNote,
+	leaveNote,
+	broadcastToNote,
+	broadcastNotePresence,
+	noteWatchers,
+	b64encode,
+	b64decode,
+	type WSClientData,
+} from "./src/server/ws-hub";
+import {
+	invalidateSessionsCache,
+	getCachedSessions,
+	findSession,
+	touchBackstageSession,
+	maybePersistEffort,
+	SESSION_EFFORTS,
+	runErrors,
+	recordRunOutcome,
+} from "./src/server/session-cache";
+import {
+	type QueueItem,
+	promptQueues,
+	steeredReceipts,
+	stoppedSessions,
+	QUEUE_STORE,
+	isGitHubQueueItem,
+	queueItem,
+	queueWithIds,
+	persistQueues,
+	broadcastQueue,
+	recordSteer,
+	clearSteerReceipts,
+	requeueSteerReceipts,
+	queuedPromptIndex,
+	deleteQueuedPrompt,
+	updateQueuedPrompt,
+	reorderQueuedPrompt,
+} from "./src/server/queue-state";
+import {
+	pendingAsks,
+	makeAskHandler,
+	type AskQuestionInput,
+} from "./src/server/asks";
+import {
+	asDataUrlList,
+	parseImageDataUrls,
+	stageHttpUpload,
+	stageFileAttachments,
+	withUploadsNote,
+	isWithinUploads,
+	UPLOADS_DIR,
+	MAX_UPLOAD_BYTES,
+	WS_MAX_PAYLOAD_BYTES,
+} from "./src/server/uploads";
+import {
+	buildBranchNote,
+	buildReposNote,
+	sessionRepoIds,
+	buildSessionNote,
+	memoryNoteFor,
+	resolvePrTarget,
+	workspaceOwningWorktree,
+	attachRepo,
+	switchPrimaryRepo,
+} from "./src/server/session-repos";
+import { interactiveMcpServers } from "./src/server/interactive-mcp";
+import {
+	IS_DEV,
+	FRONTEND_SRC,
+	FRONTEND_DIST,
+	frontend,
+	spaEntry,
+	buildFrontend,
+	scheduleFrontendRebuild,
+} from "./src/server/frontend-build";
+
+
 const PORT = parseInt(process.env.PORT || "3850");
 const HOST = process.env.HOST || "127.0.0.1";
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -391,309 +480,6 @@ mkdirSync(SESSIONS_DIR, { recursive: true });
 // graceful (see SIGTERM handler below). A plain `bun run` (no --hot) just runs
 // each branch once, exactly as before.
 const g = globalThis as any;
-
-// Unique per OS process (survives hot reloads, changes on a real restart) so
-// clients can tell a fresh instance from a draining one and reload at the right
-// moment. Every connected WebSocket is also tracked so we can warn them all
-// before the process goes down for a deploy.
-const BOOT_ID: string = (g.__bootId ??= crypto.randomUUID());
-const allClients: Set<any> = (g.__allClients ??= new Set());
-
-function broadcastToAll(msg: object) {
-	const payload = JSON.stringify(msg);
-	for (const ws of allClients) {
-		try {
-			ws.send(payload);
-		} catch {}
-	}
-}
-
-// Cache sessions with short TTL
-let sessionsCache: { data: UnifiedSession[]; ts: number } | null = null;
-const CACHE_TTL = 2000;
-
-function getCachedSessions(): UnifiedSession[] {
-	if (sessionsCache && Date.now() - sessionsCache.ts < CACHE_TTL) {
-		return sessionsCache.data;
-	}
-	const data = getAllSessions();
-	// Earliest run-start per session id, from the run journal — feeds the "in
-	// progress" elapsed ticker and survives a page refresh (a session can carry
-	// its bks id and its engine session id across records; key on both).
-	const runStarts = new Map<string, string>();
-	for (const r of activeRunRecords()) {
-		if (!r.startedAt) continue;
-		for (const key of [r.bksSessionId, r.claudeSessionId]) {
-			if (!key) continue;
-			const prev = runStarts.get(key);
-			if (!prev || r.startedAt < prev) runStarts.set(key, r.startedAt);
-		}
-	}
-	// Sessions driven from the web UI run in-process; surface those too
-	for (const s of data) {
-		if (
-			!s.isRunning &&
-			isAgentSessionBusy(s.claudeSessionId, s.codexThreadId, s.id)
-		) {
-			s.isRunning = true;
-		}
-		if (s.isRunning) {
-			s.runStartedAt =
-				runStarts.get(s.id) ||
-				(s.claudeSessionId ? runStarts.get(s.claudeSessionId) : undefined) ||
-				(s.codexThreadId ? runStarts.get(s.codexThreadId) : undefined);
-		}
-	}
-	sessionsCache = { data, ts: Date.now() };
-	return data;
-}
-
-// In-process self-management MCP servers for INTERACTIVE Backstage sessions
-// (web UI + loops) — the same opensession-sessions / opensession-admin tools the Slack
-// agent gets, so you can list/steer sessions and manage automations/MCPs from a
-// Michael session. Built fresh per run from the prompt's author. NEVER pass
-// these to automation runs or to interactive resumes of automation-owned
-// sessions — untrusted ticket text must not reach session-control / config
-// tools. Backstage is Tailscale- and team-gated and already exposes all of this
-// through its UI, so interactive users are treated as admin.
-function interactiveMcpServers(
-	user?: string,
-	sessionId?: string,
-): Record<string, unknown> {
-	const createdBy = user || productName();
-	return {
-		"opensession-sessions": createSessionsMcpServer({
-			createdBy,
-			isAdmin: true,
-			currentSessionId: sessionId,
-		}),
-		"opensession-admin": createAdminMcpServer({
-			channel: "backstage",
-			userId: user || "backstage",
-			isDM: false,
-			isPrivate: false,
-			createdBy,
-			isAdmin: true,
-		}),
-		// Long-running goals: create/list/steer persistent, self-pacing missions.
-		"opensession-goals": createGoalsMcpServer({ createdBy, isAdmin: true }),
-		// Human-in-the-loop: ask a teammate and fold the answer back into this
-		// session. Needs the session id so the answer routes home. Withheld (like
-		// the others) from automation runs — see the runSessionPrompt call site.
-		...(sessionId
-			? {
-					"opensession-humans": createHumansMcpServer({
-						sessionId,
-						createdBy,
-						isAdmin: true,
-					}),
-					// Cross-repo: attach secondary repos as isolated worktrees.
-					"opensession-repos": createReposMcpServer({
-						sessionId,
-						attach: (repo, branch) => attachRepo(sessionId, repo, branch),
-						switchPrimary: (repo) => switchPrimaryRepo(sessionId, repo),
-						snapshot: () => {
-							const s = findSession(sessionId);
-							if (!s) return null;
-							return {
-								primaryRepo:
-									s.repo ||
-									(s.worktreeDir
-										? repoForPath(s.worktreeDir).id
-										: "tella-fusion"),
-								branch: s.branch,
-								worktreeDir: s.worktreeDir,
-								attached: s.attachedRepos || [],
-							};
-						},
-						repos: () =>
-							Object.values(REPOS).map((p) => ({
-								id: p.id,
-								defaultBranch: p.defaultBranch,
-								sharedCheckout: !!p.sharedCheckout,
-							})),
-					}),
-					// Durable repo/user/team memory (stored under ~/.michael-memory,
-					// shared both ways with Slack's channel memory). Write tools are
-					// interactive-only — automation runs get read-only injection; see
-					// memory-tools.ts for the trust model.
-					"opensession-memory": createMemoryMcpServer({
-						user,
-						repos: () => {
-							const s = findSession(sessionId);
-							return s ? sessionRepoIds(s) : [];
-						},
-					}),
-					// Deep-link testing: record where the change should be tested so
-					// the Preview/Staging buttons open that route directly.
-					"opensession-preview": createPreviewMcpServer({
-						sessionId,
-						setPreviewPath: (path) =>
-							touchBackstageSession(sessionId, {
-								previewPath: path || undefined,
-							}),
-						current: () => findSession(sessionId)?.previewPath ?? null,
-					}),
-					// AskUserQuestion for engines without a canUseTool hook (Codex):
-					// blocks on the same UI question card + Slack escalation as the
-					// native Claude tool. claude-runner strips this server so Claude
-					// keeps using the native AskUserQuestion instead of a duplicate.
-					"opensession-ask": createAskUserMcpServer({
-						ask: makeAskHandler(sessionId),
-					}),
-				}
-			: {}),
-	};
-}
-
-// Codex cannot consume Claude SDK in-process MCP servers directly. Expose the
-// same interactive opensession-* tools through the run-rpc stdio proxy so Codex
-// sessions can inspect/create/steer Backstage sessions too. Goal-driven
-// sessions additionally get opensession-goal-self (next-wake/ledger/pause tools),
-// matching what the in-process path hands them at the runAgent call sites.
-registerInteractiveMcpBuilder((sessionId, user) => {
-	const servers = interactiveMcpServers(user, sessionId);
-	const goalId = sessionId ? findSession(sessionId)?.goalId : undefined;
-	if (goalId)
-		(servers as Record<string, unknown>)["opensession-goal-self"] =
-			createGoalSelfMcpServer(goalId);
-	return servers;
-});
-startRunRpcServer();
-
-/**
- * System-prompt note describing a session's repos when it spans more than one.
- * Lists the primary worktree + every attached repo with its path/branch and how
- * `@<project>:path` mentions resolve. Returns undefined for single-repo sessions
- * so the prompt stays clean.
- */
-/**
- * Branch discipline for interactive code sessions in isolated worktrees. Chats
- * in one workspace share a single worktree + branch, so each agent must treat
- * that branch as THE branch — sibling commits included. Without this, each
- * sibling chat decided the extra commits on the shared branch weren't its own
- * and cherry-picked onto a fresh branch, producing one PR per chat instead of
- * one per workspace (tella-fusion PRs #4529–#4531).
- */
-function buildBranchNote(session: {
-	mode?: "ask" | "code";
-	branch?: string | null;
-	worktreeDir?: string | null;
-}): string | undefined {
-	if (session.mode === "ask" || !session.branch || !session.worktreeDir)
-		return undefined;
-	const repo = repoForPath(session.worktreeDir);
-	// Shared-checkout repos (backstage) and main-checkout cwds have their own
-	// rules; this note is for isolated per-branch worktrees only.
-	if (repo.sharedCheckout || session.worktreeDir === repo.repo)
-		return undefined;
-	return [
-		"## Branch discipline (shared worktree)",
-		`You are working in \`${session.worktreeDir}\` on branch \`${session.branch}\`. Other chats in this workspace share this exact worktree and branch — commits you don't recognize are their work, not noise.`,
-		`Stay on \`${session.branch}\`: never create or switch branches, and never rebase away, reset, or cherry-pick around sibling commits. Commit your changes on this branch and push with \`git push origin ${session.branch}\`.`,
-		`This workspace keeps ONE pull request: if an open PR for \`${session.branch}\` already exists, pushing updates it — do not open another. Only run \`gh pr create\` when the branch has no open PR. Never merge.`,
-		"Only deviate from this (separate branch or separate PR) when the user explicitly asks for it.",
-	].join("\n");
-}
-
-function buildReposNote(session: UnifiedSession): string | undefined {
-	const branchNote = buildBranchNote(session);
-	const attached = session.attachedRepos || [];
-	if (!attached.length) return branchNote;
-	const primaryRepo =
-		session.repo ||
-		(session.worktreeDir
-			? repoForPath(session.worktreeDir).id
-			: "tella-fusion");
-	const lines = [
-		"## Repos in this session",
-		"This session spans multiple repos. Each is an isolated git worktree — `cd` into the right one to read or edit its files, and commit/push/open PRs in each repo independently (don't edit another repo's shared main checkout).",
-		`- **${primaryRepo}** (primary): ${session.worktreeDir}${session.branch ? ` — branch \`${session.branch}\`` : ""}`,
-	];
-	for (const r of attached)
-		lines.push(`- **${r.repo}**: ${r.dir} — branch \`${r.branch}\``);
-	lines.push(
-		"A file mentioned from an attached repo arrives as `@<project>:<path>` — resolve it under that repo's worktree dir above.",
-	);
-	return [branchNote, lines.join("\n")].filter(Boolean).join("\n\n");
-}
-
-/** Repo ids a session spans, primary first — memory scopes + repos note agree on this. */
-function sessionRepoIds(session: UnifiedSession): string[] {
-	const primary =
-		session.repo ||
-		(session.worktreeDir
-			? repoForPath(session.worktreeDir).id
-			: "tella-fusion");
-	return [primary, ...(session.attachedRepos || []).map((r) => r.repo)];
-}
-
-/**
- * The full per-session system-prompt note for an interactive run: repos/branch
- * discipline (buildReposNote) + the session's repo/user/team memory. Memory
- * failures never block a run — the note just goes out without it.
- */
-async function buildSessionNote(
-	session: UnifiedSession,
-	user?: string,
-): Promise<string | undefined> {
-	return (
-		[buildReposNote(session), await memoryNoteFor(user, sessionRepoIds(session))]
-			.filter(Boolean)
-			.join("\n\n") || undefined
-	);
-}
-
-/** The repo/user/team memory prompt section for a run (with tool guidance —
- *  callers are interactive paths only). Never throws: a memory failure must
- *  not block a run, the note just goes out without it. */
-async function memoryNoteFor(
-	user: string | undefined,
-	repos: string[],
-): Promise<string> {
-	try {
-		return await renderSessionMemoryNote(
-			sessionMemoryScopes({ user, repos }),
-			{ tools: true },
-		);
-	} catch (e) {
-		console.warn("[memory] failed to render session memory note:", e);
-		return "";
-	}
-}
-
-/**
- * Resolve which GitHub repo + branch a PR operation targets. With no `repo`
- * query (or the primary project's id) it's the session's primary branch; an
- * attached project id targets that repo on its attached branch. Returns null
- * when there's no branch to act on.
- */
-function resolvePrTarget(
-	session: UnifiedSession,
-	repoId?: string | null,
-): { ghRepo: string; branch: string } | null {
-	const primaryRepo =
-		session.repo ||
-		(session.worktreeDir
-			? repoForPath(session.worktreeDir).id
-			: "tella-fusion");
-	if (!repoId || repoId === primaryRepo) {
-		if (!session.branch) return null;
-		return {
-			ghRepo: getRepo(primaryRepo).ghRepo,
-			branch: session.branch,
-		};
-	}
-	const att = (session.attachedRepos || []).find(
-		(r) => r.repo === repoId,
-	);
-	if (!att) return null;
-	return { ghRepo: getRepo(att.repo).ghRepo, branch: att.branch };
-}
-
-function findSession(sessionId: string): UnifiedSession | undefined {
-	return getCachedSessions().find((s) => s.id === sessionId);
-}
 
 /**
  * List which of `files` contain `query` (case-insensitive, literal) via
@@ -755,620 +541,6 @@ function buildSummary(s: UnifiedSession): SessionSummary {
 	};
 }
 
-function touchBackstageSession(
-	bksId: string,
-	patch: Partial<BackstageSessionFile>,
-): void {
-	const path = `${SESSIONS_DIR}/${bksId}.json`;
-	try {
-		const data: BackstageSessionFile = existsSync(path)
-			? JSON.parse(readFileSync(path, "utf-8"))
-			: ({} as BackstageSessionFile);
-		writeJsonAtomic(path, {
-			...data,
-			...patch,
-			lastActivity: new Date().toISOString(),
-		});
-		sessionsCache = null;
-	} catch (e) {
-		console.error(`Failed to update backstage session ${bksId}:`, e);
-	}
-}
-
-// Reasoning-effort values the composer/new-session pill can send. Persisted on
-// the session file so queued drains, loops, and restart resumes all run at the
-// effort the pill shows; each runner maps it onto its backend's own scale.
-const SESSION_EFFORTS = new Set(["low", "medium", "high"]);
-
-/** Persist a composer-sent effort change on a backstage session (no-op otherwise). */
-function maybePersistEffort(
-	session: UnifiedSession | undefined,
-	effort?: string,
-): void {
-	if (!session || session.source !== "backstage" || !effort) return;
-	const e = effort.trim().toLowerCase();
-	if (!SESSION_EFFORTS.has(e) || session.effort === e) return;
-	touchBackstageSession(session.id, { effort: e });
-	session.effort = e; // keep the in-hand snapshot current for this turn
-}
-
-/**
- * The workspace that already owns this worktree, or null. Adopt-don't-duplicate:
- * every create path that's about to wrap a chat in a fresh workspace checks here
- * first, so landing on an already-owned worktree joins the existing workspace
- * instead of minting a second one over it. Repo main checkouts never match —
- * they're shared by every backstage/ask chat, so ownership is meaningless there.
- */
-function workspaceOwningWorktree(
-	worktreeDir: string | null | undefined,
-): Workspace | null {
-	if (!worktreeDir) return null;
-	if (Object.values(REPOS).some((r) => r.repo === worktreeDir)) return null;
-	return findWorkspaceByWorktree(worktreeDir);
-}
-
-/**
- * Attach a secondary repo to a session: create (or reuse) an isolated worktree
- * for `repoId` and record it on the session. The attached branch defaults to
- * the session's primary branch so cross-repo work shares one branch name (and
- * the PRs line up). Re-attaching the same project just updates its entry. Only
- * code sessions on a real worktree can attach — Ask/main-checkout sessions and
- * the primary project itself are rejected.
- */
-async function attachRepo(
-	sessionId: string,
-	repoId: string,
-	branch?: string,
-): Promise<{ attached: AttachedRepo; all: AttachedRepo[] }> {
-	const session = findSession(sessionId);
-	if (!session) throw new Error("Session not found");
-	if (session.mode === "ask")
-		throw new Error("Can't attach a repo to an Ask (read-only) session");
-	if (hasRemoteWorkspace(session))
-		throw new Error(
-			"This session's workspace lives inside its sandbox volume — attached repos aren't supported in volume mode yet (use a bind-mode sandbox or a plain worktree session for multi-repo work)",
-		);
-	if (!REPOS[repoId]) throw new Error(`Unknown repo "${repoId}"`);
-	if (session.repo === repoId)
-		throw new Error(`${repoId} is this session's primary repo`);
-
-	const effectiveBranch = (branch || session.branch || "").trim();
-	if (!effectiveBranch) {
-		throw new Error("No branch to attach on — pass a branch name");
-	}
-
-	const attached = await prepareAttachedWorktree(repoId, effectiveBranch);
-	const existing = (session.attachedRepos || []).filter(
-		(r) => r.repo !== repoId,
-	);
-	const all = [...existing, attached];
-	touchBackstageSession(sessionId, { attachedRepos: all });
-	return { attached, all };
-}
-
-/**
- * Switch a session's PRIMARY repo — for when the wrong repo was picked at
- * creation. Clean-only by design: allowed only while the session's worktree has
- * no uncommitted changes and no commits beyond its base, so no work is ever
- * silently stranded (a session that already committed keeps its old repo). The
- * session's branch name is reused in the target repo (keeping any cross-repo
- * PRs aligned); the next prompt runs from the new worktree because
- * runSessionPrompt re-reads `cwd` from `worktreeDir` each turn.
- */
-async function switchPrimaryRepo(
-	sessionId: string,
-	repoId: string,
-	force = false,
-): Promise<{ repo: string; branch: string; worktreeDir: string }> {
-	const session = findSession(sessionId);
-	if (!session) throw new Error("Session not found");
-	if (session.mode === "ask")
-		throw new Error("Ask sessions read the main checkout — nothing to switch");
-	if (!REPOS[repoId]) throw new Error(`Unknown repo "${repoId}"`);
-	if (session.repo === repoId)
-		throw new Error(`${repoId} is already this session's primary repo`);
-	// A switch just repoints the session at a different worktree — the old one
-	// (branch, commits, uncommitted edits) stays on disk, so nothing is ever
-	// destroyed. We still block by default when there's work so the agent-facing
-	// switch_repo tool can't silently abandon it; the human UI passes force=true
-	// after confirming, since fixing a wrong-repo choice is exactly that case.
-	if (
-		!force &&
-		session.worktreeDir &&
-		session.branch &&
-		(await worktreeHasWork(session.worktreeDir, session.branch, session.repo))
-	)
-		throw new Error(
-			"This session already has work — switching repos is only allowed on a fresh session",
-		);
-
-	const target = getRepo(repoId);
-	let wtPath: string;
-	let branch: string;
-	if (target.sharedCheckout) {
-		// Backstage: sessions edit the live main checkout on its default branch.
-		wtPath = target.repo;
-		branch = target.defaultBranch;
-	} else {
-		branch = (session.branch || "").trim();
-		if (!branch) throw new Error("Session has no branch to carry over");
-		const worktrees = await listWorktrees(target.id);
-		wtPath =
-			worktrees.find((w) => w.branch === branch)?.path ||
-			(await createWorktree(branch, target.id));
-	}
-
-	// Drop the target from attached repos if it was attached — it's the primary now.
-	const attachedRepos = (session.attachedRepos || []).filter(
-		(r) => r.repo !== repoId,
-	);
-	touchBackstageSession(sessionId, {
-		repo: target.id,
-		worktreeDir: wtPath,
-		branch,
-		attachedRepos,
-	});
-	return { repo: target.id, branch, worktreeDir: wtPath };
-}
-
-// WebSocket client state
-interface WSClientData {
-	watchingSessionId: string | null;
-	watchingNoteId: string | null;
-	user: string | null;
-}
-
-// sessionId → sockets currently viewing that session (collaboration fan-out)
-const sessionWatchers: Map<string, Set<any>> = (g.__sessionWatchers ??=
-	new Map());
-
-// Sessions whose workspace (worktree) is still being prepared by their create
-// run — the create announces session_created BEFORE the slow git work, and this
-// set is what tells clients to show the "Waiting for workspace" state and hold
-// the first message in the queue. Cleared (and broadcast via workspace_status)
-// the moment the worktree lands or the create fails.
-const preparingWorkspaces: Set<string> = (g.__preparingWorkspaces ??= new Set());
-
-function joinSession(ws: any, sessionId: string) {
-	let set = sessionWatchers.get(sessionId);
-	if (!set) {
-		set = new Set();
-		sessionWatchers.set(sessionId, set);
-	}
-	set.add(ws);
-	// Global presence shows each person once, at their most recent join — this
-	// stamp is how a two-tab user resolves to a single row.
-	ws.data.watchJoinedAt = Date.now();
-	broadcastPresence(sessionId);
-}
-
-function leaveSession(ws: any) {
-	const sessionId = ws.data?.watchingSessionId;
-	if (!sessionId) return;
-	const set = sessionWatchers.get(sessionId);
-	if (set) {
-		set.delete(ws);
-		if (set.size === 0) {
-			sessionWatchers.delete(sessionId);
-			broadcastGlobalPresence();
-		} else broadcastPresence(sessionId);
-	}
-	ws.data.watchingSessionId = null;
-}
-
-function broadcastToSession(sessionId: string, msg: object, except?: any) {
-	const set = sessionWatchers.get(sessionId);
-	if (!set) return;
-	const payload = JSON.stringify(msg);
-	for (const ws of set) {
-		if (ws === except) continue;
-		try {
-			ws.send(payload);
-		} catch {}
-	}
-}
-
-function broadcastPresence(sessionId: string) {
-	const set = sessionWatchers.get(sessionId);
-	const viewers = set
-		? Array.from(set, (ws: any) => ws.data?.user || "Anonymous")
-		: [];
-	broadcastToSession(sessionId, { type: "presence", sessionId, viewers });
-	broadcastGlobalPresence();
-}
-
-/**
- * Who's looking at what, app-wide — drives the sidebar People band and follow
- * mode. One entry per USER (a person with two tabs open would otherwise show
- * twice): the session they joined most recently wins. Anonymous viewers are
- * skipped (nothing to follow).
- */
-function broadcastGlobalPresence() {
-	const latest = new Map<string, { sessionId: string; at: number }>();
-	for (const [sessionId, set] of sessionWatchers) {
-		for (const ws of set) {
-			const user = ws.data?.user;
-			if (!user || user === "Anonymous") continue;
-			const at = ws.data?.watchJoinedAt || 0;
-			const prev = latest.get(user);
-			if (!prev || at >= prev.at) latest.set(user, { sessionId, at });
-		}
-	}
-	const viewing = [...latest.entries()].map(([user, v]) => ({
-		user,
-		sessionId: v.sessionId,
-	}));
-	broadcastToAll({ type: "global_presence", viewing });
-}
-
-// ── Collaborative notes fan-out ───────────────────────────────────────────
-// Parallel to sessionWatchers: noteId → sockets editing that note. Notes are
-// Yjs CRDT docs (src/server/notes.ts); clients relay binary Yjs updates +
-// awareness (cursors) as base64 over this same multiplexed JSON socket.
-const noteWatchers: Map<string, Set<any>> = (g.__noteWatchers ??= new Map());
-
-function joinNote(ws: any, noteId: string) {
-	let set = noteWatchers.get(noteId);
-	if (!set) {
-		set = new Set();
-		noteWatchers.set(noteId, set);
-	}
-	set.add(ws);
-	broadcastNotePresence(noteId);
-}
-
-function leaveNote(ws: any) {
-	const noteId = ws.data?.watchingNoteId;
-	if (!noteId) return;
-	const set = noteWatchers.get(noteId);
-	if (set) {
-		set.delete(ws);
-		if (set.size === 0) noteWatchers.delete(noteId);
-		else broadcastNotePresence(noteId);
-	}
-	ws.data.watchingNoteId = null;
-}
-
-function broadcastToNote(noteId: string, msg: object, except?: any) {
-	const set = noteWatchers.get(noteId);
-	if (!set) return;
-	const payload = JSON.stringify(msg);
-	for (const ws of set) {
-		if (ws === except) continue;
-		try {
-			ws.send(payload);
-		} catch {}
-	}
-}
-
-function broadcastNotePresence(noteId: string) {
-	const set = noteWatchers.get(noteId);
-	const viewers = set
-		? Array.from(set, (ws: any) => ws.data?.user || "Anonymous")
-		: [];
-	broadcastToNote(noteId, { type: "note_presence", noteId, viewers });
-}
-
-const b64encode = (u: Uint8Array) => Buffer.from(u).toString("base64");
-const b64decode = (s: string) => new Uint8Array(Buffer.from(s, "base64"));
-
-// Interactive AskUserQuestion: questions broadcast to session watchers, answered
-// from the UI. If nobody answers in the UI within ASK_UI_TIMEOUT_MS, the question
-// is escalated to the session's original prompter over Slack (the opensession-humans
-// transport) and we keep blocking on their reply; the UI question stays live the
-// whole time, so whoever answers first (web or Slack) wins.
-const ASK_UI_TIMEOUT_MS = 4 * 60 * 1000;
-
-interface AskQuestionInput {
-	question: string;
-	header?: string;
-	options?: Array<{ label: string; description?: string }>;
-	multiSelect?: boolean;
-}
-
-interface PendingAsk {
-	questionId: string;
-	questions: unknown[];
-	resolve: (answers: Record<string, string> | null) => void;
-}
-const pendingAsks: Map<string, PendingAsk> = (g.__pendingAsks ??= new Map());
-
-// Sessions whose LAST run died on a terminal failure (usage limits exhausted on
-// every account, credit/API errors). Those need a human to act — the sidebar
-// surfaces them as "Needs input" instead of letting them sink into the Backlog.
-// Keyed by canonical session id; parked on globalThis for hot reloads.
-// Backstage-owned sessions also persist the error on their session file (via
-// recordRunOutcome) so the flag survives a real restart.
-const runErrors: Map<string, { message: string; at: string }> = (g.__runErrors ??=
-	new Map());
-
-/**
- * Record how a session's run ended: an error message when it died on a terminal
- * failure, or null for a clean finish (which clears any earlier failure). The
- * enriched /api/sessions list exposes this as `lastRunError`.
- */
-function recordRunOutcome(sessionId: string, errorMessage: string | null): void {
-	const session = findSession(sessionId);
-	const id = session?.id || sessionId;
-	if (errorMessage) {
-		const entry = {
-			message: errorMessage.slice(0, 500),
-			at: new Date().toISOString(),
-		};
-		runErrors.set(id, entry);
-		if (session?.source === "backstage")
-			touchBackstageSession(id, { lastRunError: entry });
-	} else {
-		// Only rewrite the session file when there's actually a flag to clear
-		// (the in-memory map, or one persisted by a previous process).
-		const had = runErrors.delete(id) || !!session?.lastRunError;
-		if (had && session?.source === "backstage")
-			touchBackstageSession(id, { lastRunError: undefined });
-	}
-}
-
-// Flatten an AskUserQuestion payload into a single Slack-friendly prompt. Option
-// buttons are only offered when there's exactly one question (the human-asks card
-// carries one option set); multi-question asks fall back to a free-text reply.
-function askToSlackPrompt(questions: AskQuestionInput[]): {
-	question: string;
-	options?: string[];
-} {
-	if (questions.length === 1) {
-		const q = questions[0];
-		const text = q.header ? `*${q.header}* — ${q.question}` : q.question;
-		return { question: text, options: q.options?.map((o) => o.label) };
-	}
-	const text = questions
-		.map(
-			(q, i) => `${i + 1}. ${q.header ? `*${q.header}* — ` : ""}${q.question}`,
-		)
-		.join("\n");
-	return { question: text };
-}
-
-// A Slack reply is a single string; apply it as the answer to every question so
-// the AskUserQuestion result has a value for each key it expects.
-function slackAnswerToAnswers(
-	questions: AskQuestionInput[],
-	answer: string,
-): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const q of questions) out[q.question] = answer;
-	return out;
-}
-
-function makeAskHandler(sessionId: string) {
-	return async (
-		input: Record<string, unknown>,
-	): Promise<
-		| { behavior: "allow"; updatedInput: Record<string, unknown> }
-		| { behavior: "deny"; message: string }
-	> => {
-		const questions = input.questions as AskQuestionInput[] | undefined;
-		if (!questions || questions.length === 0) {
-			return { behavior: "allow", updatedInput: input };
-		}
-
-		const questionId = crypto.randomUUID();
-		let settled = false;
-		let escalatedAskId: string | null = null;
-
-		const answers = await new Promise<Record<string, string> | null>(
-			(resolve) => {
-				const finish = (a: Record<string, string> | null) => {
-					if (settled) return;
-					settled = true;
-					clearTimeout(timeoutId);
-					pendingAsks.delete(sessionId);
-					// If the web UI answered after we'd already pinged Slack, retract the
-					// Slack ask so the teammate isn't left answering a moot question.
-					if (escalatedAskId) cancelAsk(escalatedAskId);
-					resolve(a);
-				};
-
-				// No UI answer in time → ask the original prompter over Slack and keep
-				// blocking on their reply (the UI question stays live in parallel).
-				const timeoutId = setTimeout(() => {
-					void escalateAskToSlack(sessionId, questions).then((esc) => {
-						if (settled) {
-							// UI answered in the race window — undo the just-created ask.
-							if (esc) cancelAsk(esc.askId);
-							return;
-						}
-						if (!esc) {
-							// No teammate to ask (e.g. automation-owned) — fall back to deny.
-							finish(null);
-							return;
-						}
-						escalatedAskId = esc.askId;
-						void awaitBlockingAnswer(esc.askId).then((slackAnswer) => {
-							if (slackAnswer == null) {
-								finish(null);
-								return;
-							}
-							// The answer folds into the AskUserQuestion tool result (the agent
-							// continues), but that's invisible in the UI — surface it as an
-							// attributed bubble so the human sees their Slack reply land, the
-							// same way the async human-asks path does.
-							broadcastToSession(sessionId, {
-								type: "notice",
-								message: `💬 **${esc.personName}** answered (via Slack): ${slackAnswer}`,
-							});
-							finish(slackAnswerToAnswers(questions, slackAnswer));
-						});
-					});
-				}, ASK_UI_TIMEOUT_MS);
-
-				pendingAsks.set(sessionId, {
-					questionId,
-					questions,
-					resolve: (a) => finish(a),
-				});
-				broadcastToSession(sessionId, {
-					type: "ask_question",
-					sessionId,
-					questionId,
-					questions,
-				});
-				// Phone buzz: Web Push to the session owner's registered devices
-				// (opt-in per device in Settings → Notifications). Best-effort —
-				// never lets a push hiccup affect the ask flow. Deduped on the
-				// question text: a restart resumes ask-blocked runs, which re-ask
-				// the same question — that re-ask must not buzz again.
-				void (async () => {
-					try {
-						const s = findSession(sessionId);
-						if (!s?.startedBy) return;
-						const { sendPushToUser } = await import("./src/server/push");
-						const { createHash } = await import("node:crypto");
-						const qHash = createHash("sha256")
-							.update(questions.map((q) => q.question).join("\n"))
-							.digest("hex")
-							.slice(0, 16);
-						await sendPushToUser(
-							s.startedBy,
-							{
-								title: "Michael needs input",
-								body: `${s.title || sessionId} — ${questions[0]?.question || "a question is waiting"}`.slice(0, 180),
-								url: `/backstage/session/${encodeURIComponent(sessionId)}`,
-								tag: `ask-${sessionId}`,
-							},
-							{ dedupeKey: `ask:${sessionId}:${qHash}` },
-						);
-					} catch {}
-				})();
-			},
-		);
-
-		broadcastToSession(sessionId, {
-			type: "ask_resolved",
-			sessionId,
-			questionId,
-		});
-
-		if (!answers) {
-			return {
-				behavior: "deny",
-				message:
-					"Nobody answered in time (web or Slack). Proceed with your best judgment and clearly note the open question and the assumption you made.",
-			};
-		}
-		return { behavior: "allow", updatedInput: { ...input, answers } };
-	};
-}
-
-// Escalate an unanswered AskUserQuestion to the session's original prompter over
-// Slack. Returns the human-ask id (await its blocking answer) + who we asked, or
-// null when we can't resolve a teammate. Best-effort: never throws into the handler.
-async function escalateAskToSlack(
-	sessionId: string,
-	questions: AskQuestionInput[],
-): Promise<{ askId: string; personName: string } | null> {
-	try {
-		const session = findSession(sessionId);
-		const person = resolveTeammate(session?.startedBy ?? null);
-		if (!person) return null;
-
-		const { question, options } = askToSlackPrompt(questions);
-		const ask = registerAsk({
-			sessionId,
-			createdBy: session?.startedBy || "Michael",
-			person,
-			question,
-			context: `_Nobody picked this up in ${productName()} within 4 minutes, so I'm bringing it to you._`,
-			options,
-			mode: "block",
-			deliver: "now",
-		});
-		broadcastToSession(sessionId, {
-			type: "notice",
-			message: `No answer in ${productName()} — asked ${person.name} over Slack.`,
-		});
-		return { askId: ask.id, personName: person.name };
-	} catch (e) {
-		console.error("[ask] Slack escalation failed:", e);
-		return null;
-	}
-}
-
-// Messages sent while a run is in flight queue up and deliver afterwards,
-// the same way Claude Code handles interruptions. Attachments ride along:
-// `images` as composer `data:` URLs (parsed to ImageInput at delivery), `files`
-// as the raw composer payload (staged-path or inline refs). Both are persisted
-// with the queue so a restart doesn't silently drop a message's attachments.
-type QueueItem = {
-  id?: string;
-  content: string;
-  user?: string;
-  images?: string[];
-  files?: unknown;
-};
-const promptQueues: Map<string, QueueItem[]> = (g.__promptQueues ??= new Map());
-
-function isGitHubQueueItem(item?: QueueItem): boolean {
-	return item?.user === "GitHub" || item?.user === "GitHub (automation)";
-}
-
-// Steered messages (folded into a live run, delivered at the run's next turn
-// boundary) aren't in promptQueues — the drain would re-deliver them. But until
-// their turn lands they're invisible on reload, so we keep a display-only
-// receipt here: shown as "folded in" in the UI and reconciled away once the real
-// transcript entry appears. Cleared when the run finishes (or is cancelled).
-const steeredReceipts: Map<string, QueueItem[]> = (g.__steeredReceipts ??=
-	new Map());
-
-// Sessions whose run the user explicitly stopped. The queue drain skips these:
-// without the flag, stop would requeue the held steers and drainQueue would
-// immediately deliver them into a fresh run — "stop then instantly resume".
-// Cleared by the next explicit action (any new runSessionPrompt). In-memory
-// only: after a real restart a stop is stale anyway, and boot re-drains.
-const stoppedSessions: Set<string> = (g.__stoppedSessions ??= new Set());
-
-// Both maps are persisted to disk so a real restart/crash (not just a hot
-// reload, which keeps the globalThis maps) doesn't silently drop queued or
-// just-steered messages. Restored + re-drained on boot (restorePromptQueues).
-const QUEUE_STORE = `${SESSIONS_DIR}/prompt-queues.json`;
-function queueItem(item: QueueItem): QueueItem {
-	return item.id ? item : { ...item, id: crypto.randomUUID() };
-}
-
-function queueWithIds(items: QueueItem[] | undefined): QueueItem[] {
-	return (items || []).map((item) => {
-		if (item.id) return item;
-		return queueItem(item);
-	});
-}
-
-function persistQueues(): void {
-	try {
-		const entries = (m: Map<string, QueueItem[]>) =>
-			Object.fromEntries(
-				[...m]
-					.map(([k, v]) => [k, queueWithIds(v)] as const)
-					.filter(([, v]) => v.length > 0),
-			);
-		// Keep the previous copy as .bak before overwriting: if the store on disk
-		// ever ends up unparsable, restorePromptQueues falls back to it instead of
-		// silently dropping every queued message.
-		if (existsSync(QUEUE_STORE)) {
-			try {
-				copyFileSync(QUEUE_STORE, `${QUEUE_STORE}.bak`);
-			} catch {}
-		}
-		writeJsonAtomic(
-			QUEUE_STORE,
-			{
-				queued: entries(promptQueues),
-				steered: entries(steeredReceipts),
-			},
-			false,
-		);
-	} catch (e) {
-		console.error("[queue] Failed to persist prompt queues:", e);
-	}
-}
-
 /** Append a message to a session's drainable queue and persist + broadcast. */
 function enqueuePrompt(sessionId: string, item: QueueItem): void {
 	const queue = promptQueues.get(sessionId) || [];
@@ -1380,171 +552,6 @@ function enqueuePrompt(sessionId: string, item: QueueItem): void {
 	// here so every queued message drains after the current run, even if a caller
 	// forgets to do that explicitly or the session becomes idle between checks.
 	watchExternalRunAndDrain(sessionId);
-}
-
-/** Record a steered message as a visible receipt until its run finishes. */
-function recordSteer(sessionId: string, item: QueueItem): void {
-	const list = steeredReceipts.get(sessionId) || [];
-	list.push(queueItem(item));
-	steeredReceipts.set(sessionId, list);
-	persistQueues();
-	broadcastQueue(sessionId);
-}
-
-/** Clear a session's steer receipts once the run that owned them is done. */
-function clearSteerReceipts(sessionId: string): void {
-	if (!steeredReceipts.has(sessionId)) return;
-	steeredReceipts.delete(sessionId);
-	persistQueues();
-	broadcastQueue(sessionId);
-}
-
-// Clear a steer receipt the moment its message lands in the transcript (the
-// file-watcher reports appended entries). Waiting for run end left delivered
-// messages showing as "queued" whenever the client's transcript tail didn't
-// reach back to their user entry — and a mid-run restart would have re-queued
-// (re-delivered) them via restorePromptQueues. Matches the frontend reconcile:
-// exact attributed form, or containment for turns joined at one boundary.
-// Registered at module scope so every hot reload re-installs the current code.
-setTranscriptAppendListener((sessionId, entries) => {
-	const steered = steeredReceipts.get(sessionId);
-	if (!steered?.length) return;
-	const users = entries
-		.filter((e) => e.type === "user")
-		.map((e) => e.content.trim());
-	if (users.length === 0) return;
-	const remaining = steered.filter((item) => {
-		const attributed = (
-			item.user ? `[${item.user}] ${item.content}` : item.content
-		).trim();
-		return !users.some((u) => u === attributed || u.includes(attributed));
-	});
-	if (remaining.length === steered.length) return;
-	if (remaining.length > 0) steeredReceipts.set(sessionId, remaining);
-	else steeredReceipts.delete(sessionId);
-	persistQueues();
-	broadcastQueue(sessionId);
-});
-
-/** Put unconfirmed steers back into the normal queue when their run is cancelled. */
-function requeueSteerReceipts(sessionId: string): number {
-	const steered = steeredReceipts.get(sessionId);
-	if (!steered?.length) return 0;
-	const queue = promptQueues.get(sessionId) || [];
-	promptQueues.set(sessionId, [...steered, ...queue]);
-	steeredReceipts.delete(sessionId);
-	persistQueues();
-	broadcastQueue(sessionId);
-	return steered.length;
-}
-
-function queuedPromptIndex(
-	queue: QueueItem[],
-	queueId?: string,
-	queueIndex?: number,
-): number {
-	if (queueId) {
-		const byId = queue.findIndex((item) => item.id === queueId);
-		if (byId >= 0) return byId;
-	}
-	if (
-		typeof queueIndex === "number" &&
-		Number.isInteger(queueIndex) &&
-		queueIndex >= 0 &&
-		queueIndex < queue.length
-	) {
-		return queueIndex;
-	}
-	return -1;
-}
-
-function deleteQueuedPrompt(
-	sessionId: string,
-	queueId?: string,
-	queueIndex?: number,
-): boolean {
-	const queue = promptQueues.get(sessionId);
-	if (queue) {
-		const index = queuedPromptIndex(queue, queueId, queueIndex);
-		if (index >= 0) {
-			const next = queue.filter((_, i) => i !== index);
-			if (next.length > 0) promptQueues.set(sessionId, next);
-			else promptQueues.delete(sessionId);
-			persistQueues();
-			broadcastQueue(sessionId);
-			return true;
-		}
-	}
-	// Steer receipts are dismissable too (by id only — indexes are queue-
-	// relative). A receipt normally reconciles away when its message lands,
-	// but it lives server-side until the run finishes; on a long run a stale
-	// one must be deletable without waiting for that.
-	if (queueId) {
-		const steered = steeredReceipts.get(sessionId);
-		const index = (steered || []).findIndex((item) => item.id === queueId);
-		if (steered && index >= 0) {
-			const next = steered.filter((_, i) => i !== index);
-			if (next.length > 0) steeredReceipts.set(sessionId, next);
-			else steeredReceipts.delete(sessionId);
-			persistQueues();
-			broadcastQueue(sessionId);
-			return true;
-		}
-	}
-	return false;
-}
-
-function updateQueuedPrompt(
-	sessionId: string,
-	queueId: string | undefined,
-	queueIndex: number | undefined,
-	content: string,
-): boolean {
-	const queue = promptQueues.get(sessionId);
-	if (!queue) return false;
-	const index = queuedPromptIndex(queue, queueId, queueIndex);
-	if (index < 0) return false;
-	const item = queue[index];
-	if (!item) return false;
-	if (isGitHubQueueItem(item)) return false;
-	item.content = content;
-	persistQueues();
-	broadcastQueue(sessionId);
-	return true;
-}
-
-/**
- * Reorder a session's queue to match `order` (queue-item ids in their new send
- * order). Items named in `order` are placed first in that order; any queued item
- * not named — one that arrived after the client took its snapshot — keeps its
- * relative position at the tail, so a racing enqueue is never dropped. No-ops
- * (unknown session, <2 items, or an order that doesn't change anything) return
- * false without a broadcast.
- */
-function reorderQueuedPrompt(sessionId: string, order: string[]): boolean {
-	const queue = promptQueues.get(sessionId);
-	if (!queue || queue.length < 2) return false;
-	const byId = new Map(
-		queue.filter((it) => it.id).map((it) => [it.id!, it] as const),
-	);
-	const placed = new Set<string>();
-	const next: QueueItem[] = [];
-	for (const id of order) {
-		const item = byId.get(id);
-		if (item && !placed.has(id)) {
-			next.push(item);
-			placed.add(id);
-		}
-	}
-	for (const item of queue) {
-		if (!item.id || !placed.has(item.id)) next.push(item);
-	}
-	// Same references in the same slots ⇒ nothing moved.
-	if (next.every((item, i) => item === queue[i])) return false;
-	promptQueues.set(sessionId, next);
-	persistQueues();
-	broadcastQueue(sessionId);
-	return true;
 }
 
 function steerQueuedPrompt(
@@ -1813,7 +820,7 @@ function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent): void
 				{ model: to, from: event.fromModel, at: new Date().toISOString(), by: reason },
 			],
 		});
-		sessionsCache = null;
+		invalidateSessionsCache();
 		return;
 	}
 
@@ -1833,7 +840,7 @@ function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent): void
 			engineSessionId,
 		);
 	}
-	sessionsCache = null;
+	invalidateSessionsCache();
 }
 
 // Loaded agents (Plain/Linear/Slack/Stripe/…). Module-scoped because request
@@ -1887,19 +894,6 @@ function attachSessionWatchersToEngineTranscript(
 			250,
 		);
 	}
-}
-
-function broadcastQueue(sessionId: string) {
-	const queued = queueWithIds(promptQueues.get(sessionId));
-	const steered = queueWithIds(steeredReceipts.get(sessionId));
-	if (queued.length > 0) promptQueues.set(sessionId, queued);
-	if (steered.length > 0) steeredReceipts.set(sessionId, steered);
-	broadcastToSession(sessionId, {
-		type: "queue_update",
-		sessionId,
-		queued,
-		steered,
-	});
 }
 
 async function drainQueue(sessionId: string): Promise<void> {
@@ -1970,200 +964,6 @@ async function runSessionPromptAndDrain(
 ): Promise<void> {
 	await runSessionPrompt(sessionId, content, user, images, rawFiles, contextChats);
 	await drainQueue(sessionId);
-}
-
-/** Keep only the string `data:` URLs from a composer `images` payload — the
- *  display/queue form (parsed to ImageInput at delivery via parseImageDataUrls). */
-function asDataUrlList(urls?: unknown): string[] | undefined {
-	if (!Array.isArray(urls)) return undefined;
-	const out = urls.filter((u): u is string => typeof u === "string");
-	return out.length ? out : undefined;
-}
-
-/** Decode composer `data:<mediatype>;base64,<data>` URLs into runner ImageInputs. */
-function parseImageDataUrls(urls?: unknown): ImageInput[] | undefined {
-	if (!Array.isArray(urls)) return undefined;
-	const out: ImageInput[] = [];
-	for (const u of urls) {
-		if (typeof u !== "string") continue;
-		const m = u.match(/^data:([^;]+);base64,(.+)$/s);
-		if (m && m[1].startsWith("image/"))
-			out.push({ mediaType: m[1], data: m[2] });
-	}
-	return out.length ? out : undefined;
-}
-
-// Non-image composer attachments are staged to disk (the vision path only takes
-// images), then the agent is handed their absolute paths in the opening prompt.
-// Large files (a packed .crx, a zip, a PDF) stream straight to disk over a
-// dedicated HTTP endpoint (POST /backstage/api/upload) and only their {name,path}
-// reference rides the WebSocket — base64-over-WS can't carry them (frame cap +
-// memory). The legacy inline {name,dataUrl}-over-WS path is still accepted for
-// small files and older clients.
-const UPLOADS_DIR = `${SESSIONS_DIR}/uploads`;
-// The HTTP endpoint stages here — a brand-new chat has no session id yet, so the
-// reference is resolved back (and validated) at send time.
-const STAGED_UPLOADS_DIR = `${UPLOADS_DIR}/staged`;
-// Cap so a single upload can't OOM the process. The HTTP path streams, but the
-// inline base64/WS path buffers, so keep it modest.
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
-// Images still ride the WebSocket frame base64-encoded (~+33%) inside the JSON
-// envelope, and Bun's default WS `maxPayloadLength` is only 16 MB — below the
-// base64 size of a max upload — so a large image silently blew the frame
-// (close 1009). Size the frame cap off the upload cap + base64 overhead + slack.
-const WS_MAX_PAYLOAD_BYTES = Math.ceil(MAX_UPLOAD_BYTES * (4 / 3)) + 8 * 1024 * 1024;
-
-// A composer attachment arrives either pre-staged on disk (HTTP upload — carries a
-// `path`) or inline as base64 over the WS frame (legacy — carries a data URL).
-type ParsedUpload =
-	| { kind: "staged"; name: string; path: string }
-	| { kind: "inline"; name: string; data: string };
-
-/** Normalize composer `files` entries into staged-path refs or inline base64. */
-function parseFileUploads(raw?: unknown): ParsedUpload[] | undefined {
-	if (!Array.isArray(raw)) return undefined;
-	const out: ParsedUpload[] = [];
-	for (const f of raw) {
-		if (!f || typeof f !== "object") continue;
-		const name = typeof (f as any).name === "string" ? (f as any).name : "";
-		const path = typeof (f as any).path === "string" ? (f as any).path : "";
-		if (path) {
-			out.push({ kind: "staged", name, path });
-			continue;
-		}
-		const url = typeof (f as any).dataUrl === "string" ? (f as any).dataUrl : "";
-		const m = url.match(/^data:[^;]*;base64,(.+)$/s);
-		if (!m) continue;
-		out.push({ kind: "inline", name, data: m[1] });
-	}
-	return out.length ? out : undefined;
-}
-
-/** Keep a user-supplied filename to a safe basename (no traversal, no exotic chars). */
-function sanitizeFilename(name: string): string {
-	const base = (name.split(/[\\/]/).pop() || "file").replace(/^\.+/, "");
-	const cleaned = base.replace(/[^A-Za-z0-9._ -]/g, "_").trim().slice(0, 120);
-	return cleaned || "file";
-}
-
-/** Resolve `p` and confirm it lives inside UPLOADS_DIR — guards against a
- *  client-supplied {name,path} ref pointing the agent at an arbitrary file. */
-function isWithinUploads(p: string): boolean {
-	try {
-		const real = realpathSync(p);
-		const base = realpathSync(UPLOADS_DIR);
-		return real === base || real.startsWith(base + "/");
-	} catch {
-		return false;
-	}
-}
-
-/** Pick a collision-free absolute path under `dir` for the sanitized `wanted`. */
-function uniqueUploadPath(dir: string, wanted: string, used?: Set<string>): string {
-	let fname = wanted;
-	let i = 1;
-	while (used?.has(fname) || existsSync(`${dir}/${fname}`)) {
-		const dot = wanted.lastIndexOf(".");
-		fname =
-			dot > 0
-				? `${wanted.slice(0, dot)}-${i}${wanted.slice(dot)}`
-				: `${wanted}-${i}`;
-		i++;
-	}
-	used?.add(fname);
-	return `${dir}/${fname}`;
-}
-
-/**
- * Stream one HTTP upload body to the staging dir and return the {name, path} the
- * client echoes back in its next turn. Size cap enforced (the route rejects on
- * Content-Length first; this re-checks the actual bytes).
- */
-async function stageHttpUpload(
-	name: string,
-	req: Request,
-): Promise<{ name: string; path: string }> {
-	mkdirSync(STAGED_UPLOADS_DIR, { recursive: true });
-	const wanted = sanitizeFilename(name);
-	const p = uniqueUploadPath(STAGED_UPLOADS_DIR, wanted);
-	const buf = Buffer.from(await req.arrayBuffer());
-	if (buf.length === 0) throw new Error("empty upload");
-	if (buf.length > MAX_UPLOAD_BYTES)
-		throw new Error(
-			`file too large (${buf.length} bytes, max ${MAX_UPLOAD_BYTES})`,
-		);
-	writeFileSync(p, buf);
-	return { name: name || wanted, path: p };
-}
-
-/**
- * Turn normalized uploads into on-disk {name, path} pairs the agent can read.
- * Pre-staged refs (HTTP) are validated (confined to UPLOADS_DIR, exists, within
- * cap) and passed through; inline base64 is written to a per-session dir (outside
- * any repo, so it never pollutes git). Collisions de-duped, oversized skipped.
- */
-function stageUploads(
-	sessionId: string,
-	uploads: ParsedUpload[],
-): { name: string; path: string }[] {
-	const dir = `${UPLOADS_DIR}/${sessionId}`;
-	mkdirSync(dir, { recursive: true });
-	const staged: { name: string; path: string }[] = [];
-	const used = new Set<string>();
-	for (const up of uploads) {
-		if (up.kind === "staged") {
-			if (!isWithinUploads(up.path) || !existsSync(up.path)) {
-				console.warn(
-					`[uploads] Dropping staged ref outside uploads dir: ${up.path}`,
-				);
-				continue;
-			}
-			let sz = 0;
-			try {
-				sz = statSync(up.path).size;
-			} catch {
-				continue;
-			}
-			if (sz === 0 || sz > MAX_UPLOAD_BYTES) {
-				console.warn(`[uploads] Skipping ${up.name || up.path} — ${sz} bytes`);
-				continue;
-			}
-			staged.push({
-				name: up.name || up.path.split("/").pop() || "file",
-				path: up.path,
-			});
-			continue;
-		}
-		const buf = Buffer.from(up.data, "base64");
-		if (buf.length === 0 || buf.length > MAX_UPLOAD_BYTES) {
-			console.warn(
-				`[uploads] Skipping ${up.name || "(unnamed)"} for ${sessionId} — ${buf.length} bytes`,
-			);
-			continue;
-		}
-		const wanted = sanitizeFilename(up.name);
-		const p = uniqueUploadPath(dir, wanted, used);
-		writeFileSync(p, buf);
-		staged.push({ name: up.name || wanted, path: p });
-	}
-	return staged;
-}
-
-/** Append a note listing staged upload paths so the agent knows to read them. */
-function withUploadsNote(prompt: string, staged: { name: string; path: string }[]): string {
-	if (!staged.length) return prompt;
-	const lines = staged.map((s) => `- ${s.name}: ${s.path}`).join("\n");
-	return `${prompt}\n\n[The user attached ${staged.length} file(s), saved to disk — read them with your file tools if relevant:\n${lines}\n]`;
-}
-
-/** Parse + stage composer file attachments in one step; returns the prompt note-augmenter. */
-function stageFileAttachments(
-	sessionId: string,
-	raw?: unknown,
-): { name: string; path: string }[] {
-	const uploads = parseFileUploads(raw);
-	if (!uploads) return [];
-	return stageUploads(sessionId, uploads);
 }
 
 // Messages queued while a run we didn't start is in flight (Slack runs, CLI
@@ -2802,7 +1602,7 @@ async function runSessionPromptInner(
 			user || session.startedBy || undefined,
 			session.model || undefined,
 		).then((t) => {
-			if (t) sessionsCache = null;
+			if (t) invalidateSessionsCache();
 		});
 	}
 
@@ -2934,7 +1734,7 @@ async function runSessionPromptInner(
 							lastEngineProvider: effectiveProvider,
 							...(effectiveModel ? { model: effectiveModel } : {}),
 						});
-						sessionsCache = null; // new watchers must see the new transcriptPath
+						invalidateSessionsCache(); // new watchers must see the new transcriptPath
 					}
 					attachSessionWatchersToEngineTranscript(
 						sessionId,
@@ -2973,7 +1773,7 @@ async function runSessionPromptInner(
 							{ model: to, from: event.fromModel, at: new Date().toISOString(), by: reason },
 						],
 					});
-					sessionsCache = null;
+					invalidateSessionsCache();
 				}
 				if (to)
 					broadcastToSession(sessionId, {
@@ -3062,7 +1862,7 @@ async function runSessionPromptInner(
 						usage: latestUsage,
 					});
 				}
-				sessionsCache = null;
+				invalidateSessionsCache();
 				break;
 			case "error":
 				// "Session is busy" = we lost the start race to a concurrent run (the
@@ -3565,7 +2365,7 @@ async function runGoal(goal: Goal): Promise<void> {
 				goalId: goal.id,
 			};
 			writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
-			sessionsCache = null;
+			invalidateSessionsCache();
 		};
 
 		console.log(`[goals] Wake #${wake} of "${goal.name}" → ${bksId}`);
@@ -3706,181 +2506,7 @@ if (!g.__backstageBooted) {
 // download is ~1MB instead of shipping every shiki grammar/theme (~10MB)
 // upfront — the heavy chunks load on demand. Dev keeps the HMR HTMLBundle
 // (`homepage`) below. Built once per process and parked on globalThis so a
-// hot reload reuses it. Assets are content-hashed → safe to cache forever.
-const IS_DEV = envAlias("OPENSESSION_DEV", "BACKSTAGE_DEV") === "1";
-const FRONTEND_DIST = `${import.meta.dir}/.frontend-dist`;
-const FRONTEND_SRC = `${import.meta.dir}/src/frontend`;
 
-type FrontendBundle = {
-	indexHtml: string;
-	gzip: Map<string, Blob>;
-	version: string;
-};
-
-// Build (or rebuild) the prod SPA bundle in-process. The result object on
-// globalThis is MUTATED in place (never reassigned) so the long-lived `frontend`
-// reference + route closures below pick up a rebuild without a process restart —
-// which is the whole point: a CSS/frontend change no longer needs a `systemctl
-// restart` that would interrupt every in-flight Claude run. `version` changes
-// whenever the entry or CSS hash changes, so clients know to refresh.
-async function buildFrontend(): Promise<string> {
-	const result = await Bun.build({
-		entrypoints: [`${FRONTEND_SRC}/App.tsx`],
-		outdir: FRONTEND_DIST,
-		minify: true,
-		splitting: true,
-		sourcemap: "none",
-		publicPath: "/backstage/",
-		naming: {
-			entry: "[name]-[hash].[ext]",
-			chunk: "[name]-[hash].[ext]",
-			asset: "[name]-[hash].[ext]",
-		},
-	});
-	if (!result.success) {
-		throw new AggregateError(result.logs, "frontend build failed");
-	}
-	// Bun's HTML-entry splitting mis-points the bootstrap <script> at a leaf
-	// chunk, so we build the JS entry and stitch index.html ourselves: keep the
-	// source shell (icons, splash, manifest links) and point it at the hashed
-	// entry + the extracted CSS.
-	const entry = result.outputs.find((o) => o.kind === "entry-point");
-	if (!entry) throw new Error("frontend build produced no entry point");
-	const entryName = entry.path.split("/").pop()!;
-
-	// Bun 1.3.14's CSS minifier strips the space after var(...) and breaks the
-	// .panel-overlay / .sidebar-overlay inset (and a few color-mix percentages),
-	// which knocks out the mobile overlay layer. Bypass it: write the source CSS
-	// unmodified with a content-hashed name and serve it ourselves.
-	let cssSrc = await Bun.file(`${FRONTEND_SRC}/styles/global.css`).text();
-	// xterm stylesheet (the Shell tab) rides along in the same file, vendored
-	// straight from the installed package so it can't drift from the JS.
-	try {
-		const xtermCss = await Bun.file(
-			`${import.meta.dir}/node_modules/@xterm/xterm/css/xterm.css`,
-		).text();
-		cssSrc += `\n\n/* ── vendored @xterm/xterm/css/xterm.css (Shell tab) ── */\n${xtermCss}`;
-	} catch {}
-	const cssHash = Bun.hash(cssSrc).toString(36);
-	const cssName = `global-${cssHash}.css`;
-	// Atomic: a mid-write bundle file has shipped corrupt before ("useState is
-	// not defined") — never serve a torn asset.
-	writeFileAtomic(`${FRONTEND_DIST}/${cssName}`, cssSrc);
-
-	// Tailwind pass (see styles/tailwind.css). Bun can't compile Tailwind, so
-	// the real compiler runs as a subprocess (~50ms); its lightningcss minifier
-	// doesn't have the var() bug above. Linked after global.css so utilities win
-	// source-order ties against legacy rules. Fail-soft: a broken Tailwind
-	// compile ships the bundle without utilities rather than taking down the
-	// whole server (this build also runs at boot, before Bun.serve).
-	let twName: string | null = null;
-	try {
-		const twTmp = `${FRONTEND_DIST}/.tailwind-build.css`;
-		const twProc = Bun.spawn(
-			[
-				`${import.meta.dir}/node_modules/.bin/tailwindcss`,
-				"-i",
-				`${FRONTEND_SRC}/styles/tailwind.css`,
-				"-o",
-				twTmp,
-				"--minify",
-			],
-			{ cwd: import.meta.dir, stdout: "pipe", stderr: "pipe" },
-		);
-		if ((await twProc.exited) !== 0) {
-			throw new Error(await new Response(twProc.stderr).text());
-		}
-		const twCss = await Bun.file(twTmp).text();
-		twName = `tailwind-${Bun.hash(twCss).toString(36)}.css`;
-		writeFileAtomic(`${FRONTEND_DIST}/${twName}`, twCss);
-	} catch (e) {
-		console.error(
-			"[frontend] Tailwind build FAILED — serving without utilities:",
-			e,
-		);
-	}
-
-	let indexHtml = await Bun.file(`${FRONTEND_SRC}/index.html`).text();
-	indexHtml = indexHtml.replace(
-		'<script type="module" src="./App.tsx"></script>',
-		`<script type="module" crossorigin src="/backstage/${entryName}"></script>`,
-	);
-	const twLink = twName
-		? `\n  <link rel="stylesheet" href="/backstage/${twName}">`
-		: "";
-	indexHtml = indexHtml.replace(
-		"</head>",
-		`  <link rel="stylesheet" href="/backstage/${cssName}">${twLink}\n</head>`,
-	);
-	const version = `${entryName}|${cssName}|${twName ?? "no-tw"}`;
-
-	const store: FrontendBundle = (g.__backstageFrontend ??= {
-		indexHtml: "",
-		gzip: new Map<string, Blob>(),
-		version: "",
-	});
-	store.indexHtml = indexHtml;
-	store.gzip.clear(); // stale gzipped blobs were keyed by the old hashed names
-	store.version = version;
-	console.log(
-		`Frontend built: ${result.outputs.length} files → ${FRONTEND_DIST} (v=${version})`,
-	);
-	return version;
-}
-
-if (!IS_DEV && !g.__backstageFrontend) {
-	console.log("Building frontend (split + minified)…");
-	await buildFrontend();
-}
-
-const frontend: FrontendBundle | null = IS_DEV
-	? null
-	: (g.__backstageFrontend as FrontendBundle);
-
-// SPA entry: the HMR bundle in dev, the prebuilt index.html in prod. Reads
-// `frontend.indexHtml` fresh on each request so an in-process rebuild is served
-// immediately (the object is mutated, not replaced).
-const spaEntry = frontend
-	? () =>
-			new Response(frontend.indexHtml, {
-				headers: { "Content-Type": "text/html; charset=utf-8" },
-			})
-	: homepage;
-
-// Debounced in-process rebuild + client nudge. Triggered by the frontend
-// file-watch, a SIGUSR2 signal, or POST /backstage/api/rebuild-frontend — all of
-// which replace the "systemctl restart to see my CSS change" habit that was
-// interrupting every live Claude run. Clients get a non-intrusive refresh toast;
-// the bundle is served from the mutated `frontend` object with no restart.
-let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
-let rebuildInFlight = false;
-function scheduleFrontendRebuild(reason: string, debounceMs = 300): void {
-	if (IS_DEV || !frontend) return;
-	if (rebuildTimer) clearTimeout(rebuildTimer);
-	rebuildTimer = setTimeout(async () => {
-		rebuildTimer = null;
-		if (rebuildInFlight) return scheduleFrontendRebuild(reason, 300); // coalesce
-		rebuildInFlight = true;
-		const before = frontend.version;
-		try {
-			const version = await buildFrontend();
-			if (version !== before) {
-				console.log(
-					`[frontend] Rebuilt (${reason}); notifying clients (v=${version})`,
-				);
-				broadcastToAll({ type: "frontend_updated", version });
-			}
-		} catch (e) {
-			console.error(`[frontend] Rebuild failed (${reason}):`, e);
-			broadcastToAll({
-				type: "notice",
-				message: `Frontend rebuild failed — see logs. (${e})`,
-			});
-		} finally {
-			rebuildInFlight = false;
-		}
-	}, debounceMs);
-}
 
 // Land a Plain thread in a triage session: reuse the most recent live
 // (non-archived) session already linked to the thread, else kick off the
@@ -3928,7 +2554,7 @@ async function resolvePlainTriageSession(
 		void runAutomation(
 			automation,
 			(id) => {
-				sessionsCache = null;
+				invalidateSessionsCache();
 				clearTimeout(timer);
 				resolve(id);
 			},
@@ -4170,7 +2796,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			// Served gzipped (computed once, then memoised) since the JS is large.
 			const assetMatch =
 				frontend && path.match(/^\/backstage\/([\w.-]+\.(?:js|css|map))$/);
-			if (assetMatch) {
+			if (assetMatch && frontend) {
 				const name = assetMatch[1];
 				const file = Bun.file(`${FRONTEND_DIST}/${name}`);
 				if (await file.exists()) {
@@ -5114,7 +3740,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 					target.ghRepo,
 				);
 				if ("error" in result) return Response.json(result, { status: 502 });
-				sessionsCache = null; // a review can change reviewDecision in the list
+				invalidateSessionsCache(); // a review can change reviewDecision in the list
 				return Response.json(result);
 			}
 
@@ -5148,7 +3774,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 						target.ghRepo,
 					);
 					if ("error" in result) return Response.json(result, { status: 502 });
-					sessionsCache = null; // refresh prState in the sessions list
+					invalidateSessionsCache(); // refresh prState in the sessions list
 					return Response.json(result);
 				} catch (e: any) {
 					return Response.json(
@@ -5245,7 +3871,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				const body = await req.json().catch(() => ({}));
 				const days = Math.max(1, parseInt(body.days) || 7);
 				const count = archiveOlderThan(getAllSessions(), days);
-				sessionsCache = null;
+				invalidateSessionsCache();
 				return Response.json({ archived: count });
 			}
 
@@ -5300,7 +3926,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				// unarchive, also clear the file flag so the session returns to "My
 				// sessions".
 				if (!archived) clearSessionFileArchive(sessionId);
-				sessionsCache = null;
+				invalidateSessionsCache();
 				if (archived) {
 					// setArchived drops the plain id pin; also drop legacy alias-id pins,
 					// and the workspace pin once its last live chat is archived (else the
@@ -5324,7 +3950,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				const title =
 					typeof body?.title === "string" ? body.title.trim().slice(0, 80) : "";
 				setTitleOverride(sessionId, title || null);
-				sessionsCache = null;
+				invalidateSessionsCache();
 				return Response.json({ ok: true });
 			}
 
@@ -5342,7 +3968,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				const body = await req.json().catch(() => ({}));
 				const status = isManualStatus(body?.status) ? body.status : null;
 				setStatusOverride(sessionId, status);
-				sessionsCache = null;
+				invalidateSessionsCache();
 				return Response.json({ ok: true });
 			}
 
@@ -5376,7 +4002,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 						sessionId,
 						body.accept ? { by: by || "someone", at: new Date().toISOString() } : null,
 					);
-					sessionsCache = null;
+					invalidateSessionsCache();
 					// Buzz whoever asked for the review that it landed (not on self-review).
 					if (
 						body.accept &&
@@ -5409,7 +4035,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 						? { to: reviewer, by: by || "someone", at: new Date().toISOString() }
 						: null,
 				);
-				sessionsCache = null;
+				invalidateSessionsCache();
 				// Mirror the request onto GitHub's own Reviewers list (best-effort):
 				// setting a reviewer adds them, re-assigning swaps, clearing removes.
 				// Only for sessions with a branch/PR whose reviewer maps to a GitHub
@@ -5461,7 +4087,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				const cleanWorktree = url.searchParams.get("worktree") === "true";
 				try {
 					deleteSession(session);
-					sessionsCache = null;
+					invalidateSessionsCache();
 					// Tear down the session's sandbox (container + engine-state volumes —
 					// and in volume-workspace mode the workspace volume itself; that data
 					// loss is the mode's documented contract). Best-effort and detached:
@@ -5805,7 +4431,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 						: {}),
 				};
 				writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
-				sessionsCache = null;
+				invalidateSessionsCache();
 				// Also return the full unified session so the client can drop it into
 				// its session list and render the new chat instantly, instead of
 				// flashing a loading screen until the next sessions poll lands.
@@ -6661,7 +5287,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				}
 				// Fire and forget; session shows up in the list once it boots
 				void runAutomation(automation, () => {
-					sessionsCache = null;
+					invalidateSessionsCache();
 				});
 				return Response.json({ ok: true });
 			}
@@ -7196,7 +5822,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				});
 				void executeScan(scan, {
 					onSessionCreated: () => {
-						sessionsCache = null;
+						invalidateSessionsCache();
 					},
 				});
 				return Response.json({ scan });
@@ -7364,7 +5990,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 					user?: string;
 				};
 				const result = runAction(action, body.values || {}, body.user, () => {
-					sessionsCache = null;
+					invalidateSessionsCache();
 				});
 				if ("error" in result) return Response.json(result, { status: 400 });
 				return Response.json(result);
@@ -8183,7 +6809,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 						);
 						if (notice !== null) {
 							ws.send(JSON.stringify({ type: "notice", message: notice }));
-							sessionsCache = null;
+							invalidateSessionsCache();
 							break;
 						}
 
@@ -8749,7 +7375,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 							const wsToName = workspace;
 							void ensureGeneratedTitle(bksId, prompt, user, model).then((t) => {
 								if (!t) return;
-								sessionsCache = null;
+								invalidateSessionsCache();
 								if (wsAutoNamed && wsToName) {
 									const cur = getWorkspace(wsToName.id);
 									// Only while it still wears the provisional name — a manual
@@ -8876,7 +7502,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 									`${SESSIONS_DIR}/${bksId}.json`,
 									sessionData,
 								);
-								sessionsCache = null;
+								invalidateSessionsCache();
 								persisted = true;
 							};
 
@@ -9354,7 +7980,7 @@ registerSessionControl({
 		// opensession-sessions send_to_session tool.
 		const notice = handleSlashCommand(session, String(content || "").trim(), user);
 		if (notice !== null) {
-			sessionsCache = null;
+			invalidateSessionsCache();
 			return { status: "handled" as const, message: notice };
 		}
 
@@ -9519,7 +8145,7 @@ registerSessionControl({
 		// Replace the raw first-line title with a short summary in the background;
 		// the next sessions poll (≤5s) picks it up.
 		void ensureGeneratedTitle(bksId, prompt, user, model).then((t) => {
-			if (t) sessionsCache = null;
+			if (t) invalidateSessionsCache();
 		});
 
 		let engineSessionId = "";
@@ -9563,7 +8189,7 @@ registerSessionControl({
 					: {}),
 			};
 			writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, sessionData);
-			sessionsCache = null;
+			invalidateSessionsCache();
 			persisted = true;
 		};
 
@@ -9869,7 +8495,7 @@ async function loadAgents(): Promise<AgentModule[]> {
 			agents.push(
 				new GrafanaPollerAgent({
 					onSessionInvalidate: () => {
-						sessionsCache = null;
+						invalidateSessionsCache();
 					},
 				}),
 			);
@@ -9888,7 +8514,7 @@ async function loadAgents(): Promise<AgentModule[]> {
 			agents.push(
 				new GithubAgent({
 					onSessionInvalidate: () => {
-						sessionsCache = null;
+						invalidateSessionsCache();
 					},
 				}),
 			);
@@ -9923,7 +8549,7 @@ if (!g.__backstageBooted) {
 	const webhookServer = startWebhookServer(
 		agents,
 		getWebhookRoutes(() => {
-			sessionsCache = null;
+			invalidateSessionsCache();
 		}),
 	);
 	void webhookServer;
@@ -9964,10 +8590,10 @@ if (!g.__backstageBooted) {
 
 	// Cron-scheduled automations + internal event bus (agents → automations)
 	startScheduler(() => {
-		sessionsCache = null;
+		invalidateSessionsCache();
 	});
 	setEventSessionCallback(() => {
-		sessionsCache = null;
+		invalidateSessionsCache();
 	});
 
 	// Scheduled prompts ("send this to this session at 5pm") — deliver due ones
@@ -9996,7 +8622,7 @@ if (!g.__backstageBooted) {
 
 	// Archive triage sessions when their Plain ticket is done
 	startPlainArchiveSweep(() => {
-		sessionsCache = null;
+		invalidateSessionsCache();
 	});
 
 	// Auto-archive sessions that look done (merged PR, or opt-in green checks) —
@@ -10010,7 +8636,7 @@ if (!g.__backstageBooted) {
 				lastRunError: runErrors.get(s.id) || s.lastRunError,
 			})),
 		() => {
-			sessionsCache = null;
+			invalidateSessionsCache();
 		},
 	);
 
@@ -10024,7 +8650,7 @@ if (!g.__backstageBooted) {
 	setTimeout(() => {
 		const resumedIds = resumeInterruptedRuns(
 			() => {
-				sessionsCache = null;
+				invalidateSessionsCache();
 			},
 			// Re-attach the AskUserQuestion handler so a run that was blocked on an
 			// ask (web UI or Slack escalation) can ask again after the restart instead
@@ -10058,7 +8684,7 @@ if (!g.__backstageBooted) {
 			console.log(
 				`[runner] Resumed ${resumedIds.length} interrupted run(s) from before restart`,
 			);
-			sessionsCache = null;
+			invalidateSessionsCache();
 		}
 		resumeDrainedSessions(new Set(resumedIds));
 		// Re-deliver messages that were queued/steered when the process went down.
@@ -10075,7 +8701,7 @@ if (!g.__backstageBooted) {
 			const count = archiveOlderThan(getAllSessions(), 7);
 			if (count > 0) {
 				console.log(`[archive] Auto-archived ${count} session(s) idle >7 days`);
-				sessionsCache = null;
+				invalidateSessionsCache();
 			}
 			try {
 				const removed = await sweepArchivedWorktrees(getAllSessions(), 14);
@@ -10083,7 +8709,7 @@ if (!g.__backstageBooted) {
 					console.log(
 						`[worktree-sweep] Removed ${removed.length} clean worktree(s): ${removed.join(", ")}`,
 					);
-					sessionsCache = null;
+					invalidateSessionsCache();
 				}
 			} catch (e) {
 				console.error("[worktree-sweep] Sweep failed:", e);
