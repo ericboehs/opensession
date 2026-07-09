@@ -8120,7 +8120,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	position: relative;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 48px;
+	border-radius: 64px;
 	padding: 14px 14px 10px 16px;
 	transition:
 		border-color 0.15s,
