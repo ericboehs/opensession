@@ -1755,9 +1755,13 @@ async function* runOpencodeAttempt(
     yield { type: "init", sessionId: ocSessionId, provider: PROVIDER, model };
 
     // Abort → tell the server to stop the turn (best-effort), our loops exit
-    // on the signal.
+    // on the signal. Also wake the drain loop directly (failRun → signalDone):
+    // waiting for the engine's abort to come back as an SSE/poll observation
+    // left cancelled runs parked forever when both were wedged (zombie run,
+    // 2026-07-09 bks-019f488c).
     abortController.signal.addEventListener("abort", () => {
       void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
+      failRun();
     });
 
     // ── Event pump: SSE → StreamEvents, with reconnect (Bun's fetch aborts
@@ -2002,6 +2006,7 @@ async function* runOpencodeAttempt(
         }, LIVENESS_MS)
       : undefined;
 
+    let statusPollFailures = 0;
     const statusPoll = setInterval(() => {
       void (async () => {
         try {
@@ -2011,11 +2016,30 @@ async function* runOpencodeAttempt(
           if (Date.now() - sentAt < 15_000) return;
           const res = await clientFor(entry).session.status({ ...q });
           const statuses = res.data as Record<string, { type?: string }> | undefined;
+          statusPollFailures = 0;
           const mine = statuses?.[ocSessionId];
           // Absent or idle ⇒ the turn ended (covers an SSE gap that ate the
           // idle event).
           if (!mine || mine.type === "idle") signalDone();
-        } catch {}
+        } catch (e) {
+          // A silently-failing poll is how a finished/aborted engine turn
+          // becomes a forever-busy zombie run. Make it loud, and after ~60s of
+          // consecutive failures end the turn with an error instead of holding
+          // the session busy: a healthy server doesn't refuse status for a
+          // minute straight.
+          statusPollFailures++;
+          if (statusPollFailures === 1 || statusPollFailures % 6 === 0) {
+            console.warn(
+              `[opencode-runner] status poll failing for ${ocSessionId} (${statusPollFailures}x): ${e}`
+            );
+          }
+          if (statusPollFailures >= 6) {
+            runFailure ??=
+              "opencode server stopped answering status polls for 60s — ending the turn " +
+              "(engine state preserved; send again to continue)";
+            signalDone();
+          }
+        }
       })();
     }, 10_000);
 
