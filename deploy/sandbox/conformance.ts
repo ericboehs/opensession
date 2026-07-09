@@ -179,9 +179,11 @@ await Bun.write(
 
 // Overrides for hosts where the public IP doesn't accept inbound connections
 // (typical cloud security groups): pin the listener port and front it with any
-// websocket-capable tunnel (cloudflared quick tunnel, tailscale funnel, …),
-// then pass the tunnel's public base:
-//   SBX_CONF_LISTEN_PORT=39999 SBX_CONF_PUBLIC_BASE=wss://….trycloudflare.com \
+// websocket-capable tunnel (cloudflared quick tunnel, tailscale funnel, …) or
+// — the permanent setup — the publicIngress Caddy path routes (docs/
+// self-hosting-sandboxes.md), which forward ONLY /backstage/run-ws/*,
+// /backstage/rpc-ws and /ingress-health; the remote probe uses the last one.
+//   SBX_CONF_LISTEN_PORT=3860 SBX_CONF_PUBLIC_BASE=wss://michael.tella.dev \
 //     bun run deploy/sandbox/conformance.ts daytona
 const LISTEN_PORT = parseInt(process.env.SBX_CONF_LISTEN_PORT || "0", 10) || 0;
 const PUBLIC_BASE = (process.env.SBX_CONF_PUBLIC_BASE || "").replace(/\/+$/, "");
@@ -192,6 +194,7 @@ const wsSrv = Bun.serve({
   fetch(req, server) {
     const path = new URL(req.url).pathname;
     if (path === "/ping") return new Response("pong");
+    if (path === "/ingress-health") return new Response("ok"); // public-ingress parity
     return runWs.handleSandboxWsUpgrade(req, server, path) ?? undefined;
   },
   websocket: {
@@ -380,15 +383,17 @@ async function runEntry(entry: Entry): Promise<void> {
 
     // 5. dial-back reachability (remote entries must reach this listener for
     //    launchRun; docker reaches it via the bridge gateway).
+    // Remote entries probe /ingress-health — the path a publicIngress front
+    // (Caddy/tunnel) actually forwards; /ping only exists on direct listeners.
     const probeUrl = entry.remote
-      ? remoteBase && `${remoteBase.replace(/^ws(s?):\/\//, "http$1://")}/ping`
+      ? remoteBase && `${remoteBase.replace(/^ws(s?):\/\//, "http$1://")}/ingress-health`
       : `http://${bridgeGw}:${wsSrv.port}/ping`;
     let reachable = false;
     if (probeUrl) {
       const probe = await sandbox.exec([
         "sh", "-c", `curl -s -m 8 ${probeUrl} || echo UNREACHABLE`,
       ]);
-      reachable = probe.stdout.includes("pong");
+      reachable = probe.stdout.includes("pong") || /\bok\b/.test(probe.stdout);
       if (entry.remote && !reachable) {
         // Environment property, not an adapter defect: e.g. Daytona Tier 1/2
         // orgs restrict sandbox egress to an allowlist, so no callbackBaseUrl
