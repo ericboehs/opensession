@@ -73,7 +73,7 @@ import {
   REPO_ROOT,
   type RunHostSpec,
 } from "../../../runner-host/protocol";
-import { sandboxConfig, sandboxCallbackBaseUrl } from "../config";
+import { sandboxConfig, remoteSandboxCallbackBaseUrl } from "../config";
 import type {
   ExecOpts,
   ExecResult,
@@ -551,7 +551,10 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
         JSON.stringify({ accounts }, null, 2) + "\n",
       );
       await driver.exec(`chmod 600 ${REMOTE_HOME}/.backstage-claude-accounts.json`);
-      const base = sandboxCallbackBaseUrl();
+      // Remote sandboxes dial back over the public ingress when it's enabled
+      // (publicIngress.publicBaseUrl), else the plain callbackBaseUrl. Docker
+      // stays on sandboxCallbackBaseUrl — its bridge path never leaves the box.
+      const base = remoteSandboxCallbackBaseUrl();
       registerRunWsHost(hostId, spec.wsToken);
       try {
         const env: Record<string, string> = {

@@ -171,6 +171,7 @@ import {
 	sandboxWsMessage,
 	sandboxWsClose,
 } from "./src/server/run-ws";
+import { startPublicIngress } from "./src/server/public-ingress";
 import {
 	startSessionTerminal,
 	writeTerminal,
@@ -9086,6 +9087,17 @@ async function loadAgents(): Promise<AgentModule[]> {
 // any of it — the already-running agents/timers keep going untouched (only a
 // real restart reloads their code, and that restart is now graceful, below).
 if (!g.__backstageBooted) {
+	// Public dial-back ingress for remote sandboxes (src/server/public-ingress.ts):
+	// a second, isolated listener serving ONLY the run-ws/rpc-ws upgrades +
+	// /ingress-health. No-op unless ~/.backstage-sandbox.json enables
+	// publicIngress; starting/stopping it or changing its port needs a real
+	// restart (the config's other values stay read-fresh-per-run).
+	try {
+		startPublicIngress();
+	} catch (e) {
+		console.error("[public-ingress] failed to start:", e);
+	}
+
 	// Start webhook server with enabled agents + automation webhook triggers
 	agents = await loadAgents();
 	g.__agents = agents;
