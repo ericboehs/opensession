@@ -379,32 +379,64 @@ a {
 	}
 }
 
+/* The reclaimed PWA titlebar (see TitleBar.tsx) only exists in Window Controls
+   Overlay mode — hidden everywhere else. */
+.wco-titlebar {
+	display: none;
+}
+
 /* Window Controls Overlay (desktop PWA): the OS titlebar is replaced by just
    the window-control buttons overlaid on our own chrome — no OS bar, no
-   centered title text. Our UI owns the full window height, so:
-   - drop the standalone hairline (there's no OS bar above to divide from);
-   - the buttons sit at the window's top-left corner (macOS), which is exactly
-     where the sidebar brand row lives — inset the row past them so the logo
-     isn't hidden (env(titlebar-area-x) is 0 on Windows, where controls are on
-     the right, so this is a no-op there);
-   - make the brand row a drag handle so the window stays movable, with the
-     interactive controls opting back out. */
+   centered title text. We own the full window, so we paint our own titlebar
+   band across the top (`.wco-titlebar`): it fills the reclaimed strip with the
+   sidebar colour so the traffic lights sit on our surface (not a bare white
+   band), it's a drag region so the window still moves, and it carries the
+   back/forward the browser chrome no longer provides. Everything below it —
+   including the sidebar brand row (the OS¹ logo) — flows beneath, so the logo
+   lands under the controls instead of colliding with them. */
 @media (display-mode: window-controls-overlay) {
 	.app {
 		border-top: none;
 	}
-	.sidebar-brand {
-		padding-left: calc(
-			env(titlebar-area-x, 0px) + var(--sidebar-icon-left) - 8px
-		);
+	.wco-titlebar {
+		display: flex;
+		align-items: center;
+		flex-shrink: 0;
+		height: env(titlebar-area-height, 34px);
+		/* Clear the window controls: traffic lights on the left on macOS
+		   (titlebar-area-x ≈ their width); on Windows they're on the right and
+		   titlebar-area-x is 0, so this is a no-op there. */
+		padding-left: env(titlebar-area-x, 0px);
+		background: var(--bg-raised);
+		border-bottom: 1px solid var(--border);
 		-webkit-app-region: drag;
 		app-region: drag;
 	}
-	.sidebar-brand button,
-	.sidebar-brand a,
-	.sidebar-brand [role="button"] {
+	.wco-titlebar-nav {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		padding-left: 8px;
+	}
+	.wco-nav-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		border: none;
+		border-radius: 8px;
+		background: transparent;
+		color: var(--text-dim);
+		cursor: pointer;
+		/* Buttons opt out of the drag region so they stay clickable. */
 		-webkit-app-region: no-drag;
 		app-region: no-drag;
+	}
+	.wco-nav-btn:hover {
+		background: var(--bg-hover);
+		color: var(--text);
 	}
 }
 

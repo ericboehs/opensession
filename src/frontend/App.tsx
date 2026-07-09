@@ -1209,6 +1209,9 @@ function App() {
 			<MediaLightboxHost />
 			<ToastHost />
 			<div className="app">
+					{/* Reclaimed titlebar in installed-PWA Window Controls Overlay
+					    mode (desktop). Hidden (display:none) everywhere else. */}
+					<TitleBar />
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
 				    on a pushed page (a session or other view) the brand is replaced by
 				    a Back chevron that pops back to the root, iOS-style. On desktop the
