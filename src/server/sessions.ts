@@ -191,18 +191,48 @@ function findTranscriptPath(
   return findTranscriptBySessionId(sessionId);
 }
 
-function findTranscriptBySessionId(sessionId: string): string | null {
+// Reverse index of every Claude transcript: session id → its .jsonl path,
+// built by walking each project dir ONCE. Without it, the last-resort lookup
+// below did an uncached readdir of ~1200 project dirs + an existsSync per dir
+// FOR EVERY session that missed the direct path (e.g. the ~575 slack sessions
+// with no worktreeDir) — ~600k stat() calls, ~1.4s, on every sessions rebuild.
+// That rebuild runs on every cache miss (and every "+ new tab", which nulls the
+// cache), so it was the dominant cost of a slow new-tab. Building the index is
+// ~16ms and turns each miss into an O(1) map hit. Memoized with a short TTL so a
+// burst of rebuilds shares one index while newly-written transcripts still show
+// up within a couple seconds.
+let transcriptIndexCache: { map: Map<string, string>; ts: number } | null = null;
+const TRANSCRIPT_INDEX_TTL = 2000;
+function transcriptIndex(): Map<string, string> {
+  if (transcriptIndexCache && Date.now() - transcriptIndexCache.ts < TRANSCRIPT_INDEX_TTL)
+    return transcriptIndexCache.map;
+  const map = new Map<string, string>();
   let projectDirs: string[];
   try {
     projectDirs = readdirSync(CLAUDE_PROJECTS_DIR);
   } catch {
-    return null;
+    projectDirs = [];
   }
   for (const dir of projectDirs) {
-    const path = `${CLAUDE_PROJECTS_DIR}/${dir}/${sessionId}.jsonl`;
-    if (existsSync(path)) return path;
+    let entries: string[];
+    try {
+      entries = readdirSync(`${CLAUDE_PROJECTS_DIR}/${dir}`);
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (!e.endsWith(".jsonl")) continue;
+      const id = e.slice(0, -".jsonl".length);
+      // First dir wins — matches the old top-down readdir scan order.
+      if (!map.has(id)) map.set(id, `${CLAUDE_PROJECTS_DIR}/${dir}/${e}`);
+    }
   }
-  return null;
+  transcriptIndexCache = { map, ts: Date.now() };
+  return map;
+}
+
+function findTranscriptBySessionId(sessionId: string): string | null {
+  return transcriptIndex().get(sessionId) ?? null;
 }
 
 /**
