@@ -6896,9 +6896,10 @@ a.workspace-info-check-row {
 .jump-latest {
 	position: absolute;
 	left: 50%;
-	/* Sit the pill just above the composer's top edge — a small fixed lift, not
-	   keyed to --chat-under (that pushed it too far up over the transcript). */
-	bottom: 12px;
+	/* Sit the pill above the composer's top edge with a little breathing room —
+	   a small fixed lift, not keyed to --chat-under (that pushed it too far up
+	   over the transcript). */
+	bottom: 24px;
 	transform: translateX(-50%);
 	display: inline-flex;
 	align-items: center;
@@ -10445,7 +10446,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	/* Sit the pill just above the composer's top edge — a small fixed lift, not
 	   keyed to --chat-under (that pushed it too far up over the transcript). */
 	.jump-latest {
-		bottom: 12px;
+		bottom: 24px;
 	}
 
 	.viewer-messages {
