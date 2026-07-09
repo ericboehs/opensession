@@ -115,9 +115,13 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
       .then((m) => setDefaultModel(m.default))
       .catch(() => {});
   }, []);
+  // The modal is create-only; editing happens inline in the detail drawer.
   const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState<Automation | null>(null);
+  const [editMode, setEditMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Leaving/changing the selection always drops back to the read view.
+  useEffect(() => setEditMode(false), [selectedId]);
 
   const load = useCallback(async () => {
     try {
@@ -146,19 +150,20 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
     [automations, selectedId],
   );
 
-  // Escape backs out of the detail drawer (the edit modal handles its own
-  // Escape — don't close both from one keypress).
+  // Escape backs out one layer: inline edit → read view → closed. (The create
+  // modal handles its own Escape — don't close both from one keypress.)
   useEffect(() => {
     if (!sel || showModal) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      onSelect("");
+      if (editMode) setEditMode(false);
+      else onSelect("");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [!!sel, showModal, onSelect]);
+  }, [!!sel, showModal, editMode, onSelect]);
 
   async function handleToggle(a: Automation) {
     try {
@@ -203,10 +208,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
         <button
           className="btn-new-session"
           style={{ marginTop: 0 }}
-          onClick={() => {
-            setEditing(null);
-            setShowModal(true);
-          }}
+          onClick={() => setShowModal(true)}
         >
           + New automation
         </button>
@@ -297,28 +299,26 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
               </svg>
               Automations
             </button>
-            <span className="automations-drawer-title">{sel.name}</span>
-            <div className="automations-drawer-actions">
-              <button
-                className="btn-small"
-                onClick={() => handleRunNow(sel)}
-                disabled={sel.isRunning}
-              >
-                Run now
-              </button>
-              <button
-                className="btn-small"
-                onClick={() => {
-                  setEditing(sel);
-                  setShowModal(true);
-                }}
-              >
-                Edit
-              </button>
-              <button className="btn-small btn-small-danger" onClick={() => handleDelete(sel)}>
-                Delete
-              </button>
-            </div>
+            <span className="automations-drawer-title">
+              {editMode ? `Edit — ${sel.name}` : sel.name}
+            </span>
+            {!editMode && (
+              <div className="automations-drawer-actions">
+                <button
+                  className="btn-small"
+                  onClick={() => handleRunNow(sel)}
+                  disabled={sel.isRunning}
+                >
+                  Run now
+                </button>
+                <button className="btn-small" onClick={() => setEditMode(true)}>
+                  Edit
+                </button>
+                <button className="btn-small btn-small-danger" onClick={() => handleDelete(sel)}>
+                  Delete
+                </button>
+              </div>
+            )}
             <button
               className="automations-drawer-close"
               onClick={() => onSelect("")}
@@ -330,124 +330,187 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
             </button>
           </div>
           <div className="automations-drawer-body">
-            <div className="automations-drawer-chips">
-              <button
-                className={`auto-toggle ${sel.enabled ? "auto-toggle-on" : ""}`}
-                onClick={() => handleToggle(sel)}
-                title={sel.enabled ? "Disable" : "Enable"}
-              >
-                <span className="auto-toggle-knob" />
-              </button>
-              <span className={`source-chip ${sel.mode === "ask" ? "source-ask" : "source-backstage"}`}>
-                {sel.mode}
-              </span>
-              <span
-                className="source-chip"
-                title={sel.model ? "Model for this automation's runs" : "Default model (not overridden)"}
-              >
-                {sel.model || defaultModel || "default"}
-              </span>
-              {sel.fallbackModel && sel.fallbackModel !== "none" && (
-                <span
-                  className="source-chip chip-fallback"
-                  title="Fallback — used only when every account for the primary model has hit its usage limit"
-                >
-                  ↯ {sel.fallbackModel}
-                </span>
-              )}
-              {sel.accountId && (
-                <span
-                  className="source-chip"
-                  title={
-                    sel.accountStrict === false
-                      ? "Soft account pin — runs prefer this Claude subscription and fall back to the shared pool when it's out of usage"
-                      : "Hard account pin — runs use only this Claude subscription; when it's out of usage they fall to the fallback model, never the shared pool"
-                  }
-                >
-                  {claudeAccounts.find((x) => x.id === sel.accountId)?.name || "pinned account"}
-                  {sel.accountStrict === false ? " first" : " only"}
-                </span>
-              )}
-              {sel.usageCredits && (
-                <span
-                  className="source-chip"
-                  title="May keep running on paid usage-credits once the account's subscription limits are spent (needs extra usage enabled on the account)"
-                >
-                  +credits
-                </span>
-              )}
-              {(sel.isRunning || sel.lastRunStatus === "running") && (
-                <span className="working-pill">
-                  <span className="working-dot" /> Running
-                </span>
-              )}
-            </div>
-
-            <div className="automation-prompt automations-drawer-prompt">{sel.prompt}</div>
-
-            {(sel.runs?.length ?? 0) > 0 && <TriggerGraph runs={sel.runs!} />}
-
-            <div className="automation-meta">
-              {sel.slackWatch ? (
-                <span className="automation-cron automation-event" title="Runs on every top-level message in this Slack channel">
-                  watching #{sel.slackWatch.channel}
-                </span>
-              ) : sel.schedule ? (
-                <span className="automation-cron" title="UTC">{sel.schedule}</span>
-              ) : !sel.eventKey ? (
-                <span className="automation-cron">webhook / manual</span>
-              ) : null}
-              {sel.eventKey && (
-                <span className="automation-cron automation-event" title="Internal event trigger">
-                  on {sel.eventKey}
-                </span>
-              )}
-              {sel.mcpServers && (
-                <span
-                  className="automation-cron"
-                  title="MCP servers this automation's runs can use (least privilege)"
-                >
-                  mcp: {sel.mcpServers.length === 0 ? "none" : sel.mcpServers.join(", ")}
-                </span>
-              )}
-              {sel.nextRunAt && sel.enabled && (
-                <span>next {formatNext(sel.nextRunAt)}</span>
-              )}
-              {sel.lastRunAt && (
-                <span className="automation-lastrun">
-                  last run {relativeTime(sel.lastRunAt)}
-                  {sel.lastTrigger ? ` via ${sel.lastTrigger}` : ""}
-                  {sel.lastRunStatus === "ok" && <span className="auto-status-ok"> ✓</span>}
-                  {sel.lastRunStatus === "error" && (
-                    <span className="auto-status-err" title={sel.lastRunError}> ✗</span>
+            {editMode ? (
+              <div className="automation-form automation-form-inline">
+                <AutomationForm
+                  key={sel.id}
+                  kind={sel.slackWatch?.channel ? "watch" : "classic"}
+                  inline
+                  initial={sel}
+                  prefill={null}
+                  onBack={null}
+                  onClose={() => setEditMode(false)}
+                  onSaved={() => {
+                    setEditMode(false);
+                    load();
+                  }}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    className={`auto-toggle ${sel.enabled ? "auto-toggle-on" : ""}`}
+                    onClick={() => handleToggle(sel)}
+                    title={sel.enabled ? "Disable" : "Enable"}
+                  >
+                    <span className="auto-toggle-knob" />
+                  </button>
+                  <span className="text-dim text-[13px]">
+                    {sel.enabled ? "Enabled" : "Disabled"}
+                  </span>
+                  {(sel.isRunning || sel.lastRunStatus === "running") && (
+                    <span className="working-pill">
+                      <span className="working-dot" /> Running
+                    </span>
                   )}
-                  {sel.lastRunSessionId && (
+                  {sel.enabled && sel.nextRunAt && (
+                    <span className="text-faint text-[12px] ml-auto shrink-0">
+                      next run {formatNext(sel.nextRunAt)}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <div className="automations-drawer-section-label mb-1.5">Instructions</div>
+                  <div className="bg-surface border border-line rounded-panel px-3.5 py-3 text-[13px] leading-relaxed text-dim whitespace-pre-wrap">
+                    {sel.prompt}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="automations-drawer-section-label mb-1.5">Configuration</div>
+                  <div className="grid grid-cols-[max-content_1fr] items-baseline gap-x-5 gap-y-2 text-[13px]">
+                    <DetailKey>Trigger</DetailKey>
+                    <span className="text-dim min-w-0">
+                      {sel.slackWatch?.channel ? (
+                        <>
+                          watches{" "}
+                          <span className="automation-cron automation-event">
+                            #{sel.slackWatch.channel}
+                          </span>{" "}
+                          — one run per top-level message
+                        </>
+                      ) : (
+                        <>
+                          {sel.schedule && (
+                            <>
+                              {scheduleLabel(sel.schedule) &&
+                                `${scheduleLabel(sel.schedule)} · `}
+                              <span className="automation-cron" title="Cron, UTC">
+                                {sel.schedule}
+                              </span>
+                            </>
+                          )}
+                          {sel.schedule && sel.eventKey && " · "}
+                          {sel.eventKey && <>on {eventLabel(sel.eventKey)}</>}
+                          {!sel.schedule && !sel.eventKey && "webhook / manual only"}
+                        </>
+                      )}
+                    </span>
+
+                    <DetailKey>Mode</DetailKey>
+                    <span className="text-dim">
+                      {sel.mode === "ask"
+                        ? "Ask — read-only on the main checkout"
+                        : "Code — isolated worktree, can open PRs"}
+                    </span>
+
+                    <DetailKey>Model</DetailKey>
+                    <span className="text-dim">
+                      {sel.model || `${defaultModel || "default"} (default)`}
+                      {sel.fallbackModel && sel.fallbackModel !== "none" && (
+                        <span
+                          className="text-faint"
+                          title="Fallback — used only when every account for the primary model has hit its usage limit"
+                        >
+                          {" "}· falls back to {sel.fallbackModel}
+                        </span>
+                      )}
+                    </span>
+
+                    {sel.accountId && (
+                      <>
+                        <DetailKey>Account</DetailKey>
+                        <span className="text-dim">
+                          {claudeAccounts.find((x) => x.id === sel.accountId)?.name ||
+                            "pinned account"}
+                          <span className="text-faint">
+                            {sel.accountStrict === false
+                              ? " — preferred, falls back to the shared pool"
+                              : " — hard pin (cost cap)"}
+                            {sel.usageCredits ? " · paid usage-credits allowed" : ""}
+                          </span>
+                        </span>
+                      </>
+                    )}
+
+                    <DetailKey>MCPs</DetailKey>
+                    <span className="text-dim min-w-0">
+                      {sel.mcpServers === undefined
+                        ? "all connectors"
+                        : sel.mcpServers.length === 0
+                          ? "none"
+                          : sel.mcpServers.join(", ")}
+                    </span>
+
+                    {sel.webhookSecret && (
+                      <>
+                        <DetailKey>Webhook</DetailKey>
+                        <WebhookUrl id={sel.id} secret={sel.webhookSecret} />
+                      </>
+                    )}
+
+                    <DetailKey>Created</DetailKey>
+                    <span className="text-dim">
+                      by {sel.createdBy}
+                      {sel.createdAt &&
+                        ` · ${new Date(sel.createdAt).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}`}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="automations-drawer-section-label mb-1.5">Activity</div>
+                  {sel.lastRunAt ? (
+                    <div className="text-dim text-[12.5px]">
+                      last run {relativeTime(sel.lastRunAt)}
+                      {sel.lastTrigger ? ` via ${sel.lastTrigger}` : ""}
+                      {sel.lastRunStatus === "ok" && <span className="auto-status-ok"> ✓</span>}
+                      {sel.lastRunStatus === "error" && (
+                        <span className="auto-status-err" title={sel.lastRunError}> ✗</span>
+                      )}
+                      {sel.lastRunSessionId && (
+                        <>
+                          {" · "}
+                          <a
+                            className="automation-session-link"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              onOpenSession(sel.lastRunSessionId!);
+                            }}
+                            href={`${BASE_PATH}/session/${sel.lastRunSessionId}`}
+                          >
+                            view session
+                          </a>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-faint text-[12.5px]">No runs yet.</div>
+                  )}
+                  {(sel.runs?.length ?? 0) > 0 && (
                     <>
-                      {" · "}
-                      <a
-                        className="automation-session-link"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          onOpenSession(sel.lastRunSessionId!);
-                        }}
-                        href={`${BASE_PATH}/session/${sel.lastRunSessionId}`}
-                      >
-                        view session
-                      </a>
+                      <TriggerGraph runs={sel.runs!} />
+                      <RunLedger runs={sel.runs!} onOpenSession={onOpenSession} />
                     </>
                   )}
-                </span>
-              )}
-              <span className="automation-by">by {sel.createdBy}</span>
-            </div>
-
-            {sel.webhookSecret && <WebhookUrl id={sel.id} secret={sel.webhookSecret} />}
-
-            {(sel.runs?.length ?? 0) > 0 && (
-              <div>
-                <div className="automations-drawer-section-label">Run history</div>
-                <RunLedger runs={sel.runs!} onOpenSession={onOpenSession} />
-              </div>
+                </div>
+              </>
             )}
           </div>
         </aside>
@@ -455,7 +518,6 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
 
       {showModal && (
         <CreateAutomationModal
-          initial={editing}
           onClose={() => setShowModal(false)}
           onSaved={() => {
             setShowModal(false);
@@ -475,6 +537,23 @@ function triggerSummary(a: Automation): string {
   if (a.eventKey) parts.push(`on ${a.eventKey}`);
   if (!parts.length) parts.push("webhook / manual");
   return parts.join(" · ");
+}
+
+/** The preset's human label for a cron, when it matches one ("Daily · 9:00 AM PT"). */
+function scheduleLabel(cron: string): string | null {
+  const p = PRESETS.find((p) => p.cron === cron && p.cron && p.cron !== CUSTOM);
+  return p ? p.label : null;
+}
+
+function eventLabel(key: string): string {
+  return EVENT_OPTIONS.find((o) => o.key === key)?.label || key;
+}
+
+/** Left column of the drawer's Configuration grid. */
+function DetailKey({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-faint text-[12px] leading-[1.7] whitespace-nowrap">{children}</span>
+  );
 }
 
 // ── Trigger history graph ────────────────────────────────────
@@ -606,18 +685,18 @@ function RunLedger({
   );
 }
 
+/** Secret webhook URL as a Configuration-grid value: truncated URL + copy. */
 function WebhookUrl({ id, secret }: { id: string; secret: string }) {
   const [copied, setCopied] = useState(false);
   const url = `${WEBHOOK_BASE}/automations/${id}/${secret}`;
 
   return (
-    <div className="automation-webhook">
-      <span className="automation-webhook-label">webhook</span>
+    <span className="flex items-center gap-2 min-w-0">
       <span className="automation-webhook-url" title={url}>
         POST {url.replace(secret, secret.slice(0, 6) + "…")}
       </span>
       <button
-        className="btn-small"
+        className="btn-small shrink-0"
         onClick={() => {
           navigator.clipboard.writeText(url).then(() => {
             setCopied(true);
@@ -627,7 +706,7 @@ function WebhookUrl({ id, secret }: { id: string; secret: string }) {
       >
         {copied ? "Copied ✓" : "Copy URL"}
       </button>
-    </div>
+    </span>
   );
 }
 
@@ -651,18 +730,15 @@ const CATEGORY_LABELS: Record<AutomationTemplate["category"], string> = {
   hygiene: "Hygiene",
 };
 
+/** Create-only — editing renders AutomationForm inline in the detail drawer. */
 function CreateAutomationModal({
-  initial,
   onClose,
   onSaved,
 }: {
-  initial: Automation | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [step, setStep] = useState<Step>(
-    initial ? (initial.slackWatch ? "watch" : "classic") : "type",
-  );
+  const [step, setStep] = useState<Step>("type");
   const [prefill, setPrefill] = useState<AutomationDraft | null>(null);
 
   useEffect(() => {
@@ -692,9 +768,9 @@ function CreateAutomationModal({
         ) : (
           <AutomationForm
             kind={step}
-            initial={initial}
-            prefill={initial ? null : prefill}
-            onBack={initial ? null : () => setStep("type")}
+            initial={null}
+            prefill={prefill}
+            onBack={() => setStep("type")}
             onClose={onClose}
             onSaved={onSaved}
           />
@@ -942,6 +1018,7 @@ function AutomationForm({
   onBack,
   onClose,
   onSaved,
+  inline,
 }: {
   kind: "classic" | "watch";
   initial: Automation | null;
@@ -949,6 +1026,9 @@ function AutomationForm({
   onBack: (() => void) | null;
   onClose: () => void;
   onSaved: () => void;
+  /** Hosted in the detail drawer (whose head already names the automation)
+   *  rather than the create modal — drop the form's own title row. */
+  inline?: boolean;
 }) {
   const startSchedule = initial ? initial.schedule : (prefill?.schedule ?? PRESETS[2].cron);
   const matchesPreset = PRESETS.some((p) => p.cron === startSchedule && p.cron !== CUSTOM);
@@ -1040,20 +1120,22 @@ function AutomationForm({
 
   return (
     <>
-      <div className="flex items-center gap-2">
-        {onBack && (
-          <button className="btn-small" onClick={onBack} title="Back to type chooser">
-            ←
-          </button>
-        )}
-        <div className="automation-form-title" style={{ marginBottom: 0 }}>
-          {initial
-            ? `Edit "${initial.name}"`
-            : isWatch
-              ? "Watch a channel"
-              : "New automation"}
+      {!inline && (
+        <div className="flex items-center gap-2">
+          {onBack && (
+            <button className="btn-small" onClick={onBack} title="Back to type chooser">
+              ←
+            </button>
+          )}
+          <div className="automation-form-title" style={{ marginBottom: 0 }}>
+            {initial
+              ? `Edit "${initial.name}"`
+              : isWatch
+                ? "Watch a channel"
+                : "New automation"}
+          </div>
         </div>
-      </div>
+      )}
 
       <label>
         Automation name

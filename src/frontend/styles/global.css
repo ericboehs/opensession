@@ -9645,6 +9645,16 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	margin: 0;
 }
 
+/* Inline edit hosted in the drawer: drop the form's card chrome — the drawer
+   body already provides the panel background and its own padding. */
+.automation-form.automation-form-inline {
+	background: none;
+	border: none;
+	border-radius: 0;
+	padding: 0;
+	margin-bottom: 0;
+}
+
 /* Drawer open: the list compresses to a narrow rail (Reviews-style). */
 .automations-page-has-detail .automations-page-main {
 	flex: 0 0 340px;
