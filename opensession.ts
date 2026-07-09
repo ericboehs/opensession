@@ -133,6 +133,7 @@ import {
 	formatModelList,
 	DEFAULT_FALLBACK_MODEL,
 	interactiveFallbackModel,
+	interactiveDefaultModel,
 	getModelFallbackAuto,
 	setModelFallbackAuto,
 } from "./src/server/models";
@@ -6929,9 +6930,16 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 
 			// ── Models available to sessions ──
 			if (path === "/backstage/api/models" && req.method === "GET") {
+				// Single-engine core: the picker surfaces ONLY opencode models.
+				// Native claude/codex ids stay resolvable + executable (the direct
+				// Slack/Linear/Plain agent loops still run them on the SDK), just
+				// not selectable here. Guard: with opencode not configured, fall
+				// back to the full registry so the picker is never empty.
+				const opencodeOnly = KNOWN_MODELS.filter((m) => m.provider === "opencode");
+				const opencodeConfigured = opencodeOnly.length > 0;
 				return Response.json({
-					models: KNOWN_MODELS,
-					default: getDefaultModel(),
+					models: opencodeConfigured ? opencodeOnly : KNOWN_MODELS,
+					default: opencodeConfigured ? interactiveDefaultModel() : getDefaultModel(),
 					autoFallback: getModelFallbackAuto(),
 				});
 			}

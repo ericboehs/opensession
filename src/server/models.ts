@@ -1,14 +1,25 @@
 /**
  * Model registry: which models sessions can run on, and which agent backend
- * ("provider") serves each one. Claude models run through the Claude Agent SDK
- * (claude-runner.ts); GPT/Codex models run through the Codex SDK
- * (codex-runner.ts). The session's `model` field is always stored as the
- * canonical id, never an alias.
+ * ("provider") serves each one. The session's `model` field is always stored
+ * as the canonical id, never an alias.
+ *
+ * Single-engine core: interactive Backstage sessions (the picker) and
+ * automations run on the OpenCode engine (opencode-runner.ts). Model
+ * *selection* is steered there — the picker only surfaces opencode ids
+ * (opencodePickerModels), interactiveDefaultModel maps the default onto
+ * opencode, and fallbackModelChain / opencodeAutomationModel map every fallback
+ * onto opencode too (toOpencodeModel). The native "claude"/"codex" providers
+ * (claude-runner.ts / codex-runner.ts / codex-appserver.ts) are NOT removed:
+ * the direct agent loops (Slack, Linear, github, Plain) still call the Claude
+ * Agent SDK / Codex SDK directly with native ids, so native ids must stay
+ * resolvable (resolveModel prefix passthrough) and executable. Migrating those
+ * loops onto opencode is a follow-up; until then this file keeps native
+ * resolution/execution reachable while keeping them out of the picker.
  */
 
 import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
-import { opencodePickerModels } from "./opencode-config";
+import { opencodePickerModels, bridgeEnabled } from "./opencode-config";
 import { envAlias, stateDir } from "./rename-compat";
 
 export type Provider = "claude" | "codex" | "opencode";
@@ -261,10 +272,54 @@ export function interactiveFallbackModel(_primaryModel?: string): string | undef
 }
 
 /**
- * Ordered model fallback chain after a provider's account pool is exhausted.
- * The explicitly configured fallback gets the first shot, then Backstage tries
- * the strongest known models across both providers. The caller tracks models
- * that already exhausted during this run and skips them.
+ * Map a native/legacy model id onto its OpenCode-engine equivalent so the
+ * single-engine core (interactive picker + automations + the usage-limit
+ * fallback chain) always dispatches through the opencode runner:
+ *
+ *   gpt-5.5 / codex-*        → opencode/openai/<model>   (ChatGPT-sub / codex accounts)
+ *   claude-*                 → opencode/anthropic/<model> (meridian/native bridge)
+ *   opencode/…               → unchanged
+ *
+ * Fail-safe (mirrors opencodeAutomationModel): the anthropic path is gated on
+ * the bridge being enabled — with it off, claude ids stay native so a config
+ * toggle degrades to the direct SDK runner instead of failing. The openai path
+ * keys off codex accounts (not the bridge flag), so it always maps. This is
+ * *model selection*, not execution: native ids still resolve (resolveModel) and
+ * still run on the Claude/Codex SDK when the direct agent loops (Slack, Linear,
+ * github, Plain) dispatch them — those loops are not migrated in this pass.
+ */
+export function toOpencodeModel(model?: string | null): string | undefined {
+  const m = (model || "").trim();
+  if (!m) return model ?? undefined;
+  if (m.startsWith("opencode/")) return m;
+  if (m === BEST_AVAILABLE_CODEX_MODEL || m.startsWith("codex-")) {
+    return `opencode/openai/${DEFAULT_CODEX_MODEL}`;
+  }
+  if (m.startsWith("gpt-")) return `opencode/openai/${m}`;
+  if (m.startsWith("claude-")) {
+    return bridgeEnabled() ? `opencode/anthropic/${m}` : m;
+  }
+  return model ?? undefined;
+}
+
+/**
+ * Default model for interactive Backstage sessions and the picker: the global
+ * default mapped onto the opencode engine (so new interactive sessions and the
+ * picker's "default" row run on opencode). getDefaultModel() itself is left
+ * native — the direct agent loops (Slack/Linear/Plain) still read it and run it
+ * on the SDK — so this is deliberately a separate, interactive-only default.
+ */
+export function interactiveDefaultModel(): string {
+  return toOpencodeModel(getDefaultModel()) || getDefaultModel();
+}
+
+/**
+ * Ordered model fallback chain after a run's account pool is exhausted. The
+ * explicitly configured fallback gets the first shot, then Backstage tries the
+ * strongest known models — all mapped onto the OpenCode engine so a usage-limit
+ * fallback rotates among opencode models/accounts, never a native SDK runner
+ * (the single-engine core). The caller tracks models that already exhausted
+ * during this run and skips them.
  */
 export function fallbackModelChain(
   primaryModel: string | undefined,
@@ -275,23 +330,31 @@ export function fallbackModelChain(
     : null;
   if (!preferred) return [];
 
-  const primary = resolveModel(primaryModel || getDefaultModel());
+  // Compare/dedup on the opencode-mapped id so a fallback that maps to the
+  // primary's engine model is correctly skipped.
+  const primaryOc = toOpencodeModel(primaryModel || getDefaultModel());
   const seen = new Set<string>();
   const out: ModelInfo[] = [];
+  const addId = (id: string | undefined | null) => {
+    if (!id) return;
+    const oc = toOpencodeModel(id);
+    if (!oc || oc === primaryOc || seen.has(oc)) return;
+    const info = resolveModel(oc);
+    if (!info) return;
+    seen.add(oc);
+    out.push(info);
+  };
   const add = (model: ModelInfo | null) => {
     if (!model) return;
-    if (model.id === primary?.id) return;
     if (model.id === BEST_AVAILABLE_CODEX_MODEL) {
-      for (const id of CODEX_MODEL_ORDER) add(resolveModel(id));
+      for (const id of CODEX_MODEL_ORDER) addId(id);
       return;
     }
-    if (seen.has(model.id)) return;
-    seen.add(model.id);
-    out.push(model);
+    addId(model.id);
   };
 
   add(preferred);
-  for (const id of FALLBACK_MODEL_ORDER) add(resolveModel(id));
+  for (const id of FALLBACK_MODEL_ORDER) addId(id);
   return out;
 }
 

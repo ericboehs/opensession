@@ -684,10 +684,15 @@ export async function runAutomation(
       accountId: automation.accountId,
       accountStrict: !!automation.accountId && automation.accountStrict !== false,
       usageCredits: automation.usageCredits,
-      fallbackModel:
-        automation.fallbackModel === "none"
-          ? undefined
-          : automation.fallbackModel || DEFAULT_FALLBACK_MODEL,
+      // Fallback also runs on opencode (tier-preserving, same mapping as the
+      // primary): a usage-limit fallback must not drop back onto the native
+      // Codex/Claude SDK. "none" disables fallback; unset with no global
+      // default = no fallback (never inject the automation default here).
+      fallbackModel: (() => {
+        if (automation.fallbackModel === "none") return undefined;
+        const fb = automation.fallbackModel || DEFAULT_FALLBACK_MODEL;
+        return fb ? opencodeAutomationModel(fb) : undefined;
+      })(),
       journal: { bksSessionId: bksId, kind: "automation" },
     })) {
       if (event.type === "init") {
