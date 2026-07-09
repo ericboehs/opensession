@@ -107,6 +107,7 @@ import {
   journalSet,
   journalClear,
   filterMcpServers,
+  isClaudeUsageLimitError,
   CLAUDE_CODE_BIN,
   type StreamEvent,
   type ImageInput,
@@ -136,6 +137,7 @@ import {
   pickAccount,
   getUsableAccountById,
   getAccountById,
+  markExhausted,
   type ClaudeAccount,
 } from "./claude-accounts";
 
@@ -742,9 +744,42 @@ function imageParts(images: ImageInput[] | undefined): Array<Record<string, unkn
   }));
 }
 
+/** Set by an attempt that hit a Claude usage limit on its meridian bridge
+ *  account when another eligible account exists: the wrapper below reruns the
+ *  turn once (the new account's env changes the server config hash, so a
+ *  fresh opencode server binds to it). Mirrors claude-runner's
+ *  rotate-after-limit. */
+interface AccountRotation {
+  rotate: boolean;
+  note: string;
+}
+
+/** Rotation ceiling: enough to walk a realistic bridge-account pool, small
+ *  enough that a pathological "usable but instantly capped" pool can't spin. */
+const MAX_ACCOUNT_ATTEMPTS = 4;
+
 export async function* runOpencode(
   opts: RunAgentOpts & { allowOpencode?: boolean },
   model: string
+): AsyncGenerator<StreamEvent> {
+  // Each attempt may request a rotation (usage-limit on its bridge account
+  // while another usable account exists — the capped one is marked exhausted,
+  // so the re-pick moves on). The final attempt runs without a rotation box
+  // and thus ends in the terminal error (usageLimitExhausted ⇒ agent-runner's
+  // model-fallback chain takes over).
+  for (let attempt = 0; attempt < MAX_ACCOUNT_ATTEMPTS; attempt++) {
+    const rotation: AccountRotation | undefined =
+      attempt < MAX_ACCOUNT_ATTEMPTS - 1 ? { rotate: false, note: "" } : undefined;
+    yield* runOpencodeAttempt(opts, model, rotation);
+    if (!rotation?.rotate) return;
+    yield { type: "text_chunk", text: `\n\n[runner] ${rotation.note}\n\n` };
+  }
+}
+
+async function* runOpencodeAttempt(
+  opts: RunAgentOpts & { allowOpencode?: boolean },
+  model: string,
+  rotation?: AccountRotation
 ): AsyncGenerator<StreamEvent> {
   const { prompt, cwd, mode, mcpServers, confirmTools, journal, user, author } = opts;
   const isAsk = mode === "ask";
@@ -817,6 +852,16 @@ export async function* runOpencode(
   // with a clear error. `bridgeAccountLabel` names the account in that error.
   let bridgeLivenessGuard = false;
   let bridgeAccountLabel = "";
+  // Meridian-bridge account for this attempt (anthropic runs): rotation and
+  // exhaustion-marking need the id, not just the display label.
+  let pickedMeridian: ClaudeAccount | undefined;
+  // The provider's most recent in-turn retry error (opencode retries stream
+  // errors internally with backoff and stays silent while doing so — the
+  // RetryPart / session.status events are the only visibility we get).
+  let lastProviderRetryError = "";
+  // The turn died on a Claude usage limit (weekly Fable cap, 5-hour session
+  // limit, credits) — drives account rotation / usageLimitExhausted.
+  let usageLimitHit = false;
 
   try {
     // Bridge for Anthropic models — dispatched on bridge.mode in
@@ -871,6 +916,7 @@ export async function* runOpencode(
         };
         bridgeLivenessGuard = true;
         bridgeAccountLabel = picked.name;
+        pickedMeridian = picked;
       } else if (bridgeMode === "native") {
         const bridge = ensureAnthropicBridge();
         providerOverride = {
@@ -1105,12 +1151,48 @@ export async function* runOpencode(
     };
     failRun = signalDone;
 
+    // opencode retries provider stream errors internally (exponential backoff,
+    // silent from the outside) — RetryPart / session.status "retry" events are
+    // the only in-turn visibility. Record the error for the liveness guard's
+    // message, and fail FAST on a Claude usage limit: retrying the same capped
+    // account can never succeed, so waiting out the 90s guard (with a
+    // misleading "authentication hang" message) just burns the user's time.
+    const noteProviderRetry = (attempt: number, message: string) => {
+      if (!message) return;
+      lastProviderRetryError = message;
+      turnEvent({
+        direction: "out",
+        kind: "provider_retry",
+        retry_attempt: attempt,
+        error: message.slice(0, 500),
+      });
+      if (
+        parsed.providerID === "anthropic" &&
+        pickedMeridian &&
+        !runFailure &&
+        isClaudeUsageLimitError(message, true)
+      ) {
+        usageLimitHit = true;
+        runFailure =
+          `Claude usage limit on account "${bridgeAccountLabel}": ${message.slice(0, 300)}`;
+        void client.session.abort({ path: { id: ocSessionId } }).catch(() => {});
+        signalDone();
+      }
+    };
+
     const handleEvent = async (ev: any) => {
       const p = ev?.properties;
       switch (ev?.type) {
         case "message.part.updated": {
           const part = p?.part;
           if (!part || part.sessionID !== ocSessionId) return;
+          if (part.type === "retry") {
+            noteProviderRetry(
+              Number(part.attempt) || 0,
+              String(part.error?.data?.message || part.error?.name || "")
+            );
+            return;
+          }
           if (part.type === "text" && !part.synthetic && part.time?.end && !emittedText.has(part.id)) {
             emittedText.add(part.id);
             turnEvent({ direction: "out", kind: "assistant_text", ...summarizeText(part.text) });
@@ -1188,6 +1270,16 @@ export async function* runOpencode(
           sessionError = err?.data?.message || err?.name || "opencode session error";
           return;
         }
+        case "session.status": {
+          // Belt-and-braces sibling of the RetryPart handler (older/newer
+          // servers may emit one or both shapes).
+          if (p?.sessionID !== ocSessionId) return;
+          const st = p?.status;
+          if (st?.type === "retry") {
+            noteProviderRetry(Number(st.attempt) || 0, String(st.message || ""));
+          }
+          return;
+        }
         case "session.idle": {
           if (p?.sessionID === ocSessionId) signalDone();
           return;
@@ -1250,9 +1342,17 @@ export async function* runOpencode(
     const livenessTimer = bridgeLivenessGuard
       ? setTimeout(() => {
           if (sawFirstOutput || idle || abortController.signal.aborted) return;
-          runFailure ??=
-            `opencode ${parsed.providerID} run produced no output within ${LIVENESS_MS / 1000}s — ` +
-            `likely an authentication hang on account "${bridgeAccountLabel}"; aborting`;
+          // Name the real cause when the provider told us (captured retry
+          // errors) instead of guessing "authentication hang".
+          if (lastProviderRetryError && isClaudeUsageLimitError(lastProviderRetryError, true)) {
+            usageLimitHit = true;
+          }
+          runFailure ??= lastProviderRetryError
+            ? `opencode ${parsed.providerID} run produced no output within ${LIVENESS_MS / 1000}s — ` +
+              `the provider kept retrying on account "${bridgeAccountLabel}": ` +
+              `${lastProviderRetryError.slice(0, 300)}; aborting`
+            : `opencode ${parsed.providerID} run produced no output within ${LIVENESS_MS / 1000}s — ` +
+              `likely an authentication hang on account "${bridgeAccountLabel}"; aborting`;
           void client.session.abort({ path: { id: ocSessionId } }).catch(() => {});
           signalDone();
         }, LIVENESS_MS)
@@ -1299,9 +1399,41 @@ export async function* runOpencode(
     // final-message fetch below would just throw a raw fetch error on a dead
     // server) and let the finally cleanup release the session.
     if (runFailure) {
+      // Claude usage limit on the meridian account: sideline it (model-scoped
+      // for credit-metered models like Fable — see markExhausted) and, when
+      // another eligible account exists, ask the wrapper for one retry on it
+      // instead of failing the turn. No account left ⇒ terminal error with
+      // usageLimitExhausted so agent-runner's model fallback takes over.
+      if (usageLimitHit && pickedMeridian) {
+        markExhausted(pickedMeridian.id, parsed.modelID);
+        if (rotation) {
+          const next = pickMeridianAccount(
+            user,
+            parsed.modelID,
+            readOpencodeBridgeConfig()?.bridgeAccountIds
+          );
+          if (!("error" in next)) {
+            turnEvent({ direction: "out", kind: "account_switch", account: next.name });
+            bridgeRunEnd("error", runFailure);
+            rotation.rotate = true;
+            rotation.note =
+              `Claude usage limit hit on account "${pickedMeridian.name}" ` +
+              `(${parsed.modelID}); switched to "${next.name}" and retrying.`;
+            return;
+          }
+        }
+        runFailure +=
+          " — no other account is currently usable for this model; use /model to switch models.";
+      }
       turnEvent({ direction: "out", kind: "error", error: runFailure });
       bridgeRunEnd("error", runFailure);
-      yield { type: "error", content: runFailure, provider: PROVIDER, model };
+      yield {
+        type: "error",
+        content: runFailure,
+        provider: PROVIDER,
+        model,
+        usageLimitExhausted: usageLimitHit || undefined,
+      };
       return;
     }
 
@@ -1330,7 +1462,10 @@ export async function* runOpencode(
       sessionError ||
       (info?.error ? info.error?.data?.message || info.error?.name : undefined);
     if (errMessage && info?.error?.name !== "MessageAbortedError") {
-      const limit = isCodexUsageLimitError(errMessage);
+      const limit =
+        parsed.providerID === "anthropic"
+          ? isClaudeUsageLimitError(errMessage, true)
+          : isCodexUsageLimitError(errMessage);
       turnEvent({ direction: "out", kind: "error", error: errMessage });
       bridgeRunEnd("error", errMessage);
       yield {
@@ -1386,7 +1521,10 @@ export async function* runOpencode(
         content: message,
         provider: PROVIDER,
         model,
-        usageLimitExhausted: isCodexUsageLimitError(message) || undefined,
+        usageLimitExhausted:
+          (parsed.providerID === "anthropic"
+            ? isClaudeUsageLimitError(message, true)
+            : isCodexUsageLimitError(message)) || undefined,
       };
     }
   } finally {
@@ -1403,6 +1541,8 @@ export async function* runOpencode(
       entry.activeRuns = Math.max(0, entry.activeRuns - 1);
       entry.lastUsed = Date.now();
     }
-    if (journal) journalClear(runKey);
+    // Keep the journal across an account-rotation retry (the wrapper reruns
+    // the same runKey immediately); cleared for real on the final attempt.
+    if (journal && !rotation?.rotate) journalClear(runKey);
   }
 }
