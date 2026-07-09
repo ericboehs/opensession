@@ -18,6 +18,7 @@
  * NOTE: this is agent-loop code — changes here need a real `systemctl
  * restart`, hot reload won't swap a running interval (see CLAUDE.md).
  */
+import { envAlias, stateDir } from "../../server/rename-compat";
 import { mkdirSync, readFileSync, existsSync } from "fs";
 import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -30,11 +31,13 @@ import { userMatchesAny, resolveTeammate } from "../../server/shared/user-mappin
 import { openDirectMessage, sendSlackMessage } from "../slack/slack-api";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const MONITOR_DIR = `${HOME}/.backstage-monitor`;
+const MONITOR_DIR = stateDir("monitor");
 const CONFIG_PATH = `${MONITOR_DIR}/config.json`;
 const STATE_PATH = `${MONITOR_DIR}/state.json`;
 const ANSWER_MODEL = process.env.MONITOR_ANSWER_MODEL || "claude-haiku-4-5";
-const BACKSTAGE_BASE = "https://michael.taila5d766.ts.net/backstage";
+const UI_BASE =
+  envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+  "https://michael.taila5d766.ts.net/backstage";
 
 mkdirSync(MONITOR_DIR, { recursive: true });
 
@@ -220,7 +223,7 @@ const lastCheckAt = new Map<string, number>();
 let started = false;
 
 function sessionUrl(id: string): string {
-  return `${BACKSTAGE_BASE}/session/${encodeURIComponent(id)}`;
+  return `${UI_BASE}/session/${encodeURIComponent(id)}`;
 }
 
 function questionPreview(qs: AskQuestion[]): string {

@@ -4,19 +4,19 @@
  * merged, a `[GitHub]` message is delivered into that session's chat through the
  * SessionControl registry — the same steer/queue/start path a human message
  * takes — so Michael sees it and can react. The merge commit is then tracked in
- * ~/.backstage-github/pending-deploys.json (survives restarts), and when the
+ * ~/.opensession-github/pending-deploys.json (survives restarts), and when the
  * Deploy workflow (.github/workflows/deploy.yml) completes for that commit the
  * session gets a second message with the outcome. (Pre-merge staging previews
  * are NOT announced here — the session header's Staging button already surfaces
  * the preview URL + Ready state, so a chat notification would just be redundant.)
  */
+import { stateDir } from "../../server/rename-compat";
 import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { tryGetSessionControl, type SessionControl, type SessionSummary } from "../../server/session-control";
 import { REPOS } from "../../server/worktree";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const PENDING_PATH = `${HOME}/.backstage-github/pending-deploys.json`;
+const PENDING_PATH = `${stateDir("github")}/pending-deploys.json`;
 const DEPLOY_WORKFLOW_PATH = ".github/workflows/deploy.yml";
 /** A merge whose deploy never reported back is dropped after this long. */
 const PENDING_TTL_MS = 48 * 60 * 60 * 1000;

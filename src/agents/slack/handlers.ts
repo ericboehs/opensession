@@ -6,6 +6,7 @@
  * processMessage      — runs the Claude Agent SDK query() for a queued message
  */
 
+import { envAlias } from "../../server/rename-compat";
 import { existsSync } from "fs";
 import { execSync } from "child_process";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -1347,7 +1348,9 @@ I'm now in a worktree (branch: ${branch}) for this task. Please analyze what nee
 // handleMentionEvent — @mention in channels
 // ---------------------------------------------------------------------------
 
-const UI_BASE = process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+const UI_BASE =
+  envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+  "https://michael.taila5d766.ts.net/backstage";
 
 /**
  * Slack card for a triggered PR action. While running: Open-in-Backstage + Stop.

@@ -22,6 +22,7 @@
  * Investigation only — the runs never retry/recover; they open a PR only when
  * highly confident, else discuss in the card thread.
  */
+import { envAlias, stateDir } from "../../server/rename-compat";
 import { randomUUIDv7 } from "bun";
 import { mkdirSync, readFileSync, existsSync, unlinkSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
@@ -39,14 +40,15 @@ import { postSlackBlocks, updateSlackBlocks } from "../slack/slack-api";
 import { EXPORT_EVENT_KEY, EXPORT_AUTOMATION_NAME, EXPORT_INVESTIGATION_PROMPT } from "../export/prompt";
 import { UPLOAD_EVENT_KEY, UPLOAD_AUTOMATION_NAME, UPLOAD_INVESTIGATION_PROMPT } from "../upload/prompt";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const DEDUP_ROOT = `${HOME}/.backstage-grafana-poll`;
+const DEDUP_ROOT = stateDir("grafana-poll");
 
 const GRAFANA_URL = process.env.GRAFANA_URL || "";
 const GRAFANA_TOKEN = process.env.GRAFANA_SERVICE_ACCOUNT_TOKEN || "";
 const LOKI_DATASOURCE_UID = process.env.LOKI_DATASOURCE_UID || "loki";
 
-const UI_BASE = process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+const UI_BASE =
+  envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+  "https://michael.taila5d766.ts.net/backstage";
 
 const DEFAULT_LOOKBACK = "20m";
 const DEFAULT_POLL_MINUTES = 15;

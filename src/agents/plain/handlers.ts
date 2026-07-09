@@ -1,6 +1,7 @@
 /**
  * Plain agent webhook and mention handlers.
  */
+import { envAlias } from "../../server/rename-compat";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { SnoozeStatusDetail } from "@team-plain/typescript-sdk";
 import { cleanPlainToolInput } from "../../server/shared/note-style";
@@ -119,7 +120,13 @@ async function runClaude(
           PATH: process.env.PATH,
           HOME: process.env.HOME,
           LANG: process.env.LANG,
-          ...(process.env.MICHAEL_MODEL ? { MICHAEL_MODEL: process.env.MICHAEL_MODEL } : {}),
+          // New name primary, old alias along for external readers.
+          ...(envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")
+            ? {
+                OPENSESSION_MODEL: envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL"),
+                MICHAEL_MODEL: envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL"),
+              }
+            : {}),
         },
         allowedTools: [
           "Bash", "Read", "Edit", "Write", "Grep", "Glob",

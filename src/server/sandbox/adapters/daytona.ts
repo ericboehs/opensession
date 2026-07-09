@@ -77,7 +77,7 @@ async function daytonaClient(): Promise<Daytona> {
   const apiKey = cfg.apiKey || process.env.DAYTONA_API_KEY;
   if (!apiKey) {
     throw new Error(
-      'daytona sandbox provider is not configured — set {"daytona":{"apiKey":"…"}} in ~/.backstage-sandbox.json or DAYTONA_API_KEY',
+      'daytona sandbox provider is not configured — set {"daytona":{"apiKey":"…"}} in ~/.opensession-sandbox.json or DAYTONA_API_KEY',
     );
   }
   const { Daytona } = await import("@daytonaio/sdk");

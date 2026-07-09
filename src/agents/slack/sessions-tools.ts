@@ -16,6 +16,7 @@
  * spawn_task/task_status/cancel_task task primitives) are gated to the trusted
  * user via `isAdmin`, matching michael-admin.
  */
+import { envAlias } from "../../server/rename-compat";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { existsSync, readFileSync } from "fs";
@@ -317,7 +318,9 @@ export async function spawnTaskImpl(
   void Promise.resolve(deps.stampSpawnDepth(id, depth)).catch((e) =>
     console.warn(`[spawn_task] stamping spawnDepth on ${id} failed:`, e),
   );
-  const base = process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+  const base =
+    envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+    "https://michael.taila5d766.ts.net/backstage";
   return { ok: true, taskId: id, url: `${base}/session/${id}` };
 }
 

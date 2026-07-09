@@ -13,17 +13,17 @@
  *      better over time.
  *
  * Feedback state lives on the box (decoupled from repo PR churn):
- *   ~/.backstage-seo/pending.jsonl  — merged seo-sweep PRs awaiting validation
- *   ~/.backstage-seo/learnings.md   — measured outcomes; the sweep's memory
+ *   ~/.opensession-seo/pending.jsonl  — merged seo-sweep PRs awaiting validation
+ *   ~/.opensession-seo/learnings.md   — measured outcomes; the sweep's memory
  */
+import { stateDir } from "../../server/rename-compat";
 import { mkdirSync, appendFileSync, existsSync } from "fs";
 import { listAutomations, createAutomation } from "../../server/automations";
 import { defaultRepo } from "../../server/config";
 
 const REPO = defaultRepo().ghRepo;
 export const SEO_LABEL = "seo-sweep";
-const HOME = process.env.HOME || "/home/ubuntu";
-export const SEO_DIR = `${HOME}/.backstage-seo`;
+export const SEO_DIR = stateDir("seo");
 const PENDING_FILE = `${SEO_DIR}/pending.jsonl`;
 const LEARNINGS_FILE = `${SEO_DIR}/learnings.md`;
 /** SEO impact lags merge by weeks; wait before measuring so the signal is real. */

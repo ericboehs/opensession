@@ -111,7 +111,8 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync } from "fs";
 import { dirname, resolve as resolvePath } from "path";
-import { BACKSTAGE_CHATS_DIR } from "../paths";
+import { OPENSESSION_CHATS_DIR } from "../paths";
+import { envAlias, stateDir } from "../rename-compat";
 import {
   journalSet,
   journalClear,
@@ -177,10 +178,10 @@ const SETUP_TIMEOUT_MS = 10 * 60_000;
 
 /** Provider-owned state, one file per sandbox — lets get() reattach (or fully
  *  recreate a removed container with identical mounts) after any restart. */
-const STATE_DIR = `${BACKSTAGE_CHATS_DIR}/sandboxes`;
+const STATE_DIR = `${OPENSESSION_CHATS_DIR}/sandboxes`;
 /** Per-session run dirs (spec/meta/journal/socket/log per run), bind-mounted
  *  into the session's container at the identical path. */
-const RUNS_BASE = `${BACKSTAGE_CHATS_DIR}/sandbox-runs`;
+const RUNS_BASE = `${OPENSESSION_CHATS_DIR}/sandbox-runs`;
 
 interface DockerSandboxState {
   sandboxId: string;
@@ -435,7 +436,7 @@ async function sweepOrphanSnapshots(): Promise<void> {
       const container = containerNameFor(sessionId);
       if (readState(container)) continue; // still tracked → destroy() cleans
       if ((await containerStatus(container)) !== "gone") continue;
-      if (existsSync(`${BACKSTAGE_CHATS_DIR}/${sessionId}.json`)) continue; // session alive — keep
+      if (existsSync(`${OPENSESSION_CHATS_DIR}/${sessionId}.json`)) continue; // session alive — keep
       console.log(`[sandbox] removing orphaned snapshot images ${repo} (session ${sessionId} deleted, sandbox gone)`);
       await removeSnapshotImages(container);
     } catch (e) {
@@ -445,7 +446,7 @@ async function sweepOrphanSnapshots(): Promise<void> {
 }
 
 /** Paths that end up inside a `sh -c` log-redirect line must be boring. They
- *  are always provider-constructed (BACKSTAGE_CHATS_DIR + sanitized ids), so
+ *  are always provider-constructed (OPENSESSION_CHATS_DIR + sanitized ids), so
  *  this is an assertion, not an escape. */
 function assertSafePath(p: string): string {
   if (!/^[A-Za-z0-9_\/.@:-]+$/.test(p)) {
@@ -596,9 +597,9 @@ async function createContainer(
     // already write here today — so this is parity with host-run trust, not an
     // escalation. Worst case a hostile run scribbles on its own audit trail;
     // it gains no credentials or control surface from it.
-    ...vol(`${HOME}/.backstage-audit`, `${HOME}/.backstage-audit`),
+    ...vol(stateDir("audit"), stateDir("audit")),
   ];
-  mkdirSync(`${HOME}/.backstage-audit`, { recursive: true });
+  mkdirSync(stateDir("audit"), { recursive: true });
 
   // run-rpc socket (michael-* proxies). WS transport skips it — the proxies
   // dial /backstage/rpc-ws instead, which also removes the stale-inode caveat
@@ -606,7 +607,7 @@ async function createContainer(
   // mounting a MISSING host path would make docker create a directory there
   // and break run-rpc's bind.
   if (opts.transport !== "ws") {
-    const rpcSock = rpcSocketPath(BACKSTAGE_CHATS_DIR);
+    const rpcSock = rpcSocketPath(OPENSESSION_CHATS_DIR);
     try {
       if (statSync(rpcSock).isSocket()) mounts.push(...vol(rpcSock, rpcSock));
       else console.warn(`[sandbox] ${rpcSock} exists but is not a socket — michael-* proxies disabled`);
@@ -624,11 +625,13 @@ async function createContainer(
   roIfExists(`${HOME}/.gitconfig`, "gitconfig");
   roIfExists(`${HOME}/.config/gh`, "gh config");
   roIfExists(
-    process.env.BACKSTAGE_MCP_CONFIG || `${HOME}/projects/tella-backstage/mcp-config.json`,
+    envAlias("OPENSESSION_MCP_CONFIG", "BACKSTAGE_MCP_CONFIG") ||
+      `${HOME}/projects/tella-backstage/mcp-config.json`,
     "mcp-config.json",
   );
   roIfExists(
-    process.env.BACKSTAGE_CLAUDE_ACCOUNTS_PATH || `${HOME}/.backstage-claude-accounts.json`,
+    envAlias("OPENSESSION_CLAUDE_ACCOUNTS_PATH", "BACKSTAGE_CLAUDE_ACCOUNTS_PATH") ||
+      stateDir("claude-accounts.json"),
     "claude account pool",
   );
   // Codex/ChatGPT account material, for opencode/openai/* dispatch
@@ -643,7 +646,7 @@ async function createContainer(
   // codex runs in-container keep their own per-sandbox ~/.codex volume
   // (an in-container refresh attempt against a ro auth.json fails loudly
   // instead of corrupting the host family).
-  roIfExists(`${HOME}/.backstage-codex-accounts.json`, "codex account pool");
+  roIfExists(stateDir("codex-accounts.json"), "codex account pool");
   for (const acct of listCodexAccounts()) {
     if (acct.kind === "home") roIfExists(`${acct.value}/auth.json`, `codex auth (${acct.name})`);
   }
@@ -651,11 +654,13 @@ async function createContainer(
   // the runner-host's opencode dispatch (bridge mode, accounts restriction,
   // turn timeout) — without it every opencode/anthropic/* run in a sandbox
   // fails with "bridge disabled". ro like the account pool it selects from.
-  // Source honors the host-side BACKSTAGE_OPENCODE_CONFIG seam, but the
-  // destination is always the default path — that's what the in-container
-  // process (which has no such env) reads.
+  // Source honors the host-side OPENSESSION_OPENCODE_CONFIG seam (old name
+  // accepted), but the destination stays the legacy default path — that's what
+  // the in-container process (which has no such env) dual-reads.
   {
-    const src = process.env.BACKSTAGE_OPENCODE_CONFIG || `${HOME}/.backstage-opencode.json`;
+    const src =
+      envAlias("OPENSESSION_OPENCODE_CONFIG", "BACKSTAGE_OPENCODE_CONFIG") ||
+      stateDir("opencode.json");
     if (existsSync(src)) mounts.push(...vol(src, `${HOME}/.backstage-opencode.json`, true));
   }
   // The tella-local skill (ensure-up.sh + CDP helpers) at its identical host
@@ -779,8 +784,14 @@ async function runWorkspaceSetup(
   cwd: string,
   bootMode: "fresh" | "snapshot-restore",
 ): Promise<boolean> {
-  const script = `${cwd}/.backstage/setup.sh`;
-  const probe = await docker(["exec", name, "test", "-f", script]);
+  // Repo hooks: `.opensession/setup.sh` (new) with `.backstage/setup.sh`
+  // (pre-rename) fallback.
+  let script = `${cwd}/.opensession/setup.sh`;
+  let probe = await docker(["exec", name, "test", "-f", script]);
+  if (probe.exitCode !== 0) {
+    script = `${cwd}/.backstage/setup.sh`;
+    probe = await docker(["exec", name, "test", "-f", script]);
+  }
   if (probe.exitCode !== 0) return true; // no hook — settled
   if (bootMode === "snapshot-restore") {
     console.log(`[sandbox] ${name}: skipping ${script} (snapshot restore carries its effects)`);
@@ -790,7 +801,10 @@ async function runWorkspaceSetup(
   console.log(`[sandbox] ${name}: running workspace setup hook ${script} (log: ${log})`);
   const r = await docker(
     [
-      "exec", "-w", assertSafePath(cwd), "-e", `BACKSTAGE_BOOT_MODE=${bootMode}`, name,
+      "exec", "-w", assertSafePath(cwd),
+      "-e", `OPENSESSION_BOOT_MODE=${bootMode}`,
+      "-e", `BACKSTAGE_BOOT_MODE=${bootMode}`, // deprecated alias for older hooks
+      name,
       "sh", "-c", `bash ${assertSafePath(script)} >> ${log} 2>&1`,
     ],
     { timeoutMs: SETUP_TIMEOUT_MS },
@@ -845,10 +859,23 @@ function makeDockerLauncher(container: string, sessionId: string): HostLauncher 
       }
       const args = [
         "exec", "-d",
+        // New env names primary; deprecated aliases ride along so an
+        // un-migrated in-container build keeps working.
+        ...env(`OPENSESSION_RUN_JOURNAL=${dir}/journal.json`),
         ...env(`BACKSTAGE_RUN_JOURNAL=${dir}/journal.json`),
         ...env("NODE_ENV=production"),
-        ...(process.env.MICHAEL_MODEL ? env(`MICHAEL_MODEL=${process.env.MICHAEL_MODEL}`) : []),
-        ...(process.env.MICHAEL_UI_BASE ? env(`MICHAEL_UI_BASE=${process.env.MICHAEL_UI_BASE}`) : []),
+        ...(envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")
+          ? [
+              ...env(`OPENSESSION_MODEL=${envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")}`),
+              ...env(`MICHAEL_MODEL=${envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL")}`),
+            ]
+          : []),
+        ...(envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE")
+          ? [
+              ...env(`OPENSESSION_UI_BASE=${envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE")}`),
+              ...env(`MICHAEL_UI_BASE=${envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE")}`),
+            ]
+          : []),
         ...wsEnv,
         container,
         "sh", "-c",

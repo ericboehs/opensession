@@ -1,17 +1,17 @@
 /**
  * Per-PR state for the github agent, one JSON file per PR at
- * ~/.backstage-github/<prNumber>.json. Tracks the single review comment id, which
+ * ~/.opensession-github/<prNumber>.json. Tracks the single review comment id, which
  * head SHAs we've already reviewed (dedup), the resumable review session, and the
  * auto-fix / simplify run state. Mirrors the grafana-poller dedup store.
  *
  * In-process locks coalesce rapid webhook bursts (force-push, stacked commits)
  * within one process; the on-disk state guards across restarts.
  */
+import { stateDir } from "../../server/rename-compat";
 import { mkdirSync, readFileSync, existsSync, readdirSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 
-const HOME = process.env.HOME || "/home/ubuntu";
-const STATE_DIR = `${HOME}/.backstage-github`;
+const STATE_DIR = stateDir("github");
 
 mkdirSync(STATE_DIR, { recursive: true });
 

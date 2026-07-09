@@ -1,6 +1,7 @@
 /**
  * Linear agent session lifecycle, Claude runner, polling, and Ralph mode.
  */
+import { envAlias } from "../../server/rename-compat";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import {
   CLAUDE_CODE_BIN,
@@ -313,7 +314,8 @@ export async function getLastMessageUuid(worktreeDir: string, claudeSessionId: s
 
 /** Base URL of the Michael web UI, linked from Linear sessions. */
 export const MICHAEL_UI_BASE =
-  process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+  envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+  "https://michael.taila5d766.ts.net/backstage";
 
 export function michaelSessionUrl(branch: string): string {
   return `${MICHAEL_UI_BASE}/session/${encodeURIComponent(`linear-${branch}`)}`;

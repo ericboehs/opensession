@@ -4,6 +4,7 @@
  * PR review/fix/simplify shows up as a Michael session in the web UI, and resumes
  * the engine conversation across rounds via the deterministic per-PR session file.
  */
+import { envAlias } from "../../server/rename-compat";
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { BACKSTAGE_CHATS_DIR } from "../../server/paths";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
@@ -72,7 +73,9 @@ export function bksIdFor(prNumber: number, kind: GithubRunKind): string {
   return `bks-ghpr-${prNumber}-${kind}`;
 }
 
-const UI_BASE = process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage";
+const UI_BASE =
+  envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
+  "https://michael.taila5d766.ts.net/backstage";
 
 /** Backstage UI link to a run's session, for "open to monitor" links in PR comments. */
 export function sessionUrl(prNumber: number, kind: GithubRunKind): string {

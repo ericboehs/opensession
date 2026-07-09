@@ -16,9 +16,10 @@
  * be dropped or downgraded because the router hiccuped.
  *
  * The routing prompt is editable from the Connections UI (stored in
- * ~/.backstage-plain-router.json); the JSON output contract is appended by
+ * ~/.opensession-plain-router.json); the JSON output contract is appended by
  * code so prompt tweaks can't break parsing.
  */
+import { stateDir } from "../../server/rename-compat";
 import { existsSync, readFileSync } from "fs";
 import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -26,7 +27,7 @@ import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { resolveModel } from "../../server/models";
 
 const ROUTER_MODEL = process.env.PLAIN_SPAM_CHECK_MODEL || "claude-haiku-4-5";
-const CONFIG_PATH = `${process.env.HOME || "/home/ubuntu"}/.backstage-plain-router.json`;
+const CONFIG_PATH = stateDir("plain-router.json");
 
 export type TicketRoute = "spam" | "basic" | "full";
 

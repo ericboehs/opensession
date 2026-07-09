@@ -1,21 +1,23 @@
 /**
  * Sandbox configuration (Phase 0 of docs/sandboxes-plan.md).
  *
- * `~/.backstage-sandbox.json` picks the provider, e.g.
+ * `~/.opensession-sandbox.json` (dual-read fallback to `~/.backstage-sandbox.json`)
+ * picks the provider, e.g.
  *   {"provider": "docker", "image": "backstage-runner:latest",
  *    "idleStopMinutes": 30, "perRepo": {"tella-fusion": {"provider": "docker"}}}
  *
  * Read fresh on every call (same pattern as codexTransport() reading
- * ~/.backstage-codex-transport.json) so a config flip applies to the next run
+ * ~/.opensession-codex-transport.json) so a config flip applies to the next run
  * without a restart. Missing/invalid config = provider "local" = exactly
  * today's behavior.
  *
- * Kill switch: `touch ~/.backstage-chats/disable-sandboxes` forces "local" for
+ * Kill switch: `touch <chats-dir>/disable-sandboxes` forces "local" for
  * new runs regardless of config — mirroring host-client's disable-run-hosts.
  */
 
 import { existsSync, readFileSync } from "fs";
-import { BACKSTAGE_CHATS_DIR } from "../paths";
+import { OPENSESSION_CHATS_DIR } from "../paths";
+import { envAlias, stateDir } from "../rename-compat";
 import type { SandboxProviderId } from "./provider";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -24,9 +26,12 @@ const HOME = process.env.HOME || "/home/ubuntu";
 // read fresh per run). Read per call, not at module load, so a test can flip
 // the env var without re-importing this module.
 function configPath(): string {
-  return process.env.BACKSTAGE_SANDBOX_CONFIG || `${HOME}/.backstage-sandbox.json`;
+  return (
+    envAlias("OPENSESSION_SANDBOX_CONFIG", "BACKSTAGE_SANDBOX_CONFIG") ||
+    stateDir("sandbox.json")
+  );
 }
-const DISABLE_FILE = `${BACKSTAGE_CHATS_DIR}/disable-sandboxes`;
+const DISABLE_FILE = `${OPENSESSION_CHATS_DIR}/disable-sandboxes`;
 
 export interface SandboxRepoOverride {
   provider?: SandboxProviderId;
@@ -486,10 +491,10 @@ export function resolveRequestedSandbox(
   if (!sandboxProviderConfigured(id)) {
     const hint =
       id === "docker"
-        ? "create ~/.backstage-sandbox.json (see docs/self-hosting-sandboxes.md)"
+        ? "create ~/.opensession-sandbox.json (see docs/self-hosting-sandboxes.md)"
         : id === "daytona"
-          ? 'set {"daytona":{"apiKey":"…"}} in ~/.backstage-sandbox.json (or DAYTONA_API_KEY)'
-          : 'set {"e2b":{"apiKey":"…"}} in ~/.backstage-sandbox.json (or E2B_API_KEY)';
+          ? 'set {"daytona":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or DAYTONA_API_KEY)'
+          : 'set {"e2b":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or E2B_API_KEY)';
     return {
       ok: false,
       error: `Sandbox provider "${id}" is not configured — ${hint}.`,

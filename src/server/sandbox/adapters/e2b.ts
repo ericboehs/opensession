@@ -71,7 +71,7 @@ function apiKeyOrThrow(): string {
   const key = sandboxConfig().e2b?.apiKey || process.env.E2B_API_KEY;
   if (!key) {
     throw new Error(
-      'e2b sandbox provider is not configured — set {"e2b":{"apiKey":"…"}} in ~/.backstage-sandbox.json or E2B_API_KEY',
+      'e2b sandbox provider is not configured — set {"e2b":{"apiKey":"…"}} in ~/.opensession-sandbox.json or E2B_API_KEY',
     );
   }
   return key;

@@ -31,7 +31,11 @@ const hostDir = dirname(resolve(specPath));
 // at module load. The transient unit sets it too; this is the belt-and-braces
 // for manual/debug launches. (agent-runner is imported dynamically below so
 // this assignment reliably happens first.)
-process.env.BACKSTAGE_RUN_JOURNAL ||= `${hostDir}/journal.json`;
+// New name primary; keep the deprecated alias in sync for anything that
+// still reads it (both point at this host's private journal).
+process.env.OPENSESSION_RUN_JOURNAL ||=
+  process.env.BACKSTAGE_RUN_JOURNAL || `${hostDir}/journal.json`;
+process.env.BACKSTAGE_RUN_JOURNAL = process.env.OPENSESSION_RUN_JOURNAL;
 
 const { runAgent, cancelAgentRun, steerAgentRun, interruptAndSteerAgentRun } =
   await import("../server/agent-runner");
