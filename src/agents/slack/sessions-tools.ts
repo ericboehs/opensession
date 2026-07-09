@@ -18,7 +18,7 @@
  */
 import { productName } from "../../server/config";
 import { envAlias } from "../../server/rename-compat";
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 import { existsSync, readFileSync } from "fs";
 import {

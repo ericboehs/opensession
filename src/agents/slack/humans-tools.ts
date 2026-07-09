@@ -15,7 +15,7 @@
  * whitelisted user. In Backstage sessions everyone is treated as admin (the UI is
  * Tailscale- and team-gated already), matching michael-sessions.
  */
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 import {
   registerAsk,

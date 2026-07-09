@@ -14,7 +14,7 @@
  * context, so the session file and live state update immediately.
  */
 
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 import type { AttachedRepo } from "../../server/types";
 

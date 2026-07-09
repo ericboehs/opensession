@@ -11,7 +11,7 @@
  * setPreviewPath callback (touchBackstageSession), so the buttons update live.
  */
 
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 
 export interface PreviewToolContext {

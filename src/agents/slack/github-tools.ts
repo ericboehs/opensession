@@ -8,7 +8,7 @@
  * Created per interactive Slack message in handlers.ts and added to the Claude
  * run's mcpServers (in-process SDK MCP, like michael-admin — Claude path only).
  */
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 import { parsePrNumber, triggerPrAction, type PrActionKind } from "../github/trigger";
 import { sendSlackMessage } from "./slack-api";

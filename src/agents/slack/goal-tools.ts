@@ -12,7 +12,7 @@
  *   durable ledger. It only ever mutates its own goal record — low blast radius,
  *   which is why it's safe on an otherwise-headless run.
  */
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 import {
   listGoals,

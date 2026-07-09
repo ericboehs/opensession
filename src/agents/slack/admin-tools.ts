@@ -15,7 +15,7 @@
  * tools are available to anyone who can talk to Michael.
  */
 
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 import {
   listAutomations,
