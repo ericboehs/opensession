@@ -47,7 +47,7 @@ import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { extractBackstageVideos } from "./jsonl-parser";
 import { markCodexModelExhausted, priceUsageUsd, resolveConcreteModel } from "./models";
-import { personaName } from "./config";
+import { personaName, productName } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
@@ -154,7 +154,7 @@ export function formatMcpAliasNote(aliases: Map<string, string>): string | undef
     .map(([from, to]) => `- \`${from}\` is exposed as \`${to}\``);
   return [
     "## MCP Server Aliases",
-    "This repo has project-local Codex MCP config with names that collide with Backstage's runtime MCP servers. Use these runtime names for tool calls in this Codex session:",
+    `This repo has project-local Codex MCP config with names that collide with ${productName()}'s runtime MCP servers. Use these runtime names for tool calls in this Codex session:`,
     ...lines,
     "For example, if instructions mention `mcp__plain__reply_to_thread`, use `mcp__backstage_plain__reply_to_thread` when `plain` is aliased to `backstage_plain`.",
   ].join("\n");
@@ -355,7 +355,7 @@ export function buildCodexDeveloperInstructions(input: {
   }
   if (input.inProcessMcp && Object.keys(input.inProcessMcp).length) {
     parts.push(
-      `## Managing ${name}\nYou can see and steer your other Backstage sessions via the ` +
+      `## Managing ${name}\nYou can see and steer your other ${productName()} sessions via the ` +
         "michael-sessions MCP tools (list_sessions, get_session, send_to_session, " +
         "answer_session_question, cancel_session, create_session, plus spawn_task / " +
         "task_status / cancel_task for fire-and-forget child tasks you poll), manage setup " +
@@ -368,7 +368,7 @@ export function buildCodexDeveloperInstructions(input: {
         "## Asking the human a question\nWhen you genuinely need the human's decision to " +
           "proceed (a real fork in the work, a consequential irreversible choice), call " +
           "michael-ask's `ask_user` tool. It pauses this run on a question card in the " +
-          "Backstage UI (escalating to Slack if nobody answers there) and returns their " +
+          `${productName()} UI (escalating to Slack if nobody answers there) and returns their ` +
           "answer, so you can continue in the same turn. Prefer 2-4 concrete options; " +
           "don't ask for confirmations a reasonable default covers."
       );

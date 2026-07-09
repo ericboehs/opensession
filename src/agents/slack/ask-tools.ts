@@ -12,6 +12,7 @@
  * sessions keep using the native tool instead of a duplicate.
  */
 
+import { productName } from "../../server/config";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 
@@ -30,7 +31,7 @@ export function createAskUserMcpServer(ctx: { ask: AskUserHandler }) {
     tool(
       "ask_user",
       "Ask the human watching this session a question and wait for their answer. " +
-        "The run pauses on a question card in the Backstage UI (escalating to the session " +
+        `The run pauses on a question card in the ${productName()} UI (escalating to the session ` +
         "owner over Slack if nobody answers there), and this tool returns what they chose " +
         "or typed. Use it only for a genuine fork in the work — a decision you can't make " +
         "from the request, the code, or a sensible default. Offer 2-4 concrete options " +

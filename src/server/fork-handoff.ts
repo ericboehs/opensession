@@ -1,3 +1,4 @@
+import { productName } from "./config";
 import type { TranscriptEntry } from "./types";
 
 function clip(text: string, max = 1200): string {
@@ -48,7 +49,7 @@ export function buildForkHandoffNote(input: {
 
 	return [
 		"## Fork handoff",
-		`This is a new engine thread forked from Backstage session ${input.sourceId} at ${boundary}.`,
+		`This is a new engine thread forked from ${productName()} session ${input.sourceId} at ${boundary}.`,
 		input.sourceTitle ? `Source title: ${input.sourceTitle}` : undefined,
 		input.sourceModel ? `Source model: ${input.sourceModel}` : undefined,
 		"The original engine cannot clone its internal conversation state here, so use this transcript handoff as context and continue the requested work in this new session.",
@@ -126,7 +127,7 @@ export function buildEngineSwitchHandoffNote(input: {
 
 	return [
 		"## Engine handoff",
-		`This Backstage session was just switched mid-conversation from ${fromLabel} to you. You are continuing the *same* session, not starting a new task.`,
+		`This ${productName()} session was just switched mid-conversation from ${fromLabel} to you. You are continuing the *same* session, not starting a new task.`,
 		input.targetResuming
 			? "You resumed your own earlier thread in this session, so you remember the conversation up to the switch — the transcript below covers the turns the other engine ran in between, which you were not part of."
 			: "The previous engine cannot transfer its internal conversation state to you, so treat the transcript below as the conversation so far and continue seamlessly.",

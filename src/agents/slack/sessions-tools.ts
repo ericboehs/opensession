@@ -16,6 +16,7 @@
  * spawn_task/task_status/cancel_task task primitives) are gated to the trusted
  * user via `isAdmin`, matching michael-admin.
  */
+import { productName } from "../../server/config";
 import { envAlias } from "../../server/rename-compat";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
@@ -383,7 +384,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
     // -----------------------------------------------------------------------
     tool(
       "list_sessions",
-      "List all Backstage sessions with their live state (running / waiting_question / queued / idle / archived). Use filter 'waiting' to see only sessions blocked on a question (the ones that need a human), 'active' for running+waiting+queued, or 'all' (default, hides archived). This is the 'what's going on across all my sessions' view.",
+      `List all ${productName()} sessions with their live state (running / waiting_question / queued / idle / archived). Use filter 'waiting' to see only sessions blocked on a question (the ones that need a human), 'active' for running+waiting+queued, or 'all' (default, hides archived). This is the 'what's going on across all my sessions' view.`,
       {
         filter: z
           .enum(["all", "active", "waiting"])
@@ -493,7 +494,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
       ),
       tool(
         "create_session",
-        "Spin up a visible Backstage session and start it on a prompt. Use this as the sub-session primitive: Claude/Fable can create Codex workers, Codex can create Claude workers, and either can report back to this parent session. mode 'ask' (default) runs read-only on the selected repo checkout; mode 'code' can edit files / open PRs (never merges). A code worker created from a session joins that session's workspace and SHARES its worktree and branch (same workspace = same worktree); `branch` is only used when there is nothing to share — a standalone worker, or a worker targeting a different repo than the parent. Repo defaults to the parent session's repo (tella-fusion when standalone); pass repo to override, for example repo: 'backstage'. Pass model 'gpt-5.5'/'codex' for a Codex worker or a Claude model id for a Claude worker. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. When called from a session, the worker defaults to the same workspace and is instructed to report back here; set standalone true or reportBack false to opt out.",
+        `Spin up a visible ${productName()} session and start it on a prompt. Use this as the sub-session primitive: Claude/Fable can create Codex workers, Codex can create Claude workers, and either can report back to this parent session. mode 'ask' (default) runs read-only on the selected repo checkout; mode 'code' can edit files / open PRs (never merges). A code worker created from a session joins that session's workspace and SHARES its worktree and branch (same workspace = same worktree); \`branch\` is only used when there is nothing to share — a standalone worker, or a worker targeting a different repo than the parent. Repo defaults to the parent session's repo (tella-fusion when standalone); pass repo to override, for example repo: 'backstage'. Pass model 'gpt-5.5'/'codex' for a Codex worker or a Claude model id for a Claude worker. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. When called from a session, the worker defaults to the same workspace and is instructed to report back here; set standalone true or reportBack false to opt out.`,
         {
           prompt: z.string().describe("The task/prompt to start the session on."),
           repo: z

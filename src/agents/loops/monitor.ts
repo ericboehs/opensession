@@ -68,8 +68,8 @@ const MONITORS: MonitorConfig[] = [
       "- **Disk space**: `df -h /` and `df -h` (all mounts). PROBLEM if any real mount (especially `/`) is at or above 85% used, or has under ~5GB free. This box accumulates worktrees, session files, audit logs, and bun caches, so disk is the most likely failure.\n" +
       "- **Memory**: `free -h`. PROBLEM if available memory is under ~5% of total, or swap is heavily in use (lots of swap used with low free).\n" +
       "- **CPU load**: `uptime` (1/5/15-min load average) against core count from `nproc`. PROBLEM if the 5- and 15-min load averages are both sustained well above the core count (e.g. > 2× cores) — a single transient 1-min spike is NOT a problem.\n" +
-      "- **Backstage service**: `systemctl is-active backstage`. PROBLEM if it is anything other than `active`. (If permission is denied, note it and move on — don't alarm on the permission error itself.)\n" +
-      "- **Disk hogs (run only to explain a disk alarm)**: `du -sh /home/ubuntu/worktrees /home/ubuntu/.backstage-sessions /home/ubuntu/.backstage-audit /home/ubuntu/.cache 2>/dev/null` and `ls -lhS /home/ubuntu/projects/tella-backstage/*.log 2>/dev/null | head`. Use this to name what's consuming space.\n" +
+      "- **OpenSession service**: `systemctl is-active opensession backstage`. The server runs under ONE of these unit names (opensession is current, backstage the pre-rename alias) — PROBLEM only if NEITHER reports `active`. (If permission is denied, note it and move on — don't alarm on the permission error itself.)\n" +
+      "- **Disk hogs (run only to explain a disk alarm)**: `du -sh /home/ubuntu/worktrees /home/ubuntu/.opensession-chats /home/ubuntu/.opensession-audit /home/ubuntu/.backstage-chats /home/ubuntu/.backstage-audit /home/ubuntu/.cache 2>/dev/null` and `ls -lhS /home/ubuntu/projects/tella-backstage/*.log 2>/dev/null | head`. Use this to name what's consuming space.\n" +
       "- Anything else you notice that's clearly broken (e.g. a mount missing, a runaway process in `top -bn1 | head -15`).",
   },
 ];

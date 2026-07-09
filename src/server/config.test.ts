@@ -174,8 +174,8 @@ describe("config loader", () => {
   test("persona/branding: defaults with no config file", () => {
     withConfig(null);
     expect(personaName()).toBe("Michael");
-    expect(productName()).toBe("Backstage");
-    expect(productMark()).toBe("Backstage");
+    expect(productName()).toBe("OpenSession");
+    expect(productMark()).toBe("OpenSession");
   });
 
   test("persona/branding: config overrides apply", () => {
@@ -196,7 +196,7 @@ describe("config loader", () => {
     // Empty/whitespace strings are treated as unset, not honored.
     withConfig(JSON.stringify({ persona: { name: "  " }, branding: { productName: "" } }));
     expect(personaName()).toBe("Michael");
-    expect(productName()).toBe("Backstage");
+    expect(productName()).toBe("OpenSession");
   });
 
   test("identity: custom roster is parsed and validated", () => {

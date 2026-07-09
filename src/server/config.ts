@@ -525,7 +525,7 @@ export function personaName(): string {
  * (docs/rename-opensession-plan.md).
  */
 export function productName(): string {
-  return getConfig().branding?.productName || "Backstage";
+  return getConfig().branding?.productName || "OpenSession";
 }
 
 /** Short brand monogram for visual brand-mark contexts (logo chip, favicon);

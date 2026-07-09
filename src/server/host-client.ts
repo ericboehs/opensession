@@ -209,7 +209,7 @@ async function launchHostUnit(hostId: string, dir: string): Promise<void> {
   const args = [
     "sudo", "-n", "systemd-run", "--collect", "--quiet",
     `--unit=bks-run-${hostId}`,
-    `--description=Backstage run host ${hostId}`,
+    `--description=OpenSession run host ${hostId}`,
     "--uid=ubuntu", "--gid=ubuntu",
     "-p", `WorkingDirectory=${REPO_ROOT}`,
     // Same env the backstage service runs with; MCP servers and account pools

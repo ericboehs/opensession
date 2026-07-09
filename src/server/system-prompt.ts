@@ -7,7 +7,7 @@
 // "Michael"); the `michael-*` MCP server ids referenced in the text are
 // protocol identifiers and stay literal regardless of the persona name.
 
-import { personaName } from "./config";
+import { personaName, productName } from "./config";
 
 export type SystemPromptPart = { title: string; text: string };
 
@@ -15,7 +15,7 @@ export function buildSystemPromptParts(opts: {
 	isAsk: boolean;
 	/** Multi-repo note (primary + attached worktree paths); absent until repos are attached. */
 	reposNote?: string;
-	/** Backstage session URL for the PR-link instruction; absent for previews and non-journaled runs. */
+	/** Session URL for the PR-link instruction; absent for previews and non-journaled runs. */
 	sessionLink?: string;
 	/** Whether the run gets the in-process michael-admin/sessions/repos MCP tools. */
 	interactiveTools: boolean;
@@ -50,7 +50,7 @@ export function buildSystemPromptParts(opts: {
 		parts.push({
 			title: `Managing ${name}`,
 			text:
-				`## Managing ${name}\nYou can see and steer your other Backstage sessions via the ` +
+				`## Managing ${name}\nYou can see and steer your other ${productName()} sessions via the ` +
 				"michael-sessions MCP tools (list_sessions — filter 'waiting' for sessions blocked on a " +
 				"question; get_session; send_to_session; answer_session_question; cancel_session; " +
 				"create_session; and the task primitives spawn_task / task_status / cancel_task for " +
@@ -69,7 +69,7 @@ export function buildSystemPromptParts(opts: {
 				"style chores, use michael-sessions `create_session` to create a visible worker sub-session. " +
 				"Use a Codex/GPT model for mechanical work, or a Claude model when the worker needs stronger " +
 				"taste/review/judgment; Codex sessions can likewise create Claude workers. When called from this " +
-				"session, the worker is linked in the same Backstage workspace and instructed to report back here. " +
+				`session, the worker is linked in the same ${productName()} workspace and instructed to report back here. ` +
 				"For workers that only need filesystem/code access, keep `mcpServers: []` so " +
 				"unrelated external MCP startup does not slow or block them. Set `repo` to the " +
 				"registered repo id the worker should inspect or edit, such as `backstage` or `tella-fusion`. Use ask mode for " +
