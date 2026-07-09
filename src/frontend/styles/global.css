@@ -3102,22 +3102,30 @@ body.resizing-x {
 	color: var(--accent);
 	background: var(--accent-soft);
 }
-/* Preview: off = neutral (accent on hover, like "press to start"); starting =
-   amber; live = green (click opens the webapp). */
+/* Preview state is carried by the glyph color only — off = neutral, starting =
+   amber, live = green. Hover is an interaction, not a state, so every hover uses
+   the same neutral gray wash (--bg-hover); the glyph keeps its state color. */
 .preview-icon.is-off {
 	color: var(--text-faint);
 }
-.preview-icon.is-starting,
-.preview-icon.is-starting:hover {
+.preview-icon.is-off:hover {
+	color: var(--text-dim);
+	background: var(--bg-hover);
+}
+.preview-icon.is-starting {
 	color: var(--yellow);
 	background: none;
+}
+.preview-icon.is-starting:hover {
+	color: var(--yellow);
+	background: var(--bg-hover);
 }
 .preview-icon.is-live {
 	color: var(--green);
 }
 .preview-icon.is-live:hover {
 	color: var(--green);
-	background: var(--green-soft);
+	background: var(--bg-hover);
 }
 /* Staging globe rides a touch smaller than the other code icons — trim its
    hitarea to match the reduced glyph so the box hugs it rather than floating. */
