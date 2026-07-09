@@ -28,7 +28,7 @@ export const PRODUCT_MARK = "OS";
 export const AGENT_NAME = "Michael";
 
 /** Default document.title when no view-specific title applies. */
-export const DEFAULT_DOC_TITLE = `${PRODUCT_NAME} — Tella`;
+export const DEFAULT_DOC_TITLE = PRODUCT_NAME;
 
 /** "<view> — Backstage" document titles. */
 export const docTitle = (view: string) => `${view} — ${PRODUCT_NAME}`;
