@@ -16,6 +16,7 @@ import {
 } from "./api";
 import { buildMentionPrompt, buildWorkPrompt, buildRefundExecutionPrompt } from "./prompts";
 import { getDefaultModel } from "../../server/models";
+import { resolveDirectSdkModel } from "../../server/model-resolve";
 import { CLAUDE_CODE_BIN, STRIPE_CONFIRM_TOOLS, filterMcpServers } from "../../server/claude-runner";
 import { classifyRefundApproval } from "./refund-intent";
 import { worktreePathFor } from "../../server/worktree";
@@ -154,7 +155,9 @@ async function runClaude(
         // server is fail-closed invisible here.
         mcpServers: filterMcpServers(undefined, undefined) as any,
         strictMcpConfig: true,
-        model: getDefaultModel(),
+        // Direct Claude SDK call — peel any opencode/<provider>/ prefix off the
+        // fleet default down to the native id the CLI accepts.
+        model: resolveDirectSdkModel(getDefaultModel()),
         pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
         systemPrompt: {

@@ -71,6 +71,7 @@ import {
   resolveModel,
   formatModelList,
 } from "../../server/models";
+import { resolveDirectSdkModel } from "../../server/model-resolve";
 import {
   isWorktreeChannel,
   getWorktreeDirForChannel,
@@ -493,7 +494,9 @@ async function processCodexMessage(
   /** Run on this model without changing the session's configured model (fallback). */
   modelOverride?: string
 ): Promise<void> {
-  const model = modelOverride || session.model || DEFAULT_CODEX_MODEL;
+  // Direct Codex SDK call — peel any opencode/<provider>/ prefix off the id
+  // (e.g. an `opencode/openai/gpt-5.5` fleet default) to the native id.
+  const model = resolveDirectSdkModel(modelOverride || session.model || DEFAULT_CODEX_MODEL);
   console.log(
     `[slack] Running Codex SDK for ${sessionKey} in ${cwd}${session.codexThreadId ? ` (resuming ${session.codexThreadId})` : ""} (${model})`
   );
@@ -798,8 +801,10 @@ export async function processMessage(
 
   const cwd = session.worktreeDir || DEFAULT_CWD;
 
-  // Codex-provider models run through the Codex SDK instead of query()
-  if (providerFor(session.model) === "codex") {
+  // Codex-provider models run through the Codex SDK instead of query().
+  // Resolve the effective native model first so an opencode/openai/* default
+  // (provider "opencode") still routes to Codex, and opencode/anthropic/* to Claude.
+  if (providerFor(resolveDirectSdkModel(session.model || getDefaultModel())) === "codex") {
     await processCodexMessage(
       session,
       sessionKey,
@@ -971,7 +976,7 @@ export async function processMessage(
         },
         mcpServers: { ...mcpServers, ...adminMcpServers },
         strictMcpConfig: true,
-        model: session.model || getDefaultModel(),
+        model: resolveDirectSdkModel(session.model || getDefaultModel()),
         pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
         abortController,

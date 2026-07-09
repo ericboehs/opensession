@@ -13,6 +13,7 @@ import { pickAccount, markExhausted } from "../../server/claude-accounts";
 import { runCodexAuto } from "../../server/codex-appserver";
 import { productName } from "../../server/config";
 import { DEFAULT_FALLBACK_MODEL, resolveModel, getDefaultModel } from "../../server/models";
+import { resolveDirectSdkModel } from "../../server/model-resolve";
 import { cleanPlainToolInput } from "../../server/shared/note-style";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { worktreePathFor } from "../../server/worktree";
@@ -483,7 +484,9 @@ export async function runClaudeHeadless(
           session?.lastActiveUser?.email || session?.issueCreator?.email || undefined
         ) as any,
         strictMcpConfig: true,
-        model: session?.model || getDefaultModel(),
+        // Direct Claude SDK call — peel any opencode/<provider>/ prefix (e.g. an
+        // `opencode/anthropic/claude-sonnet-5` fleet default) down to the native id.
+        model: resolveDirectSdkModel(session?.model || getDefaultModel()),
         pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
         executable: "bun",
         abortController,
@@ -596,7 +599,7 @@ export async function runClaudeHeadless(
             "\n\n[Note: a previous attempt on another model may have left partial work in this worktree — review what's already done before continuing.]",
           cwd: worktreeDir,
           mode: "code",
-          model: fallback.id,
+          model: resolveDirectSdkModel(fallback.id),
           busyKeys: [`linear-${linearSessionId}`],
           author: commitAuthor,
         })) {
