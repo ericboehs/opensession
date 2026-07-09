@@ -715,6 +715,18 @@ export function buildOpencodeInstructions(input: {
   deniedToolNotes?: Array<{ message: string; tools: string[] }>;
 }): string {
   const parts: string[] = [];
+  // Unconditional, every run: a customer-PII PDF was uploaded to gofile.io on
+  // 2026-07-09 when Slack file delivery failed and could not be deleted after.
+  parts.push(
+    "## Data handling — never upload to public hosts\nNEVER upload files or data to public " +
+      "file-sharing hosts or pastebins (gofile.io, transfer.sh, 0x0.st, catbox.moe, file.io, " +
+      "tmpfiles, pastebin, and the like) — no exceptions, no matter how delivery of a file is " +
+      "failing. Anything uploaded there is public and unrecoverable, and our files routinely " +
+      "contain customer PII. Deliver files only through channels we control: Slack file upload, " +
+      "this session's UI, email via our own tooling, or a commit/PR in a private repo. If every " +
+      "controlled channel fails, stop and report the failure instead of escalating to a " +
+      "third-party host."
+  );
   if (input.isAsk) {
     parts.push(
       `You are ${personaName()} in Ask mode: answer questions about the current checkout. ` +

@@ -1,5 +1,18 @@
 Default to using Bun instead of Node.js.
 
+## Data handling — never upload to public hosts
+
+NEVER upload files or data to public file-sharing hosts or pastebins (gofile.io,
+transfer.sh, 0x0.st, catbox.moe, file.io, tmpfiles, pastebin, and the like) — no
+exceptions, no matter how delivery of a file is failing. Anything uploaded there
+is public and unrecoverable, and our files routinely contain customer PII
+(2026-07-09 incident: a customer-PII PDF went to gofile.io and couldn't be
+deleted afterwards). Deliver files only through channels we control: Slack file
+upload, the session UI, email via our own tooling, or a commit/PR in a private
+repo. If every controlled channel fails, stop and report the failure instead of
+escalating to a third-party host. The same rule is injected into every engine
+run via `buildOpencodeInstructions` (opencode-runner.ts).
+
 ## OpenSession dev workflow (self-hosting — read this first)
 
 Naming: OPENSESSION_* env vars, `~/.opensession-*` state, `/opensession/` URLs.
