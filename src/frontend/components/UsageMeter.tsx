@@ -10,8 +10,8 @@ import { cn } from "../ui/cn";
  * how full the model's context window is; hover (or tap on touch) for a
  * per-token breakdown. Cost is authoritative for Claude runs (the SDK's
  * total_cost_usd — what subscription usage-credits are billed at) and
- * approximate for Codex (marked with ~). Hidden until the first run reports
- * usage.
+ * approximate for the other engines — Codex and OpenCode — which price from
+ * list rates (marked with ~). Hidden until the first run reports usage.
  */
 
 function fmtUsd(n: number): string {
@@ -178,8 +178,8 @@ export function UsageMeter({
 				</div>
 				{approx && (
 					<p className="mt-2 text-[11px] leading-snug text-dim">
-						Codex cost is estimated from list rates; Claude cost is the exact
-						API-billed amount.
+						Cost is estimated from list rates on this engine; native Claude
+						sessions show the exact API-billed amount.
 					</p>
 				)}
 			</Popover.Popup>
