@@ -131,9 +131,14 @@ export async function resolvePreviewBoot(
         cmd: `${repo.previewCommand} ${assertSafePath(worktreeDir)}`,
       };
     }
-    console.warn(
-      `[preview] previewCommand ${repo.previewCommand} (repo ${repo.id}) not present here — trying the fallback chain`,
-    );
+    // Once per worktree — status polls re-resolve every few seconds for
+    // sandboxes that don't carry the script (e.g. remote providers).
+    if (!warnedMissingPreviewCommand.has(worktreeDir)) {
+      warnedMissingPreviewCommand.add(worktreeDir);
+      console.warn(
+        `[preview] previewCommand ${repo.previewCommand} (repo ${repo.id}) not present here — trying the fallback chain`,
+      );
+    }
   }
   if (repo.id === "tella-fusion" && (await exists(ENSURE_UP))) {
     return { kind: "tella-local", cmd: `bash ${ENSURE_UP} ${assertSafePath(worktreeDir)}` };
@@ -142,6 +147,7 @@ export async function resolvePreviewBoot(
 }
 
 const hostExists = (p: string) => existsSync(p);
+const warnedMissingPreviewCommand = new Set<string>();
 
 // Worktrees with an in-flight `startPreview` (worktreeDir -> started-at ms).
 // Parked on globalThis so it survives --hot reloads. Entries are cleared when
