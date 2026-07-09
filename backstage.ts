@@ -4011,6 +4011,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						short_name: productName(),
 						start_url: "/backstage/",
 						display: "standalone",
+						// On desktop, take over the OS titlebar: the window controls
+						// overlay our own chrome instead of a separate OS bar with a
+						// centered title. Falls back to plain standalone where WCO
+						// isn't supported (iOS, older browsers). CSS handles the
+						// controls inset + drag region under (display-mode:
+						// window-controls-overlay).
+						display_override: ["window-controls-overlay"],
 						background_color: "#0b0809",
 						theme_color: "#0b0809",
 						icons: [

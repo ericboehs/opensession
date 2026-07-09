@@ -379,6 +379,35 @@ a {
 	}
 }
 
+/* Window Controls Overlay (desktop PWA): the OS titlebar is replaced by just
+   the window-control buttons overlaid on our own chrome — no OS bar, no
+   centered title text. Our UI owns the full window height, so:
+   - drop the standalone hairline (there's no OS bar above to divide from);
+   - the buttons sit at the window's top-left corner (macOS), which is exactly
+     where the sidebar brand row lives — inset the row past them so the logo
+     isn't hidden (env(titlebar-area-x) is 0 on Windows, where controls are on
+     the right, so this is a no-op there);
+   - make the brand row a drag handle so the window stays movable, with the
+     interactive controls opting back out. */
+@media (display-mode: window-controls-overlay) {
+	.app {
+		border-top: none;
+	}
+	.sidebar-brand {
+		padding-left: calc(
+			env(titlebar-area-x, 0px) + var(--sidebar-icon-left) - 8px
+		);
+		-webkit-app-region: drag;
+		app-region: drag;
+	}
+	.sidebar-brand button,
+	.sidebar-brand a,
+	.sidebar-brand [role="button"] {
+		-webkit-app-region: no-drag;
+		app-region: no-drag;
+	}
+}
+
 /* The top bar is mobile-only: on desktop the brand + user controls live in the
    sidebar's brand row instead (cleaner, single column of chrome). Shown again in
    the ≤720px media query where the drawer needs the hamburger. */
