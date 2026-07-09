@@ -13,15 +13,17 @@ Output: src/frontend/splash/apple-splash-<w>-<h>.png
 """
 
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "frontend", "splash")
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 BG = (11, 8, 9)          # #0b0809
 TILE = (10, 6, 8)        # #0a0608
 RED = (255, 42, 42)      # #ff2a2a
 BAR = (255, 34, 34)      # #ff2222
+RED_TOP = (255, 77, 77)  # #ff4d4d (icon gradient top — keep in sync with gen-icons.py)
+RED_BOTTOM = (193, 0, 0) # #c10000
+DARK_LOBE = (30, 13, 16) # #1e0d10
 
 # Portrait device pixel sizes for modern iPhones (the standard PWA set).
 # (width_px, height_px)
@@ -64,15 +66,53 @@ def render(w, h):
         outline=(255, 40, 40), width=max(1, int(tile * 0.012)),
     )
 
-    # Glowing red "M".
-    fsize = int(tile * 0.6)
-    font = ImageFont.truetype(FONT, fsize)
-    mglow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    ImageDraw.Draw(mglow).text((cx, cy), "M", font=font, fill=(255, 40, 40, 235), anchor="mm")
-    mglow = mglow.filter(ImageFilter.GaussianBlur(int(tile * 0.06)))
-    img = Image.alpha_composite(img.convert("RGBA"), mglow).convert("RGB")
+    # Glowing red yin-yang (same construction as scripts/gen-icons.py).
+    r = int(tile * 0.30)
+    red_mask = Image.new("L", (w, h), 0)
+    dark_mask = Image.new("L", (w, h), 0)
+    rd, dd = ImageDraw.Draw(red_mask), ImageDraw.Draw(dark_mask)
+    outer = [cx - r, cy - r, cx + r, cy + r]
+    half = r / 2
+    top = [cx - half, cy - r, cx + half, cy]
+    bottom = [cx - half, cy, cx + half, cy + r]
+    dot = r / 6
+    top_dot = [cx - dot, cy - half - dot, cx + dot, cy - half + dot]
+    bottom_dot = [cx - dot, cy + half - dot, cx + dot, cy + half + dot]
+    rd.pieslice(outer, -90, 90, fill=255)   # right half red
+    rd.ellipse(top, fill=0)
+    rd.ellipse(bottom, fill=255)
+    rd.ellipse(top_dot, fill=255)
+    rd.ellipse(bottom_dot, fill=0)
+    dd.pieslice(outer, 90, 270, fill=255)   # left half dark
+    dd.ellipse(top, fill=255)
+    dd.ellipse(bottom, fill=0)
+    dd.ellipse(top_dot, fill=0)
+    dd.ellipse(bottom_dot, fill=255)
+
+    glow_alpha = red_mask.filter(ImageFilter.GaussianBlur(int(tile * 0.06))).point(
+        lambda v: v * 60 // 100
+    )
+    mglow = Image.new("RGBA", (w, h), (255, 40, 40, 0))
+    mglow.putalpha(glow_alpha)
+    img = Image.alpha_composite(img.convert("RGBA"), mglow)
+
+    dark_layer = Image.new("RGBA", (w, h), DARK_LOBE + (0,))
+    dark_layer.putalpha(dark_mask)
+    img = Image.alpha_composite(img, dark_layer)
+
+    lin = Image.linear_gradient("L").resize((w, h))
+    red_grad = Image.composite(
+        Image.new("RGB", (w, h), RED_BOTTOM),
+        Image.new("RGB", (w, h), RED_TOP),
+        lin,
+    ).convert("RGBA")
+    red_grad.putalpha(red_mask)
+    img = Image.alpha_composite(img, red_grad)
+
+    ring = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(ring).ellipse(outer, outline=RED + (180,), width=max(2, int(tile * 0.018)))
+    img = Image.alpha_composite(img, ring).convert("RGB")
     d = ImageDraw.Draw(img)
-    d.text((cx, cy), "M", font=font, fill=RED, anchor="mm")
 
     # Audio bars below the tile.
     bw = max(2, int(tile * 0.05))

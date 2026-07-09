@@ -4003,7 +4003,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				});
 			}
 
-			// App icons (KITT/red-M) — real PNGs so iOS home-screen and PWA installs
+			// App icons (red yin-yang, gen by scripts/gen-icons.py) — real PNGs so iOS home-screen and PWA installs
 			// pick them up; data-URI apple-touch-icons don't work on iOS. Short cache
 			// + must-revalidate so a refreshed design isn't pinned by a stale copy.
 			const iconFiles: Record<string, string> = {
@@ -4108,13 +4108,13 @@ const server: import("bun").Server<WSClientData> = hotServe({
 						theme_color: "#0b0809",
 						icons: [
 							{
-								src: `${publicPrefix}/icon-192.png?v=3`,
+								src: `${publicPrefix}/icon-192.png?v=4`,
 								sizes: "192x192",
 								type: "image/png",
 								purpose: "any",
 							},
 							{
-								src: `${publicPrefix}/icon.png?v=3`,
+								src: `${publicPrefix}/icon.png?v=4`,
 								sizes: "512x512",
 								type: "image/png",
 								purpose: "any",

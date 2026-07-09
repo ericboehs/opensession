@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="OS¹" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='m' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ff4d4d'/%3E%3Cstop offset='1' stop-color='%23c10000'/%3E%3C/linearGradient%3E%3Cfilter id='g' x='-50%25' y='-50%25' width='200%25' height='200%25'%3E%3CfeGaussianBlur stdDeviation='1.6' result='b'/%3E%3CfeMerge%3E%3CfeMergeNode in='b'/%3E%3CfeMergeNode in='SourceGraphic'/%3E%3C/feMerge%3E%3C/filter%3E%3C/defs%3E%3Crect width='64' height='64' rx='15' fill='%230a0608'/%3E%3Ctext x='32' y='42' font-family='-apple-system,Helvetica,Arial,sans-serif' font-size='38' font-weight='800' fill='url(%23m)' text-anchor='middle' filter='url(%23g)'%3EM%3C/text%3E%3Cg fill='%23ff2222'%3E%3Crect x='17' y='49' width='3.4' height='5' rx='1' opacity='0.35'/%3E%3Crect x='23' y='49' width='3.4' height='5' rx='1' opacity='0.6'/%3E%3Crect x='29' y='49' width='3.4' height='5' rx='1' opacity='1'/%3E%3Crect x='35' y='49' width='3.4' height='5' rx='1' opacity='0.6'/%3E%3Crect x='41' y='49' width='3.4' height='5' rx='1' opacity='0.35'/%3E%3C/g%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='m' gradientUnits='userSpaceOnUse' x1='32' y1='13' x2='32' y2='51'%3E%3Cstop offset='0' stop-color='%23ff4d4d'/%3E%3Cstop offset='1' stop-color='%23c10000'/%3E%3C/linearGradient%3E%3Cfilter id='g' x='-50%25' y='-50%25' width='200%25' height='200%25'%3E%3CfeGaussianBlur stdDeviation='1.6' result='b'/%3E%3CfeMerge%3E%3CfeMergeNode in='b'/%3E%3CfeMergeNode in='SourceGraphic'/%3E%3C/feMerge%3E%3C/filter%3E%3CclipPath id='l'%3E%3Crect x='13' y='13' width='19' height='38'/%3E%3C/clipPath%3E%3C/defs%3E%3Crect width='64' height='64' rx='15' fill='%230a0608'/%3E%3Cg filter='url(%23g)'%3E%3Ccircle cx='32' cy='32' r='19' fill='url(%23m)'/%3E%3Ccircle cx='32' cy='32' r='19' fill='%231e0d10' clip-path='url(%23l)'/%3E%3Ccircle cx='32' cy='22.5' r='9.5' fill='%231e0d10'/%3E%3Ccircle cx='32' cy='41.5' r='9.5' fill='url(%23m)'/%3E%3Ccircle cx='32' cy='22.5' r='3.2' fill='url(%23m)'/%3E%3Ccircle cx='32' cy='41.5' r='3.2' fill='%231e0d10'/%3E%3Ccircle cx='32' cy='32' r='19' fill='none' stroke='%23ff2a2a' stroke-opacity='.6' stroke-width='1.4'/%3E%3C/g%3E%3C/svg%3E" />
   <title>OS¹ — Tella</title>
   <script>
     // Pre-paint theme: set <html data-theme> from the saved preference (or the
@@ -42,7 +42,7 @@
         l.rel = rel; l.href = href;
         document.head.appendChild(l);
       };
-      add("apple-touch-icon", prefix + "/apple-touch-icon.png?v=3");
+      add("apple-touch-icon", prefix + "/apple-touch-icon.png?v=4");
       add("manifest", prefix + "/manifest.webmanifest");
 
       // iOS launch images: one PNG per device, matched by an exact media query
@@ -104,11 +104,12 @@
       border-radius: 20px;
       background: radial-gradient(120% 120% at 50% 38%, #1c0405 0%, #0a0608 70%);
       border: 1px solid rgba(255, 40, 40, 0.22);
-      color: #ff2a2a;
-      font-weight: 800;
-      font-size: 40px;
-      text-shadow: 0 0 14px rgba(255, 30, 30, 0.85), 0 0 4px rgba(255, 90, 90, 0.9);
       animation: splash-pulse 1.6s ease-in-out infinite;
+    }
+    .splash-logo svg {
+      width: 46px;
+      height: 46px;
+      filter: drop-shadow(0 0 10px rgba(255, 30, 30, 0.65));
     }
     .splash-bars {
       display: flex;
@@ -142,7 +143,7 @@
 </head>
 <body>
   <div id="splash">
-    <span class="splash-logo">M</span>
+    <span class="splash-logo"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="sm" gradientUnits="userSpaceOnUse" x1="32" y1="10" x2="32" y2="54"><stop offset="0" stop-color="#ff4d4d"/><stop offset="1" stop-color="#c10000"/></linearGradient><clipPath id="sl"><rect x="10" y="10" width="22" height="44"/></clipPath></defs><circle cx="32" cy="32" r="22" fill="url(#sm)"/><circle cx="32" cy="32" r="22" fill="#1e0d10" clip-path="url(#sl)"/><circle cx="32" cy="21" r="11" fill="#1e0d10"/><circle cx="32" cy="43" r="11" fill="url(#sm)"/><circle cx="32" cy="21" r="3.7" fill="url(#sm)"/><circle cx="32" cy="43" r="3.7" fill="#1e0d10"/><circle cx="32" cy="32" r="22" fill="none" stroke="#ff2a2a" stroke-opacity=".6" stroke-width="1.6"/></svg></span>
     <span class="splash-bars"><span></span><span></span><span></span><span></span><span></span></span>
   </div>
   <div id="root"></div>
