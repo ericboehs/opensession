@@ -15,8 +15,11 @@ import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
+  SANDBOX_MODEL_FAMILIES,
   resolveRequestedSandbox,
   sandboxCapabilityStatus,
+  sandboxModelFamilyFor,
+  sandboxModelSupport,
   sandboxProviderConfigured,
   sandboxesEnabled,
 } from "./config";
@@ -94,6 +97,49 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
     expect(sandboxCapabilityStatus().enabled).toBe(false);
     expect(sandboxProviderConfigured("docker")).toBe(false);
   });
+
+  test("status carries the model-family matrix verbatim (UI's source of truth)", () => {
+    expect(sandboxCapabilityStatus().modelFamilies).toBe(SANDBOX_MODEL_FAMILIES);
+  });
+});
+
+describe("model-family × environment capability matrix", () => {
+  test("family derivation: provider + opencode/<provider>/ prefix, first match wins", () => {
+    expect(sandboxModelFamilyFor("claude-fable-5").id).toBe("claude");
+    expect(sandboxModelFamilyFor("gpt-5.5").id).toBe("codex");
+    expect(sandboxModelFamilyFor("codex").id).toBe("codex"); // alias resolves
+    expect(sandboxModelFamilyFor("opencode/openai/gpt-5.4-mini").id).toBe("opencode-openai");
+    expect(sandboxModelFamilyFor("opencode/anthropic/claude-sonnet-5").id).toBe(
+      "opencode-anthropic",
+    );
+    expect(sandboxModelFamilyFor("opencode/google/gemini-3").id).toBe("opencode-other");
+  });
+
+  test("host is always fine; sandboxes gate by family", () => {
+    expect(sandboxModelSupport("gpt-5.5", null)).toEqual({ ok: true });
+    expect(sandboxModelSupport("gpt-5.5", "local")).toEqual({ ok: true });
+    expect(sandboxModelSupport("claude-fable-5", "daytona")).toEqual({ ok: true });
+    // opencode/openai runs everywhere: docker mounts the codex material,
+    // remote launches upload the rotation-proof seeds (bootstrap.ts).
+    expect(sandboxModelSupport("opencode/openai/gpt-5.4-mini", "daytona")).toEqual({ ok: true });
+    expect(sandboxModelSupport("opencode/openai/gpt-5.5", "e2b")).toEqual({ ok: true });
+    expect(sandboxModelSupport("opencode/anthropic/claude-sonnet-5", "docker")).toEqual({
+      ok: true,
+    });
+  });
+
+  test("native codex and other-provider opencode models are host-only, with a pointed error", () => {
+    const codex = sandboxModelSupport("gpt-5.5", "docker");
+    expect(codex.ok).toBe(false);
+    if (!codex.ok) {
+      expect(codex.error).toContain("GPT (Codex) models can't run in Docker");
+      expect(codex.error).toContain("pick Host");
+      expect(codex.error).toContain("opencode/openai");
+    }
+    const other = sandboxModelSupport("opencode/google/gemini-3", "daytona");
+    expect(other.ok).toBe(false);
+    if (!other.ok) expect(other.error).toContain("pick Host");
+  });
 });
 
 describe("resolveRequestedSandbox (create-path validation)", () => {
@@ -141,5 +187,32 @@ describe("resolveRequestedSandbox (create-path validation)", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toContain("Unknown sandbox provider");
     expect(resolveRequestedSandbox("local")).toEqual({ ok: true, provider: null });
+  });
+
+  test("model × environment combos are enforced at create, not just in the UI", () => {
+    write({ provider: "docker", daytona: { apiKey: "dtn_x" } });
+    // Supported combos pass through.
+    expect(resolveRequestedSandbox("daytona", undefined, "claude-fable-5")).toEqual({
+      ok: true,
+      provider: "daytona",
+    });
+    expect(
+      resolveRequestedSandbox("daytona", undefined, "opencode/openai/gpt-5.4-mini"),
+    ).toEqual({ ok: true, provider: "daytona" });
+    // Unsupported combos fail with the matrix's message — including via the
+    // boolean `sandbox: true` path (config default provider).
+    const explicit = resolveRequestedSandbox("docker", undefined, "gpt-5.5");
+    expect(explicit.ok).toBe(false);
+    if (!explicit.ok) expect(explicit.error).toContain("GPT (Codex) models can't run in Docker");
+    const viaDefault = resolveRequestedSandbox(true, undefined, "gpt-5.5");
+    if (sandboxesEnabled()) {
+      expect(viaDefault.ok).toBe(false);
+      if (!viaDefault.ok) expect(viaDefault.error).toContain("can't run in Docker");
+    }
+    // Host is always fine, whatever the model.
+    expect(resolveRequestedSandbox("local", undefined, "gpt-5.5")).toEqual({
+      ok: true,
+      provider: null,
+    });
   });
 });

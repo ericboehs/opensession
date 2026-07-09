@@ -164,6 +164,44 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const sandboxLabel = (id: string) =>
     id === "" ? "Host" : id === "docker" ? "Docker" : id === "daytona" ? "Daytona" : id === "e2b" ? "E2B" : id;
 
+  // Model × environment capability check, driven entirely by the server's
+  // matrix (status.modelFamilies — the same source resolveRequestedSandbox
+  // enforces at create, so this warning is a preview of the server's answer,
+  // never a second opinion). First matching family rule wins, mirroring
+  // sandboxModelFamilyFor (sandbox/config.ts).
+  const effectiveModelId = model || defaultModel;
+  const effectiveModelProvider =
+    models.find((m) => m.id === effectiveModelId)?.provider ?? "claude";
+  const modelFamily = (sandboxStatus?.modelFamilies || []).find(
+    (f) =>
+      f.match.provider === effectiveModelProvider &&
+      (!f.match.idPrefix || effectiveModelId.startsWith(f.match.idPrefix)),
+  );
+  const sandboxModelWarning = (() => {
+    if (!sandboxProvider || !modelFamily) return null;
+    if (modelFamily.environments[sandboxProvider as "docker" | "daytona" | "e2b"]) return null;
+    const supported = (Object.keys(modelFamily.environments) as Array<
+      "local" | "docker" | "daytona" | "e2b"
+    >)
+      .filter(
+        (e) =>
+          modelFamily.environments[e] &&
+          // Only steer toward environments that exist here: Host always, a
+          // sandbox provider only when it's configured.
+          (e === "local" || sandboxChoices.some((p) => p.id === e)),
+      )
+      .map((e) => (e === "local" ? "Host" : sandboxLabel(e)));
+    const pick =
+      supported.length > 1
+        ? `${supported.slice(0, -1).join(", ")} or ${supported[supported.length - 1]}`
+        : supported[0] || "Host";
+    return (
+      `${modelFamily.label} models can't run in ${sandboxLabel(sandboxProvider)} yet — pick ${pick}` +
+      (modelFamily.hint ? ` (${modelFamily.hint})` : "") +
+      "."
+    );
+  })();
+
   // Warm-on-typing (docs/sandboxes-plan.md backlog): with a REMOTE provider
   // selected, the first keystroke in the prompt fires a sandbox prewarm and
   // repeats at most once per 60s while typing continues — each call extends
@@ -435,6 +473,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const canCreate =
     !creating &&
     connected &&
+    // Unsupported model × environment combo: the server would reject the
+    // create with the same message (resolveRequestedSandbox) — block here so
+    // the wall is discovered before submit, not after.
+    !sandboxModelWarning &&
     (prompt.trim() || images.length > 0 || files.length > 0) &&
     (mode === "ask" || selectedWorktree !== "" );
 
@@ -563,6 +605,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         </div>
 
         {error && <div className="palette-error">{error}</div>}
+        {sandboxModelWarning && (
+          <div className="palette-error" role="alert">
+            {sandboxModelWarning}
+          </div>
+        )}
 
         {/* Footer toolbar */}
         <div className="palette-footer">

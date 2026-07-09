@@ -7828,6 +7828,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						const sandboxResolved = resolveRequestedSandbox(
 							forkSource ? undefined : (msg.sandbox as boolean | string | undefined),
 							repo.id,
+							model,
 						);
 						if (!sandboxResolved.ok) {
 							ws.send(
@@ -8710,7 +8711,7 @@ registerSessionControl({
 		// Sandbox opt-in: true = config default provider, or an explicit
 		// provider id validated against the config — an unconfigured pick fails
 		// the create loudly instead of silently running on the host.
-		const sandboxResolved = resolveRequestedSandbox(sandbox, repo.id);
+		const sandboxResolved = resolveRequestedSandbox(sandbox, repo.id, model);
 		if (!sandboxResolved.ok) throw new Error(sandboxResolved.error);
 		const sandboxProvider = sandboxResolved.provider;
 		const remoteSandbox = isRemoteSandboxProvider(sandboxProvider);

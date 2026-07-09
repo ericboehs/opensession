@@ -1032,6 +1032,18 @@ export async function fetchConnections(): Promise<{
 	return res.json();
 }
 
+/** One row of the model-family × environment support matrix — a verbatim
+ *  mirror of SANDBOX_MODEL_FAMILIES (src/server/sandbox/config.ts, the single
+ *  source of truth). The client only APPLIES the first-match-wins rules; it
+ *  never hardcodes a model/environment combo of its own. */
+export interface SandboxModelFamilyInfo {
+	id: string;
+	label: string;
+	match: { provider: "claude" | "codex" | "opencode"; idPrefix?: string };
+	environments: Record<"local" | "docker" | "daytona" | "e2b", boolean>;
+	hint?: string;
+}
+
 /** Sandbox capability status for the New-session provider picker
  *  (GET /api/sandbox/status — read fresh server-side per call). */
 export interface SandboxStatusInfo {
@@ -1043,6 +1055,8 @@ export interface SandboxStatusInfo {
 		note?: string;
 	}>;
 	killSwitch: boolean;
+	/** Absent on a pre-upgrade server = no client-side combo warnings. */
+	modelFamilies?: SandboxModelFamilyInfo[];
 }
 
 export async function fetchSandboxStatus(): Promise<SandboxStatusInfo> {
