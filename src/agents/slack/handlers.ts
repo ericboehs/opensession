@@ -18,6 +18,7 @@ import type {
 
 import { markdownToSlack } from "../../server/shared/markdown";
 import { cleanPlainToolInput } from "../../server/shared/note-style";
+import { productName } from "../../server/config";
 import { SLACK_SYSTEM_PROMPT_APPEND } from "./prompts";
 import {
   sendSlackMessage,
@@ -636,7 +637,7 @@ export async function processMessage(
   const backstageUrl = `https://michael.taila5d766.ts.net/backstage/session/slack-${encodeURIComponent(sessionKey)}`;
   const backstageButton = {
     type: "button",
-    text: { type: "plain_text", text: ":desktop_computer: Open in Backstage", emoji: true },
+    text: { type: "plain_text", text: `:desktop_computer: Open in ${productName()}`, emoji: true },
     url: backstageUrl,
     action_id: `backstage:${sessionKey}`,
   };
@@ -670,7 +671,7 @@ export async function processMessage(
     // edits this same message in place as work proceeds).
     const postResult = await postSlackBlocks(
       channel,
-      "Working — follow along in Backstage or tap Stop to cancel.",
+      `Working — follow along in ${productName()} or tap Stop to cancel.`,
       [
         {
           type: "section",
@@ -961,8 +962,7 @@ export async function processMessage(
           if (toolName in STRIPE_CONFIRM_TOOLS) {
             return {
               behavior: "deny",
-              message:
-                "This Stripe action requires human confirmation — open this session in Backstage and retry there; the approval card will appear in that UI.",
+              message: `This Stripe action requires human confirmation — open this session in ${productName()} and retry there; the approval card will appear in that UI.`,
             };
           }
           // Allow everything else that isn't in allowedTools (e.g. MCP tools)
@@ -1356,7 +1356,7 @@ const UI_BASE = process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.ne
 function prActionCardBlocks(message: string, bksId: string, running: boolean): any[] {
   const backstageButton = {
     type: "button",
-    text: { type: "plain_text", text: ":desktop_computer: Open in Backstage", emoji: true },
+    text: { type: "plain_text", text: `:desktop_computer: Open in ${productName()}`, emoji: true },
     url: `${UI_BASE}/session/${bksId}`,
     action_id: `backstage:${bksId}`,
   };

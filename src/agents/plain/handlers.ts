@@ -18,7 +18,7 @@ import { getDefaultModel } from "../../server/models";
 import { CLAUDE_CODE_BIN, STRIPE_CONFIRM_TOOLS, filterMcpServers } from "../../server/claude-runner";
 import { classifyRefundApproval } from "./refund-intent";
 import { worktreePathFor } from "../../server/worktree";
-import { defaultRepo } from "../../server/config";
+import { defaultRepo, productName } from "../../server/config";
 
 const TELLA_FUSION_DIR = defaultRepo().repo;
 
@@ -576,8 +576,8 @@ async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<v
       await postNote(
         thread.id,
         thread.customer.id,
-        `Auto-triage skipped — this ticket looks like spam.\n\nReason: ${verdict.reason}\n\nIf this is a real ticket, mention @michael or run the triage automation manually from Backstage.`,
-        `**Auto-triage skipped — this ticket looks like spam.**\n\nReason: ${verdict.reason}\n\n*If this is a real ticket, mention @michael or run the triage automation manually from Backstage.*`
+        `Auto-triage skipped — this ticket looks like spam.\n\nReason: ${verdict.reason}\n\nIf this is a real ticket, mention @michael or run the triage automation manually from ${productName()}.`,
+        `**Auto-triage skipped — this ticket looks like spam.**\n\nReason: ${verdict.reason}\n\n*If this is a real ticket, mention @michael or run the triage automation manually from ${productName()}.*`
       );
     }
     return;

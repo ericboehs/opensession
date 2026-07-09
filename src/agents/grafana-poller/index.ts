@@ -25,6 +25,7 @@
 import { randomUUIDv7 } from "bun";
 import { mkdirSync, readFileSync, existsSync, unlinkSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import { productName } from "../../server/config";
 import type { AgentModule } from "../types";
 import {
   listAutomations,
@@ -270,7 +271,7 @@ function controlCardBlocks(
 
   const backstageButton = {
     type: "button",
-    text: { type: "plain_text", text: ":desktop_computer: Open in Backstage", emoji: true },
+    text: { type: "plain_text", text: `:desktop_computer: Open in ${productName()}`, emoji: true },
     url: `${UI_BASE}/session/${bksId}`,
     action_id: `backstage:${bksId}`,
   };

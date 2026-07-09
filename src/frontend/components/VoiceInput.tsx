@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { transcribeClip } from "../lib/api";
 import { IconCheck, IconMic, IconPlus, IconX } from "./icons";
 import { Tooltip } from "../ui/tooltip";
+import { PRODUCT_NAME } from "../lib/brand";
 
 type Phase = "idle" | "recording" | "transcribing";
 
@@ -60,7 +61,7 @@ export function VoiceInput({
     // getUserMedia only exists in secure contexts — over plain http (the
     // :3850 hostname) the mic simply isn't there.
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setError("Mic needs HTTPS — open Backstage via its ts.net URL");
+      setError(`Mic needs HTTPS — open ${PRODUCT_NAME} via its ts.net URL`);
       return;
     }
     let stream: MediaStream;

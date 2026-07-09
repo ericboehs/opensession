@@ -5,6 +5,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { useCurrentUser } from "./UserPicker";
 import { cn } from "../ui/cn";
+import { PRODUCT_NAME } from "../lib/brand";
 
 interface Props {
 	sessionId: string;
@@ -247,7 +248,7 @@ export function PlainReplyBox({
 				) : (
 					<span className="text-faint text-[11.5px] truncate">
 						{kind === "note"
-							? `Posted as ${currentUser} (via Backstage)`
+							? `Posted as ${currentUser} (via ${PRODUCT_NAME})`
 							: `Sends via Plain, signed “${currentUser.split(/\s+/)[0]}”`}
 					</span>
 				)}

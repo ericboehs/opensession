@@ -369,6 +369,16 @@ a {
 	height: 100%;
 }
 
+/* Installed PWA has no browser chrome, so the top bar bleeds straight into the
+   OS title/status bar with nothing separating them. Add a hairline divider along
+   the very top edge so the top bar reads as a defined bar. Browser tabs already
+   get this separation from the chrome above, so scope it to standalone. */
+@media (display-mode: standalone) {
+	.app {
+		border-top: 1px solid var(--border);
+	}
+}
+
 /* The top bar is mobile-only: on desktop the brand + user controls live in the
    sidebar's brand row instead (cleaner, single column of chrome). Shown again in
    the ≤720px media query where the drawer needs the hamburger. */

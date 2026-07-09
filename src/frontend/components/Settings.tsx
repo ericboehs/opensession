@@ -1140,7 +1140,7 @@ function AutoArchivePanel() {
 						title={repo}
 						desc={
 							repo === "backstage"
-								? "Archive on green checks here too — Backstage self-hosts, so sessions finish fast and pile up otherwise."
+								? `Archive on green checks here too — ${PRODUCT_NAME} self-hosts, so sessions finish fast and pile up otherwise.`
 								: `Archive open PRs in ${repo} once their checks pass.`
 						}
 						control={

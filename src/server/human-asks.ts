@@ -32,7 +32,7 @@ import {
   postSlackBlocks,
   sendSlackMessage,
 } from "../agents/slack/slack-api";
-import { personaName } from "./config";
+import { personaName, productName } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const STORE = `${BACKSTAGE_CHATS_DIR}/human-asks.json`;
@@ -254,7 +254,7 @@ function deliveryBlocks(a: HumanAsk): { fallback: string; blocks: any[] } {
   }
   blocks.push({
     type: "context",
-    elements: [{ type: "mrkdwn", text: `<${link}|Open the session in Backstage>` }],
+    elements: [{ type: "mrkdwn", text: `<${link}|Open the session in ${productName()}>` }],
   });
   return { fallback: `${personaName()} needs your input: ${a.question}`, blocks };
 }

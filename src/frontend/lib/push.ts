@@ -5,6 +5,8 @@
  * the app was opened over a secure origin (the ts.net HTTPS host).
  */
 
+import { PRODUCT_NAME } from "./brand";
+
 export type PushState = "unsupported" | "denied" | "off" | "on";
 
 const SW_URL = "/backstage/sw.js";
@@ -46,7 +48,7 @@ export async function enablePush(user: string): Promise<void> {
     throw new Error(
       window.isSecureContext
         ? "This browser doesn't support Web Push."
-        : "Push needs the HTTPS origin — open Backstage via michael.taila5d766.ts.net.",
+        : `Push needs the HTTPS origin — open ${PRODUCT_NAME} via michael.taila5d766.ts.net.`,
     );
   }
   const permission = await Notification.requestPermission();

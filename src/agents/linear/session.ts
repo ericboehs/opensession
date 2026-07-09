@@ -10,6 +10,7 @@ import {
 } from "../../server/claude-runner";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";
 import { runCodexAuto } from "../../server/codex-appserver";
+import { productName } from "../../server/config";
 import { DEFAULT_FALLBACK_MODEL, resolveModel, getDefaultModel } from "../../server/models";
 import { cleanPlainToolInput } from "../../server/shared/note-style";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
@@ -464,8 +465,7 @@ export async function runClaudeHeadless(
           if (toolName in STRIPE_CONFIRM_TOOLS) {
             return {
               behavior: "deny" as const,
-              message:
-                "This Stripe action requires human confirmation — open this session in Backstage and retry there; the approval card will appear in that UI.",
+              message: `This Stripe action requires human confirmation — open this session in ${productName()} and retry there; the approval card will appear in that UI.`,
             };
           }
           return {
