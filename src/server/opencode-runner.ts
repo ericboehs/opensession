@@ -109,22 +109,20 @@ import { dirname, join } from "path";
 import type { Subprocess } from "bun";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import type { RunAgentOpts } from "./agent-runner";
+import { journalSet, journalClear } from "./run-journal";
 import {
-  journalSet,
-  journalClear,
   filterMcpServers,
   isClaudeUsageLimitError,
+  isCodexUsageLimitError,
   CLAUDE_CODE_BIN,
-  type StreamEvent,
-  type ImageInput,
-} from "./claude-runner";
+} from "./runner-shared";
+import type { StreamEvent, ImageInput } from "./run-events";
 import { audit, summarizeText } from "./audit";
 import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
-import { isCodexUsageLimitError } from "./codex-runner";
 import {
   appendOpencodeTranscript,
   ensureOpencodeTranscriptFile,

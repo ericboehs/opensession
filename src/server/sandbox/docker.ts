@@ -113,12 +113,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unl
 import { dirname, resolve as resolvePath } from "path";
 import { OPENSESSION_CHATS_DIR } from "../paths";
 import { envAlias, stateDir } from "../rename-compat";
-import {
-  journalSet,
-  journalClear,
-  type ActiveRunRecord,
-  type StreamEvent,
-} from "../claude-runner";
+import { journalSet, journalClear, type ActiveRunRecord } from "../run-journal";
+import type { StreamEvent } from "../run-events";
 import { RESUME_CONTINUATION_PROMPT } from "../agent-runner";
 import { providerFor } from "../models";
 import { hostRunBusy, hostSteer, hostInterruptSteer, hostCancel } from "../host-registry";

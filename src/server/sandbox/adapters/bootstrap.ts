@@ -54,12 +54,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync } 
 import { dirname } from "path";
 import { OPENSESSION_CHATS_DIR } from "../../paths";
 import { envAlias, stateDir } from "../../rename-compat";
-import {
-  journalSet,
-  journalClear,
-  type ActiveRunRecord,
-  type StreamEvent,
-} from "../../claude-runner";
+import { journalSet, journalClear, type ActiveRunRecord } from "../../run-journal";
+import type { StreamEvent } from "../../run-events";
 import { RESUME_CONTINUATION_PROMPT } from "../../agent-runner";
 import { accountsForRemoteUpload } from "../../claude-accounts";
 import { audit } from "../../audit";

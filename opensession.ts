@@ -79,10 +79,8 @@ import {
 } from "./src/server/sandbox";
 import { dockerContainerStatus } from "./src/server/sandbox/docker";
 import type { RunHostSpec } from "./src/runner-host/protocol";
-import {
-	STRIPE_CONFIRM_TOOLS,
-	activeRunRecords,
-} from "./src/server/claude-runner";
+import { STRIPE_CONFIRM_TOOLS } from "./src/server/runner-shared";
+import { activeRunRecords } from "./src/server/run-journal";
 import { buildSystemPromptParts } from "./src/server/system-prompt";
 import {
 	runAgent,
@@ -103,8 +101,8 @@ import {
 	writeFileAtomic,
 	writeJsonAtomic,
 } from "./src/server/shared/atomic-write";
-import type { ImageInput } from "./src/server/claude-runner";
-import type { ActiveRunRecord } from "./src/server/claude-runner";
+import type { ImageInput } from "./src/server/run-events";
+import type { ActiveRunRecord } from "./src/server/run-journal";
 import {
 	getPins as getUserPins,
 	setPins as setUserPins,
@@ -344,7 +342,7 @@ import type {
 	SessionUsage,
 	TranscriptEntry,
 } from "./src/server/types";
-import type { TurnUsage } from "./src/server/claude-runner";
+import type { TurnUsage } from "./src/server/run-events";
 
 const PORT = parseInt(process.env.PORT || "3850");
 const HOST = process.env.HOST || "127.0.0.1";

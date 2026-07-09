@@ -11,7 +11,7 @@ import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { runAgent } from "../../server/agent-runner";
 import { providerFor, DEFAULT_FALLBACK_MODEL, modelLabel } from "../../server/models";
 import { engineSessionPatch } from "../../server/sessions";
-import { STRIPE_CONFIRM_TOOLS } from "../../server/claude-runner";
+import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { gitIdentityFor, type GitIdentity } from "../../server/shared/user-mappings";
 import { findOrCreateWorkspaceByKey } from "../../server/workspaces";
 import { repoForPath } from "../../server/worktree";

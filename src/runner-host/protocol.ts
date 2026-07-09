@@ -23,7 +23,7 @@
  * lose mid-run events for good.
  */
 
-import type { StreamEvent, ImageInput } from "../server/claude-runner";
+import type { StreamEvent, ImageInput } from "../server/run-events";
 import type { GitIdentity } from "../server/shared/user-mappings";
 
 /** Everything a host needs to drive one run — a serializable RunAgentOpts. */

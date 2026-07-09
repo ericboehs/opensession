@@ -56,7 +56,7 @@ type RunHostMeta = import("./protocol").RunHostMeta;
 type HostToClientMsg = import("./protocol").HostToClientMsg;
 type ClientToHostMsg = import("./protocol").ClientToHostMsg;
 type AskResult = import("./protocol").AskResult;
-type StreamEvent = import("../server/claude-runner").StreamEvent;
+type StreamEvent = import("../server/run-events").StreamEvent;
 
 const spec: RunHostSpec = JSON.parse(readFileSync(specPath, "utf-8"));
 const sockPath = `${hostDir}/${HOST_SOCK_NAME}`;

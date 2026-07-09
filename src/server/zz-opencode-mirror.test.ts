@@ -21,7 +21,7 @@ const { withOpencodeTranscriptMirror } = await import("./sandbox/adapters/bootst
 const { getOpencodeTranscriptPath } = await import("./opencode-transcript");
 const { parseTranscript } = await import("./jsonl-parser");
 const { RESUME_CONTINUATION_PROMPT } = await import("./agent-runner");
-import type { StreamEvent } from "./claude-runner";
+import type { StreamEvent } from "./run-events";
 import type { RunHostSpec } from "../runner-host/protocol";
 
 afterAll(() => {

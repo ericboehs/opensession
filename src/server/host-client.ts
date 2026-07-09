@@ -31,7 +31,8 @@ import {
   type RunAgentOpts,
   type StreamEvent,
 } from "./agent-runner";
-import type { ActiveRunRecord, ImageInput } from "./claude-runner";
+import type { ActiveRunRecord } from "./run-journal";
+import type { ImageInput } from "./run-events";
 import type { GitIdentity } from "./shared/user-mappings";
 import { providerFor } from "./models";
 import { OPENSESSION_CHATS_DIR } from "./paths";

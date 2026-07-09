@@ -71,7 +71,7 @@ import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod";
 import { audit, summarizeText } from "./audit";
 import { getAccountById, getUsableAccountById, type ClaudeAccount } from "./claude-accounts";
-import { CLAUDE_CODE_BIN } from "./claude-runner";
+import { CLAUDE_CODE_BIN } from "./runner-shared";
 import { bridgePort, bridgeMaxRequestsPerHour, readOpencodeBridgeConfig } from "./opencode-config";
 import { mkdirSync } from "fs";
 

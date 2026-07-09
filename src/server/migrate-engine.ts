@@ -24,7 +24,7 @@ import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias } from "./rename-compat";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { resolveModel } from "./models";
-import type { ActiveRunRecord } from "./claude-runner";
+import type { ActiveRunRecord } from "./run-journal";
 import type { BackstageSessionFile } from "./types";
 
 export type MigrateEngineResult =

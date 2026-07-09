@@ -59,7 +59,7 @@ import {
   isClaudeUsageLimitError,
   filterMcpServers,
   STRIPE_CONFIRM_TOOLS,
-} from "../../server/claude-runner";
+} from "../../server/runner-shared";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { getAgentAwsEnv } from "../../server/aws-creds";
 import { pickAccount, markExhausted } from "../../server/claude-accounts";

@@ -7,7 +7,7 @@ import {
   proxyOpencodeMcpConfigs,
   buildOpencodeInstructions,
 } from "./opencode-runner";
-import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "./claude-runner";
+import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "./runner-shared";
 import {
   automationDeniedTools,
   opencodeAutomationModel,

@@ -17,7 +17,7 @@ import {
 import { buildMentionPrompt, buildWorkPrompt, buildRefundExecutionPrompt } from "./prompts";
 import { getDefaultModel } from "../../server/models";
 import { resolveDirectSdkModel } from "../../server/model-resolve";
-import { CLAUDE_CODE_BIN, STRIPE_CONFIRM_TOOLS, filterMcpServers } from "../../server/claude-runner";
+import { CLAUDE_CODE_BIN, STRIPE_CONFIRM_TOOLS, filterMcpServers } from "../../server/runner-shared";
 import { classifyRefundApproval } from "./refund-intent";
 import { worktreePathFor } from "../../server/worktree";
 import { defaultRepo, productName } from "../../server/config";

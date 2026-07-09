@@ -18,7 +18,7 @@
  * Phase 1 TODO (see docs/sandboxes-plan.md §5 Phase 1).
  */
 
-import type { StreamEvent } from "../claude-runner";
+import type { StreamEvent } from "../run-events";
 import type { RunAgentOpts } from "../agent-runner";
 import type { RunHostSpec } from "../../runner-host/protocol";
 

@@ -18,7 +18,7 @@ import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, existsSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { runAgent } from "./agent-runner";
-import { STRIPE_CONFIRM_TOOLS } from "./claude-runner";
+import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
 import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";

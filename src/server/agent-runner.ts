@@ -18,11 +18,10 @@ import {
   interruptRun,
   stopRunTurn,
   interruptAndSteerRun,
-  takeInterruptedRuns,
   activeRunCount,
-  type StreamEvent,
-  type ImageInput,
 } from "./claude-runner";
+import { takeInterruptedRuns } from "./run-journal";
+import type { StreamEvent, ImageInput } from "./run-events";
 import { isCodexSessionBusy, cancelCodexRun, activeCodexRunCount } from "./codex-runner";
 import {
   runOpencode,
