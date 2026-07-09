@@ -55,10 +55,22 @@ import { useIsPhone } from "../hooks/useIsPhone";
 
 const AUTOMATION_COLOR = "#d29922";
 
-// Archive the active workspace. The viewer's ⌘⇧A archives just the open chat
-// and bails on Alt, so the Alt-carrying escalation here never double-fires it.
+// Archive the active workspace. The viewer's ⌘E/⌘⇧A archives just the open
+// chat and bails on Alt, so the Alt-carrying escalation here never
+// double-fires it.
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
-const ARCHIVE_WS_SHORTCUT = isApple ? "⌘⌥⇧A" : "Ctrl+Alt+Shift+A";
+const ARCHIVE_WS_SHORTCUT_KEYS = isApple
+	? ["⌘", "⌥", "⇧", "A"]
+	: ["Ctrl", "Alt", "Shift", "A"];
+// ⌘E is the advertised archive chord; ⌘⇧A stays alive as a legacy alias.
+const ARCHIVE_SHORTCUT_KEYS = isApple ? ["⌘", "E"] : ["Ctrl", "E"];
+
+/** ⌘E (primary) or ⌘⇧A (legacy) — the archive-this-chat chord. */
+function isArchiveChord(e: KeyboardEvent): boolean {
+	if (!(e.metaKey || e.ctrlKey) || e.altKey) return false;
+	const k = e.key.toLowerCase();
+	return (k === "e" && !e.shiftKey) || (k === "a" && e.shiftKey);
+}
 
 // Long-press (touch) tuning for the mobile action sheet.
 const LONG_PRESS_MS = 450; // hold before the sheet opens
@@ -1426,22 +1438,16 @@ export function Sidebar({
 		onArchive(chat, next);
 	}
 
-	// ⌘⇧A archives the open chat and lands on the next entry in the sidebar,
-	// rather than dropping back to Home. This lives here (not in the viewer)
-	// because the sidebar owns the row ordering that defines "next". The viewer
-	// keeps a bare ⌘⇧A only for the unarchive toggle on an already-archived
-	// session — that session isn't in this list, so this handler no-ops on it
-	// and the two never both fire. ⌘⌥⇧A below escalates to the whole workspace.
+	// ⌘E (or the legacy ⌘⇧A) archives the open chat and lands on the next entry
+	// in the sidebar, rather than dropping back to Home. This lives here (not in
+	// the viewer) because the sidebar owns the row ordering that defines "next".
+	// The viewer keeps the same chord only for the unarchive toggle on an
+	// already-archived session — that session isn't in this list, so this
+	// handler no-ops on it and the two never both fire. ⌘⌥⇧A below escalates to
+	// the whole workspace.
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
-			if (
-				e.defaultPrevented ||
-				e.key.toLowerCase() !== "a" ||
-				!(e.metaKey || e.ctrlKey) ||
-				!e.shiftKey ||
-				e.altKey
-			)
-				return;
+			if (e.defaultPrevented || !isArchiveChord(e)) return;
 			if (
 				document.querySelector(
 					".palette-backdrop, .composer-schedule-modal-backdrop, .session-delete-overlay",
@@ -1467,9 +1473,9 @@ export function Sidebar({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [wsRowOrder, selectedId, onArchive]);
 
-	// ⌘⌥⇧A escalates the ⌘⇧A archive to the whole active workspace. The Alt
-	// modifier is the only thing that separates the two handlers, so exactly one
-	// fires. Targets the workspace holding the open session.
+	// ⌘⌥⇧A escalates the chat archive (⌘E/⌘⇧A) to the whole active workspace.
+	// The Alt modifier is the only thing that separates the two handlers, so
+	// exactly one fires. Targets the workspace holding the open session.
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
 			if (
@@ -2047,29 +2053,33 @@ export function Sidebar({
 						<IconPin size={21} fill={pinned ? "currentColor" : "none"} />
 					</span>
 					{row.chats.length > 0 && (
-						<span
-							role="button"
-							tabIndex={0}
-							className="sidebar-ws-action"
-							title={
-								(row.chats.length > 1
+						<Tooltip
+							label={
+								row.chats.length > 1
 									? `Archive workspace (${row.chats.length} chats)`
-									: "Archive workspace") +
-								(active ? ` · ${ARCHIVE_WS_SHORTCUT}` : "")
+									: "Archive workspace"
 							}
-							onClick={(e) => {
-								e.stopPropagation();
-								archiveWorkspaceWithNext(row);
-							}}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" || e.key === " ") {
+							shortcut={active ? ARCHIVE_WS_SHORTCUT_KEYS : undefined}
+						>
+							<span
+								role="button"
+								tabIndex={0}
+								className="sidebar-ws-action"
+								aria-label="Archive workspace"
+								onClick={(e) => {
 									e.stopPropagation();
 									archiveWorkspaceWithNext(row);
-								}
-							}}
-						>
-							<IconArchive size={21} />
-						</span>
+								}}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" || e.key === " ") {
+										e.stopPropagation();
+										archiveWorkspaceWithNext(row);
+									}
+								}}
+							>
+								<IconArchive size={21} />
+							</span>
+						</Tooltip>
 					)}
 				</span>
 				</button>
@@ -3911,29 +3921,33 @@ function SidebarItem({
 					))}
 				</div>
 			)}
-			<span
-				className="sidebar-item-x"
-				role="button"
-				aria-label="Archive session"
-				title="Archive session"
-				onClick={(e) => {
-					e.stopPropagation();
-					onArchive();
-				}}
+			<Tooltip
+				label="Archive session"
+				shortcut={selected ? ARCHIVE_SHORTCUT_KEYS : undefined}
 			>
-				<svg
-					width="20"
-					height="20"
-					viewBox="0 0 16 16"
-					fill="none"
-					stroke="currentColor"
-					strokeWidth="1.4"
+				<span
+					className="sidebar-item-x"
+					role="button"
+					aria-label="Archive session"
+					onClick={(e) => {
+						e.stopPropagation();
+						onArchive();
+					}}
 				>
-					<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
-					<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
-					<path d="M6.5 8.5h3" strokeLinecap="round" />
-				</svg>
-			</span>
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 16 16"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="1.4"
+					>
+						<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
+						<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
+						<path d="M6.5 8.5h3" strokeLinecap="round" />
+					</svg>
+				</span>
+			</Tooltip>
 		</button>
 		</div>
 		{anchor && <SessionHoverCard session={session} anchor={anchor} />}

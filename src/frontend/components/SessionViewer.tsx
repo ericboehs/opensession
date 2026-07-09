@@ -1792,18 +1792,17 @@ export function SessionViewer({
 			) {
 				return;
 			}
-			// Only the unarchive toggle lives here now — the sidebar owns ⌘⇧A for
-			// archiving a live session (it advances to the next entry, which needs
-			// the sidebar's row ordering). An archived session isn't in that list,
-			// so the sidebar handler no-ops on it and we handle unarchive here.
-			if (
-				e.key.toLowerCase() === "a" &&
+			// Only the unarchive toggle lives here now — the sidebar owns ⌘E (and
+			// the legacy ⌘⇧A) for archiving a live session (it advances to the next
+			// entry, which needs the sidebar's row ordering). An archived session
+			// isn't in that list, so the sidebar handler no-ops on it and we handle
+			// unarchive here.
+			const k = e.key.toLowerCase();
+			const archiveChord =
 				(e.metaKey || e.ctrlKey) &&
-				e.shiftKey &&
 				!e.altKey &&
-				!archiving &&
-				session.archived
-			) {
+				((k === "e" && !e.shiftKey) || (k === "a" && e.shiftKey));
+			if (archiveChord && !archiving && session.archived) {
 				e.preventDefault();
 				void handleArchive();
 			}
@@ -1926,8 +1925,8 @@ export function SessionViewer({
 						disabled={archiving}
 						title={
 							session.archived
-								? "Unarchive session (⌘⇧A)"
-								: "Archive session (⌘⇧A)"
+								? `Unarchive session (${isApple ? "⌘E" : "Ctrl+E"})`
+								: `Archive session (${isApple ? "⌘E" : "Ctrl+E"})`
 						}
 					>
 						<IconArchive size={22} />
@@ -1940,7 +1939,9 @@ export function SessionViewer({
 									? "Unarchive session"
 									: "Archive session"}
 						</span>
-						<span className="btn-viewer-shortcut">⌘⇧A</span>
+						<span className="btn-viewer-shortcut">
+							{isApple ? "⌘E" : "Ctrl+E"}
+						</span>
 					</button>
 				);
 				// Delete is destructive, so it never rides in the visible action bar —
