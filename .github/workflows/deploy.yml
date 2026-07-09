@@ -37,7 +37,7 @@ jobs:
           CMD_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name AWS-RunShellScript \
-            --comment "deploy backstage ${SHORT_SHA}" \
+            --comment "deploy opensession ${SHORT_SHA}" \
             --timeout-seconds 600 \
             --parameters commands="[\"bash /home/ubuntu/projects/tella-backstage/deploy/deploy.sh ${GITHUB_SHA}\"]" \
             --query 'Command.CommandId' --output text)
