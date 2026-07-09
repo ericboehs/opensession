@@ -9,8 +9,7 @@
  * the field is simply left for the user to fill. The model output is always
  * re-sanitized here so a bad reply can never produce an invalid branch name.
  */
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import { CLAUDE_CODE_BIN } from "./claude-runner";
+import { opencodeOneShot } from "./opencode-oneshot";
 
 const SUGGEST_MODEL = process.env.SUGGEST_BRANCH_MODEL || "claude-haiku-4-5";
 
@@ -45,30 +44,11 @@ export async function suggestBranchName(prompt: string): Promise<string | null> 
   if (text.length < 10) return null;
 
   try {
-    let resultText = "";
-    const q = query({
-      prompt: `Name a branch for this task:\n\n${text.slice(0, 2000)}`,
-      options: {
-        model: SUGGEST_MODEL,
-        maxTurns: 1,
-        allowedTools: [],
-        canUseTool: async () => ({ behavior: "deny" as const, message: "No tools available." }),
-        mcpServers: {},
-        strictMcpConfig: true,
-        systemPrompt: SYSTEM_PROMPT,
-        settingSources: [],
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-      },
-    });
-    for await (const msg of q) {
-      if (msg.type === "result") {
-        const rm = msg as any;
-        if (rm.subtype !== "success") return null;
-        resultText = rm.result || "";
-      }
-    }
+    const resultText = await opencodeOneShot(
+      `Name a branch for this task:\n\n${text.slice(0, 2000)}`,
+      { system: SYSTEM_PROMPT, model: SUGGEST_MODEL, label: "suggest-branch" },
+    );
+    if (!resultText) return null;
     // Extract the JSON object from the reply (JSON extraction, not parsing the
     // branch itself — that's sanitized below).
     const m = resultText.match(/\{[\s\S]*?\}/);

@@ -11,8 +11,7 @@
  * Fail-open: any error or unparseable output returns null and the caller falls
  * back to the default worktree (code) flow, so a hiccup never blocks Michael.
  */
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
+import { opencodeOneShot } from "../../server/opencode-oneshot";
 
 const INTENT_MODEL = process.env.SLACK_MENTION_INTENT_MODEL || "claude-haiku-4-5";
 
@@ -67,30 +66,11 @@ Respond with ONLY a JSON object: {"action": "review"|"autofix"|"simplify"|"adver
 /** Classify a GitHub PR comment that @mentions Michael — which whole-PR action (if any). */
 export async function classifyPrActionIntent(message: string): Promise<PrIntentAction> {
   try {
-    let resultText = "";
-    const q = query({
-      prompt: `Classify this PR comment addressed to Michael:\n\n${message.slice(0, 2000)}`,
-      options: {
-        model: INTENT_MODEL,
-        maxTurns: 1,
-        allowedTools: [],
-        canUseTool: async () => ({ behavior: "deny" as const, message: "No tools available." }),
-        mcpServers: {},
-        strictMcpConfig: true,
-        systemPrompt: PR_ACTION_SYSTEM,
-        settingSources: [],
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-      },
-    });
-    for await (const msg of q) {
-      if (msg.type === "result") {
-        const rm = msg as any;
-        if (rm.subtype !== "success") return "none";
-        resultText = rm.result || "";
-      }
-    }
+    const resultText = await opencodeOneShot(
+      `Classify this PR comment addressed to Michael:\n\n${message.slice(0, 2000)}`,
+      { system: PR_ACTION_SYSTEM, model: INTENT_MODEL, label: "pr-action-intent" },
+    );
+    if (!resultText) return "none";
     const m = resultText.match(/\{[\s\S]*?\}/);
     if (!m) return "none";
     const action = JSON.parse(m[0]).action;
@@ -104,35 +84,11 @@ export async function classifyPrActionIntent(message: string): Promise<PrIntentA
 /** Classify a Slack mention. Returns null on any failure (caller falls through to code mode). */
 export async function classifyMention(message: string): Promise<MentionIntent | null> {
   try {
-    let resultText = "";
-    const q = query({
-      prompt: `Classify this Slack message:\n\n${message.slice(0, 2000)}`,
-      options: {
-        model: INTENT_MODEL,
-        maxTurns: 1,
-        allowedTools: [],
-        canUseTool: async () => ({ behavior: "deny" as const, message: "No tools available." }),
-        mcpServers: {},
-        strictMcpConfig: true,
-        systemPrompt: SYSTEM_PROMPT,
-        settingSources: [],
-        env: {
-          PATH: process.env.PATH,
-          HOME: process.env.HOME,
-          LANG: process.env.LANG,
-        },
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-      },
-    });
-
-    for await (const msg of q) {
-      if (msg.type === "result") {
-        const rm = msg as any;
-        if (rm.subtype !== "success") return null;
-        resultText = rm.result || "";
-      }
-    }
+    const resultText = await opencodeOneShot(
+      `Classify this Slack message:\n\n${message.slice(0, 2000)}`,
+      { system: SYSTEM_PROMPT, model: INTENT_MODEL, label: "mention-intent" },
+    );
+    if (!resultText) return null;
 
     const match = resultText.match(/\{[\s\S]*?\}/);
     if (!match) return null;

@@ -20,8 +20,7 @@
  */
 import { envAlias, stateDir } from "../../server/rename-compat";
 import { mkdirSync, readFileSync, existsSync } from "fs";
-import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { opencodeOneShot } from "../../server/opencode-oneshot";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import {
   tryGetSessionControl,
@@ -169,30 +168,11 @@ async function decideAnswer(
   contextText: string,
 ): Promise<{ answers: Record<string, string>; reason: string } | null> {
   try {
-    let resultText = "";
-    const q = query({
-      prompt: `## Pending question(s)\n\n${JSON.stringify(questions, null, 2)}\n\n## Recent session transcript (tail)\n\n${contextText.slice(-8000)}`,
-      options: {
-        model: ANSWER_MODEL,
-        maxTurns: 1,
-        allowedTools: [],
-        canUseTool: async () => ({ behavior: "deny" as const, message: "No tools available." }),
-        mcpServers: {},
-        strictMcpConfig: true,
-        systemPrompt: ANSWER_SYSTEM,
-        settingSources: [],
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-      },
-    });
-    for await (const msg of q) {
-      if (msg.type === "result") {
-        const rm = msg as any;
-        if (rm.subtype !== "success") return null;
-        resultText = rm.result || "";
-      }
-    }
+    const resultText = await opencodeOneShot(
+      `## Pending question(s)\n\n${JSON.stringify(questions, null, 2)}\n\n## Recent session transcript (tail)\n\n${contextText.slice(-8000)}`,
+      { system: ANSWER_SYSTEM, model: ANSWER_MODEL, label: "session-monitor-answer" },
+    );
+    if (!resultText) return null;
     const m = resultText.match(/\{[\s\S]*\}/);
     if (!m) return null;
     const raw = JSON.parse(m[0]);

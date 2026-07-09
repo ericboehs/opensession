@@ -8,8 +8,7 @@
  * Fail-closed: any hiccup returns null and the note is left untouched. The note
  * content is untrusted data to edit, never instructions to follow.
  */
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import { CLAUDE_CODE_BIN } from "./claude-runner";
+import { opencodeOneShot } from "./opencode-oneshot";
 
 const NOTE_EDIT_MODEL = process.env.NOTE_EDIT_MODEL || "claude-haiku-4-5";
 
@@ -44,37 +43,11 @@ export async function editNote(
 	if (!instr) return null;
 
 	try {
-		let resultText = "";
-		const q = query({
-			prompt: `Current note markdown:\n\n<note>\n${current}\n</note>\n\nInstruction:\n\n${instr.slice(0, 4000)}`,
-			options: {
-				model: NOTE_EDIT_MODEL,
-				maxTurns: 1,
-				allowedTools: [],
-				canUseTool: async () => ({
-					behavior: "deny" as const,
-					message: "No tools available.",
-				}),
-				mcpServers: {},
-				strictMcpConfig: true,
-				systemPrompt: SYSTEM_PROMPT,
-				settingSources: [],
-				env: {
-					PATH: process.env.PATH,
-					HOME: process.env.HOME,
-					LANG: process.env.LANG,
-				},
-				pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-				executable: "bun",
-			},
-		});
-		for await (const msg of q) {
-			if (msg.type === "result") {
-				const rm = msg as any;
-				if (rm.subtype !== "success") return null;
-				resultText = rm.result || "";
-			}
-		}
+		const resultText = await opencodeOneShot(
+			`Current note markdown:\n\n<note>\n${current}\n</note>\n\nInstruction:\n\n${instr.slice(0, 4000)}`,
+			{ system: SYSTEM_PROMPT, model: NOTE_EDIT_MODEL, label: "note-edit" },
+		);
+		if (!resultText) return null;
 		const out = stripFence(resultText);
 		return out.length ? out : null;
 	} catch (e) {

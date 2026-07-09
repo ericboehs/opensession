@@ -9,14 +9,10 @@
  * background at session creation so it never blocks the create path.
  */
 import { readFileSync, existsSync } from "fs";
-import { CLAUDE_CODE_BIN } from "./claude-runner";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import { pickAccount } from "./claude-accounts";
-import { defaultRepo } from "./config";
+import { opencodeOneShot } from "./opencode-oneshot";
 
-const HOME = process.env.HOME || "/home/ubuntu";
 const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/generated-titles.json`;
 
 let cache: Record<string, string> | null = null;
@@ -76,35 +72,11 @@ export async function ensureGeneratedTitle(
 	const source = prompt.trim().slice(0, 2000);
 	if (!source) return null;
 
-	let out = "";
-	try {
-		const account = pickAccount(undefined, user, model);
-		const q = query({
-			prompt: `Summarize this coding task as a short title of 3 to 6 words, phrased as an imperative like a git branch or PR title (e.g. "Add onboarding flow", "Fix layout thumbnails", "Raise timeline playhead"). Sentence case, no trailing punctuation, no quotes, no code. Output ONLY the title, nothing else.\n\nTask:\n"""\n${source}\n"""`,
-			options: {
-				model: "haiku",
-				maxTurns: 1,
-				cwd: defaultRepo().repo,
-				allowedTools: [],
-				pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-				executable: "bun",
-				env: {
-					PATH: process.env.PATH,
-					HOME: process.env.HOME,
-					LANG: process.env.LANG,
-					...(account ? { CLAUDE_CODE_OAUTH_TOKEN: account.token } : {}),
-				},
-			},
-		});
-		for await (const msg of q) {
-			if (msg.type === "result" && (msg as any).subtype === "success") {
-				out = (msg as any).result || "";
-			}
-		}
-	} catch (e) {
-		console.error("[title] Error generating session title:", e);
-		return null;
-	}
+	const out = await opencodeOneShot(
+		`Summarize this coding task as a short title of 3 to 6 words, phrased as an imperative like a git branch or PR title (e.g. "Add onboarding flow", "Fix layout thumbnails", "Raise timeline playhead"). Sentence case, no trailing punctuation, no quotes, no code. Output ONLY the title, nothing else.\n\nTask:\n"""\n${source}\n"""`,
+		{ user, label: "generated-titles" },
+	);
+	if (!out) return null;
 
 	const title = sanitizeTitle(out);
 	if (!title) return null;

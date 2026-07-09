@@ -9,8 +9,7 @@
  * here (cron parsed, mode/eventKey/mcpServers checked against known values) so
  * a bad reply can never produce an invalid or over-privileged config.
  */
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import { CLAUDE_CODE_BIN } from "./claude-runner";
+import { opencodeOneShot } from "./opencode-oneshot";
 import { parseCron } from "./cron";
 import { readMcpConfig } from "./connections";
 
@@ -63,30 +62,11 @@ export async function draftAutomation(description: string): Promise<AutomationDr
   } catch {}
 
   try {
-    let resultText = "";
-    const q = query({
-      prompt: `Draft an automation for this:\n\n${text.slice(0, 4000)}`,
-      options: {
-        model: DRAFT_MODEL,
-        maxTurns: 1,
-        allowedTools: [],
-        canUseTool: async () => ({ behavior: "deny" as const, message: "No tools available." }),
-        mcpServers: {},
-        strictMcpConfig: true,
-        systemPrompt: systemPrompt(mcpNames),
-        settingSources: [],
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-      },
-    });
-    for await (const msg of q) {
-      if (msg.type === "result") {
-        const rm = msg as any;
-        if (rm.subtype !== "success") return null;
-        resultText = rm.result || "";
-      }
-    }
+    const resultText = await opencodeOneShot(
+      `Draft an automation for this:\n\n${text.slice(0, 4000)}`,
+      { system: systemPrompt(mcpNames), model: DRAFT_MODEL, label: "draft-automation" },
+    );
+    if (!resultText) return null;
     const m = resultText.match(/\{[\s\S]*\}/);
     if (!m) return null;
     const raw = JSON.parse(m[0]);

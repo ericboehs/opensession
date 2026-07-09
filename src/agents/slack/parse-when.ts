@@ -7,8 +7,7 @@
  * Returns the ISO string, or null if the text isn't a usable time expression
  * (caller surfaces a friendly error). Fail-closed: any hiccup returns null.
  */
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
+import { opencodeOneShot } from "../../server/opencode-oneshot";
 
 const WHEN_MODEL = process.env.SCHEDULE_WHEN_MODEL || "claude-haiku-4-5";
 
@@ -30,30 +29,11 @@ Rules:
 Respond with ONLY a JSON object: {"iso": "<ISO8601 UTC, e.g. 2026-07-06T16:00:00Z>"} or {"iso": null}.`;
 
   try {
-    let resultText = "";
-    const q = query({
-      prompt: `Convert this to an instant:\n\n${text.slice(0, 200)}`,
-      options: {
-        model: WHEN_MODEL,
-        maxTurns: 1,
-        allowedTools: [],
-        canUseTool: async () => ({ behavior: "deny" as const, message: "No tools available." }),
-        mcpServers: {},
-        strictMcpConfig: true,
-        systemPrompt: system,
-        settingSources: [],
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-      },
-    });
-    for await (const msg of q) {
-      if (msg.type === "result") {
-        const rm = msg as any;
-        if (rm.subtype !== "success") return null;
-        resultText = rm.result || "";
-      }
-    }
+    const resultText = await opencodeOneShot(
+      `Convert this to an instant:\n\n${text.slice(0, 200)}`,
+      { system, model: WHEN_MODEL, label: "parse-when" },
+    );
+    if (!resultText) return null;
     // Extract the JSON object from the model's reply (same approach as
     // mention-intent.ts) — this is JSON extraction, not date parsing.
     const m = resultText.match(/\{[\s\S]*?\}/);

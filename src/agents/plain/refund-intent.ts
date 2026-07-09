@@ -6,8 +6,7 @@
  * router: any error, ambiguity, or unparseable output returns {approve:false}.
  * A no-tools Haiku call — it only reads, never acts.
  */
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
+import { opencodeOneShot } from "../../server/opencode-oneshot";
 
 const MODEL = process.env.PLAIN_REFUND_INTENT_MODEL || "claude-haiku-4-5";
 
@@ -33,43 +32,12 @@ export async function classifyRefundApproval(
 ): Promise<RefundApproval> {
   const deny: RefundApproval = { approve: false, reason: "fail-closed default" };
   try {
-    let resultText = "";
-    const q = query({
-      prompt:
-        `Agent's note (the approval to evaluate):\n${request.slice(0, 2000)}\n\n` +
+    const resultText = await opencodeOneShot(
+      `Agent's note (the approval to evaluate):\n${request.slice(0, 2000)}\n\n` +
         `Thread context (look for a Michael refund/cancellation proposal):\n${threadContext.slice(0, 12000)}`,
-      options: {
-        model: MODEL,
-        maxTurns: 1,
-        allowedTools: [],
-        canUseTool: async () => ({
-          behavior: "deny" as const,
-          message: "No tools in the refund-intent check.",
-        }),
-        mcpServers: {},
-        strictMcpConfig: true,
-        systemPrompt: SYSTEM_PROMPT,
-        settingSources: [],
-        env: {
-          PATH: process.env.PATH,
-          HOME: process.env.HOME,
-          LANG: process.env.LANG,
-        },
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-      },
-    });
-
-    for await (const msg of q) {
-      if (msg.type === "result") {
-        const rm = msg as any;
-        if (rm.subtype !== "success") {
-          console.error(`[plain] refund-intent result error: ${rm.errors?.join(", ") || rm.subtype}`);
-          return deny;
-        }
-        resultText = rm.result || "";
-      }
-    }
+      { system: SYSTEM_PROMPT, model: MODEL, label: "refund-intent" },
+    );
+    if (!resultText) return deny;
 
     const match = resultText.match(/\{[\s\S]*?\}/);
     if (!match) return deny;

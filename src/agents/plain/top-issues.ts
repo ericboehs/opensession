@@ -9,8 +9,7 @@
  * links" window is derived from the weekday (Mon looks back over the weekend).
  */
 import { readFileSync } from "fs";
-import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { opencodeOneShot } from "../../server/opencode-oneshot";
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 
 const PLAIN_API_URL = process.env.PLAIN_API_URL || "https://core-api.uk.plain.com/graphql/v1";
@@ -216,24 +215,11 @@ async function pickQuotes(issues: IssueRollup[]): Promise<string[]> {
   if (!issues.length) return blank;
   const payload = issues.map((i, n) => ({ n, feature: i.shortName, candidates: i.quoteCandidates }));
   try {
-    let out = "";
-    const q = query({
-      prompt: `Pick a quote for each of these ${issues.length} issues:\n\n${JSON.stringify(payload).slice(0, 22000)}`,
-      options: {
-        model: QUOTE_MODEL,
-        maxTurns: 1,
-        allowedTools: [],
-        canUseTool: async () => ({ behavior: "deny" as const, message: "no tools" }),
-        mcpServers: {},
-        strictMcpConfig: true,
-        systemPrompt: QUOTE_SYSTEM,
-        settingSources: [],
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG },
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-      },
-    });
-    for await (const m of q) if (m.type === "result") out = (m as any).result || "";
+    const out = await opencodeOneShot(
+      `Pick a quote for each of these ${issues.length} issues:\n\n${JSON.stringify(payload).slice(0, 22000)}`,
+      { system: QUOTE_SYSTEM, model: QUOTE_MODEL, label: "top-issues-quotes" },
+    );
+    if (!out) return blank;
     const match = out.match(/\[[\s\S]*\]/);
     if (!match) return blank;
     const arr = JSON.parse(match[0]);

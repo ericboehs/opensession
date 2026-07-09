@@ -21,8 +21,7 @@
  */
 import { stateDir } from "../../server/rename-compat";
 import { existsSync, readFileSync } from "fs";
-import { CLAUDE_CODE_BIN } from "../../server/claude-runner";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { opencodeOneShot } from "../../server/opencode-oneshot";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { resolveModel } from "../../server/models";
 
@@ -109,43 +108,17 @@ export function setRouterConfig(patch: {
 /** Route a ticket. Returns null when no verdict could be reached (fail open → full triage). */
 export async function classifyTicketRoute(ticketContent: string): Promise<RouteVerdict | null> {
   try {
-    let resultText = "";
-    const q = query({
-      prompt: `Classify this support ticket:\n\n${ticketContent.slice(0, 8000)}`,
-      options: {
+    // Untrusted ticket text — the one-shot is tool-less by construction, so
+    // the content can only influence the classification, never act.
+    const resultText = await opencodeOneShot(
+      `Classify this support ticket:\n\n${ticketContent.slice(0, 8000)}`,
+      {
+        system: `${getRouterConfig().prompt}\n\n${OUTPUT_CONTRACT}`,
         model: ROUTER_MODEL,
-        maxTurns: 1,
-        allowedTools: [],
-        canUseTool: async () => ({
-          behavior: "deny" as const,
-          message: "No tools are available in the ticket router.",
-        }),
-        mcpServers: {},
-        strictMcpConfig: true,
-        systemPrompt: `${getRouterConfig().prompt}\n\n${OUTPUT_CONTRACT}`,
-        // No user/project settings: keep the call minimal and deterministic
-        settingSources: [],
-        // Untrusted ticket text goes into this child — minimal env, no tokens
-        env: {
-          PATH: process.env.PATH,
-          HOME: process.env.HOME,
-          LANG: process.env.LANG,
-        },
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
+        label: "ticket-router",
       },
-    });
-
-    for await (const msg of q) {
-      if (msg.type === "result") {
-        const rm = msg as any;
-        if (rm.subtype !== "success") {
-          console.error(`[plain] Ticket router result error: ${rm.errors?.join(", ") || rm.subtype}`);
-          return null;
-        }
-        resultText = rm.result || "";
-      }
-    }
+    );
+    if (!resultText) return null;
 
     const match = resultText.match(/\{[\s\S]*?\}/);
     if (!match) {

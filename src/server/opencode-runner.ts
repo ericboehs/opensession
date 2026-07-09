@@ -608,7 +608,7 @@ export function buildOpencodeInstructions(input: {
 
 // ── Server pool ──────────────────────────────────────────────────────────────
 
-interface OpencodeServerEntry {
+export interface OpencodeServerEntry {
   proc: Subprocess<"ignore", "pipe", "pipe">;
   url: string;
   password: string;
@@ -815,7 +815,14 @@ async function spawnOpencodeServer(
   return entry;
 }
 
-async function ensureOpencodeServer(
+/** Peek the live pool entry for a server key (meridian-key reuse across
+ *  ensure calls — the key must go into extraEnv BEFORE ensure computes the
+ *  config hash). */
+export function peekOpencodeServer(key: string): OpencodeServerEntry | undefined {
+  return servers.get(key);
+}
+
+export async function ensureOpencodeServer(
   key: string,
   cwd: string,
   config: Record<string, unknown>,
@@ -836,7 +843,7 @@ async function ensureOpencodeServer(
   return spawnOpencodeServer(key, cwd, config, configHash, author, extraEnv);
 }
 
-function clientFor(entry: OpencodeServerEntry): OpencodeClient {
+export function clientFor(entry: OpencodeServerEntry): OpencodeClient {
   return createOpencodeClient({
     baseUrl: entry.url,
     headers: { Authorization: `Basic ${btoa(`opencode:${entry.password}`)}` },
