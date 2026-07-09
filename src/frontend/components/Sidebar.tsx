@@ -1400,9 +1400,47 @@ export function Sidebar({
 		onArchiveWorkspace(row.chats, next?.chats[0] ?? null);
 	}
 
-	// ⌘⌥⇧A archives the whole active workspace — the workspace-level escalation
-	// of the viewer's ⌘⇧A (archive this chat). The Alt modifier is the thing
-	// that keeps them apart: the viewer's handler bails on altKey, so only one
+	// ⌘⇧A archives the open chat and lands on the next entry in the sidebar,
+	// rather than dropping back to Home. This lives here (not in the viewer)
+	// because the sidebar owns the row ordering that defines "next". The viewer
+	// keeps a bare ⌘⇧A only for the unarchive toggle on an already-archived
+	// session — that session isn't in this list, so this handler no-ops on it
+	// and the two never both fire. ⌘⌥⇧A below escalates to the whole workspace.
+	useEffect(() => {
+		function onKeyDown(e: KeyboardEvent) {
+			if (
+				e.defaultPrevented ||
+				e.key.toLowerCase() !== "a" ||
+				!(e.metaKey || e.ctrlKey) ||
+				!e.shiftKey ||
+				e.altKey
+			)
+				return;
+			if (
+				document.querySelector(
+					".palette-backdrop, .composer-schedule-modal-backdrop, .session-delete-overlay",
+				)
+			)
+				return;
+			const target = e.target as HTMLElement | null;
+			if (
+				target?.closest(
+					"input, textarea, select, [contenteditable='true'], [contenteditable='']",
+				)
+			)
+				return;
+			const s = flatOrder.find((x) => x.id === selectedId);
+			if (!s) return;
+			e.preventDefault();
+			closeWsHover();
+			archiveWithNext(s);
+		}
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [flatOrder, selectedId, onArchive]);
+
+	// ⌘⌥⇧A escalates the ⌘⇧A archive to the whole active workspace. The Alt
+	// modifier is the only thing that separates the two handlers, so exactly one
 	// fires. Targets the workspace holding the open session.
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {

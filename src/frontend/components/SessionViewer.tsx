@@ -1773,12 +1773,17 @@ export function SessionViewer({
 			) {
 				return;
 			}
+			// Only the unarchive toggle lives here now — the sidebar owns ⌘⇧A for
+			// archiving a live session (it advances to the next entry, which needs
+			// the sidebar's row ordering). An archived session isn't in that list,
+			// so the sidebar handler no-ops on it and we handle unarchive here.
 			if (
 				e.key.toLowerCase() === "a" &&
 				(e.metaKey || e.ctrlKey) &&
 				e.shiftKey &&
 				!e.altKey &&
-				!archiving
+				!archiving &&
+				session.archived
 			) {
 				e.preventDefault();
 				void handleArchive();
