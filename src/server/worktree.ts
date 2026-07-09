@@ -447,14 +447,47 @@ export async function createWorktree(
 
   await withGitLock(async () => {
     await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`.nothrow();
+    let startPoint = `origin/${repo.defaultBranch}`;
     if (base) {
       // Stacked worktree: fetch the base (it may be remote-only), then branch off it.
       await $`git -C ${repo.repo} fetch origin ${base} --quiet`.nothrow();
-      const startPoint = await resolveStartPoint(repo.repo, base, repo.defaultBranch);
-      await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} ${startPoint}`;
-    } else {
-      await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} origin/${repo.defaultBranch}`;
+      startPoint = await resolveStartPoint(repo.repo, base, repo.defaultBranch);
     }
+    const add =
+      await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} ${startPoint}`
+        .quiet()
+        .nothrow();
+    if (add.exitCode === 0) return;
+    // Collision tolerance: a create attempt killed mid-flight (e.g. a restart
+    // drain) can leave the BRANCH created but no worktree — the retry then
+    // died on "a branch named '…' already exists". Adopt such an orphan
+    // branch only when it is provably just a base marker: zero commits of its
+    // own on top of the start point and no registered worktree. A branch with
+    // unique commits is somebody's work — keep failing loudly, never silently
+    // adopt it.
+    const stderr = add.stderr.toString();
+    const branchExists =
+      (await $`git -C ${repo.repo} show-ref --verify --quiet refs/heads/${branch}`.nothrow())
+        .exitCode === 0;
+    if (branchExists) {
+      const ahead = (
+        await $`git -C ${repo.repo} rev-list --count ${startPoint}..${branch}`.nothrow()
+      ).stdout
+        .toString()
+        .trim();
+      await $`git -C ${repo.repo} worktree prune`.quiet().nothrow();
+      const registered = (await listWorktrees(repo.id)).some((w) => w.branch === branch);
+      if (ahead === "0" && !registered && !existsSync(wtPath)) {
+        console.warn(
+          `[worktree] adopting orphan branch ${branch} (0 commits ahead of ${startPoint}, no worktree) — likely a killed create attempt`,
+        );
+        await $`git -C ${repo.repo} worktree add ${wtPath} ${branch}`;
+        return;
+      }
+    }
+    throw new Error(
+      `git worktree add -b ${branch} failed: ${stderr.trim().slice(0, 300)}`,
+    );
   });
 
   // Best-effort dep install — sessions can always run `bun install` themselves.
