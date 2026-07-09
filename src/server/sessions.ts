@@ -316,8 +316,13 @@ function scanSlackSessions(): UnifiedSession[] {
       transcriptPath: resolveTranscriptPath(
         findTranscriptPath(data.worktreeDir || null, data.claudeSessionId || null),
         data.codexThreadId,
-        data.model
+        data.model,
+        // Slack session files store the opencode id in the claude slot.
+        isOpencodeSessionId(data.claudeSessionId) ? data.claudeSessionId : null
       ),
+      opencodeSessionId: isOpencodeSessionId(data.claudeSessionId)
+        ? data.claudeSessionId || undefined
+        : undefined,
       slackThread: data.channel
         ? { channel: data.channel, threadTs: data.threadTs || "" }
         : undefined,
@@ -366,10 +371,16 @@ function scanLinearSessions(): UnifiedSession[] {
         data.updatedAt || getFileMtime(`${LINEAR_SESSIONS_DIR}/${file}`),
       createdAt: getFileMtime(`${LINEAR_SESSIONS_DIR}/${file}`),
       isRunning: false,
-      transcriptPath: findTranscriptPath(
-        data.worktreeDir || null,
-        data.claudeSessionId
+      transcriptPath: resolveTranscriptPath(
+        findTranscriptPath(data.worktreeDir || null, data.claudeSessionId),
+        null,
+        data.model,
+        // Linear session files store the opencode id in the claude slot too.
+        isOpencodeSessionId(data.claudeSessionId) ? data.claudeSessionId : null
       ),
+      opencodeSessionId: isOpencodeSessionId(data.claudeSessionId)
+        ? data.claudeSessionId || undefined
+        : undefined,
       linearIssue: data.issueIdentifier
         ? {
             identifier: data.issueIdentifier,
