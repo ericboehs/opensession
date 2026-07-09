@@ -53,7 +53,8 @@ function scopeFile(scope: string): string {
   return `${MEMORY_DIR}/${scope}.json`;
 }
 
-async function loadScope(scope: string): Promise<MemoryEntry[]> {
+/** Exported for session-memory.ts (repo/user/team scopes share this store). */
+export async function loadScope(scope: string): Promise<MemoryEntry[]> {
   try {
     const file = Bun.file(scopeFile(scope));
     if (await file.exists()) {
@@ -66,7 +67,7 @@ async function loadScope(scope: string): Promise<MemoryEntry[]> {
   return [];
 }
 
-async function saveScope(scope: string, entries: MemoryEntry[]): Promise<void> {
+export async function saveScope(scope: string, entries: MemoryEntry[]): Promise<void> {
   writeJsonAtomic(scopeFile(scope), { entries });
 }
 

@@ -215,6 +215,11 @@ import { createHumansMcpServer } from "./src/agents/slack/humans-tools";
 import { createAskUserMcpServer } from "./src/agents/slack/ask-tools";
 import { createReposMcpServer } from "./src/agents/slack/repos-tools";
 import { createPreviewMcpServer } from "./src/agents/slack/preview-tools";
+import { createMemoryMcpServer } from "./src/agents/slack/memory-tools";
+import {
+	renderSessionMemoryNote,
+	sessionMemoryScopes,
+} from "./src/server/session-memory";
 import {
 	createGoalsMcpServer,
 	createGoalSelfMcpServer,
@@ -503,6 +508,17 @@ function interactiveMcpServers(
 								sharedCheckout: !!p.sharedCheckout,
 							})),
 					}),
+					// Durable repo/user/team memory (stored under ~/.michael-memory,
+					// shared both ways with Slack's channel memory). Write tools are
+					// interactive-only — automation runs get read-only injection; see
+					// memory-tools.ts for the trust model.
+					"opensession-memory": createMemoryMcpServer({
+						user,
+						repos: () => {
+							const s = findSession(sessionId);
+							return s ? sessionRepoIds(s) : [];
+						},
+					}),
 					// Deep-link testing: record where the change should be tested so
 					// the Preview/Staging buttons open that route directly.
 					"michael-preview": createPreviewMcpServer({
@@ -595,6 +611,50 @@ function buildReposNote(session: UnifiedSession): string | undefined {
 		"A file mentioned from an attached repo arrives as `@<project>:<path>` — resolve it under that repo's worktree dir above.",
 	);
 	return [branchNote, lines.join("\n")].filter(Boolean).join("\n\n");
+}
+
+/** Repo ids a session spans, primary first — memory scopes + repos note agree on this. */
+function sessionRepoIds(session: UnifiedSession): string[] {
+	const primary =
+		session.repo ||
+		(session.worktreeDir
+			? repoForPath(session.worktreeDir).id
+			: "tella-fusion");
+	return [primary, ...(session.attachedRepos || []).map((r) => r.repo)];
+}
+
+/**
+ * The full per-session system-prompt note for an interactive run: repos/branch
+ * discipline (buildReposNote) + the session's repo/user/team memory. Memory
+ * failures never block a run — the note just goes out without it.
+ */
+async function buildSessionNote(
+	session: UnifiedSession,
+	user?: string,
+): Promise<string | undefined> {
+	return (
+		[buildReposNote(session), await memoryNoteFor(user, sessionRepoIds(session))]
+			.filter(Boolean)
+			.join("\n\n") || undefined
+	);
+}
+
+/** The repo/user/team memory prompt section for a run (with tool guidance —
+ *  callers are interactive paths only). Never throws: a memory failure must
+ *  not block a run, the note just goes out without it. */
+async function memoryNoteFor(
+	user: string | undefined,
+	repos: string[],
+): Promise<string> {
+	try {
+		return await renderSessionMemoryNote(
+			sessionMemoryScopes({ user, repos }),
+			{ tools: true },
+		);
+	} catch (e) {
+		console.warn("[memory] failed to render session memory note:", e);
+		return "";
+	}
 }
 
 /**
@@ -2431,7 +2491,7 @@ async function maybeLaunchSandboxedRun(
 			mcpServers: opts.mcpServers,
 			proxyMcpServers,
 			rpcToken,
-			reposNote: buildReposNote(session),
+			reposNote: await buildSessionNote(session, opts.user),
 			confirmTools: STRIPE_CONFIRM_TOOLS,
 			aws: true,
 			author: gitIdentityFor(opts.user),
@@ -2839,7 +2899,9 @@ async function runSessionPromptInner(
 						"michael-goal-self": createGoalSelfMcpServer(session.goalId),
 					}
 				: interactiveMcpServers(user, sessionId),
-		reposNote: isAutomationSession ? undefined : buildReposNote(session),
+		reposNote: isAutomationSession
+			? undefined
+			: await buildSessionNote(session, user),
 		deniedTools,
 		confirmTools: STRIPE_CONFIRM_TOOLS,
 		aws: true, // sessions keep AWS read access (via injected creds)
@@ -8709,11 +8771,17 @@ const server: import("bun").Server<WSClientData> = hotServe({
 								accountId: createAccountId,
 								fallbackModel: interactiveFallbackModel(model),
 								mcpServers: createMcpServers,
-								reposNote: buildBranchNote({
-									mode: isAsk ? "ask" : "code",
-									branch: sessionBranch,
-									worktreeDir: wtPath,
-								}),
+								reposNote:
+									[
+										buildBranchNote({
+											mode: isAsk ? "ask" : "code",
+											branch: sessionBranch,
+											worktreeDir: wtPath,
+										}),
+										await memoryNoteFor(user, [repo.id]),
+									]
+										.filter(Boolean)
+										.join("\n\n") || undefined,
 								images,
 								// Fork: resume the source engine session into a new branch,
 								// optionally from a specific past message.
@@ -9354,11 +9422,17 @@ registerSessionControl({
 					model,
 					fallbackModel: interactiveFallbackModel(model),
 					mcpServers,
-					reposNote: buildBranchNote({
-						mode: isAsk ? "ask" : "code",
-						branch: sessionBranch,
-						worktreeDir: wtPath,
-					}),
+					reposNote:
+						[
+							buildBranchNote({
+								mode: isAsk ? "ask" : "code",
+								branch: sessionBranch,
+								worktreeDir: wtPath,
+							}),
+							await memoryNoteFor(user, [repo.id]),
+						]
+							.filter(Boolean)
+							.join("\n\n") || undefined,
 					inProcessMcp: interactiveMcpServers(user, bksId),
 					confirmTools: STRIPE_CONFIRM_TOOLS,
 					aws: true,

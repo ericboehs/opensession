@@ -611,6 +611,24 @@ export async function runAutomation(
       } catch {}
     }
 
+    // Repo + team memory (taught via opensession-memory in interactive
+    // sessions) as standing context. Read-only — automation runs never get
+    // the memory write tools (untrusted event text must not be able to plant
+    // standing context). Channel-watch runs already carry the workspace store
+    // via the channel memory above, so skip the team scope for them.
+    try {
+      const { renderSessionMemoryNote, sessionMemoryScopes } = await import(
+        "./session-memory"
+      );
+      const note = await renderSessionMemoryNote(
+        sessionMemoryScopes({
+          repos: ["tella-fusion"],
+          includeTeam: !automation.slackWatch,
+        })
+      );
+      if (note) prompt += `\n\n${note}`;
+    } catch {}
+
     // Tie the session to its Plain thread (if the event carries one) so it
     // can be auto-archived when the ticket is done, and use the ticket's
     // title as the session title
