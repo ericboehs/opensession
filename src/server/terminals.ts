@@ -1,29 +1,32 @@
 /**
  * Interactive shell terminals for the session viewer's Shell tab.
  *
- * One real PTY per WebSocket client (Bun's native `terminal` spawn option).
- * Output streams to the client as base64 `term_data` frames; input/resize come
- * back the same way. The PTY dies with its socket (or on term_stop), so
- * nothing leaks past a disconnect — and the map lives on globalThis so a hot
- * reload doesn't orphan running shells.
+ * One shell per WebSocket client. Output streams to the client as base64
+ * `term_data` frames; input/resize come back the same way. The shell dies
+ * with its socket (or on term_stop), so nothing leaks past a disconnect —
+ * and the map lives on globalThis so a hot reload doesn't orphan running
+ * shells.
  *
- * Sandbox-aware (startSessionTerminal): the PTY lands where the session's
+ * Sandbox-aware (startSessionTerminal): the shell lands where the session's
  * work actually happens.
- *  - No sandbox (or any failure mode): the login shell in the session's
- *    worktree on the host — exactly the pre-sandbox behavior.
- *  - ACTIVE docker sandbox: `docker exec -it … bash -il` in the session's
- *    container, cwd = the workspace (works for bind AND volume mode — volume
- *    workspaces have no host copy at all). Opening a terminal is an
- *    interactive action, so unlike the read surfaces (workspace-exec) it
- *    WAKES a stopped container (`docker start` first); the idle-stop sweep
- *    still applies, and stopping the container simply ends the shell
- *    (term_exit) — restart-on-demand by reopening the tab.
- *  - Daytona sandbox: a host `ssh` through Daytona's SSH gateway
- *    (`createSshAccess` → `ssh <token>@ssh.app.daytona.io`, proven reachable
- *    from this host 2026-07-08). The token is minted per shell and revoked
- *    when it closes. No ttyd, no published port, no extra HTTPS surface —
- *    the tunnel terminates at backstage and the browser only ever speaks the
- *    existing tailnet-gated session WS.
+ *  - No sandbox (or any failure mode): a real PTY (Bun's native `terminal`
+ *    spawn option) running the login shell in the session's worktree on the
+ *    host — exactly the pre-sandbox behavior.
+ *  - ACTIVE docker sandbox: same host PTY around `docker exec -it … bash -il`
+ *    in the session's container, cwd = the workspace (works for bind AND
+ *    volume mode — volume workspaces have no host copy at all). Opening a
+ *    terminal is an interactive action, so unlike the read surfaces
+ *    (workspace-exec) it WAKES a stopped container (`docker start` first);
+ *    the idle-stop sweep still applies, and stopping the container simply
+ *    ends the shell (term_exit) — restart-on-demand by reopening the tab.
+ *  - Daytona sandbox: the SDK's native PTY (`process.createPty`, a WebSocket
+ *    to the sandbox's toolbox API) — a REAL in-sandbox PTY with working
+ *    echo, prompt and resize/SIGWINCH. Not ssh: the SSH gateway ignores
+ *    pty-req on exec channels, so the previous `ssh <token>@ssh.app.daytona.io
+ *    "… exec bash -l"` transport came up with no remote tty — no prompt, no
+ *    echo, a dead-looking tab (bit us 2026-07-09). No published port, no
+ *    extra HTTPS surface — the SDK socket terminates at backstage and the
+ *    browser only ever speaks the existing tailnet-gated session WS.
  *
  * Trust model: the web UI is Tailscale- + team-gated and interactive users are
  * already admin-equivalent (sessions run arbitrary Bash via prompts), so a
@@ -35,11 +38,14 @@
  */
 
 import { existsSync } from "fs";
+import type { RemotePtyHandle, RemotePtyIo } from "./sandbox/adapters/daytona";
 
+/** Live transport for one shell — how input/resize/teardown reach the PTY,
+ *  whether it's a host process or a remote (in-sandbox) socket. */
 interface TermEntry {
-  proc: ReturnType<typeof Bun.spawn>;
-  /** Transport teardown (e.g. revoke the Daytona SSH token). */
-  dispose?: () => void;
+  write: (data: Buffer) => void;
+  resize: (cols: number, rows: number) => void;
+  stop: () => void;
 }
 
 const g = globalThis as any;
@@ -64,7 +70,9 @@ export interface TerminalOpts {
 
 type TermTargetKind = "host" | "docker" | "daytona";
 
-interface TermTarget {
+/** A shell realized as a host process wrapped in a Bun PTY (host + docker). */
+interface SpawnTarget {
+  kind: "spawn";
   argv: string[];
   /** Host cwd for the spawned process (undefined for sandbox transports —
    *  their cwd lives inside the sandbox). */
@@ -78,6 +86,24 @@ interface TermTarget {
   /** Extra env for the spawned process (e.g. the shared ssh-agent sock). */
   env?: Record<string, string>;
   dispose?: () => void;
+}
+
+/** A shell realized as a remote PTY the provider connects for us (daytona). */
+interface RemoteTarget {
+  kind: "remote";
+  target: TermTargetKind;
+  displayCwd: string;
+  notice?: string;
+  connect: (io: RemotePtyIo) => Promise<RemotePtyHandle>;
+}
+
+type TermTarget = SpawnTarget | RemoteTarget;
+
+function clampCols(cols: number | undefined): number {
+  return Math.max(20, Math.min(500, Math.round(cols || 100)));
+}
+function clampRows(rows: number | undefined): number {
+  return Math.max(5, Math.min(200, Math.round(rows || 30)));
 }
 
 /**
@@ -108,11 +134,11 @@ async function sharedSshAgentEnv(): Promise<Record<string, string>> {
   return { SSH_AUTH_SOCK: sock, SSH_AGENT_PID: String(pid) };
 }
 
-function hostShellTarget(session: TerminalSessionInfo | null | undefined, notice?: string): TermTarget {
+function hostShellTarget(session: TerminalSessionInfo | null | undefined, notice?: string): SpawnTarget {
   const shell = process.env.SHELL || "/bin/zsh";
   const cwd =
     session?.worktreeDir && existsSync(session.worktreeDir) ? session.worktreeDir : HOME;
-  return { argv: [shell, "-il"], cwd, target: "host", displayCwd: cwd, notice };
+  return { kind: "spawn", argv: [shell, "-il"], cwd, target: "host", displayCwd: cwd, notice };
 }
 
 /**
@@ -152,6 +178,7 @@ async function resolveTarget(
       const { touchSandboxActivity } = await import("./sandbox/docker");
       touchSandboxActivity(sb.sandboxId);
       return {
+        kind: "spawn",
         argv: [
           "docker", "exec", "-it",
           "-e", "TERM=xterm-256color",
@@ -165,13 +192,13 @@ async function resolveTarget(
     }
 
     if (sb.provider === "daytona" && sandboxProviderConfigured("daytona")) {
-      const { daytonaTerminalAccess } = await import("./sandbox/adapters/daytona");
-      const access = await daytonaTerminalAccess(sb.sandboxId, cwd);
+      const { daytonaPtySession } = await import("./sandbox/adapters/daytona");
+      const sandboxId = sb.sandboxId;
       return {
-        argv: access.argv,
+        kind: "remote",
         target: "daytona",
         displayCwd: cwd,
-        dispose: () => void access.revoke(),
+        connect: (io) => daytonaPtySession(sandboxId, cwd, io),
       };
     }
   } catch (e: any) {
@@ -185,9 +212,9 @@ async function resolveTarget(
 
 /**
  * Session-aware terminal start (the term_start WS handler's entry): resolves
- * the target (host / docker sandbox / daytona sandbox) and spawns the PTY.
- * Async because sandbox resolution can take seconds (container wake, SSH
- * token mint) — a term_stop or another term_start racing in cancels it.
+ * the target (host / docker sandbox / daytona sandbox) and connects the shell.
+ * Async because sandbox resolution can take seconds (container wake, remote
+ * PTY connect) — a term_stop or another term_start racing in cancels it.
  */
 export async function startSessionTerminal(
   ws: unknown,
@@ -213,6 +240,20 @@ export async function startSessionTerminal(
   let target: TermTarget;
   try {
     target = await resolveTarget(session);
+
+    if (target.kind === "remote") {
+      try {
+        await connectRemote(ws, token, target, opts);
+        return;
+      } catch (e: any) {
+        // Same fail-open shape as resolveTarget: any connect failure
+        // degrades to a host shell with a notice.
+        target = hostShellTarget(
+          session,
+          `sandbox terminal unavailable (${String(e?.message || e).slice(0, 160)}) — opened a host shell instead`,
+        );
+      }
+    }
   } finally {
     clearTimeout(slow);
   }
@@ -234,6 +275,51 @@ export async function startSessionTerminal(
   spawnPty(ws, target, opts);
 }
 
+/** Connect a provider-managed remote PTY (daytona) and register it. */
+async function connectRemote(
+  ws: unknown,
+  token: object,
+  target: RemoteTarget,
+  opts: TerminalOpts,
+): Promise<void> {
+  let handle: RemotePtyHandle | null = null;
+  const entry: TermEntry = {
+    write: (data) => void handle?.write(data),
+    resize: (cols, rows) => void handle?.resize(cols, rows),
+    stop: () => void handle?.close(),
+  };
+  handle = await target.connect({
+    cols: clampCols(opts.cols),
+    rows: clampRows(opts.rows),
+    onData: (chunk) => {
+      opts.send({
+        type: "term_data",
+        data: Buffer.from(chunk).toString("base64"),
+      });
+    },
+    onExit: (code) => {
+      if (terms.get(ws) === entry) {
+        terms.delete(ws);
+        try {
+          entry.stop();
+        } catch {}
+        opts.send({ type: "term_exit", code: code ?? 0 });
+      }
+    },
+  });
+  if (pendingStarts.get(ws) !== token) {
+    // Stopped or superseded while connecting — release the remote PTY.
+    try {
+      await handle.close();
+    } catch {}
+    return;
+  }
+  pendingStarts.delete(ws);
+  terms.set(ws, entry);
+  opts.send({ type: "term_ready", target: target.target, cwd: target.displayCwd });
+  if (target.notice) opts.send({ type: "term_notice", message: target.notice });
+}
+
 /** Host-only entry with the pre-sandbox signature. Kept so a hot reload of
  *  this module under an older backstage.ts handler keeps working; new code
  *  should use startSessionTerminal. */
@@ -243,16 +329,20 @@ export function startTerminal(
 ): void {
   stopTerminal(ws);
   const shell = process.env.SHELL || "/bin/zsh";
-  spawnPty(ws, { argv: [shell, "-il"], cwd: opts.cwd, target: "host", displayCwd: opts.cwd }, opts);
+  spawnPty(
+    ws,
+    { kind: "spawn", argv: [shell, "-il"], cwd: opts.cwd, target: "host", displayCwd: opts.cwd },
+    opts,
+  );
 }
 
-function spawnPty(ws: unknown, target: TermTarget, opts: TerminalOpts): void {
+function spawnPty(ws: unknown, target: SpawnTarget, opts: TerminalOpts): void {
   const proc = Bun.spawn(target.argv, {
     cwd: target.cwd,
     env: { ...process.env, TERM: "xterm-256color", ...target.env },
     terminal: {
-      cols: Math.max(20, Math.min(500, opts.cols || 100)),
-      rows: Math.max(5, Math.min(200, opts.rows || 30)),
+      cols: clampCols(opts.cols),
+      rows: clampRows(opts.rows),
       data: (_term: unknown, chunk: Uint8Array) => {
         opts.send({
           type: "term_data",
@@ -262,18 +352,38 @@ function spawnPty(ws: unknown, target: TermTarget, opts: TerminalOpts): void {
     },
   } as any);
 
+  const entry: TermEntry = {
+    write: (data) => {
+      try {
+        (proc as any).terminal?.write(data);
+      } catch {}
+    },
+    resize: (cols, rows) => {
+      try {
+        (proc as any).terminal?.resize(cols, rows);
+      } catch {}
+    },
+    stop: () => {
+      try {
+        proc.kill();
+      } catch {}
+      try {
+        target.dispose?.();
+      } catch {}
+    },
+  };
+
   void proc.exited.then((code) => {
-    const t = terms.get(ws);
-    if (t?.proc === proc) {
+    if (terms.get(ws) === entry) {
       terms.delete(ws);
       try {
-        t.dispose?.();
+        target.dispose?.();
       } catch {}
       opts.send({ type: "term_exit", code });
     }
   });
 
-  terms.set(ws, { proc, dispose: target.dispose });
+  terms.set(ws, entry);
   opts.send({ type: "term_ready", target: target.target, cwd: target.displayCwd });
   if (target.notice) opts.send({ type: "term_notice", message: target.notice });
 }
@@ -282,7 +392,7 @@ export function writeTerminal(ws: unknown, dataB64: string): void {
   const t = terms.get(ws);
   if (!t) return;
   try {
-    (t.proc as any).terminal?.write(Buffer.from(dataB64, "base64"));
+    t.write(Buffer.from(dataB64, "base64"));
   } catch {}
 }
 
@@ -290,10 +400,7 @@ export function resizeTerminal(ws: unknown, cols: number, rows: number): void {
   const t = terms.get(ws);
   if (!t || !cols || !rows) return;
   try {
-    (t.proc as any).terminal?.resize(
-      Math.max(20, Math.min(500, Math.round(cols))),
-      Math.max(5, Math.min(200, Math.round(rows))),
-    );
+    t.resize(clampCols(cols), clampRows(rows));
   } catch {}
 }
 
@@ -303,9 +410,6 @@ export function stopTerminal(ws: unknown): void {
   if (!t) return;
   terms.delete(ws);
   try {
-    t.proc.kill();
-  } catch {}
-  try {
-    t.dispose?.();
+    t.stop();
   } catch {}
 }

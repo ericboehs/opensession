@@ -140,60 +140,67 @@ function daytonaDriver(sbx: DaytonaSandbox): RemoteDriver {
   };
 }
 
-/** How long a Shell-tab SSH token lives. Generous (a shell can sit open all
- *  day) but bounded; the token is additionally revoked the moment the shell
- *  closes, so expiry only matters for tokens orphaned by a backstage crash. */
-const TERMINAL_SSH_EXPIRY_MINUTES = 12 * 60;
+/** IO wiring the Shell tab hands a remote PTY (see src/server/terminals.ts). */
+export interface RemotePtyIo {
+  cols: number;
+  rows: number;
+  onData: (chunk: Uint8Array) => void;
+  /** Fired once when the remote shell exits (undefined = unknown code). */
+  onExit: (code: number | undefined) => void;
+}
+
+/** Live remote-PTY handle: input, resize (real SIGWINCH), teardown. */
+export interface RemotePtyHandle {
+  write: (data: Uint8Array) => void;
+  resize: (cols: number, rows: number) => void;
+  close: () => void;
+}
 
 /**
- * Interactive terminal access for a Daytona sandbox (the session viewer's
- * Shell tab — see src/server/terminals.ts): wake the sandbox, mint an SSH
- * gateway token (`createSshAccess`), and return the ssh argv the host PTY
- * spawns plus a revoke() for teardown when the shell closes.
+ * Interactive shell inside a Daytona sandbox (the session viewer's Shell tab
+ * — see src/server/terminals.ts): wake the sandbox and open the SDK's native
+ * PTY (`process.createPty`, a WebSocket to the sandbox's toolbox API) in the
+ * session's workspace.
  *
- * Transport: `ssh <token>@ssh.app.daytona.io` (the DTO's own sshCommand),
- * verified reachable from this host 2026-07-08 (bare sandbox, exit 0, user
- * `daytona`). The gateway fronts many sandboxes behind rotating infra, so
- * host keys are not pinned (StrictHostKeyChecking=no) — the per-shell token
- * is the authentication, and everything the browser sees still flows over
- * backstage's tailnet-gated WS, never a public URL.
+ * Why not ssh: the previous transport (`ssh <token>@ssh.app.daytona.io` with
+ * a remote command) never got a remote tty — the gateway ignores pty-req on
+ * exec channels — so the shell had no prompt/echo and the tab looked dead
+ * (2026-07-09). The SDK PTY is a real tty: prompt, echo, and resize all work,
+ * and there's no per-shell token to mint/revoke. The socket terminates at
+ * backstage; the browser still only speaks the tailnet-gated session WS.
  */
-export async function daytonaTerminalAccess(
+export async function daytonaPtySession(
   sandboxId: string,
   cwd: string,
-): Promise<{ argv: string[]; revoke: () => Promise<void> }> {
+  io: RemotePtyIo,
+): Promise<RemotePtyHandle> {
   const client = await daytonaClient();
   const sbx = await client.get(sandboxId);
   if (!sbx || stateOf(sbx) === "gone") {
     throw new Error(`daytona sandbox ${sandboxId} is gone`);
   }
   await daytonaDriver(sbx).ensureStarted();
-  const access = await (sbx as any).createSshAccess(TERMINAL_SSH_EXPIRY_MINUTES);
-  const target = String(access?.sshCommand || "")
-    .replace(/^ssh\s+/, "")
-    .trim();
-  if (!target || !access?.token) {
-    throw new Error("daytona createSshAccess returned no usable sshCommand/token");
-  }
+  const pty = await sbx.process.createPty({
+    id: `shell-${crypto.randomUUID().slice(0, 8)}`,
+    cwd,
+    envs: { TERM: "xterm-256color" },
+    cols: io.cols,
+    rows: io.rows,
+    onData: io.onData,
+  });
+  await pty.waitForConnection();
+  void pty.wait().then(
+    (r) => io.onExit(r?.exitCode),
+    () => io.onExit(undefined),
+  );
   return {
-    argv: [
-      "ssh", "-tt",
-      "-o", "StrictHostKeyChecking=no",
-      "-o", "UserKnownHostsFile=/dev/null",
-      "-o", "LogLevel=ERROR",
-      "-o", "ServerAliveInterval=30",
-      "-o", "ConnectTimeout=15",
-      ...target.split(/\s+/),
-      // Land in the workspace when it exists (bare/unbootstrapped sandboxes
-      // won't have it yet); always end in a login shell.
-      `cd ${shellQuoteWord(cwd)} 2>/dev/null; exec bash -l`,
-    ],
-    revoke: async () => {
-      try {
-        await (sbx as any).revokeSshAccess(access.token);
-      } catch (e) {
-        console.warn(`[sandbox:daytona] revokeSshAccess(${sandboxId}) failed:`, e);
-      }
+    write: (data) => void pty.sendInput(data).catch(() => {}),
+    resize: (cols, rows) => void pty.resize(cols, rows).catch(() => {}),
+    close: () => {
+      void pty
+        .kill()
+        .catch(() => {})
+        .finally(() => void pty.disconnect().catch(() => {}));
     },
   };
 }
