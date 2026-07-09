@@ -3599,7 +3599,7 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	   they always line up. The mobile media query inherits this; both viewports
 	   get the "chat scrolls under the input" fade. Kept snug so the newest row
 	   sits just above the composer rather than floating well clear of it. */
-	--chat-under: 20px;
+	--chat-under: 16px;
 }
 
 /* The panel portals into this app-level slot. `display: contents` dissolves the
@@ -8009,9 +8009,10 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	   row reaches the composer — rows dissolve behind it, not on the readable
 	   content row above it. */
 	background: linear-gradient(to bottom, transparent 0, var(--bg) var(--chat-under));
-	/* Top padding re-opens the space the negative margin ate, so the composer
-	   sits where it did before; the fade lives in that reclaimed strip. */
-	padding: calc(var(--chat-under) + 6px) 20px 14px;
+	/* Top padding just re-opens the space the negative margin ate (no extra), so
+	   the composer box sits exactly where the fade completes — no dead strip of
+	   empty bg between the dissolving transcript and the input. */
+	padding: var(--chat-under) 20px 14px;
 }
 
 .viewer-input-row {
@@ -10402,7 +10403,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   composer's negative margin/backdrop and the transcript's bottom inset so
 	   they always line up. */
 	.viewer-chat {
-		--chat-under: 20px;
+		--chat-under: 16px;
 	}
 	/* Sit the pill just above the composer's top edge — a small fixed lift, not
 	   keyed to --chat-under (that pushed it too far up over the transcript). */
@@ -10452,9 +10453,10 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 			transparent 0,
 			var(--bg) var(--chat-under)
 		);
-		/* Top padding re-opens the space the negative margin ate, so the pill sits
-		   where it did before; the fade lives in that reclaimed strip. */
-		padding: calc(var(--chat-under) + 4px) 12px 8px;
+		/* Top padding just re-opens the space the negative margin ate (no extra),
+		   so the composer sits exactly where the fade completes — no dead strip of
+		   empty bg between the dissolving transcript and the input. */
+		padding: var(--chat-under) 12px 8px;
 		/* Clear the home indicator / bottom rounded corners: respect the full
        safe-area inset (≈34px on home-indicator iPhones) rather than jamming
        the composer against the very bottom edge. The hint is hidden on phones,
