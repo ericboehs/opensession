@@ -1565,15 +1565,26 @@ function interruptQueuedPrompt(
 			session.claudeSessionId,
 			session.codexThreadId,
 			session.id,
-		) ||
+		)
+	) {
+		queue.splice(index, 0, item);
+		return false;
+	}
+	if (
 		!interruptAndSteerAgentRun(
 			[session.claudeSessionId, session.codexThreadId, session.id],
 			attributed,
 			images,
 		)
 	) {
-		queue.splice(index, 0, item);
-		return false;
+		// No in-band interrupt-and-steer (opencode): keep the item queued —
+		// it's the durable record — and abort the turn so the drain delivers
+		// it right away (moved to the front so it leads the drained batch).
+		queue.splice(0, 0, item);
+		promptQueues.set(sessionId, queue);
+		persistQueues();
+		broadcastQueue(sessionId);
+		return abortTurnAndDrain(sessionId, session);
 	}
 	// No steer receipt: an interrupt delivers almost immediately, so the
 	// transcript entry is the record (same treatment as a direct interrupt send).
@@ -2123,6 +2134,34 @@ function watchExternalRunAndDrain(sessionId: string): void {
 			);
 		}
 	}, 3000);
+}
+
+/**
+ * Esc+Enter for engines with no in-band interrupt-and-steer (opencode): abort
+ * the run's current turn — the same abort the Esc/stop path uses — and let the
+ * drain watcher deliver the queue as the immediate next turn on the same
+ * engine session. The interrupting message must already be in promptQueues
+ * before calling (durability: nothing is lost if the abort races a crash).
+ * False = nothing abortable (external CLI/tmux run) — the message stays queued
+ * for the run's natural stopping point.
+ */
+function abortTurnAndDrain(
+	sessionId: string,
+	session: {
+		claudeSessionId?: string | null;
+		codexThreadId?: string | null;
+		id: string;
+	},
+): boolean {
+	const ids = [session.claudeSessionId, session.codexThreadId, session.id];
+	const aborted = stopAgentRunTurn(ids) || cancelAgentRun(...ids);
+	if (!aborted) return false;
+	// The user explicitly asked for delivery now — unpark an earlier Stop, and
+	// fold any unconfirmed steer receipts back in ahead so nothing is dropped.
+	stoppedSessions.delete(sessionId);
+	requeueSteerReceipts(sessionId);
+	watchExternalRunAndDrain(sessionId);
+	return true;
 }
 
 /**
@@ -8017,9 +8056,12 @@ const server: import("bun").Server<WSClientData> = hotServe({
 							// filtered out in jsonl-parser.
 							break;
 						}
-						// Not interruptible (external run, codex, has files, or just
-						// finished): treat like a normal send so nothing — text or
-						// attachment — is lost.
+						// No in-band interrupt-and-steer (opencode runs, or a send carrying
+						// files): queue the message durably, then abort the current turn so
+						// the drain delivers it as the immediate next turn — esc+enter
+						// semantics. If nothing is abortable either (external CLI/tmux run),
+						// it stays queued for the natural stopping point, so nothing — text
+						// or attachment — is lost.
 						if (
 							isAgentSessionBusy(
 								session.claudeSessionId,
@@ -8033,7 +8075,9 @@ const server: import("bun").Server<WSClientData> = hotServe({
 								images: imageUrls,
 								files: msg.files,
 							});
-							watchExternalRunAndDrain(sessionId);
+							if (!abortTurnAndDrain(sessionId, session)) {
+								watchExternalRunAndDrain(sessionId);
+							}
 							break;
 						}
 						await runSessionPromptAndDrain(
