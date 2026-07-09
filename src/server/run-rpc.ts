@@ -83,6 +83,26 @@ export function registerInteractiveMcpBuilder(b: InteractiveMcpBuilder): void {
   g.__runRpcMcpBuilder = b;
 }
 
+// Per-session in-process MCP overrides: an agent loop (Slack) registers the
+// exact server objects it built for its run — with loop-specific context the
+// generic interactive builder can't reconstruct (channel memory, the Slack
+// ask handler, michael-github's report-back channel) — so the stdio proxies
+// execute THOSE for the run's duration. Keyed by bks session id; parked on
+// globalThis so a hot reload keeps live runs' overrides.
+const sessionServers: Map<string, Record<string, any>> = (g.__runRpcSessionServers ??=
+  new Map());
+
+export function registerSessionMcpServers(
+  sessionId: string,
+  servers: Record<string, any>
+): void {
+  sessionServers.set(sessionId, servers);
+}
+
+export function unregisterSessionMcpServers(sessionId: string): void {
+  sessionServers.delete(sessionId);
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -120,7 +140,9 @@ export async function dispatchRunRpc(path: string, body: any): Promise<RunRpcDis
   if (!builder) return imm(503, { error: "MCP builder not registered yet" });
 
   const serverName = String(body?.server || "");
-  const cfg = builder(ctx.sessionId, ctx.user)[serverName];
+  const cfg =
+    sessionServers.get(ctx.sessionId)?.[serverName] ??
+    builder(ctx.sessionId, ctx.user)[serverName];
   if (!cfg?.instance) {
     return imm(404, { error: `no interactive MCP server "${serverName}" for this run` });
   }

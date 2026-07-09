@@ -3,22 +3,13 @@
  *
  * handleMessageEvent  — DM messages
  * handleMentionEvent  — @mention in channels
- * processMessage      — runs the Claude Agent SDK query() for a queued message
+ * processMessage      — runs a queued message through runAgent (opencode engine)
  */
 
 import { envAlias } from "../../server/rename-compat";
 import { existsSync } from "fs";
-import { execSync } from "child_process";
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import type {
-  SDKResultMessage,
-  PermissionResult,
-  PostToolUseHookInput,
-  HookJSONOutput,
-} from "@anthropic-ai/claude-agent-sdk";
 
 import { markdownToSlack } from "../../server/shared/markdown";
-import { cleanPlainToolInput } from "../../server/shared/note-style";
 import { productName } from "../../server/config";
 import { SLACK_SYSTEM_PROMPT_APPEND } from "./prompts";
 import {
@@ -49,29 +40,25 @@ import type { QueuedMessage, SessionQueue } from "./queue";
 import { sessionQueues } from "./queue";
 import { isStopMessage, cancelSession } from "./cancel";
 import { pollForVercelPreview } from "./github-reviews";
-import { runCodexAuto } from "../../server/codex-appserver";
 import { gitIdentityFor } from "../../server/shared/user-mappings";
 import { worktreePathFor } from "../../server/worktree";
 import { sessionForChannel } from "../../server/slack-links";
 import { tryGetSessionControl } from "../../server/session-control";
+import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
+import { runAgent, cancelAgentRun } from "../../server/agent-runner";
 import {
-  CLAUDE_CODE_BIN,
-  isClaudeUsageLimitError,
-  filterMcpServers,
-  STRIPE_CONFIRM_TOOLS,
-} from "../../server/runner-shared";
+  registerSessionMcpServers,
+  unregisterSessionMcpServers,
+} from "../../server/run-rpc";
+import { createAskUserMcpServer, type AskUserHandler } from "./ask-tools";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
-import { getAgentAwsEnv } from "../../server/aws-creds";
-import { pickAccount, markExhausted } from "../../server/claude-accounts";
 import {
   getDefaultModel,
-  DEFAULT_CODEX_MODEL,
-  DEFAULT_FALLBACK_MODEL,
+  toOpencodeModel,
   providerFor,
   resolveModel,
   formatModelList,
 } from "../../server/models";
-import { resolveDirectSdkModel } from "../../server/model-resolve";
 import {
   isWorktreeChannel,
   getWorktreeDirForChannel,
@@ -235,7 +222,7 @@ async function handleAskUserQuestion(
   input: Record<string, unknown>,
   channel: string,
   threadTs: string
-): Promise<PermissionResult> {
+): Promise<Awaited<ReturnType<AskUserHandler>>> {
   const questions = input.questions as Array<{
     question: string;
     header: string;
@@ -466,9 +453,7 @@ export async function handleModelCommand(
   let note = "";
   if (prevProvider !== resolved.provider) {
     note =
-      resolved.provider === "codex"
-        ? " This switches the engine to Codex — the Claude history doesn't carry over; the next message starts a fresh Codex thread in the same worktree."
-        : " This switches back to Claude — the Codex thread's history doesn't carry over, but the earlier Claude history (if any) resumes.";
+      " Switching model families starts a fresh engine session (with a transcript handoff when available); the worktree state carries over.";
   }
   await sendSlackMessage(
     channel,
@@ -479,98 +464,40 @@ export async function handleModelCommand(
 }
 
 // ---------------------------------------------------------------------------
-// processCodexMessage — runs a queued message on the Codex backend
+// Tool-name normalization + post-push format pass
 // ---------------------------------------------------------------------------
 
-async function processCodexMessage(
-  session: SlackSession,
-  sessionKey: string,
-  msg: QueuedMessage,
-  streamer: SlackStreamer,
-  cwd: string,
-  abortController: AbortController,
-  dismissStopButton: (label: string) => Promise<void>,
-  progress: SlackProgress,
-  /** Run on this model without changing the session's configured model (fallback). */
-  modelOverride?: string
-): Promise<void> {
-  // Direct Codex SDK call — peel any opencode/<provider>/ prefix off the id
-  // (e.g. an `opencode/openai/gpt-5.5` fleet default) to the native id.
-  const model = resolveDirectSdkModel(modelOverride || session.model || DEFAULT_CODEX_MODEL);
-  console.log(
-    `[slack] Running Codex SDK for ${sessionKey} in ${cwd}${session.codexThreadId ? ` (resuming ${session.codexThreadId})` : ""} (${model})`
-  );
+/** OpenCode emits lowercase tool names ("bash", "todowrite"); the streamer
+ *  helpers (buildToolStatus / isSilentTool) key on the Claude-style names. */
+const TOOL_NAME_MAP: Record<string, string> = {
+  bash: "Bash",
+  edit: "Edit",
+  write: "Write",
+  patch: "Edit",
+  read: "Read",
+  grep: "Grep",
+  glob: "Glob",
+  list: "Glob",
+  todowrite: "TodoWrite",
+  todoread: "TodoRead",
+  task: "Task",
+  skill: "Skill",
+  webfetch: "WebFetch",
+  websearch: "WebSearch",
+  notebookedit: "NotebookEdit",
+};
 
-  let resultText = "";
-  let resultThreadId = session.codexThreadId || "";
-  const busyKey = `slack-${sessionKey}`;
-
-  // Bridge the Slack queue's abort controller into the codex run
-  const { cancelCodexRun } = await import("../../server/codex-runner");
-  const onAbort = () => cancelCodexRun(resultThreadId || busyKey);
-  abortController.signal.addEventListener("abort", onAbort, { once: true });
-
-  try {
-    for await (const event of runCodexAuto({
-      prompt: msg.prompt,
-      sessionId: session.codexThreadId || undefined,
-      cwd,
-      mode: "code",
-      model,
-      busyKeys: [busyKey],
-      // Attribute commits to the Slack user who sent this message.
-      author: gitIdentityFor(msg.userId),
-      // No journal: interrupted Slack messages are re-delivered by the queue
-    })) {
-      if (abortController.signal.aborted) break;
-      if (event.type === "init") {
-        resultThreadId = event.sessionId || resultThreadId;
-        console.log(`[slack] Codex thread initialized: ${resultThreadId}`);
-      }
-      if (event.type === "tool_use" && event.toolName && !isSilentTool(event.toolName)) {
-        const status = buildToolStatus(event.toolName, event.toolInput);
-        progress.setAction(status);
-        await streamer.setStatus(status);
-      }
-      if (event.type === "done") {
-        resultText = event.result || "";
-      }
-      if (event.type === "error") {
-        resultText = `Error running Codex: ${event.content}`;
-      }
-    }
-  } catch (e: any) {
-    resultText = `Error running Codex: ${e.message || e}`;
-  } finally {
-    abortController.signal.removeEventListener("abort", onAbort);
-  }
-
-  if (abortController.signal.aborted) {
-    console.log(`[slack] Codex run aborted for ${sessionKey}`);
-    await streamer.error("Cancelled by user.");
-    await streamer.clearStatus();
-    await dismissStopButton("Cancelled");
-    return;
-  }
-
-  session.codexThreadId = resultThreadId || session.codexThreadId;
-  session.lastActivity = new Date().toISOString();
-  await saveSession(session);
-
-  const formatted = resultText ? markdownToSlack(resultText) : "";
-  const truncated = formatted
-    ? formatted.length > 3000
-      ? formatted.substring(0, 3000) + "...(truncated)"
-      : formatted
-    : "Done! (no text output)";
-
-  await streamer.stop(truncated);
-  await streamer.clearStatus();
-  await dismissStopButton("Done");
+function normalizeToolName(name: string): string {
+  return TOOL_NAME_MAP[name.toLowerCase()] || name;
 }
 
+// The old Claude PostToolUse "just format after git push" hook is gone from
+// here: that's tella-fusion repo policy, not agent code — it now lives in
+// tella-fusion's own .opencode/plugin (OpenCode tool.execute.after hook), so
+// every opencode run in that repo gets it regardless of which loop drove it.
+
 // ---------------------------------------------------------------------------
-// processMessage — core: runs the Claude Agent SDK query()
+// processMessage — core: runs a queued message through runAgent
 // ---------------------------------------------------------------------------
 
 export async function processMessage(
@@ -618,18 +545,11 @@ export async function processMessage(
   const sq = getOrCreateQueue(sessionKey);
   sq.abortController = abortController;
 
-  // MCP servers for this run, through the same runner-layer gate as backstage
-  // sessions: filterMcpServers enforces per-user `allowedUsers` (keyed on the
-  // requesting Slack user) and strips that field before the SDK sees it. The
-  // old raw-config spread meant worktree/linked channels — which bypass
-  // ALLOWED_USER_ID so the whole team can drive them — handed every teammate
-  // user-restricted servers like brex.
-  let mcpServers: Record<string, unknown> = {};
-  try {
-    mcpServers = filterMcpServers(undefined, msg.userId);
-  } catch (e) {
-    console.warn("[slack] Failed to load MCP config:", e);
-  }
+  // External MCP servers: runAgent applies the runner-layer gate itself —
+  // filterMcpServers keyed on `user: msg.userId` enforces per-user
+  // `allowedUsers` (worktree/linked channels bypass ALLOWED_USER_ID so the
+  // whole team can drive them; a user-restricted server like brex must stay
+  // invisible to everyone else).
 
   // Set up streaming (stream starts lazily on first content)
   const streamer = new SlackStreamer(channel, threadTs, msg.userId);
@@ -801,38 +721,12 @@ export async function processMessage(
 
   const cwd = session.worktreeDir || DEFAULT_CWD;
 
-  // Codex-provider models run through the Codex SDK instead of query().
-  // Resolve the effective native model first so an opencode/openai/* default
-  // (provider "opencode") still routes to Codex, and opencode/anthropic/* to Claude.
-  if (providerFor(resolveDirectSdkModel(session.model || getDefaultModel())) === "codex") {
-    await processCodexMessage(
-      session,
-      sessionKey,
-      msg,
-      streamer,
-      cwd,
-      abortController,
-      dismissStopButton,
-      progress
-    );
-    return;
-  }
-
   console.log(
-    `[slack] Running Claude SDK for ${sessionKey} in ${cwd}${session.claudeSessionId ? ` (resuming ${session.claudeSessionId})` : ""}`
+    `[slack] Running agent for ${sessionKey} in ${cwd}${session.claudeSessionId ? ` (resuming ${session.claudeSessionId})` : ""}`
   );
 
   let resultText = "";
   let resultSessionId = session.claudeSessionId || "";
-
-  // Account rotation (same pool as the backstage runner): the sender's
-  // personal sub first (matched via the identity table), shared pool as
-  // backup; when a turn dies on usage limits, sideline the account and retry
-  // on the next one. With everything exhausted, fall back to the codex model
-  // (DEFAULT_FALLBACK_MODEL) as the last resort.
-  const triedAccountIds = new Set<string>();
-  let account = pickAccount(triedAccountIds, msg.userId, session.model);
-  let limitExhausted = false;
 
   // --- Channel memory + self-management tools (interactive Slack only) -------
   // processMessage only ever runs for whitelisted users (gated at the event
@@ -910,170 +804,61 @@ export async function processMessage(
     "Pass `options` for one-tap button choices, and `context` to attach background (the copy slot, a diff, a screen). Use list_pending_asks / cancel_ask to manage outstanding ones. " +
     "When the user says things like \"ask Grant for X\", \"get John to review when I'm done\", or \"check with Jaap before shipping\", use ask_human rather than just telling them to do it.";
 
-  // Short-lived AWS read creds (instance-role snapshot, minted via the cgroup
-  // escape in aws-creds.ts). The Slack child can't reach IMDS directly, and
-  // process.env carries no AWS creds, so without this an `aws` call in-session
-  // fails with "Unable to locate credentials". Mirrors the backstage runner
-  // (claude-runner.ts childEnv). {} if minting fails — the run still proceeds.
-  const awsEnv = await getAgentAwsEnv();
+  // In-process MCP for this run: the slack-context server set (channel memory,
+  // github report-back, slack ask handler). OpenCode reaches these through the
+  // run-rpc stdio proxies, which execute against the per-session override
+  // registered below — NOT the generic interactive builder.
+  const bksId = `slack-${sessionKey}`;
+  const askHandler: AskUserHandler = (input) =>
+    handleAskUserQuestion(sessionKey, input, channel, threadTs);
+  const inProcessMcp: Record<string, unknown> = {
+    ...adminMcpServers,
+    "michael-ask": createAskUserMcpServer({ ask: askHandler }),
+  };
+  registerSessionMcpServers(bksId, inProcessMcp);
 
-  rotation: for (;;) {
-  let limitHit = false;
-  let resultWasError = false;
+  const onAbort = () => cancelAgentRun(resultSessionId, bksId);
+  abortController.signal.addEventListener("abort", onAbort, { once: true });
+
+  // Vercel-preview detection (was a Claude PostToolUse hook): track bash
+  // commands by tool-use id so PR creation can be spotted in the result.
+  const bashCommands = new Map<string, string>();
+
   try {
-    const q = query({
+    // Account rotation (meridian pool, sender-personal-first via `user`) and
+    // usage-limit model fallback are runAgent's job now. mcpServers stays
+    // unset = all configured servers, gated per-user by filterMcpServers
+    // inside the runner.
+    for await (const event of runAgent({
       prompt,
-      options: {
-        resume: resultSessionId || session.claudeSessionId || undefined,
-        cwd,
-        env: {
-          ...(process.env as Record<string, string>),
-          ...awsEnv,
-          ...(account ? { CLAUDE_CODE_OAUTH_TOKEN: account.token } : {}),
-        },
-        allowedTools: [
-          "Bash",
-          "Read",
-          "Edit",
-          "Write",
-          "Grep",
-          "Glob",
-          "Task",
-          "TaskOutput",
-          "WebFetch",
-          "WebSearch",
-          "NotebookEdit",
-          "EnterPlanMode",
-          "ExitPlanMode",
-          "TaskCreate",
-          "TaskUpdate",
-          "TaskList",
-          "TaskGet",
-          "Skill",
-          "ListMcpResourcesTool",
-          "ReadMcpResourceTool",
-          "ToolSearch",
-        ],
-        canUseTool: async (toolName, input, options) => {
-          if (toolName === "AskUserQuestion") {
-            return handleAskUserQuestion(
-              sessionKey,
-              input,
-              channel,
-              threadTs
-            );
-          }
-          // Money-moving Stripe tools need the per-call human confirmation the
-          // backstage runner provides; this path has no approval card, so deny.
-          if (toolName in STRIPE_CONFIRM_TOOLS) {
-            return {
-              behavior: "deny",
-              message: `This Stripe action requires human confirmation — open this session in ${productName()} and retry there; the approval card will appear in that UI.`,
-            };
-          }
-          // Allow everything else that isn't in allowedTools (e.g. MCP tools)
-          return { behavior: "allow", updatedInput: cleanPlainToolInput(toolName, input) };
-        },
-        mcpServers: { ...mcpServers, ...adminMcpServers },
-        strictMcpConfig: true,
-        model: resolveDirectSdkModel(session.model || getDefaultModel()),
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-        abortController,
-        systemPrompt: {
-          type: "preset",
-          preset: "claude_code",
-          append: SLACK_SYSTEM_PROMPT_APPEND + ADMIN_TOOLS_PROMPT + memoryAppend,
-        },
-        settingSources: ["user", "project"],
-        hooks: {
-          PostToolUse: [
-            {
-              matcher: "Bash",
-              hooks: [
-                async (
-                  input: PostToolUseHookInput | any
-                ): Promise<HookJSONOutput> => {
-                  const command = input?.tool_input?.command || "";
-                  if (
-                    typeof command === "string" &&
-                    command.includes("git push")
-                  ) {
-                    const PATH = `/home/ubuntu/.cargo/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/home/ubuntu/bin:/home/ubuntu/.npm-global/bin:${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`;
-                    try {
-                      console.log(
-                        `[slack] [hook] Running just format after git push in ${cwd}`
-                      );
-                      execSync("just format", {
-                        cwd,
-                        encoding: "utf-8",
-                        timeout: 120000,
-                        env: { ...process.env, PATH },
-                      });
-                      const diff = execSync(
-                        "git diff --quiet 2>&1; echo $?",
-                        { cwd, encoding: "utf-8" }
-                      ).trim();
-                      if (diff !== "0") {
-                        execSync(
-                          'git add -u && git commit -m "format" && git push',
-                          {
-                            cwd,
-                            encoding: "utf-8",
-                            timeout: 60000,
-                          }
-                        );
-                        console.log(
-                          `[slack] [hook] Format commit pushed in ${cwd}`
-                        );
-                      }
-                    } catch (e) {
-                      console.error(
-                        `[slack] [hook] Format after push failed:`,
-                        e
-                      );
-                    }
-                  }
-                  // Detect PR creation and poll for Vercel preview
-                  if (
-                    typeof command === "string" &&
-                    command.includes("gh pr create")
-                  ) {
-                    const response = String(input?.tool_response || "");
-                    const prMatch = response.match(
-                      /github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/
-                    );
-                    if (prMatch) {
-                      const prNumber = parseInt(prMatch[1], 10);
-                      console.log(
-                        `[slack] [hook] PR #${prNumber} created, polling for Vercel preview`
-                      );
-                      pollForVercelPreview(prNumber, channel, threadTs).catch(
-                        (e) =>
-                          console.error(
-                            `[slack] [vercel] Preview poll error:`,
-                            e
-                          )
-                      );
-                    }
-                  }
-                  return {} as HookJSONOutput;
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
-    for await (const sdkMsg of q) {
+      sessionId: session.claudeSessionId || undefined,
+      cwd,
+      mode: "code",
+      model: toOpencodeModel(session.model || getDefaultModel()),
+      user: msg.userId,
+      author: gitIdentityFor(msg.userId),
+      inProcessMcp,
+      reposNote: SLACK_SYSTEM_PROMPT_APPEND + ADMIN_TOOLS_PROMPT + memoryAppend,
+      // bksSessionId feeds the in-process MCP proxy path; resume-on-boot
+      // skips "slack" kinds (the queue re-delivers interrupted messages).
+      journal: { bksSessionId: bksId, kind: "slack" },
+      // Money-moving Stripe tools need the per-call human confirmation the
+      // interactive runner provides; stripped from the tool list here.
+      deniedTools: Object.fromEntries(
+        Object.keys(STRIPE_CONFIRM_TOOLS).map((name) => [
+          name,
+          `This Stripe action requires human confirmation — open this session in ${productName()} and retry there; the approval card will appear in that UI.`,
+        ])
+      ),
+      // Claude-path runs (bridge-off degraded mode) keep the native
+      // AskUserQuestion flowing to the same Slack question card.
+      onAskUser: askHandler,
+    })) {
       if (abortController.signal.aborted) break;
 
-      if (sdkMsg.type === "system" && sdkMsg.subtype === "init") {
-        resultSessionId = (sdkMsg as any).session_id;
-        console.log(
-          `[slack] SDK session initialized: ${resultSessionId}`
-        );
+      if (event.type === "init") {
+        resultSessionId = event.sessionId || resultSessionId;
+        console.log(`[slack] engine session initialized: ${resultSessionId}`);
         // Persist the id right away — the backstage UI resolves the live
         // transcript (and dedupes the branch-named session) through it, so
         // waiting until the run ends leaves the session page empty.
@@ -1083,114 +868,81 @@ export async function processMessage(
         }
       }
 
+      if (event.type === "model_switch") {
+        await sendSlackMessage(
+          channel,
+          `:warning: \`${event.fromModel}\` is out of usage on all accounts — continuing on \`${event.toModel}\`.`,
+          threadTs
+        ).catch(() => {});
+      }
+
       // Update the live progress checklist + assistant thread status from tools
-      if (sdkMsg.type === "assistant" && (sdkMsg as any).message?.content) {
-        const content = (sdkMsg as any).message.content;
-        for (const block of content as any[]) {
-          if (block.type !== "tool_use") continue;
+      if (event.type === "tool_use" && event.toolName) {
+        const name = normalizeToolName(event.toolName);
+        const input: any = event.toolInput;
 
-          // TodoWrite -> the model's own plan IS the checklist (Claude Tag style)
-          if (block.name === "TodoWrite") {
-            progress.setTodos(block.input?.todos);
-            continue;
-          }
+        if (name === "Bash" && event.toolUseId) {
+          bashCommands.set(event.toolUseId, String(input?.command || ""));
+        }
 
+        // TodoWrite -> the model's own plan IS the checklist (Claude Tag style)
+        if (name === "TodoWrite") {
+          progress.setTodos(input?.todos);
+        } else if (name === "TaskCreate") {
           // TaskCreate -> use activeForm as status (high-level progress)
-          if (block.name === "TaskCreate") {
-            const status =
-              block.input?.activeForm ||
-              block.input?.subject ||
-              "Working...";
-            progress.setAction(status);
-            await streamer.setStatus(status);
-            continue;
-          }
-
-          // Skip silent/read-only tools — don't change status
-          if (isSilentTool(block.name)) continue;
-
+          const status = input?.activeForm || input?.subject || "Working...";
+          progress.setAction(status);
+          await streamer.setStatus(status);
+        } else if (!isSilentTool(name)) {
           // Write/action tools -> show what's happening
-          const status = buildToolStatus(block.name, block.input);
+          const status = buildToolStatus(name, input);
           progress.setAction(status);
           await streamer.setStatus(status);
         }
       }
 
-      if (sdkMsg.type === "result") {
-        const resultMsg = sdkMsg as SDKResultMessage;
-        if (resultMsg.subtype === "success") {
-          resultText = resultMsg.result || "";
-        } else {
-          resultText = `Error: ${(resultMsg as any).errors?.join(", ") || "Unknown error"}`;
-          resultWasError = true;
+      // Detect PR creation from the bash result and poll for Vercel preview
+      if (event.type === "tool_result" && event.toolUseId) {
+        const cmd = bashCommands.get(event.toolUseId);
+        if (cmd?.includes("gh pr create")) {
+          const prMatch = String(event.content || "").match(
+            /github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/
+          );
+          if (prMatch) {
+            const prNumber = parseInt(prMatch[1], 10);
+            console.log(`[slack] PR #${prNumber} created, polling for Vercel preview`);
+            pollForVercelPreview(prNumber, channel, threadTs).catch((e) =>
+              console.error(`[slack] [vercel] Preview poll error:`, e)
+            );
+          }
         }
-        resultSessionId = resultMsg.session_id;
-        console.log(
-          `[slack] Claude SDK finished. Session ID: ${resultSessionId}, subtype: ${resultMsg.subtype}`
-        );
+      }
+
+      if (event.type === "done") {
+        resultSessionId = event.sessionId || resultSessionId;
+        resultText = event.result || "";
+        console.log(`[slack] agent finished. Session ID: ${resultSessionId}`);
+      }
+      if (event.type === "error") {
+        resultText = `Error: ${event.content || "Unknown error"}`;
       }
     }
-    if (isClaudeUsageLimitError(resultText, resultWasError)) limitHit = true;
   } catch (e: any) {
-    if (abortController.signal.aborted) {
-      console.log(`[slack] SDK query aborted for ${sessionKey}`);
-      await streamer.error("Cancelled by user.");
-      await streamer.clearStatus();
-      await dismissStopButton("Cancelled");
-      return;
+    if (!abortController.signal.aborted) {
+      console.error(`[slack] agent run error for ${sessionKey}:`, e);
+      resultText = `Error running agent: ${e.message || e}`;
     }
-    console.error(`[slack] SDK query error for ${sessionKey}:`, e);
-    if (isClaudeUsageLimitError(e.message || String(e), true)) {
-      limitHit = true;
-    } else {
-      resultText = `Error running Claude: ${e.message || e}`;
-    }
+  } finally {
+    abortController.signal.removeEventListener("abort", onAbort);
+    unregisterSessionMcpServers(bksId);
   }
 
-  if (!limitHit) break rotation;
-
-  // Usage limit: sideline the account (if any) and rotate
-  if (account) {
-    triedAccountIds.add(account.id);
-    markExhausted(account.id, session.model);
-  }
-  const next = pickAccount(triedAccountIds, msg.userId, session.model);
-  if (next && next.id !== account?.id) {
-    account = next;
-    console.warn(`[slack] Usage limit hit for ${sessionKey}; retrying on account ${next.name}`);
-    await streamer.setStatus(`usage limit hit — retrying on ${next.name}...`);
-    continue rotation;
-  }
-  limitExhausted = true;
-  break rotation;
-  } // rotation
-
-  // Every Claude account exhausted → last resort: the codex fallback model
-  if (limitExhausted) {
-    const fallback = DEFAULT_FALLBACK_MODEL ? resolveModel(DEFAULT_FALLBACK_MODEL) : null;
-    if (fallback?.provider === "codex") {
-      console.warn(`[slack] Claude usage exhausted for ${sessionKey}; falling back to ${fallback.id}`);
-      await sendSlackMessage(
-        channel,
-        `:warning: Claude usage limits exhausted on all accounts — continuing on \`${fallback.id}\` (Codex). History from this thread doesn't carry over to the Codex engine.`,
-        threadTs
-      );
-      await processCodexMessage(
-        session,
-        sessionKey,
-        msg,
-        streamer,
-        cwd,
-        abortController,
-        dismissStopButton,
-        progress,
-        fallback.id
-      );
-      return;
-    }
-    resultText =
-      resultText ||
-      "Claude usage limits exhausted on all accounts and no fallback model is configured.";
+  if (abortController.signal.aborted) {
+    console.log(`[slack] run aborted for ${sessionKey}`);
+    await streamer.error("Cancelled by user.");
+    await streamer.clearStatus();
+    await dismissStopButton("Cancelled");
+    return;
   }
 
   // Update session

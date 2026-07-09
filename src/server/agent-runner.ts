@@ -459,6 +459,12 @@ export function resumeInterruptedRuns(
     if (run.kind?.startsWith("github-")) {
       continue;
     }
+    // Slack runs journal (their bks session id feeds the in-process MCP proxy
+    // path), but the Slack queue re-delivers interrupted messages itself — a
+    // generic resume would double-drive the turn with no streamer attached.
+    if (run.kind?.startsWith("slack")) {
+      continue;
+    }
     // Sandboxed runs (docs/sandboxes-plan.md Phases 1+3): the sandbox — and
     // often the in-sandbox run host itself — outlives a backstage restart.
     // Reattach/relaunch through the provider instead of running in-process;
