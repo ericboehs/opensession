@@ -11,8 +11,9 @@ OpenSession is a self-hosted agent-infrastructure server. One Bun process serves
   against registered git repos, in isolated worktrees or Docker sandboxes.
 - **Agents** that turn external events into sessions: Slack messages, Linear
   issues, Plain support tickets, GitHub PR review comments.
-- **Three engines** that actually run the agent turns: the Claude Agent SDK
-  (subscription accounts), OpenAI Codex, and OpenCode ([engines.md](engines.md)).
+- **One engine** that actually runs the agent turns: OpenCode, with Claude
+  subscription capacity via the bundled Meridian bridge and ChatGPT-OAuth
+  OpenAI capacity ([engines.md](engines.md)).
 - **Automations**: stored prompts triggered by events or cron, run with
   least-privilege tool scoping ([plain.md](plain.md) documents the flagship
   triage automation).
@@ -27,9 +28,7 @@ OpenSession is a self-hosted agent-infrastructure server. One Bun process serves
  GitHub webhook ►│  web UI + WS ──► session store ~/.opensession-chats
                  │  agents (slack/linear/plain/github/stripe)   │
                  │  automations + schedulers                    │
-                 │  runner layer ──► engines:                   │
-                 │    claude-runner (Claude Agent SDK)          │
-                 │    codex-runner  (Codex exec / app-server)   │
+                 │  runner layer ──► the engine:                │
                  │    opencode-runner (opencode serve)          │
                  │  each run: git worktree or Docker sandbox    │
                  └──────────────────────────────────────────────┘
@@ -84,6 +83,6 @@ for the full rules the code enforces.
 | [linear.md](linear.md) | Linear OAuth app, webhooks, the Linear agent |
 | [plain.md](plain.md) | Plain support tickets, the triage automation |
 | [integrations-misc.md](integrations-misc.md) | Stripe, WorkOS, Grafana/Sentry/Tinybird, web push, voice |
-| [engines.md](engines.md) | Claude/Codex/OpenCode engines, accounts, model routing |
+| [engines.md](engines.md) | the OpenCode engine, accounts, model routing |
 | [../self-hosting-sandboxes.md](../self-hosting-sandboxes.md) | Docker/Daytona/E2B sandboxes |
 | [../portability-audit.md](../portability-audit.md) | what's still hardcoded (Tella-specific) |

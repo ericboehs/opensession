@@ -53,7 +53,6 @@ what the code actually reads, by feature:
 | `OPENSESSION_OPENCODE_BIN` / `OPENSESSION_OPENCODE_CONFIG` | see engines.md | OpenCode binary / config path |
 | `OPENSESSION_MODEL` | `claude-fable-5` | default model (below the UI override file) |
 | `OPENSESSION_FALLBACK_MODEL` | unset | global fallback model; `none` disables |
-| `OPENSESSION_CODEX_TRANSPORT` | `exec` | `app-server` enables the JSON-RPC Codex transport |
 | `OPENSESSION_MCP_CONFIG` | `~/projects/tella-backstage/mcp-config.json` | MCP config path override |
 | `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `MONITOR_ANSWER_MODEL`, `DRAFT_AUTOMATION_MODEL` | `claude-haiku-4-5` | per-feature cheap-task models |
 
@@ -86,7 +85,7 @@ OpenSession for its own runner-host/MCP-proxy subprocesses),
 
 Note: agent subprocesses do **not** inherit this env file — runs get a
 minimal env (PATH, HOME, LANG, OPENSESSION_MODEL) by design, and MCP servers
-carry their own credentials (`src/server/claude-runner.ts`).
+carry their own credentials (`src/server/runner-shared.ts`).
 
 ## 3. `~/.opensession/config.json`
 
@@ -193,8 +192,8 @@ automatically). Unit choices worth knowing (comments in the file itself):
 `bun --hot` means most edits apply in-process without dropping sessions:
 HTTP/WS handlers, per-message prompts and config, the session-control
 registry. **Not** hot-applied: long-lived agent loop code (Slack/Linear/
-Stripe event loops) and **runner internals** (`claude-runner.ts`,
-`agent-runner.ts`, `codex-runner.ts`, transport code, MCP filtering) — those
+Stripe event loops) and **runner internals** (`opencode-runner.ts`,
+`agent-runner.ts`, `opencode-oneshot.ts`, MCP filtering) — those
 keep running old code until a real `systemctl restart opensession`, even
 though health looks fine. Restarts are graceful (drain + journal + resume on
 boot) but still churn every session — treat them as deliberate. Full rules:

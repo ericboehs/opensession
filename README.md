@@ -1,8 +1,8 @@
 # OpenSession
 
 Self-hosted agent-infrastructure server: a web UI plus Slack, Linear, Plain,
-and GitHub agents, driving coding sessions through three engines (Claude Agent
-SDK, Codex, OpenCode) in git worktrees or Docker sandboxes on your own box.
+and GitHub agents, driving coding sessions through the OpenCode engine
+(any model provider) in git worktrees or Docker sandboxes on your own box.
 
 > Not related to opencode's `opensession` npm session viewer or to
 > ColeMurray/background-agents ("Open-Inspect").
@@ -28,9 +28,8 @@ Then read the real setup guide — secrets, accounts, integrations, systemd:
 
 Portability status: parts of the codebase still carry Tella-specific literals
 (repo registry defaults, Slack channel IDs, Linear OAuth redirect). What is
-config today vs. what still needs a code edit is tracked honestly in
-[docs/portability-audit.md](docs/portability-audit.md) and called out per page
-in the setup docs.
+config today vs. what still needs a code edit is called out per page in the
+setup docs.
 
 ## License
 

@@ -1,20 +1,71 @@
-# Engines: Claude, Codex, OpenCode
+# Engine: OpenCode
 
-Every session/automation turn runs on one of three engines, dispatched by
-model id in the runner layer. **Engine/runner code does not hot-reload** —
-after changing anything here, `systemctl restart opensession`
+Every session, automation, agent-loop turn and one-shot utility call runs on
+the OpenCode engine — a per-session `opencode serve` process driven over
+HTTP+SSE by `src/server/opencode-runner.ts` (one-shots go through
+`src/server/opencode-oneshot.ts` on a shared tool-less server). Model ids
+look like `opencode/<provider>/<model>`; bare native ids (`claude-sonnet-5`,
+`gpt-5.5`) are mapped onto that form at dispatch (`toOpencodeModel`).
+**Engine/runner code does not hot-reload** — after changing anything here,
+`systemctl restart opensession`
 ([install.md](install.md#8-hot-reload-vs-restart)).
 
-## Claude (Claude Agent SDK) — default
+Binary resolution: `OPENSESSION_OPENCODE_BIN` → `Bun.which("opencode")` → an
+nvm fallback path.
 
-`src/server/claude-runner.ts` drives the `@anthropic-ai/claude-agent-sdk`,
-which spawns the `claude` CLI:
+## Engine config
 
-- **Binary**: `OPENSESSION_CLAUDE_BIN` env → `paths.claudeBin` in
-  `~/.opensession/config.json` → `/home/ubuntu/.local/bin/claude`.
-- **Accounts**: `~/.opensession-claude-accounts.json` (override with
-  `OPENSESSION_CLAUDE_ACCOUNTS_PATH`; written mode 0600). Shape
-  (`src/server/claude-accounts.ts`):
+`~/.opensession-opencode.json` (override with `OPENSESSION_OPENCODE_CONFIG`),
+schema from `src/server/opencode-config.ts`:
+
+```json
+{
+  "enabled": true,
+  "bridge": { "mode": "meridian", "accounts": ["acc-id-1"] },
+  "port": 3456,
+  "pickerModels": ["opencode/anthropic/claude-sonnet-5"],
+  "turnTimeoutMinutes": 60,
+  "bridgeMaxRequestsPerHour": 300
+}
+```
+
+- `enabled: false` (or a missing file) = the Anthropic bridge is off;
+  `opencode/anthropic/*` models error with a clear message (there is no
+  fallback engine).
+- `pickerModels` adds opencode model ids to the UI model picker (folded into
+  the registry at load).
+- Providers beyond the two subscription bridges below use OpenCode's own auth
+  (`opencode auth login` → `~/.local/share/opencode/auth.json`; HOME is
+  passed through to the engine).
+
+## Anthropic models (the Claude bridge)
+
+`bridge.mode` controls how `opencode/anthropic/*` models get Claude
+subscription capacity:
+
+- `"meridian"` (default): the bundled community opencode-with-claude /
+  Meridian stack (`@rynfar/meridian` + scrub plugin, pinned in package.json),
+  injected as an OpenCode plugin. `accounts` optionally restricts which
+  Claude accounts serve it.
+- `"native"`: the in-repo bridge (`src/server/anthropic-bridge.ts`) — a
+  loopback-only Anthropic-Messages-compatible endpoint served by the official
+  Claude Agent SDK on **designated** accounts (`accounts` is required; never
+  the pool), with a per-boot API key, body cap, hourly rate cap, and full
+  audit. This is the only remaining consumer of
+  `@anthropic-ai/claude-agent-sdk`.
+- `"off"`: bridge disabled.
+
+Honest quota note, in two sentences: the meridian path scrubs opencode's
+fingerprints so Anthropic bills it as first-party flat subscription quota,
+which works today but is a moving enforcement target; the native bridge
+deliberately does **not** scrub, so Anthropic bills it to extra-usage credits
+and returns 400 without them.
+
+### Claude accounts
+
+`~/.opensession-claude-accounts.json` (override with
+`OPENSESSION_CLAUDE_ACCOUNTS_PATH`; written mode 0600). Shape
+(`src/server/claude-accounts.ts`):
 
 ```json
 {
@@ -44,16 +95,19 @@ which spawns the `claude` CLI:
   draw from owner-less pool accounts, least-utilized first. Accounts at ≥97%
   of the 5-hour window are sidelined until reset. Sessions can pin an
   `accountId`; automations can hard-pin (`accountStrict`) as a cost cap.
-- Fallback env vars: `OPENSESSION_FALLBACK_MODEL` (global fallback model when a
-  pool is exhausted; `none` disables), `CLAUDE_FALLBACK_PROFILE` (legacy
-  on-disk `~/.claude` credential-swap path), `OPENSESSION_FORCE_LIMIT=1`
+  Each account gets an isolated `CLAUDE_CONFIG_DIR` for Meridian's SDK
+  subprocesses, so the selected account is the only reachable credential.
+- Fallback env vars: `OPENSESSION_FALLBACK_MODEL` (global fallback model when
+  a pool is exhausted; `none` disables), `OPENSESSION_FORCE_LIMIT=1`
   (dev-only: fake a usage limit to exercise the fallback chain).
 
-## Codex
+## OpenAI models (ChatGPT OAuth)
 
-`src/server/codex-runner.ts` via `@openai/codex-sdk`:
-
-- **Accounts**: `~/.opensession-codex-accounts.json` (no env override; 0600):
+`opencode/openai/*` models run on OpenCode's native ChatGPT OAuth using the
+codex-accounts pool — `~/.opensession-codex-accounts.json` (no env override;
+0600), managed by `src/server/codex-accounts.ts` and seeded into opencode by
+`src/server/opencode-openai-auth.ts` (access-token-only + poisoned refresh so
+the host `codex login` can never be invalidated):
 
 ```json
 {
@@ -64,63 +118,10 @@ which spawns the `claude` CLI:
 }
 ```
 
-  `kind: "api_key"` injects an OpenAI key; `kind: "home"` points at a
-  `CODEX_HOME` directory containing `auth.json` from `CODEX_HOME=<dir> codex
-  login` on a ChatGPT plan. Rotation is least-recently-picked with a 1-hour
-  cool-off on rate limits (no usage endpoint exists to poll).
-- **Transport toggle**: `~/.opensession-codex-transport.json` with
-  `{ "transport": "app-server" }` or `"exec"` (file wins; then
-  `OPENSESSION_CODEX_TRANSPORT=app-server`; default `exec`). The app-server
-  transport (`src/server/codex-appserver.ts`) drives `codex app-server` over
-  JSON-RPC and adds mid-turn steering (`turn/steer`) and fast interrupt
-  (`turn/interrupt`). Both transports share the same thread/rollout files,
-  so toggling is safe mid-session.
-
-## OpenCode (+ the Anthropic bridge)
-
-`src/server/opencode-runner.ts` spawns `opencode serve` per session and talks
-HTTP+SSE. Model ids look like `opencode/<provider>/<model>` — this is the
-"bring any LLM" engine. Binary resolution: `OPENSESSION_OPENCODE_BIN` →
-`Bun.which("opencode")` → an nvm fallback path.
-
-Config: `~/.opensession-opencode.json` (override with
-`OPENSESSION_OPENCODE_CONFIG`), schema from `src/server/opencode-config.ts`:
-
-```json
-{
-  "enabled": true,
-  "bridge": { "mode": "meridian", "accounts": ["acc-id-1"] },
-  "port": 3456,
-  "pickerModels": ["opencode/anthropic/claude-sonnet-5"],
-  "turnTimeoutMinutes": 60,
-  "bridgeMaxRequestsPerHour": 300
-}
-```
-
-- `enabled: false` (or a missing file) = engine off; `opencode/anthropic/*`
-  models error.
-- `pickerModels` adds opencode model ids to the UI model picker (folded into
-  the registry at load).
-- `bridge.mode` controls how `opencode/anthropic/*` models get Claude
-  capacity:
-  - `"meridian"` (default): the bundled community opencode-with-claude /
-    Meridian stack (`@rynfar/meridian` + scrub plugin, pinned in
-    package.json), injected as an OpenCode plugin. `accounts` optionally
-    restricts which Claude accounts serve it.
-  - `"native"`: the in-repo bridge (`src/server/anthropic-bridge.ts`) — a
-    loopback-only Anthropic-Messages-compatible endpoint served by the
-    official Claude Agent SDK on **designated** accounts (`accounts` is
-    required; never the pool), with a per-boot API key, body cap, hourly
-    rate cap, and full audit.
-  - `"off"`: bridge disabled.
-
-Honest quota note, in two sentences: the meridian path scrubs opencode's
-fingerprints so Anthropic bills it as first-party flat subscription quota,
-which works today but is a moving enforcement target; the native bridge
-deliberately does **not** scrub, so Anthropic bills it to extra-usage
-credits and returns 400 without them. Details, billing tests, and the
-containment rules are in
-[sandboxes-plan.md — Workstream E](../sandboxes-plan.md).
+`kind: "api_key"` injects an OpenAI key; `kind: "home"` points at a
+`CODEX_HOME` directory containing `auth.json` from `CODEX_HOME=<dir> codex
+login` on a ChatGPT plan. Rotation is least-recently-picked with a cool-off
+on rate limits.
 
 ## Model routing
 
@@ -134,16 +135,23 @@ containment rules are in
   order: claude-opus-4-8 → claude-fable-5 → claude-sonnet-5 → gpt-5.5 →
   gpt-5.4 → claude-sonnet-4-6 → claude-haiku-4-5 → gpt-5.4-mini →
   gpt-5.3-codex-spark (a session's configured `preferredFallbackModel` is
-  tried first).
+  tried first). Every fallback is mapped onto opencode too.
 - **Cheap-task models**: several features run small classifier prompts on
-  haiku by default, each overridable by env where it's read:
-  `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `MONITOR_ANSWER_MODEL`,
+  haiku by default via `opencodeOneShot`, each overridable by env where it's
+  read: `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `MONITOR_ANSWER_MODEL`,
   `SCHEDULE_WHEN_MODEL`, `DRAFT_AUTOMATION_MODEL`,
   `SLACK_MENTION_INTENT_MODEL`, `PLAIN_SPAM_CHECK_MODEL`,
   `PLAIN_REFUND_INTENT_MODEL`, `PLAIN_TOPISSUES_QUOTE_MODEL` (all default
-  `claude-haiku-4-5`).
+  `claude-haiku-4-5`; native ids map onto opencode at dispatch), plus
+  `OPENSESSION_ONESHOT_MODEL` as the one-shot default.
 
-Direction note: the long-term plan is to converge on OpenCode as the single
-engine, with the Claude Agent SDK path staying for subscription economics
-until parity holds — see the staged-migration section of
-[sandboxes-plan.md — Workstream E](../sandboxes-plan.md).
+## Run gate + least privilege
+
+The engine is deny-by-default on run kind (`opencodeGateReason`):
+interactive kinds (`prompt`, `goal`, `create`, `linear`, `slack`) and
+unattended kinds (`automation`, `plain`, `action`, `security-scan`,
+`github-*`) are allowed; anything else — including runs with no journal
+kind — is refused. Unattended runs get the least-privilege treatment:
+denied/confirm tools are STRIPPED from the model's tool list via OpenCode's
+`tools` config (`opencodeRunPolicy`); interactive runs drop
+confirm-listed MCP servers entirely (no per-call approval bridge exists).
