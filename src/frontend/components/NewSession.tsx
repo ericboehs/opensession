@@ -521,8 +521,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         ? `New stacked branch (off ${forceBranch})`
         : "New branch",
     },
-    ...worktrees.map((wt) => ({ value: wt.branch, label: wt.branch })),
+    // Ask stays above the branch list — as the last option it drowned below
+    // the scroll fold once the worktree list grew, reading as "Ask is gone".
     { value: "__ask__", label: "Ask — read-only on main", menuLabel: "Ask · read-only on main" },
+    ...worktrees.map((wt) => ({ value: wt.branch, label: wt.branch })),
   ];
 
   return (
