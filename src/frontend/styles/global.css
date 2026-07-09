@@ -3858,8 +3858,8 @@ body.resizing-x .panel-resize::after {
 .workspace-info-panel {
 	display: flex;
 	flex-direction: column;
-	gap: 20px;
-	padding: 20px 22px 28px;
+	gap: 16px;
+	padding: 16px 16px 22px;
 }
 
 .workspace-info-head {
@@ -3983,7 +3983,7 @@ body.resizing-x .panel-resize::after {
 
 .workspace-info-body {
 	display: grid;
-	gap: 22px;
+	gap: 16px;
 }
 
 /* Latest human message from the linked Slack channel. */
