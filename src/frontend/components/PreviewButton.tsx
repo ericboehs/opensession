@@ -7,12 +7,15 @@ import {
   type PreviewStatus,
 } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
+import { BASE_PATH } from "../lib/base";
 import { withPreviewPath } from "../lib/preview-url";
 import { Tooltip } from "../ui/tooltip";
+import { CopyCheck, useCopy } from "../ui/copy";
 import {
   IconArrowUpRight,
   IconCamera,
   IconChevronDown,
+  IconLink,
   IconPlay,
   IconPlayOutline,
 } from "./icons";
@@ -62,6 +65,7 @@ export function PreviewButton({
   const [shot, setShot] = useState<string | null>(null);
   const [shotError, setShotError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const { copied, copy } = useCopy();
 
   const previewable = isPreviewable(session);
 
@@ -119,12 +123,38 @@ export function PreviewButton({
   const bootable = status.bootable !== false;
   const notBootableHint = `No preview boot mechanism for this repo — commit an .opensession/start.sh to the repo, or set previewCommand on its repos config entry`;
 
+  // Same-origin interstitial that waits for the boot and then redirects itself
+  // to the preview (PreviewWait.tsx). The agent-flagged deep link rides along
+  // so the redirect lands where a click on the live link would.
+  const waitUrl =
+    `${BASE_PATH}/preview-wait/${encodeURIComponent(session.id)}` +
+    (session.previewPath ? `?path=${encodeURIComponent(session.previewPath)}` : "");
+
   async function start() {
+    // Poll lag can leave a Start affordance up when the server is already
+    // running — nothing to wait for, open the app directly. (Out-of-scope
+    // origin, so installed PWAs hand this to a normal browser context.)
+    if (status?.running && status.previewUrl) {
+      window.open(url, "_blank", "noopener");
+      return;
+    }
+    // Popup-blocker-safe "open when ready": window.open must fire synchronously
+    // inside the click gesture, but the preview URL doesn't exist yet — so open
+    // the interstitial NOW and let it redirect itself once the status endpoint
+    // reports running. On the iOS PWA this opens the in-app browser view — a
+    // new context, never replacing the app window. A blocked open returns null
+    // and simply degrades to today's inline starting state.
+    const wait = window.open(waitUrl, "_blank");
     setStarting(true);
     try {
-      setStatus(await startPreviewApi(session.id));
+      const s = await startPreviewApi(session.id);
+      setStatus(s);
+      // Nothing actually started (repo not bootable, sandbox gate off) — don't
+      // leave the interstitial spinning toward a boot that will never come.
+      if (!s.running && !s.starting) wait?.close();
     } catch {
       setStarting(false);
+      wait?.close();
     }
   }
 
@@ -248,6 +278,17 @@ export function PreviewButton({
           {snapping ? "Capturing…" : "Snapshot preview"}
         </button>
       )}
+      {/* Header mode has no room for a copy segment (single icon by design), so
+          the copy action lives here — plus ⌘-click on the icon, mirroring
+          StagingLink. The bar layout gets a dedicated segment instead. */}
+      {variant === "header" && running && (
+        <button
+          className="preview-stop preview-copy-row"
+          onClick={() => copy(url, { toast: "Preview link copied" })}
+        >
+          Copy preview link
+        </button>
+      )}
       <div className="preview-hint">
         {running || anyRunning ? (
           "Stops this worktree's dev process group only."
@@ -273,15 +314,30 @@ export function PreviewButton({
     return (
       <div className="viewer-code-icon-wrap" ref={wrapRef}>
         {running ? (
-          <Tooltip label="Open the running app — right-click for dev services" side="bottom">
+          <Tooltip
+            label={
+              copied
+                ? "Link copied"
+                : "Open the running app — ⌘-click to copy the link, right-click for dev services"
+            }
+            side="bottom"
+          >
             <a
               className="viewer-code-icon preview-icon is-live"
               href={url}
               target="_blank"
               rel="noopener"
               onContextMenu={openMenu}
+              onClick={(e) => {
+                // ⌘/Ctrl-click copies instead of opening (the same modifier
+                // semantics as StagingLink's globe).
+                if (e.metaKey || e.ctrlKey) {
+                  e.preventDefault();
+                  copy(url, { toast: "Preview link copied" });
+                }
+              }}
             >
-              <IconPlayOutline size={24} />
+              <CopyCheck copied={copied} size={24} idle={<IconPlayOutline size={24} />} />
             </a>
           </Tooltip>
         ) : isStarting ? (
@@ -376,6 +432,19 @@ export function PreviewButton({
           Preview
         </button>
       )}
+      {/* Copy segment — the split's secondary action. Enabled once a previewUrl
+          exists (server up + Caddy fronting it); before that there's no stable
+          URL to hand out, so it sits disabled with a hint. */}
+      <button
+        className="preview-caret preview-copy aria-disabled:opacity-45 aria-disabled:cursor-default aria-disabled:hover:text-dim aria-disabled:hover:border-line-strong aria-disabled:hover:bg-transparent"
+        onClick={() => {
+          if (running) copy(url, { toast: "Preview link copied" });
+        }}
+        aria-disabled={!running || undefined}
+        title={running ? `Copy the preview link — ${url}` : "Start the preview first"}
+      >
+        <CopyCheck copied={copied} size={18} idle={<IconLink size={18} />} />
+      </button>
       {running && (
         <button
           className="preview-caret preview-snap"

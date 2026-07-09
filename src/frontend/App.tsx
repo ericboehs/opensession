@@ -21,6 +21,7 @@ import { TeamChat } from "./components/TeamChat";
 import { PrPreview } from "./components/PrPreview";
 import { SupportPreview } from "./components/SupportPreview";
 import { UserGate, getCurrentUser } from "./components/UserPicker";
+import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { TitleBar } from "./components/TitleBar";
 import { Settings, type SettingsSectionKey } from "./components/Settings";
@@ -1949,9 +1950,18 @@ function App() {
 	);
 }
 
+// The preview interstitial renders INSTEAD of the app (and outside UserGate —
+// it must work in cold-storage contexts like the iOS PWA's in-app browser).
+// The server's SPA fallback serves the shell for this path; see PreviewWait.
+const previewWaitSessionId = matchPreviewWaitRoute(location.pathname);
+
 const root = createRoot(document.getElementById("root")!);
 root.render(
-	<TooltipProvider>
-		<App />
-	</TooltipProvider>,
+	previewWaitSessionId ? (
+		<PreviewWait sessionId={previewWaitSessionId} />
+	) : (
+		<TooltipProvider>
+			<App />
+		</TooltipProvider>
+	),
 );
