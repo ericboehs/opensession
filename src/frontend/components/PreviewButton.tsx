@@ -306,11 +306,26 @@ export function PreviewButton({
   // Header mode: a single ▶ icon, color-coded by state (dim=off, amber=starting,
   // green=live), sized to sit next to the panel-toggle icon. Left-click does the
   // primary action; right-click opens the services popover (stop / snapshot).
+  // While the server is up (or starting) a small caret rides beside the icon —
+  // the popover's stop action was right-click-only and nobody found it
+  // (Michiel, 2026-07-09).
   if (variant === "header") {
     const openMenu = (e: React.MouseEvent) => {
       e.preventDefault();
       setOpen((v) => !v);
     };
+    const menuCaret = (running || anyRunning || isStarting) && (
+      <Tooltip label="Dev services — stop the server, snapshot" side="bottom">
+        <button
+          className={`viewer-code-icon preview-icon preview-header-caret ${open ? "is-live" : "is-off"}`}
+          onClick={openMenu}
+          aria-expanded={open}
+          aria-label="Dev services"
+        >
+          <IconChevronDown size={16} />
+        </button>
+      </Tooltip>
+    );
     return (
       <div className="viewer-code-icon-wrap" ref={wrapRef}>
         {running ? (
@@ -379,6 +394,7 @@ export function PreviewButton({
             </button>
           </Tooltip>
         )}
+        {menuCaret}
         {servicesPopover}
         {snapshotModal}
       </div>

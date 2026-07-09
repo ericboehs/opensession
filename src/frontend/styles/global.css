@@ -3263,6 +3263,14 @@ body.resizing-x {
 	color: var(--green);
 	background: var(--bg-hover);
 }
+/* Header preview caret: the compact dev-services handle riding beside the ▶
+   icon while the server runs/starts (the popover's stop action was
+   right-click-only and undiscoverable). Narrow hitarea, tucked against the
+   icon it belongs to. */
+.preview-header-caret {
+	padding: 3px 1px;
+	margin-left: -3px;
+}
 /* Staging globe rides a touch smaller than the other code icons — trim its
    hitarea to match the reduced glyph so the box hugs it rather than floating. */
 .staging-icon {
