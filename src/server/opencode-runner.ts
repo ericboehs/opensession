@@ -155,7 +155,11 @@ export const OPENCODE_BIN =
   Bun.which("opencode") ||
   `${HOME}/.nvm/versions/node/v20.20.0/bin/opencode`;
 
-const OPENCODE_STATE_DIR = `${OPENSESSION_CHATS_DIR}/opencode`;
+/** Instructions/state under the chat store (exported for the state-path
+ *  regression test — must stay derived from the SAME dual-read resolution the
+ *  docker adapter mounts by, or in-container runs break; see
+ *  containerStateDirFixups in sandbox/docker.ts). */
+export const OPENCODE_STATE_DIR = `${OPENSESSION_CHATS_DIR}/opencode`;
 const SERVER_START_TIMEOUT_MS = 30_000;
 const IDLE_KILL_MS = 30 * 60 * 1000;
 
@@ -269,7 +273,7 @@ export function meridianStackInfo(): MeridianStackInfo {
  *  So each account gets an empty config dir + the env token: the selected
  *  account is the only reachable credential, and a bad token fails closed
  *  instead of burning the host login's quota. */
-const MERIDIAN_CFG_ROOT = `${stateDir("opencode")}/meridian-cfg`;
+export const MERIDIAN_CFG_ROOT = `${stateDir("opencode")}/meridian-cfg`;
 
 /**
  * Env for a meridian-mode `opencode serve` process. The Meridian proxy runs

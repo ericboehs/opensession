@@ -8432,6 +8432,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 									message: `Session setup failed: ${e.message || String(e)}`,
 								});
 								emit({ type: "session_status", isRunning: false });
+								// Persist the failure on the session file too — the live
+								// events above are gone on reload, and a setup-failed session
+								// (e.g. `git worktree add` refusing a branch name that
+								// collides with an existing `name/...` ref) otherwise shows
+								// as an inexplicably empty chat (bks-019f472f, 2026-07-09).
+								recordRunOutcome(
+									announcedId,
+									`Session setup failed: ${e.message || String(e)}`,
+								);
 							} else {
 								ws.send(
 									JSON.stringify({

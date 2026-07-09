@@ -60,7 +60,8 @@ import { existsSync, readFileSync } from "fs";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
-function configPath(): string {
+/** Bridge-config file path (exported for the state-path regression test). */
+export function configPath(): string {
   return (
     envAlias("OPENSESSION_OPENCODE_CONFIG", "BACKSTAGE_OPENCODE_CONFIG") ||
     stateDir("opencode.json")

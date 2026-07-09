@@ -78,7 +78,7 @@ import { mkdirSync } from "fs";
 const HOME = process.env.HOME || "/home/ubuntu";
 // Empty, dedicated cwd for the SDK subprocess: the bridge never touches files
 // (every tool is a blocked passthrough), so no worktree must ever be visible.
-const BRIDGE_CWD = `${stateDir("opencode")}/bridge-cwd`;
+export const BRIDGE_CWD = `${stateDir("opencode")}/bridge-cwd`;
 
 const g = globalThis as any;
 

@@ -742,6 +742,21 @@ async function setupVolumeWorkspace(
   }
 }
 
+/**
+ * In-container dirs that must be ubuntu-owned for the runner to work, but that
+ * docker materializes ROOT-owned when it creates missing parents of bind-mount
+ * targets. The chats dir is the canonical case: the per-session run dir is
+ * mounted at `<chats>/sandbox-runs/<id>`, and when the image doesn't pre-seed
+ * `<chats>` under the CURRENT name (the rename moved it from ~/.backstage-chats
+ * to ~/.opensession-chats — an image built before that only seeds the old
+ * name), docker creates `<chats>` + `<chats>/sandbox-runs` as root and the
+ * in-container opencode runner then EACCESes on `mkdir <chats>/opencode`
+ * (regressed 2026-07-09, bks-019f4742-e65c). Exported for the regression test.
+ */
+export function containerStateDirFixups(): string[] {
+  return [OPENSESSION_CHATS_DIR, `${OPENSESSION_CHATS_DIR}/sandbox-runs`];
+}
+
 /** One-time in-container setup after (re)start. Idempotent. */
 async function setupContainer(name: string, cwd: string): Promise<void> {
   // Seed ~/.claude/settings.json when the volume is empty — the volume mount
@@ -753,6 +768,19 @@ async function setupContainer(name: string, cwd: string): Promise<void> {
   ]);
   if (seed.exitCode !== 0) {
     throw new Error(`sandbox ${name}: seeding ~/.claude failed: ${seed.stderr.trim().slice(0, 300)}`);
+  }
+  // Re-own the docker-created mount-target parents (see containerStateDirFixups).
+  // Only the dirs themselves, never -R: their CONTENTS are bind mounts owned by
+  // the host. Idempotent, and works with images from before the state rename.
+  const fixups = containerStateDirFixups().map((d) => assertSafePath(d));
+  const own = await docker([
+    "exec", "-u", "0", name, "sh", "-c",
+    `mkdir -p ${fixups.join(" ")} && chown 1000:1000 ${fixups.join(" ")}`,
+  ]);
+  if (own.exitCode !== 0) {
+    throw new Error(
+      `sandbox ${name}: re-owning state dirs failed: ${own.stderr.trim().slice(0, 300)}`,
+    );
   }
   // Trap (b) from the plan: verify the worktree actually works inside — the
   // .git pointer file must resolve through the mounted common dir.

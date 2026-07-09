@@ -142,7 +142,8 @@ WORKDIR /home/ubuntu
 # ubuntu, so ownership is right by construction.
 RUN mkdir -p /home/ubuntu/.config \
              /home/ubuntu/.local/share \
-             /home/ubuntu/.backstage-chats
+             /home/ubuntu/.backstage-chats \
+             /home/ubuntu/.opensession-chats
 
 # Containers are started long-lived and `docker exec`'d into (one per session).
 CMD ["sleep", "infinity"]

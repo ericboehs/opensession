@@ -53,7 +53,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync } from "fs";
 import { dirname } from "path";
 import { OPENSESSION_CHATS_DIR } from "../../paths";
-import { envAlias } from "../../rename-compat";
+import { envAlias, stateDir } from "../../rename-compat";
 import {
   journalSet,
   journalClear,
@@ -669,7 +669,10 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
       // (dual-reading) in-sandbox build resolves.
       const ocCfgSrc =
         envAlias("OPENSESSION_OPENCODE_CONFIG", "BACKSTAGE_OPENCODE_CONFIG") ||
-        `${process.env.HOME || "/home/ubuntu"}/.backstage-opencode.json`;
+        // Dual-read the host path (a new-name-only host has no
+        // ~/.backstage-opencode.json); the remote destination below stays the
+        // legacy name the in-sandbox build dual-reads.
+        stateDir("opencode.json");
       if (existsSync(ocCfgSrc)) {
         await driver.writeFile(
           `${REMOTE_HOME}/.backstage-opencode.json`,
