@@ -1,7 +1,9 @@
-// Build shareable Backstage links and copy them to the clipboard. Backstage is
+// Build shareable OpenSession links and copy them to the clipboard. The app is
 // served over plain HTTP on the Tailscale IP, so `navigator.clipboard` is often
 // absent (it needs a secure context) — every copy path falls back to a hidden
 // textarea + execCommand, the same trick the viewer's share button uses.
+
+import { BASE_PATH } from "./base";
 
 /** Canonical chat/workspace URL path — workspace-scoped when the chat has one. */
 export function chatPath(session: {
@@ -9,13 +11,13 @@ export function chatPath(session: {
   projectId?: string | null;
 }): string {
   return session.projectId
-    ? `/backstage/workspace/${encodeURIComponent(session.projectId)}/chat/${encodeURIComponent(session.id)}`
-    : `/backstage/session/${encodeURIComponent(session.id)}`;
+    ? `${BASE_PATH}/workspace/${encodeURIComponent(session.projectId)}/chat/${encodeURIComponent(session.id)}`
+    : `${BASE_PATH}/session/${encodeURIComponent(session.id)}`;
 }
 
 /** Session-less PR preview URL path. */
 export function prPath(repo: string, branch: string): string {
-  return `/backstage/pr/${encodeURIComponent(repo)}/${encodeURIComponent(branch)}`;
+  return `${BASE_PATH}/pr/${encodeURIComponent(repo)}/${encodeURIComponent(branch)}`;
 }
 
 /** Absolute link for a path built above. */

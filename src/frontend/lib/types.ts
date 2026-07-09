@@ -237,7 +237,7 @@ export interface TranscriptEntry {
 	// Ready-to-render image srcs (http(s) URLs or data: URLs), e.g. from a Read
 	// of an image file or a pasted image.
 	images?: string[];
-	// Ready-to-render video srcs (served via /backstage/media), parsed from
+	// Ready-to-render video srcs (served via <base>/media), parsed from
 	// `BACKSTAGE_VIDEO: <path>` markers a tool printed — e.g. tella-local rec.mjs.
 	videos?: string[];
 }

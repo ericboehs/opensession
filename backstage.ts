@@ -3824,35 +3824,56 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 		// Bun's default 10s idleTimeout would drop the connection mid-wait
 		idleTimeout: 240,
 
-		routes: {
-			"/backstage": spaEntry,
-			"/backstage/": spaEntry,
-			"/backstage/index.html": spaEntry,
-			// Client-side routes must serve the SPA shell, not the raw file
-			"/backstage/new": spaEntry,
-			"/backstage/session/*": spaEntry,
-			"/backstage/automations": spaEntry,
-			"/backstage/security": spaEntry,
-			"/backstage/goals": spaEntry,
-			"/backstage/wiki": spaEntry,
-			"/backstage/wiki/*": spaEntry,
-			"/backstage/notes": spaEntry,
-			"/backstage/notes/*": spaEntry,
-			"/backstage/docs": spaEntry,
-			"/backstage/docs/*": spaEntry,
-			"/backstage/connections": spaEntry,
-			"/backstage/settings": spaEntry,
-			"/backstage/actions": spaEntry,
-			"/backstage/archived": spaEntry,
-			"/backstage/catchup": spaEntry,
-			"/backstage/reviews": spaEntry,
-			"/backstage/reviews/*": spaEntry,
-			"/backstage/support/*": spaEntry,
-		},
+		// The SPA shell is served under BOTH the primary /opensession prefix and
+		// the legacy /backstage alias (rename, docs/rename-opensession-plan.md).
+		routes: Object.fromEntries(
+			["/opensession", "/backstage"].flatMap((prefix) =>
+				[
+					"",
+					"/",
+					"/index.html",
+					// Client-side routes must serve the SPA shell, not the raw file
+					"/new",
+					"/session/*",
+					"/automations",
+					"/security",
+					"/goals",
+					"/wiki",
+					"/wiki/*",
+					"/notes",
+					"/notes/*",
+					"/docs",
+					"/docs/*",
+					"/connections",
+					"/settings",
+					"/actions",
+					"/archived",
+					"/catchup",
+					"/reviews",
+					"/reviews/*",
+					"/support/*",
+				].map((p) => [prefix + p, spaEntry]),
+			),
+		),
 
 		async fetch(req) {
 			const url = new URL(req.url);
-			const path = url.pathname;
+			// Rename alias (docs/rename-opensession-plan.md): /opensession/* is the
+			// primary public prefix; every handler below matches the historical
+			// /backstage/* literal, so the new prefix is normalized onto the old one
+			// here — SAME handlers, no redirects (API/WS clients, PWA installs and
+			// baked sandbox dial-back URLs on either prefix must keep working).
+			// `publicPrefix` is the prefix THIS request used — responses that embed
+			// it (sw.js scope, manifest start_url/icons, page redirects) answer in
+			// kind so each install/bookmark stays self-consistent.
+			let path = url.pathname;
+			const publicPrefix =
+				path === "/opensession" || path.startsWith("/opensession/")
+					? "/opensession"
+					: "/backstage";
+			if (publicPrefix === "/opensession") {
+				path = "/backstage" + path.slice("/opensession".length);
+			}
 
 			// Stream a local media file referenced by a `BACKSTAGE_VIDEO:` marker in a
 			// tool's output, so the session viewer can play it inline (tools can't return
@@ -3949,7 +3970,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					headers: {
 						"Content-Type": "text/javascript; charset=utf-8",
 						"Cache-Control": "no-cache",
-						"Service-Worker-Allowed": "/backstage/",
+						// Scope follows the prefix this registration lives under.
+						"Service-Worker-Allowed": `${publicPrefix}/`,
 					},
 				});
 			}
@@ -4009,7 +4031,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					{
 						name: productName(),
 						short_name: productName(),
-						start_url: "/backstage/",
+						// Per-prefix PWA identity: installs from the legacy /backstage
+						// pages keep their identity; /opensession installs get the new
+						// start_url. One re-install event max, never a broken one.
+						start_url: `${publicPrefix}/`,
 						display: "standalone",
 						// On desktop, take over the OS titlebar: the window controls
 						// overlay our own chrome instead of a separate OS bar with a
@@ -4022,13 +4047,13 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						theme_color: "#0b0809",
 						icons: [
 							{
-								src: "/backstage/icon-192.png?v=3",
+								src: `${publicPrefix}/icon-192.png?v=3`,
 								sizes: "192x192",
 								type: "image/png",
 								purpose: "any",
 							},
 							{
-								src: "/backstage/icon.png?v=3",
+								src: `${publicPrefix}/icon.png?v=3`,
 								sizes: "512x512",
 								type: "image/png",
 								purpose: "any",
@@ -4053,8 +4078,8 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					status: 302,
 					headers: {
 						Location: sessionId
-							? `/backstage/session/${sessionId}`
-							: "/backstage/",
+							? `${publicPrefix}/session/${sessionId}`
+							: `${publicPrefix}/`,
 					},
 				});
 			}

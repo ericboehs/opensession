@@ -1,3 +1,4 @@
+import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useState } from "react";
 import {
 	getNotifSettings,
@@ -65,7 +66,7 @@ import { AGENT_NAME, PRODUCT_NAME } from "../lib/brand";
 // from the "Settings" item in the Michael menu. Designed to grow — each area is
 // just another entry in SECTIONS and a matching panel below. The "Tools" group
 // holds the app's tool surfaces (Automations, Goals, …) — those render at their
-// own routes (/backstage/automations, …) with this surface as chrome, so the
+// own routes (<base>/automations, …) with this surface as chrome, so the
 // section is controlled by the router, not local state. The "Personal" group
 // holds per-browser preferences (notifications, theme); the "Workspace" group holds
 // shared setup that configures how every session runs (default model, connections).
@@ -1277,7 +1278,7 @@ function AuditPanel() {
 								{sid && (
 									<a
 										className="text-faint font-mono text-[11px] ml-auto shrink-0 underline"
-										href={`/backstage/session/${sid}`}
+										href={`${BASE_PATH}/session/${sid}`}
 										onClick={(ev) => ev.stopPropagation()}
 									>
 										{sid.slice(0, 18)}…

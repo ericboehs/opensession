@@ -1,5 +1,7 @@
 /** Shared helpers for attaching pasted/dropped images to a composer/form. */
 
+import { BASE_PATH } from "./base";
+
 export function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -32,7 +34,7 @@ export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 /** Stream one file to the server upload endpoint; resolves to its staged path. */
 export async function uploadFile(file: File): Promise<{ name: string; path: string }> {
-  const res = await fetch("/backstage/api/upload", {
+  const res = await fetch(`${BASE_PATH}/api/upload`, {
     method: "POST",
     headers: {
       "x-file-name": encodeURIComponent(file.name),

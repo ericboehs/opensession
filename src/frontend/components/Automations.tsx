@@ -1,3 +1,4 @@
+import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   fetchAutomations,
@@ -90,7 +91,7 @@ interface ClaudeAccountOption {
 function useClaudeAccounts(): ClaudeAccountOption[] {
   const [accounts, setAccounts] = useState<ClaudeAccountOption[]>([]);
   useEffect(() => {
-    fetch("/backstage/api/claude-accounts")
+    fetch(`${BASE_PATH}/api/claude-accounts`)
       .then((r) => (r.ok ? r.json() : null))
       .then((body) => body && setAccounts(body.accounts))
       .catch(() => {});
@@ -337,7 +338,7 @@ export function Automations({ onOpenSession }: Props) {
                             e.preventDefault();
                             onOpenSession(a.lastRunSessionId!);
                           }}
-                          href={`/backstage/session/${a.lastRunSessionId}`}
+                          href={`${BASE_PATH}/session/${a.lastRunSessionId}`}
                         >
                           view session
                         </a>
@@ -474,7 +475,7 @@ function RunLedger({
           )}
           <a
             className="automation-session-link ml-auto shrink-0"
-            href={`/backstage/session/${r.sessionId}`}
+            href={`${BASE_PATH}/session/${r.sessionId}`}
             onClick={(e) => {
               e.preventDefault();
               onOpenSession(r.sessionId);
@@ -754,7 +755,7 @@ function McpPicker({
         </span>
         <a
           className="text-dim text-[12px] underline ml-auto shrink-0"
-          href="/backstage/settings"
+          href={`${BASE_PATH}/settings`}
         >
           Manage MCPs
         </a>

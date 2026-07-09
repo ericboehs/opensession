@@ -1,3 +1,4 @@
+import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useState, useCallback } from "react";
 import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
@@ -96,7 +97,7 @@ export function Connections() {
   const load = useCallback(async (force = false) => {
     if (force) setRefreshing(true);
     try {
-      const res = await fetch(`/backstage/api/connections${force ? "?refresh=1" : ""}`);
+      const res = await fetch(`${BASE_PATH}/api/connections${force ? "?refresh=1" : ""}`);
       if (res.ok) setData(await res.json());
     } catch {}
     setRefreshing(false);
@@ -113,7 +114,7 @@ export function Connections() {
   async function handleRemove(name: string) {
     if (!confirm(`Remove MCP server "${name}"? New sessions will no longer get its tools.`)) return;
     try {
-      const res = await fetch(`/backstage/api/connections/mcp/${encodeURIComponent(name)}`, {
+      const res = await fetch(`${BASE_PATH}/api/connections/mcp/${encodeURIComponent(name)}`, {
         method: "DELETE",
       });
       const body = await res.json();
@@ -137,7 +138,7 @@ export function Connections() {
       .map((u) => u.trim())
       .filter(Boolean);
     try {
-      const res = await fetch(`/backstage/api/connections/mcp/${encodeURIComponent(s.name)}`, {
+      const res = await fetch(`${BASE_PATH}/api/connections/mcp/${encodeURIComponent(s.name)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ allowedUsers }),
@@ -337,14 +338,14 @@ function PlainRouter() {
   const [savedAt, setSavedAt] = useState(0);
 
   useEffect(() => {
-    fetch("/backstage/api/connections/plain-router")
+    fetch(`${BASE_PATH}/api/connections/plain-router`)
       .then((r) => r.json())
       .then((b) => {
         setCfg(b);
         setDraft(b.prompt);
       })
       .catch(() => {});
-    fetch("/backstage/api/models")
+    fetch(`${BASE_PATH}/api/models`)
       .then((r) => r.json())
       .then((b) => setModels((b.models || []).filter((m: ModelInfo) => m.provider === "claude")))
       .catch(() => {});
@@ -354,7 +355,7 @@ function PlainRouter() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/backstage/api/connections/plain-router", {
+      const res = await fetch(`${BASE_PATH}/api/connections/plain-router`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
@@ -464,7 +465,7 @@ function AddMcpForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => 
 
       const allowed = allowedUsers.split(",").map((u) => u.trim()).filter(Boolean);
 
-      const res = await fetch("/backstage/api/connections/mcp", {
+      const res = await fetch(`${BASE_PATH}/api/connections/mcp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

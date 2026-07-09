@@ -1,3 +1,4 @@
+import { BASE_PATH } from "../lib/base";
 import React, {
 	useCallback,
 	useEffect,
@@ -1522,8 +1523,8 @@ export function SessionViewer({
 		// Match the canonical URL App maintains: workspace-scoped when the chat
 		// belongs to one, legacy /session/<id> only for workspace-less chats.
 		const path = session.projectId
-			? `/backstage/workspace/${encodeURIComponent(session.projectId)}/chat/${encodeURIComponent(session.id)}`
-			: `/backstage/session/${encodeURIComponent(session.id)}`;
+			? `${BASE_PATH}/workspace/${encodeURIComponent(session.projectId)}/chat/${encodeURIComponent(session.id)}`
+			: `${BASE_PATH}/session/${encodeURIComponent(session.id)}`;
 		const link = `${location.origin}${path}`;
 		// Inline check on the button + a floating "Link copied" toast.
 		copyLink(link, { toast: "Link copied" });

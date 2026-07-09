@@ -1,3 +1,4 @@
+import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useState, useCallback } from "react";
 import {
   fetchSecurity,
@@ -211,7 +212,7 @@ export function Security({ onOpenSession }: Props) {
                         {r.lastRunStatus === "ok" ? " ✓" : r.lastRunStatus === "error" ? " ✗" : ""}
                       </span>
                     )}
-                    <a className="automation-session-link ml-auto shrink-0" href="/backstage/automations">
+                    <a className="automation-session-link ml-auto shrink-0" href={`${BASE_PATH}/automations`}>
                       manage
                     </a>
                   </div>
@@ -277,7 +278,7 @@ export function Security({ onOpenSession }: Props) {
                       {ref.sessionId && (
                         <a
                           className="automation-session-link ml-auto shrink-0"
-                          href={`/backstage/session/${ref.sessionId}`}
+                          href={`${BASE_PATH}/session/${ref.sessionId}`}
                           onClick={(e) => {
                             e.preventDefault();
                             onOpenSession(ref.sessionId);

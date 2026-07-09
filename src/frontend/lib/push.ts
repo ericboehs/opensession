@@ -1,15 +1,16 @@
 /**
- * Web Push client: registers the /backstage/sw.js service worker and manages
+ * Web Push client: registers this prefix's sw.js service worker and manages
  * this device's push subscription. Complements lib/notify.ts (tab-bound
  * notifications) — push reaches the phone with the app closed, but only when
  * the app was opened over a secure origin (the ts.net HTTPS host).
  */
 
+import { BASE_PATH } from "./base";
 import { PRODUCT_NAME } from "./brand";
 
 export type PushState = "unsupported" | "denied" | "off" | "on";
 
-const SW_URL = "/backstage/sw.js";
+const SW_URL = `${BASE_PATH}/sw.js`;
 
 function supported(): boolean {
   return (
@@ -54,10 +55,10 @@ export async function enablePush(user: string): Promise<void> {
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("Notification permission was declined.");
 
-  const reg = await navigator.serviceWorker.register(SW_URL, { scope: "/backstage/" });
+  const reg = await navigator.serviceWorker.register(SW_URL, { scope: `${BASE_PATH}/` });
   await navigator.serviceWorker.ready;
 
-  const keyRes = await fetch("/backstage/api/push/vapid-key");
+  const keyRes = await fetch(`${BASE_PATH}/api/push/vapid-key`);
   if (!keyRes.ok) throw new Error("Couldn't fetch the push key from the server.");
   const { publicKey } = await keyRes.json();
 
@@ -68,7 +69,7 @@ export async function enablePush(user: string): Promise<void> {
       applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
     }));
 
-  const res = await fetch("/backstage/api/push/subscribe", {
+  const res = await fetch(`${BASE_PATH}/api/push/subscribe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user, subscription: sub.toJSON() }),
@@ -87,7 +88,7 @@ export async function disablePush(): Promise<void> {
   if (!sub) return;
   const endpoint = sub.endpoint;
   await sub.unsubscribe().catch(() => {});
-  await fetch("/backstage/api/push/unsubscribe", {
+  await fetch(`${BASE_PATH}/api/push/unsubscribe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ endpoint }),

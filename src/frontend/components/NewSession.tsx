@@ -75,7 +75,7 @@ function filteredRepo(): string | null {
   }
 }
 
-/** Deep-link prefill: /backstage/new?mode=ask|code&prompt=…&branch=…&repo= */
+/** Deep-link prefill: <base>/new?mode=ask|code&prompt=…&branch=…&repo= */
 function readPrefill() {
   const params = new URLSearchParams(location.search);
   // An explicit ?repo= wins (legacy ?project= still honored); otherwise fall

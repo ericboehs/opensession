@@ -121,7 +121,7 @@ export function CatchUpDeck({
 	// (from our own mark-read / archive / reply, or live WS activity) must not
 	// reorder or drop cards mid-swipe. It's frozen on the first render where the
 	// session list has actually loaded, NOT on the very first mount: a deep-link
-	// to /backstage/catchup mounts before `sessions` arrives, and freezing []
+	// to <base>/catchup mounts before `sessions` arrives, and freezing []
 	// there would strand the deck on "All caught up" forever.
 	const frozen = useRef<CatchupCard[] | null>(null);
 	const cards = useMemo<CatchupCard[]>(() => {

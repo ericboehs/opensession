@@ -1,3 +1,4 @@
+import { BASE_PATH, stripBasePath } from "./lib/base";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Sidebar } from "./components/Sidebar";
@@ -21,6 +22,7 @@ import { PrPreview } from "./components/PrPreview";
 import { SupportPreview } from "./components/SupportPreview";
 import { UserGate, getCurrentUser } from "./components/UserPicker";
 import { SettingsMenu } from "./components/SettingsMenu";
+import { TitleBar } from "./components/TitleBar";
 import { Settings, type SettingsSectionKey } from "./components/Settings";
 import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
@@ -111,7 +113,7 @@ function isToolView(view: string): view is ToolView {
 	return (TOOL_VIEWS as readonly string[]).includes(view);
 }
 
-// Non-tool settings sections, addressable as /backstage/settings/<section>.
+// Non-tool settings sections, addressable as <base>/settings/<section>.
 const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"notifications",
 	"monitor",
@@ -125,42 +127,44 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 ]);
 
 function parseRoute(pathname: string): Route {
-	// Canonical chat URL: /backstage/workspace/<wsId>/chat/<chatId>. The chat id
+	// Accept both prefixes: /opensession (primary) and /backstage (legacy alias).
+	pathname = stripBasePath(pathname);
+	// Canonical chat URL: <base>/workspace/<wsId>/chat/<chatId>. The chat id
 	// alone identifies the session; the workspace segment makes the hierarchy
-	// shareable/readable. Old /backstage/session/<id> links keep working and get
+	// shareable/readable. Old <base>/session/<id> links keep working and get
 	// canonicalized once the session (and its workspace) is known.
 	const wsChatMatch = pathname.match(
-		/^\/backstage\/workspace\/[^/]+\/chat\/(.+)$/,
+		/^\/workspace\/[^/]+\/chat\/(.+)$/,
 	);
 	if (wsChatMatch)
 		return { view: "session", id: decodeURIComponent(wsChatMatch[1]) };
-	const sessionMatch = pathname.match(/^\/backstage\/session\/(.+)$/);
+	const sessionMatch = pathname.match(/^\/session\/(.+)$/);
 	if (sessionMatch)
 		return { view: "session", id: decodeURIComponent(sessionMatch[1]) };
-	// PR preview: /backstage/pr/<repo>/<branch> (branch is fully URI-encoded, so
+	// PR preview: <base>/pr/<repo>/<branch> (branch is fully URI-encoded, so
 	// slashes in branch names arrive as %2F and land in one segment).
-	const prMatch = pathname.match(/^\/backstage\/pr\/([^/]+)\/(.+)$/);
+	const prMatch = pathname.match(/^\/pr\/([^/]+)\/(.+)$/);
 	if (prMatch)
 		return {
 			view: "pr",
 			repo: decodeURIComponent(prMatch[1]),
 			branch: decodeURIComponent(prMatch[2]),
 		};
-	// Support-ticket preview: /backstage/support/<plain thread id>.
-	const supportMatch = pathname.match(/^\/backstage\/support\/(.+)$/);
+	// Support-ticket preview: <base>/support/<plain thread id>.
+	const supportMatch = pathname.match(/^\/support\/(.+)$/);
 	if (supportMatch)
 		return { view: "support", threadId: decodeURIComponent(supportMatch[1]) };
-	if (pathname === "/backstage/new") return { view: "new" };
-	if (pathname === "/backstage/automations") return { view: "automations" };
-	if (pathname === "/backstage/security") return { view: "security" };
-	if (pathname === "/backstage/goals") return { view: "goals" };
-	if (pathname === "/backstage/actions") return { view: "actions" };
+	if (pathname === "/new") return { view: "new" };
+	if (pathname === "/automations") return { view: "automations" };
+	if (pathname === "/security") return { view: "security" };
+	if (pathname === "/goals") return { view: "goals" };
+	if (pathname === "/actions") return { view: "actions" };
 	// Back-compat: Connections moved into Settings (a Workspace section).
-	if (pathname === "/backstage/connections")
+	if (pathname === "/connections")
 		return { view: "settings", section: "connections" };
-	// /backstage/settings/<section>: a settings section, or a tool key (tools
+	// <base>/settings/<section>: a settings section, or a tool key (tools
 	// live in the Settings surface but keep their own canonical routes).
-	const settingsMatch = pathname.match(/^\/backstage\/settings(?:\/(.+))?$/);
+	const settingsMatch = pathname.match(/^\/settings(?:\/(.+))?$/);
 	if (settingsMatch) {
 		const key = settingsMatch[1] as SettingsSectionKey | undefined;
 		if (key && isToolView(key))
@@ -169,17 +173,17 @@ function parseRoute(pathname: string): Route {
 			return { view: "settings", section: key };
 		return { view: "settings" };
 	}
-	if (pathname === "/backstage/archived") return { view: "archived" };
-	if (pathname === "/backstage/catchup") return { view: "catchup" };
-	if (pathname === "/backstage/pr-tinder") return { view: "prtinder" };
-	if (pathname === "/backstage/watercooler") return { view: "watercooler" };
-	const reviewsMatch = pathname.match(/^\/backstage\/reviews(?:\/(.+))?$/);
+	if (pathname === "/archived") return { view: "archived" };
+	if (pathname === "/catchup") return { view: "catchup" };
+	if (pathname === "/pr-tinder") return { view: "prtinder" };
+	if (pathname === "/watercooler") return { view: "watercooler" };
+	const reviewsMatch = pathname.match(/^\/reviews(?:\/(.+))?$/);
 	if (reviewsMatch)
 		return {
 			view: "reviews",
 			id: reviewsMatch[1] ? decodeURIComponent(reviewsMatch[1]) : undefined,
 		};
-	const noteMatch = pathname.match(/^\/backstage\/notes(?:\/(.+))?$/);
+	const noteMatch = pathname.match(/^\/notes(?:\/(.+))?$/);
 	if (noteMatch)
 		return {
 			view: "notes",
@@ -187,14 +191,14 @@ function parseRoute(pathname: string): Route {
 				? { kind: "note", id: decodeURIComponent(noteMatch[1]) }
 				: null,
 		};
-	const docMatch = pathname.match(/^\/backstage\/docs\/(.+)$/);
+	const docMatch = pathname.match(/^\/docs\/(.+)$/);
 	if (docMatch)
 		return {
 			view: "notes",
 			sel: { kind: "doc", path: decodeURIComponent(docMatch[1]) },
 		};
-	// Back-compat: the old read-only Wiki lived at /backstage/wiki/<path>.
-	const wikiMatch = pathname.match(/^\/backstage\/wiki(?:\/(.+))?$/);
+	// Back-compat: the old read-only Wiki lived at <base>/wiki/<path>.
+	const wikiMatch = pathname.match(/^\/wiki(?:\/(.+))?$/);
 	if (wikiMatch)
 		return {
 			view: "notes",
@@ -208,47 +212,47 @@ function parseRoute(pathname: string): Route {
 function routePath(route: Route): string {
 	switch (route.view) {
 		case "session":
-			return `/backstage/session/${encodeURIComponent(route.id)}`;
+			return `${BASE_PATH}/session/${encodeURIComponent(route.id)}`;
 		case "pr":
-			return `/backstage/pr/${encodeURIComponent(route.repo)}/${encodeURIComponent(route.branch)}`;
+			return `${BASE_PATH}/pr/${encodeURIComponent(route.repo)}/${encodeURIComponent(route.branch)}`;
 		case "support":
-			return `/backstage/support/${encodeURIComponent(route.threadId)}`;
+			return `${BASE_PATH}/support/${encodeURIComponent(route.threadId)}`;
 		case "new":
 			return route.prompt
-				? `/backstage/new?prompt=${encodeURIComponent(route.prompt)}`
-				: "/backstage/new";
+				? `${BASE_PATH}/new?prompt=${encodeURIComponent(route.prompt)}`
+				: `${BASE_PATH}/new`;
 		case "automations":
-			return "/backstage/automations";
+			return `${BASE_PATH}/automations`;
 		case "security":
-			return "/backstage/security";
+			return `${BASE_PATH}/security`;
 		case "goals":
-			return "/backstage/goals";
+			return `${BASE_PATH}/goals`;
 		case "actions":
-			return "/backstage/actions";
+			return `${BASE_PATH}/actions`;
 		case "settings":
 			return route.section
-				? `/backstage/settings/${route.section}`
-				: "/backstage/settings";
+				? `${BASE_PATH}/settings/${route.section}`
+				: `${BASE_PATH}/settings`;
 		case "archived":
-			return "/backstage/archived";
+			return `${BASE_PATH}/archived`;
 		case "catchup":
-			return "/backstage/catchup";
+			return `${BASE_PATH}/catchup`;
 		case "prtinder":
-			return "/backstage/pr-tinder";
+			return `${BASE_PATH}/pr-tinder`;
 		case "watercooler":
-			return "/backstage/watercooler";
+			return `${BASE_PATH}/watercooler`;
 		case "reviews":
 			return route.id
-				? `/backstage/reviews/${encodeURIComponent(route.id)}`
-				: "/backstage/reviews";
+				? `${BASE_PATH}/reviews/${encodeURIComponent(route.id)}`
+				: `${BASE_PATH}/reviews`;
 		case "notes":
 			if (route.sel?.kind === "note")
-				return `/backstage/notes/${encodeURIComponent(route.sel.id)}`;
+				return `${BASE_PATH}/notes/${encodeURIComponent(route.sel.id)}`;
 			if (route.sel?.kind === "doc")
-				return `/backstage/docs/${route.sel.path.split("/").map(encodeURIComponent).join("/")}`;
-			return "/backstage/notes";
+				return `${BASE_PATH}/docs/${route.sel.path.split("/").map(encodeURIComponent).join("/")}`;
+			return `${BASE_PATH}/notes`;
 		default:
-			return "/backstage/";
+			return `${BASE_PATH}/`;
 	}
 }
 
@@ -291,7 +295,9 @@ function App() {
 		fetchChatMessagesApi("watercooler")
 			.then((msgs) => {
 				const lastRead = Number(
-					localStorage.getItem("backstage-chat-read") || 0,
+					localStorage.getItem("opensession-chat-read") ||
+						localStorage.getItem("backstage-chat-read") ||
+						0,
 				);
 				const me = getCurrentUser();
 				setChatUnread(
@@ -301,7 +307,7 @@ function App() {
 			.catch(() => {});
 	}, []);
 	// iOS evicts standalone PWAs from memory and relaunches them at the manifest
-	// start_url (/backstage/) — losing the session you had open. On a cold load
+	// start_url — losing the session you had open. On a cold load
 	// that lands on home, restore the last session so it isn't dropped. This only
 	// runs on a fresh document load (never on in-app navigation, which uses
 	// pushState), so tapping the logo to go home still works.
@@ -327,7 +333,7 @@ function App() {
 				if (msg.type !== "chat_message" || msg.channel !== "watercooler")
 					return;
 				if (chatOpenRef.current) {
-					localStorage.setItem("backstage-chat-read", String(msg.message.ts));
+					localStorage.setItem("opensession-chat-read", String(msg.message.ts));
 				} else if (msg.message.user !== getCurrentUser()) {
 					setChatUnread((n) => n + 1);
 				}
@@ -336,7 +342,7 @@ function App() {
 	);
 	useEffect(() => {
 		if (route.view !== "watercooler") return;
-		localStorage.setItem("backstage-chat-read", String(Date.now()));
+		localStorage.setItem("opensession-chat-read", String(Date.now()));
 		setChatUnread(0);
 	}, [route.view]);
 	// Mirror the unread count onto the app-icon badge (iOS/macOS installed PWA,
@@ -621,7 +627,7 @@ function App() {
 	});
 
 	// The "new session" ⌘K palette. It's an overlay driven by its own state (not a
-	// route), so it can open over any view; the /backstage/new route still opens it
+	// route), so it can open over any view; the <base>/new route still opens it
 	// so old links keep working.
 	const [palette, setPalette] = useState<{
 		open: boolean;
@@ -674,8 +680,8 @@ function App() {
 	searchOpenRef.current = searchOpen;
 	const closePalette = React.useCallback(() => {
 		setPalette({ open: false });
-		// A deep link left the URL on /backstage/new — return home on close.
-		if (location.pathname === "/backstage/new") goBack();
+		// A deep link left the URL on <base>/new — return home on close.
+		if (stripBasePath(location.pathname) === "/new") goBack();
 	}, []);
 
 	useEffect(() => {
@@ -709,6 +715,13 @@ function App() {
 			if ((e.metaKey || e.ctrlKey) && k === "n") {
 				e.preventDefault();
 				paletteOpenRef.current ? closePalette() : openPalette();
+				return;
+			}
+			if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && k === "b") {
+				// Toggle the desktop left sidebar. ⌘B is the panel-toggle
+				// convention (VS Code / Slack); ⌘S is left to the browser's Save.
+				e.preventDefault();
+				toggleSidebarCollapsed();
 				return;
 			}
 			if ((e.metaKey || e.ctrlKey) && e.shiftKey && k === "c") {
@@ -940,8 +953,8 @@ function App() {
 	useEffect(() => {
 		if (route.view !== "session" || !currentSession) return;
 		const canonical = activeProjectId
-			? `/backstage/workspace/${encodeURIComponent(activeProjectId)}/chat/${encodeURIComponent(route.id)}`
-			: `/backstage/session/${encodeURIComponent(route.id)}`;
+			? `${BASE_PATH}/workspace/${encodeURIComponent(activeProjectId)}/chat/${encodeURIComponent(route.id)}`
+			: `${BASE_PATH}/session/${encodeURIComponent(route.id)}`;
 		if (location.pathname !== canonical)
 			history.replaceState(null, "", canonical);
 	}, [route, currentSession, activeProjectId]);
@@ -1396,7 +1409,11 @@ function App() {
 								connected={connected}
 							/>
 							<div className="sidebar-brand-actions">
-								<Tooltip label="Search sessions" side="bottom">
+								<Tooltip
+									label="Search sessions"
+									side="bottom"
+									shortcut={["⌘", "K"]}
+								>
 									<button
 										className="sidebar-toggle-btn"
 										onClick={() => setSearchOpen(true)}
@@ -1409,7 +1426,11 @@ function App() {
 										<IconSearch size={28} />
 									</button>
 								</Tooltip>
-								<Tooltip label="Hide sidebar" side="bottom">
+								<Tooltip
+									label="Hide sidebar"
+									side="bottom"
+									shortcut={["⌘", "B"]}
+								>
 									<button
 										className="sidebar-toggle-btn"
 										onClick={toggleSidebarCollapsed}
@@ -1610,7 +1631,7 @@ function App() {
 						{/* Floating re-open control, shown only while the desktop sidebar
 						    is collapsed (CSS-gated). Mirrors the brand-row toggle so the
 						    sidebar can always be brought back. */}
-						<Tooltip label="Show sidebar" side="right">
+						<Tooltip label="Show sidebar" side="right" shortcut={["⌘", "B"]}>
 							<button
 								className="sidebar-reopen"
 								onClick={toggleSidebarCollapsed}

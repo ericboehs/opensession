@@ -1,3 +1,4 @@
+import { BASE_PATH } from "../lib/base";
 import React, {
 	Suspense,
 	lazy,
@@ -503,7 +504,7 @@ function NotePane({
 				type: "create_session",
 				mode: "ask",
 				branch: "",
-				prompt: `We're discussing the shared note "${note.title}" (open it at /backstage/notes/${noteId}). Read it below, then help me think it through / answer questions about it. If we land on changes, propose the new text — I can paste it into the note or run it through the note's prompt bar.\n\n---\n\n${note.text}`,
+				prompt: `We're discussing the shared note "${note.title}" (open it at ${BASE_PATH}/notes/${noteId}). Read it below, then help me think it through / answer questions about it. If we land on changes, propose the new text — I can paste it into the note or run it through the note's prompt bar.\n\n---\n\n${note.text}`,
 				user,
 				createWorkspace: {},
 			} as any);
@@ -531,7 +532,7 @@ function NotePane({
 	const [copied, setCopied] = useState(false);
 
 	function shareNote() {
-		const link = `${location.origin}/backstage/notes/${encodeURIComponent(noteId)}`;
+		const link = `${location.origin}${BASE_PATH}/notes/${encodeURIComponent(noteId)}`;
 		// navigator.clipboard only exists in a secure context — backstage is served
 		// over plain http on the tailnet, so fall back to a hidden-textarea copy.
 		const done = () => {

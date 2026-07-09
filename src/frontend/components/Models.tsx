@@ -1,3 +1,4 @@
+import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useState, useCallback } from "react";
 import { TEAM } from "./UserPicker";
 
@@ -82,7 +83,7 @@ function DefaultModelRow() {
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
-		fetch("/backstage/api/models")
+		fetch(`${BASE_PATH}/api/models`)
 			.then((r) => (r.ok ? r.json() : null))
 			.then((body) => {
 				if (!body) return;
@@ -97,7 +98,7 @@ function DefaultModelRow() {
 		setSaving(true);
 		setError(null);
 		try {
-			const res = await fetch("/backstage/api/models/default", {
+			const res = await fetch(`${BASE_PATH}/api/models/default`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ model: id }),
@@ -169,7 +170,7 @@ function AutoFallbackRow() {
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
-		fetch("/backstage/api/models")
+		fetch(`${BASE_PATH}/api/models`)
 			.then((r) => (r.ok ? r.json() : null))
 			.then((body) => body && setAuto(body.autoFallback !== false))
 			.catch(() => {});
@@ -182,7 +183,7 @@ function AutoFallbackRow() {
 		const prev = auto;
 		setAuto(next); // optimistic
 		try {
-			const res = await fetch("/backstage/api/models/auto-fallback", {
+			const res = await fetch(`${BASE_PATH}/api/models/auto-fallback`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ auto: next }),
@@ -352,8 +353,8 @@ function ClaudeAccountsSection() {
 		if (forceUsage) setRefreshing(true);
 		try {
 			const res = forceUsage
-				? await fetch("/backstage/api/claude-accounts/refresh", { method: "POST" })
-				: await fetch("/backstage/api/claude-accounts");
+				? await fetch(`${BASE_PATH}/api/claude-accounts/refresh`, { method: "POST" })
+				: await fetch(`${BASE_PATH}/api/claude-accounts`);
 			if (res.ok) setAccounts((await res.json()).accounts);
 		} catch {}
 		setRefreshing(false);
@@ -368,7 +369,7 @@ function ClaudeAccountsSection() {
 	async function handleRemove(a: ClaudeAccountInfo) {
 		if (!confirm(`Remove Claude account "${a.name}"? Runs will stop using its token.`)) return;
 		try {
-			const res = await fetch(`/backstage/api/claude-accounts/${encodeURIComponent(a.id)}`, {
+			const res = await fetch(`${BASE_PATH}/api/claude-accounts/${encodeURIComponent(a.id)}`, {
 				method: "DELETE",
 			});
 			const body = await res.json();
@@ -382,7 +383,7 @@ function ClaudeAccountsSection() {
 	async function handleSetOwner(a: ClaudeAccountInfo, owner: string) {
 		if (owner === (a.owner || "")) return;
 		try {
-			const res = await fetch(`/backstage/api/claude-accounts/${encodeURIComponent(a.id)}`, {
+			const res = await fetch(`${BASE_PATH}/api/claude-accounts/${encodeURIComponent(a.id)}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ owner }),
@@ -405,7 +406,7 @@ function ClaudeAccountsSection() {
 		);
 		if (credentialsPath === null) return;
 		try {
-			const res = await fetch(`/backstage/api/claude-accounts/${encodeURIComponent(a.id)}`, {
+			const res = await fetch(`${BASE_PATH}/api/claude-accounts/${encodeURIComponent(a.id)}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ owner: a.owner || "", credentialsPath }),
@@ -561,7 +562,7 @@ function CodexAccountsSection() {
 
 	const load = useCallback(async () => {
 		try {
-			const res = await fetch("/backstage/api/codex-accounts");
+			const res = await fetch(`${BASE_PATH}/api/codex-accounts`);
 			if (res.ok) setAccounts((await res.json()).accounts);
 		} catch {}
 	}, []);
@@ -575,7 +576,7 @@ function CodexAccountsSection() {
 	async function handleRemove(a: CodexAccountInfo) {
 		if (!confirm(`Remove Codex account "${a.name}"? Runs will stop using it.`)) return;
 		try {
-			const res = await fetch(`/backstage/api/codex-accounts/${encodeURIComponent(a.id)}`, {
+			const res = await fetch(`${BASE_PATH}/api/codex-accounts/${encodeURIComponent(a.id)}`, {
 				method: "DELETE",
 			});
 			const body = await res.json();
@@ -681,7 +682,7 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 		setSaving(true);
 		setError(null);
 		try {
-			const res = await fetch("/backstage/api/claude-accounts", {
+			const res = await fetch(`${BASE_PATH}/api/claude-accounts`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -778,7 +779,7 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 		setSaving(true);
 		setError(null);
 		try {
-			const res = await fetch("/backstage/api/codex-accounts", {
+			const res = await fetch(`${BASE_PATH}/api/codex-accounts`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ name: name.trim(), kind, value: value.trim() }),

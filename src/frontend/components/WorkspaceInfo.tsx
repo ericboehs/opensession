@@ -1,3 +1,4 @@
+import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { parsePatchFiles } from "@pierre/diffs";
@@ -870,7 +871,7 @@ function PrAgentActions({
 						<>
 							{" · "}
 							<a
-								href={`/backstage/session/${encodeURIComponent(done.bksId)}`}
+								href={`${BASE_PATH}/session/${encodeURIComponent(done.bksId)}`}
 								className="text-fg underline decoration-line-strong underline-offset-2"
 							>
 								open run

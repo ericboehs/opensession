@@ -1,3 +1,4 @@
+import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useState, useCallback } from "react";
 import {
   fetchGoals,
@@ -255,7 +256,7 @@ export function Goals({ onOpenSession }: Props) {
                       e.preventDefault();
                       onOpenSession(g.bksSessionId!);
                     }}
-                    href={`/backstage/session/${g.bksSessionId}`}
+                    href={`${BASE_PATH}/session/${g.bksSessionId}`}
                   >
                     open session
                   </a>

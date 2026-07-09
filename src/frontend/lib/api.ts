@@ -1,3 +1,4 @@
+import { BASE_PATH } from "./base";
 import type {
 	UnifiedSession,
 	SlackChannelLink,
@@ -9,7 +10,7 @@ import type {
 	Project,
 } from "./types";
 
-const BASE = "/backstage/api";
+const BASE = `${BASE_PATH}/api`;
 
 /** Single error shape for every API failure: HTTP status + the server's
  * `error` field when it sent one (else a "<label>: <status>" message). */
@@ -259,7 +260,7 @@ export async function fetchTranscript(sessionId: string) {
 
 /** One media item in the workspace-overview panel. Image srcs are lazy-load
  * refs served by /sessions/:id/transcript-image; videos stream from
- * /backstage/media. */
+ * <base>/media. */
 export interface WorkspaceMediaItem {
 	kind: "image" | "video";
 	src: string;
@@ -673,7 +674,7 @@ export async function postChatMessageApi(
 
 /** Stream an image to permanent chat storage; resolves to its {id,name,mime} ref. */
 export async function uploadChatImageApi(file: File): Promise<ChatImage> {
-	const res = await fetch("/backstage/api/chat/upload", {
+	const res = await fetch(`${BASE}/chat/upload`, {
 		method: "POST",
 		headers: {
 			"x-file-name": encodeURIComponent(file.name),
@@ -689,7 +690,7 @@ export async function uploadChatImageApi(file: File): Promise<ChatImage> {
 
 /** URL that serves a stored chat image's bytes. */
 export function chatImageUrl(id: string): string {
-	return `/backstage/api/chat/image/${id}`;
+	return `${BASE}/chat/image/${id}`;
 }
 
 export async function fetchWorktrees(repo?: string) {
@@ -1706,7 +1707,7 @@ export async function acceptReviewApi(
 
 export function getWebSocketUrl(): string {
 	const proto = location.protocol === "https:" ? "wss:" : "ws:";
-	return `${proto}//${location.host}/backstage/ws`;
+	return `${proto}//${location.host}${BASE_PATH}/ws`;
 }
 
 export function relativeTime(dateStr: string): string {

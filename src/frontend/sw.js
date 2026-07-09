@@ -1,8 +1,24 @@
 /*
- * Backstage service worker — Web Push only (no fetch interception / caching:
+ * OpenSession service worker — Web Push only (no fetch interception / caching:
  * the app ships hashed bundles and handles its own updates). Shows pushes as
  * notifications and focuses/opens the right session on tap.
+ *
+ * Prefix-agnostic: the app is served under /opensession/ (primary) and the
+ * legacy /backstage/ alias; one registration exists per prefix (scope). All
+ * asset/navigation URLs derive from this registration's scope, and pushed
+ * URLs are re-prefixed onto it — so a payload built with either prefix opens
+ * correctly inside whichever install received it.
  */
+const PREFIX = new URL(self.registration.scope).pathname.replace(/\/$/, "");
+
+/** Rewrite a pushed app URL onto this registration's own prefix. */
+function localUrl(url) {
+  if (!url) return PREFIX + "/";
+  return url
+    .replace(/^\/opensession(\/|$)/, PREFIX + "$1")
+    .replace(/^\/backstage(\/|$)/, PREFIX + "$1");
+}
+
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
@@ -31,9 +47,9 @@ self.addEventListener("push", (event) => {
       .showNotification(title, {
         body: data.body || "",
         tag: data.tag || undefined,
-        icon: "/backstage/icon-192.png",
-        badge: "/backstage/icon-192.png",
-        data: { url: data.url || "/backstage/" },
+        icon: PREFIX + "/icon-192.png",
+        badge: PREFIX + "/icon-192.png",
+        data: { url: localUrl(data.url) },
       })
       .then(() => updateAppBadge()),
   );
@@ -41,7 +57,7 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/backstage/";
+  const url = localUrl(event.notification.data && event.notification.data.url);
   event.waitUntil(
     Promise.all([
       updateAppBadge(event.notification.tag),

@@ -1,9 +1,10 @@
+import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useRef, useState } from "react";
 import type { WSServerMessage } from "../lib/types";
 import { PRODUCT_NAME } from "../lib/brand";
 import { toast } from "../ui/toast";
 
-const HEALTH_URL = "/backstage/api/health";
+const HEALTH_URL = `${BASE_PATH}/api/health`;
 // Grace before showing anything — most socket blips reconnect within this.
 const PILL_DELAY_MS = 2500;
 // A disconnect older than this whose health probe ALSO fails escalates from

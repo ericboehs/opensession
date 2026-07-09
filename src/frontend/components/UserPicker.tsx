@@ -2,7 +2,10 @@ import React, { useState, useEffect } from "react";
 import { UserAvatar } from "./UserAvatar";
 
 export const TEAM = ["Michiel", "Jaap", "Kent", "Grant", "Johnny", "John", "Louise"];
-const KEY = "backstage-user";
+// Rename shim: read the new key first, fall back to the legacy one (existing
+// browsers + tooling that presets it stay signed in); writes go to the new key.
+const KEY = "opensession-user";
+const LEGACY_KEY = "backstage-user";
 const CHANGE_EVENT = "michael-user-changed";
 
 function setStoredUser(val: string) {
@@ -11,7 +14,9 @@ function setStoredUser(val: string) {
 }
 
 export function getCurrentUser(): string {
-  return localStorage.getItem(KEY) || "Anonymous";
+  return (
+    localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || "Anonymous"
+  );
 }
 
 /** Switch the current user (used by the Michael dropdown's account switcher). */
