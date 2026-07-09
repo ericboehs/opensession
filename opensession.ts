@@ -3939,6 +3939,11 @@ async function resolvePlainTriageSession(
 // of tickets doesn't hammer Plain's API (every open browser polls this).
 let plainTodoCache: { data: unknown[]; ts: number } | null = null;
 const PLAIN_TODO_TTL = 30_000;
+// Workspace users + label types for the Support UI's Assign/Labels menus —
+// near-static, so cached long and shared by every open browser.
+let plainUsersCache: { data: unknown[]; ts: number } | null = null;
+let plainLabelTypesCache: { data: unknown[]; ts: number } | null = null;
+const PLAIN_META_TTL = 5 * 60_000;
 
 console.log(`Starting Backstage server on ${HOST}:${PORT}...`);
 
@@ -6433,6 +6438,150 @@ const server: import("bun").Server<WSClientData> = hotServe({
 					return Response.json({ ok: true, spam, closedThread });
 				} catch (e: any) {
 					console.error(`[plain-spam] on ${threadId} failed:`, e);
+					return Response.json(
+						{ error: e?.message || "Plain write failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
+			// Workspace users for the Assign menu (alias accounts filtered out).
+			if (path === "/backstage/api/plain/users" && req.method === "GET") {
+				if (plainUsersCache && Date.now() - plainUsersCache.ts < PLAIN_META_TTL)
+					return Response.json({ users: plainUsersCache.data });
+				try {
+					const { listWorkspaceUsers } = await import(
+						"./src/agents/plain/api"
+					);
+					const users = await listWorkspaceUsers();
+					plainUsersCache = { data: users, ts: Date.now() };
+					return Response.json({ users });
+				} catch (e: any) {
+					console.error("[plain-users] List failed:", e);
+					return Response.json(
+						{ error: e?.message || "Plain lookup failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
+			// Active label types for the Labels menu.
+			if (path === "/backstage/api/plain/label-types" && req.method === "GET") {
+				if (
+					plainLabelTypesCache &&
+					Date.now() - plainLabelTypesCache.ts < PLAIN_META_TTL
+				)
+					return Response.json({ labelTypes: plainLabelTypesCache.data });
+				try {
+					const { listLabelTypes } = await import("./src/agents/plain/api");
+					const labelTypes = await listLabelTypes();
+					plainLabelTypesCache = { data: labelTypes, ts: Date.now() };
+					return Response.json({ labelTypes });
+				} catch (e: any) {
+					console.error("[plain-label-types] List failed:", e);
+					return Response.json(
+						{ error: e?.message || "Plain lookup failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
+			// Assign a thread to a teammate (or unassign with userId: null).
+			const plainAssignMatch = path.match(
+				/^\/backstage\/api\/plain\/threads\/([^/]+)\/assign$/,
+			);
+			if (plainAssignMatch && req.method === "POST") {
+				const threadId = decodeURIComponent(plainAssignMatch[1]);
+				const body = (await req.json().catch(() => null)) as {
+					userId?: string | null;
+					user?: string;
+				} | null;
+				const userId =
+					typeof body?.userId === "string" && body.userId ? body.userId : null;
+				try {
+					const { assignThreadToUser } = await import(
+						"./src/agents/plain/api"
+					);
+					await assignThreadToUser(threadId, userId);
+					console.log(
+						`[plain-assign] ${body?.user || "someone"} ${
+							userId ? `assigned ${threadId} to ${userId}` : `unassigned ${threadId}`
+						}`,
+					);
+					return Response.json({ ok: true, userId });
+				} catch (e: any) {
+					console.error(`[plain-assign] on ${threadId} failed:`, e);
+					return Response.json(
+						{ error: e?.message || "Plain write failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
+			// Toggle labels on a thread: adds take label-type ids, removes take the
+			// thread's label instance ids.
+			const plainLabelsMatch = path.match(
+				/^\/backstage\/api\/plain\/threads\/([^/]+)\/labels$/,
+			);
+			if (plainLabelsMatch && req.method === "POST") {
+				const threadId = decodeURIComponent(plainLabelsMatch[1]);
+				const body = (await req.json().catch(() => null)) as {
+					addLabelTypeIds?: string[];
+					removeLabelIds?: string[];
+					user?: string;
+				} | null;
+				const add = Array.isArray(body?.addLabelTypeIds)
+					? body.addLabelTypeIds.filter((x) => typeof x === "string" && x)
+					: [];
+				const remove = Array.isArray(body?.removeLabelIds)
+					? body.removeLabelIds.filter((x) => typeof x === "string" && x)
+					: [];
+				if (!add.length && !remove.length)
+					return Response.json(
+						{ error: "Nothing to change" },
+						{ status: 400 },
+					);
+				try {
+					const { changeThreadLabels } = await import(
+						"./src/agents/plain/api"
+					);
+					await changeThreadLabels(threadId, add, remove);
+					console.log(
+						`[plain-labels] ${body?.user || "someone"} changed labels on ${threadId} (+${add.length} −${remove.length})`,
+					);
+					return Response.json({ ok: true });
+				} catch (e: any) {
+					console.error(`[plain-labels] on ${threadId} failed:`, e);
+					return Response.json(
+						{ error: e?.message || "Plain write failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
+			// Rename a thread.
+			const plainTitleMatch = path.match(
+				/^\/backstage\/api\/plain\/threads\/([^/]+)\/title$/,
+			);
+			if (plainTitleMatch && req.method === "POST") {
+				const threadId = decodeURIComponent(plainTitleMatch[1]);
+				const body = (await req.json().catch(() => null)) as {
+					title?: string;
+					user?: string;
+				} | null;
+				const title = typeof body?.title === "string" ? body.title.trim() : "";
+				if (!title)
+					return Response.json({ error: "Empty title" }, { status: 400 });
+				try {
+					const { setThreadTitle } = await import("./src/agents/plain/api");
+					await setThreadTitle(threadId, title.slice(0, 200));
+					plainTodoCache = null; // titles show in the queue
+					console.log(
+						`[plain-title] ${body?.user || "someone"} renamed ${threadId}`,
+					);
+					return Response.json({ ok: true });
+				} catch (e: any) {
+					console.error(`[plain-title] on ${threadId} failed:`, e);
 					return Response.json(
 						{ error: e?.message || "Plain write failed" },
 						{ status: 502 },

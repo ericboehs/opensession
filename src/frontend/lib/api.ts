@@ -6,6 +6,8 @@ import type {
 	ChatMessage,
 	ChatImage,
 	PlainThread,
+	PlainWorkspaceUser,
+	PlainLabelType,
 	SupportThread,
 	Project,
 } from "./types";
@@ -675,6 +677,72 @@ export async function setPlainThreadSpamApi(
 			label: "Failed to update spam status",
 		},
 	);
+}
+
+/** Assign a Plain thread to a workspace user, or unassign (userId = null). */
+export async function setPlainThreadAssigneeApi(
+	threadId: string,
+	userId: string | null,
+	user?: string,
+): Promise<void> {
+	await request<{ ok: boolean }>(
+		`/plain/threads/${encodeURIComponent(threadId)}/assign`,
+		{
+			method: "POST",
+			body: { userId, user },
+			label: "Failed to assign",
+		},
+	);
+}
+
+/** Add/remove labels on a Plain thread (adds = label-type ids, removes = label ids). */
+export async function changePlainThreadLabelsApi(
+	threadId: string,
+	changes: { addLabelTypeIds?: string[]; removeLabelIds?: string[] },
+	user?: string,
+): Promise<void> {
+	await request<{ ok: boolean }>(
+		`/plain/threads/${encodeURIComponent(threadId)}/labels`,
+		{
+			method: "POST",
+			body: { ...changes, user },
+			label: "Failed to update labels",
+		},
+	);
+}
+
+/** Rename a Plain thread. */
+export async function setPlainThreadTitleApi(
+	threadId: string,
+	title: string,
+	user?: string,
+): Promise<void> {
+	await request<{ ok: boolean }>(
+		`/plain/threads/${encodeURIComponent(threadId)}/title`,
+		{
+			method: "POST",
+			body: { title, user },
+			label: "Failed to rename",
+		},
+	);
+}
+
+/** Plain workspace users (Assign menu). Server-cached; alias accounts filtered. */
+export async function fetchPlainUsersApi(): Promise<PlainWorkspaceUser[]> {
+	const body = await request<{ users?: PlainWorkspaceUser[] }>(
+		"/plain/users",
+		{ label: "Failed to fetch Plain users" },
+	);
+	return body?.users || [];
+}
+
+/** Plain's active label types (Labels menu). Server-cached. */
+export async function fetchPlainLabelTypesApi(): Promise<PlainLabelType[]> {
+	const body = await request<{ labelTypes?: PlainLabelType[] }>(
+		"/plain/label-types",
+		{ label: "Failed to fetch label types" },
+	);
+	return body?.labelTypes || [];
 }
 
 /**

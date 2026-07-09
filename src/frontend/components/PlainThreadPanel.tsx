@@ -1,11 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { PlainThread, PlainTimelineEntry } from "../lib/types";
+import type {
+	PlainLabelType,
+	PlainThread,
+	PlainTimelineEntry,
+	PlainWorkspaceUser,
+} from "../lib/types";
 import {
+	changePlainThreadLabelsApi,
+	fetchPlainLabelTypesApi,
 	fetchPlainThreadApi,
+	fetchPlainUsersApi,
 	sendPlainReplyApi,
+	setPlainThreadAssigneeApi,
 	setPlainThreadPriorityApi,
 	setPlainThreadSpamApi,
 	setPlainThreadStatusApi,
+	setPlainThreadTitleApi,
 } from "../lib/api";
 import { Menu } from "../ui/menu";
 import { renderMarkdown } from "../lib/markdown";
@@ -208,6 +218,27 @@ export function PlainThreadActions({
 	const [error, setError] = useState<string | null>(null);
 	const currentUser = useCurrentUser();
 
+	// Assign/Labels menu data — server-cached (~5 min), so fetching per mount
+	// is cheap. Errors just leave the menus empty/hidden.
+	const [users, setUsers] = useState<PlainWorkspaceUser[] | null>(null);
+	const [labelTypes, setLabelTypes] = useState<PlainLabelType[] | null>(null);
+	useEffect(() => {
+		let alive = true;
+		fetchPlainUsersApi()
+			.then((u) => {
+				if (alive) setUsers(u);
+			})
+			.catch(() => {});
+		fetchPlainLabelTypesApi()
+			.then((lt) => {
+				if (alive) setLabelTypes(lt);
+			})
+			.catch(() => {});
+		return () => {
+			alive = false;
+		};
+	}, []);
+
 	async function run(fn: () => Promise<void>) {
 		if (busy) return;
 		setBusy(true);
@@ -324,6 +355,118 @@ export function PlainThreadActions({
 						))}
 					</Menu.Popup>
 				</Menu.Root>
+				<Menu.Root>
+					<Menu.Trigger
+						className={actionPill}
+						disabled={busy}
+						title="Assign this thread to a teammate in Plain"
+					>
+						{thread.assignee ? `@ ${thread.assignee.name}` : "Assign"} ▾
+					</Menu.Trigger>
+					<Menu.Popup align="start">
+						{users === null ? (
+							<div className="px-2.5 py-1.5 text-faint text-[12px]">
+								Loading…
+							</div>
+						) : (
+							users.map((u) => (
+								<Menu.Item
+									key={u.id}
+									onClick={() =>
+										run(() =>
+											setPlainThreadAssigneeApi(threadId, u.id, currentUser),
+										)
+									}
+								>
+									<span className="w-4 shrink-0">
+										{thread.assignee?.id === u.id ? "✓" : ""}
+									</span>
+									{u.name}
+								</Menu.Item>
+							))
+						)}
+						{thread.assignee && (
+							<>
+								<Menu.Separator />
+								<Menu.Item
+									onClick={() =>
+										run(() =>
+											setPlainThreadAssigneeApi(threadId, null, currentUser),
+										)
+									}
+								>
+									<span className="w-4 shrink-0" />
+									Unassign
+								</Menu.Item>
+							</>
+						)}
+					</Menu.Popup>
+				</Menu.Root>
+				{(labelTypes?.length || 0) > 0 && (
+					<Menu.Root>
+						<Menu.Trigger
+							className={actionPill}
+							disabled={busy}
+							title="Labels on this thread in Plain"
+						>
+							{(thread.labels?.length || 0) > 0
+								? `${thread.labels![0].name}${
+										thread.labels!.length > 1
+											? ` +${thread.labels!.length - 1}`
+											: ""
+									}`
+								: "Labels"}{" "}
+							▾
+						</Menu.Trigger>
+						<Menu.Popup align="start">
+							{labelTypes!.map((lt) => {
+								const existing = (thread.labels || []).find(
+									(l) => l.labelTypeId === lt.id,
+								);
+								return (
+									<Menu.CheckboxItem
+										key={lt.id}
+										checked={!!existing}
+										closeOnClick={false}
+										onClick={() =>
+											run(() =>
+												changePlainThreadLabelsApi(
+													threadId,
+													existing
+														? { removeLabelIds: [existing.id] }
+														: { addLabelTypeIds: [lt.id] },
+													currentUser,
+												),
+											)
+										}
+									>
+										<span className="w-4 shrink-0">
+											{existing ? "✓" : ""}
+										</span>
+										{lt.name}
+									</Menu.CheckboxItem>
+								);
+							})}
+						</Menu.Popup>
+					</Menu.Root>
+				)}
+				<button
+					type="button"
+					className={actionPill}
+					disabled={busy}
+					onClick={() => {
+						const next = window.prompt(
+							"Rename this thread in Plain:",
+							thread.title || "",
+						);
+						const t = next?.trim();
+						if (t && t !== thread.title)
+							run(() => setPlainThreadTitleApi(threadId, t, currentUser));
+					}}
+					title="Rename this thread in Plain"
+				>
+					Rename
+				</button>
 				<button
 					type="button"
 					className={cn(

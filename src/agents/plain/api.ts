@@ -31,6 +31,26 @@ export async function getThreadWithMessages(threadId: string): Promise<any> {
             iso8601
           }
         }
+        assignedTo {
+          __typename
+          ... on User {
+            id
+            fullName
+            publicName
+          }
+          ... on MachineUser {
+            id
+            fullName
+          }
+        }
+        labels {
+          id
+          labelType {
+            id
+            name
+            icon
+          }
+        }
         timelineEntries(first: 100) {
           edges {
             node {
@@ -133,6 +153,10 @@ export interface NormalizedPlainThread {
     email: string | null;
     isSpam: boolean;
   };
+  /** Workspace user (or bot) the thread is assigned to, if anyone. */
+  assignee: { id: string; name: string; isBot: boolean } | null;
+  /** Labels on the thread. `id` removes it, `labelTypeId` identifies the kind. */
+  labels: { id: string; labelTypeId: string; name: string; icon: string | null }[];
   entries: NormalizedPlainEntry[];
 }
 
@@ -211,6 +235,22 @@ export function normalizePlainThread(thread: any): NormalizedPlainThread {
       email: thread?.customer?.email?.email || null,
       isSpam: Boolean(thread?.customer?.markedAsSpamAt?.iso8601),
     },
+    assignee: thread?.assignedTo?.id
+      ? {
+          id: thread.assignedTo.id,
+          name:
+            thread.assignedTo.publicName || thread.assignedTo.fullName || "?",
+          isBot: thread.assignedTo.__typename === "MachineUser",
+        }
+      : null,
+    labels: (thread?.labels || [])
+      .filter((l: any) => l?.id && l?.labelType?.id)
+      .map((l: any) => ({
+        id: l.id,
+        labelTypeId: l.labelType.id,
+        name: l.labelType.name || "?",
+        icon: l.labelType.icon || null,
+      })),
     entries,
   };
 }
@@ -513,6 +553,170 @@ export async function setCustomerSpam(
   if (err?.message) {
     throw new Error(`${mutation} failed: ${err.message}`);
   }
+}
+
+/** Assign a thread to a workspace user, or unassign it (userId = null). */
+export async function assignThreadToUser(
+  threadId: string,
+  userId: string | null,
+): Promise<void> {
+  const result = userId
+    ? await plain.assignThread({ threadId, userId })
+    : await plain.unassignThread({ threadId });
+  if (result.error) {
+    throw new Error(
+      `Failed to ${userId ? "assign" : "unassign"} thread: ${result.error.message}`,
+    );
+  }
+}
+
+/** Rename a thread. No SDK method for this mutation, so raw GraphQL. */
+export async function setThreadTitle(
+  threadId: string,
+  title: string,
+): Promise<void> {
+  const result = await plain.rawRequest({
+    query: `
+      mutation UpdateThreadTitle($input: UpdateThreadTitleInput!) {
+        updateThreadTitle(input: $input) {
+          error {
+            message
+          }
+        }
+      }
+    `,
+    variables: { input: { threadId, title } },
+  });
+  const err =
+    result.error?.message ||
+    (result.data as any)?.updateThreadTitle?.error?.message;
+  if (err) {
+    throw new Error(`Failed to rename thread: ${err}`);
+  }
+}
+
+/**
+ * Add and/or remove labels on a thread. Adds take label TYPE ids
+ * (lt_…, the kind); removes take the label INSTANCE ids (l_…, from
+ * the thread's `labels`).
+ */
+export async function changeThreadLabels(
+  threadId: string,
+  addLabelTypeIds: string[],
+  removeLabelIds: string[],
+): Promise<void> {
+  if (addLabelTypeIds.length) {
+    const result = await plain.addLabels({
+      threadId,
+      labelTypeIds: addLabelTypeIds,
+    });
+    if (result.error) {
+      throw new Error(`Failed to add labels: ${result.error.message}`);
+    }
+  }
+  if (removeLabelIds.length) {
+    const result = await plain.removeLabels({ labelIds: removeLabelIds });
+    if (result.error) {
+      throw new Error(`Failed to remove labels: ${result.error.message}`);
+    }
+  }
+}
+
+/** A workspace teammate threads can be assigned to. */
+export interface PlainWorkspaceUser {
+  id: string;
+  name: string;
+  email: string | null;
+}
+
+/**
+ * Workspace users for the Assign menu. Plain's user list is full of
+ * forwarding-alias accounts (billing@, privacy@, …) whose fullName IS the
+ * email — those can't meaningfully own a ticket, so they're filtered out.
+ */
+export async function listWorkspaceUsers(): Promise<PlainWorkspaceUser[]> {
+  const result = await plain.rawRequest({
+    query: `
+      query WorkspaceUsers($first: Int!) {
+        users(first: $first) {
+          edges {
+            node {
+              id
+              fullName
+              publicName
+              email
+              isDeleted
+            }
+          }
+        }
+      }
+    `,
+    variables: { first: 100 },
+  });
+  if (result.error) {
+    throw new Error(`Failed to list users: ${result.error.message}`);
+  }
+  const edges = (result.data as any).users?.edges || [];
+  return edges
+    .map((e: any) => e?.node)
+    .filter(
+      (n: any) =>
+        n?.id &&
+        !n.isDeleted &&
+        n.fullName &&
+        !/@/.test(n.fullName), // alias accounts wear their email as a name
+    )
+    .map((n: any) => ({
+      id: n.id,
+      name: n.publicName || n.fullName,
+      email: n.email || null,
+    }))
+    .sort((a: PlainWorkspaceUser, b: PlainWorkspaceUser) =>
+      a.name.localeCompare(b.name),
+    );
+}
+
+/** A label kind that can be put on threads (Plain's label types). */
+export interface PlainLabelType {
+  id: string;
+  name: string;
+  icon: string | null;
+}
+
+/** Active (non-archived) label types, for the Labels menu. */
+export async function listLabelTypes(): Promise<PlainLabelType[]> {
+  const result = await plain.rawRequest({
+    query: `
+      query LabelTypes($first: Int!) {
+        labelTypes(first: $first) {
+          edges {
+            node {
+              id
+              name
+              icon
+              isArchived
+            }
+          }
+        }
+      }
+    `,
+    variables: { first: 100 },
+  });
+  if (result.error) {
+    throw new Error(`Failed to list label types: ${result.error.message}`);
+  }
+  const edges = (result.data as any).labelTypes?.edges || [];
+  return edges
+    .map((e: any) => e?.node)
+    .filter((n: any) => n?.id && !n.isArchived)
+    .map((n: any) => ({
+      id: n.id,
+      name: n.name || "?",
+      icon: n.icon || null,
+    }))
+    .sort((a: PlainLabelType, b: PlainLabelType) =>
+      a.name.localeCompare(b.name),
+    );
 }
 
 /** Format thread context for Claude */

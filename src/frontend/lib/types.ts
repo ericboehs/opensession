@@ -29,7 +29,25 @@ export interface PlainThread {
 		email: string | null;
 		isSpam?: boolean;
 	};
+	/** Workspace user (or bot) the thread is assigned to, if anyone. */
+	assignee?: { id: string; name: string; isBot: boolean } | null;
+	/** Labels on the thread. `id` removes it, `labelTypeId` is the kind. */
+	labels?: { id: string; labelTypeId: string; name: string; icon: string | null }[];
 	entries: PlainTimelineEntry[];
+}
+
+/** A Plain workspace teammate, for the Support UI's Assign menu. */
+export interface PlainWorkspaceUser {
+	id: string;
+	name: string;
+	email: string | null;
+}
+
+/** A Plain label kind, for the Support UI's Labels menu. */
+export interface PlainLabelType {
+	id: string;
+	name: string;
+	icon: string | null;
 }
 
 /** A TODO Plain thread in the sidebar's Support queue. */
