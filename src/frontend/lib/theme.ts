@@ -38,8 +38,12 @@ export function applyTheme(pref: ThemePref = getThemePref()) {
 	html.dataset.theme = eff;
 	html.style.colorScheme = eff;
 	const meta = document.querySelector('meta[name="theme-color"]');
+	// Match --bg-raised (the sidebar + WCO titlebar surface), not --bg: in an
+	// installed desktop PWA the OS paints the window-controls caption band (behind
+	// the traffic lights) with theme-color, so anything else leaves that strip a
+	// different colour from our own titlebar. Keep in sync with index.html.
 	if (meta)
-		meta.setAttribute("content", eff === "light" ? "#ffffff" : "#1b1b1b");
+		meta.setAttribute("content", eff === "light" ? "#f7f6f4" : "#212121");
 }
 
 export function setThemePref(pref: ThemePref) {
