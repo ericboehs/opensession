@@ -125,6 +125,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"model",
 	"modelProviders",
 	"connections",
+	"memory",
 	"warmPreviews",
 	"audit",
 ]);

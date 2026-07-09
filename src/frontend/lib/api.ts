@@ -1468,6 +1468,63 @@ export async function refreshWarmTemplateNow(
 	});
 }
 
+// ── Memory (Settings → Memory: repo/user/team/channel stores) ──
+
+export interface MemoryEntryDto {
+	id: string;
+	text: string;
+	by: string;
+	at: string;
+}
+
+export interface MemoryScopeDto {
+	scope: {
+		key: string;
+		kind: "repo" | "user" | "team" | "channel";
+		label: string;
+	};
+	entries: MemoryEntryDto[];
+}
+
+export async function fetchMemory(): Promise<{ scopes: MemoryScopeDto[] }> {
+	return request("/memory", { label: "Failed to fetch memory" });
+}
+
+export async function addMemoryEntryApi(
+	scopeKey: string,
+	text: string,
+	by: string,
+): Promise<{ entry: MemoryEntryDto }> {
+	return request("/memory", {
+		method: "POST",
+		body: { scopeKey, text, by },
+		label: "Failed to add memory",
+	});
+}
+
+export async function updateMemoryEntryApi(
+	scopeKey: string,
+	id: string,
+	text: string,
+): Promise<{ entry: MemoryEntryDto }> {
+	return request("/memory", {
+		method: "PUT",
+		body: { scopeKey, id, text },
+		label: "Failed to update memory",
+	});
+}
+
+export async function deleteMemoryEntryApi(
+	scopeKey: string,
+	id: string,
+): Promise<void> {
+	await request<void>("/memory", {
+		method: "DELETE",
+		body: { scopeKey, id },
+		label: "Failed to delete memory",
+	});
+}
+
 // ── Security (deepsec scans + profiles) ──
 
 export interface ScanProfile {

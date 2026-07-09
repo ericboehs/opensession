@@ -25,14 +25,18 @@
  */
 
 import { randomUUID } from "crypto";
+import { readdirSync } from "fs";
 import {
   loadScope,
   saveScope,
+  MEMORY_DIR,
   type MemoryEntry,
 } from "../agents/slack/memory";
-import { resolveTeammate } from "./shared/user-mappings";
+import { resolveTeammate, SLACK_ID_TO_NAME } from "./shared/user-mappings";
 
-export type MemoryScopeKind = "repo" | "user" | "team";
+// "channel" never appears in a session's scopes — it exists so the Settings
+// Memory page can list/maintain Slack channel stores alongside the rest.
+export type MemoryScopeKind = "repo" | "user" | "team" | "channel";
 
 export interface MemoryScope {
   /** Store file key under MEMORY_DIR, e.g. "repo-tella-fusion", "workspace". */
@@ -135,6 +139,55 @@ function scopeHeading(scope: MemoryScope): string {
   if (scope.kind === "repo") return `Repo ${scope.label}:`;
   if (scope.kind === "user") return `${scope.label} (user):`;
   return "Team (workspace-wide):";
+}
+
+// ── Settings-page maintenance surface (see GET/POST/PUT/DELETE /api/memory) ──
+
+/** Reconstruct a scope descriptor from a store-file key ("workspace",
+ *  "repo-x", "user-U…", "channel-C…"). Unknown shapes are rejected so the
+ *  API can't be used to create arbitrary files under MEMORY_DIR. */
+export function describeScope(key: string): MemoryScope | null {
+  if (key === "workspace") return TEAM_SCOPE;
+  const m = key.match(/^(repo|user|channel)-([A-Za-z0-9@._-]+)$/);
+  if (!m) return null;
+  const [, kind, rest] = m;
+  if (kind === "repo") return { key, kind: "repo", label: rest };
+  if (kind === "channel") return { key, kind: "channel", label: rest };
+  const teammate = /^U[A-Z0-9]{6,}$/.test(rest) ? SLACK_ID_TO_NAME[rest] : undefined;
+  return { key, kind: "user", label: teammate || rest };
+}
+
+/**
+ * Every memory scope for the Settings page: team + one per registered repo
+ * (always shown, even when empty, so there's somewhere to add), plus whatever
+ * user/channel stores exist on disk.
+ */
+export async function listAllMemory(repoIds: string[]): Promise<ScopedMemory[]> {
+  const keys = new Set<string>(["workspace", ...repoIds.map((r) => `repo-${r}`)]);
+  try {
+    for (const f of readdirSync(MEMORY_DIR)) {
+      if (f.endsWith(".json")) keys.add(f.slice(0, -5));
+    }
+  } catch {} // no store dir yet — the fixed scopes still render
+  const scopes = [...keys]
+    .map(describeScope)
+    .filter((s): s is MemoryScope => !!s);
+  const order: Record<MemoryScopeKind, number> = { team: 0, repo: 1, user: 2, channel: 3 };
+  scopes.sort((a, b) => order[a.kind] - order[b.kind] || a.label.localeCompare(b.label));
+  return listSessionMemory(scopes);
+}
+
+export async function updateMemoryEntry(
+  scopeKey: string,
+  id: string,
+  text: string
+): Promise<MemoryEntry | null> {
+  const entries = await loadScope(scopeKey);
+  const entry = entries.find((e) => e.id === id);
+  if (!entry) return null;
+  entry.text = text.trim();
+  await saveScope(scopeKey, entries);
+  return entry;
 }
 
 /**

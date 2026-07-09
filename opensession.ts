@@ -217,8 +217,13 @@ import { createReposMcpServer } from "./src/agents/slack/repos-tools";
 import { createPreviewMcpServer } from "./src/agents/slack/preview-tools";
 import { createMemoryMcpServer } from "./src/agents/slack/memory-tools";
 import {
+	addSessionMemory,
+	describeScope,
+	forgetSessionMemory,
+	listAllMemory,
 	renderSessionMemoryNote,
 	sessionMemoryScopes,
+	updateMemoryEntry,
 } from "./src/server/session-memory";
 import {
 	createGoalsMcpServer,
@@ -7035,6 +7040,54 @@ const server: import("bun").Server<WSClientData> = hotServe({
 						void refreshWarmTemplate(repoId, { force: true }).catch(() => {});
 						return Response.json({ repos: warmTemplateStatus() });
 					}
+				}
+			}
+
+			// ── Memory (Settings → Memory: the same repo/user/team/channel stores
+			// the opensession-memory tools + Slack channel memory read/write) ──
+			if (path === "/backstage/api/memory") {
+				if (req.method === "GET") {
+					return Response.json({
+						scopes: await listAllMemory(Object.keys(REPOS)),
+					});
+				}
+				const body = await req.json().catch(() => null);
+				const scope = body?.scopeKey ? describeScope(String(body.scopeKey)) : null;
+				if (!scope)
+					return Response.json(
+						{ error: "unknown or invalid scopeKey" },
+						{ status: 400 },
+					);
+				if (req.method === "POST") {
+					const text = String(body?.text || "").trim();
+					if (!text)
+						return Response.json({ error: "text required" }, { status: 400 });
+					const entry = await addSessionMemory(
+						scope,
+						text,
+						String(body?.by || "settings"),
+					);
+					return Response.json({ entry });
+				}
+				if (req.method === "PUT") {
+					const text = String(body?.text || "").trim();
+					if (!text || !body?.id)
+						return Response.json(
+							{ error: "id and text required" },
+							{ status: 400 },
+						);
+					const entry = await updateMemoryEntry(scope.key, String(body.id), text);
+					if (!entry)
+						return Response.json({ error: "entry not found" }, { status: 404 });
+					return Response.json({ entry });
+				}
+				if (req.method === "DELETE") {
+					if (!body?.id)
+						return Response.json({ error: "id required" }, { status: 400 });
+					const res = await forgetSessionMemory([scope], String(body.id));
+					if (!res.ok)
+						return Response.json({ error: res.error }, { status: 404 });
+					return Response.json({ ok: true });
 				}
 			}
 

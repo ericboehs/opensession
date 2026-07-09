@@ -60,16 +60,31 @@ import {
 	fetchWarmTemplates,
 	updateWarmTemplate,
 	refreshWarmTemplateNow,
+	fetchMemory,
+	addMemoryEntryApi,
+	updateMemoryEntryApi,
+	deleteMemoryEntryApi,
+	relativeTime,
 	type MonitorConfig,
 	type AutoArchiveConfig,
 	type WarmTemplateEntry,
+	type MemoryScopeDto,
+	type MemoryEntryDto,
 } from "../lib/api";
 import { getPushState, enablePush, disablePush, type PushState } from "../lib/push";
 import { getCurrentUser } from "./UserPicker";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { BottomSheet } from "../ui/sheet";
 import { cn } from "../ui/cn";
-import { IconChevronLeft, IconChevronRight, IconX } from "./icons";
+import {
+	IconChevronLeft,
+	IconChevronRight,
+	IconPencil,
+	IconPlus,
+	IconTrash,
+	IconX,
+} from "./icons";
+import { toast } from "../ui/toast";
 import { Tooltip } from "../ui/tooltip";
 import { AGENT_NAME, PRODUCT_NAME } from "../lib/brand";
 
@@ -100,6 +115,7 @@ export type SettingsSectionKey =
 	| "model"
 	| "modelProviders"
 	| "connections"
+	| "memory"
 	| "warmPreviews"
 	| "audit"
 	| ToolSectionKey;
@@ -398,6 +414,25 @@ const SECTIONS: {
 		),
 	},
 	{
+		key: "memory",
+		label: "Memory",
+		group: "Workspace",
+		icon: (
+			<svg
+				width="20"
+				height="20"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path d="M8 2.5l5.5 2.75L8 8 2.5 5.25 8 2.5z" strokeLinejoin="round" />
+				<path d="M2.5 8.25L8 11l5.5-2.75" strokeLinecap="round" strokeLinejoin="round" />
+				<path d="M2.5 11.25L8 14l5.5-2.75" strokeLinecap="round" strokeLinejoin="round" />
+			</svg>
+		),
+	},
+	{
 		key: "warmPreviews",
 		label: "Warm previews",
 		group: "Workspace",
@@ -459,6 +494,7 @@ function SectionPanel({
 			{section === "model" && <ModelsPanel />}
 			{section === "modelProviders" && <ModelProvidersPanel />}
 			{section === "connections" && <Connections />}
+			{section === "memory" && <MemoryPanel />}
 			{section === "warmPreviews" && <WarmPreviewsPanel />}
 		</>
 	);
@@ -1231,6 +1267,271 @@ function warmAgo(iso?: string): string {
 	const hours = Math.round(mins / 60);
 	if (hours < 48) return `${hours}h ago`;
 	return `${Math.round(hours / 24)}d ago`;
+}
+
+// ── Memory: the repo/user/team/channel stores behind the opensession-memory
+// tools and Slack channel memory — view, add, edit and delete entries. ──
+
+const MEMORY_GROUPS: {
+	kind: MemoryScopeDto["scope"]["kind"];
+	title: string;
+	/** Fixed groups render even when empty (there's always an add target). */
+	fixed: boolean;
+}[] = [
+	{ kind: "team", title: "Team", fixed: true },
+	{ kind: "repo", title: "Repos", fixed: true },
+	{ kind: "user", title: "People", fixed: false },
+	{ kind: "channel", title: "Slack channels", fixed: false },
+];
+
+function MemoryEntryRow({
+	scopeKey,
+	entry,
+	onChanged,
+}: {
+	scopeKey: string;
+	entry: MemoryEntryDto;
+	onChanged: () => void;
+}) {
+	const [editing, setEditing] = useState(false);
+	const [draft, setDraft] = useState(entry.text);
+	const [busy, setBusy] = useState(false);
+
+	async function save() {
+		const text = draft.trim();
+		if (!text || text === entry.text) return setEditing(false);
+		setBusy(true);
+		try {
+			await updateMemoryEntryApi(scopeKey, entry.id, text);
+			setEditing(false);
+			onChanged();
+		} catch (e: any) {
+			toast(e?.message || "Failed to update memory", { variant: "error" });
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	async function remove() {
+		setBusy(true);
+		try {
+			await deleteMemoryEntryApi(scopeKey, entry.id);
+			toast("Memory forgotten", { variant: "success" });
+			onChanged();
+		} catch (e: any) {
+			toast(e?.message || "Failed to delete memory", { variant: "error" });
+			setBusy(false);
+		}
+	}
+
+	if (editing)
+		return (
+			<div className="border-b border-line px-3 py-2.5 last:border-b-0">
+				<textarea
+					className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-[13px] font-medium text-fg outline-none focus:border-faint"
+					rows={2}
+					value={draft}
+					autoFocus
+					onChange={(e) => setDraft(e.target.value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
+						if (e.key === "Escape") setEditing(false);
+					}}
+				/>
+				<div className="mt-1.5 flex gap-2">
+					<button
+						className="rounded-md bg-fg px-3 py-1 text-[12px] font-medium text-bg disabled:opacity-40"
+						disabled={busy || !draft.trim()}
+						onClick={save}
+					>
+						Save
+					</button>
+					<button
+						className="rounded-md border border-line-strong px-3 py-1 text-[12px] font-medium text-dim hover:text-fg"
+						onClick={() => {
+							setDraft(entry.text);
+							setEditing(false);
+						}}
+					>
+						Cancel
+					</button>
+				</div>
+			</div>
+		);
+
+	return (
+		<div className="group flex items-start gap-2 border-b border-line px-3 py-2.5 last:border-b-0">
+			<div className="min-w-0 flex-1">
+				<div className="text-[13px] font-medium leading-snug text-fg">
+					{entry.text}
+				</div>
+				<div className="mt-0.5 text-[11.5px] font-medium text-faint">
+					{entry.by} · {relativeTime(entry.at)}
+				</div>
+			</div>
+			<div className="flex shrink-0 items-center gap-1">
+				<button
+					aria-label="Edit memory"
+					className="rounded-md p-1 text-faint transition-colors hover:bg-surface hover:text-fg"
+					disabled={busy}
+					onClick={() => {
+						setDraft(entry.text);
+						setEditing(true);
+					}}
+				>
+					<IconPencil size={15} />
+				</button>
+				<button
+					aria-label="Forget memory"
+					className="rounded-md p-1 text-faint transition-colors hover:bg-surface hover:text-red"
+					disabled={busy}
+					onClick={remove}
+				>
+					<IconTrash size={15} />
+				</button>
+			</div>
+		</div>
+	);
+}
+
+function MemoryScopeCard({
+	scoped,
+	onChanged,
+}: {
+	scoped: MemoryScopeDto;
+	onChanged: () => void;
+}) {
+	const [adding, setAdding] = useState(false);
+	const [draft, setDraft] = useState("");
+	const [busy, setBusy] = useState(false);
+
+	async function add() {
+		const text = draft.trim();
+		if (!text) return;
+		setBusy(true);
+		try {
+			await addMemoryEntryApi(scoped.scope.key, text, getCurrentUser() || "settings");
+			setDraft("");
+			setAdding(false);
+			toast("Memory saved", { variant: "success" });
+			onChanged();
+		} catch (e: any) {
+			toast(e?.message || "Failed to add memory", { variant: "error" });
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	return (
+		<div className="mb-3 overflow-hidden rounded-lg border border-line bg-panel">
+			<div className="flex items-center justify-between border-b border-line bg-surface px-3 py-2">
+				<div className="text-[12.5px] font-semibold text-fg">
+					{scoped.scope.label}
+				</div>
+				<button
+					aria-label={`Add memory to ${scoped.scope.label}`}
+					className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] font-medium text-dim transition-colors hover:bg-panel hover:text-fg"
+					onClick={() => setAdding((v) => !v)}
+				>
+					<IconPlus size={14} /> Add
+				</button>
+			</div>
+			{scoped.entries.length === 0 && !adding && (
+				<div className="px-3 py-2.5 text-[13px] font-medium text-faint">
+					No memories yet.
+				</div>
+			)}
+			{scoped.entries.map((e) => (
+				<MemoryEntryRow
+					key={e.id}
+					scopeKey={scoped.scope.key}
+					entry={e}
+					onChanged={onChanged}
+				/>
+			))}
+			{adding && (
+				<div className="border-t border-line px-3 py-2.5">
+					<textarea
+						className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-[13px] font-medium text-fg outline-none focus:border-faint"
+						rows={2}
+						placeholder="A durable, self-contained fact…"
+						value={draft}
+						autoFocus
+						onChange={(e) => setDraft(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) add();
+							if (e.key === "Escape") setAdding(false);
+						}}
+					/>
+					<div className="mt-1.5 flex gap-2">
+						<button
+							className="rounded-md bg-fg px-3 py-1 text-[12px] font-medium text-bg disabled:opacity-40"
+							disabled={busy || !draft.trim()}
+							onClick={add}
+						>
+							Save
+						</button>
+						<button
+							className="rounded-md border border-line-strong px-3 py-1 text-[12px] font-medium text-dim hover:text-fg"
+							onClick={() => setAdding(false)}
+						>
+							Cancel
+						</button>
+					</div>
+				</div>
+			)}
+		</div>
+	);
+}
+
+function MemoryPanel() {
+	const [scopes, setScopes] = useState<MemoryScopeDto[] | null>(null);
+	const [error, setError] = useState<string | null>(null);
+
+	function reload() {
+		fetchMemory()
+			.then((r) => setScopes(r.scopes))
+			.catch((e) => setError(e.message));
+	}
+	useEffect(reload, []);
+
+	if (!scopes)
+		return (
+			<div className="settings-panel">
+				<h1 className="settings-title">Memory</h1>
+				<div className="setting-row-desc">{error || "Loading…"}</div>
+			</div>
+		);
+
+	return (
+		<div className="settings-panel">
+			<h1 className="settings-title">Memory</h1>
+			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+				Durable facts injected into every matching session: team memory is
+				workspace-wide (shared with {AGENT_NAME} in Slack), repo memory follows
+				the session's repo, people memory follows whoever is prompting.
+				Sessions manage these with the opensession-memory tools ("remember
+				that…"); this page is the same store, maintained by hand.
+			</div>
+			{MEMORY_GROUPS.map((g) => {
+				const inGroup = scopes.filter((s) => s.scope.kind === g.kind);
+				if (!inGroup.length && !g.fixed) return null;
+				return (
+					<div key={g.kind} className="mb-5">
+						<div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-faint">
+							{g.title}
+						</div>
+						{inGroup.map((s) => (
+							<MemoryScopeCard key={s.scope.key} scoped={s} onChanged={reload} />
+						))}
+						{!inGroup.length && (
+							<div className="text-[13px] font-medium text-faint">None yet.</div>
+						)}
+					</div>
+				);
+			})}
+		</div>
+	);
 }
 
 function WarmPreviewsPanel() {
