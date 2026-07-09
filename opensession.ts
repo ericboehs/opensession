@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 
 import { randomUUIDv7 } from "bun";
-import { BACKSTAGE_CHATS_DIR } from "./src/server/paths";
+import { OPENSESSION_CHATS_DIR } from "./src/server/paths";
+import { envAlias } from "./src/server/rename-compat";
 import {
 	mkdirSync,
 	existsSync,
@@ -347,9 +348,9 @@ import type { TurnUsage } from "./src/server/claude-runner";
 const PORT = parseInt(process.env.PORT || "3850");
 const HOST = process.env.HOST || "127.0.0.1";
 const HOME = process.env.HOME || "/home/ubuntu";
-const BACKSTAGE_SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
+const SESSIONS_DIR = OPENSESSION_CHATS_DIR;
 
-mkdirSync(BACKSTAGE_SESSIONS_DIR, { recursive: true });
+mkdirSync(SESSIONS_DIR, { recursive: true });
 
 // --- Hot-reload support (bun --hot) ---------------------------------------
 // Under `bun --hot`, editing a module re-evaluates this entry file in the SAME
@@ -676,7 +677,7 @@ function touchBackstageSession(
 	bksId: string,
 	patch: Partial<BackstageSessionFile>,
 ): void {
-	const path = `${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`;
+	const path = `${SESSIONS_DIR}/${bksId}.json`;
 	try {
 		const data: BackstageSessionFile = existsSync(path)
 			? JSON.parse(readFileSync(path, "utf-8"))
@@ -1234,7 +1235,7 @@ const stoppedSessions: Set<string> = (g.__stoppedSessions ??= new Set());
 // Both maps are persisted to disk so a real restart/crash (not just a hot
 // reload, which keeps the globalThis maps) doesn't silently drop queued or
 // just-steered messages. Restored + re-drained on boot (restorePromptQueues).
-const QUEUE_STORE = `${BACKSTAGE_SESSIONS_DIR}/prompt-queues.json`;
+const QUEUE_STORE = `${SESSIONS_DIR}/prompt-queues.json`;
 function queueItem(item: QueueItem): QueueItem {
 	return item.id ? item : { ...item, id: crypto.randomUUID() };
 }
@@ -1619,7 +1620,7 @@ function restorePromptQueues(): void {
 // SIGTERM arrives (before the drain) and, on boot, nudge any that the journal
 // resume didn't already cover. Crash (no graceful shutdown) still falls back to
 // the journal, so both paths are covered.
-const RESUME_SNAPSHOT_PATH = `${BACKSTAGE_SESSIONS_DIR}/active-at-shutdown.json`;
+const RESUME_SNAPSHOT_PATH = `${SESSIONS_DIR}/active-at-shutdown.json`;
 
 /** Capture the sessions with an in-flight run, for boot-time wake-up. Called at
  *  the very start of graceful shutdown, before the drain empties the journal. */
@@ -1895,7 +1896,7 @@ function parseImageDataUrls(urls?: unknown): ImageInput[] | undefined {
 // reference rides the WebSocket — base64-over-WS can't carry them (frame cap +
 // memory). The legacy inline {name,dataUrl}-over-WS path is still accepted for
 // small files and older clients.
-const UPLOADS_DIR = `${BACKSTAGE_SESSIONS_DIR}/uploads`;
+const UPLOADS_DIR = `${SESSIONS_DIR}/uploads`;
 // The HTTP endpoint stages here — a brand-new chat has no session id yet, so the
 // reference is resolved back (and validated) at send time.
 const STAGED_UPLOADS_DIR = `${UPLOADS_DIR}/staged`;
@@ -3429,7 +3430,7 @@ async function runGoal(goal: Goal): Promise<void> {
 				mode: goal.mode,
 				goalId: goal.id,
 			};
-			writeJsonAtomic(`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`, data);
+			writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
 			sessionsCache = null;
 		};
 
@@ -3572,7 +3573,7 @@ if (!g.__backstageBooted) {
 // upfront — the heavy chunks load on demand. Dev keeps the HMR HTMLBundle
 // (`homepage`) below. Built once per process and parked on globalThis so a
 // hot reload reuses it. Assets are content-hashed → safe to cache forever.
-const IS_DEV = process.env.BACKSTAGE_DEV === "1";
+const IS_DEV = envAlias("OPENSESSION_DEV", "BACKSTAGE_DEV") === "1";
 const FRONTEND_DIST = `${import.meta.dir}/.frontend-dist`;
 const FRONTEND_SRC = `${import.meta.dir}/src/frontend`;
 
@@ -5632,7 +5633,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 							}
 						: {}),
 				};
-				writeJsonAtomic(`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`, data);
+				writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
 				sessionsCache = null;
 				// Also return the full unified session so the client can drop it into
 				// its session list and render the new chat instantly, instead of
@@ -6937,7 +6938,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 
 			// Sandbox capability status for the session-create provider picker:
 			// {enabled, defaultProvider, providers: [{id, configured, note?}],
-			// killSwitch}. Read fresh from ~/.backstage-sandbox.json + the
+			// killSwitch}. Read fresh from ~/.opensession-sandbox.json + the
 			// kill-switch file on every call, so a config flip shows up on the
 			// next fetch. Behavior is unit-tested via sandboxCapabilityStatus()
 			// (src/server/sandbox/capability-status.test.ts).
@@ -6980,7 +6981,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						isAsk,
 						sessionLink: isAsk
 							? undefined
-							: `${process.env.MICHAEL_UI_BASE || "https://michael.taila5d766.ts.net/backstage"}/session/<this-session>`,
+							: `${envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") || "https://michael.taila5d766.ts.net/backstage"}/session/<this-session>`,
 						interactiveTools: true,
 					}),
 				});
@@ -8137,7 +8138,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 										: {}),
 								};
 								writeJsonAtomic(
-									`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`,
+									`${SESSIONS_DIR}/${bksId}.json`,
 									sessionData,
 								);
 								sessionsCache = null;
@@ -8543,7 +8544,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 		// explicitly asked for — the systemd service is production, and the overlay
 		// pops "Script error." boxes on iOS with no diagnostics behind them.
 		development:
-			process.env.BACKSTAGE_DEV === "1"
+			envAlias("OPENSESSION_DEV", "BACKSTAGE_DEV") === "1"
 				? {
 						hmr: true,
 						console: true,
@@ -8810,7 +8811,7 @@ registerSessionControl({
 						}
 					: {}),
 			};
-			writeJsonAtomic(`${BACKSTAGE_SESSIONS_DIR}/${bksId}.json`, sessionData);
+			writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, sessionData);
 			sessionsCache = null;
 			persisted = true;
 		};
@@ -9150,7 +9151,7 @@ async function loadAgents(): Promise<AgentModule[]> {
 if (!g.__backstageBooted) {
 	// Public dial-back ingress for remote sandboxes (src/server/public-ingress.ts):
 	// a second, isolated listener serving ONLY the run-ws/rpc-ws upgrades +
-	// /ingress-health. No-op unless ~/.backstage-sandbox.json enables
+	// /ingress-health. No-op unless ~/.opensession-sandbox.json enables
 	// publicIngress; starting/stopping it or changing its port needs a real
 	// restart (the config's other values stay read-fresh-per-run).
 	try {
