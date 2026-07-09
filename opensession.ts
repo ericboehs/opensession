@@ -6205,6 +6205,140 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				}
 			}
 
+			// Quick status change on a Plain thread from the Support UI: Done
+			// closes it, Todo (re)opens/unsnoozes it, Snoozed parks it. Human-gated
+			// like the reply route — agent runs never see these paths as tools.
+			const plainStatusMatch = path.match(
+				/^\/backstage\/api\/plain\/threads\/([^/]+)\/status$/,
+			);
+			if (plainStatusMatch && req.method === "POST") {
+				const threadId = decodeURIComponent(plainStatusMatch[1]);
+				const body = (await req.json().catch(() => null)) as {
+					status?: string;
+					durationSeconds?: number;
+					user?: string;
+				} | null;
+				const status = body?.status;
+				if (status !== "todo" && status !== "done" && status !== "snoozed")
+					return Response.json(
+						{ error: "status must be todo, done or snoozed" },
+						{ status: 400 },
+					);
+				try {
+					const { setThreadStatus } = await import("./src/agents/plain/api");
+					await setThreadStatus(
+						threadId,
+						status,
+						typeof body?.durationSeconds === "number"
+							? body.durationSeconds
+							: undefined,
+					);
+					plainTodoCache = null; // the queue changed — next poll refetches
+					console.log(
+						`[plain-status] ${body?.user || "someone"} marked ${threadId} ${status}`,
+					);
+					return Response.json({ ok: true, status });
+				} catch (e: any) {
+					console.error(`[plain-status] ${status} on ${threadId} failed:`, e);
+					return Response.json(
+						{ error: e?.message || "Plain write failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
+			// Change a thread's priority (0 = Urgent … 3 = Low).
+			const plainPriorityMatch = path.match(
+				/^\/backstage\/api\/plain\/threads\/([^/]+)\/priority$/,
+			);
+			if (plainPriorityMatch && req.method === "POST") {
+				const threadId = decodeURIComponent(plainPriorityMatch[1]);
+				const body = (await req.json().catch(() => null)) as {
+					priority?: number;
+					user?: string;
+				} | null;
+				const priority = body?.priority;
+				if (
+					typeof priority !== "number" ||
+					![0, 1, 2, 3].includes(priority)
+				)
+					return Response.json(
+						{ error: "priority must be 0 (Urgent) … 3 (Low)" },
+						{ status: 400 },
+					);
+				try {
+					const { setThreadPriority } = await import(
+						"./src/agents/plain/api"
+					);
+					await setThreadPriority(threadId, priority);
+					plainTodoCache = null;
+					console.log(
+						`[plain-priority] ${body?.user || "someone"} set ${threadId} priority ${priority}`,
+					);
+					return Response.json({ ok: true, priority });
+				} catch (e: any) {
+					console.error(`[plain-priority] on ${threadId} failed:`, e);
+					return Response.json(
+						{ error: e?.message || "Plain write failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
+			// Mark the customer behind a thread as spam (or undo). Spam lives on
+			// the customer in Plain — all their threads get filtered — so marking
+			// also closes this thread to get it out of the Todo queue right away.
+			const plainSpamMatch = path.match(
+				/^\/backstage\/api\/plain\/threads\/([^/]+)\/spam$/,
+			);
+			if (plainSpamMatch && req.method === "POST") {
+				const threadId = decodeURIComponent(plainSpamMatch[1]);
+				const body = (await req.json().catch(() => null)) as {
+					spam?: boolean;
+					user?: string;
+				} | null;
+				const spam = body?.spam !== false;
+				try {
+					const { getThreadWithMessages, setCustomerSpam, setThreadStatus } =
+						await import("./src/agents/plain/api");
+					const thread = await getThreadWithMessages(threadId);
+					const customerId = thread?.customer?.id;
+					if (!customerId)
+						return Response.json(
+							{ error: "Thread has no customer" },
+							{ status: 404 },
+						);
+					await setCustomerSpam(customerId, spam);
+					// Plain closes the customer's threads itself on spam-mark (and
+					// reopens on unmark) — this explicit close is a best-effort
+					// belt-and-braces, so "already in the requested status" is fine.
+					let closedThread = false;
+					if (spam && thread?.status !== "DONE") {
+						closedThread = await setThreadStatus(threadId, "done")
+							.then(() => true)
+							.catch((e) => {
+								if (!/already in the requested status/i.test(e?.message || ""))
+									console.error(
+										`[plain-spam] Close after spam-mark failed for ${threadId}:`,
+										e,
+									);
+								return false;
+							});
+					}
+					plainTodoCache = null;
+					console.log(
+						`[plain-spam] ${body?.user || "someone"} ${spam ? "marked" : "unmarked"} customer ${customerId} (thread ${threadId}) as spam`,
+					);
+					return Response.json({ ok: true, spam, closedThread });
+				} catch (e: any) {
+					console.error(`[plain-spam] on ${threadId} failed:`, e);
+					return Response.json(
+						{ error: e?.message || "Plain write failed" },
+						{ status: 502 },
+					);
+				}
+			}
+
 			// JSON twin of the /backstage/plain-triage/<id> redirect: the Support
 			// preview's "Triage this ticket" button. Reuses a live session linked to
 			// the thread, else starts the triage automation and waits for its

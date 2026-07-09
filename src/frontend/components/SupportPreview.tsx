@@ -11,6 +11,7 @@ import { useCurrentUser } from "./UserPicker";
 import {
 	PlainEntryRow,
 	PlainReplyBox,
+	PlainThreadActions,
 	plainThreadUrl,
 	STATUS_LABEL,
 } from "./PlainThreadPanel";
@@ -222,6 +223,17 @@ export function SupportPreview({
 								<div className="text-fg font-semibold text-[18px] mt-2">
 									{thread.title}
 								</div>
+							)}
+
+							{/* One-click ticket admin, straight from here: status,
+							    priority, spam — no need to jump into Plain. */}
+							{thread && (
+								<PlainThreadActions
+									threadId={threadId}
+									thread={thread}
+									onChanged={load}
+									className="mt-3"
+								/>
 							)}
 
 							{/* The "do you want to triage this?" affordance: one click runs

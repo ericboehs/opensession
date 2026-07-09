@@ -23,7 +23,12 @@ export interface PlainThread {
 	title: string | null;
 	status: string | null;
 	priority: number | null;
-	customer: { name: string | null; email: string | null };
+	customer: {
+		id?: string | null;
+		name: string | null;
+		email: string | null;
+		isSpam?: boolean;
+	};
 	entries: PlainTimelineEntry[];
 }
 

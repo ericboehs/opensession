@@ -27,6 +27,9 @@ export async function getThreadWithMessages(threadId: string): Promise<any> {
             email
           }
           externalId
+          markedAsSpamAt {
+            iso8601
+          }
         }
         timelineEntries(first: 100) {
           edges {
@@ -124,7 +127,12 @@ export interface NormalizedPlainThread {
   title: string | null;
   status: string | null;
   priority: number | null;
-  customer: { name: string | null; email: string | null };
+  customer: {
+    id: string | null;
+    name: string | null;
+    email: string | null;
+    isSpam: boolean;
+  };
   entries: NormalizedPlainEntry[];
 }
 
@@ -198,8 +206,10 @@ export function normalizePlainThread(thread: any): NormalizedPlainThread {
     status: thread?.status || null,
     priority: thread?.priority ?? null,
     customer: {
+      id: thread?.customer?.id || null,
       name: thread?.customer?.fullName || null,
       email: thread?.customer?.email?.email || null,
+      isSpam: Boolean(thread?.customer?.markedAsSpamAt?.iso8601),
     },
     entries,
   };
@@ -422,6 +432,86 @@ export async function sendCustomerReply(
   } catch (e) {
     console.error("Error sending reply:", e);
     return false;
+  }
+}
+
+/** Statuses a human can set on a thread from the Support UI. */
+export type ThreadStatusAction = "todo" | "done" | "snoozed";
+
+/**
+ * Change a thread's status the way Plain's own inbox does: Done closes it,
+ * Todo (re)opens/unsnoozes it, Snoozed parks it for `durationSeconds`
+ * (default 1 day, after which Plain flips it back to Todo).
+ */
+export async function setThreadStatus(
+  threadId: string,
+  status: ThreadStatusAction,
+  durationSeconds?: number,
+): Promise<void> {
+  const result =
+    status === "done"
+      ? await plain.markThreadAsDone({ threadId })
+      : status === "todo"
+        ? await plain.markThreadAsTodo({ threadId })
+        : await plain.snoozeThread({
+            threadId,
+            durationSeconds: Math.max(
+              60,
+              Math.floor(durationSeconds ?? 86_400),
+            ),
+          });
+  if (result.error) {
+    throw new Error(
+      `Failed to mark thread ${status}: ${result.error.message}`,
+    );
+  }
+}
+
+/** Plain thread priorities: 0 = Urgent, 1 = High, 2 = Normal, 3 = Low. */
+export async function setThreadPriority(
+  threadId: string,
+  priority: number,
+): Promise<void> {
+  if (![0, 1, 2, 3].includes(priority)) {
+    throw new Error(`Invalid priority ${priority} (0=Urgent … 3=Low)`);
+  }
+  const result = await plain.changeThreadPriority({ threadId, priority });
+  if (result.error) {
+    throw new Error(`Failed to change priority: ${result.error.message}`);
+  }
+}
+
+/**
+ * Mark or unmark a customer as spam. Plain tracks spam on the customer, not
+ * the thread (all their future threads get filtered too); the SDK has no
+ * method for these mutations, so raw GraphQL.
+ */
+export async function setCustomerSpam(
+  customerId: string,
+  spam: boolean,
+): Promise<void> {
+  const mutation = spam ? "markCustomerAsSpam" : "unmarkCustomerAsSpam";
+  const inputType = spam
+    ? "MarkCustomerAsSpamInput"
+    : "UnmarkCustomerAsSpamInput";
+  const result = await plain.rawRequest({
+    query: `
+      mutation SetCustomerSpam($input: ${inputType}!) {
+        ${mutation}(input: $input) {
+          error {
+            message
+          }
+        }
+      }
+    `,
+    variables: { input: { customerId } },
+  });
+  if (result.error) {
+    throw new Error(`${mutation} failed: ${result.error.message}`);
+  }
+  const err = (result.data as any)?.[mutation]?.error;
+  if (err?.message) {
+    throw new Error(`${mutation} failed: ${err.message}`);
   }
 }
 

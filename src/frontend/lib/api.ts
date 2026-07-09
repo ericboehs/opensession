@@ -626,6 +626,57 @@ export async function sendPlainReplyApi(
 	);
 }
 
+/** Quick status change on a Plain thread: Todo / Snoozed / Done. */
+export async function setPlainThreadStatusApi(
+	threadId: string,
+	status: "todo" | "done" | "snoozed",
+	opts: { durationSeconds?: number; user?: string } = {},
+): Promise<void> {
+	await request<{ ok: boolean }>(
+		`/plain/threads/${encodeURIComponent(threadId)}/status`,
+		{
+			method: "POST",
+			body: { status, ...opts },
+			label: "Failed to update status",
+		},
+	);
+}
+
+/** Change a Plain thread's priority (0 = Urgent … 3 = Low). */
+export async function setPlainThreadPriorityApi(
+	threadId: string,
+	priority: number,
+	user?: string,
+): Promise<void> {
+	await request<{ ok: boolean }>(
+		`/plain/threads/${encodeURIComponent(threadId)}/priority`,
+		{
+			method: "POST",
+			body: { priority, user },
+			label: "Failed to update priority",
+		},
+	);
+}
+
+/**
+ * Mark the customer behind a Plain thread as spam (also closes the thread),
+ * or undo the spam mark.
+ */
+export async function setPlainThreadSpamApi(
+	threadId: string,
+	spam: boolean,
+	user?: string,
+): Promise<void> {
+	await request<{ ok: boolean }>(
+		`/plain/threads/${encodeURIComponent(threadId)}/spam`,
+		{
+			method: "POST",
+			body: { spam, user },
+			label: "Failed to update spam status",
+		},
+	);
+}
+
 /**
  * Start (or reuse) a triage session for a Plain thread — runs the "Plain
  * ticket triage" automation. Slow (~15-60s) when it has to boot a fresh run.

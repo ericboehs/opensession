@@ -1,6 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { PlainThread, PlainTimelineEntry } from "../lib/types";
-import { fetchPlainThreadApi, sendPlainReplyApi } from "../lib/api";
+import {
+	fetchPlainThreadApi,
+	sendPlainReplyApi,
+	setPlainThreadPriorityApi,
+	setPlainThreadSpamApi,
+	setPlainThreadStatusApi,
+} from "../lib/api";
+import { Menu } from "../ui/menu";
 import { renderMarkdown } from "../lib/markdown";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { useCurrentUser } from "./UserPicker";
@@ -123,6 +130,15 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 				</a>
 			</div>
 
+			{thread && (
+				<PlainThreadActions
+					threadId={threadId}
+					thread={thread}
+					onChanged={load}
+					className="shrink-0 px-3 py-2 border-b border-line"
+				/>
+			)}
+
 			{thread?.title && <div className="plain-title">{thread.title}</div>}
 
 			<div className="plain-timeline" ref={bodyRef}>
@@ -145,6 +161,200 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 					onSent={load}
 					className="border-t border-line"
 				/>
+			)}
+		</div>
+	);
+}
+
+/** Plain thread priorities, as Plain's own UI names them. */
+const PRIORITY_LABEL: Record<number, string> = {
+	0: "Urgent",
+	1: "High",
+	2: "Normal",
+	3: "Low",
+};
+
+const SNOOZE_OPTIONS: { label: string; seconds: number }[] = [
+	{ label: "1 hour", seconds: 3_600 },
+	{ label: "4 hours", seconds: 4 * 3_600 },
+	{ label: "1 day", seconds: 86_400 },
+	{ label: "3 days", seconds: 3 * 86_400 },
+	{ label: "1 week", seconds: 7 * 86_400 },
+];
+
+const actionPill =
+	"text-[11.5px] font-semibold px-2 py-0.5 rounded-full border cursor-pointer bg-transparent text-dim border-line hover:text-fg hover:border-line-strong disabled:opacity-50 disabled:cursor-default";
+
+/**
+ * Quick thread actions mirroring Plain's own inbox: status (Todo / Snoozed /
+ * Done), priority, and mark-as-spam. Spam lives on the customer in Plain, so
+ * marking spam also closes the thread. Shared by the session viewer's Plain
+ * tab and the Support ticket preview — like the reply box, these are the
+ * human gate: agent runs never get Plain writes as tools.
+ */
+export function PlainThreadActions({
+	threadId,
+	thread,
+	onChanged,
+	className,
+}: {
+	threadId: string;
+	thread: PlainThread;
+	/** Called after any successful action so the owner can refresh. */
+	onChanged: () => void;
+	className?: string;
+}) {
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const currentUser = useCurrentUser();
+
+	async function run(fn: () => Promise<void>) {
+		if (busy) return;
+		setBusy(true);
+		setError(null);
+		try {
+			await fn();
+			onChanged();
+		} catch (e: any) {
+			setError(e?.message || "Plain update failed");
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	const status = thread.status;
+	const setStatus = (
+		s: "todo" | "done" | "snoozed",
+		durationSeconds?: number,
+	) =>
+		run(() =>
+			setPlainThreadStatusApi(threadId, s, {
+				durationSeconds,
+				user: currentUser,
+			}),
+		);
+
+	const customerLabel =
+		thread.customer?.name || thread.customer?.email || "this customer";
+	const isSpam = !!thread.customer?.isSpam;
+
+	return (
+		<div className={cn("flex flex-col gap-1", className)}>
+			<div className="flex items-center gap-1.5 flex-wrap">
+				{status === "DONE" ? (
+					<button
+						type="button"
+						className={actionPill}
+						disabled={busy}
+						onClick={() => setStatus("todo")}
+						title="Reopen this thread (back to Todo)"
+					>
+						Reopen
+					</button>
+				) : (
+					<>
+						<button
+							type="button"
+							className={cn(actionPill, "hover:text-green")}
+							disabled={busy}
+							onClick={() => setStatus("done")}
+							title="Mark this thread Done in Plain"
+						>
+							✓ Done
+						</button>
+						{status === "SNOOZED" ? (
+							<button
+								type="button"
+								className={actionPill}
+								disabled={busy}
+								onClick={() => setStatus("todo")}
+								title="Unsnooze — back to Todo"
+							>
+								Unsnooze
+							</button>
+						) : (
+							<Menu.Root>
+								<Menu.Trigger
+									className={actionPill}
+									disabled={busy}
+									title="Snooze this thread"
+								>
+									Snooze ▾
+								</Menu.Trigger>
+								<Menu.Popup align="start">
+									{SNOOZE_OPTIONS.map((o) => (
+										<Menu.Item
+											key={o.seconds}
+											onClick={() => setStatus("snoozed", o.seconds)}
+										>
+											{o.label}
+										</Menu.Item>
+									))}
+								</Menu.Popup>
+							</Menu.Root>
+						)}
+					</>
+				)}
+				<Menu.Root>
+					<Menu.Trigger
+						className={actionPill}
+						disabled={busy}
+						title="Change priority in Plain"
+					>
+						{thread.priority != null
+							? (PRIORITY_LABEL[thread.priority] ?? `P${thread.priority}`)
+							: "Priority"}{" "}
+						▾
+					</Menu.Trigger>
+					<Menu.Popup align="start">
+						{([0, 1, 2, 3] as const).map((p) => (
+							<Menu.Item
+								key={p}
+								onClick={() =>
+									run(() =>
+										setPlainThreadPriorityApi(threadId, p, currentUser),
+									)
+								}
+							>
+								<span className="w-4 shrink-0">
+									{thread.priority === p ? "✓" : ""}
+								</span>
+								{PRIORITY_LABEL[p]}
+							</Menu.Item>
+						))}
+					</Menu.Popup>
+				</Menu.Root>
+				<button
+					type="button"
+					className={cn(
+						actionPill,
+						!isSpam && "hover:text-red hover:border-red",
+					)}
+					disabled={busy}
+					onClick={() => {
+						if (
+							isSpam ||
+							window.confirm(
+								`Mark ${customerLabel} as spam?\n\nPlain filters all their threads and this one is closed right away. Reversible via “Not spam”.`,
+							)
+						)
+							run(() =>
+								setPlainThreadSpamApi(threadId, !isSpam, currentUser),
+							);
+					}}
+					title={
+						isSpam
+							? "This customer is marked as spam in Plain — click to undo"
+							: "Mark this customer as spam in Plain (also closes the thread)"
+					}
+				>
+					{isSpam ? "Not spam" : "Spam"}
+				</button>
+			</div>
+			{error && (
+				<span className="text-red text-[12px] truncate" title={error}>
+					{error}
+				</span>
 			)}
 		</div>
 	);

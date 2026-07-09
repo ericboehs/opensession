@@ -11,6 +11,7 @@ import {
 	relativeTime,
 	fetchOpenPrs,
 	fetchSupportThreads,
+	setPlainThreadStatusApi,
 	type OpenPr,
 	type WorkspaceOverview,
 } from "../lib/api";
@@ -2206,9 +2207,25 @@ export function Sidebar({
 		);
 	}
 
+	// Quick "mark done" straight from a Support row — optimistic removal (the
+	// ticket leaves Plain's Todo queue), restored by a refetch if Plain says no.
+	async function markSupportRowDone(threadId: string) {
+		setSupportThreads((prev) =>
+			prev ? prev.filter((x) => x.id !== threadId) : prev,
+		);
+		try {
+			await setPlainThreadStatusApi(threadId, "done", { user: currentUser });
+		} catch {
+			fetchSupportThreads()
+				.then(setSupportThreads)
+				.catch(() => {});
+		}
+	}
+
 	// A Support row: one TODO Plain ticket. The dot wears the linked session's
 	// status (faint when no session exists yet); click opens the session, or the
-	// session-less ticket preview when there isn't one.
+	// session-less ticket preview when there isn't one. Hovering swaps the
+	// timestamp for a one-click "mark done".
 	function renderSupportRow(t: SupportThread) {
 		const session = supportSessionByThread.get(t.id) || null;
 		const active = session
@@ -2219,7 +2236,7 @@ export function Sidebar({
 		return (
 			<button
 				key={`support:${t.id}`}
-				className={`sidebar-item flex items-center gap-1.5 min-w-0 ${
+				className={`sidebar-item group/support flex items-center gap-1.5 min-w-0 ${
 					active ? "sidebar-item-selected" : ""
 				}`}
 				onClick={() =>
@@ -2240,12 +2257,23 @@ export function Sidebar({
 				<span className="sidebar-item-title">{label}</span>
 				{t.statusChangedAt && (
 					<span
-						className="sidebar-ws-time"
+						className="sidebar-ws-time group-hover/support:hidden"
 						title={new Date(t.statusChangedAt).toLocaleString()}
 					>
 						{shortTime(t.statusChangedAt)}
 					</span>
 				)}
+				<span
+					role="button"
+					className="sidebar-ws-time hidden group-hover/support:inline cursor-pointer hover:text-green font-semibold"
+					title="Mark done in Plain"
+					onClick={(e) => {
+						e.stopPropagation();
+						markSupportRowDone(t.id);
+					}}
+				>
+					✓
+				</span>
 			</button>
 		);
 	}
