@@ -405,8 +405,9 @@ export function sandboxConfigPresent(): boolean {
 export interface SandboxProviderStatusEntry {
   id: RunnableSandboxProviderId;
   configured: boolean;
-  /** Human caveat for a configured-but-unproven provider (e.g. daytona's WS
-   *  dial-back can't be verified without creating a real sandbox). */
+  /** Human caveat shown ONLY when something is actually missing (e.g. a remote
+   *  provider with no dial-back URL configured). Healthy providers carry no
+   *  note — the UI renders it as a dim hint line under the picker row. */
   note?: string;
 }
 
@@ -570,22 +571,32 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
   const cfg = sandboxConfig();
   const daytonaConfigured =
     enabled && Boolean(cfg.daytona?.apiKey || process.env.DAYTONA_API_KEY);
+  const e2bConfigured =
+    enabled && Boolean(cfg.e2b?.apiKey || process.env.E2B_API_KEY);
+  // Remote sandboxes must dial back over WS: healthy = a public-ingress URL or
+  // an explicit callbackBaseUrl is configured, and then the row shows no note.
+  // Only an actually-missing dial-back URL surfaces a caveat (no static
+  // "unverified" scare-copy — dial-back is proven in production).
+  const remoteDialBackConfigured = Boolean(
+    (cfg.publicIngress?.enabled && cfg.publicIngress.publicBaseUrl) ||
+      cfg.callbackBaseUrl,
+  );
+  const remoteNote = remoteDialBackConfigured
+    ? {}
+    : {
+        note: "no dial-back URL configured — set publicIngress.publicBaseUrl (or callbackBaseUrl) so sandboxes can reach this server; see docs/self-hosting-sandboxes.md",
+      };
   const providers: SandboxProviderStatusEntry[] = [
     { id: "docker", configured: enabled },
     {
       id: "daytona",
       configured: daytonaConfigured,
-      // Dial-back can only be proven by a real run, so a configured daytona
-      // always carries the caveat (the UI renders it as a dim hint line).
-      ...(daytonaConfigured
-        ? {
-            note: "dial-back unverified — the sandbox must reach callbackBaseUrl (org-tier egress applies); see docs/self-hosting-sandboxes.md",
-          }
-        : {}),
+      ...(daytonaConfigured ? remoteNote : {}),
     },
     {
       id: "e2b",
-      configured: enabled && Boolean(cfg.e2b?.apiKey || process.env.E2B_API_KEY),
+      configured: e2bConfigured,
+      ...(e2bConfigured ? remoteNote : {}),
     },
   ];
   return {

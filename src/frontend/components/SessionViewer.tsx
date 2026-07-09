@@ -45,6 +45,7 @@ import { RepoBar } from "./RepoBar";
 import { RepoTile } from "./RepoTile";
 import { SandboxBadge } from "./SandboxBadge";
 import { ModelMenuRow } from "./ModelMenuRow";
+import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
@@ -217,9 +218,20 @@ const MODEL_NAMES: Record<string, string> = {
 	codex: "Codex",
 };
 function prettyModel(id: string): string {
+	// Opencode ids get their friendly name with no engine suffix — the engine
+	// is an implementation detail ("Sonnet 5", not "… · OpenCode").
+	const oc = opencodeModelParts(id);
+	if (oc) return friendlyModelSlug(oc.model);
 	const isCodex = id.startsWith("gpt") || id.startsWith("codex");
 	const name = MODEL_NAMES[id] || id;
 	return `${name} · ${isCodex ? "Codex" : "Claude"}`;
+}
+/** Model label for the header/info metadata lines: the registry label, but
+ * opencode ids always take the pure friendly-name path (the server's labels
+ * for them only refresh on restart). */
+function metadataModelLabel(effectiveModel: string, models: ModelOption[]): string {
+	if (opencodeModelParts(effectiveModel)) return prettyModel(effectiveModel);
+	return models.find((m) => m.id === effectiveModel)?.label || prettyModel(effectiveModel);
 }
 function switchDividerText(model: string, from?: string, by?: string): string {
 	const head = from
@@ -2270,8 +2282,7 @@ export function SessionViewer({
 										{[
 											session.repo || "tella-fusion",
 											models.length > 0
-												? models.find((m) => m.id === effectiveModel)?.label ||
-													prettyModel(effectiveModel)
+												? metadataModelLabel(effectiveModel, models)
 												: null,
 										]
 										.filter(Boolean)
@@ -2415,10 +2426,10 @@ export function SessionViewer({
 							<span className="header-chatbar-model truncate">
 								{/* Drop the "Claude " prefix — "Opus 4.8" reads fine in the
 								    thin subtitle and leaves room for the cost meter. */}
-								{(
-									models.find((m) => m.id === effectiveModel)?.label ||
-									prettyModel(effectiveModel)
-								).replace(/^Claude[\s-]+/i, "")}
+								{metadataModelLabel(effectiveModel, models).replace(
+									/^Claude[\s-]+/i,
+									"",
+								)}
 							</span>
 						)}
 						{/* The composer's cost/context meter can't fit in the toolbar on

@@ -77,19 +77,47 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
     expect(s.providers.find((p) => p.id === "e2b")?.configured).toBe(false);
   });
 
-  test("daytona apiKey configures daytona and carries the dial-back caveat", () => {
-    write({ provider: "docker", daytona: { apiKey: "dtn_x" } });
+  test("remote provider without a dial-back URL carries a pointed note", () => {
+    write({ provider: "docker", daytona: { apiKey: "dtn_x" }, e2b: { apiKey: "e2b_x" } });
     const s = sandboxCapabilityStatus();
     const d = s.providers.find((p) => p.id === "daytona")!;
     expect(d.configured).toBe(true);
-    expect(d.note).toContain("dial-back unverified");
+    expect(d.note).toContain("no dial-back URL configured");
+    const e = s.providers.find((p) => p.id === "e2b")!;
+    expect(e.configured).toBe(true);
+    expect(e.note).toContain("no dial-back URL configured");
   });
 
-  test("e2b apiKey configures e2b, no note", () => {
-    write({ provider: "docker", e2b: { apiKey: "e2b_x" } });
+  test("healthy remote provider (public ingress configured) carries no note", () => {
+    write({
+      provider: "docker",
+      daytona: { apiKey: "dtn_x" },
+      publicIngress: { enabled: true, port: 3860, publicBaseUrl: "wss://example.ts.net" },
+    });
+    const d = sandboxCapabilityStatus().providers.find((p) => p.id === "daytona")!;
+    expect(d.configured).toBe(true);
+    expect(d.note).toBeUndefined();
+  });
+
+  test("an explicit callbackBaseUrl also counts as dial-back configured", () => {
+    write({
+      provider: "docker",
+      e2b: { apiKey: "e2b_x" },
+      callbackBaseUrl: "wss://michael.example.ts.net",
+    });
     const e = sandboxCapabilityStatus().providers.find((p) => p.id === "e2b")!;
     expect(e.configured).toBe(true);
     expect(e.note).toBeUndefined();
+  });
+
+  test("a disabled publicIngress block does not count as dial-back configured", () => {
+    write({
+      provider: "docker",
+      daytona: { apiKey: "dtn_x" },
+      publicIngress: { enabled: false, publicBaseUrl: "wss://example.ts.net" },
+    });
+    const d = sandboxCapabilityStatus().providers.find((p) => p.id === "daytona")!;
+    expect(d.note).toContain("no dial-back URL configured");
   });
 
   test("garbage config = no config", () => {

@@ -45,13 +45,17 @@ const PRIMARY_MODEL_IDS = [
 ] as const;
 const PRIMARY_MODEL_ID_SET = new Set<string>(PRIMARY_MODEL_IDS);
 
-/** Engine display names, keyed by ModelOption.provider — the generic grouping
- * the menus below use, so a new engine only needs an entry here. */
+/** Engine display names, keyed by ModelOption.provider — only used for the
+ * legacy (no-opencode-configured) grouping fallback below. */
 export const ENGINE_LABELS: Record<string, string> = {
 	claude: "Claude",
 	codex: "Codex",
 	opencode: "OpenCode",
 };
+
+/** De-emphasized group name for the native Claude-SDK/Codex entries that stick
+ * around as automation/fallback plumbing during the opencode migration. */
+export const LEGACY_GROUP_LABEL = "Legacy (direct SDK)";
 
 /**
  * OpenCode model ids are config-driven slugs shaped
@@ -69,25 +73,76 @@ export function opencodeModelParts(
 	return { provider: rest.slice(0, slash), model: rest.slice(slash + 1) };
 }
 
+/** Pure slug prettifier: "claude-sonnet-5" → "Sonnet 5", "claude-haiku-4-5" →
+ * "Haiku 4.5", "gpt-5.4-mini" → "GPT-5.4 mini". Mirrors the server's
+ * opencodeModelLabel (models.ts) but needs no models list, so it works in the
+ * transcript weave before /api/models has loaded — and keeps friendly names
+ * correct even while the server still serves pre-rename labels. */
+export function friendlyModelSlug(slug: string): string {
+	if (slug.startsWith("gpt-")) {
+		const m = slug.slice(4).match(/^(\d+(?:[.-]\d+)*)(?:-(.+))?$/);
+		if (m) return `GPT-${m[1].replace(/-/g, ".")}${m[2] ? ` ${m[2].replace(/-/g, " ")}` : ""}`;
+		return `GPT-${slug.slice(4)}`;
+	}
+	const words: string[] = [];
+	const nums: string[] = [];
+	for (const part of slug.replace(/^claude-/, "").split("-")) {
+		if (/^\d/.test(part)) nums.push(part);
+		else if (part) words.push(part.charAt(0).toUpperCase() + part.slice(1));
+	}
+	return [words.join(" "), nums.join(".")].filter(Boolean).join(" ") || slug;
+}
+
 /** Display name without the vendor noise: "Claude Fable 5" → "Fable 5",
  * "GPT-5.5 (Codex)" → "GPT-5.5", "opencode/anthropic/claude-sonnet-5" →
- * "claude-sonnet-5" (its OpenCode-ness shows as the menu group / dim suffix,
- * not in the pill). */
+ * "Sonnet 5". The engine is an implementation detail — it never shows in a
+ * model's name. */
 export function shortModelLabel(id: string, models: ModelOption[]): string {
 	const oc = opencodeModelParts(id);
-	if (oc) return oc.model;
+	if (oc) return friendlyModelSlug(oc.model);
 	const raw = models.find((m) => m.id === id)?.label || id || "Default";
 	return raw.replace(/^Claude\s+/i, "").replace(/\s*\(Codex\)$/i, "");
+}
+
+/** Preferred display order for the opencode main list (by id tail); anything
+ * unlisted keeps its registry/config order after these. */
+const OPENCODE_TAIL_ORDER = [
+	"claude-fable-5",
+	"claude-opus-4-8",
+	"claude-sonnet-5",
+	"claude-haiku-4-5",
+	"gpt-5.5",
+	"gpt-5.4",
+	"gpt-5.4-mini",
+];
+
+/**
+ * Split the registry into the first-class opencode entries (sorted for
+ * display) and the legacy native claude/codex ones. When opencode models are
+ * configured they ARE the model list; natives tuck under LEGACY_GROUP_LABEL.
+ */
+export function splitModelOptions(models: ModelOption[]): {
+	opencode: ModelOption[];
+	legacy: ModelOption[];
+} {
+	const rank = (m: ModelOption) => {
+		const i = OPENCODE_TAIL_ORDER.indexOf(m.id.split("/").pop() || "");
+		return i === -1 ? OPENCODE_TAIL_ORDER.length : i;
+	};
+	const opencode = models
+		.filter((m) => m.provider === "opencode")
+		.map((m, i) => [m, i] as const)
+		.sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1])
+		.map(([m]) => m);
+	return { opencode, legacy: models.filter((m) => m.provider !== "opencode") };
 }
 
 type ModelMenuOption = {
 	value: string;
 	label: string;
 	id: string;
-	/** Engine key (ModelOption.provider) for the generic group headers. */
+	/** Engine key (ModelOption.provider) for the legacy-fallback group headers. */
 	engine: string;
-	/** Dim right-aligned context, e.g. an OpenCode model's upstream provider. */
-	hint?: string;
 };
 
 /**
@@ -123,30 +178,46 @@ export function ModelEffortSelect({
 		: undefined;
 	const subscriptionLabel = currentAccount ? currentAccount.name : "Auto";
 
-	const optionFor = (id: string): ModelMenuOption => {
-		const oc = opencodeModelParts(id);
-		return {
-			value: id === defaultModel ? "" : id,
-			label: shortModelLabel(id, models),
-			id,
-			engine: models.find((m) => m.id === id)?.provider || (oc ? "opencode" : "claude"),
-			...(oc ? { hint: oc.provider } : {}),
-		};
-	};
+	const optionFor = (id: string): ModelMenuOption => ({
+		value: id === defaultModel ? "" : id,
+		label: shortModelLabel(id, models),
+		id,
+		engine:
+			models.find((m) => m.id === id)?.provider ||
+			(opencodeModelParts(id) ? "opencode" : "claude"),
+	});
+	// Legacy entries keep their FULL registry label ("Claude Sonnet 5",
+	// "GPT-5.5 (Codex)") so they never read as duplicates of the first-class
+	// short names above them.
+	const legacyOptionFor = (m: ModelOption): ModelMenuOption => ({
+		value: m.id === defaultModel ? "" : m.id,
+		label: m.label,
+		id: m.id,
+		engine: m.provider,
+	});
+	const { opencode: opencodeModels, legacy: legacyModels } = splitModelOptions(models);
+	// With opencode configured it IS the model list: its entries are the main
+	// list (friendly names, no engine anywhere) and the native claude/codex
+	// entries — automation/fallback plumbing during the migration — tuck under
+	// a de-emphasized "Legacy (direct SDK)" submenu at the bottom.
+	const opencodeFirst = opencodeModels.length > 0;
 	const availableModelIds = new Set(models.map((m) => m.id));
-	const primaryOptions = PRIMARY_MODEL_IDS
-		.filter((id) => availableModelIds.has(id))
-		.map((id) => optionFor(id));
-	const otherOptions = [
-		...(PRIMARY_MODEL_ID_SET.has(defaultModel) ? [] : [optionFor(defaultModel)]),
-		...models
-			.filter((m) => m.id !== defaultModel && !PRIMARY_MODEL_ID_SET.has(m.id))
-			.map((m) => optionFor(m.id)),
-	];
-	// "Other models" grouped by engine — generic, so config-driven engines
-	// (OpenCode's opencode/<provider>/<model> registry) land under their own
-	// header instead of as raw slashed ids in a flat list. A single engine
-	// keeps the flat list (headers would just be noise).
+	const primaryOptions = opencodeFirst
+		? [
+				...(availableModelIds.has(defaultModel) ? [] : [optionFor(defaultModel)]),
+				...opencodeModels.map((m) => optionFor(m.id)),
+			]
+		: PRIMARY_MODEL_IDS.filter((id) => availableModelIds.has(id)).map((id) => optionFor(id));
+	const otherOptions = opencodeFirst
+		? legacyModels.map(legacyOptionFor)
+		: [
+				...(PRIMARY_MODEL_ID_SET.has(defaultModel) ? [] : [optionFor(defaultModel)]),
+				...models
+					.filter((m) => m.id !== defaultModel && !PRIMARY_MODEL_ID_SET.has(m.id))
+					.map((m) => optionFor(m.id)),
+			];
+	// No-opencode fallback only: "Other models" grouped by engine. With
+	// opencode present the submenu is the flat legacy list instead.
 	const engineOrder = ["claude", "codex", "opencode"];
 	const engines = [
 		...engineOrder,
@@ -161,6 +232,12 @@ export function ModelEffortSelect({
 		.filter((g) => g.options.length > 0);
 	const isSelected = (option: ModelMenuOption) =>
 		option.value === model || (option.value === "" && (model === "" || model === defaultModel));
+	// Dim hint on the legacy submenu trigger when the CURRENT model lives in
+	// there — otherwise the open menu would show no checked row at all.
+	const selectedLegacyLabel =
+		opencodeFirst && !primaryOptions.some(isSelected)
+			? otherOptions.find(isSelected)?.label
+			: undefined;
 
 	const renderModelOption = (option: ModelMenuOption) => {
 		const selected = isSelected(option);
@@ -173,10 +250,7 @@ export function ModelEffortSelect({
 				className={cn("justify-between gap-3", selected && "bg-hover", modelDisabled && "opacity-55")}
 			>
 				<span className="min-w-0 truncate">{option.label}</span>
-				<span className="flex flex-none items-center gap-1.5">
-					{option.hint && <span className="text-faint">{option.hint}</span>}
-					{selected && <IconCheck className="shrink-0 text-dim" size={17} />}
-				</span>
+				{selected && <IconCheck className="shrink-0 text-dim" size={17} />}
 			</Menu.Item>
 		);
 	};
@@ -201,12 +275,21 @@ export function ModelEffortSelect({
 				{primaryOptions.map(renderModelOption)}
 				{otherOptions.length > 0 && (
 					<Menu.SubmenuRoot>
-						<Menu.SubmenuTrigger className="justify-between gap-3">
-							<span className="min-w-0 truncate">Other models</span>
-							<IconChevronRight className="shrink-0 text-dim" size={17} />
+						<Menu.SubmenuTrigger
+							className={cn("justify-between gap-3", opencodeFirst && "text-dim")}
+						>
+							<span className="min-w-0 truncate">
+								{opencodeFirst ? LEGACY_GROUP_LABEL : "Other models"}
+							</span>
+							<span className="flex flex-none items-center gap-1 text-dim">
+								{selectedLegacyLabel && (
+									<span className="text-faint">{selectedLegacyLabel}</span>
+								)}
+								<IconChevronRight className="shrink-0" size={17} />
+							</span>
 						</Menu.SubmenuTrigger>
 						<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
-							{otherGroups.length > 1
+							{!opencodeFirst && otherGroups.length > 1
 								? otherGroups.map((g, i) => (
 										<React.Fragment key={g.engine}>
 											{i > 0 && <Menu.Separator className="my-1" />}

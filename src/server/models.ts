@@ -33,6 +33,37 @@ export const KNOWN_MODELS: ModelInfo[] = [
   { id: "gpt-5.3-codex-spark", provider: "codex", label: "GPT-5.3 Codex Spark", aliases: ["spark"] },
 ];
 
+/** "claude-opus-4-8" → "Opus 4.8", "gpt-5.4-mini" → "GPT-5.4 mini". Fallback
+ * prettifier for model slugs with no native registry entry to borrow from. */
+function prettifyModelSlug(slug: string): string {
+  if (slug.startsWith("gpt-")) {
+    const m = slug.slice(4).match(/^(\d+(?:[.-]\d+)*)(?:-(.+))?$/);
+    if (m) return `GPT-${m[1].replace(/-/g, ".")}${m[2] ? ` ${m[2].replace(/-/g, " ")}` : ""}`;
+    return `GPT-${slug.slice(4)}`;
+  }
+  const words: string[] = [];
+  const nums: string[] = [];
+  for (const part of slug.replace(/^claude-/, "").split("-")) {
+    if (/^\d/.test(part)) nums.push(part);
+    else if (part) words.push(part.charAt(0).toUpperCase() + part.slice(1));
+  }
+  return [words.join(" "), nums.join(".")].filter(Boolean).join(" ") || slug;
+}
+
+/**
+ * Friendly label for an opencode/<provider>/<model> id: just the model name
+ * ("Sonnet 5", "GPT-5.5") — the OpenCode engine is an implementation detail,
+ * never part of the display name. Borrows the native registry's label when the
+ * tail matches a known model id, so opencode entries read exactly like the
+ * native ones always have.
+ */
+export function opencodeModelLabel(id: string): string {
+  const tail = id.split("/").pop() || id;
+  const native = KNOWN_MODELS.find((m) => m.provider !== "opencode" && m.id === tail);
+  const base = native?.label || prettifyModelSlug(tail);
+  return base.replace(/^Claude\s+/i, "").replace(/\s*\(Codex\)$/i, "");
+}
+
 // OpenCode engine models are opt-in only: `pickerModels` from
 // ~/.opensession-opencode.json (and only while `enabled` is true) surface in
 // the UI picker; any other opencode/<provider>/<model> id still resolves via
@@ -43,7 +74,7 @@ try {
     KNOWN_MODELS.push({
       id,
       provider: "opencode",
-      label: `${id.slice("opencode/".length)} (OpenCode)`,
+      label: opencodeModelLabel(id),
       aliases: [],
     });
   }
@@ -295,7 +326,11 @@ export function providerFor(model?: string | null): Provider {
 
 export function modelLabel(model?: string | null): string {
   const id = model || getDefaultModel();
-  return KNOWN_MODELS.find((m) => m.id === id)?.label || id;
+  const known = KNOWN_MODELS.find((m) => m.id === id)?.label;
+  if (known) return known;
+  // Non-picker opencode ids still deserve a friendly name, not a slashed slug.
+  if (id.startsWith("opencode/")) return opencodeModelLabel(id);
+  return id;
 }
 
 // ── Pricing & context windows (for live cost/context reporting) ──────────────

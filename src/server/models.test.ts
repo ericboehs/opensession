@@ -3,8 +3,25 @@ import {
   BEST_AVAILABLE_CODEX_MODEL,
   fallbackModelChain,
   markCodexModelExhausted,
+  opencodeModelLabel,
   resolveConcreteModel,
 } from "./models";
+
+describe("opencodeModelLabel", () => {
+  it("gives opencode ids first-class friendly names — never the engine", () => {
+    expect(opencodeModelLabel("opencode/anthropic/claude-sonnet-5")).toBe("Sonnet 5");
+    expect(opencodeModelLabel("opencode/anthropic/claude-haiku-4-5")).toBe("Haiku 4.5");
+    expect(opencodeModelLabel("opencode/anthropic/claude-opus-4-8")).toBe("Opus 4.8");
+    expect(opencodeModelLabel("opencode/anthropic/claude-fable-5")).toBe("Fable 5");
+    expect(opencodeModelLabel("opencode/openai/gpt-5.5")).toBe("GPT-5.5");
+    expect(opencodeModelLabel("opencode/openai/gpt-5.4-mini")).toBe("GPT-5.4 mini");
+  });
+
+  it("prettifies slugs with no native registry entry to borrow from", () => {
+    expect(opencodeModelLabel("opencode/anthropic/claude-sonnet-6")).toBe("Sonnet 6");
+    expect(opencodeModelLabel("opencode/openai/gpt-6")).toBe("GPT-6");
+  });
+});
 
 describe("fallbackModelChain", () => {
   it("tries the configured fallback first, then other top models", () => {

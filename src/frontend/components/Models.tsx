@@ -1,6 +1,7 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useState, useCallback } from "react";
 import { TEAM } from "./UserPicker";
+import { shortModelLabel, splitModelOptions } from "./ModelEffortSelect";
 
 // The Settings → Models panel: which model new sessions run on, plus the
 // Claude / Codex account pools those runs draw from. Everything here follows
@@ -8,7 +9,7 @@ import { TEAM } from "./UserPicker";
 
 interface ModelInfo {
 	id: string;
-	provider: "claude" | "codex";
+	provider: "claude" | "codex" | "opencode";
 	label: string;
 	aliases: string[];
 }
@@ -112,8 +113,14 @@ function DefaultModelRow() {
 		setSaving(false);
 	}
 
-	const claudeModels = (models || []).filter((m) => m.provider === "claude");
-	const codexModels = (models || []).filter((m) => m.provider === "codex");
+	// Opencode entries are the first-class list (friendly names, no engine
+	// noise); the native claude/codex entries stay selectable under
+	// de-emphasized legacy groups while the migration lands.
+	const { opencode: opencodeModels, legacy } = splitModelOptions(models || []);
+	const claudeModels = legacy.filter((m) => m.provider === "claude");
+	const codexModels = legacy.filter((m) => m.provider === "codex");
+	const legacyGroup = (engine: string) =>
+		opencodeModels.length > 0 ? `Legacy — ${engine} (direct SDK)` : engine;
 
 	return (
 		<div className="setting-row">
@@ -132,8 +139,13 @@ function DefaultModelRow() {
 					onChange={(e) => handleChange(e.target.value)}
 					aria-label="Default model"
 				>
+					{opencodeModels.map((m) => (
+						<option key={m.id} value={m.id}>
+							{shortModelLabel(m.id, models || [])}
+						</option>
+					))}
 					{claudeModels.length > 0 && (
-						<optgroup label="Claude">
+						<optgroup label={legacyGroup("Claude")}>
 							{claudeModels.map((m) => (
 								<option key={m.id} value={m.id}>
 									{m.label}
@@ -142,7 +154,7 @@ function DefaultModelRow() {
 						</optgroup>
 					)}
 					{codexModels.length > 0 && (
-						<optgroup label="Codex">
+						<optgroup label={legacyGroup("Codex")}>
 							{codexModels.map((m) => (
 								<option key={m.id} value={m.id}>
 									{m.label}
