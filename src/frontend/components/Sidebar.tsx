@@ -2082,16 +2082,7 @@ export function Sidebar({
 									? `Archive workspace (${row.chats.length} chats)`
 									: "Archive workspace"
 							}
-							shortcut={
-								// Single-chat workspace: archiving the workspace ≡ archiving
-								// the open chat, so advertise the short ⌘E chord. The ⌘⌥⇧A
-								// escalation only matters when there's more than one chat.
-								active
-									? row.chats.length > 1
-										? ARCHIVE_WS_SHORTCUT_KEYS
-										: ARCHIVE_SHORTCUT_KEYS
-									: undefined
-							}
+							shortcut={active ? ARCHIVE_WS_SHORTCUT_KEYS : undefined}
 						>
 							<span
 								role="button"

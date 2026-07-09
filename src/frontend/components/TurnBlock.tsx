@@ -10,6 +10,10 @@ import {
 import { renderMarkdown } from "../lib/markdown";
 import { IconChevronDown } from "./icons";
 import { cn } from "../ui/cn";
+import {
+  getTurnActivityPref,
+  onTurnActivityChanged,
+} from "../lib/turn-activity";
 
 interface Props {
   /** The folded part of one assistant turn: tool_use + intermediate assistant
@@ -49,15 +53,25 @@ export const TurnBlock = React.memo(function TurnBlock({
     const r = it.toolUseId ? toolResults.get(it.toolUseId) : undefined;
     return (r?.images?.length ?? 0) > 0 || (r?.videos?.length ?? 0) > 0;
   });
-  // Open while the turn is still working (thinking / tool steps in flight, no
-  // final answer yet) so you can watch it run; collapse the moment it settles
-  // and the end message appears — the chat then reads question → answer. Media
-  // pins it open regardless so a screenshot/recording stays visible.
-  const [expanded, setExpanded] = useState(live || hasMedia);
+  // Default fold state follows the per-browser preference (Settings →
+  // Appearance). "auto": open while the turn is still working (thinking /
+  // tool steps in flight, no final answer yet) so you can watch it run, and
+  // collapse the moment it settles and the end message appears — the chat
+  // then reads question → answer. "expanded"/"collapsed" pin one state for
+  // readers who always (or never) want the working visible. Media pins it
+  // open regardless so a screenshot/recording stays visible.
+  const [pref, setPref] = useState(getTurnActivityPref);
+  useEffect(
+    () => onTurnActivityChanged(() => setPref(getTurnActivityPref())),
+    []
+  );
+  const defaultExpanded =
+    hasMedia || (pref === "auto" ? live : pref === "expanded");
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   useEffect(() => {
-    setExpanded(live || hasMedia);
-  }, [live, hasMedia]);
+    setExpanded(defaultExpanded);
+  }, [defaultExpanded]);
 
   const duration = blockDuration(items, toolResults);
   const failures = tools.filter(

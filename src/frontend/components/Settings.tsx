@@ -23,6 +23,12 @@ import {
 	type WsTimePref,
 } from "../lib/workspace-time";
 import {
+	getTurnActivityPref,
+	setTurnActivityPref,
+	onTurnActivityChanged,
+	type TurnActivityPref,
+} from "../lib/turn-activity";
+import {
 	getSendKeyPref,
 	setSendKeyPref,
 	onSendKeyChanged,
@@ -1502,6 +1508,12 @@ function AppearancePanel() {
 	useEffect(() => onThemeChanged(() => setPref(getThemePref())), []);
 	const [wsTime, setWsTime] = useState<WsTimePref>(getWsTimePref);
 	useEffect(() => onWsTimeChanged(() => setWsTime(getWsTimePref())), []);
+	const [turnActivity, setTurnActivity] =
+		useState<TurnActivityPref>(getTurnActivityPref);
+	useEffect(
+		() => onTurnActivityChanged(() => setTurnActivity(getTurnActivityPref())),
+		[],
+	);
 
 	return (
 		<div className="settings-panel">
@@ -1524,6 +1536,28 @@ function AppearancePanel() {
 				{pref === "system"
 					? "Matches your operating system."
 					: `Always ${pref} mode.`}
+			</div>
+
+			<div className="settings-group-label" style={{ marginTop: 22 }}>
+				Chat
+			</div>
+			<div className="setting-card">
+				<SettingRow
+					title="Tool calls & messages"
+					desc="How each turn's working — tool calls and in-between messages — folds in the chat. Expand while running shows the work live and collapses it once the turn finishes."
+					control={
+						<Select
+							label="Tool calls & messages"
+							value={turnActivity}
+							options={[
+								{ value: "auto", label: "Expand while running" },
+								{ value: "expanded", label: "Always expanded" },
+								{ value: "collapsed", label: "Always collapsed" },
+							]}
+							onChange={setTurnActivityPref}
+						/>
+					}
+				/>
 			</div>
 
 			<div className="settings-group-label" style={{ marginTop: 22 }}>
