@@ -579,6 +579,12 @@ async function auditDaytonaLeftovers(): Promise<void> {
         // with its labels (and even state "started") for a few seconds.
         const state = String((s as any).state || "");
         if (/destroy|delet/i.test(state)) continue;
+        // ONLY sbxtest-labeled sandboxes count as suite leftovers. The API
+        // key may be the LIVE org's: real sessions' sandboxes carry the same
+        // backstage.sandbox=1 label, and reaping those here would destroy a
+        // live session's workspace out from under it.
+        const session = String((s as any).labels?.["backstage.session"] || "");
+        if (!session.startsWith("sbxtest-")) continue;
         out.push({ id: (s as any).id, state });
       }
       return out;
@@ -625,7 +631,12 @@ async function auditE2bLeftovers(): Promise<void> {
         : typeof paginator?.nextItems === "function"
           ? await paginator.nextItems()
           : await paginator;
-      return (infos || []).map((s: any) => String(s.sandboxId || s.id || "")).filter(Boolean);
+      // Same live-account guard as the daytona audit: only sbxtest sessions
+      // are suite leftovers — never reap a real session's sandbox.
+      return (infos || [])
+        .filter((s: any) => String(s.metadata?.bksSession || "").startsWith("sbxtest-"))
+        .map((s: any) => String(s.sandboxId || s.id || ""))
+        .filter(Boolean);
     };
     let leftovers = await listLeftovers();
     if (leftovers.length) {
