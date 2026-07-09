@@ -55,6 +55,11 @@ import { useIsPhone } from "../hooks/useIsPhone";
 
 const AUTOMATION_COLOR = "#d29922";
 
+// Archive the active workspace. The viewer's ⌘⇧A archives just the open chat
+// and bails on Alt, so the Alt-carrying escalation here never double-fires it.
+const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+const ARCHIVE_WS_SHORTCUT = isApple ? "⌘⌥⇧A" : "Ctrl+Alt+Shift+A";
+
 // Long-press (touch) tuning for the mobile action sheet.
 const LONG_PRESS_MS = 450; // hold before the sheet opens
 const LONG_PRESS_SLOP = 10; // px of finger travel that cancels it (a scroll)
@@ -1395,6 +1400,39 @@ export function Sidebar({
 		onArchiveWorkspace(row.chats, next?.chats[0] ?? null);
 	}
 
+	// ⌘⌥⇧A archives the whole active workspace — the workspace-level escalation
+	// of the viewer's ⌘⇧A (archive this chat). The Alt modifier is the thing
+	// that keeps them apart: the viewer's handler bails on altKey, so only one
+	// fires. Targets the workspace holding the open session.
+	useEffect(() => {
+		function onKeyDown(e: KeyboardEvent) {
+			if (
+				e.defaultPrevented ||
+				e.key.toLowerCase() !== "a" ||
+				!(e.metaKey || e.ctrlKey) ||
+				!e.shiftKey ||
+				!e.altKey
+			)
+				return;
+			const target = e.target as HTMLElement | null;
+			if (
+				target?.closest(
+					"input, textarea, select, [contenteditable='true'], [contenteditable='']",
+				)
+			)
+				return;
+			const row = wsRowOrder.find(
+				(r) => r.chats.length > 0 && r.chats.some((c) => c.id === selectedId),
+			);
+			if (!row) return;
+			e.preventDefault();
+			closeWsHover();
+			archiveWorkspaceWithNext(row);
+		}
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [wsRowOrder, selectedId, onArchiveWorkspace]);
+
 	// ── Workspace hover card ────────────────────────────────────────────────
 	// One card for the whole list (only one row can be dwelled on at a time).
 	// Unlike the info-only SessionHoverCard it carries actions (Archive, PR
@@ -1948,9 +1986,10 @@ export function Sidebar({
 							tabIndex={0}
 							className="sidebar-ws-action"
 							title={
-								row.chats.length > 1
+								(row.chats.length > 1
 									? `Archive workspace (${row.chats.length} chats)`
-									: "Archive"
+									: "Archive workspace") +
+								(active ? ` · ${ARCHIVE_WS_SHORTCUT}` : "")
 							}
 							onClick={(e) => {
 								e.stopPropagation();
