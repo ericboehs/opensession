@@ -40,26 +40,18 @@ schema from `src/server/opencode-config.ts`:
 
 ## Anthropic models (the Claude bridge)
 
-`bridge.mode` controls how `opencode/anthropic/*` models get Claude
-subscription capacity:
+`opencode/anthropic/*` models get Claude subscription capacity through
+**Meridian** — the bundled opencode-with-claude / `@rynfar/meridian` stack
+(pinned in package.json), injected as an OpenCode plugin. This is the mode we
+use: flat Max-subscription quota, verified live. `accounts` optionally
+restricts which Claude accounts serve it. Per-account `CLAUDE_CONFIG_DIR`
+isolation pins the selected account.
 
-- `"meridian"` (default): the bundled community opencode-with-claude /
-  Meridian stack (`@rynfar/meridian` + scrub plugin, pinned in package.json),
-  injected as an OpenCode plugin. `accounts` optionally restricts which
-  Claude accounts serve it.
-- `"native"`: the in-repo bridge (`src/server/anthropic-bridge.ts`) — a
-  loopback-only Anthropic-Messages-compatible endpoint served by the official
-  Claude Agent SDK on **designated** accounts (`accounts` is required; never
-  the pool), with a per-boot API key, body cap, hourly rate cap, and full
-  audit. This is the only remaining consumer of
-  `@anthropic-ai/claude-agent-sdk`.
-- `"off"`: bridge disabled.
-
-Honest quota note, in two sentences: the meridian path scrubs opencode's
-fingerprints so Anthropic bills it as first-party flat subscription quota,
-which works today but is a moving enforcement target; the native bridge
-deliberately does **not** scrub, so Anthropic bills it to extra-usage credits
-and returns 400 without them.
+Other `bridge.mode` values exist as non-default escape hatches: `"native"`
+(the in-repo `src/server/anthropic-bridge.ts`, a loopback-only
+Anthropic-Messages endpoint on the official Claude Agent SDK — designated
+accounts only, bills to extra-usage credits; the only remaining consumer of
+`@anthropic-ai/claude-agent-sdk`) and `"off"`.
 
 ### Claude accounts
 
