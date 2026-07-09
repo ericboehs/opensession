@@ -3144,16 +3144,27 @@ body.resizing-x {
 	color: var(--green);
 	background: var(--green-soft);
 }
-/* The header preview icon's cancel-spinner sits in the same 22px box as the
-   glyph so the row doesn't jump between states. It mirrors the staging globe's
-   halo (thin single arc in currentColor) so the two header icons spin alike —
-   here currentColor is the amber is-starting tone. */
+/* The header preview icon keeps its ▶ glyph while starting, haloed by a
+   spinning ring — mirroring the staging globe (glyph inside .staging-globe-wrap,
+   ring absolutely centered around it). The ring is a thin single arc in
+   currentColor (the amber is-starting tone) so the two header icons spin alike. */
+.preview-spinner-wrap {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
 .preview-icon .preview-spinner {
-	width: 22px;
-	height: 22px;
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 25px;
+	height: 25px;
+	margin: -12.5px 0 0 -12.5px;
 	border: 1.5px solid transparent;
 	border-top-color: currentColor;
 	opacity: 0.9;
+	pointer-events: none;
 }
 /* Snapshot action reached from the header popover (no caret to host it). */
 .preview-snap-row {

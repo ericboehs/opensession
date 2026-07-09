@@ -276,7 +276,10 @@ export function PreviewButton({
               onContextMenu={openMenu}
               disabled={stopping}
             >
-              <span className="preview-spinner" />
+              <span className="preview-spinner-wrap">
+                <span className="preview-spinner" aria-hidden="true" />
+                <IconPlayOutline size={24} />
+              </span>
             </button>
           </Tooltip>
         ) : (
