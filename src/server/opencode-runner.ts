@@ -1162,7 +1162,7 @@ export async function* runOpencode(
   for (let attempt = 0; attempt < MAX_ACCOUNT_ATTEMPTS; attempt++) {
     const rotation: AccountRotation | undefined =
       attempt < MAX_ACCOUNT_ATTEMPTS - 1 ? { rotate: false, note: "" } : undefined;
-    yield* runOpencodeAttempt(opts, model, rotation);
+    yield* runOpencodeAttempt(opts, model, rotation, attempt);
     if (!rotation?.rotate) return;
     yield { type: "text_chunk", text: `\n\n[runner] ${rotation.note}\n\n` };
   }
@@ -1171,7 +1171,8 @@ export async function* runOpencode(
 async function* runOpencodeAttempt(
   opts: RunAgentOpts & { allowOpencode?: boolean; forceSharedServer?: boolean },
   model: string,
-  rotation?: AccountRotation
+  rotation?: AccountRotation,
+  attemptIndex = 0
 ): AsyncGenerator<StreamEvent> {
   const { prompt, cwd, mode, mcpServers, confirmTools, journal, user, author } = opts;
   const isAsk = mode === "ask";
@@ -1707,9 +1708,15 @@ async function* runOpencodeAttempt(
       ocSessionId,
       createdFresh ? opts.seedTranscriptEntries : undefined
     );
-    appendOpencodeTranscript(ocSessionId, [
-      transcriptLineUser(prompt, undefined, undefined, opts.images),
-    ]);
+    // Account-rotation retries rerun this whole attempt with the same prompt —
+    // appending the user line again gave one send two or three identical
+    // bubbles (3× "FINISH ITTT", doubled resume prompts, 2026-07-09). The
+    // first attempt's line is the record; retries only re-deliver.
+    if (attemptIndex === 0) {
+      appendOpencodeTranscript(ocSessionId, [
+        transcriptLineUser(prompt, undefined, undefined, opts.images),
+      ]);
+    }
 
     // Kind-only journals ({kind} with no bksSessionId — the Plain/Linear/Slack
     // agent loops) are a gate/policy marker, not a crash journal: those loops
@@ -1742,6 +1749,8 @@ async function* runOpencodeAttempt(
       kind: "user_prompt",
       cwd,
       mcp_servers: mcpServers,
+      // >0 = account-rotation redelivery of the same prompt, not a new send.
+      ...(attemptIndex > 0 ? { retry_attempt: attemptIndex } : {}),
       // Shared always-warm pool visibility: which server this run multiplexed
       // onto (account × user tuple), for debugging cross-session issues.
       ...(shared ? { shared_server: serverKey } : {}),
