@@ -7,6 +7,7 @@ import { Menu, ContextMenu } from "../ui/menu";
 import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { copySessionTranscript } from "../lib/transcript-copy";
 import { IconHistory, IconPencil, IconPlus, IconRestore } from "./icons";
+import { useIsPhone } from "../hooks/useIsPhone";
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling chats of the
@@ -78,6 +79,12 @@ export function SessionTabs({
 	// during render to show the unsent-draft pencil on sibling chats.
 	const [, setDraftsRev] = useState(0);
 	useEffect(() => onDraftsChanged(() => setDraftsRev((v) => v + 1)), []);
+	// On phones the +/history controls ride INSIDE the scroll (see below) so the
+	// tab strip claims the full width instead of losing it to pinned chrome; on
+	// desktop they stay pinned after the last tab. Icons run a touch bigger on
+	// touch for an easier hit.
+	const isPhone = useIsPhone();
+	const ctrlIconSize = isPhone ? 25 : 22;
 
 	function commitRename() {
 		if (editKey !== null) onRename(editKey, draft.trim());
@@ -101,6 +108,61 @@ export function SessionTabs({
 	// One chat (or a standalone chat) → no tab strip. The lone workspace's
 	// "+ New tab" button lives next to the session title in the header instead.
 	if (tabs.length <= 1) return null;
+
+	// New-tab "+" — plain-click shares the workspace worktree; right-click offers
+	// the stacked/ask modes.
+	const newTabButton = (
+		<button
+			type="button"
+			className="session-tab session-tab-new"
+			aria-label="New chat in this workspace"
+			title="New chat — shares this workspace's worktree (right-click for options)"
+			onClick={() => onNewChat("share")}
+			onContextMenu={(e) => {
+				e.preventDefault();
+				setNewMenu({ x: e.clientX, y: e.clientY });
+			}}
+		>
+			<IconPlus size={ctrlIconSize} />
+		</button>
+	);
+
+	// History: every archived (closed) chat of this workspace, in one list.
+	// Clicking a row opens the chat read-only-ish (it gets a tab while viewed);
+	// the ⟲ restores it into the strip for good.
+	const historyMenu = archived.length > 0 && (
+		<Menu.Root>
+			<Menu.Trigger
+				className="session-tab session-tab-history"
+				aria-label="Archived chats"
+				title="Archived chats"
+			>
+				<IconHistory size={ctrlIconSize} />
+			</Menu.Trigger>
+			<Menu.Popup align="end" sideOffset={4} className="min-w-[240px] max-w-[320px]">
+				{archived.map((s) => (
+					<Menu.Item key={s.id} onClick={() => onSelect(s)}>
+						<span className="min-w-0 flex-1 truncate">{s.title}</span>
+						<span className="shrink-0 text-[11.5px] text-faint">
+							{relativeTime(s.lastActivity)}
+						</span>
+						<button
+							type="button"
+							className="flex shrink-0 cursor-pointer items-center rounded-sm border-0 bg-transparent p-0.5 text-dim hover:text-fg"
+							aria-label="Restore chat"
+							title="Restore to tabs"
+							onClick={(e) => {
+								e.stopPropagation();
+								onRestore(s);
+							}}
+						>
+							<IconRestore size={20} />
+						</button>
+					</Menu.Item>
+				))}
+			</Menu.Popup>
+		</Menu.Root>
+	);
 
 	return (
 		<div className="session-tabs" role="tablist">
@@ -254,63 +316,15 @@ export function SessionTabs({
 						</ContextMenu.Root>
 						);
 					})}
+					{/* Phone: the +/history controls scroll WITH the tabs so the strip
+					    uses the full width — nothing pinned eating horizontal room. */}
+					{isPhone && newTabButton}
+					{isPhone && historyMenu}
 				</div>
-				{/* New-tab "+" sits OUTSIDE the scroll so it's pinned and always
-				    visible — never scrolled off when the tabs overflow a narrow pane.
-				    Plain-click shares the workspace worktree; right-click offers the
-				    stacked/ask modes. */}
-				<button
-					type="button"
-					className="session-tab session-tab-new"
-					aria-label="New chat in this workspace"
-					title="New chat — shares this workspace's worktree (right-click for options)"
-					onClick={() => onNewChat("share")}
-					onContextMenu={(e) => {
-						e.preventDefault();
-						setNewMenu({ x: e.clientX, y: e.clientY });
-					}}
-				>
-					<IconPlus size={22} />
-				</button>
-			<div className="session-tabs-actions">
-
-				{/* History: every archived (closed) chat of this workspace, in one
-				    list. Clicking a row opens the chat read-only-ish (it gets a tab
-				    while viewed); the ⟲ restores it into the strip for good. */}
-				{archived.length > 0 && (
-					<Menu.Root>
-						<Menu.Trigger
-							className="session-tab session-tab-history"
-							aria-label="Archived chats"
-							title="Archived chats"
-						>
-							<IconHistory size={22} />
-						</Menu.Trigger>
-						<Menu.Popup align="end" sideOffset={4} className="min-w-[240px] max-w-[320px]">
-							{archived.map((s) => (
-								<Menu.Item key={s.id} onClick={() => onSelect(s)}>
-									<span className="min-w-0 flex-1 truncate">{s.title}</span>
-									<span className="shrink-0 text-[11.5px] text-faint">
-										{relativeTime(s.lastActivity)}
-									</span>
-									<button
-										type="button"
-										className="flex shrink-0 cursor-pointer items-center rounded-sm border-0 bg-transparent p-0.5 text-dim hover:text-fg"
-										aria-label="Restore chat"
-										title="Restore to tabs"
-										onClick={(e) => {
-											e.stopPropagation();
-											onRestore(s);
-										}}
-									>
-										<IconRestore size={20} />
-									</button>
-								</Menu.Item>
-							))}
-						</Menu.Popup>
-					</Menu.Root>
-				)}
-			</div>
+				{/* Desktop: the "+" sits OUTSIDE the scroll so it's pinned and always
+				    visible — never scrolled off when the tabs overflow a narrow pane. */}
+				{!isPhone && newTabButton}
+				{!isPhone && <div className="session-tabs-actions">{historyMenu}</div>}
 
 			{newMenu && (
 				<div
