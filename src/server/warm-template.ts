@@ -230,6 +230,10 @@ export function isNodeModulesEntry(entry: string): boolean {
 
 const BOOT_TIMEOUT_MS = 12 * 60_000;
 const ROUTE_WARM_TIMEOUT_MS = 240_000;
+/** Post-warm write-quiescence: how long the tree must go without artifact
+ *  writes before the server is stopped, and the cap on waiting for that. */
+const QUIET_WINDOW_S = 25;
+const QUIET_TIMEOUT_MS = 10 * 60_000;
 
 /**
  * Refresh a repo's warm template (idempotent; concurrent calls share one
@@ -342,6 +346,24 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
         }
       }
       console.log(`[warm-template] ${repoId}: route ${path} ${warmed ? "warmed" : "TIMED OUT"}`);
+    }
+
+    // 6b. The dev boot kicks off background compilers (ReScript's ~2.6k-module
+    //    initial build, Turbopack route compiles) that keep writing artifacts
+    //    well after the port is listening — stopping as soon as routes answer
+    //    captured a PARTIAL template on the first live refresh (the compiled
+    //    API__Session.bs.js was missing, so seeded worktrees 404'd on
+    //    /api/session). Wait until the tree has been write-quiet for a full
+    //    window before stopping; bounded, and noisy runtime paths (logs,
+    //    .next/trace) don't count as build activity.
+    const quietDeadline = Date.now() + QUIET_TIMEOUT_MS;
+    while (Date.now() < quietDeadline) {
+      const recent = await $`find ${dir} \( -path ${`${dir}/.git`} -o -path ${`${dir}/.ports`} -o -name "*.log" -o -path "*/.next/trace*" \) -prune -o -type f -newermt ${`${QUIET_WINDOW_S} seconds ago`} -print -quit`
+        .quiet()
+        .nothrow()
+        .text();
+      if (!recent.trim()) break;
+      await Bun.sleep(5000);
     }
 
     // 7. Done with the server — the template only needs the artifacts.
