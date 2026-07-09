@@ -11,6 +11,7 @@ import {
   fetchPr,
   fetchPrDiff,
   fetchGitStatus,
+  fetchReviewGuide,
   gitPushApi,
   submitPrReviewApi,
   mergePrApi,
@@ -58,6 +59,65 @@ interface PrDiffData {
   number: number;
   headRefOid: string;
   patch: string;
+}
+
+/** One narrative section of the AI review guide (mirrors the server shape). */
+interface ReviewGuideSection {
+  title: string;
+  explanation: string;
+  files: string[];
+}
+
+interface ReviewGuideData {
+  number: number;
+  headRefOid: string;
+  sections: ReviewGuideSection[];
+}
+
+/** Split a unified diff into per-file chunks keyed by the new-side path. */
+function splitPatchByFile(patch: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const part of patch.split(/^(?=diff --git )/m)) {
+    if (!part.startsWith("diff --git ")) continue;
+    const m = part.match(/^diff --git a\/(.+?) b\/(.+)$/m);
+    if (m) map.set(m[2], part);
+  }
+  return map;
+}
+
+/**
+ * Pair each guide section with the slice of the unified diff covering its
+ * files (so inline commenting keeps working inside the guide). Model paths are
+ * matched exactly, then by suffix; files no section claimed come back as a
+ * trailing "Everything else" section so guide mode never hides part of a PR.
+ */
+function sectionsWithPatches(guide: ReviewGuideData, patch: string) {
+  const byFile = splitPatchByFile(patch);
+  const unclaimed = new Set(byFile.keys());
+  const resolve = (file: string): string | null => {
+    if (byFile.has(file)) return file;
+    for (const path of byFile.keys())
+      if (path.endsWith(`/${file}`) || file.endsWith(`/${path}`)) return path;
+    return null;
+  };
+  const out = guide.sections.map((s) => {
+    const chunks: string[] = [];
+    for (const file of s.files) {
+      const path = resolve(file);
+      if (!path || !unclaimed.has(path)) continue;
+      unclaimed.delete(path);
+      chunks.push(byFile.get(path)!);
+    }
+    return { ...s, patch: chunks.join("") };
+  });
+  if (unclaimed.size > 0)
+    out.push({
+      title: "Everything else",
+      explanation: "Changes the guide didn't group into a section.",
+      files: [...unclaimed],
+      patch: [...unclaimed].map((f) => byFile.get(f)!).join(""),
+    });
+  return out;
 }
 
 /** Provider-neutral PR-state glyph (open/draft share the branch icon). */
@@ -144,6 +204,10 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [checksOpen, setChecksOpen] = useState(false);
   const [allFilesOpen, setAllFilesOpen] = useState(false);
+  const [diffView, setDiffView] = useState<"diff" | "guide">("diff");
+  const [guide, setGuide] = useState<ReviewGuideData | null>(null);
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [guideFailed, setGuideFailed] = useState(false);
   const [bodyOpen, setBodyOpen] = useState(false);
   const [bodyOverflows, setBodyOverflows] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -173,6 +237,30 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
     const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
   }, [load]);
+
+  const loadGuide = useCallback(async () => {
+    setGuideLoading(true);
+    setGuideFailed(false);
+    try {
+      const data = await fetchReviewGuide(sessionId, activeRepo);
+      if (data) setGuide(data);
+      else setGuideFailed(true);
+    } catch {
+      setGuideFailed(true);
+    } finally {
+      setGuideLoading(false);
+    }
+  }, [sessionId, activeRepo]);
+
+  // The guide is generated on demand (the first request per head commit takes
+  // the model a while) — only fetch once the reviewer opens the Guide tab, and
+  // refetch when a new push moves the head commit.
+  useEffect(() => {
+    if (diffView !== "guide" || !diff?.patch) return;
+    if (guideLoading || guideFailed) return;
+    if (guide && guide.headRefOid === diff.headRefOid) return;
+    void loadGuide();
+  }, [diffView, diff?.patch, diff?.headRefOid, guide, guideLoading, guideFailed, loadGuide]);
 
   // Inline comments don't post one-by-one — they accumulate as pending and ship
   // together when the reviewer finishes the review (the provider's native flow).
@@ -565,25 +653,78 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
       {diff?.patch && (
         <div className="pr-panel-diff">
           <div className="pr-diff-section">
-            <div className="pr-checks-title">
-              Review — comments stay pending until you submit
-              {reviewDone &&
-                (reviewDone === "submitted" ? (
-                  <span className="pr-comment-link">review submitted ✓</span>
-                ) : (
-                  <a className="pr-comment-link" href={reviewDone} target="_blank" rel="noopener">
-                    review submitted ↗
-                  </a>
+            <div className="pr-diff-head">
+              <div className="pr-diff-tabs" role="tablist">
+                {(
+                  [
+                    ["diff", "Diff"],
+                    ["guide", "Guide"],
+                  ] as Array<["diff" | "guide", string]>
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={diffView === key}
+                    className={`pr-diff-tab ${diffView === key ? "active" : ""}`}
+                    onClick={() => setDiffView(key)}
+                  >
+                    {label}
+                  </button>
                 ))}
+              </div>
+              <div className="pr-checks-title">
+                Review — comments stay pending until you submit
+                {reviewDone &&
+                  (reviewDone === "submitted" ? (
+                    <span className="pr-comment-link">review submitted ✓</span>
+                  ) : (
+                    <a className="pr-comment-link" href={reviewDone} target="_blank" rel="noopener">
+                      review submitted ↗
+                    </a>
+                  ))}
+              </div>
             </div>
-            <CommentableDiff
-              patch={diff.patch}
-              submitLabel="Add comment"
-              placeholder={`Comment on #${diff.number} — added to your pending review…`}
-              pendingComments={pending}
-              onRemovePending={handleRemovePending}
-              onSubmit={handleAddPending}
-            />
+            {diffView === "guide" ? (
+              guideLoading ? (
+                <div className="pr-guide-status">Writing the review guide…</div>
+              ) : guideFailed ? (
+                <div className="pr-guide-status">
+                  Couldn't generate a guide for this PR.
+                  <button className="prc-show-more" onClick={() => void loadGuide()}>
+                    Retry
+                  </button>
+                </div>
+              ) : guide ? (
+                sectionsWithPatches(guide, diff.patch).map((section, i, all) => (
+                  <div className="pr-guide-section" key={`${section.title}-${i}`}>
+                    <div className="pr-guide-count">
+                      {String(i + 1).padStart(2, "0")} / {String(all.length).padStart(2, "0")}
+                    </div>
+                    <div className="pr-guide-title">{section.title}</div>
+                    <div className="pr-guide-expl">{section.explanation}</div>
+                    {section.patch && (
+                      <CommentableDiff
+                        patch={section.patch}
+                        submitLabel="Add comment"
+                        placeholder={`Comment on #${diff.number} — added to your pending review…`}
+                        pendingComments={pending}
+                        onRemovePending={handleRemovePending}
+                        onSubmit={handleAddPending}
+                      />
+                    )}
+                  </div>
+                ))
+              ) : null
+            ) : (
+              <CommentableDiff
+                patch={diff.patch}
+                submitLabel="Add comment"
+                placeholder={`Comment on #${diff.number} — added to your pending review…`}
+                pendingComments={pending}
+                onRemovePending={handleRemovePending}
+                onSubmit={handleAddPending}
+              />
+            )}
           </div>
 
           {pending.length > 0 && (

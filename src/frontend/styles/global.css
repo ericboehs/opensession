@@ -6655,6 +6655,79 @@ a.workspace-info-check-row {
 	background: var(--text-faint);
 }
 
+/* Diff column head: Diff/Guide switcher + the pending-review hint. */
+.pr-diff-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 10px;
+}
+.pr-diff-head .pr-checks-title {
+	margin: 0;
+	min-width: 0;
+}
+.pr-diff-tabs {
+	display: inline-flex;
+	gap: 2px;
+	padding: 2px;
+	border-radius: var(--rf, 8px);
+	background: var(--surface);
+	flex-shrink: 0;
+}
+.pr-diff-tab {
+	appearance: none;
+	border: none;
+	background: transparent;
+	color: var(--text-dim);
+	font: inherit;
+	font-size: 12px;
+	font-weight: 600;
+	padding: 3px 10px;
+	border-radius: calc(var(--rf, 8px) - 2px);
+	cursor: pointer;
+}
+.pr-diff-tab:hover {
+	color: var(--text);
+}
+.pr-diff-tab.active {
+	background: var(--panel);
+	color: var(--text);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* AI review guide — narrative sections, each with its own diff slice. */
+.pr-guide-status {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 18px 4px;
+	font-size: 12.5px;
+	color: var(--text-dim);
+}
+.pr-guide-section {
+	margin-bottom: 28px;
+}
+.pr-guide-count {
+	font-size: 11px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+	margin-bottom: 6px;
+}
+.pr-guide-title {
+	font-size: 14px;
+	font-weight: 700;
+	color: var(--text);
+	margin-bottom: 6px;
+}
+.pr-guide-expl {
+	font-size: 12.5px;
+	line-height: 1.55;
+	color: var(--text-dim);
+	max-width: 60ch;
+	margin-bottom: 12px;
+}
+
 /* ── Reviews view ────────────────────────────────────────── */
 
 .sidebar-nav-count {

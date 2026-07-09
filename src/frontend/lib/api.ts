@@ -939,6 +939,15 @@ export async function fetchPrDiff(sessionId: string, repo?: string) {
 	);
 }
 
+/** AI review guide for the PR's Guide view — slow on first call per head commit. */
+export async function fetchReviewGuide(sessionId: string, repo?: string) {
+	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
+	return request<any>(
+		`/sessions/${encodeURIComponent(sessionId)}/review-guide${qs}`,
+		{ label: "Failed to fetch review guide" },
+	);
+}
+
 /** Session-less PR details for the sidebar's PR preview (keyed by repo+branch). */
 export async function fetchPrPreview(repo: string, branch: string) {
 	return request<any>(
