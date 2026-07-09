@@ -452,6 +452,15 @@ await new Promise<void>((resolveWait) => {
 });
 
 exiting = true; // stop the WS redial loop
+// Opencode engine: this process owns any `opencode serve` it spawned (the
+// server pool is per-process, and there is one run-host process per turn) —
+// kill it here or every opencode turn orphans a server inside the sandbox
+// container until the container stops. No-op for claude/codex runs, and the
+// next turn's run-host resumes the opencode session from its on-disk storage.
+try {
+  const oc = await import("../server/opencode-runner");
+  if (oc.killAllOpencodeServers("run-host exit") > 0) await oc.awaitOpencodeServersDead();
+} catch {}
 if (!RUN_WS_URL) {
   try {
     unlinkSync(sockPath);

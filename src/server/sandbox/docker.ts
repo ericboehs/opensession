@@ -126,6 +126,7 @@ import { writeJsonAtomic } from "../shared/atomic-write";
 import { HostHandle, type HandleCallbacks, type HostLauncher } from "../host-client";
 import { registerRunWsHost, unregisterRunWsHost, runWsConnector } from "../run-ws";
 import { getTranscriptPath } from "../sessions";
+import { OPENCODE_TRANSCRIPTS_DIR } from "../opencode-transcript";
 import { dropSandboxPreviewRoutes, tellaLocalSkillDir } from "../preview";
 import { REPOS, getRepo, worktreePathFor, type Repo } from "../worktree";
 import { LocalProvider } from "./local";
@@ -569,6 +570,7 @@ async function createContainer(
   // mounting them host-side keeps the session viewer's tail working.
   const transcriptDir = dirname(getTranscriptPath(cwd, "x"));
   mkdirSync(transcriptDir, { recursive: true });
+  mkdirSync(OPENCODE_TRANSCRIPTS_DIR, { recursive: true });
 
   const mounts: string[] = [
     // Named volumes ONLY at ~/.claude and ~/.codex — never at /home/ubuntu
@@ -578,6 +580,13 @@ async function createContainer(
     ...workspaceMounts,
     // Host-visible engine transcripts for this cwd (over the .claude volume).
     ...vol(transcriptDir, transcriptDir),
+    // OpenCode engine transcripts: the opencode runner persists claude-shape
+    // JSONL per session under ~/.claude/projects/-opencode-engine (see
+    // opencode-transcript.ts) — same trick as the per-cwd dir above, bound rw
+    // over the ~/.claude volume so the host session viewer can tail
+    // in-container opencode runs. (OpenCode's own SQLite store stays inside
+    // the container; the persisted JSONL is the durable host-visible copy.)
+    ...vol(OPENCODE_TRANSCRIPTS_DIR, OPENCODE_TRANSCRIPTS_DIR),
     // Per-session run dirs: spec/meta/journal/host.sock/log for every run.
     ...vol(runsDir, runsDir),
     // Audit log parity (append-only jsonl stream). Deliberately rw where the
@@ -621,6 +630,17 @@ async function createContainer(
     process.env.BACKSTAGE_CLAUDE_ACCOUNTS_PATH || `${HOME}/.backstage-claude-accounts.json`,
     "claude account pool",
   );
+  // OpenCode bridge config (~/.backstage-opencode.json): read IN-CONTAINER by
+  // the runner-host's opencode dispatch (bridge mode, accounts restriction,
+  // turn timeout) — without it every opencode/anthropic/* run in a sandbox
+  // fails with "bridge disabled". ro like the account pool it selects from.
+  // Source honors the host-side BACKSTAGE_OPENCODE_CONFIG seam, but the
+  // destination is always the default path — that's what the in-container
+  // process (which has no such env) reads.
+  {
+    const src = process.env.BACKSTAGE_OPENCODE_CONFIG || `${HOME}/.backstage-opencode.json`;
+    if (existsSync(src)) mounts.push(...vol(src, `${HOME}/.backstage-opencode.json`, true));
+  }
   // The tella-local skill (ensure-up.sh + CDP helpers) at its identical host
   // path, read-only — the Preview button's default bring-up for tella-fusion
   // must work inside sandboxes (both bind and volume mode). Mounted over the

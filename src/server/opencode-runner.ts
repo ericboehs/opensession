@@ -407,6 +407,36 @@ export function proxyOpencodeMcpConfigs(
   return out;
 }
 
+/** Runner-host context (sandboxed and systemd-hosted runs): `inProcessMcp`
+ *  arrives as ALREADY-BUILT stdio proxy configs (host.ts proxyMcpConfigs —
+ *  command/args/env carrying the spec's HOST-registered rpc token and the
+ *  right transport env, unix socket or rpc-ws). Pass those through verbatim:
+ *  rebuilding them here would mint a fresh token the backstage process never
+ *  registered (run-rpc auth lives there, not in this process) and point at
+ *  BUN_BIN, a host path that doesn't exist inside a sandbox container.
+ *  Returns null when the values are in-process SDK server instances (the
+ *  backstage-process path) — the caller then builds its own proxies via
+ *  proxyOpencodeMcpConfigs. */
+export function opencodeMcpFromPrebuiltProxies(
+  inProcessMcp: Record<string, unknown> | undefined
+): Record<string, Record<string, unknown>> | null {
+  const entries = Object.entries(inProcessMcp || {});
+  if (!entries.length) return null;
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const [name, raw] of entries) {
+    const cfg = raw as { command?: unknown; args?: unknown; env?: unknown };
+    if (typeof cfg?.command !== "string") return null; // SDK instance → not prebuilt
+    out[name] = {
+      type: "local",
+      command: [cfg.command, ...((Array.isArray(cfg.args) ? cfg.args : []) as string[])],
+      ...(cfg.env ? { environment: cfg.env } : {}),
+      enabled: true,
+      timeout: 60_000,
+    };
+  }
+  return out;
+}
+
 /** Session context (ask guardrails, repos note, managing-Michael notes) —
  *  delivered via an instructions file, OpenCode's system-prompt append
  *  channel. Sibling of buildCodexDeveloperInstructions with engine-accurate
@@ -518,9 +548,30 @@ export function opencodeEnv(author?: GitIdentity | null): Record<string, string>
   };
 }
 
-/** Stop every managed `opencode serve` process (verify scripts / tests). */
-export function killAllOpencodeServers(reason = "shutdown"): void {
-  for (const [key, entry] of [...servers.entries()]) killServer(key, entry, reason);
+/** Stop every managed `opencode serve` process (verify scripts / tests, and
+ *  the run-host's exit reap). Returns how many servers were told to die; await
+ *  `awaitOpencodeServersDead` after when the caller is about to process.exit
+ *  (the SIGKILL escalation is a timer that a fast exit would beat). */
+export function killAllOpencodeServers(reason = "shutdown"): number {
+  const entries = [...servers.entries()];
+  const procs = entries.map(([, e]) => e.proc);
+  for (const [key, entry] of entries) killServer(key, entry, reason);
+  pendingKilled.push(...procs);
+  return entries.length;
+}
+
+const pendingKilled: Subprocess<"ignore", "pipe", "pipe">[] = [];
+
+/** Wait (bounded) for servers killed via killAllOpencodeServers to actually
+ *  exit — covers the SIGTERM-swallowing meridian plugin, whose SIGKILL
+ *  escalation fires KILL_ESCALATION_MS after the kill. */
+export async function awaitOpencodeServersDead(timeoutMs = KILL_ESCALATION_MS + 3_000): Promise<void> {
+  const waits = pendingKilled.splice(0).map((p) => p.exited);
+  if (!waits.length) return;
+  await Promise.race([
+    Promise.all(waits),
+    new Promise((r) => setTimeout(r, timeoutMs)),
+  ]);
 }
 
 /** Grace before SIGTERM escalates to SIGKILL: the meridian plugin installs
@@ -910,13 +961,18 @@ export async function* runOpencode(
     const preEntry = servers.get(serverKey);
     const rpcToken = preEntry?.rpcToken || crypto.randomUUID();
     const hasInProcess = !!(opts.inProcessMcp && Object.keys(opts.inProcessMcp).length);
+    // Prebuilt stdio proxies (runner-host context) pass through as-is — their
+    // rpc token is already registered in the backstage process. See
+    // opencodeMcpFromPrebuiltProxies.
+    const prebuiltProxies = opencodeMcpFromPrebuiltProxies(opts.inProcessMcp);
 
     const ocConfig: Record<string, unknown> = {
       mcp: {
         ...externalMcp,
-        ...(hasInProcess && journal?.bksSessionId
-          ? proxyOpencodeMcpConfigs(opts.inProcessMcp, rpcToken)
-          : {}),
+        ...(prebuiltProxies ??
+          (hasInProcess && journal?.bksSessionId
+            ? proxyOpencodeMcpConfigs(opts.inProcessMcp, rpcToken)
+            : {})),
       },
       instructions: [instructionsPath],
       autoshare: false,
@@ -953,7 +1009,7 @@ export async function* runOpencode(
         failRun();
       });
     }
-    if (hasInProcess && journal?.bksSessionId) {
+    if (!prebuiltProxies && hasInProcess && journal?.bksSessionId) {
       registerRunToken(rpcToken, { sessionId: journal.bksSessionId, user });
       rpcTokenRegistered = true;
     }

@@ -126,5 +126,15 @@ COPY --chown=ubuntu:ubuntu src ./src
 
 WORKDIR /home/ubuntu
 
+# Pre-create HOME dirs that are PARENTS of bind-mount targets (~/.config/gh,
+# ~/.backstage-chats/sandbox-runs/…, the rpc socket) — if they don't exist,
+# docker creates them ROOT-owned when materializing the mount target, and then
+# uid-1000 tools can't write siblings (opencode needs ~/.config/opencode and
+# ~/.backstage-chats/opencode — both EACCES'd before this). Runs as USER
+# ubuntu, so ownership is right by construction.
+RUN mkdir -p /home/ubuntu/.config \
+             /home/ubuntu/.local/share \
+             /home/ubuntu/.backstage-chats
+
 # Containers are started long-lived and `docker exec`'d into (one per session).
 CMD ["sleep", "infinity"]
