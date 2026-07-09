@@ -44,6 +44,7 @@ import {
 } from "../lib/pins";
 import { Connections } from "./Connections";
 import { ModelsPanel } from "./Models";
+import { ModelProvidersPanel } from "./ModelProviders";
 import {
 	fetchMonitorConfig,
 	updateMonitorConfig,
@@ -87,6 +88,7 @@ export type SettingsSectionKey =
 	| "appearance"
 	| "workspace"
 	| "model"
+	| "modelProviders"
 	| "connections"
 	| "audit"
 	| ToolSectionKey;
@@ -345,6 +347,26 @@ const SECTIONS: {
 		),
 	},
 	{
+		key: "modelProviders",
+		label: "Model providers",
+		group: "Workspace",
+		icon: (
+			<svg
+				width="20"
+				height="20"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<rect x="2.25" y="2.25" width="5" height="5" rx="1" />
+				<rect x="8.75" y="8.75" width="5" height="5" rx="1" />
+				<circle cx="11.25" cy="4.75" r="2.5" />
+				<path d="M4.75 9.5v1.75a1 1 0 0 0 1 1h1.75" strokeLinecap="round" />
+			</svg>
+		),
+	},
+	{
 		key: "connections",
 		label: "Connections",
 		group: "Workspace",
@@ -404,6 +426,7 @@ function SectionPanel({
 			{section === "workspace" && <WorkspacePanel />}
 			{section === "audit" && <AuditPanel />}
 			{section === "model" && <ModelsPanel />}
+			{section === "modelProviders" && <ModelProvidersPanel />}
 			{section === "connections" && <Connections />}
 		</>
 	);

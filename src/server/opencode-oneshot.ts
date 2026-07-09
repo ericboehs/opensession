@@ -28,7 +28,7 @@ import {
   OPENCODE_STATE_DIR,
   type OpencodeServerEntry,
 } from "./opencode-runner";
-import { readOpencodeBridgeConfig } from "./opencode-config";
+import { readOpencodeBridgeConfig, opencodeProviderOptions } from "./opencode-config";
 import { ensureAnthropicBridge } from "./anthropic-bridge";
 import { isClaudeUsageLimitError } from "./runner-shared";
 import { markExhausted, getUsableAccountById, type ClaudeAccount } from "./claude-accounts";
@@ -164,6 +164,13 @@ export async function opencodeOneShot(
       }
 
       mkdirSync(ONESHOT_CWD, { recursive: true });
+      // Same merge as full runs: configured third-party providers UNDER the
+      // bridge override (anthropic/openai always win); key omitted when both
+      // are empty so the no-providers config hash is unchanged.
+      const providerConfig = {
+        ...opencodeProviderOptions(),
+        ...(providerOverride || {}),
+      };
       const config: Record<string, unknown> = {
         mcp: {},
         autoshare: false,
@@ -172,7 +179,7 @@ export async function opencodeOneShot(
         tools: { "*": false },
         permission: { edit: "deny", bash: { "*": "deny" }, webfetch: "deny", external_directory: "deny" },
         ...(plugin ? { plugin } : {}),
-        ...(providerOverride ? { provider: providerOverride } : {}),
+        ...(Object.keys(providerConfig).length ? { provider: providerConfig } : {}),
       };
 
       const entry = await ensureSerialized(serverKey, ONESHOT_CWD, config, extraEnv);

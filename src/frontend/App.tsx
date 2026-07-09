@@ -123,6 +123,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"appearance",
 	"workspace",
 	"model",
+	"modelProviders",
 	"connections",
 	"audit",
 ]);

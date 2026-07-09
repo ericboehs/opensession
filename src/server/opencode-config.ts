@@ -43,6 +43,12 @@
  *     "pickerModels": ["opencode/anthropic/claude-sonnet-5"], // optional: surface
  *         // these ids in the UI model picker. Absent = opencode models are
  *         // type-in only (still routable, just not advertised).
+ *     "providers": { "xai": { "apiKey": "...", "baseURL": "..." } },
+ *         // optional: third-party model providers (any provider opencode
+ *         //   supports — xai, openrouter, groq, …) with their API keys.
+ *         //   Injected into the OpenCode config as provider.<id>.options.
+ *         //   anthropic/openai are NEVER configured here: they run on the
+ *         //   subscription bridges above and always override this map.
  *     "turnTimeoutMinutes": 60,      // optional: hard wall-clock cap per opencode
  *         // turn (opencode-runner aborts past it). Default 60.
  *     "bridgeMaxRequestsPerHour": 300 // optional: per-account rolling request
@@ -50,13 +56,20 @@
  *   }
  *
  * Read fresh per call (tiny file) so edits apply without a restart — except
- * `pickerModels`, which models.ts folds into its registry at module load.
- * The env override is a test seam (verify scripts point it at a temp file so
- * they never enable the real bridge).
+ * `pickerModels`, which models.ts folds into its registry at module load (the
+ * model-providers settings routes call refreshOpencodePickerModels() after
+ * writing, so UI edits show up without one). The env override is a test seam
+ * (verify scripts point it at a temp file so they never enable the real
+ * bridge).
+ *
+ * `providers` and `pickerModels` are also WRITTEN here (Settings → Model
+ * providers): raw-JSON read-modify-write so unknown/legacy fields survive,
+ * atomic rename + chmod 0600 because the file holds API keys.
  */
 
 import { envAlias, stateDir } from "./rename-compat";
-import { existsSync, readFileSync } from "fs";
+import { writeJsonAtomic } from "./shared/atomic-write";
+import { chmodSync, existsSync, readFileSync } from "fs";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
@@ -69,6 +82,18 @@ export function configPath(): string {
 }
 
 export type BridgeMode = "meridian" | "native" | "off";
+
+/** One configured third-party provider (xai, openrouter, groq, …). */
+export interface OpencodeProviderConfig {
+  apiKey?: string;
+  baseURL?: string;
+}
+
+/** Valid provider ids — matches opencode's own provider slugs. */
+export const PROVIDER_ID_RE = /^[a-z0-9-]+$/;
+
+/** Providers served by the subscription bridges — never raw API keys here. */
+export const BRIDGE_PROVIDER_IDS = new Set(["anthropic", "openai"]);
 
 export interface OpencodeBridgeConfig {
   enabled: boolean;
@@ -93,10 +118,28 @@ export interface OpencodeBridgeConfig {
    *  only gates the Anthropic bridge); opencode/openai auth keys off the codex
    *  accounts pool, not this file — see opencode-openai-auth.ts. */
   openaiAccounts?: string[];
+  /** Third-party providers (id → apiKey/baseURL), injected into OpenCode
+   *  config as provider.<id>.options. Independent of `enabled` (that flag only
+   *  gates the Anthropic bridge). anthropic/openai never live here. */
+  providers?: Record<string, OpencodeProviderConfig>;
 }
 
 function stringArray(v: unknown): string[] | undefined {
   return Array.isArray(v) ? v.filter((x: unknown): x is string => typeof x === "string" && !!x) : undefined;
+}
+
+function providerMap(v: unknown): Record<string, OpencodeProviderConfig> | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const out: Record<string, OpencodeProviderConfig> = {};
+  for (const [id, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (!PROVIDER_ID_RE.test(id) || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const r = raw as Record<string, unknown>;
+    out[id] = {
+      ...(typeof r.apiKey === "string" && r.apiKey ? { apiKey: r.apiKey } : {}),
+      ...(typeof r.baseURL === "string" && r.baseURL ? { baseURL: r.baseURL } : {}),
+    };
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** Pure normalization (exported for tests): raw JSON → typed config. */
@@ -130,6 +173,7 @@ export function normalizeOpencodeConfig(raw: unknown): OpencodeBridgeConfig | nu
         ? r.bridgeMaxRequestsPerHour
         : undefined,
     openaiAccounts: stringArray(bridge?.openaiAccounts),
+    providers: providerMap(r.providers),
   };
 }
 
@@ -178,4 +222,138 @@ export function opencodePickerModels(): string[] {
   const cfg = readOpencodeBridgeConfig();
   if (!cfg?.enabled) return [];
   return (cfg.pickerModels || []).filter((id) => id.startsWith("opencode/"));
+}
+
+// ── Write path (Settings → Model providers) ─────────────────────────────────
+//
+// Raw-JSON read-modify-write: the normalized shape above drops/renames fields
+// (bridge, legacy aliases), so writes always go through the raw object to
+// preserve everything we don't own. Atomic rename + 0600 — the file holds keys.
+
+function readRawOpencodeConfig(): Record<string, unknown> {
+  const path = configPath();
+  if (!existsSync(path)) return {};
+  // Unlike the read path (fail-soft null), a write built on `{}` would clobber
+  // a config that's merely unparseable — fail loudly instead.
+  const raw = JSON.parse(readFileSync(path, "utf-8"));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`Cannot update ${path}: existing content is not a JSON object`);
+  }
+  return raw as Record<string, unknown>;
+}
+
+function writeRawOpencodeConfig(raw: Record<string, unknown>): void {
+  const path = configPath();
+  writeJsonAtomic(path, raw);
+  chmodSync(path, 0o600);
+}
+
+function rawProviders(raw: Record<string, unknown>): Record<string, unknown> {
+  return raw.providers && typeof raw.providers === "object" && !Array.isArray(raw.providers)
+    ? (raw.providers as Record<string, unknown>)
+    : {};
+}
+
+function rawPickerModels(raw: Record<string, unknown>): string[] {
+  return Array.isArray(raw.pickerModels)
+    ? raw.pickerModels.filter((x: unknown): x is string => typeof x === "string" && !!x)
+    : [];
+}
+
+/** Configured third-party providers (id → apiKey/baseURL). Read fresh. */
+export function opencodeProviders(): Record<string, OpencodeProviderConfig> {
+  return readOpencodeBridgeConfig()?.providers || {};
+}
+
+/**
+ * Upsert a third-party provider. Field semantics: `undefined` keeps the stored
+ * value, `""` clears it, anything else replaces it. Throws on invalid ids and
+ * on the bridge providers (anthropic/openai run on subscriptions, not keys).
+ */
+export function setOpencodeProvider(id: string, cfg: OpencodeProviderConfig): void {
+  if (!PROVIDER_ID_RE.test(id)) {
+    throw new Error(`Invalid provider id "${id}" (lowercase letters, digits and dashes only)`);
+  }
+  if (BRIDGE_PROVIDER_IDS.has(id)) {
+    throw new Error(`"${id}" runs on the subscription bridge, not a raw API key`);
+  }
+  const raw = readRawOpencodeConfig();
+  const providers = rawProviders(raw);
+  const existing =
+    providers[id] && typeof providers[id] === "object" && !Array.isArray(providers[id])
+      ? (providers[id] as Record<string, unknown>)
+      : {};
+  const next: OpencodeProviderConfig = {
+    ...(typeof existing.apiKey === "string" && existing.apiKey ? { apiKey: existing.apiKey } : {}),
+    ...(typeof existing.baseURL === "string" && existing.baseURL ? { baseURL: existing.baseURL } : {}),
+  };
+  if (cfg.apiKey !== undefined) {
+    if (cfg.apiKey) next.apiKey = cfg.apiKey;
+    else delete next.apiKey;
+  }
+  if (cfg.baseURL !== undefined) {
+    if (cfg.baseURL) next.baseURL = cfg.baseURL;
+    else delete next.baseURL;
+  }
+  providers[id] = next;
+  raw.providers = providers;
+  writeRawOpencodeConfig(raw);
+}
+
+/** Remove a third-party provider. Returns whether it existed. */
+export function removeOpencodeProvider(id: string): boolean {
+  const raw = readRawOpencodeConfig();
+  const providers = rawProviders(raw);
+  if (!(id in providers)) return false;
+  delete providers[id];
+  if (Object.keys(providers).length) raw.providers = providers;
+  else delete raw.providers;
+  writeRawOpencodeConfig(raw);
+  return true;
+}
+
+/**
+ * The configured providers shaped for OpenCode config injection:
+ * `{ [id]: { options: { apiKey, baseURL? } } }`. The runners spread this UNDER
+ * their bridge providerOverride so anthropic/openai always win; belt-and-
+ * suspenders, bridge provider ids are skipped here too.
+ */
+export function opencodeProviderOptions(): Record<string, { options: Record<string, string> }> {
+  const out: Record<string, { options: Record<string, string> }> = {};
+  for (const [id, p] of Object.entries(opencodeProviders())) {
+    if (BRIDGE_PROVIDER_IDS.has(id)) continue;
+    const options: Record<string, string> = {
+      ...(p.apiKey ? { apiKey: p.apiKey } : {}),
+      ...(p.baseURL ? { baseURL: p.baseURL } : {}),
+    };
+    if (Object.keys(options).length) out[id] = { options };
+  }
+  return out;
+}
+
+/** Add an id to pickerModels (idempotent). Returns the stored list. */
+export function addPickerModel(id: string): string[] {
+  const raw = readRawOpencodeConfig();
+  const list = rawPickerModels(raw);
+  if (!list.includes(id)) list.push(id);
+  raw.pickerModels = list;
+  writeRawOpencodeConfig(raw);
+  return list;
+}
+
+/** Remove an id from pickerModels. Returns the stored list. */
+export function removePickerModel(id: string): string[] {
+  const raw = readRawOpencodeConfig();
+  const list = rawPickerModels(raw).filter((x) => x !== id);
+  raw.pickerModels = list;
+  writeRawOpencodeConfig(raw);
+  return list;
+}
+
+/** Masked display form of a stored key ("sk-x…wxyz") — the full value never
+ *  leaves the server. */
+export function maskProviderKey(key: string | undefined): string {
+  if (!key) return "";
+  if (key.length <= 8) return "…";
+  return `${key.slice(0, 4)}…${key.slice(-4)}`;
 }

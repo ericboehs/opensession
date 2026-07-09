@@ -104,6 +104,23 @@ export function shortModelLabel(id: string, models: ModelOption[]): string {
 	return raw.replace(/^Claude\s+/i, "").replace(/\s*\(Codex\)$/i, "");
 }
 
+/** Friendly names for the upstream providers in the grouped main list. */
+const PROVIDER_LABELS: Record<string, string> = {
+	anthropic: "Anthropic",
+	openai: "OpenAI",
+	xai: "xAI",
+	meta: "Meta",
+	google: "Google",
+	openrouter: "OpenRouter",
+	groq: "Groq",
+	mistral: "Mistral",
+	deepseek: "DeepSeek",
+};
+
+/** Section order in the grouped main list; unlisted providers follow in
+ * config order. */
+const PROVIDER_ORDER = ["anthropic", "openai", "xai", "meta"];
+
 /** Preferred display order for the opencode main list (by id tail); anything
  * unlisted keeps its registry/config order after these. */
 const OPENCODE_TAIL_ORDER = [
@@ -230,6 +247,33 @@ export function ModelEffortSelect({
 			options: otherOptions.filter((o) => o.engine === engine),
 		}))
 		.filter((g) => g.options.length > 0);
+	// Main-list sections by upstream provider (Anthropic / OpenAI / xAI / …) —
+	// a flat list stops scanning well once third-party providers join the
+	// picker. Falls back to flat when everything is one provider.
+	const providerOf = (id: string) => opencodeModelParts(id)?.provider || "other";
+	const providerGroups: Array<{ provider: string; label: string; options: ModelMenuOption[] }> = [];
+	for (const option of primaryOptions) {
+		const provider = providerOf(option.id);
+		let group = providerGroups.find((g) => g.provider === provider);
+		if (!group) {
+			group = {
+				provider,
+				label:
+					PROVIDER_LABELS[provider] ||
+					provider.charAt(0).toUpperCase() + provider.slice(1),
+				options: [],
+			};
+			providerGroups.push(group);
+		}
+		group.options.push(option);
+	}
+	providerGroups.sort((a, b) => {
+		const ai = PROVIDER_ORDER.indexOf(a.provider);
+		const bi = PROVIDER_ORDER.indexOf(b.provider);
+		return (ai === -1 ? PROVIDER_ORDER.length : ai) - (bi === -1 ? PROVIDER_ORDER.length : bi);
+	});
+	const groupedPrimary = opencodeFirst && providerGroups.length > 1;
+
 	const isSelected = (option: ModelMenuOption) =>
 		option.value === model || (option.value === "" && (model === "" || model === defaultModel));
 	// Dim hint on the legacy submenu trigger when the CURRENT model lives in
@@ -272,7 +316,17 @@ export function ModelEffortSelect({
 				{hasEffort && <span className="flex-none text-faint">{effortLabel}</span>}
 			</Menu.Trigger>
 			<Menu.Popup align="end" sideOffset={6} className="max-w-[min(360px,calc(100vw-1rem))]">
-				{primaryOptions.map(renderModelOption)}
+				{groupedPrimary
+					? providerGroups.map((g, i) => (
+							<React.Fragment key={g.provider}>
+								{i > 0 && <Menu.Separator className="my-1" />}
+								<Menu.Group>
+									<Menu.GroupLabel>{g.label}</Menu.GroupLabel>
+									{g.options.map(renderModelOption)}
+								</Menu.Group>
+							</React.Fragment>
+						))
+					: primaryOptions.map(renderModelOption)}
 				{otherOptions.length > 0 && (
 					<Menu.SubmenuRoot>
 						<Menu.SubmenuTrigger

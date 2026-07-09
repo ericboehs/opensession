@@ -134,7 +134,19 @@ import {
 	interactiveDefaultModel,
 	getModelFallbackAuto,
 	setModelFallbackAuto,
+	refreshOpencodePickerModels,
 } from "./src/server/models";
+import {
+	readOpencodeBridgeConfig,
+	opencodeProviders,
+	setOpencodeProvider,
+	removeOpencodeProvider,
+	addPickerModel,
+	removePickerModel,
+	maskProviderKey,
+	PROVIDER_ID_RE,
+	BRIDGE_PROVIDER_IDS,
+} from "./src/server/opencode-config";
 import {
 	listCodexAccountsPublic,
 	addCodexAccount,
@@ -6836,6 +6848,130 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				);
 				if ("error" in result) return Response.json(result, { status: 404 });
 				return Response.json(result);
+			}
+
+			// ── Model providers (Settings → Model providers) ──
+			// Third-party OpenCode providers (xai, openrouter, groq, …): API key +
+			// optional baseURL in ~/.opensession-opencode.json (0600, keys only ever
+			// returned masked), plus their picker model ids. anthropic/openai are
+			// rejected — they run on the subscription bridges, not raw keys.
+			if (
+				path === "/backstage/api/settings/model-providers" &&
+				req.method === "GET"
+			) {
+				const pickerModels = readOpencodeBridgeConfig()?.pickerModels || [];
+				return Response.json({
+					providers: Object.entries(opencodeProviders()).map(([id, p]) => ({
+						id,
+						apiKeyMasked: maskProviderKey(p.apiKey),
+						...(p.baseURL ? { baseURL: p.baseURL } : {}),
+						models: pickerModels.filter((m) =>
+							m.startsWith(`opencode/${id}/`),
+						),
+					})),
+					pickerModels,
+				});
+			}
+
+			const modelProviderMatch = path.match(
+				/^\/backstage\/api\/settings\/model-providers\/([^/]+)$/,
+			);
+			if (modelProviderMatch && req.method === "PUT") {
+				const id = decodeURIComponent(modelProviderMatch[1]);
+				if (!PROVIDER_ID_RE.test(id)) {
+					return Response.json(
+						{
+							error:
+								"Provider id must be lowercase letters, digits and dashes (e.g. xai, openrouter)",
+						},
+						{ status: 400 },
+					);
+				}
+				if (BRIDGE_PROVIDER_IDS.has(id)) {
+					return Response.json(
+						{
+							error: `"${id}" runs on the subscription bridges (Settings → Models), not a raw API key`,
+						},
+						{ status: 400 },
+					);
+				}
+				const body = await req.json().catch(() => null);
+				if (!body || typeof body !== "object") {
+					return Response.json({ error: "Invalid JSON" }, { status: 400 });
+				}
+				const apiKey =
+					typeof body.apiKey === "string"
+						? // Strip all whitespace — pasted keys often carry line-wrap newlines.
+							body.apiKey.replace(/\s+/g, "")
+						: undefined;
+				const baseURL =
+					typeof body.baseURL === "string" ? body.baseURL.trim() : undefined;
+				const models = Array.isArray(body.models)
+					? body.models.filter(
+							(m: unknown): m is string => typeof m === "string",
+						)
+					: undefined;
+				try {
+					setOpencodeProvider(id, { apiKey, baseURL });
+					if (models) {
+						// `models` replaces this provider's picker entries wholesale.
+						const prefix = `opencode/${id}/`;
+						for (const m of readOpencodeBridgeConfig()?.pickerModels || []) {
+							if (m.startsWith(prefix)) removePickerModel(m);
+						}
+						for (const m of models) {
+							// Accept "grok-4", "xai/grok-4" or "opencode/xai/grok-4".
+							let tail = m.trim();
+							if (tail.startsWith("opencode/"))
+								tail = tail.slice("opencode/".length);
+							if (tail.startsWith(`${id}/`)) tail = tail.slice(id.length + 1);
+							if (tail) addPickerModel(`${prefix}${tail}`);
+						}
+					}
+					refreshOpencodePickerModels();
+					const stored = opencodeProviders()[id] || {};
+					const pickerModels = readOpencodeBridgeConfig()?.pickerModels || [];
+					return Response.json({
+						provider: {
+							id,
+							apiKeyMasked: maskProviderKey(stored.apiKey),
+							...(stored.baseURL ? { baseURL: stored.baseURL } : {}),
+							models: pickerModels.filter((m) =>
+								m.startsWith(`opencode/${id}/`),
+							),
+						},
+					});
+				} catch (e: any) {
+					return Response.json(
+						{ error: e?.message || "Failed to save provider" },
+						{ status: 400 },
+					);
+				}
+			}
+
+			if (modelProviderMatch && req.method === "DELETE") {
+				const id = decodeURIComponent(modelProviderMatch[1]);
+				try {
+					const removed = removeOpencodeProvider(id);
+					const prefix = `opencode/${id}/`;
+					let cleared = 0;
+					for (const m of readOpencodeBridgeConfig()?.pickerModels || []) {
+						if (m.startsWith(prefix)) {
+							removePickerModel(m);
+							cleared++;
+						}
+					}
+					refreshOpencodePickerModels();
+					if (!removed && !cleared) {
+						return Response.json({ error: "Not found" }, { status: 404 });
+					}
+					return Response.json({ ok: true });
+				} catch (e: any) {
+					return Response.json(
+						{ error: e?.message || "Failed to remove provider" },
+						{ status: 500 },
+					);
+				}
 			}
 
 			// ── Plain triage router (spam gate + model routing for new tickets) ──

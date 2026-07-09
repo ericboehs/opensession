@@ -138,7 +138,11 @@ import {
   maskOpenaiAccount,
   opencodeHasNativeOpenaiAuth,
 } from "./opencode-openai-auth";
-import { opencodeTurnTimeoutMs, readOpencodeBridgeConfig } from "./opencode-config";
+import {
+  opencodeTurnTimeoutMs,
+  readOpencodeBridgeConfig,
+  opencodeProviderOptions,
+} from "./opencode-config";
 import {
   pickAccount,
   getUsableAccountById,
@@ -1182,6 +1186,16 @@ async function* runOpencodeAttempt(
     // opencodeMcpFromPrebuiltProxies.
     const prebuiltProxies = opencodeMcpFromPrebuiltProxies(opts.inProcessMcp);
 
+    // Third-party providers configured in Settings (xai, openrouter, …) merge
+    // UNDER the bridge override so the anthropic/openai subscription bridges
+    // always win. When both are empty the `provider` key is omitted entirely —
+    // keeps the config hash (and thus server reuse) identical for setups with
+    // no providers configured.
+    const providerConfig = {
+      ...opencodeProviderOptions(),
+      ...(providerOverride || {}),
+    };
+
     const ocConfig: Record<string, unknown> = {
       mcp: {
         ...externalMcp,
@@ -1193,7 +1207,7 @@ async function* runOpencodeAttempt(
       instructions: [instructionsPath],
       autoshare: false,
       ...(meridianPlugin ? { plugin: meridianPlugin } : {}),
-      ...(providerOverride ? { provider: providerOverride } : {}),
+      ...(Object.keys(providerConfig).length ? { provider: providerConfig } : {}),
       ...(isAsk
         ? {
             permission: {

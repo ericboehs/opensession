@@ -78,17 +78,25 @@ export function opencodeModelLabel(id: string): string {
 // ~/.opensession-opencode.json (and only while `enabled` is true) surface in
 // the UI picker; any other opencode/<provider>/<model> id still resolves via
 // the prefix passthrough in resolveModel below, it's just not advertised.
-// Folded in at module load — a config change needs a reload to show up.
-try {
-  for (const id of opencodePickerModels()) {
-    KNOWN_MODELS.push({
-      id,
-      provider: "opencode",
-      label: opencodeModelLabel(id),
-      aliases: [],
-    });
+// Folded in at module load; the model-providers settings routes call
+// refreshOpencodePickerModels() after any pickerModels write so the picker
+// updates without a reload.
+export function refreshOpencodePickerModels(): void {
+  for (let i = KNOWN_MODELS.length - 1; i >= 0; i--) {
+    if (KNOWN_MODELS[i].provider === "opencode") KNOWN_MODELS.splice(i, 1);
   }
-} catch {}
+  try {
+    for (const id of opencodePickerModels()) {
+      KNOWN_MODELS.push({
+        id,
+        provider: "opencode",
+        label: opencodeModelLabel(id),
+        aliases: [],
+      });
+    }
+  } catch {}
+}
+refreshOpencodePickerModels();
 
 /** Per-provider defaults: claude-fable-5 for Anthropic, gpt-5.5 for OpenAI. */
 export const DEFAULT_CLAUDE_MODEL = "claude-fable-5";
