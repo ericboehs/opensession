@@ -19,11 +19,11 @@ export function SandboxBadge({
 	const mode = sandbox.workspace === "volume" ? "volume" : "bind";
 	const materialized = Boolean(sandbox.sandboxId);
 	const label = [
-		`Runs in an isolated ${sandbox.provider} sandbox — the agent and its commands execute inside a per-session container, not on the host.`,
+		`Runs in an isolated ${sandbox.provider} sandbox. The agent and its commands run inside a per-session container, not on the host.`,
 		mode === "volume"
 			? "Volume workspace: the checkout lives only inside the sandbox; deleting the session deletes un-pushed work."
 			: "Bind workspace: the host worktree is mounted into the sandbox, so diffs, pushes and previews work as usual.",
-		materialized ? undefined : "Not started yet — it's created on the first run.",
+		materialized ? undefined : "Not started yet. It's created on the first run.",
 	]
 		.filter(Boolean)
 		.join(" ");

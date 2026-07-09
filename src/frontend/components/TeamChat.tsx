@@ -474,7 +474,7 @@ export function TeamChat({
 							Watercooler
 						</div>
 						<div className="text-xs font-medium text-dim">
-							Team chat — @ tags a teammate (they get a ping) or a session
+							@ a teammate to ping them, or a session to link it
 						</div>
 					</div>
 				</div>
@@ -490,7 +490,7 @@ export function TeamChat({
 						</div>
 					) : messages.length === 0 ? (
 						<div className="py-8 text-center text-sm font-medium text-faint">
-							No messages yet — say hi 👋
+							No messages yet. Say hi 👋
 						</div>
 					) : (
 						messages.map((m, i) => {
@@ -710,8 +710,8 @@ export function TeamChat({
 									rows={1}
 									placeholder={
 										isPage
-											? `Message the team as ${user} — @ to tag`
-											: "Chat about this session — @ to tag"
+											? `Message the team as ${user}. @ to tag`
+											: "Chat about this session. @ to tag"
 									}
 									value={text}
 									disabled={posting}

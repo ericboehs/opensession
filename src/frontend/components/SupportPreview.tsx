@@ -134,7 +134,7 @@ export function SupportPreview({
 			if (!startingRef.current) return;
 			startingRef.current = false;
 			setStarting(false);
-			setStartError("Michael didn't respond — check the connection and try again.");
+			setStartError("Michael didn't respond. Check your connection and try again.");
 		}, 15_000);
 		const customer =
 			thread?.customer?.name || thread?.customer?.email || "customer";

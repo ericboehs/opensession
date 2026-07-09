@@ -1918,7 +1918,7 @@ export function Sidebar({
 				{/* Slack-style pencil: a chat here holds an unsent draft — come back
 				    and finish it. Yields to the hover actions like the count/time. */}
 				{row.chats.some((c) => hasDraft(`chat:${c.id}`)) && (
-					<span className="sidebar-ws-draft" title="Unsent draft — return to finish it">
+					<span className="sidebar-ws-draft" title="Unsent draft. Return to finish it.">
 						<IconPencil size={20} />
 					</span>
 				)}
@@ -2246,7 +2246,7 @@ export function Sidebar({
 				<button
 					className={`sidebar-nav-item ${watercoolerActive ? "active" : ""}`}
 					onClick={onOpenWatercooler}
-					title="Team chat — @ tags a teammate (they get a ping) or a session"
+					title="Team chat. @ a teammate to ping them, or a session to link it."
 				>
 					<span className="sidebar-nav-icon">
 						<IconWatercooler />
@@ -2877,8 +2877,8 @@ export function Sidebar({
 										onClick={() => onToggleFollow?.(v.user)}
 										title={
 											followUser === v.user
-												? `Following ${v.user} — click to stop`
-												: `${v.user} is viewing “${titleFor(v.sessionId)}” — click to follow along`
+												? `Following ${v.user}. Click to stop.`
+												: `${v.user} is viewing “${titleFor(v.sessionId)}.” Click to follow along.`
 										}
 									>
 										<UserAvatar
@@ -3791,7 +3791,7 @@ function SidebarItem({
 					</span>
 				)}
 				{!editing && hasDraft(`chat:${session.id}`) && (
-					<span className="sidebar-ws-draft" title="Unsent draft — return to finish it">
+					<span className="sidebar-ws-draft" title="Unsent draft. Return to finish it.">
 						<IconPencil size={20} />
 					</span>
 				)}
@@ -4091,7 +4091,7 @@ function hoverState(s: UnifiedSession): {
 		};
 	if (runNeedsAttention(s))
 		return {
-			label: "Last run failed — needs attention",
+			label: "Last run failed. Needs attention.",
 			tone: "accent",
 			dotClass: "sidebar-status-waiting",
 		};

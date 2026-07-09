@@ -115,7 +115,7 @@ export function PrPreview({ repo, branch, connected, send, addHandler }: Props) 
 			if (!startingRef.current) return;
 			startingRef.current = false;
 			setStarting(false);
-			setStartError("Michael didn't respond — check the connection and try again.");
+			setStartError("Michael didn't respond. Check your connection and try again.");
 		}, 15_000);
 		send({
 			type: "create_session",
@@ -184,7 +184,7 @@ export function PrPreview({ repo, branch, connected, send, addHandler }: Props) 
 						<div className="panel-placeholder">Loading PR…</div>
 					) : !pr ? (
 						<div className="panel-placeholder">
-							No PR found for <code>{branch}</code> in {repo} — it may have just
+							No PR found for <code>{branch}</code> in {repo}. It may have just
 							merged or closed.
 						</div>
 					) : (

@@ -741,10 +741,10 @@ function PushRow() {
 			desc={
 				error ||
 				(state === "unsupported"
-					? "Needs the HTTPS origin (michael.taila5d766.ts.net) — push isn't available on plain http."
+					? "Push needs the HTTPS origin (michael.taila5d766.ts.net). It isn't available on plain http."
 					: state === "denied"
-						? "Notifications are blocked for this site in the browser — allow them to enable push."
-						: "Buzz this device when a session needs your input — works with the app closed. Per device; enable it on your phone too.")
+						? "Notifications are blocked for this site. Allow them in your browser to enable push."
+						: "Buzz this device when a session needs your input, even with the app closed. It's per device, so enable it on your phone too.")
 			}
 			control={
 				<Toggle
@@ -973,7 +973,7 @@ function MonitorPanel() {
 			<div className="setting-card">
 				<SettingRow
 					title="Watch my sessions"
-					desc="The master switch — nothing below runs while this is off."
+					desc="The master switch. Nothing below runs while this is off."
 					control={
 						<Toggle
 							label="Watch my sessions"
@@ -1105,7 +1105,7 @@ function AutoArchivePanel() {
 			<div className="setting-card">
 				<SettingRow
 					title="Archive when its PR merges"
-					desc="Once a session's pull request is merged, archive it. Applies to every repo — a merged PR is done."
+					desc="Once a session's pull request is merged, archive it. Applies to every repo. A merged PR is done."
 					control={
 						<Toggle
 							label="Archive when its PR merges"
@@ -1116,7 +1116,7 @@ function AutoArchivePanel() {
 				/>
 				<SettingRow
 					title="Archive once checks are green"
-					desc="Also archive an open (unmerged) PR once every check passes, not just after merge — for repos that iterate fast and don't need the PR to stick around once it builds. Applies only to the repos below."
+					desc="Also archive an open (unmerged) PR once every check passes, not just after merge. Good for repos that iterate fast and don't need the PR to stick around once it builds. Applies only to the repos below."
 					control={
 						<Toggle
 							label="Archive once checks are green"
@@ -1140,7 +1140,7 @@ function AutoArchivePanel() {
 						title={repo}
 						desc={
 							repo === "backstage"
-								? `Archive on green checks here too — ${PRODUCT_NAME} self-hosts, so sessions finish fast and pile up otherwise.`
+								? `Archive on green checks here too. ${PRODUCT_NAME} self-hosts, so sessions finish fast and pile up otherwise.`
 								: `Archive open PRs in ${repo} once their checks pass.`
 						}
 						control={
@@ -1427,7 +1427,7 @@ function WorkspacePanel() {
 						</>
 					}
 					control={
-						<Tooltip label="Wire-up pending — edit ~/.backstage/config.json for now">
+						<Tooltip label="Wire-up pending. Edit ~/.backstage/config.json for now.">
 							{/* Disabled inputs swallow hover events, so the tooltip
 							    hangs off a wrapping span. */}
 							<span className="inline-flex">
@@ -1451,7 +1451,7 @@ function WorkspacePanel() {
 						</>
 					}
 					control={
-						<Tooltip label="Wire-up pending — edit ~/.backstage/config.json for now">
+						<Tooltip label="Wire-up pending. Edit ~/.backstage/config.json for now.">
 							<span className="inline-flex">
 								<input
 									className={IDENTITY_INPUT_CLASS}

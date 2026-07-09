@@ -90,7 +90,7 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
   }
 
   async function handleComment(repo: string, target: CommentTarget, text: string) {
-    if (!canSend) throw new Error("Michael is busy — wait for the current run to finish");
+    if (!canSend) throw new Error("Michael is busy. Wait for the current run to finish.");
     const lines =
       target.startLine === target.endLine
         ? `line ${target.startLine}`
@@ -157,9 +157,9 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
           key={cur.repo}
           patch={d.rawPatch || ""}
           submitLabel="Send to Michael"
-          placeholder={`Leave feedback on these lines — Michael picks it up in this session…`}
+          placeholder={`Leave feedback on these lines. Michael picks it up in this session…`}
           disabled={!canSend}
-          disabledHint="Michael is working — feedback can be sent when the current run finishes."
+          disabledHint="Michael is working. You can send feedback once the current run finishes."
           onSubmit={(target, text) => handleComment(cur.repo, target, text)}
           // Discarding edits the worktree — withhold it while the agent is running
           // to avoid racing its writes.

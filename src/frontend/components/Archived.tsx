@@ -124,8 +124,8 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
         <div>
           <h2 className="page-title">Archived</h2>
           <div className="page-sub">
-            {archived.length} archived session{archived.length === 1 ? "" : "s"} —
-            done Plain tickets and anything idle for over a week land here
+            {archived.length} archived session{archived.length === 1 ? "" : "s"}.
+            Done Plain tickets and anything idle for over a week land here
             automatically.
           </div>
         </div>
@@ -227,7 +227,7 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
             </button>
           ))}
           {archived.length > 200 && (
-            <div className="home-empty">Showing first 200 — refine the search to find older ones.</div>
+            <div className="home-empty">Showing the first 200. Refine your search to find older ones.</div>
           )}
         </div>
       )}

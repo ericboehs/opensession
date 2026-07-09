@@ -188,7 +188,7 @@ function GoalModal({
               onSubmit(text.trim() || null);
             }
           }}
-          placeholder="e.g. Ship the onboarding redesign — keep every reply focused on that."
+          placeholder="e.g. Ship the onboarding redesign. Keep every reply focused on that."
         />
 
         <Modal.Footer>

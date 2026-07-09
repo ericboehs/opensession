@@ -452,7 +452,7 @@ function NewScanModal({
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
             rows={3}
-            placeholder="Focus or constrain the scan — “only the upload pipeline and its S3 handling”, “report only, no fix PRs”…"
+            placeholder="Focus or constrain the scan. e.g. “only the upload pipeline and its S3 handling”, “report only, no fix PRs”…"
           />
         </label>
 

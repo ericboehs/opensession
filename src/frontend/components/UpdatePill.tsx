@@ -35,7 +35,7 @@ export function UpdatePill({ addHandler, variant = "toast" }: Props) {
         onClick={() => location.reload()}
         role="status"
         aria-live="polite"
-        title="A new update is available — tap to refresh"
+        title="A new update is available. Tap to refresh."
       >
         Update
       </button>

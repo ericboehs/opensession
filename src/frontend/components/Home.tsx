@@ -244,7 +244,7 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
     askTimer.current = setTimeout(() => {
       if (!askingRef.current) return;
       setAsking(false);
-      setAskError("Michael didn't respond — check the connection and try again.");
+      setAskError("Michael didn't respond. Check your connection and try again.");
     }, 15_000);
     onCreateStarted?.({
       prompt: q,

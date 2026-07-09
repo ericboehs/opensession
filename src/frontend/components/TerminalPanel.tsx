@@ -176,7 +176,7 @@ function ShellView({
         else if (msg.type === "term_notice")
           term.write(`\x1b[2m[${msg.message}]\x1b[0m\r\n`);
         else if (msg.type === "term_exit")
-          term.write("\r\n\x1b[2m[shell exited — switch tabs to restart]\x1b[0m\r\n");
+          term.write("\r\n\x1b[2m[shell exited. Switch tabs to restart]\x1b[0m\r\n");
       });
 
       const ro = new ResizeObserver(() => {

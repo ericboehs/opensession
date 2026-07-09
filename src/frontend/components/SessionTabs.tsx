@@ -116,7 +116,7 @@ export function SessionTabs({
 			type="button"
 			className="session-tab session-tab-new"
 			aria-label="New chat in this workspace"
-			title="New chat — shares this workspace's worktree (right-click for options)"
+			title="New chat. Shares this workspace's worktree (right-click for options)"
 			onClick={() => onNewChat("share")}
 			onContextMenu={(e) => {
 				e.preventDefault();

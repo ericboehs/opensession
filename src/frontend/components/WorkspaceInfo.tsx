@@ -770,17 +770,17 @@ const PR_AGENT_ACTIONS: Array<{
 	{
 		kind: "review",
 		label: "Review",
-		hint: "Full review pass (michael-review) — Michael posts findings on the PR",
+		hint: "Full review pass (michael-review). Michael posts findings on the PR.",
 	},
 	{
 		kind: "autofix",
 		label: "Auto-fix",
-		hint: "Opens a new chat in this workspace that fixes every finding + failing CI and pushes — watch and steer it live",
+		hint: "Opens a new chat in this workspace that fixes every finding + failing CI and pushes. Watch and steer it live.",
 	},
 	{
 		kind: "simplify",
 		label: "Simplify",
-		hint: "Quality cleanup pass — reuse, simpler shapes, dead code (michael-simplify)",
+		hint: "Quality cleanup pass: reuse, simpler shapes, dead code (michael-simplify)",
 	},
 	{
 		kind: "adversarial",

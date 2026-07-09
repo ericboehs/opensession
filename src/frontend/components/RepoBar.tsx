@@ -286,8 +286,8 @@ export function RepoBar({
             description={
               <>
                 Your current changes stay in the {primary} worktree
-                {branch ? ` (branch ${branch})` : ""} — they won't move to{" "}
-                {confirmTarget}. You can reopen them from that branch.
+                {branch ? ` (branch ${branch})` : ""}. They won't move to{" "}
+                {confirmTarget}, but you can reopen them from that branch.
               </>
             }
           />

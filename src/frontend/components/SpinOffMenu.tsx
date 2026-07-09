@@ -175,7 +175,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
             </button>
           </div>
           {starting && (
-            <div className="spinoff-note">Booting the session — you'll be taken there automatically.</div>
+            <div className="spinoff-note">Starting the session. We'll take you there automatically.</div>
           )}
         </div>
       )}

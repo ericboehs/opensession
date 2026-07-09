@@ -61,7 +61,7 @@ export function VoiceInput({
     // getUserMedia only exists in secure contexts — over plain http (the
     // :3850 hostname) the mic simply isn't there.
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setError(`Mic needs HTTPS — open ${PRODUCT_NAME} via its ts.net URL`);
+      setError(`Mic needs HTTPS. Open ${PRODUCT_NAME} at its ts.net URL.`);
       return;
     }
     let stream: MediaStream;
@@ -146,7 +146,7 @@ export function VoiceInput({
     try {
       const text = await transcribeClip(blob);
       if (text) onText(text);
-      else setError("Heard nothing — try again");
+      else setError("Heard nothing. Try again.");
     } catch (e: any) {
       setError(e?.message || "Transcription failed");
     } finally {

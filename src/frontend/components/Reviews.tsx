@@ -310,7 +310,7 @@ export function Reviews({
                 {prSessions.length === 0
                   ? "PRs opened by Michael sessions show their checks here."
                   : filter === "review"
-                    ? "All caught up — nothing needs review."
+                    ? "All caught up. Nothing needs review."
                     : "No PRs match this filter."}
               </div>
             </div>

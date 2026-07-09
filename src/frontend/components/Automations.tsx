@@ -672,7 +672,7 @@ function TypeChooser({
 
       {templates.length > 0 && (
         <div>
-          <div className="text-dim text-[12px] mb-1.5">Or start from a template — everything stays editable:</div>
+          <div className="text-dim text-[12px] mb-1.5">Or start from a template. Everything stays editable:</div>
           <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]">
             {templates.map((t) => (
               <button
@@ -1018,7 +1018,7 @@ function AutomationForm({
           rows={6}
           placeholder={
             isWatch
-              ? "Tell Michael how to handle messages in this channel — e.g. “triage each report: reproduce, check Sentry, file a Linear issue, reply in the thread with what you found.”"
+              ? "Tell Michael how to handle messages in this channel. e.g. “triage each report: reproduce, check Sentry, file a Linear issue, reply in the thread with what you found.”"
               : "What should Michael do on each run?"
           }
         />

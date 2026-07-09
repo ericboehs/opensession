@@ -95,7 +95,7 @@ export function StagingLink({
 		if (variant === "header") {
 			return (
 				<Tooltip
-					label="Staging deploy starting… — the preview link appears once it's up"
+					label="Staging deploy starting… the preview link appears once it's up"
 					side="bottom"
 					multiline
 				>
@@ -162,8 +162,8 @@ export function StagingLink({
 					copied
 						? "Link copied"
 						: building
-							? `Staging deploy ${staging.status.toLowerCase()}… — ⌘-click to copy the link`
-							: "Open staging deploy — test this PR on real infra (⌘-click to copy the link)"
+							? `Staging deploy ${staging.status.toLowerCase()}… ⌘-click to copy the link`
+							: "Open the staging deploy to test this PR on real infra (⌘-click to copy the link)"
 				}
 				side="bottom"
 				multiline
@@ -197,7 +197,7 @@ export function StagingLink({
 				copied
 					? "Link copied"
 					: building
-						? `Staging deploy ${staging.status.toLowerCase()}… — ⌘-click to copy — ${href}`
+						? `Staging deploy ${staging.status.toLowerCase()}… ⌘-click to copy — ${href}`
 						: `Test this PR on staging (⌘-click to copy the link) — ${href}`
 			}
 		>

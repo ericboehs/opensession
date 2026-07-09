@@ -59,7 +59,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     if (id === bootId.current) return;
     bootId.current = id;
     if (phaseRef.current !== "restarting" && !explicit.current) {
-      toast(`${PRODUCT_NAME} restarted — reconnected to the new server`);
+      toast(`${PRODUCT_NAME} restarted. Reconnected to the new server.`);
     }
   };
 
@@ -196,7 +196,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
         <div className="restart-sub">
           {backOnline
             ? "Refreshing…"
-            : "Hang tight — the page will refresh automatically once it's back up."}
+            : "Hang tight. The page will refresh automatically once it's back up."}
         </div>
       </div>
     </div>

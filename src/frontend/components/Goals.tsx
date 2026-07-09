@@ -401,7 +401,7 @@ function GoalForm({
           value={mission}
           onChange={(e) => setMission(e.target.value)}
           rows={12}
-          placeholder="The full mission brief — objective, strategy, operating loop, hard rules. It's restated to the agent every wake."
+          placeholder="The full mission brief: objective, strategy, operating loop, hard rules. It's restated to the agent every wake."
         />
       </label>
 

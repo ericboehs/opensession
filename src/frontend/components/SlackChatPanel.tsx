@@ -408,7 +408,7 @@ export function SlackChatPanel({
 				{loading && messages.length === 0 ? (
 					<div className="slack-loading">Loading…</div>
 				) : messages.length === 0 ? (
-					<div className="slack-loading">No messages yet — say hi 👋</div>
+					<div className="slack-loading">No messages yet. Say hi 👋</div>
 				) : (
 					messages.map((m) => (
 						<div key={m.ts} className="slack-msg">
