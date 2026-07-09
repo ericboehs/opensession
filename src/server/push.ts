@@ -117,13 +117,49 @@ export interface PushPayload {
   tag?: string;
 }
 
+// Dedupe ledger: pushes that must survive a restart without refiring (a
+// service restart resumes ask-blocked runs, which re-ask the same question —
+// the person already got that buzz). Keyed by caller-chosen fingerprint.
+const SENT_DEDUPE_PATH = `${PUSH_DIR}/sent-dedupe.json`;
+const DEDUPE_TTL_MS = 48 * 60 * 60 * 1000;
+
+function readSentDedupe(): Record<string, string> {
+  try {
+    if (existsSync(SENT_DEDUPE_PATH)) {
+      const s = JSON.parse(readFileSync(SENT_DEDUPE_PATH, "utf-8"));
+      if (s && typeof s === "object" && !Array.isArray(s)) return s;
+    }
+  } catch {}
+  return {};
+}
+
 /**
  * Send a push to every device `user` has registered (matched by exact display
  * name — the same value UserPicker stores). Fire-and-forget; prunes dead subs.
+ *
+ * `dedupeKey` (optional) suppresses the send when the same key was already
+ * pushed within the last 48h — the ledger is on disk, so a re-ask of the same
+ * question after a service restart doesn't buzz the same person twice.
  */
-export async function sendPushToUser(user: string, payload: PushPayload): Promise<void> {
+export async function sendPushToUser(
+  user: string,
+  payload: PushPayload,
+  opts?: { dedupeKey?: string },
+): Promise<void> {
   const subs = listPushSubscriptions(user);
   if (subs.length === 0) return;
+  if (opts?.dedupeKey) {
+    const sent = readSentDedupe();
+    const now = Date.now();
+    const prev = sent[opts.dedupeKey] ? Date.parse(sent[opts.dedupeKey]) : NaN;
+    if (Number.isFinite(prev) && now - prev < DEDUPE_TTL_MS) return;
+    for (const [k, v] of Object.entries(sent)) {
+      const t = Date.parse(v);
+      if (!Number.isFinite(t) || now - t >= DEDUPE_TTL_MS) delete sent[k];
+    }
+    sent[opts.dedupeKey] = new Date(now).toISOString();
+    writeJsonAtomic(SENT_DEDUPE_PATH, sent);
+  }
   ensureVapid();
   const body = JSON.stringify(payload);
   await Promise.all(

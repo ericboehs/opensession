@@ -626,6 +626,7 @@ function App() {
 			s.reviewRequest?.to?.toLowerCase() === getCurrentUser().toLowerCase() &&
 			!s.reviewRequest?.accepted,
 		onOpen: (id) => navigate({ view: "session", id }),
+		connected,
 	});
 
 	// The "new session" ⌘K palette. It's an overlay driven by its own state (not a

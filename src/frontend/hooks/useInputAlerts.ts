@@ -19,6 +19,10 @@ export function useInputAlerts(
 		/** Is this session's pending review request pointed at the current user? */
 		isMyReview: (s: UnifiedSession) => boolean;
 		onOpen: (id: string) => void;
+		/** WebSocket connectivity — a drop (server restart) re-seeds the
+		 * baselines, so the flap where every resumed session briefly reads
+		 * not-running doesn't fire spurious "Finished" alerts. */
+		connected?: boolean;
 	},
 ): void {
 	// null until the first snapshot — used to seed the baseline without alerting on
@@ -32,6 +36,16 @@ export function useInputAlerts(
 	isMineRef.current = opts.isMine;
 	isMyReviewRef.current = opts.isMyReview;
 	onOpenRef.current = opts.onOpen;
+
+	// A disconnect voids the baselines: the next snapshot after reconnect
+	// seeds silently instead of diffing against pre-restart state.
+	useEffect(() => {
+		if (opts.connected === false) {
+			waitingRef.current = null;
+			runningRef.current = null;
+			reviewRef.current = null;
+		}
+	}, [opts.connected]);
 
 	useEffect(() => {
 		const mine = sessions.filter((s) => isMineRef.current(s));
