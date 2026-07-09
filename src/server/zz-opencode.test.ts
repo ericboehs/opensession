@@ -77,11 +77,17 @@ describe("opencodeGateReason (run gate)", () => {
   test("explicit allowOpencode marker passes without a journal (verify scripts)", () => {
     expect(opencodeGateReason({ allowOpencode: true })).toBeNull();
   });
-  test("other unattended kinds stay blocked, including derivatives", () => {
-    expect(opencodeGateReason({ journal: { kind: "action" } })).toContain("not available");
-    expect(opencodeGateReason({ journal: { kind: "action-resume" } })).toContain("not available");
-    expect(opencodeGateReason({ journal: { kind: "github-review" } })).toContain("not available");
-    expect(opencodeGateReason({ journal: { kind: "security-scan" } })).toContain("not available");
+  test("single-engine: every known run kind is allowed (unattended policy applies)", () => {
+    expect(opencodeGateReason({ journal: { kind: "action" } })).toBeNull();
+    expect(opencodeGateReason({ journal: { kind: "action-resume" } })).toBeNull();
+    expect(opencodeGateReason({ journal: { kind: "github-review" } })).toBeNull();
+    expect(opencodeGateReason({ journal: { kind: "security-scan" } })).toBeNull();
+    expect(opencodeGateReason({ journal: { kind: "plain" } })).toBeNull();
+    expect(opencodeGateReason({ journal: { kind: "linear" } })).toBeNull();
+    expect(opencodeGateReason({ journal: { kind: "slack" } })).toBeNull();
+  });
+  test("unknown kinds stay blocked (deny by default)", () => {
+    expect(opencodeGateReason({ journal: { kind: "mystery-kind" } })).toContain("not available");
   });
 });
 

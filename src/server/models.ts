@@ -3,18 +3,14 @@
  * ("provider") serves each one. The session's `model` field is always stored
  * as the canonical id, never an alias.
  *
- * Single-engine core: interactive Backstage sessions (the picker) and
- * automations run on the OpenCode engine (opencode-runner.ts). Model
- * *selection* is steered there — the picker only surfaces opencode ids
- * (opencodePickerModels), interactiveDefaultModel maps the default onto
- * opencode, and fallbackModelChain / opencodeAutomationModel map every fallback
- * onto opencode too (toOpencodeModel). The native "claude"/"codex" providers
- * (claude-runner.ts / codex-runner.ts / codex-appserver.ts) are NOT removed:
- * the direct agent loops (Slack, Linear, github, Plain) still call the Claude
- * Agent SDK / Codex SDK directly with native ids, so native ids must stay
- * resolvable (resolveModel prefix passthrough) and executable. Migrating those
- * loops onto opencode is a follow-up; until then this file keeps native
- * resolution/execution reachable while keeping them out of the picker.
+ * Single engine: EVERYTHING runs on the OpenCode engine (opencode-runner.ts) —
+ * the legacy Claude/Codex SDK runners are deleted. The picker only surfaces
+ * opencode ids (opencodePickerModels), interactiveDefaultModel maps the
+ * default onto opencode, and fallbackModelChain / opencodeAutomationModel map
+ * every fallback onto opencode too (toOpencodeModel). Native ids (claude-*,
+ * gpt-*) stay RESOLVABLE (resolveModel prefix passthrough) for stored session
+ * state, env vars and provider bookkeeping — agent-runner maps them onto
+ * their opencode form at dispatch.
  */
 
 import { existsSync, readFileSync } from "fs";
@@ -296,9 +292,11 @@ export function toOpencodeModel(model?: string | null): string | undefined {
     return `opencode/openai/${DEFAULT_CODEX_MODEL}`;
   }
   if (m.startsWith("gpt-")) return `opencode/openai/${m}`;
-  if (m.startsWith("claude-")) {
-    return bridgeEnabled() ? `opencode/anthropic/${m}` : m;
-  }
+  // Always map claude-* (no bridgeEnabled() fail-safe anymore): opencode is
+  // the only engine, so with the bridge disabled an anthropic run should die
+  // on the runner's clear "bridge disabled" error instead of silently
+  // degrading — there is nothing left to degrade to.
+  if (m.startsWith("claude-")) return `opencode/anthropic/${m}`;
   return model ?? undefined;
 }
 

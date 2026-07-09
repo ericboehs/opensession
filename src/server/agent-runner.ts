@@ -1,28 +1,16 @@
 /**
- * Agent runner dispatcher: one entry point for "run a prompt in a session",
- * routed by the session's model — Claude models go through the Claude Agent
- * SDK runner, GPT/Codex models through the Codex SDK runner. Both emit the
- * same StreamEvent shape.
+ * Agent runner dispatcher: one entry point for "run a prompt in a session".
+ * Everything executes on the opencode engine — native model ids (claude-*,
+ * gpt-*) are mapped onto their opencode/<provider>/<model> form at dispatch;
+ * the runner emits the shared StreamEvent shape.
  *
- * Note on session ids: `sessionId` is the engine session id — a Claude
- * session id for claude models, a Codex thread id for codex models. Callers
- * keep the two separately (claudeSessionId vs codexThreadId) so switching
- * models mid-session keeps both histories resumable.
+ * Note on session ids: `sessionId` is the engine session id (an opencode
+ * session id; the field names claudeSessionId/codexThreadId survive in
+ * session state for on-disk compat with pre-single-engine sessions).
  */
 
-import {
-  runClaude,
-  isSessionBusy,
-  cancelRun,
-  steerRun,
-  interruptRun,
-  stopRunTurn,
-  interruptAndSteerRun,
-  activeRunCount,
-} from "./claude-runner";
 import { takeInterruptedRuns } from "./run-journal";
 import type { StreamEvent, ImageInput } from "./run-events";
-import { isCodexSessionBusy, cancelCodexRun, activeCodexRunCount } from "./codex-runner";
 import {
   runOpencode,
   isOpencodeSessionBusy,
@@ -30,20 +18,13 @@ import {
   activeOpencodeRunCount,
 } from "./opencode-runner";
 import {
-  runCodexAuto,
-  codexSteerRun,
-  codexInterruptAndSteerRun,
-  codexStopRunTurn,
-} from "./codex-appserver";
-import {
   providerFor,
   fallbackModelChain,
-  DEFAULT_CODEX_MODEL,
   BEST_AVAILABLE_CODEX_MODEL,
   getDefaultModel,
-  markCodexModelExhausted,
   resolveConcreteModel,
   resolveModel,
+  toOpencodeModel,
 } from "./models";
 import {
   hostRunBusy,
@@ -148,36 +129,13 @@ export interface RunAgentOpts {
 }
 
 function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerator<StreamEvent> {
-  // OpenCode engine: only explicit opencode/<provider>/<model> ids route here
-  // (resolveModel's prefix passthrough) — interactive sessions only; the
-  // runner hard-gates automations off the engine.
-  if (providerFor(model) === "opencode" && model) {
-    return runOpencode(opts, model);
-  }
-  if (providerFor(model) === "codex") {
-    // Transport-aware (file/env toggle): "app-server" drives the codex
-    // app-server JSON-RPC API — same threads/rollouts as exec, plus mid-turn
-    // steering and interrupts. Default stays the exec SDK.
-    return runCodexAuto({
-      prompt: opts.prompt,
-      sessionId: opts.sessionId,
-      cwd: opts.cwd,
-      mode: opts.mode,
-      model: model || DEFAULT_CODEX_MODEL,
-      effort: opts.effort,
-      mcpServers: opts.mcpServers,
-      images: opts.images,
-      reposNote: opts.reposNote,
-      inProcessMcp: opts.inProcessMcp,
-      deniedTools: opts.deniedTools,
-      confirmTools: opts.confirmTools,
-      fallbackModel: opts.fallbackModel,
-      journal: opts.journal,
-      author: opts.author,
-      user: opts.user,
-    });
-  }
-  return runClaude({ ...opts, model });
+  // Single engine: map native ids (claude-*, gpt-*, codex-best-available)
+  // onto their opencode form; explicit opencode/<provider>/<model> ids pass
+  // through. Anything that still doesn't parse as an opencode id gets the
+  // runner's clear error (e.g. anthropic bridge disabled).
+  const requested = model || getDefaultModel();
+  const mapped = toOpencodeModel(requested) || requested;
+  return runOpencode(opts, mapped);
 }
 
 export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
@@ -220,7 +178,6 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     if (!exhausted) return;
 
     exhaustedModels.add(currentModel);
-    if (providerFor(currentModel) === "codex") markCodexModelExhausted(currentModel);
     const fallback = fallbackChain.find((m) => !exhaustedModels.has(m.id));
     if (!fallback) {
       yield {
@@ -310,36 +267,29 @@ export function unmarkSessionStarting(id: string): void {
   pendingStarts.delete(id);
 }
 
-/** Busy check across both backends (pass any engine/backstage session id). */
+/** Busy check (pass any engine/backstage session id). */
 export function isAgentSessionBusy(...ids: Array<string | null | undefined>): boolean {
   for (const id of ids) {
     if (!id) continue;
-    if (
-      pendingStarts.has(id) ||
-      isSessionBusy(id) ||
-      isCodexSessionBusy(id) ||
-      isOpencodeSessionBusy(id) ||
-      hostRunBusy(id)
-    )
+    if (pendingStarts.has(id) || isOpencodeSessionBusy(id) || hostRunBusy(id))
       return true;
   }
   return false;
 }
 
 /**
- * How many runs this process is actively driving across both backends. Used by
- * graceful shutdown to wait for in-flight work to reach a stopping point before
- * exiting. (Does not count external CLI/tmux runs — we can't drain those.)
+ * How many runs this process is actively driving. Used by graceful shutdown
+ * to wait for in-flight work to reach a stopping point before exiting. (Does
+ * not count external CLI/tmux runs — we can't drain those.)
  */
 export function activeAgentRunCount(): number {
-  return activeRunCount() + activeCodexRunCount() + activeOpencodeRunCount();
+  return activeOpencodeRunCount();
 }
 
 /**
- * Steer a message into an in-flight run: Claude runs merge it at the next turn
- * boundary (same query); app-server Codex runs fold it into the RUNNING turn
- * via turn/steer. False = nothing steerable (exec-transport codex runs,
- * external processes, or the run is finishing) — caller should queue instead.
+ * Steer a message into an in-flight run. The opencode engine has no mid-turn
+ * steer (sends queue and deliver as the next turn), so only host-forwarded
+ * runs are steerable. False = nothing steerable — caller should queue.
  */
 export function steerAgentRun(
   ids: Array<string | null | undefined>,
@@ -348,56 +298,38 @@ export function steerAgentRun(
 ): boolean {
   for (const id of ids) {
     if (!id) continue;
-    // Local runs carry images as content blocks; the host-forward RPC is
-    // text-only, so a send with images falls through (caller queues it —
-    // the queue drain delivers images).
-    if (steerRun(id, text, images)) return true;
-    if (codexSteerRun(id, text, images)) return true;
+    // Host-forward RPC is text-only: a send with images falls through
+    // (caller queues it — the queue drain delivers images).
     if (!images?.length && hostSteer(id, text)) return true;
   }
   return false;
 }
 
 /**
- * Bare interrupt on an in-flight Claude run: abort the current turn WITHOUT a
- * new message so the boundary releases the run's already-steered text at once.
- * Refuses (false) when the run holds no unreleased steers. Local runs only —
- * there is no host-RPC path for a bare interrupt.
+ * Bare interrupt: no engine supports it anymore (it released a Claude run's
+ * held steers at a turn boundary). Kept for caller compat — always false, so
+ * callers fall back to the queue flap's other paths.
  */
 export function interruptAgentRun(
-  ids: Array<string | null | undefined>
+  _ids: Array<string | null | undefined>
 ): boolean {
-  for (const id of ids) {
-    if (!id) continue;
-    if (interruptRun(id)) return true;
-  }
   return false;
 }
 
 /**
- * Esc-style stop on an in-flight run: discard undelivered steers and abort the
- * current turn so the run winds down gracefully (Claude at the boundary,
- * app-server Codex via turn/interrupt). False = nothing Esc-stoppable
- * (exec-transport codex runs, external processes) — caller falls back to the
- * hard cancel.
+ * Esc-style stop: the opencode engine has no graceful stop-turn — callers
+ * fall back to the hard cancel (cancelAgentRun aborts the turn server-side).
  */
 export function stopAgentRunTurn(
-  ids: Array<string | null | undefined>
+  _ids: Array<string | null | undefined>
 ): boolean {
-  for (const id of ids) {
-    if (!id) continue;
-    if (stopRunTurn(id)) return true;
-    if (codexStopRunTurn(id)) return true;
-  }
   return false;
 }
 
 /**
- * Esc-style redirect on an in-flight run: abort the current turn but keep the
- * run alive, continuing immediately with the given message (Claude keeps the
- * query; app-server Codex interrupts the turn and starts the next one in the
- * same run). False = nothing interruptible — caller should fall back to
- * steer/queue.
+ * Esc-style redirect: abort the current turn but keep the run alive,
+ * continuing immediately with the given message. Host-forwarded runs only;
+ * false = caller should fall back to cancel + queue.
  */
 export function interruptAndSteerAgentRun(
   ids: Array<string | null | undefined>,
@@ -406,20 +338,16 @@ export function interruptAndSteerAgentRun(
 ): boolean {
   for (const id of ids) {
     if (!id) continue;
-    if (interruptAndSteerRun(id, text, images)) return true;
-    if (codexInterruptAndSteerRun(id, text, images)) return true;
     if (!images?.length && hostInterruptSteer(id, text)) return true;
   }
   return false;
 }
 
-/** Cancel across both backends; returns true if anything was cancelled. */
+/** Cancel a run; returns true if anything was cancelled. */
 export function cancelAgentRun(...ids: Array<string | null | undefined>): boolean {
   let cancelled = false;
   for (const id of ids) {
     if (!id) continue;
-    if (cancelRun(id)) cancelled = true;
-    if (cancelCodexRun(id)) cancelled = true;
     if (cancelOpencodeRun(id)) cancelled = true;
     if (hostCancel(id)) cancelled = true;
   }

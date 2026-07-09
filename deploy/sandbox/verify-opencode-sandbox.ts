@@ -44,7 +44,7 @@ const { OPENCODE_TRANSCRIPTS_DIR, getOpencodeTranscriptPath } = await import(
 const { readOpencodeBridgeConfig } = await import("../../src/server/opencode-config");
 const { BACKSTAGE_CHATS_DIR } = await import("../../src/server/paths");
 type RunHostSpec = import("../../src/runner-host/protocol").RunHostSpec;
-type StreamEvent = import("../../src/server/claude-runner").StreamEvent;
+type StreamEvent = import("../../src/server/run-events").StreamEvent;
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const SESSION_ID = `octest-${Date.now().toString(36)}`;

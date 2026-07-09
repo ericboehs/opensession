@@ -1,13 +1,13 @@
 /**
- * OpenCode runner: the third engine next to claude-runner and codex-runner
- * (docs/sandboxes-plan.md, Workstream E). Wraps a per-session `opencode serve`
- * HTTP server (OpenCode is MIT, 75+ providers) in the same StreamEvent
- * generator shape, so the chat pipeline / journal / audit contract downstream
- * doesn't care which backend serves the model.
+ * OpenCode runner: THE engine (the legacy Claude/Codex SDK runners are
+ * deleted — agent-runner maps every model id onto its opencode form and
+ * dispatches here). Wraps a per-session `opencode serve` HTTP server
+ * (OpenCode is MIT, 75+ providers) in the StreamEvent generator shape the
+ * chat pipeline / journal / audit contract downstream consumes.
  *
- * Activation is explicit: only model ids prefixed `opencode/<provider>/<model>`
- * (e.g. opencode/anthropic/claude-sonnet-5, opencode/openai/gpt-5.5) reach
- * this runner — nothing defaults to it. Provider auth is OpenCode's own
+ * Model ids are `opencode/<provider>/<model>`
+ * (e.g. opencode/anthropic/claude-sonnet-5, opencode/openai/gpt-5.5).
+ * Provider auth is OpenCode's own
  * (`opencode auth login` → ~/.local/share/opencode/auth.json; HOME is passed
  * through), except two subscription paths: `opencode/openai/*` runs on our
  * ChatGPT-subscription auth (the codex accounts pool, seeded per-account — see
@@ -109,7 +109,7 @@ import { dirname, join } from "path";
 import type { Subprocess } from "bun";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import type { RunAgentOpts } from "./agent-runner";
-import { journalSet, journalClear } from "./run-journal";
+import { journalSet, journalClear, registerActiveRunProbe } from "./run-journal";
 import {
   filterMcpServers,
   isClaudeUsageLimitError,
@@ -194,11 +194,15 @@ const INTERACTIVE_KINDS = new Set(["prompt", "goal", "create", "linear", "slack"
 /** Unattended kinds allowed on this engine — with the least-privilege policy
  *  (opencodeRunPolicy) enforced via stripped tools. "automation" is the
  *  automations engine; "plain" is the Plain support agent (untrusted ticket
- *  text — always unattended, money tools stripped via deniedTools). Everything
- *  else — action, github-…, security-scan, their derivatives, AND runs with no
- *  journal kind at all — is fail-closed off this engine (deny by default)
- *  until it gets the same treatment. */
-const AUTOMATION_KINDS = new Set(["automation", "plain"]);
+ *  text); "action" is one-shot session actions; "security-scan" the security
+ *  sweep; github-* the PR behaviors (review/auto-fix/simplify — headless,
+ *  no approval card). Runs with no journal kind at all stay fail-closed
+ *  (deny by default). */
+const AUTOMATION_KINDS = new Set(["automation", "plain", "action", "security-scan"]);
+
+function isUnattendedKind(base: string): boolean {
+  return AUTOMATION_KINDS.has(base) || base.startsWith("github-");
+}
 
 function baseJournalKind(kind?: string): string {
   return (kind || "").replace(/(-(resume|rerun|fallback))+$/, "");
@@ -215,7 +219,7 @@ export function opencodeGateReason(opts: {
 }): string | null {
   if (opts.allowOpencode === true) return null;
   const base = baseJournalKind(opts.journal?.kind);
-  if (INTERACTIVE_KINDS.has(base) || AUTOMATION_KINDS.has(base)) return null;
+  if (INTERACTIVE_KINDS.has(base) || isUnattendedKind(base)) return null;
   return base
     ? `The opencode engine is not available to "${base}" runs — interactive sessions and automations only.`
     : "The opencode engine requires an explicit run kind (journal.kind) — " +
@@ -270,7 +274,7 @@ export function opencodeRunPolicy(opts: {
 }): OpencodeRunPolicy {
   const denied = opts.deniedTools || {};
   const unattended =
-    Object.keys(denied).length > 0 || AUTOMATION_KINDS.has(baseJournalKind(opts.journalKind));
+    Object.keys(denied).length > 0 || isUnattendedKind(baseJournalKind(opts.journalKind));
   if (!unattended) {
     return {
       unattended,
@@ -632,9 +636,13 @@ export interface OpencodeServerEntry {
 const g = globalThis as any;
 const servers: Map<string, OpencodeServerEntry> = (g.__opencodeServers ??= new Map());
 
-// Active runs, keyed by run key + bks session id + opencode session id —
-// mirrors activeCodexRuns (busy checks, cancellation, shutdown drain).
+// Active runs, keyed by run key + bks session id + opencode session id
+// (busy checks, cancellation, shutdown drain).
 const activeOpencodeRuns: Map<string, AbortController> = (g.__activeOpencodeRuns ??= new Map());
+
+// Journaled runs still driven by this process (hot reload) are not
+// "interrupted" — run-journal consults this on takeInterruptedRuns.
+registerActiveRunProbe((runKey) => activeOpencodeRuns.has(runKey));
 
 export function isOpencodeSessionBusy(id: string): boolean {
   return activeOpencodeRuns.has(id);
@@ -905,6 +913,20 @@ async function* runOpencodeAttempt(
 ): AsyncGenerator<StreamEvent> {
   const { prompt, cwd, mode, mcpServers, confirmTools, journal, user, author } = opts;
   const isAsk = mode === "ask";
+
+  // Test hook: pretend usage limits are exhausted on every model, so the
+  // fallback chain can be verified without burning real limits. Set
+  // MICHAEL_FORCE_LIMIT=1 on a dev process only — never the service env.
+  if (envAlias("OPENSESSION_FORCE_LIMIT", "MICHAEL_FORCE_LIMIT") === "1") {
+    yield {
+      type: "done",
+      result: "Claude AI usage limit reached|forced-by-MICHAEL_FORCE_LIMIT",
+      provider: PROVIDER,
+      model,
+      usageLimitExhausted: true,
+    };
+    return;
+  }
 
   const gateReason = opencodeGateReason(opts);
   if (gateReason) {

@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe("run journal", () => {
 	it("preserves human-confirmed tool policy across restart drains", async () => {
-		const mod = await import(`./claude-runner.ts?journal=${crypto.randomUUID()}`);
+		const mod = await import(`./run-journal.ts?journal=${crypto.randomUUID()}`);
 		mod.journalSet({
 			runKey: "run-1",
 			bksSessionId: "bks-1",
@@ -50,8 +50,8 @@ describe("run journal", () => {
 
 	it("emits recovered run stream events during restart resume", async () => {
 		process.env.MICHAEL_FORCE_LIMIT = "1";
-		const claude = await import(`./claude-runner.ts?journal=${crypto.randomUUID()}`);
-		claude.journalSet({
+		const journal = await import(`./run-journal.ts?journal=${crypto.randomUUID()}`);
+		journal.journalSet({
 			runKey: "run-2",
 			bksSessionId: "bks-2",
 			claudeSessionId: "engine-2",
@@ -84,8 +84,8 @@ describe("run journal", () => {
 			id: "bks-2",
 			event: {
 				type: "done",
-				provider: "claude",
-				model: "claude-fable-5",
+				provider: "opencode",
+				model: "opencode/anthropic/claude-fable-5",
 				usageLimitExhausted: true,
 			},
 		});
