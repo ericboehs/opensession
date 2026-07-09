@@ -52,7 +52,7 @@ export function repoForPath(p: string): Repo {
 // runs create worktrees at once — e.g. two loops triggered together, or a loop plus
 // a PR action. This in-process mutex runs them one at a time.
 let gitOpChain: Promise<unknown> = Promise.resolve();
-function withGitLock<T>(fn: () => Promise<T>): Promise<T> {
+export function withGitLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = gitOpChain.then(fn, fn);
   gitOpChain = run.then(
     () => {},
@@ -103,7 +103,28 @@ async function seedWebappEnv(webappDir: string): Promise<void> {
  * immediately. All failure paths are caught + logged here, so a dropped
  * promise never surfaces as an unhandled rejection.
  */
-async function installWorktreeDeps(repo: Repo, wtPath: string, branchLabel: string): Promise<void> {
+/**
+ * Fresh-worktree setup: seed build artifacts from the repo's warm preview
+ * template when one is enabled + ready (node_modules hardlinks, prebuilt
+ * .next/ReScript/WASM output — see warm-template.ts), then the normal dep
+ * install (a fast no-op over a seeded tree). Both halves are best-effort;
+ * a cold build is always the fallback.
+ */
+async function seedAndInstallWorktree(
+  repo: Repo,
+  wtPath: string,
+  branchLabel: string,
+): Promise<void> {
+  try {
+    const { seedWorktreeFromWarmTemplate } = await import("./warm-template");
+    await seedWorktreeFromWarmTemplate(repo, wtPath);
+  } catch (e) {
+    console.warn(`[worktree] warm-template seeding failed for ${branchLabel} (continuing):`, e);
+  }
+  await installWorktreeDeps(repo, wtPath, branchLabel);
+}
+
+export async function installWorktreeDeps(repo: Repo, wtPath: string, branchLabel: string): Promise<void> {
   try {
     if (repo.id === "tella-fusion") {
       await seedWebappEnv(`${wtPath}/packages/core/webapp`);
@@ -303,7 +324,7 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
   if (reused) return wtPath;
 
   // Best-effort dep install so checks/builds the agent runs have deps available.
-  await installWorktreeDeps(repo, wtPath, headRef);
+  await seedAndInstallWorktree(repo, wtPath, headRef);
 
   return wtPath;
 }
@@ -338,7 +359,7 @@ export async function createWorktreeForFollowup(
   });
 
   // Best-effort dep install so the follow-up run can build/test, same as siblings.
-  await installWorktreeDeps(repo, wtPath, branch);
+  await seedAndInstallWorktree(repo, wtPath, branch);
 
   return wtPath;
 }
@@ -378,9 +399,9 @@ export async function createWorktreeForExistingBranch(
     }
   });
 
-  // Best-effort dep install, same as createWorktree — backgrounded so the
-  // opening turn isn't held behind a ~20s bun install (interactive path).
-  void installWorktreeDeps(repo, wtPath, branch);
+  // Best-effort seed + dep install, same as createWorktree — backgrounded so
+  // the opening turn isn't held behind a ~20s bun install (interactive path).
+  void seedAndInstallWorktree(repo, wtPath, branch);
 
   return wtPath;
 }
@@ -490,12 +511,12 @@ export async function createWorktree(
     );
   });
 
-  // Best-effort dep install — sessions can always run `bun install` themselves.
-  // tella-fusion's deps + dev-auth env live under the webapp; other repos
-  // (e.g. backstage) install from the repo root. Config `depsInstall` overrides.
-  // Backgrounded (not awaited): the opening turn shouldn't wait ~20s on a
-  // webapp bun install it usually doesn't need.
-  void installWorktreeDeps(repo, wtPath, branch);
+  // Best-effort warm-template seed + dep install — sessions can always run
+  // `bun install` themselves. tella-fusion's deps + dev-auth env live under
+  // the webapp; other repos (e.g. backstage) install from the repo root.
+  // Config `depsInstall` overrides. Backgrounded (not awaited): the opening
+  // turn shouldn't wait ~20s on a webapp bun install it usually doesn't need.
+  void seedAndInstallWorktree(repo, wtPath, branch);
 
   return wtPath;
 }

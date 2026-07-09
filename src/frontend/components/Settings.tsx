@@ -57,8 +57,12 @@ import {
 	fetchAutoArchiveConfig,
 	updateAutoArchiveConfig,
 	fetchAudit,
+	fetchWarmTemplates,
+	updateWarmTemplate,
+	refreshWarmTemplateNow,
 	type MonitorConfig,
 	type AutoArchiveConfig,
+	type WarmTemplateEntry,
 } from "../lib/api";
 import { getPushState, enablePush, disablePush, type PushState } from "../lib/push";
 import { getCurrentUser } from "./UserPicker";
@@ -96,6 +100,7 @@ export type SettingsSectionKey =
 	| "model"
 	| "modelProviders"
 	| "connections"
+	| "warmPreviews"
 	| "audit"
 	| ToolSectionKey;
 
@@ -393,6 +398,26 @@ const SECTIONS: {
 		),
 	},
 	{
+		key: "warmPreviews",
+		label: "Warm previews",
+		group: "Workspace",
+		icon: (
+			<svg
+				width="20"
+				height="20"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path
+					d="M8 1.8c.4 2.2 3.7 3.4 3.7 6.7a3.7 3.7 0 0 1-7.4 0c0-1.4.6-2.4 1.4-3.4.2 1 .7 1.6 1.4 2 0-1.9.2-3.9.9-5.3z"
+					strokeLinejoin="round"
+				/>
+			</svg>
+		),
+	},
+	{
 		key: "audit",
 		label: "Audit log",
 		group: "Workspace",
@@ -434,6 +459,7 @@ function SectionPanel({
 			{section === "model" && <ModelsPanel />}
 			{section === "modelProviders" && <ModelProvidersPanel />}
 			{section === "connections" && <Connections />}
+			{section === "warmPreviews" && <WarmPreviewsPanel />}
 		</>
 	);
 }
@@ -1182,6 +1208,149 @@ function AutoArchivePanel() {
 						}
 					/>
 				))}
+			</div>
+		</div>
+	);
+}
+
+// ── Warm previews (per-repo prebuilt template worktrees) ────────────────────
+
+const WARM_INTERVAL_OPTIONS: { value: string; label: string }[] = [
+	{ value: "1", label: "Every hour" },
+	{ value: "3", label: "Every 3 hours" },
+	{ value: "6", label: "Every 6 hours" },
+	{ value: "12", label: "Every 12 hours" },
+	{ value: "24", label: "Daily" },
+];
+
+function warmAgo(iso?: string): string {
+	if (!iso) return "never";
+	const mins = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
+	if (mins < 1) return "just now";
+	if (mins < 60) return `${mins}m ago`;
+	const hours = Math.round(mins / 60);
+	if (hours < 48) return `${hours}h ago`;
+	return `${Math.round(hours / 24)}d ago`;
+}
+
+function WarmPreviewsPanel() {
+	const [repos, setRepos] = useState<WarmTemplateEntry[] | null>(null);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		let alive = true;
+		fetchWarmTemplates()
+			.then((r) => alive && setRepos(r.repos))
+			.catch((e) => alive && setError(e.message));
+		return () => {
+			alive = false;
+		};
+	}, []);
+
+	// A refresh boots a real dev server (minutes) — poll while one runs so the
+	// status line flips to "Warm at <sha>" on its own.
+	useEffect(() => {
+		if (!repos?.some((e) => e.refreshing)) return;
+		let alive = true;
+		const t = setTimeout(() => {
+			fetchWarmTemplates()
+				.then((r) => alive && setRepos(r.repos))
+				.catch(() => {});
+		}, 5000);
+		return () => {
+			alive = false;
+			clearTimeout(t);
+		};
+	}, [repos]);
+
+	function apply(p: Promise<{ repos: WarmTemplateEntry[] }>) {
+		p.then((r) => setRepos(r.repos)).catch((e) => setError(e.message));
+	}
+
+	if (!repos)
+		return (
+			<div className="settings-panel">
+				<h1 className="settings-title">Warm previews</h1>
+				<div className="setting-row-desc">{error || "Loading…"}</div>
+			</div>
+		);
+
+	return (
+		<div className="settings-panel">
+			<h1 className="settings-title">Warm previews</h1>
+			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+				Keep a prebuilt template worktree per repo, refreshed from its default
+				branch on a schedule (deps installed, dev server booted once so build
+				caches are hot). New session worktrees copy those artifacts, so the
+				Preview button starts in seconds instead of doing a cold build.
+			</div>
+
+			{error && (
+				<div className="form-error" onClick={() => setError(null)}>
+					{error}
+				</div>
+			)}
+
+			<div className="setting-card">
+				{repos.map((entry) => {
+					const s = entry.state;
+					const status = entry.refreshing
+						? "Refreshing now — building the template…"
+						: !entry.enabled
+							? "Off — fresh worktrees build cold."
+							: s?.ok
+								? `Warm at ${s.sha} · refreshed ${warmAgo(s.refreshedAt)}${
+										s.lastDurationMs
+											? ` · took ${Math.round(s.lastDurationMs / 60_000)}m`
+											: ""
+									}`
+								: s?.lastError
+									? `Last refresh failed: ${s.lastError}`
+									: "Enabled — first refresh runs shortly.";
+					return (
+						<SettingRow
+							key={entry.repoId}
+							title={entry.repoId}
+							desc={status}
+							control={
+								<div className="flex items-center gap-2">
+									{entry.enabled && (
+										<>
+											<button
+												className="rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+												disabled={entry.refreshing}
+												onClick={() =>
+													apply(refreshWarmTemplateNow(entry.repoId))
+												}
+											>
+												{entry.refreshing ? "Building…" : "Run now"}
+											</button>
+											<Select
+												label={`Refresh interval for ${entry.repoId}`}
+												value={String(entry.intervalHours)}
+												options={WARM_INTERVAL_OPTIONS}
+												onChange={(v) =>
+													apply(
+														updateWarmTemplate(entry.repoId, {
+															intervalHours: parseInt(v, 10),
+														}),
+													)
+												}
+											/>
+										</>
+									)}
+									<Toggle
+										label={`Warm previews for ${entry.repoId}`}
+										checked={entry.enabled}
+										onChange={(v) =>
+											apply(updateWarmTemplate(entry.repoId, { enabled: v }))
+										}
+									/>
+								</div>
+							}
+						/>
+					);
+				})}
 			</div>
 		</div>
 	);

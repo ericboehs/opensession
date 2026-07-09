@@ -315,6 +315,7 @@ export class DaytonaProvider implements SandboxProvider {
       await remoteCloneUrl(repo),
       branch,
       repo.defaultBranch,
+      repo.id,
     );
     writeRemoteState({
       sandboxId: sbx.id,

@@ -1306,6 +1306,49 @@ export async function updateAutoArchiveConfig(
 	return request("/auto-archive", { method: "PUT", body: { user, ...patch } });
 }
 
+// ── Warm preview templates (Settings → Warm previews) ──
+
+export interface WarmTemplateEntry {
+	repoId: string;
+	enabled: boolean;
+	intervalHours: number;
+	refreshing: boolean;
+	state: {
+		sha?: string;
+		refreshedAt?: string;
+		lastDurationMs?: number;
+		ok?: boolean;
+		lastError?: string;
+		manifestEntries?: number;
+	} | null;
+}
+
+export async function fetchWarmTemplates(): Promise<{
+	repos: WarmTemplateEntry[];
+}> {
+	return request("/warm-templates", {
+		label: "Failed to fetch warm previews",
+	});
+}
+
+export async function updateWarmTemplate(
+	repoId: string,
+	patch: { enabled?: boolean; intervalHours?: number },
+): Promise<{ repos: WarmTemplateEntry[] }> {
+	return request(`/warm-templates/${encodeURIComponent(repoId)}`, {
+		method: "PUT",
+		body: patch,
+	});
+}
+
+export async function refreshWarmTemplateNow(
+	repoId: string,
+): Promise<{ repos: WarmTemplateEntry[] }> {
+	return request(`/warm-templates/${encodeURIComponent(repoId)}/refresh`, {
+		method: "POST",
+	});
+}
+
 // ── Security (deepsec scans + profiles) ──
 
 export interface ScanProfile {

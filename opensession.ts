@@ -322,6 +322,11 @@ import {
 	setAutoArchiveConfig,
 	startAutoArchiveSweep,
 } from "./src/server/auto-archive";
+import {
+	refreshWarmTemplate,
+	setWarmTemplateConfig,
+	warmTemplateStatus,
+} from "./src/server/warm-template";
 import { setTitleOverride, getTitleOverride } from "./src/server/title-overrides";
 import { setStatusOverride, isManualStatus } from "./src/server/status-overrides";
 import {
@@ -6604,6 +6609,49 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				if (!body || typeof body.user !== "string" || !body.user.trim())
 					return Response.json({ error: "user required" }, { status: 400 });
 				return Response.json(setAutoArchiveConfig(body.user, body));
+			}
+
+			// ── Warm preview templates (per-repo prebuilt worktrees, scheduled) ──
+			if (path === "/backstage/api/warm-templates" && req.method === "GET") {
+				return Response.json({ repos: warmTemplateStatus() });
+			}
+
+			{
+				const m = path.match(
+					/^\/backstage\/api\/warm-templates\/([^/]+)(\/refresh)?$/,
+				);
+				if (m) {
+					const repoId = decodeURIComponent(m[1]);
+					if (!(repoId in REPOS))
+						return Response.json(
+							{ error: `unknown repo "${repoId}"` },
+							{ status: 404 },
+						);
+					if (!m[2] && req.method === "PUT") {
+						const body = await req.json().catch(() => null);
+						if (!body)
+							return Response.json({ error: "Invalid JSON" }, { status: 400 });
+						const patch: Record<string, unknown> = {};
+						if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+						if (
+							typeof body.intervalHours === "number" &&
+							body.intervalHours >= 1
+						)
+							patch.intervalHours = Math.floor(body.intervalHours);
+						if (Array.isArray(body.warmRoutes))
+							patch.warmRoutes = body.warmRoutes.filter(
+								(r: unknown): r is string => typeof r === "string",
+							);
+						setWarmTemplateConfig(repoId, patch);
+						return Response.json({ repos: warmTemplateStatus() });
+					}
+					if (m[2] && req.method === "POST") {
+						// Fire-and-forget: a refresh boots a real dev server (minutes);
+						// the UI polls GET for progress via `refreshing`.
+						void refreshWarmTemplate(repoId, { force: true }).catch(() => {});
+						return Response.json({ repos: warmTemplateStatus() });
+					}
+				}
 			}
 
 			// ── Security (deepsec scans + profiles) ──

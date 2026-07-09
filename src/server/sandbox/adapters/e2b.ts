@@ -176,6 +176,7 @@ export class E2bProvider implements SandboxProvider {
       await remoteCloneUrl(repo),
       branch,
       repo.defaultBranch,
+      repo.id,
     );
     writeRemoteState({
       sandboxId: sbx.sandboxId,

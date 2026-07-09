@@ -320,6 +320,24 @@ async function runPrewarmBootstrap(entry: PrewarmEntry, adapter: PrewarmAdapter)
       destroyLater(entry.provider, sandboxId, "superseded mid-bootstrap");
       return;
     }
+    // Warm-previews repos ALSO get their workspace pre-cloned at the default
+    // branch (+ deps) — the adopting session then just mv's it into place and
+    // branches (setupRemoteWorkspace). Non-fatal: a failure leaves a normal
+    // runner-only prewarm.
+    try {
+      const { warmTemplateConfig } = await import("../warm-template");
+      if (warmTemplateConfig(entry.repoId).enabled) {
+        const { warmRemoteWorkspace } = await import("./adapters/bootstrap");
+        const repo = REPOS[entry.repoId];
+        if (repo) await warmRemoteWorkspace(driver, repo, `${entry.provider}-prewarm`);
+      }
+    } catch (e) {
+      console.warn(`[sandbox-prewarm] ${entry.key} warm workspace failed (non-fatal):`, e);
+    }
+    if (!current()) {
+      destroyLater(entry.provider, sandboxId, "superseded mid-warm");
+      return;
+    }
     entry.state = "ready";
     entry.lastTouchedAt = new Date().toISOString();
     persist(entry);

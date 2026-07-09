@@ -545,14 +545,78 @@ export async function bootstrapRemoteSandbox(
 
 // ── Workspace (always volume-style: cloned inside the sandbox) ───────────────
 
+/** Where prewarmed workspace clones live in-sandbox until a session adopts
+ *  them (warmRemoteWorkspace → setupRemoteWorkspace's mv). */
+export const REMOTE_WARM_BASE = `${REMOTE_HOME}/.bks-warm`;
+
+/**
+ * Pre-clone a repo at its default branch (+ deps install) inside a PREWARM
+ * sandbox, so the session that later adopts it skips the clone and most of
+ * the bun install — the remote cousin of warm-template.ts's host seeding.
+ * Runs only when the repo's warm-previews toggle is on (same Settings switch
+ * as the host template); failures are non-fatal — the prewarm is still
+ * adoptable, the workspace just sets up cold like today.
+ */
+export async function warmRemoteWorkspace(
+  driver: RemoteDriver,
+  repo: { id: string; repo: string; ghRepo?: string; defaultBranch: string; depsInstall?: string },
+  label: string,
+): Promise<void> {
+  const dir = `${REMOTE_WARM_BASE}/${sanitizeName(repo.id)}`;
+  const log = (msg: string) => console.log(`[sandbox:${label}] warm workspace: ${msg}`);
+  const has = await driver.exec(`test -d ${shellQuoteWord(dir)}/.git`);
+  if (has.exitCode !== 0) {
+    const url = await remoteCloneUrl(repo);
+    log(`cloning ${redactUrl(url)} at ${repo.defaultBranch}…`);
+    const clone = await driver.exec(
+      `mkdir -p ${shellQuoteWord(dirname(dir))} && git clone --filter=blob:none -- ${shellQuoteWord(url)} ${shellQuoteWord(dir)}`,
+      { timeoutMs: 600_000 },
+    );
+    if (clone.exitCode !== 0) {
+      log(`clone failed (adoption will set up cold): ${redactUrl(clone.stderr.trim().slice(0, 300))}`);
+      return;
+    }
+  }
+  // Deps: same convention as worktree.ts's installWorktreeDeps, expressed
+  // in-sandbox (config depsInstall → tella-fusion webapp install → root
+  // install when a package.json exists).
+  const bunEnv = `HOME=${REMOTE_HOME} PATH=${shellQuoteWord(REMOTE_PATH)}`;
+  const deps = repo.depsInstall
+    ? `cd ${shellQuoteWord(dir)} && ${bunEnv} sh -c ${shellQuoteWord(repo.depsInstall)}`
+    : `cd ${shellQuoteWord(dir)} && ${bunEnv} sh -c 'if [ -f packages/core/webapp/package.json ]; then cd packages/core/webapp && ${REMOTE_BUN} install; elif [ -f package.json ]; then ${REMOTE_BUN} install; fi'`;
+  log("installing deps…");
+  const r = await driver.exec(deps, { timeoutMs: 900_000 });
+  if (r.exitCode !== 0) {
+    log(`deps install failed (non-fatal): ${(r.stderr || r.stdout).trim().slice(0, 300)}`);
+  } else {
+    log("ready");
+  }
+}
+
 export async function setupRemoteWorkspace(
   driver: RemoteDriver,
   cwd: string,
   cloneUrl: string,
   branch: string,
   defaultBranch: string,
+  repoId?: string,
 ): Promise<void> {
-  const cloned = await driver.exec(`test -d ${shellQuoteWord(cwd)}/.git`);
+  let cloned = await driver.exec(`test -d ${shellQuoteWord(cwd)}/.git`);
+  if (cloned.exitCode !== 0 && repoId) {
+    // Adopt a prewarmed clone (warmRemoteWorkspace) when one is waiting —
+    // the mv is instant and carries node_modules with it.
+    const warmDir = `${REMOTE_WARM_BASE}/${sanitizeName(repoId)}`;
+    const adopted = await driver.exec(
+      `test -d ${shellQuoteWord(warmDir)}/.git && mkdir -p ${shellQuoteWord(dirname(cwd))} && mv ${shellQuoteWord(warmDir)} ${shellQuoteWord(cwd)}`,
+    );
+    if (adopted.exitCode === 0) {
+      console.log(`[sandbox-remote] adopted warm workspace clone for ${repoId} → ${cwd}`);
+      // The warm clone's refs may be hours old and the session branches off
+      // the default branch — freshen before the checkout below.
+      await driver.exec(`git fetch origin --quiet`, { cwd, timeoutMs: 180_000 });
+      cloned = await driver.exec(`test -d ${shellQuoteWord(cwd)}/.git`);
+    }
+  }
   if (cloned.exitCode !== 0) {
     console.log(`[sandbox-remote] cloning ${redactUrl(cloneUrl)} into ${cwd}`);
     // Blobless partial clone: full history/refs but blobs fetched lazily via
