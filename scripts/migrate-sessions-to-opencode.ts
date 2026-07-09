@@ -49,10 +49,15 @@ if (providerFor(defaultTarget) !== "opencode") {
   process.exit(1);
 }
 
-/** claude-* models map 1:1 onto the anthropic bridge; everything else
- *  (codex/gpt histories, unset models) gets the default target. */
+/** Tier-preserving mapping: claude-* models map 1:1 onto the anthropic
+ *  bridge, gpt-* map 1:1 onto opencode/openai (auth keys off the codex
+ *  accounts pool — opencode-openai-auth.ts), and the codex "best available"
+ *  alias lands on the current best openai model. Anything else (unset
+ *  models) gets the default target. */
 function targetFor(model: string | undefined): string {
   if (model?.startsWith("claude-")) return `opencode/anthropic/${model}`;
+  if (model?.startsWith("gpt-")) return `opencode/openai/${model}`;
+  if (model?.startsWith("codex")) return "opencode/openai/gpt-5.5";
   return defaultTarget;
 }
 
