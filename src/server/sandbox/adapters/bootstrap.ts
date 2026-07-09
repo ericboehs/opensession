@@ -295,6 +295,40 @@ export async function remoteCloneUrl(repo: {
   return injectToken(https);
 }
 
+/**
+ * Fast dial-back preflight for remote sandboxes: before the multi-second
+ * (cold: multi-minute) bootstrap, prove the sandbox can reach the URL runs
+ * must dial back to (`remoteSandboxCallbackBaseUrl` — run-ws/rpc-ws live
+ * there). Any HTTP response, even a 404, proves reachability; a connect
+ * failure/timeout fails the ensure() immediately with the honest, documented
+ * error instead of letting the user burn 30s+ into a bootstrap that can never
+ * produce a working run. Skips quietly when the image has no curl (bootstrap
+ * checks that loudly right after).
+ */
+export async function assertDialbackReachable(
+  driver: RemoteDriver,
+  label: string,
+): Promise<void> {
+  const wsBase = remoteSandboxCallbackBaseUrl();
+  const httpBase = wsBase.replace(/^ws(s?):\/\//, "http$1://");
+  const probe = await driver.exec(
+    `command -v curl >/dev/null 2>&1 || { echo __BKS_NO_CURL__; exit 0; }; ` +
+      `curl -sS -o /dev/null -m 5 -w '%{http_code}' ${shellQuoteWord(`${httpBase}/`)}`,
+    { timeoutMs: 20_000 },
+  );
+  if (probe.stdout.includes("__BKS_NO_CURL__")) return;
+  if (probe.exitCode !== 0) {
+    const detail = (probe.stderr || probe.stdout).trim().slice(0, 200);
+    throw new Error(
+      `${label} sandboxes can't reach this Backstage server yet — ` +
+        `${redactUrl(httpBase)} is unreachable from inside the sandbox` +
+        `${detail ? ` (${detail})` : ""}. Remote sandboxes must dial back to ` +
+        `callbackBaseUrl/publicIngress, which needs the provider org's egress tier ` +
+        `plus a publicly reachable ingress — see docs/self-hosting-sandboxes.md.`,
+    );
+  }
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 function need(r: ExecResult, what: string): void {
