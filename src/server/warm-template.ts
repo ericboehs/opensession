@@ -42,7 +42,7 @@
  * sandbox/adapters/bootstrap.ts and reads the same config.
  */
 import { $ } from "bun";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { configuredPaths, configuredRepos, type Repo } from "./config";
 import { OPENSESSION_CHATS_DIR } from "./paths";
@@ -189,9 +189,31 @@ export function warmTemplateDir(repo: Repo): string {
 // --hot reloads can't double-refresh a repo.
 const g = globalThis as unknown as {
   __warmTemplateRefreshing?: Map<string, Promise<void>>;
+  __warmTemplateSeeding?: Set<string>;
   __warmTemplateSweepTimer?: ReturnType<typeof setInterval>;
 };
 const refreshing: Map<string, Promise<void>> = (g.__warmTemplateRefreshing ??= new Map());
+// Worktrees with a seed in flight (one seed per worktree — see seedWorktree…).
+const seeding: Set<string> = (g.__warmTemplateSeeding ??= new Set());
+
+// Cross-PROCESS refresh marker: the in-memory `refreshing` map can't be seen
+// by other processes (a CLI-triggered refresh vs the live server's seeds —
+// exactly the race that fed a mid-reset template into a session seed on
+// 2026-07-09). doRefresh holds this file; seeds wait for / bail on it.
+function refreshLockFile(repoId: string): string {
+  return join(warmDir(), `${repoId}.refresh.lock`);
+}
+
+function refreshLockHeld(repoId: string): boolean {
+  try {
+    const f = refreshLockFile(repoId);
+    if (!existsSync(f)) return false;
+    // A crashed refresh must not wedge seeding forever — stale locks expire.
+    return Date.now() - statSync(f).mtimeMs < 20 * 60_000;
+  } catch {
+    return false;
+  }
+}
 
 export function warmTemplateRefreshing(repoId: string): boolean {
   return refreshing.has(repoId);
@@ -272,6 +294,8 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
   };
 
   try {
+    mkdirSync(warmDir(), { recursive: true });
+    writeFileSync(refreshLockFile(repoId), `${process.pid} ${new Date().toISOString()}\n`);
     // Lazy imports: worktree.ts/preview.ts import back into this module's
     // consumers — keep the static graph acyclic.
     const { withGitLock, installWorktreeDeps } = await import("./worktree");
@@ -394,6 +418,10 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
     );
   } catch (e) {
     await fail(String((e as any)?.message || e));
+  } finally {
+    try {
+      unlinkSync(refreshLockFile(repoId));
+    } catch {}
   }
 }
 
@@ -414,49 +442,85 @@ export async function seedWorktreeFromWarmTemplate(repo: Repo, wtPath: string): 
     if (!state?.ok || !existsSync(mf) || !existsSync(state.dir)) return false;
     if (wtPath === state.dir) return false; // never seed the template itself
 
-    // A refresh mid-flight is rewriting artifacts under us — give it a bounded
-    // moment to finish, then proceed regardless (dev tooling tolerates a
-    // partially-stale cache far better than a fully cold one).
+    // A refresh mid-flight is rewriting artifacts under us. In-process we can
+    // await it; a refresh in ANOTHER process is visible only via the lock
+    // file — wait briefly, then bail to a cold build rather than copy from a
+    // tree being reset (that race aborted a seed live on 2026-07-09).
     const inflight = refreshing.get(repo.id);
     if (inflight) {
       await Promise.race([inflight, Bun.sleep(60_000)]);
     }
-
-    const started = Date.now();
-    const entries = filterManifest(readFileSync(mf, "utf-8").split("\n"));
-    const linkDirs = entries.filter(isNodeModulesEntry);
-    const copyEntries = entries.filter((e) => !isNodeModulesEntry(e));
-
-    // node_modules trees: hardlink farms (~free for multi-GB trees; package
-    // managers replace files rather than editing in place, so shared inodes
-    // are safe).
-    for (const entry of linkDirs) {
-      const src = join(state.dir, entry);
-      const dst = join(wtPath, entry);
-      if (!existsSync(src) || existsSync(dst)) continue;
-      mkdirSync(dirname(dst.replace(/\/$/, "")), { recursive: true });
-      await $`cp -al ${src.replace(/\/$/, "")} ${dst.replace(/\/$/, "")}`.quiet();
+    for (let waited = 0; refreshLockHeld(repo.id) && waited < 90_000; waited += 5000) {
+      await Bun.sleep(5000);
+    }
+    if (refreshLockHeld(repo.id)) {
+      console.log(
+        `[warm-template] ${repo.id} template is mid-refresh (another process) — ${wtPath} builds cold`,
+      );
+      return false;
     }
 
-    // Everything else (.next, ReScript lib/ + in-source *.res.mjs, WASM
-    // bindings): real copies in ONE rsync pass — compilers may rewrite these
-    // in place, and hardlinks would cross-corrupt sessions + template.
-    if (copyEntries.length) {
-      const listFile = join(warmDir(), `.seed-${process.pid}-${Date.now()}.list`);
-      writeFileSync(listFile, copyEntries.join("\n") + "\n");
-      try {
-        await $`rsync -a -r --ignore-existing --files-from=${listFile} ${state.dir}/ ${wtPath}/`.quiet();
-      } finally {
-        try {
-          unlinkSync(listFile);
-        } catch {}
+    // One seed per worktree at a time: duplicate create paths racing two
+    // cp -al's into the same node_modules produced "cannot create directory:
+    // File exists" and killed the whole seed (bks-019f48d6, 2026-07-09).
+    if (seeding.has(wtPath)) return false;
+    seeding.add(wtPath);
+    try {
+      const started = Date.now();
+      const entries = filterManifest(readFileSync(mf, "utf-8").split("\n"));
+      const linkDirs = entries.filter(isNodeModulesEntry);
+      const copyEntries = entries.filter((e) => !isNodeModulesEntry(e));
+
+      // node_modules trees: hardlink farms (~free for multi-GB trees; package
+      // managers replace files rather than editing in place, so shared inodes
+      // are safe). Per-entry best-effort: a conflict with a concurrent writer
+      // (e.g. an already-running bun install) must not abort the other
+      // entries or the copy stage below — bun install reconciles whatever
+      // landed.
+      for (const entry of linkDirs) {
+        const src = join(state.dir, entry).replace(/\/$/, "");
+        const dst = join(wtPath, entry).replace(/\/$/, "");
+        if (!existsSync(src) || existsSync(dst)) continue;
+        mkdirSync(dirname(dst), { recursive: true });
+        const r = await $`cp -al ${src} ${dst}`.quiet().nothrow();
+        if (r.exitCode !== 0) {
+          console.warn(
+            `[warm-template] hardlink of ${entry} into ${wtPath} was partial (exit ${r.exitCode}) — bun install will reconcile`,
+          );
+        }
       }
-    }
 
-    console.log(
-      `[warm-template] seeded ${wtPath} from ${repo.id} template (${state.sha}) in ${Math.round((Date.now() - started) / 1000)}s`,
-    );
-    return true;
+      // Everything else (.next, ReScript lib/ + in-source *.res.mjs, WASM
+      // bindings): real copies in ONE rsync pass — compilers may rewrite
+      // these in place, and hardlinks would cross-corrupt sessions +
+      // template. --ignore-existing keeps concurrent writers safe.
+      if (copyEntries.length) {
+        const listFile = join(warmDir(), `.seed-${process.pid}-${Date.now()}.list`);
+        writeFileSync(listFile, copyEntries.join("\n") + "\n");
+        try {
+          const r =
+            await $`rsync -a -r --ignore-existing --files-from=${listFile} ${state.dir}/ ${wtPath}/`
+              .quiet()
+              .nothrow();
+          if (r.exitCode !== 0) {
+            console.warn(
+              `[warm-template] artifact copy into ${wtPath} was partial (rsync exit ${r.exitCode})`,
+            );
+          }
+        } finally {
+          try {
+            unlinkSync(listFile);
+          } catch {}
+        }
+      }
+
+      console.log(
+        `[warm-template] seeded ${wtPath} from ${repo.id} template (${state.sha}) in ${Math.round((Date.now() - started) / 1000)}s`,
+      );
+      return true;
+    } finally {
+      seeding.delete(wtPath);
+    }
   } catch (e) {
     console.warn(`[warm-template] seeding ${wtPath} failed (worktree builds cold):`, e);
     return false;
