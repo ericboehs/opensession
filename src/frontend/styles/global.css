@@ -3771,7 +3771,7 @@ body.resizing-x .panel-resize::after {
 	   rather than an underline, so the strip reads as a free-standing control
 	   group over the panel body. Left inset lands the first pill's label at the
 	   panel body's 22px content edge (10px strip + 12px pill padding). */
-	padding: 8px 10px;
+	padding: 13px 10px 8px;
 	/* When the tabs don't fit (narrow panel, many tabs), scroll horizontally
 	   rather than wrap or clip. Scrollbar hidden — the strip stays compact. */
 	overflow-x: auto;
