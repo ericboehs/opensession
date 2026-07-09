@@ -457,16 +457,28 @@ export class HostHandle {
   async connectWithWait(timeoutMs: number): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     let lastErr: unknown = null;
+    let attempts = 0;
     for (;;) {
+      attempts++;
       try {
-        await this.connectOnce();
-        return;
+        // BOUNDED attempt: a connector whose promise never settles (a stalled
+        // transport/SDK call) must not freeze the whole wait loop silently —
+        // treat a >5s attempt as failed and keep polling until the deadline.
+        const r = await Promise.race([
+          this.connectOnce().then(() => "ok" as const),
+          new Promise<"stall">((res) => setTimeout(() => res("stall"), 5_000)),
+        ]);
+        if (r === "ok") return;
+        lastErr = new Error("connect attempt stalled >5s (promise never settled)");
+        console.warn(
+          `[host-client] ${this.spec.hostId.slice(0, 11)}: connect attempt ${attempts} stalled >5s`,
+        );
       } catch (e) {
         lastErr = e;
       }
       if (Date.now() >= deadline) {
         throw new Error(
-          `run host ${this.spec.hostId} never became connectable: ${lastErr}`
+          `run host ${this.spec.hostId} never became connectable after ${attempts} attempt(s): ${lastErr}`
         );
       }
       await new Promise((r) => setTimeout(r, 300));

@@ -273,6 +273,16 @@ function wsMessage(ws: any, message: string | Buffer): boolean {
       // No HostHandle yet — park it. Deliberately NOT counted as consumed:
       // if this socket dies before a consumer attaches, the un-acked frames
       // are replayed on the next dial instead of vanishing with the buffer.
+      // Parking is normal for a beat after dial-in; a TERMINAL frame parking
+      // is the signature of a stuck launch (2026-07-09: a stalled provider
+      // SDK call kept connectWithWait from ever running while the whole run
+      // streamed into this buffer) — log those so it's never silent again.
+      if (msg?.t === "end") {
+        console.warn(
+          `[run-ws] host ${st.hostId.slice(0, 11)} streamed its terminal frame with no consumer attached — ` +
+            "the launch path may be stuck; frames stay parked for a late attach",
+        );
+      }
       st.buffer.push(msg);
     }
     return true;
@@ -338,6 +348,11 @@ function makeRunWsConnector(hostId: string): HostConnector {
         throw new Error(`no live run-ws connection for ${hostId} yet`);
       }
       st.consumer = handlers;
+      if (st.buffer.length) {
+        console.log(
+          `[run-ws] consumer attached for ${hostId.slice(0, 11)}, flushing ${st.buffer.length} parked frame(s)`,
+        );
+      }
       // Flushing the pre-attach buffer is the consumption moment — advance the
       // watermark now and ack it, so the host can trim its replay buffer.
       const rec = seqRecFor(hostId);
@@ -387,6 +402,7 @@ const impl = {
   wsClose,
   makeRunWsConnector,
 };
+
 g.__runWsImpl = impl;
 type Impl = typeof impl;
 const live = (): Impl => (g.__runWsImpl as Impl) ?? impl;

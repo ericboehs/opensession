@@ -600,7 +600,13 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
       if (!spec?.wsToken) {
         throw new Error(`remote launch of ${hostId}: spec.json (with wsToken) missing from ${dir}`);
       }
+      // Per-step timing marks: when a provider SDK call stalls (see the
+      // bounded execBackground below), the last mark names the culprit.
+      const t0 = Date.now();
+      const mark = (step: string) =>
+        console.log(`[sandbox-remote] launch ${hostId.slice(0, 11)}: ${step} (+${Date.now() - t0}ms)`);
       await driver.ensureStarted();
+      mark("sandbox started");
       // Scoped Claude account upload — only what THIS run may use (pinned
       // account, else pool + the run user's own personal accounts; see the
       // module header). Rewritten every launch so pin/user changes apply and
@@ -611,6 +617,7 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
         JSON.stringify({ accounts }, null, 2) + "\n",
       );
       await driver.exec(`chmod 600 ${REMOTE_HOME}/.backstage-claude-accounts.json`);
+      mark("accounts uploaded");
       // Remote sandboxes dial back over the public ingress when it's enabled
       // (publicIngress.publicBaseUrl), else the plain callbackBaseUrl. Docker
       // stays on sandboxCallbackBaseUrl — its bridge path never leaves the box.
@@ -627,9 +634,27 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
           BKS_RPC_WS_URL: `${base}/backstage/rpc-ws`,
           ...(process.env.MICHAEL_MODEL ? { MICHAEL_MODEL: process.env.MICHAEL_MODEL } : {}),
         };
-        await driver.execBackground(
+        // BOUNDED await: provider SDK calls have stalled indefinitely here in
+        // the wild (2026-07-09: a Daytona executeSessionCommand response never
+        // resolved even though the command RAN — the host started, dialed
+        // back, streamed its whole run, and every frame sat parked because
+        // this await never returned, so connectWithWait never started). The
+        // detached command's delivery is verified by the dial-back
+        // (connectWithWait) anyway — after the bound, proceed and let that
+        // decide.
+        const bg = driver.execBackground(
           `${envPrefix(env)}${REMOTE_BUN} run ${HOST_ENTRY} ${dir}/${HOST_SPEC_NAME} >> ${dir}/host.log 2>&1`,
         );
+        const bgTimeout = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 30_000));
+        const raced = await Promise.race([bg.then(() => "ok" as const), bgTimeout]);
+        if (raced === "timeout") {
+          console.warn(
+            `[sandbox-remote] execBackground for ${hostId.slice(0, 11)} still pending after 30s — ` +
+              "proceeding to the dial-back wait (the launch command may have been delivered anyway)",
+          );
+          bg.catch(() => {}); // don't let the eventual settle become an unhandled rejection
+        }
+        mark("host exec dispatched");
       } catch (e) {
         unregisterRunWsHost(hostId);
         throw e;
@@ -736,11 +761,16 @@ export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
       spec.wsToken ??= crypto.randomUUID(); // remote runs are always WS
       const record = recordForSpec(spec, parts.sandboxId, parts.providerId);
       let handle: HostHandle | undefined;
+      const t0 = Date.now();
+      const mark = (step: string) =>
+        console.log(`[sandbox-remote] launch ${spec.hostId.slice(0, 11)}: ${step} (+${Date.now() - t0}ms)`);
       try {
         await launcher.writeSpec!(dir, spec);
+        mark("spec written");
         await launcher.launch(spec.hostId, dir);
         handle = new HostHandle(dir, spec, callbacks, launcher);
         await handle.connectWithWait(45_000);
+        mark("host attached");
       } catch (e) {
         handle?.abandon();
         unregisterRunToken(spec.rpcToken);

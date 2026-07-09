@@ -987,10 +987,17 @@ function makeDockerSandbox(
       mkdirSync(dir, { recursive: true });
       writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
       let handle: HostHandle | undefined;
+      // Per-step marks: a stalled await in this chain is otherwise silent
+      // (2026-07-09: launches ran in-sandbox while backstage never attached).
+      const t0 = Date.now();
+      const mark = (step: string) =>
+        console.log(`[sandbox] launch ${spec.hostId.slice(0, 11)}: ${step} (+${Date.now() - t0}ms)`);
       try {
         await launcher.launch(spec.hostId, dir);
+        mark("host exec dispatched");
         handle = new HostHandle(dir, spec, callbacks, launcher);
         await handle.connectWithWait(30_000);
+        mark("host attached");
       } catch (e) {
         // The HostHandle ctor registered its control in the host-registry —
         // drop it (and the caller-registered run token) on any launch failure,
