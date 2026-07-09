@@ -89,6 +89,11 @@
 }
 
 @supports (corner-shape: squircle) {
+	.rounded {
+		border-radius: 6px;
+		corner-shape: squircle;
+	}
+
 	.rounded-xs {
 		border-radius: 6px;
 		corner-shape: squircle;
@@ -111,6 +116,11 @@
 
 	.rounded-xl {
 		border-radius: 30px;
+		corner-shape: squircle;
+	}
+
+	.rounded-2xl {
+		border-radius: 34px;
 		corner-shape: squircle;
 	}
 

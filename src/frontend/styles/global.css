@@ -47,6 +47,14 @@
 	--mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
 	--sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
 	--radius: 14px;
+	/* Squircle corner treatment (Chrome 139+ `corner-shape`). A superellipse
+	   hugs the corner tighter than a circular arc, so at the same radius a
+	   squircle reads LESS round — the fix is to scale every radius up. --rf is
+	   that multiplier (1 = untouched) and --cs flips the corner from a circular
+	   arc to a squircle. Both stay no-ops until the @supports block below
+	   confirms corner-shape, so non-Chrome browsers keep the original radii. */
+	--rf: 1;
+	--cs: round;
 	/* Chat column width — messages, work blocks, composer, ask cards all share
 	   it so the conversation reads as one column. */
 	--chat-col: 1000px;
@@ -277,6 +285,16 @@ button {
 }
 
 @supports (corner-shape: squircle) {
+	/* Turn the squircle treatment on everywhere: every corner radius in this
+	   file is authored as `calc(<value> * var(--rf))` + `corner-shape: var(--cs)`,
+	   so flipping these two tokens rounds up ALL radii at once. 1.6 matches the
+	   bump the Tailwind utilities already ship in tailwind.css, so legacy CSS
+	   and the new UI system land on the same corner. */
+	:root {
+		--rf: 1.6;
+		--cs: squircle;
+	}
+
 	:where(
 			[class*="rounded-"]:not([class*="rounded-full"]),
 			[class~="rounded"]
@@ -355,7 +373,7 @@ a {
 }
 ::-webkit-scrollbar-thumb {
 	background: var(--border-strong);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 }
 ::-webkit-scrollbar-track {
 	background: transparent;
@@ -426,7 +444,7 @@ a {
 		height: 28px;
 		padding: 0;
 		border: none;
-		border-radius: 8px;
+		border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 		background: transparent;
 		color: var(--text-dim);
 		cursor: pointer;
@@ -504,7 +522,7 @@ a {
 	justify-content: center;
 	width: 32px;
 	height: 32px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	background: radial-gradient(120% 120% at 50% 38%, #1c0405 0%, #0a0608 70%);
 	border: 1px solid rgba(255, 40, 40, 0.22);
 	color: #ff2a2a;
@@ -547,7 +565,7 @@ a {
 	border: none;
 	background: transparent;
 	color: inherit;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	-webkit-tap-highlight-color: transparent;
 }
@@ -593,7 +611,7 @@ a {
 	text-align: left;
 	background: none;
 	border: none;
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	font-size: 14px;
 	font-weight: 500;
@@ -645,7 +663,7 @@ a {
 	width: 18px;
 	height: 2px;
 	background: var(--text-dim);
-	border-radius: 1px;
+	border-radius: calc(1px * var(--rf)); corner-shape: var(--cs);
 }
 
 /* ── Sidebar ─────────────────────────────────────────────── */
@@ -694,7 +712,7 @@ a {
 	width: auto;
 	height: auto;
 	padding: 3px 5px;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 }
 
 /* Smaller logo tile for the brand trigger (the KITT scanner scales via % so it
@@ -703,7 +721,7 @@ a {
 	width: 26px;
 	height: 26px;
 	font-size: 14px;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 }
 
 /* Live connection dot on the logo corner — sits on a relative wrapper because
@@ -732,7 +750,7 @@ a {
 	padding: 0;
 	background: none;
 	border: none;
-	border-radius: 11px;
+	border-radius: calc(11px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-faint);
 	cursor: pointer;
 	transition: color 0.12s, background 0.12s;
@@ -898,7 +916,7 @@ body.resizing-x {
 .sidebar-repo-chip .repo-tile {
 	width: 17px;
 	height: 17px;
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	font-size: 10px;
 }
 .sidebar-repo-chip-name {
@@ -934,7 +952,7 @@ body.resizing-x {
 	background: none;
 	color: var(--text-dim);
 	border: none;
-	border-radius: 11px;
+	border-radius: calc(11px * var(--rf)); corner-shape: var(--cs);
 	font-size: 20px;
 	line-height: 1;
 	font-weight: 500;
@@ -993,7 +1011,7 @@ body.resizing-x {
 	z-index: 301;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 12px 34px rgba(0, 0, 0, 0.4);
 	padding: 12px 14px;
 	display: flex;
@@ -1024,7 +1042,7 @@ body.resizing-x {
 	min-width: 148px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 8px 10px 8px 12px;
 	color: var(--text);
 	font-size: 14px;
@@ -1055,7 +1073,7 @@ body.resizing-x {
 	z-index: 321;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 12px 34px rgba(0, 0, 0, 0.4);
 	padding: 5px;
 	max-height: 60vh;
@@ -1069,7 +1087,7 @@ body.resizing-x {
 	width: 100%;
 	background: none;
 	border: none;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 8px 9px;
 	color: var(--text);
 	font-size: 14px;
@@ -1100,7 +1118,7 @@ body.resizing-x {
 	justify-content: center;
 	width: 18px;
 	height: 18px;
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	font-size: 11px;
 	font-weight: 700;
 	color: #fff;
@@ -1198,7 +1216,7 @@ body.resizing-x {
 	width: 28px;
 	height: 28px;
 	flex-shrink: 0;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-faint);
 	opacity: 0;
 	cursor: pointer;
@@ -1285,7 +1303,7 @@ body.resizing-x {
 	width: 100%;
 	background: none;
 	border: none;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 6px 8px;
 	/* Reserve the on-hover chevron's height (18px + 12px vertical padding) so
 	   revealing it via display-toggle can't grow the row and nudge the list
@@ -1340,7 +1358,7 @@ body.resizing-x {
 	height: 28px;
 	background: none;
 	border: none;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	flex-shrink: 0;
 }
@@ -1356,7 +1374,7 @@ body.resizing-x {
 	width: 100%;
 	background: none;
 	border: none;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	font-size: 14px;
 	font-weight: 500;
@@ -1431,7 +1449,7 @@ body.resizing-x {
 	text-align: left;
 	background: none;
 	border: none;
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	/* Roomier rows: a taller hit target that's easier to click/tap. The left
 	   padding lands the leading icon on the same column as the group-header
 	   icons above it (list pad-left 10 + 6 = 16), so a row's status mark sits
@@ -1476,7 +1494,7 @@ body.resizing-x {
 	height: 26px;
 	align-items: center;
 	justify-content: center;
-	border-radius: 9px;
+	border-radius: calc(9px * var(--rf)); corner-shape: var(--cs);
 	font-size: 15px;
 	line-height: 1;
 	color: var(--text-faint);
@@ -1511,7 +1529,7 @@ body.resizing-x {
 .sidebar-swipe-row {
 	position: relative;
 	overflow: hidden;
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 }
 .sidebar-swipe-row > .sidebar-item {
 	position: relative;
@@ -1717,7 +1735,7 @@ body.resizing-x {
 .mobile-sheet-grip {
 	width: 36px;
 	height: 4px;
-	border-radius: 2px;
+	border-radius: calc(2px * var(--rf)); corner-shape: var(--cs);
 	background: var(--border-strong);
 	margin: 8px auto 6px;
 }
@@ -1738,7 +1756,7 @@ body.resizing-x {
 	font-size: 16px;
 	background: none;
 	border: none;
-	border-radius: 11px;
+	border-radius: calc(11px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	text-align: left;
 	cursor: pointer;
@@ -1851,7 +1869,7 @@ body.resizing-x {
 	color: inherit;
 	background: var(--bg);
 	border: 1px solid var(--accent, #6b8afd);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 0 3px;
 	min-width: 0;
 	flex: 1;
@@ -1910,7 +1928,7 @@ body.resizing-x {
 	z-index: 200;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 16px;
+	border-radius: calc(16px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
 	padding: 11px 13px 12px;
 	color: var(--text);
@@ -1999,7 +2017,7 @@ body.resizing-x {
 	margin-top: 7px;
 	padding: 5px 8px;
 	background: var(--accent-soft);
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	font-size: 11px;
 	color: var(--text-dim);
 }
@@ -2182,7 +2200,7 @@ body.resizing-x {
 	   transparent by default; the desktop solid-band layout sets it to a visible
 	   hairline so uncolored tabs read as outlined "stroke" chips. */
 	border: 1px solid var(--tab-stroke, transparent);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	/* Solid fill so the transcript scrolling underneath never shows through. */
 	background: var(--bg-panel);
 	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
@@ -2286,7 +2304,7 @@ body.resizing-x {
 		height: auto;
 		padding: 3px 5px;
 		border: 1px solid transparent;
-		border-radius: 10px;
+		border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 		font-size: 22px;
 	}
 	.session-tabs .session-tab-new:hover {
@@ -2314,7 +2332,7 @@ body.resizing-x {
 	color: inherit;
 	background: var(--bg);
 	border: 1px solid var(--accent, #6b8afd);
-	border-radius: 3px;
+	border-radius: calc(3px * var(--rf)); corner-shape: var(--cs);
 	padding: 0 3px;
 	margin: -1px 0;
 	outline: none;
@@ -2387,7 +2405,7 @@ body.resizing-x {
 	padding: 9px 10px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 14px;
+	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
 	corner-shape: squircle;
 }
@@ -2438,7 +2456,7 @@ body.resizing-x {
 	justify-content: center;
 	width: 16px;
 	height: 16px;
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	font-size: 11px;
 	line-height: 1;
 	color: var(--text-dim);
@@ -2476,7 +2494,7 @@ body.resizing-x {
 	margin: -2px -3px -2px 0;
 	padding: 0;
 	border: none;
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	background: transparent;
 	color: var(--text-dim);
 	font-size: 15px;
@@ -2566,7 +2584,7 @@ body.resizing-x {
 	width: 56px;
 	height: 56px;
 	margin: 0 auto 14px;
-	border-radius: 16px;
+	border-radius: calc(16px * var(--rf)); corner-shape: var(--cs);
 	background: linear-gradient(135deg, #ff5a5a, #b00000);
 	color: #fff;
 	font-size: 30px;
@@ -2592,7 +2610,7 @@ body.resizing-x {
 	background: var(--accent);
 	color: #fff;
 	border: none;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 9px 18px;
 	font-size: 13.5px;
 	font-weight: 500;
@@ -2717,7 +2735,7 @@ body.resizing-x {
 /* Double-clickable to rename — hint it on hover without shifting layout. */
 .viewer-branch-editable {
 	cursor: text;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 5px 8px;
 	margin: -5px -8px;
 }
@@ -2734,7 +2752,7 @@ body.resizing-x {
 	color: inherit;
 	background: var(--bg);
 	border: 1px solid var(--accent, #6b8afd);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 1px 4px;
 	margin: -2px 0;
 	outline: none;
@@ -2822,7 +2840,7 @@ body.resizing-x {
 	justify-content: center;
 	background: none;
 	border: 1px solid transparent;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 3px 5px;
 	font-size: 22px;
@@ -2846,7 +2864,7 @@ body.resizing-x {
 	padding: 8px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 14px;
+	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 	corner-shape: squircle;
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
 	/* iOS-style pop: scale up from the ⋯ it's anchored to. */
@@ -2884,7 +2902,7 @@ body.resizing-x {
 	text-align: left;
 	gap: 8px;
 	border: 1px solid transparent;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 8px 10px;
 	font-size: 13px;
 	color: var(--text);
@@ -2966,7 +2984,7 @@ body.resizing-x {
 	font-weight: 600;
 	text-decoration: none;
 	padding: 5px 11px;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid var(--border-strong);
 	color: var(--text-dim);
 }
@@ -3002,7 +3020,7 @@ body.resizing-x {
 	font-weight: 600;
 	text-decoration: none;
 	padding: 5px 11px;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid rgba(210, 153, 34, 0.45);
 	color: var(--yellow);
 	white-space: nowrap;
@@ -3087,7 +3105,7 @@ body.resizing-x {
 	gap: 6px;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 5px 12px;
 	font-size: 13px;
@@ -3153,7 +3171,7 @@ body.resizing-x {
 	justify-content: center;
 	padding: 3px 5px;
 	border: 1px solid transparent;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	background: none;
 	color: var(--text-faint);
 	cursor: pointer;
@@ -3248,7 +3266,7 @@ body.resizing-x {
 	white-space: nowrap;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-faint);
 	padding: 5px 12px;
 	font-size: 13px;
@@ -3281,7 +3299,7 @@ body.resizing-x {
 	white-space: nowrap;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-faint);
 	padding: 5px 12px;
 	font-size: 13px;
@@ -3317,7 +3335,7 @@ body.resizing-x {
 	white-space: nowrap;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 8px 12px;
 	font-size: 13.5px;
@@ -3356,10 +3374,10 @@ body.resizing-x {
 	margin-left: -1px;
 }
 .preview-wrap > .preview-open {
-	border-radius: 7px 0 0 7px;
+	border-radius: calc(7px * var(--rf)) 0 0 calc(7px * var(--rf)); corner-shape: var(--cs);
 }
 .preview-wrap > .preview-menu {
-	border-radius: 0 7px 7px 0;
+	border-radius: 0 calc(7px * var(--rf)) calc(7px * var(--rf)) 0; corner-shape: var(--cs);
 }
 /* Lift the segment being interacted with so its colored border sits on top of
    the shared divider instead of being clipped by the neighbour. */
@@ -3497,7 +3515,7 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	min-width: 240px;
 	background: var(--bg-elevated, var(--bg-active));
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 10px;
 	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
@@ -3546,7 +3564,7 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	width: 100%;
 	background: none;
 	border: 1px solid rgba(248, 81, 73, 0.4);
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	color: var(--red);
 	padding: 5px 10px;
 	font-size: 12px;
@@ -3578,7 +3596,7 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	min-height: 32px;
 	background: var(--control-surface);
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: var(--control-shadow);
 	color: var(--text-dim);
 	padding: 0 13px;
@@ -3603,7 +3621,7 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	gap: 7px;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 5px 10px;
 	font-size: 13px;
@@ -3630,7 +3648,7 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 .btn-delete-wt,
 .btn-delete-only,
 .btn-delete-cancel {
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 5px 12px;
 	font-size: 13px;
 	white-space: nowrap;
@@ -3757,7 +3775,7 @@ body.resizing-x .panel-resize::after {
 .panel-tab {
 	background: none;
 	border: none;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	font-size: 13px;
 	font-weight: 500;
@@ -3880,7 +3898,7 @@ body.resizing-x .panel-resize::after {
 	   let flex centering do the work: iconic glyphs are drawn centered in
 	   their viewbox (sub-¼px offsets at most), so no nudges are needed. */
 	padding: 5.5px 11px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	font-size: 12.5px;
 	font-weight: 600;
 	line-height: 1.35;
@@ -3966,7 +3984,7 @@ body.resizing-x .panel-resize::after {
 	align-items: flex-start;
 	padding: 8px 10px;
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-surface);
 	text-align: left;
 	cursor: pointer;
@@ -4025,7 +4043,7 @@ body.resizing-x .panel-resize::after {
 	aspect-ratio: 16 / 10;
 	overflow: hidden;
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-surface);
 }
 
@@ -4040,7 +4058,7 @@ body.resizing-x .panel-resize::after {
 	display: grid;
 	gap: 1px;
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	overflow: hidden;
 }
 .workspace-info-file {
@@ -4147,7 +4165,7 @@ body.resizing-x .panel-resize::after {
 	flex: none;
 	width: 18px;
 	height: 18px;
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	display: grid;
 	place-items: center;
 	color: #fff;
@@ -4192,7 +4210,7 @@ img.workspace-info-comment-avatar {
 	transform: translateY(-50%);
 	z-index: 1;
 	padding: 2px 8px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid var(--border-strong);
 	background: var(--bg-panel);
 	color: var(--text-dim);
@@ -4234,7 +4252,7 @@ img.workspace-info-comment-avatar {
 	gap: 9px;
 	padding: 11px 12px;
 	border: 1px solid var(--border-strong);
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-panel);
 	overflow: hidden;
 	cursor: pointer;
@@ -4263,7 +4281,7 @@ img.workspace-info-comment-avatar {
 	flex-direction: column;
 	padding: 10px 12px;
 	border: 1px solid var(--border-strong);
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-panel);
 	overflow: hidden;
 	cursor: pointer;
@@ -4295,7 +4313,7 @@ img.workspace-info-comment-avatar {
 	display: flex;
 	flex-direction: column;
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-panel);
 	overflow: hidden;
 	box-shadow:
@@ -4331,7 +4349,7 @@ img.workspace-info-comment-avatar {
 	align-items: center;
 	gap: 9px;
 	padding: 6px 8px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	text-decoration: none;
 }
@@ -4489,7 +4507,7 @@ a.workspace-info-check-row {
 	letter-spacing: -0.01em;
 	color: var(--accent);
 	background: var(--accent-soft);
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	padding: 2px 6px;
 	white-space: nowrap;
 }
@@ -4581,7 +4599,7 @@ a.workspace-info-check-row {
 	color: var(--text-dim);
 	background: none;
 	border: 1px solid transparent;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 3px 10px;
 	cursor: pointer;
 }
@@ -4615,7 +4633,7 @@ a.workspace-info-check-row {
 	color: var(--text-dim);
 	background: none;
 	border: 1px solid transparent;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 3px 9px;
 	cursor: pointer;
 }
@@ -4651,7 +4669,7 @@ a.workspace-info-check-row {
 	color: var(--text-faint);
 	font-size: 14px;
 	padding: 2px 6px;
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 }
 .btn-icon:hover {
 	color: var(--text);
@@ -4663,7 +4681,7 @@ a.workspace-info-check-row {
 	font-weight: 700;
 	color: var(--yellow);
 	background: rgba(210, 153, 34, 0.15);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 1px 7px;
 }
 
@@ -4703,7 +4721,7 @@ a.workspace-info-check-row {
    only when the file is expanded (see CommentableDiff). */
 .diff-file {
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	overflow: hidden;
 	background: var(--bg-panel);
 }
@@ -4795,7 +4813,7 @@ a.workspace-info-check-row {
 	margin-left: auto;
 	padding: 2px;
 	border: none;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	background: transparent;
 	color: var(--text-faint);
 	cursor: pointer;
@@ -4822,7 +4840,7 @@ a.workspace-info-check-row {
 .diff-comment-form {
 	background: var(--bg-panel);
 	border: 1px solid var(--accent);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 10px;
 	margin: 6px 8px;
 	display: flex;
@@ -4840,7 +4858,7 @@ a.workspace-info-check-row {
 .diff-comment-input {
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 8px 10px;
 	font-size: 13px;
@@ -4876,7 +4894,7 @@ a.workspace-info-check-row {
 .diff-comment-confirmation {
 	background: var(--green-soft);
 	color: var(--green);
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 6px 12px;
 	font-size: 12.5px;
 	font-weight: 600;
@@ -4894,7 +4912,7 @@ a.workspace-info-check-row {
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
 	border-left: 3px solid var(--accent);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 9px 10px;
 	margin: 6px 8px;
 	display: flex;
@@ -4936,7 +4954,7 @@ a.workspace-info-check-row {
 	margin-top: 10px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.35);
 	padding: 10px 12px;
 	padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
@@ -4959,7 +4977,7 @@ a.workspace-info-check-row {
 	background: var(--accent);
 	color: #fff;
 	border: none;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 7px 14px;
 	font-size: 13px;
 	font-weight: 600;
@@ -4978,7 +4996,7 @@ a.workspace-info-check-row {
 .pr-review-summary {
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 8px 10px;
 	font-size: 13px;
@@ -4999,7 +5017,7 @@ a.workspace-info-check-row {
 	flex: 1 1 auto;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 7px 10px;
 	font-size: 12.5px;
@@ -5019,7 +5037,7 @@ a.workspace-info-check-row {
 	background: var(--accent);
 	color: #fff;
 	border: none;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 9px 12px;
 	font-size: 13.5px;
 	font-weight: 600;
@@ -5054,7 +5072,7 @@ a.workspace-info-check-row {
 
 .diff-file {
 	border: 1px solid var(--border);
-	border-radius: var(--radius);
+	border-radius: calc(var(--radius) * var(--rf)); corner-shape: var(--cs);
 	margin-bottom: 8px;
 	overflow: hidden;
 	background: var(--bg-panel);
@@ -5081,7 +5099,7 @@ a.workspace-info-check-row {
 	font-weight: 700;
 	width: 18px;
 	height: 18px;
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -5222,7 +5240,7 @@ a.workspace-info-check-row {
 	gap: 2px;
 	padding: 3px 8px;
 	border: 1px solid var(--border);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	background: var(--control-surface);
 	box-shadow: var(--control-shadow);
@@ -5282,7 +5300,7 @@ a.workspace-info-check-row {
    pair, the way .pr-head already does for the header variant. */
 .pr-bar .pr-num-chip {
 	min-height: 30px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 0 10px;
 	font-size: 13px;
 }
@@ -5328,7 +5346,7 @@ a.workspace-info-check-row {
 	gap: 6px;
 	min-height: 30px;
 	border: 1px solid transparent;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	font-size: 13px;
 	line-height: 1;
 	font-weight: 650;
@@ -5434,14 +5452,14 @@ a.workspace-info-check-row {
 }
 .pr-head .pr-num-chip {
 	min-height: 32px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 0 11px;
 	font-size: 13px;
 }
 .pr-head .pr-bar-btn {
 	min-height: 32px;
 	padding: 5px 11px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	font-size: 13px;
 }
 .pr-head .pr-bar-error {
@@ -5562,7 +5580,7 @@ a.workspace-info-check-row {
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
 	padding: 2px 8px;
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 }
 
 .pr-review {
@@ -5652,7 +5670,7 @@ a.workspace-info-check-row {
 	color: var(--text);
 	font-size: 13.5px;
 	border-top: 0;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	transition: background 0.12s ease;
 }
 .pr-check:hover {
@@ -5731,7 +5749,7 @@ a.workspace-info-check-row {
 	border: 1px solid var(--border);
 	background: var(--bg);
 	color: var(--text-faint);
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 3px 7px;
 	font-size: 11.5px;
 	white-space: nowrap;
@@ -5755,7 +5773,7 @@ a.workspace-info-check-row {
 	gap: 8px;
 	padding: 7px 6px;
 	border: 1px solid transparent;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 }
 .pr-comment-row:hover {
 	border-color: var(--border-strong);
@@ -5965,7 +5983,7 @@ a.workspace-info-check-row {
 	max-width: min(340px, 90vw);
 	background: var(--bg-panel);
 	border: 1px solid var(--accent);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 	font-family: var(--sans);
 }
@@ -5982,7 +6000,7 @@ a.workspace-info-check-row {
 }
 .selection-trigger:hover {
 	background: var(--bg-raised);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 }
 .selection-compose {
 	display: flex;
@@ -6003,7 +6021,7 @@ a.workspace-info-check-row {
 .selection-input {
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 8px 10px;
 	font-size: 13px;
@@ -6037,7 +6055,7 @@ a.workspace-info-check-row {
 	background: var(--accent);
 	color: #fff;
 	text-decoration: none;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 9px;
 	font-size: 13px;
 	font-weight: 500;
@@ -6065,7 +6083,7 @@ a.workspace-info-check-row {
 	background: #238636;
 	color: #fff;
 	border: none;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 9px;
 	font-size: 13px;
 	font-weight: 500;
@@ -6089,7 +6107,7 @@ a.workspace-info-check-row {
 	background: var(--bg-active);
 	color: var(--text);
 	border: 1px solid var(--border);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 9px 14px;
 	font-size: 13px;
 	cursor: pointer;
@@ -6102,7 +6120,7 @@ a.workspace-info-check-row {
 	color: var(--red);
 	font-size: 12.5px;
 	background: var(--red-soft);
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 8px 10px;
 }
 
@@ -6160,7 +6178,7 @@ a.workspace-info-check-row {
 	gap: 7px;
 	background: var(--bg-raised);
 	border: 1px solid var(--border);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 6px 10px;
 	width: 240px;
 	color: var(--text-faint);
@@ -6334,7 +6352,7 @@ a.workspace-info-check-row {
 	align-self: center;
 	flex-shrink: 0;
 	padding: 2px;
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-faint);
 	opacity: 0;
 	transition: opacity 0.12s;
@@ -6383,7 +6401,7 @@ a.workspace-info-check-row {
 	letter-spacing: 0.02em;
 	color: var(--text-dim);
 	background: var(--bg-active);
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	padding: 1px 6px;
 }
 /* Repo chip — only rendered when the list spans more than one repo. */
@@ -6394,7 +6412,7 @@ a.workspace-info-check-row {
 	font-family: var(--mono);
 	color: var(--text-dim);
 	background: var(--bg-active);
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	padding: 1px 6px;
 }
 .rv-running {
@@ -6516,7 +6534,7 @@ a.workspace-info-check-row {
 .rv-sq {
 	width: 8px;
 	height: 8px;
-	border-radius: 2px;
+	border-radius: calc(2px * var(--rf)); corner-shape: var(--cs);
 }
 .rv-sq-add {
 	background: var(--green);
@@ -6587,7 +6605,7 @@ a.workspace-info-check-row {
 	justify-content: center;
 	width: 28px;
 	height: 28px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	background: none;
 	border: none;
 	color: var(--text-dim);
@@ -6633,7 +6651,7 @@ a.workspace-info-check-row {
 	margin-left: auto;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 4px 10px;
 	font: inherit;
 	font-size: 12px;
@@ -6942,7 +6960,7 @@ a.workspace-info-check-row {
 	color: var(--text);
 	background: var(--bg-raised);
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: var(--control-shadow);
 	cursor: pointer;
 	z-index: 5;
@@ -7013,7 +7031,7 @@ a.workspace-info-check-row {
 	flex-shrink: 0;
 }
 .msg-label-user::before {
-	border-radius: 2px;
+	border-radius: calc(2px * var(--rf)); corner-shape: var(--cs);
 	background: #5b7cfa;
 	opacity: 0.9;
 }
@@ -7067,7 +7085,7 @@ a.workspace-info-check-row {
 	align-self: flex-end;
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 14px;
+	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 	padding: 10px 14px;
 	color: var(--text);
 }
@@ -7096,7 +7114,7 @@ a.workspace-info-check-row {
 	align-self: flex-end;
 	background: rgba(31, 158, 138, 0.12);
 	border: 1px solid rgba(31, 158, 138, 0.3);
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	padding: 9px 14px;
 	color: var(--text);
 }
@@ -7108,7 +7126,7 @@ a.workspace-info-check-row {
 	height: 14px;
 	margin-left: 3px;
 	vertical-align: -2px;
-	border-radius: 2px;
+	border-radius: calc(2px * var(--rf)); corner-shape: var(--cs);
 	background: var(--accent);
 	animation: pulse 1s ease-in-out infinite;
 }
@@ -7154,7 +7172,7 @@ a.workspace-info-check-row {
 	text-align: center;
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	padding: 6px 14px;
 }
 
@@ -7183,7 +7201,7 @@ a.workspace-info-check-row {
 	width: auto;
 	max-width: none;
 	padding: 10px 10px 10px 16px;
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	corner-shape: squircle;
 	border: 1px solid var(--border);
 	background: var(--bg-panel);
@@ -7217,7 +7235,7 @@ a.workspace-info-check-row {
 	align-items: center;
 	height: 30px;
 	padding: 0 14px;
-	border-radius: 9px;
+	border-radius: calc(9px * var(--rf)); corner-shape: var(--cs);
 	corner-shape: squircle;
 	border: none;
 	background: var(--red);
@@ -7304,7 +7322,7 @@ a.workspace-info-check-row {
 	padding: 28px 26px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 14px;
+	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 }
 .restart-spinner {
 	width: 30px;
@@ -7344,7 +7362,7 @@ a.workspace-info-check-row {
 	align-items: center;
 	gap: 14px;
 	padding: 26px 32px;
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
 	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
@@ -7385,7 +7403,7 @@ a.workspace-info-check-row {
 .markdown pre {
 	background: #0c0c10;
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 10px 12px;
 	margin: 2px 0 8px;
 	overflow-x: auto;
@@ -7398,7 +7416,7 @@ a.workspace-info-check-row {
 	font-family: var(--mono);
 	font-size: 0.9em;
 	background: rgba(255, 255, 255, 0.06);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 1.5px 5px;
 	color: #dde1f0;
 }
@@ -7418,7 +7436,7 @@ a.workspace-info-check-row {
 	background: var(--accent-soft);
 	border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
 	color: var(--accent);
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	padding: 0.5px 6px;
 	cursor: pointer;
 	text-decoration: none;
@@ -7551,7 +7569,7 @@ a.workspace-info-check-row {
 .ask-box {
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 14px;
+	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 	padding: 12px;
 	transition: border-color 0.15s;
 }
@@ -7583,7 +7601,7 @@ a.workspace-info-check-row {
 .btn-task {
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 7px 14px;
 	font-size: 13px;
@@ -7598,7 +7616,7 @@ a.workspace-info-check-row {
 	background: var(--accent);
 	color: #fff;
 	border: none;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 7px 22px;
 	font-size: 13px;
 	font-weight: 600;
@@ -7614,7 +7632,7 @@ a.workspace-info-check-row {
 .ask-error {
 	margin-top: 10px;
 	padding: 7px 10px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	background: var(--red-soft);
 	color: var(--red);
 	font-size: 12.5px;
@@ -7719,7 +7737,7 @@ button.home-whisper-link:hover {
 	text-align: left;
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	padding: 11px 14px;
 	color: var(--text);
 	min-width: 0;
@@ -7829,7 +7847,7 @@ button.home-whisper-link:hover {
 	color: var(--text-faint);
 	font-size: 15px;
 	padding: 4px 6px;
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	flex-shrink: 0;
 }
 .pin-btn:hover {
@@ -7864,7 +7882,7 @@ button.home-whisper-link:hover {
 	max-width: 90vw;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
 	padding: 14px;
 	display: flex;
@@ -7890,7 +7908,7 @@ button.home-whisper-link:hover {
 .spinoff-form textarea {
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 7px 10px;
 	font-size: 13px;
@@ -8016,7 +8034,7 @@ button.home-whisper-link:hover {
 .tool-code-surface {
 	background: #0d0f13;
 	border: 1px solid rgba(255, 255, 255, 0.06);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 8px 10px;
 	/* Content wraps (.tool-pre / pre.shiki are pre-wrap), but anything that
 	   still measures wider — hanging whitespace, an unbreakable run — scrolls
@@ -8106,7 +8124,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	flex: 1;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 10px 14px;
 	font-size: 13.5px;
@@ -8126,7 +8144,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	background: var(--accent);
 	color: #fff;
 	border: none;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 10px 18px;
 	font-size: 13.5px;
 	font-weight: 500;
@@ -8152,7 +8170,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	position: relative;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 64px;
+	border-radius: calc(64px * var(--rf)); corner-shape: var(--cs);
 	padding: 14px 14px 10px 16px;
 	transition:
 		border-color 0.15s,
@@ -8178,7 +8196,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	padding: 10px 16px 26px;
 	border: 1px solid var(--border);
 	border-bottom: none;
-	border-radius: 16px 16px 0 0;
+	border-radius: calc(16px * var(--rf)) calc(16px * var(--rf)) 0 0; corner-shape: var(--cs);
 	background: var(--bg-panel);
 }
 .composer-queue-title {
@@ -8227,7 +8245,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 .composer-queue-action {
 	width: 34px;
 	height: 34px;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid transparent;
 	background: transparent;
 	color: var(--text-dim);
@@ -8303,7 +8321,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	width: 100%;
 	height: 100%;
 	object-fit: cover;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid var(--border);
 	display: block;
 }
@@ -8456,12 +8474,12 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 }
 .composer-hl .cmp-code {
 	background: rgba(255, 255, 255, 0.09);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	color: #e8b3b9;
 }
 .composer-hl .cmp-fence {
 	background: rgba(255, 255, 255, 0.06);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	color: #dde1f0;
 }
 html[data-theme="light"] .composer-hl .cmp-code {
@@ -8487,7 +8505,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	overflow-y: auto;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 16px;
+	border-radius: calc(16px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
 	padding: 4px;
 	z-index: 7000;
@@ -8497,7 +8515,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	align-items: baseline;
 	gap: 8px;
 	padding: 6px 9px;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	font-size: 12.5px;
 	line-height: 1.3;
@@ -8513,7 +8531,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-weight: 600;
 	color: var(--accent);
 	background: color-mix(in srgb, var(--accent) 14%, transparent);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 1px 5px;
 	align-self: center;
 }
@@ -8653,7 +8671,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .composer-send-split.has-menu .composer-send {
 	width: 34px;
-	border-radius: 14px 0 0 14px;
+	border-radius: calc(14px * var(--rf)) 0 0 calc(14px * var(--rf)); corner-shape: var(--cs);
 }
 .composer-send-split.has-menu .composer-send:not(:disabled):hover {
 	/* No scale on a fused half — it would tear the seam open. */
@@ -8686,7 +8704,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	justify-content: center;
 	width: 30px;
 	border: none;
-	border-radius: 0 14px 14px 0;
+	border-radius: 0 calc(14px * var(--rf)) calc(14px * var(--rf)) 0; corner-shape: var(--cs);
 	background: var(--accent);
 	color: #fff;
 	cursor: pointer;
@@ -8825,7 +8843,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	max-width: 92vw;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 18px;
+	border-radius: calc(18px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 	padding: 20px;
 }
@@ -8867,7 +8885,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	min-width: 0;
 	background: var(--bg-surface);
 	border: 1px solid var(--border);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	padding: 9px 12px;
 	color: var(--text);
 	font-size: 14px;
@@ -8889,7 +8907,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .composer-schedule-cancel {
 	padding: 9px 16px;
 	border: 1px solid var(--border-strong);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	background: none;
 	color: var(--text);
 	font-size: 13px;
@@ -8902,7 +8920,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .composer-schedule-submit {
 	padding: 9px 16px;
 	border: none;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	background: var(--accent);
 	color: #fff;
 	font-size: 13px;
@@ -8966,7 +8984,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 7px;
 	background: none;
 	border: 1px solid transparent;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-faint);
 	padding: 5px 12px;
 	font-size: 12.5px;
@@ -8980,7 +8998,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .btn-cancel-icon {
 	width: 8px;
 	height: 8px;
-	border-radius: 2px;
+	border-radius: calc(2px * var(--rf)); corner-shape: var(--cs);
 	background: currentColor;
 }
 .btn-cancel:hover {
@@ -9014,7 +9032,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	color: var(--text-dim);
 	font-size: 13px;
 	padding: 4px 8px;
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 }
 .btn-back:hover {
 	color: var(--text);
@@ -9057,7 +9075,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .new-session-form textarea {
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 10px 12px;
 	font-size: 13.5px;
@@ -9080,7 +9098,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	background: var(--accent);
 	color: #fff;
 	border: none;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 11px;
 	font-size: 14px;
 	font-weight: 500;
@@ -9097,7 +9115,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	background: var(--red-soft);
 	border: 1px solid rgba(248, 81, 73, 0.4);
 	color: var(--red);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 10px 12px;
 	font-size: 13px;
 }
@@ -9152,7 +9170,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .seg-control {
 	display: inline-flex;
 	background: var(--bg-hover);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 2px;
 	gap: 2px;
 }
@@ -9160,7 +9178,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	background: none;
 	border: none;
 	cursor: pointer;
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	padding: 4px 10px;
 	font-size: 12.5px;
 	font-weight: 500;
@@ -9197,7 +9215,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .automation-card {
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	padding: 14px 16px;
 }
 .automation-disabled {
@@ -9229,7 +9247,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .btn-small {
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 3px 10px;
 	font-size: 12px;
@@ -9302,7 +9320,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .automation-cron {
 	font-family: var(--mono);
 	background: var(--bg-active);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 1px 7px;
 	font-size: 11px;
 }
@@ -9330,7 +9348,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .automation-form {
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	padding: 18px;
 	margin-bottom: 18px;
 	display: flex;
@@ -9358,7 +9376,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .automation-form select {
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 8px 11px;
 	font-size: 13.5px;
@@ -9418,7 +9436,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .conn-card {
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	padding: 14px;
 	min-width: 0;
 }
@@ -9433,7 +9451,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .conn-logo {
 	width: 28px;
 	height: 28px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -9490,7 +9508,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .conn-transport {
 	font-family: var(--mono);
 	background: var(--bg-active);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 1px 6px;
 	flex-shrink: 0;
 }
@@ -9514,7 +9532,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	margin-top: 10px;
 	background: none;
 	border: 1px solid var(--border-strong);
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-faint);
 	padding: 2px 9px;
 	font-size: 11.5px;
@@ -9533,7 +9551,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-family: var(--mono);
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 1px 5px;
 }
 
@@ -9564,7 +9582,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	width: 100%;
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 7px 10px;
 	font-size: 13px;
@@ -9603,7 +9621,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	text-align: left;
 	background: none;
 	border: none;
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	font-size: 13px;
 	padding: 5px 8px;
@@ -9647,7 +9665,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	text-align: left;
 	background: none;
 	border: none;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 8px 10px;
 	min-width: 0;
 }
@@ -9687,7 +9705,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	display: none;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 6px 12px;
 	font-size: 13px;
@@ -9720,7 +9738,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .wiki-doc img {
 	max-width: 100%;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 }
 .wiki-doc a {
 	color: var(--accent);
@@ -9740,7 +9758,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-family: var(--mono);
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 1px 5px;
 	font-size: 12.5px;
 }
@@ -9762,7 +9780,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .user-gate-card {
 	background: var(--bg-raised);
 	border: 1px solid var(--border);
-	border-radius: 14px;
+	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 	padding: 32px;
 	text-align: center;
 	width: 380px;
@@ -9787,7 +9805,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 8px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 12px;
 	font-size: 14px;
@@ -10210,7 +10228,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		padding: 6px;
 		background: var(--bg-panel);
 		border: 1px solid var(--border);
-		border-radius: 16px;
+		border-radius: calc(16px * var(--rf)); corner-shape: var(--cs);
 		box-shadow: none;
 		gap: 4px;
 		/* It's part of the page (which animates in) — no popover entrance. */
@@ -11074,7 +11092,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		min-height: 84px;
 		background: var(--bg-panel);
 		border: 1px solid var(--border);
-		border-radius: 14px;
+		border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 		padding: 12px;
 		font-size: 13px;
 		font-weight: 600;
@@ -11214,7 +11232,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	margin: 4px auto 16px;
 	background: var(--bg-panel);
 	border: 1px solid rgba(255, 59, 59, 0.4);
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	padding: 14px 16px;
 	display: flex;
 	flex-direction: column;
@@ -11258,7 +11276,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	text-align: left;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 8px 12px;
 	color: var(--text);
 }
@@ -11283,7 +11301,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	width: 100%;
 	background: var(--bg-raised);
 	border: 1px solid var(--border-strong);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 7px 10px;
 	font-size: 12.5px;
@@ -11338,7 +11356,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	max-width: 100%;
 	max-height: 360px;
 	height: auto;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid rgba(127, 127, 127, 0.25);
 	margin: 6px 0;
 	display: block;
@@ -11356,7 +11374,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .md-video {
 	max-width: 100%;
 	max-height: 480px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid rgba(127, 127, 127, 0.25);
 	margin: 6px 0;
 	display: block;
@@ -11411,14 +11429,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .composer-image-preview:focus-visible {
 	outline: 2px solid var(--accent);
 	outline-offset: 2px;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 }
 .composer-image-preview img {
 	height: 56px;
 	width: auto;
 	max-width: 120px;
 	object-fit: cover;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid var(--border-strong);
 }
 .composer-image-remove {
@@ -11449,7 +11467,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	color: var(--text-dim);
 	font-size: 13px;
 	padding: 6px 12px;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 }
 .btn-attach:hover:not(:disabled) {
@@ -11502,7 +11520,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	max-width: 240px;
 	padding: 6px 26px 6px 6px;
 	border: 1px solid var(--border-strong);
-	border-radius: 14px;
+	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-hover);
 }
 .composer-file-thumb {
@@ -11512,7 +11530,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	justify-content: center;
 	width: 34px;
 	height: 34px;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	background: color-mix(in srgb, var(--accent) 16%, transparent);
 	color: var(--accent);
 	font-size: 9.5px;
@@ -11581,7 +11599,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	min-width: 172px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 14px;
+	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
 	padding: 4px;
 	z-index: 40;
@@ -11604,7 +11622,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	color: var(--text);
 	background: none;
 	border: none;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	padding: 7px 9px;
 	cursor: pointer;
 }
@@ -11630,7 +11648,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 12px;
 	padding: 7px 12px;
 	margin-bottom: 8px;
-	border-radius: 14px;
+	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 	background: color-mix(in srgb, var(--accent) 12%, transparent);
 	border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
 	font-size: 12.5px;
@@ -11676,7 +11694,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .acct-usage-bar {
 	flex: 1;
 	height: 6px;
-	border-radius: 3px;
+	border-radius: calc(3px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-active);
 	overflow: hidden;
 	min-width: 40px;
@@ -11684,7 +11702,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 
 .acct-usage-fill {
 	height: 100%;
-	border-radius: 3px;
+	border-radius: calc(3px * var(--rf)); corner-shape: var(--cs);
 	transition: width 0.3s ease;
 }
 .acct-usage-green {
@@ -11752,7 +11770,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	line-height: 1;
 	cursor: pointer;
 	padding: 2px 6px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 }
 .notes-add:hover {
 	background: var(--bg-hover);
@@ -11763,7 +11781,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	padding: 7px 9px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	font-family: var(--mono);
 	font-size: 13px;
@@ -11787,7 +11805,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	align-items: center;
 	gap: 6px;
 	padding: 7px 8px;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	color: var(--text-dim);
 }
@@ -11896,7 +11914,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 3px;
 	padding: 1px 7px;
 	margin: 0 1px;
-	border-radius: 11px;
+	border-radius: calc(11px * var(--rf)); corner-shape: var(--cs);
 	font-size: 12px;
 	font-family: var(--sans);
 	cursor: pointer;
@@ -11932,7 +11950,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-size: 12px;
 	font-family: var(--sans);
 	padding: 4px 10px;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	white-space: nowrap;
 }
@@ -11980,7 +11998,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	padding: 6px 10px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	font-family: var(--mono);
 	font-size: 13px;
@@ -11998,7 +12016,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	padding: 8px 11px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	font-size: 13px;
 	font-family: var(--mono);
@@ -12082,7 +12100,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	color: var(--text-faint);
 	font-size: 11px;
 	padding: 3px 8px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	flex-shrink: 0;
 }
@@ -12166,7 +12184,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	padding: 10px 12px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	font-family: var(--sans);
 	font-size: 14px;
@@ -12184,7 +12202,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-size: 13px;
 	font-weight: 600;
 	padding: 8px 14px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	flex-shrink: 0;
 }
@@ -12223,7 +12241,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	display: inline-flex;
 	gap: 4px;
 	background: var(--bg-panel);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 3px;
 	margin-bottom: 10px;
 }
@@ -12233,7 +12251,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	color: var(--text-dim);
 	font-size: 12px;
 	padding: 5px 12px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 }
 .slack-link-tabs button.active {
@@ -12246,7 +12264,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 0;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	overflow: hidden;
 }
 .slack-prefix {
@@ -12312,7 +12330,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .slack-tag {
 	color: #6a9fb5;
 	background: rgba(106, 159, 181, 0.14);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 0 3px;
 	font-weight: 600;
 }
@@ -12321,7 +12339,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-size: 12px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 0 4px;
 }
 
@@ -12338,14 +12356,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	min-width: 160px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 4px;
 	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 	z-index: 20;
 }
 .slack-mention-item {
 	padding: 6px 10px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	font-size: 13px;
 	color: var(--text-dim);
 	cursor: pointer;
@@ -12451,7 +12469,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 4px;
 	max-width: 88%;
 	padding: 8px 11px;
-	border-radius: 14px;
+	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid var(--border);
 	background: var(--bg-panel);
 }
@@ -12493,7 +12511,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	letter-spacing: -0.01em;
 	color: var(--text-faint);
 	border: 1px solid var(--border-strong);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 0 4px;
 }
 .plain-kind-note {
@@ -12551,7 +12569,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	width: min(820px, 100%);
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 20px;
+	border-radius: calc(20px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
 	display: flex;
 	flex-direction: column;
@@ -12582,7 +12600,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-size: 13px;
 	font-weight: 500;
 	padding: 5px 8px;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	max-width: 46%;
 	transition: background 0.12s, color 0.12s;
@@ -12662,7 +12680,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .palette-error {
 	margin: 0 16px 8px;
 	padding: 7px 10px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	background: var(--red-soft);
 	color: var(--red);
 	font-size: 12.5px;
@@ -12718,7 +12736,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .palette-effort-icon span {
 	width: 3.5px;
 	background: currentColor;
-	border-radius: 1px;
+	border-radius: calc(1px * var(--rf)); corner-shape: var(--cs);
 }
 .palette-effort-icon span:nth-child(1) { height: 6px; }
 .palette-effort-icon span:nth-child(2) { height: 10px; }
@@ -12760,7 +12778,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	right: 12px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 	padding: 12px;
 	max-height: 50vh;
@@ -12785,7 +12803,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	align-items: center;
 	gap: 8px;
 	padding: 6px 8px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	font-size: 13px;
 	color: var(--text-dim);
@@ -12807,7 +12825,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	justify-content: center;
 	width: 40px;
 	height: 40px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid transparent;
 	background: none;
 	color: var(--text-dim);
@@ -12839,7 +12857,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	align-items: center;
 	gap: 7px;
 	border: none;
-	border-radius: 9px;
+	border-radius: calc(9px * var(--rf)); corner-shape: var(--cs);
 	padding: 7px 14px;
 	background: var(--accent);
 	color: #fff;
@@ -12898,7 +12916,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	padding: 5px;
 	background: var(--bg-raised);
 	border: 1px solid var(--border);
-	border-radius: 11px;
+	border-radius: calc(11px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 .palette-create-menu-item {
@@ -12908,7 +12926,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	width: 100%;
 	padding: 7px 9px;
 	border: none;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	background: none;
 	color: var(--text);
 	text-align: left;
@@ -13051,7 +13069,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	font-size: 12.5px;
 	cursor: pointer;
 	padding: 4px 6px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 }
 .ss-clear:hover {
 	color: var(--text);
@@ -13078,7 +13096,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	padding: 8px 10px;
 	border: none;
 	background: none;
-	border-radius: 9px;
+	border-radius: calc(9px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	text-align: left;
 	color: var(--text);
@@ -13146,7 +13164,7 @@ html[data-theme="light"] .palette-card .palette-create {
 }
 .ss-tag {
 	padding: 1px 6px;
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	font-size: 11px;
 }
 .ss-tag-auto {
@@ -13179,7 +13197,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	padding: 1px 4px;
 	margin: 0 1px;
 	border: 1px solid var(--border-strong);
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-raised);
 	font-family: var(--sans);
 	font-size: 10.5px;
@@ -13222,7 +13240,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	font-size: 13px;
 	font-weight: 500;
 	padding: 6px 10px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	margin-bottom: 12px;
 }
 .settings-back:hover {
@@ -13255,7 +13273,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	font-size: 14px;
 	font-weight: 500;
 	padding: 8px 10px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 }
 .settings-sidenav-icon {
 	display: inline-flex;
@@ -13337,7 +13355,7 @@ html[data-theme="light"] .palette-card .palette-create {
 .setting-card {
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
-	border-radius: 20px;
+	border-radius: calc(20px * var(--rf)); corner-shape: var(--cs);
 	overflow: hidden;
 }
 .setting-row {
@@ -13379,7 +13397,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	flex-shrink: 0;
 	padding: 0;
 	border: none;
-	border-radius: 11px;
+	border-radius: calc(11px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-active);
 	position: relative;
 	cursor: pointer;
@@ -13408,7 +13426,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	background: var(--bg-raised);
 	color: var(--text);
 	border: 1px solid var(--border);
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	padding: 6px 10px;
 	font-size: 13px;
 	font-family: inherit;
@@ -13425,7 +13443,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	font-size: 13px;
 	font-family: inherit;
 	padding: 6px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 }
 .ui-testbtn:hover:not(:disabled) {
 	color: var(--text);
@@ -13457,7 +13475,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	position: relative;
 	width: 100%;
 	aspect-ratio: 16 / 10;
-	border-radius: 12px;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	overflow: hidden;
 	border: 2px solid var(--border);
 	transition: border-color 0.12s ease, box-shadow 0.12s ease;
@@ -13513,7 +13531,7 @@ html[data-theme="light"] .palette-card .palette-create {
 }
 .theme-mock-bar {
 	height: 6px;
-	border-radius: 4px;
+	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	background: var(--mk-pill);
 }
 .theme-mock-bar.w1 {
@@ -13527,7 +13545,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	margin: 0 9% 0 14%;
 	height: 56%;
 	background: var(--mk-panel);
-	border-radius: 8px 8px 0 0;
+	border-radius: calc(8px * var(--rf)) calc(8px * var(--rf)) 0 0; corner-shape: var(--cs);
 	padding: 11px 12px;
 	display: flex;
 	flex-direction: column;
@@ -13535,7 +13553,7 @@ html[data-theme="light"] .palette-card .palette-create {
 }
 .theme-mock-row {
 	height: 6px;
-	border-radius: 3px;
+	border-radius: calc(3px * var(--rf)); corner-shape: var(--cs);
 	background: var(--mk-line);
 }
 .theme-mock-row:nth-child(1) {
@@ -13567,7 +13585,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	color: var(--text);
 	font-size: 14px;
 	padding: 9px 11px;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	white-space: nowrap;
 }
@@ -13579,7 +13597,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	flex: 0 0 auto;
 	font-size: 12px;
 	padding: 2px 8px;
-	border-radius: 6px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid var(--border-strong);
 	background: var(--bg-panel);
 	color: var(--text);
@@ -13608,7 +13626,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	   box is trimmed to keep the hover pill the same ~34px height as the sidebar
 	   toggle rather than ballooning taller. */
 	padding: 2px 4px;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid transparent;
 	background: none;
 	color: var(--text-dim);
@@ -13658,7 +13676,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	   left feather so the title text doesn't blend through them. */
 	background: var(--bg-hover);
 	box-shadow: -6px 0 5px -2px var(--bg-hover);
-	border-radius: 5px;
+	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 }
 .sidebar-item-selected .sidebar-ws-actions {
 	background: var(--bg-active);
@@ -13688,7 +13706,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	justify-content: center;
 	width: 32px;
 	height: 32px;
-	border-radius: 7px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-faint);
 	cursor: pointer;
 }
@@ -13846,7 +13864,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	padding: 0 14px 0 12px;
 	background: var(--bg-raised);
 	border-top: 1px solid var(--border);
-	border-radius: 0 0 16px 16px;
+	border-radius: 0 0 calc(16px * var(--rf)) calc(16px * var(--rf)); corner-shape: var(--cs);
 }
 .voice-lead {
 	display: inline-flex;
@@ -13873,7 +13891,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	max-width: 2px;
 	margin: 0 auto;
 	height: 2px;
-	border-radius: 2px;
+	border-radius: calc(2px * var(--rf)); corner-shape: var(--cs);
 	background: var(--text-faint);
 }
 .voice-wave span.is-live {
@@ -13889,7 +13907,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	height: 34px;
 	border: none;
 	background: none;
-	border-radius: 8px;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	flex-shrink: 0;
 	cursor: pointer;
@@ -13939,7 +13957,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	font-size: 12.5px;
 	font-weight: 500;
 	padding: 7px 11px;
-	border-radius: 10px;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	white-space: nowrap;
 }
 
@@ -13959,7 +13977,7 @@ html[data-theme="light"] .palette-card .palette-create {
    sliders toggle. */
 @media (max-width: 720px) {
 	.composer {
-		border-radius: 18px;
+		border-radius: calc(18px * var(--rf)); corner-shape: var(--cs);
 		padding: 10px 12px 9px;
 	}
 	.composer-textarea {
@@ -14003,7 +14021,7 @@ html[data-theme="light"] .palette-card .palette-create {
 .pixel-spinner .pixel {
   width: 4px;
   height: 4px;
-  border-radius: 1px;
+  border-radius: calc(1px * var(--rf)); corner-shape: var(--cs);
   background: rgba(148, 163, 184, 0.15);
   transition:
     background 0.15s,
