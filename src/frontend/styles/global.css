@@ -10452,16 +10452,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 
 	/* Immersive reading (Safari-style): SessionViewer toggles body.chrome-collapsed
-	   from the transcript's scroll direction — scrolling down slides the top bar,
-	   the docked tab bar and the composer off-screen to maximize the reading area;
-	   scrolling back up (or reaching the top / live edge) brings them back. Pure
-	   transforms, so the layout never reflows and nothing jumps. */
+	   from the transcript's scroll direction — scrolling down slides the top bar
+	   and the docked tab bar off-screen to maximize the reading area; scrolling
+	   back up (or reaching the top / live edge) brings them back. The composer
+	   stays put (it's the primary action, always in reach). Pure transforms, so
+	   the layout never reflows and nothing jumps. */
 	.app-header-overlay,
-	.session-tabs,
-	.viewer-input,
-	.jump-latest {
-		transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1),
-			opacity 0.2s ease;
+	.session-tabs {
+		transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
 	}
 	body.chrome-collapsed .app-header-overlay {
 		transform: translateY(-100%);
@@ -10469,14 +10467,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	body.chrome-collapsed .session-tabs {
 		/* Its own height + its top offset, so it fully clears the top edge. */
 		transform: translateY(calc(-100% - var(--header-h) - 8px));
-	}
-	/* Not while the keyboard is up: the composer is docked above it, so keep it. */
-	body.chrome-collapsed:not(.kb-open) .viewer-input {
-		transform: translateY(calc(100% + env(safe-area-inset-bottom, 0px) + 16px));
-	}
-	body.chrome-collapsed:not(.kb-open) .jump-latest {
-		opacity: 0;
-		pointer-events: none;
 	}
 	/* With the header gone, drop the transcript's top fade so the revealed rows
 	   read at full strength instead of dissolving into an absent bar. */
