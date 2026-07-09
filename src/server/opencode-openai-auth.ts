@@ -72,9 +72,25 @@
  * codex accounts of kind "api_key" are a raw OpenAI platform key billed to the
  * org, not a subscription. For those we skip seeding entirely and hand opencode
  * the key via provider.openai.options.apiKey (normal api.openai.com billing).
+ *
+ * ── REMOTE SANDBOXES (daytona/e2b) ──────────────────────────────────────────
+ * Remote sandboxes never receive CODEX_HOME/auth.json — its refresh token is
+ * the ONE rotating family shared with the host codex CLI, and third-party
+ * compute must never be able to rotate (= kill) it. Instead the launcher
+ * (sandbox/adapters/bootstrap.ts) uploads, per launch, (a) a scoped
+ * codex-accounts store so the in-sandbox pick honors the same
+ * pool/openaiAccounts rules, and (b) the SAME seeded artifact this module
+ * builds locally — access-token-only + the invalid placeholder refresh,
+ * rotation-proof by construction — into a seed dir named by the
+ * OPENSESSION_OPENAI_SEED_DIR env (openaiRemoteSeedDir()). In-sandbox,
+ * bindOpenaiAccount can't read the account's CODEX_HOME (a host path that
+ * doesn't exist there) and falls back to that seed, mechanism
+ * "oauth-subscription-seeded-remote". The reader re-stamps the placeholder
+ * refresh defensively, so even a corrupted seed can never carry a live
+ * refresh token into opencode.
  */
 
-import { stateDir } from "./rename-compat";
+import { envAlias, stateDir } from "./rename-compat";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { pickCodexAccount, listCodexAccounts, type CodexAccount } from "./codex-accounts";
 
@@ -86,7 +102,23 @@ export const OPENAI_DATA_ROOT = `${stateDir("opencode")}/openai-data`;
  *  refresh would rotate the shared token family and kill CODEX_HOME). */
 export const OPENCODE_OPENAI_PLACEHOLDER_REFRESH = "codex-managed-no-refresh";
 
-export type OpenaiAuthMechanism = "oauth-subscription" | "api-key";
+/** Where a remote sandbox's pre-uploaded seed material lives — set by the
+ *  remote launcher's launch env, read in-sandbox by bindOpenaiAccount's
+ *  fallback. Unset (host / docker) = no seed dir, CODEX_HOME is the source. */
+export function openaiRemoteSeedDir(): string | undefined {
+  return envAlias("OPENSESSION_OPENAI_SEED_DIR", "BACKSTAGE_OPENAI_SEED_DIR");
+}
+
+/** The one path shape both sides of the seed contract use: the launcher
+ *  writes here (host-side), bindOpenaiAccount reads here (in-sandbox). */
+export function openaiSeedAuthPath(seedRoot: string, accountId: string): string {
+  return `${seedRoot}/${accountId}/auth.json`;
+}
+
+export type OpenaiAuthMechanism =
+  | "oauth-subscription"
+  | "oauth-subscription-seeded-remote"
+  | "api-key";
 
 export interface OpenaiAccountBinding {
   account: CodexAccount;
@@ -170,25 +202,29 @@ export function opencodeHasNativeOpenaiAuth(): boolean {
   }
 }
 
-/**
- * Bind a picked codex account into opencode-serve env + provider config. For
- * "home" (ChatGPT subscription) accounts this seeds a per-account opencode
- * auth.json from CODEX_HOME/auth.json — access-token-only with a placeholder
- * refresh — and returns XDG_DATA_HOME isolation env. For "api_key" accounts it
- * returns a provider apiKey override and no seeding. Returns {error} (never
- * throws) so the runner can surface a clean error event.
- */
-export function bindOpenaiAccount(account: CodexAccount): OpenaiAccountBinding | { error: string } {
-  if (account.kind === "api_key") {
-    return {
-      account,
-      mechanism: "api-key",
-      extraEnv: {},
-      providerOverride: { openai: { options: { apiKey: account.value } } },
-    };
-  }
+/** The seeded opencode auth.json shape (module header): access-token-only,
+ *  real expiry, deliberately-invalid placeholder refresh. */
+export interface SeededOpenaiAuth {
+  openai: {
+    type: "oauth";
+    access: string;
+    refresh: string;
+    expires: number;
+    accountId?: string;
+  };
+}
 
-  // kind === "home": seed opencode's per-account auth.json from CODEX_HOME.
+/**
+ * Build the rotation-proof seeded auth object for a "home" codex account from
+ * its CODEX_HOME/auth.json (host-side — never runs where CODEX_HOME is
+ * absent). This is the ONLY artifact that may leave the host for a remote
+ * sandbox: the live refresh token never appears in it. Returns {error}
+ * (unexpired-access is a hard requirement — see module header's fail-loud
+ * trade-off).
+ */
+export function buildSeededOpenaiAuth(
+  account: CodexAccount
+): { seeded: SeededOpenaiAuth } | { error: string } {
   const srcPath = `${account.value}/auth.json`;
   if (!existsSync(srcPath)) {
     return {
@@ -214,23 +250,149 @@ export function bindOpenaiAccount(account: CodexAccount): OpenaiAccountBinding |
       error: `codex account "${account.name}" ChatGPT access token is expired — run a codex turn (or \`codex login\`) to refresh it, then retry`,
     };
   }
+  return {
+    seeded: {
+      openai: {
+        type: "oauth",
+        access,
+        // Placeholder, deliberately invalid — see module header.
+        refresh: OPENCODE_OPENAI_PLACEHOLDER_REFRESH,
+        expires: expMs ?? Date.now() + 3_600_000,
+        ...(accountId ? { accountId } : {}),
+      },
+    },
+  };
+}
+
+/**
+ * Host-side helper for the remote launcher: which codex accounts may serve
+ * THIS run's opencode/openai/* traffic, and the seed file for each "home"
+ * account. Mirrors pickOpenaiAccount's eligibility exactly — an explicit
+ * bridge.openaiAccounts list restricts to those ids; otherwise the whole pool.
+ * `_user` is accepted (threaded from the run spec, mirroring
+ * accountsForRemoteUpload) but unused today: CodexAccount has no `owner`
+ * field, so every codex account is a shared pool account — if owners land,
+ * filter here fail-closed exactly like the Claude slice.
+ *
+ * "home" accounts whose seed can't be built (expired access token, unreadable
+ * auth.json) are EXCLUDED from the upload — an unusable-remotely account must
+ * not be picked in-sandbox just to die there — and reported in `skipped`.
+ */
+export function buildOpenaiRemoteSeedUpload(
+  accounts: CodexAccount[],
+  restrictIds?: string[],
+  _user?: string
+): {
+  accounts: CodexAccount[];
+  seeds: Array<{ accountId: string; content: string }>;
+  skipped: Array<{ account: CodexAccount; reason: string }>;
+} {
+  const eligible = restrictIds?.length
+    ? restrictIds
+        .map((id) => accounts.find((a) => a.id === id))
+        .filter((a): a is CodexAccount => !!a)
+    : accounts;
+  const out: CodexAccount[] = [];
+  const seeds: Array<{ accountId: string; content: string }> = [];
+  const skipped: Array<{ account: CodexAccount; reason: string }> = [];
+  for (const account of eligible) {
+    if (account.kind === "api_key") {
+      // The key itself travels in the scoped store — no seed file needed.
+      out.push(account);
+      continue;
+    }
+    const built = buildSeededOpenaiAuth(account);
+    if ("error" in built) {
+      skipped.push({ account, reason: built.error });
+      continue;
+    }
+    out.push(account);
+    seeds.push({ accountId: account.id, content: JSON.stringify(built.seeded) });
+  }
+  return { accounts: out, seeds, skipped };
+}
+
+/**
+ * Bind a picked codex account into opencode-serve env + provider config. For
+ * "home" (ChatGPT subscription) accounts this seeds a per-account opencode
+ * auth.json — from CODEX_HOME/auth.json when it exists (host/docker, where
+ * the auth material is local or ro-mounted), else from the launcher-uploaded
+ * remote seed (openaiRemoteSeedDir(); mechanism
+ * "oauth-subscription-seeded-remote") — access-token-only with a placeholder
+ * refresh — and returns XDG_DATA_HOME isolation env. For "api_key" accounts it
+ * returns a provider apiKey override and no seeding. Returns {error} (never
+ * throws) so the runner can surface a clean error event.
+ */
+export function bindOpenaiAccount(account: CodexAccount): OpenaiAccountBinding | { error: string } {
+  if (account.kind === "api_key") {
+    return {
+      account,
+      mechanism: "api-key",
+      extraEnv: {},
+      providerOverride: { openai: { options: { apiKey: account.value } } },
+    };
+  }
+
+  // kind === "home": seed opencode's per-account auth.json from CODEX_HOME,
+  // or — in a remote sandbox, where account.value is a host path that doesn't
+  // exist — from the launcher-uploaded seed artifact.
+  let seeded: SeededOpenaiAuth;
+  let mechanism: OpenaiAuthMechanism = "oauth-subscription";
+  const srcPath = `${account.value}/auth.json`;
+  const seedDir = openaiRemoteSeedDir();
+  if (existsSync(srcPath)) {
+    const built = buildSeededOpenaiAuth(account);
+    if ("error" in built) return built;
+    seeded = built.seeded;
+  } else if (seedDir) {
+    const seedPath = openaiSeedAuthPath(seedDir, account.id);
+    if (!existsSync(seedPath)) {
+      return {
+        error: `codex account "${account.name}" has no uploaded seed at ${seedPath} — its access token was likely expired at launch (run a codex turn on the host to refresh it, then relaunch)`,
+      };
+    }
+    let parsed: any;
+    try {
+      parsed = JSON.parse(readFileSync(seedPath, "utf-8"));
+    } catch (e: any) {
+      return { error: `failed to read uploaded seed ${seedPath}: ${e?.message || e}` };
+    }
+    const access = parsed?.openai?.access;
+    const expires = parsed?.openai?.expires;
+    if (!access || typeof access !== "string" || typeof expires !== "number") {
+      return { error: `uploaded seed ${seedPath} is malformed (no access token/expiry)` };
+    }
+    if (expires <= Date.now()) {
+      return {
+        error: `codex account "${account.name}" seeded ChatGPT access token has expired — start a fresh run (the launcher re-seeds per launch), or run a codex turn on the host to refresh it`,
+      };
+    }
+    seeded = {
+      openai: {
+        type: "oauth",
+        access,
+        // Defensively re-stamped: no seed, however it was produced, may carry
+        // a usable refresh token into opencode (see module header).
+        refresh: OPENCODE_OPENAI_PLACEHOLDER_REFRESH,
+        expires,
+        ...(typeof parsed.openai.accountId === "string"
+          ? { accountId: parsed.openai.accountId }
+          : {}),
+      },
+    };
+    mechanism = "oauth-subscription-seeded-remote";
+  } else {
+    return {
+      error: `codex account "${account.name}" has no auth.json at ${srcPath} — run \`CODEX_HOME=${account.value} codex login\` with a ChatGPT plan`,
+    };
+  }
 
   const dataHome = `${OPENAI_DATA_ROOT}/${account.id}`;
   const authDir = `${dataHome}/opencode`;
   mkdirSync(authDir, { recursive: true, mode: 0o700 });
-  const seeded = {
-    openai: {
-      type: "oauth",
-      access,
-      // Placeholder, deliberately invalid — see module header.
-      refresh: OPENCODE_OPENAI_PLACEHOLDER_REFRESH,
-      expires: expMs ?? Date.now() + 3_600_000,
-      ...(accountId ? { accountId } : {}),
-    },
-  };
   const outPath = `${authDir}/auth.json`;
   writeFileSync(outPath, JSON.stringify(seeded));
   chmodSync(outPath, 0o600);
 
-  return { account, mechanism: "oauth-subscription", extraEnv: { XDG_DATA_HOME: dataHome } };
+  return { account, mechanism, extraEnv: { XDG_DATA_HOME: dataHome } };
 }

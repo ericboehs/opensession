@@ -981,8 +981,9 @@ async function* runOpencodeAttempt(
           });
         };
         // API-key runs authenticate synchronously (no OAuth wall to hang on);
-        // guard only the subscription path where an auth hang is possible.
-        if (bound.mechanism === "oauth-subscription") {
+        // guard only the subscription paths (local-seeded and remote-seeded)
+        // where an auth hang is possible.
+        if (bound.mechanism !== "api-key") {
           bridgeLivenessGuard = true;
           bridgeAccountLabel = picked.name;
         }
@@ -991,15 +992,19 @@ async function* runOpencodeAttempt(
       // host auth (`opencode auth login`) — but only when that credential
       // actually exists. Without it opencode simply omits the provider from
       // its generated config and the turn dies with a bare "model not found";
-      // say what's actually wrong instead. (In a sandbox this means the
-      // ChatGPT/codex account files aren't mounted — containers created
-      // before the mount fix need recreation.)
+      // say what's actually wrong instead. This is the genuine fail-closed
+      // wall: it fires only when the account store is empty/exhausted here —
+      // docker mounts it ro, and remote launches (daytona/e2b) upload a
+      // scoped store + rotation-proof seeds per launch (bootstrap.ts), so a
+      // sandbox hitting this was created before those fixes (recreate it) or
+      // the host truly has no usable codex account.
       if ("error" in picked && !opencodeHasNativeOpenaiAuth()) {
         throw new Error(
           `opencode/openai: ${picked.error}; and no native \`opencode auth login\` openai ` +
             "credential exists in this environment. In a sandbox, the ChatGPT/codex account " +
-            "files may not be mounted into the container (recreate the sandbox on current " +
-            "code); otherwise add a codex account in Connections."
+            "material may be missing (mounted for docker, seed-uploaded per launch for " +
+            "daytona/e2b — recreate the sandbox on current code); otherwise add a codex " +
+            "account in Connections."
         );
       }
     }

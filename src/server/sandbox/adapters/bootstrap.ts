@@ -62,6 +62,14 @@ import {
 } from "../../claude-runner";
 import { RESUME_CONTINUATION_PROMPT } from "../../agent-runner";
 import { accountsForRemoteUpload } from "../../claude-accounts";
+import { audit } from "../../audit";
+import { listCodexAccounts } from "../../codex-accounts";
+import { readOpencodeBridgeConfig } from "../../opencode-config";
+import {
+  buildOpenaiRemoteSeedUpload,
+  maskOpenaiAccount,
+  openaiSeedAuthPath,
+} from "../../opencode-openai-auth";
 import { providerFor } from "../../models";
 import {
   appendOpencodeTranscript,
@@ -107,6 +115,10 @@ export const REMOTE_OPENCODE = `${REMOTE_HOME}/.bun/bin/opencode`;
 export const REMOTE_OPENCODE_VERSION = "1.17.15";
 export const REMOTE_REPO = REPO_ROOT; // /home/ubuntu/projects/tella-backstage
 const BOOTSTRAP_MARKER = `${REMOTE_HOME}/.bks-bootstrapped`;
+/** Where per-launch openai seed material lands in-sandbox — threaded to the
+ *  run host via the OPENSESSION_OPENAI_SEED_DIR env (openaiRemoteSeedDir()),
+ *  never derived independently on the two sides. */
+export const REMOTE_OPENAI_SEED_DIR = `${REMOTE_HOME}/.opensession-openai-seeds`;
 const REMOTE_PATH = `${REMOTE_HOME}/.bun/bin:${REMOTE_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
 
 const RUNS_BASE = `${OPENSESSION_CHATS_DIR}/sandbox-runs`;
@@ -680,6 +692,64 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
         );
         await driver.exec(`chmod 600 ${REMOTE_HOME}/.backstage-opencode.json`);
       }
+      // OpenAI/ChatGPT-subscription material for opencode/openai/* dispatched
+      // IN-SANDBOX. The raw CODEX_HOME/auth.json is NEVER uploaded — its
+      // refresh token is the one rotating family shared with the host codex
+      // CLI, and an in-sandbox refresh would rotate (= kill) the host copy.
+      // Instead: (a) a scoped codex-accounts store so pickOpenaiAccount
+      // in-sandbox applies the same pool/openaiAccounts rules, and (b) the
+      // rotation-proof SEEDED artifact per home account (access-token-only +
+      // invalid placeholder refresh — buildOpenaiRemoteSeedUpload). Uploaded
+      // whenever ANY account is eligible — mirroring the Claude slice above —
+      // so a mid-session switch to an openai model needs no relaunch.
+      // Rewritten (or removed) per launch so restriction changes apply and a
+      // previously-uploaded wider set never lingers. Destination filenames
+      // stay the legacy .backstage-* names the (dual-reading) in-sandbox
+      // build resolves — same convention as the bridge config above.
+      const openaiUpload = buildOpenaiRemoteSeedUpload(
+        listCodexAccounts(),
+        readOpencodeBridgeConfig()?.openaiAccounts,
+        spec.user,
+      );
+      for (const { account, reason } of openaiUpload.skipped) {
+        console.warn(
+          `[sandbox-remote] openai seed for ${maskOpenaiAccount(account)} skipped: ${reason}`,
+        );
+      }
+      const codexStorePath = `${REMOTE_HOME}/.backstage-codex-accounts.json`;
+      if (openaiUpload.accounts.length) {
+        await driver.writeFile(
+          codexStorePath,
+          JSON.stringify({ accounts: openaiUpload.accounts }, null, 2) + "\n",
+        );
+        // Fresh seed dir per launch — stale per-account seeds never linger.
+        await driver.exec(
+          `chmod 600 ${codexStorePath} && rm -rf ${shellQuoteWord(REMOTE_OPENAI_SEED_DIR)}`,
+        );
+        for (const seed of openaiUpload.seeds) {
+          const seedPath = openaiSeedAuthPath(REMOTE_OPENAI_SEED_DIR, seed.accountId);
+          await driver.exec(
+            `mkdir -p ${shellQuoteWord(dirname(seedPath))} && chmod 700 ${shellQuoteWord(REMOTE_OPENAI_SEED_DIR)} ${shellQuoteWord(dirname(seedPath))}`,
+          );
+          await driver.writeFile(seedPath, seed.content);
+          await driver.exec(`chmod 600 ${shellQuoteWord(seedPath)}`);
+        }
+        audit({
+          msg: "sandbox_openai_seed_upload",
+          host_id: spec.hostId,
+          bks_session_id: spec.bksSessionId,
+          mechanism: "oauth-subscription-seeded-remote",
+          accounts: openaiUpload.accounts.map((a) => maskOpenaiAccount(a)),
+          seeds: openaiUpload.seeds.length,
+          skipped: openaiUpload.skipped.map(
+            (s) => `${maskOpenaiAccount(s.account)}: ${s.reason}`,
+          ),
+        });
+      } else {
+        await driver.exec(
+          `rm -f ${codexStorePath} && rm -rf ${shellQuoteWord(REMOTE_OPENAI_SEED_DIR)}`,
+        );
+      }
       mark("accounts uploaded");
       // Remote sandboxes dial back over the public ingress when it's enabled
       // (publicIngress.publicBaseUrl), else the plain callbackBaseUrl. Docker
@@ -699,6 +769,15 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
           BACKSTAGE_OPENCODE_BIN: REMOTE_OPENCODE,
           OPENSESSION_RUN_JOURNAL: `${dir}/journal.json`,
           BACKSTAGE_RUN_JOURNAL: `${dir}/journal.json`,
+          // Where bindOpenaiAccount finds the uploaded rotation-proof openai
+          // seeds (only set when something was uploaded this launch). Old
+          // alias rides along like the other env pairs.
+          ...(openaiUpload.accounts.length
+            ? {
+                OPENSESSION_OPENAI_SEED_DIR: REMOTE_OPENAI_SEED_DIR,
+                BACKSTAGE_OPENAI_SEED_DIR: REMOTE_OPENAI_SEED_DIR,
+              }
+            : {}),
           // Dial-back on the primary prefix — the ingress/main serve accept
           // both, and URLs already baked into live sandboxes stay valid.
           BKS_RUN_WS_URL: `${base}/opensession/run-ws/${hostId}`,
