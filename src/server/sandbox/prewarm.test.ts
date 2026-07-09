@@ -27,6 +27,7 @@ import { __setChatsDirForTest } from "../paths";
 import { sandboxesEnabled } from "./config";
 import {
   claimPrewarm,
+  claimPrewarmOrWait,
   discardClaimedPrewarm,
   prewarmRateLimited,
   requestPrewarm,
@@ -232,6 +233,64 @@ describe("claimPrewarm (adoption)", () => {
     const claim = claimPrewarm("daytona", "tella-fusion", "bks-s")!;
     discardClaimedPrewarm("daytona", claim.sandboxId);
     await until(() => fake.destroyed.includes(claim.sandboxId));
+  });
+});
+
+describe("claimPrewarmOrWait (adopt a mid-bootstrap prewarm)", () => {
+  test.skipIf(killSwitch)("waits for a young in-flight bootstrap, then adopts", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const fake = makeFakeAdapter({ gate });
+    await requestPrewarm("daytona", "tella-fusion");
+    expect(readyEntry()?.state).toBe("bootstrapping");
+
+    const waiting = claimPrewarmOrWait("daytona", "tella-fusion", "bks-waiter");
+    // Not adopted yet — the bootstrap is gated open.
+    let settled = false;
+    void waiting.then(() => (settled = true));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(settled).toBe(false);
+
+    release();
+    const claim = await waiting;
+    expect(claim?.sandboxId).toBe(fake.created[0]);
+    // The waiter adopted the warming sandbox — nothing raced, nothing died.
+    expect(fake.created.length).toBe(1);
+    expect(fake.destroyed).toEqual([]);
+  });
+
+  test.skipIf(killSwitch)("two waiters: exactly one adopts", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const fake = makeFakeAdapter({ gate });
+    await requestPrewarm("daytona", "tella-fusion");
+    const a = claimPrewarmOrWait("daytona", "tella-fusion", "bks-a");
+    const b = claimPrewarmOrWait("daytona", "tella-fusion", "bks-b");
+    release();
+    const [ca, cb] = await Promise.all([a, b]);
+    const winners = [ca, cb].filter(Boolean);
+    expect(winners.length).toBe(1);
+    expect(winners[0]!.sandboxId).toBe(fake.created[0]);
+  });
+
+  test.skipIf(killSwitch)("does not wait on an old bootstrapping entry", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    makeFakeAdapter({ gate });
+    await requestPrewarm("daytona", "tella-fusion");
+    const entry = readyEntry()!;
+    entry.createdAt = new Date(Date.now() - 120_000).toISOString(); // stuck cold install
+    const claim = await claimPrewarmOrWait("daytona", "tella-fusion", "bks-s");
+    expect(claim).toBeNull(); // returned immediately — caller cold-creates
+    release();
+  });
+
+  test.skipIf(killSwitch)("ready entry claims without waiting", async () => {
+    const fake = makeFakeAdapter();
+    await requestPrewarm("daytona", "tella-fusion");
+    await until(() => readyEntry()?.state === "ready");
+    const claim = await claimPrewarmOrWait("daytona", "tella-fusion", "bks-s");
+    expect(claim?.sandboxId).toBe(fake.created[0]);
   });
 });
 

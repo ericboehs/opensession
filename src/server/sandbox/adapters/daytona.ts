@@ -60,7 +60,7 @@ import {
   type RemoteExecOpts,
 } from "./bootstrap";
 import {
-  claimPrewarm,
+  claimPrewarmOrWait,
   discardClaimedPrewarm,
   PREWARM_KEY_LABEL,
   PREWARM_LABEL,
@@ -248,9 +248,12 @@ export class DaytonaProvider implements SandboxProvider {
       // prewarm for (daytona, repo) whose runner pin + snapshot still match
       // is claimed atomically and relabeled to this session — the expensive
       // bootstrap below becomes a marker no-op and only the workspace clone
-      // remains. Any hiccup falls through to the cold create; the claimed
-      // sandbox is discarded so paid compute never dangles.
-      const claim = claimPrewarm(this.id, repo.id, spec.sessionId);
+      // remains. When the prewarm is still MID-BOOTSTRAP (the common case:
+      // typing→send is seconds, bootstrap ~20-60s) this WAITS for it instead
+      // of cold-creating a racing sibling next to the warming sandbox. Any
+      // hiccup falls through to the cold create; the claimed sandbox is
+      // discarded so paid compute never dangles.
+      const claim = await claimPrewarmOrWait(this.id, repo.id, spec.sessionId);
       if (claim) {
         try {
           const cand = await client.get(claim.sandboxId);

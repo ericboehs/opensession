@@ -133,6 +133,15 @@ function pool(): Map<string, PrewarmEntry> {
   return (g.__sandboxPrewarmPool ??= new Map());
 }
 
+/** key → the in-flight bootstrap's completion promise (never rejects — the
+ *  bootstrap catches into entry.state). Lets an ensure() WAIT for a warming
+ *  sandbox instead of cold-creating a racing sibling (claimPrewarmOrWait).
+ *  In-memory only: a restarted process can't await it and must cold-create. */
+function bootstrapDone(): Map<string, Promise<void>> {
+  const g = globalThis as unknown as { __sandboxPrewarmDone?: Map<string, Promise<void>> };
+  return (g.__sandboxPrewarmDone ??= new Map());
+}
+
 function prewarmDir(): string {
   return `${BACKSTAGE_CHATS_DIR}/sandbox-prewarm`;
 }
@@ -269,7 +278,11 @@ export async function requestPrewarm(
   };
   p.set(key, fresh);
   persist(fresh);
-  void runPrewarmBootstrap(fresh, adapter);
+  const done = runPrewarmBootstrap(fresh, adapter);
+  bootstrapDone().set(key, done);
+  void done.finally(() => {
+    if (bootstrapDone().get(key) === done) bootstrapDone().delete(key);
+  });
   return { state: "bootstrapping" };
 }
 
@@ -367,6 +380,51 @@ export function claimPrewarm(
   p.delete(key);
   p.set(`${key}#${entry.sandboxId}`, entry);
   return { sandboxId: entry.sandboxId };
+}
+
+/**
+ * Claim a ready prewarm, or — when one for this key is MID-BOOTSTRAP and
+ * young — WAIT for it to finish and then claim. Warm-on-typing reality: the
+ * typing→send gap is seconds while the bootstrap is ~20-60s, so a plain
+ * claimPrewarm at send time virtually never adopts — ensure() cold-created a
+ * RACING SIBLING next to the warming sandbox (2× paid compute, zero benefit;
+ * bks-019f4729, 2026-07-09). Waiting the remaining ~15-40s is both faster
+ * than a fresh cold create and halves the sandbox count.
+ *
+ *  - Only waits for entries younger than `maxAgeMs` (default 60s): an older
+ *    bootstrapping entry means a pathological cold bun-install — don't hold
+ *    the user's prompt hostage on it, cold-create in parallel as before.
+ *  - The wait itself is bounded by `maxWaitMs` (default 120s) as a backstop;
+ *    a finished-but-failed bootstrap resolves immediately and claims null.
+ *  - Two concurrent ensures can both wait; claimPrewarm's atomic arbitration
+ *    still lets exactly one adopt — the loser cold-creates.
+ */
+export async function claimPrewarmOrWait(
+  provider: string,
+  repoId: string,
+  sessionId: string,
+  opts?: { maxAgeMs?: number; maxWaitMs?: number },
+): Promise<{ sandboxId: string } | null> {
+  const claimed = claimPrewarm(provider, repoId, sessionId);
+  if (claimed) return claimed;
+  const key = `${provider}:${repoId}`;
+  const entry = pool().get(key);
+  if (!entry || entry.state !== "bootstrapping") return null;
+  const age = Date.now() - Date.parse(entry.createdAt);
+  if (!Number.isFinite(age) || age > (opts?.maxAgeMs ?? 60_000)) return null;
+  const done = bootstrapDone().get(key);
+  if (!done) return null; // not ours to await (restarted process)
+  console.log(
+    `[sandbox-prewarm] ensure(${sessionId.slice(0, 20)}…) waiting for in-flight ${key} prewarm (${Math.round(age / 1000)}s old)…`,
+  );
+  await Promise.race([
+    done,
+    new Promise<void>((r) => {
+      const t = setTimeout(r, opts?.maxWaitMs ?? 120_000);
+      (t as { unref?: () => void }).unref?.();
+    }),
+  ]);
+  return claimPrewarm(provider, repoId, sessionId);
 }
 
 /** Fire-and-forget destroy for a claimed sandbox the adopter found unusable
@@ -550,6 +608,7 @@ export function _setPrewarmAdapterForTest(provider: string, adapter: PrewarmAdap
 export function _resetPrewarmForTest(): void {
   testAdapters.clear();
   pool().clear();
+  bootstrapDone().clear();
   const g = globalThis as unknown as {
     __prewarmOrphanAuditAt?: number;
     __sandboxPrewarmRate?: Map<string, number[]>;
