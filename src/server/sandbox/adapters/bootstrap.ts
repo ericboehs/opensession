@@ -65,6 +65,7 @@ import { providerFor } from "../../models";
 import {
   appendOpencodeTranscript,
   ensureOpencodeTranscriptFile,
+  getOpencodeTranscriptPath,
   transcriptLineUser,
   transcriptLineAssistantText,
   transcriptLineToolUse,
@@ -753,6 +754,13 @@ function recordForSpec(
   };
 }
 
+/** Mutable engine-session ref shared between the transcript mirror and the
+ *  RunHandle's steer wrappers, so a delivered steer can be mirrored into the
+ *  file the run is CURRENTLY writing (rotation can change it mid-run). */
+export interface OcSessionRef {
+  id: string;
+}
+
 /**
  * Host-side mirror of the persisted opencode transcript for REMOTE runs.
  * The in-sandbox runner writes its JSONL inside the sandbox, where nothing
@@ -763,29 +771,66 @@ function recordForSpec(
  * from them here. Applied ONLY on the remote adapters (this module): docker's
  * bind mount already lands the in-sandbox writes on the host, and mirroring
  * there would double every line.
+ *
+ * User-entry rules (bks-019f46d2 postmortem):
+ *  - The prompt is written from the SPEC (the host knows every prompt it
+ *    dispatches), never parsed back out of dial-back frames.
+ *  - It is written AT DISPATCH when the engine session is already known
+ *    (every turn after the first) — the viewer's optimistic "Sending…"
+ *    bubble reconciles on this append, and remote engine boot is 10-30s,
+ *    so waiting for init would hang the bubble that long (or forever if
+ *    the turn dies first).
+ *  - It is (re)written on every init that lands on a NEW engine session id:
+ *    an account rotation mid-turn starts a fresh opencode session, and the
+ *    turn's prompt must exist in the file the session ends up pointing at
+ *    (the original bug: the prompt only ever landed in attempt 1's file).
+ *  - A deterministic uuid (`<hostId>-prompt`) makes re-writes upsert-safe
+ *    for the jsonl parser instead of duplicating.
+ *  - The synthetic restart-resume continuation prompt is NOT a user entry.
  */
-async function* withOpencodeTranscriptMirror(
+export async function* withOpencodeTranscriptMirror(
   events: AsyncGenerator<StreamEvent>,
   spec: RunHostSpec,
+  ocRef?: OcSessionRef,
 ): AsyncGenerator<StreamEvent> {
   if (providerFor(spec.model) !== "opencode") {
     yield* events;
     return;
   }
   let oc = spec.engineSessionId || "";
-  let wrotePrompt = false;
+  if (ocRef) ocRef.id = oc;
+  const syntheticContinuation = spec.prompt === RESUME_CONTINUATION_PROMPT;
+  const promptUuid = `${spec.hostId}-prompt`;
+  const promptWrittenTo = new Set<string>();
+  const writePrompt = (id: string) => {
+    if (!id || !spec.prompt || syntheticContinuation || promptWrittenTo.has(id)) return;
+    ensureOpencodeTranscriptFile(id);
+    // Idempotent across re-deliveries (post-restart reattach replays the same
+    // spec): the deterministic uuid is checked in-file, since the jsonl
+    // parser renders duplicate lines as duplicate entries.
+    try {
+      const path = getOpencodeTranscriptPath(id);
+      if (existsSync(path) && readFileSync(path, "utf-8").includes(`"${promptUuid}"`)) {
+        promptWrittenTo.add(id);
+        return;
+      }
+    } catch {}
+    appendOpencodeTranscript(id, [transcriptLineUser(spec.prompt, promptUuid)]);
+    promptWrittenTo.add(id);
+  };
   const mirror = (lines: Parameters<typeof appendOpencodeTranscript>[1]) => {
     if (oc) appendOpencodeTranscript(oc, lines);
   };
+  try {
+    writePrompt(oc); // dispatch-time (known session = resumed turns)
+  } catch {}
   for await (const ev of events) {
     try {
       if (ev.type === "init" && ev.sessionId) {
         oc = ev.sessionId;
+        if (ocRef) ocRef.id = oc;
         ensureOpencodeTranscriptFile(oc);
-        if (!wrotePrompt && spec.prompt) {
-          mirror([transcriptLineUser(spec.prompt)]);
-          wrotePrompt = true;
-        }
+        writePrompt(oc);
       } else if (ev.type === "text_chunk" && ev.text) {
         mirror([transcriptLineAssistantText(ev.text)]);
       } else if (ev.type === "tool_use" && ev.toolUseId) {
@@ -885,16 +930,29 @@ export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
         } catch {}
         throw e;
       }
+      const ocRef: OcSessionRef = { id: spec.engineSessionId || "" };
       const gen = withRunJournal(
-        withOpencodeTranscriptMirror(handle.events(), spec),
+        withOpencodeTranscriptMirror(handle.events(), spec, ocRef),
         record,
         touch,
       );
+      // Steers fold into the running turn in-sandbox, so they never come back
+      // as dial-back user frames — mirror DELIVERED steers into the current
+      // engine-session file (same reconcile contract as the dispatch prompt).
+      const mirrorSteer = (text: string, delivered: boolean) => {
+        if (delivered && ocRef.id && providerFor(spec.model) === "opencode" && text) {
+          try {
+            appendOpencodeTranscript(ocRef.id, [transcriptLineUser(text)]);
+          } catch {}
+        }
+        return delivered;
+      };
       return {
         events: () => gen,
         steerable: providerFor(spec.model) !== "codex",
-        steer: (text) => hostSteer(spec.bksSessionId, text),
-        interruptSteer: (text) => hostInterruptSteer(spec.bksSessionId, text),
+        steer: (text) => mirrorSteer(text, hostSteer(spec.bksSessionId, text)),
+        interruptSteer: (text) =>
+          mirrorSteer(text, hostInterruptSteer(spec.bksSessionId, text)),
         cancel: () => hostCancel(spec.bksSessionId),
       };
     },
