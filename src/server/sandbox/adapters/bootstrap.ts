@@ -500,12 +500,31 @@ export async function setupRemoteWorkspace(
   const cloned = await driver.exec(`test -d ${shellQuoteWord(cwd)}/.git`);
   if (cloned.exitCode !== 0) {
     console.log(`[sandbox-remote] cloning ${redactUrl(cloneUrl)} into ${cwd}`);
+    // Blobless partial clone: full history/refs but blobs fetched lazily via
+    // the persisted (tokenized) origin URL. tella-fusion's full .git is
+    // ~2.4GB vs ~450MB blobless — on a 10GiB sandbox disk that headroom is
+    // the difference between working and ENOSPC (verified live 2026-07-09:
+    // full clone died on the default 3GiB disk with an EMPTY git error,
+    // because the fatal line itself couldn't be written to the full disk).
     const clone = await driver.exec(
-      `mkdir -p ${shellQuoteWord(dirname(cwd))} && git clone -- ${shellQuoteWord(cloneUrl)} ${shellQuoteWord(cwd)}`,
+      `mkdir -p ${shellQuoteWord(dirname(cwd))} && git clone --filter=blob:none -- ${shellQuoteWord(cloneUrl)} ${shellQuoteWord(cwd)}`,
       { timeoutMs: 600_000 },
     );
     if (clone.exitCode !== 0) {
-      throw new Error(`remote workspace clone failed: ${redactUrl(clone.stderr.trim().slice(0, 500))}`);
+      // A disk-full death is near-silent (git gets ENOSPC/SIGKILL and stderr
+      // writes fail too) — check df and say so, instead of the bare
+      // "Cloning into …" that sent us chasing credentials.
+      const df = await driver.exec("df -h / | tail -1");
+      const full = /\s(9[0-9]|100)%\s/.test(df.stdout);
+      const detail = redactUrl(clone.stderr.trim().slice(0, 500));
+      throw new Error(
+        full
+          ? `remote workspace clone failed: sandbox disk is full (${df.stdout.trim()}). ` +
+            `The sandbox is too small for this repo — configure a bigger snapshot ` +
+            `(daytona.snapshot in ~/.backstage-sandbox.json) and recreate the session.` +
+            (detail ? ` git: ${detail}` : "")
+          : `remote workspace clone failed: ${detail || "(no stderr)"}`,
+      );
     }
   }
   const cur = await driver.exec("git branch --show-current", { cwd });

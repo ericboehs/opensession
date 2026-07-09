@@ -104,6 +104,16 @@ export interface SandboxDaytonaConfig {
   apiKey?: string;
   apiUrl?: string;
   target?: string;
+  /**
+   * Org snapshot to create sandboxes from (custom `resources` are rejected
+   * when creating from a snapshot, so sizing lives in the snapshot itself).
+   * Unset = Daytona's default snapshot: 1 vCPU / 1GB / 3GiB disk — too small
+   * for real repo workspaces (the runner payload alone is ~2GB; a tella-fusion
+   * clone died on ENOSPC, 2026-07-09). Create one via the SDK, e.g. name
+   * backstage-lg-us, image daytonaio/sandbox:0.8.0, resources {cpu:2,
+   * memory:4, disk:10 (org max)}, regionId "us".
+   */
+  snapshot?: string;
 }
 
 export interface SandboxE2bConfig {
@@ -254,6 +264,7 @@ export function sandboxConfig(): SandboxConfig {
                 apiKey: str(raw.daytona.apiKey),
                 apiUrl: str(raw.daytona.apiUrl),
                 target: str(raw.daytona.target),
+                snapshot: str(raw.daytona.snapshot),
               }
             : undefined,
         e2b:

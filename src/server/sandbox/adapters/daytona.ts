@@ -238,11 +238,14 @@ export class DaytonaProvider implements SandboxProvider {
     if (sbx && stateOf(sbx) === "gone") sbx = null;
     if (!sbx) {
       console.log(`[sandbox:daytona] creating sandbox for ${spec.sessionId}`);
-      // Default snapshot (custom `resources` are rejected when creating from a
-      // snapshot — live-API behavior 2026-07; size the sandbox via a custom
-      // snapshot/image in the daytona config instead when needed).
+      // Sizing comes from the configured org snapshot — custom `resources`
+      // are rejected when creating from a snapshot (live-API behavior
+      // 2026-07). Unset = Daytona's default snapshot (1 vCPU/1GB/3GiB disk),
+      // too small for real repo workspaces: the runner payload alone is ~2GB
+      // and a tella-fusion clone died on ENOSPC. See SandboxDaytonaConfig.
       sbx = await client.create(
         {
+          ...(cfg.daytona?.snapshot ? { snapshot: cfg.daytona.snapshot } : {}),
           labels: { [SESSION_LABEL]: spec.sessionId, "backstage.sandbox": "1" },
           autoStopInterval: cfg.idleStopMinutes || DEFAULT_IDLE_STOP_MINUTES,
         } as any,
