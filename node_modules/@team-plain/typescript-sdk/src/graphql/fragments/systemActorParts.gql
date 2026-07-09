@@ -1,4 +1,0 @@
-fragment SystemActorParts on SystemActor {
-  __typename
-  systemId
-}
