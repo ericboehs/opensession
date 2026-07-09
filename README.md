@@ -1,11 +1,11 @@
-# Backstage
+# OpenSession
 
 Self-hosted agent-infrastructure server: a web UI plus Slack, Linear, Plain,
 and GitHub agents, driving coding sessions through three engines (Claude Agent
 SDK, Codex, OpenCode) in git worktrees or Docker sandboxes on your own box.
 
-> **Note:** this project is being renamed to **OpenSession** — see
-> [docs/rename-opensession-plan.md](docs/rename-opensession-plan.md).
+> Not related to opencode's `opensession` npm session viewer or to
+> ColeMurray/background-agents ("Open-Inspect").
 
 <!-- TODO: screenshot — docs/screenshot.png (session view + sidebar) -->
 *(screenshot placeholder)*
@@ -13,10 +13,10 @@ SDK, Codex, OpenCode) in git worktrees or Docker sandboxes on your own box.
 ## Quickstart
 
 ```sh
-git clone https://github.com/tellahq/backstage.git
-cd backstage
+git clone https://github.com/tellahq/backstage.git tella-backstage
+cd tella-backstage
 bun install
-bun run backstage.ts
+bun run opensession.ts
 ```
 
 Then read the real setup guide — secrets, accounts, integrations, systemd:

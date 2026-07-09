@@ -36,7 +36,7 @@ Related env vars (`src/agents/github/`):
 `src/server/pr-info.ts` and session prompts shell out to `gh` (`gh pr view`,
 `gh pr diff`, `gh pr comment`, `gh pr merge`, `gh api`) with **no token passed
 in code** — they use the box's ambient `gh` authentication (`gh auth login`,
-or `GH_TOKEN` in `~/.backstage.env`, which systemd loads as the service's
+or `GH_TOKEN` in `~/.opensession.env`, which systemd loads as the service's
 `EnvironmentFile`). That identity needs write (and merge, if you use PR-merge
 flows) rights on your repos. Set both up: the PAT for the API client, `gh`
 auth for the CLI.
@@ -45,7 +45,7 @@ auth for the CLI.
 
 The webhook server (`src/server/webhook-server.ts`) listens on
 `127.0.0.1:${WEBHOOK_PORT}` (default 3848; also settable via
-`server.webhookPort` in `~/.backstage/config.json`). You need a
+`server.webhookPort` in `~/.opensession/config.json`). You need a
 TLS-terminating proxy in front of it for GitHub to reach it — Tella uses
 Caddy on a public hostname.
 
@@ -70,7 +70,7 @@ the code consumes (`src/agents/github/webhook.ts`):
 
 Events for other repos are dropped: the agent guards on
 `repository.full_name === defaultRepo().ghRepo` — i.e. the **default repo**
-from `~/.backstage/config.json` (Tella: `tellahq/tella-fusion`). The PR agent
+from `~/.opensession/config.json` (Tella: `tellahq/tella-fusion`). The PR agent
 is effectively single-repo today.
 
 ## Behavior toggles
@@ -103,10 +103,10 @@ only) authenticates to AWS with OIDC and calls `ssm:SendCommand` to run
 1. `git fetch` + `merge --ff-only` (never `reset --hard` — the checkout is
    live and shared; divergence aborts loudly),
 2. `bun install --frozen-lockfile` only when the lockfile changed,
-3. syncs `backstage.service` to `/etc/systemd/system/` when it changed
+3. syncs `opensession.service` to `/etc/systemd/system/` when it changed
    (the deployed unit is a copy, not a symlink),
 4. waits up to `MAX_DRAIN_WAIT` (480s) for `activeRuns == 0` on
-   `/backstage/api/health`, then `systemctl restart backstage` and a
+   `/opensession/api/health`, then `systemctl restart opensession` and a
    post-restart health gate.
 
 The AWS account ID, region, and instance ID are hardcoded in the workflow

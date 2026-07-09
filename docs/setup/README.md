@@ -1,11 +1,11 @@
-# Backstage setup
+# OpenSession setup
 
-Operator documentation for self-hosting Backstage. Start at
+Operator documentation for self-hosting OpenSession. Start at
 [install.md](install.md); the other pages are per-integration and optional.
 
 ## What it is
 
-Backstage is a self-hosted agent-infrastructure server. One Bun process serves:
+OpenSession is a self-hosted agent-infrastructure server. One Bun process serves:
 
 - **A web UI** for creating and steering coding sessions (chats) that run
   against registered git repos, in isolated worktrees or Docker sandboxes.
@@ -22,9 +22,9 @@ Backstage is a self-hosted agent-infrastructure server. One Bun process serves:
 ```
                  ┌──────────────────────────────────────────────┐
  Slack ─────────►│                                              │
- Linear webhook ►│  backstage.ts (one Bun process, bun --hot)   │
+ Linear webhook ►│  opensession.ts (one Bun process, bun --hot)   │
  Plain webhook ─►│                                              │
- GitHub webhook ►│  web UI + WS ──► session store ~/.backstage-chats
+ GitHub webhook ►│  web UI + WS ──► session store ~/.opensession-chats
                  │  agents (slack/linear/plain/github/stripe)   │
                  │  automations + schedulers                    │
                  │  runner layer ──► engines:                   │
@@ -39,7 +39,7 @@ Backstage is a self-hosted agent-infrastructure server. One Bun process serves:
 
 A second small HTTP server (the webhook server, default port 3848) receives
 GitHub/Linear/Plain/Stripe webhooks; the main server (default 3850) serves the
-UI and API at `/backstage/`.
+UI and API at `/opensession/`.
 
 ## Minimum requirements
 
@@ -49,7 +49,7 @@ UI and API at `/backstage/`.
 - [Bun](https://bun.sh) — runtime, package manager, and bundler. No Node/Vite.
 - `git`, and the [`gh` CLI](https://cli.github.com) for PR operations.
 - The `claude` CLI (Claude Code) — the Claude engine shells out to it
-  (`BACKSTAGE_CLAUDE_BIN`, default `/home/ubuntu/.local/bin/claude`).
+  (`OPENSESSION_CLAUDE_BIN`, default `/home/ubuntu/.local/bin/claude`).
 - Optional: **Docker** (sandboxed sessions —
   [self-hosting-sandboxes](../self-hosting-sandboxes.md)), **Caddy** (TLS for
   live previews), **Tailscale** (the recommended way to expose the UI at all),
@@ -58,7 +58,7 @@ UI and API at `/backstage/`.
 
 ## Trust model (read this)
 
-Backstage has **no built-in authentication**. It binds to `HOST` (default
+OpenSession has **no built-in authentication**. It binds to `HOST` (default
 `127.0.0.1`; Tella binds it to a Tailscale IP) and trusts everyone who can
 reach that address — the UI "user" is a self-selected display name stored in
 localStorage, used for attribution and per-user MCP gating, not for auth. Put

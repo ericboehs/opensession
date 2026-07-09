@@ -1,5 +1,5 @@
 [Unit]
-Description=OpenSession - agent session dashboard (formerly Backstage)
+Description=OpenSession - agent session dashboard
 After=network.target
 
 [Service]
@@ -7,11 +7,7 @@ Environment="PATH=/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/usr/local/sbin:
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/projects/tella-backstage
-# Rename compat: the old env file loads first, the new one (post-migration a
-# real file, pre-migration absent) second so its values win. Both are optional
-# (`-`) — the migration script leaves a symlink at the old name either way.
-EnvironmentFile=-/home/ubuntu/.backstage.env
-EnvironmentFile=-/home/ubuntu/.opensession.env
+EnvironmentFile=/home/ubuntu/.opensession.env
 Environment="NODE_ENV=production"
 # --hot: edits to source hot-reload in-process (request handlers and the
 # session-control registry refresh; WebSocket clients and in-flight runs

@@ -2,7 +2,7 @@
 
 ## Boot guards
 
-All agent loops are gated in `loadAgents()` (backstage.ts, ~line 8810). The
+All agent loops are gated in `loadAgents()` (opensession.ts, ~line 8810). The
 pattern is opt-**out**: `if (process.env.ENABLE_X_AGENT !== "false")`. That
 means:
 
@@ -73,7 +73,7 @@ investigation automations with a Slack control card per fresh failure.
 | `SLACK_EXPORT_FAILURE_CHANNEL` | `C093YC3TX8E` | Slack channel for export-failure cards (Tella default) |
 | `SLACK_UPLOAD_FAILURE_CHANNEL` | `C0AKPJ65BQA` | same, upload failures (Tella default) |
 
-Dedup state lives in `~/.backstage-grafana-poll/<automationId>/` (default
+Dedup state lives in `~/.opensession-grafana-poll/<automationId>/` (default
 window 7 days). **Tella-specific:** the two seeded investigators query
 Tella's Loki labels (`service_name="temporal-rust-worker"`, `story_id`,
 `streaming_upload_id`) — pointing the poller at your own failure signatures
@@ -90,8 +90,8 @@ them and nothing breaks; runs just don't get those tools.
 ## Web push
 
 `src/server/push.ts`. Zero configuration: VAPID keys are generated on first
-use and stored in `~/.backstage-push/vapid.json`; per-user subscriptions in
-`~/.backstage-push/subscriptions.json` (dead ones pruned on send). One
+use and stored in `~/.opensession-push/vapid.json`; per-user subscriptions in
+`~/.opensession-push/subscriptions.json` (dead ones pruned on send). One
 Tella-ism: the VAPID contact is hardcoded `mailto:michael@tella.dev`
 ([portability-audit §2a](../portability-audit.md)). Push requires the UI to
 be served over HTTPS (e.g. Tailscale `ts.net` certs); on iOS it needs the
@@ -119,7 +119,7 @@ agent runs that opt into AWS (`aws: true`), injecting `AWS_REGION` /
 `AWS_DEFAULT_REGION` (from `AGENT_AWS_REGION`, default `us-east-2`) plus
 temporary keys into the child env. It exists because the service cgroup
 blocks the EC2 metadata endpoint (`IPAddressDeny=169.254.169.254/32` in
-`backstage.service`) so untrusted agent code can't mint the role itself; the
+`opensession.service`) so untrusted agent code can't mint the role itself; the
 main process escapes via a transient systemd unit (`sudo -n systemd-run`) to
 fetch read-only creds. EC2-specific; off AWS, mint failure returns `{}` and
 runs proceed without AWS.

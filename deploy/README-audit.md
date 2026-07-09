@@ -1,12 +1,12 @@
-# Backstage audit logs
+# OpenSession audit logs
 
-Backstage keeps a structured audit trail of every agent run, modeled on
+OpenSession keeps a structured audit trail of every agent run, modeled on
 `tellahq/incident-agent` (`src/audit.ts` there, `src/server/audit.ts` here).
 
 ## What gets logged
 
 Every `runClaude` invocation emits `claude_turn_event` JSON lines to
-`~/.backstage-audit/audit-YYYY-MM-DD.jsonl`:
+`~/.opensession-audit/audit-YYYY-MM-DD.jsonl`:
 
 - `user_prompt` (direction `in`) — run key, backstage session, run kind
   (interactive / automation / resume), mode, cwd, MCP allowlist, denied
@@ -22,7 +22,7 @@ Every `runClaude` invocation emits `claude_turn_event` JSON lines to
   status. `bg_task_hold` / `bg_task_hold_expired` (direction `out`) — the run
   reached a turn boundary with tasks still in flight and held the query open
   (finishing would kill them with the CLI process), or gave up after
-  `BACKSTAGE_BG_HOLD_MAX_MS` (default 20 min) without task activity.
+  `OPENSESSION_BG_HOLD_MAX_MS` (default 20 min) without task activity.
 
 Bodies are stored as sha256 + bounded snippet (300 bytes; 500 for tool
 inputs), like incident-agent: small logs, but every entry can be reconciled
@@ -31,8 +31,8 @@ against the full Claude session jsonl on disk. Local files are pruned after
 
 ## Shipping to CloudWatch (one-time setup, needs admin)
 
-incident-agent ships stdout via Docker's `awslogs` driver. Backstage runs as
-a systemd unit that hard-denies IMDS (`backstage.service`), so the app can
+incident-agent ships stdout via Docker's `awslogs` driver. OpenSession runs as
+a systemd unit that hard-denies IMDS (`opensession.service`), so the app can
 never hold AWS credentials — instead the standalone amazon-cloudwatch-agent
 (its own systemd service, IMDS allowed) tails the audit files into the
 `/tella/backstage/prod` log group.
@@ -78,4 +78,4 @@ filter msg = "claude_turn_event" and kind = "tool_use" and bks_session_id = "...
 ```
 
 Locally the same questions are one `jq` away over
-`~/.backstage-audit/audit-*.jsonl`.
+`~/.opensession-audit/audit-*.jsonl`.

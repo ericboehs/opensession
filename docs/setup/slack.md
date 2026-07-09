@@ -75,7 +75,7 @@ it to read.
 
 - DMs and mentions are ignored unless the sender matches
   `ALLOWED_SLACK_USER_ID` — **except** mentions in worktree channels or
-  channels linked to a Backstage session, where the whole team can drive.
+  channels linked to a OpenSession session, where the whole team can drive.
 - `isAdmin = !ALLOWED_SLACK_USER_ID || sender === ALLOWED_SLACK_USER_ID`.
   Admin unlocks the mutating tools of the in-process MCP servers
   (`michael-admin` self-management, session control, goals, human-asks);
@@ -118,6 +118,6 @@ requires code edits today ([portability-audit §1d, §2d](../portability-audit.m
 
 Identity mapping (Slack id → person, for attribution and per-user MCP
 gating) is **not** hardcoded anymore: it derives from `identity.team` /
-`identity.slackNames` in `~/.backstage/config.json`
-([install.md](install.md#3-backstageconfigjson)); with no config file you get
+`identity.slackNames` in `~/.opensession/config.json`
+([install.md](install.md#3-opensessionconfigjson)); with no config file you get
 Tella's built-in roster.

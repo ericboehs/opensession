@@ -1,7 +1,7 @@
 # Linear
 
 The Linear agent (`src/agents/linear/`) turns Linear agent-session
-assignments into Backstage coding sessions: assign the app to an issue, it
+assignments into OpenSession coding sessions: assign the app to an issue, it
 creates a worktree, offers plan/implement, runs the work, and opens a PR when
 implementation completes.
 

@@ -33,7 +33,7 @@ Point a Plain webhook at `POST /plain/webhook` on the
 Consumed events (`src/agents/plain/handlers.ts`):
 
 - `thread.thread_created` — gated, then fires the triage automation (below)
-- `thread.thread_status_transitioned` to `DONE` — archives the Backstage
+- `thread.thread_status_transitioned` to `DONE` — archives the OpenSession
   sessions linked to that thread
 - `thread.note_created` containing `@michael` — runs the mention flow, but
   only when the note author is a human teammate (`actorType === "user"`);
@@ -50,7 +50,7 @@ surviving ticket runs through the spam/basic/full router
 
 ## The triage automation (least-privilege model)
 
-Automations are JSON files in `~/.backstage-automations/<id>.json`
+Automations are JSON files in `~/.opensession-automations/<id>.json`
 (`src/server/automations.ts`). The Plain agent seeds a triage automation on
 startup, keyed to event `plain:thread_created`, create-if-absent so your UI
 edits survive restarts (`src/agents/plain/triage-automation.ts`). Its shape
@@ -76,7 +76,7 @@ is the reference for scoping any automation:
   approves by opening the session ([integrations-misc.md](integrations-misc.md#stripe)).
 - Automation runs also pass **no user**, so any MCP server restricted with
   `allowedUsers` is invisible to them (fail-closed), and their subprocess env
-  is minimal — no tokens from `~/.backstage.env`.
+  is minimal — no tokens from `~/.opensession.env`.
 
 ## Internal-notes-in-English convention
 
@@ -84,11 +84,11 @@ Baked into the prompts (`src/agents/plain/prompts.ts` and
 `triage-prompt.ts`): internal notes and draft replies are always written in
 English regardless of the customer's language, with the customer's language
 noted so the team can translate before sending. Keep the same rule in any
-automation prompts you store in `~/.backstage-automations/`.
+automation prompts you store in `~/.opensession-automations/`.
 
 **Tella-specific copy caveat:** the triage/router prompts describe Tella
 ("a screen recording app") in code (`src/agents/plain/prompts.ts`,
 `ticket-router.ts`) — repointing them at your product is a code edit today
 ([portability-audit §2f](../portability-audit.md); `persona.company` /
-`persona.product` in `~/.backstage/config.json` are parsed but not yet
+`persona.product` in `~/.opensession/config.json` are parsed but not yet
 wired).

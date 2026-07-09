@@ -1,8 +1,9 @@
 # Rename plan: Backstage → OpenSession
 
-**Status:** PREP ONLY (2026-07-08). The rename is decided (Michiel: opensession.com
-is bought, "soon") but NOT executed. This doc is the inventory + sequencing so the
-switch is a short, boring change instead of an archaeology project.
+**Status: EXECUTED (2026-07-09).** See "Execution record" at the end for what
+shipped, what was deliberately kept, and what remains on the external checklist.
+This doc stays as the one historical record of the old name — per Michiel's
+directive, no other doc/UI copy references it; the product is simply OpenSession.
 
 **Naming facts (from the July 2026 collision research):**
 - Bare `opensession` on npm is **taken by the sst/opencode team** (their session
@@ -219,3 +220,66 @@ the GET at app boot with the constants as fallback.
 - No dual-write of state; migrations are one-shot in a restart window.
 - No chasing `backstage` inside third-party config people typed into their own
   automations/notes — parser-side compat only.
+
+
+---
+
+## Execution record (2026-07-09)
+
+Shipped, new-name-primary with every old name still working:
+
+- **Compat layer** `src/server/rename-compat.ts`: `envAlias()` (OPENSESSION_*
+  primary, BACKSTAGE_*/MICHAEL_* accepted with a one-time log line) and
+  `statePath()`/`stateDir()` (~/.opensession-* primary, ~/.backstage-*
+  dual-read, create-new at the new name; cached per process). Unit tests in
+  rename-compat.test.ts.
+- **Env vars**: every BACKSTAGE_* read + the generic MICHAEL_* config vars
+  (UI_BASE, MODEL, FALLBACK_MODEL, CODEX_TRANSPORT, FORCE_LIMIT) go through
+  envAlias. Child/remote envs (run hosts, docker exec, remote bootstrap,
+  Plain automation) export BOTH names so older runner bundles keep working.
+- **State dirs**: all ~/.backstage-* call sites resolve through stateDir;
+  scripts/migrate-opensession-state.sh renames on disk and leaves symlinks
+  (run 2026-07-09 in the swap window). Remote-sandbox upload destinations
+  keep the legacy filenames (that's what exists remotely; the in-sandbox
+  build dual-reads).
+- **URLs**: the app dual-serves /opensession (primary) + the legacy prefix as
+  a permanent alias — same handlers, no redirects (API/WS clients, PWA
+  installs, baked sandbox dial-back URLs). Frontend BASE_PATH follows the
+  prefix the page was served under; sw.js re-prefixes pushed URLs onto its
+  own scope; manifest/PWA identity is per-prefix. public-ingress accepts
+  both run-ws/rpc-ws prefixes; new launches dial back on /opensession.
+- **Entry/unit/deploy**: opensession.ts is the entry (backstage.ts is a
+  one-line alias, still COPY'd by the sandbox Dockerfile); opensession.service
+  is the unit (swap executed; the old unit file is removed from the repo and
+  the host); deploy.sh + workflow are opensession-only; package.json name is
+  `opensession`.
+- **Identifiers**: productName() default is OpenSession; model/user-facing
+  prose interpolates productName()/personaName(); monitor loop accepts both
+  unit names; localStorage keys are opensession-* with read-old fallback.
+- **Docs**: setup/README/config.example rewritten OpenSession-native (no
+  rename narrative, per directive).
+
+Deliberately KEPT (protocol/wire/persisted/external — renaming breaks live
+things for zero user-visible gain):
+
+- `bks-` / `prj-` id prefixes; the `backstage` repo id; SessionSource value
+  `"backstage"`; `michael-*` in-process MCP server ids; `===MICHAEL-SUMMARY===`
+  markers; `BACKSTAGE_VIDEO:` transcript markers (printed by external tooling);
+  `backstage-rpc.sock` filename; daytona/e2b sandbox labels
+  (`backstage.session`, `backstageSandbox`) used to adopt live sandboxes;
+  codex app-server clientInfo (persisted in rollouts); `__backstageBooted` &
+  co. globalThis keys (live hot-reload state); internal type names
+  (BackstageSessionFile etc. — safe cleanup any time).
+- External infra names: CloudWatch group `/tella/backstage/prod`, IAM role
+  `backstage-deploy`, GitHub repo `tellahq/backstage`, checkout dir
+  `~/projects/tella-backstage`, Tailscale hostname — Tier D checklist below.
+
+External checklist (Michiel):
+
+- [ ] GitHub repo rename `tellahq/backstage` → decide org/name (auto-redirects
+      make this low-risk; then update config.ts builtinRepos ghRepo, deploy.yml
+      comment, clones at leisure)
+- [ ] npm `@opensession` scope registration
+- [ ] IAM role / SSM group / CloudWatch group renames (or never — config
+      batches make them irrelevant for other orgs)
+- [ ] Domains: opensession.com live; decide on others

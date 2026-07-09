@@ -3,7 +3,7 @@
 #
 # Installs a DOCKER-USER iptables rule that DROPs container traffic to the EC2
 # instance-metadata service (169.254.169.254). This mirrors the
-# IPAddressDeny=169.254.169.254/32 that backstage.service and the systemd run
+# IPAddressDeny=169.254.169.254/32 that opensession.service and the systemd run
 # hosts already enforce: agent code must never be able to mint instance-role
 # credentials, sandboxed or not. DOCKER-USER is the chain Docker guarantees to
 # consult before its own forwarding rules, so the drop applies to every

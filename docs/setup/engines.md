@@ -2,7 +2,7 @@
 
 Every session/automation turn runs on one of three engines, dispatched by
 model id in the runner layer. **Engine/runner code does not hot-reload** —
-after changing anything here, `systemctl restart backstage`
+after changing anything here, `systemctl restart opensession`
 ([install.md](install.md#8-hot-reload-vs-restart)).
 
 ## Claude (Claude Agent SDK) — default
@@ -10,10 +10,10 @@ after changing anything here, `systemctl restart backstage`
 `src/server/claude-runner.ts` drives the `@anthropic-ai/claude-agent-sdk`,
 which spawns the `claude` CLI:
 
-- **Binary**: `BACKSTAGE_CLAUDE_BIN` env → `paths.claudeBin` in
-  `~/.backstage/config.json` → `/home/ubuntu/.local/bin/claude`.
-- **Accounts**: `~/.backstage-claude-accounts.json` (override with
-  `BACKSTAGE_CLAUDE_ACCOUNTS_PATH`; written mode 0600). Shape
+- **Binary**: `OPENSESSION_CLAUDE_BIN` env → `paths.claudeBin` in
+  `~/.opensession/config.json` → `/home/ubuntu/.local/bin/claude`.
+- **Accounts**: `~/.opensession-claude-accounts.json` (override with
+  `OPENSESSION_CLAUDE_ACCOUNTS_PATH`; written mode 0600). Shape
   (`src/server/claude-accounts.ts`):
 
 ```json
@@ -44,16 +44,16 @@ which spawns the `claude` CLI:
   draw from owner-less pool accounts, least-utilized first. Accounts at ≥97%
   of the 5-hour window are sidelined until reset. Sessions can pin an
   `accountId`; automations can hard-pin (`accountStrict`) as a cost cap.
-- Fallback env vars: `MICHAEL_FALLBACK_MODEL` (global fallback model when a
+- Fallback env vars: `OPENSESSION_FALLBACK_MODEL` (global fallback model when a
   pool is exhausted; `none` disables), `CLAUDE_FALLBACK_PROFILE` (legacy
-  on-disk `~/.claude` credential-swap path), `MICHAEL_FORCE_LIMIT=1`
+  on-disk `~/.claude` credential-swap path), `OPENSESSION_FORCE_LIMIT=1`
   (dev-only: fake a usage limit to exercise the fallback chain).
 
 ## Codex
 
 `src/server/codex-runner.ts` via `@openai/codex-sdk`:
 
-- **Accounts**: `~/.backstage-codex-accounts.json` (no env override; 0600):
+- **Accounts**: `~/.opensession-codex-accounts.json` (no env override; 0600):
 
 ```json
 {
@@ -68,9 +68,9 @@ which spawns the `claude` CLI:
   `CODEX_HOME` directory containing `auth.json` from `CODEX_HOME=<dir> codex
   login` on a ChatGPT plan. Rotation is least-recently-picked with a 1-hour
   cool-off on rate limits (no usage endpoint exists to poll).
-- **Transport toggle**: `~/.backstage-codex-transport.json` with
+- **Transport toggle**: `~/.opensession-codex-transport.json` with
   `{ "transport": "app-server" }` or `"exec"` (file wins; then
-  `MICHAEL_CODEX_TRANSPORT=app-server`; default `exec`). The app-server
+  `OPENSESSION_CODEX_TRANSPORT=app-server`; default `exec`). The app-server
   transport (`src/server/codex-appserver.ts`) drives `codex app-server` over
   JSON-RPC and adds mid-turn steering (`turn/steer`) and fast interrupt
   (`turn/interrupt`). Both transports share the same thread/rollout files,
@@ -80,11 +80,11 @@ which spawns the `claude` CLI:
 
 `src/server/opencode-runner.ts` spawns `opencode serve` per session and talks
 HTTP+SSE. Model ids look like `opencode/<provider>/<model>` — this is the
-"bring any LLM" engine. Binary resolution: `BACKSTAGE_OPENCODE_BIN` →
+"bring any LLM" engine. Binary resolution: `OPENSESSION_OPENCODE_BIN` →
 `Bun.which("opencode")` → an nvm fallback path.
 
-Config: `~/.backstage-opencode.json` (override with
-`BACKSTAGE_OPENCODE_CONFIG`), schema from `src/server/opencode-config.ts`:
+Config: `~/.opensession-opencode.json` (override with
+`OPENSESSION_OPENCODE_CONFIG`), schema from `src/server/opencode-config.ts`:
 
 ```json
 {
@@ -126,9 +126,9 @@ containment rules are in
 
 `src/server/models.ts`:
 
-- **Default model**: UI override file `~/.backstage-default-model.json`
-  (`{ "model": "<id>" | null }`) → `MICHAEL_MODEL` env → `claude-fable-5`.
-- **Fallback auto-switch**: `~/.backstage-model-fallback.json`
+- **Default model**: UI override file `~/.opensession-default-model.json`
+  (`{ "model": "<id>" | null }`) → `OPENSESSION_MODEL` env → `claude-fable-5`.
+- **Fallback auto-switch**: `~/.opensession-model-fallback.json`
   (`{ "auto": boolean }`, default true) — whether interactive sessions
   auto-fall-back when their model's pool is exhausted. The built-in fallback
   order: claude-opus-4-8 → claude-fable-5 → claude-sonnet-5 → gpt-5.5 →

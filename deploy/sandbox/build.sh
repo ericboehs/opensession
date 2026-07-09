@@ -5,7 +5,7 @@
 #   backstage-runner:<git-sha>     (immutable, current HEAD short sha)
 #
 # Build context is the repo root so the Dockerfile can COPY package.json/bun.lock/
-# src/backstage.ts. A root .dockerignore trims the context (excludes node_modules,
+# opensession.ts. A root .dockerignore trims the context (excludes node_modules,
 # .git, .frontend-dist, secrets).
 set -euo pipefail
 

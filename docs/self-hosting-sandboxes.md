@@ -1,6 +1,6 @@
 # Self-hosting sandboxes
 
-How to run Backstage sessions inside isolated sandboxes on your own
+How to run OpenSession sessions inside isolated sandboxes on your own
 infrastructure. Companion to `docs/sandboxes-plan.md` (the architecture and
 phase plan) and `deploy/sandbox/README.md` (the runner image + provider
 internals). This page is the operator's view: what to install, the full
@@ -22,7 +22,7 @@ deploy/sandbox/setup-host.sh
 deploy/sandbox/build.sh
 
 # 3. Configure the provider
-cat > ~/.backstage-sandbox.json <<'EOF'
+cat > ~/.opensession-sandbox.json <<'EOF'
 { "provider": "docker", "image": "backstage-runner:latest" }
 EOF
 
@@ -75,12 +75,12 @@ path differs, **rebuild the image with matching paths** — see the audit note
 in `docs/portability-audit.md` §6: this is the one place `/home/ubuntu`
 coupling is intrinsic, not lazy.
 
-## Config schema — `~/.backstage-sandbox.json`
+## Config schema — `~/.opensession-sandbox.json`
 
 Read fresh per run (no restart for value changes — but see "What needs a
 restart" below). Missing file, invalid JSON, or unknown values all resolve
 to `provider: "local"` (today's host behavior). Env override for the path:
-`BACKSTAGE_SANDBOX_CONFIG` (used by the verify/conformance suites).
+`OPENSESSION_SANDBOX_CONFIG` (used by the verify/conformance suites).
 
 ```jsonc
 {
@@ -138,8 +138,8 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 
   // ── Transport (how the in-sandbox run host talks to backstage) ─────
   //  "socket" (default): unix socket in a bind-mounted run dir. Docker only.
-  //  "ws": the sandbox DIALS OUT to backstage's /backstage/run-ws +
-  //        /backstage/rpc-ws routes (token-authed, seq/ack replay on
+  //  "ws": the sandbox DIALS OUT to backstage's /opensession/run-ws +
+  //        /opensession/rpc-ws routes (token-authed, seq/ack replay on
   //        reconnect). Required for remote providers (daytona/e2b force it
   //        regardless of this value); docker can dogfood it.
   "transport": "socket",
@@ -199,7 +199,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 ## Public dial-back ingress (remote providers)
 
 Remote sandboxes (Daytona/E2B) run on third-party compute and must dial back
-to backstage's `/backstage/run-ws/<hostId>` and `/backstage/rpc-ws`
+to backstage's `/opensession/run-ws/<hostId>` and `/opensession/rpc-ws`
 WebSocket routes from the **public internet**. The main server binds the
 tailnet and carries the whole app — never expose it. Instead,
 `src/server/public-ingress.ts` runs a **second, isolated Bun.serve** when
@@ -209,8 +209,8 @@ tailnet and carries the whole app — never expose it. Instead,
 
 | Path | What |
 | --- | --- |
-| `/backstage/run-ws/<hostId>` | WS upgrade — the run host's event stream |
-| `/backstage/rpc-ws?host=…` | WS upgrade — the michael-* MCP proxy channel |
+| `/opensession/run-ws/<hostId>` | WS upgrade — the run host's event stream |
+| `/opensession/rpc-ws?host=…` | WS upgrade — the michael-* MCP proxy channel |
 | `/ingress-health` | bare `200 ok` (monitors/probes) |
 
 Every other path is a **bodyless 404** — no app routes, no API, no frontend,
@@ -231,10 +231,10 @@ TLS in front of it and forward ONLY those paths. Two permanent options:
 
    ```caddyfile
    your.domain {
-       handle /backstage/run-ws/* {
+       handle /opensession/run-ws/* {
            reverse_proxy localhost:3860
        }
-       handle /backstage/rpc-ws {
+       handle /opensession/rpc-ws {
            reverse_proxy localhost:3860
        }
        handle /ingress-health {
@@ -266,7 +266,7 @@ so no ingress URL is reachable from inside.
 ## Known gaps (remote providers)
 
 - **Audit trail**: in-sandbox runs write their `claude_turn_event` audit
-  lines to the sandbox's own `~/.backstage-audit` — docker bind-mounts that
+  lines to the sandbox's own `~/.opensession-audit` — docker bind-mounts that
   dir so they land in the host stream, but **daytona/e2b sandboxes keep them
   local and they're lost when the sandbox is destroyed**. Host-side you still
   get the launch/journal/run-ws lines; grep the sandbox itself (`exec`) while
@@ -279,7 +279,7 @@ so no ingress URL is reachable from inside.
 ## Kill switch
 
 ```sh
-touch ~/.backstage-chats/disable-sandboxes
+touch ~/.opensession-chats/disable-sandboxes
 ```
 
 Checked per run: while the file exists every NEW run goes local regardless
@@ -368,10 +368,10 @@ E2B account** — treat it as untested until the conformance suite passes.
 
 ## Licensing notes
 
-- **Daytona** is AGPL-3.0. Backstage consumes it **over its API** (via the
+- **Daytona** is AGPL-3.0. OpenSession consumes it **over its API** (via the
   Apache-2.0 `@daytonaio/sdk`) and vendors none of its code, so AGPL
   obligations sit with whoever *operates* the Daytona deployment, not with
-  Backstage's codebase. Self-hosters running Daytona themselves take on
+  OpenSession's codebase. Self-hosters running Daytona themselves take on
   AGPL's network-service obligations for their Daytona instance.
 - **E2B**: the JS SDK is MIT; the self-host infra repo is Apache-2.0.
 - **Docker provider**: plain `docker` CLI against your own daemon; nothing
@@ -382,7 +382,7 @@ E2B account** — treat it as untested until the conformance suite passes.
 ## Security posture (what a sandbox does and doesn't isolate)
 
 - Process/env/resource isolation per session; minimal env (no
-  `~/.backstage.env` tokens); IMDS blocked (setup-host.sh / the systemd
+  `~/.opensession.env` tokens); IMDS blocked (setup-host.sh / the systemd
   `IPAddressDeny` mirror).
 - Phase 1 docker mounts carry **interactive-level ambient trust**: `~/.ssh`,
   `~/.gitconfig`, `~/.config/gh` are mounted read-only for push/PR parity.

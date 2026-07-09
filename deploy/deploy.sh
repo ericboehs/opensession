@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Drain-aware git-pull deploy for backstage, run ON the EC2 box by the GitHub
+# Drain-aware git-pull deploy for OpenSession, run ON the EC2 box by the GitHub
 # Actions workflow (.github/workflows/deploy.yml) via AWS SSM Run Command
 # (AWS-RunShellScript). No inbound ingress, no SSH — GitHub authenticates to AWS
 # with OIDC and calls ssm:SendCommand; the SSM agent on the box runs this.
@@ -12,11 +12,7 @@
 set -euo pipefail
 
 REPO_DIR=/home/ubuntu/projects/tella-backstage
-# Rename compat: prefer the new /opensession health path, fall back to the
-# legacy /backstage alias (a process started before the rename change only
-# serves the old prefix; after a restart it serves both).
-HEALTH_URL_NEW=http://127.0.0.1:3850/opensession/api/health
-HEALTH_URL_OLD=http://127.0.0.1:3850/backstage/api/health
+HEALTH_URL=http://127.0.0.1:3850/opensession/api/health
 TARGET_SHA="${1:-origin/master}"
 MAX_DRAIN_WAIT="${MAX_DRAIN_WAIT:-480}"   # wait up to 8 min for idle before forcing the restart
 
@@ -48,33 +44,22 @@ if ! run_as_ubuntu git -C "$REPO_DIR" diff --quiet 'HEAD@{1}' HEAD -- bun.lock p
   run_as_ubuntu bash -lc "cd '$REPO_DIR' && bun install --frozen-lockfile"
 fi
 
-# The deployed units are COPIES of the repo's *.service files (not symlinks) —
-# sync whichever is installed when it changes so unit edits actually ship.
-# opensession.service is the unit going forward; backstage.service is the
-# deprecated pre-rename name (synced only while it's still installed).
-UNITS_CHANGED=0
-for unit in opensession.service backstage.service; do
-  if [ -f "/etc/systemd/system/$unit" ] && ! cmp -s "$REPO_DIR/$unit" "/etc/systemd/system/$unit"; then
-    echo "[deploy] $unit changed — syncing unit"
-    cp "$REPO_DIR/$unit" "/etc/systemd/system/$unit"
-    UNITS_CHANGED=1
-  fi
-done
-[ "$UNITS_CHANGED" = "1" ] && systemctl daemon-reload
+# The deployed unit is a COPY of the repo's opensession.service (not a symlink) —
+# sync it when it changes so unit edits actually ship.
+if ! cmp -s "$REPO_DIR/opensession.service" /etc/systemd/system/opensession.service; then
+  echo "[deploy] opensession.service changed — syncing unit + daemon-reload"
+  cp "$REPO_DIR/opensession.service" /etc/systemd/system/opensession.service
+  systemctl daemon-reload
+fi
 
 # Drain-aware restart: wait until the service reports no in-flight runs, so the
 # restart kills as few runs / background tasks / subagents as possible. Anything
 # still running after the cap is caught by the graceful SIGTERM drain + the run
 # journal (resumed on boot), so nothing is lost — we're only minimizing churn.
-health_json() {
-  curl -s --max-time 4 "$HEALTH_URL_NEW" 2>/dev/null && return 0
-  curl -s --max-time 4 "$HEALTH_URL_OLD" 2>/dev/null
-}
-
 echo "[deploy] waiting for idle (max ${MAX_DRAIN_WAIT}s)"
 deadline=$(( $(date +%s) + MAX_DRAIN_WAIT ))
 while :; do
-  active=$(health_json \
+  active=$(curl -s --max-time 4 "$HEALTH_URL" \
     | python3 -c 'import sys,json; print(json.load(sys.stdin).get("activeRuns","?"))' 2>/dev/null || echo "?")
   if [ "$active" = "0" ]; then echo "[deploy] idle — restarting"; break; fi
   if [ "$(date +%s)" -ge "$deadline" ]; then
@@ -85,19 +70,12 @@ while :; do
   sleep 10
 done
 
-# Restart whichever unit is actually running the service (opensession.service
-# after the rename window's unit swap, backstage.service before it).
-ACTIVE_UNIT=backstage.service
-if systemctl is-enabled --quiet opensession.service 2>/dev/null || systemctl is-active --quiet opensession.service 2>/dev/null; then
-  ACTIVE_UNIT=opensession.service
-fi
-echo "[deploy] restarting $ACTIVE_UNIT"
-systemctl restart "$ACTIVE_UNIT"
+systemctl restart opensession.service
 
 # Post-restart health gate — fail the deploy if it doesn't come back.
 for _ in $(seq 1 30); do
   sleep 2
-  if curl -fs --max-time 4 "$HEALTH_URL_NEW" >/dev/null 2>&1 || curl -fs --max-time 4 "$HEALTH_URL_OLD" >/dev/null 2>&1; then
+  if curl -fs --max-time 4 "$HEALTH_URL" >/dev/null 2>&1; then
     echo "[deploy] healthy after restart"
     exit 0
   fi
