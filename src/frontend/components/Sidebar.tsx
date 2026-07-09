@@ -1400,6 +1400,32 @@ export function Sidebar({
 		onArchiveWorkspace(row.chats, next?.chats[0] ?? null);
 	}
 
+	// Archive just the open chat and pick what becomes active. We resolve the open
+	// session through wsRowOrder (the rendered workspace rows) rather than flatOrder
+	// — flatOrder only carries pinned + automation chats, so a normal open session
+	// isn't in it. If the chat has siblings in its workspace, land on one of them;
+	// otherwise the row empties out, so land on the next workspace's first chat.
+	function archiveOpenChatWithNext() {
+		const candidates = wsRowOrder.filter((r) => r.chats.length > 0);
+		const rowIdx = candidates.findIndex((r) =>
+			r.chats.some((c) => c.id === selectedId),
+		);
+		if (rowIdx < 0) return;
+		const row = candidates[rowIdx];
+		const chat = row.chats.find((c) => c.id === selectedId);
+		if (!chat) return;
+		let next: UnifiedSession | null;
+		const siblings = row.chats.filter((c) => c.id !== selectedId);
+		if (siblings.length > 0) {
+			const chatIdx = row.chats.findIndex((c) => c.id === selectedId);
+			next = siblings[Math.min(chatIdx, siblings.length - 1)] ?? null;
+		} else {
+			const rest = candidates.filter((r) => r.key !== row.key);
+			next = rest[Math.min(rowIdx, rest.length - 1)]?.chats[0] ?? null;
+		}
+		onArchive(chat, next);
+	}
+
 	// ⌘⇧A archives the open chat and lands on the next entry in the sidebar,
 	// rather than dropping back to Home. This lives here (not in the viewer)
 	// because the sidebar owns the row ordering that defines "next". The viewer
@@ -1429,15 +1455,17 @@ export function Sidebar({
 				)
 			)
 				return;
-			const s = flatOrder.find((x) => x.id === selectedId);
-			if (!s) return;
+			const inList = wsRowOrder.some(
+				(r) => r.chats.length > 0 && r.chats.some((c) => c.id === selectedId),
+			);
+			if (!inList) return;
 			e.preventDefault();
 			closeWsHover();
-			archiveWithNext(s);
+			archiveOpenChatWithNext();
 		}
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [flatOrder, selectedId, onArchive]);
+	}, [wsRowOrder, selectedId, onArchive]);
 
 	// ⌘⌥⇧A escalates the ⌘⇧A archive to the whole active workspace. The Alt
 	// modifier is the only thing that separates the two handlers, so exactly one
