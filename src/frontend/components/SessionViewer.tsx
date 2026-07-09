@@ -9,7 +9,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { Reorder } from "motion/react";
 import { renderMarkdown } from "../lib/markdown";
-import { PRODUCT_NAME, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { DEFAULT_DOC_TITLE } from "../lib/brand";
 import { isGitHubAttribution, parseHumanReply } from "../lib/humanReply";
 import type {
 	UnifiedSession,
@@ -739,7 +739,7 @@ export function SessionViewer({
 
 	// Browser tab title follows the session
 	useEffect(() => {
-		document.title = `${session.title} — ${PRODUCT_NAME}`;
+		document.title = session.title || DEFAULT_DOC_TITLE;
 		return () => {
 			document.title = DEFAULT_DOC_TITLE;
 		};
