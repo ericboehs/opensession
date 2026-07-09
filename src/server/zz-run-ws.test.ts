@@ -345,10 +345,17 @@ describe("rpc-ws upgrade auth (WS-transport opt-in only)", () => {
     sock.onmessage = (ev) => inbox.push(JSON.parse(String(ev.data)));
     await until(() => open);
 
-    // Valid frame token → dispatch runs (404: no such server for this run).
+    // Valid frame token → dispatch runs. tools/list for a server this run
+    // doesn't carry answers 200 with an empty tool list (shared opencode
+    // servers list the union of in-process servers in their config; the
+    // proxy must stay healthy) — tools/CALL on it still 404s.
     sock.send(JSON.stringify({ id: "f1", path: "/mcp/list", token: rpcToken, server: "nope" }));
     const ok = await until(() => inbox.find((m) => m.id === "f1"));
-    expect(ok.status).toBe(404);
+    expect(ok.status).toBe(200);
+    expect(ok.body?.tools ?? []).toEqual([]);
+    sock.send(JSON.stringify({ id: "f1c", path: "/mcp/call", token: rpcToken, server: "nope", tool: "x", args: {} }));
+    const okCall = await until(() => inbox.find((m) => m.id === "f1c"));
+    expect(okCall.status).toBe(404);
     // Unknown frame token → 403 from dispatchRunRpc even on an authed socket.
     sock.send(JSON.stringify({ id: "f2", path: "/mcp/list", token: "bogus", server: "nope" }));
     const bad = await until(() => inbox.find((m) => m.id === "f2"));

@@ -204,6 +204,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   try {
+    // On SHARED opencode servers, opencode-plugin-session-tag.js injects the
+    // opencode session id into the tool arguments so calls can be routed to
+    // the right backstage session. Strip it back out of the args (the tools'
+    // schemas don't know it) and forward it as a sibling field for run-rpc's
+    // per-call session resolution.
+    const args: Record<string, unknown> = { ...(req.params.arguments ?? {}) };
+    const ocSession = args.__bks_oc_session;
+    delete args.__bks_oc_session;
     // Tool calls may block for many minutes (e.g. ask_human/ask_user waiting on
     // a teammate) — allow reconnect retries well past the backstage side's
     // 30-minute per-call ceiling (run-rpc.ts) instead of the default 2 minutes.
@@ -211,7 +219,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       "/mcp/call",
       {
         tool: req.params.name,
-        args: req.params.arguments ?? {},
+        args,
+        ...(typeof ocSession === "string" && ocSession ? { ocSession } : {}),
       },
       32 * 60_000
     );

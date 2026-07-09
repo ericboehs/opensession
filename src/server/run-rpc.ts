@@ -45,14 +45,48 @@ export interface RunTokenContext {
 
 // token → run context. Parked on globalThis (hot reload keeps live runs'
 // tokens); repopulated from host specs on boot reattach after a real restart.
-const tokens: Map<string, RunTokenContext> = (g.__runRpcTokens ??= new Map());
+// Refcounted: a SHARED opencode server carries one stable token that several
+// concurrent runs register/unregister (opencode-runner) — the token must stay
+// valid until the LAST of them finishes. ctx is the most recent registration:
+// it is only the fallback identity for calls that arrive without a per-call
+// ocSession tag (see dispatchRunRpc below).
+const tokens: Map<string, RunTokenContext & { refs: number }> = (g.__runRpcTokens ??=
+  new Map());
 
 export function registerRunToken(token: string, ctx: RunTokenContext): void {
-  tokens.set(token, ctx);
+  const existing = tokens.get(token);
+  tokens.set(token, { ...ctx, refs: (existing?.refs || 0) + 1 });
 }
 
 export function unregisterRunToken(token: string | undefined): void {
-  if (token) tokens.delete(token);
+  if (!token) return;
+  const existing = tokens.get(token);
+  if (!existing || existing.refs <= 1) tokens.delete(token);
+  else existing.refs -= 1;
+}
+
+// opencode session id → the backstage session driving it, registered by
+// opencode-runner for the duration of each run on a SHARED server. Tool calls
+// proxied from such a server carry the opencode session id (injected by
+// opencode-plugin-session-tag.js, stripped back out of the args by
+// mcp-proxy.ts), which resolves here to the RIGHT session context — the
+// token's own ctx is just the shared server's most recent run. `token` pins
+// the mapping to the server that registered it: a call authenticated with a
+// different token cannot borrow another server's session identities.
+export interface OcSessionContext {
+  sessionId: string;
+  user?: string;
+  token: string;
+}
+
+const ocSessions: Map<string, OcSessionContext> = (g.__runRpcOcSessions ??= new Map());
+
+export function registerOcSessionContext(ocSessionId: string, ctx: OcSessionContext): void {
+  ocSessions.set(ocSessionId, ctx);
+}
+
+export function unregisterOcSessionContext(ocSessionId: string | undefined): void {
+  if (ocSessionId) ocSessions.delete(ocSessionId);
 }
 
 /** Constant-time string compare (length mismatch short-circuits — the length
@@ -133,8 +167,19 @@ const imm = (status: number, body: Record<string, unknown>): RunRpcDispatch => (
  * server, run tools/list or tools/call. Never throws.
  */
 export async function dispatchRunRpc(path: string, body: any): Promise<RunRpcDispatch> {
-  const ctx = tokens.get(String(body?.token || ""));
+  const token = String(body?.token || "");
+  let ctx: RunTokenContext | undefined = tokens.get(token);
   if (!ctx) return imm(403, { error: "unauthorized (unknown run token)" });
+
+  // Per-call session refinement (shared opencode servers): the proxied call
+  // names the opencode session it came from; resolve it to the backstage
+  // session that owns it — but only when that mapping was registered under
+  // the SAME token (a spoofed/stale id falls back to the token's own ctx).
+  const ocSession = String(body?.ocSession || "");
+  if (ocSession) {
+    const oc = ocSessions.get(ocSession);
+    if (oc && timingSafeEqStr(oc.token, token)) ctx = { sessionId: oc.sessionId, user: oc.user };
+  }
 
   const builder: InteractiveMcpBuilder | undefined = g.__runRpcMcpBuilder;
   if (!builder) return imm(503, { error: "MCP builder not registered yet" });
@@ -144,6 +189,11 @@ export async function dispatchRunRpc(path: string, body: any): Promise<RunRpcDis
     sessionServers.get(ctx.sessionId)?.[serverName] ??
     builder(ctx.sessionId, ctx.user)[serverName];
   if (!cfg?.instance) {
+    // tools/list for a server this session doesn't carry (shared servers list
+    // the union of in-process servers in their config) answers with an empty
+    // tool list rather than an error — the proxy stays healthy and the
+    // session simply sees no tools from it. Calls still 404.
+    if (path === "/mcp/list") return imm(200, { tools: [] });
     return imm(404, { error: `no interactive MCP server "${serverName}" for this run` });
   }
 

@@ -40,16 +40,44 @@
  * account, versions) — per-request detail exists only in opencode's own log
  * (~/.local/share/opencode/log/).
  *
- * Server lifecycle: one `opencode serve` process per backstage session (keyed
- * by bks session id, falling back to cwd), bound to 127.0.0.1 on an ephemeral
- * port with a per-server Basic-auth password, cwd = the session worktree, and
- * a minimal env (PATH/HOME/LANG + git identity — mirrors codexEnv; no
- * backstage tokens). Parked on globalThis so `bun --hot` reloads keep servers
- * alive; killed after 30 minutes idle. Config (permissions, MCP servers,
- * bridge provider override, meridian plugin) is injected via
- * OPENCODE_CONFIG_CONTENT at spawn; a config OR per-server-env change (e.g. a
- * different meridian account was picked) respawns the server (sessions persist
- * in OpenCode's own storage, so this is safe between runs). In meridian mode
+ * Server lifecycle — TWO pools since 2026-07-09 (Michiel: "one opencode
+ * server, multiple sessions"):
+ *
+ *  - SHARED always-warm servers for eligible interactive runs (see
+ *    sharedOpencodeEligible): ONE `opencode serve` per (bridge account ×
+ *    user) tuple hosts every such session concurrently, multiplexed via
+ *    opencode's per-directory app instances (`?directory=` on every API
+ *    call; events + session.status are directory-scoped, so each run pumps
+ *    its own directory's SSE stream). Everything per-run rides the prompt
+ *    body — model, `system` (session context; appends to opencode's own
+ *    system prompt), `agent` ("ask" = the config-defined read-only agent),
+ *    and `tools` strips (unattended deny-sets, confirm-server `<name>_*`
+ *    wildcards, in-process servers the run doesn't carry) — all verified
+ *    live 2026-07-09 on opencode 1.17.15. In-process michael-* tool calls
+ *    are routed per session via opencode-plugin-session-tag.js + run-rpc's
+ *    ocSession registry. cwd = a neutral state dir (never a worktree); idle
+ *    kill after 6h; a config change while runs are active DRAINS the old
+ *    server (fresh spawn takes the key, the old one dies with its last run)
+ *    instead of aborting other sessions' turns. This pool is also the fix
+ *    for the 2026-07-09 SQLite write-contention incident (21 per-session
+ *    processes on one opencode.db WAL).
+ *
+ *  - Per-session servers (keyed by bks session id, falling back to cwd) for
+ *    everything else: automations & unattended kinds (their least-privilege
+ *    MCP allowlist stays CONFIG-level), runs carrying an explicit mcpServers
+ *    allowlist, runner-host runs with prebuilt stdio proxies, and runs with
+ *    in-process servers outside SHARED_INPROCESS_SERVERS (goal wakes).
+ *    Killed after 30 minutes idle; config changes respawn immediately (runs
+ *    are serial per session).
+ *
+ * Both pools: bound to 127.0.0.1 on an ephemeral port with a per-server
+ * Basic-auth password, minimal env (PATH/HOME/LANG + git identity — mirrors
+ * codexEnv; no backstage tokens). Parked on globalThis so `bun --hot` reloads
+ * keep servers alive. Config (permissions, MCP servers, bridge provider
+ * override, meridian plugin) is injected via OPENCODE_CONFIG_CONTENT at
+ * spawn; a config OR per-server-env change (e.g. a different meridian
+ * account was picked) respawns the server (sessions persist in OpenCode's
+ * own storage, so this is safe between runs). In meridian mode
  * the Meridian proxy + its Agent SDK children live inside/under the opencode
  * server process, so killing the server reaps them too — but the meridian
  * plugin installs SIGTERM/SIGINT handlers that swallow the default terminate
@@ -122,7 +150,12 @@ import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
-import { registerRunToken, unregisterRunToken } from "./run-rpc";
+import {
+  registerRunToken,
+  unregisterRunToken,
+  registerOcSessionContext,
+  unregisterOcSessionContext,
+} from "./run-rpc";
 import {
   appendOpencodeTranscript,
   ensureOpencodeTranscriptFile,
@@ -169,6 +202,21 @@ export const OPENCODE_BIN =
 export const OPENCODE_STATE_DIR = `${OPENSESSION_CHATS_DIR}/opencode`;
 const SERVER_START_TIMEOUT_MS = 30_000;
 const IDLE_KILL_MS = 30 * 60 * 1000;
+/** Shared servers are the always-warm pool — kept alive far longer than the
+ *  per-session 30-min kill (they serve every eligible interactive session on
+ *  their account, and their whole point is no cold boots / MCP reconnects).
+ *  Still bounded so an abandoned pool member (e.g. its account went unusable
+ *  and every session rotated away) doesn't linger forever. */
+const SHARED_IDLE_KILL_MS = 6 * 60 * 60 * 1000;
+/** Neutral cwd for shared servers — sessions bring their own directory via
+ *  the per-call `?directory=` query (verified live 2026-07-09: opencode
+ *  instantiates per-directory app instances; bash/tools run in the session's
+ *  directory, events + status are scoped to it). Never a worktree. */
+const SHARED_CWD = `${OPENCODE_STATE_DIR}/shared-cwd`;
+/** Plugin that tags michael-* / opensession-* tool calls with the opencode
+ *  session id so run-rpc can route them to the right backstage session on a
+ *  shared server (see opencode-plugin-session-tag.js). */
+const SESSION_TAG_PLUGIN_PATH = join(import.meta.dir, "opencode-plugin-session-tag.js");
 
 const PROVIDER = "opencode" as const;
 
@@ -210,6 +258,76 @@ function isUnattendedKind(base: string): boolean {
 
 function baseJournalKind(kind?: string): string {
   return (kind || "").replace(/(-(resume|rerun|fallback))+$/, "");
+}
+
+// ── Shared always-warm server eligibility ────────────────────────────────────
+
+/** The in-process (proxy) MCP servers a SHARED server's config lists — the
+ *  union of what interactive runs carry (interactiveMcpServers in
+ *  opensession.ts, plus the Slack loop's michael-github). A run whose
+ *  inProcessMcp names aren't a subset of this list falls back to a
+ *  per-session server (see sharedOpencodeEligible), so adding a new
+ *  in-process server elsewhere degrades gracefully (that session just stops
+ *  sharing) until the name is added here. michael-goal-self is deliberately
+ *  NOT listed: its tool set exists only for goal sessions, and the MCP tool
+ *  list is discovered once per directory instance — a goal session could
+ *  cache an empty list. Goal wakes keep per-session servers. */
+export const SHARED_INPROCESS_SERVERS = [
+  "michael-sessions",
+  "michael-admin",
+  "michael-goals",
+  "michael-humans",
+  "michael-repos",
+  "opensession-memory",
+  "michael-preview",
+  "michael-ask",
+  "michael-github",
+];
+
+/**
+ * May this run multiplex onto a shared always-warm server? Shared servers
+ * hold ONE config for many sessions, so everything per-run must ride the
+ * per-prompt channels (model/system/agent/tools — all verified live
+ * 2026-07-09 on opencode 1.17.15). Runs that need per-server config stay on
+ * per-session servers:
+ *  - non-interactive kinds (automations & friends): their least-privilege MCP
+ *    allowlist is enforced at the CONFIG level and must stay that way for
+ *    untrusted-text runs;
+ *  - any run carrying an explicit mcpServers allowlist (e.g. an interactive
+ *    resume of an automation session) — same reason;
+ *  - runner-host runs whose inProcessMcp arrived as prebuilt stdio proxies
+ *    (their rpc token is baked into the proxy env, one per run spec);
+ *  - runs carrying an in-process server outside SHARED_INPROCESS_SERVERS
+ *    (goal wakes with michael-goal-self, future additions).
+ */
+export function sharedOpencodeEligible(opts: {
+  journal?: { kind?: string; bksSessionId?: string };
+  mcpServers?: string[];
+  inProcessMcp?: Record<string, unknown>;
+  /** Test-only override (scripts/verify-shared-opencode.ts) for direct
+   *  runOpencode calls that pass no journal. Never set from request or
+   *  automation data. */
+  forceSharedServer?: boolean;
+}): boolean {
+  const base = baseJournalKind(opts.journal?.kind);
+  if (!INTERACTIVE_KINDS.has(base) && opts.forceSharedServer !== true) return false;
+  if (opts.mcpServers) return false;
+  const inprocNames = Object.keys(opts.inProcessMcp || {});
+  if (inprocNames.length && opencodeMcpFromPrebuiltProxies(opts.inProcessMcp) !== null) {
+    return false;
+  }
+  return inprocNames.every((n) => SHARED_INPROCESS_SERVERS.includes(n));
+}
+
+/** Pool key for a shared server: the (bridge account × user) tuple that is
+ *  baked into the server's spawn env/config and therefore cannot vary
+ *  per-prompt. bridgeTag pins the provider auth (meridian account /
+ *  seeded-openai account / native bridge / plain API-key providers); the user
+ *  pins the per-user external-MCP view (allowedUsers via filterMcpServers)
+ *  and the git identity env. */
+export function sharedServerKey(bridgeTag: string, user?: string): string {
+  const u = (user || "anon").toLowerCase().replace(/[^a-z0-9@._-]/g, "_");
+  return `shared:${bridgeTag}:${u}`;
 }
 
 /** Non-null = the reason this run may not use the opencode engine. */
@@ -661,6 +779,14 @@ export interface OpencodeServerEntry {
   password: string;
   cwd: string;
   configHash: string;
+  /** Pool key this entry was registered under (logs + drain bookkeeping). */
+  key: string;
+  /** Shared always-warm pool member (multi-session, long idle, drains instead
+   *  of dying on a config change). */
+  shared?: boolean;
+  /** Config changed while runs were active (shared servers only): removed
+   *  from the pool, kept alive until its last run finishes, then killed. */
+  draining?: boolean;
   /** Stable per-server run-rpc token for the michael-* stdio proxies. */
   rpcToken: string;
   /** Stable per-server Meridian proxy API key (meridian-mode servers only) —
@@ -673,6 +799,16 @@ export interface OpencodeServerEntry {
 
 const g = globalThis as any;
 const servers: Map<string, OpencodeServerEntry> = (g.__opencodeServers ??= new Map());
+
+// Shared servers whose config changed mid-flight: out of the pool (a fresh
+// server owns the key) but alive until their last active run ends.
+const drainingServers: Set<OpencodeServerEntry> = (g.__opencodeDraining ??= new Set());
+
+// In-flight spawns per key: shared keys get CONCURRENT ensure calls from
+// different sessions (per-session keys never did — one session, serial runs),
+// and two racing spawns would leak the loser's process.
+const spawningServers: Map<string, Promise<OpencodeServerEntry>> = (g.__opencodeSpawning ??=
+  new Map());
 
 // Active runs, keyed by run key + bks session id + opencode session id
 // (busy checks, cancellation, shutdown drain).
@@ -717,10 +853,15 @@ export function opencodeEnv(author?: GitIdentity | null): Record<string, string>
  *  (the SIGKILL escalation is a timer that a fast exit would beat). */
 export function killAllOpencodeServers(reason = "shutdown"): number {
   const entries = [...servers.entries()];
-  const procs = entries.map(([, e]) => e.proc);
+  const drained = [...drainingServers];
+  const procs = [...entries.map(([, e]) => e.proc), ...drained.map((e) => e.proc)];
   for (const [key, entry] of entries) killServer(key, entry, reason);
+  for (const entry of drained) {
+    drainingServers.delete(entry);
+    killServerProc(entry, reason);
+  }
   pendingKilled.push(...procs);
-  return entries.length;
+  return entries.length + drained.length;
 }
 
 const pendingKilled: Subprocess<"ignore", "pipe", "pipe">[] = [];
@@ -746,7 +887,10 @@ export async function awaitOpencodeServersDead(timeoutMs = KILL_ESCALATION_MS + 
  *  whole stack. */
 const KILL_ESCALATION_MS = 5_000;
 
-function killServer(key: string, entry: OpencodeServerEntry, reason: string): void {
+/** Kill an entry's process (SIGTERM → SIGKILL escalation) without touching
+ *  the pool map — killServer/drain-reap wrap this with their own
+ *  bookkeeping. */
+function killServerProc(entry: OpencodeServerEntry, reason: string): void {
   if (entry.idleTimer) clearTimeout(entry.idleTimer);
   const proc = entry.proc;
   try {
@@ -754,7 +898,9 @@ function killServer(key: string, entry: OpencodeServerEntry, reason: string): vo
   } catch {}
   const escalate = setTimeout(() => {
     if (proc.exitCode === null) {
-      console.warn(`[opencode-runner] server for ${key} ignored SIGTERM — escalating to SIGKILL`);
+      console.warn(
+        `[opencode-runner] server for ${entry.key} ignored SIGTERM — escalating to SIGKILL`
+      );
       try {
         proc.kill(9);
       } catch {}
@@ -762,23 +908,54 @@ function killServer(key: string, entry: OpencodeServerEntry, reason: string): vo
   }, KILL_ESCALATION_MS);
   (escalate as unknown as { unref?: () => void }).unref?.();
   void proc.exited.then(() => clearTimeout(escalate));
+  console.log(`[opencode-runner] server for ${entry.key} stopped (${reason})`);
+}
+
+function killServer(key: string, entry: OpencodeServerEntry, reason: string): void {
   servers.delete(key);
-  console.log(`[opencode-runner] server for ${key} stopped (${reason})`);
+  killServerProc(entry, reason);
+}
+
+/** A shared server whose config changed while runs were active: hand the pool
+ *  key to a fresh spawn, keep this one alive until its last run ends (the run
+ *  finally + the proc-exit watcher both reap). Killing it outright would
+ *  abort every OTHER session's in-flight turn — the exact blast radius the
+ *  per-session pool never had. */
+function drainServer(key: string, entry: OpencodeServerEntry, reason: string): void {
+  if (entry.idleTimer) clearTimeout(entry.idleTimer);
+  entry.draining = true;
+  drainingServers.add(entry);
+  servers.delete(key);
+  console.log(
+    `[opencode-runner] server for ${key} draining (${reason}; ${entry.activeRuns} active run(s))`
+  );
+}
+
+/** Called from a run's finally once activeRuns is decremented. */
+function reapDrainedServer(entry: OpencodeServerEntry): void {
+  if (!entry.draining || entry.activeRuns > 0) return;
+  drainingServers.delete(entry);
+  killServerProc(entry, "drained (config changed)");
+}
+
+function idleKillMsFor(entry: OpencodeServerEntry): number {
+  return entry.shared ? SHARED_IDLE_KILL_MS : IDLE_KILL_MS;
 }
 
 function scheduleIdleKill(key: string): void {
   const entry = servers.get(key);
   if (!entry) return;
   if (entry.idleTimer) clearTimeout(entry.idleTimer);
+  const idleMs = idleKillMsFor(entry);
   entry.idleTimer = setTimeout(() => {
     const cur = servers.get(key);
-    if (!cur) return;
-    if (cur.activeRuns > 0 || Date.now() - cur.lastUsed < IDLE_KILL_MS) {
+    if (!cur || cur !== entry) return;
+    if (cur.activeRuns > 0 || Date.now() - cur.lastUsed < idleMs) {
       scheduleIdleKill(key);
       return;
     }
     killServer(key, cur, "idle");
-  }, IDLE_KILL_MS + 1000);
+  }, idleMs + 1000);
 }
 
 async function spawnOpencodeServer(
@@ -787,7 +964,8 @@ async function spawnOpencodeServer(
   config: Record<string, unknown>,
   configHash: string,
   author?: GitIdentity | null,
-  extraEnv?: Record<string, string>
+  extraEnv?: Record<string, string>,
+  shared?: boolean
 ): Promise<OpencodeServerEntry> {
   if (!existsSync(OPENCODE_BIN)) {
     throw new Error(
@@ -795,6 +973,7 @@ async function spawnOpencodeServer(
         "(or set BACKSTAGE_OPENCODE_BIN)."
     );
   }
+  if (shared) mkdirSync(cwd, { recursive: true });
   const password = crypto.randomUUID();
   const proc = Bun.spawn({
     cmd: [OPENCODE_BIN, "serve", "--hostname=127.0.0.1", "--port=0"],
@@ -856,13 +1035,17 @@ async function spawnOpencodeServer(
     password,
     cwd,
     configHash,
+    key,
+    shared,
     rpcToken: crypto.randomUUID(),
     lastUsed: Date.now(),
     activeRuns: 0,
   };
   servers.set(key, entry);
   scheduleIdleKill(key);
-  console.log(`[opencode-runner] server for ${key} listening on ${url} (cwd ${cwd})`);
+  console.log(
+    `[opencode-runner] ${shared ? "shared " : ""}server for ${key} listening on ${url} (cwd ${cwd})`
+  );
   return entry;
 }
 
@@ -878,20 +1061,44 @@ export async function ensureOpencodeServer(
   cwd: string,
   config: Record<string, unknown>,
   author?: GitIdentity | null,
-  extraEnv?: Record<string, string>
+  extraEnv?: Record<string, string>,
+  opts?: { shared?: boolean }
 ): Promise<OpencodeServerEntry> {
   // extraEnv is part of the identity: a different meridian account/token must
   // respawn the server (env only applies at spawn).
   const configHash = Bun.hash(
     JSON.stringify(config) + "\n" + cwd + "\n" + JSON.stringify(extraEnv || {})
   ).toString(16);
-  const existing = servers.get(key);
-  if (existing) {
-    const alive = existing.proc.exitCode === null && !existing.proc.killed;
-    if (alive && existing.configHash === configHash) return existing;
-    killServer(key, existing, alive ? "config changed" : "process died");
+  for (;;) {
+    const existing = servers.get(key);
+    if (existing) {
+      const alive = existing.proc.exitCode === null && !existing.proc.killed;
+      if (alive && existing.configHash === configHash) return existing;
+      // Shared servers with runs in flight DRAIN on a config change (a kill
+      // would abort every other session's turn); per-session servers keep
+      // today's immediate respawn (their runs are serial).
+      if (alive && opts?.shared && existing.activeRuns > 0) {
+        drainServer(key, existing, "config changed");
+      } else {
+        killServer(key, existing, alive ? "config changed" : "process died");
+      }
+    }
+    // Shared keys get concurrent ensure calls from different sessions; only
+    // one spawn may own the key. Losers await the winner and re-check (their
+    // config may differ — the loop then drains/respawns as needed).
+    const inflight = spawningServers.get(key);
+    if (inflight) {
+      await inflight.catch(() => {});
+      continue;
+    }
+    const spawn = spawnOpencodeServer(key, cwd, config, configHash, author, extraEnv, opts?.shared);
+    spawningServers.set(key, spawn);
+    try {
+      return await spawn;
+    } finally {
+      spawningServers.delete(key);
+    }
   }
-  return spawnOpencodeServer(key, cwd, config, configHash, author, extraEnv);
 }
 
 export function clientFor(entry: OpencodeServerEntry): OpencodeClient {
@@ -927,7 +1134,7 @@ interface AccountRotation {
 const MAX_ACCOUNT_ATTEMPTS = 4;
 
 export async function* runOpencode(
-  opts: RunAgentOpts & { allowOpencode?: boolean },
+  opts: RunAgentOpts & { allowOpencode?: boolean; forceSharedServer?: boolean },
   model: string
 ): AsyncGenerator<StreamEvent> {
   // Each attempt may request a rotation (usage-limit on its bridge account
@@ -945,7 +1152,7 @@ export async function* runOpencode(
 }
 
 async function* runOpencodeAttempt(
-  opts: RunAgentOpts & { allowOpencode?: boolean },
+  opts: RunAgentOpts & { allowOpencode?: boolean; forceSharedServer?: boolean },
   model: string,
   rotation?: AccountRotation
 ): AsyncGenerator<StreamEvent> {
@@ -999,7 +1206,11 @@ async function* runOpencodeAttempt(
   if (journal?.bksSessionId) registeredKeys.add(journal.bksSessionId);
   for (const key of registeredKeys) activeOpencodeRuns.set(key, abortController);
 
-  const serverKey = journal?.bksSessionId || cwd;
+  // Session identity (sticky-account key, legacy per-session server key,
+  // instructions-file name). The SHARED-server pool key is computed later,
+  // once the bridge account is known.
+  const sessionKey = journal?.bksSessionId || cwd;
+  const shared = sharedOpencodeEligible(opts);
   const turnId = crypto.randomUUID();
   let ocSessionId = opts.sessionId || "";
   const turnEvent = (fields: Record<string, unknown>) =>
@@ -1018,6 +1229,9 @@ async function* runOpencodeAttempt(
 
   let entry: OpencodeServerEntry | undefined;
   let rpcTokenRegistered = false;
+  // Non-empty = the opencode session id registered in run-rpc's ocSession
+  // registry (shared servers); unregistered in the finally.
+  let ocSessionRegistered = "";
   // Set by the proc-exit watcher / turn deadline; checked after the drain loop
   // so both failure modes surface as one clean error event.
   let runFailure: string | undefined;
@@ -1051,6 +1265,10 @@ async function* runOpencodeAttempt(
     let providerOverride: Record<string, unknown> | undefined;
     let serverExtraEnv: Record<string, string> | undefined;
     let meridianPlugin: string[] | undefined;
+    // Which provider-auth tuple this run's server env is pinned to — the
+    // provider-half of the shared pool key ("plain" = no per-run auth env,
+    // e.g. API-key providers configured in opencode itself).
+    let bridgeTag = "plain";
     if (parsed.providerID === "anthropic") {
       const cfg = readOpencodeBridgeConfig();
       const bridgeMode = cfg?.enabled ? cfg.bridgeMode : "off";
@@ -1062,13 +1280,16 @@ async function* runOpencodeAttempt(
           cfg!.bridgeAccountIds,
           opts.accountId,
           opts.accountStrict,
-          stickyMeridianAccounts.get(serverKey)
+          stickyMeridianAccounts.get(sessionKey)
         );
         if ("error" in picked) throw new Error(`meridian bridge: ${picked.error}`);
-        stickyMeridianAccounts.set(serverKey, picked.id);
+        stickyMeridianAccounts.set(sessionKey, picked.id);
+        bridgeTag = `anthropic-${picked.id}`;
         // Stable per-server proxy key so the config hash — and the server —
         // survive across runs; a fresh key is minted only with a fresh server.
-        const meridianKey = servers.get(serverKey)?.meridianKey || crypto.randomUUID();
+        const meridianKey =
+          servers.get(shared ? sharedServerKey(bridgeTag, user) : sessionKey)?.meridianKey ||
+          crypto.randomUUID();
         serverExtraEnv = meridianAccountEnv(picked, meridianKey);
         meridianPlugin = [stack.pluginPath];
         // The plugin rewrites baseURL to its live proxy URL at startup; the
@@ -1109,6 +1330,7 @@ async function* runOpencodeAttempt(
         pickedMeridian = picked;
       } else if (bridgeMode === "native") {
         const bridge = ensureAnthropicBridge();
+        bridgeTag = "anthropic-native";
         providerOverride = {
           anthropic: { options: { baseURL: `${bridge.url}/v1`, apiKey: bridge.key } },
         };
@@ -1135,6 +1357,24 @@ async function* runOpencodeAttempt(
         if ("error" in bound) throw new Error(`opencode/openai: ${bound.error}`);
         serverExtraEnv = { ...(serverExtraEnv || {}), ...bound.extraEnv };
         if (bound.providerOverride) providerOverride = bound.providerOverride;
+        bridgeTag = `openai-${picked.id}`;
+        // Shared servers live for hours, but a seeded ChatGPT access token
+        // (placeholder refresh — opencode must never rotate the real one)
+        // does not. Fold the seed's expiry into the env (and therefore the
+        // config hash): when the host codex login refreshes the token,
+        // bindOpenaiAccount reseeds and the next ensure drain-respawns onto
+        // the fresh token instead of riding the stale one to an auth wall.
+        if (shared && bound.extraEnv.XDG_DATA_HOME) {
+          try {
+            const seeded = JSON.parse(
+              readFileSync(`${bound.extraEnv.XDG_DATA_HOME}/opencode/auth.json`, "utf-8")
+            );
+            const exp = seeded?.openai?.expires;
+            if (typeof exp === "number") {
+              serverExtraEnv.BKS_OPENAI_SEED_EXPIRES = String(exp);
+            }
+          } catch {}
+        }
         const auditBase = {
           msg: "opencode_openai_run",
           turn_id: turnId,
@@ -1187,36 +1427,77 @@ async function* runOpencodeAttempt(
             "account in Connections."
         );
       }
+      if ("error" in picked) bridgeTag = "openai-host";
     }
 
+    // The server this run binds to: eligible interactive runs multiplex onto
+    // the shared always-warm server for their (bridge account × user) tuple;
+    // everything else keeps the per-session server. For shared servers the
+    // git identity rides extraEnv so it participates in the config hash
+    // (deterministic per user — a mismatch means the identity mapping
+    // changed, which SHOULD drain-respawn).
+    if (shared) {
+      serverExtraEnv = { ...(serverExtraEnv || {}), ...gitIdentityEnv(author) };
+    }
+    const serverKey = shared ? sharedServerKey(bridgeTag, user) : sessionKey;
+    const dirQuery = shared ? { directory: cwd } : undefined;
+    const q = dirQuery ? { query: dirQuery } : {};
+
     // Deny/confirm enforcement (see module doc): unattended runs get their
-    // deny-set (incl. confirm tools) STRIPPED via the `tools` config below;
-    // interactive runs keep the fail-closed server drop for confirm tools.
+    // deny-set (incl. confirm tools) STRIPPED from the model's tool list;
+    // interactive runs fail closed on confirm tools — on per-session servers
+    // by dropping the whole MCP server from the config, on shared servers by
+    // stripping `<server>_*` per prompt (the config is multi-session, so the
+    // server stays configured; the wildcard strip removes every tool of it
+    // from THIS run's tool list — engine-level, verified live 2026-07-09).
     const policy = opencodeRunPolicy({
       deniedTools: opts.deniedTools,
       confirmTools,
       journalKind: journal?.kind,
     });
+    const confirmStrips: Record<string, false> = {};
+    const confirmStrippedServers: string[] = [];
+    if (shared && policy.confirmToolsForServerDrop) {
+      for (const name of Object.keys(policy.confirmToolsForServerDrop)) {
+        const m = name.match(CONFIRM_TOOL_RE);
+        if (m) {
+          const server = m[1].split("__")[0];
+          if (!confirmStrippedServers.includes(server)) {
+            confirmStrippedServers.push(server);
+            confirmStrips[`${server}_*`] = false;
+          }
+        } else {
+          confirmStrips[name] = false;
+        }
+      }
+    }
     const { mcp: externalMcp, droppedForConfirm } = buildOpencodeMcpConfig(
-      mcpServers,
+      shared ? undefined : mcpServers,
       user,
-      policy.confirmToolsForServerDrop
+      shared ? undefined : policy.confirmToolsForServerDrop
     );
+    const confirmUnavailable = shared ? confirmStrippedServers : droppedForConfirm;
 
-    // Instructions file (OpenCode's system-append channel). Rewritten per run
-    // (repos can attach mid-session); the stable path keeps the config hash —
-    // and therefore the server — unchanged.
-    mkdirSync(OPENCODE_STATE_DIR, { recursive: true });
-    const instructionsPath = `${OPENCODE_STATE_DIR}/${serverKey.replace(/[^A-Za-z0-9._-]/g, "_")}-instructions.md`;
+    // Session context (ask guardrails, repos note, managing-Michael notes).
+    // Per-session servers deliver it via an instructions FILE in the config;
+    // shared servers can't (config is multi-session), so it rides the
+    // per-prompt `system` param instead — verified live to APPEND to
+    // opencode's own system prompt, not replace it.
     const instructions = buildOpencodeInstructions({
       isAsk,
       reposNote: opts.reposNote,
       inProcessMcp: opts.inProcessMcp,
       bksSessionId: journal?.bksSessionId,
-      droppedForConfirm,
+      droppedForConfirm: confirmUnavailable,
       deniedToolNotes: policy.noteGroups,
     });
-    writeFileSync(instructionsPath, instructions || "");
+    const instructionsPath = `${OPENCODE_STATE_DIR}/${serverKey.replace(/[^A-Za-z0-9._-]/g, "_")}-instructions.md`;
+    if (!shared) {
+      // Rewritten per run (repos can attach mid-session); the stable path
+      // keeps the config hash — and therefore the server — unchanged.
+      mkdirSync(OPENCODE_STATE_DIR, { recursive: true });
+      writeFileSync(instructionsPath, instructions || "");
+    }
 
     // Stable per-server rpc token: minted with the server entry, registered
     // for the duration of each run (the proxies only forward during runs).
@@ -1238,42 +1519,107 @@ async function* runOpencodeAttempt(
       ...(providerOverride || {}),
     };
 
-    const ocConfig: Record<string, unknown> = {
-      mcp: {
-        ...externalMcp,
-        ...(prebuiltProxies ??
-          (hasInProcess && journal?.bksSessionId
-            ? proxyOpencodeMcpConfigs(opts.inProcessMcp, rpcToken)
-            : {})),
-      },
-      instructions: [instructionsPath],
-      autoshare: false,
-      ...(meridianPlugin ? { plugin: meridianPlugin } : {}),
-      ...(Object.keys(providerConfig).length ? { provider: providerConfig } : {}),
-      ...(isAsk
-        ? {
-            permission: {
-              edit: "deny",
-              bash: ASK_BASH_PERMISSIONS,
-              webfetch: "allow",
-              external_directory: "deny",
-            },
-          }
-        : {}),
-      // Ask-mode write tools + the unattended deny-set are both enforced by
-      // stripping tools from the model's tool list. Key omitted when empty so
-      // existing interactive servers keep their config hash (no respawn).
-      ...(isAsk || Object.keys(policy.disables).length
-        ? {
-            tools: {
-              ...(isAsk ? { write: false, edit: false, patch: false } : {}),
-              ...policy.disables,
-            },
-          }
-        : {}),
-    };
+    // Per-prompt policy for shared runs: everything a per-session server
+    // bakes into its config rides the prompt body instead. Ask mode selects
+    // the config-defined read-only `ask` agent AND strips the write tools
+    // (belt + braces with the agent's own tools/permission config); the
+    // unattended deny-set (policy.disables), confirm-server wildcards, and
+    // the in-process servers this run does NOT carry are all stripped from
+    // this prompt's tool list only — other sessions on the server are
+    // untouched.
+    const promptTools: Record<string, boolean> = {};
+    let promptAgent: string | undefined;
+    if (shared) {
+      if (isAsk) {
+        promptAgent = "ask";
+        promptTools.write = false;
+        promptTools.edit = false;
+        promptTools.patch = false;
+      }
+      Object.assign(promptTools, policy.disables, confirmStrips);
+      const inprocNames = new Set(Object.keys(opts.inProcessMcp || {}));
+      for (const name of SHARED_INPROCESS_SERVERS) {
+        if (!inprocNames.has(name)) promptTools[`${name}_*`] = false;
+      }
+    }
 
-    entry = await ensureOpencodeServer(serverKey, cwd, ocConfig, author, serverExtraEnv);
+    const ocConfig: Record<string, unknown> = shared
+      ? {
+          // Shared config = the union view: every external server the run
+          // user may see (allowedUsers-gated via filterMcpServers), every
+          // in-process proxy an interactive run can carry. Per-run narrowing
+          // happens per prompt (promptTools above); per-call session routing
+          // via the session-tag plugin + run-rpc ocSession registry.
+          mcp: {
+            ...externalMcp,
+            ...proxyOpencodeMcpConfigs(
+              Object.fromEntries(SHARED_INPROCESS_SERVERS.map((n) => [n, true])),
+              rpcToken
+            ),
+          },
+          autoshare: false,
+          plugin: [...(meridianPlugin || []), SESSION_TAG_PLUGIN_PATH],
+          ...(Object.keys(providerConfig).length ? { provider: providerConfig } : {}),
+          // Read-only ask mode as a selectable agent (mode "primary" so it
+          // never doubles as a subagent): same bash allowlist + write denial
+          // the per-session ask config enforces server-wide.
+          agent: {
+            ask: {
+              mode: "primary",
+              description: "Read-only ask mode (backstage)",
+              permission: {
+                edit: "deny",
+                bash: ASK_BASH_PERMISSIONS,
+                webfetch: "allow",
+                external_directory: "deny",
+              },
+              tools: { write: false, edit: false, patch: false },
+            },
+          },
+        }
+      : {
+          mcp: {
+            ...externalMcp,
+            ...(prebuiltProxies ??
+              (hasInProcess && journal?.bksSessionId
+                ? proxyOpencodeMcpConfigs(opts.inProcessMcp, rpcToken)
+                : {})),
+          },
+          instructions: [instructionsPath],
+          autoshare: false,
+          ...(meridianPlugin ? { plugin: meridianPlugin } : {}),
+          ...(Object.keys(providerConfig).length ? { provider: providerConfig } : {}),
+          ...(isAsk
+            ? {
+                permission: {
+                  edit: "deny",
+                  bash: ASK_BASH_PERMISSIONS,
+                  webfetch: "allow",
+                  external_directory: "deny",
+                },
+              }
+            : {}),
+          // Ask-mode write tools + the unattended deny-set are both enforced by
+          // stripping tools from the model's tool list. Key omitted when empty so
+          // existing interactive servers keep their config hash (no respawn).
+          ...(isAsk || Object.keys(policy.disables).length
+            ? {
+                tools: {
+                  ...(isAsk ? { write: false, edit: false, patch: false } : {}),
+                  ...policy.disables,
+                },
+              }
+            : {}),
+        };
+
+    entry = await ensureOpencodeServer(
+      serverKey,
+      shared ? SHARED_CWD : cwd,
+      ocConfig,
+      author,
+      serverExtraEnv,
+      { shared }
+    );
     entry.rpcToken = rpcToken;
     if (serverExtraEnv?.MERIDIAN_API_KEY) entry.meridianKey = serverExtraEnv.MERIDIAN_API_KEY;
     entry.activeRuns++;
@@ -1285,6 +1631,7 @@ async function* runOpencodeAttempt(
     {
       const watched = entry;
       void watched.proc.exited.then((code) => {
+        drainingServers.delete(watched);
         if (runEnded) return;
         runFailure ??= `opencode serve exited mid-run (code ${code}) — the turn was lost; send the prompt again to restart on a fresh server`;
         if (servers.get(serverKey) === watched) killServer(serverKey, watched, "died mid-run");
@@ -1298,10 +1645,11 @@ async function* runOpencodeAttempt(
 
     const client = clientFor(entry);
 
-    // Resolve/create the opencode session.
+    // Resolve/create the opencode session. Shared servers scope every call to
+    // the run's directory (opencode's per-directory app instances).
     let createdFresh = false;
     if (ocSessionId) {
-      const existing = await client.session.get({ path: { id: ocSessionId } });
+      const existing = await client.session.get({ path: { id: ocSessionId }, ...q });
       if (!existing.data) {
         console.warn(`[opencode-runner] Session ${ocSessionId} not found — starting fresh`);
         ocSessionId = "";
@@ -1310,6 +1658,7 @@ async function* runOpencodeAttempt(
     if (!ocSessionId) {
       const created = await client.session.create({
         body: { title: journal?.bksSessionId ? `backstage ${journal.bksSessionId}` : "backstage run" },
+        ...q,
       });
       if (!created.data) throw new Error(`Failed to create opencode session: ${JSON.stringify(created.error ?? "")}`);
       ocSessionId = created.data.id;
@@ -1318,6 +1667,18 @@ async function* runOpencodeAttempt(
     if (!registeredKeys.has(ocSessionId)) {
       registeredKeys.add(ocSessionId);
       activeOpencodeRuns.set(ocSessionId, abortController);
+    }
+    // Shared servers: map this opencode session to its backstage session for
+    // the run's duration, so proxied michael-* tool calls (tagged with the
+    // opencode session id by the session-tag plugin) route to THIS session's
+    // in-process tools rather than whichever run registered the token last.
+    if (shared && rpcTokenRegistered && journal?.bksSessionId) {
+      registerOcSessionContext(ocSessionId, {
+        sessionId: journal.bksSessionId,
+        user,
+        token: rpcToken,
+      });
+      ocSessionRegistered = ocSessionId;
     }
 
     // Persist this run to the session's claude-shape jsonl transcript file —
@@ -1364,6 +1725,9 @@ async function* runOpencodeAttempt(
       kind: "user_prompt",
       cwd,
       mcp_servers: mcpServers,
+      // Shared always-warm pool visibility: which server this run multiplexed
+      // onto (account × user tuple), for debugging cross-session issues.
+      ...(shared ? { shared_server: serverKey } : {}),
       // Least-privilege visibility: the claude-style names whose opencode ids
       // were stripped from this run's tool list (unattended runs only).
       ...(policy.unattended
@@ -1376,7 +1740,7 @@ async function* runOpencodeAttempt(
     // Abort → tell the server to stop the turn (best-effort), our loops exit
     // on the signal.
     abortController.signal.addEventListener("abort", () => {
-      void client.session.abort({ path: { id: ocSessionId } }).catch(() => {});
+      void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
     });
 
     // ── Event pump: SSE → StreamEvents, with reconnect (Bun's fetch aborts
@@ -1424,7 +1788,7 @@ async function* runOpencodeAttempt(
         usageLimitHit = true;
         runFailure =
           `Claude usage limit on account "${bridgeAccountLabel}": ${message.slice(0, 300)}`;
-        void client.session.abort({ path: { id: ocSessionId } }).catch(() => {});
+        void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
         signalDone();
       }
     };
@@ -1507,6 +1871,7 @@ async function* runOpencodeAttempt(
             await client.postSessionIdPermissionsPermissionId({
               path: { id: ocSessionId, permissionID: p.id },
               body: { response: "reject" },
+              ...q,
             });
           } catch (e) {
             console.warn("[opencode-runner] failed to reject permission ask:", e);
@@ -1540,7 +1905,12 @@ async function* runOpencodeAttempt(
     const pump = (async () => {
       while (!pumpStopped && !abortController.signal.aborted && !idle) {
         try {
-          const sub = await client.event.subscribe();
+          // Shared servers: the event stream is DIRECTORY-scoped (verified live
+          // 2026-07-09 — a global subscribe sees only lifecycle events), so
+          // subscribe to this run's directory instance.
+          const sub = await client.event.subscribe(
+            (dirQuery ? { query: dirQuery } : undefined) as any
+          );
           for await (const ev of sub.stream as AsyncGenerator<any>) {
             if (pumpStopped || abortController.signal.aborted) return;
             await handleEvent(ev);
@@ -1560,8 +1930,16 @@ async function* runOpencodeAttempt(
     // session.idle — with a status poll as the SSE-gap fallback).
     const sent = await client.session.promptAsync({
       path: { id: ocSessionId },
+      ...q,
       body: {
         model: parsed,
+        // Shared servers: session context (`system` appends to opencode's own
+        // system prompt), read-only agent selection, and this run's tool
+        // strips all ride the prompt — per-session servers carry them in
+        // their config instead.
+        ...(shared && instructions ? { system: instructions } : {}),
+        ...(promptAgent ? { agent: promptAgent } : {}),
+        ...(Object.keys(promptTools).length ? { tools: promptTools } : {}),
         parts: [{ type: "text", text: prompt }, ...(imageParts(opts.images) as any[])],
       },
     });
@@ -1579,7 +1957,7 @@ async function* runOpencodeAttempt(
       runFailure ??=
         `opencode turn exceeded the ${Math.round(turnTimeout / 60_000)}-minute wall-clock limit ` +
         "(turnTimeoutMinutes in ~/.opensession-opencode.json) — aborting the turn";
-      void client.session.abort({ path: { id: ocSessionId } }).catch(() => {});
+      void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
       signalDone();
     }, turnTimeout);
 
@@ -1602,7 +1980,7 @@ async function* runOpencodeAttempt(
               `${lastProviderRetryError.slice(0, 300)}; aborting`
             : `opencode ${parsed.providerID} run produced no output within ${LIVENESS_MS / 1000}s — ` +
               `likely an authentication hang on account "${bridgeAccountLabel}"; aborting`;
-          void client.session.abort({ path: { id: ocSessionId } }).catch(() => {});
+          void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
           signalDone();
         }, LIVENESS_MS)
       : undefined;
@@ -1614,7 +1992,7 @@ async function* runOpencodeAttempt(
           // Grace: right after send the status map may not list the session
           // as busy yet — only trust absent/idle once the turn is clearly on.
           if (Date.now() - sentAt < 15_000) return;
-          const res = await clientFor(entry).session.status({});
+          const res = await clientFor(entry).session.status({ ...q });
           const statuses = res.data as Record<string, { type?: string }> | undefined;
           const mine = statuses?.[ocSessionId];
           // Absent or idle ⇒ the turn ended (covers an SSE gap that ate the
@@ -1687,7 +2065,7 @@ async function* runOpencodeAttempt(
     }
 
     // Turn finished — read the authoritative final assistant message.
-    const msgs = await client.session.messages({ path: { id: ocSessionId } });
+    const msgs = await client.session.messages({ path: { id: ocSessionId }, ...q });
     const list = (msgs.data || []) as Array<{ info: any; parts: any[] }>;
     const lastAssistant = [...list].reverse().find((m) => m.info?.role === "assistant");
     const info = lastAssistant?.info;
@@ -1785,10 +2163,14 @@ async function* runOpencodeAttempt(
     // return, generator torn down mid-drain) — no-op if already ended.
     bridgeRunEnd(abortController.signal.aborted ? "cancelled" : "abandoned");
     for (const key of registeredKeys) activeOpencodeRuns.delete(key);
+    if (ocSessionRegistered) unregisterOcSessionContext(ocSessionRegistered);
     if (rpcTokenRegistered && entry) unregisterRunToken(entry.rpcToken);
     if (entry) {
       entry.activeRuns = Math.max(0, entry.activeRuns - 1);
       entry.lastUsed = Date.now();
+      // Shared server whose config changed mid-flight: the last run out
+      // turns off the lights.
+      reapDrainedServer(entry);
     }
     // Keep the journal across an account-rotation retry (the wrapper reruns
     // the same runKey immediately); cleared for real on the final attempt.
