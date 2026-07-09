@@ -301,6 +301,9 @@ export interface TranscriptEntry {
   // Ready-to-render video srcs (served via /backstage/media) parsed from
   // `BACKSTAGE_VIDEO: <path>` markers a tool printed — e.g. tella-local rec.mjs.
   videos?: string[];
+  // Non-media composer attachments (staged to disk server-side) parsed back out
+  // of the uploads note — rendered as downloadable chips on the user bubble.
+  files?: { name: string; path: string }[];
 }
 
 export interface FileWatcherState {

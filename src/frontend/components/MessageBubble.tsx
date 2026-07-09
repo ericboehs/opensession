@@ -61,6 +61,57 @@ function EntryImages({ images }: { images?: string[] }) {
 	);
 }
 
+/** Inline video players for attached/staged videos (streamed via <base>/media). */
+function EntryVideos({ videos }: { videos?: string[] }) {
+	if (!videos || videos.length === 0) return null;
+	return (
+		<div className="msg-videos">
+			{videos.map((src, i) => (
+				<div key={i} className="md-video-wrap">
+					<video
+						className="md-video"
+						src={src}
+						controls
+						playsInline
+						preload="metadata"
+					/>
+				</div>
+			))}
+		</div>
+	);
+}
+
+/** Short uppercase extension badge for a filename (e.g. "PDF"), or "FILE". */
+function extBadge(name: string): string {
+	const dot = name.lastIndexOf(".");
+	if (dot <= 0 || dot === name.length - 1) return "FILE";
+	return name.slice(dot + 1, dot + 5).toUpperCase();
+}
+
+/** Non-media attachments on a user turn — download chips (served via <base>/media). */
+function EntryFiles({ files }: { files?: TranscriptEntry["files"] }) {
+	if (!files || files.length === 0) return null;
+	return (
+		<div className="msg-files">
+			{files.map((f, i) => (
+				<a
+					key={i}
+					className="composer-file-card msg-file-card"
+					href={`/backstage/media?path=${encodeURIComponent(f.path)}`}
+					download={f.name}
+					title={f.name}
+				>
+					<span className="composer-file-thumb">{extBadge(f.name)}</span>
+					<span className="composer-file-meta">
+						<span className="composer-file-name">{f.name}</span>
+						<span className="composer-file-sub">Attachment</span>
+					</span>
+				</a>
+			))}
+		</div>
+	);
+}
+
 // Memoized: entries keep stable references across stream events (mergeEntries
 // reuses objects) and owner is stable upstream, so a tool event appended to
 // the transcript re-renders only the affected blocks — not every bubble's
@@ -118,6 +169,8 @@ export const MessageBubble = React.memo(function MessageBubble({
 					html={humanReply.html || ""}
 				/>
 				<EntryImages images={entry.images} />
+				<EntryVideos videos={entry.videos} />
+				<EntryFiles files={entry.files} />
 			</div>
 		);
 	}
@@ -147,6 +200,8 @@ export const MessageBubble = React.memo(function MessageBubble({
 					/>
 				)}
 				<EntryImages images={entry.images} />
+				<EntryVideos videos={entry.videos} />
+				<EntryFiles files={entry.files} />
 			</div>
 		);
 	}
@@ -160,6 +215,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 				html={html || ""}
 			/>
 			<EntryImages images={entry.images} />
+			<EntryVideos videos={entry.videos} />
 		</div>
 	);
 });

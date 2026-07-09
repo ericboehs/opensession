@@ -1329,7 +1329,9 @@ async function* runOpencodeAttempt(
       ocSessionId,
       createdFresh ? opts.seedTranscriptEntries : undefined
     );
-    appendOpencodeTranscript(ocSessionId, [transcriptLineUser(prompt)]);
+    appendOpencodeTranscript(ocSessionId, [
+      transcriptLineUser(prompt, undefined, undefined, opts.images),
+    ]);
 
     // Kind-only journals ({kind} with no bksSessionId — the Plain/Linear/Slack
     // agent loops) are a gate/policy marker, not a crash journal: those loops

@@ -87,6 +87,52 @@ function extractImages(content: any): string[] {
   return out;
 }
 
+// Composer file attachments (non-image) are staged to disk and announced to
+// the agent via a note withUploadsNote() appends to the prompt. Parse the note
+// back out so the user bubble renders the attachments — inline for media the
+// /backstage/media route can stream, a file chip otherwise — instead of the
+// raw plumbing text.
+const UPLOADS_NOTE_RE =
+  /\s*\[The user attached \d+ file\(s\), saved to disk — read them with your file tools if relevant:\n([\s\S]*?)\n\]\s*$/;
+const UPLOAD_VIDEO_EXT_RE = /\.(mp4|webm|mov)$/i;
+const UPLOAD_IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp)$/i;
+
+function extractUploadsNote(text: string): {
+  text: string;
+  files: { name: string; path: string }[];
+} {
+  const m = text.match(UPLOADS_NOTE_RE);
+  if (!m) return { text, files: [] };
+  const files: { name: string; path: string }[] = [];
+  for (const line of m[1].split("\n")) {
+    if (!line.startsWith("- ")) continue;
+    // "- <name>: <abs path>" — the name may itself contain ": /", so split at
+    // the LAST occurrence (paths are always absolute).
+    const idx = line.lastIndexOf(": /");
+    if (idx <= 2) continue;
+    files.push({ name: line.slice(2, idx), path: line.slice(idx + 2) });
+  }
+  if (!files.length) return { text, files: [] };
+  return { text: text.slice(0, m.index).trimEnd(), files };
+}
+
+/** Hang parsed uploads on a user entry: streamable media inline, chips otherwise. */
+function attachUploads(
+  entry: TranscriptEntry,
+  files: { name: string; path: string }[],
+): void {
+  for (const f of files) {
+    const url = `/backstage/media?path=${encodeURIComponent(f.path)}`;
+    if (UPLOAD_VIDEO_EXT_RE.test(f.path)) {
+      entry.videos = [...(entry.videos || []), url];
+    } else if (UPLOAD_IMAGE_EXT_RE.test(f.path)) {
+      entry.images = [...(entry.images || []), url];
+    } else {
+      entry.files = [...(entry.files || []), f];
+    }
+  }
+}
+
 // Tools can't return video blocks (unlike Read-of-image), so a tool that
 // produces a video prints `BACKSTAGE_VIDEO: <abs-path>` and we turn each marker
 // into a /backstage/media URL the frontend streams. Used by tella-local rec.mjs.
@@ -212,9 +258,22 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
           }
           // Fenced injected context (e.g. an engine-switch handoff prepended to
           // the turn) is plumbing — show only the human's message.
-          const text = stripContext(block.text || "");
-          if (!text.trim()) continue;
-          pushUserEntries(entries, raw.uuid || crypto.randomUUID(), text, ts);
+          const stripped = stripContext(block.text || "");
+          const { text, files } = extractUploadsNote(stripped);
+          if (!text.trim() && !files.length) continue;
+          const id = raw.uuid || crypto.randomUUID();
+          pushUserEntries(entries, id, text, ts);
+          if (files.length) {
+            // The note rides the end of the turn — attach to its last user entry
+            // (or a bare one when the message was attachments-only).
+            const lastUser = [...entries].reverse().find((e) => e.type === "user");
+            if (lastUser) attachUploads(lastUser, files);
+            else {
+              const bare: TranscriptEntry = { id, type: "user", content: "", timestamp: ts };
+              attachUploads(bare, files);
+              entries.push(bare);
+            }
+          }
         }
       }
 
@@ -235,13 +294,18 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
         }
       }
     } else if (!raw.isMeta) {
-      const text = stripContext(extractText(content));
-      if (text) {
-        const harness = harnessEntryFor(text, ts);
+      const stripped = stripContext(extractText(content));
+      if (stripped) {
+        const harness = harnessEntryFor(stripped, ts);
         if (harness) {
           entries.push(...harness);
         } else {
+          const { text, files } = extractUploadsNote(stripped);
           pushUserEntries(entries, raw.uuid || crypto.randomUUID(), text, ts);
+          if (files.length) {
+            const lastUser = [...entries].reverse().find((e) => e.type === "user");
+            if (lastUser) attachUploads(lastUser, files);
+          }
         }
       }
     }

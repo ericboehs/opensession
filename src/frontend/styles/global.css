@@ -11394,11 +11394,32 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .md-image {
 	cursor: zoom-in;
 }
-.tool-result-videos {
+.tool-result-videos,
+.msg-videos {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
 	margin-top: 6px;
+}
+/* Attachment chips on a settled message (composer card look, minus remove) */
+.msg-files {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 6px;
+}
+.msg-user .msg-files,
+.msg-human .msg-files,
+.msg-user .msg-videos,
+.msg-human .msg-videos {
+	justify-content: flex-end;
+}
+.msg-file-card {
+	padding-right: 10px;
+	text-decoration: none;
+}
+.msg-file-card:hover {
+	border-color: var(--accent);
 }
 .md-video {
 	max-width: 100%;

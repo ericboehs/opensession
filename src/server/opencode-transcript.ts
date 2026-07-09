@@ -21,6 +21,7 @@ import { envAlias } from "./rename-compat";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
 import { Database } from "bun:sqlite";
 import type { TranscriptEntry } from "./types";
+import type { ImageInput } from "./run-events";
 import { stripContext } from "./prompt-context";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -68,12 +69,30 @@ export function existingOpencodeTranscriptPath(
 
 type JsonlLine = Record<string, unknown>;
 
-export function transcriptLineUser(text: string, id?: string, ts?: string): JsonlLine {
+export function transcriptLineUser(
+  text: string,
+  id?: string,
+  ts?: string,
+  images?: ImageInput[]
+): JsonlLine {
   return {
     type: "user",
     uuid: id || crypto.randomUUID(),
     timestamp: ts || new Date().toISOString(),
-    message: { role: "user", content: [{ type: "text", text }] },
+    message: {
+      role: "user",
+      content: [
+        { type: "text", text },
+        // Pasted images ride alongside the text block in the same claude-shape
+        // blocks jsonl-parser's extractImages reads — without them the mirror
+        // file loses the images the run actually received (they only exist in
+        // opencode's SQLite as `file` parts, which nothing renders).
+        ...(images || []).map((im) => ({
+          type: "image",
+          source: { type: "base64", media_type: im.mediaType, data: im.data },
+        })),
+      ],
+    },
   };
 }
 
@@ -144,8 +163,20 @@ export function transcriptLineToolResult(
  *  claude/codex history, and to backfill legacy opencode sessions from SQLite. */
 export function transcriptLineForEntry(e: TranscriptEntry): JsonlLine | null {
   switch (e.type) {
-    case "user":
-      return transcriptLineUser(e.content, e.id, e.timestamp);
+    case "user": {
+      const line = transcriptLineUser(e.content, e.id, e.timestamp);
+      if (e.images?.length) {
+        // Entry images are ready-to-render srcs (data: or http(s) URLs) — a
+        // url-source image block round-trips both through extractImages.
+        (line.message as { content: unknown[] }).content.push(
+          ...e.images.map((src) => ({
+            type: "image",
+            source: { type: "url", url: src },
+          }))
+        );
+      }
+      return line;
+    }
     case "assistant":
       return transcriptLineAssistantText(e.content, e.id, e.timestamp, e.model);
     case "tool_use":
@@ -235,6 +266,9 @@ interface PartData {
   synthetic?: boolean;
   tool?: string;
   callID?: string;
+  // `file` parts (pasted images ride as data: URLs).
+  mime?: string;
+  url?: string;
   state?: {
     status?: string;
     input?: unknown;
@@ -330,11 +364,23 @@ export function readOpencodeTranscript(
         role === "assistant" && data.providerID && data.modelID
           ? `opencode/${data.providerID}/${data.modelID}`
           : undefined;
+      // Pasted images arrive as `file` parts alongside the message's text part;
+      // collect their renderable srcs and hang them on the message's user entry
+      // (mirrors jsonl-parser's pasted-image handling).
+      const msgImages: string[] = [];
+      const entriesStart = entries.length;
       for (const p of partsByMessage.get(m.id) || []) {
         let part: PartData;
         try {
           part = JSON.parse(p.data);
         } catch {
+          continue;
+        }
+        if (part.type === "file") {
+          const url = typeof part.url === "string" ? part.url : "";
+          if (role === "user" && url && (part.mime || "").startsWith("image/")) {
+            msgImages.push(url);
+          }
           continue;
         }
         if (part.type === "text") {
@@ -373,8 +419,24 @@ export function readOpencodeTranscript(
             });
           }
         }
-        // reasoning / step-start / step-finish / file / patch / snapshot parts
+        // reasoning / step-start / step-finish / patch / snapshot parts
         // have no transcript rendering — skip.
+      }
+      if (msgImages.length) {
+        const lastUser = [...entries.slice(entriesStart)]
+          .reverse()
+          .find((e) => e.type === "user");
+        if (lastUser) {
+          lastUser.images = [...(lastUser.images || []), ...msgImages];
+        } else {
+          entries.push({
+            id: m.id,
+            type: "user",
+            content: "",
+            timestamp: ts,
+            images: msgImages,
+          });
+        }
       }
     }
     return entries;

@@ -243,6 +243,9 @@ export interface TranscriptEntry {
 	// Ready-to-render video srcs (served via <base>/media), parsed from
 	// `BACKSTAGE_VIDEO: <path>` markers a tool printed — e.g. tella-local rec.mjs.
 	videos?: string[];
+	// Non-media composer attachments (staged to disk server-side) — rendered as
+	// downloadable chips on the user bubble; `path` feeds <base>/media?path=.
+	files?: { name: string; path: string }[];
 }
 
 export interface DiffFile {

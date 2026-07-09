@@ -3920,11 +3920,15 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				const scoped =
 					mediaPath.startsWith("/tmp/") ||
 					mediaPath.startsWith("/home/ubuntu/");
+				// Non-media extensions are servable ONLY from the composer-uploads dir
+				// (as a download) — anything wider would make this a read-any-file-on-
+				// the-box endpoint (tokens live in dotfiles and json configs).
+				const isUploadDownload = !mediaTypes[ext] && isWithinUploads(mediaPath);
 				if (
 					!mediaPath.startsWith("/") ||
 					mediaPath.includes("..") ||
 					!scoped ||
-					!mediaTypes[ext]
+					(!mediaTypes[ext] && !isUploadDownload)
 				) {
 					return new Response("forbidden", { status: 403 });
 				}
@@ -3932,13 +3936,21 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				if (!(await file.exists()))
 					return new Response("not found", { status: 404 });
 
-				const type = mediaTypes[ext];
+				const type = mediaTypes[ext] || "application/octet-stream";
 				const size = file.size;
 				const range = req.headers.get("range");
 				const baseHeaders: Record<string, string> = {
 					"Content-Type": type,
 					"Accept-Ranges": "bytes",
 					"Cache-Control": "private, max-age=60",
+					...(isUploadDownload
+						? {
+								"Content-Disposition": `attachment; filename="${mediaPath
+									.split("/")
+									.pop()
+									?.replace(/[^\w. -]/g, "_")}"`,
+							}
+						: {}),
 				};
 				if (range) {
 					const m = range.match(/bytes=(\d*)-(\d*)/);
