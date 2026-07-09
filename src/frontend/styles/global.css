@@ -3859,7 +3859,7 @@ body.resizing-x .panel-resize::after {
 	display: flex;
 	flex-direction: column;
 	gap: 16px;
-	padding: 16px 16px 22px;
+	padding: 12px 12px 22px;
 }
 
 .workspace-info-head {
