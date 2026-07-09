@@ -16,7 +16,7 @@
  *    and dedupes by it, so a reconnecting host replays the disconnect window
  *    without double-applying (see ws-buffer.ts; the unix-socket path stays
  *    live-only).
- *  - `/backstage/rpc-ws?host=<hostId>` — the michael-* MCP proxy channel.
+ *  - `/backstage/rpc-ws?host=<hostId>` — the opensession-* MCP proxy channel.
  *    mcp-proxy.ts (BKS_RPC_WS_URL) dials it; each request frame
  *    `{id, path, token, server, tool?, args?}` goes through the same
  *    dispatchRunRpc core as the unix RPC socket and answers with

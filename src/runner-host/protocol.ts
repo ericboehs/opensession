@@ -43,7 +43,7 @@ export interface RunHostSpec {
   /** mcp-config.json allowlist (automation scoping); omitted = all servers. */
   mcpServers?: string[];
   /**
-   * michael-* in-process servers to expose via the RPC proxy (mcp-proxy.ts →
+   * opensession-* in-process servers to expose via the RPC proxy (mcp-proxy.ts →
    * backstage-rpc.sock). Names must match what the backstage-side builder
    * produces for this session. Empty/omitted for automation-owned sessions.
    */

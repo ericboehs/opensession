@@ -354,7 +354,7 @@ function onAskUser(input: Record<string, unknown>): Promise<AskResult> {
   });
 }
 
-// ── mcp-proxy config for the michael-* servers ───────────────────────────────
+// ── mcp-proxy config for the opensession-* servers ───────────────────────────────
 // Each named server becomes a stdio MCP proxy that forwards tools/list +
 // tools/call to backstage over its RPC socket — so session-control/self-admin
 // tools keep working across backstage restarts (calls retry while it's down).

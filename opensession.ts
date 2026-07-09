@@ -444,7 +444,7 @@ function getCachedSessions(): UnifiedSession[] {
 }
 
 // In-process self-management MCP servers for INTERACTIVE Backstage sessions
-// (web UI + loops) — the same michael-sessions / michael-admin tools the Slack
+// (web UI + loops) — the same opensession-sessions / opensession-admin tools the Slack
 // agent gets, so you can list/steer sessions and manage automations/MCPs from a
 // Michael session. Built fresh per run from the prompt's author. NEVER pass
 // these to automation runs or to interactive resumes of automation-owned
@@ -457,12 +457,12 @@ function interactiveMcpServers(
 ): Record<string, unknown> {
 	const createdBy = user || productName();
 	return {
-		"michael-sessions": createSessionsMcpServer({
+		"opensession-sessions": createSessionsMcpServer({
 			createdBy,
 			isAdmin: true,
 			currentSessionId: sessionId,
 		}),
-		"michael-admin": createAdminMcpServer({
+		"opensession-admin": createAdminMcpServer({
 			channel: "backstage",
 			userId: user || "backstage",
 			isDM: false,
@@ -471,19 +471,19 @@ function interactiveMcpServers(
 			isAdmin: true,
 		}),
 		// Long-running goals: create/list/steer persistent, self-pacing missions.
-		"michael-goals": createGoalsMcpServer({ createdBy, isAdmin: true }),
+		"opensession-goals": createGoalsMcpServer({ createdBy, isAdmin: true }),
 		// Human-in-the-loop: ask a teammate and fold the answer back into this
 		// session. Needs the session id so the answer routes home. Withheld (like
 		// the others) from automation runs — see the runSessionPrompt call site.
 		...(sessionId
 			? {
-					"michael-humans": createHumansMcpServer({
+					"opensession-humans": createHumansMcpServer({
 						sessionId,
 						createdBy,
 						isAdmin: true,
 					}),
 					// Cross-repo: attach secondary repos as isolated worktrees.
-					"michael-repos": createReposMcpServer({
+					"opensession-repos": createReposMcpServer({
 						sessionId,
 						attach: (repo, branch) => attachRepo(sessionId, repo, branch),
 						switchPrimary: (repo) => switchPrimaryRepo(sessionId, repo),
@@ -521,7 +521,7 @@ function interactiveMcpServers(
 					}),
 					// Deep-link testing: record where the change should be tested so
 					// the Preview/Staging buttons open that route directly.
-					"michael-preview": createPreviewMcpServer({
+					"opensession-preview": createPreviewMcpServer({
 						sessionId,
 						setPreviewPath: (path) =>
 							touchBackstageSession(sessionId, {
@@ -533,7 +533,7 @@ function interactiveMcpServers(
 					// blocks on the same UI question card + Slack escalation as the
 					// native Claude tool. claude-runner strips this server so Claude
 					// keeps using the native AskUserQuestion instead of a duplicate.
-					"michael-ask": createAskUserMcpServer({
+					"opensession-ask": createAskUserMcpServer({
 						ask: makeAskHandler(sessionId),
 					}),
 				}
@@ -542,15 +542,15 @@ function interactiveMcpServers(
 }
 
 // Codex cannot consume Claude SDK in-process MCP servers directly. Expose the
-// same interactive michael-* tools through the run-rpc stdio proxy so Codex
+// same interactive opensession-* tools through the run-rpc stdio proxy so Codex
 // sessions can inspect/create/steer Backstage sessions too. Goal-driven
-// sessions additionally get michael-goal-self (next-wake/ledger/pause tools),
+// sessions additionally get opensession-goal-self (next-wake/ledger/pause tools),
 // matching what the in-process path hands them at the runAgent call sites.
 registerInteractiveMcpBuilder((sessionId, user) => {
 	const servers = interactiveMcpServers(user, sessionId);
 	const goalId = sessionId ? findSession(sessionId)?.goalId : undefined;
 	if (goalId)
-		(servers as Record<string, unknown>)["michael-goal-self"] =
+		(servers as Record<string, unknown>)["opensession-goal-self"] =
 			createGoalSelfMcpServer(goalId);
 	return servers;
 });
@@ -1049,7 +1049,7 @@ const b64decode = (s: string) => new Uint8Array(Buffer.from(s, "base64"));
 
 // Interactive AskUserQuestion: questions broadcast to session watchers, answered
 // from the UI. If nobody answers in the UI within ASK_UI_TIMEOUT_MS, the question
-// is escalated to the session's original prompter over Slack (the michael-humans
+// is escalated to the session's original prompter over Slack (the opensession-humans
 // transport) and we keep blocking on their reply; the UI question stays live the
 // whole time, so whoever answers first (web or Slack) wins.
 const ASK_UI_TIMEOUT_MS = 4 * 60 * 1000;
@@ -2468,14 +2468,14 @@ async function maybeLaunchSandboxedRun(
 				},
 			});
 		}
-		// michael-* tools reach the container as stdio proxies over the run-rpc
+		// opensession-* tools reach the container as stdio proxies over the run-rpc
 		// socket — same path Codex and hosted runs use. The names must match
 		// what the registered InteractiveMcpBuilder can build for this session —
-		// including michael-goal-self for goal-driven sessions (the builder adds
+		// including opensession-goal-self for goal-driven sessions (the builder adds
 		// it from the session's goalId, mirroring the in-process path below).
 		const proxyMcpServers = [
 			...Object.keys(interactiveMcpServers(opts.user, session.id)),
-			...(session.goalId ? ["michael-goal-self"] : []),
+			...(session.goalId ? ["opensession-goal-self"] : []),
 		];
 		rpcToken = crypto.randomUUID();
 		registerRunToken(rpcToken, { sessionId: session.id, user: opts.user });
@@ -2767,7 +2767,7 @@ async function runSessionPromptInner(
 	const deniedTools = isAutomationSession ? automationDeniedTools() : undefined;
 
 	// @session:<id> mentions → footer resolving them for the agent's
-	// michael-sessions tools. Interactive sessions only (same gate as the tools).
+	// opensession-sessions tools. Interactive sessions only (same gate as the tools).
 	if (!isAutomationSession) {
 		const mentionsNote = sessionMentionsNote(prompt);
 		if (mentionsNote) prompt += `\n\n${mentionsNote}`;
@@ -2888,7 +2888,7 @@ async function runSessionPromptInner(
 		mcpServers,
 		// Self-management tools for normal sessions; withheld from automation
 		// sessions (and their interactive resumes) — same gate as deniedTools above.
-		// A goal-driven session also gets its own michael-goal-self controls, so an
+		// A goal-driven session also gets its own opensession-goal-self controls, so an
 		// interactive turn (a human steering it in the UI) can set the next wake,
 		// append to the ledger, or pause/finish — the same tools the headless wake has.
 		inProcessMcp: isAutomationSession
@@ -2896,7 +2896,7 @@ async function runSessionPromptInner(
 			: session.goalId
 				? {
 						...interactiveMcpServers(user, sessionId),
-						"michael-goal-self": createGoalSelfMcpServer(session.goalId),
+						"opensession-goal-self": createGoalSelfMcpServer(session.goalId),
 					}
 				: interactiveMcpServers(user, sessionId),
 		reposNote: isAutomationSession
@@ -3144,10 +3144,10 @@ async function runSessionPromptInner(
  */
 /**
  * Expand `@session:bks-…` mentions in a prompt into a footer the agent can act
- * on with its michael-sessions tools. The mention token itself stays in place
+ * on with its opensession-sessions tools. The mention token itself stays in place
  * (it carries the id); the footer resolves each id to a title/state and points
  * at the tools — including slash commands over send_to_session (e.g. "/loop").
- * Interactive sessions only: automations don't get michael-sessions.
+ * Interactive sessions only: automations don't get opensession-sessions.
  */
 function sessionMentionsNote(content: string): string | null {
 	// Only the human's visible message counts: fenced <backstage:context> blocks
@@ -3174,7 +3174,7 @@ function sessionMentionsNote(content: string): string | null {
 	});
 	return (
 		`[The @session mentions above refer to other Backstage sessions:\n${lines.join("\n")}\n` +
-		`Use the michael-sessions MCP tools with these ids: get_session (state, pending question, ` +
+		`Use the opensession-sessions MCP tools with these ids: get_session (state, pending question, ` +
 		`transcript tail), send_to_session (a message — or a slash command handled by backstage ` +
 		`itself, e.g. "/loop 15m <prompt>" to set a recurring self-prompt on the target that fires ` +
 		`only while it is idle, "/loop stop" to clear it; this works on your own session id too), ` +
@@ -3441,7 +3441,7 @@ if (!g.__backstageBooted) {
 // ── Goals: long-running, self-pacing missions ───────────────────────────────
 // A Goal drives ONE managed session across many wakes, resuming the engine
 // session each time (so context carries and the SDK compacts rather than
-// forgets), pacing itself via the michael-goal-self MCP, and stopping when done.
+// forgets), pacing itself via the opensession-goal-self MCP, and stopping when done.
 // The store + validation live in src/server/goals.ts; this is the runner +
 // ticker (here because they need the interactive MCP wiring), mirroring how the
 // session loop ticker lives in this file.
@@ -3449,21 +3449,21 @@ if (!g.__backstageBooted) {
 const runningGoals: Set<string> = (g.__runningGoals ??= new Set());
 
 /** MCP surface for a goal's own run: pull-a-human-in + its self-cadence controls.
- *  Deliberately excludes michael-admin / michael-sessions — an autonomous,
+ *  Deliberately excludes opensession-admin / opensession-sessions — an autonomous,
  *  weeks-long run gets least privilege (can't reconfigure Michael or steer other
- *  sessions); human sign-off goes through michael-humans ask_human. */
+ *  sessions); human sign-off goes through opensession-humans ask_human. */
 function goalMcpServers(
 	bksSessionId: string,
 	goalId: string,
 	createdBy: string,
 ): Record<string, unknown> {
 	return {
-		"michael-humans": createHumansMcpServer({
+		"opensession-humans": createHumansMcpServer({
 			sessionId: bksSessionId,
 			createdBy,
 			isAdmin: true,
 		}),
-		"michael-goal-self": createGoalSelfMcpServer(goalId),
+		"opensession-goal-self": createGoalSelfMcpServer(goalId),
 	};
 }
 
@@ -3474,10 +3474,10 @@ function buildGoalWakePrompt(goal: Goal, wake: number, cwd: string): string {
 		`## This is wake #${wake} of your mission.`,
 		`Your durable fact ledger is at:\n    ${goal.stateFile}\nRead it FIRST every wake — it is the authoritative record of what you've baselined, decided, shipped, and measured. Your in-context memory may have been compacted; the ledger is not.`,
 		`Do ONE meaningful increment this wake. Then, before you finish, ALWAYS:\n` +
-			`- Append what you learned/did this wake (concrete numbers, PR URLs, decisions) to the ledger via the michael-goal-self \`append_ledger\` tool.\n` +
-			`- Decide what happens next with michael-goal-self: \`set_next_wake\` (e.g. "in 7 days" after shipping, so metrics can actually move before you re-measure), or \`mark_paused\` if you're blocked on a human decision, or \`mark_done\`/\`mark_failed\` when the mission is settled. If you set none, you'll be woken again in ~24h by default.\n` +
+			`- Append what you learned/did this wake (concrete numbers, PR URLs, decisions) to the ledger via the opensession-goal-self \`append_ledger\` tool.\n` +
+			`- Decide what happens next with opensession-goal-self: \`set_next_wake\` (e.g. "in 7 days" after shipping, so metrics can actually move before you re-measure), or \`mark_paused\` if you're blocked on a human decision, or \`mark_done\`/\`mark_failed\` when the mission is settled. If you set none, you'll be woken again in ~24h by default.\n` +
 			`- Keep \`update_phase\` current so progress is visible at a glance.`,
-		`Human gates: to get sign-off or a decision from a teammate, use the michael-humans \`ask_human\` tool — it DMs them as Michael and folds their reply back into this session. Do NOT email or impersonate anyone.`,
+		`Human gates: to get sign-off or a decision from a teammate, use the opensession-humans \`ask_human\` tool — it DMs them as Michael and folds their reply back into this session. Do NOT email or impersonate anyone.`,
 	];
 	if (goal.mode === "code") {
 		const repo = getRepo(goal.repo);
@@ -3585,8 +3585,8 @@ async function runGoal(goal: Goal): Promise<void> {
 					? undefined
 					: goal.fallbackModel || DEFAULT_FALLBACK_MODEL,
 			journal: { bksSessionId: bksId, kind: "goal" },
-			// Headless: no onAskUser. Human gates go through michael-humans ask_human
-			// (async) and hard blocks through michael-goal-self mark_paused.
+			// Headless: no onAskUser. Human gates go through opensession-humans ask_human
+			// (async) and hard blocks through opensession-goal-self mark_paused.
 		})) {
 			if (event.type === "init") {
 				engineSessionId = event.sessionId || engineSessionId;
@@ -3621,7 +3621,7 @@ async function runGoal(goal: Goal): Promise<void> {
 		persistSession(engineSessionId);
 
 		// The run may have rescheduled / paused / finished itself via
-		// michael-goal-self — reload so we don't clobber those, then apply
+		// opensession-goal-self — reload so we don't clobber those, then apply
 		// bookkeeping and a 24h fallback if it left no next wake.
 		const fresh = getGoal(goal.id) || goal;
 		const next: Goal = {
@@ -5154,7 +5154,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			}
 
 			// Fire a GitHub PR agent behavior straight from the info panel — the same
-			// actions the michael-* PR labels / Slack @mentions kick off (review,
+			// actions the opensession-* PR labels / Slack @mentions kick off (review,
 			// auto-fix, simplify, adversarial). tella-fusion only (the agent is
 			// repo-scoped), and there must be an open PR for the branch.
 			if (
@@ -9252,7 +9252,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 
 console.log(`Backstage running at http://${HOST}:${PORT}/backstage/`);
 
-// --- Session control surface (powers the michael-sessions MCP) ---
+// --- Session control surface (powers the opensession-sessions MCP) ---
 // Wire the Slack-channel link index + the inbound-message bridge. Re-run on every
 // hot reload (cheap) so the index stays fresh and the sink closure is current.
 rebuildIndex(getAllSessions());
@@ -9298,7 +9298,7 @@ registerSessionControl({
 		// busy branch so "/loop stop" configures the session instead of being
 		// steered into its running turn as literal prompt text. This is what
 		// lets a monitor session manage loops (its own and others') via the
-		// michael-sessions send_to_session tool.
+		// opensession-sessions send_to_session tool.
 		const notice = handleSlashCommand(session, String(content || "").trim(), user);
 		if (notice !== null) {
 			sessionsCache = null;
@@ -9989,7 +9989,7 @@ if (!g.__backstageBooted) {
 				return session.goalId
 					? {
 							...interactiveMcpServers(user, bksSessionId),
-							"michael-goal-self": createGoalSelfMcpServer(session.goalId),
+							"opensession-goal-self": createGoalSelfMcpServer(session.goalId),
 						}
 					: interactiveMcpServers(user, bksSessionId);
 			},

@@ -2,7 +2,7 @@
  * mcp-proxy — a stdio MCP server that forwards tools/list and tools/call to
  * the backstage process over its run-rpc unix socket (src/server/run-rpc.ts).
  *
- * Spawned by Codex as a stdio MCP server, one instance per michael-* server
+ * Spawned by Codex as a stdio MCP server, one instance per opensession-* server
  * (BKS_MCP_SERVER names which one). The actual tool implementations close
  * over live backstage state and must execute there, while Codex can only
  * consume external stdio MCP servers.
@@ -16,7 +16,7 @@
  *   BKS_RPC_WS_AUTH — WS mode: the run's wsToken, the upgrade bearer
  *   BKS_RPC_TOKEN   — per-run bearer sent IN each frame (maps to session +
  *                     user via dispatchRunRpc; also the unix-socket bearer)
- *   BKS_MCP_SERVER  — which interactive server to proxy (e.g. michael-sessions)
+ *   BKS_MCP_SERVER  — which interactive server to proxy (e.g. opensession-sessions)
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";

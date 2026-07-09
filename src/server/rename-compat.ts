@@ -20,8 +20,13 @@
  * during, and after that window. Do NOT dual-write.
  *
  * Out of scope (never renamed — see the plan's Tier C): `bks-`/`prj-` id
- * prefixes, `michael-*` MCP server ids, `===MICHAEL-SUMMARY===` markers,
- * `BACKSTAGE_VIDEO:` transcript markers, the `backstage-rpc.sock` filename.
+ * prefixes, `===MICHAEL-SUMMARY===` markers, `BACKSTAGE_VIDEO:` transcript
+ * markers, the `backstage-rpc.sock` filename.
+ *
+ * `michael-*` MCP server ids graduated out of Tier C on 2026-07-09: the
+ * in-process servers are now named `opensession-*` at every definition site,
+ * with `canonicalMcpServerId()` below normalizing legacy ids at the lookup
+ * points that see persisted state (run-rpc, the runner's inProcessMcp checks).
  */
 
 import { existsSync } from "fs";
@@ -88,6 +93,19 @@ export function statePath(newRel: string, oldRel: string): string {
  */
 export function stateDir(base: string): string {
 	return statePath(`.opensession-${base}`, `.backstage-${base}`);
+}
+
+/**
+ * In-process MCP server ids renamed michael-* → opensession-* (2026-07-09).
+ * Legacy ids still arrive at runtime from persisted state: journaled runs
+ * resumed after a restart (RunHostSpec.proxyMcpServers, per-run proxy env)
+ * and engine sessions whose context still names old tool ids. Normalize at
+ * lookup points; never at definition sites (those use the new ids only).
+ */
+export function canonicalMcpServerId(name: string): string {
+	return name.startsWith("michael-")
+		? `opensession-${name.slice("michael-".length)}`
+		: name;
 }
 
 /** Test hook: forget cached resolutions + one-time warns (suites point HOME

@@ -85,7 +85,7 @@ export interface HostedRunOpts {
   forkSession?: boolean;
   resumeSessionAt?: string;
   mcpServers?: string[];
-  /** michael-* servers to expose through the RPC proxy (interactive runs only). */
+  /** opensession-* servers to expose through the RPC proxy (interactive runs only). */
   proxyMcpServers?: string[];
   reposNote?: string;
   deniedTools?: Record<string, string>;
@@ -765,7 +765,7 @@ export function discoverRunHosts(): DiscoveredHost[] {
 /**
  * Reattach to a live host after a backstage restart. Returns the same
  * generator shape as runAgentHosted; the caller runs the normal consumption
- * bookkeeping over it. Re-registers the run's RPC token so its michael-*
+ * bookkeeping over it. Re-registers the run's RPC token so its opensession-*
  * proxies keep working.
  */
 export async function attachRunHost(

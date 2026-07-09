@@ -1006,7 +1006,7 @@ export async function mergePrApi(
 	);
 }
 
-/** GitHub PR agent behaviors (the michael-* PR labels) fired straight from the
+/** GitHub PR agent behaviors (the opensession-* PR labels) fired straight from the
     info panel: review / auto-fix / simplify / adversarial. tella-fusion only. */
 export type PrAgentAction = "review" | "autofix" | "simplify" | "adversarial";
 

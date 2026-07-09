@@ -1,5 +1,5 @@
 /**
- * michael-repos — an in-process MCP server that lets a session attach secondary
+ * opensession-repos — an in-process MCP server that lets a session attach secondary
  * repos for cross-repo work. Attaching creates (or reuses) an *isolated git
  * worktree* for that repo and records it on the session, so the agent branches,
  * commits, and opens PRs there independently of the primary repo — instead of
@@ -8,7 +8,7 @@
  * switch its primary repo when it was created against the wrong one (same
  * clean-only switchPrimaryRepo the RepoBar UI uses).
  *
- * Wired the same way as michael-sessions/michael-admin: interactive runs only
+ * Wired the same way as opensession-sessions/opensession-admin: interactive runs only
  * (Backstage web sessions + Slack), never automations. The handlers run in the
  * parent process and call back into backstage.ts's attachRepo via the injected
  * context, so the session file and live state update immediately.
@@ -121,5 +121,5 @@ export function createReposMcpServer(ctx: ReposToolContext) {
     ),
   ];
 
-  return createSdkMcpServer({ name: "michael-repos", version: "1.0.0", tools });
+  return createSdkMcpServer({ name: "opensession-repos", version: "1.0.0", tools });
 }

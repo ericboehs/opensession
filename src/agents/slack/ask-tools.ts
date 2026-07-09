@@ -1,5 +1,5 @@
 /**
- * michael-ask — an in-process MCP server that gives non-Claude engines the
+ * opensession-ask — an in-process MCP server that gives non-Claude engines the
  * AskUserQuestion flow. Claude runs pause on the native AskUserQuestion tool
  * (claude-runner's canUseTool → onAskUser); Codex has no such hook, so this
  * exposes the same handler as a callable tool. A call blocks on the session's
@@ -7,7 +7,7 @@
  * the UI timeout — see makeAskHandler in backstage.ts) and returns the human's
  * answers as the tool result.
  *
- * Wired like the other michael-* siblings: interactive runs only, never
+ * Wired like the other opensession-* siblings: interactive runs only, never
  * automations. claude-runner strips this server from its MCP set so Claude
  * sessions keep using the native tool instead of a duplicate.
  */
@@ -86,5 +86,5 @@ export function createAskUserMcpServer(ctx: { ask: AskUserHandler }) {
     ),
   ];
 
-  return createSdkMcpServer({ name: "michael-ask", version: "1.0.0", tools });
+  return createSdkMcpServer({ name: "opensession-ask", version: "1.0.0", tools });
 }

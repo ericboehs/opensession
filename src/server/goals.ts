@@ -11,7 +11,7 @@
  * This module is the pure data layer: the on-disk store + validation. The runner
  * (which drives the session) and the ticker live in backstage.ts next to the
  * session loop ticker, because they need the interactive MCP wiring; the two MCP
- * surfaces (michael-goals management + michael-goal-self self-cadence) live in
+ * surfaces (opensession-goals management + opensession-goal-self self-cadence) live in
  * src/agents/slack/goal-tools.ts. Records are one JSON file per goal at
  * ~/.opensession-goals/<id>.json, mirroring the automation store.
  */
@@ -196,7 +196,7 @@ export function createGoal(input: {
   return g;
 }
 
-/** Fields an operator (via michael-goals) may patch. Runtime/scheduling fields
+/** Fields an operator (via opensession-goals) may patch. Runtime/scheduling fields
  *  (engineSessionId, wakeCount, lastRun*, worktreePath) are owned by the runner. */
 export function updateGoal(
   id: string,

@@ -13,13 +13,13 @@
  * This module owns the ask *data* (the map + disk persistence + reply matching +
  * audit). The two things only the main backstage process can do — steer an answer
  * into a live session and broadcast — it reaches through the session-control
- * registry (tryGetSessionControl), exactly like the michael-sessions MCP does.
+ * registry (tryGetSessionControl), exactly like the opensession-sessions MCP does.
  * The Slack transport (DM send + option cards) is imported directly from the
  * Slack agent's slack-api helpers; nothing there imports back into the server, so
  * there's no import cycle.
  *
  * Wired into interactive runs only (Slack + Backstage sessions), never automation
- * runs — same privilege boundary as michael-sessions/michael-admin: untrusted
+ * runs — same privilege boundary as opensession-sessions/opensession-admin: untrusted
  * ticket text must not be able to DM the team as Michael.
  */
 import { existsSync, readFileSync } from "node:fs";

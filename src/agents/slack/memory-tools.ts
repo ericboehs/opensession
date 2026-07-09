@@ -6,14 +6,14 @@
  *   user — facts about the prompting person (shared with their Slack DM memory)
  *   team — workspace-wide facts (the SAME store as Slack public-channel memory)
  *
- * Wired the same way as the michael-* siblings: interactive runs only
+ * Wired the same way as the opensession-* siblings: interactive runs only
  * (OpenSession web sessions), NEVER automations. Automation runs process
  * untrusted event/ticket text — a write tool here would make prompt injection
  * persistent (plant a "fact" once, poison every future run). Automations get
  * read-only injection instead (runAutomation appends renderSessionMemoryNote).
  *
- * First opensession-* named server — new servers take the new prefix; the
- * existing michael-* ids stay until the rename-compat aliasing pass.
+ * All in-process servers are opensession-* named (michael-* renamed
+ * 2026-07-09; canonicalMcpServerId in rename-compat covers legacy ids).
  */
 
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";

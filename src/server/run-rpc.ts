@@ -1,6 +1,6 @@
 /**
  * run-rpc — a local unix-socket RPC that lets detached run hosts reach the
- * in-process michael-* MCP servers (michael-sessions / -admin / -goals /
+ * in-process opensession-* MCP servers (opensession-sessions / -admin / -goals /
  * -humans / -repos / -goal-self), which can only execute inside the backstage
  * process (they close over live state: SessionControl, pendingAsks, attachRepo…).
  *
@@ -26,12 +26,13 @@ import { timingSafeEqual } from "crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { canonicalMcpServerId } from "./rename-compat";
 import { rpcSocketPath } from "./run-rpc-protocol";
 
 const g = globalThis as any;
 
-// Proxied tool calls can legitimately block for many minutes (michael-humans
-// ask_human in block mode waits ~20 min for a teammate; michael-ask's ask_user
+// Proxied tool calls can legitimately block for many minutes (opensession-humans
+// ask_human in block mode waits ~20 min for a teammate; opensession-ask's ask_user
 // waits on the UI question card + Slack escalation). The MCP SDK's default
 // request timeout is 60s, which killed those mid-wait — pass an explicit long
 // ceiling instead. Bun.serve gets idleTimeout: 0 below for the same reason
@@ -120,7 +121,7 @@ export function registerInteractiveMcpBuilder(b: InteractiveMcpBuilder): void {
 // Per-session in-process MCP overrides: an agent loop (Slack) registers the
 // exact server objects it built for its run — with loop-specific context the
 // generic interactive builder can't reconstruct (channel memory, the Slack
-// ask handler, michael-github's report-back channel) — so the stdio proxies
+// ask handler, opensession-github's report-back channel) — so the stdio proxies
 // execute THOSE for the run's duration. Keyed by bks session id; parked on
 // globalThis so a hot reload keeps live runs' overrides.
 const sessionServers: Map<string, Record<string, any>> = (g.__runRpcSessionServers ??=
@@ -184,10 +185,16 @@ export async function dispatchRunRpc(path: string, body: any): Promise<RunRpcDis
   const builder: InteractiveMcpBuilder | undefined = g.__runRpcMcpBuilder;
   if (!builder) return imm(503, { error: "MCP builder not registered yet" });
 
-  const serverName = String(body?.server || "");
+  // Legacy michael-* ids still arrive from journaled runs resumed across the
+  // 2026-07-09 opensession-* rename — normalize before lookup.
+  const serverName = canonicalMcpServerId(String(body?.server || ""));
+  const perSession = sessionServers.get(ctx.sessionId);
   const cfg =
-    sessionServers.get(ctx.sessionId)?.[serverName] ??
-    builder(ctx.sessionId, ctx.user)[serverName];
+    (perSession
+      ? Object.fromEntries(
+          Object.entries(perSession).map(([n, s]) => [canonicalMcpServerId(n), s]),
+        )[serverName]
+      : undefined) ?? builder(ctx.sessionId, ctx.user)[serverName];
   if (!cfg?.instance) {
     // tools/list for a server this session doesn't carry (shared servers list
     // the union of in-process servers in their config) answers with an empty

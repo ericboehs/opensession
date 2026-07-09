@@ -1,9 +1,9 @@
 /**
- * michael-sessions — an in-process MCP server that lets Michael see and steer
+ * opensession-sessions — an in-process MCP server that lets Michael see and steer
  * every other Backstage session from Slack: what's running, what's waiting on a
  * question, and the controls to answer / message / cancel / spin up sessions.
  *
- * Like michael-admin and michael-github, this is an in-process SDK MCP wired
+ * Like opensession-admin and opensession-github, this is an in-process SDK MCP wired
  * ONLY into interactive Slack runs (handlers.ts processMessage). Its tools call
  * the session-control registry (src/server/session-control.ts), which backstage.ts
  * populates at startup with the same live state + helpers the WebSocket handlers
@@ -14,7 +14,7 @@
  * Gating: the read tools (list/get) are available to any whitelisted user who
  * can talk to Michael; the control tools (answer/send/cancel/create, and the
  * spawn_task/task_status/cancel_task task primitives) are gated to the trusted
- * user via `isAdmin`, matching michael-admin.
+ * user via `isAdmin`, matching opensession-admin.
  */
 import { productName } from "../../server/config";
 import { envAlias } from "../../server/rename-compat";
@@ -126,7 +126,7 @@ export function buildChildSessionPrompt(input: {
   ];
   if (input.reportBack && input.parentSessionId) {
     parts.push(
-      `When finished, report back to the parent/orchestrator session \`${input.parentSessionId}\` using the michael-sessions send_to_session tool. Send a concise handoff with: outcome, important files/links, tests/checks run, and any follow-up needed.`
+      `When finished, report back to the parent/orchestrator session \`${input.parentSessionId}\` using the opensession-sessions send_to_session tool. Send a concise handoff with: outcome, important files/links, tests/checks run, and any follow-up needed.`
     );
   }
   return parts.join("\n\n");
@@ -263,7 +263,7 @@ export async function spawnTaskImpl(
   if (!args.prompt?.trim()) return { ok: false, error: "Need a prompt to spawn a task." };
   const mode = args.mode || "code";
   const caller = ctx.currentSessionId;
-  // Defense-in-depth: michael-sessions is withheld from automation runs at the
+  // Defense-in-depth: opensession-sessions is withheld from automation runs at the
   // wiring layer already; refuse anyway if the calling session is
   // automation-owned (interactive resumes of automation sessions included).
   if (caller && isAutomationOwned(caller, deps)) {
@@ -652,7 +652,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
   }
 
   return createSdkMcpServer({
-    name: "michael-sessions",
+    name: "opensession-sessions",
     version: "1.0.0",
     tools,
   });

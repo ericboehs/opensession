@@ -92,7 +92,7 @@ export type SandboxStatus = "running" | "stopped" | "gone";
 export interface RunHandleCallbacks {
   onAskUser?: RunAgentOpts["onAskUser"];
   /**
-   * Builds the in-process SDK MCP servers (michael-sessions/-admin/…) for
+   * Builds the in-process SDK MCP servers (opensession-sessions/-admin/…) for
    * runs executing inside this process. Hosted/containerized runs ignore it —
    * they reach the same tools via the stdio→RPC proxy path
    * (RunHostSpec.proxyMcpServers + rpcToken).

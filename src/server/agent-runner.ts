@@ -57,7 +57,7 @@ export interface RunAgentOpts {
   effort?: string;
   mcpServers?: string[];
   /**
-   * In-process SDK MCP servers (michael-sessions / michael-admin) for trusted
+   * In-process SDK MCP servers (opensession-sessions / opensession-admin) for trusted
    * interactive runs only — never automations. Claude receives them directly;
    * Codex receives stdio proxy configs that forward to the same in-process
    * servers through Backstage's run RPC socket.

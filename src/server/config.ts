@@ -511,7 +511,7 @@ export function defaultRepo(): Repo {
 /**
  * The agent's name as rendered to users and models (system prompts, Slack
  * greetings, confirm cards, health payloads). NOT for protocol identifiers —
- * `michael-*` MCP server ids, MICHAEL_* env vars, ===MICHAEL-SUMMARY===
+ * `opensession-*` MCP server ids, MICHAEL_* env vars, ===MICHAEL-SUMMARY===
  * markers stay literal (renaming those breaks running sessions).
  */
 export function personaName(): string {

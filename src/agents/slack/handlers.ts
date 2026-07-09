@@ -753,23 +753,23 @@ export async function processMessage(
     } else {
       const isAdmin = !ALLOWED_USER_ID || msg.userId === ALLOWED_USER_ID;
       adminMcpServers = {
-        "michael-admin": createAdminMcpServer({
+        "opensession-admin": createAdminMcpServer({
           ...memCtx,
           createdBy: userName || msg.userId,
           isAdmin,
           threadTs: msg.threadTs,
         }),
-        "michael-github": createGithubMcpServer({
+        "opensession-github": createGithubMcpServer({
           requestedBy: msg.userId,
           channel,
           threadTs: msg.threadTs,
         }),
-        "michael-sessions": createSessionsMcpServer({
+        "opensession-sessions": createSessionsMcpServer({
           createdBy: userName || msg.userId,
           isAdmin,
           currentSessionId: `slack-${sessionKey}`,
         }),
-        "michael-humans": createHumansMcpServer({
+        "opensession-humans": createHumansMcpServer({
           sessionId: `slack-${sessionKey}`,
           createdBy: userName || msg.userId,
           isAdmin,
@@ -781,7 +781,7 @@ export async function processMessage(
     console.warn("[slack] failed to build admin tools / memory:", e);
   }
   const ADMIN_TOOLS_PROMPT =
-    "\n\n## Self-management\nYou can manage your own setup via the michael-admin MCP tools: " +
+    "\n\n## Self-management\nYou can manage your own setup via the opensession-admin MCP tools: " +
     "channel memory (remember / list_memory / forget) and, for trusted users, automations " +
     "(list/create/update/delete/run_automation — routines on a UTC cron, or event/webhook), one-off " +
     "scheduled runs (schedule_once — 'remind me about this next week', 'run this again in a week', or any " +
@@ -789,16 +789,16 @@ export async function processMessage(
     "and MCP connections (list/add/remove_mcp_server). When a user asks you to remember something, " +
     "set up a recurring job, schedule a reminder or future task, or connect a tool, use these tools rather than just describing how." +
     "\n\n## GitHub PR actions\nWhen asked to review, auto-fix, simplify, or adversarially review a tella-fusion PR " +
-    "(e.g. \"review PR 4296\", \"auto-fix PR 4296\", \"adversarial review PR 4296\"), use the michael-github MCP tools " +
+    "(e.g. \"review PR 4296\", \"auto-fix PR 4296\", \"adversarial review PR 4296\"), use the opensession-github MCP tools " +
     "(review_pr / auto_fix_pr / simplify_pr / adversarial_review_pr) — they run the same actions as the PR labels and " +
     "post the results on the PR. Pass the PR number; the tool starts it and reports back, so just relay what it says." +
-    "\n\n## Managing other sessions\nYou can see and steer every other Backstage session via the michael-sessions MCP tools. " +
+    "\n\n## Managing other sessions\nYou can see and steer every other Backstage session via the opensession-sessions MCP tools. " +
     "Use list_sessions (filter 'waiting' to find sessions blocked on a question, 'active' for what's running) and get_session " +
     "to inspect state and transcripts. For trusted users: answer_session_question unblocks a session paused on a question, " +
     "send_to_session messages/redirects a running or idle session, cancel_session stops a run, and create_session spins up a new " +
     "ask- or code-mode session. When asked things like \"what's still running?\", \"what's waiting on me?\", or \"tell session X to …\", " +
     "use these tools. Combine with the gh CLI (Bash) for deeper PR status (CI checks, review state) beyond the PR link list_sessions already shows." +
-    "\n\n## Human in the loop\nYou can pull a teammate into the loop via the michael-humans MCP: ask_human DMs them (as you, Michael) and folds their reply back into this session. " +
+    "\n\n## Human in the loop\nYou can pull a teammate into the loop via the opensession-humans MCP: ask_human DMs them (as you, Michael) and folds their reply back into this session. " +
     "Use mode 'block' when you can't continue without the answer (your turn pauses until they reply — e.g. \"ask Grant for the copy\"), or 'async' (default) to keep working while you wait. " +
     "For async, deliver_when controls timing: 'now', 'when_done' (when this session next goes idle), 'on_pr' (once a PR is open — best for \"ask John for a review when done\"), or 'at_time' with a natural-language at_time. " +
     "Pass `options` for one-tap button choices, and `context` to attach background (the copy slot, a diff, a screen). Use list_pending_asks / cancel_ask to manage outstanding ones. " +
@@ -813,7 +813,7 @@ export async function processMessage(
     handleAskUserQuestion(sessionKey, input, channel, threadTs);
   const inProcessMcp: Record<string, unknown> = {
     ...adminMcpServers,
-    "michael-ask": createAskUserMcpServer({ ask: askHandler }),
+    "opensession-ask": createAskUserMcpServer({ ask: askHandler }),
   };
   registerSessionMcpServers(bksId, inProcessMcp);
 

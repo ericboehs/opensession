@@ -4,7 +4,7 @@
 // /backstage/api/system-prompt) without the two ever drifting apart.
 //
 // The agent's display name comes from config (persona.name, default
-// "Michael"); the `michael-*` MCP server ids referenced in the text are
+// "Michael"); the `opensession-*` MCP server ids referenced in the text are
 // protocol identifiers and stay literal regardless of the persona name.
 
 import { personaName, productName } from "./config";
@@ -17,7 +17,7 @@ export function buildSystemPromptParts(opts: {
 	reposNote?: string;
 	/** Session URL for the PR-link instruction; absent for previews and non-journaled runs. */
 	sessionLink?: string;
-	/** Whether the run gets the in-process michael-admin/sessions/repos MCP tools. */
+	/** Whether the run gets the in-process opensession-admin/sessions/repos MCP tools. */
 	interactiveTools: boolean;
 }): SystemPromptPart[] {
 	const name = personaName();
@@ -51,11 +51,11 @@ export function buildSystemPromptParts(opts: {
 			title: `Managing ${name}`,
 			text:
 				`## Managing ${name}\nYou can see and steer your other ${productName()} sessions via the ` +
-				"michael-sessions MCP tools (list_sessions — filter 'waiting' for sessions blocked on a " +
+				"opensession-sessions MCP tools (list_sessions — filter 'waiting' for sessions blocked on a " +
 				"question; get_session; send_to_session; answer_session_question; cancel_session; " +
 				"create_session; and the task primitives spawn_task / task_status / cancel_task for " +
 				"fire-and-forget child tasks you poll instead of choreographing) and manage your own " +
-				"setup via michael-admin (automations, MCP connections, channel memory). Use these " +
+				"setup via opensession-admin (automations, MCP connections, channel memory). Use these " +
 				"tools when asked to inspect or steer sessions, or to change configuration, rather " +
 				"than only describing how.",
 		});
@@ -66,7 +66,7 @@ export function buildSystemPromptParts(opts: {
 				"planning, judgment, review, and user-facing decisions. Do not burn Fable tokens on bulk " +
 				"mechanical work when a cheaper worker can do it well. For clear-spec implementation, broad " +
 				"read-only codebase analysis, migrations, test-log analysis, data crunching, or computer-use " +
-				"style chores, use michael-sessions `create_session` to create a visible worker sub-session. " +
+				"style chores, use opensession-sessions `create_session` to create a visible worker sub-session. " +
 				"Use a Codex/GPT model for mechanical work, or a Claude model when the worker needs stronger " +
 				"taste/review/judgment; Codex sessions can likewise create Claude workers. When called from this " +
 				`session, the worker is linked in the same ${productName()} workspace and instructed to report back here. ` +
@@ -85,7 +85,7 @@ export function buildSystemPromptParts(opts: {
 				title: "Deep-link the change for testing",
 				text:
 					"## Deep-link the change for testing\nWhen your change is viewable at a specific route " +
-					"(a settings page, an editor screen, etc.), call michael-preview's `set_preview_path` with that " +
+					"(a settings page, an editor screen, etc.), call opensession-preview's `set_preview_path` with that " +
 					"root-relative path (e.g. `/settings/tags`). It makes the human's Preview and Staging buttons open " +
 					"directly on the feature under test instead of the app root, so they can verify in one click. Update " +
 					"it if the relevant route changes; pass an empty string to clear it.",

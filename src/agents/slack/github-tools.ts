@@ -1,12 +1,12 @@
 /**
- * michael-github — an in-process MCP server that lets Michael trigger the GitHub
+ * opensession-github — an in-process MCP server that lets Michael trigger the GitHub
  * PR behaviors (the same review / auto-fix / simplify / adversarial actions the PR
  * labels fire) from Slack, for cases where the agent is mid-conversation. Explicit
  * "review PR <n>"-style commands are also intercepted deterministically before the
  * agent runs (see handlers.ts) — both paths share ./trigger.
  *
  * Created per interactive Slack message in handlers.ts and added to the Claude
- * run's mcpServers (in-process SDK MCP, like michael-admin — Claude path only).
+ * run's mcpServers (in-process SDK MCP, like opensession-admin — Claude path only).
  */
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
@@ -86,5 +86,5 @@ export function createGithubMcpServer(ctx: GithubToolContext) {
     ),
   ];
 
-  return createSdkMcpServer({ name: "michael-github", version: "1.0.0", tools });
+  return createSdkMcpServer({ name: "opensession-github", version: "1.0.0", tools });
 }

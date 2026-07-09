@@ -10,7 +10,7 @@
  *
  *   - /opensession/run-ws/<hostId> (WS upgrade — run host event stream;
  *                                   /backstage/run-ws/<hostId> legacy alias)
- *   - /opensession/rpc-ws          (WS upgrade — michael-* MCP proxy channel;
+ *   - /opensession/rpc-ws          (WS upgrade — opensession-* MCP proxy channel;
  *                                   /backstage/rpc-ws legacy alias)
  *   - /ingress-health              (bare 200 "ok" for monitors/probes)
  *

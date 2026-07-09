@@ -1,5 +1,5 @@
 /**
- * In-process MCP servers (michael-admin / -sessions / -goals / -humans /
+ * In-process MCP servers (opensession-admin / -sessions / -goals / -humans /
  * -repos / -preview / -github / -ask) — our own thin wrapper over
  * @modelcontextprotocol/sdk, replacing the Claude Agent SDK's
  * createSdkMcpServer/tool helpers with the exact same call shape.

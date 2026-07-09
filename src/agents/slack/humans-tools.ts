@@ -1,9 +1,9 @@
 /**
- * michael-humans — an in-process MCP server that lets a Backstage session pull a
+ * opensession-humans — an in-process MCP server that lets a Backstage session pull a
  * *teammate* into the loop: ask them a question over Slack and fold their answer
  * back into the session. The "human in the loop" surface.
  *
- * Like michael-sessions / michael-admin, this is an in-process SDK MCP wired ONLY
+ * Like opensession-sessions / opensession-admin, this is an in-process SDK MCP wired ONLY
  * into interactive runs (Slack processMessage + Backstage interactiveMcpServers),
  * never into automation runs — untrusted ticket text must not be able to DM the
  * team as Michael. Its tools go through src/server/human-asks.ts, which owns the
@@ -13,7 +13,7 @@
  * Gating: creating/cancelling asks is gated to the trusted user via `isAdmin`
  * (sending DMs to the team as Michael is outward-facing); listing is open to any
  * whitelisted user. In Backstage sessions everyone is treated as admin (the UI is
- * Tailscale- and team-gated already), matching michael-sessions.
+ * Tailscale- and team-gated already), matching opensession-sessions.
  */
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
@@ -200,5 +200,5 @@ export function createHumansMcpServer(ctx: HumansToolContext) {
     );
   }
 
-  return createSdkMcpServer({ name: "michael-humans", version: "1.0.0", tools });
+  return createSdkMcpServer({ name: "opensession-humans", version: "1.0.0", tools });
 }

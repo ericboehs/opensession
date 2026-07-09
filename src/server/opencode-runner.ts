@@ -264,24 +264,24 @@ function baseJournalKind(kind?: string): string {
 
 /** The in-process (proxy) MCP servers a SHARED server's config lists — the
  *  union of what interactive runs carry (interactiveMcpServers in
- *  opensession.ts, plus the Slack loop's michael-github). A run whose
+ *  opensession.ts, plus the Slack loop's opensession-github). A run whose
  *  inProcessMcp names aren't a subset of this list falls back to a
  *  per-session server (see sharedOpencodeEligible), so adding a new
  *  in-process server elsewhere degrades gracefully (that session just stops
- *  sharing) until the name is added here. michael-goal-self is deliberately
+ *  sharing) until the name is added here. opensession-goal-self is deliberately
  *  NOT listed: its tool set exists only for goal sessions, and the MCP tool
  *  list is discovered once per directory instance — a goal session could
  *  cache an empty list. Goal wakes keep per-session servers. */
 export const SHARED_INPROCESS_SERVERS = [
-  "michael-sessions",
-  "michael-admin",
-  "michael-goals",
-  "michael-humans",
-  "michael-repos",
+  "opensession-sessions",
+  "opensession-admin",
+  "opensession-goals",
+  "opensession-humans",
+  "opensession-repos",
   "opensession-memory",
-  "michael-preview",
-  "michael-ask",
-  "michael-github",
+  "opensession-preview",
+  "opensession-ask",
+  "opensession-github",
 ];
 
 /**
@@ -298,7 +298,7 @@ export const SHARED_INPROCESS_SERVERS = [
  *  - runner-host runs whose inProcessMcp arrived as prebuilt stdio proxies
  *    (their rpc token is baked into the proxy env, one per run spec);
  *  - runs carrying an in-process server outside SHARED_INPROCESS_SERVERS
- *    (goal wakes with michael-goal-self, future additions).
+ *    (goal wakes with opensession-goal-self, future additions).
  */
 export function sharedOpencodeEligible(opts: {
   journal?: { kind?: string; bksSessionId?: string };
@@ -735,15 +735,20 @@ export function buildOpencodeInstructions(input: {
   if (input.inProcessMcp && Object.keys(input.inProcessMcp).length) {
     parts.push(
       `## Managing ${personaName()}\nYou can see and steer your other ${productName()} sessions via the ` +
-        "michael-sessions MCP tools (list_sessions, get_session, send_to_session, " +
+        "opensession-sessions MCP tools (list_sessions, get_session, send_to_session, " +
         "answer_session_question, cancel_session, create_session), manage setup via " +
-        "michael-admin, ask teammates via michael-humans, and attach/switch repos via " +
-        "michael-repos when those servers are available."
+        "opensession-admin, ask teammates via opensession-humans, and attach/switch repos via " +
+        "opensession-repos when those servers are available."
     );
-    if ((input.inProcessMcp as Record<string, unknown>)["michael-ask"]) {
+    // Legacy michael-ask key: journaled runner-host runs resumed across the
+    // opensession-* rename carry prebuilt proxy specs under the old id.
+    if (
+      (input.inProcessMcp as Record<string, unknown>)["opensession-ask"] ||
+      (input.inProcessMcp as Record<string, unknown>)["michael-ask"]
+    ) {
       parts.push(
         "## Asking the human a question\nWhen you genuinely need the human's decision to " +
-          "proceed, call michael-ask's `ask_user` tool. It pauses this run on a question card " +
+          "proceed, call opensession-ask's `ask_user` tool. It pauses this run on a question card " +
           `in the ${productName()} UI and returns their answer. Prefer 2-4 concrete options; don't ` +
           "ask for confirmations a reasonable default covers."
       );

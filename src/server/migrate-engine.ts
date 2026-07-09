@@ -1,6 +1,6 @@
 /**
  * Migrate a backstage session onto the OpenCode engine — the "flip the model,
- * let the next turn hand off" affordance behind the michael-sessions
+ * let the next turn hand off" affordance behind the opensession-sessions
  * `migrate_session_engine` tool and scripts/migrate-sessions-to-opencode.ts.
  *
  * Deliberately does NOT start a run: it only sets `session.model` to an

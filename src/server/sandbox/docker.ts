@@ -37,7 +37,7 @@
  *    with host runs of the same worktree all keep working. Narrow on purpose:
  *    only this worktree's transcript dir, not the host's whole ~/.claude.
  *  - The run-rpc socket (~/.backstage-chats/backstage-rpc.sock) is
- *    bind-mounted (a socket can't be mounted ro) so the michael-* stdio
+ *    bind-mounted (a socket can't be mounted ro) so the opensession-* stdio
  *    proxies work from inside. Caveat: if backstage rebinds the socket (real
  *    restart), the bind still points at the old inode until the CONTAINER is
  *    restarted — the idle-stop/start cycle self-heals this, and mcp-proxy
@@ -597,7 +597,7 @@ async function createContainer(
   ];
   mkdirSync(stateDir("audit"), { recursive: true });
 
-  // run-rpc socket (michael-* proxies). WS transport skips it — the proxies
+  // run-rpc socket (opensession-* proxies). WS transport skips it — the proxies
   // dial /backstage/rpc-ws instead, which also removes the stale-inode caveat
   // (a rebound socket needed a container restart to re-resolve). Guard:
   // mounting a MISSING host path would make docker create a directory there
@@ -606,9 +606,9 @@ async function createContainer(
     const rpcSock = rpcSocketPath(OPENSESSION_CHATS_DIR);
     try {
       if (statSync(rpcSock).isSocket()) mounts.push(...vol(rpcSock, rpcSock));
-      else console.warn(`[sandbox] ${rpcSock} exists but is not a socket — michael-* proxies disabled`);
+      else console.warn(`[sandbox] ${rpcSock} exists but is not a socket — opensession-* proxies disabled`);
     } catch {
-      console.warn(`[sandbox] ${rpcSock} missing — michael-* proxies will be unavailable in ${name}`);
+      console.warn(`[sandbox] ${rpcSock} missing — opensession-* proxies will be unavailable in ${name}`);
     }
   }
 

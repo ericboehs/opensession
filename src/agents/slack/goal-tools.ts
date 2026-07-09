@@ -1,11 +1,11 @@
 /**
  * Two in-process MCP servers for Goals (see src/server/goals.ts).
  *
- * - michael-goals — management surface, a sibling of michael-admin. Wired into
+ * - opensession-goals — management surface, a sibling of opensession-admin. Wired into
  *   interactive runs only (never automation runs), gated to the trusted user for
  *   mutations. Lets Michael create/list/steer long-running goals conversationally.
  *
- * - michael-goal-self — the *running goal's own* control surface, bound to one
+ * - opensession-goal-self — the *running goal's own* control surface, bound to one
  *   goal id. Attached only to that goal's session run (see goalMcpServers in
  *   backstage.ts). It lets the mission pace itself (set_next_wake), pause for a
  *   human decision (mark_paused), declare success (mark_done), and write to its
@@ -30,7 +30,7 @@ function text(s: string) {
   return { content: [{ type: "text" as const, text: s }] };
 }
 
-// ── michael-goals (management) ───────────────────────────────
+// ── opensession-goals (management) ───────────────────────────────
 
 export interface GoalsToolContext {
   /** Display name credited as the goal creator. */
@@ -243,10 +243,10 @@ export function createGoalsMcpServer(ctx: GoalsToolContext) {
     );
   }
 
-  return createSdkMcpServer({ name: "michael-goals", version: "1.0.0", tools });
+  return createSdkMcpServer({ name: "opensession-goals", version: "1.0.0", tools });
 }
 
-// ── michael-goal-self (the running goal's own controls) ──────
+// ── opensession-goal-self (the running goal's own controls) ──────
 
 export function createGoalSelfMcpServer(goalId: string) {
   const load = () => getGoal(goalId);
@@ -270,7 +270,7 @@ export function createGoalSelfMcpServer(goalId: string) {
     ),
     tool(
       "mark_paused",
-      "Pause this mission because you're blocked on a human decision or sign-off. Say clearly in `reason` what you need and from whom. (First pull them in with michael-humans ask_human if you haven't.) The ticker won't wake you again until a human resumes the goal.",
+      "Pause this mission because you're blocked on a human decision or sign-off. Say clearly in `reason` what you need and from whom. (First pull them in with opensession-humans ask_human if you haven't.) The ticker won't wake you again until a human resumes the goal.",
       { reason: z.string().describe("What/who you're blocked on.") },
       async (args: { reason: string }) => {
         const g = load();
@@ -326,5 +326,5 @@ export function createGoalSelfMcpServer(goalId: string) {
     ),
   ];
 
-  return createSdkMcpServer({ name: "michael-goal-self", version: "1.0.0", tools });
+  return createSdkMcpServer({ name: "opensession-goal-self", version: "1.0.0", tools });
 }

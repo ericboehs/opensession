@@ -1,5 +1,5 @@
 /**
- * session-control — a tiny registry that decouples the michael-sessions MCP
+ * session-control — a tiny registry that decouples the opensession-sessions MCP
  * (src/agents/slack/sessions-tools.ts) from the live in-process state that only
  * exists inside the main backstage.ts process: the running-run map, the pending
  * AskUserQuestion map, the prompt queues, and the WebSocket broadcast fan-out.
@@ -123,7 +123,7 @@ export function registerSessionControl(c: SessionControl): void {
 export function getSessionControl(): SessionControl {
   if (!impl) {
     throw new Error(
-      "session control not registered — michael-sessions tools only work inside the backstage server process"
+      "session control not registered — opensession-sessions tools only work inside the backstage server process"
     );
   }
   return impl;

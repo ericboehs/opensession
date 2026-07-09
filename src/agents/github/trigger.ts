@@ -1,6 +1,6 @@
 /**
  * Shared entry point for triggering the GitHub PR behaviors from a PR number —
- * used by both the Slack @mention intercept (handlers.ts) and the michael-github
+ * used by both the Slack @mention intercept (handlers.ts) and the opensession-github
  * MCP tools (slack/github-tools.ts). Resolves the PR, fires the behavior
  * fire-and-forget, and returns a human message to relay.
  */

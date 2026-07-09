@@ -176,7 +176,7 @@ export interface UnifiedSession {
 	/** Secondary repos this session also works in (cross-repo sessions). */
 	attachedRepos?: Array<{ repo: string; branch: string; dir: string }>;
 	/** Route the Preview/Staging buttons deep-link to (agent-set via
-	 *  michael-preview); appended to the base URL. Unset = open the app root. */
+	 *  opensession-preview); appended to the base URL. Unset = open the app root. */
 	previewPath?: string;
 	automation?: string;
 	archived?: boolean;

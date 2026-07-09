@@ -26,7 +26,7 @@
  *  - `makeRemoteSandbox` / `makeRemoteLauncher`: the Sandbox handle whose
  *    launchRun starts HOST_ENTRY in-sandbox with the WS-transport env — the
  *    sandbox dials back to `callbackBaseUrl`'s /backstage/run-ws route (there
- *    is no socket option remotely), and the michael-* MCP proxies dial
+ *    is no socket option remotely), and the opensession-* MCP proxies dial
  *    /backstage/rpc-ws. Run dirs use the SAME absolute path host-side and
  *    in-sandbox: spec.json is mirrored host-side (so restart-resume can
  *    re-register tokens), while meta/journal/log live only in the sandbox.

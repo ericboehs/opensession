@@ -1,11 +1,11 @@
 /**
- * michael-preview — a tiny in-process MCP server that lets a session record
+ * opensession-preview — a tiny in-process MCP server that lets a session record
  * *where* its change should be tested. The path is stored on the session and
  * appended to the Preview (local dev server) and Staging (Vercel PR deploy)
  * links in the session viewer, so a human clicks one button and lands directly
  * on the feature under test (e.g. the tag editor) instead of the app root.
  *
- * Wired the same way as michael-repos: interactive runs only (Backstage web
+ * Wired the same way as opensession-repos: interactive runs only (Backstage web
  * sessions + Slack), never automations, and only when a sessionId is in scope.
  * The handler runs in the parent process and persists via the injected
  * setPreviewPath callback (touchBackstageSession), so the buttons update live.
@@ -73,5 +73,5 @@ export function createPreviewMcpServer(ctx: PreviewToolContext) {
     ),
   ];
 
-  return createSdkMcpServer({ name: "michael-preview", version: "1.0.0", tools });
+  return createSdkMcpServer({ name: "opensession-preview", version: "1.0.0", tools });
 }

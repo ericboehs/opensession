@@ -1,5 +1,5 @@
 /**
- * michael-admin — an in-process MCP server that lets Michael manage his own
+ * opensession-admin — an in-process MCP server that lets Michael manage his own
  * setup conversationally from Slack: automations (routines), MCP connections,
  * and channel memory.
  *
@@ -468,7 +468,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
   }
 
   return createSdkMcpServer({
-    name: "michael-admin",
+    name: "opensession-admin",
     version: "1.0.0",
     tools,
   });

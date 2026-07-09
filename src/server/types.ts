@@ -75,7 +75,7 @@ export interface UnifiedSession {
   /** Parent/orchestrator session when spawned as a worker sub-session. */
   parentSessionId?: string;
   /** How many spawn_task hops away from a human-created session this is
-   *  (michael-sessions spawn_task loop guard: refused at depth ≥ 2). Absent =
+   *  (opensession-sessions spawn_task loop guard: refused at depth ≥ 2). Absent =
    *  0 = created by a human or by create_session. */
   spawnDepth?: number;
   /** Secondary repos this session also works in (cross-repo sessions). */
@@ -227,7 +227,7 @@ export interface BackstageSessionFile {
   /** Secondary repos this session also works in (cross-repo sessions). */
   attachedRepos?: AttachedRepo[];
   /** Root-relative route the Preview/Staging buttons deep-link to (set by the
-   *  agent via michael-preview's set_preview_path). Unset = open the app root. */
+   *  agent via opensession-preview's set_preview_path). Unset = open the app root. */
   previewPath?: string;
   createdBy: string;
   createdAt: string;
@@ -240,7 +240,7 @@ export interface BackstageSessionFile {
   /** Parent/orchestrator session when this chat was spawned as a visible worker sub-session. */
   parentSessionId?: string;
   /** spawn_task hop count from a human-created session (loop guard; see
-   *  UnifiedSession.spawnDepth). Stamped by michael-sessions' spawn_task. */
+   *  UnifiedSession.spawnDepth). Stamped by opensession-sessions' spawn_task. */
   spawnDepth?: number;
   automation?: string; // name of the automation that created this session
 
