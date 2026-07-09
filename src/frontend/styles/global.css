@@ -7494,8 +7494,11 @@ a.workspace-info-check-row {
 
 /* A session id rendered by markdown.ts as a clickable link into that session
    (e.g. an orchestrator jumping into the worker it spawned). Reads as a
-   monospace accent chip with an open-in affordance. */
-.session-link {
+   monospace accent chip with an open-in affordance. Scoped on the chip's
+   data-session-id attribute: bare .session-link is ALSO the viewer header's
+   Linear/Plain pills (which carry their own literal ↗), and an unscoped rule
+   here clobbered them into mono accent chips with a second arrow. */
+.session-link[data-session-id] {
 	font-family: var(--mono);
 	font-size: 0.9em;
 	background: var(--accent-soft);
@@ -7510,11 +7513,11 @@ a.workspace-info-check-row {
 		background 0.12s ease,
 		border-color 0.12s ease;
 }
-.session-link::after {
+.session-link[data-session-id]::after {
 	content: " ↗";
 	opacity: 0.55;
 }
-.session-link:hover {
+.session-link[data-session-id]:hover {
 	background: color-mix(in srgb, var(--accent) 18%, transparent);
 	border-color: color-mix(in srgb, var(--accent) 55%, transparent);
 }
