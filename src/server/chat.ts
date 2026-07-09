@@ -38,6 +38,16 @@ export interface ChatImage {
 	mime: string;
 }
 
+/** Snapshot of a quoted message (Slack-style "reply"). A copy, not a
+ *  reference — it stays renderable even after the original leaves the
+ *  bounded store. */
+export interface ChatReplyTo {
+	id: string;
+	user: string;
+	/** Excerpt of the original text (bounded; may be empty for image-only). */
+	text: string;
+}
+
 export interface ChatMessage {
 	id: string;
 	/** Sender's self-selected backstage-user display name ("Michiel"). */
@@ -47,6 +57,13 @@ export interface ChatMessage {
 	images?: ChatImage[];
 	/** ms epoch */
 	ts: number;
+	/** Thread parent's message id — set only on thread replies. Replies to a
+	 *  reply are re-rooted onto the top-level parent (threads never nest). */
+	threadId?: string;
+	/** Quoted message this one replies to (independent of threads). */
+	replyTo?: ChatReplyTo;
+	/** emoji → display names of teammates who reacted with it. */
+	reactions?: Record<string, string[]>;
 }
 
 // Raster types only — SVG is deliberately excluded: it can carry scripts and
@@ -110,6 +127,20 @@ function sanitizeImages(raw: unknown): ChatImage[] {
 		out.push({ id, name: name.slice(0, 200) || "image", mime });
 	}
 	return out;
+}
+
+/** Validate + bound a client-supplied quote snapshot. */
+function sanitizeReplyTo(raw: unknown): ChatReplyTo | undefined {
+	if (!raw || typeof raw !== "object") return undefined;
+	const id = typeof (raw as any).id === "string" ? (raw as any).id : "";
+	const user = typeof (raw as any).user === "string" ? (raw as any).user : "";
+	const text = typeof (raw as any).text === "string" ? (raw as any).text : "";
+	if (!/^[0-9a-f-]{36}$/i.test(id) || !user.trim()) return undefined;
+	return {
+		id,
+		user: user.trim().slice(0, 64),
+		text: text.trim().slice(0, 300),
+	};
 }
 
 // Mentionable teammates. Keep in sync with TEAM in
@@ -176,22 +207,83 @@ export function addChatMessage(
 	user: string,
 	text: string,
 	images?: unknown,
+	opts?: { threadId?: unknown; replyTo?: unknown },
 ): ChatMessage | null {
 	const imgs = sanitizeImages(images);
 	const trimmed = text.trim().slice(0, MAX_TEXT_LEN);
 	if (!trimmed && imgs.length === 0) return null;
+	const all = readAll(channel);
+	// A thread reply must point at a message that exists in this channel;
+	// replying to a reply re-roots onto its top-level parent (Slack semantics —
+	// threads never nest).
+	let threadId: string | undefined;
+	if (
+		typeof opts?.threadId === "string" &&
+		/^[0-9a-f-]{36}$/i.test(opts.threadId)
+	) {
+		const parent = all.find((m) => m.id === opts.threadId);
+		if (parent) threadId = parent.threadId || parent.id;
+	}
+	const replyTo = sanitizeReplyTo(opts?.replyTo);
 	const message: ChatMessage = {
 		id: crypto.randomUUID(),
 		user: user.trim().slice(0, 64),
 		text: trimmed,
 		...(imgs.length ? { images: imgs } : {}),
 		ts: Date.now(),
+		...(threadId ? { threadId } : {}),
+		...(replyTo ? { replyTo } : {}),
 	};
-	const all = readAll(channel);
 	all.push(message);
 	if (!existsSync(CHAT_DIR)) mkdirSync(CHAT_DIR, { recursive: true });
 	writeJsonAtomic(fileFor(channel), { messages: all.slice(-MAX_STORED) });
 	return message;
+}
+
+// Bound the reaction map so a hostile client can't balloon a message record.
+const MAX_DISTINCT_REACTIONS = 24;
+
+/**
+ * Toggle `user`'s `emoji` reaction on a message. Returns the updated message,
+ * or null when the message doesn't exist or the emoji/user is invalid.
+ */
+export function toggleChatReaction(
+	channel: string,
+	messageId: string,
+	emoji: string,
+	user: string,
+): ChatMessage | null {
+	const em = emoji.trim();
+	const who = user.trim().slice(0, 64);
+	// Reactions are short emoji tokens — reject anything long or with spaces.
+	if (!who || !em || em.length > 16 || /\s/.test(em)) return null;
+	const all = readAll(channel);
+	const msg = all.find((m) => m.id === messageId);
+	if (!msg) return null;
+	const reactions: Record<string, string[]> = { ...(msg.reactions || {}) };
+	const users = reactions[em] ? [...reactions[em]] : [];
+	const idx = users.findIndex((u) => u.toLowerCase() === who.toLowerCase());
+	if (idx >= 0) users.splice(idx, 1);
+	else {
+		if (!reactions[em] && Object.keys(reactions).length >= MAX_DISTINCT_REACTIONS)
+			return null;
+		users.push(who);
+	}
+	if (users.length) reactions[em] = users;
+	else delete reactions[em];
+	if (Object.keys(reactions).length) msg.reactions = reactions;
+	else delete msg.reactions;
+	writeJsonAtomic(fileFor(channel), { messages: all.slice(-MAX_STORED) });
+	return msg;
+}
+
+/** Distinct display names who wrote in a thread (parent author + repliers). */
+export function threadUsers(channel: string, threadId: string): string[] {
+	const names = new Set<string>();
+	for (const m of readAll(channel)) {
+		if (m.id === threadId || m.threadId === threadId) names.add(m.user);
+	}
+	return [...names];
 }
 
 /**

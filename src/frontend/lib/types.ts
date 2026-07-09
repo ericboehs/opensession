@@ -62,6 +62,15 @@ export interface ChatImage {
 	mime: string;
 }
 
+/** Snapshot of a quoted message (Slack-style "reply") — a copy, so it stays
+ *  renderable even after the original leaves the bounded store. */
+export interface ChatReplyTo {
+	id: string;
+	user: string;
+	/** Excerpt of the original text (may be empty for image-only originals). */
+	text: string;
+}
+
 export interface ChatMessage {
 	id: string;
 	/** Sender's self-selected backstage-user display name ("Michiel"). */
@@ -71,6 +80,12 @@ export interface ChatMessage {
 	images?: ChatImage[];
 	/** ms epoch */
 	ts: number;
+	/** Thread parent's message id — set only on thread replies. */
+	threadId?: string;
+	/** Quoted message this one replies to (independent of threads). */
+	replyTo?: ChatReplyTo;
+	/** emoji → display names of teammates who reacted with it. */
+	reactions?: Record<string, string[]>;
 }
 
 /**
@@ -533,6 +548,9 @@ export type WSServerMessage =
 	// Native team chat (Watercooler + per-session Chat tabs — not Slack).
 	// Broadcast to every client so unread badges work without joining.
 	| { type: "chat_message"; channel: string; message: ChatMessage }
+	// An existing message changed in place (reaction toggled) — replace by id;
+	// never bumps unread badges.
+	| { type: "chat_message_updated"; channel: string; message: ChatMessage }
 	| { type: "chat_typing"; channel: string; user: string }
 	// Linked Slack channel: a message arrived (inbound event or our own echo).
 	| { type: "slack_message"; channelId: string; message: SlackMessage }

@@ -585,6 +585,28 @@ export function IconMessage(p: IconProps) {
   );
 }
 
+/** Smiley for the add-reaction affordance in team chat. */
+export function IconEmoji(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="12" cy="12" r="7.25" />
+      <path {...stroke} d="M9.25 13.25C9.25 13.25 10 15 12 15C14 15 14.75 13.25 14.75 13.25" />
+      <path {...stroke} d="M9.5 9.75V9.25" />
+      <path {...stroke} d="M14.5 9.75V9.25" />
+    </Svg>
+  );
+}
+
+/** Curved reply arrow for the quote-reply affordance in team chat. */
+export function IconReply(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M9.25 4.75L4.75 9L9.25 13.25" />
+      <path {...stroke} d="M4.75 9H14.25C17.0114 9 19.25 11.2386 19.25 14V19.25" />
+    </Svg>
+  );
+}
+
 /** Water-cup icon for the Watercooler team chat (a cup with a ripple). */
 export function IconWatercooler(p: IconProps) {
   return (

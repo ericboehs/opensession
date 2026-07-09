@@ -667,11 +667,40 @@ export async function postChatMessageApi(
 	text: string,
 	user: string,
 	images?: ChatImage[],
+	opts?: {
+		/** Post into this message's thread (Slack-style thread reply). */
+		threadId?: string;
+		/** Quote this message above the new one (Slack-style "reply"). */
+		replyTo?: import("./types").ChatReplyTo;
+	},
 ): Promise<ChatMessage> {
 	const body = await request<{ message: ChatMessage }>("/chat/messages", {
 		method: "POST",
-		body: { channel, text, user, images: images ?? [] },
+		body: {
+			channel,
+			text,
+			user,
+			images: images ?? [],
+			...(opts?.threadId ? { threadId: opts.threadId } : {}),
+			...(opts?.replyTo ? { replyTo: opts.replyTo } : {}),
+		},
 		label: "Failed to send",
+	});
+	return body.message;
+}
+
+/** Toggle the caller's emoji reaction on a message; resolves to the updated
+ *  message (the server also broadcasts it to every client). */
+export async function toggleChatReactionApi(
+	channel: string,
+	messageId: string,
+	emoji: string,
+	user: string,
+): Promise<ChatMessage> {
+	const body = await request<{ message: ChatMessage }>("/chat/react", {
+		method: "POST",
+		body: { channel, messageId, emoji, user },
+		label: "Failed to react",
 	});
 	return body.message;
 }

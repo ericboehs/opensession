@@ -3838,10 +3838,30 @@ console.log(`Starting Backstage server on ${HOST}:${PORT}...`);
 
 // Reuse the listening server across hot reloads so existing WebSocket clients
 // and in-flight runs survive a tweak; a fresh `bun run` just creates it once.
-// (Session/agent logic still hot-updates: the registry below is re-registered
-// on every reload, and per-message config is read fresh.)
-const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
-	Bun.serve<WSClientData>({
+// On every hot re-evaluation the freshly evaluated handlers (routes/fetch/
+// websocket) are swapped into the LIVE server via server.reload() — a bare
+// `??=` binding would keep the first evaluation's closures serving forever,
+// which is exactly how route edits silently stopped hot-applying.
+function hotServe(
+	options: Parameters<typeof Bun.serve<WSClientData>>[0],
+): import("bun").Server<WSClientData> {
+	const live = g.__backstageServer as
+		| import("bun").Server<WSClientData>
+		| undefined;
+	if (!live) return (g.__backstageServer = Bun.serve<WSClientData>(options));
+	try {
+		// reload's declared type is narrower than the full serve options, but it
+		// accepts (and swaps) routes/fetch/websocket at runtime.
+		live.reload(options as any);
+	} catch (e) {
+		console.error(
+			"[hot-reload] server.reload failed — old handlers keep serving:",
+			e,
+		);
+	}
+	return live;
+}
+const server: import("bun").Server<WSClientData> = hotServe({
 		port: PORT,
 		hostname: HOST,
 		// The plain-triage route waits for worktree+session boot (~15-60s);
@@ -6443,7 +6463,10 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 					);
 				if (!isValidChatChannel(channel))
 					return Response.json({ error: "invalid channel" }, { status: 400 });
-				const message = addChatMessage(channel, user, text, images);
+				const message = addChatMessage(channel, user, text, images, {
+					threadId: body?.threadId,
+					replyTo: body?.replyTo,
+				});
 				// null = nothing to store (no text + no image that landed on disk).
 				if (!message)
 					return Response.json(
@@ -6456,18 +6479,62 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				// @-mentions ping the tagged teammate's devices (works app-closed).
 				const { sendPushToUser } = await import("./src/server/push");
 				const inSession = channel.startsWith("session:");
-				for (const name of mentionedUsers(text, user)) {
+				const chatUrl = inSession
+					? `/backstage/session/${encodeURIComponent(channel.slice("session:".length))}`
+					: "/backstage/watercooler";
+				const preview = text.length > 140 ? `${text.slice(0, 139)}…` : text;
+				const mentioned = mentionedUsers(text, user);
+				for (const name of mentioned) {
 					void sendPushToUser(name, {
 						title: inSession
 							? `${user} mentioned you in a session chat`
 							: `${user} mentioned you in the Watercooler`,
-						body: text.length > 140 ? `${text.slice(0, 139)}…` : text,
-						url: inSession
-							? `/backstage/session/${encodeURIComponent(channel.slice("session:".length))}`
-							: "/backstage/watercooler",
+						body: preview,
+						url: chatUrl,
 						tag: `backstage-chat-${channel}`,
 					});
 				}
+				// A thread reply also pings earlier thread participants (parent
+				// author + repliers) — Slack semantics; explicit mentions above
+				// already covered anyone tagged, so skip those.
+				if (message.threadId) {
+					const { threadUsers } = await import("./src/server/chat");
+					const already = new Set(mentioned.map((n) => n.toLowerCase()));
+					for (const name of threadUsers(channel, message.threadId)) {
+						if (name.toLowerCase() === user.trim().toLowerCase()) continue;
+						if (already.has(name.toLowerCase())) continue;
+						void sendPushToUser(name, {
+							title: inSession
+								? `${user} replied in a session chat thread`
+								: `${user} replied in a Watercooler thread`,
+							body: preview || "🖼️ image",
+							url: chatUrl,
+							tag: `backstage-chat-${channel}`,
+						});
+					}
+				}
+				return Response.json({ message });
+			}
+
+			// Toggle an emoji reaction on a chat message. The updated message fans
+			// out to every client (same broadcast pattern as new messages).
+			if (path === "/backstage/api/chat/react" && req.method === "POST") {
+				const body = await req.json().catch(() => null);
+				const user = typeof body?.user === "string" ? body.user.trim() : "";
+				const messageId =
+					typeof body?.messageId === "string" ? body.messageId : "";
+				const emoji = typeof body?.emoji === "string" ? body.emoji : "";
+				const channel =
+					typeof body?.channel === "string" ? body.channel : "watercooler";
+				const { toggleChatReaction, isValidChatChannel } = await import(
+					"./src/server/chat"
+				);
+				if (!isValidChatChannel(channel) || !user || !messageId || !emoji)
+					return Response.json({ error: "invalid reaction" }, { status: 400 });
+				const message = toggleChatReaction(channel, messageId, emoji, user);
+				if (!message)
+					return Response.json({ error: "message not found" }, { status: 404 });
+				broadcastToAll({ type: "chat_message_updated", channel, message });
 				return Response.json({ message });
 			}
 
@@ -8738,7 +8805,7 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 						console: true,
 					}
 				: false,
-	}));
+});
 
 console.log(`Backstage running at http://${HOST}:${PORT}/backstage/`);
 
