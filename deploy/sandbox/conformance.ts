@@ -505,8 +505,39 @@ async function runEntry(entry: Entry): Promise<void> {
         mcpServers: [],
         journalKind: "sandbox-conformance",
       };
+      // REGRESSION (2026-07-09 launch→attach stalls, bks-019f46e9/bks-019f4729):
+      // the launch's attach chain must never wait behind another long-running
+      // exec on the provider — start one concurrently (same client instance +
+      // HTTP lanes as a prewarm bootstrap's `bun install`; a second paid
+      // sandbox is not created for cost discipline) and require the EAGER
+      // launch (spec write → host exec → dial-back → consumer attach) to
+      // finish inside 10s. The long exec is abandoned; the remote process
+      // dies with the destroy below.
+      let longExec: Promise<unknown> | null = null;
+      if (entry.remote) {
+        longExec = sandbox
+          .exec(["sh", "-c", "sleep 90; echo long-exec-done"])
+          .catch(() => {});
+      }
       const t2 = Date.now();
-      const handle = sandbox.launchRun(runSpec, {});
+      let handle: import("../../src/server/sandbox/provider").RunHandle;
+      try {
+        handle = sandbox.launchRunEager
+          ? await sandbox.launchRunEager(runSpec, {})
+          : sandbox.launchRun(runSpec, {});
+      } catch (e) {
+        ok("launch attached (eager)", false, String(e).slice(0, 160));
+        throw e;
+      }
+      if (entry.remote) {
+        const attachMs = Date.now() - t2;
+        ok(
+          "launch attaches during a concurrent long exec (<10s)",
+          !!sandbox.launchRunEager && attachMs < 10_000,
+          `${attachMs}ms`,
+        );
+        void longExec;
+      }
       const events: string[] = [];
       let text = "";
       let sawInit = false;
