@@ -2,19 +2,10 @@
  * Linear agent session lifecycle, Claude runner, polling, and Ralph mode.
  */
 import { envAlias } from "../../server/rename-compat";
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import {
-  CLAUDE_CODE_BIN,
-  isClaudeUsageLimitError,
-  filterMcpServers,
-  STRIPE_CONFIRM_TOOLS,
-} from "../../server/runner-shared";
-import { pickAccount, markExhausted } from "../../server/claude-accounts";
-import { runCodexAuto } from "../../server/codex-appserver";
+import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
+import { runAgent, cancelAgentRun } from "../../server/agent-runner";
 import { productName } from "../../server/config";
-import { DEFAULT_FALLBACK_MODEL, resolveModel, getDefaultModel } from "../../server/models";
-import { resolveDirectSdkModel } from "../../server/model-resolve";
-import { cleanPlainToolInput } from "../../server/shared/note-style";
+import { getDefaultModel, toOpencodeModel } from "../../server/models";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { worktreePathFor } from "../../server/worktree";
 import { spawn, spawnSync, execSync } from "child_process";
@@ -405,9 +396,9 @@ function makeActionStreamer(accessToken: string, linearSessionId: string) {
   };
 }
 
-// --- Claude headless runner ---
+// --- Headless agent runner (opencode engine) ---
 
-export async function runClaudeHeadless(
+export async function runAgentHeadless(
   worktreeDir: string,
   prompt: string,
   linearSessionId: string,
@@ -415,11 +406,13 @@ export async function runClaudeHeadless(
   resumeClaudeId?: string,
   session?: ActiveSession
 ): Promise<{ result: string; claudeSessionId: string }> {
-  console.log(`[linear] Running Claude SDK in ${worktreeDir}${resumeClaudeId ? ` (resuming ${resumeClaudeId})` : ""}`);
+  console.log(`[linear] Running agent in ${worktreeDir}${resumeClaudeId ? ` (resuming ${resumeClaudeId})` : ""}`);
 
   // Attribute commits this run makes to the Linear issue creator.
   const commitAuthor = gitIdentityFor(session?.issueCreator?.email);
 
+  // Kept as the loop's stop signal (linear/index.ts + handlers abort it):
+  // aborting hard-cancels the engine run by its session id and exits the loop.
   const abortController = new AbortController();
   if (session) {
     session.abortController = abortController;
@@ -431,188 +424,81 @@ export async function runClaudeHeadless(
   const THOUGHT_THROTTLE_MS = 5000;
   const actions = makeActionStreamer(accessToken, linearSessionId);
 
-  // Account rotation (same pool as the backstage runner): the issue actor's
-  // personal sub first, shared pool as backup; when everything is exhausted,
-  // fall back to the codex model as the last resort. Same actor resolution as
-  // the per-user MCP gate below.
-  const accountUser =
+  // The issue actor (last prompting user, else the issue creator): gates
+  // per-user `allowedUsers` MCP servers and drives the personal-first
+  // subscription pick inside the engine. Account rotation and usage-limit
+  // model fallback are runAgent's job now — no rotation loop here.
+  const actorEmail =
     session?.lastActiveUser?.email || session?.issueCreator?.email || undefined;
-  const triedAccountIds = new Set<string>();
-  let account = pickAccount(triedAccountIds, accountUser, session?.model);
-  let limitExhausted = false;
 
-  rotation: for (;;) {
-  let limitHit = false;
-  let resultWasError = false;
+  abortController.signal.addEventListener("abort", () => {
+    cancelAgentRun(claudeSessionId);
+  });
+
   try {
-    const q = query({
+    for await (const event of runAgent({
       prompt,
-      options: {
-        resume: claudeSessionId || resumeClaudeId || undefined,
-        cwd: worktreeDir,
-        env: {
-          ...(process.env as Record<string, string>),
-          ...(account ? { CLAUDE_CODE_OAUTH_TOKEN: account.token } : {}),
-          // Attribute commits to the Linear issue creator.
-          ...gitIdentityEnv(commitAuthor),
-        },
-        allowedTools: [
-          "Bash", "Read", "Edit", "Write", "Grep", "Glob",
-          "Task", "TaskOutput", "WebFetch", "WebSearch",
-          "NotebookEdit", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
-          "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch",
-        ],
-        canUseTool: async (toolName: string, input: unknown) => {
-          // Money-moving Stripe tools need the per-call human confirmation the
-          // backstage runner provides; this path has no approval card, so deny.
-          if (toolName in STRIPE_CONFIRM_TOOLS) {
-            return {
-              behavior: "deny" as const,
-              message: `This Stripe action requires human confirmation — open this session in ${productName()} and retry there; the approval card will appear in that UI.`,
-            };
-          }
-          return {
-            behavior: "allow" as const,
-            updatedInput: cleanPlainToolInput(toolName, input as Record<string, unknown>),
-          };
-        },
-        // Runner-layer MCP gate: enforce per-user `allowedUsers` for the issue
-        // actor (last prompting user, else the issue creator) and strip that
-        // field before the SDK sees the config.
-        mcpServers: filterMcpServers(
-          undefined,
-          session?.lastActiveUser?.email || session?.issueCreator?.email || undefined
-        ) as any,
-        strictMcpConfig: true,
-        // Direct Claude SDK call — peel any opencode/<provider>/ prefix (e.g. an
-        // `opencode/anthropic/claude-sonnet-5` fleet default) down to the native id.
-        model: resolveDirectSdkModel(session?.model || getDefaultModel()),
-        pathToClaudeCodeExecutable: CLAUDE_CODE_BIN,
-        executable: "bun",
-        abortController,
-        systemPrompt: {
-          type: "preset" as const,
-          preset: "claude_code" as const,
-        },
-        settingSources: ["user", "project"],
-      },
-    });
-
-    for await (const msg of q) {
+      sessionId: claudeSessionId || undefined,
+      cwd: worktreeDir,
+      mode: "code",
+      model: toOpencodeModel(session?.model || getDefaultModel()),
+      user: actorEmail,
+      author: commitAuthor,
+      // Kind-only journal: gate marker for the opencode engine, no crash
+      // journal — this loop tracks its own engine session ids per Linear
+      // session and re-drives turns from Linear events.
+      journal: { kind: "linear" },
+      // Money-moving Stripe tools need the per-call human confirmation the
+      // interactive runner provides; this path has no approval card, so they
+      // are stripped from the tool list with this guidance.
+      deniedTools: Object.fromEntries(
+        Object.keys(STRIPE_CONFIRM_TOOLS).map((name) => [
+          name,
+          `This Stripe action requires human confirmation — open this session in ${productName()} and retry there; the approval card will appear in that UI.`,
+        ])
+      ),
+    })) {
       if (abortController.signal.aborted) break;
 
-      // Extract session ID from init
-      if (msg.type === "system" && (msg as any).subtype === "init") {
-        claudeSessionId = (msg as any).session_id || claudeSessionId;
+      if (event.type === "init") {
+        claudeSessionId = event.sessionId || claudeSessionId;
       }
 
-      // Stream thoughts (throttled) and tool calls (coalesced actions) to Linear
-      if (msg.type === "assistant" && (msg as any).message?.content) {
-        const content = (msg as any).message.content;
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === "tool_use") actions.send(block.name, block.input);
-          }
-          const text = content
-            .filter((c: any) => c.type === "text")
-            .map((c: any) => c.text)
-            .join("");
-
-          if (text && text.length > 20) {
-            const now = Date.now();
-            if (now - lastThoughtTime > THOUGHT_THROTTLE_MS) {
-              lastThoughtTime = now;
-              createAgentActivity(accessToken, linearSessionId, {
-                type: "thought",
-                body: text.substring(0, 2000),
-              }).catch((e) => console.error("[linear] Failed to send thought:", e));
-            }
-          }
+      // Stream tool calls (coalesced actions) and thoughts (throttled;
+      // text_chunk carries whole completed text parts) to Linear.
+      if (event.type === "tool_use" && event.toolName) {
+        actions.send(event.toolName, event.toolInput);
+      }
+      if (event.type === "text_chunk" && event.text && event.text.length > 20) {
+        const now = Date.now();
+        if (now - lastThoughtTime > THOUGHT_THROTTLE_MS) {
+          lastThoughtTime = now;
+          createAgentActivity(accessToken, linearSessionId, {
+            type: "thought",
+            body: event.text.substring(0, 2000),
+          }).catch((e) => console.error("[linear] Failed to send thought:", e));
         }
       }
+      if (event.type === "model_switch") {
+        createAgentActivity(accessToken, linearSessionId, {
+          type: "thought",
+          body: `${event.fromModel} is out of usage — continuing this turn on ${event.toModel}. Worktree state carries over.`,
+        }).catch(() => {});
+      }
 
-      // Final result
-      if (msg.type === "result") {
-        const rm = msg as any;
-        claudeSessionId = rm.session_id || claudeSessionId;
-        if (rm.subtype === "success") {
-          result = rm.result || "";
-        } else {
-          result = `Error: ${rm.errors?.join(", ") || "Unknown"}`;
-          resultWasError = true;
-        }
-        console.log(`[linear] Claude finished. Session ID: ${claudeSessionId}`);
+      if (event.type === "done") {
+        claudeSessionId = event.sessionId || claudeSessionId;
+        result = event.result || "";
+        console.log(`[linear] Agent finished. Session ID: ${claudeSessionId}`);
+      }
+      if (event.type === "error") {
+        result = `Error: ${event.content || "Unknown"}`;
       }
     }
-    if (isClaudeUsageLimitError(result, resultWasError)) limitHit = true;
   } catch (e: any) {
-    if (abortController.signal.aborted) {
-      if (session) session.abortController = undefined;
-      actions.stop();
-      return { result, claudeSessionId };
-    }
-    console.error(`[linear] Claude SDK error:`, e);
-    if (isClaudeUsageLimitError(e.message || String(e), true)) {
-      limitHit = true;
-    } else {
+    if (!abortController.signal.aborted) {
+      console.error(`[linear] agent run error:`, e);
       result = `Error: ${e.message || String(e)}`;
-    }
-  }
-
-  if (!limitHit) break rotation;
-
-  if (account) {
-    triedAccountIds.add(account.id);
-    markExhausted(account.id, session?.model);
-  }
-  const next = pickAccount(triedAccountIds, accountUser, session?.model);
-  if (next && next.id !== account?.id) {
-    account = next;
-    console.warn(`[linear] Usage limit hit; retrying on account ${next.name}`);
-    createAgentActivity(accessToken, linearSessionId, {
-      type: "thought",
-      body: `Claude usage limit hit — retrying on account ${next.name}.`,
-    }).catch(() => {});
-    continue rotation;
-  }
-  limitExhausted = true;
-  break rotation;
-  } // rotation
-
-  // Every Claude account exhausted → run the turn on the codex fallback model.
-  // The codex thread has no Claude history, so this is a fresh-context turn in
-  // the same worktree; claudeSessionId is left untouched so later turns resume
-  // the Claude history once limits reset.
-  if (limitExhausted) {
-    const fallback = DEFAULT_FALLBACK_MODEL ? resolveModel(DEFAULT_FALLBACK_MODEL) : null;
-    if (fallback?.provider === "codex") {
-      console.warn(`[linear] Claude usage exhausted; falling back to ${fallback.id}`);
-      createAgentActivity(accessToken, linearSessionId, {
-        type: "thought",
-        body: `Claude usage limits exhausted on all accounts — continuing this turn on ${fallback.id} (Codex). Conversation history doesn't carry over, but the worktree state does.`,
-      }).catch(() => {});
-      try {
-        let fallbackResult = "";
-        for await (const event of runCodexAuto({
-          prompt:
-            prompt +
-            "\n\n[Note: a previous attempt on another model may have left partial work in this worktree — review what's already done before continuing.]",
-          cwd: worktreeDir,
-          mode: "code",
-          model: resolveDirectSdkModel(fallback.id),
-          busyKeys: [`linear-${linearSessionId}`],
-          author: commitAuthor,
-        })) {
-          if (abortController.signal.aborted) break;
-          if (event.type === "done") fallbackResult = event.result || "";
-          if (event.type === "error") fallbackResult = `Error running Codex: ${event.content}`;
-        }
-        result = fallbackResult || result;
-      } catch (e: any) {
-        result = `Error running Codex fallback: ${e.message || String(e)}`;
-      }
-    } else if (!result) {
-      result = "Claude usage limits exhausted on all accounts and no fallback model is configured.";
     }
   }
 

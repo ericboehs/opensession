@@ -185,8 +185,11 @@ export function parseOpencodeModel(
 
 /** Journal kinds minted by trusted interactive paths (backstage.ts:
  *  runSessionPromptInner "prompt", goal wakes "goal", both create paths
- *  "create"; host/sandbox run specs default `journalKind || "prompt"`). */
-const INTERACTIVE_KINDS = new Set(["prompt", "goal", "create"]);
+ *  "create"; host/sandbox run specs default `journalKind || "prompt"`).
+ *  "linear" and "slack" are the team-driven agent loops — trusted humans on
+ *  the other end; their runs still pass the Stripe money-movers as
+ *  deniedTools, which flips them to the unattended tool-strip policy. */
+const INTERACTIVE_KINDS = new Set(["prompt", "goal", "create", "linear", "slack"]);
 
 /** Unattended kinds allowed on this engine — with the least-privilege policy
  *  (opencodeRunPolicy) enforced via stripped tools. "automation" is the

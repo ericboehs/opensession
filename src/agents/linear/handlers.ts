@@ -35,7 +35,7 @@ import {
   getLastMessageUuid,
   loadSessionInfo,
   michaelSessionUrl,
-  runClaudeHeadless,
+  runAgentHeadless,
   saveSessionInfo,
   startRalphLoop,
   startRalphPolling,
@@ -203,7 +203,7 @@ export async function handleIssueUpdate(webhook: IssueWebhook, tokens: LinearTok
           });
         }
 
-        const { result, claudeSessionId } = await runClaudeHeadless(
+        const { result, claudeSessionId } = await runAgentHeadless(
           existingSession!.worktreeDir,
           implementationPrompt,
           existingSession!.linearSessionId,
@@ -506,7 +506,7 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
         inFlightPrompts.add(issueId);
         (async () => {
           try {
-            const { result, claudeSessionId } = await runClaudeHeadless(
+            const { result, claudeSessionId } = await runAgentHeadless(
               s.worktreeDir,
               effectivePrompt,
               agentSession.id,
