@@ -1808,6 +1808,9 @@ function App() {
 										}))}
 									onOpenSession={(id) => navigate({ view: "session", id })}
 									onRunningChange={handleSessionRunningChange}
+									onReviewChange={(id, req) =>
+										patch(id, { reviewRequest: req ?? undefined })
+									}
 									onRename={async (id, title) => {
 										try {
 											await renameSessionApi(id, title);

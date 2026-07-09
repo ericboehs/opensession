@@ -84,6 +84,10 @@ interface Props {
 	reviewRequest?: ReviewRequestInfo | null;
 	/** The chat that owns `reviewRequest` (may be a sibling, not the open one). */
 	reviewRequestSessionId?: string;
+	/** Optimistically push a reviewer pick / sign-off into the app-level session
+	    list, so the sidebar's review bands + the other chip instance flip at once
+	    instead of waiting up to a poll (~5s) for the change to round-trip. */
+	onReviewChange?: (sessionId: string, req: ReviewRequestInfo | null) => void;
 	/** Jump to a sibling tab when a status chip / reply row is clicked. */
 	onOpenTab?: (tab: PanelTab) => void;
 	/** Prefill the composer (the per-comment "Add to chat" hover action). */
@@ -896,6 +900,7 @@ function ReviewerChip({
 	sessionId,
 	reviewRequest,
 	requestSessionId,
+	onReviewChange,
 }: {
 	sessionId: string;
 	reviewRequest?: ReviewRequestInfo | null;
@@ -904,6 +909,9 @@ function ReviewerChip({
 	    chip stays consistent with the sidebar's workspace-level band; a brand-new
 	    request (none exists) targets the open `sessionId`. */
 	requestSessionId?: string;
+	/** Optimistically mirror a pick / sign-off into the app-level session list so
+	    every other surface (sidebar bands, the sibling chip) updates immediately. */
+	onReviewChange?: (sessionId: string, req: ReviewRequestInfo | null) => void;
 }) {
 	const [req, setReq] = useState(reviewRequest ?? null);
 	// Follow the polled session as it refreshes (another viewer may re-assign or
@@ -920,19 +928,29 @@ function ReviewerChip({
 		const prev = req;
 		const me = getCurrentUser();
 		// Re-assigning drops any prior sign-off (a fresh reviewer, fresh review).
-		setReq(name ? { to: name, by: me, at: new Date().toISOString() } : null);
-		setSessionReviewerApi(owner, name, me).catch(() => setReq(prev));
+		const next = name ? { to: name, by: me, at: new Date().toISOString() } : null;
+		setReq(next);
+		onReviewChange?.(owner, next);
+		setSessionReviewerApi(owner, name, me).catch(() => {
+			setReq(prev);
+			onReviewChange?.(owner, prev);
+		});
 	}
 
 	function accept(value: boolean) {
 		if (!req) return;
 		const prev = req;
 		const me = getCurrentUser();
-		setReq({
+		const next: ReviewRequestInfo = {
 			...req,
 			accepted: value ? { by: me, at: new Date().toISOString() } : undefined,
+		};
+		setReq(next);
+		onReviewChange?.(owner, next);
+		acceptReviewApi(owner, value, me).catch(() => {
+			setReq(prev);
+			onReviewChange?.(owner, prev);
 		});
-		acceptReviewApi(owner, value, me).catch(() => setReq(prev));
 	}
 
 	return (
@@ -1011,6 +1029,7 @@ export function WorkspaceInfo({
 	sandbox,
 	reviewRequest,
 	reviewRequestSessionId,
+	onReviewChange,
 	onOpenTab,
 	onAddToInput,
 	onOpenSession,
@@ -1223,6 +1242,7 @@ export function WorkspaceInfo({
 					sessionId={sessionId}
 					reviewRequest={reviewRequest}
 					requestSessionId={reviewRequestSessionId}
+					onReviewChange={onReviewChange}
 				/>
 					<SandboxBadge sandbox={sandbox} />
 				</div>

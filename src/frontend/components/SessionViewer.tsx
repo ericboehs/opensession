@@ -172,6 +172,12 @@ interface Props {
 	onOpenSession?: (id: string) => void;
 	/** Mirror live run state into the app-level session list for sidebar rows. */
 	onRunningChange?: (id: string, isRunning: boolean) => void;
+	/** Mirror a reviewer pick / sign-off into the app-level session list so the
+	    sidebar's review bands flip immediately instead of waiting for a poll. */
+	onReviewChange?: (
+		id: string,
+		req: { to: string; by: string; at: string; accepted?: { by: string; at: string } } | null,
+	) => void;
 }
 
 type PanelTab =
@@ -270,6 +276,7 @@ export function SessionViewer({
 	workerSessions,
 	onOpenSession,
 	onRunningChange,
+	onReviewChange,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
@@ -2326,6 +2333,7 @@ export function SessionViewer({
 										sandbox={session.sandbox}
 										reviewRequest={effectiveReview?.req ?? null}
 										reviewRequestSessionId={effectiveReview?.ownerId}
+										onReviewChange={onReviewChange}
 										onOpenTab={(tab) => {
 											setInfoPageOpen(false);
 											setSubagentStack([]);
@@ -2948,6 +2956,7 @@ export function SessionViewer({
 									sandbox={session.sandbox}
 									reviewRequest={effectiveReview?.req ?? null}
 									reviewRequestSessionId={effectiveReview?.ownerId}
+									onReviewChange={onReviewChange}
 									onOpenTab={(tab) => selectPanelTab(tab)}
 									onAddToInput={(text) =>
 										setComposerPrefill((p) => ({
