@@ -131,6 +131,7 @@ import {
   pickOpenaiAccount,
   bindOpenaiAccount,
   maskOpenaiAccount,
+  opencodeHasNativeOpenaiAuth,
 } from "./opencode-openai-auth";
 import { opencodeTurnTimeoutMs, readOpencodeBridgeConfig } from "./opencode-config";
 import {
@@ -977,9 +978,21 @@ async function* runOpencodeAttempt(
           bridgeAccountLabel = picked.name;
         }
       }
-      // picked.error (no codex accounts) ⇒ intentionally fall through to host
-      // auth; if opencode itself has no openai credential the turn errors
-      // normally with opencode's own "no auth" message.
+      // picked.error (no codex accounts) ⇒ fall through to opencode's own
+      // host auth (`opencode auth login`) — but only when that credential
+      // actually exists. Without it opencode simply omits the provider from
+      // its generated config and the turn dies with a bare "model not found";
+      // say what's actually wrong instead. (In a sandbox this means the
+      // ChatGPT/codex account files aren't mounted — containers created
+      // before the mount fix need recreation.)
+      if ("error" in picked && !opencodeHasNativeOpenaiAuth()) {
+        throw new Error(
+          `opencode/openai: ${picked.error}; and no native \`opencode auth login\` openai ` +
+            "credential exists in this environment. In a sandbox, the ChatGPT/codex account " +
+            "files may not be mounted into the container (recreate the sandbox on current " +
+            "code); otherwise add a codex account in Connections."
+        );
+      }
     }
 
     const { mcp: externalMcp, droppedForConfirm } = buildOpencodeMcpConfig(

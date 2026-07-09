@@ -152,6 +152,24 @@ export function pickOpenaiAccount(
 }
 
 /**
+ * Does opencode itself hold a native `opencode auth login` openai credential
+ * (the fallthrough the runner uses when no codex account is picked)? Checked
+ * at the same XDG path opencode's server process will read, so a sandboxed
+ * run — no host auth mounted — can fail with an honest named error instead
+ * of opencode's bare "model not found" (the provider is simply omitted from
+ * the generated config when there is no credential).
+ */
+export function opencodeHasNativeOpenaiAuth(): boolean {
+  const base = process.env.XDG_DATA_HOME || `${HOME}/.local/share`;
+  try {
+    const j = JSON.parse(readFileSync(`${base}/opencode/auth.json`, "utf-8"));
+    return !!j?.openai;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Bind a picked codex account into opencode-serve env + provider config. For
  * "home" (ChatGPT subscription) accounts this seeds a per-account opencode
  * auth.json from CODEX_HOME/auth.json — access-token-only with a placeholder

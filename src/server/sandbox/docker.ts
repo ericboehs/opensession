@@ -126,6 +126,7 @@ import { writeJsonAtomic } from "../shared/atomic-write";
 import { HostHandle, type HandleCallbacks, type HostLauncher } from "../host-client";
 import { registerRunWsHost, unregisterRunWsHost, runWsConnector } from "../run-ws";
 import { getTranscriptPath } from "../sessions";
+import { listCodexAccounts } from "../codex-accounts";
 import { OPENCODE_TRANSCRIPTS_DIR } from "../opencode-transcript";
 import { dropSandboxPreviewRoutes, tellaLocalSkillDir } from "../preview";
 import { REPOS, getRepo, worktreePathFor, type Repo } from "../worktree";
@@ -630,6 +631,22 @@ async function createContainer(
     process.env.BACKSTAGE_CLAUDE_ACCOUNTS_PATH || `${HOME}/.backstage-claude-accounts.json`,
     "claude account pool",
   );
+  // Codex/ChatGPT account material, for opencode/openai/* dispatch
+  // IN-CONTAINER (pickOpenaiAccount reads the pool store; bindOpenaiAccount
+  // reads each home-account's CODEX_HOME/auth.json and seeds an access-token-
+  // only opencode auth.json under the container-local
+  // ~/.backstage-opencode/openai-data — never these mounts). Without them an
+  // openai model in a sandbox died as opencode's bare "model not found".
+  // Mounted per-FILE and ro on purpose: the auth.json files carry the
+  // rotation-sensitive refresh-token family (opencode-openai-auth.ts header)
+  // — sandboxed code must never be able to rotate/corrupt them, and native
+  // codex runs in-container keep their own per-sandbox ~/.codex volume
+  // (an in-container refresh attempt against a ro auth.json fails loudly
+  // instead of corrupting the host family).
+  roIfExists(`${HOME}/.backstage-codex-accounts.json`, "codex account pool");
+  for (const acct of listCodexAccounts()) {
+    if (acct.kind === "home") roIfExists(`${acct.value}/auth.json`, `codex auth (${acct.name})`);
+  }
   // OpenCode bridge config (~/.backstage-opencode.json): read IN-CONTAINER by
   // the runner-host's opencode dispatch (bridge mode, accounts restriction,
   // turn timeout) — without it every opencode/anthropic/* run in a sandbox
