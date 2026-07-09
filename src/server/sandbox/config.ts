@@ -79,6 +79,26 @@ export const SNAPSHOT_DEFAULTS: SandboxSnapshotsConfig = {
   quickSyncOnRestore: true,
 };
 
+/** The isolated public dial-back listener (src/server/public-ingress.ts):
+ *  a SECOND Bun.serve that exposes ONLY the run-ws/rpc-ws upgrade routes (+ a
+ *  bare health check) so remote sandboxes on the public internet can dial
+ *  back without the rest of the app ever being reachable. Front it with a
+ *  TLS terminator (Caddy/tunnel) — it binds loopback by default. */
+export interface SandboxPublicIngressConfig {
+  /** Master switch. The listener only starts (at boot — needs a restart) when true. */
+  enabled: boolean;
+  /** Listen port (default 3860). */
+  port: number;
+  /** Bind host (default "127.0.0.1" — a reverse proxy/tunnel fronts it). */
+  host: string;
+  /** The base URL remote sandboxes dial, e.g. "wss://michael.tella.dev"
+   *  (http(s) is normalized to ws(s)). When set, remote-provider launches use
+   *  it as their callback base instead of callbackBaseUrl. */
+  publicBaseUrl?: string;
+}
+
+export const PUBLIC_INGRESS_DEFAULT_PORT = 3860;
+
 export interface SandboxDaytonaConfig {
   /** Falls back to DAYTONA_API_KEY. */
   apiKey?: string;
@@ -129,6 +149,8 @@ export interface SandboxConfig {
    * only works for host-local sandboxes.
    */
   callbackBaseUrl?: string;
+  /** Public dial-back listener for remote providers (absent = disabled). */
+  publicIngress?: SandboxPublicIngressConfig;
   /** Daytona adapter (provider "daytona"). */
   daytona?: SandboxDaytonaConfig;
   /** E2B adapter (provider "e2b"). */
@@ -211,6 +233,21 @@ export function sandboxConfig(): SandboxConfig {
         perRepo: Object.keys(perRepo).length ? perRepo : undefined,
         transport: raw?.transport === "ws" ? "ws" : undefined,
         callbackBaseUrl: str(raw?.callbackBaseUrl),
+        publicIngress:
+          raw?.publicIngress && typeof raw.publicIngress === "object"
+            ? {
+                enabled: raw.publicIngress.enabled === true,
+                port:
+                  typeof raw.publicIngress.port === "number" &&
+                  Number.isInteger(raw.publicIngress.port) &&
+                  raw.publicIngress.port > 0 &&
+                  raw.publicIngress.port < 65536
+                    ? raw.publicIngress.port
+                    : PUBLIC_INGRESS_DEFAULT_PORT,
+                host: str(raw.publicIngress.host) || "127.0.0.1",
+                publicBaseUrl: str(raw.publicIngress.publicBaseUrl),
+              }
+            : undefined,
         daytona:
           raw?.daytona && typeof raw.daytona === "object"
             ? {
@@ -407,6 +444,28 @@ export function sandboxCallbackBaseUrl(): string {
   let base =
     cfg.callbackBaseUrl ||
     `ws://${process.env.HOST || "127.0.0.1"}:${process.env.PORT || "3850"}`;
-  base = base.replace(/^http(s?):\/\//, "ws$1://").replace(/\/+$/, "");
-  return base;
+  return normalizeWsBase(base);
+}
+
+function normalizeWsBase(base: string): string {
+  return base.replace(/^http(s?):\/\//, "ws$1://").replace(/\/+$/, "");
+}
+
+/** The publicIngress block when it's actually enabled, else null. */
+export function publicIngressConfig(): SandboxPublicIngressConfig | null {
+  const pi = sandboxConfig().publicIngress;
+  return pi?.enabled ? pi : null;
+}
+
+/**
+ * The base URL REMOTE-provider sandboxes (daytona/e2b) dial back to: the
+ * public-ingress URL when the isolated public listener is enabled and has a
+ * publicBaseUrl, else the plain callbackBaseUrl (tailnet/self-hosted setups
+ * where the sandbox can reach the main bind directly). Docker sandboxes never
+ * use this — they stay on sandboxCallbackBaseUrl (the internal bridge path).
+ */
+export function remoteSandboxCallbackBaseUrl(): string {
+  const pi = publicIngressConfig();
+  if (pi?.publicBaseUrl) return normalizeWsBase(pi.publicBaseUrl);
+  return sandboxCallbackBaseUrl();
 }
