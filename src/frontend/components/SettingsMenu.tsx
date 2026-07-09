@@ -7,7 +7,7 @@ import { IconCheck, IconChevronRight, IconGear } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { TEAM, setCurrentUser, useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
-import { PRODUCT_NAME } from "../lib/brand";
+import { PRODUCT_MARK, PRODUCT_NAME } from "../lib/brand";
 
 // The "Michael menu": the account switcher (who you're acting as), the live
 // connection status, and an entry into the full Settings page (theme,
@@ -120,7 +120,7 @@ function SettingsSheet({
 					className="app-logo-button"
 					onClick={() => setOpen(true)}
 				>
-					<span className="app-logo">B</span>
+					<span className="app-logo">{PRODUCT_MARK}</span>
 				</button>
 			) : (
 				<button
@@ -244,7 +244,7 @@ export function SettingsMenu({
 					className="group flex items-center gap-[9px] rounded-md border-none bg-transparent py-1 pl-1.5 pr-1.5 text-fg hover:bg-hover data-[popup-open]:bg-hover"
 				>
 					<span className="relative inline-flex shrink-0">
-						<span className="app-logo app-logo--sm">B</span>
+						<span className="app-logo app-logo--sm">{PRODUCT_MARK}</span>
 						{/* Live connection dot on the logo corner (ring matches sidebar bg). */}
 						<span
 							className="app-logo-status"

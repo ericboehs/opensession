@@ -18,7 +18,7 @@
  *   `backstage-user`, `/backstage/` routes, `bks-` prefixes) stay literal.
  */
 
-export const PRODUCT_NAME = "OpenSession";
+export const PRODUCT_NAME = "OS¹";
 
 /** Short brand monogram for visual brand-mark contexts (logo chip, favicon,
  *  loading screen) — never in code identifiers, package names, or CLI/env. */
