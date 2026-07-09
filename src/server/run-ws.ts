@@ -115,6 +115,50 @@ interface RunWsState {
  *  replaces the previous socket, mirroring host.ts's single-client rule). */
 const wsConns: Map<string, RunWsState> = (g.__runWsConns ??= new Map());
 
+/** hostId → connect() calls parked until the host's dial-back arrives.
+ *  Resolution is EVENT-driven (wsOpen fires these) — never timer-polled: a
+ *  failed `bun --hot` reload kills setTimeout delivery process-wide (see the
+ *  tripwire at the bottom), which is exactly what parked the 2026-07-09
+ *  launches (bks-019f46e9, bks-019f4729) — connectWithWait's 300ms poll died
+ *  and the consumer never attached even though the host had dialed in. */
+const wsDialWaiters: Map<string, Set<(err?: Error) => void>> = (g.__runWsDialWaiters ??=
+  new Map());
+
+/** Park until the host dials in (resolved by wsOpen), the registration is
+ *  dropped (rejected), or `timeoutMs` passes (rejected — but only in a
+ *  process whose timers still work; the dial-in event needs no timer). */
+function waitForDialIn(hostId: string, timeoutMs: number): Promise<void> {
+  if (!wsTokens.get(hostId)) {
+    // Nothing is registered to dial — fail fast instead of parking forever.
+    return Promise.reject(new Error(`no run-ws token registered for ${hostId}`));
+  }
+  return new Promise<void>((resolve, reject) => {
+    const set = wsDialWaiters.get(hostId) ?? new Set();
+    wsDialWaiters.set(hostId, set);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const waiter = (err?: Error) => {
+      if (timer !== undefined) clearTimeout(timer);
+      set.delete(waiter);
+      if (set.size === 0 && wsDialWaiters.get(hostId) === set) wsDialWaiters.delete(hostId);
+      if (err) reject(err);
+      else resolve();
+    };
+    set.add(waiter);
+    timer = setTimeout(
+      () => waiter(new Error(`no live run-ws connection for ${hostId} yet`)),
+      timeoutMs,
+    );
+    (timer as { unref?: () => void }).unref?.();
+  });
+}
+
+function fireDialWaiters(hostId: string, err?: Error): void {
+  const set = wsDialWaiters.get(hostId);
+  if (!set) return;
+  wsDialWaiters.delete(hostId);
+  for (const w of [...set]) w(err);
+}
+
 /** WS client data marker; backstage.ts's handlers early-return on it. */
 export interface SandboxWsData {
   sandboxWs: "run-host" | "rpc";
@@ -130,6 +174,7 @@ export function registerRunWsHost(hostId: string, token: string): void {
 export function unregisterRunWsHost(hostId: string): void {
   wsTokens.delete(hostId);
   wsSeqs.delete(hostId);
+  fireDialWaiters(hostId, new Error(`run-ws host ${hostId} unregistered`));
   const st = wsConns.get(hostId);
   if (st) {
     wsConns.delete(hostId);
@@ -220,6 +265,9 @@ function wsOpen(ws: any): boolean {
     // it knows exactly what to replay (ws-buffer.ts replayStartFor).
     sendAck(st);
     console.log(`[run-ws] host ${data.hostId.slice(0, 11)} dialed in`);
+    // Wake connect() calls parked on this dial-in — the event IS the attach
+    // trigger (no polling; see wsDialWaiters).
+    fireDialWaiters(data.hostId);
     return true;
   }
   if (data?.sandboxWs === "rpc") return true;
@@ -274,9 +322,10 @@ function wsMessage(ws: any, message: string | Buffer): boolean {
       // if this socket dies before a consumer attaches, the un-acked frames
       // are replayed on the next dial instead of vanishing with the buffer.
       // Parking is normal for a beat after dial-in; a TERMINAL frame parking
-      // is the signature of a stuck launch (2026-07-09: a stalled provider
-      // SDK call kept connectWithWait from ever running while the whole run
-      // streamed into this buffer) — log those so it's never silent again.
+      // is the signature of a stuck launch (2026-07-09: a failed --hot reload
+      // killed setTimeout process-wide, so connectWithWait's poll loop parked
+      // forever while the whole run streamed into this buffer — see the
+      // timer-poisoning tripwire below) — log those so it's never silent.
       if (msg?.t === "end") {
         console.warn(
           `[run-ws] host ${st.hostId.slice(0, 11)} streamed its terminal frame with no consumer attached — ` +
@@ -343,9 +392,18 @@ async function handleRpcFrame(ws: any, message: string | Buffer): Promise<void> 
 function makeRunWsConnector(hostId: string): HostConnector {
   return {
     async connect(handlers: HostConnectionHandlers): Promise<HostConnection> {
-      const st = wsConns.get(hostId);
+      let st = wsConns.get(hostId);
       if (!st || st.closed) {
-        throw new Error(`no live run-ws connection for ${hostId} yet`);
+        // Wait for the dial-in EVENT instead of failing so the caller polls:
+        // host-client's retry cadence is timer-driven, and a failed --hot
+        // reload kills timers process-wide — the attach chain must be able to
+        // ride the dial-back event alone. Bounded (8s) for healthy processes
+        // so the crashed-host reconnect loop still gets its rejection.
+        await waitForDialIn(hostId, 8_000);
+        st = wsConns.get(hostId);
+        if (!st || st.closed) {
+          throw new Error(`no live run-ws connection for ${hostId} yet`);
+        }
       }
       st.consumer = handlers;
       if (st.buffer.length) {
@@ -453,4 +511,38 @@ export function dropRunWsConnection(hostId: string): boolean {
     st.ws.close();
   } catch {}
   return true;
+}
+
+// ── Timer-poisoning tripwire ──────────────────────────────────────────────────
+// A FAILED `bun --hot` reload (syntax/reference error from a mid-edit save —
+// e.g. a sweep agent's transient broken state) permanently kills setTimeout/
+// setInterval delivery for this WHOLE process (verified on Bun 1.3.14,
+// 2026-07-09: pending timers never resume AND newly scheduled ones never
+// fire; minimal repro in the commit message). Network IO keeps working, so
+// the process looks healthy while every timer-driven loop — schedulers, idle
+// sweeps, shutdown drain, connect polls, SDK waitUntilStarted polls — is
+// silently dead (that's what stalled bks-019f46e9 / bks-019f4729 and the
+// daytona Shell tab). There is no in-process recovery; the only fix is a
+// restart. Detection must therefore be EVENT-driven: module scope re-runs on
+// every successful reload, so compare the wall clock against a heartbeat
+// interval — a stale stamp means timers died since the last reload.
+{
+  const hb = (g.__timerPoisonHeartbeat ??= { at: Date.now(), armed: false });
+  if (hb.armed && Date.now() - hb.at > 15_000) {
+    g.__timersPoisonedAt ??= new Date().toISOString();
+    console.error(
+      `[run-ws] TIMERS ARE DEAD — heartbeat stale ${Math.round((Date.now() - hb.at) / 1000)}s. ` +
+        "A failed --hot reload killed setTimeout/setInterval process-wide; schedulers, sweeps, " +
+        "drain and connect polls are silently parked. RESTART NEEDED (systemctl restart backstage).",
+    );
+    hb.armed = false; // re-arm below; if timers stay dead the next reload screams again
+  }
+  if (!hb.armed) {
+    hb.armed = true;
+    hb.at = Date.now();
+    const t = setInterval(() => {
+      hb.at = Date.now();
+    }, 5_000);
+    (t as { unref?: () => void }).unref?.();
+  }
 }
