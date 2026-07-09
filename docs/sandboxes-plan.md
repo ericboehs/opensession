@@ -374,7 +374,11 @@ restoring while the user is still writing the prompt) is backlog.
   status API), and a config-status read so the toggle only shows when a
   provider is configured (today it's always offered and inert without one).
 - Warm pool / snapshotting for fast starts — base snapshots DONE
-  (Workstream S); warm-on-typing + prebaked-deps images are backlog.
+  (Workstream S); REMOTE warm-on-typing DONE (src/server/sandbox/prewarm.ts:
+  typing a new-session prompt with daytona/e2b selected starts the runner
+  bootstrap immediately; create adopts the warmed sandbox — pool keyed by
+  provider:repo, TTL'd, capped, label-audited). Still backlog: the docker
+  snapshot-restore variant (§7) + prebaked-deps images.
 - ~~Self-hoster docs~~ DONE: `docs/self-hosting-sandboxes.md` (Docker
   default, full config schema, Daytona/E2B guides + certification via the
   conformance suite, licensing, path parity, kill switch, restart rules).

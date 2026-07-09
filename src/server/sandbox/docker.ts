@@ -1128,6 +1128,14 @@ function ensureIdleSweep(): void {
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
+// NOT prewarmed: the warm-on-typing prewarm pool (src/server/sandbox/
+// prewarm.ts) is remote-only by design. Docker mounts — workspace bind/volume,
+// run dir, per-session claude/codex state volumes — are fixed at `docker
+// create` time, so a container created before the session exists could never
+// get the session's mounts; and a cold docker ensure is ~2-3s anyway (the
+// image is prebaked, and a worktree's `git fetch origin` measured ~1.5s on
+// this host — under the threshold where prewarming it would pay).
+
 // Workspace resolution is delegated here so a cwd derived through the docker
 // provider is byte-identical to the local provider's (and to the session
 // paths' own resolution, which passes an already-resolved cwd in `spec.cwd`).

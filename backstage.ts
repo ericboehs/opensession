@@ -6914,6 +6914,29 @@ const server: import("bun").Server<WSClientData> = (g.__backstageServer ??=
 				return Response.json(sandboxCapabilityStatus());
 			}
 
+			// Warm-on-typing sandbox prewarm (src/server/sandbox/prewarm.ts):
+			// the New-session palette POSTs {provider, repo, user} on the first
+			// keystroke (and ~every 60s while typing) with a REMOTE provider
+			// selected, so the 30-45s runner bootstrap runs while the prompt is
+			// being written; the create's ensure() then ADOPTS the warmed
+			// sandbox. Cheap + idempotent (a live prewarm is just TTL-touched),
+			// rate-limited per user, and validation lives in requestPrewarm —
+			// unknown provider/repo answer {state:"unsupported"}, no-remote
+			// setups {state:"disabled"}. Frontend swallows every failure.
+			if (path === "/backstage/api/sandbox/prewarm" && req.method === "POST") {
+				const body = await req.json().catch(() => null);
+				const provider = typeof body?.provider === "string" ? body.provider : "";
+				const repoId = typeof body?.repo === "string" ? body.repo : "";
+				const user = typeof body?.user === "string" && body.user ? body.user : "anon";
+				const { requestPrewarm, prewarmRateLimited } = await import(
+					"./src/server/sandbox/prewarm"
+				);
+				if (prewarmRateLimited(user)) {
+					return Response.json({ state: "rate-limited" }, { status: 429 });
+				}
+				return Response.json(await requestPrewarm(provider, repoId, user));
+			}
+
 			// What an interactive session will be told on top of the claude_code
 			// preset — previewed in the New Session modal. Same builder the runner
 			// uses (src/server/system-prompt.ts), so this can't drift from reality.

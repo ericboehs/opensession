@@ -176,6 +176,18 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   // https URL (GitHub PAT / x-access-token).
   "cloneCredential": { "type": "https-token", "token": "ghp_…" },
 
+  // Warm-on-typing prewarm pool (remote providers; src/server/sandbox/
+  // prewarm.ts): typing a new-session prompt with daytona/e2b selected
+  // starts the runner bootstrap immediately; the session create ADOPTS the
+  // warmed sandbox, cutting first-turn sandbox latency from ~30-45s+ to
+  // seconds. Absent block = these defaults, with `enabled` true whenever a
+  // remote provider is configured.
+  "prewarm": {
+    "enabled": true,           // default: true iff daytona/e2b has an API key
+    "ttlMinutes": 10,          // destroy an untouched prewarm after N minutes
+    "maxLive": 2               // max live prewarms across all repos (paid compute)
+  },
+
   // Remote runner bootstrap (first ensure() installs bun + the backstage
   // runner + claude CLI inside the sandbox — minutes cold):
   "runnerBundleUrl": null,     // tarball of the runner bundle (preferred)

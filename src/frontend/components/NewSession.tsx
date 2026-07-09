@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, fetchSandboxStatus, fetchSystemPrompt, suggestBranch, type ModelOption, type SandboxStatusInfo, type SystemPromptPart } from "../lib/api";
+import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, fetchSandboxStatus, fetchSystemPrompt, requestSandboxPrewarm, suggestBranch, type ModelOption, type SandboxStatusInfo, type SystemPromptPart } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
@@ -163,6 +163,29 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     !!sandboxStatus?.enabled && !sandboxStatus.killSwitch && sandboxChoices.length > 0;
   const sandboxLabel = (id: string) =>
     id === "" ? "Host" : id === "docker" ? "Docker" : id === "daytona" ? "Daytona" : id === "e2b" ? "E2B" : id;
+
+  // Warm-on-typing (docs/sandboxes-plan.md backlog): with a REMOTE provider
+  // selected, the first keystroke in the prompt fires a sandbox prewarm and
+  // repeats at most once per 60s while typing continues — each call extends
+  // the server pool's TTL, and session create then ADOPTS the warmed sandbox
+  // (30-45s of runner bootstrap already done). Strictly fire-and-forget: a
+  // failure must never surface or block typing.
+  const isRemoteSandbox = sandboxProvider === "daytona" || sandboxProvider === "e2b";
+  const [sandboxWarmed, setSandboxWarmed] = useState(false);
+  const lastPrewarmAtRef = useRef(0);
+  useEffect(() => {
+    // Provider/repo switch: allow an immediate re-fire for the new key.
+    lastPrewarmAtRef.current = 0;
+    setSandboxWarmed(false);
+  }, [sandboxProvider, repo]);
+  useEffect(() => {
+    if (!isRemoteSandbox || !prompt.trim() || creating) return;
+    if (Date.now() - lastPrewarmAtRef.current < 60_000) return;
+    lastPrewarmAtRef.current = Date.now();
+    requestSandboxPrewarm(sandboxProvider, repo, getCurrentUser())
+      .then((r) => setSandboxWarmed(r.state === "ready"))
+      .catch(() => {});
+  }, [prompt, isRemoteSandbox, sandboxProvider, repo, creating]);
 
   // MCP servers: empty by default (minimal context), users can opt in for
   // specific ones. The list comes from mcp-config.json via the connections
@@ -665,6 +688,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 >
                   <IconBox size={22} />
                   <span>{sandboxLabel(sandboxProvider)}</span>
+                  {sandboxWarmed && isRemoteSandbox && (
+                    <span className="text-[11px] font-medium text-faint">· warmed</span>
+                  )}
                   <IconChevronDown size={17} className="text-faint" />
                 </Menu.Trigger>
                 <Menu.Popup align="start" sideOffset={6} className="max-w-[min(340px,calc(100vw-1rem))]">

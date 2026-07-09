@@ -339,6 +339,13 @@ function need(r: ExecResult, what: string): void {
   }
 }
 
+/** What the bootstrap marker records — a prewarmed sandbox is only adoptable
+ *  while its recorded signature still matches this (prewarm.ts claim check). */
+export function bootstrapSignature(): string {
+  const cfg = sandboxConfig();
+  return cfg.runnerSha || cfg.runnerBundleUrl || "unpinned";
+}
+
 /**
  * Install the runner payload in a fresh remote sandbox (idempotent — a marker
  * file short-circuits every later call). See the module header for what/why
@@ -349,7 +356,7 @@ export async function bootstrapRemoteSandbox(
   label: string,
 ): Promise<void> {
   const cfg = sandboxConfig();
-  const signature = cfg.runnerSha || cfg.runnerBundleUrl || "unpinned";
+  const signature = bootstrapSignature();
   const marker = await driver.exec(`cat ${BOOTSTRAP_MARKER} 2>/dev/null`);
   if (marker.exitCode === 0 && marker.stdout.trim() === signature) return;
   const log = (msg: string) => console.log(`[sandbox:${label}] bootstrap: ${msg}`);

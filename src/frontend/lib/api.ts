@@ -1046,6 +1046,24 @@ export async function fetchSandboxStatus(): Promise<SandboxStatusInfo> {
 	return res.json();
 }
 
+/** Warm-on-typing sandbox prewarm (POST /api/sandbox/prewarm): fired by the
+ *  New-session palette when the user types with a REMOTE provider selected,
+ *  so the sandbox bootstrap runs while they write the prompt. Idempotent and
+ *  cheap server-side; callers must swallow failures (never block typing). */
+export async function requestSandboxPrewarm(
+	provider: string,
+	repo: string,
+	user: string,
+): Promise<{ state: string }> {
+	const res = await fetch(`${BASE}/sandbox/prewarm`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ provider, repo, user }),
+	});
+	if (!res.ok) throw new Error(`prewarm failed: ${res.status}`);
+	return res.json();
+}
+
 export async function createAutomationApi(input: {
 	name: string;
 	prompt: string;

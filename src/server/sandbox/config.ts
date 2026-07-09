@@ -99,6 +99,24 @@ export interface SandboxPublicIngressConfig {
 
 export const PUBLIC_INGRESS_DEFAULT_PORT = 3860;
 
+/** Warm-on-typing prewarm pool for REMOTE providers (src/server/sandbox/
+ *  prewarm.ts): typing a new-session prompt with daytona/e2b selected starts
+ *  the runner bootstrap immediately; session create adopts the warmed
+ *  sandbox. `enabled` defaults to TRUE whenever a remote provider is
+ *  configured (the pool is inert otherwise). */
+export interface SandboxPrewarmConfig {
+  enabled: boolean;
+  /** Destroy an untouched prewarm after this many minutes (default 10). */
+  ttlMinutes: number;
+  /** At most this many live prewarms across all keys (default 2 — paid compute). */
+  maxLive: number;
+}
+
+export const PREWARM_DEFAULTS: Omit<SandboxPrewarmConfig, "enabled"> = {
+  ttlMinutes: 10,
+  maxLive: 2,
+};
+
 export interface SandboxDaytonaConfig {
   /** Falls back to DAYTONA_API_KEY. */
   apiKey?: string;
@@ -167,6 +185,9 @@ export interface SandboxConfig {
   e2b?: SandboxE2bConfig;
   /** Clone auth for remote-provider workspaces + runner bootstrap. */
   cloneCredential?: SandboxCloneCredential;
+  /** Warm-on-typing prewarm pool (remote providers). Absent = defaults, with
+   *  `enabled` true whenever a remote provider is configured. */
+  prewarm?: Partial<SandboxPrewarmConfig>;
   /** Tarball URL of the backstage runner bundle for remote bootstrap (takes
    *  precedence over the git-clone fallback). */
   runnerBundleUrl?: string;
@@ -276,6 +297,21 @@ export function sandboxConfig(): SandboxConfig {
           raw?.cloneCredential?.type === "none"
             ? { type: raw.cloneCredential.type, token: str(raw.cloneCredential.token) }
             : undefined,
+        prewarm:
+          raw?.prewarm && typeof raw.prewarm === "object"
+            ? {
+                enabled:
+                  typeof raw.prewarm.enabled === "boolean" ? raw.prewarm.enabled : undefined,
+                ttlMinutes:
+                  typeof raw.prewarm.ttlMinutes === "number" && raw.prewarm.ttlMinutes > 0
+                    ? raw.prewarm.ttlMinutes
+                    : undefined,
+                maxLive:
+                  typeof raw.prewarm.maxLive === "number" && raw.prewarm.maxLive >= 1
+                    ? Math.floor(raw.prewarm.maxLive)
+                    : undefined,
+              }
+            : undefined,
         runnerBundleUrl: str(raw?.runnerBundleUrl),
         runnerRepoUrl: str(raw?.runnerRepoUrl),
         runnerSha: str(raw?.runnerSha),
@@ -300,6 +336,26 @@ export function effectiveSandboxProvider(repoId?: string): SandboxProviderId {
  *  defaults; a missing block = the defaults with `enabled: false`. */
 export function sandboxSnapshots(): SandboxSnapshotsConfig {
   return sandboxConfig().snapshots || SNAPSHOT_DEFAULTS;
+}
+
+/** Effective warm-on-typing prewarm settings (prewarm.ts pool). `enabled`
+ *  defaults to true exactly when a remote provider (daytona/e2b) has an API
+ *  key — a docker-only or unconfigured setup never prewarms paid compute. */
+export function sandboxPrewarmConfig(): SandboxPrewarmConfig {
+  const cfg = sandboxConfig();
+  const remoteConfigured =
+    sandboxConfigPresent() &&
+    Boolean(
+      cfg.daytona?.apiKey ||
+        process.env.DAYTONA_API_KEY ||
+        cfg.e2b?.apiKey ||
+        process.env.E2B_API_KEY,
+    );
+  return {
+    enabled: cfg.prewarm?.enabled ?? remoteConfigured,
+    ttlMinutes: cfg.prewarm?.ttlMinutes ?? PREWARM_DEFAULTS.ttlMinutes,
+    maxLive: cfg.prewarm?.maxLive ?? PREWARM_DEFAULTS.maxLive,
+  };
 }
 
 /** Effective run transport (docker honors the config; remote providers pass

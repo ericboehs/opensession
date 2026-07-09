@@ -59,6 +59,13 @@ import {
   type RemoteDriver,
   type RemoteExecOpts,
 } from "./bootstrap";
+import {
+  claimPrewarm,
+  discardClaimedPrewarm,
+  PREWARM_KEY_LABEL,
+  PREWARM_LABEL,
+  type PrewarmAdapter,
+} from "../prewarm";
 
 const SESSION_LABEL = "backstage.session";
 const DEFAULT_IDLE_STOP_MINUTES = 30;
@@ -237,6 +244,38 @@ export class DaytonaProvider implements SandboxProvider {
     }
     if (sbx && stateOf(sbx) === "gone") sbx = null;
     if (!sbx) {
+      // Warm-on-typing adoption (src/server/sandbox/prewarm.ts): a ready
+      // prewarm for (daytona, repo) whose runner pin + snapshot still match
+      // is claimed atomically and relabeled to this session — the expensive
+      // bootstrap below becomes a marker no-op and only the workspace clone
+      // remains. Any hiccup falls through to the cold create; the claimed
+      // sandbox is discarded so paid compute never dangles.
+      const claim = claimPrewarm(this.id, repo.id, spec.sessionId);
+      if (claim) {
+        try {
+          const cand = await client.get(claim.sandboxId);
+          if (cand && stateOf(cand) !== "gone") {
+            // setLabels REPLACES the label map — the prewarm labels vanish
+            // here, which is what retires it from the pool's orphan audit.
+            await cand.setLabels({ [SESSION_LABEL]: spec.sessionId, "backstage.sandbox": "1" });
+            // Swap the pool's short-TTL backstops for the session lifecycle.
+            await cand.setAutostopInterval(cfg.idleStopMinutes || DEFAULT_IDLE_STOP_MINUTES);
+            await cand.setAutoDeleteInterval(-1);
+            sbx = cand;
+            console.log(
+              `[sandbox:daytona] adopted prewarmed sandbox ${cand.id} for ${spec.sessionId}`,
+            );
+          } else {
+            discardClaimedPrewarm(this.id, claim.sandboxId);
+          }
+        } catch (e) {
+          console.warn(`[sandbox:daytona] prewarm adoption failed (cold-creating):`, e);
+          sbx = null;
+          discardClaimedPrewarm(this.id, claim.sandboxId);
+        }
+      }
+    }
+    if (!sbx) {
       console.log(`[sandbox:daytona] creating sandbox for ${spec.sessionId}`);
       // Sizing comes from the configured org snapshot — custom `resources`
       // are rejected when creating from a snapshot (live-API behavior
@@ -339,3 +378,56 @@ export class DaytonaProvider implements SandboxProvider {
     removeRemoteState(this.id, sandboxId);
   }
 }
+
+// ── Warm-on-typing prewarm hooks (src/server/sandbox/prewarm.ts) ─────────────
+
+/**
+ * The pool's provider hooks. Prewarm creates mirror the session create shape
+ * (same org snapshot — sizing is create-time, so an adopted sandbox must
+ * already be the right size) but carry the PREWARM labels instead of a
+ * session label, plus provider-side autoStop/autoDelete backstops so a
+ * crashed backstage can't leak paid compute. Loaded lazily by prewarm.ts —
+ * this module statically imports claimPrewarm from there, so the reverse
+ * edge must stay dynamic.
+ */
+export const daytonaPrewarmAdapter: PrewarmAdapter = {
+  async create(labels, opts) {
+    const cfg = sandboxConfig();
+    const sbx = await (await daytonaClient()).create(
+      {
+        ...(cfg.daytona?.snapshot ? { snapshot: cfg.daytona.snapshot } : {}),
+        labels,
+        autoStopInterval: opts.autoStopMinutes,
+        autoDeleteInterval: opts.autoDeleteMinutes,
+      } as any,
+      { timeout: 300 },
+    );
+    return { sandboxId: sbx.id, driver: daytonaDriver(sbx) };
+  },
+
+  async destroy(sandboxId) {
+    try {
+      const client = await daytonaClient();
+      const sbx = await client.get(sandboxId);
+      if (sbx) await client.delete(sbx, 120);
+    } catch (e) {
+      console.warn(`[sandbox:daytona] prewarm destroy(${sandboxId}):`, e);
+    }
+  },
+
+  async listPrewarmed() {
+    const client = await daytonaClient();
+    const out: Array<{ id: string; key: string }> = [];
+    for await (const s of client.list({ labels: { [PREWARM_LABEL]: "1" } } as any)) {
+      // Mid-teardown sandboxes still list with their labels for a few
+      // seconds — same guard as the conformance leftovers audit.
+      const state = String((s as any).state || "");
+      if (/destroy|delet/i.test(state)) continue;
+      out.push({
+        id: (s as any).id,
+        key: String((s as any).labels?.[PREWARM_KEY_LABEL] || ""),
+      });
+    }
+    return out;
+  },
+};

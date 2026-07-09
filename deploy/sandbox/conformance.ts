@@ -281,6 +281,10 @@ const entries: Entry[] = [
       callbackBaseUrl: remoteBase,
       previewPorts: [8080],
       daytona: { apiKey: daytonaKey },
+      // Warm-on-typing prewarm (src/server/sandbox/prewarm.ts): the section
+      // prewarms BEFORE the first ensure, which must then ADOPT the warmed
+      // sandbox (same id, seconds not minutes) — total sandbox count stays 1.
+      prewarm: { enabled: true, ttlMinutes: 20, maxLive: 2 },
       ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
@@ -329,6 +333,30 @@ async function runEntry(entry: Entry): Promise<void> {
     mode: "code" as const,
   };
 
+  // 0. warm-on-typing prewarm (remote entries with prewarm.enabled): request
+  //    a prewarm the way the typing route does, wait for ready, and expect
+  //    the ensure below to ADOPT it — an adopted ensure only does the
+  //    dial-back probe + marker check + workspace clone (seconds), never the
+  //    cold runner bootstrap (minutes).
+  let prewarmedId = "";
+  if (entry.remote && (entry.config as any).prewarm?.enabled) {
+    const { requestPrewarm } = await import("../../src/server/sandbox/prewarm");
+    const tP = Date.now();
+    let st = await requestPrewarm(entry.providerId, entry.repoId, "sbxtest");
+    ok("prewarm request accepted", st.state === "bootstrapping" || st.state === "ready", st.state);
+    const deadline = Date.now() + 900_000;
+    while (st.state === "bootstrapping" && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5000));
+      st = await requestPrewarm(entry.providerId, entry.repoId, "sbxtest");
+    }
+    ok(
+      "prewarm reached ready",
+      st.state === "ready" && !!st.sandboxId,
+      `${st.state} in ${((Date.now() - tP) / 1000).toFixed(0)}s`,
+    );
+    prewarmedId = st.sandboxId || "";
+  }
+
   let sandbox: Sandbox | null = null;
   try {
     // 1. ensure / reuse
@@ -336,6 +364,18 @@ async function runEntry(entry: Entry): Promise<void> {
     sandbox = await provider.ensure(spec);
     const ensureMs = Date.now() - t0;
     ok("ensure() created the sandbox", !!sandbox.id, `${sandbox.id} in ${(ensureMs / 1000).toFixed(1)}s`);
+    if (prewarmedId) {
+      ok(
+        "ensure() adopted the prewarmed sandbox",
+        sandbox.id === prewarmedId,
+        `ensure ${sandbox.id} vs prewarm ${prewarmedId}`,
+      );
+      ok(
+        "adopted ensure skipped the cold bootstrap",
+        sandbox.id === prewarmedId && ensureMs < 90_000,
+        `${(ensureMs / 1000).toFixed(1)}s`,
+      );
+    }
     ok("status() is running", (await sandbox.status()) === "running");
     const t1 = Date.now();
     const again = await provider.ensure(spec);
@@ -582,9 +622,14 @@ async function auditDaytonaLeftovers(): Promise<void> {
         // ONLY sbxtest-labeled sandboxes count as suite leftovers. The API
         // key may be the LIVE org's: real sessions' sandboxes carry the same
         // backstage.sandbox=1 label, and reaping those here would destroy a
-        // live session's workspace out from under it.
-        const session = String((s as any).labels?.["backstage.session"] || "");
-        if (!session.startsWith("sbxtest-")) continue;
+        // live session's workspace out from under it. Prewarm sandboxes
+        // (backstage.prewarm=1) have no session label — the suite's carry a
+        // prewarm key whose repo id is sbx-prefixed (sbxpub); the live
+        // pool's (daytona:tella-fusion, …) are equally off-limits here.
+        const labels = (s as any).labels || {};
+        const session = String(labels["backstage.session"] || "");
+        const prewarmRepo = String(labels["backstage.prewarm.key"] || "").split(":")[1] || "";
+        if (!session.startsWith("sbxtest-") && !prewarmRepo.startsWith("sbx")) continue;
         out.push({ id: (s as any).id, state });
       }
       return out;
