@@ -13,6 +13,42 @@ repo. If every controlled channel fails, stop and report the failure instead of
 escalating to a third-party host. The same rule is injected into every engine
 run via `buildOpencodeInstructions` (opencode-runner.ts).
 
+## Server architecture map (post-refactor 2026-07-09)
+
+`opensession.ts` is a thin entry (~630 lines): env, `hotServe` (reuse the live
+server across hot reloads), the `Bun.serve` composition (SPA routes map + fetch
+preamble → route dispatch → WS-upgrade/SPA-fallback/404 tail), `loadAgents`,
+the `__backstageBooted` boot block, and graceful shutdown. Everything else
+lives in focused modules — work in the module that owns your feature, not the
+entry file (that's what keeps parallel sessions from colliding):
+
+- `src/server/routes/` — every HTTP route, one file per domain (sessions, pr,
+  plain, workspace, models, …). Handlers get a `RouteContext` and return a
+  `Response` or `undefined` to fall through; `routes/index.ts` is the ordered
+  chain. Order only matters *within* a path family — keep a family (e.g.
+  `/notes/search` before `/notes/:id`) in one module. New endpoint → add it to
+  the matching domain file (or a new file + one line in index.ts).
+- `src/server/ws-handlers.ts` — the UI WebSocket (watch/prompt/queue control/
+  answers/terminals/notes/chat + create_session).
+- `src/server/run-session.ts` — driving a session turn: runSessionPrompt(Inner),
+  queue delivery (enqueue/steer/interrupt/drain), sandbox launch, restart
+  resume, /loop ticker. This is runner-adjacent: changes need a real restart.
+- State modules (all park live state on `globalThis` under the same keys so
+  hot reloads keep it): `ws-hub.ts` (clients/presence/broadcasts),
+  `queue-state.ts` (prompt queues + steer receipts), `asks.ts` (pending
+  AskUserQuestion + Slack escalation), `session-cache.ts` (2s session cache —
+  call `invalidateSessionsCache()`, never poke the cache), `agents-registry.ts`.
+- `session-repos.ts` (repo notes/attach/switch), `interactive-mcp.ts`
+  (interactive opensession-* MCP builders; side-effect registers the run-rpc
+  builder), `session-control-wiring.ts` (opensession-sessions MCP surface),
+  `slash-commands.ts`, `goal-runner.ts` (goal wakes + ticker),
+  `frontend-build.ts` (in-process SPA rebuild), `uploads.ts`,
+  `session-sandbox.ts`.
+
+Modules with module-scope side effects (listener/ticker registration guarded
+by `__backstageBooted`) are explicitly side-effect-imported at the top of
+opensession.ts — if you add such a module, add it to that import list.
+
 ## OpenSession dev workflow (self-hosting — read this first)
 
 Naming: OPENSESSION_* env vars, `~/.opensession-*` state, `/opensession/` URLs.
