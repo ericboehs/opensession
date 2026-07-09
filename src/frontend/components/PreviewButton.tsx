@@ -17,20 +17,27 @@ import {
   IconPlayOutline,
 } from "./icons";
 
-// Only tella-fusion worktrees are previewable — the bring-up script
-// (tella-local ensure-up.sh) seeds a tella-fusion webapp specifically.
+// Any worktree session gets the control; whether a repo can actually boot a
+// preview comes back on the status itself (`bootable` — repo-committed
+// .backstage/start.sh → configured previewCommand → tella-local fallback).
+// Repos with no mechanism show a disabled button explaining what to add.
 function isPreviewable(session: UnifiedSession): boolean {
-  if (!session.worktreeDir) return false;
-  return (session.repo ?? "tella-fusion") === "tella-fusion";
+  return !!session.worktreeDir;
 }
 
+// Where the boot-script contract is documented (shown when a repo has no
+// preview boot mechanism yet).
+const PREVIEW_DOCS_URL =
+  "https://github.com/tellahq/backstage/blob/master/deploy/sandbox/README.md#previews-in-sandboxes-phase-4a";
+
 /**
- * Header control for a session's local dev server ("Tella Local"). When the
+ * Header control for a session's local dev server ("Preview"). When the
  * webapp is up it links to it (`https://<host>:<httpsPort>` — a Caddy-fronted
  * secure origin over the tailnet); when it's off, a ▶ play button starts it
- * (runs `just dev` in the worktree via the tella-local script), showing a
+ * (runs the repo's preview boot script in the worktree), showing a
  * "Starting…" state until the server is listening. A caret popover lists the
- * dev services and can stop them. Renders only for tella-fusion worktrees.
+ * dev services and can stop them. Renders for any session with a worktree;
+ * repos without a boot mechanism get a disabled state pointing at the docs.
  */
 export function PreviewButton({
   session,
@@ -107,6 +114,10 @@ export function PreviewButton({
     : "#";
   const anyRunning = status.services.some((s) => s.running);
   const isStarting = busy && !running;
+  // Absent on pre-field servers — treat as bootable so the button still works
+  // against a not-yet-restarted backend.
+  const bootable = status.bootable !== false;
+  const notBootableHint = `No preview boot mechanism for this repo — commit a .backstage/start.sh to the repo, or set previewCommand on its repos config entry`;
 
   async function start() {
     setStarting(true);
@@ -225,10 +236,12 @@ export function PreviewButton({
         <button className="preview-stop" onClick={stop} disabled={stopping}>
           {stopping ? "Cancelling…" : "Cancel startup"}
         </button>
-      ) : (
+      ) : bootable ? (
         <button className="preview-stop" onClick={start}>
           Start dev server
         </button>
+      ) : (
+        <div className="preview-empty">{notBootableHint}.</div>
       )}
       {variant === "header" && running && (
         <button className="preview-stop preview-snap-row" onClick={snap} disabled={snapping}>
@@ -236,9 +249,15 @@ export function PreviewButton({
         </button>
       )}
       <div className="preview-hint">
-        {running || anyRunning
-          ? "Stops this worktree's dev process group only."
-          : "Runs just dev in this worktree (first build ~1 min)."}
+        {running || anyRunning ? (
+          "Stops this worktree's dev process group only."
+        ) : bootable ? (
+          "Runs the repo's preview boot script in this worktree (first build ~1 min)."
+        ) : (
+          <a href={PREVIEW_DOCS_URL} target="_blank" rel="noopener">
+            Boot-script contract docs
+          </a>
+        )}
       </div>
     </div>
   );
@@ -267,7 +286,7 @@ export function PreviewButton({
           </Tooltip>
         ) : isStarting ? (
           <Tooltip
-            label={stopping ? "Cancelling…" : "Starting Tella Local — click to cancel"}
+            label={stopping ? "Cancelling…" : "Starting the dev server — click to cancel"}
             side="bottom"
           >
             <button
@@ -282,8 +301,19 @@ export function PreviewButton({
               </span>
             </button>
           </Tooltip>
+        ) : !bootable ? (
+          <Tooltip label={`${notBootableHint} — right-click for details`} side="bottom" multiline>
+            <button
+              className="viewer-code-icon preview-icon is-off opacity-45 cursor-not-allowed"
+              onClick={openMenu}
+              onContextMenu={openMenu}
+              aria-disabled="true"
+            >
+              <IconPlayOutline size={24} />
+            </button>
+          </Tooltip>
         ) : (
-          <Tooltip label="Run — start Tella Local (right-click for dev services)" side="bottom">
+          <Tooltip label="Run — start the dev server (right-click for dev services)" side="bottom">
             <button
               className="viewer-code-icon preview-icon is-off"
               onClick={start}
@@ -318,7 +348,7 @@ export function PreviewButton({
           className="preview-open starting"
           onClick={stop}
           disabled={stopping}
-          title="Starting Tella Local (first build can take a minute) — click to cancel"
+          title="Starting the dev server (first build can take a minute) — click to cancel"
         >
           <span className="preview-spinner" />
           <span className="preview-starting-label">
@@ -326,11 +356,21 @@ export function PreviewButton({
           </span>
           <span className="preview-cancel-label">Cancel</span>
         </button>
+      ) : !bootable ? (
+        <button
+          className="preview-open opacity-45 cursor-not-allowed"
+          onClick={() => setOpen((v) => !v)}
+          aria-disabled="true"
+          title={`${notBootableHint}.`}
+        >
+          <IconPlay size={15} className="preview-play" />
+          Preview
+        </button>
       ) : (
         <button
           className="preview-open"
           onClick={start}
-          title="Start Tella Local and preview this session"
+          title="Start the dev server and preview this session"
         >
           <IconPlay size={15} className="preview-play" />
           Preview

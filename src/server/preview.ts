@@ -17,10 +17,26 @@
  * have been started with `ALLOWED_DEV_ORIGINS=<host>` so Next dev hydrates over
  * that origin (the tella-local ensure-up.sh seeds it). The preview URL is then
  * `https://<host>:<httpsPort>`.
+ *
+ * The bring-up itself is repo-generic: resolvePreviewBoot picks a committed
+ * `.backstage/start.sh` from the target repo first, then the repo's configured
+ * `previewCommand`, then the legacy tella-local script (tella-fusion only) —
+ * one chain shared by host and sandboxed previews.
  */
 import { $ } from "bun";
-import { closeSync, existsSync, openSync, readFileSync, readlinkSync, unlinkSync } from "fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "fs";
+import { homedir } from "os";
 import { basename, dirname, join } from "path";
+import { getAgentAwsEnv } from "./aws-creds";
 import { sandboxConfig } from "./sandbox/config";
 import {
   lookupSandboxHttpsPort,
@@ -28,6 +44,7 @@ import {
   sandboxHttpsPortFor,
 } from "./sandbox/preview-ports";
 import type { Sandbox } from "./sandbox/provider";
+import type { Repo } from "./config";
 import { repoForPath } from "./worktree";
 
 export interface PreviewService {
@@ -50,6 +67,10 @@ export interface PreviewStatus {
   starting: boolean;
   /** HTTPS preview URL (Caddy-fronted) when the webapp is up, else null. */
   previewUrl: string | null;
+  /** Whether a bring-up mechanism exists for this worktree's repo (repo
+   *  `.backstage/start.sh` → config `previewCommand` → tella-local fallback).
+   *  False = the Start button can't do anything; the UI shows what to add. */
+  bootable: boolean;
   services: PreviewService[];
 }
 
@@ -64,6 +85,63 @@ const ENSURE_UP =
 export function tellaLocalSkillDir(): string {
   return dirname(ENSURE_UP);
 }
+
+// ── Bring-up resolution (ONE chain, shared by host + sandbox previews) ────────
+// The boot command should live IN the target repo, not in backstage: a
+// committed `.backstage/start.sh` beats instance config (`previewCommand` on
+// the repos registry entry), which beats the legacy tella-local script — the
+// tella-fusion-specific fallback that predates the lifecycle convention.
+// Docs: deploy/sandbox/README.md "Previews in sandboxes".
+
+export interface PreviewBoot {
+  kind: "repo-script" | "preview-command" | "tella-local";
+  /** `sh -c`-ready command; every path component passes assertSafePath. */
+  cmd: string;
+  /** `.backstage/setup.sh` when present — the one-shot sibling hook
+   *  (repo-script kind only). */
+  setupScript?: string;
+}
+
+/**
+ * Resolve how to bring `worktreeDir`'s dev server up. `exists` abstracts the
+ * filesystem so the same chain serves host previews (fs) and sandboxed ones
+ * (in-container `test -f`). Returns null when the repo has no boot mechanism
+ * at all — the UI surfaces that as a disabled Start button.
+ */
+export async function resolvePreviewBoot(
+  worktreeDir: string,
+  repo: Pick<Repo, "id" | "previewCommand">,
+  exists: (path: string) => Promise<boolean> | boolean,
+): Promise<PreviewBoot | null> {
+  const startSh = `${worktreeDir}/.backstage/start.sh`;
+  if (await exists(startSh)) {
+    const setupSh = `${worktreeDir}/.backstage/setup.sh`;
+    return {
+      kind: "repo-script",
+      cmd: `bash ${assertSafePath(startSh)}`,
+      setupScript: (await exists(setupSh)) ? setupSh : undefined,
+    };
+  }
+  if (repo.previewCommand) {
+    // Absolute previewCommands may not exist in this environment (e.g. a host
+    // path the sandbox image doesn't carry) — fall through instead of failing.
+    if (!repo.previewCommand.startsWith("/") || (await exists(repo.previewCommand))) {
+      return {
+        kind: "preview-command",
+        cmd: `${repo.previewCommand} ${assertSafePath(worktreeDir)}`,
+      };
+    }
+    console.warn(
+      `[preview] previewCommand ${repo.previewCommand} (repo ${repo.id}) not present here — trying the fallback chain`,
+    );
+  }
+  if (repo.id === "tella-fusion" && (await exists(ENSURE_UP))) {
+    return { kind: "tella-local", cmd: `bash ${ENSURE_UP} ${assertSafePath(worktreeDir)}` };
+  }
+  return null;
+}
+
+const hostExists = (p: string) => existsSync(p);
 
 // Worktrees with an in-flight `startPreview` (worktreeDir -> started-at ms).
 // Parked on globalThis so it survives --hot reloads. Entries are cleared when
@@ -254,6 +332,9 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
     running: !!webapp?.running,
     starting: !webapp?.running && isStarting(worktreeDir),
     previewUrl,
+    bootable:
+      !!webapp?.running ||
+      (await resolvePreviewBoot(worktreeDir, repoForPath(worktreeDir), hostExists)) != null,
     services,
   };
 }
@@ -290,18 +371,109 @@ export async function capturePreviewScreenshot(
   }
 }
 
+/** Fresh `.ports.conf` body in tella-fusion dev-services.sh format (harmless
+ *  for repos that ignore it — a lifecycle start.sh just reads $WEBAPP_PORT). */
+function freshPortsConfText(webappPort: number, comment: string): string {
+  const rand = (min: number, max: number) => min + Math.floor(Math.random() * (max - min + 1));
+  return [
+    "# Port configuration for development services",
+    `# Seeded by backstage (${comment}): WEBAPP_PORT is the port the preview`,
+    "# is fronted at — do not hand-edit it.",
+    `WEBAPP_PORT=${webappPort}`,
+    `INSTANT_PORT=${rand(5100, 5999)}`,
+    `WEBAPP_WORKFLOW_PORT=${rand(6100, 6999)}`,
+    `WEBAPP_EMAILS_PREVIEW_PORT=${rand(6100, 6999)}`,
+    `TEMPORAL_PORT=${rand(7200, 7999)}`,
+    `TEMPORAL_UI_PORT=${rand(8200, 8999)}`,
+    "",
+  ].join("\n");
+}
+
+/** Seed/adopt `<worktree>/.ports.conf` (host fs variant of
+ *  seedSandboxPortsConf): rewrite only WEBAPP_PORT when the file exists. */
+function seedHostPortsConf(worktreeDir: string, webappPort: number): void {
+  const file = join(worktreeDir, ".ports.conf");
+  if (existsSync(file)) {
+    const text = readFileSync(file, "utf8");
+    writeFileSync(file, text.replace(/^WEBAPP_PORT=.*$/m, `WEBAPP_PORT=${webappPort}`));
+  } else {
+    writeFileSync(file, freshPortsConfText(webappPort, "host preview"));
+  }
+}
+
+/** A webapp port for a host repo-script boot: the worktree's existing
+ *  .ports.conf entry when nothing else is listening on it, else a free
+ *  random port from the host webapp dev range (3100-3999). */
+async function allocateHostWebappPort(worktreeDir: string): Promise<number | null> {
+  const existing = readPorts(worktreeDir).find((p) => p.key === "WEBAPP_PORT")?.port;
+  if (existing && (await listenersOnPort(existing)).length === 0) return existing;
+  for (let i = 0; i < 20; i++) {
+    const port = 3100 + Math.floor(Math.random() * 900);
+    if ((await listenersOnPort(port)).length === 0) return port;
+  }
+  return null;
+}
+
+// One-shot `.backstage/setup.sh` stamps for HOST previews (the sandbox path
+// runs setup.sh at workspace materialization instead — see sandbox/adapters).
+// Stamped per worktree; "settled" once run, success or not, mirroring the
+// sandbox semantics: setup never blocks or retries.
+const SETUP_STAMP_DIR = join(homedir(), ".backstage-chats", "preview-setup");
+function setupStampPath(worktreeDir: string): string {
+  return join(SETUP_STAMP_DIR, worktreeDir.replace(/\//g, "_") + ".done");
+}
+
 /**
- * Bring the session's local dev server up (Tella Local) if it isn't already,
- * by running the tella-local `ensure-up.sh` against this worktree. The script
- * is idempotent and self-detaches `just dev` (nohup), but its first-build wait
- * can take minutes — so we spawn it in the background and return immediately
- * with `starting: true`. Callers poll `getPreviewStatus` to see it flip to
- * `running` once the webapp is listening.
+ * Bring the session's dev server up if it isn't already, using the shared
+ * resolution chain (repo `.backstage/start.sh` → config `previewCommand` →
+ * tella-local). Bring-ups can take minutes (first build) — so we spawn the
+ * command in the background and return immediately with `starting: true`;
+ * callers poll `getPreviewStatus` to see it flip to `running`.
+ *
+ * Environment contract (same as sandbox boots): `BACKSTAGE_BOOT_MODE=fresh`
+ * always; repo-script boots additionally get `WEBAPP_PORT` (allocated here and
+ * seeded into .ports.conf so status can see it) and `PREVIEW_URL`. The legacy
+ * rungs (previewCommand/tella-local) own their .ports.conf themselves.
+ *
+ * AWS: the backstage service cgroup denies IMDS (IPAddressDeny in
+ * backstage.service), so children spawned here can never mint instance-role
+ * creds on their own — that's what silently broke the tella-fusion bring-up
+ * (its `aws` preflight and prebuilt-WASM S3 install both need creds). Inject
+ * the same short-lived credentials agent runs get (aws-creds.ts).
  */
 export async function startPreview(worktreeDir: string): Promise<PreviewStatus> {
   const status = await getPreviewStatus(worktreeDir);
   if (status.running || status.starting) return status;
-  if (!existsSync(ENSURE_UP)) return status; // nothing to run
+  const boot = await resolvePreviewBoot(worktreeDir, repoForPath(worktreeDir), hostExists);
+  if (!boot) return status; // nothing to run (status.bootable is false)
+
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    ...(await getAgentAwsEnv()),
+    BACKSTAGE_BOOT_MODE: "fresh",
+  };
+
+  let cmd = boot.cmd;
+  if (boot.kind === "repo-script") {
+    const port = await allocateHostWebappPort(worktreeDir);
+    if (port == null) {
+      console.warn(`[preview] ${worktreeDir}: no free webapp port for the repo-script boot`);
+      return status;
+    }
+    seedHostPortsConf(worktreeDir, port);
+    env.WEBAPP_PORT = String(port);
+    env.PREVIEW_URL = `https://${await previewHost()}:${httpsPortFor(port)}`;
+    // One-shot sibling hook, stamped per worktree; failure never blocks the
+    // start (matches the sandbox workspace-setup semantics).
+    const stamp = setupStampPath(worktreeDir);
+    if (boot.setupScript && !existsSync(stamp)) {
+      try {
+        mkdirSync(SETUP_STAMP_DIR, { recursive: true });
+      } catch {}
+      cmd =
+        `bash ${assertSafePath(boot.setupScript)}; touch ${assertSafePath(stamp)}; ` + cmd;
+    }
+  }
 
   starting.set(worktreeDir, Date.now());
   try {
@@ -310,14 +482,22 @@ export async function startPreview(worktreeDir: string): Promise<PreviewStatus> 
       "a",
     );
     // setsid puts the bring-up in its own process group (pgid = pid): the
-    // nohup'd `just dev` and everything under it inherit that group, so a
-    // cancel (stopPreview mid-start) can kill the whole tree with one signal —
-    // and can never hit backstage's own group.
-    const proc = Bun.spawn(["setsid", "bash", ENSURE_UP, worktreeDir], {
-      stdout: log,
-      stderr: log,
-      stdin: "ignore",
-    });
+    // dev server and everything under it inherit that group, so a cancel
+    // (stopPreview mid-start) can kill the whole tree with one signal — and
+    // can never hit backstage's own group. The group is also written to
+    // .ports/dev-pgid so stop works across backstage restarts (ensure-up.sh's
+    // inner `just dev` overwrites it with its own detached group — either way
+    // the file points at the group that outlives the bring-up).
+    const proc = Bun.spawn(
+      ["setsid", "bash", "-c", `mkdir -p .ports && echo $$ > .ports/dev-pgid; ${cmd}`],
+      {
+        cwd: worktreeDir,
+        env: env as Record<string, string>,
+        stdout: log,
+        stderr: log,
+        stdin: "ignore",
+      },
+    );
     startPgids.set(worktreeDir, proc.pid);
     // Don't hold the event loop open on it, and clear the flag when it exits
     // (success flips to running via polling; failure/exit stops "starting").
@@ -333,7 +513,7 @@ export async function startPreview(worktreeDir: string): Promise<PreviewStatus> 
     starting.delete(worktreeDir);
     startPgids.delete(worktreeDir);
   }
-  return { ...status, starting: true };
+  return { ...status, starting: true, bootable: true };
 }
 
 /**
@@ -489,8 +669,17 @@ export async function getSandboxPreviewStatus(
     running: !!webapp?.running,
     starting: !webapp?.running && isStarting(worktreeDir),
     previewUrl,
+    bootable:
+      !!webapp?.running ||
+      (await resolvePreviewBoot(worktreeDir, repoForPath(worktreeDir), sandboxExists(sandbox))) !=
+        null,
     services,
   };
+}
+
+/** `exists` predicate for resolvePreviewBoot inside a sandbox. */
+function sandboxExists(sandbox: Sandbox): (p: string) => Promise<boolean> {
+  return async (p) => (await sandbox.exec(["test", "-f", p])).exitCode === 0;
 }
 
 /**
@@ -509,19 +698,7 @@ async function seedSandboxPortsConf(
   webappPort: number,
 ): Promise<void> {
   const conf = assertSafePath(`${worktreeDir}/.ports.conf`);
-  const rand = (min: number, max: number) => min + Math.floor(Math.random() * (max - min + 1));
-  const fresh = [
-    "# Port configuration for development services",
-    "# Seeded by backstage (sandbox preview): WEBAPP_PORT is a container port",
-    "# pre-published to the host at create time — do not hand-edit it.",
-    `WEBAPP_PORT=${webappPort}`,
-    `INSTANT_PORT=${rand(5100, 5999)}`,
-    `WEBAPP_WORKFLOW_PORT=${rand(6100, 6999)}`,
-    `WEBAPP_EMAILS_PREVIEW_PORT=${rand(6100, 6999)}`,
-    `TEMPORAL_PORT=${rand(7200, 7999)}`,
-    `TEMPORAL_UI_PORT=${rand(8200, 8999)}`,
-    "",
-  ].join("\\n");
+  const fresh = freshPortsConfText(webappPort, "sandbox preview").replace(/\n/g, "\\n");
   await sandbox.exec([
     "sh", "-c",
     `if [ -f ${conf} ]; then sed -i 's/^WEBAPP_PORT=.*/WEBAPP_PORT=${webappPort}/' ${conf}; ` +
@@ -622,29 +799,21 @@ export async function startSandboxPreview(
     return status;
   }
 
-  // 2. Resolve the bring-up command (lifecycle convention; see docstring).
-  const startSh = `${worktreeDir}/.backstage/start.sh`;
-  const repo = repoForPath(worktreeDir);
-  let cmd: string | null = null;
-  if ((await sandbox.exec(["test", "-f", startSh])).exitCode === 0) {
-    cmd = `bash ${assertSafePath(startSh)}`;
-  } else if (repo.previewCommand) {
-    if (repo.previewCommand.startsWith("/") &&
-        (await sandbox.exec(["test", "-r", repo.previewCommand])).exitCode !== 0) {
-      console.warn(
-        `[preview] ${sandbox.id}: previewCommand ${repo.previewCommand} not present in the sandbox — cannot start`,
-      );
-      return status;
-    }
-    cmd = `${repo.previewCommand} ${assertSafePath(worktreeDir)}`;
-  } else if ((await sandbox.exec(["test", "-r", ENSURE_UP])).exitCode === 0) {
-    cmd = `bash ${ENSURE_UP} ${assertSafePath(worktreeDir)}`;
-  } else {
+  // 2. Resolve the bring-up command — the same chain as host previews
+  //    (repo .backstage/start.sh → previewCommand → tella-local), with
+  //    existence checked in-container.
+  const boot = await resolvePreviewBoot(
+    worktreeDir,
+    repoForPath(worktreeDir),
+    sandboxExists(sandbox),
+  );
+  if (!boot) {
     console.warn(
-      `[preview] ${sandbox.id}: no .backstage/start.sh, no repo previewCommand, ${ENSURE_UP} not in the sandbox — cannot start`,
+      `[preview] ${sandbox.id}: no .backstage/start.sh, no usable repo previewCommand, no tella-local fallback in the sandbox — cannot start`,
     );
     return status;
   }
+  const cmd = boot.cmd;
 
   // 3. Seed ports + tunnels, then launch detached in its own session (setsid
   //    → pgid recorded so stop can kill the whole tree; ensure-up.sh's inner

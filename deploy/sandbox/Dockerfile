@@ -50,10 +50,18 @@ RUN apt-get update \
         python3 \
         build-essential \
         ripgrep \
-        just \
         direnv \
         lsof \
     && rm -rf /var/lib/apt/lists/*
+
+# --- just (pinned upstream release) ---
+# NOT apt's: noble ships just 1.21, which predates Justfile `mod` support —
+# tella-fusion's root Justfile uses modules, so `just dev` inside the sandbox
+# dies with "Modules are currently unstable" on the apt version.
+ARG JUST_VERSION=1.43.1
+RUN curl -fsSL https://just.systems/install.sh \
+        | bash -s -- --tag "${JUST_VERSION}" --to /usr/local/bin \
+    && just --version
 
 # --- Node.js LTS (NodeSource) ---
 # Node major must track the host's (host: v20.x via nvm) — native-module ABI

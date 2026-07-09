@@ -144,17 +144,30 @@ container be recreated (stop it or change the attach set — mounts/ports are
 create-time).
 
 **Bring-up resolution (repo-local lifecycle scripts, background-agents
-convention):**
+convention).** ONE chain — `resolvePreviewBoot` in preview.ts — shared by
+sandboxed AND host previews (the Preview button on a plain non-sandboxed
+session resolves identically; only the existence checks and process plumbing
+differ):
 
-1. `<worktree>/.backstage/start.sh` when present — run detached in-container
-   with `WEBAPP_PORT` (the allocated, published port), `PREVIEW_URL`, and
-   `BACKSTAGE_BOOT_MODE` (`fresh` | `snapshot-restore`) in its env. It should
-   bring the dev server up on `$WEBAPP_PORT` (exec your server so stop's
-   process-group kill reaches it).
+1. `<worktree>/.backstage/start.sh` when present — a script committed IN the
+   target repo. Run detached with `WEBAPP_PORT` (the allocated port —
+   pre-published container port in sandboxes, a free host port for host
+   previews, seeded into `.ports.conf` either way), `PREVIEW_URL`, and
+   `BACKSTAGE_BOOT_MODE` (`fresh` | `snapshot-restore`; host previews always
+   say `fresh`) in its env. It should bring the dev server up on
+   `$WEBAPP_PORT` (exec your server so stop's process-group kill reaches it).
 2. else the repo's configured `previewCommand` (config.json `repos` entry;
    tella-fusion's is the tella-local `ensure-up.sh`), invoked with the
-   worktree path as `$1`.
-3. else the tella-local `ensure-up.sh` if the image/mounts carry it.
+   worktree path as `$1`. A configured absolute path that doesn't exist in
+   the current environment falls through to rung 3.
+3. else the tella-local `ensure-up.sh` (tella-fusion worktrees only) if the
+   environment carries it.
+
+No rung resolves → the status reports `bootable: false` and the UI renders a
+disabled Start explaining what to add. Host previews additionally inject the
+short-lived instance-role AWS creds from aws-creds.ts into the bring-up: the
+backstage service cgroup denies IMDS (IPAddressDeny) for every child, which
+otherwise breaks tella-fusion's `aws` preflight and prebuilt-WASM install.
 
 `<worktree>/.backstage/setup.sh` is the sibling one-shot hook: it runs once
 per workspace materialization (first ensure of the sandbox, cwd = workspace,
@@ -162,7 +175,10 @@ same `BACKSTAGE_BOOT_MODE` env), is **skipped on snapshot restore** (the
 restored container layer already carries its effects), is never retried once
 settled (log: `~/.backstage-chats/sandbox-runs/<session>/workspace-setup.log`),
 and never blocks the session on failure. Keep both scripts convention-level:
-no framework, no arguments beyond env.
+no framework, no arguments beyond env. Host previews honor setup.sh too, with
+one asymmetry: there is no workspace-materialization moment on the host, so it
+runs (and settles, success or not) as part of the FIRST repo-script preview
+start, stamped per worktree under `~/.backstage-chats/preview-setup/`.
 
 **`.tunnels.env` contract** (adopted from background-agents): when a preview
 starts, backstage writes `<worktree>/.tunnels.env` — dotenv, consumable by
