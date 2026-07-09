@@ -655,6 +655,23 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
         JSON.stringify({ accounts }, null, 2) + "\n",
       );
       await driver.exec(`chmod 600 ${REMOTE_HOME}/.backstage-claude-accounts.json`);
+      // OpenCode bridge config: read IN-SANDBOX by the runner's opencode
+      // dispatch (bridge mode, turn timeout). docker gets it as an ro mount;
+      // without it every opencode/anthropic/* run in a remote sandbox dies
+      // with "bridge disabled" (bks-019f46c8, 2026-07-09). Re-uploaded per
+      // launch so config edits apply, mirroring the mount's read-fresh
+      // semantics. No secrets inside (mode/models/timeouts) — the account
+      // tokens travel via the scoped accounts upload above.
+      const ocCfgSrc =
+        process.env.BACKSTAGE_OPENCODE_CONFIG ||
+        `${process.env.HOME || "/home/ubuntu"}/.backstage-opencode.json`;
+      if (existsSync(ocCfgSrc)) {
+        await driver.writeFile(
+          `${REMOTE_HOME}/.backstage-opencode.json`,
+          readFileSync(ocCfgSrc, "utf-8"),
+        );
+        await driver.exec(`chmod 600 ${REMOTE_HOME}/.backstage-opencode.json`);
+      }
       mark("accounts uploaded");
       // Remote sandboxes dial back over the public ingress when it's enabled
       // (publicIngress.publicBaseUrl), else the plain callbackBaseUrl. Docker
