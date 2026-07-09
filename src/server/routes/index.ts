@@ -1,0 +1,56 @@
+/**
+ * Ordered HTTP route handler chain. Handlers are grouped by domain; a handler
+ * returns undefined to fall through. Order across modules is free because the
+ * path families are disjoint — order WITHIN a family (e.g. /notes/search
+ * before /notes/:id) is preserved inside its module. The WebSocket upgrade,
+ * run-ws upgrades, SPA fallback and 404 stay in opensession.ts's fetch tail.
+ */
+
+import type { RouteHandler } from "./context";
+import { handleMediaRoutes } from "./media";
+import { handleStaticAssetsRoutes } from "./static-assets";
+import { handlePlainRoutes } from "./plain";
+import { handleSystemRoutes } from "./system";
+import { handleSessionsRoutes } from "./sessions";
+import { handlePrRoutes } from "./pr";
+import { handleSessionGitRoutes } from "./session-git";
+import { handlePreviewRoutes } from "./preview";
+import { handleWorkspaceRoutes } from "./workspace";
+import { handleSlackChannelsRoutes } from "./slack-channels";
+import { handleAutomationsRoutes } from "./automations";
+import { handleHumanAsksRoutes } from "./human-asks";
+import { handleChatRoutes } from "./chat";
+import { handlePrefsRoutes } from "./prefs";
+import { handleSecurityRoutes } from "./security";
+import { handleGoalsRoutes } from "./goals";
+import { handleActionsRoutes } from "./actions";
+import { handleConnectionsRoutes } from "./connections";
+import { handleAccountsRoutes } from "./accounts";
+import { handleModelsRoutes } from "./models";
+import { handleNotesRoutes } from "./notes";
+
+export type { RouteContext, RouteHandler } from "./context";
+
+export const routeHandlers: RouteHandler[] = [
+	handleMediaRoutes,
+	handleStaticAssetsRoutes,
+	handlePlainRoutes,
+	handleSystemRoutes,
+	handleSessionsRoutes,
+	handlePrRoutes,
+	handleSessionGitRoutes,
+	handlePreviewRoutes,
+	handleWorkspaceRoutes,
+	handleSlackChannelsRoutes,
+	handleAutomationsRoutes,
+	handleHumanAsksRoutes,
+	handleChatRoutes,
+	handlePrefsRoutes,
+	handleSecurityRoutes,
+	handleGoalsRoutes,
+	handleActionsRoutes,
+	handleConnectionsRoutes,
+	handleAccountsRoutes,
+	handleModelsRoutes,
+	handleNotesRoutes,
+];
