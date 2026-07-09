@@ -260,6 +260,16 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     promptRef.current?.focus();
   }, []);
 
+  // Auto-grow the prompt so a long draft isn't crammed into the resting height.
+  // CSS min-height/max-height clamp the field, so it rests tall, grows with the
+  // text, and only starts scrolling once it hits the cap.
+  useEffect(() => {
+    const el = promptRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [prompt]);
+
   // Keep the draft store in sync so a dismissed palette can restore the work.
   useEffect(() => {
     saveDraft("new-session", { text: prompt, images, files });
