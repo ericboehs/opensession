@@ -2,9 +2,17 @@ import { describe, expect, test } from "bun:test";
 import {
   parseOpencodeModel,
   opencodeGateReason,
+  opencodeRunPolicy,
+  opencodeDeniedToolIds,
   proxyOpencodeMcpConfigs,
   buildOpencodeInstructions,
 } from "./opencode-runner";
+import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "./claude-runner";
+import {
+  automationDeniedTools,
+  opencodeAutomationModel,
+  DEFAULT_OPENCODE_AUTOMATION_MODEL,
+} from "./automations";
 import {
   flattenMessageText,
   replayConversation,
@@ -40,13 +48,26 @@ describe("parseOpencodeModel", () => {
   });
 });
 
-describe("opencodeGateReason (automation hard gate)", () => {
+describe("opencodeGateReason (run gate)", () => {
   test("interactive kinds pass", () => {
     expect(opencodeGateReason({ journal: { kind: "prompt" } })).toBeNull();
     expect(opencodeGateReason({ journal: { kind: "create" } })).toBeNull();
     expect(opencodeGateReason({ journal: { kind: "goal" } })).toBeNull();
     expect(opencodeGateReason({ journal: { kind: "prompt-resume" } })).toBeNull();
     expect(opencodeGateReason({ journal: { kind: "prompt-fallback" } })).toBeNull();
+  });
+  test("automation kinds pass (least-privilege enforced via opencodeRunPolicy)", () => {
+    expect(opencodeGateReason({ journal: { kind: "automation" } })).toBeNull();
+    expect(opencodeGateReason({ journal: { kind: "automation-resume" } })).toBeNull();
+    expect(opencodeGateReason({ journal: { kind: "automation-fallback" } })).toBeNull();
+  });
+  test("deniedTools no longer blocks — enforcement moved to the policy layer", () => {
+    expect(
+      opencodeGateReason({
+        journal: { kind: "prompt" },
+        deniedTools: { mcp__plain__reply_to_thread: "no" },
+      })
+    ).toBeNull();
   });
   test("deny by default: no journal / no kind / empty kind are all blocked", () => {
     expect(opencodeGateReason({})).toContain("deny by default");
@@ -56,29 +77,162 @@ describe("opencodeGateReason (automation hard gate)", () => {
   test("explicit allowOpencode marker passes without a journal (verify scripts)", () => {
     expect(opencodeGateReason({ allowOpencode: true })).toBeNull();
   });
-  test("allowOpencode never overrides the deniedTools block", () => {
-    expect(
-      opencodeGateReason({
-        allowOpencode: true,
-        deniedTools: { mcp__plain__reply_to_thread: "no" },
-      })
-    ).toContain("automation");
-  });
-  test("automation kinds are blocked, including derivatives", () => {
-    expect(opencodeGateReason({ journal: { kind: "automation" } })).toContain("not available");
-    expect(opencodeGateReason({ journal: { kind: "automation-resume" } })).toContain("not available");
-    expect(opencodeGateReason({ journal: { kind: "automation-fallback" } })).toContain("not available");
+  test("other unattended kinds stay blocked, including derivatives", () => {
     expect(opencodeGateReason({ journal: { kind: "action" } })).toContain("not available");
+    expect(opencodeGateReason({ journal: { kind: "action-resume" } })).toContain("not available");
     expect(opencodeGateReason({ journal: { kind: "github-review" } })).toContain("not available");
     expect(opencodeGateReason({ journal: { kind: "security-scan" } })).toContain("not available");
   });
-  test("any deniedTools (automation least-privilege set) blocks, even interactive", () => {
+});
+
+describe("opencodeRunPolicy (unattended least-privilege enforcement)", () => {
+  const DENIED = automationDeniedTools();
+
+  test("automation runs are unattended even with an empty deny-set", () => {
+    expect(opencodeRunPolicy({ journalKind: "automation" }).unattended).toBe(true);
+    expect(opencodeRunPolicy({ journalKind: "automation-resume" }).unattended).toBe(true);
+  });
+  test("deniedTools force unattended regardless of kind (interactive resume of automation session)", () => {
     expect(
-      opencodeGateReason({
-        journal: { kind: "prompt" },
-        deniedTools: { mcp__plain__reply_to_thread: "no" },
-      })
-    ).toContain("automation");
+      opencodeRunPolicy({ journalKind: "prompt", deniedTools: DENIED }).unattended
+    ).toBe(true);
+  });
+  test("interactive runs keep the fail-closed confirm-server drop", () => {
+    const p = opencodeRunPolicy({ journalKind: "prompt", confirmTools: STRIPE_CONFIRM_TOOLS });
+    expect(p.unattended).toBe(false);
+    expect(p.confirmToolsForServerDrop).toEqual(STRIPE_CONFIRM_TOOLS);
+    expect(p.disables).toEqual({});
+  });
+
+  test("every automation-denied tool is stripped under opencode's <server>_<tool> naming", () => {
+    const p = opencodeRunPolicy({
+      journalKind: "automation",
+      deniedTools: DENIED,
+      confirmTools: STRIPE_CONFIRM_TOOLS,
+    });
+    for (const name of Object.keys(DENIED)) {
+      const m = name.match(/^mcp__(.+?)__(.+)$/)!;
+      expect(p.disables[`${m[1]}_${m[2]}`]).toBe(false);
+    }
+    // Spot-check the exact ids CLAUDE.md's least-privilege spec calls out.
+    expect(p.disables["plain_reply_to_thread"]).toBe(false);
+    expect(p.disables["plain_mark_thread_done"]).toBe(false);
+    expect(p.disables["plain_snooze_thread"]).toBe(false);
+    expect(p.disables["workos_delete_user"]).toBe(false);
+    expect(p.disables["workos_get_impersonation_url"]).toBe(false);
+    expect(p.disables["workos_revoke_session"]).toBe(false);
+  });
+
+  test("Stripe money-movers fold into the deny-set (post-in-note), incl. stripe_api_write", () => {
+    const p = opencodeRunPolicy({
+      journalKind: "automation",
+      deniedTools: DENIED,
+      confirmTools: STRIPE_CONFIRM_TOOLS,
+    });
+    // The whole confirm list is stripped — this run has no server drop.
+    expect(p.confirmToolsForServerDrop).toBeUndefined();
+    expect(p.disables["stripe_create_refund"]).toBe(false);
+    expect(p.disables["stripe_cancel_subscription"]).toBe(false);
+    expect(p.disables["stripe_update_subscription"]).toBe(false);
+    expect(p.disables["stripe_stripe_api_execute"]).toBe(false);
+    expect(p.disables["stripe_stripe_api_write"]).toBe(false);
+    // Naming-drift guards.
+    expect(p.disables["*_create_refund"]).toBe(false);
+    expect(p.disables["create_refund"]).toBe(false);
+    // The instructions carry the confirm_unattended-style guidance.
+    const stripeNote = p.noteGroups.find((g) =>
+      g.tools.includes("mcp__stripe__create_refund")
+    )!;
+    expect(stripeNote.message).toContain("unattended");
+    expect(stripeNote.message).toContain("internal note");
+    expect(stripeNote.message).toContain("human");
+  });
+
+  test("denied-tool messages survive into the note groups", () => {
+    const p = opencodeRunPolicy({ journalKind: "automation", deniedTools: DENIED });
+    const plainNote = p.noteGroups.find((g) => g.tools.includes("mcp__plain__reply_to_thread"))!;
+    expect(plainNote.message).toContain("read-only");
+    const workosNote = p.noteGroups.find((g) => g.tools.includes("mcp__workos__delete_user"))!;
+    expect(workosNote.message).toContain("read-only");
+  });
+
+  test("deniedTools message wins over the confirm label for the same tool", () => {
+    const p = opencodeRunPolicy({
+      journalKind: "automation",
+      deniedTools: { mcp__stripe__create_refund: "hard denied" },
+      confirmTools: { mcp__stripe__create_refund: "Create a refund" },
+    });
+    expect(p.noteGroups[0].message).toBe("hard denied");
+  });
+});
+
+describe("automation runs and per-user MCP servers (fail closed)", () => {
+  // Automation runs pass no `user`, so any allowedUsers-restricted server in
+  // the live mcp-config.json must be invisible to them — untrusted ticket
+  // text can never reach a user-scoped server (e.g. brex), even when the
+  // automation's own allowlist names it. Runs against the live mcp-config.json
+  // (brex is the restricted server as of 2026-07-09); with no restricted server
+  // configured the loop is empty and only the metadata-strip assertion bites.
+  test("allowedUsers-restricted servers are hidden from user-less runs", () => {
+    const unrestricted = filterMcpServers(undefined, undefined);
+    let mcpConfig: any = {};
+    try {
+      mcpConfig = JSON.parse(
+        require("fs").readFileSync(
+          `${process.env.HOME}/projects/tella-backstage/mcp-config.json`,
+          "utf-8"
+        )
+      ).mcpServers;
+    } catch {}
+    const restricted = Object.entries(mcpConfig || {}).filter(
+      ([, cfg]: [string, any]) => Array.isArray(cfg?.allowedUsers) && cfg.allowedUsers.length
+    );
+    for (const [name] of restricted) {
+      expect(unrestricted[name]).toBeUndefined();
+      // Even an explicit allowlist naming it (automation mcpServers) can't
+      // surface it without a cleared user.
+      expect(filterMcpServers([name], undefined)[name]).toBeUndefined();
+    }
+    // The metadata never reaches the SDK config.
+    for (const cfg of Object.values(unrestricted)) {
+      expect((cfg as any).allowedUsers).toBeUndefined();
+    }
+  });
+});
+
+describe("opencodeDeniedToolIds", () => {
+  test("mcp names map to exact, wildcard, and bare ids", () => {
+    expect(opencodeDeniedToolIds("mcp__stripe__create_refund")).toEqual([
+      "stripe_create_refund",
+      "*_create_refund",
+      "create_refund",
+    ]);
+  });
+  test("non-mcp names pass through verbatim", () => {
+    expect(opencodeDeniedToolIds("Bash")).toEqual(["Bash"]);
+  });
+});
+
+describe("opencodeAutomationModel (automations dispatch on opencode)", () => {
+  // The live ~/.backstage-opencode.json has the bridge enabled; these
+  // assertions describe the bridged mapping (the fail-safe path is exercised
+  // only when the bridge is off, which would flip claude tiers to passthrough).
+  test("tier-preserving mapping", () => {
+    expect(opencodeAutomationModel("claude-sonnet-4-6")).toBe(
+      "opencode/anthropic/claude-sonnet-4-6"
+    );
+    expect(opencodeAutomationModel("claude-fable-5")).toBe("opencode/anthropic/claude-fable-5");
+    expect(opencodeAutomationModel("gpt-5.5")).toBe("opencode/openai/gpt-5.5");
+  });
+  test("unset model gets the automation default", () => {
+    expect(opencodeAutomationModel(undefined)).toBe(DEFAULT_OPENCODE_AUTOMATION_MODEL);
+    expect(opencodeAutomationModel("")).toBe(DEFAULT_OPENCODE_AUTOMATION_MODEL);
+  });
+  test("already-opencode ids and unknown shapes pass through", () => {
+    expect(opencodeAutomationModel("opencode/anthropic/claude-haiku-4-5")).toBe(
+      "opencode/anthropic/claude-haiku-4-5"
+    );
+    expect(opencodeAutomationModel("codex-mini")).toBe("codex-mini");
   });
 });
 
@@ -111,6 +265,21 @@ describe("buildOpencodeInstructions", () => {
     expect(s).toContain("/session/abc-123");
     expect(s).toContain("stripe");
     expect(s).toContain("human approval");
+  });
+  test("unattended deny-set renders as a run-policy section", () => {
+    const s = buildOpencodeInstructions({
+      isAsk: true,
+      deniedToolNotes: opencodeRunPolicy({
+        journalKind: "automation",
+        deniedTools: automationDeniedTools(),
+        confirmTools: STRIPE_CONFIRM_TOOLS,
+      }).noteGroups,
+    });
+    expect(s).toContain("unattended least-privilege");
+    expect(s).toContain("mcp__stripe__create_refund");
+    expect(s).toContain("mcp__plain__reply_to_thread");
+    expect(s).toContain("mcp__workos__get_impersonation_url");
+    expect(s).toContain("internal note");
   });
 });
 

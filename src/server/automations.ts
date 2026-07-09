@@ -12,6 +12,7 @@ import { STRIPE_CONFIRM_TOOLS } from "./claude-runner";
 import { getAccountById } from "./claude-accounts";
 import { runAgent } from "./agent-runner";
 import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
+import { readOpencodeBridgeConfig } from "./opencode-config";
 import { createWorktree, listWorktrees } from "./worktree";
 import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
@@ -108,9 +109,11 @@ export interface Automation {
    */
   slackWatch?: SlackWatchConfig;
   /**
-   * Model id for new runs (claude-* or gpt-*; see models.ts). Omitted =
-   * default model. Codex models enforce tool denials as per-server
-   * disabled_tools instead of canUseTool — see codex-runner.ts.
+   * Model TIER for new runs (claude-* / gpt-* / opencode/…; see models.ts).
+   * Omitted = the automation default. Dispatch maps tiers onto the opencode
+   * engine (opencodeAutomationModel) — the stored id stays the tier. Codex
+   * models enforce tool denials as per-server disabled_tools (codex-runner.ts);
+   * opencode strips them via its tools config (opencodeRunPolicy).
    */
   model?: string;
   /**
@@ -493,6 +496,35 @@ export function automationMcpServersByName(name: string): string[] | undefined {
   return listAutomations().find((a) => a.name === name)?.mcpServers;
 }
 
+/** Default engine+model for automations (Michiel 2026-07-09: automations run
+ *  on the opencode engine). */
+export const DEFAULT_OPENCODE_AUTOMATION_MODEL = "opencode/anthropic/claude-sonnet-5";
+
+/**
+ * Map an automation's configured model (or a router's modelOverride) onto the
+ * opencode engine, tier-preserving: claude-sonnet-4-6 →
+ * opencode/anthropic/claude-sonnet-4-6, gpt-5.5 → opencode/openai/gpt-5.5,
+ * unset → DEFAULT_OPENCODE_AUTOMATION_MODEL. Automations keep their stored
+ * tier ids; the flip to opencode happens here at dispatch, so it covers every
+ * automation (and future ones) uniformly.
+ *
+ * Fail-safe: when the Anthropic bridge is disabled (~/.backstage-opencode.json)
+ * claude tiers keep their original id and run on the claude engine as before —
+ * a config toggle must degrade automations to the old engine, not break them.
+ * The least-privilege deny-set is enforced on every engine either way
+ * (canUseTool / disabled_tools / opencodeRunPolicy).
+ */
+export function opencodeAutomationModel(model?: string): string | undefined {
+  const m = (model || "").trim();
+  if (m.startsWith("opencode/")) return m;
+  // The openai path keys off codex accounts, not the bridge flag — always map.
+  if (m.startsWith("gpt-")) return `opencode/openai/${m}`;
+  if (readOpencodeBridgeConfig()?.enabled !== true) return model;
+  if (!m) return DEFAULT_OPENCODE_AUTOMATION_MODEL;
+  if (m.startsWith("claude-")) return `opencode/anthropic/${m}`;
+  return model; // unknown shapes (codex-*, custom ids) keep their engine
+}
+
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "automation";
 }
@@ -594,9 +626,12 @@ export async function runAutomation(
       } catch {}
     }
 
-    // The effective model/provider can change mid-run (usage-limit fallback),
-    // so track them from the runner's init/done events for persistence.
-    let effectiveModel = options?.modelOverride || automation.model;
+    // Automations dispatch on the opencode engine (tier-preserving mapping;
+    // see opencodeAutomationModel). The effective model/provider can change
+    // mid-run (usage-limit fallback), so track them from the runner's
+    // init/done events for persistence.
+    const runModel = opencodeAutomationModel(options?.modelOverride || automation.model);
+    let effectiveModel = runModel;
     let effectiveProvider = providerFor(effectiveModel);
     const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
     const persistSession = (engineSessionId: string) => {
@@ -624,7 +659,6 @@ export async function runAutomation(
       writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
     };
 
-    const runModel = options?.modelOverride || automation.model;
     console.log(
       `[automations] Running "${automation.name}" → ${bksId}${runModel ? ` (${runModel})` : ""}${options?.modelOverride ? " [routed]" : ""}`
     );
@@ -639,7 +673,8 @@ export async function runAutomation(
       mcpServers: automation.mcpServers,
       deniedTools: AUTOMATION_DENIED_TOOLS,
       // No onAskUser here, so confirm tools deny with "propose it for a human"
-      // (on codex models they're disabled outright — see codex-runner.ts)
+      // (codex disables them outright — codex-runner.ts; opencode strips them
+      // from the tool list with the same post-in-note guidance — opencodeRunPolicy)
       confirmTools: STRIPE_CONFIRM_TOOLS,
       aws: true, // automation runs get short-lived instance-role read creds
       // Cost controls: a pinned account defaults to a HARD pin for automation

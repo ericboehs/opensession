@@ -457,14 +457,23 @@ export function interruptAndSteerRun(
 /**
  * Money-moving Stripe tools: every call pauses for a human approve/deny in the
  * session UI (via onAskUser); unattended runs get a deny telling the agent to
- * propose the action instead. stripe_api_execute is included because it can
+ * propose the action instead. The raw-API tools are included because they can
  * hit any endpoint the restricted key allows, including refunds and cancels.
+ *
+ * Keep this list in sync with mcp.stripe.com's live catalog: verified
+ * 2026-07-09 the server now exposes `stripe_api_write` (mutating raw API
+ * call — the successor of `stripe_api_execute`) plus read-only
+ * `stripe_api_read`/`stripe_api_search`/`stripe_api_details`, and no longer
+ * ships cancel/update_subscription as named tools. The superseded names stay
+ * listed (a deny/confirm entry for a tool that doesn't exist is harmless; a
+ * missing entry for one that does is a hole).
  */
 export const STRIPE_CONFIRM_TOOLS: Record<string, string> = {
   mcp__stripe__create_refund: "Create a refund",
   mcp__stripe__cancel_subscription: "Cancel a subscription",
   mcp__stripe__update_subscription: "Update a subscription",
   mcp__stripe__stripe_api_execute: "Execute a raw Stripe API call",
+  mcp__stripe__stripe_api_write: "Execute a mutating Stripe API call",
 };
 
 /** A pasted/dropped image, decoded to raw base64 (no `data:` prefix). */
