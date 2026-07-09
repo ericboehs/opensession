@@ -241,7 +241,11 @@ hot-apply — a real restart is needed after changing it.
   serving a unix socket, and the michael-* MCP proxies dial
   `/backstage/rpc-ws`. Docker containers created in ws mode don't mount the
   rpc socket. `callbackBaseUrl` must be reachable FROM the sandbox (Tailscale
-  URL for self-hosters; 127.0.0.1 never works). Transport code is runner
+  URL for self-hosters; 127.0.0.1 never works). For remote providers that
+  means the PUBLIC internet: enable the isolated `publicIngress` listener
+  (src/server/public-ingress.ts — serves ONLY run-ws/rpc-ws + a health
+  check, rate-limited; see docs/self-hosting-sandboxes.md "Public dial-back
+  ingress") instead of exposing the main server. Transport code is runner
   internals — restart + image rebuild to take effect.
 - **Remote adapters** (`provider: "daytona"` / `"e2b"`,
   src/server/sandbox/adapters/): always volume-style workspaces cloned

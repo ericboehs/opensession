@@ -149,6 +149,17 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   // Default derives from the server's HOST:PORT bind.
   "callbackBaseUrl": "ws://100.65.135.7:3850",
 
+  // Isolated PUBLIC dial-back listener for remote providers — see the
+  // "Public dial-back ingress" section below. When enabled with a
+  // publicBaseUrl, remote (daytona/e2b) launches dial IT back instead of
+  // callbackBaseUrl; docker always stays on callbackBaseUrl.
+  "publicIngress": {
+    "enabled": false,          // start the listener at boot (needs restart)
+    "port": 3860,              // listen port (default 3860)
+    "host": "127.0.0.1",       // bind (default loopback — front with Caddy/tunnel)
+    "publicBaseUrl": "wss://your.domain"  // what sandboxes dial
+  },
+
   // ── Remote providers ────────────────────────────────────────────────
   "daytona": {
     "apiKey": "dtn_…",         // falls back to DAYTONA_API_KEY
@@ -173,6 +184,73 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 }
 ```
 
+## Public dial-back ingress (remote providers)
+
+Remote sandboxes (Daytona/E2B) run on third-party compute and must dial back
+to backstage's `/backstage/run-ws/<hostId>` and `/backstage/rpc-ws`
+WebSocket routes from the **public internet**. The main server binds the
+tailnet and carries the whole app — never expose it. Instead,
+`src/server/public-ingress.ts` runs a **second, isolated Bun.serve** when
+`publicIngress.enabled` is set:
+
+**What it serves — and everything it will ever serve:**
+
+| Path | What |
+| --- | --- |
+| `/backstage/run-ws/<hostId>` | WS upgrade — the run host's event stream |
+| `/backstage/rpc-ws?host=…` | WS upgrade — the michael-* MCP proxy channel |
+| `/ingress-health` | bare `200 ok` (monitors/probes) |
+
+Every other path is a **bodyless 404** — no app routes, no API, no frontend,
+no route disclosure. Auth is run-ws.ts's own (shared functions, not copies):
+per-launch `wsToken`s keyed by hostId, registered only by ws-transport
+launches, constant-time compared **before** the upgrade. With no sandboxed
+runs in flight the token registry is empty and every upgrade is a 403.
+Being internet-facing it additionally rate-limits upgrade attempts
+**per client IP: 30/min → 429** (X-Forwarded-For-aware behind a local
+reverse proxy; health is exempt). The main :3850 server keeps serving the
+same routes for the tailnet path (docker-ws) — the ingress is additive.
+
+The listener binds `127.0.0.1:3860` by default: something must terminate
+TLS in front of it and forward ONLY those paths. Two permanent options:
+
+1. **Public IP + DNS + Caddy path routes** (what michael.tella.dev does —
+   needs :443 open in the security group and an A record):
+
+   ```caddyfile
+   your.domain {
+       handle /backstage/run-ws/* {
+           reverse_proxy localhost:3860
+       }
+       handle /backstage/rpc-ws {
+           reverse_proxy localhost:3860
+       }
+       handle /ingress-health {
+           reverse_proxy localhost:3860
+       }
+       # …whatever else the domain serves stays in its own handle blocks;
+       # the ingress paths never reach it.
+   }
+   ```
+
+   Caddy fetches/renews the certificate itself; set
+   `"publicBaseUrl": "wss://your.domain"`.
+
+2. **Named Cloudflare tunnel** (no inbound ports at all): a `cloudflared`
+   service with an `ingress` rule mapping a hostname to
+   `http://127.0.0.1:3860`, `publicBaseUrl` = that hostname. Survives
+   restarts, no security-group changes; adds Cloudflare as a dependency in
+   the dial-back path. (For one-off testing, a QUICK tunnel —
+   `cloudflared tunnel --url http://127.0.0.1:3860`, ephemeral URL, no
+   account — also works: pass it as `SBX_CONF_PUBLIC_BASE` to the
+   conformance suite.)
+
+Enabling/disabling the listener or changing its port/host is a **restart**
+(it starts once at boot); `publicBaseUrl` is read per launch like the rest
+of the config. Hosted-Daytona reminder: the sandbox side of this dial-back
+needs **Tier 3 / self-hosted** egress — lower tiers block outbound traffic
+so no ingress URL is reachable from inside.
+
 ## Kill switch
 
 ```sh
@@ -194,6 +272,9 @@ propagate (see CLAUDE.md "Hot reload & restarts"):
 - First-time enablement, provider/transport code changes, anything under
   `src/server/sandbox/`, `src/runner-host/`, run-ws/rpc-ws → real
   `systemctl restart backstage`.
+- The publicIngress listener starts once at boot: enabling/disabling it or
+  changing `port`/`host` → restart (`publicBaseUrl` value tweaks apply to
+  the next launch without one).
 - Transport flips (`socket` ↔ `ws`) apply to NEW sandbox launches, but the
   transport code itself must already be live (restart once, then flip
   freely).
@@ -218,7 +299,7 @@ is `sbxtest-*` scratch), and keep the conformance matrix green:
 bun run deploy/sandbox/conformance.ts docker-socket docker-ws
 ```
 
-### Daytona (implemented, live-certified 2026-07-08)
+### Daytona (implemented, live-certified — full launchRun matrix green 2026-07-09)
 
 Self-hostable sandbox platform (Helm/K8s) with a hosted cloud. The adapter
 (`src/server/sandbox/adapters/daytona.ts`) creates sandboxes over the
@@ -228,7 +309,9 @@ ensure (minutes cold — provider snapshots as a prebaked fast path are a
 backlog item). Idle-stop is native (`autoStopInterval`).
 
 - Config: `provider: "daytona"` + the `daytona` block (or `DAYTONA_API_KEY`)
-  + a reachable `callbackBaseUrl` + `cloneCredential` for private repos.
+  + a reachable dial-back URL (the `publicIngress` section above — hosted
+  Daytona sandboxes are on the public internet, not your tailnet) +
+  `cloneCredential` for private repos.
 - **Org-tier egress caveat (hosted Daytona):** Tier 1/2 orgs restrict
   sandbox egress, which blocks the WS dial-back entirely — `launchRun`
   needs a **Tier 3 org or self-hosted Daytona**. Workspace clone/exec work
@@ -236,7 +319,11 @@ backlog item). Idle-stop is native (`autoStopInterval`).
 - Certify against your own account/deployment:
   `bun run deploy/sandbox/conformance.ts daytona` (needs the API key; runs
   one smallest-size, sbxtest-labeled sandbox and destroys it, then lists
-  the org's sandboxes to prove nothing leaked).
+  the org's sandboxes to prove nothing leaked). The full matrix — incl.
+  the launchRun round-trip + steer/cancel + mid-run WS drop/redial — went
+  27/27 green 2026-07-09 against hosted Daytona (Tier 3) dialing back over
+  the public ingress (`SBX_CONF_LISTEN_PORT=3860
+  SBX_CONF_PUBLIC_BASE=wss://michael.tella.dev`).
 
 ### E2B (implemented, NOT yet certified)
 
