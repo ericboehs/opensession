@@ -110,6 +110,19 @@ export async function getThreadWithMessages(threadId: string): Promise<any> {
                   chatId
                   text
                 }
+                ... on CustomEntry {
+                  title
+                  components {
+                    __typename
+                    ... on ComponentText {
+                      text
+                    }
+                    ... on ComponentLinkButton {
+                      linkButtonUrl
+                      linkButtonLabel
+                    }
+                  }
+                }
               }
             }
           }
@@ -136,9 +149,29 @@ export interface NormalizedPlainEntry {
   timestamp: string;
   actorName: string;
   actorType: "customer" | "support" | "bot" | "system";
-  kind: "email" | "chat" | "note";
+  /** "message" = a CustomEntry, e.g. the in-app support form's original message. */
+  kind: "email" | "chat" | "note" | "message";
   subject?: string;
   text: string;
+}
+
+/**
+ * Flatten a CustomEntry's card components to plain text: text components in
+ * order, link buttons as "label: url" lines. Layout components (spacers,
+ * dividers, rows) are skipped.
+ */
+function customEntryText(entry: any): string {
+  const parts: string[] = [];
+  for (const c of entry?.components || []) {
+    if (c?.__typename === "ComponentText" && c.text) parts.push(c.text);
+    else if (c?.__typename === "ComponentLinkButton" && c.linkButtonUrl)
+      parts.push(
+        c.linkButtonLabel
+          ? `${c.linkButtonLabel}: ${c.linkButtonUrl}`
+          : c.linkButtonUrl,
+      );
+  }
+  return parts.join("\n\n");
 }
 
 /** A Plain thread flattened to the shape the backstage sidebar renders. */
@@ -162,9 +195,10 @@ export interface NormalizedPlainThread {
 
 /**
  * Flatten the raw `getThreadWithMessages` payload into the message list the
- * session viewer's Plain sidebar renders: customer/support/bot emails & chats
- * plus internal notes, sorted oldest-first. Status-change and other non-message
- * timeline entries are dropped.
+ * session viewer's Plain sidebar renders: customer/support/bot emails & chats,
+ * custom entries (the in-app support form's message cards) plus internal notes,
+ * sorted oldest-first. Status-change and other non-message timeline entries are
+ * dropped.
  */
 export function normalizePlainThread(thread: any): NormalizedPlainThread {
   const entries: NormalizedPlainEntry[] = [];
@@ -204,6 +238,17 @@ export function normalizePlainThread(thread: any): NormalizedPlainThread {
     } else if (entry.__typename === "NoteEntry") {
       kind = "note";
       text = entry.markdown || entry.noteText || "";
+    } else if (entry.__typename === "CustomEntry") {
+      // The in-app support form posts the customer's original message as a
+      // CustomEntry via the API — the actor is our machine user, but it's the
+      // customer speaking, so attribute it to them (else the thread's opening
+      // message renders as an outbound bot card, or gets dropped entirely).
+      kind = "message";
+      subject = entry.title || undefined;
+      text = customEntryText(entry);
+      actorName =
+        thread?.customer?.fullName || thread?.customer?.email?.email || "Customer";
+      actorType = "customer";
     } else {
       continue; // status changes, assignments, etc. — not part of the conversation
     }
@@ -763,6 +808,16 @@ export function formatThreadContext(thread: any, includeAllMessages: boolean = f
       actorType = "bot";
     }
 
+    // The in-app support form posts the customer's original message as a
+    // CustomEntry via the API (machine-user actor) — it's the customer
+    // speaking, so treat it as theirs (else the customer-only filter below
+    // drops the thread's opening message).
+    if (entry?.__typename === "CustomEntry") {
+      actorName =
+        thread.customer?.fullName || thread.customer?.email?.email || "Customer";
+      actorType = "customer";
+    }
+
     if (!includeAllMessages && actorType !== "customer") {
       return;
     }
@@ -774,6 +829,12 @@ export function formatThreadContext(thread: any, includeAllMessages: boolean = f
         context += `**[${actorType.toUpperCase()}] ${actorName}** (${timestamp}):\n${entry.text}\n\n---\n\n`;
       } else if (entry.__typename === "NoteEntry" && entry.noteText) {
         context += `**[NOTE] ${actorName}** (${timestamp}):\n${entry.noteText}\n\n---\n\n`;
+      } else if (entry.__typename === "CustomEntry") {
+        const text = customEntryText(entry);
+        if (text)
+          context += `**[${actorType.toUpperCase()}] ${actorName}** (${timestamp}):\n${
+            entry.title ? `${entry.title}\n\n` : ""
+          }${text}\n\n---\n\n`;
       }
     }
   });

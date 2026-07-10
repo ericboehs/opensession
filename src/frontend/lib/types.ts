@@ -12,7 +12,8 @@ export interface PlainTimelineEntry {
 	timestamp: string;
 	actorName: string;
 	actorType: "customer" | "support" | "bot" | "system";
-	kind: "email" | "chat" | "note";
+	/** "message" = a CustomEntry, e.g. the in-app support form's original message. */
+	kind: "email" | "chat" | "note" | "message";
 	subject?: string;
 	text: string;
 }
