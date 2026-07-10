@@ -591,6 +591,12 @@ const ASK_BASH_PERMISSIONS: Record<string, "allow" | "deny"> = {
   "git status*": "allow", "git log*": "allow", "git diff*": "allow",
   "git show*": "allow", "git branch*": "allow", "git blame*": "allow",
   "git grep*": "allow", "git ls-files*": "allow",
+  // Read-only system inspection (health checks, diagnosing the box). Only
+  // no-op systemctl verbs — bare "systemctl *" would allow restart/stop.
+  "free*": "allow", "uptime*": "allow", "nproc*": "allow",
+  "ps": "allow", "ps *": "allow", "top -b*": "allow",
+  "systemctl status*": "allow", "systemctl is-active*": "allow",
+  "systemctl is-enabled*": "allow", "systemctl list-units*": "allow",
   "*": "deny",
 };
 
