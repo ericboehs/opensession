@@ -37,8 +37,6 @@ import {
   michaelSessionUrl,
   runAgentHeadless,
   saveSessionInfo,
-  startRalphLoop,
-  startRalphPolling,
   startSessionPolling,
   stopSessionPolling,
   type ActiveSession,
@@ -151,7 +149,6 @@ export async function handleIssueUpdate(webhook: IssueWebhook, tokens: LinearTok
         planningConversation: [],
         awaitingImplementationConfirmation: diskSession.awaitingImplementationConfirmation || false,
         awaitingInitialDirection: false,
-        isRalphMode: diskSession.isRalphMode || false,
         participants: diskSession.participants || [],
         lastActiveUser: diskSession.lastActiveUser || null,
         issueCreator: diskSession.issueCreator || details.creator || null,
@@ -169,10 +166,6 @@ export async function handleIssueUpdate(webhook: IssueWebhook, tokens: LinearTok
 
   const hasPlan = await issueHasPlan(accessToken, issue.id);
   if (!hasPlan) {
-    return Response.json({ ok: true });
-  }
-
-  if (existingSession.isRalphMode) {
     return Response.json({ ok: true });
   }
 
@@ -222,7 +215,6 @@ export async function handleIssueUpdate(webhook: IssueWebhook, tokens: LinearTok
           details.title,
           existingSession!.worktreeDir,
           existingSession!.linearSessionId,
-          undefined,
           undefined,
           existingSession!.issueId,
           existingSession!.issueUrl,
@@ -274,15 +266,6 @@ export async function handleAgentSession(
         session.abortController.abort();
         session.abortController = undefined;
       }
-      if (session.isRalphMode && session.ralphProcess) {
-        session.ralphProcess.kill();
-        session.ralphProcess = undefined;
-      }
-      if (session.ralphPollInterval) {
-        clearInterval(session.ralphPollInterval);
-        session.ralphPollInterval = undefined;
-      }
-      session.isRalphMode = false;
       stopSessionPolling(session);
     }
     return Response.json({ ok: true });
@@ -326,7 +309,6 @@ export async function handleAgentSession(
           planningConversation: [],
           awaitingImplementationConfirmation: diskSession.awaitingImplementationConfirmation || false,
           awaitingInitialDirection: diskSession.awaitingInitialDirection || false,
-          isRalphMode: diskSession.isRalphMode || false,
           participants: diskSession.participants || [],
           lastActiveUser: diskSession.lastActiveUser || null,
           issueCreator: diskSession.issueCreator || null,
@@ -336,12 +318,7 @@ export async function handleAgentSession(
         if (diskSession.claudeSessionId) {
           session.lastMessageUuid = await getLastMessageUuid(diskSession.worktreeDir, diskSession.claudeSessionId);
         }
-        if (diskSession.isRalphMode) {
-          const at = await getValidToken(organizationId, tokens);
-          if (at) startRalphPolling(session, at, agentSession.id);
-        } else {
-          startSessionPolling(session);
-        }
+        startSessionPolling(session);
       }
     }
 
@@ -426,15 +403,6 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
 
         // Implementation confirmation
         else if (session.awaitingImplementationConfirmation) {
-          const lowerPrompt = prompt.toLowerCase().trim();
-
-          if (lowerPrompt.includes("ralph")) {
-            session.awaitingImplementationConfirmation = false;
-            session.isRalphMode = true;
-            await startRalphLoop(session, accessToken, agentSession.id);
-            return Response.json({ ok: true });
-          }
-
           session.awaitingImplementationConfirmation = false;
           const { participantsSection, coAuthorInstruction } = buildParticipantSections(
             session.participants || [],
@@ -453,26 +421,6 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
             type: "thought",
             body: MESSAGES.implementationStarted,
           });
-        }
-
-        // Ralph mode
-        if (session.isRalphMode) {
-          const lowerPrompt = prompt.toLowerCase().trim();
-          if (lowerPrompt === "stop" || lowerPrompt.includes("stop ralph")) {
-            if (session.ralphProcess) session.ralphProcess.kill();
-            if (session.ralphPollInterval) clearInterval(session.ralphPollInterval);
-            session.isRalphMode = false;
-            await createAgentActivity(accessToken, agentSession.id, {
-              type: "response",
-              body: "Ralph loop stopped. You can now interact with the session normally.",
-            });
-            return Response.json({ ok: true });
-          }
-          await createAgentActivity(accessToken, agentSession.id, {
-            type: "thought",
-            body: "Ralph is running... Reply 'stop' if you need to interrupt.",
-          });
-          return Response.json({ ok: true });
         }
 
         // Planning continuation
@@ -526,7 +474,6 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
               s.worktreeDir,
               s.linearSessionId,
               undefined,
-              undefined,
               s.issueId,
               s.issueUrl,
               s.participants,
@@ -552,7 +499,6 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
                   s.issueTitle,
                   s.worktreeDir,
                   s.linearSessionId,
-                  false,
                   true,
                   s.issueId,
                   s.issueUrl,
@@ -562,7 +508,7 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
 
                 await createAgentActivity(accessToken, agentSession.id, {
                   type: "elicitation",
-                  body: `${MESSAGES.planningComplete}\n\n**How would you like to proceed?**\n- Reply "one-shot" - Single Claude session implementation\n- Reply "ralph" - Iterative task loop with progress updates`,
+                  body: `${MESSAGES.planningComplete}\n\nReply when you're ready and I'll start implementing.`,
                 });
               } else if (result.includes("IMPLEMENTATION_COMPLETE")) {
                 const creatorGithub = linearEmailToGithubUsername(s.issueCreator?.email || null);
@@ -626,8 +572,6 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
     try {
       const session = activeSessions.get(agentSession.id);
       if (session) {
-        if (session.isRalphMode && session.ralphProcess) session.ralphProcess.kill();
-        if (session.ralphPollInterval) clearInterval(session.ralphPollInterval);
         stopSessionPolling(session);
       }
       deleteWorktree(branch);
@@ -687,7 +631,6 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
     planningConversation: [],
     awaitingImplementationConfirmation: false,
     awaitingInitialDirection: true,
-    isRalphMode: false,
     participants: [],
     lastActiveUser: null,
     issueCreator: issueDetails.creator,
@@ -705,7 +648,6 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
         issue.title,
         worktreeDir,
         agentSession.id,
-        undefined,
         undefined,
         issue.id,
         issue.url,

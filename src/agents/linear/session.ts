@@ -1,5 +1,5 @@
 /**
- * Linear agent session lifecycle, Claude runner, polling, and Ralph mode.
+ * Linear agent session lifecycle, Claude runner, and polling.
  */
 import { envAlias } from "../../server/rename-compat";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
@@ -8,18 +8,10 @@ import { productName } from "../../server/config";
 import { getDefaultModel, toOpencodeModel } from "../../server/models";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { worktreePathFor } from "../../server/worktree";
-import { spawn, spawnSync, execSync } from "child_process";
+import { spawn } from "child_process";
 import { unlinkSync } from "fs";
-import { linearEmailToGithubUsername, gitIdentityFor, gitIdentityEnv } from "../../server/shared/user-mappings";
-import {
-  createAgentActivity,
-  fetchPlanFromLinear,
-  getIssueDetails,
-  moveToStatus,
-  postComment,
-  updateAgentSession,
-  type PlanStep,
-} from "./api";
+import { gitIdentityFor, gitIdentityEnv } from "../../server/shared/user-mappings";
+import { createAgentActivity } from "./api";
 import type { LinearTokens } from "./oauth";
 import { getValidToken } from "./oauth";
 
@@ -32,16 +24,6 @@ export interface Participant {
   id: string;
   name: string;
   email: string | null;
-}
-
-interface RalphStatus {
-  iteration: number;
-  max: number;
-  status: "running" | "idle" | "complete" | "max_iterations";
-  current_tool?: string;
-  tool_time?: string;
-  total_cost_usd: number;
-  started?: string;
 }
 
 export interface ActiveSession {
@@ -63,9 +45,6 @@ export interface ActiveSession {
   planningConversation: Array<{ role: "michael" | "user"; content: string; timestamp: string }>;
   awaitingImplementationConfirmation: boolean;
   awaitingInitialDirection: boolean;
-  isRalphMode: boolean;
-  ralphProcess?: ReturnType<typeof Bun.spawn>;
-  ralphPollInterval?: ReturnType<typeof setInterval>;
   participants: Participant[];
   lastActiveUser: Participant | null;
   issueCreator: Participant | null;
@@ -182,7 +161,6 @@ export async function saveSessionInfo(
   issueTitle: string,
   worktreeDir: string,
   linearSessionId?: string,
-  isRalphMode?: boolean,
   awaitingImplementationConfirmation?: boolean,
   issueId?: string,
   issueUrl?: string,
@@ -210,7 +188,6 @@ export async function saveSessionInfo(
     issueTitle,
     worktreeDir,
     linearSessionId,
-    isRalphMode: isRalphMode !== undefined ? isRalphMode : (existing.isRalphMode || false),
     awaitingImplementationConfirmation:
       awaitingImplementationConfirmation !== undefined
         ? awaitingImplementationConfirmation
@@ -236,7 +213,6 @@ export async function loadSessionInfo(branch: string): Promise<{
   issueTitle?: string;
   worktreeDir: string;
   linearSessionId?: string;
-  isRalphMode?: boolean;
   awaitingImplementationConfirmation?: boolean;
   awaitingInitialDirection?: boolean;
   issueId?: string;
@@ -643,336 +619,6 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>`;
   }
 }
 
-// --- Ralph mode ---
-
-/** Map a Ralph prd.json to Linear's session plan panel. Empty plans are rejected by the API. */
-function ralphPlanFromPrd(prd: any, currentTaskId?: string): PlanStep[] {
-  if (!Array.isArray(prd)) return [];
-  return prd.map((t: any) => ({
-    content: clip(String(t.title || t.description || t.id || "task"), 200),
-    status: t.passes ? "completed" : t.id === currentTaskId ? "inProgress" : "pending",
-  }));
-}
-
-async function syncRalphPlan(session: ActiveSession, accessToken: string, linearSessionId: string): Promise<void> {
-  try {
-    const prdFile = Bun.file(`${session.worktreeDir}/prd.json`);
-    if (!(await prdFile.exists())) return;
-    const plan = ralphPlanFromPrd(JSON.parse(await prdFile.text()));
-    if (plan.length > 0) {
-      await updateAgentSession(accessToken, linearSessionId, { plan });
-    }
-  } catch (e) {
-    console.error("[linear] Failed to sync Ralph plan:", e);
-  }
-}
-
-export async function startRalphLoop(
-  session: ActiveSession,
-  accessToken: string,
-  linearSessionId: string
-): Promise<void> {
-  console.log(`[linear] Starting Ralph loop for ${session.issueIdentifier}`);
-
-  await createAgentActivity(accessToken, linearSessionId, {
-    type: "thought",
-    body: "Starting Ralph iterative implementation loop...",
-  });
-
-  await moveToStatus(accessToken, session.issueId, session.teamId, "In Progress");
-
-  const plan = await fetchPlanFromLinear(accessToken, session.issueId);
-  if (!plan) {
-    await createAgentActivity(accessToken, linearSessionId, {
-      type: "error",
-      body: "Could not find implementation plan in issue comments.",
-    });
-    return;
-  }
-
-  const planFile = `PLAN-${session.issueIdentifier}.md`;
-  const planPath = `${session.worktreeDir}/${planFile}`;
-  await Bun.write(planPath, plan);
-
-  const fullPath = `/home/ubuntu/.nvm/versions/node/v20.20.0/bin:${process.env.PATH}`;
-  try {
-    // args array, not a shell string — planFile embeds the issue identifier,
-    // which must never be interpolated into a shell command.
-    const importResult = spawnSync("just", ["ralph", "import", planFile], {
-      cwd: session.worktreeDir,
-      encoding: "utf-8",
-      env: { ...process.env, PATH: fullPath },
-    });
-    if (importResult.status !== 0) {
-      throw new Error(
-        importResult.stderr?.trim() ||
-          importResult.stdout?.trim() ||
-          `just ralph import exited with code ${importResult.status}`
-      );
-    }
-  } catch (e) {
-    console.error(`[linear] Ralph import failed:`, e);
-    await createAgentActivity(accessToken, linearSessionId, {
-      type: "error",
-      body: `Ralph import failed - ${e}`,
-    });
-    return;
-  }
-
-  let prdContent = "";
-  try {
-    const prdFile = Bun.file(`${session.worktreeDir}/prd.json`);
-    if (await prdFile.exists()) {
-      prdContent = await prdFile.text();
-    }
-  } catch {}
-
-  await createAgentActivity(accessToken, linearSessionId, {
-    type: "thought",
-    body: "PRD generated. Starting iterative loop...",
-  });
-
-  const prdMessage = prdContent
-    ? `🔄 **PRD generated. Starting iterative loop...**\n\n\`\`\`json\n${prdContent}\`\`\``
-    : "🔄 PRD generated. Starting iterative loop...";
-  await postComment(accessToken, session.issueId, prdMessage);
-
-  // Publish the task list to the session's plan panel
-  await syncRalphPlan(session, accessToken, linearSessionId);
-
-  session.ralphProcess = Bun.spawn(["just", "ralph", "loop"], {
-    cwd: session.worktreeDir,
-    stdout: "ignore",
-    stderr: "ignore",
-    env: {
-      ...process.env,
-      PATH: "/home/ubuntu/.cargo/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/home/ubuntu/bin:/home/ubuntu/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      HOME: "/home/ubuntu",
-    },
-  });
-  console.log(`[linear] Ralph loop started (pid: ${session.ralphProcess.pid})`);
-
-  await saveSessionInfo(
-    session.branch,
-    session.claudeSessionId,
-    session.issueIdentifier,
-    session.issueTitle,
-    session.worktreeDir,
-    session.linearSessionId,
-    true,
-    false,
-    session.issueId,
-    session.issueUrl,
-    session.participants,
-    session.lastActiveUser
-  );
-
-  startRalphPolling(session, accessToken, linearSessionId);
-}
-
-export function startRalphPolling(
-  session: ActiveSession,
-  accessToken: string,
-  linearSessionId: string
-): void {
-  console.log(`[linear] Starting Ralph polling for ${session.issueIdentifier || session.branch}`);
-  let lastPostedIteration = 0;
-  let lastStatus = "";
-
-  session.ralphPollInterval = setInterval(async () => {
-    const statusPath = `${session.worktreeDir}/status.json`;
-    const prdPath = `${session.worktreeDir}/prd.json`;
-
-    try {
-      const statusFile = Bun.file(statusPath);
-      if (!(await statusFile.exists())) return;
-
-      const status: RalphStatus = JSON.parse(await statusFile.text());
-
-      if (status.status === "complete" || status.status === "max_iterations") {
-        await handleRalphCompletion(session, accessToken, linearSessionId, status);
-        return;
-      }
-
-      const shouldPost = status.iteration !== lastPostedIteration || status.status !== lastStatus;
-      if (!shouldPost) return;
-
-      lastPostedIteration = status.iteration;
-      lastStatus = status.status;
-
-      // Task statuses live in the session's plan panel; the thought is a
-      // compact ephemeral ticker that the next update replaces.
-      await syncRalphPlan(session, accessToken, linearSessionId);
-
-      let message = `**Ralph** iteration ${status.iteration}/${status.max}`;
-      const prdFile = Bun.file(prdPath);
-      if (await prdFile.exists()) {
-        try {
-          const prd = JSON.parse(await prdFile.text());
-          const completed = prd.filter((t: { passes?: boolean }) => t.passes);
-          message += ` (${completed.length}/${prd.length} tasks)`;
-        } catch {}
-      }
-      if (status.current_tool) {
-        message += `\n\n_${status.current_tool}_`;
-      }
-
-      await createAgentActivity(
-        accessToken,
-        linearSessionId,
-        { type: "thought", body: message },
-        true
-      );
-    } catch (e) {
-      console.error(`[linear] Error polling Ralph status:`, e);
-    }
-  }, 10000);
-}
-
-async function handleRalphCompletion(
-  session: ActiveSession,
-  accessToken: string,
-  linearSessionId: string,
-  status: RalphStatus
-): Promise<void> {
-  console.log(`[linear] Ralph completed for ${session.issueIdentifier}: ${status.status}`);
-
-  if (session.ralphPollInterval) {
-    clearInterval(session.ralphPollInterval);
-    session.ralphPollInterval = undefined;
-  }
-
-  if (session.ralphProcess) {
-    try {
-      await session.ralphProcess.exited;
-    } catch {}
-    session.ralphProcess = undefined;
-  }
-
-  const isSuccess = status.status === "complete";
-  const message = isSuccess
-    ? `Ralph completed all tasks after ${status.iteration} iterations!`
-    : `Ralph reached max iterations (${status.max}).`;
-
-  // Final plan-panel state before the summary lands
-  await syncRalphPlan(session, accessToken, linearSessionId);
-
-  await createAgentActivity(accessToken, linearSessionId, {
-    type: "thought",
-    body: message,
-  });
-
-  try {
-    let issueTitle = session.issueTitle;
-    let issueUrl = session.issueUrl;
-    if (!issueTitle || !issueUrl) {
-      if (session.issueId) {
-        const details = await getIssueDetails(accessToken, session.issueId);
-        issueTitle = details.title;
-        issueUrl = details.url;
-      }
-    }
-
-    const prTitle = `[${session.issueIdentifier}] ${issueTitle}`;
-
-    let summary = "";
-    try {
-      const progressFile = Bun.file(`${session.worktreeDir}/progress.json`);
-      if (await progressFile.exists()) {
-        const progress = JSON.parse(await progressFile.text());
-        if (Array.isArray(progress) && progress.length > 0) {
-          summary = progress
-            .map((p: { task_id: string; notes: string }) => `- **${p.task_id}**: ${p.notes}`)
-            .join("\n");
-        }
-      }
-    } catch {}
-
-    let participantsLine = "";
-    if (session.participants.length > 0) {
-      const names = session.participants.map((p) => p.name);
-      participantsLine =
-        session.participants.length === 1
-          ? `**Requested by:** ${names[0]} (via Linear)`
-          : `**Participants:** ${names.join(", ")} (via Linear)`;
-    }
-
-    const prBody = `Implemented by Ralph (${status.iteration} iterations)
-
-## Summary
-${summary || "No progress details available."}
-
-${participantsLine}
-
-Linear: ${issueUrl}`;
-
-    execSync("just ralph clean", { cwd: session.worktreeDir, encoding: "utf-8" });
-    execSync("rm -f PLAN-*.md", { cwd: session.worktreeDir, encoding: "utf-8" });
-
-    let commitMsg = "Ralph implementation";
-    const coAuthor = session.lastActiveUser;
-    if (coAuthor) {
-      const email = coAuthor.email || `${coAuthor.id}@users.linear.app`;
-      commitMsg += `\n\nCo-Authored-By: ${coAuthor.name} <${email}>`;
-    }
-
-    const commitMsgFile = `${session.worktreeDir}/.commit-msg`;
-    await Bun.write(commitMsgFile, commitMsg);
-
-    execSync(
-      "git add -A && git diff --cached --quiet || git commit -F .commit-msg && rm -f .commit-msg && git push -u origin " +
-        session.branch,
-      { cwd: session.worktreeDir, encoding: "utf-8" }
-    );
-
-    await Bun.write(`${session.worktreeDir}/.pr-body.md`, prBody);
-
-    const reviewerGithub = linearEmailToGithubUsername(session.issueCreator?.email || null);
-    const reviewerFlag = reviewerGithub ? ` --reviewer ${reviewerGithub}` : "";
-    const prResult = execSync(
-      `gh pr create --title "${prTitle}" --body-file .pr-body.md${reviewerFlag}`,
-      { cwd: session.worktreeDir, encoding: "utf-8" }
-    );
-
-    execSync("rm -f .pr-body.md", { cwd: session.worktreeDir });
-
-    const prUrl = prResult.trim();
-    console.log(`[linear] Created PR: ${prUrl}`);
-
-    const completionMessage = isSuccess
-      ? `**Implementation complete!**\n\n${summary ? `## Summary\n${summary}\n\n` : ""}PR: ${prUrl}`
-      : `Reached max iterations. PR: ${prUrl}`;
-
-    await createAgentActivity(accessToken, linearSessionId, {
-      type: "response",
-      body: completionMessage,
-    });
-  } catch (e) {
-    console.error(`[linear] Error creating PR:`, e);
-    await createAgentActivity(accessToken, linearSessionId, {
-      type: "error",
-      body: `${message}\n\nFailed to create PR: ${e}`,
-    });
-  }
-
-  session.isRalphMode = false;
-
-  await saveSessionInfo(
-    session.branch,
-    session.claudeSessionId,
-    session.issueIdentifier,
-    session.issueTitle,
-    session.worktreeDir,
-    session.linearSessionId,
-    false,
-    undefined,
-    session.issueId,
-    session.issueUrl,
-    session.participants,
-    session.lastActiveUser
-  );
-}
-
 // --- Startup ---
 
 export async function loadActiveSessionsOnStartup(tokens: LinearTokens): Promise<void> {
@@ -1019,7 +665,6 @@ export async function loadActiveSessionsOnStartup(tokens: LinearTokens): Promise
             planningConversation: [],
             awaitingImplementationConfirmation: sessionData.awaitingImplementationConfirmation || false,
             awaitingInitialDirection: sessionData.awaitingInitialDirection || false,
-            isRalphMode: sessionData.isRalphMode || false,
             participants: sessionData.participants || [],
             lastActiveUser: sessionData.lastActiveUser || null,
             issueCreator: sessionData.issueCreator || null,
@@ -1028,38 +673,11 @@ export async function loadActiveSessionsOnStartup(tokens: LinearTokens): Promise
           activeSessions.set(sessionData.linearSessionId, session);
 
           console.log(
-            `[linear] Restored session: ${branch} (Claude: ${sessionData.claudeSessionId}, Linear: ${sessionData.linearSessionId}, Ralph: ${session.isRalphMode})`
+            `[linear] Restored session: ${branch} (Claude: ${sessionData.claudeSessionId}, Linear: ${sessionData.linearSessionId})`
           );
 
           if (session.awaitingInitialDirection) {
             // No polling needed yet
-          } else if (session.isRalphMode) {
-            const statusPath = `${sessionData.worktreeDir}/status.json`;
-            let needsRestart = true;
-            try {
-              const statusFile = Bun.file(statusPath);
-              if (await statusFile.exists()) {
-                const st = JSON.parse(await statusFile.text());
-                if (st.status === "complete" || st.status === "max_iterations") {
-                  needsRestart = false;
-                }
-              }
-            } catch {}
-
-            if (needsRestart) {
-              session.ralphProcess = Bun.spawn(["just", "ralph", "loop"], {
-                cwd: sessionData.worktreeDir,
-                stdout: "ignore",
-                stderr: "ignore",
-                env: {
-                  ...process.env,
-                  PATH: "/home/ubuntu/.cargo/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/home/ubuntu/bin:/home/ubuntu/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-                  HOME: "/home/ubuntu",
-                },
-              });
-            }
-
-            startRalphPolling(session, accessToken, sessionData.linearSessionId);
           } else {
             startSessionPolling(session);
           }

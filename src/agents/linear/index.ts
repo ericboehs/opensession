@@ -66,12 +66,6 @@ export class LinearAgent implements AgentModule {
       if (session.abortController) {
         session.abortController.abort();
       }
-      if (session.ralphProcess) {
-        session.ralphProcess.kill();
-      }
-      if (session.ralphPollInterval) {
-        clearInterval(session.ralphPollInterval);
-      }
       stopSessionPolling(session);
     }
     console.log("[linear] Agent shut down");
@@ -85,7 +79,6 @@ export class LinearAgent implements AgentModule {
         branch: s.branch,
         issue: s.issueIdentifier,
         isPlanning: s.isPlanning,
-        isRalphMode: s.isRalphMode,
       })),
     };
   }

@@ -194,7 +194,6 @@ export interface LinearSessionFile {
   issueTitle?: string;
   worktreeDir?: string;
   linearSessionId?: string;
-  isRalphMode?: boolean;
   issueId?: string;
   issueUrl?: string;
   participants?: Array<{ id: string; name: string; email: string | null }>;
