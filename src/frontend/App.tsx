@@ -1003,12 +1003,18 @@ function App() {
 		!s.archived || s.id === currentSession?.id;
 	const projectChats: UnifiedSession[] = activeProjectId
 		? sessions
-				.filter((s) => liveTab(s) && s.projectId === activeProjectId)
+				.filter(
+					(s) =>
+						liveTab(s) && s.projectId === activeProjectId && !s.sideChatOf,
+				)
 				.sort(byCreated)
 		: currentSession?.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
 			? sessions
 					.filter(
-						(s) => liveTab(s) && s.worktreeDir === currentSession.worktreeDir,
+						(s) =>
+							liveTab(s) &&
+							s.worktreeDir === currentSession.worktreeDir &&
+							!s.sideChatOf,
 					)
 					.sort(byCreated)
 			: currentSession
@@ -1019,10 +1025,16 @@ function App() {
 	// already holds a live tab via liveTab().
 	const archivedChats: UnifiedSession[] = (
 		activeProjectId
-			? sessions.filter((s) => s.archived && s.projectId === activeProjectId)
+			? sessions.filter(
+					(s) =>
+						s.archived && s.projectId === activeProjectId && !s.sideChatOf,
+				)
 			: currentSession?.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
 				? sessions.filter(
-						(s) => s.archived && s.worktreeDir === currentSession.worktreeDir,
+						(s) =>
+							s.archived &&
+							s.worktreeDir === currentSession.worktreeDir &&
+							!s.sideChatOf,
 					)
 				: []
 	)

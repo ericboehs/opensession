@@ -271,7 +271,9 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
     typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
 
   // Ambient status whisper — counts only, no lists; the sidebar has the lists.
-  const active = sessions.filter((s) => !s.archived);
+  // Side chats live inside their parent session's panel, never as standalone
+  // sessions on Home — exclude them from every count/list below.
+  const active = sessions.filter((s) => !s.archived && !s.sideChatOf);
   const running = active.filter((s) => s.isRunning);
   const waiting = active.filter(
     (s) => (s.waitingForInput || s.lastRunError) && !s.isRunning,

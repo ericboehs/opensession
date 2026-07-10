@@ -18,7 +18,16 @@ export const CTX_CLOSE = "</backstage:context>";
 
 /** Fence a block of injected context so it renders invisibly in the transcript. */
 export function wrapContext(body: string): string {
-  return `${CTX_OPEN}\n${body}\n${CTX_CLOSE}`;
+  // Neutralize any fence sentinels inside the body: a nested
+  // <backstage:context> marker in inlined content (e.g. a side chat's
+  // transcript that literally contains the string) would otherwise let that
+  // content break out of the fence and inject unfenced instructions into the
+  // agent — a prompt-injection vector. A sentinel inside a fenced block is
+  // never legitimate, so replacing the angle brackets is always safe.
+  const safe = body
+    .replaceAll(CTX_OPEN, "‹backstage:context›")
+    .replaceAll(CTX_CLOSE, "‹/backstage:context›");
+  return `${CTX_OPEN}\n${safe}\n${CTX_CLOSE}`;
 }
 
 const STRIP_RE = new RegExp(`${CTX_OPEN}[\\s\\S]*?${CTX_CLOSE}\\n*`, "g");

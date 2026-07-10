@@ -438,6 +438,18 @@ export async function handleSessionsRoutes(
 
 		const cleanWorktree = url.searchParams.get("worktree") === "true";
 		try {
+			// Cascade-delete this session's side chats — they live only in this
+			// session's panel (suppressed from the sidebar), so orphaning them
+			// leaves unreachable files on disk. Before deleteSession so the parent
+			// is still resolvable to anything that needs it.
+			for (const child of getAllSessions().filter(
+				(s) => s.sideChatOf === sessionId,
+			)) {
+				try {
+					deleteSession(child);
+					destroySessionSandbox(child, "delete");
+				} catch {}
+			}
 			deleteSession(session);
 			invalidateSessionsCache();
 			// Tear down the session's sandbox (container + engine-state volumes —

@@ -19,6 +19,7 @@ import type {
 	AskQuestion,
 } from "../lib/types";
 import { TranscriptBlocks } from "./TranscriptBlocks";
+import { SideChatsPanel } from "./SideChatsPanel";
 import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
@@ -191,6 +192,7 @@ type PanelTab =
 	| "slack"
 	| "chat"
 	| "plain"
+	| "sidechats"
 	| "workflows";
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -701,9 +703,20 @@ export function SessionViewer({
 	const plainUrl = session.plainThreadId
 		? plainThreadUrl(session.plainThreadId)
 		: "";
+	// Side chats hang off any normal backstage session (not an automation view,
+	// and not a side chat itself — no nesting). Their tab opens the panel even
+	// for an ask-mode chat with no workspace.
+	const canSideChat =
+		session.source === "backstage" && !session.automation && !session.sideChatOf;
 	// Workflow runs open the panel too: ask-mode sessions without a workspace
 	// or Plain thread still need somewhere to show the Agents tab.
-	const panelAvailable = hasWorkspace || hasPlain || workflowRuns.length > 0;
+	const panelAvailable =
+		hasWorkspace || hasPlain || workflowRuns.length > 0 || canSideChat;
+	// A persisted "sidechats" tab is meaningless on a session that can't have
+	// side chats (automation view / a side chat itself) — fall back to Info.
+	useEffect(() => {
+		if (panelTab === "sidechats" && !canSideChat) setPanelTab("info");
+	}, [panelTab, canSideChat]);
 	const isBusy = isRunningLive || isStreaming;
 	// Derived, not the raw flag: transcript content or streaming text means the
 	// opening run already started, so the worktree is done — this guards against
@@ -1227,6 +1240,8 @@ export function SessionViewer({
 			.filter(
 				(c) =>
 					c.id !== session.id &&
+					// Side chats are recalled via their own @mention, not offered here.
+					!c.sideChatOf &&
 					// Only chats with something to hand over — a transcript or at
 					// least a started engine thread.
 					(c.transcriptPath || c.claudeSessionId || c.codexThreadId),
@@ -1419,6 +1434,15 @@ export function SessionViewer({
 			setFiles((prev) => [...prev, ...fls]);
 		}
 		setComposerPrefill((p) => ({ seq: (p?.seq ?? 0) + 1, text: q.content }));
+	}
+
+	// Append an @session:<id> token to the main composer (from a side chat's
+	// "Mention in main thread") so the user can pull that chat's context back in.
+	function insertMention(id: string) {
+		setComposerPrefill((p) => ({
+			seq: (p?.seq ?? 0) + 1,
+			text: `@session:${id} `,
+		}));
 	}
 
 	function handleQueueReorder(next: QueueReceipt[]) {
@@ -2967,6 +2991,14 @@ export function SessionViewer({
 							>
 								Info
 							</button>
+							{canSideChat && (
+								<button
+									className={`panel-tab ${panelTab === "sidechats" ? "active" : ""}`}
+									onClick={() => selectPanelTab("sidechats")}
+								>
+									Side chats
+								</button>
+							)}
 							{hasWorkspace && (
 								<>
 									<button
@@ -3071,6 +3103,11 @@ export function SessionViewer({
 									onOpenSession={(id) => onOpenSession?.(id)}
 									liveMediaCount={liveMediaCount}
 									liveMedia={liveOverviewMedia}
+								/>
+							) : panelTab === "sidechats" ? (
+								<SideChatsPanel
+									sessionId={session.id}
+									onMention={insertMention}
 								/>
 							) : panelTab === "workflows" && workflowRuns.length > 0 ? (
 								// Before the Plain fallthrough: a Plain-only session's

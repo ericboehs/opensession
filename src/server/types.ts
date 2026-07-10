@@ -74,6 +74,9 @@ export interface UnifiedSession {
   projectId?: string | null;
   /** Parent/orchestrator session when spawned as a worker sub-session. */
   parentSessionId?: string;
+  /** Set on a side chat — the parent session it was spawned from and
+   *  @-mentions back into. Suppressed from the left sidebar. */
+  sideChatOf?: string;
   /** How many spawn_task hops away from a human-created session this is
    *  (opensession-sessions spawn_task loop guard: refused at depth ≥ 2). Absent =
    *  0 = created by a human or by create_session. */
@@ -316,6 +319,9 @@ export interface BackstageSessionFile {
   projectId?: string | null; // legacy alias of workspaceId (dual-read during migration)
   /** Parent/orchestrator session when this chat was spawned as a visible worker sub-session. */
   parentSessionId?: string;
+  /** Set on a side chat — the parent session it was spawned from and
+   *  @-mentions back into. Suppressed from the left sidebar. */
+  sideChatOf?: string;
   /** spawn_task hop count from a human-created session (loop guard; see
    *  UnifiedSession.spawnDepth). Stamped by opensession-sessions' spawn_task. */
   spawnDepth?: number;
