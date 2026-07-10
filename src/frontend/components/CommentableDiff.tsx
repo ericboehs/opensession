@@ -18,6 +18,12 @@ export interface PendingComment extends CommentTarget {
   text: string;
 }
 
+/** URLs for a changed image's two sides (either may be absent). */
+export interface DiffImageSrcs {
+  oldSrc?: string;
+  newSrc?: string;
+}
+
 interface Props {
   patch: string;
   submitLabel: string;
@@ -25,6 +31,13 @@ interface Props {
   disabled?: boolean;
   disabledHint?: string;
   onSubmit: (target: CommentTarget, text: string) => Promise<void>;
+  /**
+   * When provided, changed image files render the actual pictures (before/after)
+   * instead of an empty binary diff. The callback maps a file to the URLs of its
+   * two sides — the host knows where the bytes live (worktree endpoint, PR blob
+   * endpoint). Non-image files are unaffected.
+   */
+  imageSrcs?: (file: FileDiffMetadata) => DiffImageSrcs | null;
   /**
    * Review-batching mode: when provided, already-added comments render inline as
    * pending cards (the parent owns the list and submits them as one review).
@@ -86,6 +99,8 @@ const NO_ANNOTATIONS: DiffLineAnnotation<Meta>[] = [];
  * row is memoized with stable props (annotations, onSelect, renderAnnotation),
  * so a selection change re-renders at most the two files it touches.
  */
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
+
 export function CommentableDiff({
   patch,
   submitLabel,
@@ -96,6 +111,7 @@ export function CommentableDiff({
   pendingComments,
   onRemovePending,
   onDiscard,
+  imageSrcs,
 }: Props) {
   const reviewMode = pendingComments !== undefined;
   const theme = useResolvedTheme();
@@ -369,18 +385,21 @@ export function CommentableDiff({
                 {s.del > 0 && <span className="diff-del">−{s.del}</span>}
               </span>
             </div>
-            {isOpen && (
-              <FileDiffRow
-                key={theme}
-                file={file}
-                fileIndex={i}
-                theme={theme}
-                annotations={annotations}
-                selectedLines={isDraftFile ? draft!.range : null}
-                onSelect={handleSelect}
-                renderAnnotation={renderAnnotation}
-              />
-            )}
+            {isOpen &&
+              (imageSrcs && IMAGE_EXT.test(file.name) ? (
+                <ImageDiffRow file={file} srcs={imageSrcs(file)} />
+              ) : (
+                <FileDiffRow
+                  key={theme}
+                  file={file}
+                  fileIndex={i}
+                  theme={theme}
+                  annotations={annotations}
+                  selectedLines={isDraftFile ? draft!.range : null}
+                  onSelect={handleSelect}
+                  renderAnnotation={renderAnnotation}
+                />
+              ))}
           </div>
         );
       })}
@@ -389,6 +408,42 @@ export function CommentableDiff({
           ? "Click a line number (drag for a range) to add a comment. They stay pending until you finish the review."
           : "Click a line number (drag for a range) to comment."}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A changed image, rendered as the actual pictures: before/after side by side
+ * for a modification, a single picture for added/deleted files. Sides that
+ * fail to load (e.g. an untracked file not in the base) hide themselves.
+ */
+function ImageDiffRow({
+  file,
+  srcs,
+}: {
+  file: FileDiffMetadata;
+  srcs: DiffImageSrcs | null;
+}) {
+  const [oldErr, setOldErr] = useState(false);
+  const [newErr, setNewErr] = useState(false);
+  const showOld = !!srcs?.oldSrc && file.type !== "new" && !oldErr;
+  const showNew = !!srcs?.newSrc && file.type !== "deleted" && !newErr;
+  if (!showOld && !showNew)
+    return <div className="diff-image-empty">Image not available to preview</div>;
+  return (
+    <div className="diff-image-row">
+      {showOld && (
+        <figure className="diff-image-cell diff-image-old">
+          <img src={srcs!.oldSrc} alt="" loading="lazy" onError={() => setOldErr(true)} />
+          <figcaption>{file.type === "deleted" ? "Deleted" : "Before"}</figcaption>
+        </figure>
+      )}
+      {showNew && (
+        <figure className="diff-image-cell diff-image-new">
+          <img src={srcs!.newSrc} alt="" loading="lazy" onError={() => setNewErr(true)} />
+          <figcaption>{file.type === "new" ? "Added" : "After"}</figcaption>
+        </figure>
+      )}
     </div>
   );
 }

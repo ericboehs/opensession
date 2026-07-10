@@ -9,10 +9,13 @@
 import type { RouteContext } from "./context";
 import { type SessionDiff, discardSessionFile, getSessionDiff } from "../git-diff";
 import { getGitStatus, gitPull, gitPush } from "../git-status";
+import { imageContentType, imageHeaders } from "../image-mime";
 import { hasRemoteWorkspace, workspaceExecFor } from "../sandbox";
 import { findSession } from "../session-cache";
 import { getRepo, repoForPath } from "../worktree";
+import { $ } from "bun";
 import { existsSync } from "fs";
+import { resolve } from "path";
 
 export async function handleSessionGitRoutes(
 	ctx: RouteContext,
@@ -185,6 +188,66 @@ export async function handleSessionGitRoutes(
 				isPrimary ? await workspaceExecFor(session, dir) : undefined,
 			),
 		);
+	}
+
+	// An image from a session's worktree, for the Changes tab's diff view —
+	// binary files have no textual hunks, so the client renders the picture
+	// itself. `?side=new` (default) reads the working tree; `?side=base` shows
+	// the pre-change version via `git show <merge-base>:<path>`.
+	if (
+		path.match(/^\/backstage\/api\/sessions\/(.+)\/worktree-image$/) &&
+		req.method === "GET"
+	) {
+		const sessionId = decodeURIComponent(
+			path.match(/^\/backstage\/api\/sessions\/(.+)\/worktree-image$/)![1],
+		);
+		const session = findSession(sessionId);
+		if (!session) return new Response("Session not found", { status: 404 });
+		const filePath = url.searchParams.get("path") || "";
+		const contentType = imageContentType(filePath);
+		if (!contentType) return new Response("Not an image path", { status: 400 });
+		const repoId = url.searchParams.get("repo");
+		const primaryRepo =
+			session.repo ||
+			(session.worktreeDir
+				? repoForPath(session.worktreeDir).id
+				: "tella-fusion");
+		const isPrimary = !repoId || repoId === primaryRepo;
+		const dir = isPrimary
+			? session.worktreeDir
+			: (session.attachedRepos || []).find((r) => r.repo === repoId)?.dir;
+		if (!dir || !existsSync(dir)) return new Response("No worktree", { status: 404 });
+		// Keep reads inside the worktree — the path comes from the client.
+		const abs = resolve(dir, filePath);
+		if (abs !== dir && !abs.startsWith(`${dir}/`))
+			return new Response("Bad path", { status: 400 });
+		try {
+			if (url.searchParams.get("side") === "base") {
+				const repoConf = getRepo(repoId || primaryRepo);
+				const base = (
+					await $`git -C ${dir} merge-base HEAD origin/${repoConf.defaultBranch}`
+						.quiet()
+						.text()
+				).trim();
+				const proc = Bun.spawn(["git", "-C", dir, "show", `${base}:${filePath}`], {
+					stdout: "pipe",
+					stderr: "ignore",
+				});
+				const bytes = await new Response(proc.stdout).arrayBuffer();
+				if ((await proc.exited) !== 0)
+					return new Response("Not in base", { status: 404 });
+				return new Response(bytes, {
+					headers: imageHeaders(contentType, "private, max-age=300"),
+				});
+			}
+			const f = Bun.file(abs);
+			if (!(await f.exists())) return new Response("Not found", { status: 404 });
+			return new Response(f, {
+				headers: imageHeaders(contentType, "no-cache"),
+			});
+		} catch {
+			return new Response("Failed to read image", { status: 500 });
+		}
 	}
 
 	// Push the session's branch (sets upstream on first push). Human-triggered

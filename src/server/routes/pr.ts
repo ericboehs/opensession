@@ -245,6 +245,33 @@ export async function handlePrRoutes(
 		);
 	}
 
+	// An image blob from a repo at a ref, for PR diff views — binary files have
+	// no textual hunks, so the client renders the picture itself (head ref for
+	// the new side, base ref for the old). Image extensions only; the repo must
+	// be registered. Served through gh so private repos work.
+	if (path === "/backstage/api/pr-image" && req.method === "GET") {
+		const filePath = url.searchParams.get("path") || "";
+		const ref = url.searchParams.get("ref") || "";
+		const { imageContentType, imageHeaders } = await import("../image-mime");
+		const contentType = imageContentType(filePath);
+		if (!contentType || !ref)
+			return new Response("path (an image) and ref required", { status: 400 });
+		const repo = getRepo(url.searchParams.get("repo") || undefined);
+		const proc = Bun.spawn(
+			[
+				"gh", "api", "-H", "Accept: application/vnd.github.raw",
+				`repos/${repo.ghRepo}/contents/${encodeURIComponent(filePath).replace(/%2F/gi, "/")}?ref=${encodeURIComponent(ref)}`,
+			],
+			{ stdout: "pipe", stderr: "ignore" },
+		);
+		const bytes = await new Response(proc.stdout).arrayBuffer();
+		if ((await proc.exited) !== 0 || bytes.byteLength === 0)
+			return new Response("Not found at that ref", { status: 404 });
+		return new Response(bytes, {
+			headers: imageHeaders(contentType, "private, max-age=120"),
+		});
+	}
+
 	// Session-less PR preview (sidebar PR rows with no chat yet): PR details
 	// and diff straight from repo+branch — same pr-info helpers as the
 	// session routes, minus the session lookup.

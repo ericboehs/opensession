@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PrDetails, WSServerMessage } from "../lib/types";
 import {
+	API_BASE,
 	fetchModels,
 	fetchPrPreview,
 	fetchPrPreviewDiff,
@@ -290,6 +291,18 @@ export function PrPreview({ repo, branch, connected, send, addHandler }: Props) 
 										disabled
 										disabledHint="Start a session below to review this PR"
 										onSubmit={async () => {}}
+										imageSrcs={(file) => {
+											const src = (ref: string, p: string) =>
+												`${API_BASE}/pr-image?repo=${encodeURIComponent(repo)}&ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(p)}`;
+											return {
+												oldSrc: pr?.baseRefName
+													? src(pr.baseRefName, file.prevName || file.name)
+													: undefined,
+												newSrc: pr?.headRefName
+													? src(pr.headRefName, file.name)
+													: undefined,
+											};
+										}}
 									/>
 								</div>
 							)}

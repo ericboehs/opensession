@@ -14,6 +14,9 @@ import type {
 
 const BASE = `${BASE_PATH}/api`;
 
+/** API base for building direct resource URLs (e.g. <img src> endpoints). */
+export const API_BASE = BASE;
+
 /** Single error shape for every API failure: HTTP status + the server's
  * `error` field when it sent one (else a "<label>: <status>" message). */
 export class ApiError extends Error {

@@ -834,9 +834,17 @@ export function getAllSessions(): UnifiedSession[] {
           reviewDecision: pr.reviewDecision,
           checks: pr.checks,
         });
-      } else if (t.source === "linked") {
-        // Repo/branch outside the PR cache — keep the stored link as a label.
-        refs.push({ repo: t.repo, branch: t.branch, source: "linked", ...t.stored });
+      } else if (
+        t.source !== "primary" &&
+        (t.stored || !prsByRepo.has(t.repo))
+      ) {
+        // No cache hit but the target is still real: a linked PR keeps its
+        // stored url/number/title as a label, and an attached repo outside the
+        // bulk cache's coverage (it only polls the active dev repos) keeps a
+        // bare ref — the PR routes resolve it live. A covered repo with no
+        // cache entry genuinely has no PR, and a primary branch with no PR
+        // stays absent, as before.
+        refs.push({ repo: t.repo, branch: t.branch, source: t.source, ...t.stored });
       }
     }
     if (refs.length > 0) session.prs = refs;

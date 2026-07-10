@@ -3763,9 +3763,11 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 }
 
 .viewer-panel {
-	/* Drag-resizable from the left edge (.panel-resize sets --panel-w). */
+	/* Drag-resizable from the left edge (.panel-resize sets --panel-w). The cap
+	   only reserves the left sidebar + a readable chat column — reviewing code
+	   needs real width on desktop, not a fixed 900px. */
 	width: var(--panel-w, 44%);
-	max-width: 900px;
+	max-width: max(480px, calc(100vw - 620px));
 	min-width: 320px;
 	flex-shrink: 0;
 	position: relative;
@@ -5016,6 +5018,54 @@ a.workspace-info-check-row {
 	font-size: 11.5px;
 	text-align: center;
 	padding-bottom: 8px;
+}
+
+/* Changed images in diff/review views: the actual pictures, before/after side
+   by side for modifications. Checkerboard backing so transparency reads. */
+.diff-image-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	padding: 12px;
+}
+.diff-image-cell {
+	margin: 0;
+	min-width: 0;
+	flex: 0 1 auto;
+	max-width: min(480px, 100%);
+}
+.diff-image-cell img {
+	display: block;
+	max-width: 100%;
+	max-height: 360px;
+	border: 1px solid var(--border);
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
+	background:
+		repeating-conic-gradient(rgba(128, 128, 128, 0.18) 0% 25%, transparent 0% 50%)
+		0 0 / 16px 16px;
+}
+.diff-image-old img {
+	opacity: 0.8;
+}
+.diff-image-cell figcaption {
+	margin-top: 4px;
+	font-size: 11px;
+	color: var(--text-dim);
+}
+.diff-image-old figcaption::before {
+	content: "−";
+	color: var(--diff-del, #e5534b);
+	margin-right: 4px;
+}
+.diff-image-new figcaption::before {
+	content: "+";
+	color: var(--diff-add, #57ab5a);
+	margin-right: 4px;
+}
+.diff-image-empty {
+	padding: 12px;
+	font-size: 12px;
+	color: var(--text-dim);
 }
 
 /* A saved-but-not-yet-submitted inline comment, shown in-place on the diff. */

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, startTransition } from "react";
 import type { RepoDiff } from "../lib/types";
-import { fetchDiff, discardDiffFile } from "../lib/api";
+import { API_BASE, fetchDiff, discardDiffFile } from "../lib/api";
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
@@ -164,6 +164,16 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
           // Discarding edits the worktree — withhold it while the agent is running
           // to avoid racing its writes.
           onDiscard={canSend ? (path, oldPath) => handleDiscard(cur.repo, path, oldPath) : undefined}
+          // Changed images render as pictures: new side straight from the
+          // worktree, old side from the diff's merge base.
+          imageSrcs={(file) => {
+            const src = (side: "new" | "base", p: string) =>
+              `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/worktree-image?repo=${encodeURIComponent(cur.repo)}&side=${side}&path=${encodeURIComponent(p)}`;
+            return {
+              oldSrc: src("base", file.prevName || file.name),
+              newSrc: src("new", file.name),
+            };
+          }}
         />
       </div>
     </div>

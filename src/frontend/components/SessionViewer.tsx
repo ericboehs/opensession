@@ -463,7 +463,7 @@ export function SessionViewer({
 	// Shared by the Workspace and sub-agent panels via the --panel-w var.
 	const [panelW, setPanelW] = useState<number>(() => {
 		const v = Number(localStorage.getItem("michael-panel-w"));
-		return v >= 320 && v <= 900 ? v : 0;
+		return v >= 320 && v <= 2400 ? v : 0;
 	});
 	const panelWRef = useRef(panelW);
 	panelWRef.current = panelW;
@@ -476,7 +476,9 @@ export function SessionViewer({
 				.right ?? window.innerWidth;
 		document.body.classList.add("resizing-x");
 		const onMove = (ev: MouseEvent) => {
-			const max = Math.min(900, Math.round(window.innerWidth * 0.72));
+			// Wide enough to review code side-by-side: only reserve room for the
+			// left sidebar + a readable chat column instead of a fixed 900px cap.
+			const max = Math.max(480, Math.round(window.innerWidth - 620));
 			const w = Math.min(max, Math.max(320, Math.round(right - ev.clientX)));
 			panelWRef.current = w;
 			setPanelW(w);

@@ -8,6 +8,7 @@ import type {
   PrReviewer,
 } from "../lib/types";
 import {
+  API_BASE,
   fetchPr,
   fetchPrDiff,
   fetchGitStatus,
@@ -19,6 +20,7 @@ import {
   unlinkPrApi,
 } from "../lib/api";
 import { toast } from "../ui/toast";
+import type { FileDiffMetadata } from "@pierre/diffs";
 import { CommentableDiff, type CommentTarget, type PendingComment } from "./CommentableDiff";
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
@@ -437,6 +439,23 @@ export function PrPanel({
     if (header && header.getAttribute("aria-expanded") === "false") header.click();
   }, []);
 
+  // Changed images render as pictures, served from the repo at the PR's head
+  // (new side) / base (old side) refs through the pr-image endpoint.
+  const prBase = pr?.baseRefName;
+  const prHead = pr?.headRefName;
+  const activeRepoId = active?.repo;
+  const prImageSrcs = useCallback(
+    (file: FileDiffMetadata) => {
+      const src = (ref: string, p: string) =>
+        `${API_BASE}/pr-image?${activeRepoId ? `repo=${encodeURIComponent(activeRepoId)}&` : ""}ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(p)}`;
+      return {
+        oldSrc: prBase ? src(prBase, file.prevName || file.name) : undefined,
+        newSrc: prHead ? src(prHead, file.name) : undefined,
+      };
+    },
+    [prBase, prHead, activeRepoId],
+  );
+
   function handleLinked(all: LinkedPrEntry[], justLinked: LinkedPrEntry) {
     setLinkedLocal(all);
     setActiveKey(`${justLinked.repo} ${justLinked.branch}`);
@@ -829,6 +848,7 @@ export function PrPanel({
                         pendingComments={pending}
                         onRemovePending={handleRemovePending}
                         onSubmit={handleAddPending}
+                        imageSrcs={prImageSrcs}
                       />
                     )}
                   </div>
@@ -842,6 +862,7 @@ export function PrPanel({
                 pendingComments={pending}
                 onRemovePending={handleRemovePending}
                 onSubmit={handleAddPending}
+                imageSrcs={prImageSrcs}
               />
             )}
           </div>
