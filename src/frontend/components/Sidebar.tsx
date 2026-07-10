@@ -176,6 +176,10 @@ interface Props {
 	prTinderActive: boolean;
 	/** Open PR Tinder (swipe triage of the repo's open PRs). */
 	onOpenPrTinder: () => void;
+	/** True while the Support Tinder deck is open — highlights its entry. */
+	supportTinderActive: boolean;
+	/** Open Support Tinder (swipe triage of the Plain Todo queue). */
+	onOpenSupportTinder: () => void;
 	/** True while the Watercooler (team chat) is open — highlights its entry. */
 	watercoolerActive: boolean;
 	/** Open the Watercooler — the team-wide native chat room (not Slack). */
@@ -665,6 +669,8 @@ export function Sidebar({
 	onOpenAutomation,
 	prTinderActive,
 	onOpenPrTinder,
+	supportTinderActive,
+	onOpenSupportTinder,
 	watercoolerActive,
 	onOpenWatercooler,
 	watercoolerUnread,
@@ -2471,6 +2477,16 @@ export function Sidebar({
 						<IconFlame />
 					</span>
 					PR Tinder
+				</button>
+				<button
+					className={`sidebar-nav-item ${supportTinderActive ? "active" : ""}`}
+					onClick={onOpenSupportTinder}
+					title="Swipe through the Plain Todo queue"
+				>
+					<span className="sidebar-nav-icon">
+						<IconInbox />
+					</span>
+					Support Tinder
 				</button>
 			</nav>
 

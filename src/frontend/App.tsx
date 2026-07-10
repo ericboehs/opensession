@@ -10,6 +10,7 @@ import { SessionSearch } from "./components/SessionSearch";
 import { Home } from "./components/Home";
 import { CatchUpDeck } from "./components/CatchUpDeck";
 import { PrTinder } from "./components/PrTinder";
+import { SupportTinder } from "./components/SupportTinder";
 import { Automations } from "./components/Automations";
 import { Security } from "./components/Security";
 import { Goals } from "./components/Goals";
@@ -88,6 +89,8 @@ type Route =
 	| { view: "reviews"; id?: string }
 	// PR Tinder — one-at-a-time swipe triage of the repo's open PRs.
 	| { view: "prtinder" }
+	// Support Tinder — the same swipe triage over the Plain Todo queue.
+	| { view: "supporttinder" }
 	// Tool surfaces (Automations/Security/Goals/Actions/Notes) render inside the
 	// Settings chrome but keep their own routes, so old links stay deep-linkable.
 	| { view: "automations"; id?: string }
@@ -200,6 +203,7 @@ function parseRoute(pathname: string): Route {
 	if (pathname === "/archived") return { view: "archived" };
 	if (pathname === "/catchup") return { view: "catchup" };
 	if (pathname === "/pr-tinder") return { view: "prtinder" };
+	if (pathname === "/support-tinder") return { view: "supporttinder" };
 	if (pathname === "/watercooler") return { view: "watercooler" };
 	const reviewsMatch = pathname.match(/^\/reviews(?:\/(.+))?$/);
 	if (reviewsMatch)
@@ -269,6 +273,8 @@ function routePath(route: Route): string {
 			return `${BASE_PATH}/catchup`;
 		case "prtinder":
 			return `${BASE_PATH}/pr-tinder`;
+		case "supporttinder":
+			return `${BASE_PATH}/support-tinder`;
 		case "watercooler":
 			return `${BASE_PATH}/watercooler`;
 		case "reviews":
@@ -1505,6 +1511,8 @@ function App() {
 							}
 							prTinderActive={route.view === "prtinder"}
 							onOpenPrTinder={() => navigate({ view: "prtinder" })}
+							supportTinderActive={route.view === "supporttinder"}
+							onOpenSupportTinder={() => navigate({ view: "supporttinder" })}
 							watercoolerActive={route.view === "watercooler"}
 							onOpenWatercooler={() => navigate({ view: "watercooler" })}
 							watercoolerUnread={chatUnread}
@@ -1764,6 +1772,8 @@ function App() {
 							/>
 						) : route.view === "prtinder" ? (
 							<PrTinder onExit={goBack} />
+						) : route.view === "supporttinder" ? (
+							<SupportTinder onExit={goBack} />
 						) : route.view === "watercooler" ? (
 							<TeamChat
 								channel="watercooler"
