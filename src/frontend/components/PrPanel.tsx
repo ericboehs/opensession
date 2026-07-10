@@ -39,7 +39,7 @@ interface Props {
   onOpenSession?: () => void;
   /** Append PR/check/comment context to this session's composer draft. */
   onAddToInput?: (text: string) => void;
-  /** Side-by-side info|diff layout for wide containers (the Reviews drawer). */
+  /** Side-by-side info|diff layout (Reviews drawer, session Review tab). */
   split?: boolean;
   /**
    * Repos in this session (primary + attached). When more than one, a repo

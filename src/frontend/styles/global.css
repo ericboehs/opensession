@@ -5553,8 +5553,10 @@ a.workspace-info-check-row {
 	min-width: 0;
 }
 
-/* Split layout (Reviews drawer): metadata/checks/actions on the left, the
-   code diff filling the rest — each scrolls on its own. */
+/* Split layout (Reviews drawer + session Review tab): metadata/checks/actions
+   on the left, the code diff filling the rest — each scrolls on its own. The
+   info column caps at 384px but yields in narrower hosts (the session viewer
+   panel can be as narrow as 320px). */
 .pr-panel-split {
 	flex-direction: row;
 	align-items: stretch;
@@ -5563,7 +5565,7 @@ a.workspace-info-check-row {
 	gap: 0;
 }
 .pr-panel-split .pr-panel-info {
-	width: 384px;
+	width: min(384px, 45%);
 	flex-shrink: 0;
 	overflow-y: auto;
 	padding: 16px 20px 22px;

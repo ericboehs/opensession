@@ -3030,6 +3030,7 @@ export function SessionViewer({
 								<PrPanel
 									sessionId={session.id}
 									send={send}
+									split
 									onAddToInput={(text) =>
 										setComposerPrefill((p) => ({
 											seq: (p?.seq ?? 0) + 1,
