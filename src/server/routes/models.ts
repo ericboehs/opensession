@@ -82,6 +82,7 @@ export async function handleModelsRoutes(
 				sessionLink: isAsk
 					? undefined
 					: `${envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") || "https://michael.taila5d766.ts.net/backstage"}/session/<this-session>`,
+				user: url.searchParams.get("user") || undefined,
 				interactiveTools: true,
 			}),
 		});

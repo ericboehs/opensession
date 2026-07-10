@@ -146,7 +146,7 @@ import {
 } from "./runner-shared";
 import type { StreamEvent, ImageInput } from "./run-events";
 import { audit, summarizeText } from "./audit";
-import { gitIdentityEnv, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
+import { gitIdentityEnv, githubLoginFor, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
@@ -748,6 +748,11 @@ export function buildOpencodeInstructions(input: {
   reposNote?: string;
   inProcessMcp?: Record<string, unknown>;
   bksSessionId?: string;
+  /** Requester attribution for PRs: the turn's raw user label and the resolved
+   *  git identity (same table as commit attribution). PRs open under the bot
+   *  GitHub account, so the body line + assignee are how the human shows up. */
+  user?: string;
+  author?: GitIdentity | null;
   droppedForConfirm?: string[];
   /** Unattended least-privilege denials (opencodeRunPolicy.noteGroups) — the
    *  tools are already stripped at the engine level; this tells the agent
@@ -778,10 +783,23 @@ export function buildOpencodeInstructions(input: {
   if (input.reposNote) parts.push(input.reposNote);
   if (!input.isAsk && input.bksSessionId) {
     const link = `${UI_BASE}/session/${input.bksSessionId}`;
+    const requester = input.author?.name || null;
+    const login = githubLoginFor(input.user || input.author?.name);
+    const footer = requester
+      ? `Started by ${requester} in [this ${personaName()} session](${link})`
+      : `Created by [this ${personaName()} session](${link})`;
     parts.push(
-      "## Session link in PRs\nWhenever you open a pull request (any repo, via `gh pr create` " +
-        `or otherwise), include a link back to this ${personaName()} session at the end of the PR body:\n\n` +
-        `Created by [this ${personaName()} session](${link})`
+      "## PR attribution\nWhenever you open a pull request (any repo, via `gh pr create` " +
+        "or otherwise):\n" +
+        `- End the PR body with this line, using exactly this session URL:\n\n  ${footer}\n` +
+        (requester
+          ? `- The PR opens under the bot GitHub account, so also attribute it to ${requester}` +
+            (login
+              ? ` by assigning them: add \`--assignee ${login}\` to \`gh pr create\` (or ` +
+                `\`gh pr edit --add-assignee ${login}\` for an existing PR). If the assignment ` +
+                "fails, continue without it."
+              : " via the body line above.")
+          : "")
     );
   }
   const inproc = (input.inProcessMcp || {}) as Record<string, unknown>;
@@ -1575,6 +1593,8 @@ async function* runOpencodeAttempt(
       reposNote: opts.reposNote,
       inProcessMcp: opts.inProcessMcp,
       bksSessionId: journal?.bksSessionId,
+      user,
+      author,
       droppedForConfirm: confirmUnavailable,
       deniedToolNotes: policy.noteGroups,
     });

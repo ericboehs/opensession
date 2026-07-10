@@ -1143,12 +1143,16 @@ export interface SystemPromptPart {
 	text: string;
 }
 
-export async function fetchSystemPrompt(mode: "ask" | "code"): Promise<{
+export async function fetchSystemPrompt(
+	mode: "ask" | "code",
+	user?: string,
+): Promise<{
 	preset: string;
 	settingSources: string[];
 	parts: SystemPromptPart[];
 }> {
-	return request(`/system-prompt?mode=${mode}`, {
+	const u = user ? `&user=${encodeURIComponent(user)}` : "";
+	return request(`/system-prompt?mode=${mode}${u}`, {
 		label: "Failed to fetch system prompt",
 	});
 }

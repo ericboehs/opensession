@@ -267,7 +267,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   } | null>(null);
   useEffect(() => {
     if (!sysPromptOpen || sysPrompt?.mode === mode) return;
-    fetchSystemPrompt(mode)
+    fetchSystemPrompt(mode, getCurrentUser())
       .then((r) => setSysPrompt({ mode, parts: r.parts }))
       .catch((e) =>
         setSysPrompt({

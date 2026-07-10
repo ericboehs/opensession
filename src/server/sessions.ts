@@ -513,6 +513,8 @@ interface PrInfo {
   checks: PrChecksSummary;
   /** Person keys ("kent") of teammates with a pending review request. */
   reviewRequested: string[];
+  /** Assignee GitHub logins — bot-authored PRs carry the requester here. */
+  assignees: string[];
 }
 // Repos the bulk PR cache covers — the active dev repos whose PRs the sidebar
 // Open PRs section and Reviews table surface. Fusion carries 200+ open PRs and
@@ -590,9 +592,10 @@ async function refreshPrCache(): Promise<void> {
       isDraft: boolean; additions: number; deletions: number; changedFiles: number;
       reviewDecision: string; author?: { login?: string; name?: string }; updatedAt: string;
       reviewRequests?: Array<{ login?: string; name?: string; slug?: string }>;
+      assignees?: Array<{ login?: string }>;
     };
     const FIELDS =
-      "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,updatedAt,reviewRequests";
+      "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,updatedAt,reviewRequests,assignees";
 
     // A session's branch is matched against open PRs, so we must see EVERY open
     // PR — not just the newest N. Fusion carries 200+ open PRs at a time, so a
@@ -651,6 +654,9 @@ async function refreshPrCache(): Promise<void> {
         reviewRequested: (pr.reviewRequests || [])
           .map((r) => githubLoginToPersonKey(r.login))
           .filter((p): p is string => !!p),
+        assignees: (pr.assignees || [])
+          .map((a) => a.login)
+          .filter((l): l is string => !!l),
       });
 
       // Seed with recent closed/merged (newest-first → keep the first per branch),
@@ -678,11 +684,13 @@ async function refreshPrCache(): Promise<void> {
  * Every open PR across the covered repos (prRepos() — from the same batched
  * cache the session enrichment uses), each attributed to a teammate when its
  * GitHub author maps to one via the identity table. Bot-authored PRs
- * (tella-butler — the ones Michael opens from sessions) come back with
- * `person: null`; the frontend attributes those through the session that
- * opened them. Powers the sidebar's Open PRs section, which must show a
- * person's PRs even when no Backstage session exists for them — e.g. PRs
- * opened from another tool (Conductor, local CLI) under their own account.
+ * (tella-butler — the ones Michael opens from sessions) fall back to the
+ * first teammate assignee (sessions instruct the agent to `--assignee` the
+ * requester); with neither, `person` is null and the frontend attributes
+ * through the session that opened them. Powers the sidebar's Open PRs
+ * section, which must show a person's PRs even when no Backstage session
+ * exists for them — e.g. PRs opened from another tool (Conductor, local CLI)
+ * under their own account.
  */
 export interface OpenPrEntry {
 	repo: string;
@@ -715,7 +723,12 @@ export function getOpenPrs(): OpenPrEntry[] {
 				isDraft: pr.isDraft,
 				reviewDecision: pr.reviewDecision,
 				author: pr.author,
-				person: githubLoginToPersonKey(pr.author),
+				person:
+					githubLoginToPersonKey(pr.author) ??
+					pr.assignees
+						.map((l) => githubLoginToPersonKey(l))
+						.find((p): p is string => !!p) ??
+					null,
 				updatedAt: pr.updatedAt,
 				checks: pr.checks,
 				reviewRequested: pr.reviewRequested,
@@ -817,7 +830,7 @@ export function getAllSessions(): UnifiedSession[] {
     const seen = new Set<string>();
     const refs: SessionPrRef[] = [];
     for (const t of targets) {
-      const key = `${t.repo} ${t.branch}`;
+      const key = `${t.repo}\x00${t.branch}`;
       if (seen.has(key)) continue; // a link duplicating the primary/attached pair
       seen.add(key);
       const pr = prsByRepo.get(t.repo)?.get(t.branch);

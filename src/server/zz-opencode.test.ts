@@ -269,8 +269,30 @@ describe("buildOpencodeInstructions", () => {
       droppedForConfirm: ["stripe"],
     });
     expect(s).toContain("/session/abc-123");
+    expect(s).toContain("Created by [this");
     expect(s).toContain("stripe");
     expect(s).toContain("human approval");
+  });
+  test("a resolved requester gets named + assigned in the PR instruction", () => {
+    const s = buildOpencodeInstructions({
+      isAsk: false,
+      bksSessionId: "abc-123",
+      user: "michiel",
+      author: { name: "Michiel Westerbeek", email: "happylinks@gmail.com" },
+    });
+    expect(s).toContain("Started by Michiel Westerbeek in [this");
+    expect(s).toContain("--assignee happylinks");
+    expect(s).not.toContain("Created by [this");
+  });
+  test("an unresolved user keeps the generic footer", () => {
+    const s = buildOpencodeInstructions({
+      isAsk: false,
+      bksSessionId: "abc-123",
+      user: "Anonymous",
+      author: null,
+    });
+    expect(s).toContain("Created by [this");
+    expect(s).not.toContain("--assignee");
   });
   test("unattended deny-set renders as a run-policy section", () => {
     const s = buildOpencodeInstructions({

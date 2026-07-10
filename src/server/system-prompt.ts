@@ -8,6 +8,7 @@
 // protocol identifiers and stay literal regardless of the persona name.
 
 import { personaName, productName } from "./config";
+import { gitIdentityFor, githubLoginFor } from "./shared/user-mappings";
 
 export type SystemPromptPart = { title: string; text: string };
 
@@ -17,6 +18,9 @@ export function buildSystemPromptParts(opts: {
 	reposNote?: string;
 	/** Session URL for the PR-link instruction; absent for previews and non-journaled runs. */
 	sessionLink?: string;
+	/** Who's prompting — resolved through the commit-attribution identity table
+	 *  so PRs the bot opens carry the human's name + GitHub assignee. */
+	user?: string;
 	/** Whether the run gets the in-process opensession-admin/sessions/repos MCP tools. */
 	interactiveTools: boolean;
 }): SystemPromptPart[] {
@@ -36,14 +40,24 @@ export function buildSystemPromptParts(opts: {
 		parts.push({ title: "Repos", text: opts.reposNote });
 	}
 	if (!opts.isAsk && opts.sessionLink) {
+		const requester = gitIdentityFor(opts.user)?.name || null;
+		const login = githubLoginFor(opts.user);
+		const footer = requester
+			? `🤖 Started by ${requester} in [this ${name} session](${opts.sessionLink})`
+			: `🤖 Created by [this ${name} session](${opts.sessionLink})`;
 		parts.push({
-			title: "Session link in PRs",
+			title: "PR attribution",
 			text:
-				"## Session link in PRs\nWhenever you open a pull request (any repo, via `gh pr " +
-				`create\` or otherwise), always include a link back to this ${name} session in the ` +
-				"PR body so a human can open it to see how the change was made. Add a line like:\n\n" +
-				`🤖 Created by [this ${name} session](${opts.sessionLink})\n\n` +
-				"Put it at the end of the PR body. Use exactly this session URL.",
+				"## PR attribution\nWhenever you open a pull request (any repo, via `gh pr " +
+				"create` or otherwise), always end the PR body with this line, using exactly " +
+				"this session URL, so a human can see who asked for the change and how it was " +
+				`made:\n\n${footer}` +
+				(requester && login
+					? `\n\nThe PR opens under the bot GitHub account, so also assign ${requester}: ` +
+						`add \`--assignee ${login}\` to \`gh pr create\` (or \`gh pr edit ` +
+						`--add-assignee ${login}\` for an existing PR). If the assignment fails, ` +
+						"continue without it."
+					: ""),
 		});
 	}
 	if (opts.interactiveTools) {
