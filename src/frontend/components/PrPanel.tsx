@@ -15,7 +15,10 @@ import {
   gitPushApi,
   submitPrReviewApi,
   mergePrApi,
+  linkPrApi,
+  unlinkPrApi,
 } from "../lib/api";
+import { toast } from "../ui/toast";
 import { CommentableDiff, type CommentTarget, type PendingComment } from "./CommentableDiff";
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
@@ -42,11 +45,16 @@ interface Props {
   /** Side-by-side info|diff layout (Reviews drawer, session Review tab). */
   split?: boolean;
   /**
-   * Repos in this session (primary + attached). When more than one, a repo
-   * switcher selects which repo's PR to show. Omit for single-repo callers
-   * (e.g. the Reviews drawer) — they target the primary branch as before.
+   * Repos in this session (primary + attached). Together with `linkedPrs`
+   * these form the PR targets; when more than one, a tab bar selects which PR
+   * to show. Omit for single-repo callers (e.g. the Reviews drawer) — they
+   * target the primary branch as before.
    */
   repos?: Array<{ repo: string; primary: boolean }>;
+  /** PRs manually linked to the session (session.linkedPrs) — extra targets. */
+  linkedPrs?: LinkedPrEntry[];
+  /** Offer the "Link PR" affordance (session Review tab; off in the Reviews drawer). */
+  linkable?: boolean;
   /**
    * WebSocket sender. When provided, selecting text in the PR info column shows a
    * "Send to session" popover that delivers the selection + a message to this PR's
@@ -59,6 +67,30 @@ interface PrDiffData {
   number: number;
   headRefOid: string;
   patch: string;
+}
+
+/** A PR manually linked to the session (mirrors session.linkedPrs entries). */
+export interface LinkedPrEntry {
+  repo: string;
+  branch: string;
+  number?: number;
+  url?: string;
+  title?: string;
+}
+
+/**
+ * One selectable PR in the panel: the primary repo's, an attached repo's, or a
+ * manually linked one. Primary/attached target by repo id (the server resolves
+ * the branch); linked PRs carry an explicit branch since they can live on any
+ * branch — including another branch of the primary repo.
+ */
+interface PrTarget {
+  key: string;
+  repo: string;
+  branch?: string;
+  primary?: boolean;
+  linked?: boolean;
+  label: string;
 }
 
 /** One narrative section of the AI review guide (mirrors the server shape). */
@@ -183,11 +215,42 @@ function summarize(checks: PrCheck[]) {
   return { passed, failed, pending, total: checks.length };
 }
 
-export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, send }: Props) {
-  const repoList = repos && repos.length > 1 ? repos : null;
-  const [activeRepo, setActiveRepo] = useState<string | undefined>(
-    repoList ? (repoList.find((r) => r.primary)?.repo ?? repoList[0].repo) : undefined,
+export function PrPanel({
+  sessionId,
+  onOpenSession,
+  onAddToInput,
+  split,
+  repos,
+  linkedPrs,
+  linkable,
+  send,
+}: Props) {
+  // Local copy of the linked-PR list so link/unlink applies instantly; the
+  // sessions list catches up on its next refresh.
+  const [linkedLocal, setLinkedLocal] = useState<LinkedPrEntry[] | null>(null);
+  const linked = linkedLocal ?? linkedPrs ?? [];
+  const targets = useMemo<PrTarget[]>(
+    () => [
+      ...(repos ?? []).map((r) => ({
+        key: r.repo,
+        repo: r.repo,
+        primary: r.primary,
+        label: r.repo,
+      })),
+      ...linked.map((lp) => ({
+        key: `${lp.repo} ${lp.branch}`,
+        repo: lp.repo,
+        branch: lp.branch,
+        linked: true,
+        label: lp.number ? `${lp.repo} #${lp.number}` : `${lp.repo}:${lp.branch}`,
+      })),
+    ],
+    [repos, linked],
   );
+  const [activeKey, setActiveKey] = useState<string | undefined>(
+    () => (targets.find((t) => t.primary) ?? targets[0])?.key,
+  );
+  const active = targets.find((t) => t.key === activeKey) ?? targets[0];
   const [pr, setPr] = useState<PrDetails | null>(null);
   const [git, setGit] = useState<GitStatusInfo | null>(null);
   const [diff, setDiff] = useState<PrDiffData | null>(null);
@@ -216,9 +279,12 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
   const load = useCallback(async () => {
     try {
       const [prData, diffData, gitData] = await Promise.all([
-        fetchPr(sessionId, activeRepo),
-        fetchPrDiff(sessionId, activeRepo).catch(() => null),
-        fetchGitStatus(sessionId, activeRepo).catch(() => null),
+        fetchPr(sessionId, active?.repo, active?.branch),
+        fetchPrDiff(sessionId, active?.repo, active?.branch).catch(() => null),
+        // A linked PR has no local worktree in this session — no git state.
+        active?.linked
+          ? Promise.resolve(null)
+          : fetchGitStatus(sessionId, active?.repo).catch(() => null),
       ]);
       setPr(prData);
       setDiff(diffData);
@@ -228,7 +294,7 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
     } finally {
       setLoading(false);
     }
-  }, [sessionId, activeRepo]);
+  }, [sessionId, active?.repo, active?.branch, active?.linked]);
 
   useEffect(() => {
     setLoading(true);
@@ -242,7 +308,7 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
     setGuideLoading(true);
     setGuideFailed(false);
     try {
-      const data = await fetchReviewGuide(sessionId, activeRepo);
+      const data = await fetchReviewGuide(sessionId, active?.repo, active?.branch);
       if (data) setGuide(data);
       else setGuideFailed(true);
     } catch {
@@ -250,7 +316,7 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
     } finally {
       setGuideLoading(false);
     }
-  }, [sessionId, activeRepo]);
+  }, [sessionId, active?.repo, active?.branch]);
 
   // The guide is generated on demand (the first request per head commit takes
   // the model a while) — only fetch once the reviewer opens the Guide tab, and
@@ -286,7 +352,8 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
         user: getCurrentUser(),
         event: reviewEvent,
         summary: summary.trim() || undefined,
-        repo: activeRepo,
+        repo: active?.repo,
+        branch: active?.branch,
         comments: pending.map((c) => ({
           text: c.text,
           path: c.path,
@@ -321,7 +388,7 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
     setMerging(true);
     setMergeError(null);
     try {
-      await mergePrApi(sessionId, "squash", activeRepo);
+      await mergePrApi(sessionId, "squash", active?.repo, active?.branch);
       await load();
     } catch (e: any) {
       setMergeError(e.message || "Merge failed");
@@ -370,18 +437,61 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
     if (header && header.getAttribute("aria-expanded") === "false") header.click();
   }, []);
 
-  const switcher = repoList ? (
+  function handleLinked(all: LinkedPrEntry[], justLinked: LinkedPrEntry) {
+    setLinkedLocal(all);
+    setActiveKey(`${justLinked.repo} ${justLinked.branch}`);
+  }
+
+  async function handleUnlink(t: PrTarget) {
+    try {
+      const res = await unlinkPrApi(sessionId, t.repo, t.branch!);
+      setLinkedLocal(res.all);
+      if (activeKey === t.key)
+        setActiveKey((targets.find((x) => x.primary) ?? targets[0])?.key);
+      toast("PR unlinked");
+    } catch (e: any) {
+      toast(e.message || "Couldn't unlink the PR");
+    }
+  }
+
+  // Tab bar across the top: one tab per PR (primary repo, attached repos,
+  // linked PRs) plus the link affordance. With a single target the bar
+  // disappears and "Link PR" moves into the actions row instead.
+  const showBar = targets.length > 1;
+  const switcher = showBar ? (
     <div className="pr-repo-tabs">
-      {repoList.map((r) => (
+      {targets.map((t) => (
         <button
-          key={r.repo}
-          className={`pr-repo-tab ${r.repo === activeRepo ? "pr-repo-tab-active" : ""}`}
-          onClick={() => setActiveRepo(r.repo)}
-          title={r.primary ? "Primary repo" : "Attached repo"}
+          key={t.key}
+          className={`pr-repo-tab ${t.key === active?.key ? "pr-repo-tab-active" : ""}`}
+          onClick={() => setActiveKey(t.key)}
+          title={
+            t.linked
+              ? `Linked PR — branch ${t.branch}`
+              : t.primary
+                ? "Primary repo"
+                : "Attached repo"
+          }
         >
-          {r.repo}
+          {t.label}
+          {t.linked && t.key === active?.key && (
+            <span
+              className="pr-repo-tab-x"
+              role="button"
+              title="Unlink this PR from the session"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleUnlink(t);
+              }}
+            >
+              <IconX size={12} />
+            </span>
+          )}
         </button>
       ))}
+      {linkable && (
+        <LinkPrControl sessionId={sessionId} variant="tab" onLinked={handleLinked} />
+      )}
     </div>
   ) : null;
 
@@ -409,11 +519,16 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
               git={git}
               pr={null}
               sessionId={sessionId}
-              repo={activeRepo}
+              repo={active?.repo}
               send={send}
               onRefresh={load}
             />
           </PrCard>
+          {linkable && !showBar && (
+            <div className="prc-actions">
+              <LinkPrControl sessionId={sessionId} variant="action" onLinked={handleLinked} />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -428,6 +543,7 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
   return (
     <div className={`pr-panel ${split ? "pr-panel-split" : ""}`} ref={rootRef}>
       {switcher}
+      <div className="pr-panel-body">
       <SelectionToSession sessionId={sessionId} label={`${provider.changeAbbr} #${pr.number}`} send={send}>
         <div className="pr-panel-info">
           {/* Header — title + meta line, Linear-style */}
@@ -470,6 +586,9 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
                 Open session →
               </button>
             )}
+            {linkable && !showBar && (
+              <LinkPrControl sessionId={sessionId} variant="action" onLinked={handleLinked} />
+            )}
           </div>
           {mergeError && <div className="pr-merge-error">{mergeError}</div>}
 
@@ -503,7 +622,7 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
               git={git}
               pr={pr}
               sessionId={sessionId}
-              repo={activeRepo}
+              repo={active?.repo}
               send={send}
               onRefresh={load}
             />
@@ -782,7 +901,85 @@ export function PrPanel({ sessionId, onOpenSession, onAddToInput, split, repos, 
           )}
         </div>
       )}
+      </div>
     </div>
+  );
+}
+
+/**
+ * The "Link PR" affordance: a "+" chip in the tab bar (or a quiet button in
+ * the actions row when there's no bar yet) that expands into a paste-a-URL
+ * input. Linking accepts any PR in a registered repo.
+ */
+function LinkPrControl({
+  sessionId,
+  variant,
+  onLinked,
+}: {
+  sessionId: string;
+  variant: "tab" | "action";
+  onLinked: (all: LinkedPrEntry[], linked: LinkedPrEntry) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [val, setVal] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    const url = val.trim();
+    if (!url || busy) return;
+    setBusy(true);
+    try {
+      const res = await linkPrApi(sessionId, url);
+      onLinked(res.all, res.linked);
+      toast(
+        `Linked ${res.linked.repo}${res.linked.number ? ` #${res.linked.number}` : ""}`,
+      );
+      setVal("");
+      setOpen(false);
+    } catch (e: any) {
+      toast(e.message || "Couldn't link that PR");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open)
+    return (
+      <button
+        className={variant === "tab" ? "pr-repo-tab pr-link-add" : "prc-btn"}
+        onClick={() => setOpen(true)}
+        title="Link another PR to this session"
+      >
+        {variant === "tab" ? "+" : "Link PR…"}
+      </button>
+    );
+
+  return (
+    <form
+      className="pr-link-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <input
+        autoFocus
+        className="pr-link-input"
+        placeholder="Paste a GitHub PR URL…"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+        }}
+      />
+      <button
+        type="submit"
+        className="pr-link-submit"
+        disabled={busy || !val.trim()}
+      >
+        {busy ? "Linking…" : "Link"}
+      </button>
+    </form>
   );
 }
 

@@ -80,6 +80,14 @@ export interface UnifiedSession {
   spawnDepth?: number;
   /** Secondary repos this session also works in (cross-repo sessions). */
   attachedRepos?: AttachedRepo[];
+  /** PRs manually linked to this session (beyond branch/attached-repo ones). */
+  linkedPrs?: LinkedPr[];
+  /**
+   * Every PR associated with this session (primary branch + attached repos +
+   * manual links), enriched from the bulk PR cache. The singular pr* fields
+   * above stay the primary branch's PR for existing list/Reviews consumers.
+   */
+  prs?: SessionPrRef[];
   /**
    * Root-relative route the agent recorded as the place to test this change
    * (e.g. `/settings/tags`). Appended to the Preview (local dev) and Staging
@@ -222,6 +230,39 @@ export interface AttachedRepo {
   dir: string; // worktree path
 }
 
+/**
+ * A pull request manually linked to a session, beyond the ones derived from
+ * its own branch (primary repo) and attached repos. Keyed by repo+branch —
+ * the whole PR pipeline (pr-info, the bulk PR cache) is branch-keyed — with
+ * number/url/title stored as a fallback label for repos outside the PR cache.
+ */
+export interface LinkedPr {
+  repo: string; // repo id (key in worktree.ts REPOS)
+  branch: string; // the PR's head branch
+  number?: number;
+  url?: string;
+  title?: string;
+}
+
+/**
+ * One PR associated with a session, resolved at list time: the primary
+ * branch's PR, an attached repo's PR, or a manually linked one. Enriched from
+ * the bulk PR cache when covered; a linked PR outside the cache keeps its
+ * stored url/number/title with no live state.
+ */
+export interface SessionPrRef {
+  repo: string;
+  branch: string;
+  source: "primary" | "attached" | "linked";
+  url?: string;
+  state?: "OPEN" | "MERGED" | "CLOSED";
+  number?: number;
+  title?: string;
+  isDraft?: boolean;
+  reviewDecision?: string;
+  checks?: { total: number; passed: number; failed: number; pending: number };
+}
+
 export interface BackstageSessionFile {
   id: string;
   claudeSessionId: string;
@@ -229,6 +270,8 @@ export interface BackstageSessionFile {
   worktreeDir: string;
   /** Secondary repos this session also works in (cross-repo sessions). */
   attachedRepos?: AttachedRepo[];
+  /** PRs manually linked to this session (beyond branch/attached-repo ones). */
+  linkedPrs?: LinkedPr[];
   /** Root-relative route the Preview/Staging buttons deep-link to (set by the
    *  agent via opensession-preview's set_preview_path). Unset = open the app root. */
   previewPath?: string;

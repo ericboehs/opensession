@@ -25,6 +25,7 @@ import type {
   LinearSessionFile,
   CLISessionFile,
   BackstageSessionFile,
+  SessionPrRef,
   TranscriptEntry,
 } from "./types";
 
@@ -427,6 +428,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       parentSessionId: data.parentSessionId,
       spawnDepth: data.spawnDepth,
       attachedRepos: data.attachedRepos,
+      linkedPrs: data.linkedPrs,
       previewPath: data.previewPath,
       automation:
         data.automation ||
@@ -770,7 +772,10 @@ export function getAllSessions(): UnifiedSession[] {
   }
 
   // Enrich with PR URLs and state, matched within the session's own repo so a
-  // branch name reused across repos never picks up the wrong PR.
+  // branch name reused across repos never picks up the wrong PR. Beyond the
+  // singular pr* fields (still the primary branch's PR, for the list/Reviews
+  // consumers), collect EVERY PR the session spans — attached repos and
+  // manually linked PRs — into session.prs for the multi-PR surfaces.
   const prsByRepo = getPrsByRepo();
   for (const session of allSessions) {
     if (session.branch) {
@@ -791,6 +796,50 @@ export function getAllSessions(): UnifiedSession[] {
         session.prChecks = pr.checks;
       }
     }
+
+    const targets: Array<{
+      repo: string;
+      branch: string;
+      source: SessionPrRef["source"];
+      stored?: { url?: string; number?: number; title?: string };
+    }> = [];
+    if (session.branch)
+      targets.push({
+        repo: session.repo || defaultRepo().id,
+        branch: session.branch,
+        source: "primary",
+      });
+    for (const att of session.attachedRepos || [])
+      targets.push({ repo: att.repo, branch: att.branch, source: "attached" });
+    for (const lp of session.linkedPrs || [])
+      targets.push({ repo: lp.repo, branch: lp.branch, source: "linked", stored: lp });
+
+    const seen = new Set<string>();
+    const refs: SessionPrRef[] = [];
+    for (const t of targets) {
+      const key = `${t.repo} ${t.branch}`;
+      if (seen.has(key)) continue; // a link duplicating the primary/attached pair
+      seen.add(key);
+      const pr = prsByRepo.get(t.repo)?.get(t.branch);
+      if (pr) {
+        refs.push({
+          repo: t.repo,
+          branch: t.branch,
+          source: t.source,
+          url: pr.url,
+          state: pr.state,
+          number: pr.number,
+          title: pr.title,
+          isDraft: pr.isDraft,
+          reviewDecision: pr.reviewDecision,
+          checks: pr.checks,
+        });
+      } else if (t.source === "linked") {
+        // Repo/branch outside the PR cache — keep the stored link as a label.
+        refs.push({ repo: t.repo, branch: t.branch, source: "linked", ...t.stored });
+      }
+    }
+    if (refs.length > 0) session.prs = refs;
   }
 
   // Apply the cross-source archive registry

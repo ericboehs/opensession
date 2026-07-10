@@ -122,7 +122,8 @@ export async function handlePrRoutes(
 	}
 
 	// PR details for a session's branch (PR tab). `?repo=<project>` targets an
-	// attached repo's PR; default/primary targets the session's own branch.
+	// attached repo's PR; `?repo=&branch=` a linked PR (which may be another
+	// branch of the primary repo); default/primary the session's own branch.
 	if (
 		path.match(/^\/backstage\/api\/sessions\/(.+)\/pr$/) &&
 		req.method === "GET"
@@ -133,7 +134,11 @@ export async function handlePrRoutes(
 		const session = findSession(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
-		const target = resolvePrTarget(session, url.searchParams.get("repo"));
+		const target = resolvePrTarget(
+			session,
+			url.searchParams.get("repo"),
+			url.searchParams.get("branch"),
+		);
 		if (!target) return Response.json(null);
 		return Response.json(await getPrDetails(target.branch, target.ghRepo));
 	}
@@ -149,9 +154,69 @@ export async function handlePrRoutes(
 		const session = findSession(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
-		const target = resolvePrTarget(session, url.searchParams.get("repo"));
+		const target = resolvePrTarget(
+			session,
+			url.searchParams.get("repo"),
+			url.searchParams.get("branch"),
+		);
 		if (!target) return Response.json(null);
 		return Response.json(await getPrDiff(target.branch, target.ghRepo));
+	}
+
+	// Link a PR to the session (a follow-up PR, or one in another repo/branch).
+	// Body: { url } or { repo, number } or { repo, branch }.
+	if (
+		path.match(/^\/backstage\/api\/sessions\/(.+)\/link-pr$/) &&
+		req.method === "POST"
+	) {
+		const sessionId = decodeURIComponent(
+			path.match(/^\/backstage\/api\/sessions\/(.+)\/link-pr$/)![1],
+		);
+		const body = await req.json().catch(() => ({}));
+		try {
+			const { linkPr } = await import("../session-repos");
+			const result = await linkPr(sessionId, {
+				url: body.url,
+				repo: body.repo,
+				number: body.number,
+				branch: body.branch,
+			});
+			invalidateSessionsCache(); // session.prs / linkedPrs changed
+			return Response.json({ ok: true, ...result });
+		} catch (e: any) {
+			return Response.json(
+				{ error: e.message || String(e) },
+				{ status: 400 },
+			);
+		}
+	}
+
+	// Unlink a PR (drops the link only — the PR itself is untouched). POST, not
+	// DELETE, so it isn't swallowed by the generic DELETE /sessions/:id route.
+	if (
+		path.match(/^\/backstage\/api\/sessions\/(.+)\/unlink-pr$/) &&
+		req.method === "POST"
+	) {
+		const sessionId = decodeURIComponent(
+			path.match(/^\/backstage\/api\/sessions\/(.+)\/unlink-pr$/)![1],
+		);
+		const body = await req.json().catch(() => ({}));
+		if (!body.repo || !body.branch)
+			return Response.json(
+				{ error: "repo and branch required" },
+				{ status: 400 },
+			);
+		try {
+			const { unlinkPr } = await import("../session-repos");
+			const all = unlinkPr(sessionId, body.repo, body.branch);
+			invalidateSessionsCache();
+			return Response.json({ ok: true, all });
+		} catch (e: any) {
+			return Response.json(
+				{ error: e.message || String(e) },
+				{ status: 400 },
+			);
+		}
 	}
 
 	// AI review guide for the PR tab's Guide view — generated on first
@@ -168,7 +233,11 @@ export async function handlePrRoutes(
 		const session = findSession(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
-		const target = resolvePrTarget(session, url.searchParams.get("repo"));
+		const target = resolvePrTarget(
+			session,
+			url.searchParams.get("repo"),
+			url.searchParams.get("branch"),
+		);
 		if (!target) return Response.json(null);
 		const { getReviewGuide } = await import("../../server/review-guide");
 		return Response.json(
@@ -209,7 +278,7 @@ export async function handlePrRoutes(
 		const body = await req.json().catch(() => null);
 		if (!body?.text?.trim())
 			return Response.json({ error: "Empty comment" }, { status: 400 });
-		const target = resolvePrTarget(session, body.repo);
+		const target = resolvePrTarget(session, body.repo, body.branch);
 		if (!target)
 			return Response.json(
 				{ error: "No branch/PR for that repo" },
@@ -246,7 +315,7 @@ export async function handlePrRoutes(
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
 		const body = await req.json().catch(() => null);
-		const target = resolvePrTarget(session, body?.repo);
+		const target = resolvePrTarget(session, body?.repo, body?.branch);
 		if (!target)
 			return Response.json(
 				{ error: "No branch/PR for that repo" },
@@ -302,7 +371,7 @@ export async function handlePrRoutes(
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
 		const body = await req.json().catch(() => ({}));
-		const target = resolvePrTarget(session, body.repo);
+		const target = resolvePrTarget(session, body.repo, body.branch);
 		if (!target)
 			return Response.json(
 				{ error: "No branch/PR for that repo" },
@@ -349,7 +418,7 @@ export async function handlePrRoutes(
 		if (!["review", "autofix", "simplify", "adversarial"].includes(kind))
 			return Response.json({ error: "Unknown action" }, { status: 400 });
 
-		const target = resolvePrTarget(session, body?.repo);
+		const target = resolvePrTarget(session, body?.repo, body?.branch);
 		if (!target)
 			return Response.json(
 				{ error: "No branch/PR for that repo" },

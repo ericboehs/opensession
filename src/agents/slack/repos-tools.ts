@@ -16,7 +16,7 @@
 
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
-import type { AttachedRepo } from "../../server/types";
+import type { AttachedRepo, LinkedPr } from "../../server/types";
 
 export interface ReposToolContext {
   /** The session these tools act on. */
@@ -37,6 +37,16 @@ export interface ReposToolContext {
   } | null;
   /** All registered repos (id + default branch + whether shared-checkout). */
   repos: () => Array<{ id: string; defaultBranch: string; sharedCheckout: boolean }>;
+  /**
+   * Link a PR to the session (shows up in its Review tab beside the
+   * branch-derived PRs); throws with a human message on bad input.
+   */
+  linkPr: (input: {
+    url?: string;
+    repo?: string;
+    number?: number;
+    branch?: string;
+  }) => Promise<{ linked: LinkedPr; all: LinkedPr[] }>;
 }
 
 function text(s: string) {
@@ -116,6 +126,34 @@ export function createReposMcpServer(ctx: ReposToolContext) {
           );
         } catch (e: any) {
           return text(`Couldn't switch to ${args.repo}: ${e?.message || String(e)}`);
+        }
+      }
+    ),
+    tool(
+      "link_pr",
+      "Link a pull request to this session so it shows in the session's Review tab beside the branch-derived PRs. Use when you open a follow-up PR on a different branch, or when a related PR (yours or someone else's) belongs with this session's work. PRs you open on this session's own branch (or an attached repo's branch) are shown automatically — don't link those.",
+      {
+        url: z
+          .string()
+          .optional()
+          .describe("GitHub PR URL (https://github.com/owner/repo/pull/123). Easiest — repo and number are parsed from it."),
+        repo: z
+          .string()
+          .optional()
+          .describe("Repo id (e.g. 'tella-fusion', 'gitops') when not passing a URL."),
+        number: z.number().optional().describe("PR number in that repo."),
+        branch: z.string().optional().describe("PR head branch, as an alternative to the number."),
+      },
+      async (args: { url?: string; repo?: string; number?: number; branch?: string }) => {
+        try {
+          const { linked, all } = await ctx.linkPr(args);
+          const label = linked.number ? `#${linked.number}` : `branch ${linked.branch}`;
+          return text(
+            `Linked ${linked.repo} ${label}${linked.title ? ` (“${linked.title}”)` : ""} to this session.` +
+              (all.length > 1 ? `\nLinked PRs now: ${all.map((r) => `${r.repo}${r.number ? `#${r.number}` : `:${r.branch}`}`).join(", ")}.` : "")
+          );
+        } catch (e: any) {
+          return text(`Couldn't link that PR: ${e?.message || String(e)}`);
         }
       }
     ),

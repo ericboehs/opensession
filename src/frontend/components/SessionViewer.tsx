@@ -3047,6 +3047,8 @@ export function SessionViewer({
 											primary: false,
 										})),
 									]}
+									linkedPrs={session.linkedPrs}
+									linkable
 								/>
 							)}
 						</div>

@@ -21,7 +21,7 @@ import {
 	sessionMemoryScopes,
 } from "./session-memory";
 import { findSession, touchBackstageSession } from "./session-cache";
-import type { AttachedRepo, UnifiedSession } from "./types";
+import type { AttachedRepo, LinkedPr, UnifiedSession } from "./types";
 
 /**
  * Branch discipline for interactive code sessions in isolated worktrees. Chats
@@ -133,12 +133,27 @@ export async function memoryNoteFor(
 export function resolvePrTarget(
 	session: UnifiedSession,
 	repoId?: string | null,
+	branch?: string | null,
 ): { ghRepo: string; branch: string } | null {
 	const primaryRepo =
 		session.repo ||
 		(session.worktreeDir
 			? repoForPath(session.worktreeDir).id
 			: "tella-fusion");
+	// Explicit repo+branch — a linked PR, which may live on a different branch
+	// of the primary repo. Only pairs the session actually lists resolve, so
+	// the PR routes can't be pointed at an arbitrary branch.
+	if (repoId && branch) {
+		const lp = (session.linkedPrs || []).find(
+			(r) => r.repo === repoId && r.branch === branch,
+		);
+		const att = (session.attachedRepos || []).find(
+			(r) => r.repo === repoId && r.branch === branch,
+		);
+		const isPrimary = repoId === primaryRepo && branch === session.branch;
+		if (!lp && !att && !isPrimary) return null;
+		return { ghRepo: getRepo(repoId).ghRepo, branch };
+	}
 	if (!repoId || repoId === primaryRepo) {
 		if (!session.branch) return null;
 		return {
@@ -149,8 +164,10 @@ export function resolvePrTarget(
 	const att = (session.attachedRepos || []).find(
 		(r) => r.repo === repoId,
 	);
-	if (!att) return null;
-	return { ghRepo: getRepo(att.repo).ghRepo, branch: att.branch };
+	if (att) return { ghRepo: getRepo(att.repo).ghRepo, branch: att.branch };
+	const lp = (session.linkedPrs || []).find((r) => r.repo === repoId);
+	if (!lp) return null;
+	return { ghRepo: getRepo(lp.repo).ghRepo, branch: lp.branch };
 }
 
 /**
@@ -270,4 +287,132 @@ export async function switchPrimaryRepo(
 		attachedRepos,
 	});
 	return { repo: target.id, branch, worktreeDir: wtPath };
+}
+
+/** `gh pr view` for one PR — resolves a number or branch to its head branch + label fields. */
+async function ghPrView(
+	ghRepo: string,
+	selector: string,
+): Promise<{ branch: string; number: number; url: string; title: string } | null> {
+	try {
+		const proc = Bun.spawn(
+			[
+				"gh", "pr", "view", selector, "--repo", ghRepo,
+				"--json", "headRefName,number,url,title",
+			],
+			{ stdout: "pipe", stderr: "ignore" },
+		);
+		const raw = await new Response(proc.stdout).text();
+		if ((await proc.exited) !== 0 || !raw.trim()) return null;
+		const pr = JSON.parse(raw);
+		return {
+			branch: pr.headRefName,
+			number: pr.number,
+			url: pr.url,
+			title: pr.title || "",
+		};
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Link a PR to a session, beyond the ones derived from its branch and attached
+ * repos — a follow-up PR on another branch, a related PR in another repo, or
+ * one opened outside the session. Accepts a GitHub PR URL, or repo id +
+ * number/branch; the PR is resolved via gh so the stored link carries the head
+ * branch (the key the whole PR pipeline uses) plus number/url/title for
+ * labels. Re-linking an already-linked PR refreshes its entry.
+ */
+export async function linkPr(
+	sessionId: string,
+	input: { url?: string; repo?: string; number?: number; branch?: string },
+): Promise<{ linked: LinkedPr; all: LinkedPr[] }> {
+	const session = findSession(sessionId);
+	if (!session) throw new Error("Session not found");
+
+	let repoId = input.repo?.trim();
+	let number = input.number;
+	let branch = input.branch?.trim();
+
+	if (input.url) {
+		const m = input.url.match(
+			/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/i,
+		);
+		if (!m) throw new Error("Not a GitHub PR URL (…github.com/owner/repo/pull/N)");
+		const ghRepo = `${m[1]}/${m[2]}`.toLowerCase();
+		const match = Object.values(REPOS).find(
+			(r) => r.ghRepo?.toLowerCase() === ghRepo,
+		);
+		if (!match)
+			throw new Error(
+				`${m[1]}/${m[2]} isn't a registered repo (known: ${Object.values(REPOS)
+					.filter((r) => r.ghRepo)
+					.map((r) => r.id)
+					.join(", ")})`,
+			);
+		repoId = match.id;
+		number = parseInt(m[3], 10);
+	}
+
+	if (!repoId) throw new Error("Pass a PR URL or a repo id");
+	const repo = REPOS[repoId];
+	if (!repo?.ghRepo) throw new Error(`Unknown repo "${repoId}"`);
+	if (!number && !branch)
+		throw new Error("Pass a PR URL, a PR number, or a branch");
+
+	// Resolve through gh: number → head branch (required — the PR pipeline is
+	// branch-keyed), branch → number/url/title (best-effort label enrichment).
+	const resolved = await ghPrView(repo.ghRepo, number ? String(number) : branch!);
+	if (number && !resolved)
+		throw new Error(`Couldn't find PR #${number} in ${repo.ghRepo}`);
+	if (resolved) {
+		branch = resolved.branch;
+		number = resolved.number;
+	}
+
+	const primaryRepo =
+		session.repo ||
+		(session.worktreeDir ? repoForPath(session.worktreeDir).id : "tella-fusion");
+	if (repoId === primaryRepo && branch === session.branch)
+		throw new Error("That's this session's own PR — it's already shown");
+	if (
+		(session.attachedRepos || []).some(
+			(r) => r.repo === repoId && r.branch === branch,
+		)
+	)
+		throw new Error(
+			`That's the attached ${repoId} repo's PR — it's already shown`,
+		);
+
+	const linked: LinkedPr = {
+		repo: repoId,
+		branch: branch!,
+		...(number ? { number } : {}),
+		...(resolved?.url ? { url: resolved.url } : {}),
+		...(resolved?.title ? { title: resolved.title } : {}),
+	};
+	const all = [
+		...(session.linkedPrs || []).filter(
+			(r) => !(r.repo === repoId && r.branch === branch),
+		),
+		linked,
+	];
+	touchBackstageSession(sessionId, { linkedPrs: all });
+	return { linked, all };
+}
+
+/** Remove a linked PR from a session (the link only — the PR is untouched). */
+export function unlinkPr(
+	sessionId: string,
+	repoId: string,
+	branch: string,
+): LinkedPr[] {
+	const session = findSession(sessionId);
+	if (!session) throw new Error("Session not found");
+	const all = (session.linkedPrs || []).filter(
+		(r) => !(r.repo === repoId && r.branch === branch),
+	);
+	touchBackstageSession(sessionId, { linkedPrs: all });
+	return all;
 }

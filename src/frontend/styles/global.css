@@ -4659,6 +4659,9 @@ a.workspace-info-check-row {
 	overflow-x: auto;
 }
 .pr-repo-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 	font-size: 12px;
 	white-space: nowrap;
 	color: var(--text-dim);
@@ -4675,6 +4678,49 @@ a.workspace-info-check-row {
 	color: var(--text);
 	background: var(--bg-panel);
 	border-color: var(--border);
+}
+/* Unlink (×) inside the active linked-PR tab. */
+.pr-repo-tab-x {
+	display: inline-flex;
+	align-items: center;
+	color: var(--text-dim);
+	margin-right: -4px;
+}
+.pr-repo-tab-x:hover {
+	color: var(--text);
+}
+/* "Link PR" affordance: the + chip / inline paste-a-URL form. */
+.pr-link-form {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+.pr-link-input {
+	font-size: 12px;
+	color: var(--text);
+	background: var(--bg-panel);
+	border: 1px solid var(--border);
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
+	padding: 3px 10px;
+	width: min(280px, 50vw);
+}
+.pr-link-input:focus {
+	outline: none;
+	border-color: var(--accent);
+}
+.pr-link-submit {
+	font-size: 12px;
+	white-space: nowrap;
+	color: var(--text);
+	background: var(--bg-panel);
+	border: 1px solid var(--border);
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
+	padding: 3px 10px;
+	cursor: pointer;
+}
+.pr-link-submit:disabled {
+	color: var(--text-dim);
+	cursor: default;
 }
 
 /* Per-repo tabs in a multi-repo session's diff */
@@ -5556,13 +5602,23 @@ a.workspace-info-check-row {
 /* Split layout (Reviews drawer + session Review tab): metadata/checks/actions
    on the left, the code diff filling the rest — each scrolls on its own. The
    info column caps at 384px but yields in narrower hosts (the session viewer
-   panel can be as narrow as 320px). */
+   panel can be as narrow as 320px). The PR tab bar sits ABOVE the split, so
+   the row lives on .pr-panel-body (a plain wrapper — display:contents — in
+   the stacked layout), not on the panel itself. */
 .pr-panel-split {
-	flex-direction: row;
-	align-items: stretch;
 	height: 100%;
 	padding: 0;
 	gap: 0;
+}
+.pr-panel-body {
+	display: contents;
+}
+.pr-panel-split .pr-panel-body {
+	display: flex;
+	flex-direction: row;
+	align-items: stretch;
+	flex: 1;
+	min-height: 0;
 }
 .pr-panel-split .pr-panel-info {
 	width: min(384px, 45%);
@@ -7437,8 +7493,10 @@ a.workspace-info-check-row {
 
 	/* the PrPanel split stacks: info, then the diff below */
 	.pr-panel-split {
-		flex-direction: column;
 		height: auto;
+	}
+	.pr-panel-split .pr-panel-body {
+		flex-direction: column;
 	}
 	.pr-panel-split .pr-panel-info {
 		width: auto;

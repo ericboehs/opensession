@@ -21,7 +21,7 @@ import { productName } from "./config";
 import { repoForPath, REPOS } from "./worktree";
 import { registerInteractiveMcpBuilder, startRunRpcServer } from "./run-rpc";
 import { findSession, touchBackstageSession } from "./session-cache";
-import { attachRepo, sessionRepoIds, switchPrimaryRepo } from "./session-repos";
+import { attachRepo, linkPr, sessionRepoIds, switchPrimaryRepo } from "./session-repos";
 import { makeAskHandler } from "./asks";
 
 export function interactiveMcpServers(
@@ -80,6 +80,7 @@ export function interactiveMcpServers(
 								defaultBranch: p.defaultBranch,
 								sharedCheckout: !!p.sharedCheckout,
 							})),
+						linkPr: (input) => linkPr(sessionId, input),
 					}),
 					// Durable repo/user/team memory (stored under ~/.michael-memory,
 					// shared both ways with Slack's channel memory). Write tools are

@@ -890,9 +890,18 @@ export async function discardDiffFile(
 	});
 }
 
-/** `repo` (a repo id) targets an attached repo's PR; omit for the primary. */
-export async function fetchPr(sessionId: string, repo?: string) {
-	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
+/** Query string targeting one of a session's PRs: `repo` (a repo id) targets an
+ *  attached repo's PR, `repo`+`branch` a linked PR; both omitted = primary. */
+function prTargetQs(repo?: string, branch?: string) {
+	const params = new URLSearchParams();
+	if (repo) params.set("repo", repo);
+	if (branch) params.set("branch", branch);
+	const qs = params.toString();
+	return qs ? `?${qs}` : "";
+}
+
+export async function fetchPr(sessionId: string, repo?: string, branch?: string) {
+	const qs = prTargetQs(repo, branch);
 	return request<any>(`/sessions/${encodeURIComponent(sessionId)}/pr${qs}`, {
 		label: "Failed to fetch PR",
 	});
@@ -931,8 +940,8 @@ export async function gitPullApi(
 	);
 }
 
-export async function fetchPrDiff(sessionId: string, repo?: string) {
-	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
+export async function fetchPrDiff(sessionId: string, repo?: string, branch?: string) {
+	const qs = prTargetQs(repo, branch);
 	return request<any>(
 		`/sessions/${encodeURIComponent(sessionId)}/pr-diff${qs}`,
 		{ label: "Failed to fetch PR diff" },
@@ -940,11 +949,33 @@ export async function fetchPrDiff(sessionId: string, repo?: string) {
 }
 
 /** AI review guide for the PR's Guide view — slow on first call per head commit. */
-export async function fetchReviewGuide(sessionId: string, repo?: string) {
-	const qs = repo ? `?repo=${encodeURIComponent(repo)}` : "";
+export async function fetchReviewGuide(sessionId: string, repo?: string, branch?: string) {
+	const qs = prTargetQs(repo, branch);
 	return request<any>(
 		`/sessions/${encodeURIComponent(sessionId)}/review-guide${qs}`,
 		{ label: "Failed to fetch review guide" },
+	);
+}
+
+/** Link a PR to a session by URL (shows beside the branch-derived PRs). */
+export async function linkPrApi(sessionId: string, url: string) {
+	type LinkedPr = NonNullable<
+		import("./types").UnifiedSession["linkedPrs"]
+	>[number];
+	return request<{ ok: true; linked: LinkedPr; all: LinkedPr[] }>(
+		`/sessions/${encodeURIComponent(sessionId)}/link-pr`,
+		{ method: "POST", body: { url }, label: "Failed to link PR" },
+	);
+}
+
+/** Drop a linked PR from a session (the link only — the PR is untouched). */
+export async function unlinkPrApi(sessionId: string, repo: string, branch: string) {
+	type LinkedPr = NonNullable<
+		import("./types").UnifiedSession["linkedPrs"]
+	>[number];
+	return request<{ ok: true; all: LinkedPr[] }>(
+		`/sessions/${encodeURIComponent(sessionId)}/unlink-pr`,
+		{ method: "POST", body: { repo, branch }, label: "Failed to unlink PR" },
 	);
 }
 
@@ -973,6 +1004,7 @@ export async function postPrCommentApi(
 		startLine?: number;
 		side?: "RIGHT" | "LEFT";
 		repo?: string;
+		branch?: string;
 	},
 ) {
 	return request<{ ok: true; url?: string }>(
@@ -988,6 +1020,7 @@ export async function submitPrReviewApi(
 		event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 		summary?: string;
 		repo?: string;
+		branch?: string;
 		comments: Array<{
 			text: string;
 			path: string;
@@ -1008,10 +1041,18 @@ export async function mergePrApi(
 	sessionId: string,
 	method: "squash" | "merge" | "rebase" = "squash",
 	repo?: string,
+	branch?: string,
 ) {
 	return request<{ ok: true; url?: string }>(
 		`/sessions/${encodeURIComponent(sessionId)}/pr-merge`,
-		{ method: "POST", body: { method, ...(repo ? { repo } : {}) } },
+		{
+			method: "POST",
+			body: {
+				method,
+				...(repo ? { repo } : {}),
+				...(branch ? { branch } : {}),
+			},
+		},
 	);
 }
 

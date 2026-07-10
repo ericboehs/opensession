@@ -176,6 +176,29 @@ export interface UnifiedSession {
 	parentSessionId?: string;
 	/** Secondary repos this session also works in (cross-repo sessions). */
 	attachedRepos?: Array<{ repo: string; branch: string; dir: string }>;
+	/** PRs manually linked to this session (beyond branch/attached-repo ones). */
+	linkedPrs?: Array<{
+		repo: string;
+		branch: string;
+		number?: number;
+		url?: string;
+		title?: string;
+	}>;
+	/** Every PR this session spans (primary + attached + linked), enriched from
+	 *  the server's bulk PR cache. The singular pr* fields above stay the
+	 *  primary branch's PR. */
+	prs?: Array<{
+		repo: string;
+		branch: string;
+		source: "primary" | "attached" | "linked";
+		url?: string;
+		state?: "OPEN" | "MERGED" | "CLOSED";
+		number?: number;
+		title?: string;
+		isDraft?: boolean;
+		reviewDecision?: string;
+		checks?: { total: number; passed: number; failed: number; pending: number };
+	}>;
 	/** Route the Preview/Staging buttons deep-link to (agent-set via
 	 *  opensession-preview); appended to the base URL. Unset = open the app root. */
 	previewPath?: string;
