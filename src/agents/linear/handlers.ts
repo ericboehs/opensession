@@ -32,13 +32,10 @@ import {
   deleteWorktree,
   formatConversationHistory,
   generateBranchName,
-  getLastMessageUuid,
   loadSessionInfo,
   michaelSessionUrl,
   runAgentHeadless,
   saveSessionInfo,
-  startSessionPolling,
-  stopSessionPolling,
   type ActiveSession,
 } from "./session";
 
@@ -144,7 +141,6 @@ export async function handleIssueUpdate(webhook: IssueWebhook, tokens: LinearTok
         teamId: details.teamId,
         worktreeDir: diskSession.worktreeDir,
         linearSessionId: diskSession.linearSessionId || "",
-        lastMessageUuid: null,
         isPlanning: false,
         planningConversation: [],
         awaitingImplementationConfirmation: diskSession.awaitingImplementationConfirmation || false,
@@ -206,7 +202,6 @@ export async function handleIssueUpdate(webhook: IssueWebhook, tokens: LinearTok
         );
 
         existingSession!.claudeSessionId = claudeSessionId;
-        existingSession!.lastMessageUuid = await getLastMessageUuid(existingSession!.worktreeDir, claudeSessionId);
 
         await saveSessionInfo(
           existingSession!.branch,
@@ -266,7 +261,6 @@ export async function handleAgentSession(
         session.abortController.abort();
         session.abortController = undefined;
       }
-      stopSessionPolling(session);
     }
     return Response.json({ ok: true });
   }
@@ -304,7 +298,6 @@ export async function handleAgentSession(
           teamId: "",
           worktreeDir: diskSession.worktreeDir,
           linearSessionId: agentSession.id,
-          lastMessageUuid: null,
           isPlanning: false,
           planningConversation: [],
           awaitingImplementationConfirmation: diskSession.awaitingImplementationConfirmation || false,
@@ -315,10 +308,6 @@ export async function handleAgentSession(
           model: diskSession.model,
         };
         activeSessions.set(agentSession.id, session);
-        if (diskSession.claudeSessionId) {
-          session.lastMessageUuid = await getLastMessageUuid(diskSession.worktreeDir, diskSession.claudeSessionId);
-        }
-        startSessionPolling(session);
       }
     }
 
@@ -464,7 +453,6 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
             );
 
             s.claudeSessionId = claudeSessionId;
-            s.lastMessageUuid = await getLastMessageUuid(s.worktreeDir, claudeSessionId);
 
             await saveSessionInfo(
               s.branch,
@@ -570,10 +558,6 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
     console.log(`[linear] Session ${action} for issue: ${agentSession.issue.identifier}`);
     const branch = await generateBranchName(agentSession.issue.title, agentSession.issue.identifier);
     try {
-      const session = activeSessions.get(agentSession.id);
-      if (session) {
-        stopSessionPolling(session);
-      }
       deleteWorktree(branch);
       deleteSessionFile(branch);
       activeSessions.delete(agentSession.id);
@@ -626,7 +610,6 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
     teamId,
     worktreeDir,
     linearSessionId: agentSession.id,
-    lastMessageUuid: null,
     isPlanning: false,
     planningConversation: [],
     awaitingImplementationConfirmation: false,

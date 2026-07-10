@@ -1,5 +1,5 @@
 /**
- * Linear agent session lifecycle, Claude runner, and polling.
+ * Linear agent session lifecycle and the headless agent runner.
  */
 import { envAlias } from "../../server/rename-compat";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
@@ -16,7 +16,9 @@ import type { LinearTokens } from "./oauth";
 import { getValidToken } from "./oauth";
 
 const SESSION_DIR = `${process.env.HOME}/.linear-sessions`;
-const CLAUDE_PROJECTS_DIR = `${process.env.HOME}/.claude/projects`;
+
+/** Sessions with no activity for this long aren't restored on startup. */
+const STALE_SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 
 // --- Types ---
 
@@ -38,8 +40,6 @@ export interface ActiveSession {
   teamId: string;
   worktreeDir: string;
   linearSessionId: string;
-  lastMessageUuid: string | null;
-  pollInterval?: ReturnType<typeof setInterval>;
   abortController?: AbortController;
   isPlanning: boolean;
   planningConversation: Array<{ role: "michael" | "user"; content: string; timestamp: string }>;
@@ -57,9 +57,6 @@ export const activeSessions = new Map<string, ActiveSession>();
 
 /** Dedup set for webhook sessions */
 export const processedSessions = new Set<string>();
-
-/** Track sent message UUIDs to avoid duplicates */
-const sentMessageUuids = new Set<string>();
 
 // --- Utilities ---
 
@@ -221,6 +218,7 @@ export async function loadSessionInfo(branch: string): Promise<{
   lastActiveUser?: Participant | null;
   issueCreator?: Participant | null;
   model?: string;
+  updatedAt?: string;
 } | null> {
   try {
     const file = Bun.file(`${SESSION_DIR}/${branch}.json`);
@@ -245,37 +243,6 @@ export function deleteSessionFile(branch: string): void {
 export function deleteWorktree(branch: string): void {
   spawn("/home/ubuntu/bin/wt", ["delete", branch], { stdio: "inherit" });
   console.log(`[linear] Deleted worktree: ${branch}`);
-}
-
-// --- Claude session file ---
-
-function getClaudeSessionFile(worktreeDir: string, claudeSessionId: string): string {
-  const projectFolder = worktreeDir.replace(/\//g, "-").replace(/^-/, "");
-  return `${CLAUDE_PROJECTS_DIR}/${projectFolder}/${claudeSessionId}.jsonl`;
-}
-
-export async function getLastMessageUuid(worktreeDir: string, claudeSessionId: string): Promise<string | null> {
-  const sessionFile = getClaudeSessionFile(worktreeDir, claudeSessionId);
-  try {
-    const file = Bun.file(sessionFile);
-    if (!(await file.exists())) return null;
-
-    const content = await file.text();
-    const lines = content.trim().split("\n");
-
-    let lastUuid: string | null = null;
-    for (const line of lines) {
-      try {
-        const msg = JSON.parse(line);
-        if (msg.type === "assistant" && msg.uuid) {
-          lastUuid = msg.uuid;
-        }
-      } catch {}
-    }
-    return lastUuid;
-  } catch {
-    return null;
-  }
 }
 
 // --- Action activity streaming ---
@@ -485,76 +452,6 @@ export async function runAgentHeadless(
   return { result, claudeSessionId };
 }
 
-// --- Session polling ---
-
-async function pollClaudeSession(session: ActiveSession): Promise<void> {
-  if (!session.claudeSessionId) return;
-
-  const sessionFile = getClaudeSessionFile(session.worktreeDir, session.claudeSessionId);
-
-  try {
-    const file = Bun.file(sessionFile);
-    if (!(await file.exists())) return;
-
-    const content = await file.text();
-    const lines = content.trim().split("\n");
-
-    let foundLast = session.lastMessageUuid === null;
-    const newMessages: Array<{ uuid: string; text: string }> = [];
-
-    for (const line of lines) {
-      try {
-        const msg = JSON.parse(line);
-        if (!foundLast) {
-          if (msg.uuid === session.lastMessageUuid) foundLast = true;
-          continue;
-        }
-        if (msg.type === "assistant" && msg.message?.content) {
-          const textContent = msg.message.content
-            .filter((c: any) => c.type === "text")
-            .map((c: any) => c.text)
-            .join("");
-          if (textContent && textContent.length > 20) {
-            newMessages.push({ uuid: msg.uuid, text: textContent });
-          }
-        }
-      } catch {}
-    }
-
-    const unseenMessages = newMessages.filter((m) => !sentMessageUuids.has(m.uuid));
-    if (unseenMessages.length > 0) {
-      const lastMsg = unseenMessages[unseenMessages.length - 1];
-      sentMessageUuids.add(lastMsg.uuid);
-
-      await createAgentActivity(session.accessToken, session.linearSessionId, {
-        type: "thought",
-        body: lastMsg.text,
-      });
-
-      session.lastMessageUuid = lastMsg.uuid;
-      for (const msg of unseenMessages) {
-        sentMessageUuids.add(msg.uuid);
-      }
-    }
-  } catch (e) {
-    console.error(`[linear] Error polling Claude session:`, e);
-  }
-}
-
-export function startSessionPolling(session: ActiveSession): void {
-  if (session.pollInterval) clearInterval(session.pollInterval);
-  console.log(`[linear] Starting session polling for ${session.branch}`);
-  session.pollInterval = setInterval(() => pollClaudeSession(session), 5000);
-}
-
-export function stopSessionPolling(session: ActiveSession): void {
-  if (session.pollInterval) {
-    console.log(`[linear] Stopping session polling for ${session.branch}`);
-    clearInterval(session.pollInterval);
-    session.pollInterval = undefined;
-  }
-}
-
 // --- PR creation ---
 
 export async function createPrWithAttribution(
@@ -582,9 +479,7 @@ ${participantsLine ? `\n${participantsLine}\n` : ""}
 ## Test plan
 - [ ] Verify implementation meets acceptance criteria
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>`;
+🤖 Generated with [Claude Code](https://claude.com/claude-code)`;
 
   try {
     const args = ["gh", "pr", "create", "--title", `${issueIdentifier}: ${issueTitle}`, "--body", prBody];
@@ -628,6 +523,13 @@ export async function loadActiveSessionsOnStartup(tokens: LinearTokens): Promise
     const { readdirSync } = await import("fs");
     const files = readdirSync(SESSION_DIR).filter((f) => f.endsWith(".json"));
 
+    // Single-workspace install: every session belongs to the one authorized org.
+    const orgId = Object.keys(tokens)[0];
+    if (!orgId) return;
+    const accessToken = await getValidToken(orgId, tokens);
+    if (!accessToken) return;
+
+    let skippedStale = 0;
     for (const file of files) {
       try {
         const branch = file.replace(".json", "");
@@ -638,15 +540,13 @@ export async function loadActiveSessionsOnStartup(tokens: LinearTokens): Promise
           sessionData.linearSessionId &&
           (sessionData.claudeSessionId || sessionData.awaitingInitialDirection)
         ) {
-          const orgId = Object.keys(tokens)[0];
-          if (!orgId) continue;
-
-          const accessToken = await getValidToken(orgId, tokens);
-          if (!accessToken) continue;
-
-          const lastMessageUuid = sessionData.claudeSessionId
-            ? await getLastMessageUuid(sessionData.worktreeDir, sessionData.claudeSessionId)
-            : null;
+          // Don't resurrect long-idle sessions — a week without a run means the
+          // ticket moved on without us; the file stays on disk for manual resume.
+          const updatedAt = Date.parse(sessionData.updatedAt || "");
+          if (!updatedAt || Date.now() - updatedAt > STALE_SESSION_MS) {
+            skippedStale++;
+            continue;
+          }
 
           const session: ActiveSession = {
             branch,
@@ -660,7 +560,6 @@ export async function loadActiveSessionsOnStartup(tokens: LinearTokens): Promise
             teamId: "",
             worktreeDir: sessionData.worktreeDir,
             linearSessionId: sessionData.linearSessionId,
-            lastMessageUuid,
             isPlanning: false,
             planningConversation: [],
             awaitingImplementationConfirmation: sessionData.awaitingImplementationConfirmation || false,
@@ -675,16 +574,13 @@ export async function loadActiveSessionsOnStartup(tokens: LinearTokens): Promise
           console.log(
             `[linear] Restored session: ${branch} (Claude: ${sessionData.claudeSessionId}, Linear: ${sessionData.linearSessionId})`
           );
-
-          if (session.awaitingInitialDirection) {
-            // No polling needed yet
-          } else {
-            startSessionPolling(session);
-          }
         }
       } catch (e) {
         console.error(`[linear] Error loading session ${file}:`, e);
       }
+    }
+    if (skippedStale > 0) {
+      console.log(`[linear] Skipped ${skippedStale} stale session file(s) (idle > 7 days)`);
     }
   } catch {
     console.log("[linear] No active sessions to load");

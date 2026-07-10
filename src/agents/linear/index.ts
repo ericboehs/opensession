@@ -7,7 +7,7 @@ import { loadTokens, handleAuthorize, handleCallback } from "./oauth";
 import type { LinearTokens } from "./oauth";
 import { handleAgentSession, handleIssueUpdate } from "./handlers";
 import type { AgentSessionWebhook, IssueWebhook } from "./handlers";
-import { activeSessions, loadActiveSessionsOnStartup, stopSessionPolling } from "./session";
+import { activeSessions, loadActiveSessionsOnStartup } from "./session";
 
 const LINEAR_WEBHOOK_SECRET = process.env.LINEAR_WEBHOOK_SECRET || "";
 
@@ -66,7 +66,6 @@ export class LinearAgent implements AgentModule {
       if (session.abortController) {
         session.abortController.abort();
       }
-      stopSessionPolling(session);
     }
     console.log("[linear] Agent shut down");
   }
