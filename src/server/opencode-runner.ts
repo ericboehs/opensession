@@ -1584,6 +1584,14 @@ async function* runOpencodeAttempt(
           autoshare: false,
           plugin: [...(meridianPlugin || []), SESSION_TAG_PLUGIN_PATH],
           ...(Object.keys(providerConfig).length ? { provider: providerConfig } : {}),
+          // Code mode reads files outside the worktree as a matter of course —
+          // attachments land in ~/.opensession-chats/uploads — and opencode's
+          // default for external_directory is "ask", which blocks the tool on
+          // a permission ask no one is there to answer (the 2026-07-10 wedge:
+          // a session sat busy 40 min on a `read` of a staged PDF). Bash is
+          // unrestricted in code mode, so gating the read tool adds no
+          // security — allow it. Ask mode's agent below still denies.
+          permission: { external_directory: "allow" },
           // Read-only ask mode as a selectable agent (mode "primary" so it
           // never doubles as a subagent): same bash allowlist + write denial
           // the per-session ask config enforces server-wide.
@@ -1622,7 +1630,10 @@ async function* runOpencodeAttempt(
                   external_directory: "deny",
                 },
               }
-            : {}),
+            : // Same rationale as the shared config: attachments live outside
+              // the worktree and code mode's unrestricted bash makes the read
+              // gate pure friction (plus a turn-wedging ask by default).
+              { permission: { external_directory: "allow" } }),
           // Ask-mode write tools + the unattended deny-set are both enforced by
           // stripping tools from the model's tool list. Key omitted when empty so
           // existing interactive servers keep their config hash (no respawn).
@@ -1829,6 +1840,53 @@ async function* runOpencodeAttempt(
       }
     };
 
+    // Auto-reject a permission ask: an unanswered ask blocks its tool call
+    // forever while the session stays "busy", so the status poll (correctly)
+    // never ends the turn — the 2026-07-10 wedge. There is no interactive
+    // permission bridge on this engine yet; legit needs are config-level
+    // allows, anything that still surfaces gets a clean reject so the model
+    // sees a tool error instead of the session hanging. Deduped because both
+    // the SSE pump and the poll sweep can see the same ask.
+    const repliedPermissionIds = new Set<string>();
+    const rejectPermissionAsk = async (ask: any, via: string) => {
+      const permId = String(ask?.id || "");
+      if (!permId || repliedPermissionIds.has(permId)) return;
+      repliedPermissionIds.add(permId);
+      const kind = String(ask?.permission ?? ask?.action ?? "unknown");
+      console.warn(
+        `[opencode-runner] auto-rejecting permission ask ${permId} (${kind}) on ${ocSessionId} via ${via} — no interactive permission bridge`
+      );
+      turnEvent({
+        direction: "out",
+        kind: "permission_decision",
+        tool_name: kind,
+        decision: "deny",
+        reason: "opencode_no_permission_bridge",
+      });
+      // Legacy reply endpoint first (exists on every server version we run,
+      // 1.17.15 included); fall back to the flat 1.17+ reply route in case a
+      // future server drops the legacy path.
+      const res = await client
+        .postSessionIdPermissionsPermissionId({
+          path: { id: ocSessionId, permissionID: permId },
+          body: { response: "reject" },
+          ...q,
+        })
+        .catch((e) => ({ error: e }));
+      if ((res as { error?: unknown })?.error) {
+        await fetch(`${entry!.url}/permission/${encodeURIComponent(permId)}/reply`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            Authorization: `Basic ${btoa(`opencode:${entry!.password}`)}`,
+          },
+          body: JSON.stringify({ reply: "reject" }),
+        }).catch((e) =>
+          console.warn(`[opencode-runner] failed to reject permission ask ${permId}:`, e)
+        );
+      }
+    };
+
     const handleEvent = async (ev: any) => {
       const p = ev?.properties;
       switch (ev?.type) {
@@ -1892,26 +1950,16 @@ async function* runOpencodeAttempt(
           }
           return;
         }
-        case "permission.updated": {
+        // opencode renamed this event: pre-1.17 servers emit
+        // "permission.updated", 1.17+ emits "permission.asked" (the npm SDK's
+        // types still say "updated" — trust the wire, not the types; the
+        // mismatch is exactly how the reject backstop silently died and a
+        // staged-PDF read wedged a session for 40 min on 2026-07-10).
+        case "permission.updated":
+        case "permission.asked":
+        case "permission.v2.asked": {
           if (p?.sessionID !== ocSessionId) return;
-          // No interactive permission bridge on this engine yet — reject, so a
-          // misconfigured "ask" can never wedge or silently allow.
-          turnEvent({
-            direction: "out",
-            kind: "permission_decision",
-            tool_name: p?.type,
-            decision: "deny",
-            reason: "opencode_no_permission_bridge",
-          });
-          try {
-            await client.postSessionIdPermissionsPermissionId({
-              path: { id: ocSessionId, permissionID: p.id },
-              body: { response: "reject" },
-              ...q,
-            });
-          } catch (e) {
-            console.warn("[opencode-runner] failed to reject permission ask:", e);
-          }
+          await rejectPermissionAsk(p, "sse");
           return;
         }
         case "session.error": {
@@ -2035,7 +2083,28 @@ async function* runOpencodeAttempt(
           const mine = statuses?.[ocSessionId];
           // Absent or idle ⇒ the turn ended (covers an SSE gap that ate the
           // idle event).
-          if (!mine || mine.type === "idle") signalDone();
+          if (!mine || mine.type === "idle") {
+            signalDone();
+            return;
+          }
+          // Busy ⇒ belt + braces on permission asks: one that slipped past the
+          // SSE pump (reconnect gap, another event rename upstream) blocks its
+          // tool forever with the session held busy — exactly the state this
+          // poll can't otherwise distinguish from honest work. Sweep and
+          // reject. Older servers 404 the endpoint; any failure = "nothing
+          // pending".
+          try {
+            const pr = await fetch(`${entry.url}/permission`, {
+              headers: { Authorization: `Basic ${btoa(`opencode:${entry.password}`)}` },
+              signal: AbortSignal.timeout(5000),
+            });
+            if (pr.ok) {
+              const asks = (await pr.json()) as Array<{ id?: string; sessionID?: string }>;
+              for (const ask of Array.isArray(asks) ? asks : []) {
+                if (ask?.sessionID === ocSessionId) await rejectPermissionAsk(ask, "poll");
+              }
+            }
+          } catch {}
         } catch (e) {
           // A silently-failing poll is how a finished/aborted engine turn
           // becomes a forever-busy zombie run. Make it loud, and after ~60s of
