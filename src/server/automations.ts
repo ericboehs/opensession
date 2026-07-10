@@ -13,16 +13,14 @@ import { getAccountById } from "./claude-accounts";
 import { runAgent } from "./agent-runner";
 import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
 import { readOpencodeBridgeConfig } from "./opencode-config";
-import { createWorktree, listWorktrees } from "./worktree";
+import { createWorktree, getRepo, listWorktrees, REPOS } from "./worktree";
 import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
 import { stateDir } from "./rename-compat";
 import { linkThreadInIndex } from "./slack-links";
 
-const HOME = process.env.HOME || "/home/ubuntu";
 const AUTOMATIONS_DIR = stateDir("automations");
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
-const TELLA_FUSION = `${HOME}/projects/tella-fusion`;
 
 /**
  * Config for an automation that is driven by polling a Grafana Loki failure
@@ -88,6 +86,13 @@ export interface Automation {
    */
   runOnceAt?: string;
   mode: "ask" | "code";
+  /**
+   * Registered repo id (see worktree.ts REPOS) this automation works against.
+   * Omitted = tella-fusion (the historical default). Ask mode reads the repo's
+   * main checkout; code mode gets an isolated worktree — for shared-checkout
+   * repos (backstage) explicitly isolated, never the live checkout.
+   */
+  repo?: string;
   enabled: boolean;
   createdBy: string;
   createdAt: string;
@@ -275,6 +280,15 @@ function sanitizeModel(model?: unknown, allowNone = false): string | { error: st
   return resolved.id;
 }
 
+function sanitizeRepo(repo?: unknown): string | { error: string } | undefined {
+  if (typeof repo !== "string" || !repo.trim()) return undefined;
+  const id = repo.trim();
+  if (!(id in REPOS)) {
+    return { error: `Unknown repo "${id}" — registered: ${Object.keys(REPOS).join(", ")}` };
+  }
+  return id;
+}
+
 export function createAutomation(input: {
   name: string;
   prompt: string;
@@ -285,6 +299,7 @@ export function createAutomation(input: {
   createdBy: string;
   eventKey?: string;
   mcpServers?: string[];
+  repo?: string;
   model?: string;
   fallbackModel?: string;
   accountId?: string;
@@ -306,6 +321,8 @@ export function createAutomation(input: {
   if (schedule && !parseCron(schedule)) {
     return { error: `Invalid cron expression: "${schedule}"` };
   }
+  const repo = sanitizeRepo(input.repo);
+  if (repo && typeof repo === "object") return repo;
   const model = sanitizeModel(input.model);
   if (model && typeof model === "object") return model;
   const fallbackModel = sanitizeModel(input.fallbackModel, true);
@@ -330,6 +347,7 @@ export function createAutomation(input: {
     webhookSecret: generateSecret(),
     eventKey: (input.eventKey || "").trim() || undefined,
     mcpServers: sanitizeMcpList(input.mcpServers),
+    repo,
     model,
     fallbackModel,
     accountId,
@@ -345,7 +363,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "model" | "fallbackModel" | "accountId" | "accountStrict" | "usageCredits" | "sandbox" | "grafanaPoll" | "slackWatch">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "repo" | "model" | "fallbackModel" | "accountId" | "accountStrict" | "usageCredits" | "sandbox" | "grafanaPoll" | "slackWatch">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -363,6 +381,11 @@ export function updateAutomation(
     if (runOnceAt) next.schedule = ""; // one-off and cron are mutually exclusive
   }
   if ("mcpServers" in patch) next.mcpServers = sanitizeMcpList(patch.mcpServers);
+  if ("repo" in patch) {
+    const repo = sanitizeRepo(patch.repo);
+    if (repo && typeof repo === "object") return repo;
+    next.repo = repo;
+  }
   if ("grafanaPoll" in patch) {
     const grafanaPoll = sanitizeGrafanaPoll(patch.grafanaPoll);
     if (grafanaPoll && "error" in grafanaPoll) return grafanaPoll;
@@ -568,15 +591,22 @@ export async function runAutomation(
   const bksId = options?.bksSessionId || `bks-${randomUUIDv7()}`;
 
   try {
-    let cwd = TELLA_FUSION;
+    // The automation's repo (default tella-fusion). Ask mode reads the main
+    // checkout; code mode gets an isolated worktree — `isolated` matters for
+    // shared-checkout repos (backstage), where an unattended run must never
+    // work in the live checkout: it ships a PR and a human merges.
+    const repo = getRepo(automation.repo);
+    let cwd = repo.repo;
     let branch = "";
     if (automation.mode === "code") {
       branch = `auto-${slugify(automation.name)}-${startedAt
         .toISOString()
         .slice(0, 16)
         .replace(/[-T:]/g, "")}`;
-      const worktrees = await listWorktrees();
-      cwd = worktrees.find((w) => w.branch === branch)?.path || (await createWorktree(branch));
+      const worktrees = await listWorktrees(repo.id);
+      cwd =
+        worktrees.find((w) => w.branch === branch)?.path ||
+        (await createWorktree(branch, repo.id, { isolated: true }));
     }
 
     recordRunStart(automation.id, {
@@ -623,7 +653,7 @@ export async function runAutomation(
       );
       const note = await renderSessionMemoryNote(
         sessionMemoryScopes({
-          repos: ["tella-fusion"],
+          repos: [getRepo(automation.repo).id],
           includeTeam: !automation.slackWatch,
         })
       );

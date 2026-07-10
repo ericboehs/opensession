@@ -453,7 +453,7 @@ export function worktreePathFor(
 export async function createWorktree(
   branch: string,
   repoId?: string,
-  opts?: { base?: string },
+  opts?: { base?: string; isolated?: boolean },
 ): Promise<string> {
   const repo = getRepo(repoId);
 
@@ -461,7 +461,11 @@ export async function createWorktree(
   // session works in the live main checkout on the default branch so its edits
   // hot-reload in the running server. No branch is created or switched — every
   // session stays on the default branch and commits there.
-  if (repo.sharedCheckout) return repo.repo;
+  // `isolated` opts out and builds a real per-branch worktree even for a
+  // shared-checkout repo — unattended code runs (automations) must never work
+  // in the live checkout; they ship a PR instead (matches worktreePathFor /
+  // createWorktreeForExistingBranch).
+  if (repo.sharedCheckout && !opts?.isolated) return repo.repo;
 
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${branch}`;
   const base = opts?.base;
