@@ -165,6 +165,7 @@ import {
   transcriptLineToolResult,
 } from "./opencode-transcript";
 import { ensureAnthropicBridge } from "./anthropic-bridge";
+import { ensureAgentAwsCredsFile } from "./aws-creds";
 import {
   pickOpenaiAccount,
   bindOpenaiAccount,
@@ -1495,6 +1496,20 @@ async function* runOpencodeAttempt(
     if (shared) {
       serverExtraEnv = { ...(serverExtraEnv || {}), ...gitIdentityEnv(author) };
     }
+    // AWS read creds (aws-creds.ts): `aws: true` runs get a STATIC pointer
+    // env to a credentials file the main process keeps fresh — raw keys in
+    // the spawn env would expire under a long-lived server, and rotating
+    // them would churn the config hash. Every shared-eligible kind passes
+    // aws:true (run-session / slack / linear), so shared servers hash
+    // identically; per-session unattended runs gate at their call site
+    // (automations/github yes, plain no). In sandboxes the mint fails (IMDS
+    // blocked) and the run proceeds without AWS — documented docker caveat.
+    if (opts.aws) {
+      const awsPointerEnv = await ensureAgentAwsCredsFile();
+      if (Object.keys(awsPointerEnv).length) {
+        serverExtraEnv = { ...(serverExtraEnv || {}), ...awsPointerEnv };
+      }
+    }
     const serverKey = shared ? sharedServerKey(bridgeTag, user) : sessionKey;
     const dirQuery = shared ? { directory: cwd } : undefined;
     const q = dirQuery ? { query: dirQuery } : {};
@@ -1784,7 +1799,7 @@ async function* runOpencodeAttempt(
         user,
         deniedTools: opts.deniedTools,
         confirmTools,
-        aws: false,
+        aws: !!opts.aws,
         model,
         effort: opts.effort,
         fallbackModel: opts.fallbackModel,

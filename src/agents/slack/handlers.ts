@@ -837,6 +837,9 @@ export async function processMessage(
       model: toOpencodeModel(session.model || getDefaultModel()),
       user: msg.userId,
       author: gitIdentityFor(msg.userId),
+      // Interactive Slack runs keep AWS read access via the injected
+      // short-lived creds (restores a2655fc9, lost in the opencode cutover).
+      aws: true,
       inProcessMcp,
       reposNote: SLACK_SYSTEM_PROMPT_APPEND + ADMIN_TOOLS_PROMPT + memoryAppend,
       // bksSessionId feeds the in-process MCP proxy path; resume-on-boot

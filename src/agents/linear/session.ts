@@ -387,6 +387,10 @@ export async function runAgentHeadless(
       model: toOpencodeModel(session?.model || getDefaultModel()),
       user: actorEmail,
       author: commitAuthor,
+      // Teammate-driven runs keep AWS read access — also keeps the shared
+      // opencode server env identical across interactive kinds (a mixed
+      // aws/non-aws env would drain-respawn the server on every alternation).
+      aws: true,
       // Kind-only journal: gate marker for the opencode engine, no crash
       // journal — this loop tracks its own engine session ids per Linear
       // session and re-drives turns from Linear events.
