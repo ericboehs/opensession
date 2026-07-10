@@ -188,7 +188,7 @@ import {
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://michael.taila5d766.ts.net/backstage";
+  "https://os.tella.dev";
 
 /** opencode binary (installed user-level: `npm i -g opencode-ai`). */
 export const OPENCODE_BIN =

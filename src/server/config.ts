@@ -437,13 +437,12 @@ export function configuredServer(): ResolvedServer {
     host: process.env.HOST || s.host || "127.0.0.1",
     port: Number.isFinite(envPort) ? envPort : s.port ?? 3850,
     webhookPort: Number.isFinite(envWebhookPort) ? envWebhookPort : s.webhookPort ?? 3848,
-    // Built-in default stays on /backstage until the operator flips
-    // OPENSESSION_UI_BASE (or config publicBaseUrl) in the rename restart
-    // window — the /backstage alias path keeps every old link working forever.
+    // Canonical UI origin (os.tella.dev, 2026-07-10): the app serves at the
+    // bare domain root, no path prefix. Old prefixed links 301 there.
     publicBaseUrl:
       envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
       s.publicBaseUrl ||
-      "https://michael.taila5d766.ts.net/backstage",
+      "https://os.tella.dev",
     previewHost: process.env.PREVIEW_HOST || s.previewHost || "michael.taila5d766.ts.net",
     caddyAdmin: s.caddyAdmin || "http://localhost:2019",
   };

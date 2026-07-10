@@ -51,8 +51,13 @@ opensession.ts — if you add such a module, add it to that import list.
 
 ## OpenSession dev workflow (self-hosting — read this first)
 
-Naming: OPENSESSION_* env vars, `~/.opensession-*` state, `/opensession/` URLs.
-`src/server/rename-compat.ts` keeps legacy aliases for all three working — never
+Naming: OPENSESSION_* env vars, `~/.opensession-*` state. URLs are prefix-less
+since 2026-07-10: the app serves at the bare domain root (https://os.tella.dev),
+old `/opensession` + `/backstage` page URLs 301 there, and prefixed non-page
+traffic (WS upgrades incl. sandbox dial-back run-ws/rpc-ws, API calls) still
+normalizes silently onto the internal `/backstage/*` route literals — keep that
+normalization; running sandboxes have the old literals baked in.
+`src/server/rename-compat.ts` keeps legacy aliases for env/state working — never
 remove it, and never rename protocol ids (`bks-`/`prj-` prefixes,
 `===MICHAEL-SUMMARY===`/`BACKSTAGE_VIDEO:` markers, repo ids). The in-process
 MCP servers are named `opensession-*` (renamed from `michael-*` 2026-07-09;
@@ -127,8 +132,12 @@ opportunistically when touched (strangler pattern — never a big-bang rewrite):
   AnimatePresence can't track exits through Base UI portals; don't use it there.
 
 - Use `bun run opensession.ts` to start the server
-- Server binds to Tailscale IP (100.65.135.7:3850) — not publicly accessible
-- Access at `http://michael:3850/opensession/` (the legacy path alias also stays served — old links, PWA installs and API clients keep working)
+- Server binds 127.0.0.1:3850 — not publicly accessible
+- Access at `https://os.tella.dev/` — tailnet-only (public DNS A record on the
+  Tailscale IP; Caddy terminates TLS with a lego-issued cert, DNS-01 via Vercel,
+  renewed by lego-renew.timer — see /etc/lego). Old `/opensession` +
+  `/backstage` page URLs 301 to the prefix-less form on the same host; the
+  ts.net `:8443` entry keeps serving, so old bookmarks land fine.
 - Bun automatically loads .env, so don't use dotenv
 - HTML imports for frontend bundling (no Vite)
 - All session file access is read-only (never modify ~/.slack-sessions/ or ~/.linear-sessions/)

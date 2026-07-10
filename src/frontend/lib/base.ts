@@ -15,6 +15,8 @@
 
 export const PRIMARY_BASE_PATH = "/opensession";
 export const LEGACY_BASE_PATH = "/backstage";
+/** Bare-domain serving (os.tella.dev): the app lives at the root, no prefix. */
+export const ROOT_BASE_PATH = "";
 
 function detectBasePath(): string {
 	if (typeof location !== "undefined") {
@@ -22,11 +24,19 @@ function detectBasePath(): string {
 		if (p === LEGACY_BASE_PATH || p.startsWith(`${LEGACY_BASE_PATH}/`)) {
 			return LEGACY_BASE_PATH;
 		}
+		if (p === PRIMARY_BASE_PATH || p.startsWith(`${PRIMARY_BASE_PATH}/`)) {
+			return PRIMARY_BASE_PATH;
+		}
+		// Neither prefix → served at the domain root (os.tella.dev). Every
+		// consumer builds URLs as `${BASE_PATH}/...`, so "" yields root-relative
+		// paths; the server normalizes unprefixed paths onto its internal
+		// /backstage literals (opensession.ts fetch preamble).
+		return ROOT_BASE_PATH;
 	}
 	return PRIMARY_BASE_PATH;
 }
 
-/** The prefix this page is served under ("/opensession" or "/backstage"). */
+/** The prefix this page is served under ("/opensession", "/backstage", or "" at the domain root). */
 export const BASE_PATH = detectBasePath();
 
 /** Strip either prefix off a pathname → the app-internal route ("/" rooted). */

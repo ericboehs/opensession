@@ -39,7 +39,10 @@ export async function buildFrontend(): Promise<string> {
 		minify: true,
 		splitting: true,
 		sourcemap: "none",
-		publicPath: "/backstage/",
+		// Root-relative assets: the app is served at the bare domain root
+		// (os.tella.dev); old /opensession + /backstage page URLs 301 there, and
+		// prefixed asset requests still normalize in the fetch preamble.
+		publicPath: "/",
 		naming: {
 			entry: "[name]-[hash].[ext]",
 			chunk: "[name]-[hash].[ext]",
@@ -112,14 +115,14 @@ export async function buildFrontend(): Promise<string> {
 	let indexHtml = await Bun.file(`${FRONTEND_SRC}/index.html`).text();
 	indexHtml = indexHtml.replace(
 		'<script type="module" src="./App.tsx"></script>',
-		`<script type="module" crossorigin src="/backstage/${entryName}"></script>`,
+		`<script type="module" crossorigin src="/${entryName}"></script>`,
 	);
 	const twLink = twName
-		? `\n  <link rel="stylesheet" href="/backstage/${twName}">`
+		? `\n  <link rel="stylesheet" href="/${twName}">`
 		: "";
 	indexHtml = indexHtml.replace(
 		"</head>",
-		`  <link rel="stylesheet" href="/backstage/${cssName}">${twLink}\n</head>`,
+		`  <link rel="stylesheet" href="/${cssName}">${twLink}\n</head>`,
 	);
 	const version = `${entryName}|${cssName}|${twName ?? "no-tw"}`;
 

@@ -101,55 +101,70 @@ const server: import("bun").Server<WSClientData> = hotServe({
 		// Bun's default 10s idleTimeout would drop the connection mid-wait
 		idleTimeout: 240,
 
-		// The SPA shell is served under BOTH the primary /opensession prefix and
-		// the legacy /backstage alias (rename, docs/rename-opensession-plan.md).
+		// The SPA shell is served at the bare domain root only (os.tella.dev,
+		// 2026-07-10) — no path prefix. Old /opensession + /backstage page URLs
+		// 301 onto the root form in the fetch preamble below.
 		routes: Object.fromEntries(
-			["/opensession", "/backstage"].flatMap((prefix) =>
-				[
-					"",
-					"/",
-					"/index.html",
-					// Client-side routes must serve the SPA shell, not the raw file
-					"/new",
-					"/session/*",
-					"/automations",
-					"/security",
-					"/goals",
-					"/wiki",
-					"/wiki/*",
-					"/notes",
-					"/notes/*",
-					"/docs",
-					"/docs/*",
-					"/connections",
-					"/settings",
-					"/actions",
-					"/archived",
-					"/catchup",
-					"/reviews",
-					"/reviews/*",
-					"/support/*",
-				].map((p) => [prefix + p, spaEntry]),
-			),
+			[
+				"/",
+				"/index.html",
+				// Client-side routes must serve the SPA shell, not the raw file
+				"/new",
+				"/session/*",
+				"/automations",
+				"/security",
+				"/goals",
+				"/wiki",
+				"/wiki/*",
+				"/notes",
+				"/notes/*",
+				"/docs",
+				"/docs/*",
+				"/connections",
+				"/settings",
+				"/actions",
+				"/archived",
+				"/catchup",
+				"/reviews",
+				"/reviews/*",
+				"/support/*",
+			].map((p) => [p, spaEntry]),
 		),
 
 		async fetch(req) {
 			const url = new URL(req.url);
-			// Rename alias (docs/rename-opensession-plan.md): /opensession/* is the
-			// primary public prefix; every handler below matches the historical
-			// /backstage/* literal, so the new prefix is normalized onto the old one
-			// here — SAME handlers, no redirects (API/WS clients, PWA installs and
-			// baked sandbox dial-back URLs on either prefix must keep working).
-			// `publicPrefix` is the prefix THIS request used — responses that embed
-			// it (sw.js scope, manifest start_url/icons, page redirects) answer in
-			// kind so each install/bookmark stays self-consistent.
+			// The bare domain root is the ONLY public URL form (os.tella.dev,
+			// 2026-07-10 — prefixes dropped). Handlers below still match the
+			// historical /backstage/* literals, so the root form normalizes onto
+			// /backstage here, and `${publicPrefix}/...` embeds (sw.js scope,
+			// manifest start_url/icons, page redirects) stay root-relative
+			// because publicPrefix is "" for it.
+			//
+			// Old-prefix traffic: page loads 301 to the root form; everything
+			// else keeps normalizing silently instead of redirecting — WebSocket
+			// upgrades (sandbox dial-back URLs baked into RUNNING sandboxes hit
+			// run-ws/rpc-ws through the public ingress with the old literals) and
+			// API calls from not-yet-reloaded tabs (a redirect would break POSTs).
 			let path = url.pathname;
 			const publicPrefix =
 				path === "/opensession" || path.startsWith("/opensession/")
 					? "/opensession"
-					: "/backstage";
+					: path === "/backstage" || path.startsWith("/backstage/")
+						? "/backstage"
+						: "";
 			if (publicPrefix === "/opensession") {
 				path = "/backstage" + path.slice("/opensession".length);
+			} else if (publicPrefix === "") {
+				path = "/backstage" + path;
+			}
+			if (
+				publicPrefix !== "" &&
+				(req.method === "GET" || req.method === "HEAD") &&
+				!req.headers.get("upgrade") &&
+				!path.startsWith("/backstage/api/")
+			) {
+				const stripped = path.slice("/backstage".length) || "/";
+				return Response.redirect(stripped + url.search, 301);
 			}
 
 			// Every API/asset route lives in src/server/routes/* — ordered domain

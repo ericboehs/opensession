@@ -33,10 +33,13 @@
     // Injected at runtime so the bundler doesn't try to resolve these as build
     // assets — they're served by the OpenSession server, not bundled. The
     // prefix follows the URL this page was served under (/opensession/ primary,
-    // /backstage/ legacy alias) so each install's PWA identity — manifest,
-    // start_url, icons — stays self-consistent per prefix.
+    // /backstage/ legacy alias, or "" at a bare domain root like os.tella.dev)
+    // so each install's PWA identity — manifest, start_url, icons — stays
+    // self-consistent per prefix. Mirrors lib/base.ts detectBasePath().
     (function () {
-      var prefix = location.pathname.indexOf("/backstage") === 0 ? "/backstage" : "/opensession";
+      var p = location.pathname;
+      var prefix = p.indexOf("/backstage") === 0 ? "/backstage"
+        : p.indexOf("/opensession") === 0 ? "/opensession" : "";
       var add = function (rel, href) {
         var l = document.createElement("link");
         l.rel = rel; l.href = href;
