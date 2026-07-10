@@ -144,7 +144,7 @@ export async function handlePlainRoutes(
 			return Response.json({ threads: plainTodoCache.data });
 		try {
 			const { listTodoThreads } = await import("../../agents/plain/api");
-			const threads = await listTodoThreads(50);
+			const threads = await listTodoThreads(100);
 			plainTodoCache = { data: threads, ts: Date.now() };
 			return Response.json({ threads });
 		} catch (e: any) {
