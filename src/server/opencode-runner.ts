@@ -600,6 +600,16 @@ const ASK_BASH_PERMISSIONS: Record<string, "allow" | "deny"> = {
   "*": "deny",
 };
 
+/** Ask-mode external_directory rules: composer attachments are staged under
+ *  the chats uploads dir (outside any worktree), so reading them must work in
+ *  read-only sessions too; everything else outside the worktree stays denied
+ *  (deny errors immediately — never "ask", which blocks the tool on a
+ *  permission ask; see the permission-ask bridge in runOpencodeAttempt). */
+const ASK_EXTERNAL_DIR_PERMISSIONS: Record<string, "allow" | "deny"> = {
+  [`${OPENSESSION_CHATS_DIR}/uploads/**`]: "allow",
+  "*": "deny",
+};
+
 const CONFIRM_TOOL_RE = /^mcp__(.+)__(.+)$/;
 
 /**
@@ -1603,7 +1613,7 @@ async function* runOpencodeAttempt(
                 edit: "deny",
                 bash: ASK_BASH_PERMISSIONS,
                 webfetch: "allow",
-                external_directory: "deny",
+                external_directory: ASK_EXTERNAL_DIR_PERMISSIONS,
               },
               tools: { write: false, edit: false, patch: false },
             },
@@ -1627,7 +1637,7 @@ async function* runOpencodeAttempt(
                   edit: "deny",
                   bash: ASK_BASH_PERMISSIONS,
                   webfetch: "allow",
-                  external_directory: "deny",
+                  external_directory: ASK_EXTERNAL_DIR_PERMISSIONS,
                 },
               }
             : // Same rationale as the shared config: attachments live outside
@@ -1840,36 +1850,29 @@ async function* runOpencodeAttempt(
       }
     };
 
-    // Auto-reject a permission ask: an unanswered ask blocks its tool call
-    // forever while the session stays "busy", so the status poll (correctly)
-    // never ends the turn — the 2026-07-10 wedge. There is no interactive
-    // permission bridge on this engine yet; legit needs are config-level
-    // allows, anything that still surfaces gets a clean reject so the model
-    // sees a tool error instead of the session hanging. Deduped because both
-    // the SSE pump and the poll sweep can see the same ask.
+    // ── Permission-ask bridge ────────────────────────────────────────────────
+    // An unanswered permission ask blocks its tool call forever while the
+    // session stays engine-busy — the status poll (correctly) never ends the
+    // turn, so every ask MUST get a reply (the 2026-07-10 staged-PDF wedge).
+    // Policy: unattended runs auto-reject (no human present, untrusted input;
+    // their real permissions are config-level). Interactive runs auto-approve
+    // external_directory (reading files on our own box — code mode config-
+    // allows it outright, this covers ask mode attachments and config drift)
+    // and surface every other ask on the session's question card via
+    // onAskUser (UI card + push + Slack escalation — the AskUserQuestion
+    // pipeline); no answer ⇒ reject. Deduped because the SSE pump and the
+    // poll sweep can both see the same ask; surfaced asks are serialized so a
+    // session shows one card at a time (pendingAsks holds one per session).
     const repliedPermissionIds = new Set<string>();
-    const rejectPermissionAsk = async (ask: any, via: string) => {
-      const permId = String(ask?.id || "");
-      if (!permId || repliedPermissionIds.has(permId)) return;
-      repliedPermissionIds.add(permId);
-      const kind = String(ask?.permission ?? ask?.action ?? "unknown");
-      console.warn(
-        `[opencode-runner] auto-rejecting permission ask ${permId} (${kind}) on ${ocSessionId} via ${via} — no interactive permission bridge`
-      );
-      turnEvent({
-        direction: "out",
-        kind: "permission_decision",
-        tool_name: kind,
-        decision: "deny",
-        reason: "opencode_no_permission_bridge",
-      });
+    let permissionAskChain: Promise<void> = Promise.resolve();
+    const replyPermissionAsk = async (permId: string, reply: "once" | "always" | "reject") => {
       // Legacy reply endpoint first (exists on every server version we run,
       // 1.17.15 included); fall back to the flat 1.17+ reply route in case a
       // future server drops the legacy path.
       const res = await client
         .postSessionIdPermissionsPermissionId({
           path: { id: ocSessionId, permissionID: permId },
-          body: { response: "reject" },
+          body: { response: reply },
           ...q,
         })
         .catch((e) => ({ error: e }));
@@ -1880,11 +1883,81 @@ async function* runOpencodeAttempt(
             "content-type": "application/json",
             Authorization: `Basic ${btoa(`opencode:${entry!.password}`)}`,
           },
-          body: JSON.stringify({ reply: "reject" }),
+          body: JSON.stringify({ reply }),
         }).catch((e) =>
-          console.warn(`[opencode-runner] failed to reject permission ask ${permId}:`, e)
+          console.warn(`[opencode-runner] failed to answer permission ask ${permId}:`, e)
         );
       }
+    };
+    const decidePermissionAsk = async (ask: any): Promise<"once" | "always" | "reject"> => {
+      const kind = String(ask?.permission ?? ask?.action ?? "unknown");
+      if (policy.unattended) return "reject";
+      if (kind === "external_directory") return "once";
+      if (!opts.onAskUser) return "reject";
+      // Surface on the session's question card and wait for the human.
+      const what = ((ask?.patterns ?? ask?.resources ?? []) as unknown[])
+        .map(String)
+        .join(", ");
+      const meta = ask?.metadata ? JSON.stringify(ask.metadata).slice(0, 300) : "";
+      const answer = await opts.onAskUser({
+        questions: [
+          {
+            question:
+              `The agent needs permission: **${kind}**` +
+              (what ? ` on \`${what}\`` : "") +
+              (meta && meta !== "{}" ? ` (${meta})` : "") +
+              ". Allow it?",
+            header: "Permission",
+            options: [
+              { label: "Allow", description: "Allow this call once" },
+              { label: "Allow always", description: "Remember for matching future calls" },
+              { label: "Reject", description: "Deny — the agent sees a permission error" },
+            ],
+            multiSelect: false,
+          },
+        ],
+      });
+      if (answer.behavior === "deny") return "reject"; // nobody answered
+      const picked = String(
+        Object.values(
+          (answer.updatedInput as { answers?: Record<string, string> }).answers || {}
+        )[0] || ""
+      ).toLowerCase();
+      if (picked.startsWith("allow always")) return "always";
+      if (picked.startsWith("allow") || picked.startsWith("yes")) return "once";
+      return "reject";
+    };
+    const handlePermissionAsk = (ask: any, via: string) => {
+      const permId = String(ask?.id || "");
+      if (!permId || repliedPermissionIds.has(permId)) return;
+      repliedPermissionIds.add(permId);
+      const kind = String(ask?.permission ?? ask?.action ?? "unknown");
+      permissionAskChain = permissionAskChain.then(async () => {
+        let reply: "once" | "always" | "reject" = "reject";
+        try {
+          reply = await decidePermissionAsk(ask);
+        } catch (e) {
+          console.warn(`[opencode-runner] permission ask ${permId} decision failed:`, e);
+        }
+        console.warn(
+          `[opencode-runner] permission ask ${permId} (${kind}) on ${ocSessionId} via ${via} → ${reply}`
+        );
+        turnEvent({
+          direction: "out",
+          kind: "permission_decision",
+          tool_name: kind,
+          decision: reply === "reject" ? "deny" : "allow",
+          reason:
+            policy.unattended
+              ? "unattended_auto_reject"
+              : kind === "external_directory"
+                ? "interactive_auto_approve"
+                : opts.onAskUser
+                  ? "human_decision"
+                  : "no_ask_handler",
+        });
+        await replyPermissionAsk(permId, reply);
+      });
     };
 
     const handleEvent = async (ev: any) => {
@@ -1959,7 +2032,9 @@ async function* runOpencodeAttempt(
         case "permission.asked":
         case "permission.v2.asked": {
           if (p?.sessionID !== ocSessionId) return;
-          await rejectPermissionAsk(p, "sse");
+          // Fire-and-forget: a surfaced ask waits minutes for a human —
+          // awaiting here would stall the whole SSE pump.
+          handlePermissionAsk(p, "sse");
           return;
         }
         case "session.error": {
@@ -2090,9 +2165,10 @@ async function* runOpencodeAttempt(
           // Busy ⇒ belt + braces on permission asks: one that slipped past the
           // SSE pump (reconnect gap, another event rename upstream) blocks its
           // tool forever with the session held busy — exactly the state this
-          // poll can't otherwise distinguish from honest work. Sweep and
-          // reject. Older servers 404 the endpoint; any failure = "nothing
-          // pending".
+          // poll can't otherwise distinguish from honest work. Sweep pending
+          // asks into the same policy bridge (deduped, so an ask the pump
+          // already surfaced isn't double-asked). Older servers 404 the
+          // endpoint; any failure = "nothing pending".
           try {
             const pr = await fetch(`${entry.url}/permission`, {
               headers: { Authorization: `Basic ${btoa(`opencode:${entry.password}`)}` },
@@ -2101,7 +2177,7 @@ async function* runOpencodeAttempt(
             if (pr.ok) {
               const asks = (await pr.json()) as Array<{ id?: string; sessionID?: string }>;
               for (const ask of Array.isArray(asks) ? asks : []) {
-                if (ask?.sessionID === ocSessionId) await rejectPermissionAsk(ask, "poll");
+                if (ask?.sessionID === ocSessionId) handlePermissionAsk(ask, "poll");
               }
             }
           } catch {}
