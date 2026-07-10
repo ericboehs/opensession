@@ -10,9 +10,9 @@ import type { PlainThread, SupportThread } from "../lib/types";
 import {
 	fetchPlainThreadById,
 	fetchSupportThreads,
-	sendPlainReplyApi,
 	setPlainThreadSpamApi,
 	setPlainThreadStatusApi,
+	startPlainTriageApi,
 } from "../lib/api";
 import { PlainEntryRow, plainThreadUrl } from "./PlainThreadPanel";
 import { useCurrentUser } from "./UserPicker";
@@ -22,21 +22,21 @@ import { useCurrentUser } from "./UserPicker";
  * a time:
  *   swipe right / Skip  (→ or k) → leave it as-is (status untouched), next
  *   swipe left  / Spam  (← or s) → mark the customer spam (closes thread), next
- *   Reply (r) → quick customer reply via Plain, optionally mark Done too, next
+ *   Session (e) → jump into the ticket's opensession session (reuses the live
+ *                 triage session, or boots a fresh triage run if none exists)
  *   Done  (d) → mark the thread Done, next
  *   Plain (o) → open the thread in the Plain app
  *   Back  (b) → previous card · Esc → leave
  * Spam and Done land on the undo stack (z / header ↩ / toast) like PR Tinder's
- * actions; a sent reply can't be unsent, so replies only get a toast.
- * The deck keeps Plain's own Todo-inbox order (newest status change first) —
- * no shuffle, you're working a queue, not re-rolling it.
+ * actions. The deck keeps Plain's own Todo-inbox order (newest status change
+ * first) — no shuffle, you're working a queue, not re-rolling it.
  */
 
 const SWIPE_DISTANCE = 110; // px of drag past which a release commits
 const SWIPE_VELOCITY = 520; // px/s flick that commits regardless of distance
 const UNDO_MS = 7000;
 
-type Action = "skip" | "spam" | "reply" | "done";
+type Action = "skip" | "spam" | "done";
 
 /** One reversible deck action; `at` is the card's index, for jumping back. */
 type UndoEntry =
@@ -46,6 +46,8 @@ type UndoEntry =
 interface Props {
 	/** Leave the deck (back / done). */
 	onExit: () => void;
+	/** Navigate into a session (the Session button resolves one over HTTP). */
+	onOpenSession: (id: string) => void;
 }
 
 function ageDays(ts: string): number {
@@ -76,7 +78,7 @@ const PRIORITY: Record<number, { label: string; cls: string }> = {
 	3: { label: "Low", cls: "border-line text-faint" },
 };
 
-export function SupportTinder({ onExit }: Props) {
+export function SupportTinder({ onExit, onOpenSession }: Props) {
 	const currentUser = useCurrentUser();
 
 	// One fetch per visit; the deck is then frozen — acting on cards never
@@ -100,7 +102,6 @@ export function SupportTinder({ onExit }: Props) {
 
 	const [index, setIndex] = useState(0);
 	const [dir, setDir] = useState<Action | null>(null);
-	const [panel, setPanel] = useState<"reply" | null>(null);
 	const [toast, setToast] = useState<{
 		text: string;
 		undo?: () => void;
@@ -168,7 +169,6 @@ export function SupportTinder({ onExit }: Props) {
 	);
 
 	function advance(action: Action) {
-		setPanel(null);
 		setDir(action);
 		setIndex((i) => i + 1);
 	}
@@ -218,29 +218,23 @@ export function SupportTinder({ onExit }: Props) {
 			});
 	}
 
-	function reply(text: string, alsoDone: boolean) {
-		if (!card || busy) return;
+	// Jump into the ticket's opensession session. The API reuses the newest
+	// live session linked to the thread (instant) or boots a fresh triage run
+	// (~15-60s) — keep the button in a visible in-progress state the whole way.
+	// Navigating away leaves the deck; the ticket's status is untouched.
+	const [opening, setOpening] = useState(false);
+	function openSession() {
+		if (!card || opening) return;
 		const target = card;
-		setBusy(true);
-		sendPlainReplyApi(target.id, text, "reply", currentUser)
-			.then(async () => {
-				if (alsoDone) {
-					await setPlainThreadStatusApi(target.id, "done", {
-						user: currentUser,
-					}).catch(() => {});
-				}
-				setBusy(false);
-				advance("reply");
-				// A sent reply can't be unsent — no undo entry, just the receipt.
-				showToast(
-					alsoDone
-						? `Replied to ${customerLabel(target)} · Done`
-						: `Replied to ${customerLabel(target)}`,
-				);
+		setOpening(true);
+		startPlainTriageApi(target.id)
+			.then((sessionId) => {
+				setOpening(false);
+				onOpenSession(sessionId);
 			})
 			.catch((e) => {
-				setBusy(false);
-				showToast(`Reply failed: ${e.message}`);
+				setOpening(false);
+				showToast(`Session failed: ${e.message}`);
 			});
 	}
 
@@ -254,7 +248,6 @@ export function SupportTinder({ onExit }: Props) {
 			historyRef.current.pop();
 			setHistoryLen(historyRef.current.length);
 			setBusy(false);
-			setPanel(null);
 			setDir(null);
 			setIndex(entry.at);
 			showToast(msg);
@@ -277,17 +270,15 @@ export function SupportTinder({ onExit }: Props) {
 	}
 
 	function back() {
-		setPanel(null);
 		setDir(null);
 		setIndex((i) => Math.max(0, i - 1));
 	}
 
-	// Keyboard: →/k skip, ←/s spam, r reply, d done, o Plain, b back, z undo;
-	// Esc closes the reply panel first, then leaves the deck.
+	// Keyboard: →/k skip, ←/s spam, e session, d done, o Plain, b back, z undo;
+	// Esc leaves the deck.
 	useEffect(() => {
 		function onKey(e: KeyboardEvent) {
 			if (e.key === "Escape") {
-				if (panel) return setPanel(null);
 				return onExit();
 			}
 			const el = e.target as HTMLElement | null;
@@ -311,9 +302,9 @@ export function SupportTinder({ onExit }: Props) {
 			} else if (e.key === "ArrowLeft" || e.key === "s") {
 				e.preventDefault();
 				spam();
-			} else if (e.key === "r" || e.key === "m") {
+			} else if (e.key === "e") {
 				e.preventDefault();
-				setPanel((p) => (p === "reply" ? null : "reply"));
+				openSession();
 			} else if (e.key === "d") {
 				e.preventDefault();
 				markDone();
@@ -327,7 +318,7 @@ export function SupportTinder({ onExit }: Props) {
 		}
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [card, index, panel, busy, onExit]);
+	}, [card, index, busy, opening, onExit]);
 
 	return (
 		<div className="relative flex min-h-0 flex-1 flex-col items-center bg-surface">
@@ -418,18 +409,6 @@ export function SupportTinder({ onExit }: Props) {
 				</div>
 			)}
 
-			{/* Reply panel floats above the action bar (it must stay on-screen
-			    however far the card is scrolled). */}
-			{panel === "reply" && card && (
-				<ReplyPanel
-					key={`reply-${card.id}`}
-					busy={busy}
-					customer={customerLabel(card)}
-					onSubmit={reply}
-					onCancel={() => setPanel(null)}
-				/>
-			)}
-
 			{/* Action bar (works without gestures). */}
 			{deck !== null && !done && !error && (
 				<div className="flex w-full max-w-[640px] items-stretch gap-2.5 px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
@@ -450,11 +429,12 @@ export function SupportTinder({ onExit }: Props) {
 						Done
 					</button>
 					<button
-						className={`flex-1 rounded-lg border border-line px-3 py-3 text-sm font-semibold hover:bg-surface ${panel === "reply" ? "bg-surface text-fg" : "bg-panel text-dim hover:text-fg"}`}
-						onClick={() => setPanel((p) => (p === "reply" ? null : "reply"))}
-						title="Reply to the customer (r)"
+						className="flex-1 rounded-lg border border-line bg-panel px-3 py-3 text-sm font-semibold text-dim hover:bg-surface hover:text-fg disabled:opacity-50"
+						onClick={openSession}
+						disabled={opening}
+						title="Open the ticket's opensession session — starts triage if none exists (e)"
 					>
-						Reply
+						{opening ? "Opening…" : "Session"}
 					</button>
 					<button
 						className="flex-1 rounded-lg border border-line bg-panel px-3 py-3 text-sm font-semibold text-dim hover:bg-surface hover:text-fg"
@@ -520,7 +500,7 @@ function SwipeCard({
 			onSkip();
 	}
 
-	// Exit flings left for spam/done (dealt with and gone), right for skip/reply.
+	// Exit flings left for spam/done (dealt with and gone), right for skip.
 	// The card lives in normal flow (auto height), so the exiting one is popped
 	// to absolute for its fling — otherwise it would hold layout and shove the
 	// incoming card down while both are mounted.
@@ -622,67 +602,6 @@ function SwipeCard({
 				)}
 			</div>
 		</motion.div>
-	);
-}
-
-function ReplyPanel({
-	busy,
-	customer,
-	onSubmit,
-	onCancel,
-}: {
-	busy: boolean;
-	customer: string;
-	onSubmit: (text: string, alsoDone: boolean) => void;
-	onCancel: () => void;
-}) {
-	const [text, setText] = useState("");
-	return (
-		<div
-			className="absolute inset-x-4 bottom-24 z-30 mx-auto w-auto max-w-[600px] rounded-lg border border-line-strong bg-panel p-3 shadow-[0_10px_34px_rgba(0,0,0,0.4)] sm:inset-x-auto sm:left-1/2 sm:w-[600px] sm:-translate-x-1/2"
-			onPointerDownCapture={(e) => e.stopPropagation()}
-		>
-			<textarea
-				autoFocus
-				rows={3}
-				value={text}
-				placeholder={`Reply to ${customer}… (Enter to send, Esc to cancel)`}
-				onChange={(e) => setText(e.target.value)}
-				onKeyDown={(e) => {
-					if (e.key === "Enter" && !e.shiftKey) {
-						e.preventDefault();
-						if (text.trim()) onSubmit(text.trim(), false);
-					}
-				}}
-				className="w-full resize-none appearance-none rounded-md border border-line bg-surface px-3 py-2 text-sm leading-relaxed text-fg outline-none [-webkit-appearance:none] placeholder:text-faint focus:border-line-strong"
-			/>
-			<div className="mt-2 flex items-center gap-2">
-				<span className="mr-auto text-[11.5px] text-faint">
-					Sends via Plain, signed with your first name
-				</span>
-				<button
-					className="rounded-md border border-line bg-transparent px-3 py-1.5 text-xs font-semibold text-dim hover:text-fg"
-					onClick={onCancel}
-				>
-					Cancel
-				</button>
-				<button
-					className="rounded-md border border-line bg-transparent px-3 py-1.5 text-xs font-semibold text-dim hover:text-green disabled:opacity-40"
-					disabled={busy || !text.trim()}
-					onClick={() => onSubmit(text.trim(), true)}
-					title="Send the reply and mark the thread Done"
-				>
-					Reply + Done
-				</button>
-				<button
-					className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-					disabled={busy || !text.trim()}
-					onClick={() => onSubmit(text.trim(), false)}
-				>
-					Reply & next
-				</button>
-			</div>
-		</div>
 	);
 }
 

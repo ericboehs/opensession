@@ -1773,7 +1773,10 @@ function App() {
 						) : route.view === "prtinder" ? (
 							<PrTinder onExit={goBack} />
 						) : route.view === "supporttinder" ? (
-							<SupportTinder onExit={goBack} />
+							<SupportTinder
+								onExit={goBack}
+								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
 						) : route.view === "watercooler" ? (
 							<TeamChat
 								channel="watercooler"
