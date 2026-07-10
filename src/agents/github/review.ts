@@ -127,8 +127,14 @@ export async function runReview(
       return null;
     }
 
+    // Fetch the diff here (the server has gh + shell) and inline it in the
+    // prompt: unattended ask-mode opencode runs have NO bash tool, so the agent
+    // cannot run `gh pr diff` itself (PR #4676's review starved on exactly that).
+    const diff = await getPrDiff(pr.headRef);
+    if (!diff) console.warn(`[github] could not fetch diff for PR #${pr.number}; reviewing without it`);
+
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
-    const prompt = buildReviewPrompt(base, details, isUpdate, steer);
+    const prompt = buildReviewPrompt(base, details, isUpdate, steer, diff?.patch);
 
     console.log(`[github] Reviewing PR #${pr.number} @ ${pr.headSha.slice(0, 7)} (${isUpdate ? "update" : "initial"})`);
     const result = await runGithubAgent({
