@@ -66,6 +66,57 @@ function slackAnswerToAnswers(
 	return out;
 }
 
+/**
+ * Offer a question card on the session WITHOUT the makeAskHandler timeout /
+ * Slack-escalation machinery: the card stays up until answered or `close()`d
+ * by the caller. Built for humans-tools' blocking Slack asks — the DM is the
+ * primary channel and already pings the asked teammate; this card gives the
+ * session's own watcher a way to answer (or acknowledge an out-of-band action
+ * like an SSO login) without interrupting the run. Answering calls `onAnswer`
+ * once; closing retracts the card and never calls it.
+ */
+export function offerAskCard(
+	sessionId: string,
+	questions: AskQuestionInput[],
+	onAnswer: (answers: Record<string, string> | null) => void,
+): { close: () => void } {
+	const questionId = crypto.randomUUID();
+	let settled = false;
+	const retract = () => {
+		if (pendingAsks.get(sessionId)?.questionId === questionId) {
+			pendingAsks.delete(sessionId);
+		}
+		broadcastToSession(sessionId, {
+			type: "ask_resolved",
+			sessionId,
+			questionId,
+		});
+	};
+	pendingAsks.set(sessionId, {
+		questionId,
+		questions,
+		resolve: (a) => {
+			if (settled) return;
+			settled = true;
+			retract();
+			onAnswer(a);
+		},
+	});
+	broadcastToSession(sessionId, {
+		type: "ask_question",
+		sessionId,
+		questionId,
+		questions,
+	});
+	return {
+		close: () => {
+			if (settled) return;
+			settled = true;
+			retract();
+		},
+	};
+}
+
 export function makeAskHandler(sessionId: string) {
 	return async (
 		input: Record<string, unknown>,

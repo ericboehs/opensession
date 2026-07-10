@@ -20,11 +20,13 @@ import { z } from "zod";
 import {
   registerAsk,
   awaitBlockingAnswer,
+  resolveAskFromUI,
   listAsks,
   cancelAsk,
   type DeliverWhen,
   type HumanAsk,
 } from "../../server/human-asks";
+import { offerAskCard } from "../../server/asks";
 import { resolveTeammate } from "../../server/shared/user-mappings";
 import { parseWhen } from "./parse-when";
 
@@ -95,7 +97,7 @@ export function createHumansMcpServer(ctx: HumansToolContext) {
           "options (optional): a short list of choices → they get one-tap buttons (plus an 'Other…' free-text fallback). Omit for an open-ended reply.",
           "",
           "mode:",
-          "- 'block' — you NEED the answer to keep going right now. Your turn pauses (up to ~20 min) until they reply, then this tool returns their answer and you continue. If they don't reply in time it returns empty and the ask becomes async, so a later reply still resumes the session. Use for 'ask Grant for the copy' when you can't proceed without it.",
+          "- 'block' — you NEED the answer to keep going right now. Your turn pauses (up to ~20 min) until they reply, then this tool returns their answer and you continue. The question also shows as a card in the session UI, so whoever is watching can answer (or confirm an out-of-band action, like completing a login you asked for) without waiting on Slack. If nobody replies in time it returns empty and the ask becomes async, so a later reply still resumes the session. Use for 'ask Grant for the copy' when you can't proceed without it.",
           "- 'async' (default) — you DON'T need it right now. Returns immediately so you keep working; when they reply, the answer is delivered into this session as a new message. Use for 'get John's review' etc.",
           "",
           "deliver_when (async only — when the teammate is actually pinged):",
@@ -174,13 +176,41 @@ export function createHumansMcpServer(ctx: HumansToolContext) {
           });
 
           if (mode === "block") {
-            const answer = await awaitBlockingAnswer(ask.id);
-            if (answer === null) {
-              return text(
-                `No reply from ${person.name} within the wait window. I've left the question open (\`${ask.id}\`) — when they answer, it'll come back into this session. For now, proceed with your best judgment and note the open question.`
-              );
+            // The Slack DM is the primary channel, but the session's own
+            // driver is watching the UI — surface the same question as a card
+            // there too (2026-07-10 SSO wedge: the block ask was invisible in
+            // the UI, so the session just looked stuck and got interrupted).
+            // Whoever answers first wins: a UI answer resolves the ask, which
+            // settles the await below; the card is retracted once the wait
+            // ends either way.
+            const card = offerAskCard(
+              ctx.sessionId,
+              [
+                {
+                  question:
+                    `Waiting on **${person.name}** (asked over Slack): ${args.question.trim()}\n\n` +
+                    `If you know the answer — or already handled it out-of-band — answer here to unblock the session immediately.`,
+                  header: "Human ask",
+                  options: args.options?.map((label) => ({ label })),
+                },
+              ],
+              (answers) => {
+                if (!answers) return;
+                const v = Object.values(answers).filter(Boolean).join("\n");
+                if (v) resolveAskFromUI(ask.id, v, ctx.createdBy || "the session driver");
+              }
+            );
+            try {
+              const answer = await awaitBlockingAnswer(ask.id);
+              if (answer === null) {
+                return text(
+                  `No reply from ${person.name} within the wait window. I've left the question open (\`${ask.id}\`) — when they answer, it'll come back into this session. For now, proceed with your best judgment and note the open question.`
+                );
+              }
+              return text(`${person.name} replied:\n\n${answer}`);
+            } finally {
+              card.close();
             }
-            return text(`${person.name} replied:\n\n${answer}`);
           }
 
           return text(

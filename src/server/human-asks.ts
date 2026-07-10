@@ -418,6 +418,34 @@ export function matchReply(input: {
   return match;
 }
 
+/** Resolve a delivered ask with an answer given in the session UI (the question
+ *  card humans-tools offers alongside the Slack DM for block asks). Fires the
+ *  live block resolver — the awaiting tool call returns this answer — and posts
+ *  a follow-up in the DM thread so the asked teammate isn't left answering a
+ *  moot question. Returns true if the ask was still outstanding. */
+export function resolveAskFromUI(askId: string, answer: string, answeredBy: string): boolean {
+  const a = asks.get(askId);
+  if (!a || a.state !== "delivered") return false;
+  audit({
+    context: "human_ask",
+    action: "reply_accepted",
+    ask_id: a.id,
+    session_id: a.sessionId,
+    person: a.person.name,
+    via: "ui",
+    answered_by: answeredBy,
+  });
+  resolveAsk(a, answer, answeredBy);
+  if (a.slack) {
+    void sendSlackMessage(
+      a.slack.channel,
+      `:white_check_mark: _${answeredBy} answered this in ${productName()} — all set: "${answer.slice(0, 280)}"_`,
+      a.slack.rootTs
+    ).catch(() => {});
+  }
+  return true;
+}
+
 /** Resolve an option-button / modal answer by ask id (from the Slack interactivity
  *  endpoint). Returns true if it was an outstanding ask. */
 export function resolveByOption(askId: string, label: string): boolean {
@@ -450,6 +478,29 @@ export function isAwaiting(askId: string): boolean {
  * session has a PR. Idempotent — a delivered ask won't re-fire.
  */
 export function onSessionIdle(sessionId: string): void {
+  // A block ask can only hold a turn while its run is alive — the session
+  // going idle means the awaiting tool call is gone (interrupt, cancel, or
+  // crash). Degrade to async so a late reply steers into the session as a new
+  // message instead of resolving into the dead tool call and vanishing
+  // (2026-07-10: an SSO ask stayed block+delivered after an interrupt; a
+  // later Slack reply would have been silently eaten by the orphaned
+  // resolver).
+  for (const a of asks.values()) {
+    if (a.sessionId !== sessionId || a.state !== "delivered" || a.mode !== "block") continue;
+    const resolver = resolvers.get(a.id);
+    if (resolver) resolver(null); // settles the orphaned await; its tool is dead
+    a.mode = "async";
+    asks.set(a.id, a);
+    persist();
+    audit({
+      context: "human_ask",
+      action: "degraded_to_async",
+      ask_id: a.id,
+      session_id: sessionId,
+      reason: "session_idle_with_block_pending",
+    });
+  }
+
   const pending = [...asks.values()].filter(
     (a) => a.sessionId === sessionId && a.state === "scheduled"
   );
