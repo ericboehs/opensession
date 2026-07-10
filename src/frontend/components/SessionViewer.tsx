@@ -2514,18 +2514,19 @@ export function SessionViewer({
 										No transcript available for this session
 									</div>
 								) : !hasLiveConversation && contextChatOptions.length > 0 ? (
-									// Top padding clears the floating tab pills on desktop; phones
-									// already pad .viewer-messages for them.
-									<div className="pt-10 max-md:pt-1 w-full max-w-[var(--chat-col)] mx-auto">
-										<div className="text-dim mb-3">
+									// Simple centered empty state: the whole region centers the
+									// heading + attachable-context chips so a fresh chat reads as a
+									// calm blank canvas rather than a top-left form.
+									<div className="min-h-full flex flex-col items-center justify-center text-center w-full max-w-[840px] mx-auto px-4">
+										<div className="text-dim mb-4">
 											New chat in{" "}
 											<span className="text-fg font-medium">
 												{workspaceName || session.branch || "this workspace"}
 											</span>
 											.
 										</div>
-										<div className="text-dim mb-2.5">Add chat transcripts:</div>
-										<div className="flex flex-wrap items-center gap-2">
+										<div className="text-dim mb-3">Add chat transcripts</div>
+										<div className="flex flex-wrap items-center justify-center gap-2">
 											{(showAllContextChats
 												? contextChatOptions
 												: contextChatOptions.slice(0, 4)

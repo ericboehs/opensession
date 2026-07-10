@@ -108,7 +108,7 @@ export function dismissToast(id: number) {
 export function ToastHost() {
 	const items = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 	return (
-		<div className="pointer-events-none fixed inset-x-0 bottom-6 z-[100] flex flex-col items-center gap-2 px-4">
+		<div className="pointer-events-none fixed inset-x-0 bottom-6 z-[100] flex flex-col items-center gap-2 px-4 max-[720px]:bottom-[calc(84px+env(safe-area-inset-bottom))]">
 			<AnimatePresence initial={false}>
 				{items.map((t) => (
 					<ToastCard key={t.id} toast={t} />

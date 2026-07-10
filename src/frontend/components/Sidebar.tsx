@@ -585,6 +585,22 @@ function mineStatus(s: UnifiedSession): MineStatus {
 	return "pending";
 }
 
+// PR state overrides the manual review bands. A merged PR means the work is
+// done → the row leaves every review band and falls into the "Done" status
+// lane. An approved-but-unmerged PR means the reviewer already signed off on
+// GitHub → the review has landed, so the row leaves "Awaiting review" and moves
+// to "Reviewed" (same as a manual "Mark as reviewed"). Without this a session
+// you sent out sits in "Awaiting review" forever, since the band otherwise only
+// clears on a manual accept.
+function wsPrMerged(r: { chats: UnifiedSession[] }): boolean {
+	return r.chats.some((c) => c.prState === "MERGED");
+}
+function wsPrApproved(r: { chats: UnifiedSession[] }): boolean {
+	return (
+		!wsPrMerged(r) && r.chats.some((c) => c.prReviewDecision === "APPROVED")
+	);
+}
+
 const EXPANDED_KEY = "michael-sidebar-expanded";
 
 const DEFAULT_EXPANDED = [
@@ -1324,12 +1340,15 @@ export function Sidebar({
 	// workspaces, so the owner lens below would otherwise hide them entirely.
 	const needsReviewRows = useMemo(() => {
 		const me = currentUser.toLowerCase();
-		return wsRows.filter((r) =>
-			r.chats.some(
-				(c) =>
-					c.reviewRequest?.to?.toLowerCase() === me &&
-					!c.reviewRequest?.accepted,
-			),
+		return wsRows.filter(
+			(r) =>
+				!wsPrMerged(r) &&
+				!wsPrApproved(r) &&
+				r.chats.some(
+					(c) =>
+						c.reviewRequest?.to?.toLowerCase() === me &&
+						!c.reviewRequest?.accepted,
+				),
 		);
 	}, [wsRows, currentUser]);
 	// The mirror of "Needs review": workspaces where YOU asked a teammate to
@@ -1344,6 +1363,8 @@ export function Sidebar({
 		return wsRows.filter(
 			(r) =>
 				!needsKeys.has(r.key) &&
+				!wsPrMerged(r) &&
+				!wsPrApproved(r) &&
 				r.chats.some(
 					(c) =>
 						c.reviewRequest?.by?.toLowerCase() === me &&
@@ -1351,22 +1372,27 @@ export function Sidebar({
 				),
 		);
 	}, [wsRows, currentUser, needsReviewRows]);
-	// Reviewed: the request landed — the reviewer signed off (info panel's "Mark
-	// as reviewed"). Shown to both parties (asker or reviewer) so a session you
-	// sent out reads as done instead of vanishing back into the status lanes, and
-	// the reviewer sees their sign-off confirmed. Accepted rows leave Needs /
-	// Awaiting (both gate on `!accepted`) and land here instead.
+	// Reviewed: the request landed — the reviewer signed off, either via the info
+	// panel's "Mark as reviewed" (`reviewRequest.accepted`) or by approving the
+	// PR on GitHub (`prReviewDecision === "APPROVED"`, wsPrApproved). Shown to
+	// both parties (asker or reviewer) so a session you sent out reads as done
+	// instead of vanishing back into the status lanes, and the reviewer sees their
+	// sign-off confirmed. Accepted/approved rows leave Needs / Awaiting and land
+	// here instead. A merged PR skips this band entirely — it's fully done, so it
+	// belongs in the "Done" status lane, not "Reviewed".
 	const reviewedRows = useMemo(() => {
 		const me = currentUser.toLowerCase();
-		return wsRows.filter((r) =>
-			r.chats.some((c) => {
+		return wsRows.filter((r) => {
+			if (wsPrMerged(r)) return false;
+			const mineRequest = r.chats.some((c) => {
 				const rq = c.reviewRequest;
 				return (
-					rq?.accepted &&
-					(rq.by.toLowerCase() === me || rq.to.toLowerCase() === me)
+					rq && (rq.by.toLowerCase() === me || rq.to.toLowerCase() === me)
 				);
-			}),
-		);
+			});
+			if (!mineRequest) return false;
+			return r.chats.some((c) => c.reviewRequest?.accepted) || wsPrApproved(r);
+		});
 	}, [wsRows, currentUser]);
 	// Every workspace pulled into a review band (Needs / Awaiting / Reviewed) —
 	// excluded from the pinned/status lanes below so it lives in exactly one place.

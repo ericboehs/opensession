@@ -47,23 +47,57 @@ export async function copySessionTranscript(
 	mode: "concise" | "full",
 	onToast: (message: string) => void,
 ): Promise<void> {
-	let entries: TranscriptEntry[];
-	try {
-		entries = ((await fetchTranscript(session.id)) as TranscriptEntry[]) || [];
-	} catch {
-		onToast("Couldn't load the transcript");
-		return;
-	}
-	const body = formatTranscript(entries, mode);
-	if (!body) {
-		onToast("Nothing to copy yet");
-		return;
-	}
-	copyToClipboard(`# ${session.title}\n\n${body}\n`, () =>
+	const okToast = () =>
 		onToast(
 			mode === "concise"
 				? "Concise transcript copied"
 				: "Full transcript copied",
-		),
-	);
+		);
+
+	// Fetch → format into the final clipboard string. Rejects with a sentinel so
+	// callers can tell "load failed" from "nothing to copy" and surface the right
+	// toast.
+	const build = async (): Promise<string> => {
+		const entries =
+			((await fetchTranscript(session.id)) as TranscriptEntry[]) || [];
+		const body = formatTranscript(entries, mode);
+		if (!body) throw new Error("empty");
+		return `# ${session.title}\n\n${body}\n`;
+	};
+
+	// The transcript needs an async fetch, but writing to the clipboard *after* an
+	// await loses the click's transient user-activation — so
+	// `navigator.clipboard.writeText(await …)` is rejected in WebKit/Safari (the
+	// copy silently fails while the toast still claims success). The async
+	// ClipboardItem pattern fixes it: we hand `clipboard.write()` a Promise<Blob>
+	// synchronously inside the gesture and the browser awaits the fetch while
+	// keeping activation. Secure-context only (needs navigator.clipboard).
+	if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+		try {
+			const blob = build().then(
+				(text) => new Blob([text], { type: "text/plain" }),
+			);
+			await navigator.clipboard.write([
+				new ClipboardItem({ "text/plain": blob }),
+			]);
+			okToast();
+			return;
+		} catch {
+			// Fall through to the fetch-then-textarea path (covers browsers that
+			// reject a pending ClipboardItem, and lets us report load/empty state).
+		}
+	}
+
+	let text: string;
+	try {
+		text = await build();
+	} catch (e) {
+		onToast(
+			(e as Error).message === "empty"
+				? "Nothing to copy yet"
+				: "Couldn't load the transcript",
+		);
+		return;
+	}
+	copyToClipboard(text, okToast);
 }
