@@ -24,10 +24,20 @@ export interface LinkedChannelMessage {
 const g = globalThis as unknown as {
 	__slackLinkChanToSess?: Map<string, string>;
 	__slackLinkSessToChan?: Map<string, string>;
+	__slackLinkThreadToSess?: Map<string, string>;
+	__slackLinkSessToThreads?: Map<string, Set<string>>;
 	__linkedChannelSink?: (channelId: string, msg: LinkedChannelMessage) => void;
 };
 const chanToSess: Map<string, string> = (g.__slackLinkChanToSess ??= new Map());
 const sessToChan: Map<string, string> = (g.__slackLinkSessToChan ??= new Map());
+// Thread-level index: `${channel}:${threadTs}` → session id. Populated from
+// BackstageSessionFile.slackThreads (messages a session — typically an
+// automation run — posted to Slack), so a human reply in one of those threads
+// drives the posting session instead of spawning a new one.
+const threadToSess: Map<string, string> = (g.__slackLinkThreadToSess ??= new Map());
+const sessToThreads: Map<string, Set<string>> = (g.__slackLinkSessToThreads ??= new Map());
+
+const threadKey = (channel: string, threadTs: string) => `${channel}:${threadTs}`;
 
 /** The backstage session id a channel is linked to, if any. */
 export function sessionForChannel(channelId: string): string | undefined {
@@ -57,14 +67,52 @@ export function unlinkInIndex(sessionId: string): void {
 	sessToChan.delete(sessionId);
 }
 
+/** The backstage session that posted the message anchoring this thread, if any. */
+export function sessionForThread(
+	channel: string,
+	threadTs: string,
+): string | undefined {
+	return threadToSess.get(threadKey(channel, threadTs));
+}
+
+/** Link a thread to a session (a session can own several threads; a thread has one session). */
+export function linkThreadInIndex(
+	sessionId: string,
+	channel: string,
+	threadTs: string,
+): void {
+	const key = threadKey(channel, threadTs);
+	const prevSess = threadToSess.get(key);
+	if (prevSess && prevSess !== sessionId) sessToThreads.get(prevSess)?.delete(key);
+	threadToSess.set(key, sessionId);
+	let keys = sessToThreads.get(sessionId);
+	if (!keys) sessToThreads.set(sessionId, (keys = new Set()));
+	keys.add(key);
+}
+
+/** Remove all of a session's thread links (session deleted). */
+export function unlinkThreadsInIndex(sessionId: string): void {
+	for (const key of sessToThreads.get(sessionId) || []) threadToSess.delete(key);
+	sessToThreads.delete(sessionId);
+}
+
 /** Rebuild the whole index from the session store (called at startup). */
 export function rebuildIndex(
-	sessions: Array<{ id: string; slackChannel?: { channelId: string } }>,
+	sessions: Array<{
+		id: string;
+		slackChannel?: { channelId: string };
+		slackThreads?: Array<{ channel: string; threadTs: string }>;
+	}>,
 ): void {
 	chanToSess.clear();
 	sessToChan.clear();
+	threadToSess.clear();
+	sessToThreads.clear();
 	for (const s of sessions) {
 		if (s.slackChannel?.channelId) linkInIndex(s.id, s.slackChannel.channelId);
+		for (const t of s.slackThreads || []) {
+			if (t?.channel && t?.threadTs) linkThreadInIndex(s.id, t.channel, t.threadTs);
+		}
 	}
 }
 

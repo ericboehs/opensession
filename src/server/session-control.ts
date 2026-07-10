@@ -99,12 +99,18 @@ export interface SessionControl {
    * `opts.busy: "queue"` skips the steer: an FYI event (merge/deploy/preview
    * notifications) must wait its turn, never interrupt-and-redirect a run the
    * way a human message does.
+   * `opts.slackReplyTo` marks the message as coming from a Slack thread — the
+   * answering turn's reply is mirrored back into that thread (rides the queue,
+   * so it survives a busy run and a restart).
    */
   deliverToSession(
     id: string,
     content: string,
     user?: string,
-    opts?: { busy?: "steer" | "queue" },
+    opts?: {
+      busy?: "steer" | "queue";
+      slackReplyTo?: { channel: string; threadTs: string };
+    },
   ): Promise<DeliverResult>;
   /** Cancel a session's in-flight run (only runs this process owns). */
   cancelSession(id: string): boolean;

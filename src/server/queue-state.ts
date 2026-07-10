@@ -25,6 +25,9 @@ export type QueueItem = {
 	user?: string;
 	images?: string[];
 	files?: unknown;
+	/** Slack thread this message came from — the turn's reply is mirrored back
+	 *  there (rides the queue + persistence so a busy run can't drop it). */
+	slackReplyTo?: { channel: string; threadTs: string };
 };
 export const promptQueues: Map<string, QueueItem[]> = (g.__promptQueues ??=
 	new Map());

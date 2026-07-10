@@ -499,6 +499,9 @@ export async function drainQueue(sessionId: string): Promise<void> {
 		const combinedFiles = batch.flatMap((m) =>
 			Array.isArray(m.files) ? m.files : [],
 		);
+		// A queued Slack-thread reply carries its origin thread — the turn's answer
+		// mirrors back there. Last one wins if a batch somehow spans threads.
+		const slackReplyTo = [...batch].reverse().find((m) => m.slackReplyTo)?.slackReplyTo;
 		try {
 			await runSessionPrompt(
 				sessionId,
@@ -506,6 +509,8 @@ export async function drainQueue(sessionId: string): Promise<void> {
 				batch[0].user,
 				combinedImages,
 				combinedFiles.length ? combinedFiles : undefined,
+				undefined,
+				slackReplyTo,
 			);
 		} catch (e) {
 			// The batch was already spliced out and persisted away — put it back at
@@ -526,8 +531,9 @@ export async function runSessionPromptAndDrain(
 	images?: ImageInput[],
 	rawFiles?: unknown,
 	contextChats?: string[],
+	slackReplyTo?: { channel: string; threadTs: string },
 ): Promise<void> {
-	await runSessionPrompt(sessionId, content, user, images, rawFiles, contextChats);
+	await runSessionPrompt(sessionId, content, user, images, rawFiles, contextChats, slackReplyTo);
 	await drainQueue(sessionId);
 }
 
@@ -873,6 +879,7 @@ export async function runSessionPrompt(
 	images?: ImageInput[],
 	rawFiles?: unknown,
 	contextChats?: string[],
+	slackReplyTo?: { channel: string; threadTs: string },
 ): Promise<void> {
 	// Any explicit new run lifts a user stop — the queue may drain again.
 	stoppedSessions.delete(sessionId);
@@ -882,7 +889,7 @@ export async function runSessionPrompt(
 	// dropped as a "Session is busy" error toast.
 	markSessionStarting(sessionId);
 	try {
-		await runSessionPromptInner(sessionId, content, user, images, rawFiles, contextChats);
+		await runSessionPromptInner(sessionId, content, user, images, rawFiles, contextChats, slackReplyTo);
 	} finally {
 		unmarkSessionStarting(sessionId);
 	}
@@ -895,6 +902,7 @@ async function runSessionPromptInner(
 	images?: ImageInput[],
 	rawFiles?: unknown,
 	contextChats?: string[],
+	slackReplyTo?: { channel: string; threadTs: string },
 ): Promise<void> {
 	const session = findSession(sessionId);
 	if (!session) return;
@@ -1434,13 +1442,24 @@ async function runSessionPromptInner(
 		isRunning: false,
 	});
 
-	// Mirror Michael's reply into the session's linked Slack channel, so a channel
-	// @mention (which routes here via deliverToSession) gets answered in-channel.
-	if (session.slackChannel?.channelId && !endedWithError && assistantText.trim()) {
-		void sendSlackMessage(
-			session.slackChannel.channelId,
-			assistantText.trim().slice(0, 38000),
-		).catch(() => {});
+	// Mirror Michael's reply back to Slack. A turn that came from a Slack thread
+	// (a reply under a message this session posted — see slackReplyTo plumbing)
+	// answers in that thread; otherwise a linked channel gets the reply
+	// top-level, so a channel @mention (routed via deliverToSession) gets
+	// answered in-channel.
+	if (!endedWithError && assistantText.trim()) {
+		if (slackReplyTo) {
+			void sendSlackMessage(
+				slackReplyTo.channel,
+				assistantText.trim().slice(0, 38000),
+				slackReplyTo.threadTs,
+			).catch(() => {});
+		} else if (session.slackChannel?.channelId) {
+			void sendSlackMessage(
+				session.slackChannel.channelId,
+				assistantText.trim().slice(0, 38000),
+			).catch(() => {});
+		}
 	}
 
 	// The session just finished a turn; if nothing's queued it's idle now, so fire

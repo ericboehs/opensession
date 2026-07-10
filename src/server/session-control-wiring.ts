@@ -129,9 +129,13 @@ registerSessionControl({
 			// Busy + owned here → fold into the running turn (delivered at the next
 			// stopping point). Otherwise queue and drain when the external run ends.
 			// FYI events opt out of steering entirely (busy: "queue") — they wait
-			// behind the run instead of interrupting it.
+			// behind the run instead of interrupting it. Slack-thread replies also
+			// never steer: the in-thread answer mirror only fires on a turn that
+			// carries the slackReplyTo, and a steered message can't (it folds into
+			// a turn that's already running).
 			if (
 				opts?.busy !== "queue" &&
+				!opts?.slackReplyTo &&
 				steerAgentRun(
 					[session.claudeSessionId, session.codexThreadId, session.id],
 					attributed,
@@ -147,7 +151,7 @@ registerSessionControl({
 					message: "Folded into the running turn.",
 				};
 			}
-			enqueuePrompt(id, { content, user });
+			enqueuePrompt(id, { content, user, slackReplyTo: opts?.slackReplyTo });
 			watchExternalRunAndDrain(id);
 			return {
 				status: "queued" as const,
@@ -170,9 +174,15 @@ registerSessionControl({
 
 		// Idle → start a fresh turn in the background; don't block the tool call on
 		// the whole run finishing.
-		void runSessionPromptAndDrain(id, content, user).catch((e) =>
-			console.error(`[sessions-mcp] deliver to ${id} failed:`, e),
-		);
+		void runSessionPromptAndDrain(
+			id,
+			content,
+			user,
+			undefined,
+			undefined,
+			undefined,
+			opts?.slackReplyTo,
+		).catch((e) => console.error(`[sessions-mcp] deliver to ${id} failed:`, e));
 		return {
 			status: "started" as const,
 			message: "Started a new turn on the session.",

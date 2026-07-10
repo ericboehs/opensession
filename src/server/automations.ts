@@ -17,6 +17,7 @@ import { createWorktree, listWorktrees } from "./worktree";
 import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
 import { stateDir } from "./rename-compat";
+import { linkThreadInIndex } from "./slack-links";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const AUTOMATIONS_DIR = stateDir("automations");
@@ -652,6 +653,14 @@ export async function runAutomation(
     let effectiveModel = runModel;
     let effectiveProvider = providerFor(effectiveModel);
     const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
+    // Slack messages this run posts (via the slack MCP) — captured from the
+    // tool stream so a human reply in one of those threads routes back to THIS
+    // session (thread index in slack-links.ts) instead of starting a new one.
+    const slackThreads: Array<{ channel: string; threadTs: string }> = [];
+    const pendingSlackPosts = new Map<
+      string,
+      { channel?: string; threadTs?: string }
+    >();
     const persistSession = (engineSessionId: string) => {
       const data: BackstageSessionFile = {
         id: bksId,
@@ -673,6 +682,7 @@ export async function runAutomation(
         mode: automation.mode,
         automation: automation.name,
         plainThreadId,
+        ...(slackThreads.length ? { slackThreads: [...slackThreads] } : {}),
       };
       writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
     };
@@ -719,6 +729,48 @@ export async function runAutomation(
         if (event.model) effectiveModel = event.model;
         persistSession(engineSessionId);
         onSessionCreated?.(bksId);
+      }
+      // Capture Slack posts: remember the tool input at tool_use, then read the
+      // posted message's channel/ts off the tool_result (raw chat.postMessage
+      // JSON — `ok`/`channel`/`ts` sit at the head, safely inside the stream
+      // event's 500-char truncation). A threaded reply anchors to the thread it
+      // replied INTO (input.thread_ts); a top-level post anchors to its own ts.
+      if (
+        event.type === "tool_use" &&
+        event.toolUseId &&
+        /^slack_.*(post_message|reply_to_thread|add_message)$/.test(event.toolName || "")
+      ) {
+        const input = (event.toolInput || {}) as Record<string, unknown>;
+        pendingSlackPosts.set(event.toolUseId, {
+          channel:
+            typeof input.channel_id === "string" ? input.channel_id
+            : typeof input.channel === "string" ? input.channel
+            : undefined,
+          threadTs: typeof input.thread_ts === "string" ? input.thread_ts : undefined,
+        });
+      }
+      if (event.type === "tool_result" && event.toolUseId && pendingSlackPosts.has(event.toolUseId)) {
+        const pending = pendingSlackPosts.get(event.toolUseId)!;
+        pendingSlackPosts.delete(event.toolUseId);
+        const result = event.content || "";
+        // Prefer the result's channel (always the canonical C…/D… id — the
+        // input may carry a channel name) and lenient-regex it: a truncated
+        // JSON tail must not lose the post.
+        const channel =
+          result.match(/"channel"\s*:\s*"([A-Z0-9]+)"/)?.[1] || pending.channel;
+        const threadTs =
+          pending.threadTs || result.match(/"ts"\s*:\s*"(\d+\.\d+)"/)?.[1];
+        const posted = /"ok"\s*:\s*true/.test(result);
+        if (
+          posted && channel && threadTs &&
+          !slackThreads.some((t) => t.channel === channel && t.threadTs === threadTs)
+        ) {
+          slackThreads.push({ channel, threadTs });
+          // Live-link + persist immediately so a fast reply routes even while
+          // the run is still going.
+          linkThreadInIndex(bksId, channel, threadTs);
+          persistSession(engineSessionId);
+        }
       }
       if (event.type === "model_switch") {
         const to = event.toModel || "";

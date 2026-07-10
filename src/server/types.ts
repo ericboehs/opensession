@@ -154,6 +154,10 @@ export interface UnifiedSession {
   aliasIds?: string[];
   /** A Slack channel linked to this session for in-context discussion. */
   slackChannel?: SlackChannelLink;
+  /** Slack threads this session posted to (automation runs capture their own
+   *  posts here) — a reply in one of these threads drives THIS session instead
+   *  of starting a new one (thread index in slack-links.ts). */
+  slackThreads?: Array<{ channel: string; threadTs: string }>;
   // Source-specific
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
@@ -264,6 +268,8 @@ export interface BackstageSessionFile {
   lastRunError?: { message: string; at: string }; // last run died on a terminal error; cleared on the next clean run
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
   slackChannel?: SlackChannelLink; // Slack channel linked for in-context discussion
+  /** Slack threads this session posted to (see UnifiedSession.slackThreads). */
+  slackThreads?: Array<{ channel: string; threadTs: string }>;
   mcpServers?: string[]; // External MCP servers to load for this session; empty = none (minimal context)
   /** Sandbox opt-in (docs/sandboxes-plan.md): recorded at create time when the
    *  creator asked for a sandbox. `provider` is the effective provider id at

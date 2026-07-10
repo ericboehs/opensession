@@ -42,7 +42,7 @@ import { isStopMessage, cancelSession } from "./cancel";
 import { pollForVercelPreview } from "./github-reviews";
 import { gitIdentityFor } from "../../server/shared/user-mappings";
 import { worktreePathFor } from "../../server/worktree";
-import { sessionForChannel } from "../../server/slack-links";
+import { sessionForChannel, sessionForThread } from "../../server/slack-links";
 import { tryGetSessionControl } from "../../server/session-control";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { runAgent, cancelAgentRun } from "../../server/agent-runner";
@@ -1003,6 +1003,37 @@ export async function handleMessageEvent(event: any): Promise<void> {
     `[slack] Message from ${user} in ${channel}: ${text.substring(0, 50)}...`
   );
 
+  // A DM reply under a message a backstage session posted (automation DMs like
+  // the daily recap) drives that session, answered back in the same thread —
+  // same rule as channel threads. Before the allow-list gate for the same
+  // reason as the human-ask path above: the DM'd person must be able to follow
+  // up on a message Michael sent them, and the scope is just as tight (only
+  // threads whose anchor message a session posted, only in that person's DM).
+  if (thread_ts) {
+    const threadSessionId = sessionForThread(channel, thread_ts);
+    if (threadSessionId) {
+      const control = tryGetSessionControl();
+      if (control) {
+        console.log(
+          `[slack] DM thread reply in ${channel}/${thread_ts} → session ${threadSessionId}`
+        );
+        await addReaction(channel, ts, "eyes");
+        const userInfo = await getUserInfo(user);
+        const res = await control.deliverToSession(
+          threadSessionId,
+          text,
+          userInfo?.real_name || user,
+          { busy: "queue", slackReplyTo: { channel, threadTs: thread_ts } },
+        );
+        // Stale link (session deleted) → fall through to the normal DM flow.
+        if (res.status !== "error") return;
+        console.warn(
+          `[slack] Thread-linked session ${threadSessionId} rejected delivery (${res.message}) — falling back`
+        );
+      }
+    }
+  }
+
   if (ALLOWED_USER_ID && user !== ALLOWED_USER_ID) {
     console.log(`[slack] Ignoring message from non-allowed user: ${user}`);
     return;
@@ -1155,10 +1186,19 @@ export async function handleMentionEvent(event: any): Promise<void> {
   // ALLOWED_USER_ID check so the whole team can drive the work from the channel.
   const inWorktreeChannel = isWorktreeChannel(channel);
   const linkedSessionId = sessionForChannel(channel);
+  // A mention in a thread anchored by a message some backstage session posted
+  // (automation summaries etc.) drives THAT session instead of starting a new
+  // one. Same team-wide bypass as linked channels: anyone in the thread can
+  // follow up.
+  const threadSessionId =
+    !linkedSessionId && thread_ts
+      ? sessionForThread(channel, thread_ts)
+      : undefined;
 
   if (
     !inWorktreeChannel &&
     !linkedSessionId &&
+    !threadSessionId &&
     ALLOWED_USER_ID &&
     user !== ALLOWED_USER_ID
   ) {
@@ -1181,6 +1221,33 @@ export async function handleMentionEvent(event: any): Promise<void> {
         info?.real_name || user,
       );
       return;
+    }
+  }
+
+  // Thread posted by a session (e.g. an automation's Slack summary): deliver
+  // the reply into that session and answer back in this thread. busy: "queue"
+  // — if the automation run is still going, the follow-up waits for it rather
+  // than steering (the in-thread answer mirror rides the queued message).
+  if (threadSessionId) {
+    const control = tryGetSessionControl();
+    if (control) {
+      console.log(
+        `[slack] Thread reply in ${channel}/${thread_ts} → session ${threadSessionId}`
+      );
+      await addReaction(channel, ts, "eyes");
+      const info = await getUserInfo(user);
+      const res = await control.deliverToSession(
+        threadSessionId,
+        cleanText,
+        info?.real_name || user,
+        { busy: "queue", slackReplyTo: { channel, threadTs: thread_ts } },
+      );
+      // A stale link (session deleted since the index was built) falls through
+      // to the normal mention flow instead of eating the message.
+      if (res.status !== "error") return;
+      console.warn(
+        `[slack] Thread-linked session ${threadSessionId} rejected delivery (${res.message}) — falling back`
+      );
     }
   }
 
