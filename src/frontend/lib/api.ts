@@ -1521,6 +1521,46 @@ export async function refreshWarmTemplateNow(
 	});
 }
 
+// ── Papercuts (Settings → Papercuts: cross-session friction log) ──
+
+export interface PapercutDto {
+	ts: string;
+	message: string;
+	repo?: string;
+	sessionId?: string;
+	model?: string;
+	runKind?: string;
+	by?: string;
+}
+
+export interface PapercutsRepoConfig {
+	repoId: string;
+	enabled: boolean;
+}
+
+export async function fetchPapercuts(opts?: {
+	repo?: string;
+	days?: number;
+}): Promise<{ entries: PapercutDto[]; repos: PapercutsRepoConfig[] }> {
+	const params = new URLSearchParams();
+	if (opts?.repo) params.set("repo", opts.repo);
+	if (opts?.days) params.set("days", String(opts.days));
+	const qs = params.toString();
+	return request(`/papercuts${qs ? `?${qs}` : ""}`, {
+		label: "Failed to fetch papercuts",
+	});
+}
+
+export async function setPapercutsRepoEnabled(
+	repo: string,
+	enabled: boolean,
+): Promise<{ repos: PapercutsRepoConfig[] }> {
+	return request("/papercuts/config", {
+		method: "PUT",
+		body: { repo, enabled },
+	});
+}
+
 // ── Memory (Settings → Memory: repo/user/team/channel stores) ──
 
 export interface MemoryEntryDto {

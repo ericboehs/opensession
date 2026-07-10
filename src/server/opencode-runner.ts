@@ -283,6 +283,7 @@ export const SHARED_INPROCESS_SERVERS = [
   "opensession-preview",
   "opensession-ask",
   "opensession-github",
+  "opensession-papercuts",
 ];
 
 /**
@@ -783,7 +784,11 @@ export function buildOpencodeInstructions(input: {
         `Created by [this ${personaName()} session](${link})`
     );
   }
-  if (input.inProcessMcp && Object.keys(input.inProcessMcp).length) {
+  const inproc = (input.inProcessMcp || {}) as Record<string, unknown>;
+  // Gated on the sessions server specifically (not any in-process server):
+  // automation runs now carry opensession-papercuts alone and must not be told
+  // they have session-control tools they don't.
+  if (inproc["opensession-sessions"] || inproc["michael-sessions"]) {
     parts.push(
       `## Managing ${personaName()}\nYou can see and steer your other ${productName()} sessions via the ` +
         "opensession-sessions MCP tools (list_sessions, get_session, send_to_session, " +
@@ -791,19 +796,30 @@ export function buildOpencodeInstructions(input: {
         "opensession-admin, ask teammates via opensession-humans, and attach/switch repos via " +
         "opensession-repos when those servers are available."
     );
-    // Legacy michael-ask key: journaled runner-host runs resumed across the
-    // opensession-* rename carry prebuilt proxy specs under the old id.
-    if (
-      (input.inProcessMcp as Record<string, unknown>)["opensession-ask"] ||
-      (input.inProcessMcp as Record<string, unknown>)["michael-ask"]
-    ) {
-      parts.push(
-        "## Asking the human a question\nWhen you genuinely need the human's decision to " +
-          "proceed, call opensession-ask's `ask_user` tool. It pauses this run on a question card " +
-          `in the ${productName()} UI and returns their answer. Prefer 2-4 concrete options; don't ` +
-          "ask for confirmations a reasonable default covers."
-      );
-    }
+  }
+  // Legacy michael-ask key: journaled runner-host runs resumed across the
+  // opensession-* rename carry prebuilt proxy specs under the old id.
+  if (inproc["opensession-ask"] || inproc["michael-ask"]) {
+    parts.push(
+      "## Asking the human a question\nWhen you genuinely need the human's decision to " +
+        "proceed, call opensession-ask's `ask_user` tool. It pauses this run on a question card " +
+        `in the ${productName()} UI and returns their answer. Prefer 2-4 concrete options; don't ` +
+        "ask for confirmations a reasonable default covers."
+    );
+  }
+  if (inproc["opensession-papercuts"]) {
+    parts.push(
+      "## Log papercuts\nWhen you hit a small friction while working — a tool call that " +
+        "missed and had to be retried, a confusing or undocumented setup step, a flaky " +
+        "command, a stale cache, a misleading error, a non-obvious gotcha — log it with " +
+        "opensession-papercuts' `log_papercut` tool. One or two sentences: what you were " +
+        "doing → what got in the way (a guess at the cause/fix is a bonus). Do this " +
+        "proactively, in the moment, even though none of these are blocking — logged " +
+        "together they show where the repo and tooling need sanding down. This is distinct " +
+        "from your final report (what you accomplished) and from Linear issues (real bugs / " +
+        "tracked work); don't log ordinary task difficulty or your own mistakes, only " +
+        "friction the environment caused."
+    );
   }
   if (input.droppedForConfirm?.length) {
     parts.push(

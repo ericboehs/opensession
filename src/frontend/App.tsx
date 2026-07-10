@@ -127,6 +127,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"connections",
 	"memory",
 	"warmPreviews",
+	"papercuts",
 	"audit",
 ]);
 

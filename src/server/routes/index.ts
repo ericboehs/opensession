@@ -28,6 +28,7 @@ import { handleConnectionsRoutes } from "./connections";
 import { handleAccountsRoutes } from "./accounts";
 import { handleModelsRoutes } from "./models";
 import { handleNotesRoutes } from "./notes";
+import { handlePapercutsRoutes } from "./papercuts";
 
 export type { RouteContext, RouteHandler } from "./context";
 
@@ -53,4 +54,5 @@ export const routeHandlers: RouteHandler[] = [
 	handleAccountsRoutes,
 	handleModelsRoutes,
 	handleNotesRoutes,
+	handlePapercutsRoutes,
 ];

@@ -64,12 +64,16 @@ import {
 	addMemoryEntryApi,
 	updateMemoryEntryApi,
 	deleteMemoryEntryApi,
+	fetchPapercuts,
+	setPapercutsRepoEnabled,
 	relativeTime,
 	type MonitorConfig,
 	type AutoArchiveConfig,
 	type WarmTemplateEntry,
 	type MemoryScopeDto,
 	type MemoryEntryDto,
+	type PapercutDto,
+	type PapercutsRepoConfig,
 } from "../lib/api";
 import { getPushState, enablePush, disablePush, type PushState } from "../lib/push";
 import { getCurrentUser } from "./UserPicker";
@@ -117,6 +121,7 @@ export type SettingsSectionKey =
 	| "connections"
 	| "memory"
 	| "warmPreviews"
+	| "papercuts"
 	| "audit"
 	| ToolSectionKey;
 
@@ -453,6 +458,32 @@ const SECTIONS: {
 		),
 	},
 	{
+		key: "papercuts",
+		label: "Papercuts",
+		group: "Workspace",
+		icon: (
+			<svg
+				width="20"
+				height="20"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<rect
+					x="1.6"
+					y="5.4"
+					width="12.8"
+					height="5.2"
+					rx="2.6"
+					transform="rotate(-45 8 8)"
+					strokeLinejoin="round"
+				/>
+				<path d="M6.9 8h.01M9.1 8h.01M8 6.9v.01M8 9.1v.01" strokeLinecap="round" />
+			</svg>
+		),
+	},
+	{
 		key: "audit",
 		label: "Audit log",
 		group: "Workspace",
@@ -496,6 +527,7 @@ function SectionPanel({
 			{section === "connections" && <Connections />}
 			{section === "memory" && <MemoryPanel />}
 			{section === "warmPreviews" && <WarmPreviewsPanel />}
+			{section === "papercuts" && <PapercutsPanel />}
 		</>
 	);
 }
@@ -1653,6 +1685,123 @@ function WarmPreviewsPanel() {
 					);
 				})}
 			</div>
+		</div>
+	);
+}
+
+// ── Papercuts: the cross-session friction log agents append via the
+// opensession-papercuts tools — per-repo toggles + the recent entries. ──
+function PapercutsPanel() {
+	const [repos, setRepos] = useState<PapercutsRepoConfig[] | null>(null);
+	const [entries, setEntries] = useState<PapercutDto[]>([]);
+	const [repoFilter, setRepoFilter] = useState("");
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		let alive = true;
+		fetchPapercuts({ repo: repoFilter || undefined, days: 30 })
+			.then((r) => {
+				if (!alive) return;
+				setRepos(r.repos);
+				setEntries(r.entries);
+			})
+			.catch((e) => alive && setError(e.message));
+		return () => {
+			alive = false;
+		};
+	}, [repoFilter]);
+
+	if (!repos)
+		return (
+			<div className="settings-panel">
+				<h1 className="settings-title">Papercuts</h1>
+				<div className="setting-row-desc">{error || "Loading…"}</div>
+			</div>
+		);
+
+	return (
+		<div className="settings-panel">
+			<h1 className="settings-title">Papercuts</h1>
+			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+				Small frictions agents log in the moment while working — retried tool
+				calls, flaky commands, misleading errors, undocumented gotchas. None
+				block on their own; together they show where a repo needs sanding
+				down. The nightly Dreaming digest reads them too.
+			</div>
+
+			{error && (
+				<div className="form-error" onClick={() => setError(null)}>
+					{error}
+				</div>
+			)}
+
+			<div className="setting-card">
+				{repos.map((r) => (
+					<SettingRow
+						key={r.repoId}
+						title={r.repoId}
+						desc={
+							r.enabled
+								? "Sessions and automations in this repo get the log_papercut tool and the nudge to use it."
+								: "Off — runs in this repo don't log papercuts."
+						}
+						control={
+							<Toggle
+								label={`Papercuts for ${r.repoId}`}
+								checked={r.enabled}
+								onChange={(v) =>
+									setPapercutsRepoEnabled(r.repoId, v)
+										.then((res) => setRepos(res.repos))
+										.catch((e) => setError(e.message))
+								}
+							/>
+						}
+					/>
+				))}
+			</div>
+
+			<div className="mt-5 mb-2 flex items-center justify-between">
+				<div className="text-[13px] font-medium text-dim">
+					Last 30 days · {entries.length} logged
+				</div>
+				<Select
+					label="Filter papercuts by repo"
+					value={repoFilter}
+					options={[
+						{ value: "", label: "All repos" },
+						...repos.map((r) => ({ value: r.repoId, label: r.repoId })),
+					]}
+					onChange={setRepoFilter}
+				/>
+			</div>
+			{entries.length === 0 ? (
+				<div className="setting-row-desc">
+					Nothing logged yet — papercuts appear here as agents hit friction.
+				</div>
+			) : (
+				<div className="setting-card">
+					{entries.map((e, i) => (
+						<div
+							key={`${e.ts}-${i}`}
+							className="border-b border-line px-4 py-3 last:border-b-0"
+						>
+							<div className="text-[13px] leading-relaxed text-fg">
+								{e.message}
+							</div>
+							<div className="mt-1 text-xs text-faint">
+								{[
+									e.repo,
+									e.by,
+									e.runKind && e.runKind !== "prompt" ? e.runKind : null,
+									warmAgo(e.ts),
+								]
+									.filter(Boolean)
+									.join(" · ")}
+							</div>
+						</div>
+					))}
+				</div>
+			)}
 		</div>
 	);
 }

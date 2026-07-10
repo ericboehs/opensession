@@ -18,6 +18,9 @@ import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
 import { stateDir } from "./rename-compat";
 import { linkThreadInIndex } from "./slack-links";
+import { createPapercutsMcpServer } from "../agents/slack/papercuts-tools";
+import { papercutsEnabledForRepo } from "./papercuts";
+import { registerSessionMcpServers, unregisterSessionMcpServers } from "./run-rpc";
 
 const AUTOMATIONS_DIR = stateDir("automations");
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
@@ -721,6 +724,24 @@ export async function runAutomation(
       `[automations] Running "${automation.name}" → ${bksId}${runModel ? ` (${runModel})` : ""}${options?.modelOverride ? " [routed]" : ""}`
     );
 
+    // Papercuts: the ONE in-process opensession-* server automation runs get
+    // (append-only friction log — see papercuts-tools.ts for the trust model;
+    // the run-rpc builder in interactive-mcp.ts fails closed so an automation
+    // session can never resolve the admin/sessions siblings through the same
+    // socket). Registered per run so the proxy executes THESE instances with
+    // automation context; per-repo toggle in Settings → Papercuts.
+    const inProcessMcp = papercutsEnabledForRepo(repo.id)
+      ? {
+          "opensession-papercuts": createPapercutsMcpServer({
+            sessionId: bksId,
+            runKind: "automation",
+            by: `${automation.name} (automation)`,
+            defaults: () => ({ repo: repo.id, model: effectiveModel }),
+          }),
+        }
+      : undefined;
+    if (inProcessMcp) registerSessionMcpServers(bksId, inProcessMcp);
+
     let engineSessionId = "";
     let errorMsg = "";
     for await (const event of runAgent({
@@ -729,6 +750,7 @@ export async function runAutomation(
       mode: automation.mode,
       model: runModel,
       mcpServers: automation.mcpServers,
+      inProcessMcp,
       deniedTools: AUTOMATION_DENIED_TOOLS,
       // No onAskUser here, so confirm tools deny with "propose it for a human"
       // (codex disables them outright — codex-runner.ts; opencode strips them
@@ -842,6 +864,7 @@ export async function runAutomation(
       durationMs: Date.now() - startedAt.getTime(),
     });
   } finally {
+    unregisterSessionMcpServers(bksId);
     const left = (runningCounts.get(automation.id) || 1) - 1;
     if (left <= 0) runningCounts.delete(automation.id);
     else runningCounts.set(automation.id, left);

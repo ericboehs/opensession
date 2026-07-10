@@ -276,6 +276,7 @@ export function buildAuditDigest(date: string): Record<string, unknown> | null {
   const toolCalls = new Map<string, number>();
   const models = new Map<string, number>();
   const accountSwitches = new Map<string, number>();
+  const papercuts: Array<Record<string, unknown>> = [];
   const oneshots = { total: 0, failed: 0 };
   let events = 0;
   let turns = 0;
@@ -376,6 +377,19 @@ export function buildAuditDigest(date: string): Record<string, unknown> | null {
         accountSwitches.set(acc, (accountSwitches.get(acc) || 0) + 1);
         break;
       }
+      // Agent-logged friction (src/server/papercuts.ts) — surfaced verbatim so
+      // the Dreaming automation can spot recurring papercuts across sessions.
+      case "papercut":
+        if (papercuts.length < 200) {
+          papercuts.push({
+            message: String(e.message || ""),
+            repo: e.repo || undefined,
+            runKind: e.run_kind || undefined,
+            by: e.by || undefined,
+            session: e.bks_session_id || undefined,
+          });
+        }
+        break;
     }
   }
 
@@ -426,6 +440,7 @@ export function buildAuditDigest(date: string): Record<string, unknown> | null {
       cancelled,
       permissionDecisions,
       engineRetries,
+      papercuts: papercuts.length,
       costUsd: +costUsd.toFixed(2),
     },
     byRunKind,
@@ -438,6 +453,7 @@ export function buildAuditDigest(date: string): Record<string, unknown> | null {
       .map(([tool, count]) => ({ tool, count })),
     oneshots,
     accountSwitches: Object.fromEntries(accountSwitches),
+    papercuts,
     sessions: topSessions,
     sessionsTruncated: Math.max(0, sessions.size - topSessions.length),
   };

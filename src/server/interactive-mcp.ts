@@ -7,6 +7,10 @@
  * sessions — untrusted ticket text must not reach session-control / config
  * tools. Backstage is Tailscale- and team-gated and already exposes all of this
  * through its UI, so interactive users are treated as admin.
+ *
+ * Sole exception: opensession-papercuts (append-only friction log, no reads of
+ * anything sensitive, no control surface) also goes to automation runs — see
+ * papercutsServerFor and the automation guard in the run-rpc builder below.
  */
 
 import { createSessionsMcpServer } from "../agents/slack/sessions-tools";
@@ -17,12 +21,45 @@ import { createReposMcpServer } from "../agents/slack/repos-tools";
 import { createPreviewMcpServer } from "../agents/slack/preview-tools";
 import { createMemoryMcpServer } from "../agents/slack/memory-tools";
 import { createGoalsMcpServer, createGoalSelfMcpServer } from "../agents/slack/goal-tools";
+import { createPapercutsMcpServer } from "../agents/slack/papercuts-tools";
+import { papercutsEnabledForRepo } from "./papercuts";
 import { productName } from "./config";
 import { repoForPath, REPOS } from "./worktree";
 import { registerInteractiveMcpBuilder, startRunRpcServer } from "./run-rpc";
 import { findSession, touchBackstageSession } from "./session-cache";
 import { attachRepo, linkPr, sessionRepoIds, switchPrimaryRepo } from "./session-repos";
 import { makeAskHandler } from "./asks";
+
+/** The session's primary repo id, for the papercuts toggle (undefined =
+ *  chat-only session, which logs under no repo and is always enabled). */
+function sessionRepoId(sessionId: string): string | undefined {
+	const s = findSession(sessionId);
+	if (!s) return undefined;
+	return s.repo || (s.worktreeDir ? repoForPath(s.worktreeDir).id : undefined);
+}
+
+/** The papercuts server for a session, or {} when its repo opted out
+ *  (Settings → Papercuts). Shared with automationMcpServers below — this is
+ *  the ONE opensession-* server that is safe for automation runs (append-only
+ *  friction log; see papercuts-tools.ts). */
+function papercutsServerFor(
+	sessionId: string,
+	runKind: string,
+	by?: string,
+): Record<string, unknown> {
+	if (!papercutsEnabledForRepo(sessionRepoId(sessionId))) return {};
+	return {
+		"opensession-papercuts": createPapercutsMcpServer({
+			sessionId,
+			runKind,
+			by,
+			defaults: () => {
+				const s = findSession(sessionId);
+				return { repo: sessionRepoId(sessionId), model: s?.model };
+			},
+		}),
+	};
+}
 
 export function interactiveMcpServers(
 	user?: string,
@@ -110,6 +147,9 @@ export function interactiveMcpServers(
 					"opensession-ask": createAskUserMcpServer({
 						ask: makeAskHandler(sessionId),
 					}),
+					// Friction log — log_papercut/list_papercuts, per-repo toggle in
+					// Settings → Papercuts (dropped here when the repo opted out).
+					...papercutsServerFor(sessionId, "prompt", createdBy),
 				}
 			: {}),
 	};
@@ -121,8 +161,21 @@ export function interactiveMcpServers(
 // sessions additionally get opensession-goal-self (next-wake/ledger/pause tools),
 // matching what the in-process path hands them at the runAgent call sites.
 registerInteractiveMcpBuilder((sessionId, user) => {
+	// Automation-owned sessions run on untrusted event/ticket text. Their runs
+	// only ever carry opensession-papercuts (automations.ts registers the exact
+	// instances per run), but this builder is also run-rpc's FALLBACK resolver
+	// for any registered run token — so it must fail closed here rather than
+	// hand session-control/admin tools to an automation that asks for them.
+	const session = sessionId ? findSession(sessionId) : undefined;
+	if (session?.automation) {
+		return papercutsServerFor(
+			sessionId,
+			"automation",
+			`${session.automation} (automation)`,
+		);
+	}
 	const servers = interactiveMcpServers(user, sessionId);
-	const goalId = sessionId ? findSession(sessionId)?.goalId : undefined;
+	const goalId = session?.goalId;
 	if (goalId)
 		(servers as Record<string, unknown>)["opensession-goal-self"] =
 			createGoalSelfMcpServer(goalId);
