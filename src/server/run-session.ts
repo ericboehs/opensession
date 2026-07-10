@@ -26,6 +26,7 @@ import {
 import {
 	automationDeniedTools,
 	automationMcpServersByName,
+	selfImproveMcpForSession,
 } from "./automations";
 import { defaultRepo } from "./config";
 import {
@@ -1212,11 +1213,14 @@ async function runSessionPromptInner(
 		mcpServers,
 		// Self-management tools for normal sessions; withheld from automation
 		// sessions (and their interactive resumes) — same gate as deniedTools above.
+		// Exception: a selfImprove automation's sessions keep their scoped pair
+		// (spawn_task suite + own-prompt update) so a Slack thread reply reaches
+		// a session with the same tools its nightly run had.
 		// A goal-driven session also gets its own opensession-goal-self controls, so an
 		// interactive turn (a human steering it in the UI) can set the next wake,
 		// append to the ledger, or pause/finish — the same tools the headless wake has.
 		inProcessMcp: isAutomationSession
-			? undefined
+			? selfImproveMcpForSession(session, sessionId)
 			: session.goalId
 				? {
 						...interactiveMcpServers(user, sessionId),

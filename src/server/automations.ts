@@ -21,6 +21,9 @@ import { linkThreadInIndex } from "./slack-links";
 import { createPapercutsMcpServer } from "../agents/slack/papercuts-tools";
 import { papercutsEnabledForRepo } from "./papercuts";
 import { registerSessionMcpServers, unregisterSessionMcpServers } from "./run-rpc";
+import { createSessionsMcpServer } from "../agents/slack/sessions-tools";
+import { createSelfImproveMcpServer } from "../agents/slack/self-improve-tools";
+import { audit } from "./audit";
 
 const AUTOMATIONS_DIR = stateDir("automations");
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
@@ -107,6 +110,17 @@ export interface Automation {
    * existed. Prefer naming just what the automation actually uses.
    */
   mcpServers?: string[];
+  /**
+   * Self-improving automation (human-set only — e.g. the nightly Dreaming
+   * reflection). Runs (and thread-reply resumes) additionally get two scoped
+   * in-process servers: opensession-sessions in `automationSelf` shape (the
+   * spawn_task/task_status/cancel_task suite ONLY — no answer/send/cancel/
+   * create on other sessions) and opensession-self (read own record + update
+   * OWN prompt, with timestamped backup + audit event). Children it spawns
+   * stay PR-gated and depth-guarded; schedule/model/mode/repo changes remain
+   * human-only. See selfImproveMcpServers below.
+   */
+  selfImprove?: boolean;
   /**
    * If set, this automation is poll-triggered off a Grafana Loki signal by the
    * generic grafana-poller agent (one run per fresh failure). See GrafanaPollConfig.
@@ -303,6 +317,7 @@ export function createAutomation(input: {
   eventKey?: string;
   mcpServers?: string[];
   repo?: string;
+  selfImprove?: boolean;
   model?: string;
   fallbackModel?: string;
   accountId?: string;
@@ -351,6 +366,7 @@ export function createAutomation(input: {
     eventKey: (input.eventKey || "").trim() || undefined,
     mcpServers: sanitizeMcpList(input.mcpServers),
     repo,
+    selfImprove: input.selfImprove === true || undefined,
     model,
     fallbackModel,
     accountId,
@@ -366,7 +382,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "repo" | "model" | "fallbackModel" | "accountId" | "accountStrict" | "usageCredits" | "sandbox" | "grafanaPoll" | "slackWatch">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "repo" | "selfImprove" | "model" | "fallbackModel" | "accountId" | "accountStrict" | "usageCredits" | "sandbox" | "grafanaPoll" | "slackWatch">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -389,6 +405,7 @@ export function updateAutomation(
     if (repo && typeof repo === "object") return repo;
     next.repo = repo;
   }
+  if ("selfImprove" in patch) next.selfImprove = patch.selfImprove === true || undefined;
   if ("grafanaPoll" in patch) {
     const grafanaPoll = sanitizeGrafanaPoll(patch.grafanaPoll);
     if (grafanaPoll && "error" in grafanaPoll) return grafanaPoll;
@@ -424,6 +441,88 @@ export function updateAutomation(
   if (!next.webhookSecret) next.webhookSecret = generateSecret();
   saveAutomation(next);
   return next;
+}
+
+/**
+ * Prompt self-update for selfImprove automations (the opensession-self MCP's
+ * write path). Own record only; a timestamped backup lands next to the record
+ * and an audit event records the reason, so a bad self-edit is one `cp` from
+ * undone. Length floor guards against self-lobotomy (a degenerate rewrite
+ * that drops the prompt's structure and guardrails).
+ */
+export function updateAutomationPromptSelf(
+  id: string,
+  newPrompt: string,
+  reason: string
+): { ok: true; backupPath: string } | { ok: false; error: string } {
+  const a = getAutomation(id);
+  if (!a) return { ok: false, error: "Automation not found." };
+  const prompt = (newPrompt || "").trim();
+  if (prompt.length < 500) {
+    return {
+      ok: false,
+      error: `Refused: new prompt is ${prompt.length} chars — a full replacement this short would drop the prompt's structure/guardrails. Pass the COMPLETE prompt.`,
+    };
+  }
+  if (!reason?.trim()) return { ok: false, error: "A one-line reason is required (audited)." };
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-T:]/g, "");
+  const backupPath = `${AUTOMATIONS_DIR}/${id}.json.bak.self-${stamp}`;
+  writeJsonAtomic(backupPath, a);
+  const res = updateAutomation(id, { prompt });
+  if ("error" in res) return { ok: false, error: res.error };
+  audit({
+    msg: "automation_self_update",
+    automation_id: id,
+    automation_name: a.name,
+    reason: reason.trim().slice(0, 500),
+    prompt_bytes_before: Buffer.byteLength(a.prompt, "utf8"),
+    prompt_bytes_after: Buffer.byteLength(prompt, "utf8"),
+    backup: backupPath,
+  });
+  return { ok: true, backupPath };
+}
+
+/**
+ * The two scoped in-process servers a selfImprove automation run gets (see
+ * the Automation.selfImprove doc). Used by runAutomation for scheduled/manual
+ * runs AND — via selfImproveMcpForSession — by the interactive-resume paths
+ * (run-session.ts, interactive-mcp.ts's run-rpc fallback builder), so a Slack
+ * thread reply reaches a session with the same tools the nightly run had.
+ */
+export function selfImproveMcpServers(
+  a: Automation,
+  sessionId: string
+): Record<string, unknown> {
+  return {
+    "opensession-sessions": createSessionsMcpServer({
+      createdBy: `${a.name} (automation)`,
+      isAdmin: false,
+      automationSelf: true,
+      currentSessionId: sessionId,
+    }),
+    "opensession-self": createSelfImproveMcpServer({
+      automationName: a.name,
+      getOwn: () => {
+        const cur = getAutomation(a.id);
+        if (!cur) return null;
+        const { name, prompt, schedule, mode, repo, model, mcpServers } = cur;
+        return { name, prompt, schedule, mode, repo, model, mcpServers };
+      },
+      updateOwnPrompt: (p, reason) => updateAutomationPromptSelf(a.id, p, reason),
+    }),
+  };
+}
+
+/** selfImproveMcpServers for a session file (automation resolved by the name
+ *  stamped on the session) — undefined unless that automation has the flag. */
+export function selfImproveMcpForSession(
+  session: { automation?: string },
+  sessionId: string
+): Record<string, unknown> | undefined {
+  if (!session.automation) return undefined;
+  const a = listAutomations().find((x) => x.name === session.automation);
+  if (!a?.selfImprove) return undefined;
+  return selfImproveMcpServers(a, sessionId);
 }
 
 export function deleteAutomation(id: string): boolean {
@@ -730,7 +829,7 @@ export async function runAutomation(
     // session can never resolve the admin/sessions siblings through the same
     // socket). Registered per run so the proxy executes THESE instances with
     // automation context; per-repo toggle in Settings → Papercuts.
-    const inProcessMcp = papercutsEnabledForRepo(repo.id)
+    const papercutsMcp = papercutsEnabledForRepo(repo.id)
       ? {
           "opensession-papercuts": createPapercutsMcpServer({
             sessionId: bksId,
@@ -740,6 +839,16 @@ export async function runAutomation(
           }),
         }
       : undefined;
+    // Self-improving automations (human-set flag) also get the scoped pair:
+    // spawn_task suite + own-prompt update. Per-session servers like every
+    // unattended kind, so no SHARED_INPROCESS_SERVERS entry is needed.
+    const selfMcp = automation.selfImprove
+      ? selfImproveMcpServers(automation, bksId)
+      : undefined;
+    const inProcessMcp =
+      papercutsMcp || selfMcp
+        ? { ...(papercutsMcp || {}), ...(selfMcp || {}) }
+        : undefined;
     if (inProcessMcp) registerSessionMcpServers(bksId, inProcessMcp);
 
     let engineSessionId = "";

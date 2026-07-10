@@ -39,6 +39,14 @@ export interface SessionsToolContext {
   isAdmin: boolean;
   /** The session using these tools, so worker sessions can report back to it. */
   currentSessionId?: string;
+  /**
+   * Self-improving automation (automation.selfImprove, human-set): grants the
+   * task primitives (spawn_task/task_status/cancel_task) WITHOUT isAdmin — the
+   * spawn suite only, never answer/send/cancel/create on other sessions. Also
+   * lifts spawnTaskImpl's automation refusal for this server instance. The
+   * blast radius stays PR-gated: children open PRs, humans merge.
+   */
+  automationSelf?: boolean;
 }
 
 function text(s: string) {
@@ -266,7 +274,10 @@ export async function spawnTaskImpl(
   // Defense-in-depth: opensession-sessions is withheld from automation runs at the
   // wiring layer already; refuse anyway if the calling session is
   // automation-owned (interactive resumes of automation sessions included).
-  if (caller && isAutomationOwned(caller, deps)) {
+  // Exception: a self-improving automation (automation.selfImprove, human-set)
+  // gets a server instance built with `automationSelf` — spawning is the point
+  // there, and the depth guard below still applies.
+  if (caller && !ctx.automationSelf && isAutomationOwned(caller, deps)) {
     return { ok: false, error: "spawn_task is not available from automation sessions." };
   }
   const myDepth = resolveSpawnDepth(caller, deps);
@@ -610,12 +621,21 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           );
         }
       ),
-      // ---------------------------------------------------------------------
-      // Tasks — fire-and-forget child sessions (spawn / poll / cancel)
-      // ---------------------------------------------------------------------
+    );
+  }
+
+  // Tasks — fire-and-forget child sessions (spawn / poll / cancel). Available
+  // to the trusted user, and to self-improving automations (automationSelf):
+  // there the spawn suite is the ONLY control surface — no answer/send/cancel/
+  // create on arbitrary sessions — and children stay PR-gated + depth-guarded.
+  if (ctx.isAdmin || ctx.automationSelf) {
+    tools.push(
       tool(
         "spawn_task",
-        "Delegate a self-contained task to a child session and return IMMEDIATELY with {taskId, url} — the lightweight alternative to create_session + send_to_session choreography when you just want work done and a handle to poll. The child is created through the same code path as create_session (it shares this session's worktree in code mode when repos match, inherits your user, is linked as a child, and is told to report back here); poll it with task_status and stop it with cancel_task. Mode defaults to 'code' (pass a branch unless the child can share this session's code worktree); use 'ask' for read-only investigation. Loop guard: spawned children may delegate one further level, then spawn_task refuses (depth ≥ 2). Not available from automation sessions.",
+        "Delegate a self-contained task to a child session and return IMMEDIATELY with {taskId, url} — the lightweight alternative to create_session + send_to_session choreography when you just want work done and a handle to poll. The child is created through the same code path as create_session (it shares this session's worktree in code mode when repos match, inherits your user, is linked as a child, and is told to report back here); poll it with task_status and stop it with cancel_task. Mode defaults to 'code' (pass a branch unless the child can share this session's code worktree); use 'ask' for read-only investigation. Loop guard: spawned children may delegate one further level, then spawn_task refuses (depth ≥ 2)." +
+          (ctx.automationSelf
+            ? " Children may edit code and open PRs but NEVER merge — a human reviews every PR."
+            : " Not available from automation sessions."),
         {
           prompt: z.string().describe("Self-contained task prompt: scope, relevant files, constraints, acceptance criteria, and what to report."),
           repo: z.string().optional().describe("Registered repo id, e.g. 'tella-fusion' or 'backstage'. Defaults to this session's repo."),
@@ -628,7 +648,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           const res = await spawnTaskImpl(args, ctx);
           if (!res.ok) return text(res.error);
           return text(
-            `Spawned task \`${res.taskId}\` — ${res.url}\nIt runs in the background; poll with task_status(taskId), answer questions with answer_session_question, stop with cancel_task.`
+            `Spawned task \`${res.taskId}\` — ${res.url}\nIt runs in the background; poll with task_status(taskId)${ctx.isAdmin ? ", answer questions with answer_session_question," : ""} and stop with cancel_task.`
           );
         }
       ),
@@ -644,7 +664,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
       ),
       tool(
         "cancel_task",
-        "Cancel a spawned task's in-flight run (drops queued messages too). Same as cancel_session — only runs this server owns.",
+        "Cancel a spawned task's in-flight run (drops queued messages too). Only runs this server owns.",
         { taskId: z.string().describe("The task/session id returned by spawn_task.") },
         async (args: { taskId: string }) => text(cancelTaskImpl(args))
       )

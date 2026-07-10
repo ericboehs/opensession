@@ -26,6 +26,7 @@ import { papercutsEnabledForRepo } from "./papercuts";
 import { productName } from "./config";
 import { repoForPath, REPOS } from "./worktree";
 import { registerInteractiveMcpBuilder, startRunRpcServer } from "./run-rpc";
+import { selfImproveMcpForSession } from "./automations";
 import { findSession, touchBackstageSession } from "./session-cache";
 import { attachRepo, linkPr, sessionRepoIds, switchPrimaryRepo } from "./session-repos";
 import { makeAskHandler } from "./asks";
@@ -163,16 +164,20 @@ export function interactiveMcpServers(
 registerInteractiveMcpBuilder((sessionId, user) => {
 	// Automation-owned sessions run on untrusted event/ticket text. Their runs
 	// only ever carry opensession-papercuts (automations.ts registers the exact
-	// instances per run), but this builder is also run-rpc's FALLBACK resolver
-	// for any registered run token — so it must fail closed here rather than
+	// instances per run) — plus, for selfImprove automations only, the scoped
+	// spawn/self pair — but this builder is also run-rpc's FALLBACK resolver
+	// for any registered run token, so it must fail closed here rather than
 	// hand session-control/admin tools to an automation that asks for them.
 	const session = sessionId ? findSession(sessionId) : undefined;
 	if (session?.automation) {
-		return papercutsServerFor(
-			sessionId,
-			"automation",
-			`${session.automation} (automation)`,
-		);
+		return {
+			...papercutsServerFor(
+				sessionId,
+				"automation",
+				`${session.automation} (automation)`,
+			),
+			...(selfImproveMcpForSession(session, sessionId) || {}),
+		};
 	}
 	const servers = interactiveMcpServers(user, sessionId);
 	const goalId = session?.goalId;
