@@ -393,6 +393,13 @@ export function resumeInterruptedRuns(
     if (run.kind?.startsWith("slack")) {
       continue;
     }
+    // Workflow fan-out agents ("workflow", plus -resume/-rerun suffixes): the
+    // orchestration state (the script's Worker) died with the process — the
+    // workflow store marks the run interrupted on boot, and replaying a lone
+    // child agent without its script would be noise.
+    if (run.kind?.startsWith("workflow")) {
+      continue;
+    }
     // Sandboxed runs (docs/sandboxes-plan.md Phases 1+3): the sandbox — and
     // often the in-sandbox run host itself — outlives a backstage restart.
     // Reattach/relaunch through the provider instead of running in-process;

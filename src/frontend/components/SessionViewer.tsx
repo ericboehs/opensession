@@ -52,6 +52,8 @@ import { PrStatusBar } from "./PrStatusBar";
 import { SlackChatPanel } from "./SlackChatPanel";
 import { TeamChat } from "./TeamChat";
 import { PlainThreadPanel } from "./PlainThreadPanel";
+import { WorkflowPanel } from "./WorkflowPanel";
+import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 import { PreviewButton } from "./PreviewButton";
 import { StagingLink } from "./StagingLink";
 import { WorkspaceInfo } from "./WorkspaceInfo";
@@ -188,7 +190,8 @@ type PanelTab =
 	| "pr"
 	| "slack"
 	| "chat"
-	| "plain";
+	| "plain"
+	| "workflows";
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
@@ -421,11 +424,14 @@ export function SessionViewer({
 			session.mode !== "ask" &&
 			Boolean(session.worktreeDir || session.branch);
 		const stored = localStorage.getItem("michael-panel-tab") as PanelTab | null;
-		if (stored) {
+		// "workflows" isn't meaningfully restorable (runs seed async, so the tab
+		// starts hidden and the body would flash PrPanel) — map it back to Info.
+		const tab = stored === "workflows" ? "info" : stored;
+		if (tab) {
 			const available =
-				stored === "info" ||
-				(stored === "plain" ? Boolean(session.plainThreadId) : workspace);
-			if (available) return stored;
+				tab === "info" ||
+				(tab === "plain" ? Boolean(session.plainThreadId) : workspace);
+			if (available) return tab;
 		}
 		return "info";
 	});
@@ -614,6 +620,55 @@ export function SessionViewer({
 		setUsage(session.usage);
 	}, [session.id, session.usage]);
 
+	// Dynamic workflow runs (opensession-workflows MCP): seeded by a fetch on
+	// open/session switch, then kept live by workflow_update broadcasts. Powers
+	// the Agents tab — hidden entirely while empty.
+	const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSnapshot[]>([]);
+	// True once the seed fetch for the current session has settled — the
+	// runs-vanished fallback below must not flip tabs off an empty [] mid-fetch.
+	const [workflowsLoaded, setWorkflowsLoaded] = useState(false);
+	useEffect(() => {
+		let stale = false;
+		setWorkflowRuns([]);
+		setWorkflowsLoaded(false);
+		fetch(`${BASE_PATH}/api/sessions/${encodeURIComponent(session.id)}/workflows`)
+			.then((r) => (r.ok ? r.json() : null))
+			.then((d) => {
+				if (stale) return;
+				if (Array.isArray(d?.runs)) {
+					const fetched = d.runs as WorkflowRunSnapshot[];
+					// WS upserts may have landed while the fetch was in flight — those
+					// snapshots are newer than the seed, so keep them and only add
+					// fetched runs we don't have yet (the panel re-sorts by startedAt).
+					setWorkflowRuns((prev) => {
+						const have = new Set(prev.map((r) => r.runId));
+						const added = fetched.filter((r) => !have.has(r.runId));
+						return added.length ? [...prev, ...added] : prev;
+					});
+				}
+				setWorkflowsLoaded(true);
+			})
+			.catch(() => {
+				if (!stale) setWorkflowsLoaded(true);
+			});
+		return () => {
+			stale = true;
+		};
+	}, [session.id]);
+	function cancelWorkflowRun(runId: string) {
+		// Fire-and-forget: the workflow_update echo flips the card to cancelled.
+		fetch(`${BASE_PATH}/api/workflows/${encodeURIComponent(runId)}/cancel`, {
+			method: "POST",
+		}).catch(() => {});
+	}
+	// If the runs vanish out from under the open tab (e.g. session switch),
+	// fall back to Info instead of a blank panel behind a hidden tab. Only
+	// after the seed fetch settled — an in-flight seed always starts at [].
+	useEffect(() => {
+		if (workflowsLoaded && panelTab === "workflows" && workflowRuns.length === 0)
+			setPanelTab("info");
+	}, [workflowsLoaded, panelTab, workflowRuns.length]);
+
 	// Keep the pin star in sync with the store (changes can come from the tab bar
 	// or the Home screen) and reset when switching sessions.
 	useEffect(() => setPinned(isPinned(session.id)), [session.id]);
@@ -646,7 +701,9 @@ export function SessionViewer({
 	const plainUrl = session.plainThreadId
 		? plainThreadUrl(session.plainThreadId)
 		: "";
-	const panelAvailable = hasWorkspace || hasPlain;
+	// Workflow runs open the panel too: ask-mode sessions without a workspace
+	// or Plain thread still need somewhere to show the Agents tab.
+	const panelAvailable = hasWorkspace || hasPlain || workflowRuns.length > 0;
 	const isBusy = isRunningLive || isStreaming;
 	// Derived, not the raw flag: transcript content or streaming text means the
 	// opening run already started, so the worktree is done — this guards against
@@ -787,6 +844,17 @@ export function SessionViewer({
 				return;
 			}
 			switch (msg.type) {
+				case "workflow_update": {
+					// Dynamic workflows: upsert the live run snapshot (already
+					// session-filtered by the sessionId gate above).
+					const run = msg.run;
+					setWorkflowRuns((prev) =>
+						prev.some((r) => r.runId === run.runId)
+							? prev.map((r) => (r.runId === run.runId ? run : r))
+							: [run, ...prev],
+					);
+					break;
+				}
 				case "transcript_init": {
 					// Weave persisted model switches into the conversation as dividers
 					const switches: TranscriptEntry[] = (session.modelHistory || []).map(
@@ -2226,7 +2294,9 @@ export function SessionViewer({
 							label={
 								hasWorkspace
 									? "Toggle side panel (changes, terminal, PR, Plain)"
-									: "Toggle Plain conversation panel"
+									: hasPlain
+										? "Toggle Plain conversation panel"
+										: "Toggle side panel (agents)"
 							}
 						>
 							<button
@@ -2304,7 +2374,11 @@ export function SessionViewer({
 										>
 											<IconSidebarRight size={20} />
 											<span>
-												{hasWorkspace ? "Changes, terminal & PR" : "Plain conversation"}
+												{hasWorkspace
+													? "Changes, terminal & PR"
+													: hasPlain
+														? "Plain conversation"
+														: "Agents"}
 											</span>
 											<IconChevronRight className="btn-viewer-panelrow-caret" size={18} />
 										</button>
@@ -2947,6 +3021,21 @@ export function SessionViewer({
 									<span className="panel-tab-dot" />
 							</button>
 							)}
+							{workflowRuns.length > 0 && (
+								<button
+									className={`panel-tab ${panelTab === "workflows" ? "active" : ""}`}
+									onClick={() => selectPanelTab("workflows")}
+								>
+									Agents
+									{workflowRuns.some((r) => r.status === "running") ? (
+										<span className="panel-tab-dot animate-pulse bg-green" />
+									) : (
+										<span className="panel-tab-count">
+											{workflowRuns.length}
+										</span>
+									)}
+								</button>
+							)}
 						</div>
 						<div className="panel-body">
 							{/* Plain-only sessions (no code workspace) show just the timeline. */}
@@ -2982,6 +3071,14 @@ export function SessionViewer({
 									onOpenSession={(id) => onOpenSession?.(id)}
 									liveMediaCount={liveMediaCount}
 									liveMedia={liveOverviewMedia}
+								/>
+							) : panelTab === "workflows" && workflowRuns.length > 0 ? (
+								// Before the Plain fallthrough: a Plain-only session's
+								// Agents tab must win over its default timeline panel.
+								<WorkflowPanel
+									sessionId={session.id}
+									runs={workflowRuns}
+									onCancel={cancelWorkflowRun}
 								/>
 							) : (panelTab === "plain" || !hasWorkspace) && hasPlain ? (
 								<PlainThreadPanel

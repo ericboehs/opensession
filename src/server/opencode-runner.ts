@@ -241,8 +241,13 @@ export function parseOpencodeModel(
  *  "create"; host/sandbox run specs default `journalKind || "prompt"`).
  *  "linear" and "slack" are the team-driven agent loops — trusted humans on
  *  the other end; their runs still pass the Stripe money-movers as
- *  deniedTools, which flips them to the unattended tool-strip policy. */
-const INTERACTIVE_KINDS = new Set(["prompt", "goal", "create", "linear", "slack"]);
+ *  deniedTools, which flips them to the unattended tool-strip policy.
+ *  "workflow" is workflow fan-out agents — only launchable from interactive
+ *  sessions (the opensession-workflows MCP is interactive-only), so they
+ *  inherit interactive trust; ask mode + no MCP servers keeps them read-only
+ *  workers, and staying interactive keeps them shared-server eligible (no
+ *  per-agent `opencode serve` — the 2026-07-09 SQLite contention trap). */
+const INTERACTIVE_KINDS = new Set(["prompt", "goal", "create", "linear", "slack", "workflow"]);
 
 /** Unattended kinds allowed on this engine — with the least-privilege policy
  *  (opencodeRunPolicy) enforced via stripped tools. "automation" is the
@@ -285,6 +290,7 @@ export const SHARED_INPROCESS_SERVERS = [
   "opensession-ask",
   "opensession-github",
   "opensession-papercuts",
+  "opensession-workflows",
 ];
 
 /**

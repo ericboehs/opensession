@@ -23,6 +23,7 @@ import { createWalkthroughMcpServer } from "../agents/slack/walkthrough-tools";
 import { createMemoryMcpServer } from "../agents/slack/memory-tools";
 import { createGoalsMcpServer, createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { createPapercutsMcpServer } from "../agents/slack/papercuts-tools";
+import { createWorkflowsMcpServer } from "../agents/slack/workflow-tools";
 import { papercutsEnabledForRepo } from "./papercuts";
 import { productName } from "./config";
 import { repoForPath, REPOS } from "./worktree";
@@ -154,6 +155,16 @@ export function interactiveMcpServers(
 					// keeps using the native AskUserQuestion instead of a duplicate.
 					"opensession-ask": createAskUserMcpServer({
 						ask: makeAskHandler(sessionId),
+					}),
+					// Dynamic workflows: deterministic agent fan-out from a
+					// model-authored script (Agents panel). Interactive-only like the
+					// siblings — the automation fail-closed gate in the run-rpc builder
+					// below withholds it from automation-owned sessions.
+					"opensession-workflows": createWorkflowsMcpServer({
+						sessionId,
+						user: createdBy,
+						cwd: () => findSession(sessionId)?.worktreeDir || undefined,
+						defaultModel: () => findSession(sessionId)?.model,
 					}),
 					// Friction log — log_papercut/list_papercuts, per-repo toggle in
 					// Settings → Papercuts (dropped here when the repo opted out).

@@ -1,3 +1,7 @@
+// Type-only (erased at build): the dynamic-workflow run snapshot broadcast to
+// the session's Agents panel.
+import type { WorkflowRunSnapshot } from "../../server/workflow-types";
+
 export type SessionSource = "slack" | "linear" | "backstage" | "cli";
 
 /** A Slack channel linked to a backstage session (strictly one-to-one). */
@@ -585,6 +589,9 @@ export type WSServerMessage =
 	// id for multi-repo sessions) — the PR status header refetches on this.
 	| { type: "git_pushed"; sessionId: string; repo?: string }
 	| { type: "notice"; sessionId?: string; message: string }
+	// Dynamic workflow run snapshot changed (workflow-store broadcasts every
+	// mutation) — powers the session's Agents panel.
+	| { type: "workflow_update"; sessionId: string; run: WorkflowRunSnapshot }
 	| { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string }
 	| {
 			type: "subscription_changed";
