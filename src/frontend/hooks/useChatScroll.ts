@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // Scroll engineering for the transcript. The guiding rule: never move the reader
 // against their intent. The reader's own scroll position is the source of truth
@@ -13,6 +13,13 @@ import { useCallback, useRef, useState } from "react";
 // space below it the browser can't scroll it up to the top. The spacer is sized to
 // exactly the room the latest turn needs and shrinks to nothing as the reply fills
 // it — so once the answer is long enough the spacer vanishes and scrolling is normal.
+//
+// The load-bearing subtlety: the browser fires scroll events for layout causes too
+// (the pin's own anchor animation, clamps when stream text swaps for the final
+// entry) and those always land "at the edge" — the pinned position IS the padded
+// scroll max. So following only ever RE-engages from gesture-backed scrolls
+// (wheel/touch/scrollbar drag) or explicit actions (jump button); position alone
+// is never proof of intent.
 
 // Distance from the bottom (px) that still counts as "at the live edge".
 const STICK_THRESHOLD = 90;
@@ -77,6 +84,33 @@ export function useChatScroll(): ChatScroll {
   const pinnedRef = useRef(false);
   // Set on send; consumed once to perform the one-time scroll-to-top.
   const needAnchorRef = useRef(false);
+  // Where the pin parked the reader (scrollTop). While they're still there,
+  // relayout actively holds the pinned turn at TOP_GAP through DOM swaps —
+  // the pending bubble → real entry replacement shifts/clamps scrollTop, and
+  // at scroll-max the browser's scroll anchoring keeps the BOTTOM edge stable
+  // instead, dragging the reader from the pinned turn to the live edge.
+  const pinTopRef = useRef<number | null>(null);
+  // Expiry (performance.now()) of an in-flight programmatic smooth scroll.
+  // Its intermediate scroll events pass through "not at the edge" positions;
+  // reading those as reader intent turned following off mid-animation, so a
+  // jump-to-latest during a fast stream landed short of the grown bottom and
+  // never stuck. While in flight we only ever re-engage (on arrival); a real
+  // gesture (wheel/touch) or the deadline cancels the flight.
+  const autoFlightRef = useRef(0);
+  // Timestamps of the last real reader gestures. Scroll events without a
+  // recent gesture are layout-driven — the pin's anchor animation, or the
+  // clamp when stream text swaps for the final transcript entry — and must
+  // never RE-engage following: the pinned position sits exactly at the padded
+  // scroll max, so those events always read as "at the edge" and used to
+  // dissolve the pin (on send) or yank the view to the bottom (on turn end).
+  // Touch gets a long window of its own: iOS momentum keeps scrolling for
+  // seconds after the last touch event, with no scrollend support to lean on.
+  const lastGestureRef = useRef(0);
+  const lastTouchRef = useRef(0);
+  // True while the pointer is dragging the scrollbar (classic scrollbars hit
+  // the container itself past clientWidth; overlay scrollbars aren't
+  // detectable — those readers re-engage via wheel/touch or the jump button).
+  const scrollbarDragRef = useRef(false);
 
   const distanceFromBottom = useCallback(() => {
     const el = containerRef.current;
@@ -87,7 +121,10 @@ export function useChatScroll(): ChatScroll {
   const clearSpacer = useCallback(() => {
     pinnedRef.current = false;
     needAnchorRef.current = false;
+    pinTopRef.current = null;
     if (spacerRef.current) spacerRef.current.style.height = "0px";
+    // Hand scroll anchoring back to the browser (disabled while pinned).
+    if (containerRef.current) containerRef.current.style.overflowAnchor = "";
   }, []);
 
   const setFollowing = useCallback((v: boolean) => {
@@ -111,6 +148,7 @@ export function useChatScroll(): ChatScroll {
       const el = containerRef.current;
       if (!el) return;
       clearSpacer();
+      if (behavior === "smooth") autoFlightRef.current = performance.now() + 1200;
       el.scrollTo({ top: el.scrollHeight, behavior });
       setFollowing(true);
     },
@@ -121,8 +159,23 @@ export function useChatScroll(): ChatScroll {
     const el = containerRef.current;
     if (!el || !target) return;
     const delta = target.getBoundingClientRect().top - el.getBoundingClientRect().top - TOP_GAP;
-    if (delta <= 0) return; // already at or above the target — don't scroll up
+    if (delta <= 0) {
+      // Already at or above the target — don't scroll up. For a pinned turn
+      // this IS the pin position; remember it so relayout holds it.
+      if (pinnedRef.current) pinTopRef.current = el.scrollTop;
+      return;
+    }
+    const finalFromBottom = el.scrollHeight - (el.scrollTop + delta) - el.clientHeight;
+    if (pinnedRef.current) pinTopRef.current = el.scrollTop + delta;
     el.scrollTo({ top: el.scrollTop + delta, behavior: "smooth" });
+    // A reopen-anchor that lands at the live edge anyway keeps following (with
+    // a flight so the animation's mid positions don't disengage it). A pinned
+    // turn must stop following instead: its padded "edge" is fake, and the
+    // reply streams into the reserved space below.
+    if (!pinnedRef.current && finalFromBottom < STICK_THRESHOLD) {
+      autoFlightRef.current = performance.now() + 1200;
+      return;
+    }
     // Leaving the live edge to read from the top is intent: stop following so the
     // streaming reply fills the space below instead of yanking us back down.
     setFollowing(false);
@@ -159,6 +212,11 @@ export function useChatScroll(): ChatScroll {
     const el = containerRef.current;
     if (!el) return;
     if (pinnedRef.current) {
+      // Own the position for the duration of the pin: at scroll-max the
+      // browser's scroll anchoring keeps the bottom edge stable across content
+      // swaps, which would teleport the reader from the pinned turn to the
+      // live edge when the final entry lands.
+      el.style.overflowAnchor = "none";
       sizeSpacer();
       if (needAnchorRef.current) {
         // First paint after a send: now that the spacer reserves room, scroll the
@@ -168,6 +226,27 @@ export function useChatScroll(): ChatScroll {
           anchorToTop(target);
           needAnchorRef.current = false;
           sizeSpacer();
+        }
+      } else if (
+        pinTopRef.current !== null &&
+        Math.abs(el.scrollTop - pinTopRef.current) < 4
+      ) {
+        // The reader is still parked at the pin: hold the turn at TOP_GAP
+        // through DOM swaps that shift or clamp scrollTop. Skipped the moment
+        // they scroll away — their position is theirs.
+        const target = lastUserEl(el);
+        if (target) {
+          const desired = Math.max(
+            0,
+            Math.round(
+              target.getBoundingClientRect().top -
+                el.getBoundingClientRect().top +
+                el.scrollTop -
+                TOP_GAP,
+            ),
+          );
+          if (Math.abs(desired - el.scrollTop) > 1) el.scrollTop = desired;
+          pinTopRef.current = el.scrollTop;
         }
       }
       updateScrollToBottomVisibility(false);
@@ -187,9 +266,79 @@ export function useChatScroll(): ChatScroll {
   // edge re-engages it; scrolling away disengages it.
   const onScroll = useCallback(() => {
     const atEdge = distanceFromBottom() < STICK_THRESHOLD;
-    if (atEdge !== followingRef.current) setFollowing(atEdge);
-    updateScrollToBottomVisibility(atEdge);
+    const now = performance.now();
+    if (autoFlightRef.current) {
+      if (now > autoFlightRef.current) {
+        autoFlightRef.current = 0; // overdue — treat the event as the reader's
+      } else if (atEdge) {
+        autoFlightRef.current = 0; // arrived
+        if (!followingRef.current) setFollowing(true);
+        updateScrollToBottomVisibility(true);
+        return;
+      } else {
+        return; // mid-flight positions carry no reader intent
+      }
+    }
+    // Leaving the edge always disengages, but only a gesture-backed scroll may
+    // RE-engage: layout-driven events (see lastGestureRef) always land "at the
+    // edge" and carry no intent. Non-gesture readers at the true bottom still
+    // have the jump button.
+    const gestured =
+      scrollbarDragRef.current ||
+      now - lastGestureRef.current < 1000 ||
+      now - lastTouchRef.current < 6000;
+    if (!atEdge && followingRef.current) setFollowing(false);
+    else if (atEdge && !followingRef.current && gestured) setFollowing(true);
+    updateScrollToBottomVisibility(followingRef.current);
   }, [distanceFromBottom, setFollowing, updateScrollToBottomVisibility]);
+
+  // Two container-level listeners: a real gesture cancels a programmatic
+  // flight immediately (so the reader can grab the transcript mid-animation),
+  // and capture-phase load events re-run the glue — an image finishing to load
+  // grows the content with no React state change, which otherwise left a
+  // following reader silently stranded above the bottom.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const gesture = () => {
+      autoFlightRef.current = 0;
+      lastGestureRef.current = performance.now();
+    };
+    const touch = () => {
+      gesture();
+      lastTouchRef.current = performance.now();
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      // Classic scrollbar drags hit the container itself past the content box.
+      if (
+        e.target === el &&
+        (e.offsetX >= el.clientWidth || e.offsetY >= el.clientHeight)
+      )
+        scrollbarDragRef.current = true;
+    };
+    const endDrag = () => {
+      if (!scrollbarDragRef.current) return;
+      scrollbarDragRef.current = false;
+      lastGestureRef.current = performance.now();
+    };
+    const onLoad = () => relayout();
+    el.addEventListener("wheel", gesture, { passive: true });
+    el.addEventListener("touchstart", touch, { passive: true });
+    el.addEventListener("touchmove", touch, { passive: true });
+    el.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    el.addEventListener("load", onLoad, true);
+    return () => {
+      el.removeEventListener("wheel", gesture);
+      el.removeEventListener("touchstart", touch);
+      el.removeEventListener("touchmove", touch);
+      el.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+      el.removeEventListener("load", onLoad, true);
+    };
+  }, [relayout]);
 
   return {
     containerRef,
