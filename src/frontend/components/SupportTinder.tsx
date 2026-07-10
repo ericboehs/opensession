@@ -28,8 +28,8 @@ import { useCurrentUser } from "./UserPicker";
  *   Plain (o) → open the thread in the Plain app
  *   Back  (b) → previous card · Esc → leave
  * Spam and Done land on the undo stack (z / header ↩ / toast) like PR Tinder's
- * actions. The deck keeps Plain's own Todo-inbox order (newest status change
- * first) — no shuffle, you're working a queue, not re-rolling it.
+ * actions. The deck is shuffled per visit — random order beats the queue's
+ * age order here, so old tickets don't wall off the fresh ones.
  */
 
 const SWIPE_DISTANCE = 110; // px of drag past which a release commits
@@ -48,6 +48,16 @@ interface Props {
 	onExit: () => void;
 	/** Navigate into a session (the Session button resolves one over HTTP). */
 	onOpenSession: (id: string) => void;
+}
+
+/** Fisher–Yates, returns a new array — the deck order is rolled once per visit. */
+function shuffle<T>(arr: T[]): T[] {
+	const out = arr.slice();
+	for (let i = out.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[out[i], out[j]] = [out[j], out[i]];
+	}
+	return out;
 }
 
 function ageDays(ts: string): number {
@@ -81,8 +91,8 @@ const PRIORITY: Record<number, { label: string; cls: string }> = {
 export function SupportTinder({ onExit, onOpenSession }: Props) {
 	const currentUser = useCurrentUser();
 
-	// One fetch per visit; the deck is then frozen — acting on cards never
-	// reorders the rest.
+	// One fetch per visit; the deck is shuffled once and then frozen — acting
+	// on cards never reorders the rest.
 	const [deck, setDeck] = useState<SupportThread[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
@@ -90,7 +100,7 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 		let alive = true;
 		fetchSupportThreads()
 			.then((threads) => {
-				if (alive) setDeck(threads);
+				if (alive) setDeck(shuffle(threads));
 			})
 			.catch((e) => {
 				if (alive) setError(e.message || String(e));
