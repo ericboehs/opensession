@@ -1349,6 +1349,12 @@ async function* runOpencodeAttempt(
   // The turn died on a Claude usage limit (weekly Fable cap, 5-hour session
   // limit, credits) — drives account rotation / usageLimitExhausted.
   let usageLimitHit = false;
+  // The liveness guard fired with zero provider visibility (no retry events,
+  // no stream bytes): the signature of a wedged Meridian proxy, not bad
+  // credentials — the same server's first request typically worked and later
+  // ones hang forever (2026-07-10: 20 aborts, all this shape). Drives
+  // kill-the-server + one fresh-server retry in the runFailure block.
+  let livenessWedged = false;
 
   try {
     // Bridge for Anthropic models — dispatched on bridge.mode in
@@ -2206,12 +2212,13 @@ async function* runOpencodeAttempt(
           if (lastProviderRetryError && isClaudeUsageLimitError(lastProviderRetryError, true)) {
             usageLimitHit = true;
           }
+          if (!lastProviderRetryError) livenessWedged = true;
           runFailure ??= lastProviderRetryError
             ? `opencode ${parsed.providerID} run produced no output within ${LIVENESS_MS / 1000}s — ` +
               `the provider kept retrying on account "${bridgeAccountLabel}": ` +
               `${lastProviderRetryError.slice(0, 300)}; aborting`
             : `opencode ${parsed.providerID} run produced no output within ${LIVENESS_MS / 1000}s — ` +
-              `likely an authentication hang on account "${bridgeAccountLabel}"; aborting`;
+              `the engine bridge on account "${bridgeAccountLabel}" went silent (wedged proxy or auth hang); aborting`;
           void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
           signalDone();
         }, LIVENESS_MS)
@@ -2325,6 +2332,26 @@ async function* runOpencodeAttempt(
         }
         runFailure +=
           " — no other account is currently usable for this model; use /model to switch models.";
+      }
+      // Silent liveness wedge: the Meridian proxy stopped returning bytes (its
+      // first request after boot works, later ones hang forever). The server
+      // is unrecoverable for this session — kill it so the next attempt (ours
+      // below, or a later human "continue") cold-boots a fresh proxy instead
+      // of hanging on this one again. Retry once on a fresh server (bounded to
+      // the first attempt so a genuinely-hanging account costs 2×90s, not 4×).
+      if (livenessWedged && entry && !entry.shared) {
+        if (servers.get(entry.key) === entry && entry.activeRuns <= 1) {
+          killServer(entry.key, entry, "liveness wedge — respawn on next run");
+        }
+        if (rotation && attemptIndex === 0 && !usageLimitHit) {
+          turnEvent({ direction: "out", kind: "server_respawn_retry", error: runFailure });
+          bridgeRunEnd("error", runFailure);
+          rotation.rotate = true;
+          rotation.note =
+            `Engine bridge went silent on account "${bridgeAccountLabel}" — ` +
+            "respawned the opencode server and retrying once.";
+          return;
+        }
       }
       turnEvent({ direction: "out", kind: "error", error: runFailure });
       bridgeRunEnd("error", runFailure);
