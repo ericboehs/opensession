@@ -6,12 +6,51 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
+import { readFileSync, statfsSync } from "node:fs";
+import { cpus, loadavg } from "node:os";
 import type { RouteContext } from "./context";
 import { activeAgentRunCount } from "../agent-runner";
 import { getAgents } from "../agents-registry";
 import { IS_DEV, buildFrontend, frontend } from "../frontend-build";
 import { MAX_UPLOAD_BYTES, stageHttpUpload } from "../uploads";
 import { BOOT_ID, broadcastToAll } from "../ws-hub";
+
+/** Host metrics for the health endpoint. The health-monitor automation runs
+ *  in ask mode on the opencode engine, where the bash tool is unavailable to
+ *  unattended runs — webfetching this endpoint is its only way to see disk/
+ *  memory/CPU, so keep these fields stable. */
+function systemStats(): Record<string, unknown> {
+	try {
+		const mem: Record<string, number> = {};
+		for (const line of readFileSync("/proc/meminfo", "utf-8").split("\n")) {
+			const m = line.match(/^(\w+):\s+(\d+) kB/);
+			if (m) mem[m[1]] = Number(m[2]) * 1024;
+		}
+		const s = statfsSync("/");
+		const totalBytes = s.blocks * s.bsize;
+		const availBytes = s.bavail * s.bsize;
+		const [load1, load5, load15] = loadavg();
+		return {
+			disk: {
+				mount: "/",
+				totalGb: +(totalBytes / 1e9).toFixed(1),
+				availGb: +(availBytes / 1e9).toFixed(1),
+				usedPct: +((1 - availBytes / totalBytes) * 100).toFixed(1),
+			},
+			memory: {
+				totalGb: +((mem.MemTotal || 0) / 1e9).toFixed(2),
+				availableGb: +((mem.MemAvailable || 0) / 1e9).toFixed(2),
+				availablePct: mem.MemTotal
+					? +(((mem.MemAvailable || 0) / mem.MemTotal) * 100).toFixed(1)
+					: null,
+				swapUsedGb: +(((mem.SwapTotal || 0) - (mem.SwapFree || 0)) / 1e9).toFixed(2),
+			},
+			load: { "1m": load1, "5m": load5, "15m": load15, cores: cpus().length },
+		};
+	} catch (e) {
+		return { error: String((e as Error)?.message || e) };
+	}
+}
 
 export async function handleSystemRoutes(
 	ctx: RouteContext,
@@ -36,6 +75,7 @@ export async function handleSystemRoutes(
 			// restart kills as few in-flight runs/background tasks as possible.
 			activeRuns: activeAgentRunCount(),
 			agents: agentHealth,
+			system: systemStats(),
 		});
 	}
 
