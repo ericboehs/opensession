@@ -772,6 +772,21 @@ export function buildOpencodeInstructions(input: {
       "controlled channel fails, stop and report the failure instead of escalating to a " +
       "third-party host."
   );
+  // Observed 2026-07-10 (bks-019f4b70): twice in one session the model ended
+  // its turn on a plan sentence ("I'll rebase X, then …") with zero tool
+  // calls, both times on the first turn after a mid-run interrupt — the user
+  // had to reply "WHY DID YOU STOP" to resume. Engine + runner were healthy
+  // (clean end_turn); this is a model-side announce-then-stop, so we push
+  // back at the instruction layer.
+  parts.push(
+    "## Finish your turns\nNever end your turn on an announcement of what you're about to " +
+      'do ("I\'ll rebase and then open the PR", "let me look at how X works"). If your last ' +
+      "sentence describes a next action, perform it — keep calling tools until the task is " +
+      "done or you are genuinely blocked on input only the human can give. This applies " +
+      "especially right after the user interrupts or redirects you mid-task: treat the new " +
+      "message as a course correction, acknowledge it briefly if useful, and keep working " +
+      "to completion in the same turn."
+  );
   if (input.isAsk) {
     parts.push(
       `You are ${personaName()} in Ask mode: answer questions about the current checkout. ` +
