@@ -23,7 +23,7 @@ import type { RunAgentOpts } from "../agent-runner";
 import type { RunHostSpec } from "../../runner-host/protocol";
 
 /** The provider ids the registry knows. Only "local" is wired in Phase 0. */
-export type SandboxProviderId = "local" | "docker" | "daytona" | "e2b";
+export type SandboxProviderId = "local" | "docker" | "daytona" | "e2b" | "box";
 
 /**
  * Everything a provider needs to create-or-reuse the sandbox for a session.

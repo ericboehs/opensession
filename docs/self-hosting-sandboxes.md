@@ -85,7 +85,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 ```jsonc
 {
   // Which SandboxProvider new opted-in sessions get.
-  // "local" (default) | "docker" | "daytona" | "e2b"
+  // "local" (default) | "docker" | "daytona" | "e2b" | "box"
   "provider": "docker",
 
   // ── Docker provider ────────────────────────────────────────────────
@@ -169,6 +169,10 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   "e2b": {
     "apiKey": "e2b_…",         // falls back to E2B_API_KEY
     "template": "base"         // sandbox template id (default "base")
+  },
+  "box": {
+    "apiKey": "box_…",         // falls back to BOX_API_KEY
+    "apiUrl": "…"              // optional (default https://ascii.dev/api/box/v1)
   },
 
   // How remote sandboxes authenticate `git clone` (they can't mount host
@@ -364,6 +368,29 @@ E2B account** — treat it as untested until the conformance suite passes.
   extends — **expiry KILLS the sandbox and its workspace** (vs. Daytona's
   stop/start). Push early.
 - To certify: `bun run deploy/sandbox/conformance.ts e2b` with credentials,
+  fix what fails, and record the certification in this doc + the plan.
+
+### Box / ascii.dev (implemented, NOT yet certified)
+
+Persistent Ubuntu VMs (box.ascii.dev): 4 vCPU / 8GB fixed size, Docker
+inside the VM, per-second billing, EU-hosted. The adapter
+(`src/server/sandbox/adapters/box.ts`) speaks the plain HTTP API (no SDK
+dep) to the same contract as Daytona/E2B (volume-style workspace, ws
+transport, bootstrap on first ensure) but has **not been run against a live
+Box account** — treat it as untested until the conformance suite passes.
+
+- Config: `provider: "box"` + the `box` block (or `BOX_API_KEY`).
+- Lifetime model: a TTL countdown to **archival** (disk snapshot; resume
+  restores it — gentler than E2B's kill). The adapter resets the TTL to
+  `idleStopMinutes` on activity; a long fully-idle gap archives the box and
+  the next turn resumes it.
+- Exec quirk: the commands endpoint caps at 60s per call, so longer
+  commands run detached in-VM and are polled (transparent to callers).
+- Preview URLs come from the in-box `host <port>` CLI
+  (`https://<subdomain>-<port>.on.ascii.dev`, `_token`-protected).
+- No prewarm adapter and no Shell-tab remote PTY yet (SSH-key provisioning
+  is the follow-up path for the latter).
+- To certify: `bun run deploy/sandbox/conformance.ts box` with credentials,
   fix what fails, and record the certification in this doc + the plan.
 
 ## Licensing notes

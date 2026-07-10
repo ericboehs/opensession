@@ -61,7 +61,7 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
     const s = sandboxCapabilityStatus();
     expect(s.enabled).toBe(false);
     expect(s.defaultProvider).toBe("local");
-    expect(s.providers.map((p) => p.id)).toEqual(["docker", "daytona", "e2b"]);
+    expect(s.providers.map((p) => p.id)).toEqual(["docker", "daytona", "e2b", "box"]);
     expect(s.providers.every((p) => !p.configured)).toBe(true);
     expect(s.killSwitch).toBe(!sandboxesEnabled());
   });

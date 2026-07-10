@@ -2,7 +2,7 @@
  * Sandbox provider CONFORMANCE suite (docs/sandboxes-plan.md §5 Phase 3.3) —
  * the verify.ts checks parameterized over providers. Run MANUALLY:
  *
- *   bun run deploy/sandbox/conformance.ts [docker-socket] [docker-ws] [daytona] [e2b]
+ *   bun run deploy/sandbox/conformance.ts [docker-socket] [docker-ws] [daytona] [e2b] [box]
  *
  * (no args = the full matrix). Per entry: ensure/reuse, exec argv+stderr
  * semantics, workspace git (bind worktree for docker, in-sandbox volume-style
@@ -107,6 +107,8 @@ function liveSandboxFileConfig(): any {
 const liveCfg = liveSandboxFileConfig();
 const daytonaKey: string = liveCfg?.daytona?.apiKey || process.env.DAYTONA_API_KEY || "";
 const e2bKey: string = liveCfg?.e2b?.apiKey || process.env.E2B_API_KEY || "";
+const boxKey: string = liveCfg?.box?.apiKey || process.env.BOX_API_KEY || "";
+const boxApiUrl: string = liveCfg?.box?.apiUrl || "https://ascii.dev/api/box/v1";
 
 function githubToken(): string {
   if (process.env.GITHUB_API_TOKEN) return process.env.GITHUB_API_TOKEN;
@@ -229,7 +231,7 @@ console.log(
 
 interface Entry {
   name: string;
-  providerId: "docker" | "daytona" | "e2b";
+  providerId: "docker" | "daytona" | "e2b" | "box";
   /** null = run it; string = print SKIPPED reason. */
   skip: string | null;
   /** Scratch config for this entry (credentials included, never logged). */
@@ -301,6 +303,22 @@ const entries: Entry[] = [
       callbackBaseUrl: remoteBase,
       previewPorts: [8080],
       e2b: { apiKey: e2bKey },
+      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
+    },
+    repoId: PUB_REPO_ID,
+    branch: PUB_BRANCH,
+    expectPort: "url",
+    remote: true,
+  },
+  {
+    name: "box",
+    providerId: "box",
+    skip: boxKey ? null : "SKIPPED: no credentials (set box.apiKey in ~/.backstage-sandbox.json or BOX_API_KEY)",
+    config: {
+      provider: "box",
+      callbackBaseUrl: remoteBase,
+      previewPorts: [8080],
+      box: { apiKey: boxKey },
       ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
@@ -738,6 +756,52 @@ async function auditE2bLeftovers(): Promise<void> {
   }
 }
 
+async function auditBoxLeftovers(): Promise<void> {
+  if (!boxKey) return;
+  section = "box";
+  try {
+    // Box has no labels — the adapter names boxes with their session id, so
+    // suite leftovers are exactly the ones named sbxtest-*. Same live-account
+    // guard as the other audits: never reap a real session's box.
+    const res = await fetch(`${boxApiUrl}/boxes?limit=100`, {
+      headers: { Authorization: `Bearer ${boxKey}` },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) throw new Error(`list boxes: HTTP ${res.status}`);
+    const listLeftovers = (boxes: Array<{ id: string; name?: string; state?: string }>) =>
+      (boxes || []).filter((b) => String(b.name || "").startsWith("sbxtest-"));
+    let leftovers = listLeftovers(((await res.json()) as any).boxes);
+    if (leftovers.length) {
+      // Deletions are async server-side — give in-flight teardowns a moment.
+      await new Promise((r) => setTimeout(r, 15_000));
+      const again = await fetch(`${boxApiUrl}/boxes?limit=100`, {
+        headers: { Authorization: `Bearer ${boxKey}` },
+        signal: AbortSignal.timeout(30_000),
+      });
+      leftovers = again.ok ? listLeftovers(((await again.json()) as any).boxes) : leftovers;
+    }
+    ok(
+      "no backstage-named boxes left behind",
+      leftovers.length === 0,
+      leftovers.map((l) => `${l.id}(${l.state})`).join(",") || "none",
+    );
+    for (const { id } of leftovers) {
+      console.warn(`  cleaning up leftover box ${id}`);
+      try {
+        await fetch(`${boxApiUrl}/boxes/${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${boxKey}` },
+          signal: AbortSignal.timeout(60_000),
+        });
+      } catch (e) {
+        console.warn(`  cleanup of ${id} failed:`, String(e).slice(0, 200));
+      }
+    }
+  } catch (e) {
+    ok("box leftovers audit ran", false, String(e).slice(0, 200));
+  }
+}
+
 // ── run the matrix ────────────────────────────────────────────────────────────
 
 try {
@@ -750,6 +814,7 @@ try {
   }
   await auditDaytonaLeftovers();
   await auditE2bLeftovers();
+  await auditBoxLeftovers();
 } finally {
   console.log("\n── cleanup ──");
   // Docker scratch containers/volumes/state for both docker entries.

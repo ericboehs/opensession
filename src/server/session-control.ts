@@ -69,11 +69,11 @@ export interface CreateSessionOpts {
   user?: string;
   /**
    * Ask for a sandboxed session (docs/sandboxes-plan.md). `true` = the config
-   * default provider; a provider id ("docker" | "daytona" | "e2b") picks one
-   * explicitly and must be configured (~/.opensession-sandbox.json), else the
-   * create fails with a clear error.
+   * default provider; a provider id ("docker" | "daytona" | "e2b" | "box")
+   * picks one explicitly and must be configured (~/.opensession-sandbox.json),
+   * else the create fails with a clear error.
    */
-  sandbox?: boolean | "docker" | "daytona" | "e2b";
+  sandbox?: boolean | "docker" | "daytona" | "e2b" | "box";
 }
 
 /**

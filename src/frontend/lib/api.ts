@@ -1245,7 +1245,7 @@ export interface SandboxModelFamilyInfo {
 	id: string;
 	label: string;
 	match: { provider: "claude" | "codex" | "opencode"; idPrefix?: string };
-	environments: Record<"local" | "docker" | "daytona" | "e2b", boolean>;
+	environments: Record<"local" | "docker" | "daytona" | "e2b" | "box", boolean>;
 	hint?: string;
 }
 
@@ -1255,7 +1255,7 @@ export interface SandboxStatusInfo {
 	enabled: boolean;
 	defaultProvider: string;
 	providers: Array<{
-		id: "docker" | "daytona" | "e2b";
+		id: "docker" | "daytona" | "e2b" | "box";
 		configured: boolean;
 		note?: string;
 	}>;

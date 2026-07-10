@@ -147,6 +147,13 @@ export interface SandboxE2bConfig {
   template?: string;
 }
 
+export interface SandboxBoxConfig {
+  /** ascii.dev Box API key (`box_…`). Falls back to BOX_API_KEY. */
+  apiKey?: string;
+  /** API base (default https://ascii.dev/api/box/v1). */
+  apiUrl?: string;
+}
+
 export interface SandboxConfig {
   provider: SandboxProviderId;
   /** Container image for the docker provider (Phase 1). */
@@ -189,6 +196,8 @@ export interface SandboxConfig {
   daytona?: SandboxDaytonaConfig;
   /** E2B adapter (provider "e2b"). */
   e2b?: SandboxE2bConfig;
+  /** ascii.dev Box adapter (provider "box"). */
+  box?: SandboxBoxConfig;
   /** Clone auth for remote-provider workspaces + runner bootstrap. */
   cloneCredential?: SandboxCloneCredential;
   /** Warm-on-typing prewarm pool (remote providers). Absent = defaults, with
@@ -204,7 +213,7 @@ export interface SandboxConfig {
   runnerSha?: string;
 }
 
-const PROVIDER_IDS = new Set<string>(["local", "docker", "daytona", "e2b"]);
+const PROVIDER_IDS = new Set<string>(["local", "docker", "daytona", "e2b", "box"]);
 
 function asProviderId(v: unknown): SandboxProviderId | undefined {
   return typeof v === "string" && PROVIDER_IDS.has(v)
@@ -298,6 +307,10 @@ export function sandboxConfig(): SandboxConfig {
           raw?.e2b && typeof raw.e2b === "object"
             ? { apiKey: str(raw.e2b.apiKey), template: str(raw.e2b.template) }
             : undefined,
+        box:
+          raw?.box && typeof raw.box === "object"
+            ? { apiKey: str(raw.box.apiKey), apiUrl: str(raw.box.apiUrl) }
+            : undefined,
         cloneCredential:
           raw?.cloneCredential?.type === "https-token" ||
           raw?.cloneCredential?.type === "none"
@@ -346,7 +359,9 @@ export function sandboxSnapshots(): SandboxSnapshotsConfig {
 
 /** Effective warm-on-typing prewarm settings (prewarm.ts pool). `enabled`
  *  defaults to true exactly when a remote provider (daytona/e2b) has an API
- *  key — a docker-only or unconfigured setup never prewarms paid compute. */
+ *  key — a docker-only or unconfigured setup never prewarms paid compute.
+ *  ("box" is deliberately absent: it has no prewarm adapter yet, so a
+ *  box-only setup keeps the pool inert.) */
 export function sandboxPrewarmConfig(): SandboxPrewarmConfig {
   const cfg = sandboxConfig();
   const remoteConfigured =
@@ -373,7 +388,7 @@ export function sandboxTransport(): SandboxTransport {
 // ── Provider capability status (per-session provider picker) ────────────────
 
 /** The providers a session can explicitly pick ("local" = no sandbox). */
-export const RUNNABLE_SANDBOX_PROVIDERS = ["docker", "daytona", "e2b"] as const;
+export const RUNNABLE_SANDBOX_PROVIDERS = ["docker", "daytona", "e2b", "box"] as const;
 export type RunnableSandboxProviderId = (typeof RUNNABLE_SANDBOX_PROVIDERS)[number];
 
 export function isRunnableSandboxProvider(v: unknown): v is RunnableSandboxProviderId {
@@ -385,8 +400,8 @@ export function isRunnableSandboxProvider(v: unknown): v is RunnableSandboxProvi
 
 /** Remote providers have no host mounts — their workspaces are ALWAYS
  *  volume-style (cloned inside the sandbox; no host fallback for runs). */
-export function isRemoteSandboxProvider(v: unknown): v is "daytona" | "e2b" {
-  return v === "daytona" || v === "e2b";
+export function isRemoteSandboxProvider(v: unknown): v is "daytona" | "e2b" | "box" {
+  return v === "daytona" || v === "e2b" || v === "box";
 }
 
 /** True when a sandbox config file exists and parses — the operator has set
@@ -439,6 +454,7 @@ const ALL_ENVIRONMENTS: Record<SandboxEnvironmentId, boolean> = {
   docker: true,
   daytona: true,
   e2b: true,
+  box: true,
 };
 
 export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
@@ -465,7 +481,7 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
     id: "opencode-other",
     label: "OpenCode (other providers)",
     match: { provider: "opencode" },
-    environments: { local: true, docker: false, daytona: false, e2b: false },
+    environments: { local: true, docker: false, daytona: false, e2b: false, box: false },
     hint: "its `opencode auth login` credential only exists on the host",
   },
   {
@@ -475,7 +491,7 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
     id: "codex",
     label: "GPT (Codex)",
     match: { provider: "codex" },
-    environments: { local: true, docker: false, daytona: false, e2b: false },
+    environments: { local: true, docker: false, daytona: false, e2b: false, box: false },
     hint: "Codex account state stays on the host; use an opencode/openai/* model to run GPT in a sandbox",
   },
   {
@@ -491,6 +507,7 @@ const ENVIRONMENT_LABELS: Record<SandboxEnvironmentId, string> = {
   docker: "Docker",
   daytona: "Daytona",
   e2b: "E2B",
+  box: "Box",
 };
 
 /** The matrix row a model (or the current default, for ""/undefined) falls
@@ -562,6 +579,7 @@ export function sandboxProviderConfigured(id: RunnableSandboxProviderId): boolea
   const cfg = sandboxConfig();
   if (id === "docker") return true;
   if (id === "daytona") return Boolean(cfg.daytona?.apiKey || process.env.DAYTONA_API_KEY);
+  if (id === "box") return Boolean(cfg.box?.apiKey || process.env.BOX_API_KEY);
   return Boolean(cfg.e2b?.apiKey || process.env.E2B_API_KEY);
 }
 
@@ -573,6 +591,8 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
     enabled && Boolean(cfg.daytona?.apiKey || process.env.DAYTONA_API_KEY);
   const e2bConfigured =
     enabled && Boolean(cfg.e2b?.apiKey || process.env.E2B_API_KEY);
+  const boxConfigured =
+    enabled && Boolean(cfg.box?.apiKey || process.env.BOX_API_KEY);
   // Remote sandboxes must dial back over WS: healthy = a public-ingress URL or
   // an explicit callbackBaseUrl is configured, and then the row shows no note.
   // Only an actually-missing dial-back URL surfaces a caveat (no static
@@ -597,6 +617,11 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
       id: "e2b",
       configured: e2bConfigured,
       ...(e2bConfigured ? remoteNote : {}),
+    },
+    {
+      id: "box",
+      configured: boxConfigured,
+      ...(boxConfigured ? remoteNote : {}),
     },
   ];
   return {
@@ -639,7 +664,7 @@ export function resolveRequestedSandbox(
   if (!isRunnableSandboxProvider(id)) {
     return {
       ok: false,
-      error: `Unknown sandbox provider "${requested}" — valid values: docker, daytona, e2b (or true for the configured default).`,
+      error: `Unknown sandbox provider "${requested}" — valid values: docker, daytona, e2b, box (or true for the configured default).`,
     };
   }
   if (!sandboxProviderConfigured(id)) {
@@ -648,7 +673,9 @@ export function resolveRequestedSandbox(
         ? "create ~/.opensession-sandbox.json (see docs/self-hosting-sandboxes.md)"
         : id === "daytona"
           ? 'set {"daytona":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or DAYTONA_API_KEY)'
-          : 'set {"e2b":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or E2B_API_KEY)';
+          : id === "box"
+            ? 'set {"box":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or BOX_API_KEY)'
+            : 'set {"e2b":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or E2B_API_KEY)';
     return {
       ok: false,
       error: `Sandbox provider "${id}" is not configured — ${hint}.`,

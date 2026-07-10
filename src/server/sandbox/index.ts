@@ -13,6 +13,7 @@ import { LocalProvider } from "./local";
 import { DockerProvider } from "./docker";
 import { DaytonaProvider } from "./adapters/daytona";
 import { E2bProvider } from "./adapters/e2b";
+import { BoxProvider } from "./adapters/box";
 import { effectiveSandboxProvider } from "./config";
 import type { SandboxProvider, SandboxProviderId } from "./provider";
 
@@ -51,6 +52,7 @@ const localProvider = new LocalProvider();
 const dockerProvider = new DockerProvider();
 const daytonaProvider = new DaytonaProvider();
 const e2bProvider = new E2bProvider();
+const boxProvider = new BoxProvider();
 
 /**
  * Resolve a SandboxProvider. `spec` (a provider id, e.g. from a session file's
@@ -71,6 +73,8 @@ export function getSandboxProvider(
       return daytonaProvider;
     case "e2b":
       return e2bProvider;
+    case "box":
+      return boxProvider;
     default:
       throw new Error(`unknown sandbox provider "${id}"`);
   }
