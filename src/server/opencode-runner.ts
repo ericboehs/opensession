@@ -660,6 +660,16 @@ export function buildOpencodeMcpConfig(
   return { mcp, droppedForConfirm };
 }
 
+/** OpenCode applies `mcp.<name>.timeout` to tool CALLS, not just the tools
+ *  fetch its doc comment mentions. Blocking tools on the opensession proxies
+ *  (ask_human mode=block, ask_user) legitimately wait up to run-rpc.ts's
+ *  30-minute per-call ceiling, and mcp-proxy retries to 32 — at the previous
+ *  60s a blocking ask on an opencode-engine session was GUARANTEED to die
+ *  with MCP -32001 while the teammate's answer landed on a dead request
+ *  (2026-07-10: Michiel answered an SSO-approval ask and the session never
+ *  saw it). Sit just above the whole chain. */
+const PROXY_MCP_TIMEOUT_MS = 33 * 60_000;
+
 /** In-process michael-* servers, exposed as stdio proxies that forward to the
  *  backstage process over the run-rpc socket — the exact pattern Codex uses
  *  (codex-runner proxyMcpConfigs), in OpenCode's config shape. */
@@ -679,7 +689,7 @@ export function proxyOpencodeMcpConfigs(
         BKS_MCP_SERVER: name,
       },
       enabled: true,
-      timeout: 60_000,
+      timeout: PROXY_MCP_TIMEOUT_MS,
     };
   }
   return out;
@@ -709,7 +719,7 @@ export function opencodeMcpFromPrebuiltProxies(
       command: [cfg.command, ...((Array.isArray(cfg.args) ? cfg.args : []) as string[])],
       ...(cfg.env ? { environment: cfg.env } : {}),
       enabled: true,
-      timeout: 60_000,
+      timeout: PROXY_MCP_TIMEOUT_MS,
     };
   }
   return out;
