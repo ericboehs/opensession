@@ -3289,6 +3289,17 @@ body.resizing-x {
 	background: rgba(210, 153, 34, 0.13);
 	opacity: 1;
 }
+/* Rebuilding after a push: same amber as building, but the branch alias still
+   serves the previous Ready deploy, so the link stays clickable (pointer). */
+.staging-icon.is-rebuilding {
+	color: var(--yellow);
+	opacity: 0.72;
+}
+.staging-icon.is-rebuilding:hover {
+	color: var(--yellow);
+	background: rgba(210, 153, 34, 0.13);
+	opacity: 1;
+}
 .staging-icon.is-ready {
 	color: var(--green);
 }

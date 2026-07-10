@@ -3,6 +3,7 @@ import { fetchPr } from "../lib/api";
 import type { PrCheck, UnifiedSession } from "../lib/types";
 import { withPreviewPath } from "../lib/preview-url";
 import { Tooltip } from "../ui/tooltip";
+import { toast } from "../ui/toast";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { IconArrowUpRight, IconGlobe } from "./icons";
 import { checkClass, isDeployment } from "./PrPanel";
@@ -121,15 +122,14 @@ export function StagingLink({
 
 	// A push mid-review kicks off a *new* Vercel preview, but butler's
 	// preview-table comment still advertises the previous deploy as Ready — so
-	// trusting staging.status alone leaves the globe green and clickable while
-	// the link it points at is stale. When a deploy check is pending we know a
-	// rebuild is in flight, so treat it as building regardless of the comment;
-	// the globe tracks the live checks headline instead of the lagging comment.
-	const rebuilding = deployPending;
-	const building = staging.status !== "Ready" || rebuilding;
-	// Status word for the tooltip — "building" reads truer than the stale
-	// "ready" while a rebuild's deploy check is still pending.
-	const statusWord = rebuilding ? "building" : staging.status.toLowerCase();
+	// staging.status alone leaves the globe green while a rebuild is in flight.
+	// The branch alias keeps serving the last Ready deploy until the new one
+	// lands, so a rebuild only means "possibly one push behind", never a dead
+	// link — keep it clickable, spin the globe, and say so in the tooltip.
+	// Only a first deploy that has never gone Ready gets a dead (swallowed)
+	// click: before that the alias 404s.
+	const rebuilding = deployPending && staging.status === "Ready";
+	const building = staging.status !== "Ready";
 	// Deep-link to the agent-flagged route (set_preview_path) so the button
 	// opens the feature under test, not the app root.
 	const href = withPreviewPath(staging.url, session.previewPath);
@@ -142,15 +142,21 @@ export function StagingLink({
 			copy(href, { toast: "Link copied" });
 			return;
 		}
-		// A still-building deploy isn't testable yet, so swallow a plain click —
-		// the spinning globe signals "not ready". (⌘-click above still copies.)
-		if (building) e.preventDefault();
+		// Before the first deploy goes Ready the alias 404s, so swallow a plain
+		// click — but never silently (an unexplained dead link reads as a bug).
+		if (building) {
+			e.preventDefault();
+			toast(
+				`Staging deploy is ${staging.status.toLowerCase()} — the link goes live once the first deploy finishes`,
+			);
+		}
 	};
 
-	// The globe carries a spinning ring while the deploy builds so "not ready
-	// yet" reads at a glance and pairs with the click being disabled above.
-	// While a ⌘-copy is fresh the globe morphs into a drawing checkmark; otherwise
-	// it's the (optionally spinning) globe.
+	// The globe carries a spinning ring while any deploy is in flight — first
+	// build (link dead until it lands) and rebuild (link opens the previous
+	// deploy) alike. While a ⌘-copy is fresh the globe morphs into a drawing
+	// checkmark; otherwise it's the (optionally spinning) globe.
+	const spinning = building || rebuilding;
 	const globe = (size: number, className?: string) =>
 		copied ? (
 			<CopyCheck
@@ -160,31 +166,35 @@ export function StagingLink({
 			/>
 		) : (
 			<span className="staging-globe-wrap">
-				{building && <span className="staging-spinner" aria-hidden="true" />}
+				{spinning && <span className="staging-spinner" aria-hidden="true" />}
 				<IconGlobe size={size} className={className} />
 			</span>
 		);
 
+	const stateClass = building
+		? "is-building"
+		: rebuilding
+			? "is-rebuilding"
+			: "is-ready";
+	const tooltip = (copyHint: string) =>
+		copied
+			? "Link copied"
+			: building
+				? `Staging deploy ${staging.status.toLowerCase()}… ${copyHint}`
+				: rebuilding
+					? `Redeploying for the latest push — opens the previous deploy until it lands (${copyHint})`
+					: `Open the staging deploy to test this PR on real infra (${copyHint})`;
+
 	if (variant === "header") {
 		return (
-			<Tooltip
-				label={
-					copied
-						? "Link copied"
-						: building
-							? `Staging deploy ${statusWord}… ⌘-click to copy the link`
-							: "Open the staging deploy to test this PR on real infra (⌘-click to copy the link)"
-				}
-				side="bottom"
-				multiline
-			>
+			<Tooltip label={tooltip("⌘-click to copy the link")} side="bottom" multiline>
 				<a
 					href={href}
 					target="_blank"
 					rel="noopener"
 					onClick={onClick}
 					aria-disabled={building || undefined}
-					className={`viewer-code-icon staging-icon ${building ? "is-building" : "is-ready"}`}
+					className={`viewer-code-icon staging-icon ${stateClass}`}
 				>
 					{/* The globe glyph only fills ~60% of its box (thin circle in a 24
 					    viewBox), so it still needs a hair more than the play/sidebar
@@ -203,13 +213,7 @@ export function StagingLink({
 			onClick={onClick}
 			aria-disabled={building || undefined}
 			className={`staging-link ${building ? "staging-link-building" : ""}`}
-			title={
-				copied
-					? "Link copied"
-					: building
-						? `Staging deploy ${statusWord}… ⌘-click to copy — ${href}`
-						: `Test this PR on staging (⌘-click to copy the link) — ${href}`
-			}
+			title={`${tooltip("⌘-click to copy the link")} — ${href}`}
 		>
 			{globe(15, "staging-globe")}
 			Staging
