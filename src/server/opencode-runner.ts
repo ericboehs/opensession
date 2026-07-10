@@ -582,8 +582,20 @@ const stickyMeridianAccounts: Map<string, string> = (
 // ── OpenCode config generation ───────────────────────────────────────────────
 
 /** Read-only bash surface for ask mode: allow common inspection commands,
- *  deny everything else (opencode matches most-specific pattern first). */
+ *  deny everything else.
+ *
+ *  ORDER MATTERS — the catch-all deny MUST come first. OpenCode evaluates
+ *  permission rules LAST-match-wins (Permission.evaluate is a findLast over
+ *  the rules in config-object insertion order; there is NO specificity
+ *  ranking), so later specific allows override the earlier "*" deny. With
+ *  the catch-all LAST it won every match — every command denied — and,
+ *  worse, Permission.disabled() hides a tool entirely when its last-matching
+ *  rule is a "*" deny, which is what made bash vanish from every unattended
+ *  ask run (the PR #4676 review starvation, the health-monitor blinding).
+ *  Verified against opencode v1.17.15 source (permission/index.ts
+ *  evaluate/disabled, session/llm/request.ts resolveTools). */
 const ASK_BASH_PERMISSIONS: Record<string, "allow" | "deny"> = {
+  "*": "deny",
   "cat *": "allow", "ls*": "allow", "rg *": "allow", "grep *": "allow",
   "find *": "allow", "head *": "allow", "tail *": "allow", "wc *": "allow",
   "tree*": "allow", "file *": "allow", "stat *": "allow", "du *": "allow",
@@ -597,17 +609,17 @@ const ASK_BASH_PERMISSIONS: Record<string, "allow" | "deny"> = {
   "ps": "allow", "ps *": "allow", "top -b*": "allow",
   "systemctl status*": "allow", "systemctl is-active*": "allow",
   "systemctl is-enabled*": "allow", "systemctl list-units*": "allow",
-  "*": "deny",
 };
 
 /** Ask-mode external_directory rules: composer attachments are staged under
  *  the chats uploads dir (outside any worktree), so reading them must work in
  *  read-only sessions too; everything else outside the worktree stays denied
  *  (deny errors immediately — never "ask", which blocks the tool on a
- *  permission ask; see the permission-ask bridge in runOpencodeAttempt). */
+ *  permission ask; see the permission-ask bridge in runOpencodeAttempt).
+ *  Catch-all deny FIRST — last-match-wins, see ASK_BASH_PERMISSIONS. */
 const ASK_EXTERNAL_DIR_PERMISSIONS: Record<string, "allow" | "deny"> = {
-  [`${OPENSESSION_CHATS_DIR}/uploads/**`]: "allow",
   "*": "deny",
+  [`${OPENSESSION_CHATS_DIR}/uploads/**`]: "allow",
 };
 
 const CONFIRM_TOOL_RE = /^mcp__(.+)__(.+)$/;
