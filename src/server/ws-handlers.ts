@@ -8,6 +8,7 @@
 import type { WebSocketHandler } from "bun";
 import type { WSClientData } from "./ws-hub";
 import { type StreamEvent, cancelAgentRun, interruptAndSteerAgentRun, isAgentSessionBusy, markSessionStarting, runAgent, steerAgentRun, stopAgentRunTurn, unmarkSessionStarting } from "./agent-runner";
+import { audit } from "./audit";
 import { makeAskHandler, pendingAsks } from "./asks";
 import { getAccountById } from "./claude-accounts";
 import { startWatching, stopAllWatchesForClient } from "./file-watcher";
@@ -479,6 +480,20 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								session.id,
 							);
 						}
+						// A stopped run's only trace is the runner's anonymous
+						// "cancelled" turn event — record who pulled the plug (stop
+						// button / Esc), or diagnosing "why did it go silent?" means
+						// inferring the gesture by elimination.
+						console.log(
+							`[ws] run stopped on ${sessionId} by ${data.user || "unknown"} (${stopped ? "graceful" : "hard-cancel"})`,
+						);
+						audit({
+							msg: "run_cancelled",
+							bks_session_id: sessionId,
+							source: "ui_stop",
+							user: data.user,
+							graceful: stopped,
+						});
 					}
 					const requeued = requeueSteerReceipts(sessionId);
 					if (requeued > 0) {

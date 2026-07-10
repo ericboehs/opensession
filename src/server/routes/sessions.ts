@@ -9,6 +9,7 @@
 import type { RouteContext } from "./context";
 import { cancelAgentRun, isAgentSessionBusy, stopAgentRunTurn } from "../agent-runner";
 import { archiveOlderThan, setArchived, unpinArchivedSessions } from "../archive";
+import { audit } from "../audit";
 import { pendingAsks } from "../asks";
 import { transcriptMatchSnippet } from "../jsonl-parser";
 import { clearSessionFileArchive } from "../plain-archive";
@@ -262,6 +263,12 @@ export async function handleSessionsRoutes(
 					session.id,
 				);
 			}
+			audit({
+				msg: "run_cancelled",
+				bks_session_id: session.id,
+				source: "archive",
+				graceful: stopped,
+			});
 			requeueSteerReceipts(session.id);
 			stoppedRun = true;
 		}

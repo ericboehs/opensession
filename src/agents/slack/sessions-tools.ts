@@ -16,6 +16,7 @@
  * spawn_task/task_status/cancel_task task primitives) are gated to the trusted
  * user via `isAdmin`, matching opensession-admin.
  */
+import { audit } from "../../server/audit";
 import { productName } from "../../server/config";
 import { envAlias } from "../../server/rename-compat";
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
@@ -496,6 +497,15 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
         { id: z.string().describe("The session id to cancel.") },
         async (args: { id: string }) => {
           const ok = getSessionControl().cancelSession(args.id);
+          if (ok) {
+            audit({
+              msg: "run_cancelled",
+              bks_session_id: args.id,
+              source: "sessions_mcp",
+              user: ctx.createdBy,
+              cancelled_from: ctx.currentSessionId,
+            });
+          }
           return text(
             ok
               ? `Cancelled the run on \`${args.id}\`.`
