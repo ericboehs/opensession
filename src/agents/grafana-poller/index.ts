@@ -48,7 +48,7 @@ const LOKI_DATASOURCE_UID = process.env.LOKI_DATASOURCE_UID || "loki";
 
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://michael.taila5d766.ts.net/backstage";
+  "https://os.tella.dev";
 
 const DEFAULT_LOOKBACK = "20m";
 const DEFAULT_POLL_MINUTES = 15;

@@ -49,7 +49,7 @@ export async function enablePush(user: string): Promise<void> {
     throw new Error(
       window.isSecureContext
         ? "This browser doesn't support Web Push."
-        : `Push needs the HTTPS origin. Open ${PRODUCT_NAME} at michael.taila5d766.ts.net.`,
+        : `Push needs the HTTPS origin. Open ${PRODUCT_NAME} at os.tella.dev.`,
     );
   }
   const permission = await Notification.requestPermission();

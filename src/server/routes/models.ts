@@ -81,7 +81,7 @@ export async function handleModelsRoutes(
 				isAsk,
 				sessionLink: isAsk
 					? undefined
-					: `${envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") || "https://michael.taila5d766.ts.net/backstage"}/session/<this-session>`,
+					: `${envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") || "https://os.tella.dev"}/session/<this-session>`,
 				user: url.searchParams.get("user") || undefined,
 				interactiveTools: true,
 			}),

@@ -558,7 +558,7 @@ export async function processMessage(
   // Post a status message with the live Backstage session link and a Stop
   // button, so the run can be followed/cancelled even if Slack's assistant DM
   // disables the input field while we're working.
-  const backstageUrl = `https://michael.taila5d766.ts.net/backstage/session/slack-${encodeURIComponent(sessionKey)}`;
+  const backstageUrl = `https://os.tella.dev/session/slack-${encodeURIComponent(sessionKey)}`;
   const backstageButton = {
     type: "button",
     text: { type: "plain_text", text: `:desktop_computer: Open in ${productName()}`, emoji: true },
@@ -1141,7 +1141,7 @@ I'm now in a worktree (branch: ${branch}) for this task. Please analyze what nee
 
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://michael.taila5d766.ts.net/backstage";
+  "https://os.tella.dev";
 
 /**
  * Slack card for a triggered PR action. While running: Open-in-Backstage + Stop.

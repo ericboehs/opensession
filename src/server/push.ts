@@ -1,7 +1,7 @@
 /**
  * Web Push: phone/desktop notifications that work with the app closed —
  * unlike lib/notify.ts's tab-bound Notification API. Requires the app to be
- * opened over a secure origin (https://michael.taila5d766.ts.net); the plain
+ * opened over a secure origin (https://os.tella.dev); the plain
  * http://michael:3850 origin has no service workers, so no push there.
  *
  * VAPID keys are generated once and persisted; subscriptions are stored per

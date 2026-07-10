@@ -332,7 +332,7 @@ export async function spawnTaskImpl(
   );
   const base =
     envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-    "https://michael.taila5d766.ts.net/backstage";
+    "https://os.tella.dev";
   return { ok: true, taskId: id, url: `${base}/session/${id}` };
 }
 

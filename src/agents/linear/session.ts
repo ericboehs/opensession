@@ -250,7 +250,7 @@ export function deleteWorktree(branch: string): void {
 /** Base URL of the Michael web UI, linked from Linear sessions. */
 export const MICHAEL_UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://michael.taila5d766.ts.net/backstage";
+  "https://os.tella.dev";
 
 export function michaelSessionUrl(branch: string): string {
   return `${MICHAEL_UI_BASE}/session/${encodeURIComponent(`linear-${branch}`)}`;

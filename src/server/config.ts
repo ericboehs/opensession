@@ -37,7 +37,7 @@ export interface ServerSection {
   host?: string;
   port?: number;
   webhookPort?: number;
-  /** Public web-UI base, e.g. "https://michael.taila5d766.ts.net/backstage". */
+  /** Public web-UI base, e.g. "https://os.tella.dev". */
   publicBaseUrl?: string;
   /** Host previews are served from (Caddy-fronted). */
   previewHost?: string;

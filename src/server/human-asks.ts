@@ -41,7 +41,7 @@ const UI_BASE =
   // Default stays on /backstage until the operator flips OPENSESSION_UI_BASE in
   // the restart window (the alias path keeps old links working forever).
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://michael.taila5d766.ts.net/backstage";
+  "https://os.tella.dev";
 
 /** How long a "block" ask holds the agent's turn before degrading to async. */
 const BLOCK_TIMEOUT_MS = 20 * 60 * 1000;

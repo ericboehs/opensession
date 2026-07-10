@@ -35,7 +35,7 @@ const STATE_PATH = `${MONITOR_DIR}/state.json`;
 const ANSWER_MODEL = process.env.MONITOR_ANSWER_MODEL || "claude-haiku-4-5";
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://michael.taila5d766.ts.net/backstage";
+  "https://os.tella.dev";
 
 mkdirSync(MONITOR_DIR, { recursive: true });
 

@@ -74,7 +74,7 @@ export function bksIdFor(prNumber: number, kind: GithubRunKind): string {
 
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://michael.taila5d766.ts.net/backstage";
+  "https://os.tella.dev";
 
 /** Backstage UI link to a run's session, for "open to monitor" links in PR comments. */
 export function sessionUrl(prNumber: number, kind: GithubRunKind): string {
