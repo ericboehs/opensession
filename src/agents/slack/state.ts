@@ -171,8 +171,13 @@ export async function loadSession(
   }
 }
 
+/** Sessions with no activity for this long aren't restored on startup. A reply
+ *  in an old thread still revives its session — every handler falls back to
+ *  loadSession(sessionKey) when the key isn't in activeSessions. */
+const STALE_SESSION_MS = 7 * 24 * 60 * 60 * 1000;
+
 export async function loadActiveSessionsOnStartup(): Promise<void> {
-  const { readdirSync } = require("fs");
+  const { readdirSync, statSync } = require("fs");
   console.log("[slack] Loading active sessions from disk...");
 
   try {
@@ -180,18 +185,32 @@ export async function loadActiveSessionsOnStartup(): Promise<void> {
       f.endsWith(".json")
     );
 
+    let skippedStale = 0;
     for (const file of files) {
       try {
         const key = file.replace(".json", "");
         const session = await loadSession(key);
 
         if (session && session.claudeSessionId) {
+          let lastActive = Date.parse(session.lastActivity || session.createdAt || "");
+          if (!lastActive) {
+            try {
+              lastActive = statSync(`${SESSION_DIR}/${file}`).mtimeMs;
+            } catch {}
+          }
+          if (!lastActive || Date.now() - lastActive > STALE_SESSION_MS) {
+            skippedStale++;
+            continue;
+          }
           activeSessions.set(key, session);
           console.log(`[slack] Restored session: ${key}`);
         }
       } catch (e) {
         console.error(`[slack] Error loading session ${file}:`, e);
       }
+    }
+    if (skippedStale > 0) {
+      console.log(`[slack] Skipped ${skippedStale} stale session file(s) (idle > 7 days)`);
     }
   } catch {
     console.log("[slack] No active sessions to load");

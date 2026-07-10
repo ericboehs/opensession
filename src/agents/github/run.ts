@@ -17,7 +17,6 @@ import { findOrCreateWorkspaceByKey } from "../../server/workspaces";
 import { repoForPath } from "../../server/worktree";
 import type { BackstageSessionFile } from "../../server/types";
 
-const HOME = process.env.HOME || "/home/ubuntu";
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 
 /**

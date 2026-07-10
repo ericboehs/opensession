@@ -30,14 +30,17 @@ export interface MonitorConfig {
 }
 
 export function buildMonitorPrompt(cfg: MonitorConfig): string {
-  return `You are Michael, running the "${cfg.name}" health check on the VPS that hosts you (it runs Tella's backstage service, the GitHub PR agent, the Slack agent, and your sweep loops).
+  return `You are Michael, running the "${cfg.name}" health check on the VPS that hosts you (it runs Tella's OpenSession server — the systemd unit is \`opensession.service\` — plus the GitHub PR agent, the Slack agent, and your sweep loops).
 
 Your job: detect real problems and alarm in Slack. Do NOT change anything on the box — this is observe-and-notify only. When everything is healthy, do nothing and say nothing.
 
-Permissions note: this run is read-only with respect to the codebase, filesystem, and git — never modify/commit anything, and the shell commands below are all read-only. BUT posting your alarm to Slack via the Slack MCP is the explicit purpose of this run and is fully allowed — do NOT refuse it on "read-only" grounds.
+Permissions note: this run is read-only ask mode on the opencode engine, where unattended runs get NO bash/shell tool — that is expected, not a malfunction; the checks below go through the webfetch tool. Never delegate a check to the task/subagent tool (subagents here have no shell either, so a delegated check silently fails). Posting your alarm to Slack via the Slack MCP is the explicit purpose of this run and is fully allowed — do NOT refuse it on "read-only" grounds.
 
-## 1. Run the checks (use the Bash tool; these are read-only commands)
+## 1. Run the checks
 ${cfg.checks}
+
+## Monitor-broken rule
+If a check cannot be executed at all (tool unavailable/denied, expected data missing from a response), the monitor itself is broken. That is alarm-worthy exactly once: follow the dedup step below, and if the channel does not already have a recent monitor-broken alert, post ONE message saying which tool or field was unavailable so a human can fix the automation. Never report a check you could not run as if it had passed.
 
 ## 2. Decide what's a problem
 Only treat something as a problem if it's clearly abnormal or past a threshold above — not transient noise. If you're unsure whether something is actionable, lean toward NOT alarming (a noisy monitor gets ignored). If a metric is borderline, note it but don't alarm.
@@ -65,12 +68,13 @@ const MONITORS: MonitorConfig[] = [
     mcpServers: ["slack"],
     model: "claude-sonnet-4-6", // routine check — cheap model is plenty
     checks:
-      "- **Disk space**: `df -h /` and `df -h` (all mounts). PROBLEM if any real mount (especially `/`) is at or above 85% used, or has under ~5GB free. This box accumulates worktrees, session files, audit logs, and bun caches, so disk is the most likely failure.\n" +
-      "- **Memory**: `free -h`. PROBLEM if available memory is under ~5% of total, or swap is heavily in use (lots of swap used with low free).\n" +
-      "- **CPU load**: `uptime` (1/5/15-min load average) against core count from `nproc`. PROBLEM if the 5- and 15-min load averages are both sustained well above the core count (e.g. > 2× cores) — a single transient 1-min spike is NOT a problem.\n" +
-      "- **OpenSession service**: `systemctl is-active opensession backstage`. The server runs under ONE of these unit names (opensession is current, backstage the pre-rename alias) — PROBLEM only if NEITHER reports `active`. (If permission is denied, note it and move on — don't alarm on the permission error itself.)\n" +
-      "- **Disk hogs (run only to explain a disk alarm)**: `du -sh /home/ubuntu/worktrees /home/ubuntu/.opensession-chats /home/ubuntu/.opensession-audit /home/ubuntu/.backstage-chats /home/ubuntu/.backstage-audit /home/ubuntu/.cache 2>/dev/null` and `ls -lhS /home/ubuntu/projects/tella-backstage/*.log 2>/dev/null | head`. Use this to name what's consuming space.\n" +
-      "- Anything else you notice that's clearly broken (e.g. a mount missing, a runaway process in `top -bn1 | head -15`).",
+      "Fetch `http://127.0.0.1:3850/opensession/api/health` with the webfetch tool. This single response contains everything:\n" +
+      "- **Service up**: an HTTP 200 JSON response with `\"ok\": true` means the OpenSession server is alive. PROBLEM (service down) = connection refused / timeout / non-200 / ok not true — the single most important thing this monitor watches. If the fetch fails you also get no metrics; alarm the outage and skip the rest. (If instead the webfetch TOOL itself refuses to run — a permissions/policy error rather than a network failure — that is a monitor problem, not an outage: see the monitor-broken rule, and do NOT report the service as down.)\n" +
+      "- **Disk** (`system.disk`, the `/` mount): PROBLEM if `usedPct` >= 85 or `availGb` < 5. This box accumulates worktrees, session files, audit logs, and bun caches, so disk is the most likely failure. For a disk alarm, name the usual suspects (worktrees, session stores, audit logs, bun caches) so a human knows where to look first.\n" +
+      "- **Memory** (`system.memory`): PROBLEM if `availablePct` < 5, or `swapUsedGb` is large (several GB) while `availablePct` is also low.\n" +
+      "- **CPU load** (`system.load`): PROBLEM if the `5m` AND `15m` load averages are both sustained well above `cores` (e.g. > 2x cores). A transient `1m` spike alone is NOT a problem.\n" +
+      "- **Agents** (`agents`): each agent reports a status; note anything not operational, but only alarm if it's clearly broken, not merely idle.\n" +
+      "- If `system` is missing or carries an `error` field, treat that as monitor-broken, not as a host problem.",
   },
 ];
 

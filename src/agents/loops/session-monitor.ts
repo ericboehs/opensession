@@ -29,7 +29,6 @@ import {
 import { userMatchesAny, resolveTeammate } from "../../server/shared/user-mappings";
 import { openDirectMessage, sendSlackMessage } from "../slack/slack-api";
 
-const HOME = process.env.HOME || "/home/ubuntu";
 const MONITOR_DIR = stateDir("monitor");
 const CONFIG_PATH = `${MONITOR_DIR}/config.json`;
 const STATE_PATH = `${MONITOR_DIR}/state.json`;

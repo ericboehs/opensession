@@ -22,8 +22,31 @@ import {
 } from "./constants";
 import { DEFAULT_REVIEW_PROMPT, DOCS_SYNC_PROMPT } from "./prompts";
 import { setGithubSessionInvalidate, resolveReviewConfig } from "./webhook";
-import { listPrStates, activeCodeLoops, clearPendingMention } from "./state";
+import { listPrStates, activeCodeLoops, clearPendingMention, updatePrState } from "./state";
 import type { PrRef } from "./review";
+
+/** Crash recovery only makes sense across one restart window — a flag older
+ *  than this is a leftover whose cleanup failed, and re-firing it would spawn
+ *  a surprise run (and PR comments) on a long-dead PR at every boot. Stale
+ *  flags are cleared instead of re-fired. */
+const RECOVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** True (and logs + clears via `clear`) when a recovery flag is too old to re-fire. */
+function dropIfStale(
+  prNumber: number,
+  headRef: string,
+  kind: string,
+  at: string | undefined,
+  clear: (s: import("./state").GithubPrState) => void
+): boolean {
+  const t = Date.parse(at || "");
+  if (t && Date.now() - t <= RECOVERY_MAX_AGE_MS) return false;
+  console.log(
+    `[github] Clearing stale ${kind} recovery flag for PR #${prNumber} (from ${at || "unknown"})`
+  );
+  updatePrState(prNumber, headRef, clear);
+  return true;
+}
 
 const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "";
 
@@ -79,6 +102,9 @@ async function recoverFixLoops(): Promise<void> {
   if (!interrupted.length) return;
   const { runAutoFix } = await import("./autofix");
   for (const s of interrupted) {
+    if (dropIfStale(s.prNumber, s.headRef, "auto-fix", s.autoFix?.startedAt, (st) => {
+      if (st.autoFix) st.autoFix.active = false;
+    })) continue;
     console.log(`[github] Recovering interrupted auto-fix loop for PR #${s.prNumber}`);
     const ref: PrRef = { number: s.prNumber, headRef: s.headRef, headSha: "", title: `PR #${s.prNumber}` };
     void runAutoFix(ref, s.autoFix?.requestedBy || "", undefined, /*resuming*/ true, s.autoFix?.steer).catch((e) =>
@@ -94,6 +120,9 @@ async function recoverOneShots(): Promise<void> {
   const { triggerPrAction } = await import("./trigger");
   for (const s of interrupted) {
     const run = s.activeRun!;
+    if (dropIfStale(s.prNumber, s.headRef, run.kind, run.startedAt, (st) => {
+      st.activeRun = undefined;
+    })) continue;
     console.log(`[github] Recovering interrupted ${run.kind} for PR #${s.prNumber}`);
     void triggerPrAction(run.kind, s.prNumber, run.requestedBy, run.steer).catch((e) =>
       console.error(`[github] ${run.kind} recovery failed for PR #${s.prNumber}:`, e),
@@ -108,6 +137,9 @@ async function recoverMentions(): Promise<void> {
   const { runConversationalMention } = await import("./mention");
   for (const s of interrupted) {
     const m = s.activeMention!;
+    if (dropIfStale(s.prNumber, s.headRef, "mention", m.startedAt, (st) => {
+      st.activeMention = undefined;
+    })) continue;
     console.log(`[github] Recovering interrupted mention for PR #${s.prNumber}`);
     void runConversationalMention(
       { prNumber: s.prNumber, author: m.author, body: m.body, kind: m.kind, replyToId: m.replyToId, inline: m.inline },
@@ -133,6 +165,9 @@ async function recoverPendingMentions(): Promise<void> {
       continue;
     }
     const p = s.pendingMention!;
+    if (dropIfStale(s.prNumber, s.headRef, "pending-mention", p.receivedAt, (st) => {
+      st.pendingMention = undefined;
+    })) continue;
     console.log(`[github] Recovering dropped mention for PR #${s.prNumber} (from @${p.author})`);
     void dispatchMention({
       prNumber: s.prNumber,

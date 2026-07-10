@@ -10,6 +10,7 @@
  */
 import { readFileSync } from "fs";
 import { opencodeOneShot } from "../../server/opencode-oneshot";
+import { statePath } from "../../server/rename-compat";
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 
 const PLAIN_API_URL = process.env.PLAIN_API_URL || "https://core-api.uk.plain.com/graphql/v1";
@@ -262,7 +263,8 @@ function slackToken(): string {
   if (process.env.SLACK_BOT_TOKEN) return process.env.SLACK_BOT_TOKEN;
   const home = process.env.HOME || "/home/ubuntu";
   try {
-    const m = readFileSync(`${home}/.backstage.env`, "utf8").match(/^SLACK_BOT_TOKEN=(.*)$/m);
+    const envFile = statePath(".opensession.env", ".backstage.env");
+    const m = readFileSync(envFile, "utf8").match(/^SLACK_BOT_TOKEN=(.*)$/m);
     if (m) return m[1].trim().replace(/^["']|["']$/g, "");
   } catch {}
   try {
