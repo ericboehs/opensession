@@ -94,6 +94,8 @@ export interface UnifiedSession {
    * (PR deploy) URLs so a click lands directly on the feature under test.
    */
   previewPath?: string;
+  /** Agent-published demo walkthrough (opensession-walkthrough). */
+  walkthrough?: SessionWalkthrough;
   automation?: string;
   archived?: boolean;
   /** Why this session is archived — powers the "Auto-archived" filter. */
@@ -263,6 +265,33 @@ export interface SessionPrRef {
   checks?: { total: number; passed: number; failed: number; pending: number };
 }
 
+/** One before/after screenshot pair in a session walkthrough. Paths are
+ *  absolute, under the walkthrough uploads dir (staged copies — never the
+ *  agent's worktree/tmp originals, which vanish when the worktree is pruned). */
+export interface WalkthroughShot {
+  before?: string;
+  after?: string;
+  caption?: string;
+}
+
+/**
+ * A Cursor-style PR walkthrough the agent publishes when it finishes a
+ * user-visible change: a short demo video, before/after screenshots, and a
+ * writeup. Rendered inline in the session's Review tab and mirrored into the
+ * GitHub PR description (video + images as os.tella.dev links there — the
+ * server is tailnet-only, so GitHub's camo proxy can't inline them).
+ */
+export interface SessionWalkthrough {
+  /** Markdown writeup: what changed, root cause, how it was verified. */
+  summary: string;
+  /** Absolute path to the staged demo video (mp4/webm/mov), if any. */
+  video?: string;
+  videoTitle?: string;
+  shots?: WalkthroughShot[];
+  publishedAt: string;
+  publishedBy?: string;
+}
+
 export interface BackstageSessionFile {
   id: string;
   claudeSessionId: string;
@@ -275,6 +304,8 @@ export interface BackstageSessionFile {
   /** Root-relative route the Preview/Staging buttons deep-link to (set by the
    *  agent via opensession-preview's set_preview_path). Unset = open the app root. */
   previewPath?: string;
+  /** Agent-published demo walkthrough (opensession-walkthrough). */
+  walkthrough?: SessionWalkthrough;
   createdBy: string;
   createdAt: string;
   lastActivity: string;

@@ -281,6 +281,7 @@ export const SHARED_INPROCESS_SERVERS = [
   "opensession-repos",
   "opensession-memory",
   "opensession-preview",
+  "opensession-walkthrough",
   "opensession-ask",
   "opensession-github",
   "opensession-papercuts",
@@ -838,6 +839,21 @@ export function buildOpencodeInstructions(input: {
         "proceed, call opensession-ask's `ask_user` tool. It pauses this run on a question card " +
         `in the ${productName()} UI and returns their answer. Prefer 2-4 concrete options; don't ` +
         "ask for confirmations a reasonable default covers."
+    );
+  }
+  if (!input.isAsk && inproc["opensession-walkthrough"]) {
+    parts.push(
+      "## Publish a walkthrough\nWhen you finish a user-visible change (UI, visual fix, new " +
+        "feature flow), publish a walkthrough with opensession-walkthrough's " +
+        "`publish_walkthrough`: a short demo screen-recording of the change working, " +
+        "before/after screenshots when the change is visual, and a 2-6 sentence markdown " +
+        "writeup (what changed, root cause for fixes, how you verified it). Record media " +
+        "first — for tella-fusion webapp changes use the tella-local skill (screenshots and " +
+        "screen recordings) — and pass absolute file paths; they are copied to durable " +
+        "storage. It renders in the session's Review tab and is mirrored into the PR " +
+        "description; if you publish before the PR exists, call it again after `gh pr create` " +
+        "so it lands there too. Skip it for pure refactors, backend-only changes, or trivial " +
+        "tweaks — a walkthrough should demonstrate something a human can see."
     );
   }
   if (inproc["opensession-papercuts"]) {

@@ -19,6 +19,7 @@ import { createHumansMcpServer } from "../agents/slack/humans-tools";
 import { createAskUserMcpServer } from "../agents/slack/ask-tools";
 import { createReposMcpServer } from "../agents/slack/repos-tools";
 import { createPreviewMcpServer } from "../agents/slack/preview-tools";
+import { createWalkthroughMcpServer } from "../agents/slack/walkthrough-tools";
 import { createMemoryMcpServer } from "../agents/slack/memory-tools";
 import { createGoalsMcpServer, createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { createPapercutsMcpServer } from "../agents/slack/papercuts-tools";
@@ -140,6 +141,12 @@ export function interactiveMcpServers(
 								previewPath: path || undefined,
 							}),
 						current: () => findSession(sessionId)?.previewPath ?? null,
+					}),
+					// Publish a demo walkthrough (video + before/after + writeup) onto
+					// the session's Review tab and the PR description.
+					"opensession-walkthrough": createWalkthroughMcpServer({
+						sessionId,
+						by: createdBy,
 					}),
 					// AskUserQuestion for engines without a canUseTool hook (Codex):
 					// blocks on the same UI question card + Slack escalation as the

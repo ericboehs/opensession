@@ -451,6 +451,7 @@ export function Reviews({
               onAddToInput={(text) => onAddToInput(selected.id, text)}
               split
               send={send}
+              walkthrough={selected.walkthrough}
             />
           </div>
         </aside>

@@ -6,7 +6,9 @@ import type {
   PrDetails,
   PrFile,
   PrReviewer,
+  SessionWalkthrough,
 } from "../lib/types";
+import { WalkthroughCard } from "./WalkthroughCard";
 import {
   API_BASE,
   fetchPr,
@@ -63,6 +65,9 @@ interface Props {
    * session (via a `prompt` message — the server steers/queues if it's busy).
    */
   send?: (msg: any) => void;
+  /** Agent-published walkthrough (session.walkthrough) — rendered at the top
+   *  of the info column; its mirrored section is stripped from the PR body. */
+  walkthrough?: SessionWalkthrough;
 }
 
 interface PrDiffData {
@@ -226,6 +231,7 @@ export function PrPanel({
   linkedPrs,
   linkable,
   send,
+  walkthrough,
 }: Props) {
   // Local copy of the linked-PR list so link/unlink applies instantly; the
   // sessions list catches up on its next refresh.
@@ -417,7 +423,18 @@ export function PrPanel({
     };
   }, [pr]);
 
-  const bodyHtml = useMemo(() => (pr?.body ? renderMarkdown(pr.body) : ""), [pr?.body]);
+  const bodyHtml = useMemo(() => {
+    if (!pr?.body) return "";
+    // The mirrored walkthrough section is link-only (GitHub can't reach the
+    // tailnet media) — drop it here, where WalkthroughCard renders the real thing.
+    const stripped = pr.body
+      .replace(
+        /<!-- opensession:walkthrough -->[\s\S]*?<!-- \/opensession:walkthrough -->/,
+        "",
+      )
+      .trim();
+    return stripped ? renderMarkdown(stripped) : "";
+  }, [pr?.body]);
   const provider = useMemo(() => providerFromUrl(pr?.url), [pr?.url]);
 
   // Only offer the expand toggle when the clamped description is actually taller
@@ -527,6 +544,7 @@ export function PrPanel({
       <div className="pr-panel">
         {switcher}
         <div className="pr-panel-info">
+          {walkthrough && <WalkthroughCard walkthrough={walkthrough} />}
           <PrCard title="Status">
             <div className="prc-status-row">
               <span className="prc-state prc-state-muted">
@@ -611,7 +629,9 @@ export function PrPanel({
           </div>
           {mergeError && <div className="pr-merge-error">{mergeError}</div>}
 
-          {pr.body && (
+          {walkthrough && <WalkthroughCard walkthrough={walkthrough} />}
+
+          {!!bodyHtml && (
             <div className="pr-body pr-body-top">
               <div
                 ref={bodyRef}

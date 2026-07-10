@@ -403,6 +403,56 @@ export async function editPrReviewers(
   }
 }
 
+/**
+ * Rewrite the PR description through a mutator over the current body — used by
+ * the walkthrough mirror to splice its managed section in place. Reads the
+ * live body first (never a cached one: humans edit descriptions) and writes
+ * via --body-file so markdown/quotes/newlines survive shell-free.
+ */
+export async function updatePrBody(
+  branch: string,
+  mutate: (body: string) => string,
+  repo: string = DEFAULT_REPO
+): Promise<{ ok: true; number: number; url: string } | { error: string }> {
+  try {
+    const view = Bun.spawn(
+      ["gh", "pr", "view", branch, "--repo", repo, "--json", "body,number,url"],
+      { stdout: "pipe", stderr: "pipe" }
+    );
+    const [out, viewErr, viewCode] = await Promise.all([
+      new Response(view.stdout).text(),
+      new Response(view.stderr).text(),
+      view.exited,
+    ]);
+    if (viewCode !== 0)
+      return { error: (viewErr || "gh pr view failed").slice(0, 300) };
+    const pr = JSON.parse(out) as { body: string; number: number; url: string };
+    const next = mutate(pr.body || "");
+    if (next === (pr.body || "")) return { ok: true, number: pr.number, url: pr.url };
+    const tmp = `/tmp/opensession-pr-body-${Date.now()}-${Math.random().toString(36).slice(2)}.md`;
+    await Bun.write(tmp, next);
+    try {
+      const edit = Bun.spawn(
+        ["gh", "pr", "edit", branch, "--repo", repo, "--body-file", tmp],
+        { stdout: "pipe", stderr: "pipe" }
+      );
+      const [, editErr, editCode] = await Promise.all([
+        new Response(edit.stdout).text(),
+        new Response(edit.stderr).text(),
+        edit.exited,
+      ]);
+      if (editCode !== 0)
+        return { error: (editErr || "gh pr edit failed").slice(0, 300) };
+    } finally {
+      await Bun.file(tmp).unlink().catch(() => {});
+    }
+    cache.delete(cacheKey(repo, branch)); // body changed
+    return { ok: true, number: pr.number, url: pr.url };
+  } catch (e: any) {
+    return { error: e.message || String(e) };
+  }
+}
+
 // One in-flight `gh pr view` per branch — concurrent panels share the promise
 // instead of stacking subprocesses.
 const inflight = new Map<string, Promise<PrDetails | null>>();

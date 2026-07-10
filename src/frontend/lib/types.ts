@@ -132,6 +132,24 @@ export interface SessionUsage {
 	updatedAt: string;
 }
 
+/** One before/after screenshot pair in a session walkthrough. */
+export interface WalkthroughShot {
+	before?: string;
+	after?: string;
+	caption?: string;
+}
+
+/** Agent-published PR walkthrough: demo video + before/after + writeup.
+ *  Paths are server-absolute; stream them via /backstage/media?path=. */
+export interface SessionWalkthrough {
+	summary: string;
+	video?: string;
+	videoTitle?: string;
+	shots?: WalkthroughShot[];
+	publishedAt: string;
+	publishedBy?: string;
+}
+
 export interface UnifiedSession {
 	id: string;
 	claudeSessionId: string | null;
@@ -202,6 +220,9 @@ export interface UnifiedSession {
 	/** Route the Preview/Staging buttons deep-link to (agent-set via
 	 *  opensession-preview); appended to the base URL. Unset = open the app root. */
 	previewPath?: string;
+	/** Agent-published demo walkthrough (video + before/after + writeup),
+	 *  rendered in the Review tab and mirrored to the PR description. */
+	walkthrough?: SessionWalkthrough;
 	automation?: string;
 	archived?: boolean;
 	/** Why this session is archived — powers the "Auto-archived" filter. */

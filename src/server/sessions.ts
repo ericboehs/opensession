@@ -430,6 +430,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       attachedRepos: data.attachedRepos,
       linkedPrs: data.linkedPrs,
       previewPath: data.previewPath,
+      walkthrough: data.walkthrough,
       automation:
         data.automation ||
         (data.createdBy?.endsWith(" (automation)")

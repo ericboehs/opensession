@@ -3051,6 +3051,7 @@ export function SessionViewer({
 									]}
 									linkedPrs={session.linkedPrs}
 									linkable
+									walkthrough={session.walkthrough}
 								/>
 							)}
 						</div>
