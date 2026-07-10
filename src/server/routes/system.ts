@@ -129,6 +129,53 @@ export async function handleSystemRoutes(
 		}
 	}
 
+	// ── Audit digest: one day rolled up for the nightly Dreaming automation ──
+	// That run is unattended ask mode (no shell, raw jsonl too big to read), so
+	// this endpoint is its only window into yesterday's work — like /api/health
+	// for the health monitor. Default date is yesterday (UTC).
+	if (path === "/backstage/api/audit/digest" && req.method === "GET") {
+		const { buildAuditDigest, listAuditDates } = await import(
+			"../../server/audit"
+		);
+		const date =
+			url.searchParams.get("date") ||
+			new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+		const digestJson = buildAuditDigest(date);
+		if (!digestJson) {
+			return Response.json(
+				{
+					ok: false,
+					error: `no audit log for ${date}`,
+					dates: listAuditDates().slice(0, 7),
+				},
+				{ status: 404 },
+			);
+		}
+		// Join automation runs so automation sessions carry a readable name.
+		const { listAutomations } = await import("../automations");
+		const automationRuns: Array<Record<string, unknown>> = [];
+		const nameBySession = new Map<string, string>();
+		for (const a of listAutomations()) {
+			for (const r of a.runs || []) {
+				if (String(r.at).slice(0, 10) !== date) continue;
+				automationRuns.push({
+					automation: a.name,
+					at: r.at,
+					trigger: r.trigger,
+					status: r.status,
+					durationMs: r.durationMs,
+					sessionId: r.sessionId,
+				});
+				if (r.sessionId) nameBySession.set(r.sessionId, a.name);
+			}
+		}
+		for (const s of digestJson.sessions as Array<Record<string, unknown>>) {
+			const name = nameBySession.get(String(s.id));
+			if (name) s.automation = name;
+		}
+		return Response.json({ ok: true, ...digestJson, automationRuns });
+	}
+
 	// ── Audit log viewer (Settings → Audit log) ──
 	if (path === "/backstage/api/audit" && req.method === "GET") {
 		const { listAuditDates, readAuditEvents } = await import(

@@ -210,6 +210,239 @@ export function readAuditEvents(opts: {
   };
 }
 
+/** One day's audit log rolled up into a compact, LLM-consumable shape. Built
+ *  for the nightly "Dreaming" reflection automation: it runs unattended in
+ *  ask mode (no shell, and the raw jsonl is 10-20MB — far past what the read
+ *  tool can take), so it webfetches /api/audit/digest instead. Keep the field
+ *  names stable — the automation prompt names them. */
+export function buildAuditDigest(date: string): Record<string, unknown> | null {
+  ensureAuditDir();
+  const path = `${AUDIT_DIR}/audit-${date}.jsonl`;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !existsSync(path)) return null;
+
+  interface SessionAgg {
+    id: string;
+    runKind: string;
+    mode: string;
+    models: Set<string>;
+    firstPrompt: string;
+    turns: number;
+    errors: number;
+    toolErrors: number;
+    cancelled: number;
+    permissionDecisions: number;
+    durationMs: number;
+    costUsd: number;
+  }
+  const sessions = new Map<string, SessionAgg>();
+  const sessionOf = (e: Record<string, unknown>): SessionAgg | null => {
+    const id = String(e.bks_session_id || "");
+    if (!id) return null;
+    let s = sessions.get(id);
+    if (!s) {
+      s = {
+        id,
+        runKind: String(e.run_kind || "?"),
+        mode: String(e.mode || "?"),
+        models: new Set(),
+        firstPrompt: "",
+        turns: 0,
+        errors: 0,
+        toolErrors: 0,
+        cancelled: 0,
+        permissionDecisions: 0,
+        durationMs: 0,
+        costUsd: 0,
+      };
+      sessions.set(id, s);
+    }
+    if (e.model) s.models.add(String(e.model));
+    return s;
+  };
+
+  // Group key for recurring failures: ids and counts vary per occurrence.
+  const normalize = (msg: string) =>
+    msg.replace(/[0-9a-f-]{12,}/gi, "*").replace(/\d+/g, "#").slice(0, 160);
+
+  interface ErrGroup {
+    count: number;
+    runKinds: Set<string>;
+    sample: string;
+    sampleSession: string;
+  }
+  const errorGroups = new Map<string, ErrGroup>();
+  const toolErrorGroups = new Map<string, ErrGroup & { tool: string }>();
+  const toolNameById = new Map<string, string>();
+  const toolCalls = new Map<string, number>();
+  const models = new Map<string, number>();
+  const accountSwitches = new Map<string, number>();
+  const oneshots = { total: 0, failed: 0 };
+  let events = 0;
+  let turns = 0;
+  let errors = 0;
+  let toolErrors = 0;
+  let cancelled = 0;
+  let permissionDecisions = 0;
+  let engineRetries = 0;
+  let costUsd = 0;
+
+  for (const line of readFileSync(path, "utf-8").split("\n")) {
+    if (!line) continue;
+    let e: Record<string, unknown>;
+    try {
+      e = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    events++;
+    if (e.msg === "opencode_oneshot") {
+      oneshots.total++;
+      if (e.status && e.status !== "ok") oneshots.failed++;
+      continue;
+    }
+    if (e.msg === "opencode_meridian_run" || e.msg === "opencode_openai_run") {
+      if (e.retry_attempt) engineRetries++;
+      continue;
+    }
+    const s = sessionOf(e);
+    switch (String(e.kind || "")) {
+      case "user_prompt":
+        if (e.model) models.set(String(e.model), (models.get(String(e.model)) || 0) + 1);
+        if (s && !s.firstPrompt) s.firstPrompt = String(e.text_snippet || "").slice(0, 200);
+        break;
+      case "result": {
+        turns++;
+        const cost = Number(e.total_cost_usd) || 0;
+        costUsd += cost;
+        if (s) {
+          s.turns++;
+          s.durationMs += Number(e.duration_ms) || 0;
+          s.costUsd += cost;
+        }
+        break;
+      }
+      case "error": {
+        errors++;
+        if (s) s.errors++;
+        const raw = String(e.error || "");
+        const g = errorGroups.get(normalize(raw)) || {
+          count: 0,
+          runKinds: new Set<string>(),
+          sample: raw.slice(0, 300),
+          sampleSession: String(e.bks_session_id || ""),
+        };
+        g.count++;
+        g.runKinds.add(String(e.run_kind || "?"));
+        errorGroups.set(normalize(raw), g);
+        break;
+      }
+      case "cancelled":
+        cancelled++;
+        if (s) s.cancelled++;
+        break;
+      case "tool_use":
+        if (e.tool_use_id && e.tool_name) {
+          toolNameById.set(String(e.tool_use_id), String(e.tool_name));
+        }
+        if (e.tool_name) {
+          toolCalls.set(String(e.tool_name), (toolCalls.get(String(e.tool_name)) || 0) + 1);
+        }
+        break;
+      case "tool_result": {
+        if (e.is_error !== true) break;
+        toolErrors++;
+        if (s) s.toolErrors++;
+        const tool = toolNameById.get(String(e.tool_use_id || "")) || "?";
+        const snippet = String(e.text_snippet || "");
+        const key = `${tool}: ${normalize(snippet)}`;
+        const g = toolErrorGroups.get(key) || {
+          tool,
+          count: 0,
+          runKinds: new Set<string>(),
+          sample: snippet.slice(0, 300),
+          sampleSession: String(e.bks_session_id || ""),
+        };
+        g.count++;
+        g.runKinds.add(String(e.run_kind || "?"));
+        toolErrorGroups.set(key, g);
+        break;
+      }
+      case "permission_decision":
+        permissionDecisions++;
+        if (s) s.permissionDecisions++;
+        break;
+      case "account_switch": {
+        const acc = String(e.account || "?");
+        accountSwitches.set(acc, (accountSwitches.get(acc) || 0) + 1);
+        break;
+      }
+    }
+  }
+
+  const byRunKind: Record<
+    string,
+    { sessions: number; turns: number; errors: number; toolErrors: number; costUsd: number }
+  > = {};
+  for (const s of sessions.values()) {
+    const k = (byRunKind[s.runKind] ||= { sessions: 0, turns: 0, errors: 0, toolErrors: 0, costUsd: 0 });
+    k.sessions++;
+    k.turns += s.turns;
+    k.errors += s.errors;
+    k.toolErrors += s.toolErrors;
+    k.costUsd = +(k.costUsd + s.costUsd).toFixed(2);
+  }
+  // Most troubled sessions first; quiet ones fall off the capped list.
+  const topSessions = [...sessions.values()]
+    .sort((a, b) => b.errors + b.toolErrors - (a.errors + a.toolErrors) || b.turns - a.turns)
+    .slice(0, 60)
+    .map((s) => ({
+      id: s.id,
+      runKind: s.runKind,
+      mode: s.mode,
+      models: [...s.models],
+      firstPrompt: s.firstPrompt,
+      turns: s.turns,
+      errors: s.errors,
+      toolErrors: s.toolErrors,
+      cancelled: s.cancelled,
+      permissionDecisions: s.permissionDecisions,
+      durationMs: s.durationMs,
+      costUsd: +s.costUsd.toFixed(2),
+    }));
+  const topGroups = <T extends ErrGroup>(m: Map<string, T>) =>
+    [...m.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20)
+      .map((g) => ({ ...g, runKinds: [...g.runKinds] }));
+
+  return {
+    date,
+    totals: {
+      events,
+      sessions: sessions.size,
+      turns,
+      errors,
+      toolErrors,
+      cancelled,
+      permissionDecisions,
+      engineRetries,
+      costUsd: +costUsd.toFixed(2),
+    },
+    byRunKind,
+    models: Object.fromEntries(models),
+    errorGroups: topGroups(errorGroups),
+    toolErrorGroups: topGroups(toolErrorGroups),
+    topTools: [...toolCalls.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
+      .map(([tool, count]) => ({ tool, count })),
+    oneshots,
+    accountSwitches: Object.fromEntries(accountSwitches),
+    sessions: topSessions,
+    sessionsTruncated: Math.max(0, sessions.size - topSessions.length),
+  };
+}
+
 /**
  * Wraps a side-effecting call with start/end audit events: redacted args on
  * both, result fingerprint + duration on completion. Results are only
