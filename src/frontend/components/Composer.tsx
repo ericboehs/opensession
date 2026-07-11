@@ -322,10 +322,14 @@ export function Composer({
   // unfocused, the composer collapses to a single-row pill ("+ · placeholder ·
   // mic · send"), hiding the model/effort/goal chips. Focusing the field or
   // adding any content (text or attachment) expands it to the full toolbar.
+  // The open model menu also holds it expanded: the portaled popup takes focus
+  // (blurring the textarea), and collapsing would unmount the pill trigger and
+  // slam the menu shut mid-interaction.
   const [focused, setFocused] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const hasAttached = !!attached;
   const hasContent = !!text.trim() || imgs.length > 0 || fls.length > 0 || hasAttached;
-  const minimized = isPhone && !focused && !hasContent;
+  const minimized = isPhone && !focused && !hasContent && !modelMenuOpen;
   const showSend = !busy || hasContent;
 
   // Which toolbar popover is open ("add" menu or "goal" editor). Closed on an
@@ -604,7 +608,18 @@ export function Composer({
             autoFocus={autoFocus}
           />
         </motion.div>
-        <div className="composer-toolbar" ref={toolbarRef}>
+        <div
+          className="composer-toolbar"
+          ref={toolbarRef}
+          // Phones: a toolbar tap must not blur the textarea — the blur would
+          // collapse the empty composer mid-tap (unmounting the model pill and
+          // reflowing + / mic / send under the finger) and dismiss the
+          // keyboard. Cancelling pointerdown keeps focus where it is; clicks
+          // still fire on the buttons.
+          onPointerDown={(e) => {
+            if (isPhone) e.preventDefault();
+          }}
+        >
           {canAttach && (
             <motion.div layout="position" transition={composerMorph} className="composer-pop-wrap">
               <Tooltip label="Add files or a file reference">
@@ -743,6 +758,7 @@ export function Composer({
                   accountId={accountId}
                   onAccountChange={onAccountChange}
                   disabled={disabled}
+                  onOpenChange={setModelMenuOpen}
                 />
               </motion.div>
             )}

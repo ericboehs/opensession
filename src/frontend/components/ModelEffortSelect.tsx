@@ -35,6 +35,10 @@ type Props = {
 	disabled?: boolean;
 	title?: string;
 	className?: string;
+	/** Fires as the menu opens/closes. The phone composer needs it: the popup
+	 * takes focus (blurring the textarea), and the composer must stay expanded
+	 * while open or this trigger unmounts and the menu closes with it. */
+	onOpenChange?: (open: boolean) => void;
 };
 
 const PRIMARY_MODEL_IDS = [
@@ -184,6 +188,7 @@ export function ModelEffortSelect({
 	disabled,
 	title,
 	className,
+	onOpenChange,
 }: Props) {
 	const effectiveModel = model || defaultModel;
 	const modelLabel = shortModelLabel(effectiveModel, models);
@@ -300,7 +305,7 @@ export function ModelEffortSelect({
 	};
 
 	return (
-		<Menu.Root>
+		<Menu.Root onOpenChange={onOpenChange}>
 			<Menu.Trigger
 				type="button"
 				// Quiet pill: no outline at rest, hover state only, no chevron.
