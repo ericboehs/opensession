@@ -222,9 +222,14 @@ registerSessionControl({
 		if (!sandboxResolved.ok) throw new Error(sandboxResolved.error);
 		const sandboxProvider = sandboxResolved.provider;
 		const remoteSandbox = isRemoteSandboxProvider(sandboxProvider);
-		const parentWorkspace = parentSession?.projectId
-			? getWorkspace(parentSession.projectId)
-			: null;
+		// HQ is an orchestrator, not a workspace: its spawns are independent
+		// sessions that merely report back — never tabs sharing HQ's workspace
+		// or worktree.
+		const parentIsHq = Boolean(parentSession?.hq);
+		const parentWorkspace =
+			!parentIsHq && parentSession?.projectId
+				? getWorkspace(parentSession.projectId)
+				: null;
 
 		let wtPath: string;
 		let sessionBranch = branch || "";
@@ -258,8 +263,8 @@ registerSessionControl({
 
 		const bksId = `bks-${randomUUIDv7()}`;
 		const title = prompt.trim().split("\n")[0].slice(0, 80);
-		let projectId = parentSession?.projectId || null;
-		if (!projectId) {
+		let projectId = parentIsHq ? null : parentSession?.projectId || null;
+		if (!projectId && !parentIsHq) {
 			// Adopt the workspace that already owns the (parent's or this child's)
 			// worktree before minting a duplicate one over it; only a workspace-less
 			// backstage parent on an unowned worktree gets wrapped in a fresh one.

@@ -17,6 +17,7 @@ import {
 	ensureHq,
 } from "../lib/api";
 import { loadOverview, overviewCache } from "../lib/workspace-overview";
+import { HqStatusChip } from "./HqControls";
 import { openLightbox } from "./MediaLightbox";
 import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged, togglePin, reorderPins } from "../lib/pins";
@@ -2973,6 +2974,17 @@ export function Sidebar({
 										style={{ background: "var(--green)" }}
 									/>
 								)}
+								{/* OPEN/CLOSED without entering the session; the chip
+								    stops propagation so the row doesn't navigate. */}
+								<span
+									style={{
+										marginLeft: "auto",
+										display: "flex",
+										alignItems: "center",
+									}}
+								>
+									<HqStatusChip user={currentUser} />
+								</span>
 							</button>
 						</div>
 					);

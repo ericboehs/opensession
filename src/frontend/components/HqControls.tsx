@@ -13,6 +13,7 @@ import {
 	type HqLane,
 } from "../lib/api";
 import { Tooltip } from "../ui/tooltip";
+import { IconChevronRight } from "./icons";
 
 const LANES: { value: HqLane; label: string }[] = [
 	{ value: "off", label: "Off" },
@@ -74,6 +75,89 @@ function LaneRow({
 	);
 }
 
+/**
+ * The OPEN/CLOSED toggle as a self-contained chip — rendered beside the HQ
+ * row in the sidebar and inside HqControls. Span-based (role=button) so it
+ * can sit inside clickable rows without nesting <button>s. Instances sync
+ * through the "backstage:hq-changed" window event. Renders nothing until the
+ * user has an HQ config entry (i.e. has opened HQ once).
+ */
+export function HqStatusChip({ user }: { user: string }) {
+	const [state, setState] = useState<{
+		status: "open" | "closed";
+		buffered: number;
+	} | null>(null);
+
+	useEffect(() => {
+		let alive = true;
+		const refetch = () =>
+			fetchHqInfo(user)
+				.then(
+					(i) =>
+						alive &&
+						setState({ status: i.config.status, buffered: i.buffered }),
+				)
+				.catch(() => {});
+		refetch();
+		window.addEventListener("backstage:hq-changed", refetch);
+		return () => {
+			alive = false;
+			window.removeEventListener("backstage:hq-changed", refetch);
+		};
+	}, [user]);
+
+	if (!state) return null;
+	const isOpen = state.status === "open";
+	return (
+		<Tooltip
+			label={
+				isOpen
+					? "HQ is receiving events — click to close (events buffer silently)"
+					: `HQ is closed${state.buffered ? ` — ${state.buffered} event(s) buffered` : ""} — click to open (flushes a catch-up digest)`
+			}
+		>
+			<span
+				role="button"
+				tabIndex={0}
+				className="source-chip"
+				style={{
+					cursor: "pointer",
+					background: isOpen ? "var(--green)" : "transparent",
+					color: isOpen ? "#fff" : "var(--text-dim)",
+					border: isOpen
+						? "1px solid var(--green)"
+						: "1px solid var(--line)",
+				}}
+				onClick={(e) => {
+					e.stopPropagation();
+					const next = isOpen ? ("closed" as const) : ("open" as const);
+					setState({ ...state, status: next });
+					// Both outcomes broadcast: success syncs every instance, failure
+					// makes them (and us) refetch the truth.
+					updateHqConfig(user, { status: next })
+						.catch(() => {})
+						.finally(() =>
+							window.dispatchEvent(new Event("backstage:hq-changed")),
+						);
+				}}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						e.stopPropagation();
+						(e.currentTarget as HTMLElement).click();
+					}
+				}}
+			>
+				{isOpen
+					? "OPEN"
+					: state.buffered
+						? `CLOSED · ${state.buffered}`
+						: "CLOSED"}
+			</span>
+		</Tooltip>
+	);
+}
+
 export function HqControls({
 	user,
 	variant = "header",
@@ -93,11 +177,16 @@ export function HqControls({
 
 	useEffect(() => {
 		let alive = true;
-		fetchHqInfo(user)
-			.then((i) => alive && setInfo(i))
-			.catch(() => {});
+		const refetch = () =>
+			fetchHqInfo(user)
+				.then((i) => alive && setInfo(i))
+				.catch(() => {});
+		refetch();
+		// The status chip (here, or in the sidebar) saved a change — stay in sync.
+		window.addEventListener("backstage:hq-changed", refetch);
 		return () => {
 			alive = false;
+			window.removeEventListener("backstage:hq-changed", refetch);
 		};
 	}, [user]);
 
@@ -118,7 +207,6 @@ export function HqControls({
 
 	if (!info) return null;
 	const { config } = info;
-	const isOpen = config.status === "open";
 
 	function patch(p: Parameters<typeof updateHqConfig>[1]) {
 		setInfo(
@@ -133,7 +221,11 @@ export function HqControls({
 				},
 		);
 		updateHqConfig(user, p)
-			.then((r) => setInfo((cur) => cur && { ...cur, ...r }))
+			.then((r) => {
+				setInfo((cur) => cur && { ...cur, ...r });
+				// Keep the sidebar chip (and any other instance) in sync.
+				window.dispatchEvent(new Event("backstage:hq-changed"));
+			})
 			.catch(() => {});
 	}
 
@@ -148,33 +240,7 @@ export function HqControls({
 			});
 	}
 
-	const switchButton = (
-		<Tooltip
-			label={
-					isOpen
-						? "HQ is receiving events — click to close (events buffer silently)"
-						: `HQ is closed${info.buffered ? ` — ${info.buffered} event(s) buffered` : ""} — click to open (flushes a catch-up digest)`
-				}
-			>
-				<button
-					type="button"
-					className="source-chip"
-					style={{
-						cursor: "pointer",
-						background: isOpen ? "var(--green)" : "transparent",
-						color: isOpen ? "#fff" : "var(--text-dim)",
-						border: isOpen ? "1px solid var(--green)" : "1px solid var(--line)",
-					}}
-					onClick={() => patch({ status: isOpen ? "closed" : "open" })}
-				>
-					{isOpen
-						? "OPEN"
-						: info.buffered
-							? `CLOSED · ${info.buffered}`
-							: "CLOSED"}
-				</button>
-		</Tooltip>
-	);
+	const switchButton = <HqStatusChip user={user} />;
 
 	const settingsBody = (
 		<>
@@ -294,20 +360,38 @@ export function HqControls({
 	// section of the info page instead of behind a popover.
 	if (variant === "page")
 		return (
-			<div style={{ padding: "10px 14px 4px" }}>
-				<div
+			<div style={{ padding: "2px 6px" }}>
+				<button
+					type="button"
+					onClick={() => setOpen((o) => !o)}
+					aria-expanded={open}
 					style={{
 						display: "flex",
 						alignItems: "center",
-						justifyContent: "space-between",
 						gap: 8,
-						marginBottom: 8,
+						width: "100%",
+						padding: "9px 8px",
+						background: "transparent",
+						border: "none",
+						color: "inherit",
+						fontSize: 13,
+						cursor: "pointer",
 					}}
 				>
-					<span style={{ fontWeight: 600, fontSize: 13 }}>HQ events</span>
-					{switchButton}
-				</div>
-				{settingsBody}
+					<span style={{ fontWeight: 600 }}>HQ events</span>
+					<span style={{ marginLeft: "auto", display: "flex" }}>
+						{switchButton}
+					</span>
+					<IconChevronRight
+						size={16}
+						style={{
+							color: "var(--text-dim)",
+							transform: open ? "rotate(90deg)" : "none",
+							transition: "transform 0.15s ease",
+						}}
+					/>
+				</button>
+				{open && <div style={{ padding: "0 8px 10px" }}>{settingsBody}</div>}
 			</div>
 		);
 

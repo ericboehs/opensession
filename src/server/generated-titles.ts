@@ -69,6 +69,13 @@ export async function ensureGeneratedTitle(
 	model?: string,
 ): Promise<string | null> {
 	if (getGeneratedTitle(id)) return null; // already have one
+	// HQ sessions keep their fixed "HQ" title — the prompts here are telemetry
+	// events, and summarizing those produced garbage titles. Direct file read
+	// (not findSession) to stay out of the sessions-cache import cycle.
+	try {
+		const f = `${BACKSTAGE_CHATS_DIR}/${id}.json`;
+		if (existsSync(f) && JSON.parse(readFileSync(f, "utf-8")).hq) return null;
+	} catch {}
 	const source = prompt.trim().slice(0, 2000);
 	if (!source) return null;
 
