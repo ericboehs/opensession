@@ -29,7 +29,6 @@ import { Settings, type SettingsSectionKey } from "./components/Settings";
 import { SessionTabs } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
-import { PullToRefresh } from "./components/PullToRefresh";
 import { UpdatePill } from "./components/UpdatePill";
 import { IconSearch, IconSidebarLeft } from "./components/icons";
 import { useSessions } from "./hooks/useSessions";
@@ -1257,7 +1256,6 @@ function App() {
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
 			<MediaLightboxHost />
-			<PullToRefresh />
 			<ToastHost />
 			<div className="app">
 					{/* Reclaimed titlebar in installed-PWA Window Controls Overlay
