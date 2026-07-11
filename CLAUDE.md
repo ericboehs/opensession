@@ -190,19 +190,17 @@ The `opensession-sessions` in-process MCP (src/agents/slack/sessions-tools.ts) i
 
 ## Model routing and delegation
 
-Interactive Claude/Fable sessions should act as orchestrators, not as the only
-worker. Use the OpenSession `opensession-sessions` MCP tools to spin up focused worker
-sessions when that saves scarce premium-model tokens or reduces context noise.
+Interactive sessions should act as orchestrators, not as the only worker. Use
+the OpenSession `opensession-sessions` MCP tools to spin up focused worker
+sessions when that reduces context noise or parallelizes work.
 
-All models run on the opencode engine — ids are `opencode/<provider>/<model>`,
-and bare native ids map onto that form at dispatch. **Use Fable or Opus
-(`claude-fable-5` / `claude-opus-4-8`) — pick whichever fits the task.**
-Intelligence and taste come first; we don't route work to cheaper models to save
-cost.
+Pick the model that fits each task — intelligence and taste come first, cost
+isn't a reason to downgrade. All models run on the opencode engine (ids are
+`opencode/<provider>/<model>`; bare native ids map onto that form at dispatch).
 
-How to delegate from a Fable/Claude OpenSession session:
-- Use `opensession-sessions.create_session` with `model: "claude-fable-5"` or
-  `"claude-opus-4-8"` — your choice per task.
+How to delegate from an OpenSession session:
+- Use `opensession-sessions.create_session`, setting `model` to whatever fits
+  the worker's task.
 - For workers that only need filesystem/code access, pass `mcpServers: []` so
   unrelated external MCP startup does not slow or block them.
 - Set `repo` to the registered repo id the worker should inspect or edit, such
