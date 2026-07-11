@@ -25,6 +25,14 @@ export function useWebSocket() {
   // Flipped true by ANY inbound message (pong or otherwise); the heartbeat
   // flips it false after each ping. Still false at the next beat = dead socket.
   const aliveRef = useRef(true);
+  // Outbound messages issued while the socket wasn't OPEN (wifi switch, server
+  // restart, PWA resume): held here and flushed in order on the next onopen, so
+  // a transient drop doesn't silently swallow intent like create_session — the
+  // "I clicked create, nothing happened after switching networks" bug. Bounded
+  // so a long outage can't replay a stale flood.
+  const outboxRef = useRef<{ msg: WSClientMessage; at: number }[]>([]);
+  const OUTBOX_MAX = 50;
+  const OUTBOX_TTL_MS = 30_000;
 
   const connect = useCallback(() => {
     // Already open OR mid-handshake — don't stack a second socket.
@@ -36,7 +44,19 @@ export function useWebSocket() {
     aliveRef.current = true;
 
     ws.onopen = () => {
-      if (wsRef.current === ws) setConnected(true);
+      if (wsRef.current !== ws) return;
+      setConnected(true);
+      // Flush anything queued while we were down. FIFO preserves the order the
+      // user issued them; skip messages that have gone stale.
+      const now = Date.now();
+      const pending = outboxRef.current;
+      outboxRef.current = [];
+      for (const item of pending) {
+        if (now - item.at > OUTBOX_TTL_MS) continue;
+        try {
+          ws.send(JSON.stringify(item.msg));
+        } catch {}
+      }
     };
 
     ws.onmessage = (e) => {
@@ -127,11 +147,32 @@ export function useWebSocket() {
     };
   }, [connect]);
 
-  const send = useCallback((msg: WSClientMessage) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(msg));
-    }
-  }, []);
+  const send = useCallback(
+    (msg: WSClientMessage) => {
+      const ws = wsRef.current;
+      if (ws?.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify(msg));
+          return;
+        } catch {
+          // send threw mid-drop — fall through and queue it for the reconnect.
+        }
+      }
+      // Liveness pings are worthless once stale — never queue them.
+      if ((msg as { type?: string }).type === "ping") return;
+      const box = outboxRef.current;
+      box.push({ msg, at: Date.now() });
+      // Keep only the most recent OUTBOX_MAX (drop oldest intent first).
+      if (box.length > OUTBOX_MAX) box.splice(0, box.length - OUTBOX_MAX);
+      // Don't wait out the 2s backoff — try to reconnect right now so the
+      // queued message goes out as soon as possible.
+      if (!ws || ws.readyState === WebSocket.CLOSED) {
+        clearTimeout(reconnectTimer.current);
+        connect();
+      }
+    },
+    [connect],
+  );
 
   const addHandler = useCallback((handler: (msg: WSServerMessage) => void) => {
     handlersRef.current.push(handler);
