@@ -8950,6 +8950,59 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	font-size: 12px;
 	font-weight: 650;
 }
+/* Compact running-agents flap — same tuck-under-the-composer trick as the
+   queue flap, but a single tappable row. */
+.composer-agents {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: calc(100% - 36px);
+	margin: 0 18px -14px;
+	padding: 9px 12px 22px;
+	border: 1px solid var(--border);
+	border-bottom: none;
+	border-radius: calc(16px * var(--rf)) calc(16px * var(--rf)) 0 0; corner-shape: var(--cs);
+	background: var(--bg-panel);
+	text-align: left;
+	color: var(--text);
+	font-size: 13px;
+	font-weight: 550;
+	cursor: pointer;
+}
+.composer-agents:active {
+	background: var(--bg-hover);
+}
+.composer-agents-dot {
+	flex: none;
+	width: 8px;
+	height: 8px;
+	border-radius: 999px;
+	background: var(--green, #34c759);
+	animation: composer-agents-pulse 1.4s ease-in-out infinite;
+}
+@keyframes composer-agents-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.35; }
+}
+.composer-agents-label {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.composer-agents-phase {
+	color: var(--text-faint);
+	font-weight: 500;
+}
+.composer-agents-caret {
+	flex: none;
+	color: var(--text-faint);
+}
+@media (prefers-reduced-motion: reduce) {
+	.composer-agents-dot { animation: none; }
+}
 .composer-queue-list {
 	display: flex;
 	flex-direction: column;

@@ -1751,6 +1751,54 @@ export function SessionViewer({
 		return () => mq.removeEventListener("change", onChange);
 	}, []);
 
+	// Compact "agents running" flap above the composer — phone-only. On desktop
+	// the Agents panel tab (with its pulsing dot) is always visible; on a phone
+	// the right panel overlays the chat and is closed by default, so a running
+	// workflow/subagent fan-out has no glance. This gives one: a tappable pill
+	// that opens the Agents panel. Reuses the queue flap's tuck-under styling.
+	const runningWorkflowRuns = workflowRuns.filter((r) => r.status === "running");
+	const runningAgentCount = runningWorkflowRuns.reduce(
+		(n, r) => n + r.agents.filter((a) => a.status === "running").length,
+		0,
+	);
+	const agentBubble =
+		isPhone && runningWorkflowRuns.length > 0
+			? (() => {
+					const count = runningAgentCount || runningWorkflowRuns.length;
+					const phase = runningWorkflowRuns[0]?.currentPhase;
+					return (
+						<button
+							type="button"
+							className="composer-agents"
+							aria-label="Show running agents"
+							onClick={() => {
+								selectPanelTab("workflows");
+								setPanelOpen(true);
+							}}
+						>
+							<span className="composer-agents-dot" />
+							<span className="composer-agents-label">
+								{count} {count === 1 ? "agent" : "agents"} running
+								{phase ? (
+									<span className="composer-agents-phase"> · {phase}</span>
+								) : null}
+							</span>
+							<IconChevronRight size={18} className="composer-agents-caret" />
+						</button>
+					);
+				})()
+			: null;
+
+	// The composer takes a single `attached` node; stack the agents flap above
+	// the queue flap when both are live.
+	const attachedComposer =
+		agentBubble || attachedQueue ? (
+			<>
+				{agentBubble}
+				{attachedQueue}
+			</>
+		) : null;
+
 	// Opened by picking this session's workspace in the sidebar: focus the
 	// composer so you can start typing immediately. Runs on mount (a new session
 	// remounts this component) and when the pulse re-fires for the already-open
@@ -2853,7 +2901,7 @@ export function SessionViewer({
 									busySendMode={busySend}
 									onStop={handleCancel}
 									sendTitle={isBusy ? busySendLabel : undefined}
-									attached={attachedQueue}
+									attached={attachedComposer}
 									prefill={composerPrefill}
 									models={models}
 									defaultModel={defaultModel}
