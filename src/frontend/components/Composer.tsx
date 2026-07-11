@@ -360,11 +360,30 @@ export function Composer({
     };
   }, [menu]);
 
+  // iOS focus-preserving taps: a tap's default continuation (touchend →
+  // synthesized mousedown → textarea blur → keyboard dismiss → click) makes
+  // toolbar taps close the keyboard and, on an empty draft, collapse the
+  // composer mid-tap. Cancelling pointerdown does NOT stop that on iOS — the
+  // only reliable point is touchend itself. tapProps(action) fires the action
+  // on touchend and cancels the mouse synthesis; onClick stays for mouse/pen,
+  // guarded by the shared timestamp against browsers that still send both.
+  const touchFiredAt = useRef(0);
+  function tapProps(action: () => void) {
+    return {
+      onTouchEnd: (e: React.TouchEvent) => {
+        e.preventDefault();
+        touchFiredAt.current = Date.now();
+        action();
+      },
+      onClick: () => {
+        if (Date.now() - touchFiredAt.current < 700) return;
+        action();
+      },
+    };
+  }
+
   // Modal editing on the draft (Settings → Composer → Vim mode). The engine
   // consumes keys in normal/visual modes; insert mode only claims Escape.
-  // vimKeyTouchAt: when a key-bar touchend just ran, the follow-up click (on
-  // browsers that still synthesize one) must not double-fire the key.
-  const vimKeyTouchAt = useRef(0);
   const vim = useVimMode({
     enabled: vimEnabled,
     textareaRef,
@@ -648,8 +667,11 @@ export function Composer({
           // Phones: a toolbar tap must not blur the textarea — the blur would
           // collapse the empty composer mid-tap (unmounting the model pill and
           // reflowing + / mic / send under the finger) and dismiss the
-          // keyboard. Cancelling pointerdown keeps focus where it is; clicks
-          // still fire on the buttons.
+          // keyboard. Cancelling pointerdown covers pointer-event browsers,
+          // but NOT iOS Safari — there the blur rides the touchend→mousedown
+          // synthesis, which only touchend's own preventDefault stops. That's
+          // what tapProps() on the individual buttons is for; this handler is
+          // the non-iOS half.
           onPointerDown={(e) => {
             if (isPhone) e.preventDefault();
           }}
@@ -660,7 +682,7 @@ export function Composer({
                 <button
                   type="button"
                   className="palette-icon-btn composer-add-btn"
-                  onClick={() => setMenu(menu === "add" ? null : "add")}
+                  {...tapProps(() => setMenu(menu === "add" ? null : "add"))}
                   disabled={disabled}
                   aria-label="Add"
                   aria-expanded={menu === "add"}
@@ -673,10 +695,10 @@ export function Composer({
                   <button
                     type="button"
                     className="composer-menu-item"
-                    onClick={() => {
+                    {...tapProps(() => {
                       setMenu(null);
                       fileInputRef.current?.click();
-                    }}
+                    })}
                   >
                     <span className="composer-menu-icon">
                       <IconPaperclip size={22} />
@@ -687,10 +709,10 @@ export function Composer({
                     <button
                       type="button"
                       className="composer-menu-item"
-                      onClick={() => {
+                      {...tapProps(() => {
                         setMenu(null);
                         startMention();
-                      }}
+                      })}
                     >
                       <span className="composer-menu-icon">
                         <IconAtSign size={22} />
@@ -741,7 +763,7 @@ export function Composer({
                   <button
                     type="button"
                     className={`palette-icon-btn composer-goal-btn ${goal ? "is-on" : ""}`}
-                    onClick={() => setMenu(menu === "goal" ? null : "goal")}
+                    {...tapProps(() => setMenu(menu === "goal" ? null : "goal"))}
                     disabled={disabled}
                     aria-pressed={!!goal}
                   >
@@ -822,7 +844,7 @@ export function Composer({
               <button
                 type="button"
                 className="composer-send composer-stop"
-                onClick={onStop}
+                {...tapProps(() => onStop())}
                 disabled={disabled}
                 aria-label="Stop current turn"
               >
@@ -852,7 +874,7 @@ export function Composer({
               >
                 <button
                   className={`composer-send ${busy && busySendMode === "steer" ? "composer-send-interrupt" : busy ? "composer-send-queue-main" : ""}`}
-                  onClick={() => fireSend(onSend)}
+                  {...tapProps(() => fireSend(onSend))}
                   disabled={disabled || isSendDisabled}
                 >
                   {busy ? (
@@ -910,15 +932,7 @@ export function Composer({
                     ? "border-accent text-fg"
                     : ""
                 }`}
-                onTouchEnd={(e) => {
-                  e.preventDefault();
-                  vimKeyTouchAt.current = Date.now();
-                  vim.injectKey(key);
-                }}
-                onClick={() => {
-                  if (Date.now() - vimKeyTouchAt.current < 700) return;
-                  vim.injectKey(key);
-                }}
+                {...tapProps(() => vim.injectKey(key))}
                 aria-label={key}
               >
                 {label}
