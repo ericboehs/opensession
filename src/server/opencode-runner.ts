@@ -1256,9 +1256,14 @@ interface AccountRotation {
   note: string;
 }
 
-/** Rotation ceiling: enough to walk a realistic bridge-account pool, small
- *  enough that a pathological "usable but instantly capped" pool can't spin. */
-const MAX_ACCOUNT_ATTEMPTS = 4;
+/** Rotation ceiling: enough to walk a realistic bridge-account pool — a user's
+ *  personal subs AND then the shared pool — before giving up to the model
+ *  fallback, but small enough that a pathological "usable but instantly capped"
+ *  pool can't spin. Was 4, which a user with 4 personal accounts consumed
+ *  entirely (personal-first) before the shared pool was ever reached — so a
+ *  weekly Fable cap hard-failed instead of falling through to a pool account
+ *  that still had budget (2026-07-11). */
+const MAX_ACCOUNT_ATTEMPTS = 8;
 
 export async function* runOpencode(
   opts: RunAgentOpts & { allowOpencode?: boolean; forceSharedServer?: boolean },
