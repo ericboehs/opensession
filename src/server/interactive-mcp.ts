@@ -23,6 +23,7 @@ import { createWalkthroughMcpServer } from "../agents/slack/walkthrough-tools";
 import { createMemoryMcpServer } from "../agents/slack/memory-tools";
 import { createGoalsMcpServer, createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { createPapercutsMcpServer } from "../agents/slack/papercuts-tools";
+import { createAssetsMcpServer } from "../agents/slack/assets-tools";
 import { createWorkflowsMcpServer } from "../agents/slack/workflow-tools";
 import { papercutsEnabledForRepo } from "./papercuts";
 import { productName } from "./config";
@@ -168,6 +169,9 @@ export function interactiveMcpServers(
 						user: createdBy,
 						cwd: () => findSession(sessionId)?.worktreeDir || undefined,
 					}),
+					// Per-session scratch assets (previewed in the Assets tab).
+					// Works in Ask mode — writes land outside the checkout.
+					"opensession-assets": createAssetsMcpServer({ sessionId }),
 					// Friction log — log_papercut/list_papercuts, per-repo toggle in
 					// Settings → Papercuts (dropped here when the repo opted out).
 					...papercutsServerFor(sessionId, "prompt", createdBy),

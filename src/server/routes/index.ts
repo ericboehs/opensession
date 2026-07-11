@@ -11,6 +11,7 @@ import { handleMediaRoutes } from "./media";
 import { handleStaticAssetsRoutes } from "./static-assets";
 import { handlePlainRoutes } from "./plain";
 import { handleSystemRoutes } from "./system";
+import { handleSessionAssetsRoutes } from "./session-assets";
 import { handleSessionsRoutes } from "./sessions";
 import { handlePrRoutes } from "./pr";
 import { handleSessionGitRoutes } from "./session-git";
@@ -39,6 +40,9 @@ export const routeHandlers: RouteHandler[] = [
 	handleStaticAssetsRoutes,
 	handlePlainRoutes,
 	handleSystemRoutes,
+	// Before the generic session routes: /api/sessions/:id/assets* is inside
+	// their path family and must not be swallowed by broader matches.
+	handleSessionAssetsRoutes,
 	handleSessionsRoutes,
 	handlePrRoutes,
 	handleSessionGitRoutes,

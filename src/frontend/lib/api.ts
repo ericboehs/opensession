@@ -77,6 +77,40 @@ export async function fetchSessionsText(): Promise<string> {
 	return res.text();
 }
 
+// ── Session assets (scratch folder previewed in the Assets tab) ─────────────
+
+export interface SessionAssetFile {
+	path: string;
+	size: number;
+	mtime: string;
+}
+
+export async function fetchSessionAssets(
+	sessionId: string,
+): Promise<{ dir: string; files: SessionAssetFile[] }> {
+	return request(`/sessions/${encodeURIComponent(sessionId)}/assets`, {
+		label: "Failed to load assets",
+	});
+}
+
+/** Direct URL of one asset (iframe/img/video src). Path-based so relative
+ *  references inside a previewed HTML asset resolve to sibling assets. */
+export function sessionAssetRawUrl(sessionId: string, path: string): string {
+	const rel = path.split("/").map(encodeURIComponent).join("/");
+	return `${BASE}/sessions/${encodeURIComponent(sessionId)}/assets/raw/${rel}`;
+}
+
+export async function deleteSessionAssetApi(
+	sessionId: string,
+	path: string,
+): Promise<void> {
+	await request(`/sessions/${encodeURIComponent(sessionId)}/assets/delete`, {
+		method: "POST",
+		body: { path },
+		label: "Failed to delete asset",
+	});
+}
+
 export async function fetchSessions(): Promise<UnifiedSession[]> {
 	return request<UnifiedSession[]>("/sessions", {
 		label: "Failed to fetch sessions",

@@ -575,6 +575,9 @@ export type WSServerMessage =
 	// A silent server-side auto-push published the session's local commits (repo
 	// id for multi-repo sessions) — the PR status header refetches on this.
 	| { type: "git_pushed"; sessionId: string; repo?: string }
+	// The session's scratch assets folder changed (agent wrote/deleted a
+	// file) — the Assets tab refetches its tree on this.
+	| { type: "assets_changed"; sessionId: string }
 	| { type: "notice"; sessionId?: string; message: string }
 	// Dynamic workflow run snapshot changed (workflow-store broadcasts every
 	// mutation) — powers the session's Agents panel.

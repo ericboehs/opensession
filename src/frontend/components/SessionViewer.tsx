@@ -56,6 +56,7 @@ import { PrStatusBar } from "./PrStatusBar";
 import { TeamChat } from "./TeamChat";
 import { PlainThreadPanel } from "./PlainThreadPanel";
 import { WorkflowPanel } from "./WorkflowPanel";
+import { AssetsPanel, useSessionAssets } from "./AssetsPanel";
 import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 import { PreviewButton } from "./PreviewButton";
 import { StagingLink } from "./StagingLink";
@@ -195,7 +196,8 @@ type PanelTab =
 	| "chat"
 	| "plain"
 	| "sidechats"
-	| "workflows";
+	| "workflows"
+	| "assets";
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
@@ -518,6 +520,12 @@ export function SessionViewer({
 	const panelStyle = panelW
 		? ({ "--panel-w": `${panelW}px` } as React.CSSProperties)
 		: undefined;
+	// Session scratch assets (Assets tab): fetched once per session + on
+	// assets_changed broadcasts; the tab only appears once files exist.
+	const { files: assetFiles, refresh: refreshAssets } = useSessionAssets(
+		session.id,
+		addHandler,
+	);
 	const panelResizeHandle = (
 		<div
 			className="panel-resize"
@@ -3138,6 +3146,18 @@ export function SessionViewer({
 									) : null}
 								</button>
 							)}
+							{/* Scratch artifacts the agent saved for previewing (works in
+							    ask mode too — no workspace needed). Appears once the first
+							    file lands; the assets_changed broadcast keeps it live. */}
+							{assetFiles.length > 0 && (
+								<button
+									className={`panel-tab ${panelTab === "assets" ? "active" : ""}`}
+									onClick={() => selectPanelTab("assets")}
+								>
+									Assets
+									<span className="panel-tab-count">{assetFiles.length}</span>
+								</button>
+							)}
 						</div>
 						<div className="panel-body">
 							{/* Plain-only sessions (no code workspace) show just the timeline. */}
@@ -3189,6 +3209,14 @@ export function SessionViewer({
 									sessionId={session.id}
 									runs={workflowRuns}
 									onCancel={cancelWorkflowRun}
+								/>
+							) : panelTab === "assets" ? (
+								// Also before the Plain fallthrough: assets exist for
+								// ask/Plain sessions with no code workspace.
+								<AssetsPanel
+									sessionId={session.id}
+									files={assetFiles}
+									refresh={refreshAssets}
 								/>
 							) : (panelTab === "plain" || !hasWorkspace) && hasPlain ? (
 								<PlainThreadPanel

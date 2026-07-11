@@ -306,6 +306,7 @@ export const SHARED_INPROCESS_SERVERS = [
   "opensession-github",
   "opensession-papercuts",
   "opensession-workflows",
+  "opensession-assets",
 ];
 
 /**
@@ -815,6 +816,21 @@ export function buildOpencodeInstructions(input: {
         "This is a READ-ONLY session — never modify, create, or delete files, never commit, " +
         "never run state-changing commands (the permission config enforces this). Explore with " +
         "read-only shell and git commands, then answer clearly and concisely."
+    );
+  }
+  const inprocEarly = (input.inProcessMcp || {}) as Record<string, unknown>;
+  if (inprocEarly["opensession-assets"]) {
+    parts.push(
+      "## Session assets\nThis session has a scratch assets folder — not part of any repo, " +
+        "never committed. Save helper artifacts there with opensession-assets' `write_asset` " +
+        "(plus list/read/delete_asset): interactive HTML/JS visualizations, generated reports, " +
+        "diagrams, sample data. Files appear immediately in the session's Assets tab with a " +
+        "live preview; relative references between assets resolve, so multi-file pages " +
+        "(index.html + style.css + data.json) work. Reach for it when a visual or document " +
+        "explains something better than chat text — a chart of results, an interactive demo, a " +
+        "formatted report. It also works in read-only Ask sessions: the assets folder is " +
+        "session scratch space, not the checkout. If an artifact turns out repo-worthy, copy " +
+        "it into the worktree explicitly and commit it like any other change."
     );
   }
   if (input.reposNote) parts.push(input.reposNote);
