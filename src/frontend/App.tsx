@@ -37,6 +37,7 @@ import { useBackSwipe } from "./hooks/useBackSwipe";
 import { useIsPhone } from "./hooks/useIsPhone";
 import { useInputAlerts } from "./hooks/useInputAlerts";
 import { initAlerts } from "./lib/notify";
+import { registerServiceWorker } from "./lib/push";
 import {
 	archiveSessionApi,
 	deleteSessionApi,
@@ -380,6 +381,10 @@ function App() {
 		localStorage.setItem("opensession-chat-read", String(Date.now()));
 		setChatUnread(0);
 	}, [route.view]);
+	// Register the service worker at boot, not just when enabling push: it also
+	// caches the app shell (sw.js), so a cold start on a flaky tailnet paints
+	// the app instead of white-screening.
+	useEffect(() => registerServiceWorker(), []);
 	// Mirror the unread count onto the app-icon badge (iOS/macOS installed PWA,
 	// Chrome taskbar). While the app is open this is the source of truth,
 	// overwriting whatever notification count sw.js left; no-op where the

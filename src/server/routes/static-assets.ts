@@ -35,9 +35,9 @@ export async function handleStaticAssetsRoutes(
 		);
 	}
 
-	// Service worker (Web Push). Must precede the hashed-asset matcher —
-	// sw.js is served from source, never cached hard (the browser refetches
-	// it on its own schedule and applies updates).
+	// Service worker (Web Push + app-shell cache). Must precede the hashed-asset
+	// matcher — sw.js is served from source, never cached hard (the browser
+	// refetches it on its own schedule and applies updates).
 	if (path === "/backstage/sw.js") {
 		return new Response(Bun.file(`${FRONTEND_SRC}/sw.js`), {
 			headers: {

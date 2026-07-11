@@ -22,6 +22,21 @@ function supported(): boolean {
   );
 }
 
+/**
+ * Register this prefix's service worker at app boot (idempotent — enablePush
+ * registers the same URL+scope). Push stays opt-in; this bare registration is
+ * what turns on sw.js's app-shell caching, so a phone cold start paints from
+ * cache when the tailnet is slow or unreachable. Registration alone never
+ * prompts for any permission.
+ */
+export function registerServiceWorker(): void {
+  if (typeof window === "undefined" || !window.isSecureContext) return;
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker
+    .register(SW_URL, { scope: `${BASE_PATH}/` })
+    .catch(() => {});
+}
+
 export async function getPushState(): Promise<PushState> {
   if (!supported()) return "unsupported";
   if (Notification.permission === "denied") return "denied";
