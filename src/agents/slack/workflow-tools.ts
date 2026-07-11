@@ -21,6 +21,7 @@ import {
 	readWorkflowScript,
 } from "../../server/workflow-store";
 import { WORKFLOW_LIMITS } from "../../server/workflow-types";
+import { selectableModels } from "../../server/models";
 import type {
 	WorkflowAgentSnapshot,
 	WorkflowRunSnapshot,
@@ -67,7 +68,21 @@ function countByStatus(agents: WorkflowAgentSnapshot[]): string {
 		.join(", ");
 }
 
-const RUN_WORKFLOW_DESCRIPTION = `Run a dynamic workflow: a JS script YOU author that fans out many lightweight read/analyze agents deterministically and combines their results — map-reduce over a codebase, N-way file audits, comparative research. Progress streams live to this session's Agents panel; poll workflow_status for the outcome.
+/** Built per server so the MODEL line lists the CURRENT selectable models
+ *  (from the live registry — see selectableModels), never a hardcoded set. */
+function runWorkflowDescription(): string {
+	const models = selectableModels();
+	const modelLine = models.length
+		? `MODEL: pick whichever model fits each agent — pass opts.model with any of the currently available ids: ${models
+				.map((m) => `${m.id} (${m.label})`)
+				.join(
+					", ",
+				)}. Agents default to ${WORKFLOW_DEFAULT_MODEL} when you don't set one. Choose per task — intelligence and taste first.`
+		: `MODEL: agents default to ${WORKFLOW_DEFAULT_MODEL}; pass opts.model to pick another available model per agent.`;
+	return RUN_WORKFLOW_DESCRIPTION_TEMPLATE.replace("__MODEL_LINE__", modelLine);
+}
+
+const RUN_WORKFLOW_DESCRIPTION_TEMPLATE = `Run a dynamic workflow: a JS script YOU author that fans out many lightweight read/analyze agents deterministically and combines their results — map-reduce over a codebase, N-way file audits, comparative research. Progress streams live to this session's Agents panel; poll workflow_status for the outcome.
 
 Script shape — plain JavaScript (NOT TypeScript), no imports; the API below is injected as globals. A meta export is required, then the async body follows (top-level await AND top-level return are allowed):
 
@@ -86,7 +101,7 @@ Injected globals:
 - args — your args_json, parsed, verbatim.
 - budget — { total, spent(), remaining() } in output tokens.
 
-MODEL: use Fable or Opus — pick whichever fits each agent (opts.model: "claude-fable-5" or "claude-opus-4-8"). Agents default to Opus when you don't set one. Don't route agents to other models.
+__MODEL_LINE__
 
 Rules:
 - Date.now(), argless new Date(), and Math.random() THROW inside scripts (they break resume replay determinism) — pass timestamps/seeds via args.
@@ -94,7 +109,7 @@ Rules:
 - Agents are read-only by default (ask mode). Pass opts.write to let one edit code (see below).
 - Limits: ${WORKFLOW_LIMITS.maxConcurrentAgents} agents run concurrently (extras queue), ${WORKFLOW_LIMITS.maxAgents} agent() calls per run lifetime, ${Math.round(WORKFLOW_LIMITS.agentTimeoutMs / 60_000)}min per agent, ${Math.round(WORKFLOW_LIMITS.workflowTimeoutMs / 60_000)}min per workflow.
 
-Example (agents run on Opus by default — no opts.model needed):
+Example (no opts.model set → agents run on the default):
 
 export const meta = { name: "route-audit", phases: [{ title: "List" }, { title: "Audit" }, { title: "Rank" }] };
 phase("List");
@@ -122,7 +137,7 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 	const tools = [
 		tool(
 			"run_workflow",
-			RUN_WORKFLOW_DESCRIPTION,
+			runWorkflowDescription(),
 			{
 				script: z
 					.string()

@@ -79,6 +79,16 @@ export function opencodeModelLabel(id: string): string {
   return base.replace(/^Claude\s+/i, "").replace(/\s*\(Codex\)$/i, "");
 }
 
+/** The models a session can actually select — the same live set the picker and
+ *  GET /api/models expose (the opencode-provider entries, refreshed from
+ *  opencode's picker; the full registry as a fallback when opencode isn't
+ *  configured). Used to list choices dynamically instead of hardcoding names. */
+export function selectableModels(): { id: string; label: string }[] {
+  const opencodeOnly = KNOWN_MODELS.filter((m) => m.provider === "opencode");
+  const list = opencodeOnly.length ? opencodeOnly : KNOWN_MODELS;
+  return list.map((m) => ({ id: m.id, label: m.label }));
+}
+
 // OpenCode engine models are opt-in only: `pickerModels` from
 // ~/.opensession-opencode.json (and only while `enabled` is true) surface in
 // the UI picker; any other opencode/<provider>/<model> id still resolves via
