@@ -14,7 +14,12 @@ import {
 	readWorkflowJournal,
 } from "../workflow-store";
 import { cancelWorkflow } from "../workflow-runner";
-import { readEngineTranscript } from "../sessions";
+import {
+	getOpencodeTranscriptPath,
+	readOpencodeTranscript,
+} from "../opencode-transcript";
+import { parseTranscript } from "../jsonl-parser";
+import { existsSync } from "fs";
 
 // Boot pass: flip any run.json still "running" with no live worker to
 // "interrupted" (the orchestration state died with the previous process).
@@ -68,13 +73,20 @@ export async function handleWorkflowsRoutes(
 			);
 			const engineSessionId =
 				snap?.engineSessionId || journal?.outcome.engineSessionId;
-			const cwd = journal?.outcome.cwd || run.cwd;
 			if (!engineSessionId)
 				return Response.json(
 					{ error: "Agent has not started a run yet", entries: [] },
 					{ status: 404 },
 				);
-			let entries = readEngineTranscript(cwd, engineSessionId, "opencode");
+			// Prefer the runner's mirror jsonl (keyed by the ocSessionId we
+			// captured), exactly like mergedSessionTranscript — opencode's own db
+			// keys the content under a directory-scoped id that differs from the
+			// init id on the shared server, so a raw db read misses. DB is the
+			// fallback for older sessions with no mirror file.
+			const mirror = getOpencodeTranscriptPath(engineSessionId);
+			let entries = existsSync(mirror)
+				? parseTranscript(mirror)
+				: readOpencodeTranscript(engineSessionId);
 			if (entries.length > 500) entries = entries.slice(-500);
 			return Response.json({ entries });
 		}
