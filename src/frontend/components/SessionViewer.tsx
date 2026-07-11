@@ -37,6 +37,7 @@ import {
 	type ClaudeAccountOption,
 } from "../lib/api";
 import { Composer } from "./Composer";
+import { ComposerAgents } from "./ComposerAgents";
 import { UsageMeter } from "./UsageMeter";
 import { SchedulePromptButton } from "./SchedulePrompt";
 import type { FileAttachment } from "../lib/images";
@@ -1754,40 +1755,20 @@ export function SessionViewer({
 	// Compact "agents running" flap above the composer — phone-only. On desktop
 	// the Agents panel tab (with its pulsing dot) is always visible; on a phone
 	// the right panel overlays the chat and is closed by default, so a running
-	// workflow/subagent fan-out has no glance. This gives one: a tappable pill
-	// that opens the Agents panel. Reuses the queue flap's tuck-under styling.
+	// workflow fan-out has no glance. ComposerAgents is the tappable
+	// pill → mini-card → full-panel progression. Reuses the queue flap's
+	// tuck-under styling.
 	const runningWorkflowRuns = workflowRuns.filter((r) => r.status === "running");
-	const runningAgentCount = runningWorkflowRuns.reduce(
-		(n, r) => n + r.agents.filter((a) => a.status === "running").length,
-		0,
-	);
 	const agentBubble =
-		isPhone && runningWorkflowRuns.length > 0
-			? (() => {
-					const count = runningAgentCount || runningWorkflowRuns.length;
-					const phase = runningWorkflowRuns[0]?.currentPhase;
-					return (
-						<button
-							type="button"
-							className="composer-agents"
-							aria-label="Show running agents"
-							onClick={() => {
-								selectPanelTab("workflows");
-								setPanelOpen(true);
-							}}
-						>
-							<span className="composer-agents-dot" />
-							<span className="composer-agents-label">
-								{count} {count === 1 ? "agent" : "agents"} running
-								{phase ? (
-									<span className="composer-agents-phase"> · {phase}</span>
-								) : null}
-							</span>
-							<IconChevronRight size={18} className="composer-agents-caret" />
-						</button>
-					);
-				})()
-			: null;
+		isPhone && runningWorkflowRuns.length > 0 ? (
+			<ComposerAgents
+				runs={runningWorkflowRuns}
+				onOpenPanel={() => {
+					selectPanelTab("workflows");
+					setPanelOpen(true);
+				}}
+			/>
+		) : null;
 
 	// The composer takes a single `attached` node; stack the agents flap above
 	// the queue flap when both are live.
