@@ -663,13 +663,6 @@ export function SessionViewer({
 			method: "POST",
 		}).catch(() => {});
 	}
-	// If the runs vanish out from under the open tab (e.g. session switch),
-	// fall back to Info instead of a blank panel behind a hidden tab. Only
-	// after the seed fetch settled — an in-flight seed always starts at [].
-	useEffect(() => {
-		if (workflowsLoaded && panelTab === "workflows" && workflowRuns.length === 0)
-			setPanelTab("info");
-	}, [workflowsLoaded, panelTab, workflowRuns.length]);
 
 	// Keep the pin star in sync with the store (changes can come from the tab bar
 	// or the Home screen) and reset when switching sessions.
@@ -681,6 +674,20 @@ export function SessionViewer({
 
 	const isAsk = session.mode === "ask";
 	const hasWorkspace = !isAsk && Boolean(session.worktreeDir || session.branch);
+	// The Agents tab stays available on any session with a workspace (it shows
+	// an empty state that teaches the feature), so only fall back to Info when
+	// the tab itself is gone — a session that can't run workflows AND has no
+	// runs to show.
+	useEffect(() => {
+		if (
+			workflowsLoaded &&
+			panelTab === "workflows" &&
+			workflowRuns.length === 0 &&
+			!hasWorkspace
+		)
+			setPanelTab("info");
+	}, [workflowsLoaded, panelTab, workflowRuns.length, hasWorkspace]);
+
 	// Ask→code promotion: creates a worktree and flips the chat to code mode.
 	// The 5s session poll picks up the mode change and re-renders with the full
 	// code affordances (diff/PR tabs, RepoBar).
@@ -3053,7 +3060,11 @@ export function SessionViewer({
 									<span className="panel-tab-dot" />
 							</button>
 							)}
-							{workflowRuns.length > 0 && (
+							{/* Shown whenever the session CAN run workflows (it needs a
+							    worktree for the agents' cwd), not only once a run exists —
+							    a tab that only appears after the fact is undiscoverable.
+							    The panel's empty state explains how to start one. */}
+							{(hasWorkspace || workflowRuns.length > 0) && (
 								<button
 									className={`panel-tab ${panelTab === "workflows" ? "active" : ""}`}
 									onClick={() => selectPanelTab("workflows")}
@@ -3061,11 +3072,11 @@ export function SessionViewer({
 									Agents
 									{workflowRuns.some((r) => r.status === "running") ? (
 										<span className="panel-tab-dot animate-pulse bg-green" />
-									) : (
+									) : workflowRuns.length > 0 ? (
 										<span className="panel-tab-count">
 											{workflowRuns.length}
 										</span>
-									)}
+									) : null}
 								</button>
 							)}
 						</div>
@@ -3109,9 +3120,11 @@ export function SessionViewer({
 									sessionId={session.id}
 									onMention={insertMention}
 								/>
-							) : panelTab === "workflows" && workflowRuns.length > 0 ? (
+							) : panelTab === "workflows" ? (
 								// Before the Plain fallthrough: a Plain-only session's
 								// Agents tab must win over its default timeline panel.
+								// Renders with zero runs too — the panel's empty state is
+								// how you discover workflows exist.
 								<WorkflowPanel
 									sessionId={session.id}
 									runs={workflowRuns}

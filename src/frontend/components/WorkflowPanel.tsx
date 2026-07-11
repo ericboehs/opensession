@@ -136,12 +136,56 @@ export function WorkflowPanel({ sessionId: _sessionId, runs, onCancel }: Props) 
 		return () => window.clearInterval(t);
 	}, [anyRunning]);
 
-	if (ordered.length === 0) return null;
+	if (ordered.length === 0) return <WorkflowsEmptyState />;
 	return (
 		<div className="flex flex-col gap-3 p-3 pb-6">
 			{ordered.map((run) => (
 				<RunCard key={run.runId} run={run} now={now} onCancel={onCancel} />
 			))}
+		</div>
+	);
+}
+
+/** The discovery surface: with no runs yet, this tab is the only place that
+ *  tells you dynamic workflows exist and how to kick one off. */
+function WorkflowsEmptyState() {
+	return (
+		<div className="flex flex-col gap-4 p-4 pb-6">
+			<div>
+				<div className="mb-1.5 text-sm font-medium text-fg">
+					No agent runs yet
+				</div>
+				<p className="text-xs leading-relaxed text-dim">
+					Ask this session to <span className="text-fg">use a workflow</span> and
+					it will write a script that fans out many focused agents at once —
+					one per file, per topic, per candidate — then combine their results.
+					Each agent runs read-only in this worktree. They&rsquo;ll show up here
+					live, grouped by phase.
+				</p>
+			</div>
+			<div>
+				<div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-faint">
+					Try
+				</div>
+				<div className="flex flex-col gap-1.5">
+					{[
+						"Use a workflow to audit every route handler for missing auth checks.",
+						"Use a workflow: one agent per file over src/, each reporting its biggest refactor. Then rank the top 5.",
+						"Use a workflow to compare 3 approaches to this problem in parallel and pick a winner.",
+					].map((s) => (
+						<div
+							key={s}
+							className="rounded-sm border border-line bg-surface px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-dim"
+						>
+							{s}
+						</div>
+					))}
+				</div>
+			</div>
+			<p className="text-xs leading-relaxed text-faint">
+				Workflow agents are read-only. For agents that write code and open PRs,
+				ask this session to spawn tasks instead.
+			</p>
 		</div>
 	);
 }
