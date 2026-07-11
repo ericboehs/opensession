@@ -78,6 +78,7 @@ import {
 	IconTerminal,
 	IconCopy,
 	IconFile,
+	IconMessage,
 } from "./icons";
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
 import { PixelSpinner } from "./PixelSpinner";
@@ -447,6 +448,10 @@ export function SessionViewer({
 		setPanelTab(tab);
 		localStorage.setItem("michael-panel-tab", tab);
 	}
+	// Bumped by the ⋯ menu's "New side chat" — tells the SideChatsPanel to
+	// create (and open) a fresh side chat as soon as it shows. The panel calls
+	// onCreateConsumed to reset it to 0, so tab remounts don't re-create.
+	const [sideChatCreateSeq, setSideChatCreateSeq] = useState(0);
 	// Sub-agent sidebar: a breadcrumb stack of opened sub-agents (clicking a Task
 	// call pushes; nested Task calls push further). Non-empty → the right region
 	// shows the sub-agent conversation instead of the Workspace panel.
@@ -1996,6 +2001,26 @@ export function SessionViewer({
 						New chat in workspace
 					</button>
 				);
+				// New side chat — spawns a durable side chat (shares the repo, ask
+				// mode, out of the main thread) and opens it in the side panel.
+				// Phone-only like newChatAction above it: on desktop the Side chats
+				// tab is the affordance.
+				const newSideChatAction = isPhone && canSideChat && (
+					<button
+						className="btn-viewer-newchat"
+						onClick={() => {
+							setOverflowOpen(false);
+							setSubagentStack([]);
+							setPanelOpen(true);
+							selectPanelTab("sidechats");
+							setSideChatCreateSeq((n) => n + 1);
+						}}
+						title="Start a side chat that doesn't interrupt the main conversation"
+					>
+						<IconMessage size={22} />
+						New side chat
+					</button>
+				);
 				// Copy transcript. These normally live on a tab's right-click menu,
 				// but a lone-chat workspace has no tab strip (and phones hide it at
 				// every count), so the only place to grab this chat's full text is the
@@ -2317,6 +2342,7 @@ export function SessionViewer({
 								{isPhone && secondaryActions}
 								{(compactHeader || isPhone) && shareAction(true)}
 								{newChatAction}
+								{newSideChatAction}
 								{transcriptActions}
 								{overflowActions}
 								{archiveAction}
@@ -3145,6 +3171,8 @@ export function SessionViewer({
 								<SideChatsPanel
 									sessionId={session.id}
 									onMention={insertMention}
+									createSeq={sideChatCreateSeq}
+									onCreateConsumed={() => setSideChatCreateSeq(0)}
 								/>
 							) : panelTab === "workflows" ? (
 								// Before the Plain fallthrough: a Plain-only session's

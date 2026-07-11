@@ -11,6 +11,11 @@ interface SideChatsPanelProps {
 	sessionId: string;
 	/** Insert @session:<id> into the MAIN composer. */
 	onMention: (sessionId: string) => void;
+	/** Non-zero → create (and open) a fresh side chat on show. The parent bumps
+	 * this from its "New side chat" menu action; we call onCreateConsumed to
+	 * reset it so a later tab remount doesn't create another. */
+	createSeq?: number;
+	onCreateConsumed?: () => void;
 }
 
 /**
@@ -20,7 +25,12 @@ interface SideChatsPanelProps {
  * repo/model but run in ask mode and stay out of the main conversation until
  * @-mentioned back in.
  */
-export function SideChatsPanel({ sessionId, onMention }: SideChatsPanelProps) {
+export function SideChatsPanel({
+	sessionId,
+	onMention,
+	createSeq,
+	onCreateConsumed,
+}: SideChatsPanelProps) {
 	const [chats, setChats] = useState<UnifiedSession[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [creating, setCreating] = useState(false);
@@ -70,6 +80,17 @@ export function SideChatsPanel({ sessionId, onMention }: SideChatsPanelProps) {
 			setCreating(false);
 		}
 	}
+
+	// Parent-requested creation (⋯ menu → "New side chat"). Consume the signal
+	// before creating so a re-render or tab remount can't double-create.
+	useEffect(() => {
+		if (!createSeq) return;
+		onCreateConsumed?.();
+		void createSideChat();
+		// createSideChat/onCreateConsumed are stable enough per mount; keying on
+		// the seq alone keeps this from re-firing on unrelated renders.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [createSeq]);
 
 	if (openId) {
 		const open = chats?.find((c) => c.id === openId);
