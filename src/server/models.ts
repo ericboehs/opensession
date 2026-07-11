@@ -211,15 +211,16 @@ export function setDefaultModel(input: string | null): string {
 }
 
 /**
- * Optional global fallback model when a run dies on usage limits with every
- * account in its pool exhausted. Unset means no automatic fallback; callers
- * that want fallback should pass an explicit per-session/per-automation
- * fallbackModel.
+ * Global fallback model when a run dies on usage limits with every account in
+ * its pool exhausted (e.g. the weekly-scoped Fable cap). Defaults to Opus —
+ * strong and abundant, so an interactive session keeps working instead of
+ * stalling on the limit notice. Override with OPENSESSION_FALLBACK_MODEL, or
+ * set it to "none" to disable the automatic fallback entirely.
  */
 export const DEFAULT_FALLBACK_MODEL: string | undefined = (() => {
   const v = (envAlias("OPENSESSION_FALLBACK_MODEL", "MICHAEL_FALLBACK_MODEL") || "").trim().toLowerCase();
   if (v === "none") return undefined;
-  return v || undefined;
+  return v || "claude-opus-4-8";
 })();
 
 /**
