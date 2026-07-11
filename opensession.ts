@@ -497,7 +497,10 @@ if (!g.__backstageBooted) {
 		// Restore human-in-the-loop asks: re-arm scheduled timers, and degrade any
 		// block asks that lost their held turn to async so late replies still land.
 		initHumanAsks();
-	}, 3000);
+		// 1.5s: enough for boot-time state (agents, watchers, session-control
+		// registry) to settle before we start resuming, without adding dead air to
+		// every restart. Paired with the shorter drain above for faster recovery.
+	}, 1500);
 
 	// Ongoing hygiene (every 6h): archive sessions idle for more than a week,
 	// then remove worktrees of archived sessions idle >14 days with no WIP.
@@ -553,10 +556,13 @@ if (!g.__backstageBooted) {
 	// stopping point (bounded), then exit — instead of killing every run mid-turn.
 	// Anything still running after the drain window is picked up by the run
 	// journal on the next boot (resumeInterruptedRuns), so nothing is lost.
-	// 2-min default so in-flight runner runs have a real chance to finish their
-	// current turn before exit. Must stay below the unit's TimeoutStopSec (140s),
-	// or systemd SIGKILLs the process mid-drain.
-	const DRAIN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_DRAIN_MS || "120000");
+	// 60s default: long enough for most in-flight turns to reach a natural
+	// stopping point, short enough for a snappy restart. Anything still running
+	// is resumed from the run journal on the next boot (and self-heals transient
+	// failures via the fallback graph), so a shorter drain costs a little redo
+	// work, not lost work. Must stay below the unit's TimeoutStopSec (80s), or
+	// systemd SIGKILLs the process mid-drain.
+	const DRAIN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_DRAIN_MS || "60000");
 	let shuttingDown = false;
 	const gracefulShutdown = async (signal: string) => {
 		if (shuttingDown) return;

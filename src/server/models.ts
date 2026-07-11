@@ -6,7 +6,7 @@
  * Single engine: EVERYTHING runs on the OpenCode engine (opencode-runner.ts) —
  * the legacy Claude/Codex SDK runners are deleted. The picker only surfaces
  * opencode ids (opencodePickerModels), interactiveDefaultModel maps the
- * default onto opencode, and fallbackModelChain / opencodeAutomationModel map
+ * default onto opencode, and nextFallbackModel / opencodeAutomationModel map
  * every fallback onto opencode too (toOpencodeModel). Native ids (claude-*,
  * gpt-*) stay RESOLVABLE (resolveModel prefix passthrough) for stored session
  * state, env vars and provider bookkeeping — agent-runner maps them onto
@@ -138,11 +138,46 @@ const CODEX_MODEL_ORDER = [
   "gpt-5.3-codex-spark",
 ];
 
-const FALLBACK_MODEL_ORDER = [
+/**
+ * Fallback ROUTING tiers (higher = smarter). NOT an absolute capability
+ * ranking — it encodes the policy Michiel set (2026-07-11): keep a run going on
+ * an equal-or-smarter model automatically, but ASK a human before dropping to a
+ * dumber one. "smart→smart / medium→smart = fine (auto); smart→dumb /
+ * medium→dumb = ask." Concrete edges that policy yields: Fable→Sol auto,
+ * Fable→Opus ask, Opus→Sol auto, Opus→Sonnet ask, Sol→Opus ask.
+ *
+ * Unlisted models default to tier 1 (treated as a downgrade from any premium
+ * primary, so the human is asked — the safe default).
+ */
+const FALLBACK_TIER: Record<string, number> = {
+  "claude-fable-5": 3,
+  "gpt-5.6-sol": 3,
+  "gpt-5.6-terra": 3,
+  "gpt-5.6-luna": 3,
+  "claude-opus-4-8": 2,
+  "gpt-5.5": 2,
+  "claude-sonnet-5": 1,
+  "gpt-5.4": 1,
+  "claude-sonnet-4-6": 1,
+  "claude-haiku-4-5": 0,
+  "gpt-5.4-mini": 0,
+  "gpt-5.3-codex-spark": 0,
+};
+
+/**
+ * Ordered fallback DESTINATIONS, most-desirable first. A run that exhausts its
+ * model walks this list for the next usable one; the per-hop auto/ask mode then
+ * comes from the tier comparison (nextFallbackModel).
+ *
+ * Fable is deliberately ABSENT — it's a fallback *source*, never a destination:
+ * its weekly-scoped credit pool is the scarce thing we're usually falling *off*
+ * of, so routing another exhausted model back into it would just re-hit the cap.
+ */
+const FALLBACK_DESTINATIONS = [
+  "gpt-5.6-sol",
   "claude-opus-4-8",
-  "claude-fable-5",
-  "claude-sonnet-5",
   "gpt-5.5",
+  "claude-sonnet-5",
   "gpt-5.4",
   "claude-sonnet-4-6",
   "claude-haiku-4-5",
@@ -355,48 +390,99 @@ export function interactiveDefaultModel(): string {
   return toOpencodeModel(getDefaultModel()) || getDefaultModel();
 }
 
-/**
- * Ordered model fallback chain after a run's account pool is exhausted. The
- * explicitly configured fallback gets the first shot, then Backstage tries the
- * strongest known models — all mapped onto the OpenCode engine so a usage-limit
- * fallback rotates among opencode models/accounts, never a native SDK runner
- * (the single-engine core). The caller tracks models that already exhausted
- * during this run and skips them.
- */
-export function fallbackModelChain(
-  primaryModel: string | undefined,
-  preferredFallbackModel: string | undefined
-): ModelInfo[] {
-  const preferred = preferredFallbackModel
-    ? resolveModel(preferredFallbackModel)
-    : null;
-  if (!preferred) return [];
+/** Strip the opencode engine prefix so a mapped id ("opencode/openai/gpt-5.6-sol")
+ *  resolves to its native key ("gpt-5.6-sol") for tier lookup. Native ids pass
+ *  through unchanged. */
+function nativeModelId(id: string | undefined | null): string {
+  return (id || "").replace(/^opencode\/[^/]+\//, "");
+}
 
-  // Compare/dedup on the opencode-mapped id so a fallback that maps to the
-  // primary's engine model is correctly skipped.
-  const primaryOc = toOpencodeModel(primaryModel || getDefaultModel());
-  const seen = new Set<string>();
-  const out: ModelInfo[] = [];
-  const addId = (id: string | undefined | null) => {
+/** Routing tier for a model id (native or opencode-mapped). Unlisted → 1. */
+export function fallbackTier(id: string | undefined | null): number {
+  const t = FALLBACK_TIER[nativeModelId(id)];
+  return t === undefined ? 1 : t;
+}
+
+export type FallbackMode = "auto" | "ask";
+export interface FallbackHop {
+  /** opencode-mapped id to run next */
+  id: string;
+  /** "auto" = keep going silently (equal-or-smarter); "ask" = confirm with a
+   *  human first (downgrade to a dumber model). */
+  mode: FallbackMode;
+}
+
+/**
+ * The next model to try after `currentModel` has run out (usage-exhausted on
+ * every account, or hit an unrecoverable transient failure). Walks
+ * FALLBACK_DESTINATIONS (plus an explicitly-configured `preferred` first),
+ * skipping the current engine model and anything already exhausted this run,
+ * and orders auto-eligible (equal-or-smarter) candidates ahead of downgrades so
+ * we keep the strongest usable model. Returns null when nothing is left.
+ *
+ * `mode` is the tier comparison against the model we're LEAVING: equal-or-higher
+ * tier ⇒ "auto" (Fable→Sol, Opus→Sol), lower ⇒ "ask" (Fable→Opus, Opus→Sonnet,
+ * Sol→Opus). All ids in/out are opencode-mapped.
+ */
+export function nextFallbackModel(
+  currentModel: string,
+  exhausted: Set<string>,
+  preferredFallbackModel?: string
+): FallbackHop | null {
+  const currentOc = toOpencodeModel(currentModel) || currentModel;
+  const currentTier = fallbackTier(currentOc);
+
+  const candidates: string[] = [];
+  const add = (id: string | undefined | null) => {
     if (!id) return;
-    const oc = toOpencodeModel(id);
-    if (!oc || oc === primaryOc || seen.has(oc)) return;
-    const info = resolveModel(oc);
-    if (!info) return;
-    seen.add(oc);
-    out.push(info);
-  };
-  const add = (model: ModelInfo | null) => {
-    if (!model) return;
-    if (model.id === BEST_AVAILABLE_CODEX_MODEL) {
-      for (const id of CODEX_MODEL_ORDER) addId(id);
+    if (id === BEST_AVAILABLE_CODEX_MODEL) {
+      for (const c of CODEX_MODEL_ORDER) add(c);
       return;
     }
-    addId(model.id);
+    const oc = toOpencodeModel(id);
+    if (!oc || oc === currentOc || exhausted.has(oc) || candidates.includes(oc)) return;
+    if (!resolveModel(oc)) return;
+    candidates.push(oc);
   };
+  if (preferredFallbackModel && preferredFallbackModel !== "none") add(preferredFallbackModel);
+  for (const id of FALLBACK_DESTINATIONS) add(id);
+  if (!candidates.length) return null;
 
-  add(preferred);
-  for (const id of FALLBACK_MODEL_ORDER) addId(id);
+  // Stable sort (candidates already in preference order): auto-eligible first,
+  // then by descending tier — so we always reach for the strongest model we can
+  // keep going on before offering a downgrade.
+  candidates.sort((a, b) => {
+    const aDown = fallbackTier(a) >= currentTier ? 0 : 1;
+    const bDown = fallbackTier(b) >= currentTier ? 0 : 1;
+    if (aDown !== bDown) return aDown - bDown;
+    return fallbackTier(b) - fallbackTier(a);
+  });
+
+  const to = candidates[0];
+  return { id: to, mode: fallbackTier(to) >= currentTier ? "auto" : "ask" };
+}
+
+/**
+ * The full ordered fallback plan from a primary model — repeated
+ * nextFallbackModel hops until the graph is dry. Exported for tests and any
+ * caller that wants to preview the chain; the live runner uses nextFallbackModel
+ * directly so a hop's mode is evaluated against the model actually being left.
+ */
+export function fallbackPlan(
+  primaryModel: string | undefined,
+  preferredFallbackModel: string | undefined
+): FallbackHop[] {
+  if (!preferredFallbackModel || preferredFallbackModel === "none") return [];
+  const exhausted = new Set<string>();
+  const out: FallbackHop[] = [];
+  let current = toOpencodeModel(primaryModel || getDefaultModel()) || getDefaultModel();
+  for (let i = 0; i < 32; i++) {
+    const hop = nextFallbackModel(current, exhausted, preferredFallbackModel);
+    if (!hop) break;
+    out.push(hop);
+    exhausted.add(hop.id);
+    current = hop.id;
+  }
   return out;
 }
 

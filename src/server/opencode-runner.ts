@@ -142,6 +142,7 @@ import {
   filterMcpServers,
   isClaudeUsageLimitError,
   isCodexUsageLimitError,
+  isTransientRunError,
   CLAUDE_CODE_BIN,
 } from "./runner-shared";
 import type { StreamEvent, ImageInput } from "./run-events";
@@ -1256,31 +1257,33 @@ interface AccountRotation {
   note: string;
 }
 
-/** Rotation ceiling: enough to walk a realistic bridge-account pool — a user's
- *  personal subs AND then the shared pool — before giving up to the model
- *  fallback, but small enough that a pathological "usable but instantly capped"
- *  pool can't spin. Was 4, which a user with 4 personal accounts consumed
- *  entirely (personal-first) before the shared pool was ever reached — so a
- *  weekly Fable cap hard-failed instead of falling through to a pool account
- *  that still had budget (2026-07-11). */
-const MAX_ACCOUNT_ATTEMPTS = 8;
+/** Runaway backstop only — NOT the real limit. Walk EVERY account before giving
+ *  up (Michiel 2026-07-11): each usage-limit rotation marks the capped account
+ *  exhausted (markExhausted) and pickMeridianAccount only returns a not-yet-
+ *  exhausted account, so the pool strictly shrinks and the loop terminates on
+ *  its own when the pool is dry (rotation stays false → terminal error ⇒
+ *  agent-runner's model-fallback graph). This ceiling just stops a pathological
+ *  bug (an account that never sticks as exhausted) from spinning forever; set
+ *  well above any realistic personal-subs + shared-pool count. */
+const MAX_ACCOUNT_ATTEMPTS = 64;
 
 export async function* runOpencode(
   opts: RunAgentOpts & { allowOpencode?: boolean; forceSharedServer?: boolean },
   model: string
 ): AsyncGenerator<StreamEvent> {
-  // Each attempt may request a rotation (usage-limit on its bridge account
-  // while another usable account exists — the capped one is marked exhausted,
-  // so the re-pick moves on). The final attempt runs without a rotation box
-  // and thus ends in the terminal error (usageLimitExhausted ⇒ agent-runner's
-  // model-fallback chain takes over).
+  // Every attempt gets a rotation box. It requests a rotation on a usage limit
+  // (another usable account exists — the capped one is marked exhausted so the
+  // re-pick moves on) or a bounded transient retry. When the pool is dry the box
+  // is left untouched and the attempt emits the terminal error itself.
   for (let attempt = 0; attempt < MAX_ACCOUNT_ATTEMPTS; attempt++) {
-    const rotation: AccountRotation | undefined =
-      attempt < MAX_ACCOUNT_ATTEMPTS - 1 ? { rotate: false, note: "" } : undefined;
+    const rotation: AccountRotation = { rotate: false, note: "" };
     yield* runOpencodeAttempt(opts, model, rotation, attempt);
-    if (!rotation?.rotate) return;
+    if (!rotation.rotate) return;
     yield { type: "text_chunk", text: `\n\n[runner] ${rotation.note}\n\n` };
   }
+  console.warn(
+    `[opencode-runner] account-rotation backstop (${MAX_ACCOUNT_ATTEMPTS}) hit for ${model} — giving up`
+  );
 }
 
 async function* runOpencodeAttempt(
@@ -2375,25 +2378,36 @@ async function* runOpencodeAttempt(
         runFailure +=
           " — no other account is currently usable for this model; use /model to switch models.";
       }
-      // Silent liveness wedge: the Meridian proxy stopped returning bytes (its
-      // first request after boot works, later ones hang forever). The server
-      // is unrecoverable for this session — kill it so the next attempt (ours
-      // below, or a later human "continue") cold-boots a fresh proxy instead
-      // of hanging on this one again. Retry once on a fresh server (bounded to
-      // the first attempt so a genuinely-hanging account costs 2×90s, not 4×).
-      if (livenessWedged && entry && !entry.shared) {
-        if (servers.get(entry.key) === entry && entry.activeRuns <= 1) {
+      // Transient infra failure — recover instead of failing the turn. Covers
+      // the silent liveness wedge (the Meridian proxy's first post-boot request
+      // works, later ones hang forever) plus server death, network blips, 5xx
+      // and SQLite write contention (isTransientRunError). Bounded to the first
+      // attempt so a genuinely-stuck account costs one extra try (≈2×90s for a
+      // wedge), not an endless respawn loop; anything past that falls through to
+      // the terminal error and agent-runner's model-fallback graph.
+      const transientFailure =
+        !usageLimitHit && (livenessWedged || isTransientRunError(runFailure));
+      if (transientFailure && rotation && attemptIndex === 0) {
+        // A wedged per-session server is unrecoverable for this session — kill
+        // it so the retry cold-boots a fresh proxy instead of hanging again. A
+        // shared server is left alone (other sessions depend on it); the retry
+        // just reconnects / re-picks.
+        if (
+          livenessWedged &&
+          entry &&
+          !entry.shared &&
+          servers.get(entry.key) === entry &&
+          entry.activeRuns <= 1
+        ) {
           killServer(entry.key, entry, "liveness wedge — respawn on next run");
         }
-        if (rotation && attemptIndex === 0 && !usageLimitHit) {
-          turnEvent({ direction: "out", kind: "server_respawn_retry", error: runFailure });
-          bridgeRunEnd("error", runFailure);
-          rotation.rotate = true;
-          rotation.note =
-            `Engine bridge went silent on account "${bridgeAccountLabel}" — ` +
-            "respawned the opencode server and retrying once.";
-          return;
-        }
+        turnEvent({ direction: "out", kind: "server_respawn_retry", error: runFailure });
+        bridgeRunEnd("error", runFailure);
+        rotation.rotate = true;
+        rotation.note = livenessWedged
+          ? `Engine bridge went silent on account "${bridgeAccountLabel}" — respawned the opencode server and retrying once.`
+          : `Transient engine error on account "${bridgeAccountLabel}" — retrying once.`;
+        return;
       }
       turnEvent({ direction: "out", kind: "error", error: runFailure });
       bridgeRunEnd("error", runFailure);

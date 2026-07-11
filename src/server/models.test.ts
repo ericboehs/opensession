@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
   BEST_AVAILABLE_CODEX_MODEL,
-  fallbackModelChain,
+  fallbackPlan,
+  fallbackTier,
+  nextFallbackModel,
   markCodexModelExhausted,
   opencodeModelLabel,
   resolveConcreteModel,
@@ -57,41 +59,74 @@ describe("toOpencodeModel", () => {
   });
 });
 
-describe("fallbackModelChain", () => {
-  it("maps the whole chain onto the opencode engine — never a native SDK id", () => {
-    const chain = fallbackModelChain("claude-fable-5", "gpt-5.5");
-    const ids = chain.map((m) => m.id);
+describe("fallback graph (nextFallbackModel)", () => {
+  // Sol is openai → always maps regardless of the anthropic bridge flag; the
+  // claude ids adapt to bridge state via toOpencodeModel so the assertions hold
+  // whether the bridge is on or off.
+  const sol = "opencode/openai/gpt-5.6-sol";
+  const opus = toOpencodeModel("claude-opus-4-8")!;
+  const fable = toOpencodeModel("claude-fable-5")!;
+  const sonnet = toOpencodeModel("claude-sonnet-5")!;
 
-    // configured fallback first, mapped onto opencode; openai always maps.
-    expect(chain[0].id).toBe("opencode/openai/gpt-5.5");
-    expect(ids).not.toContain("gpt-5.5"); // no bare native id
-    expect(ids).not.toContain("claude-fable-5");
-    // With the anthropic bridge on, every entry (incl. claude tiers) is opencode.
+  it("keeps equal-or-smarter switches automatic, downgrades ask (Michiel's policy)", () => {
+    // Fable → Sol: equal tier, automatic.
+    expect(nextFallbackModel(fable, new Set([fable]), "claude-opus-4-8")).toEqual({
+      id: sol,
+      mode: "auto",
+    });
+    // Fable, Sol gone → Opus: downgrade, ASK.
+    expect(
+      nextFallbackModel(fable, new Set([fable, sol]), "claude-opus-4-8")
+    ).toEqual({ id: opus, mode: "ask" });
+    // Opus → Sol: upgrade-ish, automatic.
+    expect(nextFallbackModel(opus, new Set([opus]), "claude-opus-4-8")).toEqual({
+      id: sol,
+      mode: "auto",
+    });
+    // Opus, Sol + gpt-5.5 gone → Sonnet: downgrade, ASK.
+    expect(
+      nextFallbackModel(
+        opus,
+        new Set([opus, sol, "opencode/openai/gpt-5.5"]),
+        "claude-opus-4-8"
+      )
+    ).toEqual({ id: sonnet, mode: "ask" });
+    // Sol → Opus: downgrade, ASK.
+    expect(nextFallbackModel(sol, new Set([sol]), "claude-opus-4-8")).toEqual({
+      id: opus,
+      mode: "ask",
+    });
+  });
+
+  it("never routes back into Fable (scarce weekly-scoped credit pool)", () => {
+    const plan = fallbackPlan("claude-opus-4-8", "claude-opus-4-8");
+    expect(plan.map((h) => h.id)).not.toContain(fable);
+  });
+
+  it("returns no plan when no fallback is configured / disabled", () => {
+    expect(fallbackPlan("claude-fable-5", undefined)).toEqual([]);
+    expect(fallbackPlan("claude-fable-5", "none")).toEqual([]);
+  });
+
+  it("Fable's plan leads with the automatic Sol hop; the drop to Opus is ask-gated", () => {
+    const plan = fallbackPlan("claude-fable-5", "claude-opus-4-8");
+    expect(plan.length).toBeGreaterThan(0);
+    // First hop off Fable is the equal-tier Sol, taken automatically.
+    expect(plan[0]).toEqual({ id: sol, mode: "auto" });
+    // Dropping down to Opus is a downgrade → always ask (each hop's mode is
+    // re-evaluated against the model it leaves, so lateral moves lower in the
+    // chain can be auto again — that's intended).
+    expect(plan.find((h) => h.id === opus)?.mode).toBe("ask");
+    // With the anthropic bridge on, every hop is an opencode id (no native SDK).
     if (bridgeEnabled()) {
-      for (const m of chain) {
-        expect(m.provider).toBe("opencode");
-        expect(m.id.startsWith("opencode/")).toBe(true);
-      }
-      expect(chain[1].id).toBe("opencode/anthropic/claude-opus-4-8");
+      for (const hop of plan) expect(hop.id.startsWith("opencode/")).toBe(true);
     }
   });
 
-  it("skips the primary when the configured fallback maps to the same engine model", () => {
-    const chain = fallbackModelChain("gpt-5.5", "gpt-5.5").map((m) => m.id);
-    expect(chain).not.toContain("opencode/openai/gpt-5.5");
-    expect(chain).not.toContain("gpt-5.5");
-  });
-
-  it("expands the best available codex fallback into concrete opencode/openai models", () => {
-    const chain = fallbackModelChain("gpt-5.5", BEST_AVAILABLE_CODEX_MODEL).map(
-      (m) => m.id
-    );
-    expect(chain.slice(0, 3)).toEqual([
-      "opencode/openai/gpt-5.4",
-      "opencode/openai/gpt-5.4-mini",
-      "opencode/openai/gpt-5.3-codex-spark",
-    ]);
-    expect(chain).not.toContain("opencode/openai/gpt-5.5");
+  it("tiers Fable/Sol above Opus above Sonnet", () => {
+    expect(fallbackTier("claude-fable-5")).toBeGreaterThan(fallbackTier("claude-opus-4-8"));
+    expect(fallbackTier(sol)).toBeGreaterThan(fallbackTier("claude-opus-4-8"));
+    expect(fallbackTier("claude-opus-4-8")).toBeGreaterThan(fallbackTier("claude-sonnet-5"));
   });
 });
 

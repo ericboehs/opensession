@@ -110,3 +110,61 @@ export function isCodexUsageLimitError(message: string): boolean {
     s.includes("too many requests")
   );
 }
+
+/**
+ * Infrastructure/transient run failures worth recovering from rather than
+ * surfacing as a dead turn: a fresh server/account (opencode-runner) or the
+ * next model in the fallback graph (agent-runner) usually clears them. The goal
+ * is "continue without failing" — so this deliberately matches the failure
+ * *shapes* our runner emits (server death, wedged bridge, network blips, 5xx,
+ * SQLite write contention), NOT model output.
+ *
+ * Kept TIGHT on purpose. It must never match:
+ *  - usage limits (their own rotation/fallback path owns those — check those
+ *    classifiers first at every call site), or
+ *  - a user abort / MessageAbortedError (callers already gate on
+ *    `abortController.signal.aborted` before consulting this), or
+ *  - a genuine tool/model error the model itself produced.
+ * A false positive here spends real budget retrying / silently downgrades the
+ * model, so when in doubt this returns false and the error surfaces.
+ */
+export function isTransientRunError(message: string | undefined | null): boolean {
+  if (!message) return false;
+  const s = message.toLowerCase();
+  // Never treat a user/engine abort as transient — that's an intentional stop.
+  if (s.includes("messageabortederror") || s.includes("aborted")) return false;
+  return (
+    // Network / socket
+    s.includes("econnrefused") ||
+    s.includes("econnreset") ||
+    s.includes("etimedout") ||
+    s.includes("enotfound") ||
+    s.includes("epipe") ||
+    s.includes("socket hang up") ||
+    s.includes("socket connection") ||
+    s.includes("network error") ||
+    s.includes("fetch failed") ||
+    s.includes("connection error") ||
+    s.includes("connection closed") ||
+    s.includes("connection refused") ||
+    // Liveness wedge — the Meridian proxy stopped returning bytes mid-run
+    s.includes("produced no output within") ||
+    // Server death / boot failure
+    s.includes("opencode server exited") ||
+    s.includes("server exited") ||
+    s.includes("server died") ||
+    s.includes("failed to start opencode") ||
+    s.includes("econnaborted") ||
+    // HTTP 5xx / gateway / provider overload
+    s.includes("bad gateway") ||
+    s.includes("service unavailable") ||
+    s.includes("gateway timeout") ||
+    s.includes("internal server error") ||
+    s.includes("overloaded_error") ||
+    s.includes("overloaded") ||
+    /\b50[234]\b/.test(s) ||
+    // OpenCode's shared SQLite store under write contention — transient, retry
+    // clears it (see the SQLite-statement-failure runbook).
+    s.includes("failed to execute statement")
+  );
+}

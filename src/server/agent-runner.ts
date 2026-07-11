@@ -19,13 +19,15 @@ import {
 } from "./opencode-runner";
 import {
   providerFor,
-  fallbackModelChain,
+  nextFallbackModel,
+  modelLabel,
   BEST_AVAILABLE_CODEX_MODEL,
   getDefaultModel,
   resolveConcreteModel,
   resolveModel,
   toOpencodeModel,
 } from "./models";
+import { isTransientRunError } from "./runner-shared";
 import {
   hostRunBusy,
   hostSteer,
@@ -145,8 +147,9 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
   const preferredFallback = wantsBestCodex
     ? BEST_AVAILABLE_CODEX_MODEL
     : opts.fallbackModel;
-  const fallbackChain = fallbackModelChain(primaryModel, preferredFallback);
-  if (!fallbackChain.length) {
+  // No fallback configured (interactive auto-switch off, or an automation with
+  // fallbackModel:"none") ⇒ run the primary and surface whatever it does.
+  if (!preferredFallback || preferredFallback === "none") {
     yield* runOnModel(opts, primaryModel);
     return;
   }
@@ -158,57 +161,111 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
   for (;;) {
     let sawInit = false;
     let currentEngineId = currentOpts.sessionId;
-    let exhausted = false;
+    // Why this turn ended, if it did: a usage cap (pool drained) or a transient
+    // infra failure. Both route into the fallback graph so the session keeps
+    // going instead of dead-ending on the error — the "continue without
+    // failing" goal.
+    let failure: { transient: boolean; content?: string } | null = null;
 
     for await (const event of runOnModel(currentOpts, currentModel)) {
       if (event.type === "init") {
         sawInit = true;
         currentEngineId = event.sessionId || currentEngineId;
       }
-      exhausted =
-        (event.type === "done" || event.type === "error") &&
-        event.usageLimitExhausted === true;
-      if (!exhausted) {
-        yield event;
-        continue;
+      if (event.type === "done" && event.usageLimitExhausted === true) {
+        failure = { transient: false };
+        break;
       }
-      break;
+      if (event.type === "error") {
+        if (event.usageLimitExhausted === true) {
+          failure = { transient: false, content: event.content };
+          break;
+        }
+        // A non-usage error that looks like infra (server death, wedge, 5xx,
+        // network, SQLite contention): the opencode runner already spent its own
+        // in-attempt retry, so escalate to the next model rather than failing.
+        if (isTransientRunError(event.content)) {
+          failure = { transient: true, content: event.content };
+          break;
+        }
+      }
+      yield event;
     }
 
-    if (!exhausted) return;
+    if (!failure) return;
 
-    exhaustedModels.add(currentModel);
-    const fallback = fallbackChain.find((m) => !exhaustedModels.has(m.id));
-    if (!fallback) {
+    const currentOc = toOpencodeModel(currentModel) || currentModel;
+    exhaustedModels.add(currentOc);
+    const hop = nextFallbackModel(currentOc, exhaustedModels, preferredFallback);
+    if (!hop) {
+      // Nothing left to try — surface the terminal error we were suppressing.
       yield {
         type: "error",
-        content: `${currentModel} usage exhausted, and no fallback models remain.`,
+        content: failure.transient
+          ? failure.content ||
+            `${modelLabel(currentModel)} failed and no fallback models remain.`
+          : `${modelLabel(currentModel)} is out of usage, and no fallback models remain.`,
         provider: providerFor(currentModel),
         model: currentModel,
-        usageLimitExhausted: true,
+        usageLimitExhausted: failure.transient ? undefined : true,
       };
       return;
     }
 
-    // Current model is out of usage on every account — switch to the next fallback.
-    const crossProvider = providerFor(currentModel) !== fallback.provider;
-    console.warn(`[runner] ${currentModel} exhausted on all accounts; falling back to ${fallback.id}`);
+    // Downgrade to a dumber model (Fable→Opus, Opus→Sonnet, Sol→Opus): a human
+    // decides. Interactive runs get an AskUserQuestion; headless runs
+    // (automations, workflow sub-agents, restart resumes without an ask handler)
+    // auto-proceed — stalling them would defeat "continue without failing".
+    if (hop.mode === "ask") {
+      const approved = await askFallbackApproval(
+        opts.onAskUser,
+        currentModel,
+        hop.id,
+        failure.transient
+      );
+      if (!approved) {
+        yield {
+          type: "error",
+          content:
+            `${modelLabel(currentModel)} is out of usage. ` +
+            `Declined the fallback to ${modelLabel(hop.id)} — use /model to switch when ready.`,
+          provider: providerFor(currentModel),
+          model: currentModel,
+          usageLimitExhausted: true,
+        };
+        return;
+      }
+    }
+
+    // Everything runs on the opencode engine, so `providerFor` reports
+    // "opencode" for both sides and can't tell a same-family switch from a
+    // cross-family one. The decision that matters — resume the partial session
+    // vs. start fresh with a handoff — turns on the UNDERLYING provider
+    // (anthropic ↔ openai): same family resumes the opencode session; a family
+    // switch needs a fresh session seeded with the prior transcript.
+    const fromFamily = engineFamily(currentOc);
+    const toFamily = engineFamily(hop.id);
+    const crossProvider = fromFamily !== toFamily;
+    const reason = failure.transient ? "hit a transient failure" : "is out of usage on all accounts";
+    console.warn(
+      `[runner] ${currentModel} ${reason}; falling back to ${hop.id} (${hop.mode})`
+    );
     // Structured cue: interactive sessions turn this into a durable model-switch
     // divider + model pill update (backstage.ts run loop). Other consumers ignore
     // it and rely on the human-readable text line below.
-    yield { type: "model_switch", fromModel: currentModel, toModel: fallback.id };
+    yield { type: "model_switch", fromModel: currentModel, toModel: hop.id };
     yield {
       type: "text_chunk",
-      text: `\n\n[runner] ${currentModel} usage exhausted on all accounts; falling back to ${fallback.id}.\n\n`,
+      text: `\n\n[runner] ${modelLabel(currentModel)} ${reason}; falling back to ${modelLabel(hop.id)}.\n\n`,
     };
 
     let prompt = currentOpts.prompt;
     let handoffEntries: TranscriptEntry[] = [];
     if (sawInit && crossProvider) {
-      // Entry-based read so all three engines can hand off: claude/codex from
-      // their transcript files, opencode from OpenCode's SQLite store.
+      // The engine session is always an opencode session id, so read the prior
+      // turn from OpenCode's store regardless of which model family produced it.
       const entries = currentEngineId
-        ? readEngineTranscript(currentOpts.cwd, currentEngineId, providerFor(currentModel))
+        ? readEngineTranscript(currentOpts.cwd, currentEngineId, "opencode")
         : [];
       handoffEntries = entries;
       if (entries.length) {
@@ -216,15 +273,15 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
           `${wrapContext(
             buildEngineSwitchHandoffNote({
               fromModel: currentModel,
-              fromProvider: providerFor(currentModel),
-              toProvider: fallback.provider,
+              fromProvider: familyLabel(fromFamily),
+              toProvider: familyLabel(toFamily),
               targetResuming: false,
               entries,
             })
           )}\n\n${prompt}`;
       } else {
         prompt +=
-          "\n\n[Note: a previous attempt on another model was cut short by usage limits and may have " +
+          "\n\n[Note: a previous attempt on another model was cut short and may have " +
           "left partial work in this directory — review what's already done before continuing.]";
       }
     }
@@ -232,20 +289,75 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     currentOpts = {
       ...currentOpts,
       prompt,
-      // Same provider can resume the partial session; cross-provider starts fresh
+      // Same family can resume the partial session; a family switch starts fresh
       sessionId: crossProvider ? undefined : currentEngineId,
-      // A cross-provider fallback INTO opencode seeds the fresh opencode
-      // session's persisted transcript with the history the handoff covers.
+      // The fresh opencode session is seeded with the history the handoff covers.
       seedTranscriptEntries:
-        crossProvider && fallback.provider === "opencode" && handoffEntries.length
-          ? handoffEntries
-          : undefined,
+        crossProvider && handoffEntries.length ? handoffEntries : undefined,
       journal: opts.journal
         ? { ...opts.journal, kind: `${opts.journal.kind || "run"}-fallback` }
         : undefined,
     };
-    currentModel = fallback.id;
+    currentModel = hop.id;
   }
+}
+
+/** Underlying engine provider family of a model id ("anthropic" / "openai"),
+ *  read from its opencode mapping. Drives resume-vs-fresh on a fallback hop. */
+function engineFamily(model: string): string {
+  const oc = toOpencodeModel(model) || model;
+  return oc.match(/^opencode\/([^/]+)\//)?.[1] || providerFor(model);
+}
+
+/** Map an engine family to the handoff note's provider label. */
+function familyLabel(family: string): "claude" | "codex" | "opencode" {
+  if (family === "anthropic") return "claude";
+  if (family === "openai") return "codex";
+  return "opencode";
+}
+
+/**
+ * Confirm a downgrade fallback with the human. Interactive runs surface an
+ * AskUserQuestion card (web UI + Slack escalation); headless runs — no
+ * onAskUser — auto-approve so automations and workflow sub-agents keep going
+ * rather than dead-ending on the limit. Returns false only when a human is
+ * present and declined (or nobody answered).
+ */
+async function askFallbackApproval(
+  onAskUser: RunAgentOpts["onAskUser"],
+  fromModel: string,
+  toModel: string,
+  transient: boolean
+): Promise<boolean> {
+  if (!onAskUser) return true;
+  const reason = transient
+    ? `**${modelLabel(fromModel)}** hit a transient failure`
+    : `**${modelLabel(fromModel)}** is out of usage`;
+  const switchLabel = `Switch to ${modelLabel(toModel)}`;
+  let answer;
+  try {
+    answer = await onAskUser({
+      questions: [
+        {
+          question: `${reason}. Fall back to the lighter **${modelLabel(toModel)}** to keep going?`,
+          header: "Model fallback",
+          options: [
+            { label: switchLabel, description: "Continue this turn on the fallback model" },
+            { label: "Stop here", description: "Don't switch — I'll pick a model myself" },
+          ],
+          multiSelect: false,
+        },
+      ],
+    });
+  } catch (e) {
+    console.warn(`[runner] fallback approval ask failed for ${fromModel}→${toModel}:`, e);
+    return false;
+  }
+  if (answer.behavior === "deny") return false; // nobody answered / timed out
+  const picked = String(
+    Object.values((answer.updatedInput as { answers?: Record<string, string> }).answers || {})[0] || ""
+  ).toLowerCase();
+  return picked.startsWith("switch") || picked.startsWith("yes");
 }
 
 // Sessions whose prompt run has started but isn't registered in the runner's
