@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * iOS-style edge-swipe-to-go-back for the mobile page stack. On phones the
@@ -27,8 +27,17 @@ const SLOP = 8; // px of movement before committing to an axis
 const SNAP_MS = 260; // matches the CSS page transition
 
 export function useBackSwipe({ active, onBack, paneRef }: Opts) {
+  // Callers pass a fresh `onBack` closure every render. Going through a ref
+  // keeps it out of the effect deps: if the effect re-ran mid-gesture (any
+  // re-render, e.g. a WebSocket session update), the replacement listeners
+  // would start with `dragging = false`, the touchend would be ignored, and
+  // the pane would be stranded on its inline mid-drag transform.
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
+
   useEffect(() => {
     if (!active) return;
+    const onBack = () => onBackRef.current();
     const mq = window.matchMedia(MOBILE);
 
     let startX = 0;
@@ -149,6 +158,16 @@ export function useBackSwipe({ active, onBack, paneRef }: Opts) {
       document.removeEventListener("touchmove", onMove);
       document.removeEventListener("touchend", onEnd);
       document.removeEventListener("touchcancel", onEnd);
+      // If teardown still lands mid-drag (route change, unmount), hand the
+      // pane back to the CSS class instead of leaving it stuck halfway.
+      // An in-flight settle() is untouched: onEnd resets `dragging` first.
+      if (candidate || dragging) {
+        const el = paneRef.current;
+        if (el) {
+          el.style.transition = "";
+          el.style.transform = "";
+        }
+      }
     };
-  }, [active, onBack, paneRef]);
+  }, [active, paneRef]);
 }
