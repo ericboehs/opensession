@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, fetchSandboxStatus, fetchSystemPrompt, requestSandboxPrewarm, suggestBranch, fetchClaudeAccounts, type ClaudeAccountOption, type ModelOption, type SandboxStatusInfo, type SystemPromptPart } from "../lib/api";
+import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, fetchSandboxStatus, requestSandboxPrewarm, suggestBranch, fetchClaudeAccounts, type ClaudeAccountOption, type ModelOption, type SandboxStatusInfo } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
-import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections, IconReturn, IconTerminal, IconBox } from "./icons";
-import { Modal } from "../ui/modal";
-import { Tooltip } from "../ui/tooltip";
+import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections, IconReturn, IconBox } from "./icons";
 import type { WSServerMessage } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -257,30 +255,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       on ? [...prev, name] : prev.filter((m) => m !== name),
     );
   }
-
-  // System-prompt preview: what the session will be told on top of the
-  // claude_code preset (fetched lazily, keyed by ask/code mode).
-  const [sysPromptOpen, setSysPromptOpen] = useState(false);
-  const [sysPrompt, setSysPrompt] = useState<{
-    mode: string;
-    parts: SystemPromptPart[];
-  } | null>(null);
-  useEffect(() => {
-    if (!sysPromptOpen || sysPrompt?.mode === mode) return;
-    fetchSystemPrompt(mode, getCurrentUser())
-      .then((r) => setSysPrompt({ mode, parts: r.parts }))
-      .catch((e) =>
-        setSysPrompt({
-          mode,
-          parts: [
-            {
-              title: "Unavailable",
-              text: e?.message || "Could not load the system prompt.",
-            },
-          ],
-        }),
-      );
-  }, [sysPromptOpen, mode, sysPrompt]);
 
   // Phone-only sheet state (desktop uses a Menu popup instead).
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
@@ -743,18 +717,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               )}
             </div>
             )}
-            <Tooltip label="System prompt — what this session will be told">
-              <button
-                type="button"
-                className="palette-icon-btn"
-                onClick={() => setSysPromptOpen(true)}
-                disabled={creating}
-                aria-label="View system prompt"
-              >
-                <IconTerminal size={24} />
-              </button>
-            </Tooltip>
-            {showSandboxPicker && (
+            {/* On phones the run-environment picker hides behind the options
+                toggle with the other advanced controls. */}
+            {showSandboxPicker && optionsVisible && (
               <Menu.Root>
                 <Menu.Trigger
                   type="button"
@@ -891,37 +856,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         </div>
       </div>
 
-      {/* System-prompt preview: the exact appends the runner adds on top of
-          the claude_code preset (served by /api/system-prompt — same builder,
-          so it can't drift). Mode-aware: Ask sessions swap in the read-only
-          preamble and drop the code-mode parts. */}
-      <Modal.Root open={sysPromptOpen} onOpenChange={setSysPromptOpen}>
-        <Modal.Content widthClassName="max-w-[38rem]">
-          <Modal.Header
-            title="System prompt"
-            description={`Claude Code's standard system prompt, plus CLAUDE.md files and these ${
-              mode === "ask" ? "Ask-mode" : ""
-            } session instructions.`}
-          />
-          <div className="flex flex-col gap-3 overflow-y-auto">
-            {(sysPrompt?.mode === mode ? sysPrompt.parts : []).map((p) => (
-              <div key={p.title}>
-                <div className="pb-1 text-[12.5px] font-semibold text-dim">
-                  {p.title}
-                </div>
-                <pre className="whitespace-pre-wrap rounded-md border border-line bg-surface px-3 py-2.5 font-mono text-[12px] leading-relaxed text-fg">
-                  {p.text}
-                </pre>
-              </div>
-            ))}
-            {sysPrompt?.mode !== mode && (
-              <div className="py-6 text-center text-[13px] font-medium text-dim">
-                Loading…
-              </div>
-            )}
-          </div>
-        </Modal.Content>
-      </Modal.Root>
     </div>
   );
 }
