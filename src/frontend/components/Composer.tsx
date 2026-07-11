@@ -362,6 +362,9 @@ export function Composer({
 
   // Modal editing on the draft (Settings → Composer → Vim mode). The engine
   // consumes keys in normal/visual modes; insert mode only claims Escape.
+  // vimKeyTouchAt: when a key-bar touchend just ran, the follow-up click (on
+  // browsers that still synthesize one) must not double-fire the key.
+  const vimKeyTouchAt = useRef(0);
   const vim = useVimMode({
     enabled: vimEnabled,
     textareaRef,
@@ -871,12 +874,23 @@ export function Composer({
             touch), so give vim users a Termius-style key row pinned above the
             keyboard. Software keys route through vim.injectKey: consumed by
             the engine in normal/visual mode, emulated on the textarea in
-            insert mode. Cancelling pointerdown keeps the textarea focused so
-            a tap can't collapse the composer or dismiss the keyboard. */}
-        {vimEnabled && isPhone && focused && (
+            insert mode.
+
+            iOS tap handling is the load-bearing part: a tap's default
+            continuation is touchend → synthesized mousedown (blurs the
+            textarea, dismissing the keyboard) → click — and the blur flips
+            `focused`, which would unmount this bar BEFORE the click fires
+            (preventing pointerdown does NOT stop any of that on iOS; it lost
+            us the whole bar on-device). So each key acts on touchend and
+            cancels it, suppressing the entire mouse-synthesis chain; onClick
+            stays for mouse/pen, with a recent-touch guard for browsers that
+            fire both. The bar also stays mounted outside insert mode even if
+            focus is lost, so it can never vanish mid-interaction. */}
+        {vimEnabled && isPhone && !minimized && (focused || vim.mode !== "insert") && (
           <div
             className="mt-1.5 flex gap-1.5 border-t border-line pt-1.5"
             onPointerDown={(e) => e.preventDefault()}
+            onMouseDown={(e) => e.preventDefault()}
           >
             {(
               [
@@ -896,7 +910,15 @@ export function Composer({
                     ? "border-accent text-fg"
                     : ""
                 }`}
-                onClick={() => vim.injectKey(key)}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  vimKeyTouchAt.current = Date.now();
+                  vim.injectKey(key);
+                }}
+                onClick={() => {
+                  if (Date.now() - vimKeyTouchAt.current < 700) return;
+                  vim.injectKey(key);
+                }}
                 aria-label={key}
               >
                 {label}
