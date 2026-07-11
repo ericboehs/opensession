@@ -25,6 +25,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const STICK_THRESHOLD = 90;
 // Gap left above a pinned turn so a little previous context stays visible.
 const TOP_GAP = 20;
+// Touch devices get instant pin scrolls: iOS Safari drops smooth programmatic
+// scrolls during keyboard/visual-viewport animation, leaving the pin stranded
+// at an intermediate position.
+const COARSE_POINTER =
+  typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
 
 export interface ChatScroll {
   /** Attach to the scrollable transcript container. */
@@ -60,6 +65,21 @@ function selectionWithin(el: HTMLElement): boolean {
 function lastUserEl(container: HTMLElement): HTMLElement | null {
   const els = container.querySelectorAll<HTMLElement>(".msg-user");
   return els[els.length - 1] ?? null;
+}
+
+// The container's top edge as the reader actually sees it. On iOS the on-screen
+// keyboard doesn't shrink the layout viewport — Safari pans the *visual*
+// viewport down to keep the focused composer visible — so client-rect
+// coordinates (and clientHeight) describe a window partly above/behind what's
+// on screen. Anchoring a pinned turn to the raw container top then parks it
+// above the visible area and the reader sees only the spacer: empty space.
+// All pin math measures from this clipped top instead. In the standalone PWA
+// visualViewport stays inert (offsetTop 0), which degrades to the raw top.
+function visibleTop(el: HTMLElement): number {
+  const rectTop = el.getBoundingClientRect().top;
+  const vv = window.visualViewport;
+  if (!vv) return rectTop;
+  return Math.max(rectTop, vv.offsetTop);
 }
 
 function latestMessageVisible(container: HTMLElement): boolean {
@@ -158,7 +178,7 @@ export function useChatScroll(): ChatScroll {
   const anchorToTop = useCallback((target: HTMLElement | null) => {
     const el = containerRef.current;
     if (!el || !target) return;
-    const delta = target.getBoundingClientRect().top - el.getBoundingClientRect().top - TOP_GAP;
+    const delta = target.getBoundingClientRect().top - visibleTop(el) - TOP_GAP;
     if (delta <= 0) {
       // Already at or above the target — don't scroll up. For a pinned turn
       // this IS the pin position; remember it so relayout holds it.
@@ -167,13 +187,16 @@ export function useChatScroll(): ChatScroll {
     }
     const finalFromBottom = el.scrollHeight - (el.scrollTop + delta) - el.clientHeight;
     if (pinnedRef.current) pinTopRef.current = el.scrollTop + delta;
-    el.scrollTo({ top: el.scrollTop + delta, behavior: "smooth" });
+    el.scrollTo({ top: el.scrollTop + delta, behavior: COARSE_POINTER ? "auto" : "smooth" });
+    // An instant scroll can land clamped (sub-pixel or scroll-max rounding);
+    // record where it actually parked so relayout's hold engages.
+    if (COARSE_POINTER && pinnedRef.current) pinTopRef.current = el.scrollTop;
     // A reopen-anchor that lands at the live edge anyway keeps following (with
     // a flight so the animation's mid positions don't disengage it). A pinned
     // turn must stop following instead: its padded "edge" is fake, and the
     // reply streams into the reserved space below.
     if (!pinnedRef.current && finalFromBottom < STICK_THRESHOLD) {
-      autoFlightRef.current = performance.now() + 1200;
+      if (!COARSE_POINTER) autoFlightRef.current = performance.now() + 1200;
       return;
     }
     // Leaving the live edge to read from the top is intent: stop following so the
@@ -196,7 +219,11 @@ export function useChatScroll(): ChatScroll {
     const targetTop =
       target.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
     const below = contentHeight - targetTop; // content height beneath the pinned turn
-    sp.style.height = `${Math.max(0, el.clientHeight - below - TOP_GAP)}px`;
+    // Shrink by the visual-viewport pan (iOS keyboard) so scroll-max sits
+    // exactly at the pan-aware pin position — no more, or the anchor clamps
+    // short; no less, or empty spacer stays visible once the keyboard closes.
+    const topCut = visibleTop(el) - el.getBoundingClientRect().top;
+    sp.style.height = `${Math.max(0, el.clientHeight - topCut - below - TOP_GAP)}px`;
   }, []);
 
   const beginTurn = useCallback(() => {
@@ -240,7 +267,7 @@ export function useChatScroll(): ChatScroll {
             0,
             Math.round(
               target.getBoundingClientRect().top -
-                el.getBoundingClientRect().top +
+                visibleTop(el) +
                 el.scrollTop -
                 TOP_GAP,
             ),
@@ -337,6 +364,23 @@ export function useChatScroll(): ChatScroll {
       window.removeEventListener("pointerup", endDrag);
       window.removeEventListener("pointercancel", endDrag);
       el.removeEventListener("load", onLoad, true);
+    };
+  }, [relayout]);
+
+  // While a turn is pinned, keyboard open/close (visual-viewport pan/resize on
+  // iOS) moves the visible window without any content change — re-seat the pin
+  // so the turn stays at TOP_GAP below what the reader actually sees.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onChange = () => {
+      if (pinnedRef.current) relayout();
+    };
+    vv.addEventListener("resize", onChange);
+    vv.addEventListener("scroll", onChange);
+    return () => {
+      vv.removeEventListener("resize", onChange);
+      vv.removeEventListener("scroll", onChange);
     };
   }, [relayout]);
 
