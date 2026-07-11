@@ -46,6 +46,7 @@ import { DiffPanel, useSessionDiff } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
 import { RepoTile } from "./RepoTile";
 import { SandboxBadge } from "./SandboxBadge";
+import { HqControls } from "./HqControls";
 import { ModelMenuRow } from "./ModelMenuRow";
 import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
 import { AskCard } from "./AskCard";
@@ -2252,6 +2253,11 @@ export function SessionViewer({
 					    container (docker/daytona/e2b). Renders nothing for host sessions
 					    — purely from session fields, no container polling. */}
 					<SandboxBadge sandbox={session.sandbox} />
+					{/* HQ: OPEN/CLOSED switch + event-subscription popover, on the
+					    owner's config (src/server/hq.ts). */}
+					{session.hq && (
+						<HqControls user={session.startedBy || getCurrentUser()} />
+					)}
 					{/* Lone-chat "+ New tab": when the workspace has a single chat the
 					    tab strip is hidden, so the affordance to spawn a sibling chat
 					    lives here beside the title (⌘T does the same). With 2+ chats the

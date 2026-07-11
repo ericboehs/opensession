@@ -94,6 +94,8 @@ export interface UnifiedSession {
   /** Agent-published demo walkthrough (opensession-walkthrough). */
   walkthrough?: SessionWalkthrough;
   automation?: string;
+  /** This is a user's HQ orchestrator session (src/server/hq.ts). */
+  hq?: boolean;
   archived?: boolean;
   /** Why this session is archived — powers the "Auto-archived" filter. */
   archivedReason?: "manual" | "idle" | "auto" | "plain";
@@ -331,6 +333,7 @@ export interface BackstageSessionFile {
   lastEngineProvider?: "claude" | "codex" | "opencode";
   modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
   usage?: SessionUsage; // cumulative token/cost accounting for this session's runs
+  hq?: boolean; // this is a user's HQ orchestrator session (src/server/hq.ts)
   archived?: boolean;
   archivedAt?: string;
   archivedReason?: "manual" | "idle" | "auto" | "plain";

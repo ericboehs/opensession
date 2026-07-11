@@ -564,7 +564,19 @@ registerSessionControl({
 					sessionId: bksId,
 					isRunning: false,
 				});
-				if (!promptQueues.get(bksId)?.length) onHumanAsksSessionIdle(bksId);
+				if (!promptQueues.get(bksId)?.length) {
+					onHumanAsksSessionIdle(bksId);
+					// HQ: publish the spawned session's outcome to its owner (opt-in).
+					void import("./hq")
+						.then((m) =>
+							m.hqSessionEvent(
+								bksId,
+								runFailure ? "session:error" : "session:finished",
+								runFailure ? { body: runFailure.slice(0, 400) } : {},
+							),
+						)
+						.catch(() => {});
+				}
 			} catch (e) {
 				console.error(`[sessions-mcp] create session ${bksId} failed:`, e);
 			}

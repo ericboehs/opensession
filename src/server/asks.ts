@@ -190,6 +190,18 @@ export function makeAskHandler(sessionId: string) {
 					questionId,
 					questions,
 				});
+				// HQ: surface the blocked question to the owner's HQ session
+				// (no-op unless they've opted into HQ — see hq.ts).
+				void import("./hq")
+					.then((m) =>
+						m.hqSessionEvent(sessionId, "session:question", {
+							body: questions
+								.map((q) => q.question)
+								.join(" · ")
+								.slice(0, 400),
+						}),
+					)
+					.catch(() => {});
 				// Phone buzz: Web Push to the session owner's registered devices
 				// (opt-in per device in Settings → Notifications). Best-effort —
 				// never lets a push hiccup affect the ask flow. Deduped on the

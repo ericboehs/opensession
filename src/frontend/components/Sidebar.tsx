@@ -14,6 +14,7 @@ import {
 	setPlainThreadStatusApi,
 	type OpenPr,
 	type WorkspaceOverview,
+	ensureHq,
 } from "../lib/api";
 import { loadOverview, overviewCache } from "../lib/workspace-overview";
 import { openLightbox } from "./MediaLightbox";
@@ -1162,6 +1163,7 @@ export function Sidebar({
 		for (const s of filtered) {
 			if (s.automation) continue; // automations render in their own band
 			if (s.sideChatOf) continue; // side chats live in the parent's panel, not the sidebar
+			if (s.hq) continue; // HQ renders its own dedicated slot above Pinned
 			if (s.projectId) {
 				const list = byWs.get(s.projectId) || [];
 				list.push(s);
@@ -2922,6 +2924,59 @@ export function Sidebar({
 							</div>
 						);
 					})()}
+
+				{/* ── HQ: the user's orchestrator session — a permanent slot above
+				    Pinned. Click opens it (creating it on first use); the session
+				    itself is suppressed from the normal lanes. ── */}
+				{(() => {
+					const hqChat = sessions.find(
+						(s) => s.hq && s.startedBy === currentUser && !s.archived,
+					);
+					const active = !!hqChat && hqChat.id === selectedId;
+					return (
+						<div className="sidebar-group sidebar-group--hq">
+							<button
+								type="button"
+								className={`sidebar-item flex items-center gap-2 min-w-0 ${
+									active ? "sidebar-item-selected" : ""
+								}`}
+								onClick={() => {
+									if (hqChat) onSelect(hqChat);
+									else
+										void ensureHq(currentUser)
+											.then((r) => r.session && onSelect(r.session))
+											.catch(() => {});
+								}}
+							>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 16 16"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="1.4"
+									style={{ flexShrink: 0 }}
+								>
+									<path d="M8 2v3" strokeLinecap="round" />
+									<path d="M4.5 5h7l1 9h-9l1-9z" strokeLinejoin="round" />
+									<path d="M2 5h12" strokeLinecap="round" />
+								</svg>
+								<span
+									className="sidebar-item-title"
+									style={{ fontWeight: 600 }}
+								>
+									HQ
+								</span>
+								{hqChat?.isRunning && (
+									<span
+										className="sidebar-group-dot"
+										style={{ background: "var(--green)" }}
+									/>
+								)}
+							</button>
+						</div>
+					);
+				})()}
 
 				{/* ── Pinned (workspaces + notes, mixed) ── */}
 				{(() => {

@@ -31,6 +31,7 @@ const REVIEW_ACTIONS = new Set(["opened", "reopened", "synchronize", "ready_for_
 
 interface PrPayload {
   number: number;
+  html_url?: string;
   draft?: boolean;
   state?: string;
   title?: string;
@@ -123,6 +124,16 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
 
     // ── Merge → notify linked sessions + queue seo-sweep PRs + fire docs-sync ──
     if (action === "closed" && pr.merged) {
+      // HQ: merged PRs are a subscribable HQ event (default digest lane).
+      void import("../../server/hq")
+        .then((m) =>
+          m.publishHqEvent({
+            type: "github:pr_merged",
+            title: `PR #${pr.number} merged: ${pr.title || ""}`,
+            url: pr.html_url,
+          }),
+        )
+        .catch(() => {});
       import("./session-notify")
         .then((m) => m.notifyMergedPrSessions(payload))
         .catch((e) => console.error("[github] notifyMergedPrSessions failed:", e));
@@ -153,6 +164,27 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
         const fired = fireAutomationsForEvent(PR_MERGED_EVENT_KEY, payload);
         if (fired) console.log(`[github] PR #${pr.number} merged → fired ${fired} docs-sync automation(s)`);
       }
+      return;
+    }
+
+    // ── Review requested → HQ event (nothing else consumes this action) ──
+    if (action === "review_requested") {
+      const p = payload as {
+        requested_reviewer?: { login?: string };
+        requested_team?: { name?: string };
+      };
+      const reviewer =
+        p.requested_reviewer?.login || p.requested_team?.name || "";
+      void import("../../server/hq")
+        .then((m) =>
+          m.publishHqEvent({
+            type: "github:review_request",
+            title: `Review requested on PR #${pr.number}: ${pr.title || ""}`,
+            body: reviewer ? `Reviewer: ${reviewer}` : undefined,
+            url: pr.html_url,
+          }),
+        )
+        .catch(() => {});
       return;
     }
 

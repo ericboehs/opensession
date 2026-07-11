@@ -398,6 +398,9 @@ if (!g.__backstageBooted) {
 		ensureStalePrMonitor();
 		const { ensureCronJobs } = await import("./src/agents/loops/cron-jobs");
 		ensureCronJobs();
+		// HQ orchestrator sessions: work-hours + digest ticker (opt-in per user)
+		const { startHqTicker } = await import("./src/server/hq");
+		startHqTicker();
 	} catch (e) {
 		console.error(
 			"[loops] Failed to seed sweep/monitor/seo/stale-pr/cron loops:",

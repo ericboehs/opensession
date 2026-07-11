@@ -99,8 +99,19 @@ export async function buildSessionNote(
 	session: UnifiedSession,
 	user?: string,
 ): Promise<string | undefined> {
+	// HQ sessions get their orchestrator role prepended — the discipline that
+	// makes HQ route work instead of doing it (see hq.ts).
+	const hqNote = session.hq
+		? (await import("./hq")).hqSessionNote(
+				session.startedBy || user || "the user",
+			)
+		: undefined;
 	return (
-		[buildReposNote(session), await memoryNoteFor(user, sessionRepoIds(session))]
+		[
+			hqNote,
+			buildReposNote(session),
+			await memoryNoteFor(user, sessionRepoIds(session)),
+		]
 			.filter(Boolean)
 			.join("\n\n") || undefined
 	);

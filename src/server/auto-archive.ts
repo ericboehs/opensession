@@ -127,7 +127,8 @@ export function autoArchiveDoneSessions(sessions: SweepSession[]): number {
   const justArchived: SweepSession[] = [];
 
   for (const s of sessions) {
-    if (s.archived || s.automation || !s.startedBy) continue;
+    // HQ sessions are permanent fixtures — never auto-archived.
+    if (s.archived || s.automation || s.hq || !s.startedBy) continue;
     const userCfg: AutoArchiveUserConfig = {
       ...AUTO_ARCHIVE_DEFAULTS,
       ...cfg.users[s.startedBy.trim()],

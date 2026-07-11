@@ -1475,6 +1475,20 @@ async function runSessionPromptInner(
 		// linger on "Ahead by N commits" (see autoPushSessionBranches). Only on a
 		// clean finish — an errored/aborted turn may be mid-work. Fire-and-forget.
 		if (!endedWithError) void autoPushSessionBranches(session);
+		// HQ: the session is idle now — publish the turn's outcome to the
+		// owner's HQ session (no-op unless they've opted in; skips HQ itself,
+		// automation sessions and side chats — see hqSessionEvent).
+		void import("./hq")
+			.then((m) =>
+				m.hqSessionEvent(
+					sessionId,
+					endedWithError ? "session:error" : "session:finished",
+					endedWithError
+						? { body: (runFailure || "Run failed").slice(0, 400) }
+						: { body: assistantText.trim().slice(-400) },
+				),
+			)
+			.catch(() => {});
 	}
 }
 

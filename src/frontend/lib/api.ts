@@ -1415,6 +1415,58 @@ export async function updateAutoArchiveConfig(
 	return request("/auto-archive", { method: "PUT", body: { user, ...patch } });
 }
 
+// ── HQ (per-user orchestrator session — src/server/hq.ts) ──
+
+export type HqLane = "off" | "digest" | "immediate";
+
+export interface HqWorkHours {
+	open: string;
+	close: string;
+	tzOffsetMinutes: number;
+}
+
+export interface HqConfig {
+	sessionId: string | null;
+	status: "open" | "closed";
+	workHours: HqWorkHours | null;
+	digestMinutes: number;
+	subs: Record<string, HqLane>;
+}
+
+export interface HqInfo {
+	config: HqConfig;
+	buffered: number;
+	eventTypes: { key: string; label: string; dflt: HqLane }[];
+	automations: { id: string; name: string }[];
+}
+
+export async function fetchHqInfo(user: string): Promise<HqInfo> {
+	return request(`/hq?user=${encodeURIComponent(user)}`, {
+		label: "Failed to fetch HQ config",
+	});
+}
+
+export async function updateHqConfig(
+	user: string,
+	patch: {
+		status?: "open" | "closed";
+		workHours?: HqWorkHours | null;
+		digestMinutes?: number;
+		subs?: Record<string, HqLane>;
+	},
+): Promise<{ config: HqConfig; buffered: number }> {
+	return request("/hq", { method: "PUT", body: { user, ...patch } });
+}
+
+export async function ensureHq(
+	user: string,
+): Promise<{
+	sessionId: string;
+	session: import("./types").UnifiedSession | null;
+}> {
+	return request("/hq/ensure", { method: "POST", body: { user } });
+}
+
 // ── Warm preview templates (Settings → Warm previews) ──
 
 export interface WarmTemplateEntry {

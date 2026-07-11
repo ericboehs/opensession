@@ -595,6 +595,20 @@ Please address this feedback:
         handlePullRequestReview(payload, branchToChannel).catch((e) => {
           console.error("[slack] Error handling PR review webhook:", e);
         });
+        // HQ: PR review submitted — a subscribable HQ event (default digest).
+        if (payload.action === "submitted") {
+          const review = payload.review || {};
+          const rpr = payload.pull_request || {};
+          void import("../../server/hq")
+            .then((m) =>
+              m.publishHqEvent({
+                type: "github:review",
+                title: `${review.user?.login || "someone"} ${String(review.state || "reviewed").replace(/_/g, " ").toLowerCase()} PR #${rpr.number}: ${rpr.title || ""}`,
+                url: review.html_url || rpr.html_url,
+              }),
+            )
+            .catch(() => {});
+        }
       }
 
       // Forward PR events to the github agent (review / auto-fix / simplify,
