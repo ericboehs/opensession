@@ -41,6 +41,11 @@ import {
 	type SendKeyPref,
 } from "../lib/send-key";
 import {
+	getVimModePref,
+	setVimModePref,
+	onVimModeChanged,
+} from "../lib/vim-pref";
+import {
 	getPinNewSessions,
 	setPinNewSessions,
 	onPinNewSessionsChanged,
@@ -1961,10 +1966,12 @@ function AuditPanel() {
 function ComposerPanel() {
 	const [sendKey, setSendKey] = useState<SendKeyPref>(getSendKeyPref);
 	const [busySend, setBusySend] = useState<BusySendPref>(getBusySendPref);
+	const [vimMode, setVimMode] = useState<boolean>(getVimModePref);
 	const [pinNew, setPinNew] = useState<boolean>(getPinNewSessions);
 	const [pinNewWs, setPinNewWs] = useState<boolean>(getPinNewWorkspaces);
 	useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
 	useEffect(() => onBusySendChanged(() => setBusySend(getBusySendPref())), []);
+	useEffect(() => onVimModeChanged(() => setVimMode(getVimModePref())), []);
 	useEffect(
 		() => onPinNewSessionsChanged(() => setPinNew(getPinNewSessions())),
 		[],
@@ -2019,6 +2026,13 @@ function ComposerPanel() {
 							]}
 							onChange={setBusySendPref}
 						/>
+					}
+				/>
+				<SettingRow
+					title="Vim mode"
+					desc="Modal editing in the message composer: Esc for normal mode, the usual motions and operators, i to type. Enter still sends."
+					control={
+						<Toggle label="Vim mode" checked={vimMode} onChange={setVimModePref} />
 					}
 				/>
 				<SettingRow

@@ -28,6 +28,8 @@ import {
   MOD_ENTER_GLYPH,
 } from "../lib/send-key";
 import { VoiceInput } from "./VoiceInput";
+import { getVimModePref, onVimModeChanged } from "../lib/vim-pref";
+import { useVimMode } from "../hooks/useVimMode";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { motion, AnimatePresence } from "motion/react";
 import { composerMorph, composerChipMotion } from "../ui/motion";
@@ -277,6 +279,9 @@ export function Composer({
   // "Send messages with" preference (Settings → Composer): Enter or ⌘/Ctrl+Enter.
   const [sendKey, setSendKey] = useState(getSendKeyPref);
   useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
+  // Vim mode preference (Settings → Composer, default off).
+  const [vimEnabled, setVimEnabled] = useState(getVimModePref);
+  useEffect(() => onVimModeChanged(() => setVimEnabled(getVimModePref())), []);
   const isControlled = value !== undefined;
   const text = isControlled ? value : innerValue;
   const setText = isControlled ? onChange ?? (() => {}) : setInnerValue;
@@ -354,6 +359,15 @@ export function Composer({
       document.removeEventListener("touchstart", onDown);
     };
   }, [menu]);
+
+  // Modal editing on the draft (Settings → Composer → Vim mode). The engine
+  // consumes keys in normal/visual modes; insert mode only claims Escape.
+  const vim = useVimMode({
+    enabled: vimEnabled,
+    textareaRef,
+    value: text,
+    onChange: setText,
+  });
 
   // "@"-mention file autocomplete (shared with the New-session prompt field).
   const mentions = useFileMentions({
@@ -496,6 +510,11 @@ export function Composer({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (mentions.handleKeyDown(e)) return;
     if ((e.nativeEvent as any).isComposing) return;
+    // Vim mode gets the key before the send/stop logic: in insert mode it only
+    // claims Escape (drop to normal mode — a second, bare Escape in normal mode
+    // falls through here to the busy-stop below), and Enter is never consumed,
+    // so the send combos keep working in any mode.
+    if (vim.handleKeyDown(e)) return;
     // Esc while a run is busy = the stop button: interrupt the current turn.
     if (e.key === "Escape" && busy && onStop && !disabled) {
       e.preventDefault();
@@ -556,6 +575,18 @@ export function Composer({
         onDrop={handleDrop}
         onDragOver={(e) => canAttach && e.preventDefault()}
       >
+        {/* Vim mode indicator — only surfaces outside insert mode, so plain
+            typing looks identical with the pref on. Sits above the input wrap's
+            scroll-fade mask. */}
+        {vimEnabled && vim.mode !== "insert" && (
+          <div className="pointer-events-none absolute right-3 top-2 z-[2] select-none rounded-sm border border-line bg-surface px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-dim">
+            {vim.mode === "normal"
+              ? "NORMAL"
+              : vim.mode === "visual"
+                ? "VISUAL"
+                : "V-LINE"}
+          </div>
+        )}
         <ImageThumbs images={imgs} onRemove={removeImage} disabled={disabled} />
         <FileChips files={fls} onRemove={removeFile} disabled={disabled} />
         <motion.div
