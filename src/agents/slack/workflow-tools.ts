@@ -86,10 +86,7 @@ Injected globals:
 - args — your args_json, parsed, verbatim.
 - budget — { total, spent(), remaining() } in output tokens.
 
-MODEL: agents run on Opus 4.8 (claude-opus-4-8) by default — strong output is the point, cost is only a tie-breaker. Override per agent with opts.model only when you have a specific reason:
-- "claude-sonnet-5" / "gpt-5.5" — for a genuinely mechanical, clearly-specified fan-out (e.g. extracting a list from 200 files) where you're confident a cheaper model nails it and the volume is large.
-- "claude-fable-5" — the orchestrator's own model; rarely right for a fan-out.
-Default to Opus. Don't downgrade an agent whose output you actually depend on.
+MODEL: use Fable or Opus. Agents run on Opus 4.8 (claude-opus-4-8) by default — the right choice for most fan-out work. Override to "claude-fable-5" (opts.model) for the small number of agents doing the hardest, highest-taste work: final synthesis, ranking, ambiguous judgment. Never route agents to other models.
 
 Rules:
 - Date.now(), argless new Date(), and Math.random() THROW inside scripts (they break resume replay determinism) — pass timestamps/seeds via args.
