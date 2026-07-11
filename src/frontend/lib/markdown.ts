@@ -35,6 +35,24 @@ function sessionLink(id: string): string {
 }
 
 md.use({
+  tokenizer: {
+    // Strikethrough requires DOUBLE tildes (~~text~~). GFM also accepts a
+    // single ~, but session content is full of bare tildes that are NOT
+    // strikethrough — ReScript labeled args (`foo(~storyID=…, ~error)`),
+    // approximate numbers (`~350 files`), home paths (`~/.config`) — and two of
+    // them on a line struck everything between. Returning undefined on a
+    // single tilde lets marked fall through to plain text.
+    del(this: any, src: string) {
+      const m = /^~~(?=\S)([\s\S]*?\S)~~/.exec(src);
+      if (!m) return undefined;
+      return {
+        type: "del",
+        raw: m[0],
+        text: m[1],
+        tokens: this.lexer.inlineTokens(m[1]),
+      };
+    },
+  },
   renderer: {
     // Session content is untrusted (assistant output, tool results, pasted
     // text). marked passes raw HTML through verbatim by default, and we inject

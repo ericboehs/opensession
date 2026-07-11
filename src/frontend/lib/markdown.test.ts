@@ -37,3 +37,21 @@ describe("renderMarkdown session links", () => {
     expect(html).not.toContain("session-link");
   });
 });
+
+describe("renderMarkdown strikethrough (double-tilde only)", () => {
+  it("does not strike through single tildes in code-ish content", () => {
+    // ReScript labeled args, approximate numbers, home paths — all bare tildes.
+    for (const src of [
+      "updateUpdatedAt(~storyID=query.id, ~sceneID=scene.id)",
+      "call foo(~storyID) then bar(~sceneID) next",
+      "That leaves ~352 across ~165 files",
+      "edit ~/.config and ~/.bashrc",
+    ]) {
+      expect(renderMarkdown(src)).not.toContain("<del>");
+    }
+  });
+
+  it("still renders real ~~strikethrough~~", () => {
+    expect(renderMarkdown("this is ~~struck~~ text")).toContain("<del>struck</del>");
+  });
+});
