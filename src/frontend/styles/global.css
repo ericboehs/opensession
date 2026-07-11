@@ -13503,6 +13503,17 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 6px;
 	min-width: 0;
 }
+/* Single-line footer: the model pill is the only flexible item — it gives way
+   (its label ellipsizes) while the icon buttons and Create keep their size. */
+.palette-footer .palette-pill {
+	flex-shrink: 1;
+	min-width: 0;
+}
+.palette-footer .palette-icon-btn,
+.palette-footer .palette-mcp-picker-container,
+.palette-footer .palette-create-split {
+	flex-shrink: 0;
+}
 
 .palette-pill {
 	position: relative;
@@ -13760,7 +13771,19 @@ html[data-theme="light"] .palette-card .palette-create {
 
 @media (max-width: 560px) {
 	.palette-backdrop { padding-top: 7vh; }
-	.palette-footer { flex-wrap: wrap; }
+	/* Keep the footer on ONE line at phone widths: tighten the fixed controls
+	   and let the model pill's ellipsis absorb whatever is left over. */
+	.palette-footer { padding: 9px 8px; gap: 6px; }
+	.palette-footer-left,
+	.palette-footer-right { gap: 4px; }
+	.palette-footer .palette-icon-btn { width: 36px; }
+	.palette-footer .palette-pill { padding: 5px 9px; }
+	.palette-create-main { padding: 7px 12px; }
+}
+/* Ultra-narrow screens: the effort suffix cedes its space to the model name,
+   which would otherwise truncate down to a single letter. */
+@media (max-width: 374px) {
+	.palette-footer .palette-pill-effort { display: none; }
 }
 
 /* ── ⌘K session search palette ─────────────────────────────────────────── */

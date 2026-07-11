@@ -318,7 +318,7 @@ export function ModelEffortSelect({
 				aria-label={hasEffort ? "Model and reasoning effort" : "Model"}
 			>
 				<span className="palette-pill-label">{modelLabel}</span>
-				{hasEffort && <span className="flex-none text-faint">{effortLabel}</span>}
+				{hasEffort && <span className="palette-pill-effort flex-none text-faint">{effortLabel}</span>}
 			</Menu.Trigger>
 			<Menu.Popup align="end" sideOffset={6} className="max-w-[min(360px,calc(100vw-1rem))]">
 				{groupedPrimary

@@ -509,9 +509,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       }}
     >
       <div className="palette-card" role="dialog" aria-label="New session">
-        {/* Header: repo (left) · create-from (right). Hidden on phones until
-            the options toggle in the footer opens it. */}
-        {optionsVisible && (
+        {/* Header: repo (left) · create-from (right). The repo picker is
+            always visible — on phones the create-from picker hides until the
+            options toggle in the footer opens it. */}
         <div className="palette-header">
           <PaletteSelect
             className="palette-trigger palette-trigger-strong"
@@ -534,6 +534,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             <IconChevronDown className="palette-chevron" size={22} />
           </PaletteSelect>
 
+          {optionsVisible && (
           <PaletteSelect
             className="palette-trigger"
             title="What to create from"
@@ -554,8 +555,8 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             <span className="palette-trigger-label">{createFromLabel}</span>
             <IconChevronDown className="palette-chevron" size={22} />
           </PaletteSelect>
+          )}
         </div>
-        )}
 
         {/* Prompt */}
         <div
@@ -723,17 +724,14 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               <Menu.Root>
                 <Menu.Trigger
                   type="button"
-                  className={`palette-icon-btn !w-auto gap-1.5 px-2.5 text-[13px] font-medium ${sandboxProvider ? "is-on" : ""}`}
+                  className={`palette-icon-btn ${sandboxProvider ? "is-on" : ""}`}
                   disabled={creating}
-                  title="Where this session's agent runs — on the host, or inside an isolated per-session sandbox"
+                  title={`Run environment — ${sandboxLabel(sandboxProvider)}${
+                    sandboxWarmed && isRemoteSandbox ? " (warmed)" : ""
+                  }`}
                   aria-label="Run environment"
                 >
-                  <IconBox size={22} />
-                  <span>{sandboxLabel(sandboxProvider)}</span>
-                  {sandboxWarmed && isRemoteSandbox && (
-                    <span className="text-[11px] font-medium text-faint">· warmed</span>
-                  )}
-                  <IconChevronDown size={17} className="text-faint" />
+                  <IconBox size={24} />
                 </Menu.Trigger>
                 <Menu.Popup align="start" sideOffset={6} className="max-w-[min(340px,calc(100vw-1rem))]">
                   <Menu.Group>
