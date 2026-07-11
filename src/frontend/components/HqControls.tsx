@@ -74,7 +74,16 @@ function LaneRow({
 	);
 }
 
-export function HqControls({ user }: { user: string }) {
+export function HqControls({
+	user,
+	variant = "header",
+}: {
+	user: string;
+	/** "header" = chip + gear popover (desktop title row); "page" = the same
+	 *  controls inline, for the phone session-info page where the title row —
+	 *  and thus the header variant — is CSS-hidden. */
+	variant?: "header" | "page";
+}) {
 	const [info, setInfo] = useState<HqInfo | null>(null);
 	const [open, setOpen] = useState(false);
 	const ref = useRef<HTMLDivElement>(null);
@@ -139,18 +148,9 @@ export function HqControls({ user }: { user: string }) {
 			});
 	}
 
-	return (
-		<div
-			ref={ref}
-			style={{
-				display: "flex",
-				alignItems: "center",
-				gap: 6,
-				position: "relative",
-			}}
-		>
-			<Tooltip
-				label={
+	const switchButton = (
+		<Tooltip
+			label={
 					isOpen
 						? "HQ is receiving events — click to close (events buffer silently)"
 						: `HQ is closed${info.buffered ? ` — ${info.buffered} event(s) buffered` : ""} — click to open (flushes a catch-up digest)`
@@ -173,45 +173,11 @@ export function HqControls({ user }: { user: string }) {
 							? `CLOSED · ${info.buffered}`
 							: "CLOSED"}
 				</button>
-			</Tooltip>
-			<Tooltip label="HQ events & work hours">
-				<button
-					type="button"
-					className="viewer-newtab-btn"
-					onClick={() => setOpen((o) => !o)}
-					aria-label="HQ settings"
-					aria-expanded={open}
-				>
-					<svg
-						width="16"
-						height="16"
-						viewBox="0 0 16 16"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="1.4"
-					>
-						<circle cx="8" cy="8" r="2.2" />
-						<path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6L11 5M5 11l-1.4 1.4" />
-					</svg>
-				</button>
-			</Tooltip>
-			{open && (
-				<div
-					style={{
-						position: "absolute",
-						top: "calc(100% + 6px)",
-						left: 0,
-						zIndex: 50,
-						width: 320,
-						maxHeight: 440,
-						overflowY: "auto",
-						padding: 12,
-						borderRadius: 8,
-						border: "1px solid var(--line)",
-						background: "var(--panel)",
-						boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
-					}}
-				>
+		</Tooltip>
+	);
+
+	const settingsBody = (
+		<>
 					<div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>
 						Events
 					</div>
@@ -320,6 +286,81 @@ export function HqControls({ user }: { user: string }) {
 						Work hours auto-open/close HQ at the boundaries; the manual
 						switch wins in between. Closed = events buffer silently.
 					</div>
+		</>
+	);
+
+	// Phone session-info page: the header title row (and so the header variant)
+	// is CSS-hidden on phones, so render the switch + settings inline as a
+	// section of the info page instead of behind a popover.
+	if (variant === "page")
+		return (
+			<div style={{ padding: "10px 14px 4px" }}>
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "space-between",
+						gap: 8,
+						marginBottom: 8,
+					}}
+				>
+					<span style={{ fontWeight: 600, fontSize: 13 }}>HQ events</span>
+					{switchButton}
+				</div>
+				{settingsBody}
+			</div>
+		);
+
+	return (
+		<div
+			ref={ref}
+			style={{
+				display: "flex",
+				alignItems: "center",
+				gap: 6,
+				position: "relative",
+			}}
+		>
+			{switchButton}
+			<Tooltip label="HQ events & work hours">
+				<button
+					type="button"
+					className="viewer-newtab-btn"
+					onClick={() => setOpen((o) => !o)}
+					aria-label="HQ settings"
+					aria-expanded={open}
+				>
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 16 16"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="1.4"
+					>
+						<circle cx="8" cy="8" r="2.2" />
+						<path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6L11 5M5 11l-1.4 1.4" />
+					</svg>
+				</button>
+			</Tooltip>
+			{open && (
+				<div
+					style={{
+						position: "absolute",
+						top: "calc(100% + 6px)",
+						left: 0,
+						zIndex: 50,
+						width: 320,
+						maxHeight: 440,
+						overflowY: "auto",
+						padding: 12,
+						borderRadius: 8,
+						border: "1px solid var(--line)",
+						background: "var(--panel)",
+						boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
+					}}
+				>
+					{settingsBody}
 				</div>
 			)}
 		</div>

@@ -623,7 +623,15 @@ function App() {
 		const toRoot = next.view === "home";
 		const fromRoot = cur.view === "home";
 		const samePath = path === location.pathname;
-		const replace = opts?.replace ?? (samePath || (!toRoot && !fromRoot));
+		// HQ is a hub: it opens other sessions constantly (event cards, worker
+		// reports), so navigating away from it PUSHES — Back returns to HQ, not
+		// past it. The stack stays bounded: the next panel→panel hop replaces.
+		const fromHq =
+			cur.view === "session" &&
+			!!sessions.find((s) => s.id === cur.id || s.aliasIds?.includes(cur.id))
+				?.hq;
+		const replace =
+			opts?.replace ?? (samePath || (!toRoot && !fromRoot && !fromHq));
 		if (replace) history.replaceState(null, "", path);
 		else history.pushState(null, "", path);
 		if (!toRoot && fromRoot && !samePath) rootBehind.current = true;

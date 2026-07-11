@@ -2469,6 +2469,14 @@ export function SessionViewer({
 									</div>
 								</div>
 								<div className="viewer-overflow-menu session-info-list">
+									{/* HQ: the header's OPEN/CLOSED switch + subscriptions live
+									    in the hidden title row on phones, so surface them here. */}
+									{session.hq && (
+										<HqControls
+											user={session.startedBy || getCurrentUser()}
+											variant="page"
+										/>
+									)}
 									{panelAvailable && (
 										<button
 											className="btn-viewer-panelrow"
