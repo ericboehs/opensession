@@ -359,24 +359,6 @@ export function prettifyMentions(text: string): string {
   });
 }
 
-/**
- * Channel name via a GET (conversations.info). The generic slackApiCall posts a
- * JSON body, which conversations.info doesn't read reliably — so use a query
- * param here, mirroring getUserInfo.
- */
-export async function getChannelName(channelId: string): Promise<string | null> {
-  try {
-    const resp = await fetchWithTimeout(
-      `https://slack.com/api/conversations.info?channel=${channelId}`,
-      { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
-    );
-    const data = (await resp.json()) as any;
-    return data.ok && data.channel?.name ? data.channel.name : null;
-  } catch {
-    return null;
-  }
-}
-
 // Cache resolved user name + avatar for an hour (history renders many messages).
 const userProfileCache = new Map<
   string,
@@ -455,55 +437,4 @@ export async function fetchChannelHistory(
     }
   }
   return out;
-}
-
-// Whether the bot token has `chat:write.customize` (lets us post under a
-// person's name + avatar). Slack *silently ignores* username/icon overrides when
-// the scope is missing (it doesn't error), so we must check the granted scopes
-// up front rather than infer from the post response. Cached for the process.
-let customizeScope: boolean | null = null;
-export async function slackCanCustomize(): Promise<boolean> {
-  if (customizeScope !== null) return customizeScope;
-  try {
-    const resp = await fetchWithTimeout("https://slack.com/api/auth.test", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
-    });
-    const scopes = (resp.headers.get("x-oauth-scopes") || "")
-      .split(",")
-      .map((s) => s.trim());
-    customizeScope = scopes.includes("chat:write.customize");
-  } catch {
-    customizeScope = false;
-  }
-  return customizeScope;
-}
-
-/**
- * Post to a channel as a specific person. With `chat:write.customize` this posts
- * under their name + avatar; without the scope Slack would silently drop the
- * override, so we fall back to a plain Michael post prefixed with the name (so
- * it's still clear who wrote it). Auto-upgrades once the scope is granted.
- */
-export async function postChannelMessageAs(
-  channelId: string,
-  text: string,
-  opts: { username?: string; iconUrl?: string }
-): Promise<{ ok: boolean; ts?: string; overridden: boolean }> {
-  if (opts.username && (await slackCanCustomize())) {
-    const r = await slackApiCall("chat.postMessage", {
-      channel: channelId,
-      text,
-      mrkdwn: true,
-      username: opts.username,
-      icon_url: opts.iconUrl,
-    });
-    if (r.ok) return { ok: true, ts: r.ts, overridden: true };
-  }
-  const r = await slackApiCall("chat.postMessage", {
-    channel: channelId,
-    text: opts.username ? `*${opts.username}:* ${text}` : text,
-    mrkdwn: true,
-  });
-  return { ok: !!r.ok, ts: r.ts, overridden: false };
 }

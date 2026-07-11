@@ -4,12 +4,6 @@ import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 
 export type SessionSource = "slack" | "linear" | "backstage" | "cli";
 
-/** A Slack channel linked to a backstage session (strictly one-to-one). */
-export interface SlackChannelLink {
-	channelId: string;
-	name: string;
-}
-
 /** One message in a session's linked Plain thread (customer support). */
 export interface PlainTimelineEntry {
 	id: string;
@@ -65,16 +59,6 @@ export interface SupportThread {
 	createdAt: string | null;
 	priority: number | null;
 	customer: { name: string | null; email: string | null };
-}
-
-/** One message in a linked Slack channel, as shown in the chat panel. */
-export interface SlackMessage {
-	ts: string;
-	userId: string | null;
-	userName: string;
-	avatarUrl?: string;
-	text: string;
-	isBot: boolean;
 }
 
 /**
@@ -259,8 +243,6 @@ export interface UnifiedSession {
 	sandbox?: { provider: string; sandboxId?: string; workspace?: "bind" | "volume" };
 	linearIssue?: { identifier: string; title: string; url?: string };
 	slackThread?: { channel: string; threadTs: string };
-	/** A Slack channel linked to this session for in-context discussion. */
-	slackChannel?: SlackChannelLink;
 	/** Blocked on an AskUserQuestion — a human needs to answer. Set by /api/sessions. */
 	waitingForInput?: boolean;
 	/** Number of prompts queued behind the current run. Set by /api/sessions. */
@@ -646,13 +628,6 @@ export type WSServerMessage =
 	// never bumps unread badges.
 	| { type: "chat_message_updated"; channel: string; message: ChatMessage }
 	| { type: "chat_typing"; channel: string; user: string }
-	// Linked Slack channel: a message arrived (inbound event or our own echo).
-	| { type: "slack_message"; channelId: string; message: SlackMessage }
-	| {
-			type: "channel_linked";
-			sessionId: string;
-			slackChannel: SlackChannelLink | null;
-	  }
 	| { type: "pong" }
 	| { type: "error"; sessionId?: string; message: string };
 

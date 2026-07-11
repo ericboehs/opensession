@@ -51,7 +51,7 @@ import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
-import { SlackChatPanel } from "./SlackChatPanel";
+
 import { TeamChat } from "./TeamChat";
 import { PlainThreadPanel } from "./PlainThreadPanel";
 import { WorkflowPanel } from "./WorkflowPanel";
@@ -190,7 +190,6 @@ type PanelTab =
 	| "changes"
 	| "terminal"
 	| "pr"
-	| "slack"
 	| "chat"
 	| "plain"
 	| "sidechats"
@@ -426,10 +425,16 @@ export function SessionViewer({
 		const workspace =
 			session.mode !== "ask" &&
 			Boolean(session.worktreeDir || session.branch);
-		const stored = localStorage.getItem("michael-panel-tab") as PanelTab | null;
+		const stored = localStorage.getItem("michael-panel-tab");
 		// "workflows" isn't meaningfully restorable (runs seed async, so the tab
-		// starts hidden and the body would flash PrPanel) — map it back to Info.
-		const tab = stored === "workflows" ? "info" : stored;
+		// starts hidden and the body would flash PrPanel) — it, and any stored
+		// tab that no longer exists, maps back to Info.
+		const restorable: PanelTab[] = ["info", "changes", "terminal", "pr", "chat", "plain", "sidechats"];
+		const tab: PanelTab | null = restorable.includes(stored as PanelTab)
+			? (stored as PanelTab)
+			: stored
+				? "info"
+				: null;
 		if (tab) {
 			const available =
 				tab === "info" ||
@@ -2477,7 +2482,6 @@ export function SessionViewer({
 										)}
 										repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
 										prState={hasWorkspace ? session.prState : undefined}
-										slackChannel={session.slackChannel}
 										sandbox={session.sandbox}
 										reviewRequest={effectiveReview?.req ?? null}
 										reviewRequestSessionId={effectiveReview?.ownerId}
@@ -3066,13 +3070,6 @@ export function SessionViewer({
 										)}
 									</button>
 									<button
-										className={`panel-tab ${panelTab === "slack" ? "active" : ""}`}
-										onClick={() => selectPanelTab("slack")}
-									>
-										Slack
-										{session.slackChannel && <span className="panel-tab-dot" />}
-									</button>
-									<button
 										className={`panel-tab ${panelTab === "chat" ? "active" : ""}`}
 										onClick={() => selectPanelTab("chat")}
 									>
@@ -3128,7 +3125,6 @@ export function SessionViewer({
 										hasWorkspace ? session.repo || "tella-fusion" : undefined
 									}
 									prState={hasWorkspace ? session.prState : undefined}
-									slackChannel={session.slackChannel}
 									sandbox={session.sandbox}
 									reviewRequest={effectiveReview?.req ?? null}
 									reviewRequestSessionId={effectiveReview?.ownerId}
@@ -3185,13 +3181,6 @@ export function SessionViewer({
 									entries={entries}
 									sessionId={session.id}
 									send={send}
-									addHandler={addHandler}
-								/>
-							) : panelTab === "slack" ? (
-								<SlackChatPanel
-									sessionId={session.id}
-									slackChannel={session.slackChannel}
-									user={getCurrentUser()}
 									addHandler={addHandler}
 								/>
 							) : panelTab === "chat" ? (

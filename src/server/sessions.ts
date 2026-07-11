@@ -452,7 +452,6 @@ function scanBackstageSessions(): UnifiedSession[] {
       goalId: data.goalId,
       lastRunError: data.lastRunError,
       loop: data.loop,
-      slackChannel: data.slackChannel,
       slackThreads: data.slackThreads,
       sandbox: data.sandbox,
       lastActivity: data.lastActivity,

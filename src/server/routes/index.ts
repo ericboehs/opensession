@@ -16,7 +16,6 @@ import { handlePrRoutes } from "./pr";
 import { handleSessionGitRoutes } from "./session-git";
 import { handlePreviewRoutes } from "./preview";
 import { handleWorkspaceRoutes } from "./workspace";
-import { handleSlackChannelsRoutes } from "./slack-channels";
 import { handleAutomationsRoutes } from "./automations";
 import { handleHumanAsksRoutes } from "./human-asks";
 import { handleChatRoutes } from "./chat";
@@ -44,7 +43,6 @@ export const routeHandlers: RouteHandler[] = [
 	handleSessionGitRoutes,
 	handlePreviewRoutes,
 	handleWorkspaceRoutes,
-	handleSlackChannelsRoutes,
 	handleAutomationsRoutes,
 	handleHumanAsksRoutes,
 	handleChatRoutes,

@@ -1,11 +1,5 @@
 export type SessionSource = "slack" | "linear" | "backstage" | "cli";
 
-/** A Slack channel linked to a backstage session (strictly one-to-one). */
-export interface SlackChannelLink {
-  channelId: string;
-  name: string;
-}
-
 /**
  * Cumulative token/cost accounting for a chat session, updated after every run.
  * Cost is the API-equivalent USD spend (authoritative `total_cost_usd` from the
@@ -165,8 +159,6 @@ export interface UnifiedSession {
   // tracked by multiple files (e.g. a Slack run writes both <branch>.json and
   // <channel>-<threadTs>.json) and external deep links may use any of them.
   aliasIds?: string[];
-  /** A Slack channel linked to this session for in-context discussion. */
-  slackChannel?: SlackChannelLink;
   /** Slack threads this session posted to (automation runs capture their own
    *  posts here) — a reply in one of these threads drives THIS session instead
    *  of starting a new one (thread index in slack-links.ts). */
@@ -346,7 +338,6 @@ export interface BackstageSessionFile {
   goalId?: string; // Goal record this session is driven by (src/server/goals.ts)
   lastRunError?: { message: string; at: string }; // last run died on a terminal error; cleared on the next clean run
   loop?: { prompt: string; intervalMinutes: number; lastRunAt?: string; setBy?: string };
-  slackChannel?: SlackChannelLink; // Slack channel linked for in-context discussion
   /** Slack threads this session posted to (see UnifiedSession.slackThreads). */
   slackThreads?: Array<{ channel: string; threadTs: string }>;
   mcpServers?: string[]; // External MCP servers to load for this session; empty = none (minimal context)

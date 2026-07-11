@@ -1,8 +1,6 @@
 import { BASE_PATH } from "./base";
 import type {
 	UnifiedSession,
-	SlackChannelLink,
-	SlackMessage,
 	ChatMessage,
 	ChatImage,
 	PlainThread,
@@ -558,36 +556,6 @@ export async function switchPrimaryRepoApi(
 	);
 }
 
-// ── Linked Slack channels ──
-
-export async function linkChannelApi(
-	sessionId: string,
-	opts: { mode: "create" | "existing"; name?: string; channelId?: string },
-): Promise<SlackChannelLink> {
-	const body = await request<{ slackChannel: SlackChannelLink }>(
-		`/sessions/${encodeURIComponent(sessionId)}/link-channel`,
-		{ method: "POST", body: opts },
-	);
-	return body.slackChannel;
-}
-
-export async function unlinkChannelApi(sessionId: string): Promise<void> {
-	await request<void>(
-		`/sessions/${encodeURIComponent(sessionId)}/unlink-channel`,
-		{ method: "POST" },
-	);
-}
-
-export async function fetchChannelHistoryApi(
-	sessionId: string,
-): Promise<SlackMessage[]> {
-	const body = await request<{ messages?: SlackMessage[] }>(
-		`/sessions/${encodeURIComponent(sessionId)}/channel/history`,
-		{ label: "Failed to fetch history" },
-	);
-	return Array.isArray(body?.messages) ? body.messages : [];
-}
-
 export async function fetchPlainThreadApi(
 	sessionId: string,
 ): Promise<PlainThread | null> {
@@ -758,18 +726,6 @@ export async function startPlainTriageApi(threadId: string): Promise<string> {
 		{ method: "POST", label: "Failed to start triage" },
 	);
 	return body.sessionId;
-}
-
-export async function postChannelMessageApi(
-	sessionId: string,
-	text: string,
-	user: string,
-): Promise<SlackMessage> {
-	const body = await request<{ message: SlackMessage }>(
-		`/sessions/${encodeURIComponent(sessionId)}/channel/message`,
-		{ method: "POST", body: { text, user } },
-	);
-	return body.message;
 }
 
 // ── Native team chat (Watercooler + per-session Chat tabs — not Slack) ──

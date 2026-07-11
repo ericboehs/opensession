@@ -6,7 +6,6 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import { useResolvedTheme } from "./CodeHighlight";
 import {
-	fetchChannelHistoryApi,
 	fetchDiff,
 	fetchPr,
 	setSessionReviewerApi,
@@ -23,8 +22,6 @@ import type {
 	DiffFile,
 	PrCheck,
 	PrDetails,
-	SlackChannelLink,
-	SlackMessage,
 } from "../lib/types";
 import { formatPrCommentPrompt } from "./PrPanel";
 import { renderMarkdown } from "../lib/markdown";
@@ -42,18 +39,17 @@ import { IconBell, IconCheck, IconClock, IconPlay, IconX } from "./icons";
 /**
  * Workspace info block at the top of the right side panel (the "Info" tab): a
  * dense, at-a-glance catch-all — title + meta, a status row (checks, review,
- * PR state), the latest human message from the linked Slack channel, the
- * opening prompt, the summary, and a compact filmstrip of every screenshot /
- * video from the workspace's chats. Opening it answers "what is this and where
- * does it stand" without switching tabs; Changes / Terminal / Checks / Slack
- * are the drill-downs.
+ * PR state), the opening prompt, the summary, and a compact filmstrip of every
+ * screenshot / video from the workspace's chats. Opening it answers "what is
+ * this and where does it stand" without switching tabs; Changes / Terminal /
+ * Checks are the drill-downs.
  *
  * Loading/caching for the overview lives in lib/workspace-overview (shared with
  * the sidebar's workspace hover card), including the pre-restart transcript
- * fallbacks. PR + Slack are fetched here and refreshed on a slow interval.
+ * fallbacks. The PR is fetched here and refreshed on a slow interval.
  */
 
-type PanelTab = "changes" | "terminal" | "pr" | "slack";
+type PanelTab = "changes" | "terminal" | "pr";
 
 type ReviewRequestInfo = {
 	to: string;
@@ -74,8 +70,6 @@ interface Props {
 	repo?: string;
 	/** PR lane state, when the session has a PR — gates the PR fetch. */
 	prState?: string | null;
-	/** Linked Slack channel, when one exists — gates the Slack fetch. */
-	slackChannel?: SlackChannelLink | null;
 	/** The open chat's sandbox opt-in — renders a provider/mode badge in the
 	    status row (from session fields only; no container polling). */
 	sandbox?: { provider: string; sandboxId?: string; workspace?: "bind" | "volume" };
@@ -165,17 +159,6 @@ function hueFor(name: string): number {
 	for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
 	return Math.abs(h) % 360;
 }
-/** Strip Slack markup (<url|label>, <@U…>, entities) down to plain text. */
-function plainSlack(text: string): string {
-	return text
-		.replace(/<([^|>]+)\|([^>]+)>/g, "$2")
-		.replace(/<([^>]+)>/g, "$1")
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.trim();
-}
-
 /** Flatten a GitHub markdown/HTML comment body into a clean one-glance
     preview: drop HTML comments/tags, collapse markdown emphasis + headings,
     turn links into their label, squash whitespace. */
@@ -1025,7 +1008,6 @@ export function WorkspaceInfo({
 	chats,
 	repo,
 	prState,
-	slackChannel,
 	sandbox,
 	reviewRequest,
 	reviewRequestSessionId,
@@ -1043,7 +1025,6 @@ export function WorkspaceInfo({
 	);
 	const [promptExpanded, setPromptExpanded] = useState(false);
 	const [pr, setPr] = useState<PrDetails | null>(null);
-	const [latestHuman, setLatestHuman] = useState<SlackMessage | null>(null);
 	const [files, setFiles] = useState<DiffFile[] | null>(null);
 	// The primary repo's raw patch, kept so the file rows can hover-reveal the
 	// actual diff for that file (parsed lazily below).
@@ -1079,9 +1060,8 @@ export function WorkspaceInfo({
 		};
 	}, [cacheKey, chatsKey, workspaceId, liveMediaCount]);
 
-	// PR (for the status chips) + latest human Slack message — the two live
-	// signals the catch-all surfaces. Both are gated so we don't fetch when
-	// there's nothing to show, and refreshed on a slow interval while open.
+	// PR (for the status chips) — gated so we don't fetch when there's nothing
+	// to show, and refreshed on a slow interval while open.
 	useEffect(() => {
 		if (!prState) {
 			setPr(null);
@@ -1126,28 +1106,6 @@ export function WorkspaceInfo({
 			clearInterval(iv);
 		};
 	}, [sessionId, repo, liveMediaCount]);
-
-	useEffect(() => {
-		if (!slackChannel) {
-			setLatestHuman(null);
-			return;
-		}
-		let alive = true;
-		const load = () =>
-			fetchChannelHistoryApi(sessionId)
-				.then((msgs) => {
-					if (!alive) return;
-					const human = [...msgs].reverse().find((m) => !m.isBot && m.text.trim());
-					setLatestHuman(human ?? null);
-				})
-				.catch(() => {});
-		load();
-		const iv = setInterval(load, 45000);
-		return () => {
-			alive = false;
-			clearInterval(iv);
-		};
-	}, [sessionId, slackChannel?.channelId]);
 
 	const oldest = chats[0];
 	const started = oldest?.createdAt
@@ -1203,7 +1161,6 @@ export function WorkspaceInfo({
 
 	const hasBody = Boolean(
 		chips.length > 0 ||
-			latestHuman ||
 			comments.length > 0 ||
 			changed.length > 0 ||
 			(data && data.prompt) ||
@@ -1257,29 +1214,6 @@ export function WorkspaceInfo({
 			</div>
 			{hasBody ? (
 				<div className="workspace-info-body">
-					{latestHuman && (
-						<button
-							type="button"
-							className="workspace-info-reply"
-							onClick={() => onOpenTab?.("slack")}
-							title="Open the Slack tab"
-						>
-							<span
-								className="workspace-info-reply-avatar"
-								style={{ background: `hsl(${hueFor(latestHuman.userName)} 55% 45%)` }}
-							>
-								{initial(latestHuman.userName)}
-							</span>
-							<span className="workspace-info-reply-body">
-								<span className="workspace-info-reply-name">
-									{latestHuman.userName}
-								</span>
-								<span className="workspace-info-reply-text">
-									{plainSlack(latestHuman.text)}
-								</span>
-							</span>
-						</button>
-					)}
 					{comments.length > 0 && (
 						<div className="workspace-info-section">
 							<div className="workspace-info-label workspace-info-comments-label">

@@ -42,7 +42,7 @@ import { isStopMessage, cancelSession } from "./cancel";
 import { pollForVercelPreview } from "./github-reviews";
 import { gitIdentityFor } from "../../server/shared/user-mappings";
 import { worktreePathFor } from "../../server/worktree";
-import { sessionForChannel, sessionForThread } from "../../server/slack-links";
+import { sessionForThread } from "../../server/slack-links";
 import { tryGetSessionControl } from "../../server/session-control";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { runAgent, cancelAgentRun } from "../../server/agent-runner";
@@ -1185,46 +1185,25 @@ export async function handleMentionEvent(event: any): Promise<void> {
     `[slack] Mention from ${user} in ${channel}: ${cleanText?.substring(0, 50)}...`
   );
 
-  // Worktree channels — and channels linked to a backstage session — bypass the
-  // ALLOWED_USER_ID check so the whole team can drive the work from the channel.
+  // Worktree channels bypass the ALLOWED_USER_ID check so the whole team can
+  // drive the work from the channel.
   const inWorktreeChannel = isWorktreeChannel(channel);
-  const linkedSessionId = sessionForChannel(channel);
   // A mention in a thread anchored by a message some backstage session posted
   // (automation summaries etc.) drives THAT session instead of starting a new
-  // one. Same team-wide bypass as linked channels: anyone in the thread can
+  // one. Same team-wide bypass as worktree channels: anyone in the thread can
   // follow up.
-  const threadSessionId =
-    !linkedSessionId && thread_ts
-      ? sessionForThread(channel, thread_ts)
-      : undefined;
+  const threadSessionId = thread_ts
+    ? sessionForThread(channel, thread_ts)
+    : undefined;
 
   if (
     !inWorktreeChannel &&
-    !linkedSessionId &&
     !threadSessionId &&
     ALLOWED_USER_ID &&
     user !== ALLOWED_USER_ID
   ) {
     console.log(`[slack] Ignoring mention from non-allowed user: ${user}`);
     return;
-  }
-
-  // Linked channel: @Michael drives the linked backstage session in its own
-  // context (its worktree + claude session). The reply is mirrored back to this
-  // channel by runSessionPrompt. This "channel drives the session" path takes
-  // precedence over the worktree/intent routing below.
-  if (linkedSessionId) {
-    const control = tryGetSessionControl();
-    if (control) {
-      await addReaction(channel, ts, "eyes");
-      const info = await getUserInfo(user);
-      await control.deliverToSession(
-        linkedSessionId,
-        cleanText,
-        info?.real_name || user,
-      );
-      return;
-    }
   }
 
   // Thread posted by a session (e.g. an automation's Slack summary): deliver

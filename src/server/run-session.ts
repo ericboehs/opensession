@@ -1193,10 +1193,9 @@ async function runSessionPromptInner(
 	// credit/API errors) — recorded on the session after the loop so the sidebar
 	// surfaces it as "Needs input"; null (a clean finish) clears an earlier one.
 	let runFailure: string | null = null;
-	// Accumulate the assistant reply so we can mirror it to a linked Slack channel
-	// (this path — queue drain / deliverToSession / loops — is where a channel
-	// @mention lands; web-typed prompts stream through the WS handler instead, so
-	// they don't spam the channel).
+	// Accumulate the assistant reply so we can mirror it back to a Slack thread
+	// the session posted to (slackReplyTo — e.g. a reply under an automation's
+	// summary message lands here via deliverToSession).
 	let assistantText = "";
 
 	for await (const event of sandboxRun ?? runAgent({
@@ -1457,24 +1456,15 @@ async function runSessionPromptInner(
 		isRunning: false,
 	});
 
-	// Mirror Michael's reply back to Slack. A turn that came from a Slack thread
+	// Mirror Michael's reply back to Slack: a turn that came from a Slack thread
 	// (a reply under a message this session posted — see slackReplyTo plumbing)
-	// answers in that thread; otherwise a linked channel gets the reply
-	// top-level, so a channel @mention (routed via deliverToSession) gets
-	// answered in-channel.
-	if (!endedWithError && assistantText.trim()) {
-		if (slackReplyTo) {
-			void sendSlackMessage(
-				slackReplyTo.channel,
-				assistantText.trim().slice(0, 38000),
-				slackReplyTo.threadTs,
-			).catch(() => {});
-		} else if (session.slackChannel?.channelId) {
-			void sendSlackMessage(
-				session.slackChannel.channelId,
-				assistantText.trim().slice(0, 38000),
-			).catch(() => {});
-		}
+	// answers in that thread.
+	if (!endedWithError && assistantText.trim() && slackReplyTo) {
+		void sendSlackMessage(
+			slackReplyTo.channel,
+			assistantText.trim().slice(0, 38000),
+			slackReplyTo.threadTs,
+		).catch(() => {});
 	}
 
 	// The session just finished a turn; if nothing's queued it's idle now, so fire

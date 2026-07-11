@@ -23,7 +23,7 @@ import { type SessionState, type SessionSummary, registerSessionControl } from "
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
 import { engineSessionPatch, getAllSessions, mergedSessionTranscript } from "./sessions";
 import { writeJsonAtomic } from "./shared/atomic-write";
-import { rebuildIndex, registerLinkedChannelSink } from "./slack-links";
+import { rebuildIndex } from "./slack-links";
 import { handleSlashCommand } from "./slash-commands";
 import { type BackstageSessionFile, type SessionUsage, type UnifiedSession } from "./types";
 import { type Workspace, createWorkspace, getWorkspace } from "./workspaces";
@@ -65,12 +65,9 @@ function buildSummary(s: UnifiedSession): SessionSummary {
 }
 
 // --- Session control surface (powers the opensession-sessions MCP) ---
-// Wire the Slack-channel link index + the inbound-message bridge. Re-run on every
-// hot reload (cheap) so the index stays fresh and the sink closure is current.
+// Wire the Slack thread index (thread replies → owning session). Re-run on
+// every hot reload (cheap) so the index stays fresh.
 rebuildIndex(getAllSessions());
-registerLinkedChannelSink((channelId, message) => {
-	broadcastToAll({ type: "slack_message", channelId, message });
-});
 
 // Wires the MCP's tools into the same in-process state and helpers the
 // WebSocket handlers use, so a management session steers/answers/creates the
