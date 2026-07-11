@@ -1,5 +1,5 @@
 /**
- * Per-user/system preferences: Web Push, session monitor, auto-archive, warm preview templates, memory stores, pinned tabs, tab colors.
+ * Per-user/system preferences: Web Push, session monitor, auto-archive, warm preview templates, memory stores, pinned tabs, UI prefs, tab colors.
  *
  * Extracted verbatim from the opensession.ts fetch chain. Every handler
  * returns a Response for a matched route or undefined to fall through to the
@@ -12,6 +12,7 @@ import { frontend } from "../frontend-build";
 import { getPins as getUserPins, setPins as setUserPins } from "../pins";
 import { addSessionMemory, describeScope, forgetSessionMemory, listAllMemory, updateMemoryEntry } from "../session-memory";
 import { getTabColors as getUserTabColors, setTabColors as setUserTabColors } from "../tab-colors";
+import { getUiPrefs, patchUiPrefs } from "../ui-prefs";
 import { refreshWarmTemplate, setWarmTemplateConfig, warmTemplateStatus } from "../warm-template";
 import { REPOS } from "../worktree";
 
@@ -201,6 +202,30 @@ export async function handlePrefsRoutes(
 			);
 		}
 		return Response.json({ pins: setUserPins(body.user, body.pins) });
+	}
+
+	// ── Per-user UI prefs (cross-device view preferences, e.g. the turn-
+	// activity fold setting). GET reads a user's map; PUT merges a patch —
+	// merge, not replace, so one device can't clobber keys set on another.
+	if (path === "/backstage/api/ui-prefs" && req.method === "GET") {
+		const user = url.searchParams.get("user") || "Anonymous";
+		return Response.json({ prefs: getUiPrefs(user) });
+	}
+
+	if (path === "/backstage/api/ui-prefs" && req.method === "PUT") {
+		const body = await req.json().catch(() => null);
+		if (
+			!body ||
+			typeof body.user !== "string" ||
+			typeof body.prefs !== "object" ||
+			body.prefs === null
+		) {
+			return Response.json(
+				{ error: "user (string) and prefs (object) are required" },
+				{ status: 400 },
+			);
+		}
+		return Response.json({ prefs: patchUiPrefs(body.user, body.prefs) });
 	}
 
 	// ── Per-user session tab colors ──

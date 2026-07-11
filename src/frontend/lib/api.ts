@@ -1871,6 +1871,31 @@ export async function savePinsApi(
 	return Array.isArray(body?.pins) ? body.pins : pins;
 }
 
+// ── UI prefs (per-user cross-device view preferences) ──
+
+export async function fetchUiPrefs(
+	user: string,
+): Promise<Record<string, string>> {
+	const body = await request<{ prefs?: Record<string, string> }>(
+		`/ui-prefs?user=${encodeURIComponent(user)}`,
+		{ label: "Failed to fetch UI prefs" },
+	);
+	return body?.prefs && typeof body.prefs === "object" ? body.prefs : {};
+}
+
+/** Merge a patch into the user's server-side prefs (null value deletes). */
+export async function saveUiPrefsApi(
+	user: string,
+	prefs: Record<string, string | null>,
+): Promise<Record<string, string>> {
+	const body = await request<{ prefs?: Record<string, string> }>("/ui-prefs", {
+		method: "PUT",
+		body: { user, prefs },
+		label: "Failed to save UI prefs",
+	});
+	return body?.prefs && typeof body.prefs === "object" ? body.prefs : {};
+}
+
 // ── Tab colors (per-user session tab colors) ──
 
 export async function fetchTabColors(
