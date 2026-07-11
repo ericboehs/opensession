@@ -51,7 +51,7 @@ interface Worktree {
 // Keep in sync with REPOS in src/server/worktree.ts.
 const REPOS = [
   { id: "tella-fusion", label: "tella-fusion" },
-  { id: "backstage", label: "backstage (Michael itself)" },
+  { id: "backstage", label: "opensession (Michael itself)" },
   { id: "gitops", label: "gitops" },
   { id: "infra", label: "infra" },
   { id: "shared-infra", label: "shared-infra" },
