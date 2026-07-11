@@ -43,6 +43,8 @@
  * real restart (routes don't hot-apply at all — CLAUDE.md).
  */
 
+import { readFileSync, writeFileSync } from "node:fs";
+import { audit } from "./audit";
 import { dispatchRunRpc, timingSafeEqStr } from "./run-rpc";
 import type { HostConnection, HostConnectionHandlers, HostConnector } from "./host-client";
 
@@ -523,19 +525,108 @@ export function dropRunWsConnection(hostId: string): boolean {
 // sweeps, shutdown drain, connect polls, SDK waitUntilStarted polls — is
 // silently dead (that's what stalled bks-019f46e9 / bks-019f4729 and the
 // daytona Shell tab). There is no in-process recovery; the only fix is a
-// restart. Detection must therefore be EVENT-driven: module scope re-runs on
-// every successful reload, so compare the wall clock against a heartbeat
-// interval — a stale stamp means timers died since the last reload.
+// restart — so once poisoning is CONFIRMED we self-restart: exit the process
+// and let systemd (Restart=always) boot a clean one. Detached engine servers
+// survive the exit and the boot reattaches their runs (2026-07-11 incident:
+// both stalled sessions reattached mid-turn with nothing lost), so the exit
+// costs seconds of availability, not work.
+//
+// Detection can't use timers, so it rides events that still work: module
+// scope re-runs on every successful reload, and the fetch preamble calls
+// timerPoisonRequestCheck() on every HTTP request. A stale heartbeat stamp
+// alone is only SUSPICION (a long synchronous stall also delays the stamp);
+// confirmation is a zero-delay probe setTimeout — a live-but-delayed timer
+// wheel fires it as soon as the loop frees, a poisoned one never does.
+
+const POISON_STALE_MS = 20_000; // heartbeat stamps every 5s; 20s = 4 missed beats
+const POISON_CONFIRM_MS = 3_000; // suspicion age before a silent probe convicts
+
+/**
+ * Per-request timer-poisoning check (called from the Bun.serve fetch preamble
+ * — O(1), no IO on the healthy path). Two-phase so a long synchronous stall
+ * can't cause a false restart: first stale sighting schedules a zero-delay
+ * probe and returns; if a LATER request (≥POISON_CONFIRM_MS after) finds the
+ * probe never fired, timers are provably dead and we escalate.
+ */
+export function timerPoisonRequestCheck(): void {
+  const hb = g.__timerPoisonHeartbeat as { at: number; armed: boolean } | undefined;
+  if (!hb?.armed || g.__timerPoisonExiting || g.__timerPoisonHalted) return;
+  if (Date.now() - hb.at < POISON_STALE_MS) {
+    g.__timerPoisonSuspicion = undefined;
+    return;
+  }
+  let s = g.__timerPoisonSuspicion as { since: number; probeFired: boolean } | undefined;
+  if (!s) {
+    s = g.__timerPoisonSuspicion = { since: Date.now(), probeFired: false };
+    const captured = s;
+    try {
+      setTimeout(() => {
+        captured.probeFired = true;
+      }, 0);
+    } catch {}
+    return;
+  }
+  if (s.probeFired) {
+    // Timers were merely delayed (blocked event loop), not dead.
+    g.__timerPoisonSuspicion = undefined;
+    return;
+  }
+  if (Date.now() - s.since >= POISON_CONFIRM_MS) escalateTimerPoison(Date.now() - hb.at);
+}
+
+function escalateTimerPoison(staleMs: number): void {
+  g.__timersPoisonedAt ??= new Date().toISOString();
+  // Restart-loop guard: a syntax error sitting in the tree poisons FRESH boots
+  // too, so unbounded auto-exits would flap forever. Track recent auto-exits
+  // in a state file; after 3 in 30 minutes stop exiting and just scream — at
+  // that point the tree needs a human (or a fixing agent), not a restart.
+  const guardPath = `${process.env.HOME}/.opensession-timer-poison.json`;
+  let exits: string[] = [];
+  try {
+    exits = (JSON.parse(readFileSync(guardPath, "utf8")).exits ?? []) as string[];
+  } catch {}
+  const cutoff = Date.now() - 30 * 60_000;
+  exits = exits.filter((t) => Date.parse(t) > cutoff);
+  if (exits.length >= 3) {
+    if (!g.__timerPoisonHalted) {
+      g.__timerPoisonHalted = true;
+      audit({ msg: "timer_poison_halted", staleSeconds: Math.round(staleMs / 1000), recentExits: exits });
+      console.error(
+        "[run-ws] TIMERS ARE DEAD and 3 auto-restarts in 30m did not cure it — the checked-out " +
+          "tree likely fails to parse (fresh boots poison too). NOT exiting again; fix the tree " +
+          "(bunx tsc --noEmit), then systemctl restart opensession.",
+      );
+    }
+    return;
+  }
+  exits.push(new Date().toISOString());
+  try {
+    writeFileSync(guardPath, JSON.stringify({ exits }));
+  } catch {}
+  g.__timerPoisonExiting = true;
+  audit({ msg: "timer_poison_restart", staleSeconds: Math.round(staleMs / 1000), autoExitsLast30m: exits.length });
+  console.error(
+    `[run-ws] TIMERS ARE DEAD — heartbeat stale ${Math.round(staleMs / 1000)}s and a probe timer never ` +
+      "fired. A failed --hot reload killed setTimeout/setInterval process-wide. Self-restarting: " +
+      "exiting now; systemd (Restart=always) boots a clean process, detached engine runs reattach.",
+  );
+  const poisonExit = g.__poisonExit as (() => void) | undefined;
+  if (poisonExit) {
+    poisonExit(); // opensession.ts's gracefulShutdown in timers-dead mode (snapshot + exit)
+  } else {
+    process.exit(1);
+  }
+}
+
 {
   const hb = (g.__timerPoisonHeartbeat ??= { at: Date.now(), armed: false });
   if (hb.armed && Date.now() - hb.at > 15_000) {
-    g.__timersPoisonedAt ??= new Date().toISOString();
     console.error(
-      `[run-ws] TIMERS ARE DEAD — heartbeat stale ${Math.round((Date.now() - hb.at) / 1000)}s. ` +
-        "A failed --hot reload killed setTimeout/setInterval process-wide; schedulers, sweeps, " +
-        "drain and connect polls are silently parked. RESTART NEEDED (systemctl restart backstage).",
+      `[run-ws] timer heartbeat stale ${Math.round((Date.now() - hb.at) / 1000)}s at reload — ` +
+        "probing for --hot timer poisoning (self-restart follows if confirmed).",
     );
-    hb.armed = false; // re-arm below; if timers stay dead the next reload screams again
+    timerPoisonRequestCheck(); // seeds the suspicion + probe; next request confirms
+    hb.armed = false; // re-arm below; if timers are actually alive the interval resumes stamping
   }
   if (!hb.armed) {
     hb.armed = true;

@@ -23,7 +23,7 @@ import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { startPublicIngress } from "./src/server/public-ingress";
 import { envAlias } from "./src/server/rename-compat";
 import { recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, snapshotActiveSessions } from "./src/server/run-session";
-import { handleSandboxWsUpgrade } from "./src/server/run-ws";
+import { handleSandboxWsUpgrade, timerPoisonRequestCheck } from "./src/server/run-ws";
 import { type Sandbox } from "./src/server/sandbox";
 import { findSession, invalidateSessionsCache, runErrors } from "./src/server/session-cache";
 import { getSessionControl } from "./src/server/session-control";
@@ -138,6 +138,11 @@ const server: import("bun").Server<WSClientData> = hotServe({
 		),
 
 		async fetch(req) {
+			// Timer-poisoning watchdog: a failed --hot reload kills every timer in
+			// the process while HTTP keeps serving. Requests are the one signal
+			// that keeps flowing, so each one runs the O(1) staleness check; a
+			// confirmed poisoning self-restarts the process (run-ws.ts tripwire).
+			timerPoisonRequestCheck();
 			const url = new URL(req.url);
 			// The bare domain root is the ONLY public URL form (os.tella.dev,
 			// 2026-07-10 — prefixes dropped). Handlers below still match the
@@ -587,8 +592,15 @@ if (!g.__backstageBooted) {
 	const gracefulShutdown = async (signal: string) => {
 		if (shuttingDown) return;
 		shuttingDown = true;
+		// With poisoned timers (failed --hot reload — see run-ws.ts tripwire)
+		// every `await sleep` and Promise.race timeout below would wedge forever
+		// and systemd would SIGKILL us at TimeoutStopSec (observed: an 80s
+		// "restart"). Nothing timer-driven can drain anyway, so skip straight to
+		// snapshot → stop → exit; the journal resumes/reattaches runs on boot.
+		const timersDead = !!(globalThis as any).__timersPoisonedAt;
 		console.log(
-			`[shutdown] ${signal} — stopping intake and draining in-flight runs…`,
+			`[shutdown] ${signal} — stopping intake and draining in-flight runs…` +
+				(timersDead ? " (timers poisoned: skipping every timed wait)" : ""),
 		);
 		// Snapshot active sessions BEFORE the drain — the drain lets runs finish
 		// their turn and clear themselves from the journal, so this is the only
@@ -598,13 +610,13 @@ if (!g.__backstageBooted) {
 		// and auto-refresh once the new instance is up (instead of silently queuing
 		// messages that would be lost). Brief pause to let the frames flush.
 		broadcastToAll({ type: "server_restarting" });
-		await new Promise((r) => setTimeout(r, 150));
+		if (!timersDead) await new Promise((r) => setTimeout(r, 150));
 		// Stop agents from accepting new work (Slack socket, webhook intake, …).
 		// BOUNDED: an agent shutdown that awaits a flaky network call (e.g. the
 		// Slack socket close during a Slack outage) used to hang here for the
 		// whole TimeoutStopSec — the drain loop below never even started and
 		// systemd SIGKILLed everything at 140s (observed 2026-07-09 10:15).
-		for (const agent of agents) {
+		for (const agent of timersDead ? [] : agents) {
 			const t0 = Date.now();
 			try {
 				const r = await Promise.race([
@@ -634,7 +646,7 @@ if (!g.__backstageBooted) {
 		// from the journal. Waiting on those would just delay the restart.
 		const undrainable = () =>
 			Math.max(0, activeAgentRunCount() - activeDetachedAgentRunCount());
-		const deadline = Date.now() + DRAIN_TIMEOUT_MS;
+		const deadline = timersDead ? 0 : Date.now() + DRAIN_TIMEOUT_MS;
 		let n = undrainable();
 		while (n > 0 && Date.now() < deadline) {
 			console.log(`[shutdown] waiting on ${n} in-flight run(s)…`);
@@ -658,6 +670,11 @@ if (!g.__backstageBooted) {
 	};
 	process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
 	process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
+	// The run-ws timer-poison tripwire calls this when a failed --hot reload's
+	// timer death is confirmed: same snapshot+exit path as a signal, and the
+	// timersDead branch above keeps it free of timed waits. systemd's
+	// Restart=always then boots a clean process within RestartSec.
+	(globalThis as any).__poisonExit = () => void gracefulShutdown("TIMER_POISON");
 
 	// Frontend live-reload: rebuild the SPA bundle in-process when its source
 	// changes, so a CSS/frontend tweak no longer needs a `systemctl restart` that
