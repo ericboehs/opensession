@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { VimEngine, type VimDoc, type VimResult } from "./vim";
+import { VimEngine, verticalCaretTarget, type VimDoc, type VimResult } from "./vim";
 
 // Drive an engine with a key string ("dw", "2dd", "ciw"-style sequences of
 // single chars) plus named keys in <angle brackets> ("<Escape>", "<C-r>").
@@ -357,6 +357,21 @@ describe("visual mode", () => {
 		expect([d.start, d.end]).toEqual([4, 8]);
 		d = press(engine, "ob", d);
 		expect([d.start, d.end]).toEqual([0, 8]);
+	});
+});
+
+describe("verticalCaretTarget (key-bar arrow emulation)", () => {
+	test("moves down/up keeping the column, clamped to short lines", () => {
+		const t = "longline\nab\nlonger";
+		expect(verticalCaretTarget(t, 6, 1)).toBe(11); // clamped to "ab" end
+		expect(verticalCaretTarget(t, 10, 1)).toBe(13); // col 1 into "longer"
+		expect(verticalCaretTarget(t, 13, -1)).toBe(10);
+	});
+
+	test("stays put at buffer edges", () => {
+		const t = "one\ntwo";
+		expect(verticalCaretTarget(t, 5, 1)).toBe(5);
+		expect(verticalCaretTarget(t, 1, -1)).toBe(1);
 	});
 });
 

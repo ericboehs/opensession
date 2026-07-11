@@ -866,6 +866,44 @@ export function Composer({
             </motion.div>
           )}
         </div>
+        {/* Phone vim key bar — the on-screen keyboard has no Esc/Tab/arrow
+            keys (and the native accessory bar is WebKit chrome we can't
+            touch), so give vim users a Termius-style key row pinned above the
+            keyboard. Software keys route through vim.injectKey: consumed by
+            the engine in normal/visual mode, emulated on the textarea in
+            insert mode. Cancelling pointerdown keeps the textarea focused so
+            a tap can't collapse the composer or dismiss the keyboard. */}
+        {vimEnabled && isPhone && focused && (
+          <div
+            className="mt-1.5 flex gap-1.5 border-t border-line pt-1.5"
+            onPointerDown={(e) => e.preventDefault()}
+          >
+            {(
+              [
+                ["esc", "Escape"],
+                ["tab", "Tab"],
+                ["←", "ArrowLeft"],
+                ["↓", "ArrowDown"],
+                ["↑", "ArrowUp"],
+                ["→", "ArrowRight"],
+              ] as const
+            ).map(([label, key]) => (
+              <button
+                key={key}
+                type="button"
+                className={`h-8 flex-1 select-none rounded-md border border-line bg-surface text-[12px] font-semibold text-dim active:bg-panel ${
+                  key === "Escape" && vim.mode !== "insert"
+                    ? "border-accent text-fg"
+                    : ""
+                }`}
+                onClick={() => vim.injectKey(key)}
+                aria-label={key}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </motion.div>
       {hint && <div className="composer-hint">{hint}</div>}
     </div>

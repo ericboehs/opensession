@@ -106,6 +106,25 @@ function wordEndBoundary(t: string, i: number): number {
 	return j;
 }
 
+/**
+ * Plain up/down caret movement (no sticky column) — used by the phone key bar
+ * to emulate arrow keys in insert mode, where the engine doesn't consume them.
+ * Returns the clamped target position; at a buffer edge it stays put.
+ */
+export function verticalCaretTarget(t: string, pos: number, delta: 1 | -1): number {
+	const ls = lineStartAt(t, pos);
+	const col = pos - ls;
+	if (delta > 0) {
+		const le = lineEndAt(t, pos);
+		if (le >= t.length) return pos;
+		const nls = le + 1;
+		return Math.min(nls + col, lineEndAt(t, nls));
+	}
+	if (ls === 0) return pos;
+	const pls = lineStartAt(t, ls - 1);
+	return Math.min(pls + col, ls - 1);
+}
+
 // ── engine ──────────────────────────────────────────────────────────────────
 
 const UNDO_CAP = 100;

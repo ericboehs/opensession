@@ -6,7 +6,7 @@
 // engine — and any half-typed command state — back to plain typing.
 
 import { useEffect, useRef, useState } from "react";
-import { VimEngine, type VimMode } from "../lib/vim";
+import { VimEngine, verticalCaretTarget, type VimMode } from "../lib/vim";
 
 export function useVimMode({
 	enabled,
@@ -22,6 +22,13 @@ export function useVimMode({
 	mode: VimMode;
 	/** Returns true when the key was consumed (caller must not process it further). */
 	handleKeyDown: (e: React.KeyboardEvent) => boolean;
+	/**
+	 * Software-press a key by name ("Escape", "ArrowLeft", "Tab") — the phone
+	 * key bar, where the on-screen keyboard has no such keys. Keys the engine
+	 * doesn't consume are emulated on the textarea (arrows move the caret, Tab
+	 * indents), so the bar works in insert mode too.
+	 */
+	injectKey: (key: string) => void;
 } {
 	const engineRef = useRef<VimEngine | null>(null);
 	const [mode, setMode] = useState<VimMode>("insert");
@@ -33,28 +40,78 @@ export function useVimMode({
 		}
 	}, [enabled]);
 
-	function handleKeyDown(e: React.KeyboardEvent): boolean {
-		if (!enabled) return false;
+	function applySelection(start: number, end: number) {
+		// After React commits the (possibly new) value — setting it before the
+		// value lands would clamp against the old text.
+		queueMicrotask(() => {
+			textareaRef.current?.setSelectionRange(start, end);
+		});
+	}
+
+	function feed(key: string, e?: React.KeyboardEvent): boolean {
 		const el = textareaRef.current;
 		if (!el) return false;
 		if (!engineRef.current) engineRef.current = new VimEngine();
 		const engine = engineRef.current;
-		const res = engine.handleKey(e, {
-			text: value,
-			start: el.selectionStart,
-			end: el.selectionEnd,
-		});
+		const res = engine.handleKey(
+			e ?? { key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+			{ text: value, start: el.selectionStart, end: el.selectionEnd },
+		);
 		setMode(engine.mode);
 		if (!res) return false;
-		e.preventDefault();
+		e?.preventDefault();
 		if (res.text !== value) onChange(res.text);
-		// Apply the selection after React commits the (possibly new) value —
-		// setting it before the value lands would clamp against the old text.
-		queueMicrotask(() => {
-			textareaRef.current?.setSelectionRange(res.start, res.end);
-		});
+		applySelection(res.start, res.end);
 		return true;
 	}
 
-	return { mode, handleKeyDown };
+	function handleKeyDown(e: React.KeyboardEvent): boolean {
+		if (!enabled) return false;
+		return feed(e.key, e);
+	}
+
+	function injectKey(key: string) {
+		if (!enabled) return;
+		const el = textareaRef.current;
+		if (!el) return;
+		// Outside insert mode, arrows behave as their vim motions so visual-mode
+		// selections extend instead of collapsing.
+		const arrows: Record<string, string> = {
+			ArrowLeft: "h",
+			ArrowRight: "l",
+			ArrowUp: "k",
+			ArrowDown: "j",
+		};
+		const mapped =
+			engineRef.current && engineRef.current.mode !== "insert"
+				? arrows[key] ?? key
+				: key;
+		if (feed(mapped)) return;
+		// Not consumed — insert-mode emulation of the key's native behavior.
+		const pos = el.selectionStart;
+		switch (key) {
+			case "ArrowLeft":
+				applySelection(Math.max(0, pos - 1), Math.max(0, pos - 1));
+				return;
+			case "ArrowRight": {
+				const p = Math.min(value.length, el.selectionEnd + 1);
+				applySelection(p, p);
+				return;
+			}
+			case "ArrowUp":
+			case "ArrowDown": {
+				const p = verticalCaretTarget(value, pos, key === "ArrowDown" ? 1 : -1);
+				applySelection(p, p);
+				return;
+			}
+			case "Tab": {
+				const next = value.slice(0, pos) + "\t" + value.slice(el.selectionEnd);
+				onChange(next);
+				applySelection(pos + 1, pos + 1);
+				return;
+			}
+		}
+	}
+
+	return { mode, handleKeyDown, injectKey };
 }
