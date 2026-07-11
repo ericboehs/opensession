@@ -717,7 +717,9 @@ export function Composer({
           <div className="composer-spacer" />
 
           {/* Model + effort live together on the right edge (ChatGPT-style):
-              one pill, effort levels up top, the model behind a submenu. */}
+              one pill, effort levels up top, the model behind a submenu.
+              Phones reorder it next to the + button via flex order (see the
+              "Lightweight phone inputs" block in global.css). */}
           <AnimatePresence initial={false}>
             {!minimized && (
               <motion.div

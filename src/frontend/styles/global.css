@@ -15162,12 +15162,11 @@ html[data-theme="light"] .palette-card .palette-create {
 }
 
 /* ── Lightweight phone inputs ────────────────────────────────────
-   Phones get the ChatGPT-style minimal bar: just the input plus
-   + / mic / send. Model, effort and goal keep their defaults and stay
-   out of the composer — the model surfaces (and switches) from the
-   compact selector under the top-bar title instead (.header-model-select),
-   and the new-session palette hides repo/base/model/effort behind the
-   sliders toggle. */
+   Phones get the ChatGPT-style minimal bar: input plus + / model /
+   mic / send. The model+effort pill stays in the expanded toolbar
+   (reordered next to the + button via flex order below); goal keeps
+   its default and stays out of the composer, and the new-session
+   palette hides repo/base/model/effort behind the sliders toggle. */
 @media (max-width: 720px) {
 	.composer {
 		border-radius: calc(18px * var(--rf)); corner-shape: var(--cs);
@@ -15181,9 +15180,18 @@ html[data-theme="light"] .palette-card .palette-create {
 	.composer-toolbar {
 		margin-top: 6px;
 	}
-	.composer-toolbar .palette-pill,
 	.composer-goal-btn {
 		display: none;
+	}
+	/* The model pill sits next to the + button on phones (DOM keeps it
+	   on the right edge for desktop; flex order moves it here). The
+	   pill-shrink rules in the earlier phone block (no chevron, 136px
+	   ellipsis cap) keep it from crowding out mic/send. */
+	.composer-toolbar .composer-pop-wrap:has(.composer-add-btn) {
+		order: -2;
+	}
+	.composer-toolbar .palette-select-motion {
+		order: -1;
 	}
 	/* Comfortable thumb targets for what remains. */
 	.composer-toolbar .palette-icon-btn,
