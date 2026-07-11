@@ -393,11 +393,6 @@ if (!g.__backstageBooted) {
 		ensureStalePrMonitor();
 		const { ensureCronJobs } = await import("./src/agents/loops/cron-jobs");
 		ensureCronJobs();
-		// Autonomous session monitor (per-user, opt-in — Settings → Monitor)
-		const { startSessionMonitor } = await import(
-			"./src/agents/loops/session-monitor"
-		);
-		startSessionMonitor();
 	} catch (e) {
 		console.error(
 			"[loops] Failed to seed sweep/monitor/seo/stale-pr/cron loops:",

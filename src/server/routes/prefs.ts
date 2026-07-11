@@ -1,5 +1,5 @@
 /**
- * Per-user/system preferences: Web Push, session monitor, auto-archive, warm preview templates, memory stores, pinned tabs, UI prefs, tab colors.
+ * Per-user/system preferences: Web Push, auto-archive, warm preview templates, memory stores, pinned tabs, UI prefs, tab colors.
  *
  * Extracted verbatim from the opensession.ts fetch chain. Every handler
  * returns a Response for a matched route or undefined to fall through to the
@@ -48,27 +48,6 @@ export async function handlePrefsRoutes(
 		const { removePushSubscription } = await import("../../server/push");
 		removePushSubscription(body.endpoint);
 		return Response.json({ ok: true });
-	}
-
-	// ── Session monitor (per-user, opt-in) ──
-	if (path === "/backstage/api/monitor" && req.method === "GET") {
-		const user = (url.searchParams.get("user") || "").trim();
-		if (!user)
-			return Response.json({ error: "user required" }, { status: 400 });
-		const { getMonitorConfig } = await import(
-			"../../agents/loops/session-monitor"
-		);
-		return Response.json(getMonitorConfig(user));
-	}
-
-	if (path === "/backstage/api/monitor" && req.method === "PUT") {
-		const body = await req.json().catch(() => null);
-		if (!body || typeof body.user !== "string" || !body.user.trim())
-			return Response.json({ error: "user required" }, { status: 400 });
-		const { setMonitorConfig } = await import(
-			"../../agents/loops/session-monitor"
-		);
-		return Response.json(setMonitorConfig(body.user, body));
 	}
 
 	// ── Auto-archive (per-user, opt-in by repo) ──

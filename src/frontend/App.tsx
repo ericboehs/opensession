@@ -120,7 +120,6 @@ function isToolView(view: string): view is ToolView {
 // Non-tool settings sections, addressable as <base>/settings/<section>.
 const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"notifications",
-	"monitor",
 	"autoArchive",
 	"composer",
 	"appearance",

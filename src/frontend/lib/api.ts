@@ -1391,29 +1391,6 @@ export async function fetchAudit(opts: {
 	});
 }
 
-// ── Session monitor (per-user, opt-in) ──
-
-export interface MonitorConfig {
-	enabled: boolean;
-	intervalMinutes: number;
-	slackDm: boolean;
-	autoAnswer: boolean;
-	stalledMinutes: number;
-}
-
-export async function fetchMonitorConfig(user: string): Promise<MonitorConfig> {
-	return request(`/monitor?user=${encodeURIComponent(user)}`, {
-		label: "Failed to fetch monitor config",
-	});
-}
-
-export async function updateMonitorConfig(
-	user: string,
-	patch: Partial<MonitorConfig>,
-): Promise<MonitorConfig> {
-	return request("/monitor", { method: "PUT", body: { user, ...patch } });
-}
-
 // ── Auto-archive (per-user, opt-in by repo) ──
 
 export interface AutoArchiveConfig {
