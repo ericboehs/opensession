@@ -18,7 +18,7 @@
  * transcript read can never take a prompt path down.
  */
 import { envAlias } from "./rename-compat";
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { Database } from "bun:sqlite";
 import type { TranscriptEntry } from "./types";
 import type { ImageInput } from "./run-events";
@@ -239,6 +239,59 @@ export function ensureOpencodeTranscriptFile(
   } catch (e) {
     console.warn(`[opencode-transcript] ensure failed for ${ocSessionId}:`, e);
   }
+}
+
+/** Uuids already present in a session's persisted transcript file. */
+export function opencodeTranscriptUuids(ocSessionId: string): Set<string> {
+  const out = new Set<string>();
+  try {
+    const path = getOpencodeTranscriptPath(ocSessionId);
+    if (!existsSync(path)) return out;
+    for (const line of readFileSync(path, "utf-8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const uuid = (JSON.parse(line) as { uuid?: unknown }).uuid;
+        if (typeof uuid === "string" && uuid) out.add(uuid);
+      } catch {}
+    }
+  } catch {}
+  return out;
+}
+
+/**
+ * Append transcript lines for engine activity the live mirror missed — the
+ * restart gap, where a turn kept executing inside a detached `opencode serve`
+ * while no backstage process was around to pump its events (reattach path,
+ * opencode-runner.tryReattachOpencodeRun). Assistant text and tool lines
+ * only: their uuids are stable opencode part ids in BOTH writers (the live
+ * SSE mirror and the SQLite reader), so uuid-dedup is sound; user lines are
+ * written by the runner at send time with random uuids and never need
+ * backfill. Returns every uuid now present, for seeding the live pump's
+ * dedup sets so post-gap events don't double-append.
+ */
+export function backfillOpencodeTranscriptGap(ocSessionId: string): Set<string> {
+  const seen = opencodeTranscriptUuids(ocSessionId);
+  try {
+    const missing: JsonlLine[] = [];
+    for (const e of readOpencodeTranscript(ocSessionId)) {
+      if (e.type === "user") continue;
+      const line = transcriptLineForEntry(e);
+      if (!line) continue;
+      const uuid = String(line.uuid || "");
+      if (!uuid || seen.has(uuid)) continue;
+      seen.add(uuid);
+      missing.push(line);
+    }
+    if (missing.length) {
+      appendOpencodeTranscript(ocSessionId, missing);
+      console.log(
+        `[opencode-transcript] backfilled ${missing.length} gap line(s) for ${ocSessionId}`
+      );
+    }
+  } catch (e) {
+    console.warn(`[opencode-transcript] gap backfill failed for ${ocSessionId}:`, e);
+  }
+  return seen;
 }
 
 /**

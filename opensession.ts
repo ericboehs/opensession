@@ -3,7 +3,13 @@
 import { createGoalSelfMcpServer } from "./src/agents/slack/goal-tools";
 import { type AgentModule } from "./src/agents/types";
 import { ensureSeedActions } from "./src/server/actions";
-import { activeAgentRunCount, resumeInterruptedRuns } from "./src/server/agent-runner";
+import {
+	activeAgentRunCount,
+	activeDetachedAgentRunCount,
+	resumeInterruptedRuns,
+} from "./src/server/agent-runner";
+import { enableOpencodeServerDetach } from "./src/server/opencode-detach";
+import { adoptDetachedOpencodeServers } from "./src/server/opencode-runner";
 import { archiveOlderThan } from "./src/server/archive";
 import { makeAskHandler, pendingAsks } from "./src/server/asks";
 import { startAutoArchiveSweep } from "./src/server/auto-archive";
@@ -337,6 +343,12 @@ async function loadAgents(): Promise<AgentModule[]> {
 // any of it — the already-running agents/timers keep going untouched (only a
 // real restart reloads their code, and that restart is now graceful, below).
 if (!g.__backstageBooted) {
+	// Detached engine servers (src/server/opencode-detach.ts): opt this — and
+	// only this — process into spawning `opencode serve` in transient systemd
+	// user scopes, so in-flight turns survive a `systemctl restart`. Runner-host
+	// and sandbox contexts never enable it. Kill switch: OPENSESSION_OC_DETACH=0.
+	enableOpencodeServerDetach();
+
 	// Public dial-back ingress for remote sandboxes (src/server/public-ingress.ts):
 	// a second, isolated listener serving ONLY the run-ws/rpc-ws upgrades +
 	// /ingress-health. No-op unless ~/.opensession-sandbox.json enables
@@ -453,6 +465,18 @@ if (!g.__backstageBooted) {
 	// journal no longer held it). Together these wake every session that was
 	// active before the restart.
 	setTimeout(() => {
+		void (async () => {
+		// Adopt detached `opencode serve` scopes that survived the restart FIRST —
+		// resumeInterruptedRuns reattaches journaled runs to these adopted pool
+		// entries (tryReattachOpencodeRun) instead of re-prompting their sessions.
+		try {
+			const adopted = await adoptDetachedOpencodeServers();
+			if (adopted > 0) {
+				console.log(`[runner] Adopted ${adopted} detached opencode server(s) from before restart`);
+			}
+		} catch (e) {
+			console.error("[runner] Detached-server adoption failed:", e);
+		}
 		const resumedIds = resumeInterruptedRuns(
 			() => {
 				invalidateSessionsCache();
@@ -497,6 +521,7 @@ if (!g.__backstageBooted) {
 		// Restore human-in-the-loop asks: re-arm scheduled timers, and degrade any
 		// block asks that lost their held turn to async so late replies still land.
 		initHumanAsks();
+		})();
 		// 1.5s: enough for boot-time state (agents, watchers, session-control
 		// registry) to settle before we start resuming, without adding dead air to
 		// every restart. Paired with the shorter drain above for faster recovery.
@@ -606,13 +631,20 @@ if (!g.__backstageBooted) {
 		try {
 			server.stop();
 		} catch {}
-		// Wait for runner-driven runs (web UI / automations / loops) to settle.
+		// Wait for runner-driven runs (web UI / automations / loops) to settle —
+		// but ONLY the ones a restart would actually kill. Runs on DETACHED
+		// engine servers (opencode-detach.ts) survive the restart: their
+		// `opencode serve` scopes live outside this unit's cgroup and keep
+		// executing, and the next boot adopts the servers + reattaches the runs
+		// from the journal. Waiting on those would just delay the restart.
+		const undrainable = () =>
+			Math.max(0, activeAgentRunCount() - activeDetachedAgentRunCount());
 		const deadline = Date.now() + DRAIN_TIMEOUT_MS;
-		let n = activeAgentRunCount();
+		let n = undrainable();
 		while (n > 0 && Date.now() < deadline) {
 			console.log(`[shutdown] waiting on ${n} in-flight run(s)…`);
 			await new Promise((r) => setTimeout(r, 500));
-			n = activeAgentRunCount();
+			n = undrainable();
 		}
 		if (n > 0) {
 			console.log(
@@ -620,6 +652,12 @@ if (!g.__backstageBooted) {
 			);
 		} else {
 			console.log("[shutdown] all in-flight runs drained cleanly");
+		}
+		const surviving = activeDetachedAgentRunCount();
+		if (surviving > 0) {
+			console.log(
+				`[shutdown] ${surviving} run(s) continue on detached engine servers — reattaching on next boot`,
+			);
 		}
 		process.exit(0);
 	};

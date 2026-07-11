@@ -164,3 +164,53 @@ describe("persisted transcript file", () => {
     ).toBeNull();
   });
 });
+
+describe("backfillOpencodeTranscriptGap", () => {
+  const { backfillOpencodeTranscriptGap, opencodeTranscriptUuids } = mod;
+  const GAP_SES = "ses_gaptest";
+  test("appends only missing assistant/tool lines, never user lines, and seeds dedup", () => {
+    // Own session (the shared fixture's file is already fully backfilled by
+    // the ensure test above). Store state: user text + tool pair + final
+    // assistant text.
+    const db = new Database(dbPath);
+    const t0 = 1783600000000;
+    db.query("INSERT INTO session VALUES (?, 'p', 't', 1, 1)").run(GAP_SES);
+    const ins = db.query("INSERT INTO message VALUES (?, ?, ?, ?, ?)");
+    ins.run("gm_1", GAP_SES, t0, t0, JSON.stringify({ role: "user", time: { created: t0 } }));
+    ins.run("gm_2", GAP_SES, t0 + 1000, t0 + 1000, JSON.stringify({ role: "assistant", time: { created: t0 + 1000 } }));
+    const insP = db.query("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)");
+    insP.run("gprt_u1", "gm_1", GAP_SES, t0, t0, JSON.stringify({ type: "text", text: "do the thing" }));
+    insP.run("gprt_tool", "gm_2", GAP_SES, t0 + 800, t0 + 800,
+      JSON.stringify({ type: "tool", tool: "bash", state: { status: "completed", input: { command: "ls" }, output: "file.txt" } }));
+    insP.run("gprt_a1", "gm_2", GAP_SES, t0 + 1000, t0 + 1000,
+      JSON.stringify({ type: "text", text: "all done" }));
+    db.close();
+
+    // Simulate the restart gap: the live mirror wrote the user line and the
+    // pre-restart tool pair, then the process died before the assistant text.
+    appendOpencodeTranscript(GAP_SES, [
+      transcriptLineUser("do the thing", undefined, "2026-07-08T00:00:00.000Z"),
+      transcriptLineToolUse("gprt_tool", "bash", { command: "ls" }, "2026-07-08T00:00:01.000Z"),
+      transcriptLineToolResult("gprt_tool", "file.txt", false, "2026-07-08T00:00:02.000Z"),
+    ]);
+    const seen = backfillOpencodeTranscriptGap(GAP_SES);
+    const lines = readFileSync(getOpencodeTranscriptPath(GAP_SES), "utf-8").trim().split("\n");
+    // Exactly one line appended: the assistant text. The tool pair was
+    // already mirrored (uuid dedup) and the SQLite user entry must NOT
+    // duplicate the runner-written user line (random uuid, still one bubble).
+    expect(lines.length).toBe(4);
+    const added = JSON.parse(lines[lines.length - 1]);
+    expect(added.uuid).toBe("gprt_a1");
+    expect(added.message.content[0].text).toBe("all done");
+    // Seeds cover file + store uuids for the live pump's dedup sets.
+    expect(seen.has("gprt_a1")).toBe(true);
+    expect(seen.has("gprt_tool-use")).toBe(true);
+    expect(seen.has("gprt_tool-result")).toBe(true);
+    // Idempotent: a second backfill appends nothing.
+    backfillOpencodeTranscriptGap(GAP_SES);
+    expect(
+      readFileSync(getOpencodeTranscriptPath(GAP_SES), "utf-8").trim().split("\n").length
+    ).toBe(4);
+    expect(opencodeTranscriptUuids(GAP_SES).size).toBe(4);
+  });
+});

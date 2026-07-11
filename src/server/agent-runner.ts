@@ -16,6 +16,8 @@ import {
   isOpencodeSessionBusy,
   cancelOpencodeRun,
   activeOpencodeRunCount,
+  activeDetachedOpencodeRunCount,
+  tryReattachOpencodeRun,
 } from "./opencode-runner";
 import {
   providerFor,
@@ -398,6 +400,13 @@ export function activeAgentRunCount(): number {
   return activeOpencodeRunCount();
 }
 
+/** Of those, how many execute on a DETACHED engine server that survives a
+ *  restart — the graceful-shutdown drain skips waiting on these (boot
+ *  reattaches them via the journal instead). */
+export function activeDetachedAgentRunCount(): number {
+  return activeDetachedOpencodeRunCount();
+}
+
 /**
  * Steer a message into an in-flight run. The opencode engine has no mid-turn
  * steer (sends queue and deliver as the next turn), so only host-forwarded
@@ -604,11 +613,36 @@ export function resumeInterruptedRuns(
       continue;
     }
     if (run.bksSessionId) resumed.push(run.bksSessionId);
-    console.log(
-      `[runner] Resuming interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} (started ${run.startedAt}, model ${run.model || "default"})`
-    );
     void (async () => {
       try {
+        // First choice: REATTACH — the run's detached `opencode serve`
+        // survived the restart and the turn may still be executing. The
+        // adopted-pool lookup + session probe live in tryReattachOpencodeRun;
+        // null means the server is gone (or was a direct child) and we fall
+        // back to the classic continuation re-prompt below.
+        if (run.serverKey) {
+          const reattached = await tryReattachOpencodeRun(run, {
+            onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
+          }).catch((e) => {
+            console.warn(`[runner] Reattach probe failed for ${run.runKey}:`, e);
+            return null;
+          });
+          if (reattached) {
+            console.log(
+              `[runner] Reattached ${run.kind || "run"} ${run.bksSessionId || run.runKey} to its live engine turn (server ${run.serverKey})`
+            );
+            for await (const event of reattached) {
+              if (run.bksSessionId) onEvent?.(run.bksSessionId, event);
+              if (event.type === "done" || event.type === "error") {
+                onResumed?.(run.bksSessionId);
+              }
+            }
+            return;
+          }
+        }
+        console.log(
+          `[runner] Resuming interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} (started ${run.startedAt}, model ${run.model || "default"})`
+        );
         for await (const event of runAgent({
           prompt: RESUME_CONTINUATION_PROMPT,
           sessionId: run.claudeSessionId,

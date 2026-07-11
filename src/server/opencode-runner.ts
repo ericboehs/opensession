@@ -137,7 +137,19 @@ import { dirname, join } from "path";
 import type { Subprocess } from "bun";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import type { RunAgentOpts } from "./agent-runner";
-import { journalSet, journalClear, registerActiveRunProbe } from "./run-journal";
+import { journalSet, journalClear, registerActiveRunProbe, type ActiveRunRecord } from "./run-journal";
+import {
+  adoptedProcHandle,
+  bunProcHandle,
+  opencodeDetachActive,
+  opencodeServerHealthy,
+  readDetachedRegistry,
+  removeDetachedRecord,
+  spawnDetachedOpencodeServer,
+  stopDetachedUnit,
+  upsertDetachedRecord,
+  type ServerProcHandle,
+} from "./opencode-detach";
 import {
   filterMcpServers,
   isClaudeUsageLimitError,
@@ -159,6 +171,7 @@ import {
 } from "./run-rpc";
 import {
   appendOpencodeTranscript,
+  backfillOpencodeTranscriptGap,
   ensureOpencodeTranscriptFile,
   transcriptLineUser,
   transcriptLineAssistantText,
@@ -902,7 +915,9 @@ export function buildOpencodeInstructions(input: {
 // ── Server pool ──────────────────────────────────────────────────────────────
 
 export interface OpencodeServerEntry {
-  proc: Subprocess<"ignore", "pipe", "pipe">;
+  /** Direct Bun child, this process's systemd-run waiter, or an ADOPTED
+   *  detached scope from before a restart (see opencode-detach.ts). */
+  proc: ServerProcHandle;
   url: string;
   password: string;
   cwd: string;
@@ -992,7 +1007,7 @@ export function killAllOpencodeServers(reason = "shutdown"): number {
   return entries.length + drained.length;
 }
 
-const pendingKilled: Subprocess<"ignore", "pipe", "pipe">[] = [];
+const pendingKilled: ServerProcHandle[] = [];
 
 /** Wait (bounded) for servers killed via killAllOpencodeServers to actually
  *  exit — covers the SIGTERM-swallowing meridian plugin, whose SIGKILL
@@ -1024,18 +1039,25 @@ function killServerProc(entry: OpencodeServerEntry, reason: string): void {
   try {
     proc.kill();
   } catch {}
-  const escalate = setTimeout(() => {
-    if (proc.exitCode === null) {
-      console.warn(
-        `[opencode-runner] server for ${entry.key} ignored SIGTERM — escalating to SIGKILL`
-      );
-      try {
-        proc.kill(9);
-      } catch {}
-    }
-  }, KILL_ESCALATION_MS);
-  (escalate as unknown as { unref?: () => void }).unref?.();
-  void proc.exited.then(() => clearTimeout(escalate));
+  if (proc.detached && proc.unit) {
+    // The scope's own TimeoutStopSec=5 (set at spawn) escalates the stop job
+    // to SIGKILL — no timer needed here. Keep the registry in sync so the
+    // next boot doesn't try to adopt a corpse.
+    removeDetachedRecord(proc.unit);
+  } else {
+    const escalate = setTimeout(() => {
+      if (proc.exitCode === null) {
+        console.warn(
+          `[opencode-runner] server for ${entry.key} ignored SIGTERM — escalating to SIGKILL`
+        );
+        try {
+          proc.kill(true);
+        } catch {}
+      }
+    }, KILL_ESCALATION_MS);
+    (escalate as unknown as { unref?: () => void }).unref?.();
+    void proc.exited.then(() => clearTimeout(escalate));
+  }
   console.log(`[opencode-runner] server for ${entry.key} stopped (${reason})`);
 }
 
@@ -1103,6 +1125,55 @@ async function spawnOpencodeServer(
   }
   if (shared) mkdirSync(cwd, { recursive: true });
   const password = crypto.randomUUID();
+
+  // Detached spawn (opensession.ts main process only, see opencode-detach.ts):
+  // the server lives in its own transient systemd user scope, OUTSIDE this
+  // service's cgroup, so a `systemctl restart` leaves it — and every turn it
+  // is executing — running. The registry record is what the next boot adopts
+  // it back from. Any failure here falls through to the classic direct child.
+  if (opencodeDetachActive()) {
+    try {
+      const det = await spawnDetachedOpencodeServer({
+        bin: OPENCODE_BIN,
+        cwd,
+        env: {
+          ...opencodeEnv(author),
+          ...(extraEnv || {}),
+          OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
+          OPENCODE_SERVER_PASSWORD: password,
+        },
+        password,
+        logDir: `${OPENCODE_STATE_DIR}/server-logs`,
+        startTimeoutMs: SERVER_START_TIMEOUT_MS,
+      });
+      const entry: OpencodeServerEntry = {
+        proc: det.handle,
+        url: det.url,
+        password,
+        cwd,
+        configHash,
+        key,
+        shared,
+        rpcToken: crypto.randomUUID(),
+        lastUsed: Date.now(),
+        activeRuns: 0,
+      };
+      servers.set(key, entry);
+      scheduleIdleKill(key);
+      syncDetachedRecord(entry);
+      console.log(
+        `[opencode-runner] ${shared ? "shared " : ""}server for ${key} listening on ${det.url} ` +
+          `(detached scope ${det.unit}, cwd ${cwd})`
+      );
+      return entry;
+    } catch (e) {
+      console.warn(
+        `[opencode-runner] detached spawn failed for ${key} — falling back to direct child:`,
+        e instanceof Error ? e.message : e
+      );
+    }
+  }
+
   const proc = Bun.spawn({
     cmd: [OPENCODE_BIN, "serve", "--hostname=127.0.0.1", "--port=0"],
     cwd,
@@ -1158,7 +1229,7 @@ async function spawnOpencodeServer(
   });
 
   const entry: OpencodeServerEntry = {
-    proc,
+    proc: bunProcHandle(proc),
     url,
     password,
     cwd,
@@ -1234,6 +1305,101 @@ export function clientFor(entry: OpencodeServerEntry): OpencodeClient {
     baseUrl: entry.url,
     headers: { Authorization: `Basic ${btoa(`opencode:${entry.password}`)}` },
   });
+}
+
+// ── Detached servers: registry sync + boot adoption ──────────────────────────
+
+/** Mirror a detached entry's live identity into the adoption registry. Called
+ *  at spawn AND after the run body reassigns rpcToken/meridianKey (per-session
+ *  servers bake the run-minted rpc token into their config — the registry must
+ *  carry the one the proxies actually authenticate with). */
+function syncDetachedRecord(entry: OpencodeServerEntry): void {
+  const proc = entry.proc;
+  if (!proc.detached || !proc.unit) return;
+  const prev = readDetachedRegistry().find((r) => r.unit === proc.unit);
+  upsertDetachedRecord({
+    key: entry.key,
+    unit: proc.unit,
+    pid: proc.pid || prev?.pid || 0,
+    url: entry.url,
+    password: entry.password,
+    cwd: entry.cwd,
+    configHash: entry.configHash,
+    shared: entry.shared,
+    rpcToken: entry.rpcToken,
+    meridianKey: entry.meridianKey,
+    spawnedAt: prev?.spawnedAt || new Date().toISOString(),
+  });
+}
+
+/**
+ * Re-adopt detached `opencode serve` scopes that survived the last restart
+ * into the live pool, so (a) journaled runs can REATTACH to their still-
+ * running turns (tryReattachOpencodeRun) and (b) idle survivors are reused
+ * instead of leaked. Dead or unhealthy records are pruned (scope stopped,
+ * registry entry removed). Called from opensession.ts's boot block BEFORE
+ * resumeInterruptedRuns; must never throw.
+ */
+export async function adoptDetachedOpencodeServers(): Promise<number> {
+  if (!opencodeDetachActive()) return 0;
+  const records = readDetachedRegistry();
+  if (!records.length) return 0;
+  const byKey = new Map<string, typeof records>();
+  for (const r of records) {
+    const list = byKey.get(r.key);
+    if (list) list.push(r);
+    else byKey.set(r.key, [r]);
+  }
+  let adopted = 0;
+  for (const [key, recs] of byKey) {
+    // Newest per key wins; older duplicates are config-change drains the
+    // restart cut short — their runs can't be reattached (the pool holds one
+    // entry per key), so stop them rather than leak authed servers.
+    recs.sort((a, b) => (a.spawnedAt < b.spawnedAt ? 1 : -1));
+    const [newest, ...older] = recs;
+    for (const r of older) {
+      stopDetachedUnit(r.unit);
+      removeDetachedRecord(r.unit);
+      console.log(`[opencode-runner] stopped superseded detached server ${r.unit} (${key})`);
+    }
+    if (servers.has(key)) continue; // hot reload — the pool entry never died
+    const healthy = await opencodeServerHealthy(newest.url, newest.password);
+    if (!healthy) {
+      stopDetachedUnit(newest.unit);
+      removeDetachedRecord(newest.unit);
+      continue;
+    }
+    const entry: OpencodeServerEntry = {
+      proc: adoptedProcHandle(newest.unit, newest.pid),
+      url: newest.url,
+      password: newest.password,
+      cwd: newest.cwd,
+      configHash: newest.configHash,
+      key,
+      shared: newest.shared,
+      rpcToken: newest.rpcToken,
+      meridianKey: newest.meridianKey,
+      lastUsed: Date.now(),
+      activeRuns: 0,
+    };
+    servers.set(key, entry);
+    scheduleIdleKill(key);
+    adopted++;
+    console.log(
+      `[opencode-runner] adopted detached server for ${key} (${newest.unit}, ${newest.url})`
+    );
+  }
+  return adopted;
+}
+
+// Runs currently executing on a DETACHED server — these survive a restart
+// (the shutdown drain skips them; boot reattaches via the journal).
+const detachedRunKeys: Set<string> = (g.__opencodeDetachedRuns ??= new Set());
+
+export function activeDetachedOpencodeRunCount(): number {
+  let n = 0;
+  for (const key of detachedRunKeys) if (activeOpencodeRuns.has(key)) n++;
+  return n;
 }
 
 // ── The run ──────────────────────────────────────────────────────────────────
@@ -1793,6 +1959,10 @@ async function* runOpencodeAttempt(
     if (serverExtraEnv?.MERIDIAN_API_KEY) entry.meridianKey = serverExtraEnv.MERIDIAN_API_KEY;
     entry.activeRuns++;
     entry.lastUsed = Date.now();
+    // Registry must carry the token the config actually baked in (fresh spawns
+    // record the placeholder minted before this reassignment).
+    syncDetachedRecord(entry);
+    if (entry.proc.detached) detachedRunKeys.add(runKey);
 
     // Watch the server process for the duration of this run: a mid-turn death
     // would otherwise leave the SSE pump reconnecting forever and the drain
@@ -1879,6 +2049,9 @@ async function* runOpencodeAttempt(
         runKey,
         bksSessionId: journal.bksSessionId,
         claudeSessionId: ocSessionId,
+        // Reattach needs the hosting server: detached servers survive the
+        // restart, and resume looks the adopted entry up by this key.
+        serverKey,
         prompt,
         cwd,
         mode,
@@ -2520,6 +2693,7 @@ async function* runOpencodeAttempt(
     // return, generator torn down mid-drain) — no-op if already ended.
     bridgeRunEnd(abortController.signal.aborted ? "cancelled" : "abandoned");
     for (const key of registeredKeys) activeOpencodeRuns.delete(key);
+    detachedRunKeys.delete(runKey);
     if (ocSessionRegistered) unregisterOcSessionContext(ocSessionRegistered);
     if (rpcTokenRegistered && entry) unregisterRunToken(entry.rpcToken);
     if (entry) {
@@ -2533,4 +2707,535 @@ async function* runOpencodeAttempt(
     // the same runKey immediately); cleared for real on the final attempt.
     if (journal?.bksSessionId && !rotation?.rotate) journalClear(runKey);
   }
+}
+
+// ── Reattach: resume a run whose detached server survived the restart ────────
+
+/**
+ * Try to REATTACH a journaled run to its still-running (or just-finished)
+ * turn on a detached server that survived the restart, instead of re-prompting
+ * the session (agent-runner's RESUME_CONTINUATION_PROMPT fallback — which
+ * loses the in-flight turn). Preconditions checked here, before any events:
+ * the journaled serverKey resolves to a live ADOPTED pool entry and the
+ * opencode session exists on it. Returns null when they don't hold — the
+ * caller falls back to the classic re-prompt resume.
+ *
+ * The generator is a condensed copy of runOpencodeAttempt's drain machinery
+ * (SSE pump → mirror → permission bridge → status poll → final-message tail);
+ * that function is the master copy — keep event/mirroring semantics in sync
+ * with it. What reattach deliberately skips: account picking + bridge audit
+ * (the surviving server IS the account choice), config building/ensure (the
+ * server already runs the config the turn started under), prompt send and the
+ * user transcript line (the turn is already running), and account rotation
+ * (an engine failure here surfaces as a plain error — the next human send
+ * goes through the full path).
+ *
+ * Mirror continuity: dedup sets are seeded from the transcript file's uuids
+ * and the restart gap is backfilled from opencode's SQLite store
+ * (backfillOpencodeTranscriptGap) before the pump starts, so pre-restart
+ * lines never double-append and gap activity isn't lost.
+ */
+export async function tryReattachOpencodeRun(
+  run: ActiveRunRecord,
+  handlers: { onAskUser?: RunAgentOpts["onAskUser"] }
+): Promise<AsyncGenerator<StreamEvent> | null> {
+  const ocSessionId = run.claudeSessionId;
+  const serverKey = run.serverKey;
+  if (!ocSessionId || !serverKey) return null;
+  const entry = servers.get(serverKey);
+  if (!entry || !entry.proc.detached || entry.proc.exitCode !== null) return null;
+  const runKey = run.runKey;
+  if (activeOpencodeRuns.has(runKey)) return null;
+  if (run.bksSessionId && activeOpencodeRuns.has(run.bksSessionId)) return null;
+  const shared = !!entry.shared;
+  const q = shared ? { query: { directory: run.cwd } } : {};
+  const client = clientFor(entry);
+  let busy = false;
+  try {
+    const sess = await client.session.get({ path: { id: ocSessionId }, ...q });
+    if (!sess.data) return null;
+    const st = await client.session.status({ ...q });
+    const statuses = st.data as Record<string, { type?: string }> | undefined;
+    const mine = statuses?.[ocSessionId];
+    busy = !!mine && mine.type !== "idle";
+  } catch {
+    return null;
+  }
+  const model = run.model || "";
+
+  async function* attach(): AsyncGenerator<StreamEvent> {
+    const abortController = new AbortController();
+    const registeredKeys = new Set<string>([runKey, ocSessionId!]);
+    if (run.bksSessionId) registeredKeys.add(run.bksSessionId);
+    for (const key of registeredKeys) activeOpencodeRuns.set(key, abortController);
+    detachedRunKeys.add(runKey);
+    const server = entry!;
+    server.activeRuns++;
+    server.lastUsed = Date.now();
+    // takeInterruptedRuns wiped the journal — re-record so a second restart
+    // mid-reattach can reattach again.
+    journalSet({ ...run });
+    let rpcTokenRegistered = false;
+    let ocSessionRegistered = "";
+    if (run.bksSessionId) {
+      // Revive the in-process MCP path: the proxies baked into the server's
+      // config reconnect to the run-rpc socket on their next call and
+      // authenticate with this token (interactive-builder authz still applies
+      // per session — automation-owned sessions stay fail-closed there).
+      registerRunToken(server.rpcToken, { sessionId: run.bksSessionId, user: run.user });
+      rpcTokenRegistered = true;
+      if (shared) {
+        registerOcSessionContext(ocSessionId!, {
+          sessionId: run.bksSessionId,
+          user: run.user,
+          token: server.rpcToken,
+        });
+        ocSessionRegistered = ocSessionId!;
+      }
+    }
+    const turnId = crypto.randomUUID();
+    const turnEvent = (fields: Record<string, unknown>) =>
+      audit({
+        msg: "claude_turn_event",
+        provider: PROVIDER,
+        turn_id: turnId,
+        run_key: runKey,
+        bks_session_id: run.bksSessionId,
+        run_kind: `${run.kind || "run"}-reattach`,
+        mode: run.mode || "code",
+        claude_session_id: ocSessionId,
+        model,
+        ...fields,
+      });
+    let runFailure: string | undefined;
+    let runEnded = false;
+    try {
+      yield { type: "init", sessionId: ocSessionId!, provider: PROVIDER, model };
+      turnEvent({
+        direction: "in",
+        kind: "reattach",
+        summary: busy
+          ? "reattached to live engine turn after restart"
+          : "turn finished during restart — finalizing from the engine store",
+      });
+
+      // Seed mirror dedup from what the file already has + backfill the gap.
+      const seenUuids = backfillOpencodeTranscriptGap(ocSessionId!);
+      const emittedText = new Set<string>();
+      const startedTools = new Set<string>();
+      const finishedTools = new Set<string>();
+      for (const uuid of seenUuids) {
+        if (uuid.endsWith("-use")) startedTools.add(uuid.slice(0, -4));
+        else if (uuid.endsWith("-result")) finishedTools.add(uuid.slice(0, -7));
+        else emittedText.add(uuid);
+      }
+
+      const pending: StreamEvent[] = [];
+      let wake: (() => void) | null = null;
+      let idle = !busy;
+      let sessionError: string | undefined;
+      const push = (ev: StreamEvent) => {
+        pending.push(ev);
+        wake?.();
+      };
+      const signalDone = () => {
+        idle = true;
+        wake?.();
+      };
+      abortController.signal.addEventListener("abort", () => {
+        void client.session.abort({ path: { id: ocSessionId! }, ...q }).catch(() => {});
+        signalDone();
+      });
+      // A mid-reattach server death must end the turn cleanly (master copy:
+      // the proc-exit watcher in runOpencodeAttempt).
+      void server.proc.exited.then(() => {
+        if (runEnded) return;
+        runFailure ??=
+          "opencode serve exited mid-run (detached server died) — the turn was lost; send the prompt again to restart on a fresh server";
+        if (servers.get(serverKey!) === server) killServer(serverKey!, server, "died mid-run");
+        signalDone();
+      });
+
+      // Permission bridge (same policy as the master copy).
+      const policy = opencodeRunPolicy({
+        deniedTools: run.deniedTools,
+        confirmTools: run.confirmTools,
+        journalKind: run.kind,
+      });
+      const repliedPermissionIds = new Set<string>();
+      let permissionAskChain: Promise<void> = Promise.resolve();
+      const replyPermissionAsk = async (permId: string, reply: "once" | "always" | "reject") => {
+        const res = await client
+          .postSessionIdPermissionsPermissionId({
+            path: { id: ocSessionId!, permissionID: permId },
+            body: { response: reply },
+            ...q,
+          })
+          .catch((e) => ({ error: e }));
+        if ((res as { error?: unknown })?.error) {
+          await fetch(`${server.url}/permission/${encodeURIComponent(permId)}/reply`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              Authorization: `Basic ${btoa(`opencode:${server.password}`)}`,
+            },
+            body: JSON.stringify({ reply }),
+          }).catch((e) =>
+            console.warn(`[opencode-runner] failed to answer permission ask ${permId}:`, e)
+          );
+        }
+      };
+      const decidePermissionAsk = async (ask: any): Promise<"once" | "always" | "reject"> => {
+        const kind = String(ask?.permission ?? ask?.action ?? "unknown");
+        if (policy.unattended) return "reject";
+        if (kind === "external_directory") return "once";
+        if (!handlers.onAskUser) return "reject";
+        const what = ((ask?.patterns ?? ask?.resources ?? []) as unknown[]).map(String).join(", ");
+        const meta = ask?.metadata ? JSON.stringify(ask.metadata).slice(0, 300) : "";
+        const answer = await handlers.onAskUser({
+          questions: [
+            {
+              question:
+                `The agent needs permission: **${kind}**` +
+                (what ? ` on \`${what}\`` : "") +
+                (meta && meta !== "{}" ? ` (${meta})` : "") +
+                ". Allow it?",
+              header: "Permission",
+              options: [
+                { label: "Allow", description: "Allow this call once" },
+                { label: "Allow always", description: "Remember for matching future calls" },
+                { label: "Reject", description: "Deny — the agent sees a permission error" },
+              ],
+              multiSelect: false,
+            },
+          ],
+        });
+        if (answer.behavior === "deny") return "reject";
+        const picked = String(
+          Object.values(
+            (answer.updatedInput as { answers?: Record<string, string> }).answers || {}
+          )[0] || ""
+        ).toLowerCase();
+        if (picked.startsWith("allow always")) return "always";
+        if (picked.startsWith("allow") || picked.startsWith("yes")) return "once";
+        return "reject";
+      };
+      const handlePermissionAsk = (ask: any, via: string) => {
+        const permId = String(ask?.id || "");
+        if (!permId || repliedPermissionIds.has(permId)) return;
+        repliedPermissionIds.add(permId);
+        const kind = String(ask?.permission ?? ask?.action ?? "unknown");
+        permissionAskChain = permissionAskChain.then(async () => {
+          let reply: "once" | "always" | "reject" = "reject";
+          try {
+            reply = await decidePermissionAsk(ask);
+          } catch (e) {
+            console.warn(`[opencode-runner] permission ask ${permId} decision failed:`, e);
+          }
+          console.warn(
+            `[opencode-runner] permission ask ${permId} (${kind}) on ${ocSessionId} via ${via} → ${reply}`
+          );
+          turnEvent({
+            direction: "out",
+            kind: "permission_decision",
+            tool_name: kind,
+            decision: reply === "reject" ? "deny" : "allow",
+            reason: policy.unattended
+              ? "unattended_auto_reject"
+              : kind === "external_directory"
+                ? "interactive_auto_approve"
+                : handlers.onAskUser
+                  ? "human_decision"
+                  : "no_ask_handler",
+          });
+          await replyPermissionAsk(permId, reply);
+        });
+      };
+
+      const handleEvent = async (ev: any) => {
+        const p = ev?.properties;
+        switch (ev?.type) {
+          case "message.part.updated": {
+            const part = p?.part;
+            if (!part || part.sessionID !== ocSessionId) return;
+            if (
+              part.type === "text" &&
+              !part.synthetic &&
+              part.time?.end &&
+              !emittedText.has(part.id)
+            ) {
+              emittedText.add(part.id);
+              turnEvent({ direction: "out", kind: "assistant_text", ...summarizeText(part.text) });
+              appendOpencodeTranscript(ocSessionId!, [
+                transcriptLineAssistantText(part.text, part.id, undefined, model),
+              ]);
+              push({ type: "text_chunk", text: part.text });
+            }
+            if (part.type === "tool") {
+              const state = part.state;
+              if (
+                (state?.status === "running" ||
+                  state?.status === "completed" ||
+                  state?.status === "error") &&
+                !startedTools.has(part.id)
+              ) {
+                startedTools.add(part.id);
+                turnEvent({
+                  direction: "out",
+                  kind: "tool_use",
+                  tool_name: part.tool,
+                  tool_use_id: part.id,
+                  ...summarizeText(JSON.stringify(state?.input ?? {}), 500),
+                });
+                appendOpencodeTranscript(ocSessionId!, [
+                  transcriptLineToolUse(part.id, part.tool || "tool", state?.input),
+                ]);
+                push({
+                  type: "tool_use",
+                  toolName: part.tool,
+                  toolInput: state?.input,
+                  toolUseId: part.id,
+                });
+              }
+              if (
+                (state?.status === "completed" || state?.status === "error") &&
+                !finishedTools.has(part.id)
+              ) {
+                finishedTools.add(part.id);
+                const result =
+                  state.status === "completed" ? state.output || "" : `Error: ${state.error}`;
+                turnEvent({
+                  direction: "in",
+                  kind: "tool_result",
+                  tool_use_id: part.id,
+                  is_error: state.status === "error",
+                  ...summarizeText(result),
+                });
+                appendOpencodeTranscript(ocSessionId!, [
+                  transcriptLineToolResult(part.id, result, state.status === "error"),
+                ]);
+                push({
+                  type: "tool_result",
+                  toolUseId: part.id,
+                  content: result.length > 500 ? result.slice(0, 500) + "..." : result,
+                });
+              }
+            }
+            return;
+          }
+          case "permission.updated":
+          case "permission.asked":
+          case "permission.v2.asked": {
+            if (p?.sessionID !== ocSessionId) return;
+            handlePermissionAsk(p, "sse");
+            return;
+          }
+          case "session.error": {
+            if (p?.sessionID && p.sessionID !== ocSessionId) return;
+            const err = p?.error;
+            sessionError = err?.data?.message || err?.name || "opencode session error";
+            return;
+          }
+          case "session.idle": {
+            if (p?.sessionID === ocSessionId) signalDone();
+            return;
+          }
+        }
+      };
+
+      let pumpStopped = false;
+      const pump = busy
+        ? (async () => {
+            while (!pumpStopped && !abortController.signal.aborted && !idle) {
+              try {
+                const sub = await client.event.subscribe(
+                  (shared ? { query: { directory: run.cwd } } : undefined) as any
+                );
+                for await (const ev of sub.stream as AsyncGenerator<any>) {
+                  if (pumpStopped || abortController.signal.aborted) return;
+                  await handleEvent(ev);
+                  if (idle) return;
+                }
+              } catch {
+                // stream dropped — fall through to reconnect
+              }
+              if (!pumpStopped && !idle && !abortController.signal.aborted) {
+                await new Promise((r) => setTimeout(r, 1000));
+              }
+            }
+          })()
+        : Promise.resolve();
+
+      // Wall-clock deadline: what's LEFT of the original turn budget (floor 5
+      // minutes so a turn reattached near its limit isn't killed instantly).
+      const startedAtMs = Date.parse(run.startedAt || "") || Date.now();
+      const remainingMs = Math.max(
+        5 * 60_000,
+        opencodeTurnTimeoutMs() - (Date.now() - startedAtMs)
+      );
+      const turnDeadline = busy
+        ? setTimeout(() => {
+            runFailure ??=
+              `opencode turn exceeded the ${Math.round(opencodeTurnTimeoutMs() / 60_000)}-minute ` +
+              "wall-clock limit (turnTimeoutMinutes in ~/.opensession-opencode.json) — aborting the turn";
+            void client.session.abort({ path: { id: ocSessionId! }, ...q }).catch(() => {});
+            signalDone();
+          }, remainingMs)
+        : undefined;
+
+      let statusPollFailures = 0;
+      const statusPoll = busy
+        ? setInterval(() => {
+            void (async () => {
+              try {
+                if (idle) return;
+                const res = await client.session.status({ ...q });
+                const statuses = res.data as Record<string, { type?: string }> | undefined;
+                statusPollFailures = 0;
+                const mine = statuses?.[ocSessionId!];
+                if (!mine || mine.type === "idle") {
+                  signalDone();
+                  return;
+                }
+                try {
+                  const pr = await fetch(`${server.url}/permission`, {
+                    headers: { Authorization: `Basic ${btoa(`opencode:${server.password}`)}` },
+                    signal: AbortSignal.timeout(5000),
+                  });
+                  if (pr.ok) {
+                    const asks = (await pr.json()) as Array<{ id?: string; sessionID?: string }>;
+                    for (const ask of Array.isArray(asks) ? asks : []) {
+                      if (ask?.sessionID === ocSessionId) handlePermissionAsk(ask, "poll");
+                    }
+                  }
+                } catch {}
+              } catch (e) {
+                statusPollFailures++;
+                if (statusPollFailures === 1 || statusPollFailures % 6 === 0) {
+                  console.warn(
+                    `[opencode-runner] status poll failing for ${ocSessionId} (${statusPollFailures}x): ${e}`
+                  );
+                }
+                if (statusPollFailures >= 6) {
+                  runFailure ??=
+                    "opencode server stopped answering status polls for 60s — ending the turn " +
+                    "(engine state preserved; send again to continue)";
+                  signalDone();
+                }
+              }
+            })();
+          }, 10_000)
+        : undefined;
+
+      try {
+        for (;;) {
+          while (pending.length) yield pending.shift()!;
+          if (abortController.signal.aborted) return;
+          if (idle) break;
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+          });
+          wake = null;
+        }
+        while (pending.length) yield pending.shift()!;
+      } finally {
+        if (statusPoll) clearInterval(statusPoll);
+        if (turnDeadline) clearTimeout(turnDeadline);
+        pumpStopped = true;
+        void pump.catch(() => {});
+      }
+
+      if (runFailure) {
+        turnEvent({ direction: "out", kind: "error", error: runFailure });
+        yield { type: "error", content: runFailure, provider: PROVIDER, model };
+        return;
+      }
+
+      // Turn over — read the authoritative final assistant message (mirrors
+      // the master copy's tail; the seeded dedup keeps pre-restart text from
+      // double-appending).
+      const msgs = await client.session.messages({ path: { id: ocSessionId! }, ...q });
+      const list = (msgs.data || []) as Array<{ info: any; parts: any[] }>;
+      const lastAssistant = [...list].reverse().find((m) => m.info?.role === "assistant");
+      const info = lastAssistant?.info;
+      const parts = lastAssistant?.parts || [];
+      const textOut = parts
+        .filter((pt) => pt.type === "text" && !pt.synthetic && pt.text)
+        .map((pt) => {
+          if (!emittedText.has(pt.id)) {
+            emittedText.add(pt.id);
+            appendOpencodeTranscript(ocSessionId!, [
+              transcriptLineAssistantText(pt.text, pt.id, undefined, model),
+            ]);
+            pending.push({ type: "text_chunk", text: pt.text });
+          }
+          return pt.text;
+        })
+        .join("\n\n");
+      while (pending.length) yield pending.shift()!;
+
+      const errMessage =
+        sessionError ||
+        (info?.error ? info.error?.data?.message || info.error?.name : undefined);
+      if (errMessage && info?.error?.name !== "MessageAbortedError") {
+        turnEvent({ direction: "out", kind: "error", error: errMessage });
+        yield { type: "error", content: errMessage, provider: PROVIDER, model };
+        return;
+      }
+      if (abortController.signal.aborted) return;
+
+      const tokens = info?.tokens;
+      turnEvent({
+        direction: "out",
+        kind: "result",
+        result_subtype: "success",
+        is_error: false,
+        input_tokens: tokens?.input,
+        output_tokens: tokens?.output,
+        cache_read_input_tokens: tokens?.cache?.read,
+        total_cost_usd: info?.cost,
+        ...summarizeText(textOut),
+      });
+      yield {
+        type: "done",
+        sessionId: ocSessionId!,
+        result: textOut || "Done! (no text output)",
+        provider: PROVIDER,
+        model,
+        usage: tokens
+          ? {
+              costUsd: info?.cost || undefined,
+              costApproximate: true,
+              inputTokens: tokens.input || 0,
+              outputTokens: tokens.output || 0,
+              cacheReadTokens: tokens.cache?.read || 0,
+              cacheCreationTokens: tokens.cache?.write || 0,
+              contextTokens:
+                (tokens.input || 0) + (tokens.cache?.read || 0) + (tokens.cache?.write || 0),
+            }
+          : undefined,
+      };
+    } catch (e: any) {
+      if (!abortController.signal.aborted) {
+        const message = e?.message || String(e);
+        turnEvent({ direction: "out", kind: "error", error: message });
+        yield { type: "error", content: message, provider: PROVIDER, model };
+      }
+    } finally {
+      runEnded = true;
+      if (abortController.signal.aborted) {
+        turnEvent({ direction: "out", kind: "cancelled" });
+      }
+      for (const key of registeredKeys) activeOpencodeRuns.delete(key);
+      detachedRunKeys.delete(runKey);
+      if (ocSessionRegistered) unregisterOcSessionContext(ocSessionRegistered);
+      if (rpcTokenRegistered) unregisterRunToken(server.rpcToken);
+      server.activeRuns = Math.max(0, server.activeRuns - 1);
+      server.lastUsed = Date.now();
+      reapDrainedServer(server);
+      journalClear(runKey);
+    }
+  }
+
+  return attach();
 }

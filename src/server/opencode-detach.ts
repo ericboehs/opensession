@@ -1,0 +1,400 @@
+/**
+ * Detached `opencode serve` processes — the piece that makes a backstage
+ * restart non-destructive for in-flight runs.
+ *
+ * Why: engine turns execute server-side inside `opencode serve`; the backstage
+ * process is just an SSE client. Servers spawned as direct Bun children die
+ * with the unit on `systemctl restart` (KillMode=mixed SIGTERMs only the bun
+ * parent, but systemd SIGKILLs the remaining cgroup members once it exits),
+ * killing every in-flight turn. Spawning them via `systemd-run --user --scope`
+ * moves each server into its own transient user scope OUTSIDE
+ * opensession.service's cgroup, so a service restart leaves them running; the
+ * next boot re-adopts them from the registry file and reattaches journaled
+ * runs (see adoptDetachedOpencodeServers / tryReattachOpencodeRun in
+ * opencode-runner.ts).
+ *
+ * Registry: ~/.opensession-opencode-servers.json records {unit, pid, url,
+ * password, key, configHash, rpcToken, …} per detached server. It is the ONLY
+ * bridge across a restart (ports are ephemeral, passwords random per spawn),
+ * so spawn/kill paths must keep it in sync: upsert on successful spawn,
+ * remove on kill. Contains the Basic-auth passwords for loopback-bound
+ * servers — same trust domain as opencode's own auth store under $HOME.
+ *
+ * Detached stdio goes to a log file, never a pipe: a pipe's read end dies
+ * with the backstage process and the next engine write would SIGPIPE-kill the
+ * surviving server. That also means the port can't be parsed from stdout —
+ * we pick a free port ourselves and health-poll the URL instead.
+ *
+ * Gating: detach only activates when the owning process opted in
+ * (enableOpencodeServerDetach — opensession.ts's boot block; the runner-host
+ * and sandbox contexts never do), the systemd user manager is reachable, and
+ * the OPENSESSION_OC_DETACH=0 kill switch is off. Every failure inside the
+ * detached spawn path falls back to a plain direct-child spawn.
+ */
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync } from "fs";
+import type { Subprocess } from "bun";
+import { envAlias } from "./rename-compat";
+import { writeJsonAtomic } from "./shared/atomic-write";
+
+const HOME = process.env.HOME || "/home/ubuntu";
+
+/** One process handle shape for both pools: a live Bun child (direct spawn,
+ *  or the systemd-run waiter of a just-detached spawn) and an ADOPTED scope
+ *  from a previous process (no child handle exists — liveness is a pid poll). */
+export interface ServerProcHandle {
+  /** systemd user scope unit name — detached servers only. */
+  unit?: string;
+  pid?: number;
+  detached: boolean;
+  readonly exitCode: number | null;
+  readonly killed: boolean;
+  exited: Promise<number>;
+  /** SIGTERM the server (detached: `systemctl --user stop`, whose scope-level
+   *  TimeoutStopSec=5 escalates to SIGKILL — covers the SIGTERM-swallowing
+   *  meridian plugin). `force` maps to the direct child's SIGKILL escalation;
+   *  detached scopes already escalate via the stop job. */
+  kill(force?: boolean): void;
+}
+
+/** Wrap a directly-spawned Bun child (the classic pool path). */
+export function bunProcHandle(proc: Subprocess<"ignore", "pipe" | number, "pipe" | number>): ServerProcHandle {
+  return {
+    detached: false,
+    get pid() {
+      return proc.pid;
+    },
+    get exitCode() {
+      return proc.exitCode;
+    },
+    get killed() {
+      return proc.killed;
+    },
+    exited: proc.exited,
+    kill(force?: boolean) {
+      try {
+        proc.kill(force ? 9 : undefined);
+      } catch {}
+    },
+  };
+}
+
+// ── Gating ───────────────────────────────────────────────────────────────────
+
+const g = globalThis as any;
+
+const UID = typeof process.getuid === "function" ? process.getuid() : 1000;
+export const SYSTEMD_USER_RUNTIME = `/run/user/${UID}`;
+
+/** Opt this process into detached engine spawns. Called ONLY from
+ *  opensession.ts's boot block — the runner-host and in-sandbox contexts keep
+ *  direct children (no user manager there, and their lifecycle is their own). */
+export function enableOpencodeServerDetach(): void {
+  g.__opencodeDetachEnabled = true;
+}
+
+export function opencodeDetachActive(): boolean {
+  if (envAlias("OPENSESSION_OC_DETACH", "BACKSTAGE_OC_DETACH") === "0") return false;
+  if (g.__opencodeDetachEnabled !== true) return false;
+  return existsSync(`${SYSTEMD_USER_RUNTIME}/systemd/private`) && !!Bun.which("systemd-run");
+}
+
+function systemdEnv(): Record<string, string> {
+  return {
+    PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+    XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || SYSTEMD_USER_RUNTIME,
+  };
+}
+
+/** Ask the user manager to stop a scope. --no-block: never wedge a kill path
+ *  on the manager; the scope's own TimeoutStopSec (set at spawn) handles the
+ *  SIGTERM→SIGKILL escalation. Safe on already-gone units. */
+export function stopDetachedUnit(unit: string): void {
+  try {
+    Bun.spawn({
+      cmd: ["systemctl", "--user", "stop", "--no-block", `${unit}.scope`],
+      env: systemdEnv(),
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+  } catch {}
+}
+
+// ── Registry ─────────────────────────────────────────────────────────────────
+
+export interface DetachedServerRecord {
+  key: string;
+  unit: string;
+  pid: number;
+  url: string;
+  password: string;
+  cwd: string;
+  configHash: string;
+  shared?: boolean;
+  rpcToken: string;
+  meridianKey?: string;
+  spawnedAt: string;
+}
+
+const REGISTRY_PATH =
+  envAlias("OPENSESSION_OC_SERVER_REGISTRY", "BACKSTAGE_OC_SERVER_REGISTRY") ||
+  `${HOME}/.opensession-opencode-servers.json`;
+
+export function readDetachedRegistry(): DetachedServerRecord[] {
+  try {
+    if (!existsSync(REGISTRY_PATH)) return [];
+    const parsed = JSON.parse(readFileSync(REGISTRY_PATH, "utf-8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDetachedRegistry(records: DetachedServerRecord[]): void {
+  try {
+    writeJsonAtomic(REGISTRY_PATH, records);
+    chmodSync(REGISTRY_PATH, 0o600); // holds the servers' Basic-auth passwords
+  } catch (e) {
+    console.warn("[opencode-detach] registry write failed:", e);
+  }
+}
+
+/** Record a live detached server. Keyed by unit (unique per spawn) — a pool
+ *  key may briefly have two records while a config-change drain overlaps a
+ *  respawn; adoption keeps the newest per key and stops the rest. */
+export function upsertDetachedRecord(record: DetachedServerRecord): void {
+  const rest = readDetachedRegistry().filter((r) => r.unit !== record.unit);
+  writeDetachedRegistry([...rest, record]);
+}
+
+export function removeDetachedRecord(unit: string): void {
+  const all = readDetachedRegistry();
+  const rest = all.filter((r) => r.unit !== unit);
+  if (rest.length !== all.length) writeDetachedRegistry(rest);
+}
+
+// ── Detached spawn ───────────────────────────────────────────────────────────
+
+/** Poll cadence for adopted servers' liveness (no child handle to wait on). */
+const ADOPTED_EXIT_POLL_MS = 3_000;
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Handle for a scope adopted from a previous process: liveness is a pid
+ *  poll (exit codes are unobservable across the reparent — dead is dead). */
+export function adoptedProcHandle(unit: string, pid: number): ServerProcHandle {
+  let exitCode: number | null = null;
+  let killed = false;
+  let resolveExited: (code: number) => void = () => {};
+  const exited = new Promise<number>((r) => (resolveExited = r));
+  const markDead = () => {
+    if (exitCode === null) {
+      exitCode = -1;
+      clearInterval(timer);
+      resolveExited(-1);
+    }
+  };
+  const timer = setInterval(() => {
+    if (!processAlive(pid)) markDead();
+  }, ADOPTED_EXIT_POLL_MS);
+  (timer as unknown as { unref?: () => void }).unref?.();
+  return {
+    unit,
+    pid,
+    detached: true,
+    get exitCode() {
+      return exitCode;
+    },
+    get killed() {
+      return killed;
+    },
+    exited,
+    kill() {
+      killed = true;
+      stopDetachedUnit(unit);
+      // The stop job SIGKILLs within its TimeoutStopSec; reflect it soon after
+      // so pool alive-checks converge even if the pid poll lags.
+      setTimeout(markDead, 8_000);
+    },
+  };
+}
+
+/** Handle for a detached server this process just spawned: the systemd-run
+ *  waiter is our child and exits exactly when the engine does, so exit
+ *  observation stays precise; kills still go through the user manager (a
+ *  signal to systemd-run wouldn't reach the scope). */
+function detachedChildHandle(
+  unit: string,
+  pid: number,
+  waiter: Subprocess<"ignore", number, number>
+): ServerProcHandle {
+  let killed = false;
+  return {
+    unit,
+    pid,
+    detached: true,
+    get exitCode() {
+      return waiter.exitCode;
+    },
+    get killed() {
+      return killed;
+    },
+    exited: waiter.exited,
+    kill() {
+      killed = true;
+      stopDetachedUnit(unit);
+    },
+  };
+}
+
+function pickFreePort(): number {
+  const srv = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response("", { status: 404 }),
+  });
+  const port = srv.port;
+  srv.stop(true);
+  if (!port) throw new Error("could not allocate a free port");
+  return port;
+}
+
+/** Any authed HTTP response = the server is up and the password is ours
+ *  (401/403 would mean we're talking to a stranger on a recycled port). */
+export async function opencodeServerHealthy(
+  url: string,
+  password: string,
+  timeoutMs = 3_000
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${url}/permission`, {
+      headers: { Authorization: `Basic ${btoa(`opencode:${password}`)}` },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.status !== 401 && res.status !== 403 && res.status < 500;
+  } catch {
+    return false;
+  }
+}
+
+/** The engine pid inside the scope, read from the scope's cgroup (systemd-run
+ *  itself stays in OUR cgroup — only its exec'd child moves). */
+function scopeMainPid(unit: string): number | null {
+  try {
+    const shown = Bun.spawnSync({
+      cmd: ["systemctl", "--user", "show", `${unit}.scope`, "-p", "ControlGroup", "--value"],
+      env: systemdEnv(),
+    });
+    const cg = shown.stdout.toString().trim();
+    if (!cg.startsWith("/")) return null;
+    const procs = readFileSync(`/sys/fs/cgroup${cg}/cgroup.procs`, "utf-8")
+      .split("\n")
+      .map((l) => parseInt(l.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    return procs[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export interface DetachedSpawn {
+  handle: ServerProcHandle;
+  url: string;
+  unit: string;
+  pid: number;
+}
+
+/**
+ * Spawn `opencode serve` in its own transient user scope. Throws on any
+ * failure (systemd-run error, startup timeout, unreadable scope pid) — the
+ * caller falls back to a direct-child spawn.
+ */
+export async function spawnDetachedOpencodeServer(opts: {
+  bin: string;
+  cwd: string;
+  /** Full child env (config content + password included). */
+  env: Record<string, string>;
+  password: string;
+  logDir: string;
+  startTimeoutMs: number;
+}): Promise<DetachedSpawn> {
+  const unit = `opensession-oc-${crypto.randomUUID().slice(0, 13)}`;
+  const port = pickFreePort();
+  const url = `http://127.0.0.1:${port}`;
+  mkdirSync(opts.logDir, { recursive: true });
+  const logPath = `${opts.logDir}/${unit}.log`;
+  const fd = openSync(logPath, "a");
+  let waiter: Subprocess<"ignore", number, number>;
+  try {
+    waiter = Bun.spawn({
+      cmd: [
+        "systemd-run",
+        "--user",
+        "--scope",
+        "--collect",
+        "--quiet",
+        `--unit=${unit}`,
+        // SIGTERM→SIGKILL escalation for scope stops (meridian swallows TERM).
+        "--property=TimeoutStopSec=5",
+        "--",
+        opts.bin,
+        "serve",
+        "--hostname=127.0.0.1",
+        `--port=${port}`,
+      ],
+      cwd: opts.cwd,
+      env: { ...opts.env, XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || SYSTEMD_USER_RUNTIME },
+      stdin: "ignore",
+      stdout: fd,
+      stderr: fd,
+    }) as Subprocess<"ignore", number, number>;
+  } finally {
+    // The child holds its own dup of the fd.
+    try {
+      closeSync(fd);
+    } catch {}
+  }
+
+  const deadline = Date.now() + opts.startTimeoutMs;
+  const logTail = () => {
+    try {
+      return readFileSync(logPath, "utf-8").slice(-500);
+    } catch {
+      return "";
+    }
+  };
+  for (;;) {
+    if (waiter.exitCode !== null) {
+      throw new Error(
+        `detached opencode serve (${unit}) exited with code ${waiter.exitCode}: ${logTail()}`
+      );
+    }
+    if (await opencodeServerHealthy(url, opts.password, 1_500)) break;
+    if (Date.now() > deadline) {
+      stopDetachedUnit(unit);
+      throw new Error(
+        `detached opencode serve (${unit}) didn't answer within ${Math.round(
+          opts.startTimeoutMs / 1000
+        )}s: ${logTail()}`
+      );
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+
+  const pid = scopeMainPid(unit);
+  if (!pid) {
+    // Without the engine pid the registry record can't support adoption —
+    // treat as a failed detach and let the caller fall back (the scope is
+    // stopped so nothing leaks).
+    stopDetachedUnit(unit);
+    throw new Error(`detached opencode serve (${unit}): could not resolve scope pid`);
+  }
+  return { handle: detachedChildHandle(unit, pid, waiter), url, unit, pid };
+}
