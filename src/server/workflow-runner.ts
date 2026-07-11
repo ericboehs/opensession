@@ -28,13 +28,18 @@ import {
 	unregisterLiveWorkflow,
 	updateWorkflowRun,
 } from "./workflow-store";
+import { findSession } from "./session-cache";
+import { repoForPath } from "./worktree";
 import {
 	WORKFLOW_LIMITS,
 	type WorkerToParent,
 	type WorkflowAgentOpts,
 	type WorkflowAgentOutcome,
+	type WorkflowAgentSnapshot,
+	type WorkflowExecCtx,
 	type WorkflowExecutor,
 	type WorkflowJournalEntry,
+	type WorkflowMergeResult,
 	type WorkflowMeta,
 	type WorkflowRunSnapshot,
 } from "./workflow-types";
@@ -250,6 +255,11 @@ export interface StartWorkflowOpts {
 	defaultModel?: string;
 	/** Output-token budget exposed to the script as `budget` (null = unbounded). */
 	budgetTotal?: number;
+	/** The session's repo id + branch. Resolved from the session file when
+	 *  omitted; write agents cut their isolated worktrees off this branch and
+	 *  merge() lands them back onto it. */
+	repo?: string;
+	baseBranch?: string;
 	/** Injected by tests; defaults to the real runAgent-backed executor. */
 	executor?: WorkflowExecutor;
 	/** Replay this run's journal: matching agent calls resolve instantly. */
@@ -325,28 +335,77 @@ function runWorkflow(
 	let worker: Worker | undefined;
 	let finished = false;
 	let totalCalls = 0;
+	let totalWriteCalls = 0;
 	// Calls the worker is still awaiting an agent_result for.
 	const openCalls = new Set<number>();
 
-	// Semaphore: at most maxConcurrentAgents concurrent executor calls; the
-	// rest queue FIFO.
-	let inFlight = 0;
-	const waiting: Array<() => void> = [];
-	const acquire = (): Promise<void> =>
+	// The session's repo + branch, resolved once per run (write agents branch
+	// off it; merge() merges back into it). Explicit opts win — tests pass them.
+	let repoInfo: { repo?: string; baseBranch?: string } | undefined;
+	function sessionRepoInfo(): { repo?: string; baseBranch?: string } {
+		if (repoInfo) return repoInfo;
+		if (opts.repo !== undefined || opts.baseBranch !== undefined) {
+			repoInfo = { repo: opts.repo, baseBranch: opts.baseBranch };
+			return repoInfo;
+		}
+		try {
+			const session = findSession(opts.sessionId);
+			repoInfo = {
+				repo:
+					session?.repo ||
+					(session?.worktreeDir ? repoForPath(session.worktreeDir).id : undefined),
+				baseBranch: session?.branch || undefined,
+			};
+		} catch (e) {
+			console.warn(`[workflow] ${runId} could not resolve the session's repo:`, e);
+			repoInfo = {};
+		}
+		return repoInfo;
+	}
+
+	function execCtx(extra?: Partial<WorkflowExecCtx>): WorkflowExecCtx {
+		const { repo, baseBranch } = sessionRepoInfo();
+		return {
+			runId,
+			sessionId: opts.sessionId,
+			user: opts.user,
+			cwd: opts.cwd,
+			repo,
+			baseBranch,
+			defaultModel: opts.defaultModel,
+			signal: controller.signal,
+			...extra,
+		};
+	}
+
+	// Two semaphores: read agents share the big pool, write agents a small one
+	// of their own (each cuts a git worktree — disk + the repo's git lock).
+	// The rest queue FIFO in their own lane.
+	const pools = {
+		read: { inFlight: 0, max: WORKFLOW_LIMITS.maxConcurrentAgents, waiting: [] as Array<() => void> },
+		write: {
+			inFlight: 0,
+			max: WORKFLOW_LIMITS.maxConcurrentWriteAgents,
+			waiting: [] as Array<() => void>,
+		},
+	};
+	const acquire = (kind: "read" | "write"): Promise<void> =>
 		new Promise((resolve) => {
-			if (inFlight < WORKFLOW_LIMITS.maxConcurrentAgents) {
-				inFlight++;
+			const pool = pools[kind];
+			if (pool.inFlight < pool.max) {
+				pool.inFlight++;
 				resolve();
 			} else {
-				waiting.push(() => {
-					inFlight++;
+				pool.waiting.push(() => {
+					pool.inFlight++;
 					resolve();
 				});
 			}
 		});
-	const release = (): void => {
-		inFlight--;
-		const next = waiting.shift();
+	const release = (kind: "read" | "write"): void => {
+		const pool = pools[kind];
+		pool.inFlight--;
+		const next = pool.waiting.shift();
 		if (next) next();
 	};
 
@@ -421,6 +480,45 @@ function runWorkflow(
 		return outcome.text;
 	}
 
+	/** What the script's `await agent(...)` resolves to. A write agent resolves
+	 *  to an OBJECT (its branch + diffstat + text) so the script can hand it
+	 *  straight to merge(); a read agent keeps resolving to text/structured. */
+	function agentValue(
+		outcome: WorkflowAgentOutcome,
+		seq: number,
+		write: boolean,
+	): unknown {
+		if (!outcome.ok) return null;
+		const value = outcome.structured ?? outcome.text ?? null;
+		if (!write) return value;
+		return {
+			text: outcome.text ?? "",
+			...(outcome.structured !== undefined ? { structured: outcome.structured } : {}),
+			branch: outcome.branch ?? null,
+			worktreeDir: outcome.worktreeDir ?? null,
+			changed: outcome.changed === true,
+			files: outcome.files ?? [],
+			insertions: outcome.insertions ?? 0,
+			deletions: outcome.deletions ?? 0,
+			seq,
+		};
+	}
+
+	/** Copy the outcome's drill-in pointer + write artifacts onto the row. */
+	function applyOutcome(
+		agent: WorkflowAgentSnapshot,
+		outcome: WorkflowAgentOutcome,
+	): void {
+		if (outcome.engineSessionId) agent.engineSessionId = outcome.engineSessionId;
+		if (agent.write) {
+			agent.changed = outcome.changed === true;
+			if (outcome.branch) agent.branch = outcome.branch;
+			if (outcome.files) agent.filesChanged = outcome.files.length;
+			if (outcome.insertions !== undefined) agent.insertions = outcome.insertions;
+			if (outcome.deletions !== undefined) agent.deletions = outcome.deletions;
+		}
+	}
+
 	async function handleAgentCall(
 		msg: Extract<WorkerToParent, { type: "agent_call" }>,
 	): Promise<void> {
@@ -428,6 +526,15 @@ function runWorkflow(
 		totalCalls++;
 		if (totalCalls > WORKFLOW_LIMITS.maxAgents) {
 			postResult(msg.callId, { ok: false, value: null, error: "agent cap reached" });
+			return;
+		}
+		const write = msg.opts.write === true;
+		if (write && ++totalWriteCalls > WORKFLOW_LIMITS.maxWriteAgents) {
+			postResult(msg.callId, {
+				ok: false,
+				value: null,
+				error: "write-agent cap reached",
+			});
 			return;
 		}
 		const hash = hashAgentCall(msg.prompt, msg.opts);
@@ -442,7 +549,9 @@ function runWorkflow(
 			const outcome = journaled.outcome;
 			const now = new Date().toISOString();
 			updateWorkflowRun(runId, (s) => {
-				s.agents.push({
+				// A replayed write agent is NOT re-run: its branch already exists
+				// (and if a human deleted it, merge() reports it skipped).
+				const agent: WorkflowAgentSnapshot = {
 					seq: msg.seq,
 					label,
 					phase: msg.opts.phase,
@@ -457,7 +566,10 @@ function runWorkflow(
 					endedAt: now,
 					cached: true,
 					structured,
-				});
+					...(write ? { write: true } : {}),
+				};
+				applyOutcome(agent, outcome);
+				s.agents.push(agent);
 				s.totals.agents = s.agents.length;
 			});
 			// Carry the entry into this run's journal so resuming the resumed
@@ -469,7 +581,7 @@ function runWorkflow(
 			}
 			postResult(msg.callId, {
 				ok: true,
-				value: outcome.structured ?? outcome.text ?? null,
+				value: agentValue(outcome, msg.seq, write),
 				// Report the ORIGINAL spend so the worker-side budget replays
 				// deterministically (a script branching on budget.remaining() must
 				// see the same numbers as the original run).
@@ -487,11 +599,12 @@ function runWorkflow(
 				status: "pending",
 				promptPreview: msg.prompt,
 				structured,
+				...(write ? { write: true } : {}),
 			});
 			s.totals.agents = s.agents.length;
 		});
 
-		await acquire();
+		await acquire(write ? "write" : "read");
 		// Everything after acquire() runs under one finally — a throw anywhere
 		// (even the snapshot write) must not leak the semaphore slot.
 		const startedAt = new Date().toISOString();
@@ -511,14 +624,16 @@ function runWorkflow(
 			const executor = await executorPromise;
 			outcome = await executor.execute(
 				{ prompt: msg.prompt, opts: msg.opts, seq: msg.seq },
-				{
-					runId,
-					sessionId: opts.sessionId,
-					user: opts.user,
-					cwd: opts.cwd,
-					defaultModel: opts.defaultModel,
-					signal: controller.signal,
-				},
+				execCtx({
+					// The engine session id lands on the row as soon as it exists, so
+					// the UI can drill into a RUNNING agent's conversation.
+					onEngineSession: (engineSessionId) => {
+						updateWorkflowRun(runId, (s) => {
+							const agent = s.agents.find((a) => a.seq === msg.seq);
+							if (agent) agent.engineSessionId = engineSessionId;
+						});
+					},
+				}),
 			);
 		} catch (e) {
 			outcome = {
@@ -526,7 +641,7 @@ function runWorkflow(
 				error: e instanceof Error ? e.message : String(e),
 			};
 		} finally {
-			release();
+			release(write ? "write" : "read");
 		}
 		const endedAt = new Date().toISOString();
 		// A cancel/finish that raced us already resolved the call and marked
@@ -542,6 +657,7 @@ function runWorkflow(
 				if (outcome.tokens) agent.tokens = outcome.tokens;
 				agent.resultPreview = outcomePreview(outcome);
 				if (!outcome.ok) agent.error = outcome.error || "agent failed";
+				applyOutcome(agent, outcome);
 			}
 			if (outcome.tokens) {
 				s.totals.tokensIn += outcome.tokens.input || 0;
@@ -563,10 +679,61 @@ function runWorkflow(
 		}
 		postResult(msg.callId, {
 			ok: outcome.ok,
-			value: outcome.structured ?? outcome.text ?? null,
+			value: agentValue(outcome, msg.seq, write),
 			error: outcome.error,
 			tokensOut: outcome.tokens?.output,
 		});
+	}
+
+	// ── merge() bridge ─────────────────────────────────────────────────────────
+
+	function postMergeResult(callId: number, result: WorkflowMergeResult): void {
+		try {
+			worker?.postMessage({ type: "merge_result", callId, result });
+		} catch {}
+	}
+
+	/** The script's merge(items): land write agents' branches on the session's
+	 *  branch (workflow-execute's mergeWorkflowAgents does the safety work) and
+	 *  mark the outcome on each agent's row. */
+	async function handleMergeCall(
+		msg: Extract<WorkerToParent, { type: "merge_call" }>,
+	): Promise<void> {
+		const items = (msg.items || []).filter(
+			(i) => i && typeof i.branch === "string" && i.branch,
+		);
+		if (!items.length) {
+			postMergeResult(msg.callId, { merged: [], conflicts: [], skipped: [] });
+			return;
+		}
+		let result: WorkflowMergeResult;
+		try {
+			const executor = await executorPromise;
+			if (!executor.merge) {
+				throw new Error("this workflow executor cannot merge write agents");
+			}
+			result = await executor.merge(execCtx(), items);
+		} catch (e) {
+			result = {
+				merged: [],
+				conflicts: [],
+				skipped: items.map((i) => ({ ...i, reason: "merge failed" })),
+				error: e instanceof Error ? e.message : String(e),
+			};
+		}
+		if (!finished) {
+			updateWorkflowRun(runId, (s) => {
+				for (const m of result.merged) {
+					const agent = s.agents.find((a) => a.seq === m.seq);
+					if (agent) agent.merged = "merged";
+				}
+				for (const c of result.conflicts) {
+					const agent = s.agents.find((a) => a.seq === c.seq);
+					if (agent) agent.merged = "conflict";
+				}
+			});
+		}
+		postMergeResult(msg.callId, result);
 	}
 
 	/** Bound the stored top-level result (it's persisted + broadcast). */
@@ -589,6 +756,17 @@ function runWorkflow(
 					postResult(msg.callId, {
 						ok: false,
 						value: null,
+						error: e instanceof Error ? e.message : String(e),
+					});
+				});
+				return;
+			case "merge_call":
+				handleMergeCall(msg).catch((e) => {
+					console.warn(`[workflow] ${runId} merge call failed:`, e);
+					postMergeResult(msg.callId, {
+						merged: [],
+						conflicts: [],
+						skipped: [],
 						error: e instanceof Error ? e.message : String(e),
 					});
 				});

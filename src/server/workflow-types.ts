@@ -26,8 +26,13 @@
 export const WORKFLOW_LIMITS = {
 	/** Concurrent agent runs per workflow. */
 	maxConcurrentAgents: 8,
+	/** Concurrent WRITE agents (own pool): each one cuts a git worktree — heavy
+	 *  on disk and on the repo's git lock, so it's kept well below the read pool. */
+	maxConcurrentWriteAgents: 4,
 	/** Lifetime agent() calls per workflow run. */
 	maxAgents: 200,
+	/** Lifetime write-agent calls per workflow run (worktrees are expensive). */
+	maxWriteAgents: 40,
 	/** Per-agent wall clock before the run is failed. */
 	agentTimeoutMs: 15 * 60_000,
 	/** Whole-workflow wall clock before the worker is terminated. */
@@ -64,6 +69,11 @@ export interface WorkflowAgentOpts {
 	schema?: unknown;
 	/** Model id (native or opencode form); defaults to the workflow default. */
 	model?: string;
+	/** Run this agent in code mode inside its OWN isolated git worktree
+	 *  (branched off the session's branch) so it may edit files with zero
+	 *  collisions against sibling agents. Its work is auto-committed on its own
+	 *  branch; `merge()` lands selected branches back on the session's branch. */
+	write?: boolean;
 }
 
 // ── Parent ⇄ executor contract ───────────────────────────────────────────────
@@ -81,11 +91,21 @@ export interface WorkflowExecCtx {
 	user?: string;
 	/** Working directory for the agent run (the session's worktree). */
 	cwd: string;
+	/** The session's repo id (worktree.ts REPOS key) — write agents cut their
+	 *  isolated worktrees there, merge() lands them back. */
+	repo?: string;
+	/** The session's branch — the base a write agent's branch is cut from and
+	 *  the branch merge() merges into. */
+	baseBranch?: string;
 	/** Default model when the call doesn't override. */
 	defaultModel?: string;
 	/** Flipped on cancel/timeouts — executors stop consuming and cancel the
 	 *  underlying engine run. */
 	signal: AbortSignal;
+	/** Reported as soon as the engine session exists, so the snapshot carries
+	 *  the drill-in pointer WHILE the agent runs (the journal entry only lands
+	 *  when it finishes). */
+	onEngineSession?: (engineSessionId: string) => void;
 }
 
 export interface WorkflowAgentOutcome {
@@ -97,6 +117,34 @@ export interface WorkflowAgentOutcome {
 	error?: string;
 	model?: string;
 	tokens?: { input: number; output: number };
+	/** The opencode session this agent ran in — the transcript drill-in pointer. */
+	engineSessionId?: string;
+	/** Where it ran (the session's worktree, or a write agent's own one). */
+	cwd?: string;
+	// ── write agents ──
+	/** The agent's own branch (write agents only). */
+	branch?: string;
+	worktreeDir?: string;
+	/** Did the agent actually change anything? (false → worktree removed.) */
+	changed?: boolean;
+	/** Paths touched vs. the base commit. */
+	files?: string[];
+	insertions?: number;
+	deletions?: number;
+	/** The auto-commit's sha. */
+	commit?: string;
+}
+
+/** Outcome of a merge() call: every branch lands in exactly one bucket. A
+ *  conflicted branch never sinks the batch — the merge is aborted, the
+ *  conflicting files are reported, and the next branch is tried. `error` is set
+ *  when the batch was refused wholesale (dirty session worktree, live shared
+ *  checkout) — nothing was merged in that case. */
+export interface WorkflowMergeResult {
+	merged: Array<{ branch: string; seq: number }>;
+	conflicts: Array<{ branch: string; seq: number; files: string[] }>;
+	skipped: Array<{ branch: string; seq: number; reason: string }>;
+	error?: string;
 }
 
 /** Executes one agent() call. The real implementation drives runAgent; tests
@@ -106,6 +154,13 @@ export interface WorkflowExecutor {
 		req: WorkflowAgentRequest,
 		ctx: WorkflowExecCtx,
 	): Promise<WorkflowAgentOutcome>;
+	/** Land write agents' branches on the session's branch. Optional so test
+	 *  fakes don't have to implement it (the runner reports a clear error when
+	 *  a script calls merge() against an executor that can't). */
+	merge?(
+		ctx: WorkflowExecCtx,
+		items: Array<{ seq: number; branch: string }>,
+	): Promise<WorkflowMergeResult>;
 }
 
 // ── Persistence / snapshots (UI payloads) ────────────────────────────────────
@@ -134,6 +189,18 @@ export interface WorkflowAgentSnapshot {
 	cached?: boolean;
 	/** True when the call carried a schema. */
 	structured?: boolean;
+	/** The agent's opencode session — the UI's transcript drill-in pointer.
+	 *  Set as soon as the engine session exists (not only when the agent ends). */
+	engineSessionId?: string;
+	// ── write agents ──
+	write?: boolean;
+	branch?: string;
+	changed?: boolean;
+	filesChanged?: number;
+	insertions?: number;
+	deletions?: number;
+	/** Set by a merge() call that included this agent's branch. */
+	merged?: "merged" | "conflict";
 }
 
 export type WorkflowRunStatus =
@@ -188,6 +255,11 @@ export type WorkerToParent =
 			prompt: string;
 			opts: WorkflowAgentOpts;
 	  }
+	| {
+			type: "merge_call";
+			callId: number;
+			items: Array<{ seq: number; branch: string }>;
+	  }
 	| { type: "phase"; title: string }
 	| { type: "log"; message: string }
 	| { type: "done"; result: unknown }
@@ -199,8 +271,11 @@ export type ParentToWorker =
 			type: "agent_result";
 			callId: number;
 			ok: boolean;
-			/** The resolved value for the script: structured ?? text; null on error. */
+			/** The resolved value for the script: for a write agent the result
+			 *  object (branch + diffstat + text), else structured ?? text; null on
+			 *  error. */
 			value: unknown;
 			error?: string;
 			tokensOut?: number;
-	  };
+	  }
+	| { type: "merge_result"; callId: number; result: WorkflowMergeResult };

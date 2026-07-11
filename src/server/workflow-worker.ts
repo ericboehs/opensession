@@ -66,6 +66,28 @@ function agent(prompt: unknown, opts?: WorkflowAgentOpts): Promise<unknown> {
 	});
 }
 
+/** Land write agents' branches on the session's branch, sequentially. Accepts
+ *  a single write-agent result, an array of them, or bare {seq, branch} items;
+ *  nulls and unchanged/branchless agents are dropped. Resolves to a
+ *  WorkflowMergeResult ({ merged, conflicts, skipped, error }) — a conflicted
+ *  branch never rejects; it's reported and the batch continues. */
+function merge(input: unknown): Promise<unknown> {
+	const list = Array.isArray(input) ? input : [input];
+	const items: Array<{ seq: number; branch: string }> = [];
+	for (const it of list) {
+		if (!it || typeof it !== "object") continue;
+		const o = it as { seq?: unknown; branch?: unknown };
+		if (typeof o.branch === "string" && o.branch && typeof o.seq === "number") {
+			items.push({ seq: o.seq, branch: o.branch });
+		}
+	}
+	const callId = callCounter++;
+	return new Promise((resolve) => {
+		pendingCalls.set(callId, resolve);
+		post({ type: "merge_call", callId, items });
+	});
+}
+
 /** Barrier over thunks; a thrown thunk resolves to null, never rejects the
  *  batch. */
 function parallel(thunks: Array<() => unknown>): Promise<unknown[]> {
@@ -219,8 +241,8 @@ async function runBody(
 		const AsyncFunction = async function () {}.constructor as new (
 			...params: string[]
 		) => (...values: unknown[]) => Promise<unknown>;
-		const apiNames = ["agent", "parallel", "pipeline", "phase", "log", "args", "budget"];
-		const apiValues = [agent, parallel, pipeline, phase, log, args, budget];
+		const apiNames = ["agent", "parallel", "pipeline", "merge", "phase", "log", "args", "budget"];
+		const apiValues = [agent, parallel, pipeline, merge, phase, log, args, budget];
 		const fn = new AsyncFunction(...apiNames, ...DANGEROUS_GLOBALS, body);
 		scrubEnv();
 		poisonDeterminismHoles();
@@ -254,5 +276,12 @@ workerGlobal.onmessage = (event: MessageEvent<unknown>) => {
 		if (typeof msg.tokensOut === "number") budgetSpent += msg.tokensOut;
 		// null on error — the script filters, we never reject.
 		resolve(msg.ok ? msg.value : null);
+		return;
+	}
+	if (msg.type === "merge_result") {
+		const resolve = pendingCalls.get(msg.callId);
+		if (!resolve) return;
+		pendingCalls.delete(msg.callId);
+		resolve(msg.result);
 	}
 };

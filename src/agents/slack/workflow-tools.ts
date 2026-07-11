@@ -26,12 +26,23 @@ import type {
 	WorkflowRunSnapshot,
 } from "../../server/workflow-types";
 
+/**
+ * The model workflow agents run on when the script doesn't name one.
+ * Deliberately NOT the session's model: a fan-out inherits whatever the
+ * orchestrator happens to be on (Fable), which is both expensive and not
+ * obviously the right worker. Opus is the strong default — intelligence first,
+ * cost only a tie-breaker (CLAUDE.md's priority rule). A script can still route
+ * per agent via opts.model when it has a reason to.
+ */
+export const WORKFLOW_DEFAULT_MODEL = "claude-opus-4-8";
+
 export interface WorkflowsToolContext {
 	sessionId: string;
 	user?: string;
 	/** Resolved lazily per call — the session's worktree can change mid-run. */
 	cwd: () => string | undefined;
-	/** The session's model, used as the default for agent() calls. */
+	/** Overrides WORKFLOW_DEFAULT_MODEL for agent() calls that name no model.
+	 *  Left unset in production — agents default to Opus, not the session's model. */
 	defaultModel?: () => string | undefined;
 }
 
@@ -75,14 +86,20 @@ Injected globals:
 - args — your args_json, parsed, verbatim.
 - budget — { total, spent(), remaining() } in output tokens.
 
+MODEL: agents run on Opus 4.8 (claude-opus-4-8) by default — strong output is the point, cost is only a tie-breaker. Override per agent with opts.model only when you have a specific reason:
+- "claude-sonnet-5" / "gpt-5.5" — for a genuinely mechanical, clearly-specified fan-out (e.g. extracting a list from 200 files) where you're confident a cheaper model nails it and the volume is large.
+- "claude-fable-5" — the orchestrator's own model; rarely right for a fan-out.
+Default to Opus. Don't downgrade an agent whose output you actually depend on.
+
 Rules:
 - Date.now(), argless new Date(), and Math.random() THROW inside scripts (they break resume replay determinism) — pass timestamps/seeds via args.
-- Workflow agents are read-only workers (ask mode, no MCP servers) and start fresh with ZERO context from this session — make every prompt self-contained. For code-writing children use opensession-sessions spawn_task instead.
+- Agents start fresh with ZERO context from this session — make every prompt self-contained (paths, constraints, what to return).
+- Agents are read-only by default (ask mode). Pass opts.write to let one edit code (see below).
 - Limits: ${WORKFLOW_LIMITS.maxConcurrentAgents} agents run concurrently (extras queue), ${WORKFLOW_LIMITS.maxAgents} agent() calls per run lifetime, ${Math.round(WORKFLOW_LIMITS.agentTimeoutMs / 60_000)}min per agent, ${Math.round(WORKFLOW_LIMITS.workflowTimeoutMs / 60_000)}min per workflow.
 
-Example:
+Example (agents run on Opus by default — no opts.model needed):
 
-export const meta = { name: "route-audit", phases: [{ title: "List" }, { title: "Audit" }] };
+export const meta = { name: "route-audit", phases: [{ title: "List" }, { title: "Audit" }, { title: "Rank" }] };
 phase("List");
 const files = await agent(
   "List every .ts file in src/server/routes of this repo. Reply with ONLY the basenames.",
@@ -95,8 +112,14 @@ const findings = await pipeline(
   (f) => agent("Read src/server/routes/" + f + " and report missing auth/validation checks. Reply 'none' if clean.", { label: f }),
   (prev, f) => (prev && prev !== "none" ? f + ": " + prev : null),
 );
-log("audits done");
-return findings.filter(Boolean).join("\\n") || "all clean";`;
+log(findings.filter(Boolean).length + " files with findings");
+phase("Rank");
+const real = findings.filter(Boolean);
+if (!real.length) return "all clean";
+return await agent(
+  "Rank these route-audit findings by real-world severity and drop the false positives:\\n" + real.join("\\n"),
+  { label: "rank findings" },
+);`;
 
 export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 	const tools = [
@@ -150,7 +173,7 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 						sessionId: ctx.sessionId,
 						user: ctx.user,
 						cwd,
-						defaultModel: ctx.defaultModel?.(),
+						defaultModel: ctx.defaultModel?.() || WORKFLOW_DEFAULT_MODEL,
 						budgetTotal: args.budget_tokens,
 					});
 					return text(
@@ -310,7 +333,7 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 						sessionId: ctx.sessionId,
 						user: ctx.user,
 						cwd,
-						defaultModel: ctx.defaultModel?.(),
+						defaultModel: ctx.defaultModel?.() || WORKFLOW_DEFAULT_MODEL,
 						resumeFromRunId: args.run_id,
 					});
 					return text(

@@ -14,6 +14,7 @@ import {
 	readWorkflowJournal,
 } from "../workflow-store";
 import { cancelWorkflow } from "../workflow-runner";
+import { readEngineTranscript } from "../sessions";
 
 // Boot pass: flip any run.json still "running" with no live worker to
 // "interrupted" (the orchestration state died with the previous process).
@@ -42,6 +43,40 @@ export async function handleWorkflowsRoutes(
 			return Response.json({
 				runs: listWorkflowRunsForSession(decodeURIComponent(m[1])),
 			});
+		}
+	}
+
+	// One agent's full conversation (its opencode session transcript — tool
+	// calls and all) — the "go into the subagent" drill-in. Reads the live
+	// snapshot first (engineSessionId is set the moment the engine session
+	// exists, so this works WHILE the agent runs), falling back to the journal
+	// outcome for a finished agent. Capped so a chatty agent can't blow the
+	// payload.
+	{
+		const m = path.match(
+			/^\/backstage\/api\/workflows\/([^/]+)\/agents\/(\d+)\/transcript$/,
+		);
+		if (m && req.method === "GET") {
+			const runId = decodeURIComponent(m[1]);
+			const seq = parseInt(m[2], 10);
+			const run = getWorkflowRun(runId);
+			if (!run)
+				return Response.json({ error: "Workflow not found" }, { status: 404 });
+			const snap = run.agents.find((a) => a.seq === seq);
+			const journal = readWorkflowJournal(runId).find(
+				(e: WorkflowJournalEntry) => e.seq === seq,
+			);
+			const engineSessionId =
+				snap?.engineSessionId || journal?.outcome.engineSessionId;
+			const cwd = journal?.outcome.cwd || run.cwd;
+			if (!engineSessionId)
+				return Response.json(
+					{ error: "Agent has not started a run yet", entries: [] },
+					{ status: 404 },
+				);
+			let entries = readEngineTranscript(cwd, engineSessionId, "opencode");
+			if (entries.length > 500) entries = entries.slice(-500);
+			return Response.json({ entries });
 		}
 	}
 

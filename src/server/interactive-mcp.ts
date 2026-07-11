@@ -160,11 +160,13 @@ export function interactiveMcpServers(
 					// model-authored script (Agents panel). Interactive-only like the
 					// siblings — the automation fail-closed gate in the run-rpc builder
 					// below withholds it from automation-owned sessions.
+					// No defaultModel: agents run on WORKFLOW_DEFAULT_MODEL (Opus), NOT
+					// the session's model — a fan-out shouldn't silently inherit
+					// whatever the orchestrator happens to be on.
 					"opensession-workflows": createWorkflowsMcpServer({
 						sessionId,
 						user: createdBy,
 						cwd: () => findSession(sessionId)?.worktreeDir || undefined,
-						defaultModel: () => findSession(sessionId)?.model,
 					}),
 					// Friction log — log_papercut/list_papercuts, per-repo toggle in
 					// Settings → Papercuts (dropped here when the repo opted out).

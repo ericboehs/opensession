@@ -2,11 +2,20 @@
  * Workflow agent executor — the real WorkflowExecutor behind workflow-runner.
  *
  * Each `agent()` call inside a workflow script becomes one lightweight
- * opencode run (journal kind "workflow", mode "ask", cwd = the session's
- * worktree) driven to completion here. Deliberately minimal RunAgentOpts: no
- * mcpServers, no inProcessMcp, no deniedTools — ask mode already withholds
- * write tools, and kind "workflow" is interactive-trusted (the
+ * opencode run (journal kind "workflow", cwd = the session's worktree) driven
+ * to completion here. Deliberately minimal RunAgentOpts: no mcpServers, no
+ * inProcessMcp, no deniedTools — kind "workflow" is interactive-trusted (the
  * opensession-workflows MCP that launches these is interactive-only).
+ *
+ * Read agents (the default) run in mode "ask", which already withholds write
+ * tools. A `write: true` agent instead gets its OWN isolated git worktree
+ * (createWorktree(branch, repo, {isolated: true, base: sessionBranch}) —
+ * `isolated` is what keeps a shared-checkout repo like backstage out of the
+ * LIVE main checkout) and runs in mode "code" there, so N write agents edit
+ * code in parallel with zero collisions. Its work is auto-committed on its own
+ * branch; an agent that changed nothing has its worktree removed again.
+ * mergeWorkflowAgents() lands selected branches back on the session's branch,
+ * sequentially, refusing loudly rather than ever clobbering a shared/dirty tree.
  *
  * Schema mode (WorkflowAgentOpts.schema): the agent is told to reply with a
  * fenced ```json block; we extract the LAST fenced block (whole-reply parse
@@ -15,15 +24,19 @@
  * WORKFLOW_LIMITS.schemaAttempts total attempts.
  */
 
+import { $ } from "bun";
 import { runAgent, type RunAgentOpts, type StreamEvent } from "./agent-runner";
 import { cancelOpencodeRun } from "./opencode-runner";
 import { getDefaultModel } from "./models";
+import { createWorktree, getRepo, removeWorktree } from "./worktree";
+import { gitIdentityEnv, gitIdentityFor } from "./shared/user-mappings";
 import {
 	WORKFLOW_LIMITS,
 	type WorkflowAgentOutcome,
 	type WorkflowAgentRequest,
 	type WorkflowExecCtx,
 	type WorkflowExecutor,
+	type WorkflowMergeResult,
 } from "./workflow-types";
 
 // ── runAgent seam (tests inject a fake; never spin real engine runs) ─────────
@@ -35,6 +48,38 @@ let runAgentImpl: RunAgentFn = runAgent;
 /** Test seam: swap the runAgent implementation (null restores the real one). */
 export function _setRunAgentForTests(fn: RunAgentFn | null): void {
 	runAgentImpl = fn ?? runAgent;
+}
+
+// ── worktree seam (tests point it at a throwaway git repo in tmp) ────────────
+
+/** The bits of worktree.ts the write path needs. Tests swap them for a fake
+ *  backed by a real (throwaway) git repo — never the live repos. */
+export interface WorkflowWorktreeOps {
+	create(
+		branch: string,
+		repoId: string | undefined,
+		opts: { base?: string; isolated: true },
+	): Promise<string>;
+	remove(branch: string, repoId?: string): Promise<void>;
+	/** Is this repo the live shared main checkout (backstage), and is the
+	 *  session working IN it? Then merging into it is forbidden. */
+	isLiveSharedCheckout(repoId: string | undefined, sessionCwd: string): boolean;
+}
+
+const realWorktreeOps: WorkflowWorktreeOps = {
+	create: (branch, repoId, opts) => createWorktree(branch, repoId, opts),
+	remove: (branch, repoId) => removeWorktree(branch, repoId),
+	isLiveSharedCheckout: (repoId, sessionCwd) => {
+		const repo = getRepo(repoId);
+		return !!repo.sharedCheckout && sessionCwd === repo.repo;
+	},
+};
+
+let worktreeOps: WorkflowWorktreeOps = realWorktreeOps;
+
+/** Test seam: swap the worktree ops (null restores the real ones). */
+export function _setWorktreeOpsForTests(ops: WorkflowWorktreeOps | null): void {
+	worktreeOps = ops ?? realWorktreeOps;
 }
 
 // ── runAgentCollect ──────────────────────────────────────────────────────────
@@ -55,6 +100,7 @@ export interface RunAgentCollectResult {
 export async function runAgentCollect(
 	opts: RunAgentOpts,
 	signal?: AbortSignal,
+	onEngineSession?: (engineSessionId: string) => void,
 ): Promise<RunAgentCollectResult> {
 	let text = "";
 	let model: string | undefined;
@@ -89,8 +135,16 @@ export async function runAgentCollect(
 			if (next.done) break;
 			const event = next.value;
 			if (event.type === "init") {
+				const previous = engineSessionId;
 				engineSessionId = event.sessionId || engineSessionId;
 				model = event.model || model;
+				// Report the drill-in pointer the moment it exists — the UI can
+				// then watch the agent work live, long before the journal entry.
+				if (engineSessionId && engineSessionId !== previous) {
+					try {
+						onEngineSession?.(engineSessionId);
+					} catch {}
+				}
 			} else if (event.type === "model_switch") {
 				// Usage-limit fallback: agent-runner re-runs the FULL prompt on the
 				// fallback model (model_switch event + a synthetic "[runner] …" text
@@ -259,6 +313,96 @@ function walkSchema(value: unknown, schema: unknown, path: string, errors: strin
 	}
 }
 
+// ── Write agents: branch naming + git plumbing ───────────────────────────────
+
+/**
+ * A write agent's branch: `wf-<short runId>-<seq>`. Derived ONLY from
+ * (runId, seq) — no Date.now/random — so a resumed run addresses the same
+ * branch it created, and a replayed outcome still points at real work.
+ */
+export function workflowBranchName(runId: string, seq: number): string {
+	const compact = runId.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+	const short = compact.slice(-8) || "run";
+	return `wf-${short}-${seq}`;
+}
+
+/** git commits under the run's user when we can map them, else git's default. */
+function gitEnv(user?: string): Record<string, string> {
+	return { ...process.env, ...gitIdentityEnv(gitIdentityFor(user)) } as Record<
+		string,
+		string
+	>;
+}
+
+async function gitHead(dir: string): Promise<string> {
+	const res = await $`git -C ${dir} rev-parse HEAD`.quiet().nothrow();
+	return res.exitCode === 0 ? res.stdout.toString().trim() : "";
+}
+
+/** `git diff --numstat <from> <to>` → files + insertions + deletions (binary
+ *  files report "-" for both counts and contribute 0). */
+async function diffStat(
+	dir: string,
+	from: string,
+	to: string,
+): Promise<{ files: string[]; insertions: number; deletions: number }> {
+	const res = await $`git -C ${dir} diff --numstat ${from} ${to}`.quiet().nothrow();
+	const files: string[] = [];
+	let insertions = 0;
+	let deletions = 0;
+	if (res.exitCode === 0) {
+		for (const line of res.stdout.toString().split("\n")) {
+			if (!line.trim()) continue;
+			const [add, del, ...rest] = line.split("\t");
+			const file = rest.join("\t");
+			if (!file) continue;
+			files.push(file);
+			insertions += Number.parseInt(add, 10) || 0;
+			deletions += Number.parseInt(del, 10) || 0;
+		}
+	}
+	return { files, insertions, deletions };
+}
+
+/**
+ * Commit everything a write agent produced, on its own branch. Returns the
+ * commit + diffstat vs. the commit the worktree started at; `changed: false`
+ * when the agent touched nothing at all (the caller then removes the worktree,
+ * so a no-op agent leaves no branch behind).
+ */
+async function commitWriteAgent(
+	dir: string,
+	baseCommit: string,
+	message: string,
+	user?: string,
+): Promise<{
+	changed: boolean;
+	commit?: string;
+	files: string[];
+	insertions: number;
+	deletions: number;
+}> {
+	const env = gitEnv(user);
+	await $`git -C ${dir} add -A`.quiet().nothrow().env(env);
+	const staged = await $`git -C ${dir} diff --cached --quiet`.quiet().nothrow();
+	// exit 1 = something is staged; 0 = nothing to commit.
+	if (staged.exitCode !== 0) {
+		const commit =
+			await $`git -C ${dir} commit --no-verify -m ${message}`.quiet().nothrow().env(env);
+		if (commit.exitCode !== 0) {
+			throw new Error(
+				`workflow write agent commit failed: ${commit.stderr.toString().trim().slice(0, 300)}`,
+			);
+		}
+	}
+	const head = await gitHead(dir);
+	if (!head || head === baseCommit) {
+		return { changed: false, files: [], insertions: 0, deletions: 0 };
+	}
+	const stat = await diffStat(dir, baseCommit, head);
+	return { changed: true, commit: head, ...stat };
+}
+
 // ── The executor ─────────────────────────────────────────────────────────────
 
 /** Terse preamble so the worker's final message is machine-consumable. */
@@ -267,6 +411,16 @@ const WORKER_PREAMBLE =
 	"message IS the return value a script consumes — output exactly the " +
 	"requested data, with no greeting, preamble, or sign-off. Be " +
 	"self-contained: don't reference other agents or ask questions.";
+
+/** Write agents get their own worktree; they must not reach outside it, and
+ *  they never commit/push (we auto-commit their work on their branch). */
+const WRITE_PREAMBLE =
+	"You are a focused worker agent inside a scripted workflow, running in your " +
+	"OWN isolated git worktree — edit files freely here, and NEVER touch paths " +
+	"outside this working directory. Do NOT run git commit/push/checkout: your " +
+	"changes are committed for you when you finish, and other agents are editing " +
+	"sibling worktrees in parallel. Your final message is a short report of what " +
+	"you changed — no greeting, preamble or sign-off.";
 
 function capResult(text: string): string {
 	return text.length > WORKFLOW_LIMITS.maxResultChars
@@ -286,6 +440,7 @@ function addTokens(
 export const workflowExecutor: WorkflowExecutor = {
 	async execute(req: WorkflowAgentRequest, ctx: WorkflowExecCtx): Promise<WorkflowAgentOutcome> {
 		const model = req.opts.model || ctx.defaultModel || getDefaultModel();
+		const write = req.opts.write === true;
 
 		// Per-agent timeout + the workflow's cancel signal fold into one signal.
 		const inner = new AbortController();
@@ -298,33 +453,106 @@ export const workflowExecutor: WorkflowExecutor = {
 			inner.abort();
 		}, WORKFLOW_LIMITS.agentTimeoutMs);
 
+		// Set once a write agent's worktree exists — the finally block cleans it
+		// up when the agent produced no commit of its own.
+		let worktree: { branch: string; dir: string; baseCommit: string } | undefined;
+		let keepWorktree = false;
+
 		try {
+			if (write) {
+				const branch = workflowBranchName(ctx.runId, req.seq);
+				// `isolated: true` is load-bearing: without it a shared-checkout repo
+				// (backstage) would hand back the LIVE main checkout and every write
+				// agent would edit the running server's tree.
+				const dir = await worktreeOps.create(branch, ctx.repo, {
+					isolated: true,
+					base: ctx.baseBranch,
+				});
+				worktree = { branch, dir, baseCommit: await gitHead(dir) };
+			}
+
+			const cwd = worktree?.dir || ctx.cwd;
 			const baseOpts: RunAgentOpts = {
 				prompt: "",
-				cwd: ctx.cwd,
-				mode: "ask",
+				cwd,
+				mode: write ? "code" : "ask",
 				model,
 				user: ctx.user,
+				...(write ? { author: gitIdentityFor(ctx.user) } : {}),
 				journal: { kind: "workflow" },
 			};
-			let prompt = `${WORKER_PREAMBLE}\n\n${req.prompt}`;
+			let prompt = `${write ? WRITE_PREAMBLE : WORKER_PREAMBLE}\n\n${req.prompt}`;
 
 			const cancelError = () =>
 				timedOut
 					? `agent timed out after ${Math.round(WORKFLOW_LIMITS.agentTimeoutMs / 60_000)}m`
 					: "workflow cancelled";
 
-			if (req.opts.schema === undefined) {
-				const res = await runAgentCollect({ ...baseOpts, prompt }, inner.signal);
-				if (res.error) {
+			let engineSessionId: string | undefined;
+			const onEngineSession = (id: string) => {
+				engineSessionId = id;
+				ctx.onEngineSession?.(id);
+			};
+
+			/** Everything a write agent adds on top of a finished run: commit its
+			 *  work, diffstat it, and drop the worktree when it changed nothing. */
+			const withWriteResult = async (
+				outcome: WorkflowAgentOutcome,
+			): Promise<WorkflowAgentOutcome> => {
+				const base = { ...outcome, engineSessionId, cwd };
+				if (!worktree) return base;
+				const label = req.opts.label || req.prompt.replace(/\s+/g, " ").trim().slice(0, 60);
+				if (!outcome.ok) {
+					// Failed/cancelled: only keep the worktree if the agent committed
+					// something itself (rare); otherwise leave nothing behind.
+					const head = await gitHead(worktree.dir);
+					keepWorktree = !!head && head !== worktree.baseCommit;
 					return {
+						...base,
+						branch: keepWorktree ? worktree.branch : undefined,
+						worktreeDir: keepWorktree ? worktree.dir : undefined,
+						changed: keepWorktree,
+					};
+				}
+				// Hold the worktree across the commit: if committing throws, the
+				// agent's work stays on disk for a human instead of evaporating.
+				keepWorktree = true;
+				const committed = await commitWriteAgent(
+					worktree.dir,
+					worktree.baseCommit,
+					`workflow: ${label}`,
+					ctx.user,
+				);
+				keepWorktree = committed.changed;
+				if (!committed.changed) return { ...base, changed: false };
+				return {
+					...base,
+					branch: worktree.branch,
+					worktreeDir: worktree.dir,
+					changed: true,
+					commit: committed.commit,
+					files: committed.files,
+					insertions: committed.insertions,
+					deletions: committed.deletions,
+				};
+			};
+
+			if (req.opts.schema === undefined) {
+				const res = await runAgentCollect({ ...baseOpts, prompt }, inner.signal, onEngineSession);
+				if (res.error) {
+					return await withWriteResult({
 						ok: false,
 						error: res.error === "cancelled" ? cancelError() : res.error,
 						model: res.model || model,
 						tokens: res.tokens,
-					};
+					});
 				}
-				return { ok: true, text: capResult(res.text), model: res.model || model, tokens: res.tokens };
+				return await withWriteResult({
+					ok: true,
+					text: capResult(res.text),
+					model: res.model || model,
+					tokens: res.tokens,
+				});
 			}
 
 			// Schema mode: demand a fenced json block, validate, retry by
@@ -332,7 +560,6 @@ export const workflowExecutor: WorkflowExecutor = {
 			prompt +=
 				"\n\nReply with ONLY a fenced ```json block matching this JSON Schema:\n" +
 				JSON.stringify(req.opts.schema);
-			let engineSessionId: string | undefined;
 			let tokens: { input: number; output: number } | undefined;
 			let lastModel: string | undefined;
 			let lastError = "";
@@ -352,17 +579,18 @@ export const workflowExecutor: WorkflowExecutor = {
 				const res = await runAgentCollect(
 					{ ...baseOpts, prompt: attemptPrompt, sessionId: engineSessionId },
 					inner.signal,
+					onEngineSession,
 				);
 				engineSessionId = res.engineSessionId || engineSessionId;
 				tokens = addTokens(tokens, res.tokens);
 				lastModel = res.model || lastModel;
 				if (res.error) {
-					return {
+					return await withWriteResult({
 						ok: false,
 						error: res.error === "cancelled" ? cancelError() : res.error,
 						model: lastModel || model,
 						tokens,
-					};
+					});
 				}
 				const raw = extractLastFencedJson(res.text) ?? res.text.trim();
 				let parsed: unknown;
@@ -374,25 +602,146 @@ export const workflowExecutor: WorkflowExecutor = {
 				}
 				const schemaErrors = validateJsonSchema(parsed, req.opts.schema);
 				if (!schemaErrors.length) {
-					return {
+					return await withWriteResult({
 						ok: true,
 						text: capResult(res.text),
 						structured: parsed,
 						model: lastModel || model,
 						tokens,
-					};
+					});
 				}
 				lastError = schemaErrors.join("; ");
 			}
-			return {
+			return await withWriteResult({
 				ok: false,
 				error: `schema validation failed after ${WORKFLOW_LIMITS.schemaAttempts} attempts: ${lastError}`,
 				model: lastModel || model,
 				tokens,
-			};
+			});
 		} finally {
 			clearTimeout(timer);
 			ctx.signal.removeEventListener("abort", onCancel);
+			// A write agent with nothing to show for itself (no changes, an error,
+			// a cancel, or a throw on the way) leaves no worktree or branch behind.
+			if (worktree && !keepWorktree) {
+				try {
+					await worktreeOps.remove(worktree.branch, ctx.repo);
+				} catch (e) {
+					console.warn(
+						`[workflow] failed to remove worktree ${worktree.branch}:`,
+						e,
+					);
+				}
+			}
 		}
 	},
+
+	merge(ctx, items) {
+		return mergeWorkflowAgents(ctx, items);
+	},
 };
+
+// ── merge() ──────────────────────────────────────────────────────────────────
+
+/**
+ * Land write agents' branches on the session's branch, in the session's own
+ * worktree, sequentially.
+ *
+ * SAFETY (this touches a checkout a human and the live server may be using):
+ *  - REFUSES when the session works in a shared-checkout repo's LIVE main
+ *    checkout (backstage on master) — merging into the tree `bun --hot` is
+ *    serving, and every other session is editing, is exactly the "never reset
+ *    or switch the shared tree" trap in CLAUDE.md. The script gets the branch
+ *    names back and can report them for manual handling.
+ *  - REFUSES when the session worktree is dirty — a merge would entangle
+ *    somebody's uncommitted work.
+ *  - A conflicting branch is `merge --abort`ed (tree left exactly as it was),
+ *    its conflicting files are reported, and the batch CONTINUES: one bad agent
+ *    must not sink the others.
+ */
+export async function mergeWorkflowAgents(
+	ctx: WorkflowExecCtx,
+	items: Array<{ seq: number; branch: string }>,
+): Promise<WorkflowMergeResult> {
+	const result: WorkflowMergeResult = { merged: [], conflicts: [], skipped: [] };
+	if (!items.length) return result;
+
+	const dir = ctx.cwd;
+	if (worktreeOps.isLiveSharedCheckout(ctx.repo, dir)) {
+		return {
+			...result,
+			error:
+				`refusing to merge into the live shared checkout (${dir}): this session works directly ` +
+				`in ${ctx.repo || "the repo"}'s main checkout, which the running server and other sessions share. ` +
+				`The agents' branches are intact — merge or cherry-pick them by hand: ${items
+					.map((i) => i.branch)
+					.join(", ")}.`,
+		};
+	}
+
+	const isRepo = await $`git -C ${dir} rev-parse --git-dir`.quiet().nothrow();
+	if (isRepo.exitCode !== 0) {
+		return { ...result, error: `not a git worktree: ${dir}` };
+	}
+	const status = await $`git -C ${dir} status --porcelain`.quiet().nothrow();
+	const dirty = status.exitCode === 0 && status.stdout.toString().trim().length > 0;
+	if (dirty) {
+		return {
+			...result,
+			error:
+				`refusing to merge into a dirty worktree (${dir}): commit or stash the uncommitted changes first. ` +
+				`The agents' branches are intact: ${items.map((i) => i.branch).join(", ")}.`,
+		};
+	}
+
+	const env = gitEnv(ctx.user);
+	for (const item of items) {
+		const exists =
+			await $`git -C ${dir} rev-parse --verify --quiet refs/heads/${item.branch}`
+				.quiet()
+				.nothrow();
+		if (exists.exitCode !== 0) {
+			result.skipped.push({ ...item, reason: "branch no longer exists" });
+			continue;
+		}
+		const merge =
+			await $`git -C ${dir} merge --no-ff --no-edit -m ${`workflow: merge ${item.branch}`} ${item.branch}`
+				.quiet()
+				.nothrow()
+				.env(env);
+		if (merge.exitCode === 0) {
+			result.merged.push({ seq: item.seq, branch: item.branch });
+			// The work lives on the session's branch now — the worktree is dead
+			// weight (the branch itself is cheap, so it stays as a paper trail).
+			try {
+				await worktreeOps.remove(item.branch, ctx.repo);
+			} catch (e) {
+				console.warn(`[workflow] failed to remove merged worktree ${item.branch}:`, e);
+			}
+			continue;
+		}
+		const conflicted =
+			await $`git -C ${dir} diff --name-only --diff-filter=U`.quiet().nothrow();
+		const files =
+			conflicted.exitCode === 0
+				? conflicted.stdout
+						.toString()
+						.split("\n")
+						.map((f) => f.trim())
+						.filter(Boolean)
+				: [];
+		// Leave the tree exactly as we found it, then keep going.
+		await $`git -C ${dir} merge --abort`.quiet().nothrow();
+		if (!files.length) {
+			// Not a content conflict (e.g. the merge refused outright) — say so
+			// rather than reporting a conflict with no files.
+			result.skipped.push({
+				...item,
+				reason: merge.stderr.toString().trim().slice(0, 200) || "merge failed",
+			});
+			continue;
+		}
+		result.conflicts.push({ seq: item.seq, branch: item.branch, files });
+	}
+	return result;
+}

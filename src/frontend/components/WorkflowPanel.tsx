@@ -7,6 +7,7 @@ import type {
 } from "../../server/workflow-types";
 import { cn } from "../ui/cn";
 import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
+import { WorkflowAgentTranscript } from "./WorkflowAgentTranscript";
 
 /**
  * Agents tab: live view of a session's dynamic workflow runs (the
@@ -16,6 +17,16 @@ import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
  * (/api/workflows/:runId/agents/:seq). Snapshots arrive via the
  * workflow_update WS broadcast; this component is a pure renderer plus the
  * drill-in fetch. Never mounted with zero runs (the tab itself hides).
+ *
+ * Two levels of drill-in:
+ *  - the row expands in place to the full prompt/result (journal entry), and
+ *  - "View conversation" swaps the whole panel for WorkflowAgentTranscript —
+ *    the agent's real conversation (its tool calls / steps), live while it
+ *    runs. The selected agent is re-resolved from `runs` every render so the
+ *    WS snapshot keeps its header status/duration honest.
+ *
+ * Write agents (opts.write — code mode in their own isolated worktree) carry a
+ * branch chip + diffstat + merge badge on their row.
  */
 
 interface Props {
@@ -100,11 +111,60 @@ function agentDuration(a: WorkflowAgentSnapshot, now: number): string {
 	return fmtDuration(end - new Date(a.startedAt).getTime());
 }
 
-function Chip({ children }: { children: React.ReactNode }) {
+function Chip({
+	children,
+	tone,
+	title,
+}: {
+	children: React.ReactNode;
+	/** Merge outcome tints; default is the neutral outlined chip. */
+	tone?: "green" | "red";
+	title?: string;
+}) {
 	return (
-		<span className="shrink-0 rounded-sm border border-line px-1 py-px text-[11px] font-medium text-faint">
+		<span
+			title={title}
+			className={cn(
+				"shrink-0 rounded-sm border px-1 py-px text-[11px] font-medium",
+				tone === "green"
+					? "border-transparent bg-green-soft text-green"
+					: tone === "red"
+						? "border-transparent bg-red-soft text-red"
+						: "border-line text-faint",
+			)}
+		>
 			{children}
 		</span>
+	);
+}
+
+/** Write-agent readout: branch + diffstat (or "no changes") + merge outcome. */
+function WriteChips({ a }: { a: WorkflowAgentSnapshot }) {
+	const files = a.filesChanged ?? 0;
+	return (
+		<>
+			{a.branch && (
+				<Chip title={a.branch}>
+					<span className="font-mono">⑂ {a.branch}</span>
+				</Chip>
+			)}
+			{a.changed ? (
+				<span className="shrink-0 text-[11px] tabular-nums">
+					<span className="text-green">+{a.insertions ?? 0}</span>{" "}
+					<span className="text-red">−{a.deletions ?? 0}</span>
+					{files > 0 && (
+						<span className="text-faint">
+							{" "}
+							· {files} file{files === 1 ? "" : "s"}
+						</span>
+					)}
+				</span>
+			) : (
+				a.status === "done" && <Chip>no changes</Chip>
+			)}
+			{a.merged === "merged" && <Chip tone="green">merged</Chip>}
+			{a.merged === "conflict" && <Chip tone="red">conflict</Chip>}
+		</>
 	);
 }
 
@@ -136,11 +196,44 @@ export function WorkflowPanel({ sessionId: _sessionId, runs, onCancel }: Props) 
 		return () => window.clearInterval(t);
 	}, [anyRunning]);
 
+	// The open agent conversation, if any. Held as ids (not the snapshot) so the
+	// drilled-in view tracks the live WS snapshot rather than a frozen copy.
+	const [openConvo, setOpenConvo] = useState<{
+		runId: string;
+		seq: number;
+	} | null>(null);
+	const onOpenAgent = useCallback(
+		(runId: string, seq: number) => setOpenConvo({ runId, seq }),
+		[],
+	);
+	const onBack = useCallback(() => setOpenConvo(null), []);
+	const convoAgent = useMemo(() => {
+		if (!openConvo) return undefined;
+		return ordered
+			.find((r) => r.runId === openConvo.runId)
+			?.agents.find((a) => a.seq === openConvo.seq);
+	}, [openConvo, ordered]);
+
+	if (openConvo && convoAgent)
+		return (
+			<WorkflowAgentTranscript
+				runId={openConvo.runId}
+				agent={convoAgent}
+				onBack={onBack}
+			/>
+		);
+
 	if (ordered.length === 0) return <WorkflowsEmptyState />;
 	return (
 		<div className="flex flex-col gap-3 p-3 pb-6">
 			{ordered.map((run) => (
-				<RunCard key={run.runId} run={run} now={now} onCancel={onCancel} />
+				<RunCard
+					key={run.runId}
+					run={run}
+					now={now}
+					onCancel={onCancel}
+					onOpenAgent={onOpenAgent}
+				/>
 			))}
 		</div>
 	);
@@ -159,8 +252,9 @@ function WorkflowsEmptyState() {
 					Ask this session to <span className="text-fg">use a workflow</span> and
 					it will write a script that fans out many focused agents at once —
 					one per file, per topic, per candidate — then combine their results.
-					Each agent runs read-only in this worktree. They&rsquo;ll show up here
-					live, grouped by phase.
+					Agents read this worktree by default; write agents get their own
+					isolated branch and can be merged back. They&rsquo;ll show up here
+					live, grouped by phase — open one to watch what it&rsquo;s doing.
 				</p>
 			</div>
 			<div>
@@ -172,6 +266,7 @@ function WorkflowsEmptyState() {
 						"Use a workflow to audit every route handler for missing auth checks.",
 						"Use a workflow: one agent per file over src/, each reporting its biggest refactor. Then rank the top 5.",
 						"Use a workflow to compare 3 approaches to this problem in parallel and pick a winner.",
+						"Use a workflow with write agents: one per file, migrate each to the new API, then merge them.",
 					].map((s) => (
 						<div
 							key={s}
@@ -183,8 +278,10 @@ function WorkflowsEmptyState() {
 				</div>
 			</div>
 			<p className="text-xs leading-relaxed text-faint">
-				Workflow agents are read-only. For agents that write code and open PRs,
-				ask this session to spawn tasks instead.
+				Write agents each work in their own isolated worktree, so they never
+				collide; merging back into this session&rsquo;s branch is explicit. For
+				heavier, steerable work that opens PRs, ask this session to spawn tasks
+				instead.
 			</p>
 		</div>
 	);
@@ -194,10 +291,12 @@ function RunCard({
 	run,
 	now,
 	onCancel,
+	onOpenAgent,
 }: {
 	run: WorkflowRunSnapshot;
 	now: number;
 	onCancel: (runId: string) => void;
+	onOpenAgent: (runId: string, seq: number) => void;
 }) {
 	// Expanded agent rows (by seq) + their lazily-fetched journal entries.
 	const [openAgents, setOpenAgents] = useState<ReadonlySet<number>>(
@@ -288,6 +387,11 @@ function RunCard({
 	if (elapsedMs > 0 || run.status === "running")
 		meta.push(fmtDuration(elapsedMs));
 
+	const openConversation = useCallback(
+		(seq: number) => onOpenAgent(run.runId, seq),
+		[onOpenAgent, run.runId],
+	);
+
 	function agentRow(a: WorkflowAgentSnapshot) {
 		return (
 			<AgentRow
@@ -300,6 +404,7 @@ function RunCard({
 				duration={agentDuration(a, now)}
 				onToggle={toggleAgent}
 				onLoadDetail={loadDetail}
+				onOpenConversation={openConversation}
 			/>
 		);
 	}
@@ -434,6 +539,7 @@ const AgentRow = React.memo(function AgentRow({
 	duration,
 	onToggle,
 	onLoadDetail,
+	onOpenConversation,
 }: {
 	a: WorkflowAgentSnapshot;
 	open: boolean;
@@ -441,6 +547,7 @@ const AgentRow = React.memo(function AgentRow({
 	duration: string;
 	onToggle: (seq: number) => void;
 	onLoadDetail: (seq: number) => void;
+	onOpenConversation: (seq: number) => void;
 }) {
 	const full = typeof detail === "object" ? detail : undefined;
 	const promptText = full?.prompt ?? a.promptPreview;
@@ -467,6 +574,7 @@ const AgentRow = React.memo(function AgentRow({
 				>
 					{a.label}
 				</span>
+				{a.write && <WriteChips a={a} />}
 				{a.cached && <Chip>cached</Chip>}
 				{a.model && <Chip>{shortModel(a.model)}</Chip>}
 				{a.tokens && (
@@ -489,6 +597,18 @@ const AgentRow = React.memo(function AgentRow({
 				<div className="min-h-0 overflow-hidden">
 					{open && (
 						<div className="mx-2 mb-1.5 mt-0.5 flex flex-col gap-1.5 rounded-sm bg-panel p-2">
+							{/* The headline affordance: what the agent actually DID, not
+							    just what it said at the end. Available even while it runs
+							    (the transcript view polls). */}
+							{a.status !== "pending" && (
+								<button
+									className="flex items-center gap-1 self-start rounded-sm border border-line bg-surface px-2 py-1 text-[11px] font-medium text-fg transition-colors hover:border-line-strong hover:bg-hover"
+									onClick={() => onOpenConversation(a.seq)}
+								>
+									View conversation
+									<span className="text-faint">→</span>
+								</button>
+							)}
 							<div className="text-[11px] font-medium text-faint">Prompt</div>
 							<DetailPre text={promptText} />
 							{(resultText || a.status === "error") && (
