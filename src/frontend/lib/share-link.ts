@@ -25,6 +25,38 @@ export function absoluteLink(path: string): string {
   return `${location.origin}${path}`;
 }
 
+/**
+ * True when the native share sheet is the better affordance for a share
+ * button: the Web Share API exists (secure context) and the device is
+ * touch-first. On desktop the button's real job is "give me the link", so
+ * copying stays the behavior there even though macOS Safari has the API.
+ */
+export function canNativeShare(): boolean {
+  return (
+    typeof navigator.share === "function" &&
+    !!window.matchMedia?.("(pointer: coarse)").matches
+  );
+}
+
+/**
+ * Share a link through the native sheet when that's the better affordance,
+ * else copy it. `onCopied` fires only on the copy path — the sheet is its own
+ * feedback, and a dismissed sheet (AbortError) is a non-event, not a fallback.
+ */
+export function shareOrCopyLink(
+  link: string,
+  opts: { title?: string; onCopied?: () => void } = {},
+): void {
+  if (canNativeShare()) {
+    navigator.share({ url: link, title: opts.title }).catch((err) => {
+      if ((err as Error | undefined)?.name === "AbortError") return;
+      copyToClipboard(link, opts.onCopied);
+    });
+    return;
+  }
+  copyToClipboard(link, opts.onCopied);
+}
+
 /** Copy text to the clipboard, secure-context or not; `onDone` fires either way. */
 export function copyToClipboard(text: string, onDone?: () => void): void {
   const done = onDone || (() => {});

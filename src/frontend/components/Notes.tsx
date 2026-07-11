@@ -1,4 +1,5 @@
 import { BASE_PATH } from "../lib/base";
+import { shareOrCopyLink } from "../lib/share-link";
 import React, {
 	Suspense,
 	lazy,
@@ -79,21 +80,6 @@ function ancestorDirs(docPath: string): string[] {
 	for (let i = 1; i < parts.length; i++) dirs.push(parts.slice(0, i).join("/"));
 	return dirs;
 }
-/** Copy text without the Clipboard API (insecure-context fallback). */
-function fallbackCopy(text: string, onDone: () => void) {
-	try {
-		const ta = document.createElement("textarea");
-		ta.value = text;
-		ta.style.position = "fixed";
-		ta.style.opacity = "0";
-		document.body.appendChild(ta);
-		ta.select();
-		const ok = document.execCommand("copy");
-		document.body.removeChild(ta);
-		if (ok) onDone();
-	} catch {}
-}
-
 function stripFrontmatter(md: string): string {
 	if (!md.startsWith("---\n")) return md;
 	const end = md.indexOf("\n---", 4);
@@ -533,19 +519,13 @@ function NotePane({
 
 	function shareNote() {
 		const link = `${location.origin}${BASE_PATH}/notes/${encodeURIComponent(noteId)}`;
-		// navigator.clipboard only exists in a secure context — backstage is served
-		// over plain http on the tailnet, so fall back to a hidden-textarea copy.
-		const done = () => {
-			setCopied(true);
-			setTimeout(() => setCopied(false), 1600);
-		};
-		if (navigator.clipboard?.writeText) {
-			navigator.clipboard
-				.writeText(link)
-				.then(done, () => fallbackCopy(link, done));
-		} else {
-			fallbackCopy(link, done);
-		}
+		// Phone: native share sheet. Elsewhere: copy ("✓ Link copied" flash).
+		shareOrCopyLink(link, {
+			onCopied: () => {
+				setCopied(true);
+				setTimeout(() => setCopied(false), 1600);
+			},
+		});
 	}
 
 	return (

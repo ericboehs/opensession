@@ -411,7 +411,7 @@ export function SessionViewer({
 		questionId: string;
 		questions: AskQuestion[];
 	} | null>(null);
-	const { copied, copy: copyLink } = useCopy();
+	const { copied, share: shareLink } = useCopy();
 	// Inline rename of the header title (double-click), mirroring the tab strip.
 	// `null` = not editing; a string = the working draft.
 	const [renameDraft, setRenameDraft] = useState<string | null>(null);
@@ -1652,8 +1652,9 @@ export function SessionViewer({
 			? `${BASE_PATH}/workspace/${encodeURIComponent(session.projectId)}/chat/${encodeURIComponent(session.id)}`
 			: `${BASE_PATH}/session/${encodeURIComponent(session.id)}`;
 		const link = `${location.origin}${path}`;
-		// Inline check on the button + a floating "Link copied" toast.
-		copyLink(link, { toast: "Link copied" });
+		// Phone: native share sheet. Desktop: copy, with the inline check on
+		// the button + a floating "Link copied" toast.
+		shareLink(link, { toast: "Link copied", title: session.title || undefined });
 	}
 
 	function commitRename() {
