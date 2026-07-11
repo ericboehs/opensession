@@ -174,6 +174,7 @@ import {
   backfillOpencodeTranscriptGap,
   ensureOpencodeTranscriptFile,
   transcriptLineUser,
+  transcriptLineRunnerNotice,
   transcriptLineAssistantText,
   transcriptLineToolUse,
   transcriptLineToolResult,
@@ -1433,6 +1434,20 @@ interface AccountRotation {
   note: string;
 }
 
+/** Per-turn transcript state carried ACROSS rotation attempts (the rotation
+ *  box above is recreated per attempt). Tracks which engine session's file got
+ *  this turn's user line — a rotation retry can either resume the same session
+ *  (line already there; skip) or start a FRESH one when the turn had no
+ *  session to resume (first turn of a chat), where skipping left the user
+ *  message out of the new file entirely (bks-019f52bd: bubble stuck on
+ *  "Sending…", user turn missing after reload). Same contract as the remote
+ *  mirror's promptWrittenTo (sandbox/adapters/bootstrap.ts). `notes` queues
+ *  rotation notices for the next attempt to persist as system lines. */
+interface TurnTranscriptState {
+  promptWrittenTo: string;
+  notes: string[];
+}
+
 /** Runaway backstop only — NOT the real limit. Walk EVERY account before giving
  *  up (Michiel 2026-07-11): each usage-limit rotation marks the capped account
  *  exhausted (markExhausted) and pickMeridianAccount only returns a not-yet-
@@ -1451,11 +1466,18 @@ export async function* runOpencode(
   // (another usable account exists — the capped one is marked exhausted so the
   // re-pick moves on) or a bounded transient retry. When the pool is dry the box
   // is left untouched and the attempt emits the terminal error itself.
+  const turn: TurnTranscriptState = { promptWrittenTo: "", notes: [] };
   for (let attempt = 0; attempt < MAX_ACCOUNT_ATTEMPTS; attempt++) {
     const rotation: AccountRotation = { rotate: false, note: "" };
-    yield* runOpencodeAttempt(opts, model, rotation, attempt);
+    yield* runOpencodeAttempt(opts, model, rotation, attempt, turn);
     if (!rotation.rotate) return;
-    yield { type: "text_chunk", text: `\n\n[runner] ${rotation.note}\n\n` };
+    // Surface the rotation as a structured notice, not assistant text: a
+    // text_chunk polluted the streaming bubble and vanished on reload (it was
+    // never persisted). The next attempt writes it into the transcript as a
+    // durable system line (see TurnTranscriptState); the event is for stream
+    // consumers that mirror transcripts elsewhere (remote sandbox host).
+    turn.notes.push(rotation.note);
+    yield { type: "runner_notice", text: rotation.note };
   }
   console.warn(
     `[opencode-runner] account-rotation backstop (${MAX_ACCOUNT_ATTEMPTS}) hit for ${model} — giving up`
@@ -1466,7 +1488,8 @@ async function* runOpencodeAttempt(
   opts: RunAgentOpts & { allowOpencode?: boolean; forceSharedServer?: boolean },
   model: string,
   rotation?: AccountRotation,
-  attemptIndex = 0
+  attemptIndex = 0,
+  turn: TurnTranscriptState = { promptWrittenTo: "", notes: [] }
 ): AsyncGenerator<StreamEvent> {
   const { prompt, cwd, mode, mcpServers, confirmTools, journal, user, author } = opts;
   const isAsk = mode === "ask";
@@ -2041,12 +2064,25 @@ async function* runOpencodeAttempt(
     );
     // Account-rotation retries rerun this whole attempt with the same prompt —
     // appending the user line again gave one send two or three identical
-    // bubbles (3× "FINISH ITTT", doubled resume prompts, 2026-07-09). The
-    // first attempt's line is the record; retries only re-deliver.
-    if (attemptIndex === 0) {
+    // bubbles (3× "FINISH ITTT", doubled resume prompts, 2026-07-09). But a
+    // retry with no session to resume starts a FRESH engine session, whose
+    // file must get the line too (bks-019f52bd) — so dedup on which session
+    // file already has it, not on the attempt number.
+    if (turn.promptWrittenTo !== ocSessionId) {
       appendOpencodeTranscript(ocSessionId, [
         transcriptLineUser(prompt, undefined, undefined, opts.images),
       ]);
+      turn.promptWrittenTo = ocSessionId;
+    }
+    // Rotation notices queued by failed attempts ("usage limit hit on X;
+    // switched to Y") persist as system lines here, in whichever file this
+    // retry actually writes to — as stream-only text they vanished on reload.
+    if (turn.notes.length) {
+      appendOpencodeTranscript(
+        ocSessionId,
+        turn.notes.map((n) => transcriptLineRunnerNotice(n))
+      );
+      turn.notes.length = 0;
     }
 
     // Kind-only journals ({kind} with no bksSessionId — the Plain/Linear/Slack

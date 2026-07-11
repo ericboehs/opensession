@@ -72,6 +72,7 @@ import {
   ensureOpencodeTranscriptFile,
   getOpencodeTranscriptPath,
   transcriptLineUser,
+  transcriptLineRunnerNotice,
   transcriptLineAssistantText,
   transcriptLineToolUse,
   transcriptLineToolResult,
@@ -990,6 +991,11 @@ export async function* withOpencodeTranscriptMirror(
         writePrompt(oc);
       } else if (ev.type === "text_chunk" && ev.text) {
         mirror([transcriptLineAssistantText(ev.text)]);
+      } else if (ev.type === "runner_notice" && ev.text) {
+        // In-sandbox rotation/retry notices: the sandbox runner persisted them
+        // to ITS transcript file, which nothing on the host reads — mirror
+        // them into the host-side file as the same durable system line.
+        mirror([transcriptLineRunnerNotice(ev.text)]);
       } else if (ev.type === "tool_use" && ev.toolUseId) {
         mirror([transcriptLineToolUse(ev.toolUseId, ev.toolName || "tool", ev.toolInput)]);
       } else if (ev.type === "tool_result" && ev.toolUseId) {

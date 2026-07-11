@@ -96,6 +96,20 @@ export function transcriptLineUser(
   };
 }
 
+/** Runner operational notice ("usage limit hit; switched account and
+ *  retrying") as a durable transcript line. Rides a user-role line — the only
+ *  role the runner can inject without claiming the model said something — with
+ *  a harness marker the jsonl parser maps to a `system` entry (same pattern as
+ *  `<task-notification>`), so it renders as a system chip instead of a user
+ *  bubble and never confuses pending-bubble/steer reconciliation. */
+export function transcriptLineRunnerNotice(
+  text: string,
+  id?: string,
+  ts?: string
+): JsonlLine {
+  return transcriptLineUser(`<runner-notice>${text}</runner-notice>`, id, ts);
+}
+
 export function transcriptLineAssistantText(
   text: string,
   id?: string,

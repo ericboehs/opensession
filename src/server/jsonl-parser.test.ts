@@ -150,6 +150,35 @@ describe("parseTranscript", () => {
     expect(entries[0].content).toBe("real question");
   });
 
+  it("maps runner-notice user lines to system entries (both content shapes)", () => {
+    const blockLine = JSON.stringify({
+      type: "user",
+      uuid: "n1",
+      timestamp: TS,
+      message: {
+        role: "user",
+        // Blocks shape — what transcriptLineRunnerNotice writes.
+        content: [
+          {
+            type: "text",
+            text: '<runner-notice>Claude usage limit hit on account "A"; switched to "B" and retrying.</runner-notice>',
+          },
+        ],
+      },
+    });
+    const path = writeFixture([
+      userLine("u1", "real question"),
+      blockLine,
+      userLine("n2", "<runner-notice>Transient engine error — retrying once.</runner-notice>"),
+    ]);
+    const entries = parseTranscript(path);
+    expect(entries.map((e) => e.type)).toEqual(["user", "system", "system"]);
+    expect(entries[1].content).toBe(
+      'Claude usage limit hit on account "A"; switched to "B" and retrying.',
+    );
+    expect(entries[2].content).toBe("Transient engine error — retrying once.");
+  });
+
   it("returns [] for an empty file", () => {
     const path = writeFixture([]);
     expect(parseTranscript(path)).toEqual([]);

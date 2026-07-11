@@ -30,7 +30,13 @@ export interface StreamEvent {
     | "usage_snapshot"
     | "done"
     | "error"
-    | "model_switch";
+    | "model_switch"
+    // Runner-injected operational notice (`text`), e.g. "usage limit hit on
+    // account X; switched to Y and retrying". NOT part of the model's reply —
+    // the runner persists it as a durable system line in the session
+    // transcript (the remote mirror does the same host-side), so stream
+    // consumers should not fold it into assistant text.
+    | "runner_notice";
   sessionId?: string;
   text?: string;
   /** On a model_switch: the exhausted model and the fallback it switched to. */

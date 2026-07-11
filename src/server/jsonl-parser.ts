@@ -200,6 +200,15 @@ function harnessEntryFor(text: string, ts: string): TranscriptEntry[] | null {
     }];
   }
   if (t.startsWith("<system-reminder>")) return [];
+  // Runner-injected operational notice (account rotation, transient-error
+  // retry — transcriptLineRunnerNotice in opencode-transcript.ts): render as a
+  // system chip, never as a user bubble.
+  if (t.startsWith("<runner-notice>")) {
+    const body = t.match(/<runner-notice>([\s\S]*?)<\/runner-notice>/)?.[1]?.trim();
+    return body
+      ? [{ id: crypto.randomUUID(), type: "system", content: body, timestamp: ts }]
+      : [];
+  }
   // The SDK writes this marker into the jsonl whenever a turn is interrupted
   // ("… for tool use" when the abort landed on a pending tool call).
   // Interrupt-and-redirect is the default send-while-busy now, so this would

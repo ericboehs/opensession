@@ -116,6 +116,33 @@ describe("withOpencodeTranscriptMirror", () => {
     expect(b.filter((e) => e.type === "user")).toHaveLength(1);
   });
 
+  test("runner_notice events persist as system entries after the rotation", async () => {
+    const s = spec({ prompt: "notice me" });
+    await drain(
+      withOpencodeTranscriptMirror(
+        stream([
+          { type: "init", sessionId: "ses_notice_a" } as StreamEvent,
+          { type: "runner_notice", text: "usage limit; switching accounts" } as StreamEvent,
+          { type: "init", sessionId: "ses_notice_b" } as StreamEvent,
+          { type: "text_chunk", text: "answer after rotation" } as StreamEvent,
+        ]),
+        s,
+      ),
+    );
+    // The notice fired between the two inits, so it lands in the FIRST file;
+    // what matters is it parses back as a system chip, not a user bubble.
+    const a = entriesOf("ses_notice_a");
+    expect(a.map((e) => [e.type, e.content])).toEqual([
+      ["user", "notice me"],
+      ["system", "usage limit; switching accounts"],
+    ]);
+    const b = entriesOf("ses_notice_b");
+    expect(b.map((e) => [e.type, e.content])).toEqual([
+      ["user", "notice me"],
+      ["assistant", "answer after rotation"],
+    ]);
+  });
+
   test("synthetic resume-continuation prompt is not a user entry", async () => {
     const oc = "ses_mirror_resume";
     await drain(
