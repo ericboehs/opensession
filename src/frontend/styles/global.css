@@ -217,6 +217,61 @@ body {
 	overflow: hidden;
 }
 
+/* ── Pull-to-refresh badge (mobile only) ─────────────────────────────
+   A circular badge that a downward pull at the top of the visible scroller
+   drags into view (usePullToRefresh drives --ptr = pull px and --ptr-progress
+   = 0..1). Hidden on desktop; off-screen above the top edge at rest. */
+.ptr {
+	display: none;
+}
+@media (max-width: 720px) {
+	.ptr {
+		display: flex;
+		position: fixed;
+		top: calc(10px + env(safe-area-inset-top, 0px));
+		left: 50%;
+		z-index: 55;
+		width: 32px;
+		height: 32px;
+		margin-left: -16px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 9999px;
+		background: var(--bg-raised);
+		border: 1px solid var(--border);
+		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+		color: var(--text-dim);
+		opacity: var(--ptr-progress, 0);
+		/* -52px keeps it tucked above the top edge until the pull pushes it down. */
+		transform: translateY(calc(var(--ptr, 0) * 1px - 52px));
+		pointer-events: none;
+	}
+	.ptr-arrow {
+		transform: rotate(calc(var(--ptr-progress, 0) * 180deg));
+		transition: transform 120ms ease;
+	}
+	/* Past the threshold the arrow flips to point up ("release to refresh"),
+	   then hides once the spinner takes over. */
+	.ptr-spinner {
+		display: none;
+		animation: ptr-spin 0.7s linear infinite;
+	}
+	.ptr-refreshing {
+		opacity: 1;
+	}
+	.ptr-refreshing .ptr-arrow {
+		display: none;
+	}
+	.ptr-refreshing .ptr-spinner {
+		display: block;
+	}
+}
+@keyframes ptr-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 /* ── Native feel: UI chrome isn't text-selectable ────────────────
    Disable text selection everywhere by default so labels, buttons,
    nav, headers, tabs and status text behave like a native app — no
