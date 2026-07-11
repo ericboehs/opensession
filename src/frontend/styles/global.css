@@ -203,6 +203,13 @@ select {
 /* Lock the outer document to the viewport so only inner containers scroll.
    position: fixed stops iOS rubber-band/elastic overscroll of the whole page
    (header included); overscroll-behavior stops scroll-chaining to the body. */
+/* Must live on html, not body: overscroll-behavior only disables the
+   browser's swipe-back/forward navigation gesture (Chrome/Android) when set
+   on the root element — it does not propagate up from body. */
+html {
+	overscroll-behavior-x: none;
+}
+
 body {
 	position: fixed;
 	inset: 0;

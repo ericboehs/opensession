@@ -36,6 +36,7 @@ export function useBackSwipe({ active, onBack, paneRef }: Opts) {
     let width = 0;
     let candidate = false; // touch began in the left-edge zone
     let dragging = false; // committed to a horizontal drag
+    let startTarget: EventTarget | null = null;
 
     const setTransform = (px: number) => {
       const el = paneRef.current;
@@ -74,6 +75,13 @@ export function useBackSwipe({ active, onBack, paneRef }: Opts) {
       startY = t.clientY;
       dragging = false;
       candidate = startX <= EDGE;
+      startTarget = candidate ? e.target : null;
+      // The edge zone is app-owned gesture territory: preventDefault here is
+      // what stops the browser's native back-swipe (iOS Safari) from starting
+      // a real history navigation and racing our pane drag. It also swallows
+      // the tap→click synthesis for touches starting in the zone, so onEnd
+      // re-dispatches a click when the touch turns out to be a plain tap.
+      if (candidate && e.cancelable) e.preventDefault();
       const el = paneRef.current;
       width = el
         ? el.getBoundingClientRect().width || window.innerWidth
@@ -99,16 +107,31 @@ export function useBackSwipe({ active, onBack, paneRef }: Opts) {
       setTransform(px);
     };
 
-    const onEnd = () => {
+    const onEnd = (e: TouchEvent) => {
       if (!candidate) return;
       const wasDragging = dragging;
+      const target = startTarget;
       candidate = false;
       dragging = false;
+      startTarget = null;
       const el = paneRef.current;
       if (!wasDragging || !el) {
         if (el) {
           el.style.transition = "";
           el.style.transform = "";
+        }
+        // preventDefault on touchstart suppressed the browser's own tap→click,
+        // so a touch that never became a drag and barely moved is a tap we
+        // must complete ourselves.
+        const t = e.changedTouches?.[0];
+        if (
+          e.type === "touchend" &&
+          t &&
+          Math.abs(t.clientX - startX) < SLOP &&
+          Math.abs(t.clientY - startY) < SLOP &&
+          target instanceof HTMLElement
+        ) {
+          target.click();
         }
         return;
       }
@@ -117,7 +140,7 @@ export function useBackSwipe({ active, onBack, paneRef }: Opts) {
       settle(px > width / 2);
     };
 
-    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchstart", onStart, { passive: false });
     document.addEventListener("touchmove", onMove, { passive: false });
     document.addEventListener("touchend", onEnd);
     document.addEventListener("touchcancel", onEnd);
