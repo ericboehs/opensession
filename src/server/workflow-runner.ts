@@ -30,6 +30,7 @@ import {
 } from "./workflow-store";
 import { findSession } from "./session-cache";
 import { repoForPath } from "./worktree";
+import { tryGetSessionControl } from "./session-control";
 import {
 	WORKFLOW_LIMITS,
 	type WorkerToParent,
@@ -43,6 +44,50 @@ import {
 	type WorkflowMeta,
 	type WorkflowRunSnapshot,
 } from "./workflow-types";
+
+/**
+ * When a workflow reaches a terminal state, nudge the session that launched it
+ * so the model picks the results up on its own — the launching turn already
+ * ended (a workflow is fire-and-forget), so without this the session sits idle
+ * until a human types "continue". Queued (never steered): a session that's mid
+ * turn polling workflow_status isn't interrupted; an idle one starts a turn.
+ * Best-effort — a delivery failure must never affect the run's finalization.
+ */
+function wakeOwningSession(snap: WorkflowRunSnapshot): void {
+	try {
+		// Only a natural completion wakes the session. A cancelled run is a human
+		// pressing Stop — waking the model to "continue" would fight that intent.
+		if (snap.status !== "done" && snap.status !== "error") return;
+		const ctrl = tryGetSessionControl();
+		if (!ctrl) return;
+		// Only wake a session this process is actually tracking (skip CLI/tmux
+		// and already-gone sessions — deliverToSession would no-op or error).
+		if (!ctrl.getSession(snap.sessionId)) return;
+		const counts = { done: 0, error: 0 } as Record<string, number>;
+		for (const a of snap.agents) counts[a.status] = (counts[a.status] || 0) + 1;
+		const tally = Object.entries(counts)
+			.filter(([, n]) => n)
+			.map(([k, n]) => `${n} ${k}`)
+			.join(", ");
+		const head =
+			snap.status === "done"
+				? `✅ Workflow "${snap.name}" finished`
+				: snap.status === "error"
+					? `⚠️ Workflow "${snap.name}" failed`
+					: `⏹️ Workflow "${snap.name}" ${snap.status}`;
+		const msg =
+			`${head} (${snap.runId}) — ${snap.agents.length} agents${tally ? `: ${tally}` : ""}. ` +
+			`Read its result with workflow_status ${snap.runId} and continue the task.` +
+			(snap.error ? `\nError: ${snap.error}` : "");
+		void ctrl
+			.deliverToSession(snap.sessionId, msg, snap.user, { busy: "queue" })
+			.catch((e) =>
+				console.warn(`[workflow] ${snap.runId} wake delivery failed:`, e),
+			);
+	} catch (e) {
+		console.warn(`[workflow] ${snap.runId} wakeOwningSession threw:`, e);
+	}
+}
 
 // ── Meta parsing ─────────────────────────────────────────────────────────────
 
@@ -223,6 +268,49 @@ export function parseWorkflowMeta(script: string): {
 	return { meta: meta as WorkflowMeta, body };
 }
 
+/**
+ * Compile-check the script body without running it (the worker executes it as
+ * an AsyncFunction; we build the same AsyncFunction here in a try/catch). On a
+ * SyntaxError, return an actionable message; null when it parses. The dominant
+ * real-world cause is a truncated `run_workflow` argument (big scripts, often
+ * with inlined JSON schemas), so a truncation-shaped error says so explicitly
+ * so the model splits the script up rather than blindly resubmitting the same
+ * broken text. Never runs the body — no side effects.
+ */
+export function checkScriptSyntax(body: string): string | null {
+	try {
+		// Same construction shape as the worker (agent/parallel/… + shadowed
+		// globals), so a valid body here is valid there. Parsing only.
+		const AsyncFunction = async function () {}.constructor as new (
+			...args: string[]
+		) => unknown;
+		new AsyncFunction(
+			"agent",
+			"parallel",
+			"pipeline",
+			"merge",
+			"phase",
+			"log",
+			"args",
+			"budget",
+			body,
+		);
+		return null;
+	} catch (e) {
+		const raw = e instanceof Error ? e.message : String(e);
+		const looksTruncated =
+			/Unexpected (EOF|end of|token)|missing|must have an initializer|Unterminated/i.test(
+				raw,
+			);
+		const hint = looksTruncated
+			? " — the script looks truncated (unbalanced braces/parens or a cut-off statement). " +
+				"This usually means the run_workflow argument was too large: shorten it (define a JSON " +
+				"schema once in a variable and reuse it, drop inline comments, keep prompts terse) and resubmit."
+			: "";
+		return `workflow script has a syntax error: ${raw}${hint}`;
+	}
+}
+
 // ── Journal hashing (stable across key order) ────────────────────────────────
 
 function stableStringify(value: unknown): string {
@@ -278,6 +366,13 @@ export function startWorkflow(opts: StartWorkflowOpts): { runId: string } {
 		);
 	}
 	const { meta, body } = parseWorkflowMeta(script);
+	// Syntax-check the body BEFORE spawning the worker, so a broken script fails
+	// synchronously with an actionable message the model can act on — instead of
+	// dying inside the worker with a bare "Unexpected EOF" it can't place. The
+	// common cause is a script argument that got truncated (large scripts with
+	// inlined JSON schemas), so we detect the truncation shape and say so.
+	const syntaxError = checkScriptSyntax(body);
+	if (syntaxError) throw new Error(syntaxError);
 	const runId = `wf-${randomUUIDv7()}`;
 
 	// Replay is keyed by hash ONLY, consumed FIFO per hash: seq (worker call
@@ -425,8 +520,9 @@ function runWorkflow(
 		finished = true;
 		clearTimeout(deadline);
 		controller.abort();
+		let snap: WorkflowRunSnapshot | undefined;
 		try {
-			updateWorkflowRun(runId, mutate);
+			snap = updateWorkflowRun(runId, mutate);
 		} catch (e) {
 			console.warn(`[workflow] ${runId} failed to finalize snapshot:`, e);
 		}
@@ -434,6 +530,12 @@ function runWorkflow(
 		try {
 			worker?.terminate();
 		} catch {}
+		// Wake the owning session so it continues on its own instead of waiting
+		// for a human "continue" — the workflow was fire-and-forget from the
+		// turn that launched it, so nothing else re-drives the model when it's
+		// done. Queue (never steer): an in-flight turn that's polling shouldn't
+		// be interrupted; an idle session starts a fresh turn.
+		if (snap) wakeOwningSession(snap);
 	}
 
 	function markUnfinishedAgents(s: WorkflowRunSnapshot, endedAt: string): void {

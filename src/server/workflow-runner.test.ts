@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
 	cancelWorkflow,
+	checkScriptSyntax,
 	parseWorkflowMeta,
 	startWorkflow,
 	type StartWorkflowOpts,
@@ -682,5 +683,44 @@ describe("snapshot payload bounds", () => {
 		expect(snap.logs[0].message.length).toBeLessThanOrEqual(501);
 		expect(snap.agents[0].label.length).toBeLessThanOrEqual(201);
 		expect((snap.agents[0].error || "").length).toBeLessThanOrEqual(1001);
+	});
+});
+
+// ── Script syntax pre-check (2026-07-11: truncated scripts failed cryptically) ─
+
+describe("checkScriptSyntax", () => {
+	test("valid body passes", () => {
+		expect(checkScriptSyntax('phase("x"); return await agent("hi");')).toBeNull();
+	});
+
+	test("a truncated body (cut mid-statement) is flagged as likely-truncated", () => {
+		// Exactly the real-world failure: the run_workflow arg was cut off.
+		const msg = checkScriptSyntax('const findings = results.filter(');
+		expect(msg).toBeTruthy();
+		expect(msg).toMatch(/syntax error/i);
+		expect(msg).toMatch(/truncated/i);
+	});
+
+	test("unbalanced brace is flagged", () => {
+		const msg = checkScriptSyntax('if (x) { log("a")');
+		expect(msg).toMatch(/syntax error/i);
+	});
+
+	test("a plain (non-truncation) syntax error omits the truncation hint", () => {
+		const msg = checkScriptSyntax("return 1 2 3;");
+		expect(msg).toBeTruthy();
+		expect(msg).not.toMatch(/truncated/i);
+	});
+
+	test("startWorkflow throws synchronously on a truncated script (no run created)", () => {
+		expect(() =>
+			startWorkflow({
+				sessionId: "bks-x",
+				cwd: "/tmp",
+				executor: echoExecutor(),
+				script:
+					'export const meta = { name: "broken" };\nconst r = await parallel([() => agent("hi"',
+			}),
+		).toThrow(/truncated/i);
 	});
 });
