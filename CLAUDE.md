@@ -195,22 +195,14 @@ worker. Use the OpenSession `opensession-sessions` MCP tools to spin up focused 
 sessions when that saves scarce premium-model tokens or reduces context noise.
 
 All models run on the opencode engine — ids are `opencode/<provider>/<model>`,
-and bare native ids (`gpt-5.5`, `claude-sonnet-5`) map onto that form at
-dispatch. Model defaults:
-- `gpt-5.5` (opencode/openai): bulk and mechanical work. Use for
-  clear-spec implementation, broad read-only codebase analysis, migrations,
-  test-log analysis, data crunching, and computer-use-like chores. It is cheap
-  enough in practice that cost should rarely block use.
-- `claude-sonnet-5`: focused Claude worker for subsystem tracing or a second
-  implementation pass when GPT output is not good enough.
-- `claude-opus-4-8`: strong reviewer / design critic when taste or judgment
-  matters and Fable capacity should be saved.
-- `claude-fable-5`: orchestration, ambiguous planning, final judgment,
-  high-taste review, UI/UX, copy, API design, and deciding what ships.
+and bare native ids map onto that form at dispatch. **Use Fable or Opus
+(`claude-fable-5` / `claude-opus-4-8`) — pick whichever fits the task.**
+Intelligence and taste come first; we don't route work to cheaper models to save
+cost.
 
 How to delegate from a Fable/Claude OpenSession session:
-- Use `opensession-sessions.create_session` with `model: "gpt-5.5"` for GPT
-  workers.
+- Use `opensession-sessions.create_session` with `model: "claude-fable-5"` or
+  `"claude-opus-4-8"` — your choice per task.
 - For workers that only need filesystem/code access, pass `mcpServers: []` so
   unrelated external MCP startup does not slow or block them.
 - Set `repo` to the registered repo id the worker should inspect or edit, such

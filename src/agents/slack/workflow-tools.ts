@@ -86,7 +86,7 @@ Injected globals:
 - args — your args_json, parsed, verbatim.
 - budget — { total, spent(), remaining() } in output tokens.
 
-MODEL: use Fable or Opus. Agents run on Opus 4.8 (claude-opus-4-8) by default — the right choice for most fan-out work. Override to "claude-fable-5" (opts.model) for the small number of agents doing the hardest, highest-taste work: final synthesis, ranking, ambiguous judgment. Never route agents to other models.
+MODEL: use Fable or Opus — pick whichever fits each agent (opts.model: "claude-fable-5" or "claude-opus-4-8"). Agents default to Opus when you don't set one. Don't route agents to other models.
 
 Rules:
 - Date.now(), argless new Date(), and Math.random() THROW inside scripts (they break resume replay determinism) — pass timestamps/seeds via args.
