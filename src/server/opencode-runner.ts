@@ -966,7 +966,12 @@ export function isOpencodeSessionBusy(id: string): boolean {
 }
 
 export function activeOpencodeRunCount(): number {
-  return activeOpencodeRuns.size;
+  // Distinct RUNS, not map keys — each run registers up to three alias keys
+  // (runKey, bks session id, opencode session id) for one controller. Key
+  // counting made the shutdown drain wait its full 60s on phantom
+  // "undrainable" runs (live 2026-07-11: one detached run's extra aliases
+  // outnumbered the detached-key set, so the subtraction never hit zero).
+  return new Set(activeOpencodeRuns.values()).size;
 }
 
 export function cancelOpencodeRun(id: string): boolean {
@@ -1397,9 +1402,14 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
 const detachedRunKeys: Set<string> = (g.__opencodeDetachedRuns ??= new Set());
 
 export function activeDetachedOpencodeRunCount(): number {
-  let n = 0;
-  for (const key of detachedRunKeys) if (activeOpencodeRuns.has(key)) n++;
-  return n;
+  // Same distinct-controller counting as activeOpencodeRunCount, so the
+  // shutdown drain's subtraction compares like with like.
+  const controllers = new Set<AbortController>();
+  for (const key of detachedRunKeys) {
+    const ac = activeOpencodeRuns.get(key);
+    if (ac) controllers.add(ac);
+  }
+  return controllers.size;
 }
 
 // ── The run ──────────────────────────────────────────────────────────────────
