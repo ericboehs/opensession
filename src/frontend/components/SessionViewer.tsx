@@ -3004,25 +3004,38 @@ export function SessionViewer({
 				) : panelAvailable && panelOpen ? (
 					<div className="viewer-panel" style={panelStyle}>
 						{panelResizeHandle}
-						{/* Phones reach this panel as a deeper page from the ⋯ menu, so
-						    give it its own chevron-back to the chat (the desktop toggle
-						    button is hidden there). */}
+						{/* Phones open this panel as a full-width bottom sheet, so it
+						    carries one clean header row: chevron-back to the chat on the
+						    left (the desktop toggle button is hidden there) and the
+						    labelled Preview/Staging controls on the right — on desktop
+						    those live in the session header as state-colored icons. */}
 						{isPhone && (
-							<button
-								className="panel-back"
-								onClick={() => setPanelOpen(false)}
-								aria-label="Back to chat"
-							>
-								<svg width="11" height="18" viewBox="0 0 11 18" fill="none">
-									<path
-										d="M9 1.5L2 9l7 7.5"
-										stroke="currentColor"
-										strokeWidth="2.25"
-										strokeLinecap="round"
-										strokeLinejoin="round"
+							<div className="panel-sheet-head">
+								<button
+									className="panel-back"
+									onClick={() => setPanelOpen(false)}
+									aria-label="Back to chat"
+								>
+									<svg width="11" height="18" viewBox="0 0 11 18" fill="none">
+										<path
+											d="M9 1.5L2 9l7 7.5"
+											stroke="currentColor"
+											strokeWidth="2.25"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
+									</svg>
+								</button>
+								<div className="panel-sheet-actions">
+									<PreviewButton
+										session={session}
+										onAttachImage={(img) =>
+											setImages((prev) => [...prev, img])
+										}
 									/>
-								</svg>
-							</button>
+									<StagingLink session={session} />
+								</div>
+							</div>
 						)}
 						{hasWorkspace && (
 							<PrStatusBar
@@ -3036,26 +3049,13 @@ export function SessionViewer({
 								// Globe (staging deploy) rides inside the strip, left of the
 								// PR chip, so it shares the strip's tone background — it's
 								// pulled out of the header while the panel is open. On phones
-								// the globe stays in the panel-actions row below.
+								// the globe stays in the sheet-head row above.
 								leading={
 									!isPhone ? (
 										<StagingLink session={session} variant="header" />
 									) : undefined
 								}
 							/>
-						)}
-						{/* Phones don't get the header's icon affordances (that bar is
-						    hidden there), so keep the labelled Preview/Staging controls in
-						    the panel action row on phones only. On desktop they live in the
-						    session header as state-colored icons. */}
-						{isPhone && (
-							<div className="panel-actions">
-								<PreviewButton
-									session={session}
-									onAttachImage={(img) => setImages((prev) => [...prev, img])}
-								/>
-								<StagingLink session={session} />
-							</div>
 						)}
 						<div className="panel-tabs">
 							<button

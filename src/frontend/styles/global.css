@@ -10978,6 +10978,84 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 }
 
+/* Phones: the workspace panel becomes a full-width bottom sheet in the same
+   language as the composer modal / mobile action sheet — rounded top, sliding
+   up over everything including the floating header pills (z 40), with the dim
+   backdrop covering the whole screen rather than stopping at the header. */
+@media (max-width: 720px) {
+	.viewer-panel {
+		top: calc(env(safe-area-inset-top, 0px) + 10px);
+		left: 0;
+		width: 100%;
+		border-left: none;
+		border-top: 1px solid var(--border);
+		border-radius: 20px 20px 0 0;
+		corner-shape: var(--cs);
+		/* Respect the rounded corners; the drag-resize handle is hidden on
+		   phones so nothing inside needs to bleed out. */
+		overflow: hidden;
+		z-index: 50;
+		box-shadow: 0 -16px 48px rgba(0, 0, 0, 0.55);
+		animation: sheet-up 260ms cubic-bezier(0.32, 0.72, 0, 1);
+	}
+	.panel-overlay {
+		inset: 0;
+		z-index: 45;
+		background: rgba(0, 0, 0, 0.5);
+	}
+
+	/* One clean header row at the top of the sheet: back chevron on the left,
+	   the test-this-change actions (Preview / staging globe) on the right. */
+	.panel-sheet-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 14px 2px 8px;
+	}
+	.panel-sheet-head .panel-back {
+		margin: 0;
+	}
+	.panel-sheet-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-left: auto;
+		min-width: 0;
+	}
+
+	/* The PR strip reads as a row of the sheet, not a boxed 54px band. */
+	.viewer-panel .pr-bar {
+		min-height: 50px;
+		padding: 8px 14px;
+	}
+
+	/* Tabs: full-round pills with real touch targets and breathing room, and a
+	   soft fade at the strip's edges instead of a hard clip when it scrolls. */
+	.panel-tabs {
+		gap: 6px;
+		padding: 6px 14px 10px;
+		-webkit-mask-image: linear-gradient(
+			to right,
+			transparent 0,
+			#000 10px,
+			#000 calc(100% - 28px),
+			transparent
+		);
+		mask-image: linear-gradient(
+			to right,
+			transparent 0,
+			#000 10px,
+			#000 calc(100% - 28px),
+			transparent
+		);
+	}
+	.panel-tab {
+		font-size: 14px;
+		padding: 8px 15px;
+		border-radius: 999px;
+	}
+}
+
 @media (max-width: 720px) {
 	/* iOS-style page stack. The sidebar is the root page (full screen); any
 	   non-home route is a page pushed over it, sliding in from the right. The
@@ -12046,12 +12124,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
    the settings sub-nav, and inline icon buttons. Scoped to phones so
    desktop keeps its tighter density. */
 @media (max-width: 720px) {
-	/* Workspace tabs (Diff / Terminal / PR / Reviews) — the main way you
-	   move around a session on a phone. Taller rows, bigger labels. */
-	.panel-tab {
-		font-size: 14px;
-		padding: 8px 14px;
-	}
+	/* Workspace panel tabs are styled in the phone bottom-sheet block above
+	   (full-round pills with 44pt-leaning targets). */
 	.reviews-tab {
 		font-size: 14px;
 		padding: 11px 14px 13px;
