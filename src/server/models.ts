@@ -337,6 +337,10 @@ export function toOpencodeModel(model?: string | null): string | undefined {
   // on the runner's clear "bridge disabled" error instead of silently
   // degrading — there is nothing left to degrade to.
   if (m.startsWith("claude-")) return `opencode/anthropic/${m}`;
+  // A bare "<provider>/<model>" (e.g. "openai/gpt-5.6-sol") written without the
+  // engine prefix → opencode passthrough. Mirrors resolveModel so an id maps the
+  // same whichever seam sees it first, instead of degrading to the default.
+  if (m.includes("/")) return `opencode/${m}`;
   return model ?? undefined;
 }
 
@@ -415,6 +419,15 @@ export function resolveModel(input: string): ModelInfo | null {
   // the only way a session lands on the opencode runner (nothing defaults to it).
   if (s.startsWith("opencode/") && s.slice("opencode/".length).includes("/")) {
     return { id: s, provider: "opencode", label: s, aliases: [] };
+  }
+  // A bare "<provider>/<model>" (e.g. "openai/gpt-5.6-sol", "anthropic/claude-…")
+  // is an opencode engine id written without the engine prefix — a shape a
+  // workflow's agent({model}) override can easily use. Normalize it to the
+  // opencode form so it resolves to the intended model instead of falling
+  // through to null (which silently degrades callers to the default model).
+  if (s.includes("/")) {
+    const id = `opencode/${s}`;
+    return { id, provider: "opencode", label: id, aliases: [] };
   }
   return null;
 }

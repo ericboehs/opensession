@@ -5,6 +5,7 @@ import {
   markCodexModelExhausted,
   opencodeModelLabel,
   resolveConcreteModel,
+  resolveModel,
   toOpencodeModel,
 } from "./models";
 import { bridgeEnabled } from "./opencode-config";
@@ -34,6 +35,16 @@ describe("toOpencodeModel", () => {
   it("passes opencode ids through untouched", () => {
     expect(toOpencodeModel("opencode/anthropic/claude-sonnet-5")).toBe(
       "opencode/anthropic/claude-sonnet-5"
+    );
+  });
+  it("maps a bare provider/model path onto the opencode engine", () => {
+    // A workflow agent({model}) override may write the provider path without the
+    // engine prefix — it must reach the intended model, not degrade to default.
+    expect(toOpencodeModel("openai/gpt-5.6-sol")).toBe(
+      "opencode/openai/gpt-5.6-sol"
+    );
+    expect(resolveModel("openai/gpt-5.6-sol")?.id).toBe(
+      "opencode/openai/gpt-5.6-sol"
     );
   });
   it("maps claude tiers only when the anthropic bridge is enabled (fail-safe)", () => {
