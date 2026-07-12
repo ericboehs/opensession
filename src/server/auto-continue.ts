@@ -18,6 +18,23 @@ export const AUTO_CONTINUE_PROMPT =
 	"can give.";
 
 /**
+ * Fenced context appended to a prompt that was delivered by ABORTING the
+ * running turn (busy-send interrupt). The engine has no mid-turn steer (see
+ * "why opencode stops": every busy-send is an abort, and the truncated turn
+ * left in history primes a short acknowledge-then-stop reply — the main
+ * announce-then-stop trigger). This note reframes the delivery as a steer so
+ * the model folds it into the work in progress instead of parking. Remove
+ * when the engine gains real mid-turn steering (opencode v2 delivery:"steer").
+ */
+export const INTERRUPT_STEER_NOTE =
+	"Delivery note: the user sent this while your previous turn was still " +
+	"executing; that turn was interrupted to deliver it. Treat it as a mid-task " +
+	"steer — fold it into the work in progress and continue executing in THIS " +
+	"turn: pick up any interrupted step that is still needed, act on the new " +
+	"message, and keep working until done or genuinely blocked. Do not end the " +
+	"turn on a bare acknowledgment or an announcement of what you will do.";
+
+/**
  * Does the reply's final sentence read as a next action the model was about
  * to take ("Now let me read the exact code…", "I'll rebase and then open the
  * PR") rather than a completion, question, or handoff to the human?

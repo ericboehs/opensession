@@ -114,6 +114,7 @@ import {
 	announcesNextAction,
 	AUTO_CONTINUE_PROMPT,
 	AUTO_CONTINUE_USER,
+	INTERRUPT_STEER_NOTE,
 } from "./auto-continue";
 
 const g = globalThis as any;
@@ -123,6 +124,23 @@ const g = globalThis as any;
 // row parks for the human instead of looping. Cleared when a human prompt
 // arrives or a turn does real (tool-calling) work.
 const autoContinueNudged: Set<string> = (g.__autoContinueNudged ??= new Set());
+
+// Sessions whose current queue head was delivered by aborting the running
+// turn (busy-send interrupt). The next drain consumes the mark and appends
+// INTERRUPT_STEER_NOTE so the model treats the delivery as a mid-task steer
+// instead of a fresh turn it can acknowledge-and-park on. Timestamped so a
+// mark whose drain never happens (user Stop) expires instead of mislabeling
+// a much later, unrelated prompt.
+const interruptDrainMarks: Map<string, number> = (g.__interruptDrainMarks ??=
+	new Map());
+const INTERRUPT_DRAIN_MARK_TTL_MS = 5 * 60_000;
+
+function consumeInterruptDrainMark(sessionId: string): boolean {
+	const at = interruptDrainMarks.get(sessionId);
+	if (at === undefined) return false;
+	interruptDrainMarks.delete(sessionId);
+	return Date.now() - at < INTERRUPT_DRAIN_MARK_TTL_MS;
+}
 
 /** Append a message to a session's drainable queue and persist + broadcast. */
 export function enqueuePrompt(sessionId: string, item: QueueItem): void {
@@ -499,11 +517,18 @@ export async function drainQueue(sessionId: string): Promise<void> {
 		if (queue.length === 0) promptQueues.delete(sessionId);
 		persistQueues();
 		broadcastQueue(sessionId);
-		const combined = batch
+		let combined = batch
 			.map((m) =>
 				batch.length > 1 && m.user ? `[${m.user}] ${m.content}` : m.content,
 			)
 			.join("\n\n");
+		// Interrupt delivery (busy-send aborted the turn to land this batch):
+		// append the fenced steer note so the model resumes the interrupted work
+		// instead of acknowledge-and-parking. Fenced, so the transcript shows
+		// only the user's text.
+		if (consumeInterruptDrainMark(sessionId)) {
+			combined = `${combined}\n\n${wrapContext(INTERRUPT_STEER_NOTE)}`;
+		}
 		// Attachments queued alongside the text ride the drained turn: images are
 		// decoded to ImageInput, files handed through as staged/inline refs.
 		const combinedImages = parseImageDataUrls(
@@ -609,6 +634,9 @@ export function abortTurnAndDrain(
 	// fold any unconfirmed steer receipts back in ahead so nothing is dropped.
 	stoppedSessions.delete(sessionId);
 	requeueSteerReceipts(sessionId);
+	// The drained batch is an interrupt delivery: flag it so the drain frames
+	// it as a mid-task steer (see INTERRUPT_STEER_NOTE).
+	interruptDrainMarks.set(sessionId, Date.now());
 	watchExternalRunAndDrain(sessionId);
 	return true;
 }
