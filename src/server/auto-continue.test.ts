@@ -1,0 +1,61 @@
+import { describe, expect, test } from "bun:test";
+import { announcesNextAction } from "./auto-continue";
+
+describe("announcesNextAction", () => {
+	test("matches the observed bks-019f533e announce-then-stop tail", () => {
+		expect(
+			announcesNextAction(
+				"Research is complete across all three areas. Now let me read the exact code at the key insertion points before implementing.",
+			),
+		).toBe(true);
+	});
+
+	test("matches classic I'll-do-X-then-Y endings", () => {
+		expect(
+			announcesNextAction("I'll rebase onto master and then open the PR."),
+		).toBe(true);
+		expect(
+			announcesNextAction(
+				"The tests pass. Next, I will wire the frontend half.",
+			),
+		).toBe(true);
+		expect(announcesNextAction("I’m going to restart the service now.")).toBe(
+			true,
+		);
+	});
+
+	test("does not match completions", () => {
+		expect(announcesNextAction("Implemented and pushed as e9e13a7e.")).toBe(
+			false,
+		);
+		expect(
+			announcesNextAction(
+				"Live verification completed: the bundle contains the new label and health checks pass.",
+			),
+		).toBe(false);
+	});
+
+	test("does not match questions or handoffs to the human", () => {
+		expect(
+			announcesNextAction("Should I also apply this to the Slack loop?"),
+		).toBe(false);
+		expect(
+			announcesNextAction(
+				"I pushed the fix — let me know if you want the toast variant instead.",
+			),
+		).toBe(false);
+		expect(
+			announcesNextAction("I'll wait for your decision on the schema."),
+		).toBe(false);
+		expect(
+			announcesNextAction(
+				"Done. Say the word if you want me to merge it as well.",
+			),
+		).toBe(false);
+	});
+
+	test("ignores empty and trivial tails", () => {
+		expect(announcesNextAction("")).toBe(false);
+		expect(announcesNextAction("Done.")).toBe(false);
+	});
+});

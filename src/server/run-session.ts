@@ -109,8 +109,20 @@ import {
 import { buildSessionNote } from "./session-repos";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { makeAskHandler } from "./asks";
+import { audit } from "./audit";
+import {
+	announcesNextAction,
+	AUTO_CONTINUE_PROMPT,
+	AUTO_CONTINUE_USER,
+} from "./auto-continue";
 
 const g = globalThis as any;
+
+// Sessions whose last turn already got an announce-then-stop auto-continue —
+// one consecutive nudge max, so a model that announces-and-stops twice in a
+// row parks for the human instead of looping. Cleared when a human prompt
+// arrives or a turn does real (tool-calling) work.
+const autoContinueNudged: Set<string> = (g.__autoContinueNudged ??= new Set());
 
 /** Append a message to a session's drainable queue and persist + broadcast. */
 export function enqueuePrompt(sessionId: string, item: QueueItem): void {
@@ -908,6 +920,10 @@ async function runSessionPromptInner(
 	const session = findSession(sessionId);
 	if (!session) return;
 
+	// A fresh human prompt re-arms the announce-then-stop guard (the nudge's
+	// own delivery keeps the flag, capping it at one consecutive auto-continue).
+	if (user !== AUTO_CONTINUE_USER) autoContinueNudged.delete(sessionId);
+
 	// The engine session id depends on the session's model: codex models resume
 	// the codex thread, claude models the claude session. A missing engine id
 	// just means "first run on this provider" — a fresh thread/session starts.
@@ -1197,6 +1213,9 @@ async function runSessionPromptInner(
 	// the session posted to (slackReplyTo — e.g. a reply under an automation's
 	// summary message lands here via deliverToSession).
 	let assistantText = "";
+	// Tool calls seen this run — the announce-then-stop guard below only fires
+	// on turns that did no work at all.
+	let toolUseCount = 0;
 
 	for await (const event of sandboxRun ?? runAgent({
 		prompt,
@@ -1319,6 +1338,7 @@ async function runSessionPromptInner(
 				break;
 			}
 			case "tool_use":
+				toolUseCount++;
 				broadcastToSession(sessionId, {
 					type: "stream_tool_use",
 					sessionId,
@@ -1471,6 +1491,43 @@ async function runSessionPromptInner(
 			assistantText.trim().slice(0, 38000),
 			slackReplyTo.threadTs,
 		).catch(() => {});
+	}
+
+	// Announce-then-stop guard: the instruction-layer fix (28731464) still lets
+	// an occasional turn end cleanly on a plan sentence ("Now let me read the
+	// exact code…") with zero tool calls — the session then sits idle until the
+	// human types "continue" (seen 2026-07-10 bks-019f4b70, again 2026-07-12
+	// bks-019f533e). When a clean, tool-less interactive turn ends on an
+	// announced next action, queue ONE auto-continue; the drain watcher delivers
+	// it as the next turn. Never for automation sessions, never over a user
+	// Stop, never when something is already queued, one consecutive nudge max.
+	if (toolUseCount > 0) autoContinueNudged.delete(sessionId);
+	if (
+		!endedWithError &&
+		!runFailure &&
+		session.source === "backstage" &&
+		!isAutomationSession &&
+		toolUseCount === 0 &&
+		!promptQueues.get(sessionId)?.length &&
+		!stoppedSessions.has(sessionId) &&
+		!autoContinueNudged.has(sessionId) &&
+		announcesNextAction(assistantText)
+	) {
+		autoContinueNudged.add(sessionId);
+		audit({
+			msg: "auto_continue_nudge",
+			bks_session_id: sessionId,
+			tail: assistantText.trim().slice(-200),
+		});
+		broadcastToSession(sessionId, {
+			type: "notice",
+			message:
+				"Turn ended on an announced next step without doing it — auto-continuing.",
+		});
+		enqueuePrompt(sessionId, {
+			content: AUTO_CONTINUE_PROMPT,
+			user: AUTO_CONTINUE_USER,
+		});
 	}
 
 	// The session just finished a turn; if nothing's queued it's idle now, so fire
