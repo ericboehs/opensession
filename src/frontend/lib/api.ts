@@ -987,6 +987,14 @@ export async function fetchPrPreviewDiff(repo: string, branch: string) {
 	);
 }
 
+/** Session-less review guide for the PR preview's Guide tab (slow on first call per head commit). */
+export async function fetchPrPreviewGuide(repo: string, branch: string) {
+	return request<any>(
+		`/pr-preview-guide?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}`,
+		{ label: "Failed to fetch review guide" },
+	);
+}
+
 export async function postPrCommentApi(
 	sessionId: string,
 	payload: {

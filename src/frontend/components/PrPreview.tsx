@@ -5,10 +5,17 @@ import {
 	fetchModels,
 	fetchPrPreview,
 	fetchPrPreviewDiff,
+	fetchPrPreviewGuide,
 	relativeTime,
 	type ModelOption,
 } from "../lib/api";
-import { CheckRow, checkClass, isDeployment } from "./PrPanel";
+import {
+	CheckRow,
+	checkClass,
+	isDeployment,
+	sectionsWithPatches,
+	type ReviewGuideData,
+} from "./PrPanel";
 import { CommentableDiff } from "./CommentableDiff";
 import { Composer } from "./Composer";
 import { useCurrentUser } from "./UserPicker";
@@ -54,7 +61,10 @@ export function PrPreview({
 	const draftKey = `pr-preview:${repo}:${branch}`;
 	const [pr, setPr] = useState<PrDetails | null>(null);
 	const [diff, setDiff] = useState<PrDiffData | null>(null);
-	const [tab, setTab] = useState<"overview" | "changes">("overview");
+	const [tab, setTab] = useState<"overview" | "changes" | "guide">("overview");
+	const [guide, setGuide] = useState<ReviewGuideData | null>(null);
+	const [guideLoading, setGuideLoading] = useState(false);
+	const [guideFailed, setGuideFailed] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [prompt, setPrompt] = useState(() => loadDraft(draftKey).text);
 	useEffect(() => {
@@ -101,6 +111,30 @@ export function PrPreview({
 			})
 			.catch(() => {});
 	}, []);
+
+	const loadGuide = useCallback(async () => {
+		setGuideLoading(true);
+		setGuideFailed(false);
+		try {
+			const data = await fetchPrPreviewGuide(repo, branch);
+			if (data) setGuide(data);
+			else setGuideFailed(true);
+		} catch {
+			setGuideFailed(true);
+		} finally {
+			setGuideLoading(false);
+		}
+	}, [repo, branch]);
+
+	// The guide is generated on demand (the first request per head commit takes
+	// the model a while) — only fetch once the Guide tab opens, and refetch when
+	// the head moves (same pattern as PrPanel).
+	useEffect(() => {
+		if (tab !== "guide" || !diff?.patch) return;
+		if (guideLoading || guideFailed) return;
+		if (guide && guide.headRefOid === diff.headRefOid) return;
+		void loadGuide();
+	}, [tab, diff?.patch, diff?.headRefOid, guide, guideLoading, guideFailed, loadGuide]);
 
 	// Success navigates away on session_created (App handles it); on failure the
 	// `starting` lock would stick forever — reset on server error or timeout
@@ -175,6 +209,22 @@ export function PrPreview({
 	}, [pr]);
 
 	const bodyHtml = useMemo(() => (pr?.body ? renderMarkdown(pr.body) : ""), [pr?.body]);
+
+	// Old/new image URLs for binary files in the diff — shared by the Changes
+	// and Guide views.
+	const prImageSrcs = useCallback(
+		(file: { name: string; prevName?: string }) => {
+			const src = (ref: string, p: string) =>
+				`${API_BASE}/pr-image?repo=${encodeURIComponent(repo)}&ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(p)}`;
+			return {
+				oldSrc: pr?.baseRefName
+					? src(pr.baseRefName, file.prevName || file.name)
+					: undefined,
+				newSrc: pr?.headRefName ? src(pr.headRefName, file.name) : undefined,
+			};
+		},
+		[repo, pr?.baseRefName, pr?.headRefName],
+	);
 
 	// Sessions related to this PR: primarily via the server-enriched `prs` refs
 	// (primary + attached + linked), with primary-branch/number fallbacks for
@@ -284,6 +334,12 @@ export function PrPreview({
 										<span className="panel-tab-count">{pr.changedFiles}</span>
 									)}
 								</button>
+								<button
+									className={`panel-tab ${tab === "guide" ? "active" : ""}`}
+									onClick={() => setTab("guide")}
+								>
+									Guide
+								</button>
 							</div>
 
 							{tab === "overview" ? (
@@ -391,6 +447,45 @@ export function PrPreview({
 										</div>
 									)}
 								</>
+							) : tab === "guide" ? (
+								!diff?.patch ? (
+									<div className="panel-placeholder">
+										Couldn't load the diff for this PR.
+									</div>
+								) : guideLoading ? (
+									<div className="pr-guide-status">Writing the review guide…</div>
+								) : guideFailed ? (
+									<div className="pr-guide-status">
+										Couldn't generate a guide for this PR.
+										<button className="prc-show-more" onClick={() => void loadGuide()}>
+											Retry
+										</button>
+									</div>
+								) : guide ? (
+									<div className="pr-diff-section">
+										{sectionsWithPatches(guide, diff.patch).map((section, i, all) => (
+											<div className="pr-guide-section" key={`${section.title}-${i}`}>
+												<div className="pr-guide-count">
+													{String(i + 1).padStart(2, "0")} /{" "}
+													{String(all.length).padStart(2, "0")}
+												</div>
+												<div className="pr-guide-title">{section.title}</div>
+												<div className="pr-guide-expl">{section.explanation}</div>
+												{section.patch && (
+													<CommentableDiff
+														patch={section.patch}
+														submitLabel="Add comment"
+														placeholder=""
+														disabled
+														disabledHint="Start a session below to review this PR"
+														onSubmit={async () => {}}
+														imageSrcs={prImageSrcs}
+													/>
+												)}
+											</div>
+										))}
+									</div>
+								) : null
 							) : diff?.patch ? (
 								<div className="pr-diff-section">
 									<CommentableDiff
@@ -400,18 +495,7 @@ export function PrPreview({
 										disabled
 										disabledHint="Start a session below to review this PR"
 										onSubmit={async () => {}}
-										imageSrcs={(file) => {
-											const src = (ref: string, p: string) =>
-												`${API_BASE}/pr-image?repo=${encodeURIComponent(repo)}&ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(p)}`;
-											return {
-												oldSrc: pr?.baseRefName
-													? src(pr.baseRefName, file.prevName || file.name)
-													: undefined,
-												newSrc: pr?.headRefName
-													? src(pr.headRefName, file.name)
-													: undefined,
-											};
-										}}
+										imageSrcs={prImageSrcs}
 									/>
 								</div>
 							) : (

@@ -289,6 +289,16 @@ export async function handlePrRoutes(
 		const repo = getRepo(url.searchParams.get("repo") || undefined);
 		return Response.json(await getPrDiff(branch, repo.ghRepo));
 	}
+	// Session-less review guide for the preview's Guide tab — getReviewGuide
+	// only needs branch+ghRepo (same generation/cache as the session route).
+	if (path === "/backstage/api/pr-preview-guide" && req.method === "GET") {
+		const branch = url.searchParams.get("branch") || "";
+		if (!branch)
+			return Response.json({ error: "branch required" }, { status: 400 });
+		const repo = getRepo(url.searchParams.get("repo") || undefined);
+		const { getReviewGuide } = await import("../../server/review-guide");
+		return Response.json(await getReviewGuide(branch, repo.ghRepo));
+	}
 
 	// Post a comment on the session's PR (inline when path+line present)
 	if (

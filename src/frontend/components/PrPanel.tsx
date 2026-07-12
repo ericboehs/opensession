@@ -107,7 +107,7 @@ interface ReviewGuideSection {
   files: string[];
 }
 
-interface ReviewGuideData {
+export interface ReviewGuideData {
   number: number;
   headRefOid: string;
   sections: ReviewGuideSection[];
@@ -130,7 +130,7 @@ function splitPatchByFile(patch: string): Map<string, string> {
  * matched exactly, then by suffix; files no section claimed come back as a
  * trailing "Everything else" section so guide mode never hides part of a PR.
  */
-function sectionsWithPatches(guide: ReviewGuideData, patch: string) {
+export function sectionsWithPatches(guide: ReviewGuideData, patch: string) {
   const byFile = splitPatchByFile(patch);
   const unclaimed = new Set(byFile.keys());
   const resolve = (file: string): string | null => {
