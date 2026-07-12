@@ -561,6 +561,7 @@ export type WSServerMessage =
 	| { type: "stream_tool_result"; sessionId?: string; entry: TranscriptEntry }
 	| { type: "stream_done"; sessionId?: string }
 	| { type: "usage_update"; sessionId: string; usage: SessionUsage }
+	| { type: "cache_warning"; sessionId: string }
 	| {
 			type: "session_created";
 			id: string;

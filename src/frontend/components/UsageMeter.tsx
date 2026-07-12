@@ -102,9 +102,11 @@ function Row({
 export function UsageMeter({
 	usage,
 	className,
+	showCacheRate = false,
 }: {
 	usage: SessionUsage | undefined;
 	className?: string;
+	showCacheRate?: boolean;
 }) {
 	if (!usage || usage.turns === 0) return null;
 
@@ -137,6 +139,9 @@ export function UsageMeter({
 					{fmtUsd(usage.costUsd)}
 				</span>
 				{window > 0 && <ContextRing frac={frac} tone={tone.stroke} />}
+				{showCacheRate && (
+					<span className="tabular-nums text-dim">{cacheHit}% cached</span>
+				)}
 			</Popover.Trigger>
 			<Popover.Popup side="top" align="end" className="w-64 p-3 text-xs">
 				<div className="mb-2 flex items-baseline justify-between">

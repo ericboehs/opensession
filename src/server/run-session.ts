@@ -1395,6 +1395,12 @@ async function runSessionPromptInner(
 						usage: latestUsage,
 					});
 				}
+				if (event.cacheMissWarning) {
+					broadcastToSession(sessionId, {
+						type: "cache_warning",
+						sessionId,
+					});
+				}
 				invalidateSessionsCache();
 				break;
 			case "error":

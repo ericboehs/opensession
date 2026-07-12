@@ -1023,6 +1023,12 @@ export function SessionViewer({
 					if (msg.sessionId !== session.id) break;
 					setUsage(msg.usage);
 					break;
+				case "cache_warning":
+					if (msg.sessionId !== session.id) break;
+					toast("Prompt cache missed; this turn reprocessed the full context.", {
+						duration: 6000,
+					});
+					break;
 				case "notice":
 					setEntries((prev) => [
 						...prev,
@@ -2629,7 +2635,7 @@ export function SessionViewer({
 								<span className="header-chatbar-sep" aria-hidden="true">
 									·
 								</span>
-								<UsageMeter usage={usage} className="chatbar-usage" />
+								<UsageMeter usage={usage} className="chatbar-usage" showCacheRate />
 							</>
 						)}
 					</span>,

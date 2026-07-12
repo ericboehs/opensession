@@ -157,7 +157,12 @@ import {
   isTransientRunError,
   CLAUDE_CODE_BIN,
 } from "./runner-shared";
-import type { StreamEvent, ImageInput } from "./run-events";
+import {
+  isLikelyPromptCacheMiss,
+  type StreamEvent,
+  type ImageInput,
+  type TurnUsage,
+} from "./run-events";
 import { audit, summarizeText } from "./audit";
 import { gitIdentityEnv, githubLoginFor, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { OPENSESSION_CHATS_DIR } from "./paths";
@@ -541,6 +546,9 @@ export function meridianAccountEnv(account: ClaudeAccount, meridianKey: string):
     // Deterministic SDK executable (same binary claude-runner uses) instead of
     // Meridian's bundled/platform/PATH probing.
     MERIDIAN_CLAUDE_PATH: CLAUDE_CODE_BIN,
+    // Keep non-core schemas out of Anthropic's stable prompt prefix. Meridian
+    // makes deferred tools discoverable through the Agent SDK's ToolSearch.
+    MERIDIAN_DEFER_TOOL_THRESHOLD: "15",
   };
 }
 
@@ -2699,6 +2707,19 @@ async function* runOpencodeAttempt(
     if (abortController.signal.aborted) return;
 
     const tokens = info?.tokens;
+    const usage: TurnUsage | undefined = tokens
+      ? {
+          costUsd: info?.cost || undefined,
+          costApproximate: true,
+          inputTokens: tokens.input || 0,
+          outputTokens: tokens.output || 0,
+          cacheReadTokens: tokens.cache?.read || 0,
+          cacheCreationTokens: tokens.cache?.write || 0,
+          contextTokens:
+            (tokens.input || 0) + (tokens.cache?.read || 0) + (tokens.cache?.write || 0),
+        }
+      : undefined;
+    const userTurns = list.filter((message) => message.info?.role === "user").length;
     turnEvent({
       direction: "out",
       kind: "result",
@@ -2711,24 +2732,16 @@ async function* runOpencodeAttempt(
       ...summarizeText(textOut),
     });
     bridgeRunEnd("success");
+    if (usage) yield { type: "usage_snapshot", usage };
     yield {
       type: "done",
       sessionId: ocSessionId,
       result: textOut || "Done! (no text output)",
       provider: PROVIDER,
       model,
-      usage: tokens
-        ? {
-            costUsd: info?.cost || undefined,
-            costApproximate: true,
-            inputTokens: tokens.input || 0,
-            outputTokens: tokens.output || 0,
-            cacheReadTokens: tokens.cache?.read || 0,
-            cacheCreationTokens: tokens.cache?.write || 0,
-            contextTokens:
-              (tokens.input || 0) + (tokens.cache?.read || 0) + (tokens.cache?.write || 0),
-          }
-        : undefined,
+      usage,
+      cacheMissWarning:
+        (usage && isLikelyPromptCacheMiss(usage, userTurns, parsed.providerID)) || undefined,
     };
   } catch (e: any) {
     if (!abortController.signal.aborted) {
@@ -3247,6 +3260,19 @@ export async function tryReattachOpencodeRun(
       if (abortController.signal.aborted) return;
 
       const tokens = info?.tokens;
+      const usage: TurnUsage | undefined = tokens
+        ? {
+            costUsd: info?.cost || undefined,
+            costApproximate: true,
+            inputTokens: tokens.input || 0,
+            outputTokens: tokens.output || 0,
+            cacheReadTokens: tokens.cache?.read || 0,
+            cacheCreationTokens: tokens.cache?.write || 0,
+            contextTokens:
+              (tokens.input || 0) + (tokens.cache?.read || 0) + (tokens.cache?.write || 0),
+          }
+        : undefined;
+      const userTurns = list.filter((message) => message.info?.role === "user").length;
       turnEvent({
         direction: "out",
         kind: "result",
@@ -3258,24 +3284,21 @@ export async function tryReattachOpencodeRun(
         total_cost_usd: info?.cost,
         ...summarizeText(textOut),
       });
+      if (usage) yield { type: "usage_snapshot", usage };
       yield {
         type: "done",
         sessionId: ocSessionId!,
         result: textOut || "Done! (no text output)",
         provider: PROVIDER,
         model,
-        usage: tokens
-          ? {
-              costUsd: info?.cost || undefined,
-              costApproximate: true,
-              inputTokens: tokens.input || 0,
-              outputTokens: tokens.output || 0,
-              cacheReadTokens: tokens.cache?.read || 0,
-              cacheCreationTokens: tokens.cache?.write || 0,
-              contextTokens:
-                (tokens.input || 0) + (tokens.cache?.read || 0) + (tokens.cache?.write || 0),
-            }
-          : undefined,
+        usage,
+        cacheMissWarning:
+          (usage &&
+            isLikelyPromptCacheMiss(
+              usage,
+              userTurns,
+              parseOpencodeModel(model)?.providerID || "",
+            )) || undefined,
       };
     } catch (e: any) {
       if (!abortController.signal.aborted) {

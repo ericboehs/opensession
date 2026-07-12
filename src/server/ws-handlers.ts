@@ -1177,6 +1177,8 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								// creator's socket in the window before they watch.
 								emit({ type: "usage_update", usage: latestUsage });
 							}
+							if (event.cacheMissWarning)
+								emit({ type: "cache_warning", sessionId: bksId });
 						}
 						if (event.type === "error") {
 							runFailure = event.content || "Run failed";

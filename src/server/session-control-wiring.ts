@@ -541,6 +541,12 @@ registerSessionControl({
 								usage: latestUsage,
 							});
 						}
+						if (event.cacheMissWarning) {
+							broadcastToSession(bksId, {
+								type: "cache_warning",
+								sessionId: bksId,
+							});
+						}
 					}
 					if (event.type === "error") {
 						runFailure = event.content || "Run failed";

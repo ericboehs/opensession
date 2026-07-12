@@ -21,6 +21,16 @@ export interface TurnUsage {
   contextTokens: number;
 }
 
+/** A large Anthropic turn after the first should reuse at least some prefix. */
+export function isLikelyPromptCacheMiss(
+  usage: TurnUsage,
+  userTurns: number,
+  providerId: string,
+): boolean {
+  if (providerId !== "anthropic" || userTurns < 2 || usage.contextTokens < 10_000) return false;
+  return usage.cacheReadTokens < 1_024 && usage.cacheReadTokens / usage.contextTokens < 0.05;
+}
+
 export interface StreamEvent {
   type:
     | "init"
@@ -70,6 +80,8 @@ export interface StreamEvent {
    * rather than onto the previous snapshot).
    */
   usage?: TurnUsage;
+  /** This completed Anthropic turn unexpectedly reused almost none of its prompt. */
+  cacheMissWarning?: boolean;
   /**
    * Set on a terminal done/error when the run died on usage limits with no
    * account left to rotate to — the dispatcher's cue to try a fallback model.
