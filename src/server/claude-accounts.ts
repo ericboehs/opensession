@@ -42,6 +42,11 @@ const TOKEN_REFRESH_SLACK_MS = 5 * 60 * 1000;
 const DEFAULT_EXHAUST_MS = 60 * 60 * 1000;
 // Treat an account as unusable for new runs at/above this 5-hour utilization.
 const EXHAUSTED_UTILIZATION = 97;
+// Weekly scoped caps (Fable) only sideline an account when fully spent: the
+// percentage is integer-rounded and Anthropic keeps serving right up to the
+// cap (verified live at 97%), and a real limit error still sidelines the
+// account via markExhausted. The 5-hour buffer above stays conservative.
+const SCOPED_EXHAUSTED_UTILIZATION = 100;
 
 export interface ClaudeAccount {
   id: string;
@@ -478,7 +483,15 @@ function accountUtilization(a: ClaudeAccount, model?: string): number {
  */
 function isAccountUsableFor(a: ClaudeAccount, model?: string, allowExtraUsage?: boolean): boolean {
   if (isExhausted(a.id) || isModelExhausted(a.id, model)) return false;
-  if (accountUtilization(a, model) < EXHAUSTED_UTILIZATION) return true;
+  const usage = usageCache.get(a.id);
+  const fiveHour = usage?.fiveHour?.utilization ?? 0;
+  const scoped = scopedLimitForModel(usage, model);
+  if (
+    fiveHour < EXHAUSTED_UTILIZATION &&
+    (scoped === null || scoped < SCOPED_EXHAUSTED_UTILIZATION)
+  ) {
+    return true;
+  }
   return !!allowExtraUsage && hasCreditHeadroom(a);
 }
 
