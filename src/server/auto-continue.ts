@@ -39,7 +39,42 @@ export function announcesNextAction(text: string): boolean {
 		)
 	)
 		return false;
-	return /\b(let me|i['’]ll|i will|i['’]m going to|i['’]m about to|next,? i|now i['’]m|now i will)\b/i.test(
+	if (
+		/\b(let me|i['’]ll|i will|i['’]m going to|i['’]m about to|next,? i|now i['’]m|now i will)\b/i.test(
+			last,
+		)
+	)
+		return true;
+	// Bare gerund announcements ("Fetching the review comments on #4791.",
+	// "Now running the tests.") — seen 2026-07-12 in bks-019f54f8, where the
+	// first-person patterns above missed and the session parked. The verb must
+	// be followed by an object-ish token so completion shapes ("Testing
+	// complete.", "Everything is working.") and -ing non-verbs ("During the
+	// run…") stay out.
+	const gerund = /^(?:(?:now|next|first|then|ok(?:ay)?),?\s+)?([a-z]+ing)\s+(\S.*)/i.exec(
 		last,
 	);
+	if (!gerund) return false;
+	if (NON_VERB_ING.has(gerund[1].toLowerCase())) return false;
+	return (
+		/^(?:the|a|an|this|that|these|those|it|its|my|our|your|all|both|each|some|more|on)\b/i.test(
+			gerund[2],
+		) || /^[A-Z0-9`"'@[#]/.test(gerund[2])
+	);
 }
+
+/** -ing words that open sentences without being an action the model is taking. */
+const NON_VERB_ING = new Set([
+	"during",
+	"nothing",
+	"everything",
+	"anything",
+	"something",
+	"warning",
+	"pending",
+	"assuming",
+	"regarding",
+	"according",
+	"meaning",
+	"interesting",
+]);

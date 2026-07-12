@@ -24,6 +24,31 @@ describe("announcesNextAction", () => {
 		);
 	});
 
+	test("matches bare gerund announcements (observed bks-019f54f8 tail)", () => {
+		expect(
+			announcesNextAction("Fetching the review comments on #4791."),
+		).toBe(true);
+		expect(announcesNextAction("Now running the failing tests.")).toBe(true);
+		expect(
+			announcesNextAction("Checking the CI status before pushing."),
+		).toBe(true);
+		expect(announcesNextAction("Working on it right away.")).toBe(true);
+	});
+
+	test("does not match gerund-shaped completions or -ing non-verbs", () => {
+		expect(announcesNextAction("Testing complete.")).toBe(false);
+		expect(announcesNextAction("Everything is working now.")).toBe(false);
+		expect(
+			announcesNextAction("During the run, the flag was already set."),
+		).toBe(false);
+		expect(
+			announcesNextAction("Nothing matching the pattern was found."),
+		).toBe(false);
+		expect(
+			announcesNextAction("Assuming the flag is set, this behaves the same."),
+		).toBe(false);
+	});
+
 	test("does not match completions", () => {
 		expect(announcesNextAction("Implemented and pushed as e9e13a7e.")).toBe(
 			false,
