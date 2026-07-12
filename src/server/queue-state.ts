@@ -14,6 +14,7 @@
 import { copyFileSync, existsSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { setTranscriptAppendListener } from "./file-watcher";
+import { stripContext } from "./prompt-context";
 import { SESSIONS_DIR } from "./session-cache";
 import { broadcastToSession } from "./ws-hub";
 
@@ -100,11 +101,21 @@ export function broadcastQueue(sessionId: string) {
 	const steered = queueWithIds(steeredReceipts.get(sessionId));
 	if (queued.length > 0) promptQueues.set(sessionId, queued);
 	if (steered.length > 0) steeredReceipts.set(sessionId, steered);
+	// Display copy only: fenced <backstage:context> blocks (e.g. the queued
+	// auto-continue nudge) are model plumbing, not something the queue chip
+	// should render raw. The stored items keep the full content for delivery.
+	const forDisplay = (items: typeof queued) =>
+		items.map((i) => {
+			const shown = stripContext(i.content);
+			return shown === i.content
+				? i
+				: { ...i, content: shown || "(auto-continue)" };
+		});
 	broadcastToSession(sessionId, {
 		type: "queue_update",
 		sessionId,
-		queued,
-		steered,
+		queued: forDisplay(queued),
+		steered: forDisplay(steered),
 	});
 }
 

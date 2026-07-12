@@ -1524,8 +1524,12 @@ async function runSessionPromptInner(
 			message:
 				"Turn ended on an announced next step without doing it — auto-continuing.",
 		});
+		// Fenced so the transcript never shows it as a user bubble: the parsers
+		// strip <backstage:context> from user text and skip the then-empty entry,
+		// while the engine still sees the full instruction. The notice above (and
+		// the audit event) are the human-visible trace.
 		enqueuePrompt(sessionId, {
-			content: AUTO_CONTINUE_PROMPT,
+			content: wrapContext(AUTO_CONTINUE_PROMPT),
 			user: AUTO_CONTINUE_USER,
 		});
 	}
