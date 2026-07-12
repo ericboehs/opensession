@@ -178,12 +178,14 @@ import {
   appendOpencodeTranscript,
   backfillOpencodeTranscriptGap,
   ensureOpencodeTranscriptFile,
+  existingOpencodeTranscriptPath,
   transcriptLineUser,
   transcriptLineRunnerNotice,
   transcriptLineAssistantText,
   transcriptLineToolUse,
   transcriptLineToolResult,
 } from "./opencode-transcript";
+import { parseTranscript } from "./jsonl-parser";
 import { ensureAnthropicBridge } from "./anthropic-bridge";
 import { ensureAgentAwsCredsFile } from "./aws-creds";
 import {
@@ -2141,6 +2143,10 @@ async function* runOpencodeAttempt(
     // Resolve/create the opencode session. Shared servers scope every call to
     // the run's directory (opencode's per-directory app instances).
     let createdFresh = false;
+    // Kept for seeding: a model/account switch lands on a server whose SQLite
+    // doesn't have this id, so the run starts a fresh engine session — the
+    // prior session's persisted transcript is the only history carrier.
+    const priorOcSessionId = ocSessionId;
     if (ocSessionId) {
       const existing = await client.session.get({ path: { id: ocSessionId }, ...q });
       if (!existing.data) {
@@ -2208,12 +2214,19 @@ async function* runOpencodeAttempt(
     // Persist this run to the session's claude-shape jsonl transcript file —
     // OpenCode's own storage is SQLite (nothing tailable), and without a file
     // every reload rendered "No transcript available". Fresh cross-engine
-    // handoffs seed the file with the prior engine's history; legacy sessions
-    // (runs from before persistence existed) backfill from SQLite here.
-    ensureOpencodeTranscriptFile(
-      ocSessionId,
-      createdFresh ? opts.seedTranscriptEntries : undefined
-    );
+    // handoffs seed the file with the prior engine's history; a fresh session
+    // REPLACING a prior opencode one (model/account switch onto a server that
+    // doesn't have the old id, mid-turn rotation restart) seeds from the prior
+    // session's persisted file, so the UI transcript survives the id change
+    // (bks-019f57a0 lost its visible history across two switches, 2026-07-12).
+    // Legacy sessions (runs from before persistence existed) backfill from
+    // SQLite inside ensure.
+    let seedEntries = createdFresh ? opts.seedTranscriptEntries : undefined;
+    if (createdFresh && !seedEntries?.length && priorOcSessionId) {
+      const priorPath = existingOpencodeTranscriptPath(priorOcSessionId);
+      if (priorPath) seedEntries = parseTranscript(priorPath);
+    }
+    ensureOpencodeTranscriptFile(ocSessionId, seedEntries);
     // Account-rotation retries rerun this whole attempt with the same prompt —
     // appending the user line again gave one send two or three identical
     // bubbles (3× "FINISH ITTT", doubled resume prompts, 2026-07-09). But a
