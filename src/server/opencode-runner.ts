@@ -522,6 +522,55 @@ export function meridianStackInfo(): MeridianStackInfo {
 export const MERIDIAN_CFG_ROOT = `${stateDir("opencode")}/meridian-cfg`;
 
 /**
+ * Install the opencode-fingerprint scrub as a Meridian PROXY plugin so it runs
+ * SERVER-SIDE (in the proxy's onRequest pipeline) rather than only in the v1
+ * OpenCode `experimental.chat.system.transform` hook. Why this exists: the
+ * scrub is what strips opencode's identity tells from the system prompt so
+ * Anthropic bills the request against the Claude subscription plan instead of
+ * third-party extra-usage. The v1 hook only fires on the v1 engine; when a run
+ * dispatches through the v2 session loop (no equivalent hook shipped yet —
+ * v2's plugin domains are agent/aisdk/catalog/… with no request/system hook,
+ * 2026-07-12) the system prompt would reach Anthropic un-scrubbed and get
+ * billed as third-party. Both engines send through the SAME in-process proxy
+ * on the `opencode` adapter, so scrubbing at the proxy is engine-agnostic and
+ * future-proofs the v2 cutover. Idempotent for v1 (the client hook already
+ * scrubbed the identical text, so the server pass is a no-op).
+ *
+ * Meridian reads plugins from `<HOME>/.config/meridian/plugins/*.{js,ts}`
+ * (not overridable via env in the bundled build), loaded fault-tolerantly at
+ * proxy startup. We drop a one-line re-export of the version-pinned installed
+ * scrub package so it tracks node_modules. Runs once per process; the proxy
+ * picks it up when the next meridian server (and its proxy) spawns.
+ */
+let meridianProxyScrubInstalled = false;
+export function ensureMeridianProxyScrub(): void {
+  if (meridianProxyScrubInstalled) return;
+  meridianProxyScrubInstalled = true;
+  try {
+    const scrubPkg = Bun.resolveSync(
+      "@rynfar/meridian-plugin-opencode-scrub",
+      import.meta.dir,
+    );
+    // Meridian's proxy resolves the plugin dir via os.homedir(); with HOME set
+    // (systemd unit + opencodeEnv both pass it) that equals this HOME. The
+    // proxy runs in-process in the opencode server, which inherits it.
+    const pluginDir = `${HOME}/.config/meridian/plugins`;
+    mkdirSync(pluginDir, { recursive: true });
+    // The loader matches .js/.ts only and imports the default export by
+    // absolute path — a re-export resolves without relative-path juggling.
+    writeFileSync(
+      `${pluginDir}/opencode-scrub.js`,
+      `export { default } from ${JSON.stringify(scrubPkg)}\n`,
+    );
+  } catch (e) {
+    // Non-fatal: a missing scrub package just leaves v2 traffic un-scrubbed
+    // (v1 still scrubs client-side). Never block a run on this.
+    console.error("[opencode-runner] meridian proxy scrub install failed:", e);
+    meridianProxyScrubInstalled = false;
+  }
+}
+
+/**
  * Env for a meridian-mode `opencode serve` process. The Meridian proxy runs
  * in-process in that server (the plugin calls startProxyServer) and passes its
  * process env through to the Agent SDK subprocess, so this is the per-session
@@ -1691,6 +1740,9 @@ async function* runOpencodeAttempt(
           servers.get(shared ? sharedServerKey(bridgeTag, user) : sessionKey)?.meridianKey ||
           crypto.randomUUID();
         serverExtraEnv = meridianAccountEnv(picked, meridianKey);
+        // Ensure the server-side fingerprint scrub is present before this
+        // server's proxy starts (engine-agnostic billing — see fn doc).
+        ensureMeridianProxyScrub();
         meridianPlugin = [stack.pluginPath];
         // The plugin rewrites baseURL to its live proxy URL at startup; the
         // placeholder guarantees a hard connection failure (never a real
