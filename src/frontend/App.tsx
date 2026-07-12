@@ -1764,6 +1764,8 @@ function App() {
 								connected={connected}
 								send={send}
 								addHandler={addHandler}
+								sessions={sessions}
+								onOpenSession={(id) => navigate({ view: "session", id })}
 							/>
 						) : route.view === "support" ? (
 							<SupportPreview

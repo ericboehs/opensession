@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PrDetails, WSServerMessage } from "../lib/types";
+import type { PrDetails, UnifiedSession, WSServerMessage } from "../lib/types";
 import {
 	API_BASE,
 	fetchModels,
 	fetchPrPreview,
 	fetchPrPreviewDiff,
+	relativeTime,
 	type ModelOption,
 } from "../lib/api";
 import { CheckRow, checkClass, isDeployment } from "./PrPanel";
@@ -13,6 +14,7 @@ import { Composer } from "./Composer";
 import { useCurrentUser } from "./UserPicker";
 import { renderMarkdown } from "../lib/markdown";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
+import { chatPath } from "../lib/share-link";
 
 interface Props {
 	/** Repo id (e.g. "tella-fusion") + the PR's head branch — the preview's key. */
@@ -21,6 +23,9 @@ interface Props {
 	connected: boolean;
 	send: (msg: any) => void;
 	addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
+	/** Live sessions list — used to surface chats related to this PR. */
+	sessions: UnifiedSession[];
+	onOpenSession: (id: string) => void;
 }
 
 interface PrDiffData {
@@ -37,10 +42,19 @@ interface PrDiffData {
  * (`create_session` with `fromPr`), and App navigates into it on
  * `session_created` exactly like the Home ask box.
  */
-export function PrPreview({ repo, branch, connected, send, addHandler }: Props) {
+export function PrPreview({
+	repo,
+	branch,
+	connected,
+	send,
+	addHandler,
+	sessions,
+	onOpenSession,
+}: Props) {
 	const draftKey = `pr-preview:${repo}:${branch}`;
 	const [pr, setPr] = useState<PrDetails | null>(null);
 	const [diff, setDiff] = useState<PrDiffData | null>(null);
+	const [tab, setTab] = useState<"overview" | "changes">("overview");
 	const [loading, setLoading] = useState(true);
 	const [prompt, setPrompt] = useState(() => loadDraft(draftKey).text);
 	useEffect(() => {
@@ -162,6 +176,37 @@ export function PrPreview({ repo, branch, connected, send, addHandler }: Props) 
 
 	const bodyHtml = useMemo(() => (pr?.body ? renderMarkdown(pr.body) : ""), [pr?.body]);
 
+	// Sessions related to this PR: primarily via the server-enriched `prs` refs
+	// (primary + attached + linked), with primary-branch/number fallbacks for
+	// sessions the enrichment hasn't reached. Matching also uses the loaded PR's
+	// number and head branch, so /pr/<repo>/<number> URLs (gh resolves either a
+	// branch or a number) link the same sessions as branch URLs.
+	const relatedSessions = useMemo(() => {
+		const num = pr?.number;
+		const head = pr?.headRefName;
+		const refMatch = (r: { repo: string; branch?: string; number?: number }) =>
+			r.repo === repo &&
+			((num != null && r.number === num) ||
+				r.branch === branch ||
+				(!!head && r.branch === head));
+		const matched = sessions.filter((s) => {
+			if (s.sideChatOf) return false;
+			if ((s.prs || []).some(refMatch)) return true;
+			if ((s.linkedPrs || []).some(refMatch)) return true;
+			const sRepo = s.repo || "tella-fusion";
+			if (sRepo === repo && (s.branch === branch || (!!head && s.branch === head)))
+				return true;
+			if (num != null && sRepo === repo && s.prNumber === num) return true;
+			return (s.attachedRepos || []).some(
+				(a) => a.repo === repo && (a.branch === branch || (!!head && a.branch === head)),
+			);
+		});
+		return matched.sort((a, b) => {
+			if (a.isRunning !== b.isRunning) return a.isRunning ? -1 : 1;
+			return (b.lastActivity || "").localeCompare(a.lastActivity || "");
+		});
+	}, [sessions, repo, branch, pr?.number, pr?.headRefName]);
+
 	const stateClass = pr
 		? pr.state === "MERGED"
 			? "pr-pill-merged"
@@ -220,70 +265,134 @@ export function PrPreview({ repo, branch, connected, send, addHandler }: Props) 
 								)}
 							</div>
 
-							{pr.checks.length > 0 && (
-								<div className="pr-checks">
-									<div className="pr-checks-summary" aria-disabled>
-										<span
-											className={`pr-checks-status ${
-												checkSummary.failed > 0
-													? "pr-sum-fail"
-													: checkSummary.pending > 0
-														? "pr-sum-pending"
-														: "pr-sum-pass"
-											}`}
-										>
-											{checkSummary.failed > 0
-												? "Some checks failed"
-												: checkSummary.pending > 0
-													? "Checks running"
-													: "All checks passed"}
-										</span>
-										<span className="pr-checks-counts">
-											{checkSummary.passed > 0 && (
-												<span className="pr-count check-success-text">✓ {checkSummary.passed}</span>
-											)}
-											{checkSummary.failed > 0 && (
-												<span className="pr-count check-failure-text">✕ {checkSummary.failed}</span>
-											)}
-											{checkSummary.pending > 0 && (
-												<span className="pr-count check-pending-text">● {checkSummary.pending}</span>
-											)}
-										</span>
-									</div>
-									{checkSummary.deployments.length > 0 && (
-										<>
-											<div className="pr-checks-group">Deployments</div>
-											{checkSummary.deployments.map((check, i) => (
-												<CheckRow key={`d${i}`} check={check} />
-											))}
-										</>
+							{/* Floating pill tabs (same pattern as the session panel). The
+							    strip's panel-context padding is cancelled so the first pill's
+							    label lands on the page's content edge. */}
+							<div className="panel-tabs px-0 -mx-3 pt-3 pb-1">
+								<button
+									className={`panel-tab ${tab === "overview" ? "active" : ""}`}
+									onClick={() => setTab("overview")}
+								>
+									Overview
+								</button>
+								<button
+									className={`panel-tab ${tab === "changes" ? "active" : ""}`}
+									onClick={() => setTab("changes")}
+								>
+									Changes
+									{pr.changedFiles > 0 && (
+										<span className="panel-tab-count">{pr.changedFiles}</span>
 									)}
-									{checkSummary.checks.length > 0 && (
-										<>
+								</button>
+							</div>
+
+							{tab === "overview" ? (
+								<>
+									{pr.checks.length > 0 && (
+										<div className="pr-checks">
+											<div className="pr-checks-summary" aria-disabled>
+												<span
+													className={`pr-checks-status ${
+														checkSummary.failed > 0
+															? "pr-sum-fail"
+															: checkSummary.pending > 0
+																? "pr-sum-pending"
+																: "pr-sum-pass"
+													}`}
+												>
+													{checkSummary.failed > 0
+														? "Some checks failed"
+														: checkSummary.pending > 0
+															? "Checks running"
+															: "All checks passed"}
+												</span>
+												<span className="pr-checks-counts">
+													{checkSummary.passed > 0 && (
+														<span className="pr-count check-success-text">✓ {checkSummary.passed}</span>
+													)}
+													{checkSummary.failed > 0 && (
+														<span className="pr-count check-failure-text">✕ {checkSummary.failed}</span>
+													)}
+													{checkSummary.pending > 0 && (
+														<span className="pr-count check-pending-text">● {checkSummary.pending}</span>
+													)}
+												</span>
+											</div>
 											{checkSummary.deployments.length > 0 && (
-												<div className="pr-checks-group">Checks</div>
+												<>
+													<div className="pr-checks-group">Deployments</div>
+													{checkSummary.deployments.map((check, i) => (
+														<CheckRow key={`d${i}`} check={check} />
+													))}
+												</>
 											)}
-											{checkSummary.checks.map((check, i) => (
-												<CheckRow key={`c${i}`} check={check} />
-											))}
-										</>
+											{checkSummary.checks.length > 0 && (
+												<>
+													{checkSummary.deployments.length > 0 && (
+														<div className="pr-checks-group">Checks</div>
+													)}
+													{checkSummary.checks.map((check, i) => (
+														<CheckRow key={`c${i}`} check={check} />
+													))}
+												</>
+											)}
+										</div>
 									)}
-								</div>
-							)}
 
-							{pr.body && (
-								<div className="pr-body">
-									<div className="pr-checks-title">Description</div>
-									<div
-										className="pr-body-md markdown"
-										dangerouslySetInnerHTML={{ __html: bodyHtml }}
-									/>
-								</div>
-							)}
+									{relatedSessions.length > 0 && (
+										<div className="pr-body">
+											<div className="pr-checks-title">Sessions</div>
+											<div className="flex flex-col">
+												{relatedSessions.map((s) => (
+													<a
+														key={s.id}
+														href={chatPath(s)}
+														onClick={(e) => {
+															// Plain click navigates in-app; modified clicks
+															// keep native new-tab behavior.
+															if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+															e.preventDefault();
+															onOpenSession(s.id);
+														}}
+														className="flex items-center gap-2 px-2 py-1.5 -mx-2 rounded-md text-[13px] text-fg no-underline hover:bg-surface"
+													>
+														<span
+															className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+																s.isRunning ? "bg-green animate-pulse" : "bg-line"
+															}`}
+														/>
+														<span className="truncate">{s.title}</span>
+														{s.archived && (
+															<span className="text-faint text-[11px] shrink-0">
+																archived
+															</span>
+														)}
+														{s.startedBy && (
+															<span className="text-faint text-[12px] shrink-0">
+																{s.startedBy}
+															</span>
+														)}
+														<span className="text-faint text-[12px] shrink-0 ml-auto">
+															{relativeTime(s.lastActivity)}
+														</span>
+													</a>
+												))}
+											</div>
+										</div>
+									)}
 
-							{diff?.patch && (
-								<div className="pr-diff-section mt-4">
-									<div className="pr-checks-title">Changes</div>
+									{pr.body && (
+										<div className="pr-body">
+											<div className="pr-checks-title">Description</div>
+											<div
+												className="pr-body-md markdown"
+												dangerouslySetInnerHTML={{ __html: bodyHtml }}
+											/>
+										</div>
+									)}
+								</>
+							) : diff?.patch ? (
+								<div className="pr-diff-section">
 									<CommentableDiff
 										patch={diff.patch}
 										submitLabel="Add comment"
@@ -304,6 +413,10 @@ export function PrPreview({ repo, branch, connected, send, addHandler }: Props) 
 											};
 										}}
 									/>
+								</div>
+							) : (
+								<div className="panel-placeholder">
+									Couldn't load the diff for this PR.
 								</div>
 							)}
 						</div>
