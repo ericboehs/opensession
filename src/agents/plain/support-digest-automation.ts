@@ -40,7 +40,7 @@ export function ensureSupportDigestAutomation(): void {
     mcpServers: ["plain", "linear"],
     workflows: true, // human-set: cron prompt is our own text (see workflow-tools.ts)
     model: "claude-fable-5",
-    fallbackModel: "claude-opus-4-8",
+    fallbackModel: "gpt-5.6-sol", // Michiel: fall back to Sol if Fable is unavailable
   });
   if ("error" in created) {
     console.error(`[plain] Failed to seed Morning support digest:`, created.error);
