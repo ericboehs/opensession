@@ -10496,6 +10496,41 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 }
 
+@media (max-width: 560px) {
+	.automations-page-main {
+		padding: 20px 16px 48px;
+	}
+	.automations-page .page-header {
+		align-items: flex-start;
+		flex-direction: column;
+		gap: 14px;
+		margin-bottom: 20px;
+	}
+	.automations-row {
+		gap: 10px;
+		padding: 12px 4px;
+	}
+	.automations-row-main {
+		order: -1;
+	}
+	.automations-row-name {
+		font-size: 14.5px;
+	}
+	.automations-row-graph,
+	.automations-row-next {
+		display: none;
+	}
+	.auto-toggle {
+		flex-shrink: 0;
+	}
+	.automations-row .working-pill,
+	.automations-row .source-chip {
+		max-width: 92px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+}
+
 /* ── Connections ─────────────────────────────────────────── */
 
 .connections {
