@@ -1008,6 +1008,29 @@ export function cancelOpencodeRun(id: string): boolean {
   return false;
 }
 
+// In-band mid-turn steer, registered per active run (same alias keys as
+// activeOpencodeRuns). Mechanism: POST /session/{id}/message with
+// noReply:true appends the user message to the engine session's history
+// WITHOUT scheduling a reply turn, and the v1 session loop rebuilds its
+// message list on every step — so the running turn picks the message up at
+// its next LLM call, Claude-SDK-steer style (verified live 2026-07-12: a
+// mid-turn noReply landed between assistant steps and the final reply
+// incorporated it). This is what makes busy-sends deliverable without
+// aborting the turn (the abort residue is the announce-then-stop trigger).
+type OpencodeSteerFn = (text: string, images?: ImageInput[]) => void;
+const activeOpencodeSteers: Map<string, OpencodeSteerFn> = (g.__activeOpencodeSteers ??=
+  new Map());
+
+/** Fold a message into a live opencode run at its next step boundary.
+ *  True = accepted for delivery (fire-and-forget POST; the caller keeps a
+ *  steer receipt as the durable record until the transcript shows it). */
+export function steerOpencodeRun(id: string, text: string, images?: ImageInput[]): boolean {
+  const fn = activeOpencodeSteers.get(id);
+  if (!fn) return false;
+  fn(text, images);
+  return true;
+}
+
 /** Minimal env for the opencode server process (mirrors codexEnv). HOME is
  *  passed so OpenCode finds its own auth store (`opencode auth login`);
  *  backstage tokens never are. */
@@ -2076,6 +2099,37 @@ async function* runOpencodeAttempt(
       registeredKeys.add(ocSessionId);
       activeOpencodeRuns.set(ocSessionId, abortController);
     }
+    // In-band steer for this run (see steerOpencodeRun): noReply message →
+    // engine history → picked up at the turn's next step boundary. The user
+    // line is mirrored into the transcript jsonl here because the SSE pump
+    // only writes assistant/tool parts; a POST failure is audited and the
+    // caller's steer receipt stays visible as the recovery affordance.
+    const steerFn: OpencodeSteerFn = (text, images) => {
+      void client.session
+        .prompt({
+          path: { id: ocSessionId },
+          ...q,
+          body: {
+            noReply: true,
+            parts: [{ type: "text", text }, ...(imageParts(images) as any[])],
+          },
+        })
+        .then((sent: any) => {
+          if (sent?.error) throw new Error(JSON.stringify(sent.error));
+          turnEvent({ direction: "in", kind: "steer_injected", ...summarizeText(text) });
+          appendOpencodeTranscript(ocSessionId, [
+            transcriptLineUser(text, undefined, undefined, images),
+          ]);
+        })
+        .catch((e: any) => {
+          turnEvent({
+            direction: "in",
+            kind: "steer_inject_failed",
+            error: String(e?.message || e).slice(0, 300),
+          });
+        });
+    };
+    for (const key of registeredKeys) activeOpencodeSteers.set(key, steerFn);
     // Shared servers: map this opencode session to its backstage session for
     // the run's duration, so proxied michael-* tool calls (tagged with the
     // opencode session id by the session-tag plugin) route to THIS session's
@@ -2781,7 +2835,10 @@ async function* runOpencodeAttempt(
     // Backstop for paths that never reached an explicit close (cancel, early
     // return, generator torn down mid-drain) — no-op if already ended.
     bridgeRunEnd(abortController.signal.aborted ? "cancelled" : "abandoned");
-    for (const key of registeredKeys) activeOpencodeRuns.delete(key);
+    for (const key of registeredKeys) {
+      activeOpencodeRuns.delete(key);
+      activeOpencodeSteers.delete(key);
+    }
     detachedRunKeys.delete(runKey);
     if (ocSessionRegistered) unregisterOcSessionContext(ocSessionRegistered);
     if (rpcTokenRegistered && entry) unregisterRunToken(entry.rpcToken);
@@ -2896,6 +2953,33 @@ export async function tryReattachOpencodeRun(
         model,
         ...fields,
       });
+    // Same in-band steer as a fresh run — a restart must not cost steering.
+    const steerFn: OpencodeSteerFn = (text, images) => {
+      void client.session
+        .prompt({
+          path: { id: ocSessionId! },
+          ...q,
+          body: {
+            noReply: true,
+            parts: [{ type: "text", text }, ...(imageParts(images) as any[])],
+          },
+        })
+        .then((sent: any) => {
+          if (sent?.error) throw new Error(JSON.stringify(sent.error));
+          turnEvent({ direction: "in", kind: "steer_injected", ...summarizeText(text) });
+          appendOpencodeTranscript(ocSessionId!, [
+            transcriptLineUser(text, undefined, undefined, images),
+          ]);
+        })
+        .catch((e: any) => {
+          turnEvent({
+            direction: "in",
+            kind: "steer_inject_failed",
+            error: String(e?.message || e).slice(0, 300),
+          });
+        });
+    };
+    for (const key of registeredKeys) activeOpencodeSteers.set(key, steerFn);
     let runFailure: string | undefined;
     let runEnded = false;
     try {
@@ -3325,7 +3409,10 @@ export async function tryReattachOpencodeRun(
       if (abortController.signal.aborted) {
         turnEvent({ direction: "out", kind: "cancelled" });
       }
-      for (const key of registeredKeys) activeOpencodeRuns.delete(key);
+      for (const key of registeredKeys) {
+        activeOpencodeRuns.delete(key);
+        activeOpencodeSteers.delete(key);
+      }
       detachedRunKeys.delete(runKey);
       if (ocSessionRegistered) unregisterOcSessionContext(ocSessionRegistered);
       if (rpcTokenRegistered) unregisterRunToken(server.rpcToken);

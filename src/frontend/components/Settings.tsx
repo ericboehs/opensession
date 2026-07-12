@@ -1861,8 +1861,9 @@ function ComposerPanel() {
 					title="Follow-up behavior"
 					desc={
 						<>
-							Steer stops the current turn and delivers your message right
-							away; Queue waits until the agent finishes.
+							Steer folds your message into the running turn (picked up at
+							the next step, without stopping the work); Queue waits until
+							the agent finishes.
 							{sendKey === "enter" && (
 								<div className="text-dim text-xs mt-1">
 									Use {MOD_ENTER_GLYPH} to steer even when Queue is your

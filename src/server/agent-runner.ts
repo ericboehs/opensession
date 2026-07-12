@@ -18,6 +18,7 @@ import {
   activeOpencodeRunCount,
   activeDetachedOpencodeRunCount,
   tryReattachOpencodeRun,
+  steerOpencodeRun,
 } from "./opencode-runner";
 import {
   providerFor,
@@ -408,9 +409,11 @@ export function activeDetachedAgentRunCount(): number {
 }
 
 /**
- * Steer a message into an in-flight run. The opencode engine has no mid-turn
- * steer (sends queue and deliver as the next turn), so only host-forwarded
- * runs are steerable. False = nothing steerable — caller should queue.
+ * Steer a message into an in-flight run. Opencode runs steer in-band since
+ * 2026-07-12 (steerOpencodeRun: a noReply history append the running turn
+ * picks up at its next step boundary — Claude-SDK-steer semantics);
+ * host-forwarded runs steer over RPC. False = nothing steerable — caller
+ * should queue.
  */
 export function steerAgentRun(
   ids: Array<string | null | undefined>,
@@ -419,6 +422,7 @@ export function steerAgentRun(
 ): boolean {
   for (const id of ids) {
     if (!id) continue;
+    if (steerOpencodeRun(id, text, images)) return true;
     // Host-forward RPC is text-only: a send with images falls through
     // (caller queues it — the queue drain delivers images).
     if (!images?.length && hostSteer(id, text)) return true;

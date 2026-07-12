@@ -865,7 +865,7 @@ export function Composer({
                   sendTitle ||
                   (busy
                     ? busySendMode === "steer"
-                      ? `Steer — stop the current turn and deliver now (${sendKeyLabel(sendKey)})`
+                      ? `Steer — fold into the running turn now (${sendKeyLabel(sendKey)})`
                       : `Queue for the next turn (${sendKeyLabel(sendKey)})${
                           sendKey === "enter" ? ` — ${MOD_ENTER_GLYPH} steers now` : ""
                         }`

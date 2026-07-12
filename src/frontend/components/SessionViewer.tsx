@@ -1337,22 +1337,25 @@ export function SessionViewer({
 
 		if (noEngine) return false;
 		// Two follow-up behaviors while busy (per-browser setting): Queue (waits
-		// for the next turn) or Steer (stops the current turn and delivers now —
-		// the interrupt_prompt path, which falls back to the queue when nothing is
-		// interruptible or files are attached). ⌘/Ctrl+Enter forces Steer
-		// regardless of the default. Idle: just run it. Attachments ride along on
-		// every path — images fold into the run as content blocks; files route to
-		// the queue server-side.
+		// for the next turn) or Steer (folds into the LIVE run at its next step
+		// boundary — busyMode:"steer", real in-band steering since 2026-07-12;
+		// the server falls back to the queue when nothing is steerable or files
+		// are attached). The turn keeps running: no abort, no lost work, none of
+		// the announce-then-stop residue interrupts used to cause. ⌘/Ctrl+Enter
+		// forces Steer regardless of the default. Idle: just run it. Attachments
+		// ride along on every path — images fold into the run as content blocks;
+		// files route to the queue server-side.
 		const steerNow = isBusy && (!!opts?.interrupt || busySend === "steer");
 		send(
 			isBusy
 				? steerNow
 					? {
-							type: "interrupt_prompt" as const,
+							type: "prompt" as const,
 							sessionId: session.id,
 							content: text,
 							user,
 							effort,
+							busyMode: "steer" as const,
 							...(imgs.length ? { images: imgs } : {}),
 							...(fls.length ? { files: filePayload } : {}),
 						}
@@ -1379,7 +1382,7 @@ export function SessionViewer({
 						...(contextChats.length ? { contextChats } : {}),
 					},
 		);
-		if (!isBusy || steerNow) {
+		if (!isBusy) {
 			setIsRunningLive(true);
 			onRunningChange?.(session.id, true);
 			beginTurn(); // pin this new turn near the top so its reply streams in below
@@ -1397,7 +1400,8 @@ export function SessionViewer({
 			]);
 		} else {
 			// Busy send: show it in the queue flap right away (no transcript
-			// bubble) — the server's queue_update / steer-receipt echo replaces it.
+			// bubble, no beginTurn — a steer folds into the RUNNING turn) — the
+			// server's queue_update / steer-receipt echo replaces it.
 			setPending((p) => [
 				...p,
 				{
@@ -1406,7 +1410,7 @@ export function SessionViewer({
 					user,
 					sentAt: Date.now(),
 					images: imgs.length ? imgs : undefined,
-					busyMode: "queue" as const,
+					busyMode: steerNow ? ("steer" as const) : ("queue" as const),
 				},
 			]);
 		}
