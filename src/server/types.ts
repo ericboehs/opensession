@@ -122,6 +122,11 @@ export interface UnifiedSession {
   /** Provider whose engine last drove a run — lets the next run detect an
    *  in-place cross-provider switch and bridge context. */
   lastEngineProvider?: "claude" | "codex" | "opencode";
+  /** Model that last actually drove a run. Anthropic and OpenAI models both
+   *  report provider "opencode", so provider alone can't detect a family
+   *  switch (which lands on another server as a fresh engine session and
+   *  needs a transcript bridge) — this can. */
+  lastEngineModel?: string;
   /** /model switches, newest last — rendered as dividers in the conversation.
    *  `from` is the model in effect before the switch (for a "X → Y" divider). */
   modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
@@ -331,6 +336,7 @@ export interface BackstageSessionFile {
    *  next run detect an in-place cross-provider switch (Claude↔Codex) and hand
    *  the incoming engine a transcript bridge so context carries over. */
   lastEngineProvider?: "claude" | "codex" | "opencode";
+  lastEngineModel?: string; // model that last drove a run (family-switch detection)
   modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
   usage?: SessionUsage; // cumulative token/cost accounting for this session's runs
   hq?: boolean; // this is a user's HQ orchestrator session (src/server/hq.ts)

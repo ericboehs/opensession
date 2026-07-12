@@ -447,6 +447,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       codexThreadId: data.codexThreadId,
       opencodeSessionId: data.opencodeSessionId,
       lastEngineProvider: data.lastEngineProvider,
+      lastEngineModel: data.lastEngineModel,
       modelHistory: data.modelHistory,
       usage: data.usage,
       goal: data.goal,

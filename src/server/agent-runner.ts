@@ -307,7 +307,7 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
 
 /** Underlying engine provider family of a model id ("anthropic" / "openai"),
  *  read from its opencode mapping. Drives resume-vs-fresh on a fallback hop. */
-function engineFamily(model: string): string {
+export function engineFamily(model: string): string {
   const oc = toOpencodeModel(model) || model;
   return oc.match(/^opencode\/([^/]+)\//)?.[1] || providerFor(model);
 }

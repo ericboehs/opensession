@@ -19,6 +19,7 @@ import {
 	steerAgentRun,
 	interruptAgentRun,
 	stopAgentRunTurn,
+	engineFamily,
 	interruptAndSteerAgentRun,
 	RESUME_CONTINUATION_PROMPT,
 	type StreamEvent,
@@ -1003,7 +1004,20 @@ async function runSessionPromptInner(
 	// so a fresh opencode session's persisted transcript is seeded with them
 	// (keeps the UI transcript continuous across an engine migration).
 	let switchHandoffEntries: TranscriptEntry[] = [];
-	if (lastProvider && lastProvider !== provider) {
+	// Anthropic and OpenAI models both report provider "opencode", but they run
+	// on different servers: a family switch (claude-* ↔ gpt-*) can't resume the
+	// engine session and starts fresh, so it needs the same bridge as a classic
+	// cross-provider switch. Detected via the model that last actually drove a
+	// run (bks-019f57a0 dropped its visible history across exactly this switch,
+	// 2026-07-12; sessions from before lastEngineModel existed skip this and
+	// still get the runner's prior-transcript file seeding).
+	const familySwitch =
+		lastProvider === "opencode" &&
+		provider === "opencode" &&
+		!!session.lastEngineModel &&
+		!!session.model &&
+		engineFamily(session.lastEngineModel) !== engineFamily(session.model);
+	if (lastProvider && (lastProvider !== provider || familySwitch)) {
 		const prevEngineId =
 			lastProvider === "codex"
 				? session.codexThreadId
@@ -1036,11 +1050,13 @@ async function runSessionPromptInner(
 						: undefined,
 				fromProvider: lastProvider,
 				toProvider: provider,
-				targetResuming: !!engineSessionId,
+				// A family switch never resumes — the target server doesn't have the
+				// session, so the incoming model needs the whole transcript.
+				targetResuming: familySwitch ? false : !!engineSessionId,
 				entries: prevEntries,
 			});
 			console.log(
-				`[prompt] ${sessionId}: cross-provider switch ${lastProvider}→${provider}; bridging ${prevEntries.length} transcript entries`,
+				`[prompt] ${sessionId}: cross-${familySwitch ? "family" : "provider"} switch ${lastProvider}→${provider}; bridging ${prevEntries.length} transcript entries`,
 			);
 		}
 	}
@@ -1260,11 +1276,15 @@ async function runSessionPromptInner(
 		// usage exhaustion stops the run so the human can choose what to do.
 		fallbackModel: interactiveFallbackModel(session.model),
 		images,
-		// Cross-engine switch INTO opencode: seed the fresh opencode session's
-		// persisted transcript with the prior engine's history (same entries the
-		// handoff note was built from) so the UI transcript stays continuous.
+		// Engine switch: seed the fresh opencode session's persisted transcript
+		// with the prior history (same entries the handoff note was built from)
+		// so the UI transcript stays continuous. Everything dispatches onto the
+		// opencode engine, so no provider gate — the picker id's provider can be
+		// "codex"/"claude" (bare gpt-5.6-sol) while the run still lands on
+		// opencode; the old `provider === "opencode"` guard silently dropped the
+		// seed for exactly those switches.
 		seedTranscriptEntries:
-			provider === "opencode" && switchHandoff && switchHandoffEntries.length
+			switchHandoff && switchHandoffEntries.length
 				? switchHandoffEntries
 				: undefined,
 		mcpServers,
@@ -1312,7 +1332,9 @@ async function runSessionPromptInner(
 						touchBackstageSession(session.id, {
 							...engineSessionPatch(effectiveProvider, finalSessionId),
 							lastEngineProvider: effectiveProvider,
-							...(effectiveModel ? { model: effectiveModel } : {}),
+							...(effectiveModel
+								? { model: effectiveModel, lastEngineModel: effectiveModel }
+								: {}),
 						});
 						invalidateSessionsCache(); // new watchers must see the new transcriptPath
 					}
@@ -1486,7 +1508,9 @@ async function runSessionPromptInner(
 			{
 				...engineSessionPatch(effectiveProvider, finalSessionId),
 				lastEngineProvider: effectiveProvider,
-				...(effectiveModel ? { model: effectiveModel } : {}),
+				...(effectiveModel
+					? { model: effectiveModel, lastEngineModel: effectiveModel }
+					: {}),
 				...(latestUsage ? { usage: latestUsage } : {}),
 			},
 		);
