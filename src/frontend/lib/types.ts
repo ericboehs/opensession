@@ -58,7 +58,27 @@ export interface SupportThread {
 	statusChangedAt: string | null;
 	createdAt: string | null;
 	priority: number | null;
+	/** Labels on the thread (id = instance l_…, typeId = kind lt_…). Optional
+	 *  so rows cached by an older server shape still render. */
+	labels?: { id: string; typeId: string; name: string; icon: string | null }[];
 	customer: { name: string | null; email: string | null };
+}
+
+export interface ReportMeta {
+	id: string;
+	title: string;
+	automationId: string;
+	automationName: string;
+	sessionId?: string;
+	createdAt: string;
+	summary?: string;
+}
+
+export interface ReportGroup {
+	automationId: string;
+	automationName: string;
+	count: number;
+	latest: ReportMeta;
 }
 
 /**

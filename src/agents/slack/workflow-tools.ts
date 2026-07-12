@@ -6,10 +6,15 @@
  * workflow-worker.ts; exposure gating is the real boundary); each agent()
  * call becomes a plain opencode run in ask mode (see
  * src/server/workflow-types.ts for the contract, workflow-runner.ts for
- * orchestration). Interactive sessions ONLY — model-authored code
- * execution must never be reachable from untrusted automation/ticket text;
- * the fail-closed gate in interactive-mcp.ts enforces that (do not wire this
- * server into automation runs).
+ * orchestration). Interactive sessions, plus automations a HUMAN flagged
+ * with `workflows: true` (automations.ts registers the instance per run —
+ * e.g. the morning support digest, whose cron prompt is our own text).
+ * Never set that flag on automations triggered by untrusted event/ticket
+ * text (Plain triage, channel watches): model-authored code execution must
+ * not be steerable from a ticket. The fail-closed gate in interactive-mcp.ts
+ * still withholds the interactive builder from automation-owned sessions;
+ * flagged automations only get the instance automations.ts explicitly
+ * registers (Michiel-authorized 2026-07-12).
  */
 
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";

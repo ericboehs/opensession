@@ -54,6 +54,7 @@ import {
 	IconStatusRing,
 	IconTrash,
 	IconWatercooler,
+	IconFile,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { RepoTile, swatchColor } from "./RepoTile";
@@ -188,6 +189,10 @@ interface Props {
 	onOpenWatercooler: () => void;
 	/** Unread Watercooler messages (badge on its entry). */
 	watercoolerUnread: number;
+	/** True while the recurring Reports surface is open. */
+	reportsActive: boolean;
+	/** Open automation-produced recurring reports. */
+	onOpenReports: () => void;
 	onSelect: (session: UnifiedSession) => void;
 	/** Open the session-less PR preview for a PR row with no chat behind it. */
 	onOpenPr: (repo: string, branch: string) => void;
@@ -692,6 +697,8 @@ export function Sidebar({
 	watercoolerActive,
 	onOpenWatercooler,
 	watercoolerUnread,
+	reportsActive,
+	onOpenReports,
 	onSelect,
 	onOpenPr,
 	selectedPr = null,
@@ -3221,6 +3228,17 @@ export function Sidebar({
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
+
+				<div className="sidebar-group sidebar-group--band-start">
+					<button
+						type="button"
+						className={`flex w-full items-center gap-2 rounded-md border-0 px-2 py-2 text-left text-[14px] cursor-pointer ${reportsActive ? "bg-active text-fg" : "bg-transparent text-dim hover:bg-hover hover:text-fg"}`}
+						onClick={onOpenReports}
+					>
+						<IconFile size={18} className="shrink-0" />
+						<span className="font-medium">Reports</span>
+					</button>
+				</div>
 
 				{/* ── Support: the Plain TODO queue, newest status change first (the
 				    same ordering as Plain's Todo inbox). Rows with a linked session

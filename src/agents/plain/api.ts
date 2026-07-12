@@ -309,6 +309,8 @@ export interface SupportThreadSummary {
   statusChangedAt: string | null;
   createdAt: string | null;
   priority: number | null;
+  /** Labels on the thread: id = instance (l_…), typeId = kind (lt_…). */
+  labels: { id: string; typeId: string; name: string; icon: string | null }[];
   customer: { name: string | null; email: string | null };
 }
 
@@ -333,6 +335,14 @@ export async function listTodoThreads(limit: number = 50): Promise<SupportThread
               iso8601
             }
             priority
+            labels {
+              id
+              labelType {
+                id
+                name
+                icon
+              }
+            }
             customer {
               fullName
               email {
@@ -369,6 +379,12 @@ export async function listTodoThreads(limit: number = 50): Promise<SupportThread
       statusChangedAt: n.statusChangedAt?.iso8601 || null,
       createdAt: n.createdAt?.iso8601 || null,
       priority: n.priority ?? null,
+      labels: (n.labels || []).map((l: any) => ({
+        id: l?.id || "",
+        typeId: l?.labelType?.id || "",
+        name: l?.labelType?.name || "?",
+        icon: l?.labelType?.icon || null,
+      })),
       customer: {
         name: n.customer?.fullName || null,
         email: n.customer?.email?.email || null,

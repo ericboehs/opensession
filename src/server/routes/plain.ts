@@ -484,6 +484,7 @@ export async function handlePlainRoutes(
 				"../../agents/plain/api"
 			);
 			await changeThreadLabels(threadId, add, remove);
+			plainTodoCache = null; // labels show on the queue rows
 			console.log(
 				`[plain-labels] ${body?.user || "someone"} changed labels on ${threadId} (+${add.length} −${remove.length})`,
 			);

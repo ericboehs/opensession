@@ -7,6 +7,8 @@ import type {
 	PlainWorkspaceUser,
 	PlainLabelType,
 	SupportThread,
+	ReportGroup,
+	ReportMeta,
 	Project,
 } from "./types";
 
@@ -14,6 +16,25 @@ const BASE = `${BASE_PATH}/api`;
 
 /** API base for building direct resource URLs (e.g. <img src> endpoints). */
 export const API_BASE = BASE;
+
+export async function fetchReportGroups(): Promise<ReportGroup[]> {
+	const result = await request<{ groups: ReportGroup[] }>("/reports", {
+		label: "Failed to load reports",
+	});
+	return result.groups;
+}
+
+export async function fetchReports(automationId: string): Promise<ReportMeta[]> {
+	const result = await request<{ reports: ReportMeta[] }>(
+		`/reports/${encodeURIComponent(automationId)}`,
+		{ label: "Failed to load report history" },
+	);
+	return result.reports;
+}
+
+export function reportRawUrl(automationId: string, reportId: string): string {
+	return `${BASE}/reports/${encodeURIComponent(automationId)}/${encodeURIComponent(reportId)}/raw`;
+}
 
 /** Single error shape for every API failure: HTTP status + the server's
  * `error` field when it sent one (else a "<label>: <status>" message). */

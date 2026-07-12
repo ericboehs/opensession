@@ -19,6 +19,8 @@ import type { BackstageSessionFile } from "./types";
 import { stateDir } from "./rename-compat";
 import { linkThreadInIndex } from "./slack-links";
 import { createPapercutsMcpServer } from "../agents/slack/papercuts-tools";
+import { createReportMcpServer } from "../agents/slack/report-tools";
+import { createWorkflowsMcpServer } from "../agents/slack/workflow-tools";
 import { papercutsEnabledForRepo } from "./papercuts";
 import { registerSessionMcpServers, unregisterSessionMcpServers } from "./run-rpc";
 import { createSessionsMcpServer } from "../agents/slack/sessions-tools";
@@ -110,6 +112,16 @@ export interface Automation {
    * existed. Prefer naming just what the automation actually uses.
    */
   mcpServers?: string[];
+  /**
+   * Human-set only: give this automation's runs the opensession-workflows
+   * tools (run_workflow fan-outs — model-authored scripts in a contained
+   * Worker, agents in ask mode). Safe for cron/introspective automations
+   * whose prompt is our own text (morning support digest); NEVER set it on
+   * automations triggered by untrusted event/ticket text (Plain triage,
+   * channel watches) — model-authored code execution must not be steerable
+   * from a ticket. See workflow-tools.ts's module doc.
+   */
+  workflows?: boolean;
   /**
    * Self-improving automation (human-set only — e.g. the nightly Dreaming
    * reflection). Runs (and thread-reply resumes) additionally get two scoped
@@ -318,6 +330,7 @@ export function createAutomation(input: {
   mcpServers?: string[];
   repo?: string;
   selfImprove?: boolean;
+  workflows?: boolean;
   model?: string;
   fallbackModel?: string;
   accountId?: string;
@@ -367,6 +380,7 @@ export function createAutomation(input: {
     mcpServers: sanitizeMcpList(input.mcpServers),
     repo,
     selfImprove: input.selfImprove === true || undefined,
+    workflows: input.workflows === true || undefined,
     model,
     fallbackModel,
     accountId,
@@ -382,7 +396,7 @@ export function createAutomation(input: {
 
 export function updateAutomation(
   id: string,
-  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "repo" | "selfImprove" | "model" | "fallbackModel" | "accountId" | "accountStrict" | "usageCredits" | "sandbox" | "grafanaPoll" | "slackWatch">>
+  patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "repo" | "selfImprove" | "workflows" | "model" | "fallbackModel" | "accountId" | "accountStrict" | "usageCredits" | "sandbox" | "grafanaPoll" | "slackWatch">>
 ): Automation | { error: string } {
   const a = getAutomation(id);
   if (!a) return { error: "Automation not found" };
@@ -406,6 +420,7 @@ export function updateAutomation(
     next.repo = repo;
   }
   if ("selfImprove" in patch) next.selfImprove = patch.selfImprove === true || undefined;
+  if ("workflows" in patch) next.workflows = patch.workflows === true || undefined;
   if ("grafanaPoll" in patch) {
     const grafanaPoll = sanitizeGrafanaPoll(patch.grafanaPoll);
     if (grafanaPoll && "error" in grafanaPoll) return grafanaPoll;
@@ -823,12 +838,25 @@ export async function runAutomation(
       `[automations] Running "${automation.name}" → ${bksId}${runModel ? ` (${runModel})` : ""}${options?.modelOverride ? " [routed]" : ""}`
     );
 
-    // Papercuts: the ONE in-process opensession-* server automation runs get
-    // (append-only friction log — see papercuts-tools.ts for the trust model;
-    // the run-rpc builder in interactive-mcp.ts fails closed so an automation
+    // In-process servers for automation runs — all held to the automation
+    // bar (append-only, nothing sensitive readable, no control surface; the
+    // run-rpc builder in interactive-mcp.ts fails closed so an automation
     // session can never resolve the admin/sessions siblings through the same
     // socket). Registered per run so the proxy executes THESE instances with
-    // automation context; per-repo toggle in Settings → Papercuts.
+    // automation context.
+    // - opensession-report: every run — publish_report into this automation's
+    //   own Reports group (reports.ts), the Reports-view surface.
+    // - opensession-papercuts: friction log; per-repo toggle in Settings.
+    // - opensession-workflows: HUMAN-flagged automations only (`workflows`,
+    //   e.g. the morning support digest) — see workflow-tools.ts trust notes.
+    // - self-improve pair: human-set `selfImprove` flag (Dreaming).
+    const reportMcp = {
+      "opensession-report": createReportMcpServer({
+        automationId: automation.id,
+        automationName: automation.name,
+        sessionId: bksId,
+      }),
+    };
     const papercutsMcp = papercutsEnabledForRepo(repo.id)
       ? {
           "opensession-papercuts": createPapercutsMcpServer({
@@ -839,17 +867,25 @@ export async function runAutomation(
           }),
         }
       : undefined;
-    // Self-improving automations (human-set flag) also get the scoped pair:
-    // spawn_task suite + own-prompt update. Per-session servers like every
-    // unattended kind, so no SHARED_INPROCESS_SERVERS entry is needed.
+    const workflowsMcp = automation.workflows
+      ? {
+          "opensession-workflows": createWorkflowsMcpServer({
+            sessionId: bksId,
+            user: `${automation.name} (automation)`,
+            cwd: () => cwd,
+          }),
+        }
+      : undefined;
     const selfMcp = automation.selfImprove
       ? selfImproveMcpServers(automation, bksId)
       : undefined;
-    const inProcessMcp =
-      papercutsMcp || selfMcp
-        ? { ...(papercutsMcp || {}), ...(selfMcp || {}) }
-        : undefined;
-    if (inProcessMcp) registerSessionMcpServers(bksId, inProcessMcp);
+    const inProcessMcp = {
+      ...reportMcp,
+      ...(papercutsMcp || {}),
+      ...(workflowsMcp || {}),
+      ...(selfMcp || {}),
+    };
+    registerSessionMcpServers(bksId, inProcessMcp);
 
     let engineSessionId = "";
     let errorMsg = "";

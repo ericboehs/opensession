@@ -7,6 +7,7 @@ import { handleWebhook, activeSessions, pendingConfirmations } from "./handlers"
 import type { PlainWebhookPayload } from "./handlers";
 import { ensureTriageAutomation } from "./triage-automation";
 import { ensureTopIssuesRollup } from "./top-issues-automation";
+import { ensureSupportDigestAutomation } from "./support-digest-automation";
 
 const PLAIN_WEBHOOK_SECRET = process.env.PLAIN_WEBHOOK_SECRET || "";
 
@@ -44,6 +45,7 @@ export class PlainAgent implements AgentModule {
     // Seed the triage automation (code-seeded; create-if-absent preserves UI edits)
     ensureTriageAutomation();
     ensureTopIssuesRollup();
+    ensureSupportDigestAutomation();
 
     // Start confirmation cleanup timer
     cleanupInterval = setInterval(() => {

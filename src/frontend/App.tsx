@@ -21,6 +21,7 @@ import { Reviews } from "./components/Reviews";
 import { TeamChat } from "./components/TeamChat";
 import { PrPreview } from "./components/PrPreview";
 import { SupportPreview } from "./components/SupportPreview";
+import { Reports } from "./components/Reports";
 import { UserGate, getCurrentUser } from "./components/UserPicker";
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { SettingsMenu } from "./components/SettingsMenu";
@@ -87,6 +88,7 @@ type Route =
 	| { view: "pr"; repo: string; branch: string }
 	// Session-less support-ticket preview (a Support row with no session yet).
 	| { view: "support"; threadId: string }
+	| { view: "reports"; automationId?: string; reportId?: string }
 	| { view: "reviews"; id?: string }
 	// PR Tinder — one-at-a-time swipe triage of the repo's open PRs.
 	| { view: "prtinder" }
@@ -162,6 +164,13 @@ function parseRoute(pathname: string): Route {
 	const supportMatch = pathname.match(/^\/support\/(.+)$/);
 	if (supportMatch)
 		return { view: "support", threadId: decodeURIComponent(supportMatch[1]) };
+	const reportsMatch = pathname.match(/^\/reports(?:\/([^/]+)(?:\/([^/]+))?)?$/);
+	if (reportsMatch)
+		return {
+			view: "reports",
+			automationId: reportsMatch[1] ? decodeURIComponent(reportsMatch[1]) : undefined,
+			reportId: reportsMatch[2] ? decodeURIComponent(reportsMatch[2]) : undefined,
+		};
 	if (pathname === "/new") return { view: "new" };
 	// <base>/automations/<id-or-name>: the automations page with one selected
 	// (its detail drawer open). The segment accepts the automation id or name —
@@ -245,6 +254,10 @@ function routePath(route: Route): string {
 			return `${BASE_PATH}/pr/${encodeURIComponent(route.repo)}/${encodeURIComponent(route.branch)}`;
 		case "support":
 			return `${BASE_PATH}/support/${encodeURIComponent(route.threadId)}`;
+		case "reports":
+			return route.automationId
+				? `${BASE_PATH}/reports/${encodeURIComponent(route.automationId)}${route.reportId ? `/${encodeURIComponent(route.reportId)}` : ""}`
+				: `${BASE_PATH}/reports`;
 		case "new":
 			return route.prompt
 				? `${BASE_PATH}/new?prompt=${encodeURIComponent(route.prompt)}`
@@ -1540,6 +1553,8 @@ function App() {
 							watercoolerActive={route.view === "watercooler"}
 							onOpenWatercooler={() => navigate({ view: "watercooler" })}
 							watercoolerUnread={chatUnread}
+							reportsActive={route.view === "reports"}
+							onOpenReports={() => navigate({ view: "reports" })}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenPr={(repo, branch) =>
 								navigate({ view: "pr", repo, branch })
@@ -1766,6 +1781,16 @@ function App() {
 								addHandler={addHandler}
 								sessions={sessions}
 								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
+						) : route.view === "reports" ? (
+							<Reports
+								selectedAutomationId={route.automationId}
+								selectedReportId={route.reportId}
+								onSelect={(automationId, reportId) =>
+									navigate({ view: "reports", automationId, reportId }, { replace: true })
+								}
+								onOpenSession={(id) => navigate({ view: "session", id })}
+								addHandler={addHandler}
 							/>
 						) : route.view === "support" ? (
 							<SupportPreview
