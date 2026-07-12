@@ -2993,6 +2993,16 @@ export function Sidebar({
 									<HqStatusChip user={currentUser} />
 								</span>
 							</button>
+							<button
+								type="button"
+								className={`sidebar-item flex items-center gap-2 min-w-0 ${
+									reportsActive ? "sidebar-item-selected" : ""
+								}`}
+								onClick={onOpenReports}
+							>
+								<IconFile size={16} className="shrink-0" />
+								<span className="sidebar-item-title">Reports</span>
+							</button>
 						</div>
 					);
 				})()}
@@ -3228,17 +3238,6 @@ export function Sidebar({
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
-
-				<div className="sidebar-group sidebar-group--band-start">
-					<button
-						type="button"
-						className={`flex w-full items-center gap-2 rounded-md border-0 px-2 py-2 text-left text-[14px] cursor-pointer ${reportsActive ? "bg-active text-fg" : "bg-transparent text-dim hover:bg-hover hover:text-fg"}`}
-						onClick={onOpenReports}
-					>
-						<IconFile size={18} className="shrink-0" />
-						<span className="font-medium">Reports</span>
-					</button>
-				</div>
 
 				{/* ── Support: the Plain TODO queue, newest status change first (the
 				    same ordering as Plain's Todo inbox). Rows with a linked session
