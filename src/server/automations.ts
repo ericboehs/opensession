@@ -540,6 +540,38 @@ export function selfImproveMcpForSession(
   return selfImproveMcpServers(a, sessionId);
 }
 
+/** The automation-bar servers rebuilt for run-rpc's FALLBACK path. A real
+ *  restart mid-run wipes the per-run registration (globalThis parking only
+ *  survives hot reloads) while the reattached engine turn keeps calling its
+ *  stdio proxies — so rebuild opensession-report (every run) and
+ *  opensession-workflows (human-set `workflows` flag only) from the automation
+ *  record, exactly the set runAutomation registers at dispatch. Never the
+ *  admin/sessions siblings. */
+export function automationRunMcpForSession(
+  session: { automation?: string; worktreeDir?: string | null },
+  sessionId: string
+): Record<string, unknown> | undefined {
+  if (!session.automation) return undefined;
+  const a = listAutomations().find((x) => x.name === session.automation);
+  if (!a) return undefined;
+  const servers: Record<string, unknown> = {
+    "opensession-report": createReportMcpServer({
+      automationId: a.id,
+      automationName: a.name,
+      sessionId,
+    }),
+  };
+  if (a.workflows) {
+    const cwd = session.worktreeDir || getRepo(a.repo).repo;
+    servers["opensession-workflows"] = createWorkflowsMcpServer({
+      sessionId,
+      user: `${a.name} (automation)`,
+      cwd: () => cwd,
+    });
+  }
+  return servers;
+}
+
 export function deleteAutomation(id: string): boolean {
   const path = `${AUTOMATIONS_DIR}/${id}.json`;
   if (!existsSync(path)) return false;

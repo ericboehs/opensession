@@ -29,7 +29,7 @@ import { papercutsEnabledForRepo } from "./papercuts";
 import { productName } from "./config";
 import { repoForPath, REPOS } from "./worktree";
 import { registerInteractiveMcpBuilder, startRunRpcServer } from "./run-rpc";
-import { selfImproveMcpForSession } from "./automations";
+import { automationRunMcpForSession, selfImproveMcpForSession } from "./automations";
 import { findSession, touchBackstageSession } from "./session-cache";
 import { attachRepo, linkPr, sessionRepoIds, switchPrimaryRepo } from "./session-repos";
 import { makeAskHandler } from "./asks";
@@ -200,6 +200,7 @@ registerInteractiveMcpBuilder((sessionId, user) => {
 				"automation",
 				`${session.automation} (automation)`,
 			),
+			...(automationRunMcpForSession(session, sessionId) || {}),
 			...(selfImproveMcpForSession(session, sessionId) || {}),
 		};
 	}
