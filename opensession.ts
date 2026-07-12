@@ -11,6 +11,7 @@ import {
 import { enableOpencodeServerDetach } from "./src/server/opencode-detach";
 import { adoptDetachedOpencodeServers } from "./src/server/opencode-runner";
 import { archiveOlderThan } from "./src/server/archive";
+import { startAccountHealthMonitor } from "./src/server/account-health";
 import { makeAskHandler, pendingAsks } from "./src/server/asks";
 import { startAutoArchiveSweep } from "./src/server/auto-archive";
 import { getWebhookRoutes, setEventSessionCallback, startScheduler } from "./src/server/automations";
@@ -462,6 +463,9 @@ if (!g.__backstageBooted) {
 
 	// Poll per-account Claude usage (drives account picking + the Connections UI)
 	startUsagePoller();
+
+	// DM owners/Michiel when pool credentials expire or break (account-health.ts)
+	startAccountHealthMonitor();
 
 	// Resume Claude runs a previous process left in-flight (restart/crash), then
 	// wake any session that finished its turn during the shutdown drain (so the
