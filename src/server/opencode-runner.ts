@@ -1647,7 +1647,19 @@ async function* runOpencodeAttempt(
           opts.accountStrict,
           stickyMeridianAccounts.get(sessionKey)
         );
-        if ("error" in picked) throw new Error(`meridian bridge: ${picked.error}`);
+        if ("error" in picked) {
+          // A dry/pinned-out account pool at pick time is the same condition
+          // as a mid-run usage limit with no account left to rotate to: flag
+          // the error so the catch below emits usageLimitExhausted and
+          // agent-runner's model-fallback graph takes over instead of
+          // dead-ending the run (the message matches neither usage-limit
+          // classifier nor isTransientRunError).
+          const err = new Error(`meridian bridge: ${picked.error}`) as Error & {
+            usageLimitExhausted?: boolean;
+          };
+          err.usageLimitExhausted = true;
+          throw err;
+        }
         stickyMeridianAccounts.set(sessionKey, picked.id);
         bridgeTag = `anthropic-${picked.id}`;
         // Stable per-server proxy key so the config hash — and the server —
@@ -2754,9 +2766,11 @@ async function* runOpencodeAttempt(
         provider: PROVIDER,
         model,
         usageLimitExhausted:
+          e?.usageLimitExhausted === true ||
           (parsed.providerID === "anthropic"
             ? isClaudeUsageLimitError(message, true)
-            : isCodexUsageLimitError(message)) || undefined,
+            : isCodexUsageLimitError(message)) ||
+          undefined,
       };
     }
   } finally {
