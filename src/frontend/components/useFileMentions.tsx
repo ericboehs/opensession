@@ -243,6 +243,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
       {suggestions.map((item, i) => {
         const isSession = item.kind === "session";
         const isSkill = item.kind === "skill";
+        const isDir = item.kind === "dir";
         const path = item.display;
         const slash = isSession || isSkill ? -1 : path.lastIndexOf("/");
         const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
@@ -261,7 +262,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
           >
             {isSession && <span className="mention-repo">session</span>}
             {!isSession && !isSkill && item.repo && <span className="mention-repo">{item.repo}</span>}
-            <span className="mention-base">{isSkill ? `/${base}` : base}</span>
+            <span className="mention-base">{isSkill ? `/${base}` : isDir ? `${base}/` : base}</span>
             {isSession || isSkill
               ? item.sub && <span className="mention-dir">{item.sub}</span>
               : dir && <span className="mention-dir">{dir}</span>}

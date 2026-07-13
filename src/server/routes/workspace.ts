@@ -7,7 +7,7 @@
  */
 
 import type { RouteContext } from "./context";
-import { searchRepoFiles } from "../file-index";
+import { searchRepoEntries } from "../file-index";
 import { runSessionPrompt } from "../run-session";
 import { type Sandbox, hasRemoteWorkspace, workspaceExecFor } from "../sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "../sandbox/config";
@@ -36,12 +36,12 @@ export async function handleWorkspaceRoutes(
 		);
 	}
 
-	// File-mention autocomplete ("@" in the composer). Searches the session's
-	// primary worktree plus any attached repos (cross-repo sessions), falling
-	// back to the default repo for new-session composers with no session
+	// File/folder-mention autocomplete ("@" in the composer). Searches the
+	// session's primary worktree plus any attached repos (cross-repo sessions),
+	// falling back to the default repo for new-session composers with no session
 	// yet. Each hit carries `insert` (what lands in the textarea: a bare path for
-	// the primary repo, `<repo>:path` for an attached one) and a `repo` label
-	// when more than one repo is in play.
+	// the primary repo, `<repo>:path` for an attached one — folders with a
+	// trailing slash) and a `repo` label when more than one repo is in play.
 	if (path === "/backstage/api/files" && req.method === "GET") {
 		const q = url.searchParams.get("q") || "";
 		const sessionId = url.searchParams.get("session");
@@ -76,20 +76,28 @@ export async function handleWorkspaceRoutes(
 				: undefined;
 		const multi = repos.length > 1;
 		const perRepo = multi ? Math.max(6, Math.floor(20 / repos.length)) : 20;
-		const out: Array<{ display: string; insert: string; repo?: string }> =
-			[];
+		const out: Array<{
+			display: string;
+			insert: string;
+			repo?: string;
+			kind?: "dir";
+		}> = [];
 		for (const r of repos) {
 			try {
-				for (const f of await searchRepoFiles(
+				for (const f of await searchRepoEntries(
 					r.dir,
 					q,
 					perRepo,
 					r.primary ? primaryExec : undefined,
 				)) {
+					// Folders insert with a trailing slash so the prompt text
+					// (and the agent reading it) can tell them from files.
+					const rel = f.dir ? `${f.path}/` : f.path;
 					out.push({
-						display: f,
-						insert: r.primary ? f : `${r.repo}:${f}`,
+						display: f.path,
+						insert: r.primary ? rel : `${r.repo}:${rel}`,
 						repo: multi ? r.repo : undefined,
+						...(f.dir ? { kind: "dir" as const } : {}),
 					});
 				}
 			} catch {}

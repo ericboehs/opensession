@@ -14,7 +14,7 @@
  * VOLUME section (Phase 2): a second sbxtest session materializes a
  * volume-only workspace (cloned in-container from a scratch LOCAL BARE repo —
  * no real GitHub repo involved), then drives the exec-routed surfaces
- * (workspaceExecFor → searchRepoFiles/getSessionDiff/getGitStatus), the
+ * (workspaceExecFor → searchRepoEntries/getSessionDiff/getGitStatus), the
  * preview port publishing (in-container Bun.serve reached through the
  * published loopback port), the stopped-container host-exec fallback, and
  * the destroy-removes-the-workspace-volume contract.
@@ -75,7 +75,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 const { DockerProvider, containerNameFor, snapshotRepoForSandbox, snapshotSandboxImage, sweepIdleSandboxes } =
   await import("../../src/server/sandbox/docker");
 const { workspaceExecFor } = await import("../../src/server/sandbox/workspace-exec");
-const { searchRepoFiles } = await import("../../src/server/file-index");
+const { searchRepoEntries } = await import("../../src/server/file-index");
 const { getSessionDiff } = await import("../../src/server/git-diff");
 const { getGitStatus } = await import("../../src/server/git-status");
 const { worktreePathFor } = await import("../../src/server/worktree");
@@ -427,8 +427,8 @@ try {
   const exec = await workspaceExecFor(volSession);
   ok("workspaceExecFor routes into the sandbox", exec.sandboxed && exec.remote,
     `sandboxed=${exec.sandboxed} remote=${exec.remote}`);
-  const hits = await searchRepoFiles(VOL_CWD, "readme", 20, exec);
-  ok("searchRepoFiles (git ls-files in-container)", hits.includes("README.md"), hits.join(","));
+  const hits = (await searchRepoEntries(VOL_CWD, "readme", 20, exec)).map((e) => e.path);
+  ok("searchRepoEntries (git ls-files in-container)", hits.includes("README.md"), hits.join(","));
   // Dirty the workspace: modify a tracked file + add an untracked one.
   await exec(["sh", "-c", "echo volume-edit >> README.md && echo new-untracked > sbx-vol-new.txt"]);
   const diff = await getSessionDiff(VOL_CWD, "main", exec);
