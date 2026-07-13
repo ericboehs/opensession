@@ -693,6 +693,11 @@ const ASK_BASH_PERMISSIONS: Record<string, "allow" | "deny"> = {
   // any endpoint). These four only ever read.
   "gh pr list*": "allow", "gh pr view*": "allow",
   "gh pr checks*": "allow", "gh pr status*": "allow",
+  // jq: a pure read-only JSON filter (no file writes, no shell-out, no code
+  // exec — its language is sandboxed data transformation), so it's on par with
+  // grep/wc for the allowlist. Lets ask-mode runs process `gh --json` / API
+  // output instead of thrashing on the (correctly denied) `python3 -c`.
+  "jq *": "allow", "jq*": "allow",
   // Read-only system inspection (health checks, diagnosing the box). Only
   // no-op systemctl verbs — bare "systemctl *" would allow restart/stop.
   "free*": "allow", "uptime*": "allow", "nproc*": "allow",
