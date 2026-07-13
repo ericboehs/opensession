@@ -114,12 +114,29 @@ export function buildEngineSwitchHandoffNote(input: {
 	targetResuming?: boolean;
 	entries: TranscriptEntry[];
 	maxEntries?: number;
+	maxChars?: number;
 }): string {
-	const maxEntries = input.maxEntries ?? 14;
-	const useful = input.entries
-		.filter((e) => ["user", "assistant", "system"].includes(e.type))
-		.slice(-maxEntries);
-	const lines = useful.map((e) => `- ${roleLabel(e.type)}: ${clip(e.content)}`);
+	const maxChars = input.maxChars ?? 180_000;
+	const conversational = input.entries.filter((e) =>
+		["user", "assistant", "system"].includes(e.type),
+	);
+	const useful = input.maxEntries !== undefined
+		? conversational.slice(-input.maxEntries)
+		: conversational;
+	const candidates = useful.map(
+		(e) => `- ${roleLabel(e.type)}: ${clip(e.content, 8_000)}`,
+	);
+	const lines: string[] = [];
+	let chars = 0;
+	for (let i = candidates.length - 1; i >= 0; i--) {
+		const line = candidates[i];
+		if (lines.length && chars + line.length + 1 > maxChars) break;
+		lines.unshift(line.slice(0, maxChars));
+		chars += line.length + 1;
+	}
+	if (lines.length < candidates.length) {
+		lines.unshift("- System: Earlier conversation omitted because the engine handoff reached its context budget.");
+	}
 
 	const fromLabel = input.fromModel
 		? `${input.fromModel} (${input.fromProvider})`
@@ -132,7 +149,7 @@ export function buildEngineSwitchHandoffNote(input: {
 			? "You resumed your own earlier thread in this session, so you remember the conversation up to the switch — the transcript below covers the turns the other engine ran in between, which you were not part of."
 			: "The previous engine cannot transfer its internal conversation state to you, so treat the transcript below as the conversation so far and continue seamlessly.",
 		lines.length
-			? `Recent transcript:\n${lines.join("\n")}`
+			? `Conversation transcript:\n${lines.join("\n")}`
 			: "No prior transcript entries were available.",
 	]
 		.filter(Boolean)

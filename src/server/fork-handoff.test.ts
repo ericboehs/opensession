@@ -146,4 +146,37 @@ describe("buildEngineSwitchHandoffNote", () => {
 		});
 		expect(note).toContain("No prior transcript entries were available.");
 	});
+
+	it("keeps instructions older than the previous 14-entry handoff window", () => {
+		const entries = [entry("u0", "user", "Keep the report links pointed at Plain.")];
+		for (let i = 1; i <= 20; i++) {
+			entries.push(entry(`a${i}`, "assistant", `Progress update ${i}.`));
+		}
+
+		const note = buildEngineSwitchHandoffNote({
+			fromProvider: "claude",
+			toProvider: "codex",
+			targetResuming: false,
+			entries,
+		});
+
+		expect(note).toContain("Keep the report links pointed at Plain.");
+		expect(note).toContain("Progress update 20.");
+	});
+
+	it("drops only the oldest turns when the handoff reaches its character budget", () => {
+		const note = buildEngineSwitchHandoffNote({
+			fromProvider: "claude",
+			toProvider: "codex",
+			entries: [
+				entry("u1", "user", "old instruction"),
+				entry("a1", "assistant", "new instruction"),
+			],
+			maxChars: 40,
+		});
+
+		expect(note).toContain("Earlier conversation omitted");
+		expect(note).not.toContain("old instruction");
+		expect(note).toContain("new instruction");
+	});
 });
