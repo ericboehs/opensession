@@ -1789,6 +1789,7 @@ function App() {
 								onSelect={(automationId, reportId) =>
 									navigate({ view: "reports", automationId, reportId }, { replace: true })
 								}
+								onBack={() => navigate({ view: "reports" }, { replace: true })}
 								onOpenSession={(id) => navigate({ view: "session", id })}
 								addHandler={addHandler}
 							/>

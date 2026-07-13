@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { docTitle } from "../lib/brand";
 import {
 	fetchReportGroups,
@@ -6,12 +6,15 @@ import {
 	reportRawUrl,
 } from "../lib/api";
 import type { ReportGroup, ReportMeta } from "../lib/types";
-import { IconChevronRight, IconFile } from "./icons";
+import { useIsPhone } from "../hooks/useIsPhone";
+import { IconChevronLeft, IconChevronRight, IconFile } from "./icons";
 
 interface Props {
 	selectedAutomationId?: string;
 	selectedReportId?: string;
 	onSelect: (automationId: string, reportId?: string) => void;
+	/** Phone list/detail navigation: clear the selection to return to the list. */
+	onBack: () => void;
 	onOpenSession: (id: string) => void;
 	addHandler: (handler: (message: any) => void) => () => void;
 }
@@ -29,19 +32,31 @@ export function Reports({
 	selectedAutomationId,
 	selectedReportId,
 	onSelect,
+	onBack,
 	onOpenSession,
 	addHandler,
 }: Props) {
 	const [groups, setGroups] = useState<ReportGroup[] | null>(null);
 	const [history, setHistory] = useState<ReportMeta[]>([]);
 	const [error, setError] = useState("");
+	const isPhone = useIsPhone();
+
+	// loadGroups is also invoked from the mount-scoped ws handler, where props
+	// from that first render would be stale — read the live values via refs.
+	const selectionRef = useRef(selectedAutomationId);
+	selectionRef.current = selectedAutomationId;
+	const isPhoneRef = useRef(isPhone);
+	isPhoneRef.current = isPhone;
 
 	async function loadGroups() {
 		try {
 			const next = await fetchReportGroups();
 			setGroups(next);
 			setError("");
-			if (!selectedAutomationId && next[0]) onSelect(next[0].automationId);
+			// On phones the bare /reports route IS the list page, so don't
+			// auto-select — that would skip straight past it into the detail.
+			if (!selectionRef.current && !isPhoneRef.current && next[0])
+				onSelect(next[0].automationId);
 		} catch (e: any) {
 			setError(e?.message || "Failed to load reports");
 			setGroups([]);
@@ -96,51 +111,90 @@ export function Reports({
 			</div>
 		);
 
-	return (
-		<div className="flex min-h-0 flex-1 max-[720px]:flex-col">
-			<aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-panel max-[720px]:w-full max-[720px]:max-h-[38vh] max-[720px]:border-r-0 max-[720px]:border-b">
-				<div className="border-b border-line px-4 py-4">
-					<h1 className="m-0 text-lg font-semibold tracking-[-0.02em] text-fg">Reports</h1>
-					<p className="m-0 mt-1 text-xs text-dim">Recurring intelligence, organized by automation</p>
-				</div>
-				<div className="min-h-0 overflow-y-auto p-2">
-					{groups.map((group) => (
-						<button
-							key={group.automationId}
-							type="button"
-							className={`mb-1 flex w-full items-start gap-3 rounded-md border-0 px-3 py-3 text-left cursor-pointer ${selectedAutomationId === group.automationId ? "bg-active" : "bg-transparent hover:bg-hover"}`}
-							onClick={() => onSelect(group.automationId)}
-						>
-							<span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-surface text-accent"><IconFile size={17} /></span>
-							<span className="min-w-0 flex-1">
-								<span className="block truncate text-sm font-medium text-fg">{group.automationName}</span>
-								<span className="mt-1 block truncate text-xs text-dim">{group.latest.title}</span>
-								<span className="mt-1.5 block text-[11px] text-faint">{formatDate(group.latest.createdAt)} · {group.count} {group.count === 1 ? "report" : "reports"}</span>
-							</span>
-							<IconChevronRight size={16} className="mt-2 shrink-0 text-faint" />
-						</button>
-					))}
-				</div>
-			</aside>
+	// Phone: the two panes become separate pages — the list at bare /reports,
+	// the detail once an automation is selected, with a back button between.
+	const showList = !isPhone || !selectedAutomationId;
+	const showDetail = !isPhone || !!selectedAutomationId;
 
-			<section className="flex min-w-0 flex-1 flex-col bg-bg">
-				{selected && (
-					<>
-						<header className="flex shrink-0 items-start gap-4 border-b border-line px-5 py-3">
-							<div className="min-w-0 flex-1">
-								<h2 className="m-0 truncate text-base font-semibold text-fg">{selected.title}</h2>
-								<p className="m-0 mt-1 text-xs text-dim">{formatDate(selected.createdAt, true)}{selected.summary ? ` · ${selected.summary}` : ""}</p>
-							</div>
-							{selected.sessionId && <button type="button" className="shrink-0 rounded-md border border-line bg-panel px-3 py-1.5 text-xs text-fg cursor-pointer hover:bg-hover" onClick={() => onOpenSession(selected.sessionId!)}>Open run</button>}
-							<select
-								aria-label="Report history"
-								className="max-w-[190px] shrink-0 rounded-md border border-line bg-panel px-2 py-1.5 text-xs text-fg"
-								value={selected.id}
-								onChange={(event) => onSelect(selected.automationId, event.target.value)}
+	return (
+		<div className="flex min-h-0 flex-1">
+			{showList && (
+				<aside className={`flex min-h-0 flex-col bg-panel ${isPhone ? "w-full flex-1" : "w-[300px] shrink-0 border-r border-line"}`}>
+					<div className="border-b border-line px-4 py-4">
+						<h1 className="m-0 text-lg font-semibold tracking-[-0.02em] text-fg">Reports</h1>
+						<p className="m-0 mt-1 text-xs text-dim">Recurring intelligence, organized by automation</p>
+					</div>
+					<div className="min-h-0 flex-1 overflow-y-auto p-2">
+						{groups.map((group) => (
+							<button
+								key={group.automationId}
+								type="button"
+								className={`mb-1 flex w-full items-start gap-3 rounded-md border-0 px-3 py-3 text-left cursor-pointer ${!isPhone && selectedAutomationId === group.automationId ? "bg-active" : "bg-transparent hover:bg-hover"}`}
+								onClick={() => onSelect(group.automationId)}
 							>
-								{history.map((report) => <option key={report.id} value={report.id}>{formatDate(report.createdAt, true)}</option>)}
-							</select>
+								<span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-surface text-accent"><IconFile size={17} /></span>
+								<span className="min-w-0 flex-1">
+									<span className="block truncate text-sm font-medium text-fg">{group.automationName}</span>
+									<span className="mt-1 block truncate text-xs text-dim">{group.latest.title}</span>
+									<span className="mt-1.5 block text-[11px] text-faint">{formatDate(group.latest.createdAt)} · {group.count} {group.count === 1 ? "report" : "reports"}</span>
+								</span>
+								<IconChevronRight size={16} className="mt-2 shrink-0 text-faint" />
+							</button>
+						))}
+					</div>
+				</aside>
+			)}
+
+			{showDetail && (
+				<section className="flex min-w-0 flex-1 flex-col bg-bg">
+					{isPhone ? (
+						<header className="shrink-0 border-b border-line px-3 pb-3 pt-2">
+							<button
+								type="button"
+								className="-ml-1 flex items-center gap-0.5 rounded-md border-0 bg-transparent py-1.5 pl-1 pr-2.5 text-sm font-medium text-accent cursor-pointer"
+								onClick={onBack}
+							>
+								<IconChevronLeft size={18} />
+								Reports
+							</button>
+							{selected && (
+								<>
+									<h2 className="m-0 mt-1 px-1 text-base font-semibold leading-snug text-fg">{selected.title}</h2>
+									<p className="m-0 mt-1 px-1 text-xs leading-5 text-dim line-clamp-2">{formatDate(selected.createdAt, true)}{selected.summary ? ` · ${selected.summary}` : ""}</p>
+									<div className="mt-2.5 flex items-center gap-2 px-1">
+										<select
+											aria-label="Report history"
+											className="min-w-0 flex-1 rounded-md border border-line bg-panel px-2 py-1.5 text-xs text-fg"
+											value={selected.id}
+											onChange={(event) => onSelect(selected.automationId, event.target.value)}
+										>
+											{history.map((report) => <option key={report.id} value={report.id}>{formatDate(report.createdAt, true)}</option>)}
+										</select>
+										{selected.sessionId && <button type="button" className="shrink-0 rounded-md border border-line bg-panel px-3 py-1.5 text-xs text-fg cursor-pointer hover:bg-hover" onClick={() => onOpenSession(selected.sessionId!)}>Open run</button>}
+									</div>
+								</>
+							)}
 						</header>
+					) : (
+						selected && (
+							<header className="flex shrink-0 items-start gap-4 border-b border-line px-5 py-3">
+								<div className="min-w-0 flex-1">
+									<h2 className="m-0 truncate text-base font-semibold text-fg">{selected.title}</h2>
+									<p className="m-0 mt-1 text-xs text-dim">{formatDate(selected.createdAt, true)}{selected.summary ? ` · ${selected.summary}` : ""}</p>
+								</div>
+								{selected.sessionId && <button type="button" className="shrink-0 rounded-md border border-line bg-panel px-3 py-1.5 text-xs text-fg cursor-pointer hover:bg-hover" onClick={() => onOpenSession(selected.sessionId!)}>Open run</button>}
+								<select
+									aria-label="Report history"
+									className="max-w-[190px] shrink-0 rounded-md border border-line bg-panel px-2 py-1.5 text-xs text-fg"
+									value={selected.id}
+									onChange={(event) => onSelect(selected.automationId, event.target.value)}
+								>
+									{history.map((report) => <option key={report.id} value={report.id}>{formatDate(report.createdAt, true)}</option>)}
+								</select>
+							</header>
+						)
+					)}
+					{selected && (
 						<iframe
 							key={selected.id}
 							title={selected.title}
@@ -148,9 +202,9 @@ export function Reports({
 							src={reportRawUrl(selected.automationId, selected.id)}
 							className="min-h-0 flex-1 border-0 bg-white"
 						/>
-					</>
-				)}
-			</section>
+					)}
+				</section>
+			)}
 		</div>
 	);
 }
