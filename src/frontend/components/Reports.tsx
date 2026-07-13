@@ -215,8 +215,21 @@ export function Reports({
 						<iframe
 							key={selected.id}
 							title={selected.title}
-							sandbox="allow-same-origin"
+							sandbox="allow-same-origin allow-top-navigation-by-user-activation"
 							src={reportRawUrl(selected.automationId, selected.id)}
+							onLoad={(event) => {
+								for (const link of event.currentTarget.contentDocument?.querySelectorAll("a") || []) {
+									link.target = "_top";
+									const match = link.href.match(/^https:\/\/os\.tella\.dev\/support\/([^/?#]+)/);
+									if (!match || link.textContent?.trim() === "(session)") continue;
+									const sessionLink = link.cloneNode(false) as HTMLAnchorElement;
+									sessionLink.textContent = "(session)";
+									sessionLink.href = link.href;
+									sessionLink.target = "_top";
+									link.href = `https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/thread/${match[1]}/`;
+									link.after(" ", sessionLink);
+								}
+							}}
 							className="min-h-0 flex-1 border-0 bg-white"
 						/>
 					)}

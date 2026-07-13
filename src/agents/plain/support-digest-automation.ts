@@ -14,7 +14,7 @@ import { listAutomations, createAutomation } from "../../server/automations";
 const EVENT_KEY = "cron:plain-support-digest";
 export const SUPPORT_DIGEST_NAME = "Morning support digest";
 
-const PROMPT = `You are Michael. Produce the morning support digest: one scannable HTML report of the Plain support queue that lets the team work THROUGH the queue from the report alone — a bounded plan up top, then a complete categorized listing. Completeness matters: every todo ticket must appear exactly once in the report (in Easy tickets, a cluster, or Remaining), so nothing has to be re-triaged in Plain.
+export const SUPPORT_DIGEST_PROMPT = `You are Michael. Produce the morning support digest: one scannable HTML report of the Plain support queue that lets the team work THROUGH the queue from the report alone — a bounded plan up top, then a complete categorized listing. Completeness matters: every todo ticket must appear exactly once in the report (in Easy tickets, a cluster, or Remaining), so nothing has to be re-triaged in Plain.
 
 Step 1 — gather (plain MCP, reads only): get_queue_stats; list_threads status "todo" limit 100 (rows include labels); list_threads status "snoozed" limit 100 for its count. Compute the deterministic facts yourself or inside the workflow script — counts, new-in-last-24h (createdAt), per-label breakdown plus unlabeled count, the 5 oldest with ages — never spend agent tokens on arithmetic.
 
@@ -30,7 +30,7 @@ Step 4 — publish: render ONE self-contained HTML document (inline CSS only, no
 5. Remaining tickets — every todo ticket not already listed above, grouped by category, one compact row each (linked title, age, one-line action when the classification has a useful one).
 6. Per-label breakdown (small table).
 7. Oldest tickets.
-Every ticket you mention must link to https://os.tella.dev/support/<threadId> (the OpenSession ticket preview). Publish it with opensession-report's publish_report — title, the full HTML, and a 1-2 sentence summary with the counts (including the easy count) and the top action.
+Every ticket mention must use this exact HTML shape (substitute the real id and escaped title): \`<a href="https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/thread/<threadId>/" target="_top"><ticket title></a> <a href="https://os.tella.dev/support/<threadId>" target="_top">(session)</a>\`. The name links to Plain; only the literal \`(session)\` links to OpenSession. Publish it with opensession-report's publish_report — title, the full HTML, and a 1-2 sentence summary with the counts (including the easy count) and the top action.
 
 Finish your reply with a 3-5 line text summary: headline counts (including how many easy tickets) and the top 2 recommended actions.
 
@@ -40,7 +40,7 @@ export function ensureSupportDigestAutomation(): void {
   if (listAutomations().some((a) => a.eventKey === EVENT_KEY)) return;
   const created = createAutomation({
     name: SUPPORT_DIGEST_NAME,
-    prompt: PROMPT,
+    prompt: SUPPORT_DIGEST_PROMPT,
     schedule: "0 6 * * *", // ~8am Amsterdam (drifts 1h with DST; cron is UTC)
     mode: "ask",
     createdBy: "Michael (plain agent)",
