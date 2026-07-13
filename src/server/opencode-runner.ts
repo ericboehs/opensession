@@ -1818,7 +1818,20 @@ async function* runOpencodeAttempt(
       const picked = pickOpenaiAccount(parsed.modelID, cfg?.openaiAccounts);
       if (!("error" in picked)) {
         const bound = bindOpenaiAccount(picked);
-        if ("error" in bound) throw new Error(`opencode/openai: ${bound.error}`);
+        if ("error" in bound) {
+          // An unusable codex account at bind time (expired ChatGPT access
+          // token, unreadable auth.json) is the same condition as a dry pool:
+          // this model has no account to run on right now. Flag it like the
+          // meridian pick failure above so agent-runner's model-fallback graph
+          // hops to the next destination instead of dead-ending the run
+          // (2026-07-12: PR #4804 autofix died here after Fable→Sol, with
+          // Opus still available).
+          const err = new Error(`opencode/openai: ${bound.error}`) as Error & {
+            usageLimitExhausted?: boolean;
+          };
+          err.usageLimitExhausted = true;
+          throw err;
+        }
         serverExtraEnv = { ...(serverExtraEnv || {}), ...bound.extraEnv };
         if (bound.providerOverride) providerOverride = bound.providerOverride;
         bridgeTag = `openai-${picked.id}`;
@@ -1883,13 +1896,18 @@ async function* runOpencodeAttempt(
       // sandbox hitting this was created before those fixes (recreate it) or
       // the host truly has no usable codex account.
       if ("error" in picked && !opencodeHasNativeOpenaiAuth()) {
-        throw new Error(
+        // Also exhaustion-shaped (no account can serve this model here) —
+        // flagged so the fallback graph can route to another family rather
+        // than dead-ending, same as the bind failure above.
+        const err = new Error(
           `opencode/openai: ${picked.error}; and no native \`opencode auth login\` openai ` +
             "credential exists in this environment. In a sandbox, the ChatGPT/codex account " +
             "material may be missing (mounted for docker, seed-uploaded per launch for " +
             "daytona/e2b — recreate the sandbox on current code); otherwise add a codex " +
             "account in Connections."
-        );
+        ) as Error & { usageLimitExhausted?: boolean };
+        err.usageLimitExhausted = true;
+        throw err;
       }
       if ("error" in picked) bridgeTag = "openai-host";
     }
