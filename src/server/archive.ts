@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { unpinEverywhere } from "./pins";
+import { removeFromFoldersEverywhere } from "./folders";
 import type { UnifiedSession } from "./types";
 
 const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/archive-registry.json`;
@@ -79,6 +80,8 @@ export function unpinArchivedSessions(
       keys.push(`workspace:${pid}`);
   }
   unpinEverywhere(keys);
+  // Folder entries go stale the same way pins do — drop them everywhere too.
+  removeFromFoldersEverywhere(keys);
 }
 
 export function getArchiveReason(id: string): ArchiveReason | null {
@@ -98,7 +101,10 @@ export function setArchived(
   // Archived work shouldn't stay pinned (for anyone) — it would resurface in
   // the Pinned band on unarchive. Callers that know more keys (alias ids, the
   // workspace pin) drop those on top of this.
-  if (archived) unpinEverywhere([id]);
+  if (archived) {
+    unpinEverywhere([id]);
+    removeFromFoldersEverywhere([id]);
+  }
 }
 
 /** Archive everything idle for more than `days` days. Returns count. */

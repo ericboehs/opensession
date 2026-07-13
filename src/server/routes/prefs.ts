@@ -9,6 +9,7 @@
 import type { RouteContext } from "./context";
 import { getAutoArchiveConfig, setAutoArchiveConfig } from "../auto-archive";
 import { frontend } from "../frontend-build";
+import { getFolders as getUserFolders, setFolders as setUserFolders } from "../folders";
 import { getPins as getUserPins, setPins as setUserPins } from "../pins";
 import { addSessionMemory, describeScope, forgetSessionMemory, listAllMemory, updateMemoryEntry } from "../session-memory";
 import { getTabColors as getUserTabColors, setTabColors as setUserTabColors } from "../tab-colors";
@@ -181,6 +182,32 @@ export async function handlePrefsRoutes(
 			);
 		}
 		return Response.json({ pins: setUserPins(body.user, body.pins) });
+	}
+
+	// ── Per-user sidebar folders ──
+	// Same per-user model and wholesale-replace contract as pins: GET reads a
+	// user's folders; PUT replaces the full list (order = section order, each
+	// folder's keys order = its rows' order).
+	if (path === "/backstage/api/folders" && req.method === "GET") {
+		const user = url.searchParams.get("user") || "Anonymous";
+		return Response.json({ folders: getUserFolders(user) });
+	}
+
+	if (path === "/backstage/api/folders" && req.method === "PUT") {
+		const body = await req.json().catch(() => null);
+		if (
+			!body ||
+			typeof body.user !== "string" ||
+			!Array.isArray(body.folders)
+		) {
+			return Response.json(
+				{ error: "user (string) and folders (array) are required" },
+				{ status: 400 },
+			);
+		}
+		return Response.json({
+			folders: setUserFolders(body.user, body.folders),
+		});
 	}
 
 	// ── Per-user UI prefs (cross-device view preferences, e.g. the turn-
