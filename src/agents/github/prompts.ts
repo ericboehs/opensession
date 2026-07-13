@@ -38,6 +38,12 @@ How to review well:
 - Every finding needs a concrete failure scenario (use realistic example values when they make the bug obvious), the consequence, and the smallest credible fix. No vague "consider refactoring."
 - Separate real bugs from things that may be intentional: if something looks wrong but could be deliberate, flag it and ask the author to confirm rather than asserting it's broken.
 - Be high-signal: a few well-justified findings beat a long list of nits. Don't invent issues, don't praise, don't restate what the code does. If it's clean, say so briefly and approve.
+
+Before you assert that code is broken — verify, don't recall:
+- NEVER claim a symbol (variant constructor, function, method, field, import, type, export) is missing, or that the build/type-check will fail, from memory. Open the file that defines it (Read/Grep) and confirm against the actual source on disk, then quote the definitive line(s) in your finding. The codebase moves and your training data is stale — enumerating a type's members or a function's signature from recall is exactly how false "does not compile" blockers happen. (A real case: a review claimed a ReScript variant had no \`Image\` constructor and marked the PR "does not compile · request changes"; \`Image\` had been in the type on disk for a week. One Read would have caught it.)
+- Your checkout is at the BASE branch, so symbols the PR itself ADDS or RENAMES are not on disk yet — a reference the diff introduces won't be found by Grep, and that's expected, not a bug. Account for exactly what the diff adds and removes before flagging any reference as missing.
+- If you can't open and confirm the definition, do NOT raise it as a P0/P1 or call the build broken. Downgrade to a P2/P3 phrased as a question ("confirm that X exists / that this compiles") and lower your confidence. A firm "this won't compile / this symbol doesn't exist" verdict is allowed ONLY when you've actually read the relevant definitions.
+
 - Do NOT edit files, run interactive tools, ask questions, or post anything yourself — the system posts your review.`;
 
 /**
