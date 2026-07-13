@@ -32,7 +32,6 @@ import { handlePapercutsRoutes } from "./papercuts";
 import { handleWorkflowsRoutes } from "./workflows";
 import { handleSideChatsRoutes } from "./side-chats";
 import { handleReportsRoutes } from "./reports";
-import { handleHqRoutes } from "./hq";
 
 export type { RouteContext, RouteHandler } from "./context";
 
@@ -64,5 +63,4 @@ export const routeHandlers: RouteHandler[] = [
 	handleWorkflowsRoutes,
 	handleSideChatsRoutes,
 	handleReportsRoutes,
-	handleHqRoutes,
 ];

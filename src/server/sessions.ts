@@ -438,7 +438,6 @@ function scanBackstageSessions(): UnifiedSession[] {
           ? data.createdBy.slice(0, -" (automation)".length)
           : undefined),
       archived: data.archived || undefined,
-      hq: data.hq || undefined,
       archivedReason: data.archivedReason,
       plainThreadId: data.plainThreadId,
       model: data.model,

@@ -568,21 +568,6 @@ async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<v
     );
   }
 
-  // HQ: surface the (non-spam, inbound) ticket to subscribed HQ users. The
-  // ticket text is untrusted customer data — the formatter fences it.
-  void import("../../server/hq")
-    .then((m) =>
-      m.publishHqEvent({
-        type: "support:ticket",
-        title: thread.title || "New support ticket",
-        body:
-          `From: ${thread.customer?.fullName || "Unknown"} <${thread.customer?.email?.email || "no email"}>\n` +
-          (thread.previewText || "").slice(0, 300),
-        untrusted: true,
-      }),
-    )
-    .catch(() => {});
-
   fireAutomationsForEvent(
     "plain:thread_created",
     JSON.stringify(

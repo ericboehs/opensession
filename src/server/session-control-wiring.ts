@@ -222,12 +222,8 @@ registerSessionControl({
 		if (!sandboxResolved.ok) throw new Error(sandboxResolved.error);
 		const sandboxProvider = sandboxResolved.provider;
 		const remoteSandbox = isRemoteSandboxProvider(sandboxProvider);
-		// HQ is an orchestrator, not a workspace: its spawns are independent
-		// sessions that merely report back — never tabs sharing HQ's workspace
-		// or worktree.
-		const parentIsHq = Boolean(parentSession?.hq);
 		const parentWorkspace =
-			!parentIsHq && parentSession?.projectId
+			parentSession?.projectId
 				? getWorkspace(parentSession.projectId)
 				: null;
 
@@ -263,8 +259,8 @@ registerSessionControl({
 
 		const bksId = `bks-${randomUUIDv7()}`;
 		const title = prompt.trim().split("\n")[0].slice(0, 80);
-		let projectId = parentIsHq ? null : parentSession?.projectId || null;
-		if (!projectId && !parentIsHq) {
+		let projectId = parentSession?.projectId || null;
+		if (!projectId) {
 			// Adopt the workspace that already owns the (parent's or this child's)
 			// worktree before minting a duplicate one over it; only a workspace-less
 			// backstage parent on an unowned worktree gets wrapped in a fresh one.
@@ -577,16 +573,6 @@ registerSessionControl({
 				});
 				if (!promptQueues.get(bksId)?.length) {
 					onHumanAsksSessionIdle(bksId);
-					// HQ: publish the spawned session's outcome to its owner (opt-in).
-					void import("./hq")
-						.then((m) =>
-							m.hqSessionEvent(
-								bksId,
-								runFailure ? "session:error" : "session:finished",
-								runFailure ? { body: runFailure.slice(0, 400) } : {},
-							),
-						)
-						.catch(() => {});
 				}
 			} catch (e) {
 				console.error(`[sessions-mcp] create session ${bksId} failed:`, e);

@@ -1030,7 +1030,6 @@ export async function runAutomation(
       error: errorMsg || undefined,
       durationMs: Date.now() - startedAt.getTime(),
     });
-    notifyHqAutomationRun(automation, bksId, errorMsg || undefined);
     console.log(
       `[automations] "${automation.name}" finished ${errorMsg ? `with error: ${errorMsg}` : "ok"}`
     );
@@ -1041,32 +1040,12 @@ export async function runAutomation(
       error: e.message || String(e),
       durationMs: Date.now() - startedAt.getTime(),
     });
-    notifyHqAutomationRun(automation, bksId, e.message || String(e));
   } finally {
     unregisterSessionMcpServers(bksId);
     const left = (runningCounts.get(automation.id) || 1) - 1;
     if (left <= 0) runningCounts.delete(automation.id);
     else runningCounts.set(automation.id, left);
   }
-}
-
-/** HQ: surface an automation run's completion to subscribed users' HQ
- *  sessions (per-automation `automation:<id>` toggles, default off). */
-function notifyHqAutomationRun(
-  automation: { id: string; name: string },
-  bksId: string | undefined,
-  error?: string,
-): void {
-  void import("./hq")
-    .then((m) =>
-      m.publishHqEvent({
-        type: `automation:${automation.id}`,
-        title: `${automation.name} — run ${error ? "failed" : "finished"}`,
-        body: error ? error.slice(0, 300) : undefined,
-        sessionId: bksId,
-      }),
-    )
-    .catch(() => {});
 }
 
 // ── Internal event bus ───────────────────────────────────────
