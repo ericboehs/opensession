@@ -55,6 +55,7 @@ import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import {
   getDefaultModel,
   toOpencodeModel,
+  interactiveFallbackModel,
   providerFor,
   resolveModel,
   formatModelList,
@@ -835,6 +836,14 @@ export async function processMessage(
       cwd,
       mode: "code",
       model: toOpencodeModel(session.model || getDefaultModel()),
+      // Interactive Slack runs are as interactive as the web UI: when the
+      // primary model exhausts (e.g. the small Fable weekly bucket), let
+      // runAgent's tier graph carry the turn onto Sol/Opus instead of
+      // dead-ending on "no other account is currently usable". Without this the
+      // fallback guard in runAgent short-circuits and the comment above is a
+      // no-op. onAskUser (below) routes any ask-before-downgrade hop to the
+      // Slack question card.
+      fallbackModel: interactiveFallbackModel(session.model),
       user: msg.userId,
       author: gitIdentityFor(msg.userId),
       // Interactive Slack runs keep AWS read access via the injected

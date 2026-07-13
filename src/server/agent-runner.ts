@@ -162,7 +162,6 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
   const exhaustedModels = new Set<string>();
 
   for (;;) {
-    let sawInit = false;
     let currentEngineId = currentOpts.sessionId;
     // Why this turn ended, if it did: a usage cap (pool drained) or a transient
     // infra failure. Both route into the fallback graph so the session keeps
@@ -172,7 +171,6 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
 
     for await (const event of runOnModel(currentOpts, currentModel)) {
       if (event.type === "init") {
-        sawInit = true;
         currentEngineId = event.sessionId || currentEngineId;
       }
       if (event.type === "done" && event.usageLimitExhausted === true) {
@@ -264,9 +262,15 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
 
     let prompt = currentOpts.prompt;
     let handoffEntries: TranscriptEntry[] = [];
-    if (sawInit && crossProvider) {
+    if (crossProvider) {
       // The engine session is always an opencode session id, so read the prior
       // turn from OpenCode's store regardless of which model family produced it.
+      // Gate on currentEngineId (present when resuming an existing session),
+      // NOT on sawInit: an account pool that is dry *at pick time* throws
+      // usageLimitExhausted BEFORE any init event, so sawInit stays false — yet
+      // the resumed session on disk still holds the full history to hand off.
+      // Requiring sawInit here dropped that history and started the fallback
+      // model on a blank session (the "history lost after fallback" bug).
       const entries = currentEngineId
         ? readEngineTranscript(currentOpts.cwd, currentEngineId, "opencode")
         : [];
