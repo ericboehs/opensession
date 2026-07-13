@@ -2792,6 +2792,16 @@ export function Sidebar({
 					</span>
 					Support Tinder
 				</button>
+				<button
+					className={`sidebar-nav-item ${reportsActive ? "active" : ""}`}
+					onClick={onOpenReports}
+					title="Recurring automation reports"
+				>
+					<span className="sidebar-nav-icon">
+						<IconFile />
+					</span>
+					Reports
+				</button>
 			</nav>
 
 			<div
@@ -3289,19 +3299,6 @@ export function Sidebar({
 							</div>
 						);
 					})()}
-
-				<div className="sidebar-group">
-					<button
-						type="button"
-						className={`sidebar-item flex items-center gap-2 min-w-0 ${
-							reportsActive ? "sidebar-item-selected" : ""
-						}`}
-						onClick={onOpenReports}
-					>
-						<IconFile size={16} className="shrink-0" />
-						<span className="sidebar-item-title">Reports</span>
-					</button>
-				</div>
 
 				{/* ── Pinned (workspaces + notes, mixed) ── */}
 				{(() => {
