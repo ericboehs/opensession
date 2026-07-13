@@ -824,6 +824,20 @@ export function IconLink(p: IconProps) {
   );
 }
 
+// Arrow rising out of a tray: share.
+export function IconShare(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M12 13.25V4.75" />
+      <path {...stroke} d="M8.75 7.75L12 4.5L15.25 7.75" />
+      <path
+        {...stroke}
+        d="M8.25 9.75H6.75C5.64543 9.75 4.75 10.6454 4.75 11.75V17.25C4.75 18.3546 5.64543 19.25 6.75 19.25H17.25C18.3546 19.25 19.25 18.3546 19.25 17.25V11.75C19.25 10.6454 18.3546 9.75 17.25 9.75H15.75"
+      />
+    </Svg>
+  );
+}
+
 // Envelope — "mark as unread".
 export function IconMail(p: IconProps) {
   return (

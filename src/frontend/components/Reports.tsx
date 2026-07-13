@@ -7,7 +7,10 @@ import {
 } from "../lib/api";
 import type { ReportGroup, ReportMeta } from "../lib/types";
 import { useIsPhone } from "../hooks/useIsPhone";
-import { IconChevronLeft, IconChevronRight, IconFile } from "./icons";
+import { BASE_PATH } from "../lib/base";
+import { absoluteLink } from "../lib/share-link";
+import { CopyCheck, useCopy } from "../ui/copy";
+import { IconChevronLeft, IconChevronRight, IconFile, IconShare } from "./icons";
 
 interface Props {
 	selectedAutomationId?: string;
@@ -91,6 +94,14 @@ export function Reports({
 	}, [selectedAutomationId]);
 
 	const selected = history.find((report) => report.id === selectedReportId) || history[0];
+	const { copied, share } = useCopy();
+	const shareSelected = () => {
+		if (!selected) return;
+		const link = absoluteLink(
+			`${BASE_PATH}/reports/${encodeURIComponent(selected.automationId)}/${encodeURIComponent(selected.id)}`,
+		);
+		share(link, { toast: true, title: selected.title });
+	};
 
 	if (groups === null)
 		return <div className="flex flex-1 items-center justify-center text-dim">Loading reports…</div>;
@@ -171,6 +182,9 @@ export function Reports({
 											{history.map((report) => <option key={report.id} value={report.id}>{formatDate(report.createdAt, true)}</option>)}
 										</select>
 										{selected.sessionId && <button type="button" className="shrink-0 rounded-md border border-line bg-panel px-3 py-1.5 text-xs text-fg cursor-pointer hover:bg-hover" onClick={() => onOpenSession(selected.sessionId!)}>Open run</button>}
+										<button type="button" aria-label="Share report" className="flex shrink-0 items-center justify-center rounded-md border border-line bg-panel px-2.5 py-1.5 text-fg cursor-pointer hover:bg-hover" onClick={shareSelected}>
+											<CopyCheck copied={copied} size={15} idle={<IconShare size={15} />} />
+										</button>
 									</div>
 								</>
 							)}
@@ -182,6 +196,9 @@ export function Reports({
 									<h2 className="m-0 truncate text-base font-semibold text-fg">{selected.title}</h2>
 									<p className="m-0 mt-1 text-xs text-dim">{formatDate(selected.createdAt, true)}{selected.summary ? ` · ${selected.summary}` : ""}</p>
 								</div>
+								<button type="button" aria-label="Share report" title="Share report" className="flex shrink-0 items-center justify-center rounded-md border border-line bg-panel px-2.5 py-1.5 text-fg cursor-pointer hover:bg-hover" onClick={shareSelected}>
+									<CopyCheck copied={copied} size={15} idle={<IconShare size={15} />} />
+								</button>
 								{selected.sessionId && <button type="button" className="shrink-0 rounded-md border border-line bg-panel px-3 py-1.5 text-xs text-fg cursor-pointer hover:bg-hover" onClick={() => onOpenSession(selected.sessionId!)}>Open run</button>}
 								<select
 									aria-label="Report history"
