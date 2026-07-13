@@ -19,6 +19,7 @@ interface Props {
 	/** Phone list/detail navigation: clear the selection to return to the list. */
 	onBack: () => void;
 	onOpenSession: (id: string) => void;
+	onOpenSupport: (threadId: string) => void;
 	addHandler: (handler: (message: any) => void) => () => void;
 }
 
@@ -37,6 +38,7 @@ export function Reports({
 	onSelect,
 	onBack,
 	onOpenSession,
+	onOpenSupport,
 	addHandler,
 }: Props) {
 	const [groups, setGroups] = useState<ReportGroup[] | null>(null);
@@ -215,20 +217,34 @@ export function Reports({
 						<iframe
 							key={selected.id}
 							title={selected.title}
-							sandbox="allow-same-origin allow-top-navigation-by-user-activation"
+							sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
 							src={reportRawUrl(selected.automationId, selected.id)}
 							onLoad={(event) => {
-								for (const link of event.currentTarget.contentDocument?.querySelectorAll("a") || []) {
-									link.target = "_top";
+								const document = event.currentTarget.contentDocument;
+								if (!document) return;
+								for (const link of document.querySelectorAll("a")) {
+									link.target = "_blank";
+									link.rel = "noopener noreferrer";
 									const match = link.href.match(/^https:\/\/os\.tella\.dev\/support\/([^/?#]+)/);
-									if (!match || link.textContent?.trim() === "(session)") continue;
+									if (!match) continue;
+									if (link.textContent?.trim() === "(session)") {
+										link.removeAttribute("target");
+										continue;
+									}
 									const sessionLink = link.cloneNode(false) as HTMLAnchorElement;
 									sessionLink.textContent = "(session)";
 									sessionLink.href = link.href;
-									sessionLink.target = "_top";
+									sessionLink.removeAttribute("target");
 									link.href = `https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/thread/${match[1]}/`;
 									link.after(" ", sessionLink);
 								}
+								document.addEventListener("click", (clickEvent) => {
+									const link = (clickEvent.target as Element | null)?.closest?.("a");
+									const match = link?.href.match(/^https:\/\/os\.tella\.dev\/support\/([^/?#]+)/);
+									if (!match) return;
+									clickEvent.preventDefault();
+									onOpenSupport(decodeURIComponent(match[1]));
+								});
 							}}
 							className="min-h-0 flex-1 border-0 bg-white"
 						/>

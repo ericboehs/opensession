@@ -1791,6 +1791,7 @@ function App() {
 								}
 								onBack={() => navigate({ view: "reports" }, { replace: true })}
 								onOpenSession={(id) => navigate({ view: "session", id })}
+								onOpenSupport={(threadId) => navigate({ view: "support", threadId })}
 								addHandler={addHandler}
 							/>
 						) : route.view === "support" ? (

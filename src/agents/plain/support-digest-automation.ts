@@ -30,7 +30,7 @@ Step 4 — publish: render ONE self-contained HTML document (inline CSS only, no
 5. Remaining tickets — every todo ticket not already listed above, grouped by category, one compact row each (linked title, age, one-line action when the classification has a useful one).
 6. Per-label breakdown (small table).
 7. Oldest tickets.
-Every ticket mention must use this exact HTML shape (substitute the real id and escaped title): \`<a href="https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/thread/<threadId>/" target="_top"><ticket title></a> <a href="https://os.tella.dev/support/<threadId>" target="_top">(session)</a>\`. The name links to Plain; only the literal \`(session)\` links to OpenSession. Publish it with opensession-report's publish_report — title, the full HTML, and a 1-2 sentence summary with the counts (including the easy count) and the top action.
+Every ticket mention must use this exact HTML shape (substitute the real id and escaped title): \`<a href="https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/thread/<threadId>/" target="_blank" rel="noopener noreferrer"><ticket title></a> <a href="https://os.tella.dev/support/<threadId>">(session)</a>\`. The name opens Plain externally; only the literal \`(session)\` opens OpenSession in the current app. Publish it with opensession-report's publish_report — title, the full HTML, and a 1-2 sentence summary with the counts (including the easy count) and the top action.
 
 Finish your reply with a 3-5 line text summary: headline counts (including how many easy tickets) and the top 2 recommended actions.
 
