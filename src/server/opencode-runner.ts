@@ -687,6 +687,12 @@ const ASK_BASH_PERMISSIONS: Record<string, "allow" | "deny"> = {
   "git status*": "allow", "git log*": "allow", "git diff*": "allow",
   "git show*": "allow", "git branch*": "allow", "git blame*": "allow",
   "git grep*": "allow", "git ls-files*": "allow",
+  // Read-only GitHub inspection (PR-backlog digests, review triage). Only the
+  // non-mutating `gh pr` read verbs — NOT bare "gh *" (that would allow
+  // pr create/merge/close/comment) and NOT "gh api *" (which can -X POST/PATCH
+  // any endpoint). These four only ever read.
+  "gh pr list*": "allow", "gh pr view*": "allow",
+  "gh pr checks*": "allow", "gh pr status*": "allow",
   // Read-only system inspection (health checks, diagnosing the box). Only
   // no-op systemctl verbs — bare "systemctl *" would allow restart/stop.
   "free*": "allow", "uptime*": "allow", "nproc*": "allow",
