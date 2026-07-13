@@ -2840,6 +2840,7 @@ export function Sidebar({
 						<Tooltip label="New folder">
 						<button
 							className="sidebar-new-btn inline-flex items-center justify-center"
+							aria-label="New folder"
 							onClick={() => {
 								const f = createFolder("New folder");
 								setFolderDraft(f.name);
@@ -4435,6 +4436,18 @@ function FolderSection<Row extends { key: string }>({
 	renderRow: (row: Row) => React.ReactNode;
 }) {
 	const controls = useDragControls();
+	const sectionEl = useRef<HTMLDivElement | null>(null);
+	const renameInput = useRef<HTMLInputElement | null>(null);
+	// Entering edit mode (create or rename): focus the input ourselves and
+	// scroll the section into view. The folders region can sit well below the
+	// fold (big review/pinned bands above it), and mount-time autoFocus doesn't
+	// reliably scroll a transformed Reorder.Item into view in Safari — which
+	// made the header's New-folder button look like a no-op.
+	useEffect(() => {
+		if (!editing) return;
+		renameInput.current?.focus({ preventScroll: true });
+		sectionEl.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+	}, [editing]);
 	// In-flight row order during a drag (same draft/commit pattern as Pinned).
 	const [rowOrderDraft, setRowOrderDraft] = useState<string[] | null>(null);
 	const rowOrderPending = useRef<string[] | null>(null);
@@ -4470,7 +4483,10 @@ function FolderSection<Row extends { key: string }>({
 			className={`sidebar-folder-section${open ? " is-open" : ""}${
 				dragging ? " is-reordering" : ""
 			}${isDropTarget ? " is-drop-target" : ""}`}
-			ref={registerZone}
+			ref={(el: HTMLDivElement | null) => {
+				sectionEl.current = el;
+				registerZone(el);
+			}}
 		>
 			<button
 				type="button"
@@ -4520,9 +4536,9 @@ function FolderSection<Row extends { key: string }>({
 			>
 				{editing ? (
 					<input
+						ref={renameInput}
 						className="sidebar-item-rename sidebar-folder-rename"
 						value={draft}
-						autoFocus
 						onFocus={(e) => e.currentTarget.select()}
 						onChange={(e) => onDraftChange(e.target.value)}
 						onClick={(e) => e.stopPropagation()}
