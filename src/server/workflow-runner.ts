@@ -49,9 +49,14 @@ import {
  * When a workflow reaches a terminal state, nudge the session that launched it
  * so the model picks the results up on its own — the launching turn already
  * ended (a workflow is fire-and-forget), so without this the session sits idle
- * until a human types "continue". Queued (never steered): a session that's mid
- * turn polling workflow_status isn't interrupted; an idle one starts a turn.
- * Best-effort — a delivery failure must never affect the run's finalization.
+ * until a human types "continue". Steered (the deliverToSession default), not
+ * queued: this is an agent-to-agent handoff ("continue the task"), so it must
+ * reach the model without a human in the loop. A mid-turn session folds it into
+ * the running turn (opencode steer is a non-disruptive noReply fold-in, not an
+ * interrupt — a session polling workflow_status just sees the result land); an
+ * idle one starts a turn; a steer that can't land falls through to the queue +
+ * drain-watcher. Best-effort — a delivery failure must never affect the run's
+ * finalization.
  */
 function wakeOwningSession(snap: WorkflowRunSnapshot): void {
 	try {
@@ -80,7 +85,7 @@ function wakeOwningSession(snap: WorkflowRunSnapshot): void {
 			`Read its result with workflow_status ${snap.runId} and continue the task.` +
 			(snap.error ? `\nError: ${snap.error}` : "");
 		void ctrl
-			.deliverToSession(snap.sessionId, msg, snap.user, { busy: "queue" })
+			.deliverToSession(snap.sessionId, msg, snap.user)
 			.catch((e) =>
 				console.warn(`[workflow] ${snap.runId} wake delivery failed:`, e),
 			);
@@ -533,8 +538,9 @@ function runWorkflow(
 		// Wake the owning session so it continues on its own instead of waiting
 		// for a human "continue" — the workflow was fire-and-forget from the
 		// turn that launched it, so nothing else re-drives the model when it's
-		// done. Queue (never steer): an in-flight turn that's polling shouldn't
-		// be interrupted; an idle session starts a fresh turn.
+		// done. Steered agent-to-agent (see wakeOwningSession): folds into an
+		// in-flight turn, starts one on an idle session — never parked waiting
+		// on a human.
 		if (snap) wakeOwningSession(snap);
 	}
 
