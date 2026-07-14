@@ -102,3 +102,28 @@ describe("createWorktree branch-collision adoption", () => {
     expect(head).toBe("fresh-branch");
   });
 });
+
+describe("resolveUniqueBranch", () => {
+  test("passes through a name with no ref collision", async () => {
+    const { resolveUniqueBranch } = await import("./worktree");
+    expect(await resolveUniqueBranch("brand-new-name", "scratch")).toBe(
+      "brand-new-name",
+    );
+  });
+
+  test("bumps when the name is a directory of an existing ref", async () => {
+    const { resolveUniqueBranch } = await import("./worktree");
+    // `git worktree add -b test` can't create refs/heads/test while
+    // refs/heads/test/foo exists (the reported failure). Expect a -2 bump.
+    await git(repoDir, "branch", "test/foo", "origin/main");
+    expect(await resolveUniqueBranch("test", "scratch")).toBe("test-2");
+  });
+
+  test("bumps on an exact-name collision, skipping taken suffixes", async () => {
+    const { resolveUniqueBranch } = await import("./worktree");
+    await git(repoDir, "branch", "dup", "origin/main");
+    await git(repoDir, "branch", "dup-2", "origin/main");
+    expect(await resolveUniqueBranch("dup", "scratch")).toBe("dup-3");
+  });
+
+});

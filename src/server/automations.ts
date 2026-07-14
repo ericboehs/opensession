@@ -766,6 +766,22 @@ export async function runAutomation(
     });
 
     let prompt = automation.prompt;
+    // Tell the run which model it's executing as, so a prompt that wants to
+    // record it (e.g. Plain triage stamps the model on its note) can quote an
+    // accurate name instead of guessing. This is the model the run STARTS on;
+    // a mid-run usage-limit fallback can swap it (tracked in modelHistory), so
+    // word it as "started on".
+    {
+      const runModelForPrompt = opencodeAutomationModel(
+        options?.modelOverride || automation.model,
+      );
+      const displayModel = (runModelForPrompt || "").replace(
+        /^opencode\/[^/]+\//,
+        "",
+      );
+      if (displayModel)
+        prompt += `\n\n## Model\n\nThis run started on the \`${displayModel}\` model.`;
+    }
     if (options?.eventContext) {
       const source =
         trigger !== "event"

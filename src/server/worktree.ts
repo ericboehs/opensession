@@ -445,6 +445,58 @@ export function worktreePathFor(
 }
 
 /**
+ * Pick a branch name that `git worktree add -b` can actually create, starting
+ * from `desired` and bumping (`name`, `name-2`, `name-3`, …) until it clears
+ * every existing local branch. Three collision kinds all block creation, and
+ * we guard all three because git stores refs as files under `refs/heads/`:
+ *   - exact match (`test` when `test` exists),
+ *   - `desired` is a directory of an existing ref (`test` when `test/foo`
+ *     exists — the reported failure: "cannot lock ref … 'test/…' exists"),
+ *   - an existing ref is a directory prefix of `desired` (`test/foo` when a
+ *     branch `test` exists).
+ * Callers pass slug names (sanitizeBranchSlug maps `/`→`-`), and a suffix bump
+ * always clears the first two collisions for a slash-free name; the third only
+ * arises for slashed names (not produced here), where a parent branch blocks
+ * the whole subtree and no suffix escapes it — we then return `desired` and let
+ * the worktree add fail loudly rather than loop.
+ * Used by the new-session path so a fresh session never dies on a name clash.
+ * Reuse paths (existing worktree for the branch, from-PR, orphan adoption in
+ * `createWorktree`) intentionally do NOT go through here — they want the exact
+ * name back.
+ */
+export async function resolveUniqueBranch(
+  desired: string,
+  repoId?: string,
+): Promise<string> {
+  const repo = getRepo(repoId);
+  // The format literal is interpolated (not written into the template) so Bun's
+  // shell parser doesn't choke on the `%(…)` parens.
+  const fmt = "%(refname:short)";
+  const existing = new Set(
+    (
+      await $`git -C ${repo.repo} for-each-ref --format=${fmt} refs/heads`
+        .nothrow()
+        .text()
+    )
+      .split("\n")
+      .map((b) => b.trim())
+      .filter(Boolean),
+  );
+  const collides = (name: string) =>
+    [...existing].some(
+      (b) => b === name || b.startsWith(`${name}/`) || name.startsWith(`${b}/`),
+    );
+  if (!collides(desired)) return desired;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `${desired}-${n}`;
+    if (!collides(candidate)) return candidate;
+  }
+  // Astronomically unlikely; fall back to the desired name and let the worktree
+  // add fail loudly rather than loop forever.
+  return desired;
+}
+
+/**
  * Create a worktree for `branch`. By default it branches from
  * `origin/<defaultBranch>`. Pass `opts.base` (e.g. a workspace's branch) to
  * create a *stacked* worktree branched off that ref instead — this is what lets

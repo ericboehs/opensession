@@ -35,7 +35,7 @@ import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } fro
 import { type BackstageSessionFile, type SessionUsage } from "./types";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
-import { createWorktree, createWorktreeForExistingBranch, getRepo, listWorktrees, repoForPath, worktreePathFor } from "./worktree";
+import { createWorktree, createWorktreeForExistingBranch, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreePathFor } from "./worktree";
 import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import { watch } from "fs";
@@ -546,7 +546,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 			}
 
 			case "create_session": {
-				const { branch, prompt, user, mode } = msg;
+				const { prompt, user, mode } = msg;
+				// Mutable: a brand-new code branch is made collision-free below (a
+				// name clashing with an existing `name/...` ref — or vice versa —
+				// makes `git worktree add -b` fail, killing the session).
+				let branch = msg.branch;
 				const images = parseImageDataUrls(msg.images);
 				// Session opened from a PR row (sidebar): `branch` is the PR's
 				// EXISTING head branch — check it out instead of creating a new
@@ -741,6 +745,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						const worktrees = await listWorktrees(repo.id);
 						wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
 						if (!wtPath) {
+							// A genuinely new branch: dodge ref-hierarchy collisions
+							// (e.g. requested `test` while `test/foo` already exists)
+							// before we bake the name into the path + session file.
+							if (branch)
+								branch = await resolveUniqueBranch(branch, repo.id);
 							wtPath = worktreePathFor(branch, repo.id);
 							// Volume-mode sandbox (docs/sandboxes-plan.md Phase 2): the
 							// workspace is cloned into a per-session volume INSIDE the
