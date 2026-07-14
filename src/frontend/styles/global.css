@@ -1494,12 +1494,12 @@ body.resizing-x {
 	background: none;
 	border: none;
 	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
-	/* Roomier rows: a taller hit target that's easier to click/tap. The left
+	/* Compact rows: a tight but still-clickable hit target. The left
 	   padding lands the leading icon on the same column as the group-header
 	   icons above it (list pad-left 10 + 6 = 16), so a row's status mark sits
 	   directly under its lane's icon; the right padding lands the trailing
 	   time/number flush under the header's filter/＋ buttons. */
-	padding: 11px 8px 11px 10px;
+	padding: 7px 8px 7px 10px;
 	color: var(--text);
 	position: relative;
 }
