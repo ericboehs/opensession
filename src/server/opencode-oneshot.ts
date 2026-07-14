@@ -119,13 +119,14 @@ export async function opencodeOneShot(
   }
 
   const startedAt = Date.now();
-  // Two attempts max: a usage-limited meridian account is marked exhausted and
-  // re-picked once; anything else fails immediately.
+  const serverKey = `oneshot:${parsed.providerID}`;
+  // Two attempts max: an unhealthy meridian account (a usage limit, or a wedged
+  // subscription/provider fault that only ever reaches us as our own 120s
+  // timeout — opencode swallows the real error into an internal retry loop) is
+  // sidelined and re-picked once; anything else fails immediately.
   for (let attempt = 0; attempt < 2; attempt++) {
     let account: ClaudeAccount | undefined;
     try {
-      const serverKey = `oneshot:${parsed.providerID}`;
-
       // Provider auth: meridian (or native bridge) for anthropic models —
       // same dispatch as full runs; other providers use opencode's own auth.
       let providerOverride: Record<string, unknown> | undefined;
@@ -235,10 +236,26 @@ export async function opencodeOneShot(
     } catch (e: any) {
       const message = e?.message || String(e);
       const limited = isClaudeUsageLimitError(message, true);
-      if (limited && account && attempt === 0) {
-        console.warn(`[oneshot:${label}] usage limit on ${account.name} — rotating account`);
+      // A wedged sticky account must not pin the whole one-shot path to itself.
+      // opencode retries a provider fault (a usage limit, or a "Claude Max
+      // subscription issue") internally with backoff, so what reaches us is our
+      // own 120s timeout, never the underlying error text — that timeout IS the
+      // signal the sticky account is unhealthy for one-shots. Treat both a usage
+      // limit and that timeout as an account fault: drop the sticky pin, sideline
+      // the account for a cooldown so the re-pick routes around it, and retry
+      // once on a fresh account. Without this, one broken account silently kills
+      // every title/branch/router one-shot until a restart (the 2026-07-14
+      // "titles show the raw prompt" wedge).
+      const wedged = message.includes("timed out after");
+      if (account && (limited || wedged)) {
+        if (stickyAccounts.get(serverKey) === account.id) stickyAccounts.delete(serverKey);
         markExhausted(account.id, parsed.modelID);
-        continue;
+        if (attempt === 0) {
+          console.warn(
+            `[oneshot:${label}] ${account.name} unhealthy (${limited ? "usage limit" : "wedged/timeout"}) — rotating account`,
+          );
+          continue;
+        }
       }
       console.warn(`[oneshot:${label}] failed: ${message}`);
       audit({

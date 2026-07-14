@@ -99,6 +99,25 @@ export function isClaudeUsageLimitError(message: string, isErrorResult: boolean)
   );
 }
 
+/**
+ * A Claude account whose *subscription* is the fault — an expired, downgraded,
+ * or billing-blocked Max plan. The bridge surfaces it as
+ * "AI_APICallError: Claude Max subscription issue. Check your subscription
+ * status at https://claude.ai/settings/subscription". This is NOT a usage limit
+ * (no reset frees it) but it IS an account-level fault that is dead on retry, so
+ * callers should sideline the account and rotate off it exactly like a usage
+ * limit rather than retrying the same account into a timeout. opencode's ai-sdk
+ * treats it as retryable, so if it's not caught it manifests as a long hang.
+ */
+export function isClaudeSubscriptionError(message: string): boolean {
+  const s = message.toLowerCase();
+  return (
+    s.includes("subscription issue") ||
+    s.includes("check your subscription") ||
+    (s.includes("claude max") && s.includes("subscription"))
+  );
+}
+
 export function isCodexUsageLimitError(message: string): boolean {
   const s = message.toLowerCase();
   return (

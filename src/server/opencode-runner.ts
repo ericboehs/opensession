@@ -153,6 +153,7 @@ import {
 import {
   filterMcpServers,
   isClaudeUsageLimitError,
+  isClaudeSubscriptionError,
   isCodexUsageLimitError,
   isTransientRunError,
   CLAUDE_CODE_BIN,
@@ -2379,15 +2380,23 @@ async function* runOpencodeAttempt(
         retry_attempt: attempt,
         error: message.slice(0, 500),
       });
+      const subIssue = isClaudeSubscriptionError(message);
       if (
         parsed.providerID === "anthropic" &&
         pickedMeridian &&
         !runFailure &&
-        isClaudeUsageLimitError(message, true)
+        (isClaudeUsageLimitError(message, true) || subIssue)
       ) {
+        // Both faults are account-level and dead on retry: opencode would keep
+        // retrying the same capped/subscription-broken account until the 90s
+        // liveness guard, burning the turn. Sideline + rotate immediately via
+        // the usage-limit machinery (usageLimitHit drives markExhausted and the
+        // account rotation downstream). Landing elsewhere in the pool is the
+        // only thing that recovers a subscription-broken account.
         usageLimitHit = true;
-        runFailure =
-          `Claude usage limit on account "${bridgeAccountLabel}": ${message.slice(0, 300)}`;
+        runFailure = `${
+          subIssue ? "Claude subscription issue" : "Claude usage limit"
+        } on account "${bridgeAccountLabel}": ${message.slice(0, 300)}`;
         void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
         signalDone();
       }
