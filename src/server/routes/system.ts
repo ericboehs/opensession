@@ -130,9 +130,10 @@ export async function handleSystemRoutes(
 	}
 
 	// ── Audit digest: one day rolled up for the nightly Dreaming automation ──
-	// That run is unattended ask mode (no shell, raw jsonl too big to read), so
-	// this endpoint is its only window into yesterday's work — like /api/health
-	// for the health monitor. Default date is yesterday (UTC).
+	// The raw jsonl is 10-20MB (too big to shell-process), so this rolled-up
+	// endpoint is that run's window into yesterday's work — like /api/health for
+	// the health monitor. Default date is yesterday (UTC). Use `?section=` to
+	// pull individual detail sections under the engine's tool-output cap.
 	if (path === "/backstage/api/audit/digest" && req.method === "GET") {
 		const { buildAuditDigest, listAuditDates } = await import(
 			"../../server/audit"
@@ -173,7 +174,24 @@ export async function handleSystemRoutes(
 			const name = nameBySession.get(String(s.id));
 			if (name) s.automation = name;
 		}
-		return Response.json({ ok: true, ...digestJson, automationRuns });
+		const full: Record<string, unknown> = { ok: true, ...digestJson, automationRuns };
+		// The full digest is 50-70KB, which trips the engine's large-tool-output
+		// truncation (the body spills to a file and the inline view is cut). A
+		// `?section=errorGroups,sessions` filter lets a caller pull one or two
+		// detail sections at a time, each small enough to land inline. `ok`,
+		// `date` and a `sections` index of what's available always ride along.
+		const section = url.searchParams.get("section");
+		if (section) {
+			const want = new Set(section.split(",").map((s) => s.trim()).filter(Boolean));
+			const picked: Record<string, unknown> = {
+				ok: true,
+				date,
+				sections: Object.keys(full).filter((k) => k !== "ok"),
+			};
+			for (const k of want) if (k in full) picked[k] = full[k];
+			return Response.json(picked);
+		}
+		return Response.json(full);
 	}
 
 	// ── Audit log viewer (Settings → Audit log) ──

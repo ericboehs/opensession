@@ -211,10 +211,12 @@ export function readAuditEvents(opts: {
 }
 
 /** One day's audit log rolled up into a compact, LLM-consumable shape. Built
- *  for the nightly "Dreaming" reflection automation: it runs unattended in
- *  ask mode (no shell, and the raw jsonl is 10-20MB — far past what the read
- *  tool can take), so it webfetches /api/audit/digest instead. Keep the field
- *  names stable — the automation prompt names them. */
+ *  for the nightly "Dreaming" reflection automation: the raw jsonl is 10-20MB
+ *  (far past what the read tool can take), so it webfetches /api/audit/digest
+ *  instead of shell-processing the log. The whole digest is 50-70KB, which the
+ *  engine truncates as a large tool output — callers can pass `?section=` to
+ *  fetch detail sections individually. Keep the field names stable — the
+ *  automation prompt names them. */
 export function buildAuditDigest(date: string): Record<string, unknown> | null {
   ensureAuditDir();
   const path = `${AUDIT_DIR}/audit-${date}.jsonl`;
