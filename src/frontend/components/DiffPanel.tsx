@@ -190,7 +190,7 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
  */
 function DiffEmptyState({ isRunning }: { isRunning: boolean }) {
   return (
-    <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 px-4 py-12 text-center">
+    <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 px-4 pt-12 pb-24 text-center">
       <svg
         viewBox="0 0 40 40"
         className="h-14 w-14 text-faint"
