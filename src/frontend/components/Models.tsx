@@ -12,6 +12,7 @@ interface ModelInfo {
 	provider: "claude" | "codex" | "opencode";
 	label: string;
 	aliases: string[];
+	efforts: string[];
 }
 
 interface UsageWindow {

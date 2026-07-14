@@ -32,6 +32,49 @@ export interface ModelInfo {
   aliases: string[];
 }
 
+export const SESSION_EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
+export type SessionEffort = (typeof SESSION_EFFORTS)[number];
+
+const OPENAI_EFFORTS: SessionEffort[] = ["none", "low", "medium", "high", "xhigh"];
+const CLAUDE_EFFORTS: SessionEffort[] = ["low", "medium", "high", "xhigh", "max"];
+
+/** OpenCode variants exposed by the configured model. Keep this aligned with
+ * `opencode models <provider> --verbose`; the selected value is sent verbatim
+ * as the prompt's `variant`. */
+export function modelEfforts(model: string): SessionEffort[] {
+  const id = model.replace(/^opencode\//, "");
+  const slash = id.indexOf("/");
+  const provider =
+    slash === -1
+      ? id.startsWith("claude-")
+        ? "anthropic"
+        : id.startsWith("gpt-")
+          ? "openai"
+          : ""
+      : id.slice(0, slash);
+  const slug = slash === -1 ? id : id.slice(slash + 1);
+
+  if (provider === "openai" && /^gpt-5\./.test(slug)) return OPENAI_EFFORTS;
+  if (provider === "anthropic") {
+    if (slug.startsWith("claude-haiku-4-5")) return ["high", "max"];
+    if (/^claude-(?:fable|opus|sonnet)-/.test(slug)) return CLAUDE_EFFORTS;
+  }
+  if (provider === "meta" && slug === "muse-spark-1.1") return OPENAI_EFFORTS;
+  return [];
+}
+
+/** Preserve a supported selection, otherwise prefer High (the UI default). */
+export function normalizeModelEffort(
+  model: string,
+  effort?: string | null
+): SessionEffort | undefined {
+  const supported = modelEfforts(model);
+  if (!supported.length) return undefined;
+  const normalized = effort?.trim().toLowerCase() as SessionEffort | undefined;
+  if (normalized && supported.includes(normalized)) return normalized;
+  return supported.includes("high") ? "high" : supported[0];
+}
+
 export const KNOWN_MODELS: ModelInfo[] = [
   { id: "claude-fable-5", provider: "claude", label: "Claude Fable 5", aliases: ["fable"] },
   { id: "claude-opus-4-8", provider: "claude", label: "Claude Opus 4.8", aliases: ["opus"] },

@@ -1110,6 +1110,7 @@ export interface ModelOption {
 	provider: "claude" | "codex" | "opencode";
 	label: string;
 	aliases: string[];
+	efforts: string[];
 }
 
 /**

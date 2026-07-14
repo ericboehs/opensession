@@ -248,7 +248,7 @@ export interface UnifiedSession {
 	};
 	aliasIds?: string[];
 	model?: string;
-	/** Reasoning effort for this session's runs (low|medium|high); unset = default (high). */
+	/** OpenCode reasoning variant for this session's runs; unset = model default. */
 	effort?: string;
 	/** Pinned Claude subscription (claude-accounts id); unset = auto pool. */
 	accountId?: string;

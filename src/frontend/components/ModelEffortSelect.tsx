@@ -5,9 +5,12 @@ import { cn } from "../ui/cn";
 import { IconCheck, IconChevronRight } from "./icons";
 
 export const EFFORTS = [
+	{ id: "none", label: "None" },
 	{ id: "low", label: "Low" },
 	{ id: "medium", label: "Medium" },
 	{ id: "high", label: "High" },
+	{ id: "xhigh", label: "Extra high" },
+	{ id: "max", label: "Max" },
 ];
 
 type Props = {
@@ -192,8 +195,15 @@ export function ModelEffortSelect({
 }: Props) {
 	const effectiveModel = model || defaultModel;
 	const modelLabel = shortModelLabel(effectiveModel, models);
-	const effortLabel = EFFORTS.find((e) => e.id === effort)?.label ?? "High";
-	const hasEffort = !!onEffortChange;
+	const supportedEffortIds = models.find((m) => m.id === effectiveModel)?.efforts ?? [];
+	const supportedEfforts = EFFORTS.filter((e) => supportedEffortIds.includes(e.id));
+	const effectiveEffort = supportedEffortIds.includes(effort ?? "")
+		? effort!
+		: supportedEffortIds.includes("high")
+			? "high"
+			: supportedEffortIds[0];
+	const effortLabel = EFFORTS.find((e) => e.id === effectiveEffort)?.label;
+	const hasEffort = !!onEffortChange && supportedEfforts.length > 0;
 	const hasSubscription = !!onAccountChange && !!accounts && accounts.length > 0;
 	const currentAccount = accountId
 		? accounts?.find((a) => a.id === accountId)
@@ -290,10 +300,17 @@ export function ModelEffortSelect({
 
 	const renderModelOption = (option: ModelMenuOption) => {
 		const selected = isSelected(option);
+		const nextEfforts = models.find((m) => m.id === option.id)?.efforts ?? [];
 		return (
 			<Menu.Item
 				key={option.value || option.id}
-				onClick={() => onModelChange(option.value)}
+				onClick={() => {
+					onModelChange(option.value);
+					if (onEffortChange && !nextEfforts.includes(effort ?? "")) {
+						const nextEffort = nextEfforts.includes("high") ? "high" : nextEfforts[0];
+						if (nextEffort) onEffortChange(nextEffort);
+					}
+				}}
 				disabled={modelDisabled}
 				title={modelDisabled ? modelTitle : undefined}
 				className={cn("justify-between gap-3", selected && "bg-hover", modelDisabled && "opacity-55")}
@@ -373,8 +390,8 @@ export function ModelEffortSelect({
 							</span>
 						</Menu.SubmenuTrigger>
 						<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
-							{EFFORTS.map((e) => {
-								const selected = (effort ?? "high") === e.id;
+							{supportedEfforts.map((e) => {
+								const selected = effectiveEffort === e.id;
 								return (
 									<Menu.Item
 										key={e.id}

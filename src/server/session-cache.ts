@@ -9,6 +9,7 @@ import { OPENSESSION_CHATS_DIR } from "./paths";
 import { getAllSessions } from "./sessions";
 import { activeRunRecords } from "./run-journal";
 import { isAgentSessionBusy } from "./agent-runner";
+import { SESSION_EFFORTS as MODEL_EFFORTS } from "./models";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import type { UnifiedSession, BackstageSessionFile } from "./types";
 
@@ -85,10 +86,9 @@ export function touchBackstageSession(
 	}
 }
 
-// Reasoning-effort values the composer/new-session pill can send. Persisted on
-// the session file so queued drains, loops, and restart resumes all run at the
-// effort the pill shows; each runner maps it onto its backend's own scale.
-export const SESSION_EFFORTS = new Set(["low", "medium", "high"]);
+// Reasoning-effort values the composer/new-session pill can send. Model-specific
+// support is exposed by /api/models and normalized by the runner before dispatch.
+export const SESSION_EFFORTS = new Set<string>(MODEL_EFFORTS);
 
 /** Persist a composer-sent effort change on a backstage session (no-op otherwise). */
 export function maybePersistEffort(

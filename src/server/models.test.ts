@@ -5,6 +5,8 @@ import {
   fallbackTier,
   nextFallbackModel,
   markCodexModelExhausted,
+  modelEfforts,
+  normalizeModelEffort,
   opencodeModelLabel,
   resolveConcreteModel,
   resolveModel,
@@ -25,6 +27,47 @@ describe("opencodeModelLabel", () => {
   it("prettifies slugs with no native registry entry to borrow from", () => {
     expect(opencodeModelLabel("opencode/anthropic/claude-sonnet-6")).toBe("Sonnet 6");
     expect(opencodeModelLabel("opencode/openai/gpt-6")).toBe("GPT-6");
+  });
+});
+
+describe("model efforts", () => {
+  it("exposes the variants supported by each configured model family", () => {
+    expect(modelEfforts("opencode/openai/gpt-5.6-sol")).toEqual([
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(modelEfforts("opencode/anthropic/claude-fable-5")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(modelEfforts("opencode/anthropic/claude-haiku-4-5")).toEqual([
+      "high",
+      "max",
+    ]);
+    expect(modelEfforts("opencode/meta/muse-spark-1.1")).toEqual([
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(modelEfforts("opencode/xai/grok-4.5")).toEqual([]);
+  });
+
+  it("falls back to a supported effort when models change", () => {
+    expect(normalizeModelEffort("opencode/anthropic/claude-haiku-4-5", "low")).toBe(
+      "high"
+    );
+    expect(normalizeModelEffort("opencode/anthropic/claude-fable-5", "max")).toBe(
+      "max"
+    );
+    expect(normalizeModelEffort("opencode/xai/grok-4.5", "high")).toBeUndefined();
   });
 });
 

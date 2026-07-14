@@ -100,7 +100,7 @@ export interface UnifiedSession {
   plainThreadId?: string;
   /** Model id for runs in this session; unset = default (MICHAEL_MODEL). */
   model?: string;
-  /** Reasoning effort for runs in this session (low|medium|high); unset = backend default. */
+  /** OpenCode reasoning variant for runs in this session; unset = model default. */
   effort?: string;
   /**
    * Pinned Claude subscription (claude-accounts id) for runs in this session.
@@ -326,7 +326,7 @@ export interface BackstageSessionFile {
 
   plainThreadId?: string; // Plain thread this session is triaging
   model?: string; // model id for this session's runs; unset = default
-  effort?: string; // reasoning effort for this session's runs (low|medium|high); unset = backend default
+  effort?: string; // OpenCode reasoning variant for this session's runs; unset = model default
   accountId?: string; // pinned Claude subscription (claude-accounts id); unset = auto pool
   codexThreadId?: string; // codex thread id once the session has run on a codex model
   opencodeSessionId?: string; // opencode session id (ses_…) once the session has run on an opencode/* model

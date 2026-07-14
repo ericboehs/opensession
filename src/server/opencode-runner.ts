@@ -167,6 +167,7 @@ import { audit, summarizeText } from "./audit";
 import { gitIdentityEnv, githubLoginFor, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
+import { normalizeModelEffort } from "./models";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import {
   registerRunToken,
@@ -2634,6 +2635,7 @@ async function* runOpencodeAttempt(
       ...q,
       body: {
         model: parsed,
+        variant: normalizeModelEffort(model, opts.effort),
         // Shared servers: session context (`system` appends to opencode's own
         // system prompt), read-only agent selection, and this run's tool
         // strips all ride the prompt — per-session servers carry them in
@@ -2642,7 +2644,7 @@ async function* runOpencodeAttempt(
         ...(promptAgent ? { agent: promptAgent } : {}),
         ...(Object.keys(promptTools).length ? { tools: promptTools } : {}),
         parts: [{ type: "text", text: prompt }, ...(imageParts(opts.images) as any[])],
-      },
+      } as any,
     });
     if (sent.error) {
       throw new Error(`opencode prompt failed: ${JSON.stringify(sent.error)}`);

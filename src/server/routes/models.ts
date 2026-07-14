@@ -7,7 +7,7 @@
  */
 
 import type { RouteContext } from "./context";
-import { KNOWN_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, setDefaultModel, setModelFallbackAuto } from "../models";
+import { KNOWN_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, modelEfforts, setDefaultModel, setModelFallbackAuto } from "../models";
 import { envAlias } from "../rename-compat";
 import { type Sandbox } from "../sandbox";
 import { sandboxCapabilityStatus } from "../sandbox/config";
@@ -30,7 +30,10 @@ export async function handleModelsRoutes(
 		const opencodeOnly = KNOWN_MODELS.filter((m) => m.provider === "opencode");
 		const opencodeConfigured = opencodeOnly.length > 0;
 		return Response.json({
-			models: opencodeConfigured ? opencodeOnly : KNOWN_MODELS,
+			models: (opencodeConfigured ? opencodeOnly : KNOWN_MODELS).map((model) => ({
+				...model,
+				efforts: modelEfforts(model.id),
+			})),
 			default: opencodeConfigured ? interactiveDefaultModel() : getDefaultModel(),
 			autoFallback: getModelFallbackAuto(),
 		});

@@ -54,11 +54,7 @@ export interface RunAgentOpts {
   mode?: "ask" | "code";
   /** Model id; decides the backend. Omitted = default Claude model. */
   model?: string;
-  /**
-   * Reasoning effort for this run (UI scale: low | medium | high). Each runner
-   * normalizes it onto its own scale (Claude: low..max, Codex: minimal..xhigh);
-   * unset = the backend's default.
-   */
+  /** OpenCode reasoning variant for this run; unset = the model default. */
   effort?: string;
   mcpServers?: string[];
   /**
