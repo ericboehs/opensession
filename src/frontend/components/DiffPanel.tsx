@@ -110,11 +110,11 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
 
   if (loading) return <div className="panel-placeholder">Loading diff…</div>;
   if (error) return <div className="panel-placeholder panel-error">{error}</div>;
-  if (!repos || !repos.length) return <DiffEmptyState />;
+  if (!repos || !repos.length) return <DiffEmptyState isRunning={isRunning} />;
 
   // Repos that actually have changes; if none, show the empty state.
   const changed = repos.filter((r) => r.diff.rawPatch?.trim() || r.diff.files.length > 0);
-  if (!changed.length) return <DiffEmptyState />;
+  if (!changed.length) return <DiffEmptyState isRunning={isRunning} />;
 
   const multi = changed.length > 1;
   const cur = changed[Math.min(active, changed.length - 1)] || changed[0];
@@ -183,11 +183,12 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
 
 /**
  * Empty state for the Changes tab. Shown both before the first fetch resolves
- * with any changes and when the worktree is genuinely clean. The diff hook keeps
- * polling underneath (every 8s while the agent runs, 30s idle), so we surface a
- * subtle "pulling latest" line to signal we're still watching.
+ * with any changes and when the worktree is genuinely clean. While the agent is
+ * actively running we surface a subtle "pulling latest" line — the diff hook
+ * polls faster then (8s vs 30s idle) and changes are imminent, so it signals
+ * we're watching; once the run finishes the worktree is settled and we drop it.
  */
-function DiffEmptyState() {
+function DiffEmptyState({ isRunning }: { isRunning: boolean }) {
   return (
     <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 px-4 py-12 text-center">
       <svg
@@ -208,10 +209,12 @@ function DiffEmptyState() {
         <div className="text-lg font-medium text-dim">No file changes yet</div>
         <div className="text-sm text-faint">Changes appear here.</div>
       </div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-faint">
-        <PixelSpinner className="text-faint" />
-        <span>Pulling latest…</span>
-      </div>
+      {isRunning && (
+        <div className="mt-1 flex items-center gap-2 text-xs text-faint">
+          <PixelSpinner className="text-faint" />
+          <span>Pulling latest…</span>
+        </div>
+      )}
     </div>
   );
 }
