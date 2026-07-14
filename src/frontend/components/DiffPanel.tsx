@@ -4,6 +4,7 @@ import { API_BASE, fetchDiff, discardDiffFile } from "../lib/api";
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
+import { PixelSpinner } from "./PixelSpinner";
 
 interface Props {
   sessionId: string;
@@ -109,11 +110,11 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
 
   if (loading) return <div className="panel-placeholder">Loading diff…</div>;
   if (error) return <div className="panel-placeholder panel-error">{error}</div>;
-  if (!repos || !repos.length) return <div className="panel-placeholder">No changes yet</div>;
+  if (!repos || !repos.length) return <DiffEmptyState />;
 
-  // Repos that actually have changes; if none, show "No changes yet".
+  // Repos that actually have changes; if none, show the empty state.
   const changed = repos.filter((r) => r.diff.rawPatch?.trim() || r.diff.files.length > 0);
-  if (!changed.length) return <div className="panel-placeholder">No changes yet</div>;
+  if (!changed.length) return <DiffEmptyState />;
 
   const multi = changed.length > 1;
   const cur = changed[Math.min(active, changed.length - 1)] || changed[0];
@@ -175,6 +176,41 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
             };
           }}
         />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Empty state for the Changes tab. Shown both before the first fetch resolves
+ * with any changes and when the worktree is genuinely clean. The diff hook keeps
+ * polling underneath (every 8s while the agent runs, 30s idle), so we surface a
+ * subtle "pulling latest" line to signal we're still watching.
+ */
+function DiffEmptyState() {
+  return (
+    <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 px-4 py-12 text-center">
+      <svg
+        viewBox="0 0 40 40"
+        className="h-14 w-14 text-faint"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <circle cx="13" cy="13" r="5" />
+        <circle cx="27" cy="27" r="5" />
+        <path d="M13 18v5a4 4 0 0 0 4 4h5" />
+      </svg>
+      <div className="flex flex-col gap-1">
+        <div className="text-lg font-medium text-dim">No file changes yet</div>
+        <div className="text-sm text-faint">Changes appear here.</div>
+      </div>
+      <div className="mt-1 flex items-center gap-2 text-xs text-faint">
+        <PixelSpinner className="text-faint" />
+        <span>Pulling latest…</span>
       </div>
     </div>
   );
