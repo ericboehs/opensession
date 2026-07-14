@@ -206,8 +206,8 @@ deepsec = vercel-labs/deepsec, an AI vuln scanner. It reuses the logged-in \`cla
 3. Install deepsec: \`corepack pnpm install\` (expect an \`@anthropic-ai/sdk\` peer-dep warning — harmless).
 
 ## Scan
-4. Run the full scan: \`corepack pnpm deepsec process --agent claude 2>&1 | tee /tmp/deepsec-scan-${repo.id}.log\`. If a scoped focus is given below (profile / extra instructions), you may use \`--diff\` or path filters where deepsec supports them to match that scope.
-5. \`corepack pnpm deepsec export --format md-dir --out ./findings\`, then read findings under findings/CRITICAL, findings/HIGH, findings/MEDIUM. Ignore BUG/low severity.
+4. deepsec scopes by project (\`deepsec.config.ts\` → \`projects: [{ id, root }]\`); a scan only sees files under a project's \`root\`. Read \`.deepsec/deepsec.config.ts\` and run the scan for EVERY project listed, so coverage isn't silently limited to one root: with a single project \`corepack pnpm deepsec process --agent claude\` auto-resolves; with more than one, run it once per project passing \`--project-id <id>\` (auto-resolution is disabled once a second project exists). Tee each to \`/tmp/deepsec-scan-${repo.id}-<id>.log\`. If a scoped focus is given below (profile / extra instructions), you may use \`--diff\` or path filters where deepsec supports them to match that scope.
+5. Export each project's findings (\`corepack pnpm deepsec export --format md-dir --out ./findings\`, adding \`--project-id <id>\` per project when there are several), then read findings under findings/CRITICAL, findings/HIGH, findings/MEDIUM. Ignore BUG/low severity.
 
 ## Per finding (MEDIUM/HIGH/CRITICAL only; cap 8 PRs per run — if more, list the overflow in the summary)
 6. VERIFY against the real code: open the cited file+lines and confirm the issue is genuinely real and reachable. deepsec has a real false-positive rate — DROP false positives.${isFusion ? ` Use \`.deepsec/data/tella-fusion-deepsec/INFO.md\` (Tella's auth model, intended-public endpoints) to avoid known FPs (e.g. login/signup/callback_workos/webhooks are intentionally unauthenticated).` : ""}
