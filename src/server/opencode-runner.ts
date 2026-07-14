@@ -715,6 +715,11 @@ const ASK_BASH_PERMISSIONS: Record<string, "allow" | "deny"> = {
 const ASK_EXTERNAL_DIR_PERMISSIONS: Record<string, "allow" | "deny"> = {
   "*": "deny",
   [`${OPENSESSION_CHATS_DIR}/uploads/**`]: "allow",
+  // Shared scratch: digests, triage and other read-only runs stage working
+  // files under /tmp/opencode/<subdir>/… — a single-star glob wouldn't match
+  // those nested paths, so allow the whole subtree (deny catch-all is first,
+  // last-match-wins). It's a throwaway scratch dir, no security surface.
+  "/tmp/opencode/**": "allow",
 };
 
 const CONFIRM_TOOL_RE = /^mcp__(.+)__(.+)$/;
