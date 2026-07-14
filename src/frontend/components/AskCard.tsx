@@ -54,28 +54,32 @@ export function AskCard({ questions, onAnswer }: Props) {
         <div key={q.question} className="ask-card-question">
           {q.header && <div className="ask-card-header">{q.header}</div>}
           <div className="ask-card-text">{q.question}</div>
-          <div className="ask-card-options">
-            {q.options.map((opt) => {
-              const active = (selected[q.question] || []).includes(opt.label);
-              return (
-                <button
-                  key={opt.label}
-                  className={`ask-card-option ${active ? "active" : ""}`}
-                  onClick={() => toggle(q, opt.label)}
-                  disabled={submitted}
-                  title={opt.description}
-                >
-                  <span className="ask-card-option-label">{opt.label}</span>
-                  {opt.description && (
-                    <span className="ask-card-option-desc">{opt.description}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+          {q.options?.length ? (
+            <div className="ask-card-options">
+              {q.options.map((opt) => {
+                const active = (selected[q.question] || []).includes(opt.label);
+                return (
+                  <button
+                    key={opt.label}
+                    className={`ask-card-option ${active ? "active" : ""}`}
+                    onClick={() => toggle(q, opt.label)}
+                    disabled={submitted}
+                    title={opt.description}
+                  >
+                    <span className="ask-card-option-label">{opt.label}</span>
+                    {opt.description && (
+                      <span className="ask-card-option-desc">{opt.description}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           <input
             className="ask-card-other"
-            placeholder="Or type your own answer…"
+            placeholder={
+              q.options?.length ? "Or type your own answer…" : "Type your answer…"
+            }
             value={other[q.question] || ""}
             onChange={(e) => setOther((prev) => ({ ...prev, [q.question]: e.target.value }))}
             onKeyDown={(e) => {

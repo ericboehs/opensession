@@ -658,6 +658,6 @@ export type WSServerMessage =
 export interface AskQuestion {
 	question: string;
 	header?: string;
-	options: Array<{ label: string; description?: string }>;
+	options?: Array<{ label: string; description?: string }>;
 	multiSelect?: boolean;
 }
