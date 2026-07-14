@@ -68,7 +68,7 @@ import {
 	IconFile,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
-import { RepoTile, swatchColor } from "./RepoTile";
+import { RepoTile, swatchColor, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
 
 const AUTOMATION_COLOR = "#d29922";
@@ -2687,7 +2687,7 @@ export function Sidebar({
 							onClick={() => toggleGroup(gkey)}
 						>
 							<RepoTile name={repo} />
-							<span className="sidebar-group-name">{repo}</span>
+							<span className="sidebar-group-name">{repoLabel(repo)}</span>
 							{/* Count rides directly behind the repo name, not pinned right. */}
 							<span className="sidebar-group-count">
 								{b.rows.length + b.prs.length}
@@ -4027,7 +4027,7 @@ function FilterPopover({
 		{ value: "all", label: "All repos" },
 		...repos.map((name) => ({
 			value: name,
-			label: name,
+			label: repoLabel(name),
 			icon: <RepoTile name={name} />,
 		})),
 	];
@@ -4227,7 +4227,7 @@ const RepoFilterChip = React.forwardRef<
 			{ value: "all", label: "All repos" },
 			...repos.map((name) => ({
 				value: name,
-				label: name,
+				label: repoLabel(name),
 				icon: <RepoTile name={name} />,
 			})),
 		];
@@ -4294,7 +4294,7 @@ const RepoFilterChip = React.forwardRef<
 				onClick={probe ? undefined : () => setOpen((o) => !o)}
 			>
 				<RepoTile name={repo} />
-				<span className="sidebar-repo-chip-name">{repo}</span>
+				<span className="sidebar-repo-chip-name">{repoLabel(repo)}</span>
 			</button>
 			<button
 				type="button"
@@ -5125,9 +5125,9 @@ function SessionHoverCard({
 	if (s.model) rows.push(["Model", s.model]);
 	if (s.mode) rows.push(["Mode", s.mode]);
 
-	const repoLabel = s.repo || "tella-fusion";
+	const repoName = repoLabel(s.repo || "tella-fusion");
 	const extra = s.attachedRepos?.length || 0;
-	rows.push(["Repo", extra ? `${repoLabel} +${extra} more` : repoLabel]);
+	rows.push(["Repo", extra ? `${repoName} +${extra} more` : repoName]);
 	if (s.branch)
 		rows.push([
 			"Branch",

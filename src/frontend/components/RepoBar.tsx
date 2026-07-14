@@ -11,7 +11,7 @@ import {
 import { Menu } from "../ui/menu";
 import { Modal } from "../ui/modal";
 import { IconCheck, IconPlus, IconX, IconChevronRight } from "./icons";
-import { RepoTile } from "./RepoTile";
+import { RepoTile, repoLabel } from "./RepoTile";
 
 interface Props {
   sessionId: string;
@@ -158,7 +158,7 @@ export function RepoBar({
       >
         <RepoTile name={primary} size={18} />
         <span className="min-w-0 flex-1 truncate text-left">
-          {busy ?? primary}
+          {busy ?? repoLabel(primary)}
           {attached.length > 0 && (
             <span className="text-faint"> +{attached.length}</span>
           )}
@@ -171,7 +171,7 @@ export function RepoBar({
         title="Repo — click to switch or attach another"
       >
         <RepoTile name={primary} />
-        <span className="max-w-[180px] truncate">{busy ?? primary}</span>
+        <span className="max-w-[180px] truncate">{busy ?? repoLabel(primary)}</span>
         {attached.length > 0 && (
           <span
             className="text-[12px] text-dim"
@@ -198,14 +198,14 @@ export function RepoBar({
                 [{ id: primary }, ...switchTargets].map((p) => (
                   <Menu.Item key={p.id} onClick={() => switchPrimary(p.id)}>
                     <RepoTile name={p.id} />
-                    <span className="min-w-0 flex-1 truncate">{p.id}</span>
+                    <span className="min-w-0 flex-1 truncate">{repoLabel(p.id)}</span>
                     {p.id === primary && <IconCheck size={20} className="text-dim" />}
                   </Menu.Item>
                 ))
               ) : (
                 <div className={staticRow}>
                   <RepoTile name={primary} />
-                  <span className="min-w-0 flex-1 truncate">{primary}</span>
+                  <span className="min-w-0 flex-1 truncate">{repoLabel(primary)}</span>
                   <IconCheck size={20} className="text-dim" />
                 </div>
               )}
@@ -218,7 +218,7 @@ export function RepoBar({
                       <div key={r.repo} className={staticRow} title={`${r.dir} — branch ${r.branch}`}>
                         <RepoTile name={r.repo} />
                         <span className="min-w-0 flex-1 truncate">
-                          {r.repo} <span className="text-faint">· {r.branch}</span>
+                          {repoLabel(r.repo)} <span className="text-faint">· {r.branch}</span>
                         </span>
                         <button
                           className="cursor-pointer rounded border-0 bg-transparent p-0.5 text-faint hover:text-fg"
@@ -244,7 +244,7 @@ export function RepoBar({
                       title="Attach to this session as an isolated worktree"
                     >
                       <RepoTile name={p.id} />
-                      <span className="min-w-0 flex-1 truncate">{p.id}</span>
+                      <span className="min-w-0 flex-1 truncate">{repoLabel(p.id)}</span>
                       <IconPlus size={18} className="text-faint" />
                     </Menu.Item>
                   ))
@@ -262,7 +262,7 @@ export function RepoBar({
               ) : (
                 hasWork && (
                   <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-[11px] leading-snug text-faint">
-                    Switching keeps your current changes in the {primary} worktree
+                    Switching keeps your current changes in the {repoLabel(primary)} worktree
                     — they won't move to the new repo.
                   </div>
                 )
@@ -282,12 +282,12 @@ export function RepoBar({
       <Modal.Root open={confirmOpen} onOpenChange={setConfirmOpen} disablePointerDismissal>
         <Modal.Content widthClassName="max-w-[26rem]">
           <Modal.Header
-            title={`Switch this workspace to ${confirmTarget}?`}
+            title={`Switch this workspace to ${confirmTarget ? repoLabel(confirmTarget) : ""}?`}
             description={
               <>
-                Your current changes stay in the {primary} worktree
+                Your current changes stay in the {repoLabel(primary)} worktree
                 {branch ? ` (branch ${branch})` : ""}. They won't move to{" "}
-                {confirmTarget}, but you can reopen them from that branch.
+                {confirmTarget ? repoLabel(confirmTarget) : ""}, but you can reopen them from that branch.
               </>
             }
           />
@@ -308,7 +308,7 @@ export function RepoBar({
               className="rounded-md bg-accent px-5 py-2 text-[13.5px] font-semibold text-white outline-none hover:brightness-105"
               onClick={() => confirmTarget && doSwitch(confirmTarget)}
             >
-              Switch to {confirmTarget}
+              Switch to {confirmTarget ? repoLabel(confirmTarget) : ""}
             </button>
           </Modal.Footer>
         </Modal.Content>

@@ -26,6 +26,20 @@ export function repoColor(key: string): string {
 	return swatchColor(key);
 }
 
+// A few repos display under a different name than their internal id — the
+// Backstage → OpenSession rename lives here so id `backstage` reads
+// `opensession` everywhere its name is shown, with an `O` tile glyph. The tile
+// color stays keyed on the raw id (via repoColor) so it's stable across the
+// rename. See docs/rename-opensession-plan.md.
+const REPO_DISPLAY: Record<string, { label: string; letter: string }> = {
+	backstage: { label: "opensession", letter: "O" },
+};
+
+/** The name a repo shows in the UI (its id, except for the renamed ones). */
+export function repoLabel(id: string): string {
+	return REPO_DISPLAY[id]?.label ?? id;
+}
+
 // A tiny colored letter-tile standing in for a repo's icon (sidebar Repo
 // dropdown, session-header breadcrumb, repo menus). `size` (px) shrinks it for
 // tight spots like the phone header's model line; omitted = the 18px default.
@@ -49,9 +63,10 @@ export function RepoTile({
 	} else if (round) {
 		style.borderRadius = "50%";
 	}
+	const letter = REPO_DISPLAY[name]?.letter ?? (name[0] || "?").toUpperCase();
 	return (
 		<span className="repo-tile" style={style}>
-			{(name[0] || "?").toUpperCase()}
+			{letter}
 		</span>
 	);
 }
