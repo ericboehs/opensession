@@ -268,7 +268,7 @@ function formatReset(resetsAt: string | null): string {
 	if (!resetsAt) return "";
 	const d = new Date(resetsAt);
 	if (isNaN(d.getTime())) return "";
-	return `resets ${d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}`;
+	return `resets ${d.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
 }
 
 function UsageBar({ label, window: w }: { label: string; window: UsageWindow | null }) {
