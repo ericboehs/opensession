@@ -15083,6 +15083,12 @@ html[data-theme="light"] .palette-card .palette-create {
   animation-timing-function: ease-out;
 }
 
+/* Slow variant — for calm, ambient indicators (e.g. the Changes tab empty
+ * state) where the default 1.2s cadence reads as jittery rather than lively. */
+.pixel-spinner.pixel-spinner-slow .pixel {
+  animation-duration: 2.4s;
+}
+
 /* Backstage is dark by default; lighten the idle pixels under the light theme. */
 html[data-theme="light"] .pixel-spinner .pixel {
   background: rgba(148, 163, 184, 0.2);

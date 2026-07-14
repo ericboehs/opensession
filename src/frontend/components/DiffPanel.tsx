@@ -211,7 +211,7 @@ function DiffEmptyState({ isRunning }: { isRunning: boolean }) {
       </div>
       {isRunning && (
         <div className="mt-1 flex items-center gap-2 text-xs text-faint">
-          <PixelSpinner className="text-faint" />
+          <PixelSpinner className="pixel-spinner-slow text-faint" interval={4000} />
           <span>Pulling latest…</span>
         </div>
       )}
