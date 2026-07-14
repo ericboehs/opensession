@@ -143,6 +143,23 @@ function consumeInterruptDrainMark(sessionId: string): boolean {
 	return Date.now() - at < INTERRUPT_DRAIN_MARK_TTL_MS;
 }
 
+// When an interrupt targets a SPECIFIC queued item (the queue chip's send/▲
+// button) rather than a fresh compose-send, only that one item should be
+// delivered by the abort-driven drain — the rest of the queue stays put and
+// drains at the next natural stopping point. Keyed by item id; timestamped so a
+// marker whose drain never happens (e.g. the user hits Stop before it fires)
+// expires instead of solo-delivering a stale item much later.
+const interruptSoloItems: Map<string, { id: string; at: number }> =
+	(g.__interruptSoloItems ??= new Map());
+
+function consumeInterruptSoloItem(sessionId: string): string | undefined {
+	const mark = interruptSoloItems.get(sessionId);
+	if (!mark) return undefined;
+	interruptSoloItems.delete(sessionId);
+	if (Date.now() - mark.at >= INTERRUPT_DRAIN_MARK_TTL_MS) return undefined;
+	return mark.id;
+}
+
 /** Append a message to a session's drainable queue and persist + broadcast. */
 export function enqueuePrompt(sessionId: string, item: QueueItem): void {
 	const queue = promptQueues.get(sessionId) || [];
@@ -251,11 +268,16 @@ export function interruptQueuedPrompt(
 			images,
 		)
 	) {
-		// No in-band interrupt-and-steer (opencode): keep the item queued —
-		// it's the durable record — and abort the turn so the drain delivers
-		// it right away (moved to the front so it leads the drained batch).
-		queue.splice(0, 0, item);
+		// No in-band interrupt-and-steer (opencode): keep the item queued — it's
+		// the durable record — and abort the turn so the drain delivers it right
+		// away. Mark it (by id) as the solo delivery so the drain delivers ONLY
+		// this item; every other queued item stays put and drains at the next
+		// natural stopping point instead of being swept into this batch. Kept at
+		// its original position so the queue doesn't visibly reshuffle.
+		const solo = queueItem(item);
+		queue.splice(index, 0, solo);
 		promptQueues.set(sessionId, queue);
+		interruptSoloItems.set(sessionId, { id: solo.id!, at: Date.now() });
 		persistQueues();
 		broadcastQueue(sessionId);
 		return abortTurnAndDrain(sessionId, session);
@@ -514,7 +536,18 @@ export async function drainQueue(sessionId: string): Promise<void> {
 			watchExternalRunAndDrain(sessionId);
 			return;
 		}
-		const batch = queue.splice(0, queue.length);
+		// An interrupt targeting one specific queued item (the queue chip's ▲
+		// send button) delivers ONLY that item; a natural drain — or a stale or
+		// already-removed solo marker — delivers the whole queue combined. The
+		// rest stays queued and drains on the loop's next pass (once this
+		// interrupt turn finishes), so the top item no longer vanishes when you
+		// send a lower one.
+		const soloId = consumeInterruptSoloItem(sessionId);
+		const soloIndex = soloId ? queue.findIndex((m) => m.id === soloId) : -1;
+		const batch =
+			soloIndex >= 0
+				? queue.splice(soloIndex, 1)
+				: queue.splice(0, queue.length);
 		if (queue.length === 0) promptQueues.delete(sessionId);
 		persistQueues();
 		broadcastQueue(sessionId);
