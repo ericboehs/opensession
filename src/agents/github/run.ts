@@ -150,7 +150,12 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
   const projectId = projectIdForPr(opts.prNumber, opts.branch, opts.title, opts.cwd);
 
   const existingSessionFile = readSessionFile(bksId);
-  const resumeFrom = opts.resume
+  // Engine sessions are scoped to their directory; a session started under a
+  // different cwd (e.g. a review from before reviews got per-PR worktrees)
+  // won't resolve there — start fresh rather than resuming across cwds.
+  const cwdMatches =
+    !existingSessionFile?.worktreeDir || existingSessionFile.worktreeDir === opts.cwd;
+  const resumeFrom = opts.resume && cwdMatches
     ? readEngineSessionId(existingSessionFile, opts.model)
     : "";
 

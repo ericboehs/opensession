@@ -330,6 +330,30 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
 }
 
 /**
+ * Read-only worktree pinned to a PR's HEAD for review runs. Deliberately
+ * separate from the autofix `-michael` worktree: autofix pushes trigger
+ * re-reviews, so a review sharing that tree would hard-reset it out from
+ * under the still-running autofix. Reviews are ask-mode (Read/Grep only, no
+ * builds), so there's no dep install — a bare checkout is enough. On reuse it
+ * re-pins to the freshly fetched head, which is safe here because nothing
+ * else ever writes in this tree.
+ */
+export async function createReviewWorktreeForPrHead(headRef: string): Promise<string> {
+  const repo = defaultRepo();
+  const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael-review`;
+  return withGitLock(async () => {
+    await $`git -C ${repo.repo} fetch origin ${headRef} --quiet`;
+    if (existsSync(wtPath)) {
+      await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet();
+      return wtPath;
+    }
+    await $`git -C ${repo.repo} worktree prune`.quiet();
+    await $`git -C ${repo.repo} worktree add ${wtPath} -B ${headRef}-michael-review origin/${headRef}`;
+    return wtPath;
+  });
+}
+
+/**
  * Worktree for a FOLLOW-UP branch cut fresh off `baseRef` (a PR's base, e.g.
  * `main`). Used when someone @-mentions Michael asking for a change on a PR that
  * is already merged/closed — you can't push to the old PR, so the work goes on a

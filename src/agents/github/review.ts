@@ -22,6 +22,7 @@ import {
   type ReviewInlineComment,
 } from "./github-rest";
 import { defaultRepo } from "../../server/config";
+import { createReviewWorktreeForPrHead } from "../../server/worktree";
 
 const TELLA_FUSION = defaultRepo().repo;
 
@@ -133,15 +134,29 @@ export async function runReview(
     const diff = await getPrDiff(pr.headRef);
     if (!diff) console.warn(`[github] could not fetch diff for PR #${pr.number}; reviewing without it`);
 
+    // Pin a read-only worktree to the PR head so the files the agent Reads are
+    // the exact tree the diff describes. The shared clone fallback (fetch
+    // failure, fork PRs whose head isn't in origin) drifts from the diff —
+    // that's the "file not found / offset out of range" storm on refactor PRs
+    // — so when it happens the prompt says to trust the diff over the disk.
+    let cwd = TELLA_FUSION;
+    let checkoutAtHead = false;
+    try {
+      cwd = await createReviewWorktreeForPrHead(pr.headRef);
+      checkoutAtHead = true;
+    } catch (e) {
+      console.warn(`[github] review worktree for ${pr.headRef} failed, using shared clone:`, e);
+    }
+
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
-    const prompt = buildReviewPrompt(base, details, isUpdate, steer, diff?.patch);
+    const prompt = buildReviewPrompt(base, details, isUpdate, steer, diff?.patch, checkoutAtHead);
 
     console.log(`[github] Reviewing PR #${pr.number} @ ${pr.headSha.slice(0, 7)} (${isUpdate ? "update" : "initial"})`);
     const result = await runGithubAgent({
       prNumber: pr.number,
       kind: "review",
       prompt,
-      cwd: TELLA_FUSION,
+      cwd,
       mode: "ask",
       model: config.model,
       branch: pr.headRef,

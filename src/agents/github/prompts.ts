@@ -41,7 +41,7 @@ How to review well:
 
 Before you assert that code is broken — verify, don't recall:
 - NEVER claim a symbol (variant constructor, function, method, field, import, type, export) is missing, or that the build/type-check will fail, from memory. Open the file that defines it (Read/Grep) and confirm against the actual source on disk, then quote the definitive line(s) in your finding. The codebase moves and your training data is stale — enumerating a type's members or a function's signature from recall is exactly how false "does not compile" blockers happen. (A real case: a review claimed a ReScript variant had no \`Image\` constructor and marked the PR "does not compile · request changes"; \`Image\` had been in the type on disk for a week. One Read would have caught it.)
-- Your checkout is at the BASE branch, so symbols the PR itself ADDS or RENAMES are not on disk yet — a reference the diff introduces won't be found by Grep, and that's expected, not a bug. Account for exactly what the diff adds and removes before flagging any reference as missing.
+- Your checkout is pinned to this PR's HEAD: the diff is already applied on disk, so the diff's paths and line numbers match the files, and symbols the PR adds or renames ARE on disk. Conversely, code the PR removes or renames away is gone — don't flag a deleted symbol as missing when the diff shows the PR removing its uses too. If a Read at a path the diff names fails, trust the diff and note the discrepancy instead of retrying variations.
 - If you can't open and confirm the definition, do NOT raise it as a P0/P1 or call the build broken. Downgrade to a P2/P3 phrased as a question ("confirm that X exists / that this compiles") and lower your confidence. A firm "this won't compile / this symbol doesn't exist" verdict is allowed ONLY when you've actually read the relevant definitions.
 
 - Do NOT edit files, run interactive tools, ask questions, or post anything yourself — the system posts your review.`;
@@ -126,7 +126,7 @@ const DIFF_INLINE_CAP = 200_000;
  * contain \`\`\` themselves. Oversized diffs are cut at a file boundary and the
  * dropped file paths are listed so the reviewer knows what it didn't see.
  */
-export function diffBlock(patch: string): string {
+export function diffBlock(patch: string, checkoutAtHead = true): string {
   let body = patch.trimEnd();
   let note = "";
   if (body.length > DIFF_INLINE_CAP) {
@@ -137,14 +137,24 @@ export function diffBlock(patch: string): string {
     body = kept;
     note = `\n\n[Diff truncated at ${DIFF_INLINE_CAP} chars. Files NOT shown: ${
       dropped.join(", ") || "(tail of the last file above)"
-    } — read them in the checkout and say in your summary that they weren't diff-reviewed.]`;
+    } — ${
+      checkoutAtHead
+        ? "read them in the checkout"
+        : "they are NOT reliably on disk (see the checkout note above), so don't thrash on failed Reads"
+    } and say in your summary that they weren't diff-reviewed.]`;
   }
+  const checkoutNote = checkoutAtHead
+    ? "Your checkout is pinned to the PR's HEAD: the diff IS applied to the files on\n" +
+      "disk. Use the diff for what changed and Read/Grep on the checkout for surrounding context."
+    : "WARNING: the checkout could NOT be pinned to this PR's head for this run, so files on\n" +
+      "disk may not match the diff (renamed/added paths may be missing, line numbers may be\n" +
+      "off). Trust the diff over the checkout; if a Read fails or looks stale, say so instead\n" +
+      "of retrying path variations, and lower your confidence accordingly.";
   return [
     "## The diff",
     "",
     "The PR's diff is inlined below (this run has no shell — do not try to run `gh` or `git`).",
-    "Your checkout is at the BASE branch: the PR's changes are NOT applied to the files on",
-    "disk. Use the diff for what changed and Read/Grep on the checkout for surrounding context.",
+    checkoutNote,
     "",
     "===BEGIN PR DIFF===",
     body,
@@ -191,6 +201,7 @@ export function buildReviewPrompt(
   isUpdate: boolean,
   steer?: string,
   diffPatch?: string,
+  checkoutAtHead = true,
 ): string {
   const header = isUpdate
     ? `You previously reviewed PR #${pr.number} ("${pr.title}"). New commits have been pushed. Re-review the CURRENT diff, focusing on what changed since your last review, and produce a fresh full assessment.`
@@ -200,7 +211,7 @@ export function buildReviewPrompt(
   // fetch failing is rare (gh/network hiccup at dispatch) — in that case tell
   // the agent to say so rather than review blind.
   const diffSection = diffPatch?.trim()
-    ? diffBlock(diffPatch)
+    ? diffBlock(diffPatch, checkoutAtHead)
     : `## The diff\n\nThe diff could not be fetched at dispatch time and this run has no shell. Do NOT guess at the changes: report in your summary that the diff was unavailable, verdict "comment", confidence 1, findings [].`;
 
   return [
