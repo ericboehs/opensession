@@ -1499,7 +1499,7 @@ body.resizing-x {
 	   icons above it (list pad-left 10 + 6 = 16), so a row's status mark sits
 	   directly under its lane's icon; the right padding lands the trailing
 	   time/number flush under the header's filter/＋ buttons. */
-	padding: 7px 8px 7px 10px;
+	padding: 9px 8px 9px 10px;
 	color: var(--text);
 	position: relative;
 }
@@ -1647,7 +1647,7 @@ body.resizing-x {
 
 /* Other people's sessions stack a "name · time" meta line under the title, so
    the row is already two lines tall. Trim the vertical padding — otherwise the
-   full 11px top/bottom on each row leaves a big gap between them. */
+   full 9px top/bottom on each row leaves a big gap between them. */
 .sidebar-item--twoline {
 	padding-top: 7px;
 	padding-bottom: 7px;
