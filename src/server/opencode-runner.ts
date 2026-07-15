@@ -206,6 +206,7 @@ import {
   getUsableAccountById,
   getAccountById,
   markExhausted,
+  waitForUsableAccount,
   type ClaudeAccount,
 } from "./claude-accounts";
 
@@ -284,6 +285,19 @@ const AUTOMATION_KINDS = new Set(["automation", "plain", "action", "security-sca
 
 function isUnattendedKind(base: string): boolean {
   return AUTOMATION_KINDS.has(base) || base.startsWith("github-");
+}
+
+/** Dry-pool queueing budget per run kind. Unattended runs have no human
+ *  staring at a spinner, so instead of aborting the instant every account is
+ *  at its usage limit (the 2026-07-14 cascade) they wait for the pool to
+ *  free. Interactive runs keep failing fast into agent-runner's
+ *  model-fallback graph — a queued wait there just looks like a hang. */
+const POOL_WAIT_UNATTENDED_MS = Number(
+  envAlias("OPENSESSION_POOL_WAIT_MS", "BACKSTAGE_POOL_WAIT_MS") || 10 * 60_000
+);
+
+function poolWaitMsFor(kind?: string): number {
+  return isUnattendedKind(baseJournalKind(kind)) ? POOL_WAIT_UNATTENDED_MS : 0;
 }
 
 function baseJournalKind(kind?: string): string {
@@ -1750,7 +1764,18 @@ async function* runOpencodeAttempt(
       const bridgeMode = cfg?.enabled ? cfg.bridgeMode : "off";
       if (bridgeMode === "meridian") {
         const stack = meridianStackInfo();
-        const picked = pickMeridianAccount(
+        const repick = () => {
+          const p = pickMeridianAccount(
+            user,
+            parsed.modelID,
+            cfg!.bridgeAccountIds,
+            opts.accountId,
+            opts.accountStrict,
+            stickyMeridianAccounts.get(sessionKey)
+          );
+          return "error" in p ? null : p;
+        };
+        let picked = pickMeridianAccount(
           user,
           parsed.modelID,
           cfg!.bridgeAccountIds,
@@ -1758,6 +1783,48 @@ async function* runOpencodeAttempt(
           opts.accountStrict,
           stickyMeridianAccounts.get(sessionKey)
         );
+        if ("error" in picked) {
+          // Dry pool at pick time: unattended runs queue for an account to
+          // free instead of cascading aborts (poolWaitMsFor is 0 for
+          // interactive kinds, which fail fast into the fallback graph). This
+          // is pre-init — no engine session, no partial work — so a delayed
+          // start is safe and idempotent.
+          const waitMs = poolWaitMsFor(journal?.kind);
+          const cause = picked.error;
+          if (waitMs > 0) {
+            const waited = await waitForUsableAccount({
+              pick: repick,
+              user,
+              model: parsed.modelID,
+              maxWaitMs: waitMs,
+              onWaitStart: (earliestReset) => {
+                audit({
+                  msg: "account_pool_wait",
+                  run_kind: journal?.kind,
+                  bks_session_id: journal?.bksSessionId,
+                  model,
+                  reason: cause,
+                  earliest_reset: new Date(earliestReset).toISOString(),
+                  max_wait_ms: waitMs,
+                });
+                console.warn(
+                  `[opencode-runner] account pool dry for ${model} (${cause}) — ` +
+                    `waiting up to ${Math.round(waitMs / 60000)}m (earliest reset ${new Date(earliestReset).toISOString()})`
+                );
+              },
+            });
+            if (waited) {
+              audit({
+                msg: "account_pool_wait_resolved",
+                run_kind: journal?.kind,
+                bks_session_id: journal?.bksSessionId,
+                model,
+                account: waited.name,
+              });
+              picked = waited;
+            }
+          }
+        }
         if ("error" in picked) {
           // A dry/pinned-out account pool at pick time is the same condition
           // as a mid-run usage limit with no account left to rotate to: flag
@@ -2798,12 +2865,45 @@ async function* runOpencodeAttempt(
       if (usageLimitHit && pickedMeridian) {
         markExhausted(pickedMeridian.id, parsed.modelID);
         if (rotation) {
-          const next = pickMeridianAccount(
-            user,
-            parsed.modelID,
-            readOpencodeBridgeConfig()?.bridgeAccountIds
-          );
-          if (!("error" in next)) {
+          const repickNext = () => {
+            const p = pickMeridianAccount(
+              user,
+              parsed.modelID,
+              readOpencodeBridgeConfig()?.bridgeAccountIds
+            );
+            return "error" in p ? null : p;
+          };
+          let next: ClaudeAccount | null = repickNext();
+          if (!next) {
+            // Whole pool capped mid-run: unattended runs queue for the pool
+            // to free (same backpressure as the pick-time branch) so the turn
+            // retries on a fresh account instead of dying with the cascade.
+            const waitMs = poolWaitMsFor(journal?.kind);
+            if (waitMs > 0) {
+              next = await waitForUsableAccount({
+                pick: repickNext,
+                user,
+                model: parsed.modelID,
+                maxWaitMs: waitMs,
+                onWaitStart: (earliestReset) => {
+                  audit({
+                    msg: "account_pool_wait",
+                    run_kind: journal?.kind,
+                    bks_session_id: journal?.bksSessionId,
+                    model,
+                    reason: "mid-run usage limit; pool dry",
+                    earliest_reset: new Date(earliestReset).toISOString(),
+                    max_wait_ms: waitMs,
+                  });
+                  console.warn(
+                    `[opencode-runner] mid-run usage limit and pool dry for ${model} — ` +
+                      `waiting up to ${Math.round(waitMs / 60000)}m before retrying`
+                  );
+                },
+              });
+            }
+          }
+          if (next) {
             turnEvent({ direction: "out", kind: "account_switch", account: next.name });
             bridgeRunEnd("error", runFailure);
             rotation.rotate = true;

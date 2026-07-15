@@ -101,3 +101,81 @@ describe("pickAccount usage-credits policy", () => {
     expect(accounts.pickAccount(new Set(["fresh"]), undefined, undefined, true)).toBeUndefined();
   });
 });
+
+describe("dry-pool backpressure", () => {
+  const maxedWindow = (resetsAt: string | null) => ({
+    fetchedAt: new Date().toISOString(),
+    fiveHour: { utilization: 100, resetsAt },
+    sevenDay: null,
+    extraUsage: null,
+  });
+
+  test("a maxed account whose cached window already reset counts as usable", () => {
+    // Window rolled 1 minute ago but the cache still says 100% — the stale
+    // cache must not sideline the account until the next hourly poll.
+    accounts.__setUsageCacheForTest("fresh", usage(50));
+    accounts.__setUsageCacheForTest(
+      "maxed",
+      maxedWindow(new Date(Date.now() - 60_000).toISOString())
+    );
+    expect(accounts.pickAccount(new Set(["fresh"]))?.id).toBe("maxed");
+    // A window that resets in the future still sidelines it.
+    accounts.__setUsageCacheForTest(
+      "maxed",
+      maxedWindow(new Date(Date.now() + 60_000).toISOString())
+    );
+    expect(accounts.pickAccount(new Set(["fresh"]))).toBeUndefined();
+  });
+
+  test("earliestPoolReset reports the sidelined window's reset", () => {
+    const resetAt = Date.now() + 5 * 60_000;
+    accounts.__setUsageCacheForTest("fresh", maxedWindow(new Date(resetAt).toISOString()));
+    accounts.__setUsageCacheForTest("maxed", maxedWindow(new Date(resetAt + 60_000).toISOString()));
+    const earliest = accounts.earliestPoolReset();
+    expect(earliest).not.toBeNull();
+    expect(Math.abs((earliest as number) - resetAt)).toBeLessThan(1000);
+  });
+
+  test("earliestPoolReset is now-ish when something is usable", () => {
+    accounts.__setUsageCacheForTest("fresh", usage(10));
+    const earliest = accounts.earliestPoolReset();
+    expect(earliest).not.toBeNull();
+    expect((earliest as number) - Date.now()).toBeLessThan(1000);
+  });
+
+  test("waitForUsableAccount returns immediately once pick succeeds", async () => {
+    accounts.__setUsageCacheForTest("fresh", usage(10));
+    const picked = await accounts.waitForUsableAccount({
+      pick: () => accounts.pickAccount(),
+      maxWaitMs: 5_000,
+      pollMs: 10,
+    });
+    expect(picked?.id).toBe("fresh");
+  });
+
+  test("waitForUsableAccount fails fast when the earliest reset is beyond the budget", async () => {
+    const far = new Date(Date.now() + 60 * 60_000).toISOString();
+    accounts.__setUsageCacheForTest("fresh", maxedWindow(far));
+    accounts.__setUsageCacheForTest("maxed", maxedWindow(far));
+    const t0 = Date.now();
+    const picked = await accounts.waitForUsableAccount({
+      pick: () => accounts.pickAccount(),
+      maxWaitMs: 1_000,
+      pollMs: 10,
+    });
+    expect(picked).toBeNull();
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+
+  test("waitForUsableAccount picks up an account freed while waiting", async () => {
+    const soon = new Date(Date.now() + 150).toISOString();
+    accounts.__setUsageCacheForTest("fresh", maxedWindow(soon));
+    accounts.__setUsageCacheForTest("maxed", maxedWindow(soon));
+    const picked = await accounts.waitForUsableAccount({
+      pick: () => accounts.pickAccount(),
+      maxWaitMs: 5_000,
+      pollMs: 50,
+    });
+    expect(picked).not.toBeNull();
+  });
+});

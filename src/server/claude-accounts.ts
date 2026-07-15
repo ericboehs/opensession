@@ -458,18 +458,45 @@ function hasCreditHeadroom(a: ClaudeAccount): boolean {
   return !!extra?.enabled && extra.monthlyLimit > 0 && extra.usedCredits < extra.monthlyLimit;
 }
 
-function scopedLimitForModel(usage: AccountUsage | undefined, model?: string): number | null {
+function scopedEntryForModel(
+  usage: AccountUsage | undefined,
+  model?: string
+): { label: string; utilization: number | null; resetsAt: string | null } | null {
   if (!usage || !model) return null;
   if (model === "claude-fable-5" || model.toLowerCase().includes("fable")) {
-    const fable = usage.scopedLimits?.find((l) => l.label.toLowerCase() === "fable");
-    return fable?.utilization ?? null;
+    return usage.scopedLimits?.find((l) => l.label.toLowerCase() === "fable") ?? null;
   }
   return null;
 }
 
+/**
+ * Cached utilization, unless the window's own resetsAt has already passed —
+ * then the cache is provably stale (the window rolled since the last poll)
+ * and the real utilization restarted near zero. Without this, an account
+ * sidelined at 97%+ stays out of the pool for up to a full POLL_INTERVAL_MS
+ * after its window resets, which is what let a dry pool cascade for hours.
+ */
+function currentUtilization(
+  w: { utilization: number | null; resetsAt: string | null } | null | undefined
+): number {
+  if (!w) return 0;
+  if (w.resetsAt) {
+    const t = Date.parse(w.resetsAt);
+    if (Number.isFinite(t) && t <= Date.now()) return 0;
+  }
+  return w.utilization ?? 0;
+}
+
+function scopedLimitForModel(usage: AccountUsage | undefined, model?: string): number | null {
+  const entry = scopedEntryForModel(usage, model);
+  if (!entry) return null;
+  if (entry.utilization === null) return null;
+  return currentUtilization(entry);
+}
+
 function accountUtilization(a: ClaudeAccount, model?: string): number {
   const usage = usageCache.get(a.id);
-  const fiveHour = usage?.fiveHour?.utilization ?? 0;
+  const fiveHour = currentUtilization(usage?.fiveHour);
   const scoped = scopedLimitForModel(usage, model);
   return scoped === null ? fiveHour : Math.max(fiveHour, scoped);
 }
@@ -484,7 +511,7 @@ function accountUtilization(a: ClaudeAccount, model?: string): number {
 function isAccountUsableFor(a: ClaudeAccount, model?: string, allowExtraUsage?: boolean): boolean {
   if (isExhausted(a.id) || isModelExhausted(a.id, model)) return false;
   const usage = usageCache.get(a.id);
-  const fiveHour = usage?.fiveHour?.utilization ?? 0;
+  const fiveHour = currentUtilization(usage?.fiveHour);
   const scoped = scopedLimitForModel(usage, model);
   if (
     fiveHour < EXHAUSTED_UTILIZATION &&
@@ -745,4 +772,98 @@ export function markExhausted(id: string, model?: string): void {
     `[claude-accounts] ${account?.name || id}${model ? ` (${model})` : ""} marked exhausted until ${new Date(until).toISOString()}`
   );
   if (account) void refreshAccountUsage(account);
+}
+
+// ── Dry-pool backpressure ────────────────────────────────────────────────────
+
+/**
+ * Earliest known time an account that could serve (user, model) comes back
+ * into the pool: the min over every candidate's sideline timestamps and its
+ * cached usage-window resets. Candidates are the shared pool plus the user's
+ * own personal subs — the same set pickAccount draws from. Returns Date.now()
+ * when something is usable right now, null when NO candidate exists at all
+ * (none configured, or only other people's personal accounts — nothing to
+ * wait for), and falls back to now + DEFAULT_EXHAUST_MS when every candidate
+ * is sidelined without a known reset.
+ */
+export function earliestPoolReset(user?: string, model?: string): number | null {
+  const now = Date.now();
+  const candidates = readStore().filter(
+    (a) => !a.owner || (!!user && userMatchesAny(user, [a.owner]))
+  );
+  if (candidates.length === 0) return null;
+  let min: number | null = null;
+  const consider = (t: number | null | undefined) => {
+    if (typeof t === "number" && Number.isFinite(t) && t > now && (min === null || t < min)) {
+      min = t;
+    }
+  };
+  for (const a of candidates) {
+    if (isAccountUsableFor(a, model)) return now;
+    consider(exhaustedUntil.get(a.id));
+    if (model) consider(modelExhaustedUntil.get(modelExhaustionKey(a.id, model)));
+    const usage = usageCache.get(a.id);
+    if (usage?.fiveHour?.resetsAt) consider(Date.parse(usage.fiveHour.resetsAt));
+    const scoped = scopedEntryForModel(usage, model);
+    if (scoped?.resetsAt) consider(Date.parse(scoped.resetsAt));
+  }
+  return min ?? now + DEFAULT_EXHAUST_MS;
+}
+
+/** One global throttle for the dry-pool usage refresh: many runs wait on the
+ *  same dry pool at once, and the usage endpoint rate-limits aggressively —
+ *  they must share one refresh, not each mint their own. */
+let lastDryPoolRefreshAt = 0;
+const DRY_POOL_REFRESH_MS = 5 * 60 * 1000;
+
+async function refreshSidelinedAccounts(user?: string, model?: string): Promise<void> {
+  if (Date.now() - lastDryPoolRefreshAt < DRY_POOL_REFRESH_MS) return;
+  lastDryPoolRefreshAt = Date.now();
+  for (const a of readStore()) {
+    if (a.owner && !(user && userMatchesAny(user, [a.owner]))) continue;
+    if (a.usageScope === "missing" && !a.credentialsPath) continue;
+    if (isAccountUsableFor(a, model)) continue;
+    // Sequential on purpose — see refreshAllUsage.
+    await refreshAccountUsage(a);
+  }
+}
+
+/**
+ * Backpressure for a dry pool: instead of the caller aborting the run the
+ * instant no account is usable (the 2026-07-14 cascade — 117 aborts in a
+ * day), poll `pick` until it yields an account or the budget runs out.
+ * Recovery comes from three directions while we wait: sideline timestamps
+ * expire on their own, `currentUtilization` frees accounts the moment their
+ * cached window's resetsAt passes, and a throttled usage refresh catches
+ * early recoveries. Returns null immediately when there is nothing to wait
+ * for (no candidate accounts) or the earliest known reset is beyond the
+ * budget — callers should fall through to their existing failure path.
+ */
+export async function waitForUsableAccount(opts: {
+  pick: () => ClaudeAccount | null;
+  user?: string;
+  model?: string;
+  maxWaitMs: number;
+  pollMs?: number;
+  onWaitStart?: (earliestReset: number) => void;
+}): Promise<ClaudeAccount | null> {
+  const { pick, user, model, maxWaitMs } = opts;
+  if (maxWaitMs <= 0) return null;
+  const reset = earliestPoolReset(user, model);
+  if (reset === null) return null;
+  const deadline = Date.now() + maxWaitMs;
+  if (reset > deadline) return null;
+  opts.onWaitStart?.(reset);
+  // Jittered poll so a fleet of waiters doesn't stampede the picker (and the
+  // freed account) in lockstep the moment a reset lands.
+  const pollMs = opts.pollMs ?? 15_000 + Math.floor(Math.random() * 10_000);
+  while (Date.now() < deadline) {
+    await refreshSidelinedAccounts(user, model).catch(() => {});
+    const picked = pick();
+    if (picked) return picked;
+    const remaining = deadline - Date.now();
+    if (remaining <= 1000) break;
+    await new Promise((r) => setTimeout(r, Math.min(pollMs, remaining)));
+  }
+  return null;
 }
