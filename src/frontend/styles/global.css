@@ -14809,6 +14809,11 @@ html[data-theme="light"] .palette-card .palette-create {
 	margin-left: auto;
 	min-width: 34px;
 	text-align: right;
+	/* On touch this badge is display:flex (the hover-none rule below), which
+	   nullifies text-align:right and left-aligns the digits inside the 34px
+	   min-width box — leaving them ~20px short of the header icons. Pin the
+	   digits to the box's right edge so they land flush under those icons. */
+	justify-content: flex-end;
 	font-size: 10.5px;
 	color: var(--text-faint);
 }
@@ -14845,6 +14850,9 @@ html[data-theme="light"] .palette-card .palette-create {
 	margin-left: auto;
 	min-width: 34px;
 	text-align: right;
+	/* Same as .sidebar-ws-time: this is a flex box on touch, so pin the digits
+	   to the right edge (text-align:right is ignored on a flex container). */
+	justify-content: flex-end;
 	font-size: 10.5px;
 	font-variant-numeric: tabular-nums;
 	color: var(--yellow);
