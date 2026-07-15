@@ -722,6 +722,15 @@ const ASK_EXTERNAL_DIR_PERMISSIONS: Record<string, "allow" | "deny"> = {
   // those nested paths, so allow the whole subtree (deny catch-all is first,
   // last-match-wins). It's a throwaway scratch dir, no security surface.
   "/tmp/opencode/**": "allow",
+  // SEO loop state (pending.jsonl / learnings.md): the SEO Validation
+  // automation runs in ask mode but its whole job is reading and appending
+  // these box-local files (see src/agents/loops/seo.ts). The shell tool also
+  // routes command arg paths through this permission, so this covers both the
+  // Read tool and bash cat/append. Nothing sensitive lives here. Both the
+  // canonical dir and the legacy ~/.backstage-seo symlink spelling are
+  // allowed — opencode matches the path as written, without resolving links.
+  [`${stateDir("seo")}/**`]: "allow",
+  [`${process.env.HOME || "/home/ubuntu"}/.backstage-seo/**`]: "allow",
 };
 
 const CONFIRM_TOOL_RE = /^mcp__(.+)__(.+)$/;
