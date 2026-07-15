@@ -1026,6 +1026,7 @@ export function WorkspaceInfo({
 		() => overviewCache.get(cacheKey)?.data ?? null,
 	);
 	const [promptExpanded, setPromptExpanded] = useState(false);
+	const [commentsExpanded, setCommentsExpanded] = useState(false);
 	const [pr, setPr] = useState<PrDetails | null>(null);
 	const [files, setFiles] = useState<DiffFile[] | null>(null);
 	// The primary repo's raw patch, kept so the file rows can hover-reveal the
@@ -1042,6 +1043,7 @@ export function WorkspaceInfo({
 		const cached = overviewCache.get(cacheKey);
 		setData(cached?.data ?? null);
 		setPromptExpanded(false);
+		setCommentsExpanded(false);
 		// Fresh cache → refresh quietly in the background after a beat (also
 		// debounces the liveMediaCount bumps during a streaming run).
 		const t = setTimeout(
@@ -1236,25 +1238,27 @@ export function WorkspaceInfo({
 								)}
 							</div>
 							<div className="workspace-info-comments">
-								{comments
-									.slice(-COMMENT_PREVIEW)
-									.reverse()
-									.map((c, i) => (
-										<CommentCard
-											key={c.url || `${c.author}:${i}`}
-											comment={c}
-											pr={pr!}
-											onOpenTab={onOpenTab}
-											onAddToInput={onAddToInput}
-										/>
-									))}
+								{(commentsExpanded
+									? comments.slice().reverse()
+									: comments.slice(-COMMENT_PREVIEW).reverse()
+								).map((c, i) => (
+									<CommentCard
+										key={c.url || `${c.author}:${i}`}
+										comment={c}
+										pr={pr!}
+										onOpenTab={onOpenTab}
+										onAddToInput={onAddToInput}
+									/>
+								))}
 								{comments.length > COMMENT_PREVIEW && (
 									<button
 										type="button"
 										className="workspace-info-more"
-										onClick={() => onOpenTab?.("pr")}
+										onClick={() => setCommentsExpanded((v) => !v)}
 									>
-										View all {comments.length} comments →
+										{commentsExpanded
+											? "Show fewer comments"
+											: `View all ${comments.length} comments`}
 									</button>
 								)}
 							</div>
