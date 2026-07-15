@@ -1450,12 +1450,14 @@ body.resizing-x {
    follows takes the trailing space instead. */
 .sidebar-status-group .sidebar-group-count,
 .sidebar-group--pinned .sidebar-group-count,
+.sidebar-group--review .sidebar-group-count,
 .sidebar-archived-row .sidebar-group-count {
 	margin-left: 0;
 	padding-right: 0;
 }
 .sidebar-status-group .sidebar-group-chevron,
-.sidebar-group--pinned .sidebar-group-chevron {
+.sidebar-group--pinned .sidebar-group-chevron,
+.sidebar-group--review .sidebar-group-chevron {
 	margin-left: auto;
 }
 
