@@ -12385,6 +12385,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.sidebar-list {
 		flex: none;
 		overflow-y: visible;
+		/* The floating top bar uses a 12px right inset (.app-header-overlay),
+		   not the sidebar's desktop 18px (10px here + 8px on .sidebar-item), so
+		   the trailing times/counts landed 6px short of the header's
+		   filter/search icons. Drop the list's right padding to 4px (4 + 8 = 12)
+		   so the whole right column sits flush under those icons — the
+		   "trailing times flush-right under the header buttons" the base
+		   .sidebar-list rule is after. */
+		padding-right: 4px;
 	}
 
 	/* One horizontally-scrollable line of tap cards (Slack-home style) rather
