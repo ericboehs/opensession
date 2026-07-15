@@ -951,9 +951,11 @@ function ReviewerChip({
 				}
 			>
 				{accepted ? (
-					<span className="wi-chip-icon">
-						<IconCheck size={20} />
-					</span>
+					<UserAvatar name={accepted.by} size={20}>
+						<span className="wi-chip-avatar-check">
+							<IconCheck size={12} />
+						</span>
+					</UserAvatar>
 				) : req ? (
 					<UserAvatar name={req.to} size={20} />
 				) : (

@@ -3138,6 +3138,26 @@ body.resizing-x {
 	object-fit: cover;
 }
 
+/* Small "reviewed" checkmark badge nested over the reviewer's avatar in the
+   green Reviewed chip — bottom-right, ringed against the chip tint. */
+.wi-chip-avatar-check {
+	position: absolute;
+	right: -3px;
+	bottom: -3px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 13px;
+	height: 13px;
+	border-radius: 50%;
+	color: #fff;
+	background: var(--green, #16a34a);
+	box-shadow: 0 0 0 1.5px var(--bg-panel);
+}
+.wi-chip-avatar-check svg {
+	display: block;
+}
+
 /* presence facepile (the Figma/Notion-style user row before Share) */
 .presence {
 	display: flex;
