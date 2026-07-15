@@ -1250,7 +1250,44 @@ function GitStatusRows({
     }
   }
 
-  const rows: Array<{ key: string; label: string; tone: string; action?: React.ReactNode }> = [];
+  const rows: Array<{
+    key: string;
+    label: string;
+    tone: string;
+    strong?: boolean;
+    action?: React.ReactNode;
+  }> = [];
+
+  // Base-sync (rebase) status — lead with it so the panel answers "am I behind
+  // main?" at a glance. Shown for any real feature branch (not the base branch
+  // itself, not a merged PR): a reassuring green "up to date" when in sync, and
+  // a prominent yellow "N behind" with a one-click Update (rebase) when not.
+  if (git && git.branch && git.branch !== base && pr?.state !== "MERGED") {
+    const behind = git.behindBase;
+    rows.push({
+      key: "base-sync",
+      label:
+        behind > 0
+          ? `${behind} commit${behind === 1 ? "" : "s"} behind ${base}`
+          : `Up to date with ${base}`,
+      tone: behind > 0 ? "yellow" : "green",
+      strong: behind > 0,
+      action:
+        behind > 0 && send ? (
+          <button
+            className="prc-action"
+            onClick={() =>
+              promptSession(
+                "update from " + base,
+                `Update this branch with the latest origin/${base} (rebase preferred), resolve any conflicts, and push.`,
+              )
+            }
+          >
+            Update
+          </button>
+        ) : undefined,
+    });
+  }
 
   if (!pr && git) {
     rows.push({
@@ -1321,33 +1358,12 @@ function GitStatusRows({
       ),
     });
   }
-  if (git && git.behindBase > 0 && pr?.state !== "MERGED") {
-    rows.push({
-      key: "behind",
-      label: `${git.behindBase} commit${git.behindBase === 1 ? "" : "s"} behind ${base}`,
-      tone: "muted",
-      action: send && (
-        <button
-          className="prc-action"
-          onClick={() =>
-            promptSession(
-              "update from " + base,
-              `Update this branch with the latest origin/${base} (rebase preferred), resolve any conflicts, and push.`,
-            )
-          }
-        >
-          Update
-        </button>
-      ),
-    });
-  }
-
   if (rows.length === 0) return null;
 
   return (
     <>
       {rows.map((row) => (
-        <div key={row.key} className="prc-git-row">
+        <div key={row.key} className={`prc-git-row${row.strong ? " prc-git-row-strong" : ""}`}>
           <span className={`prc-git-dot prc-tone-${row.tone}`} />
           <span className="prc-git-label">{row.label}</span>
           {row.action}

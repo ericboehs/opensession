@@ -6732,6 +6732,11 @@ a.workspace-info-check-row {
 	font-size: 13px;
 	color: var(--text-dim);
 }
+/* Attention row (e.g. behind main) — lift the label out of the dim tone. */
+.prc-git-row-strong .prc-git-label {
+	color: var(--text);
+	font-weight: 550;
+}
 .prc-git-dot {
 	width: 7px;
 	height: 7px;
