@@ -513,6 +513,8 @@ interface PrInfo {
   author: string;
   updatedAt: string;
   checks: PrChecksSummary;
+  /** MERGEABLE | CONFLICTING | UNKNOWN — GitHub's async conflict probe. */
+  mergeable: string;
   /** Person keys ("kent") of teammates with a pending review request. */
   reviewRequested: string[];
   /** Assignee GitHub logins — bot-authored PRs carry the requester here. */
@@ -691,6 +693,7 @@ async function refreshPrCache(): Promise<void> {
         author: pr.author?.login || pr.author?.name || "",
         updatedAt: pr.updatedAt || "",
         checks: checksByNumber.get(pr.number) || { total: 0, passed: 0, failed: 0, pending: 0 },
+        mergeable: pr.mergeable || "UNKNOWN",
         // Individual review requests only — team requests ("Infra reviewers")
         // have no login and we can't cheaply resolve their membership.
         reviewRequested: (pr.reviewRequests || [])
@@ -838,6 +841,7 @@ export function getAllSessions(): UnifiedSession[] {
       if (pr) {
         session.prUrl = pr.url;
         session.prState = pr.state;
+        session.prMergeable = pr.mergeable;
         session.prNumber = pr.number;
         session.prTitle = pr.title;
         session.prIsDraft = pr.isDraft;

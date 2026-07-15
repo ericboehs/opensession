@@ -3110,7 +3110,7 @@ export function SessionViewer({
 										Review
 										{session.prState && (
 											<span
-												className={`panel-tab-dot pr-dot-${session.prState.toLowerCase()}`}
+												className={`panel-tab-dot ${session.prState === "OPEN" && session.prMergeable === "CONFLICTING" ? "pr-dot-conflict" : `pr-dot-${session.prState.toLowerCase()}`}`}
 											/>
 										)}
 									</button>

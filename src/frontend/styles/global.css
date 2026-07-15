@@ -4035,6 +4035,9 @@ body.resizing-x .panel-resize::after {
 .pr-dot-closed {
 	background: var(--red);
 }
+.pr-dot-conflict {
+	background: var(--yellow);
+}
 
 .panel-close {
 	background: none;

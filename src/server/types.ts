@@ -47,6 +47,8 @@ export interface UnifiedSession {
   transcriptPath: string | null;
   prUrl?: string;
   prState?: "OPEN" | "MERGED" | "CLOSED";
+  /** MERGEABLE | CONFLICTING | UNKNOWN — GitHub's async conflict probe. */
+  prMergeable?: string;
   // Rich PR fields, populated from the batched gh pr list for the Reviews
   // table's columns (so the list never fetches per-PR).
   prNumber?: number;
