@@ -567,6 +567,26 @@ function summarizeChecks(rollup: RollupCheck[] | undefined): PrChecksSummary {
   return summary;
 }
 
+// GitHub only populates a PR's `reviewDecision` when branch protection *requires*
+// a review. tella-fusion has no such rule, so reviewDecision comes back "" even
+// after a teammate approves — which left approved-but-unmerged PRs stuck in the
+// sidebar's "Awaiting review" band forever (it clears only on APPROVED or MERGED).
+// Derive an effective decision from the actual latest review per reviewer,
+// matching GitHub's own precedence: any outstanding CHANGES_REQUESTED blocks,
+// otherwise any APPROVED counts. COMMENTED / DISMISSED / PENDING don't decide.
+// Used only as a fallback — a real reviewDecision (branch-protected repos) wins.
+function deriveReviewDecision(
+  latestReviews: Array<{ state?: string }> | undefined,
+): string {
+  let approved = false;
+  for (const r of latestReviews || []) {
+    const s = (r.state || "").toUpperCase();
+    if (s === "CHANGES_REQUESTED") return "CHANGES_REQUESTED";
+    if (s === "APPROVED") approved = true;
+  }
+  return approved ? "APPROVED" : "";
+}
+
 // Stale-while-revalidate: never block the event loop on gh (it takes ~10s on
 // fusion, which used to freeze every agent in the process).
 function getPrsByRepo(): Map<string, Map<string, PrInfo>> {
@@ -595,9 +615,15 @@ async function refreshPrCache(): Promise<void> {
       reviewDecision: string; author?: { login?: string; name?: string }; updatedAt: string;
       reviewRequests?: Array<{ login?: string; name?: string; slug?: string }>;
       assignees?: Array<{ login?: string }>;
+      // MERGEABLE | CONFLICTING | UNKNOWN. GitHub computes this asynchronously,
+      // so a freshly-pushed PR reads UNKNOWN until the background probe lands —
+      // the 60s SWR refresh picks up the real value. `mergeable` is a cheap PR
+      // enum (unlike statusCheckRollup), so it's safe to add to the bulk list;
+      // mergeStateStatus is NOT a `gh pr list` field (detail-only), don't add it.
+      mergeable?: string;
     };
     const FIELDS =
-      "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,updatedAt,reviewRequests,assignees";
+      "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,updatedAt,reviewRequests,assignees,mergeable";
 
     // A session's branch is matched against open PRs, so we must see EVERY open
     // PR — not just the newest N. Fusion carries 200+ open PRs at a time, so a
@@ -611,7 +637,7 @@ async function refreshPrCache(): Promise<void> {
     // PRs (the ones a reviewer actually triages); others show no checks column.
     const next = new Map<string, Map<string, PrInfo>>();
     await Promise.all(prRepos().map(async (repo) => {
-      const [openPrs, recentAll, rollups] = await Promise.all([
+      const [openPrs, recentAll, rollups, reviews] = await Promise.all([
         ghJson<BulkPr[]>([
           "pr", "list", "--repo", repo.ghRepo, "--state", "open",
           "--limit", String(repo.openLimit), "--json", FIELDS,
@@ -623,6 +649,14 @@ async function refreshPrCache(): Promise<void> {
         ghJson<Array<{ number: number; statusCheckRollup?: RollupCheck[] }>>([
           "pr", "list", "--repo", repo.ghRepo, "--state", "open",
           "--limit", String(repo.rollupLimit), "--json", "number,statusCheckRollup",
+        ]),
+        // Review state per open PR, to fill in an approval GitHub won't report
+        // via reviewDecision (see deriveReviewDecision). latestReviews is cheap
+        // (~4s across every open PR, unlike statusCheckRollup), so it covers the
+        // full open window rather than a scoped slice.
+        ghJson<Array<{ number: number; latestReviews?: Array<{ state?: string }> }>>([
+          "pr", "list", "--repo", repo.ghRepo, "--state", "open",
+          "--limit", String(repo.openLimit), "--json", "number,latestReviews",
         ]),
       ]);
 
@@ -638,6 +672,12 @@ async function refreshPrCache(): Promise<void> {
         checksByNumber.set(r.number, summarizeChecks(r.statusCheckRollup));
       }
 
+      const reviewByNumber = new Map<number, string>();
+      for (const r of reviews || []) {
+        const decision = deriveReviewDecision(r.latestReviews);
+        if (decision) reviewByNumber.set(r.number, decision);
+      }
+
       const toInfo = (pr: BulkPr): PrInfo => ({
         url: pr.url,
         state: pr.state as PrInfo["state"],
@@ -647,7 +687,7 @@ async function refreshPrCache(): Promise<void> {
         additions: pr.additions || 0,
         deletions: pr.deletions || 0,
         changedFiles: pr.changedFiles || 0,
-        reviewDecision: pr.reviewDecision || "",
+        reviewDecision: pr.reviewDecision || reviewByNumber.get(pr.number) || "",
         author: pr.author?.login || pr.author?.name || "",
         updatedAt: pr.updatedAt || "",
         checks: checksByNumber.get(pr.number) || { total: 0, passed: 0, failed: 0, pending: 0 },
