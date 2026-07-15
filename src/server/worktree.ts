@@ -128,6 +128,27 @@ export async function installWorktreeDeps(repo: Repo, wtPath: string, branchLabe
   try {
     if (repo.id === "tella-fusion") {
       await seedWebappEnv(`${wtPath}/packages/core/webapp`);
+      // .envrc is gitignored (it derives gst.env at direnv time), so fresh
+      // worktrees lack it and `direnv exec . just dev` starts with a broken
+      // env. Seed it from the main checkout, same as .env.local.
+      try {
+        if (
+          !(await Bun.file(`${wtPath}/.envrc`).exists()) &&
+          (await Bun.file(`${repo.repo}/.envrc`).exists())
+        ) {
+          await Bun.write(`${wtPath}/.envrc`, Bun.file(`${repo.repo}/.envrc`));
+        }
+      } catch (e) {
+        console.warn(`[worktree] .envrc seed failed for ${branchLabel} (continuing):`, e);
+      }
+      // The static codec crates (x264-static, fdk-aac-static) build from
+      // submodule sources; a fresh worktree has those dirs empty, so cargo
+      // builds can't validate. Shallow + best-effort.
+      try {
+        await $`git -C ${wtPath} submodule update --init --depth 1`.quiet();
+      } catch (e) {
+        console.warn(`[worktree] submodule init failed for ${branchLabel} (continuing):`, e);
+      }
     }
     if (repo.depsInstall) {
       await $`sh -c ${repo.depsInstall}`.cwd(wtPath).quiet();

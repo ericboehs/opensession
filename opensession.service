@@ -3,7 +3,11 @@ Description=OpenSession - agent session dashboard
 After=network.target
 
 [Service]
-Environment="PATH=/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# .cargo/bin: opencodeEnv()/host-client pass this PATH straight through to
+# engine subprocesses, and tella-fusion code sessions need cargo/rustup on it
+# to build/validate Rust (dev pipeline runs `cargo watch`). Interactive shells
+# get it from the login profile; the service must carry it explicitly.
+Environment="PATH=/home/ubuntu/.cargo/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/projects/tella-backstage
