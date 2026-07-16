@@ -1414,6 +1414,17 @@ export function WorkspaceInfo({
 				/>
 					<SandboxBadge sandbox={sandbox} />
 				</div>
+				{repo && (
+					<button
+						type="button"
+						className="workspace-info-review-btn"
+						onClick={() => onOpenTab?.("pr")}
+						title="Open the full-width review"
+					>
+						<IconPullRequest />
+						Review changes
+					</button>
+				)}
 				{pr?.number && repo === "tella-fusion" && (
 					<PrAgentActions
 							sessionId={sessionId}
