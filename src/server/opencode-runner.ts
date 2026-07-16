@@ -2499,6 +2499,13 @@ async function* runOpencodeAttempt(
     let wake: (() => void) | null = null;
     let idle = false; // session went idle = turn finished
     let sessionError: string | undefined;
+    // Last engine-session abort WE issued this attempt (liveness guard, usage-
+    // limit fast-fail, turn deadline). A rotation/respawn retry re-prompts the
+    // SAME engine session, so the retry must wait for this to land first — an
+    // unawaited abort arriving after the retry's turn starts kills it ~100ms in
+    // (MessageAbortedError) and the turn ends as an empty phantom success
+    // (2026-07-16 bks-019f6c33).
+    let engineAbortInFlight: Promise<unknown> | null = null;
     const emittedText = new Set<string>();
     const startedTools = new Set<string>();
     const finishedTools = new Set<string>();
@@ -2546,7 +2553,9 @@ async function* runOpencodeAttempt(
         runFailure = `${
           subIssue ? "Claude subscription issue" : "Claude usage limit"
         } on account "${bridgeAccountLabel}": ${message.slice(0, 300)}`;
-        void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
+        engineAbortInFlight = client.session
+          .abort({ path: { id: ocSessionId }, ...q })
+          .catch(() => {});
         signalDone();
       }
     };
@@ -2818,7 +2827,9 @@ async function* runOpencodeAttempt(
       runFailure ??=
         `opencode turn exceeded the ${Math.round(turnTimeout / 60_000)}-minute wall-clock limit ` +
         "(turnTimeoutMinutes in ~/.opensession-opencode.json) — aborting the turn";
-      void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
+      engineAbortInFlight = client.session
+        .abort({ path: { id: ocSessionId }, ...q })
+        .catch(() => {});
       signalDone();
     }, turnTimeout);
 
@@ -2842,7 +2853,9 @@ async function* runOpencodeAttempt(
               `${lastProviderRetryError.slice(0, 300)}; aborting`
             : `opencode ${parsed.providerID} run produced no output within ${LIVENESS_MS / 1000}s — ` +
               `the engine bridge on account "${bridgeAccountLabel}" went silent (wedged proxy or auth hang); aborting`;
-          void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
+          engineAbortInFlight = client.session
+            .abort({ path: { id: ocSessionId }, ...q })
+            .catch(() => {});
           signalDone();
         }, LIVENESS_MS)
       : undefined;
@@ -2930,6 +2943,17 @@ async function* runOpencodeAttempt(
     // final-message fetch below would just throw a raw fetch error on a dead
     // server) and let the finally cleanup release the session.
     if (runFailure) {
+      // Fence any abort we fired before a rotation/respawn retry re-prompts
+      // the same engine session — a stale abort landing after the retry's turn
+      // starts kills it instantly. Bounded so a hung server can't stall the
+      // retry indefinitely.
+      if (engineAbortInFlight) {
+        await Promise.race([
+          engineAbortInFlight,
+          new Promise((resolve) => setTimeout(resolve, 5_000)),
+        ]);
+        engineAbortInFlight = null;
+      }
       // Claude usage limit on the meridian account: sideline it (model-scoped
       // for credit-metered models like Fable — see markExhausted) and, when
       // another eligible account exists, ask the wrapper for one retry on it
@@ -3073,6 +3097,30 @@ async function* runOpencodeAttempt(
       return;
     }
     if (abortController.signal.aborted) return;
+
+    // MessageAbortedError is exempted from the error path above so user
+    // cancels end quietly — but reaching here NOT via our abortController with
+    // zero output means the engine turn was killed externally (e.g. a stale
+    // abort from a previous attempt). Reporting success would show the user a
+    // silently-dead turn ("Done! (no text output)"); retry once instead, then
+    // surface an honest error.
+    if (info?.error?.name === "MessageAbortedError" && !textOut) {
+      const abortedMsg =
+        `opencode engine turn was aborted externally before producing output ` +
+        `on account "${bridgeAccountLabel}"`;
+      if (rotation && attemptIndex === 0) {
+        turnEvent({ direction: "out", kind: "server_respawn_retry", error: abortedMsg });
+        bridgeRunEnd("error", abortedMsg);
+        rotation.rotate = true;
+        rotation.note =
+          "Engine turn was aborted externally before producing output — retrying once.";
+        return;
+      }
+      turnEvent({ direction: "out", kind: "error", error: abortedMsg });
+      bridgeRunEnd("error", abortedMsg);
+      yield { type: "error", content: abortedMsg, provider: PROVIDER, model };
+      return;
+    }
 
     const tokens = info?.tokens;
     const usage: TurnUsage | undefined = tokens
