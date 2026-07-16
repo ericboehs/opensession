@@ -8,7 +8,7 @@
 
 import type { RouteContext } from "./context";
 import { AUTOMATION_TEMPLATES } from "../automation-templates";
-import { createAutomation, deleteAutomation, getAutomation, isAutomationRunning, listAutomations, runAutomation, updateAutomation } from "../automations";
+import { createAutomation, deleteAutomation, getAutomation, isAutomationRunning, listAutomations, retriggerAutomationSession, runAutomation, updateAutomation } from "../automations";
 import { draftAutomation } from "../draft-automation";
 import { invalidateSessionsCache } from "../session-cache";
 
@@ -69,6 +69,19 @@ export async function handleAutomationsRoutes(
 			invalidateSessionsCache();
 		});
 		return Response.json({ ok: true });
+	}
+
+	// Re-fire an automation with the original triggering event of one of its
+	// past runs — the HTTP twin of the Slack thread-reply "retrigger". Body:
+	// {sessionId} of the automation-owned session whose event to replay.
+	if (path === "/backstage/api/automations/retrigger" && req.method === "POST") {
+		const body = await req.json().catch(() => null);
+		if (!body || typeof body.sessionId !== "string")
+			return Response.json({ error: "sessionId required" }, { status: 400 });
+		const result = retriggerAutomationSession(body.sessionId);
+		if (!result.ok) return Response.json({ error: result.reason }, { status: 400 });
+		invalidateSessionsCache();
+		return Response.json(result);
 	}
 
 	const autoMatch = path.match(/^\/backstage\/api\/automations\/([^/]+)$/);
