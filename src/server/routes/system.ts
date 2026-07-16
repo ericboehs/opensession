@@ -1,5 +1,5 @@
 /**
- * Health check, in-process frontend rebuild, HTTP upload staging, audit-log viewer.
+ * Health check, macropad keypad feed, in-process frontend rebuild, HTTP upload staging, audit-log viewer.
  *
  * Extracted verbatim from the opensession.ts fetch chain. Every handler
  * returns a Response for a matched route or undefined to fall through to the
@@ -12,6 +12,9 @@ import type { RouteContext } from "./context";
 import { activeAgentRunCount } from "../agent-runner";
 import { getAgents } from "../agents-registry";
 import { IS_DEV, buildFrontend, frontend } from "../frontend-build";
+import { getPins } from "../pins";
+import { runErrors } from "../session-cache";
+import { getSessionControl } from "../session-control";
 import { MAX_UPLOAD_BYTES, stageHttpUpload } from "../uploads";
 import { BOOT_ID, broadcastToAll } from "../ws-hub";
 
@@ -77,6 +80,45 @@ export async function handleSystemRoutes(
 			agents: agentHealth,
 			system: systemStats(),
 		});
+	}
+
+	// ── Macropad status feed ──
+	// A user's pinned sessions (pinned order, max 8) with a coarse status per
+	// key, for a hardware keypad. Polled ~every 1.5s, so it only touches
+	// in-memory state: the per-user pins file plus the 2s session cache behind
+	// SessionControl. Same auth posture as /api/health (none — network-gated).
+	if (path === "/backstage/api/keypad" && req.method === "GET") {
+		const user = url.searchParams.get("user") || "Anonymous";
+		const control = getSessionControl();
+		const sessions: Array<{
+			id: string;
+			title: string;
+			status: "idle" | "working" | "needs_input" | "done" | "error";
+		}> = [];
+		for (const key of getPins(user)) {
+			if (sessions.length >= 8) break;
+			// Pins also hold workspace rows (`workspace:<id>`) — not sessions.
+			if (key.startsWith("workspace:")) continue;
+			const s = control.getSession(key);
+			if (!s || s.state === "archived") continue;
+			// A queued prompt means the session is about to run — show it as
+			// working, same as taskStateOf (sessions-tools.ts). An engine session
+			// id means it has run before, so an idle session with one is "done";
+			// without one it's a fresh pinned chat that never ran.
+			const lastRunError = runErrors.get(s.id) || s.lastRunError;
+			const status =
+				s.state === "waiting_question"
+					? "needs_input"
+					: s.state === "running" || s.state === "queued"
+						? "working"
+						: lastRunError
+							? "error"
+							: s.claudeSessionId || s.codexThreadId || s.opencodeSessionId
+								? "done"
+								: "idle";
+			sessions.push({ id: s.id, title: s.title || "Untitled", status });
+		}
+		return Response.json({ sessions });
 	}
 
 	// Rebuild the frontend bundle in-process (no restart → live runs untouched).
