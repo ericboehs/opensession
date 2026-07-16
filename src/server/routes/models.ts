@@ -7,7 +7,7 @@
  */
 
 import type { RouteContext } from "./context";
-import { KNOWN_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, modelEfforts, setDefaultModel, setModelFallbackAuto } from "../models";
+import { KNOWN_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, modelEfforts, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
 import { envAlias } from "../rename-compat";
 import { type Sandbox } from "../sandbox";
 import { sandboxCapabilityStatus } from "../sandbox/config";
@@ -140,15 +140,23 @@ export async function handleModelsRoutes(
 	// Set (or clear, with model:null) the default model new sessions run on.
 	if (path === "/backstage/api/models/default" && req.method === "PUT") {
 		const body = await req.json().catch(() => null);
-		if (!body || !("model" in body)) {
+		// Two independent knobs: `model` = the global default (Slack/Linear/
+		// Plain loops, workflows); `interactiveModel` = what NEW interactive
+		// sessions start on (the composer's preselected row — dial ids OK).
+		if (!body || (!("model" in body) && !("interactiveModel" in body))) {
 			return Response.json(
-				{ error: "model is required (id, or null to clear)" },
+				{ error: "model or interactiveModel is required (id, or null to clear)" },
 				{ status: 400 },
 			);
 		}
 		try {
-			const next = setDefaultModel(body.model ?? null);
-			return Response.json({ default: next });
+			if ("model" in body) setDefaultModel(body.model ?? null);
+			if ("interactiveModel" in body)
+				setInteractiveDefaultModel(body.interactiveModel ?? null);
+			return Response.json({
+				default: getDefaultModel(),
+				interactiveDefault: interactiveDefaultModel(),
+			});
 		} catch (e: any) {
 			return Response.json(
 				{ error: e?.message || "Failed to set default model" },

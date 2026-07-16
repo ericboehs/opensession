@@ -17,7 +17,7 @@ import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { parseTranscript, parseTranscriptTail } from "./jsonl-parser";
-import { dialPreset, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
+import { dialPreset, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
 import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { wrapContext } from "./prompt-context";
 import { deleteQueuedPrompt, persistQueues, promptQueues, queueWithIds, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, updateQueuedPrompt } from "./queue-state";
@@ -589,12 +589,14 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					? forkSource.mode !== "code"
 					: mode === "ask";
 				// Optional model pick from the UI; invalid input falls back to default.
-				// A fork inherits the source's model.
+				// A fork inherits the source's model. No pick = stamp the interactive
+				// default NOW: leaving it empty would let the init event persist the
+				// engine's resolved model — which for a dial default would silently
+				// disengage the dial (the preset id must be what the session stores).
 				const model = forkSource
 					? forkSource.model
-					: msg.model
-						? resolveModel(String(msg.model))?.id
-						: undefined;
+					: (msg.model ? resolveModel(String(msg.model))?.id : undefined) ||
+						interactiveDefaultModel();
 				// Reasoning effort from the New-session palette (forks inherit).
 				const createEffort = forkSource
 					? forkSource.effort

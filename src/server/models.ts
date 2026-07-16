@@ -358,6 +358,12 @@ const FALLBACK_DESTINATIONS = [
  * (MICHAEL_MODEL accepted as a deprecated alias) →
  * DEFAULT_CLAUDE_MODEL. Stored as { model: "<id>" | null } in this file.
  */
+/** Stored as { model, interactiveModel? }: `model` is the GLOBAL default every
+ *  consumer of getDefaultModel() sees (Slack/Linear/Plain loops, workflows);
+ *  `interactiveModel` overrides what NEW interactive sessions (the composer's
+ *  preselected row) start on, without touching those loops. Dial preset ids
+ *  are valid here — interactiveDefaultModel returns them unresolved so the
+ *  session stores `dial/<tier>` and keeps its oracle+effort. */
 const DEFAULT_MODEL_STORE = stateDir("default-model.json");
 const FALLBACK_AUTO_STORE = stateDir("model-fallback.json");
 const CODEX_MODEL_EXHAUST_MS = 60 * 60 * 1000;
@@ -365,21 +371,41 @@ const codexModelExhaustedUntil = new Map<string, number>();
 
 // undefined = not yet loaded from disk; null = no override set.
 let overrideCache: string | null | undefined;
+let interactiveOverrideCache: string | null | undefined;
 
-function loadOverride(): string | null {
-  if (overrideCache !== undefined) return overrideCache;
+function loadStoredDefault(field: "model" | "interactiveModel"): string | null {
   try {
     if (existsSync(DEFAULT_MODEL_STORE)) {
       const raw = JSON.parse(readFileSync(DEFAULT_MODEL_STORE, "utf8"));
-      const id = typeof raw?.model === "string" ? raw.model.trim() : "";
-      overrideCache = id && resolveModel(id) ? resolveModel(id)!.id : null;
-    } else {
-      overrideCache = null;
+      const id = typeof raw?.[field] === "string" ? raw[field].trim() : "";
+      return id && resolveModel(id) ? resolveModel(id)!.id : null;
     }
-  } catch {
-    overrideCache = null;
-  }
+  } catch {}
+  return null;
+}
+
+function loadOverride(): string | null {
+  if (overrideCache === undefined) overrideCache = loadStoredDefault("model");
   return overrideCache;
+}
+
+function loadInteractiveOverride(): string | null {
+  if (interactiveOverrideCache === undefined) {
+    interactiveOverrideCache = loadStoredDefault("interactiveModel");
+  }
+  return interactiveOverrideCache;
+}
+
+/** Read-modify-write so the two default fields never clobber each other. */
+function patchDefaultModelStore(patch: Record<string, string | null>): void {
+  let raw: Record<string, unknown> = {};
+  try {
+    if (existsSync(DEFAULT_MODEL_STORE)) {
+      const parsed = JSON.parse(readFileSync(DEFAULT_MODEL_STORE, "utf8"));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) raw = parsed;
+    }
+  } catch {}
+  writeJsonAtomic(DEFAULT_MODEL_STORE, { ...raw, ...patch });
 }
 
 /**
@@ -400,14 +426,35 @@ export function setDefaultModel(input: string | null): string {
   if (input === null || input.trim() === "") {
     overrideCache = null;
     try {
-      writeJsonAtomic(DEFAULT_MODEL_STORE, { model: null });
+      patchDefaultModelStore({ model: null });
     } catch {}
     return getDefaultModel();
   }
   const m = resolveModel(input);
   if (!m) throw new Error(`Unknown model: ${input}`);
   overrideCache = m.id;
-  writeJsonAtomic(DEFAULT_MODEL_STORE, { model: m.id });
+  patchDefaultModelStore({ model: m.id });
+  return m.id;
+}
+
+/**
+ * Persist the default for NEW interactive sessions only (the composer's
+ * preselected model) — the global default above, and everything that reads it
+ * (Slack/Linear/Plain loops, workflows), stays untouched. Accepts dial preset
+ * ids ("dial/medium"); null clears back to the opencode-mapped global default.
+ */
+export function setInteractiveDefaultModel(input: string | null): string {
+  if (input === null || input.trim() === "") {
+    interactiveOverrideCache = null;
+    try {
+      patchDefaultModelStore({ interactiveModel: null });
+    } catch {}
+    return interactiveDefaultModel();
+  }
+  const m = resolveModel(input);
+  if (!m) throw new Error(`Unknown model: ${input}`);
+  interactiveOverrideCache = m.id;
+  patchDefaultModelStore({ interactiveModel: m.id });
   return m.id;
 }
 
@@ -559,6 +606,11 @@ export function toOpencodeModel(model?: string | null): string | undefined {
  * on the SDK — so this is deliberately a separate, interactive-only default.
  */
 export function interactiveDefaultModel(): string {
+  const o = loadInteractiveOverride();
+  // Dial ids return unresolved: the session must store `dial/<tier>` for the
+  // runner's dial hook (oracle + effort) to engage — toOpencodeModel would
+  // collapse the preset to its bare main model.
+  if (o) return dialPreset(o) ? o : toOpencodeModel(o) || o;
   return toOpencodeModel(getDefaultModel()) || getDefaultModel();
 }
 
