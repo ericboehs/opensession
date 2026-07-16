@@ -17,7 +17,7 @@ import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { parseTranscript, parseTranscriptTail } from "./jsonl-parser";
-import { interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
+import { dialPreset, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
 import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { wrapContext } from "./prompt-context";
 import { deleteQueuedPrompt, persistQueues, promptQueues, queueWithIds, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, updateQueuedPrompt } from "./queue-state";
@@ -1075,7 +1075,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						if (event.type === "init") {
 							engineSessionId = event.sessionId || "";
 							if (event.provider) effectiveProvider = event.provider;
-							if (event.model) effectiveModel = event.model;
+							// Dial sessions keep `dial/<tier>` stored — init/done report the
+							// preset's resolved MAIN model; adopting it would disengage the
+							// dial next turn. model_switch still adopts (real fallback).
+							if (event.model && !dialPreset(model)) effectiveModel = event.model;
 							// Session was persisted/announced before setup — just record
 							// the engine id so the run is resumable while it streams.
 							touchBackstageSession(
@@ -1175,7 +1178,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						if (event.type === "done") {
 							engineSessionId = event.sessionId || engineSessionId;
 							if (event.provider) effectiveProvider = event.provider;
-							if (event.model) effectiveModel = event.model;
+							if (event.model && !dialPreset(model)) effectiveModel = event.model;
 							if (event.usageLimitExhausted)
 								runFailure =
 									event.result || "Usage limit reached on every account";
