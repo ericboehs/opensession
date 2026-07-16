@@ -29,7 +29,10 @@ function uiHost(): string {
 /**
  * Extract a session id from an OpenSession URL, or null if it isn't one of ours.
  * Handles the legacy `/opensession/…` and `/backstage/…` path prefixes that
- * 301 to the bare `/session/…` form (Slack sends whatever the user pasted).
+ * 301 to the bare form (Slack sends whatever the user pasted), and both URL
+ * shapes the UI produces:
+ *   - `/session/<id>`
+ *   - `/workspace/<projectId>/chat/<id>`  (the deep-link the app copies today)
  */
 export function sessionIdFromUrl(rawUrl: string): string | null {
   let u: URL;
@@ -45,7 +48,9 @@ export function sessionIdFromUrl(rawUrl: string): string | null {
   } else if (path === "/backstage" || path.startsWith("/backstage/")) {
     path = path.slice("/backstage".length);
   }
-  const m = path.match(/^\/session\/([^/?#]+)/);
+  const m =
+    path.match(/^\/session\/([^/?#]+)/) ||
+    path.match(/^\/workspace\/[^/?#]+\/chat\/([^/?#]+)/);
   return m ? decodeURIComponent(m[1]) : null;
 }
 

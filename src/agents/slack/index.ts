@@ -171,6 +171,12 @@ export class SlackAgent implements AgentModule {
       if (payload.type === "event_callback") {
         const event = payload.event;
 
+        if (event.type === "link_shared") {
+          console.log(
+            `[slack] link_shared links=${JSON.stringify((event.links || []).map((l: any) => l.url))}`,
+          );
+        }
+
         if (event.bot_id || event.subtype === "bot_message") {
           return Response.json({ ok: true });
         }
