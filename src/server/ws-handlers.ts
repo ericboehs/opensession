@@ -28,7 +28,7 @@ import { type Sandbox, hasRemoteWorkspace } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled } from "./sandbox/config";
 import { SESSIONS_DIR, SESSION_EFFORTS, findSession, invalidateSessionsCache, maybePersistEffort, recordRunOutcome, touchBackstageSession } from "./session-cache";
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
-import { engineSessionPatch } from "./sessions";
+import { engineSessionPatch, engineUserTexts } from "./sessions";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { handleSlashCommand } from "./slash-commands";
 import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } from "./terminals";
@@ -495,7 +495,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							graceful: stopped,
 						});
 					}
-					const requeued = requeueSteerReceipts(sessionId);
+					const requeued = requeueSteerReceipts(
+						sessionId,
+						session ? engineUserTexts(session) : undefined,
+					);
 					if (requeued > 0) {
 						broadcastToSession(sessionId, {
 							type: "notice",

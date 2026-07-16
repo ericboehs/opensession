@@ -137,6 +137,30 @@ export function mergedSessionTranscript(
   );
 }
 
+/**
+ * User texts already in a session's engine history, for
+ * requeueSteerReceipts: a steer that shows up here landed durably (noReply
+ * history append), so putting it back into the prompt queue on cancel would
+ * deliver it twice.
+ */
+export function engineUserTexts(session: {
+	transcriptPath?: string | null;
+	opencodeSessionId?: string | null;
+	claudeSessionId?: string | null;
+}): string[] {
+	try {
+		return mergedSessionTranscript({
+			transcriptPath: session.transcriptPath ?? null,
+			opencodeSessionId: session.opencodeSessionId ?? undefined,
+			claudeSessionId: session.claudeSessionId ?? null,
+		})
+			.filter((e) => e.type === "user")
+			.map((e) => e.content.trim());
+	} catch {
+		return [];
+	}
+}
+
 export function engineSessionPatch(
   provider: "claude" | "codex" | "opencode",
   engineSessionId: string

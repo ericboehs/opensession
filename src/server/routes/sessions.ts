@@ -19,7 +19,7 @@ import { getReviewRequest, setReviewAccepted, setReviewRequest } from "../review
 import { findSession, getCachedSessions, invalidateSessionsCache, runErrors } from "../session-cache";
 import { resolvePrTarget } from "../session-repos";
 import { destroySessionSandbox } from "../session-sandbox";
-import { deleteSession, getAllSessions, mergedSessionTranscript } from "../sessions";
+import { deleteSession, engineUserTexts, getAllSessions, mergedSessionTranscript } from "../sessions";
 import { githubLoginFor } from "../shared/user-mappings";
 import { isManualStatus, setStatusOverride } from "../status-overrides";
 import { getSubagentTranscript } from "../subagents";
@@ -269,7 +269,7 @@ export async function handleSessionsRoutes(
 				source: "archive",
 				graceful: stopped,
 			});
-			requeueSteerReceipts(session.id);
+			requeueSteerReceipts(session.id, engineUserTexts(session));
 			stoppedRun = true;
 		}
 		setArchived(sessionId, archived);

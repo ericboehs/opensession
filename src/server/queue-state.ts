@@ -143,6 +143,16 @@ export function clearSteerReceipts(sessionId: string): void {
 // (re-delivered) them via restorePromptQueues. Matches the frontend reconcile:
 // exact attributed form, or containment for turns joined at one boundary.
 // Registered at module scope so every hot reload re-installs the current code.
+/** Whether a steer receipt's message already appears among the transcript's
+ *  user texts (same matching as the frontend reconcile: exact attributed
+ *  form, or containment for turns joined at one boundary). */
+export function steerDelivered(item: QueueItem, userTexts: string[]): boolean {
+	const attributed = (
+		item.user ? `[${item.user}] ${item.content}` : item.content
+	).trim();
+	return userTexts.some((u) => u === attributed || u.includes(attributed));
+}
+
 setTranscriptAppendListener((sessionId, entries) => {
 	const steered = steeredReceipts.get(sessionId);
 	if (!steered?.length) return;
@@ -150,12 +160,7 @@ setTranscriptAppendListener((sessionId, entries) => {
 		.filter((e) => e.type === "user")
 		.map((e) => e.content.trim());
 	if (users.length === 0) return;
-	const remaining = steered.filter((item) => {
-		const attributed = (
-			item.user ? `[${item.user}] ${item.content}` : item.content
-		).trim();
-		return !users.some((u) => u === attributed || u.includes(attributed));
-	});
+	const remaining = steered.filter((item) => !steerDelivered(item, users));
 	if (remaining.length === steered.length) return;
 	if (remaining.length > 0) steeredReceipts.set(sessionId, remaining);
 	else steeredReceipts.delete(sessionId);
@@ -163,16 +168,34 @@ setTranscriptAppendListener((sessionId, entries) => {
 	broadcastQueue(sessionId);
 });
 
-/** Put unconfirmed steers back into the normal queue when their run is cancelled. */
-export function requeueSteerReceipts(sessionId: string): number {
+/**
+ * Put unconfirmed steers back into the normal queue when their run is
+ * cancelled. A steer is a noReply engine-history append — once it's in the
+ * store the next turn on that session already sees it, so requeueing it
+ * delivers a duplicate turn (live 2026-07-16: a worker's two report-back
+ * steers came back as queued prompts after the user interrupted the run,
+ * despite both sitting in the engine history the interrupting turn ran with).
+ * Callers pass the transcript's user texts (engineUserTexts) so receipts
+ * that already landed are dropped instead of requeued; only steers the
+ * engine never got (a failed fire-and-forget POST) go back into the queue.
+ */
+export function requeueSteerReceipts(
+	sessionId: string,
+	deliveredUserTexts?: string[],
+): number {
 	const steered = steeredReceipts.get(sessionId);
 	if (!steered?.length) return 0;
-	const queue = promptQueues.get(sessionId) || [];
-	promptQueues.set(sessionId, [...steered, ...queue]);
+	const undelivered = deliveredUserTexts?.length
+		? steered.filter((item) => !steerDelivered(item, deliveredUserTexts))
+		: steered;
+	if (undelivered.length > 0) {
+		const queue = promptQueues.get(sessionId) || [];
+		promptQueues.set(sessionId, [...undelivered, ...queue]);
+	}
 	steeredReceipts.delete(sessionId);
 	persistQueues();
 	broadcastQueue(sessionId);
-	return steered.length;
+	return undelivered.length;
 }
 
 export function queuedPromptIndex(

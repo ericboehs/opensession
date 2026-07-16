@@ -50,6 +50,7 @@ import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import {
 	engineSessionPatch,
+	engineUserTexts,
 	getEngineTranscriptPath,
 	readEngineTranscript,
 } from "./sessions";
@@ -98,6 +99,7 @@ import {
 	QUEUE_STORE,
 	recordSteer,
 	requeueSteerReceipts,
+	steerDelivered,
 	steeredReceipts,
 	stoppedSessions,
 	type QueueItem,
@@ -328,7 +330,18 @@ export function restorePromptQueues(): void {
 		if (items?.length) merged.set(id, [...items]);
 	}
 	for (const [id, items] of Object.entries(data.steered || {})) {
-		if (items?.length) merged.set(id, [...(merged.get(id) || []), ...items]);
+		if (!items?.length) continue;
+		// A persisted steer receipt whose message already sits in the engine
+		// history landed before the restart — re-delivering it from the queue
+		// would duplicate it (same rule as requeueSteerReceipts). Plain queued
+		// items above are exempt: they were never delivered anywhere.
+		const session = findSession(id);
+		const delivered = session ? engineUserTexts(session) : [];
+		const undelivered = delivered.length
+			? items.filter((item) => !steerDelivered(item, delivered))
+			: items;
+		if (!undelivered.length) continue;
+		merged.set(id, [...(merged.get(id) || []), ...undelivered]);
 	}
 	steeredReceipts.clear();
 	let restored = 0;
@@ -658,6 +671,8 @@ export function abortTurnAndDrain(
 	session: {
 		claudeSessionId?: string | null;
 		codexThreadId?: string | null;
+		opencodeSessionId?: string | null;
+		transcriptPath?: string | null;
 		id: string;
 	},
 ): boolean {
@@ -665,9 +680,11 @@ export function abortTurnAndDrain(
 	const aborted = stopAgentRunTurn(ids) || cancelAgentRun(...ids);
 	if (!aborted) return false;
 	// The user explicitly asked for delivery now — unpark an earlier Stop, and
-	// fold any unconfirmed steer receipts back in ahead so nothing is dropped.
+	// fold steer receipts the engine never got back in ahead so nothing is
+	// dropped (landed steers are already in the engine history — requeueing
+	// them would deliver duplicates).
 	stoppedSessions.delete(sessionId);
-	requeueSteerReceipts(sessionId);
+	requeueSteerReceipts(sessionId, engineUserTexts(session));
 	// The drained batch is an interrupt delivery: flag it so the drain frames
 	// it as a mid-task steer (see INTERRUPT_STEER_NOTE).
 	interruptDrainMarks.set(sessionId, Date.now());

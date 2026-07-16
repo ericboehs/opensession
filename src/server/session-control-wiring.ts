@@ -21,7 +21,7 @@ import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/conf
 import { SESSIONS_DIR, findSession, getCachedSessions, invalidateSessionsCache, recordRunOutcome, touchBackstageSession } from "./session-cache";
 import { type SessionState, type SessionSummary, registerSessionControl } from "./session-control";
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
-import { engineSessionPatch, getAllSessions, mergedSessionTranscript } from "./sessions";
+import { engineSessionPatch, engineUserTexts, getAllSessions, mergedSessionTranscript } from "./sessions";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { rebuildIndex } from "./slack-links";
 import { handleSlashCommand } from "./slash-commands";
@@ -194,7 +194,7 @@ registerSessionControl({
 			session.codexThreadId,
 			session.id,
 		);
-		requeueSteerReceipts(id);
+		requeueSteerReceipts(id, engineUserTexts(session));
 		return cancelled;
 	},
 
