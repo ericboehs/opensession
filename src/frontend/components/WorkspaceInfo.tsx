@@ -1031,14 +1031,12 @@ function ReviewerChip({
 function GitStatusRows({
 	sessionId,
 	repo,
-	pr,
 	git,
 	send,
 	onReload,
 }: {
 	sessionId: string;
 	repo?: string;
-	pr: PrDetails | null;
 	git: GitStatusInfo | null;
 	send?: (msg: any) => void;
 	onReload: () => void;
@@ -1051,26 +1049,15 @@ function GitStatusRows({
 	const behind = git?.behind ?? 0;
 	const behindBase = git?.behindBase ?? 0;
 	const dirty = git?.uncommittedFiles ?? 0;
-	const conflicts = pr?.mergeable === "CONFLICTING";
 
-	// The one-word lane: the PR's state if there is one, else "No PR" once there's
-	// local work to publish. Behind counts fold together — a stale upstream reads
-	// "behind remote", a fresh branch behind its base reads "behind <base>".
+	// Behind counts fold together — a stale upstream reads "behind remote", a
+	// fresh branch behind its base reads "behind <base>". PR state is omitted
+	// here: it already lives in the status strip at the top of the panel.
 	const behindCount = behind > 0 ? behind : behindBase;
 	const behindWhat = behind > 0 ? "remote" : git?.baseBranch || "main";
 
-	let state: { label: string; tone: ChipTone } | null = null;
-	if (pr) {
-		if (pr.state === "MERGED") state = { label: "Merged", tone: "purple" };
-		else if (pr.state === "CLOSED") state = { label: "Closed", tone: "muted" };
-		else if (pr.isDraft) state = { label: "Draft", tone: "muted" };
-		else state = { label: "Open", tone: "green" };
-	} else if (ahead > 0 || dirty > 0) {
-		state = { label: "No PR", tone: "muted" };
-	}
-
 	const hasRows = ahead > 0 || behindCount > 0 || dirty > 0;
-	if (!state && !hasRows) return null;
+	if (!hasRows) return null;
 
 	async function run(name: string, fn: () => Promise<unknown>) {
 		if (busy) return;
@@ -1103,24 +1090,8 @@ function GitStatusRows({
 	return (
 		<div className="workspace-info-section">
 			<div className="workspace-info-label">Status</div>
-			{state && (
-				<div className="wi-git-state">
-					<span className="wi-chip-icon">
-						<IconPullRequest size={18} />
-					</span>
-					<span className={`wi-git-state-label wi-git-state-${state.tone}`}>
-						{state.label}
-					</span>
-					{conflicts && (
-						<span className="wi-chip wi-chip-red wi-git-badge">
-							Merge conflicts
-						</span>
-					)}
-				</div>
-			)}
-			{hasRows && (
-				<div className="wi-git-rows">
-					{ahead > 0 && (
+			<div className="wi-git-rows">
+				{ahead > 0 && (
 						<div className="wi-git-row">
 							<span className="wi-git-dot" />
 							<span className="wi-git-label">
@@ -1190,7 +1161,6 @@ function GitStatusRows({
 						</div>
 					)}
 				</div>
-			)}
 			{error && <div className="wi-git-error">{error}</div>}
 		</div>
 	);
@@ -1389,12 +1359,12 @@ export function WorkspaceInfo({
 			) === i,
 	);
 
-	// Show the Status section when there's a PR to state, or any local git delta
-	// to act on (ahead / behind / uncommitted) — a clean, PR-less tree stays quiet.
+	// Show the Status section when there's any local git delta to act on
+	// (ahead / behind / uncommitted) — a clean tree stays quiet. PR state is not
+	// mirrored here; it already lives in the status strip at the top of the panel.
 	const showGit = Boolean(
 		git &&
-			(pr ||
-				git.ahead > 0 ||
+			(git.ahead > 0 ||
 				git.behind > 0 ||
 				git.behindBase > 0 ||
 				git.uncommittedFiles > 0),
@@ -1459,7 +1429,6 @@ export function WorkspaceInfo({
 						<GitStatusRows
 							sessionId={sessionId}
 							repo={repo}
-							pr={pr}
 							git={git}
 							send={send}
 							onReload={reloadGit}
