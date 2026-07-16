@@ -32,7 +32,7 @@ import {
 	fetchFileMentions,
 	fetchSkillMentions,
 	promoteChatApi,
-	startPreviewApi,
+	fetchPr,
 	type WorkspaceMediaItem,
 	type ModelOption,
 	type ClaudeAccountOption,
@@ -43,6 +43,7 @@ import { UsageMeter } from "./UsageMeter";
 import { SchedulePromptButton } from "./SchedulePrompt";
 import type { FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
+import { withPreviewPath } from "../lib/preview-url";
 import { DiffPanel, useSessionDiff } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
 import { RepoTile } from "./RepoTile";
@@ -2078,9 +2079,41 @@ export function SessionViewer({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [archiving, handleArchive, session.archived]);
 
-	// ⌘O opens the session's preview (starting the dev server if it isn't up —
-	// same semantics as the Preview button); ⌘G opens its GitHub PR. Chords
-	// without a target (no worktree / no PR) fall through to the browser.
+	// Staging deploy for the ⌘O chord — mirrors StagingLink's poll (same
+	// relevance gate; the server caches PR details for 30s, so the duplicate
+	// fetch stays cheap). Kept here because StagingLink mounts per layout
+	// variant, so a window listener inside it would register multiple times.
+	const stagingRelevant =
+		!!session.prUrl &&
+		session.prState === "OPEN" &&
+		(session.repo ?? "tella-fusion") === "tella-fusion";
+	const [staging, setStaging] = useState<{
+		url: string;
+		status: string;
+	} | null>(null);
+	useEffect(() => {
+		if (!stagingRelevant) {
+			setStaging(null);
+			return;
+		}
+		let alive = true;
+		const load = () =>
+			fetchPr(session.id)
+				.then((pr) => {
+					if (alive) setStaging(pr?.staging ?? null);
+				})
+				.catch(() => {});
+		load();
+		const t = setInterval(load, 60000);
+		return () => {
+			alive = false;
+			clearInterval(t);
+		};
+	}, [session.id, stagingRelevant]);
+
+	// ⌘O opens the PR's staging deploy (the Vercel preview StagingLink's globe
+	// points at); ⌘G opens its GitHub PR. Chords without a target (no staging
+	// deploy / no PR) fall through to the browser.
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
 			if (
@@ -2112,37 +2145,29 @@ export function SessionViewer({
 				if (!prUrl) return;
 				e.preventDefault();
 				window.open(prUrl, "_blank", "noopener");
-			} else if (k === "o" && session.worktreeDir) {
+			} else if (k === "o" && staging) {
 				e.preventDefault();
-				// Popup-blocker-safe mirror of PreviewButton.start(): open the
-				// same-origin interstitial synchronously inside the gesture (it
-				// redirects itself the moment the status endpoint reports running),
-				// then kick the bring-up — a server-side no-op when it already is.
-				const waitUrl =
-					`${BASE_PATH}/preview-wait/${encodeURIComponent(session.id)}` +
-					(session.previewPath
-						? `?path=${encodeURIComponent(session.previewPath)}`
-						: "");
-				const wait = window.open(waitUrl, "_blank");
-				startPreviewApi(session.id)
-					.then((s) => {
-						// Nothing running and nothing started (repo not bootable) —
-						// don't leave the interstitial spinning toward a boot that
-						// will never come.
-						if (!s.running && !s.starting) wait?.close();
-					})
-					.catch(() => wait?.close());
+				// Match the globe's click semantics: before the first deploy goes
+				// Ready the branch alias 404s, so swallow the chord with the same
+				// explanatory toast instead of opening a dead link. (A rebuild
+				// after a push keeps status Ready and stays openable — the alias
+				// serves the previous deploy until the new one lands.)
+				if (staging.status !== "Ready") {
+					toast(
+						`Staging deploy is ${staging.status.toLowerCase()} — the link goes live once the first deploy finishes`,
+					);
+					return;
+				}
+				window.open(
+					withPreviewPath(staging.url, session.previewPath),
+					"_blank",
+					"noopener",
+				);
 			}
 		}
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [
-		session.id,
-		session.prUrl,
-		session.prs,
-		session.previewPath,
-		session.worktreeDir,
-	]);
+	}, [session.prUrl, session.prs, session.previewPath, staging]);
 
 
 	return (

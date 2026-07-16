@@ -33,11 +33,6 @@ function isPreviewable(session: UnifiedSession): boolean {
 const PREVIEW_DOCS_URL =
   "https://github.com/tellahq/backstage/blob/master/deploy/sandbox/README.md#previews-in-sandboxes-phase-4a";
 
-// Keyboard hint for the open-preview chord (SessionViewer owns the handler).
-const OPEN_CHORD = /Mac|iPhone|iPad|iPod/.test(navigator.platform)
-  ? "⌘O"
-  : "Ctrl+O";
-
 /**
  * Header control for a session's local dev server ("Preview"). When the
  * webapp is up it links to it (`https://<host>:<httpsPort>` — a Caddy-fronted
@@ -338,7 +333,7 @@ export function PreviewButton({
             label={
               copied
                 ? "Link copied"
-                : `Open the running app (${OPEN_CHORD}) — ⌘-click to copy the link, right-click for dev services`
+                : "Open the running app — ⌘-click to copy the link, right-click for dev services"
             }
             side="bottom"
           >
@@ -389,10 +384,7 @@ export function PreviewButton({
             </button>
           </Tooltip>
         ) : (
-          <Tooltip
-            label={`Run — start the dev server (${OPEN_CHORD}; right-click for dev services)`}
-            side="bottom"
-          >
+          <Tooltip label="Run — start the dev server (right-click for dev services)" side="bottom">
             <button
               className="viewer-code-icon preview-icon is-off"
               onClick={start}
@@ -417,7 +409,7 @@ export function PreviewButton({
           href={url}
           target="_blank"
           rel="noopener"
-          title={`Open the webapp (${OPEN_CHORD}) — ${url}`}
+          title={`Open the webapp — ${url}`}
         >
           <IconPlay size={15} className="preview-play" />
           Preview
@@ -450,7 +442,7 @@ export function PreviewButton({
         <button
           className="preview-open"
           onClick={start}
-          title={`Start the dev server and preview this session (${OPEN_CHORD})`}
+          title="Start the dev server and preview this session"
         >
           <IconPlay size={15} className="preview-play" />
           Preview

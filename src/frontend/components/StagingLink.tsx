@@ -8,6 +8,13 @@ import { CopyCheck, useCopy } from "../ui/copy";
 import { IconArrowUpRight, IconGlobe } from "./icons";
 import { checkClass, isDeployment } from "./PrPanel";
 
+// Keyboard hint for the open-staging chord (SessionViewer owns the handler —
+// this component mounts once per layout variant, so a listener here would
+// register multiple times).
+const OPEN_CHORD = /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+	? "⌘O"
+	: "Ctrl+O";
+
 /**
  * Header link to the PR's staging deploy (the Vercel preview at
  * https://tella-git-<branch>.tella.dev) so a change can be tested on real
@@ -182,8 +189,8 @@ export function StagingLink({
 			: building
 				? `Staging deploy ${staging.status.toLowerCase()}… ${copyHint}`
 				: rebuilding
-					? `Redeploying for the latest push — opens the previous deploy until it lands (${copyHint})`
-					: `Open the staging deploy to test this PR on real infra (${copyHint})`;
+					? `Redeploying for the latest push — opens the previous deploy until it lands (${OPEN_CHORD}; ${copyHint})`
+					: `Open the staging deploy to test this PR on real infra (${OPEN_CHORD}; ${copyHint})`;
 
 	if (variant === "header") {
 		return (
