@@ -117,9 +117,12 @@
  * `turnTimeoutMinutes` in ~/.backstage-opencode.json) that aborts the turn
  * with a clear error.
  *
- * Steering/interrupt: OpenCode has no mid-turn steer API, so steers fall back
- * to the caller's queue (same as exec-transport Codex); cancel maps to
- * `POST /session/:id/abort` + process-level abort.
+ * Steering/interrupt: mid-turn steers land in-band via steerOpencodeRun
+ * (noReply message append — the running turn reads it at its next LLM call;
+ * see the doc at its definition). What OpenCode still lacks is
+ * interrupt-and-steer (a forced turn boundary, Esc+Enter style) — that path
+ * falls back to abort + queue until opencode v2's delivery:"steer"; cancel
+ * maps to `POST /session/:id/abort` + process-level abort.
  *
  * Resume after a backstage restart: the journal records the OpenCode session
  * id (in ActiveRunRecord.claudeSessionId, like Codex thread ids) and the full
