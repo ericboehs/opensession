@@ -47,7 +47,11 @@ import { RepoBar } from "./RepoBar";
 import { RepoTile } from "./RepoTile";
 import { SandboxBadge } from "./SandboxBadge";
 import { ModelMenuRow } from "./ModelMenuRow";
-import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
+import {
+	EFFORTS,
+	friendlyModelSlug,
+	opencodeModelParts,
+} from "./ModelEffortSelect";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
@@ -833,6 +837,45 @@ export function SessionViewer({
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, []);
+
+	// ⌘⌥↑/⌘⌥↓ step the reasoning effort through the current model's supported
+	// levels (up = more thinking), wrapping at the ends. Resolves the same
+	// effective effort as the ModelEffortSelect pill (stored value when the
+	// model offers it, else "high", else the model's first level), so the step
+	// always starts from what the pill displays. Fires with the composer
+	// focused too — the Alt modifier keeps it clear of plain ⌘↑/⌘↓ (workspace
+	// cycling in the Sidebar, and caret start/end moves in the textarea).
+	useEffect(() => {
+		function onKeyDown(e: KeyboardEvent) {
+			if (
+				e.defaultPrevented ||
+				(e.key !== "ArrowUp" && e.key !== "ArrowDown") ||
+				!(e.metaKey || e.ctrlKey) ||
+				!e.altKey ||
+				e.shiftKey
+			)
+				return;
+			const effectiveModel = model || defaultModel;
+			const supportedIds =
+				models.find((m) => m.id === effectiveModel)?.efforts ?? [];
+			const supported = EFFORTS.filter((ef) => supportedIds.includes(ef.id));
+			if (supported.length < 2) return;
+			const effective = supportedIds.includes(effort)
+				? effort
+				: supportedIds.includes("high")
+					? "high"
+					: supported[0].id;
+			const idx = supported.findIndex((ef) => ef.id === effective);
+			const dir = e.key === "ArrowUp" ? 1 : -1;
+			const next =
+				supported[(idx + dir + supported.length) % supported.length];
+			if (!next) return;
+			e.preventDefault();
+			setEffort(next.id);
+		}
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [models, defaultModel, model, effort]);
 
 	// A "new tab" while this session is open is a fresh chat *in this session*:
 	// clear the composer and jump to the live edge. We skip the first run (and

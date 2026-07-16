@@ -1842,6 +1842,53 @@ export function Sidebar({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [wsRowOrder, selectedId, onArchiveWorkspace]);
 
+	// ⌘↓/⌘↑ cycle the open session through the sidebar's workspace rows in
+	// visual order (down = next row), wrapping at the ends. Chatless rows are
+	// skipped — same candidate set as the archive-with-next handlers above.
+	// Deliberately fires while the composer is focused (unlike the archive
+	// chords): jumping workspaces without leaving the keyboard is the point,
+	// and that costs the textarea its ⌘-arrow caret-to-start/end moves. Alt is
+	// excluded so ⌘⌥ arrows stay free for the reasoning-effort chord
+	// (SessionViewer); Shift so ⌘⇧-arrow text selection keeps working.
+	useEffect(() => {
+		function onKeyDown(e: KeyboardEvent) {
+			if (
+				e.defaultPrevented ||
+				(e.key !== "ArrowUp" && e.key !== "ArrowDown") ||
+				!(e.metaKey || e.ctrlKey) ||
+				e.altKey ||
+				e.shiftKey
+			)
+				return;
+			if (
+				document.querySelector(
+					".palette-backdrop, .composer-schedule-modal-backdrop, .session-delete-overlay",
+				)
+			)
+				return;
+			const candidates = wsRowOrder.filter((r) => r.chats.length > 0);
+			if (candidates.length === 0) return;
+			const idx = candidates.findIndex((r) =>
+				r.chats.some((c) => c.id === selectedId),
+			);
+			const dir = e.key === "ArrowDown" ? 1 : -1;
+			// No open session in the list (e.g. Home): enter from the edge.
+			const next =
+				idx < 0
+					? dir === 1
+						? candidates[0]
+						: candidates[candidates.length - 1]
+					: candidates[(idx + dir + candidates.length) % candidates.length];
+			if (!next) return;
+			e.preventDefault();
+			closeWsHover();
+			if (next.workspace) onOpenProject(next.workspace.id);
+			else if (next.chats[0]) onSelect(next.chats[0]);
+		}
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [wsRowOrder, selectedId, onOpenProject, onSelect]);
+
 	// ── Workspace hover card ────────────────────────────────────────────────
 	// One card for the whole list (only one row can be dwelled on at a time).
 	// Unlike the info-only SessionHoverCard it carries actions (Archive, PR
