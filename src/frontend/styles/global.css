@@ -4664,6 +4664,71 @@ a.workspace-info-check-row {
 	gap: 5px;
 }
 
+/* Status section (info panel): the PR/branch state line + one row per
+   outstanding git fact (ahead → Push, behind → Update, dirty → Commit). The
+   Conductor-style status header, in the info panel's own idiom. */
+.wi-git-state {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	flex-wrap: wrap;
+}
+.wi-git-state-label {
+	font-size: 14px;
+	font-weight: 650;
+}
+.wi-git-state-green {
+	color: var(--green, #16a34a);
+}
+.wi-git-state-purple {
+	color: var(--purple, #7c3aed);
+}
+.wi-git-state-muted {
+	color: var(--text-dim);
+}
+.wi-git-badge {
+	margin-left: 1px;
+	cursor: default;
+	padding: 3px 8px;
+	font-size: 11.5px;
+}
+.wi-git-rows {
+	display: grid;
+	gap: 8px;
+	margin-top: 3px;
+}
+.wi-git-row {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	min-height: 28px;
+}
+.wi-git-dot {
+	flex: 0 0 auto;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--yellow, #ca8a04);
+}
+.wi-git-label {
+	color: var(--text-dim);
+	font-size: 13.5px;
+	line-height: 1.3;
+}
+.wi-git-row .wi-git-btn {
+	margin-left: auto;
+	min-height: 28px;
+	padding: 4px 12px;
+}
+.wi-git-prompted {
+	margin-left: auto;
+}
+.wi-git-error {
+	color: var(--red);
+	font-size: 11.5px;
+	margin-top: 2px;
+}
+
 .workspace-info-text {
 	color: var(--text-dim);
 	font-size: 14px;

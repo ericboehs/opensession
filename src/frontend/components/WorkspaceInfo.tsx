@@ -8,6 +8,9 @@ import { useResolvedTheme } from "./CodeHighlight";
 import {
 	fetchDiff,
 	fetchPr,
+	fetchGitStatus,
+	gitPushApi,
+	gitPullApi,
 	setSessionReviewerApi,
 	acceptReviewApi,
 	triggerPrActionApi,
@@ -20,6 +23,7 @@ import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
 import type {
 	DiffFile,
+	GitStatusInfo,
 	PrCheck,
 	PrDetails,
 } from "../lib/types";
@@ -34,7 +38,16 @@ import {
 import { summarizeChecks } from "./PrStatusBar";
 import { openLightbox } from "./MediaLightbox";
 import { SandboxBadge } from "./SandboxBadge";
-import { IconBell, IconCheck, IconClock, IconPlay, IconX } from "./icons";
+import {
+	IconArrowDown,
+	IconArrowUp,
+	IconBell,
+	IconCheck,
+	IconClock,
+	IconPlay,
+	IconPullRequest,
+	IconX,
+} from "./icons";
 
 /**
  * Workspace info block at the top of the right side panel (the "Info" tab): a
@@ -89,6 +102,9 @@ interface Props {
 	/** Navigate to a session — used by Auto-fix, which spins up a new chat in this
 	    workspace and jumps into it. */
 	onOpenSession?: (id: string) => void;
+	/** Prompt the session (the Status section's Commit action) — the WS `prompt`
+	    message. Absent in read-only mounts, where Commit is simply hidden. */
+	send?: (msg: any) => void;
 	/** Media items currently in the open chat's live entries — bumps refresh
 	    the panel as new screenshots land during a run. */
 	liveMediaCount: number;
@@ -1003,6 +1019,183 @@ function ReviewerChip({
 	);
 }
 
+/**
+ * The "Status" section of the info panel: the PR/branch state, plus a row per
+ * outstanding git fact — ahead of remote → Push, behind → Update, dirty tree →
+ * Commit. This is the Conductor-style status header (see server/git-status.ts),
+ * surfaced in the info panel's own idiom (a labelled section, not a bordered
+ * card). Push/Update call the git APIs directly; Commit prompts the session
+ * (we don't do bare `git commit` — a session-authored commit gets a real
+ * message), matching how Create PR / Resolve work in the status strip.
+ */
+function GitStatusRows({
+	sessionId,
+	repo,
+	pr,
+	git,
+	send,
+	onReload,
+}: {
+	sessionId: string;
+	repo?: string;
+	pr: PrDetails | null;
+	git: GitStatusInfo | null;
+	send?: (msg: any) => void;
+	onReload: () => void;
+}) {
+	const [busy, setBusy] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	const [prompted, setPrompted] = useState(false);
+
+	const ahead = git?.ahead ?? 0;
+	const behind = git?.behind ?? 0;
+	const behindBase = git?.behindBase ?? 0;
+	const dirty = git?.uncommittedFiles ?? 0;
+	const conflicts = pr?.mergeable === "CONFLICTING";
+
+	// The one-word lane: the PR's state if there is one, else "No PR" once there's
+	// local work to publish. Behind counts fold together — a stale upstream reads
+	// "behind remote", a fresh branch behind its base reads "behind <base>".
+	const behindCount = behind > 0 ? behind : behindBase;
+	const behindWhat = behind > 0 ? "remote" : git?.baseBranch || "main";
+
+	let state: { label: string; tone: ChipTone } | null = null;
+	if (pr) {
+		if (pr.state === "MERGED") state = { label: "Merged", tone: "purple" };
+		else if (pr.state === "CLOSED") state = { label: "Closed", tone: "muted" };
+		else if (pr.isDraft) state = { label: "Draft", tone: "muted" };
+		else state = { label: "Open", tone: "green" };
+	} else if (ahead > 0 || dirty > 0) {
+		state = { label: "No PR", tone: "muted" };
+	}
+
+	const hasRows = ahead > 0 || behindCount > 0 || dirty > 0;
+	if (!state && !hasRows) return null;
+
+	async function run(name: string, fn: () => Promise<unknown>) {
+		if (busy) return;
+		setBusy(name);
+		setError(null);
+		try {
+			await fn();
+			onReload();
+		} catch (e: any) {
+			setError(e?.message || `${name} failed`);
+		} finally {
+			setBusy(null);
+		}
+	}
+
+	function commit() {
+		if (!send) return;
+		send({
+			type: "prompt",
+			sessionId,
+			user: getCurrentUser(),
+			content: `Commit the ${dirty} uncommitted file${
+				dirty === 1 ? "" : "s"
+			} in this worktree with a clear, descriptive message, then push.`,
+		});
+		setPrompted(true);
+		setTimeout(() => setPrompted(false), 6000);
+	}
+
+	return (
+		<div className="workspace-info-section">
+			<div className="workspace-info-label">Status</div>
+			{state && (
+				<div className="wi-git-state">
+					<span className="wi-chip-icon">
+						<IconPullRequest size={18} />
+					</span>
+					<span className={`wi-git-state-label wi-git-state-${state.tone}`}>
+						{state.label}
+					</span>
+					{conflicts && (
+						<span className="wi-chip wi-chip-red wi-git-badge">
+							Merge conflicts
+						</span>
+					)}
+				</div>
+			)}
+			{hasRows && (
+				<div className="wi-git-rows">
+					{ahead > 0 && (
+						<div className="wi-git-row">
+							<span className="wi-git-dot" />
+							<span className="wi-git-label">
+								{ahead} commit{ahead === 1 ? "" : "s"} ahead of remote
+							</span>
+							<button
+								type="button"
+								className="pr-bar-btn pr-bar-btn-solid wi-git-btn"
+								disabled={!!busy}
+								onClick={() => run("push", () => gitPushApi(sessionId, repo))}
+							>
+								<span className="pr-bar-btn-icon">
+									<IconArrowUp size={18} />
+								</span>
+								<span className="pr-bar-btn-label">
+									{busy === "push" ? "Pushing…" : "Push"}
+								</span>
+							</button>
+						</div>
+					)}
+					{behindCount > 0 && (
+						<div className="wi-git-row">
+							<span className="wi-git-dot" />
+							<span className="wi-git-label">
+								{behindCount} commit{behindCount === 1 ? "" : "s"} behind{" "}
+								{behindWhat}
+							</span>
+							<button
+								type="button"
+								className="pr-bar-btn pr-bar-btn-solid wi-git-btn"
+								disabled={!!busy}
+								title={`Fast-forward to origin/${behindWhat === "remote" ? git?.branch || "the upstream" : behindWhat}`}
+								onClick={() =>
+									run("pull", () => gitPullApi(sessionId, repo, behind === 0))
+								}
+							>
+								<span className="pr-bar-btn-icon">
+									<IconArrowDown size={18} />
+								</span>
+								<span className="pr-bar-btn-label">
+									{busy === "pull" ? "Updating…" : "Update"}
+								</span>
+							</button>
+						</div>
+					)}
+					{dirty > 0 && (
+						<div className="wi-git-row">
+							<span className="wi-git-dot" />
+							<span className="wi-git-label">
+								{dirty} uncommitted file{dirty === 1 ? "" : "s"}
+							</span>
+							{send &&
+								(prompted ? (
+									<span className="pr-bar-prompted wi-git-prompted">
+										Asked Michael ✓
+									</span>
+								) : (
+									<button
+										type="button"
+										className="pr-bar-btn pr-bar-btn-secondary wi-git-btn"
+										onClick={commit}
+										title="Ask Michael to commit the uncommitted changes and push"
+									>
+										<span className="pr-bar-btn-label">Commit</span>
+									</button>
+								))}
+						</div>
+					)}
+				</div>
+			)}
+			{error && <div className="wi-git-error">{error}</div>}
+		</div>
+	);
+}
+
 export function WorkspaceInfo({
 	sessionId,
 	workspaceId,
@@ -1017,6 +1210,7 @@ export function WorkspaceInfo({
 	onOpenTab,
 	onAddToInput,
 	onOpenSession,
+	send,
 	liveMediaCount,
 	liveMedia = [],
 }: Props) {
@@ -1032,6 +1226,8 @@ export function WorkspaceInfo({
 	// The primary repo's raw patch, kept so the file rows can hover-reveal the
 	// actual diff for that file (parsed lazily below).
 	const [rawPatch, setRawPatch] = useState<string>("");
+	// Local git state (ahead/behind, dirty tree) for the Status section.
+	const [git, setGit] = useState<GitStatusInfo | null>(null);
 
 	// The chats array is re-created every App render — read it through a ref so
 	// the fetch effect keys on the stable chatsKey instead.
@@ -1111,6 +1307,36 @@ export function WorkspaceInfo({
 		};
 	}, [sessionId, repo, liveMediaCount]);
 
+	// Local git status (ahead/behind, uncommitted) for the Status section — same
+	// slow poll, refetched as live media bumps (a proxy for run activity) so the
+	// counts settle after a turn's auto-commit/push. Only when the chat has a repo.
+	useEffect(() => {
+		if (!repo) {
+			setGit(null);
+			return;
+		}
+		let alive = true;
+		const load = () =>
+			fetchGitStatus(sessionId, repo)
+				.then((g) => alive && setGit(g))
+				.catch(() => {});
+		load();
+		const iv = setInterval(load, 45000);
+		return () => {
+			alive = false;
+			clearInterval(iv);
+		};
+	}, [sessionId, repo, liveMediaCount]);
+
+	// Refetch git status right after a Push/Update lands, so the row clears
+	// without waiting on the 45s poll.
+	const reloadGit = () => {
+		if (repo)
+			fetchGitStatus(sessionId, repo)
+				.then(setGit)
+				.catch(() => {});
+	};
+
 	const oldest = chats[0];
 	const started = oldest?.createdAt
 		? new Date(oldest.createdAt).toLocaleDateString(undefined, {
@@ -1163,8 +1389,19 @@ export function WorkspaceInfo({
 			) === i,
 	);
 
+	// Show the Status section when there's a PR to state, or any local git delta
+	// to act on (ahead / behind / uncommitted) — a clean, PR-less tree stays quiet.
+	const showGit = Boolean(
+		git &&
+			(pr ||
+				git.ahead > 0 ||
+				git.behind > 0 ||
+				git.behindBase > 0 ||
+				git.uncommittedFiles > 0),
+	);
 	const hasBody = Boolean(
-		chips.length > 0 ||
+		showGit ||
+			chips.length > 0 ||
 			comments.length > 0 ||
 			changed.length > 0 ||
 			(data && data.prompt) ||
@@ -1218,6 +1455,16 @@ export function WorkspaceInfo({
 			</div>
 			{hasBody ? (
 				<div className="workspace-info-body">
+					{showGit && (
+						<GitStatusRows
+							sessionId={sessionId}
+							repo={repo}
+							pr={pr}
+							git={git}
+							send={send}
+							onReload={reloadGit}
+						/>
+					)}
 					{comments.length > 0 && (
 						<div className="workspace-info-section">
 							<div className="workspace-info-label workspace-info-comments-label">

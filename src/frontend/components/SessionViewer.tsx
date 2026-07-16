@@ -2531,6 +2531,7 @@ export function SessionViewer({
 										reviewRequest={effectiveReview?.req ?? null}
 										reviewRequestSessionId={effectiveReview?.ownerId}
 										onReviewChange={onReviewChange}
+										send={connected ? send : undefined}
 										onOpenTab={(tab) => {
 											setInfoPageOpen(false);
 											setSubagentStack([]);
@@ -3186,6 +3187,7 @@ export function SessionViewer({
 									reviewRequest={effectiveReview?.req ?? null}
 									reviewRequestSessionId={effectiveReview?.ownerId}
 									onReviewChange={onReviewChange}
+									send={connected ? send : undefined}
 									onOpenTab={(tab) => selectPanelTab(tab)}
 									onAddToInput={(text) =>
 										setComposerPrefill((p) => ({
