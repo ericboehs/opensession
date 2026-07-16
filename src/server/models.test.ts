@@ -133,6 +133,39 @@ describe("The Dial", () => {
     expect(dialPreset(undefined)).toBeUndefined();
   });
 
+  it("wires each tier to its intended main and oracle model effort", () => {
+    expect(
+      DIAL_PRESETS.map(({ id, model, effort, oracleAgent }) => ({ id, model, effort, oracleAgent }))
+    ).toEqual([
+      {
+        id: "dial/ultra",
+        model: "claude-fable-5",
+        effort: "high",
+        oracleAgent: "oracle-sol",
+      },
+      {
+        id: "dial/high",
+        model: "gpt-5.6-sol",
+        effort: "xhigh",
+        oracleAgent: "oracle-fable",
+      },
+      {
+        id: "dial/medium",
+        model: "gpt-5.6-sol",
+        effort: "medium",
+        oracleAgent: "oracle-sol",
+      },
+      {
+        id: "dial/low",
+        model: "gpt-5.6-luna",
+        effort: "high",
+        oracleAgent: "oracle-sol",
+      },
+    ]);
+    expect(DIAL_ORACLE_AGENTS["oracle-sol"]?.variant).toBe("high");
+    expect(DIAL_ORACLE_AGENTS["oracle-fable"]?.variant).toBe("high");
+  });
+
   it("defines every preset's oracle agent and a valid main model + effort", () => {
     for (const p of DIAL_PRESETS) {
       expect(DIAL_ORACLE_AGENTS[p.oracleAgent]).toBeDefined();
