@@ -122,9 +122,22 @@ export async function runReview(
     }
     // If the placeholder failed, summaryCommentId keeps prevId and postReview edits it.
 
-    const details = await getPrDetails(pr.headRef);
+    // Look up by PR number, not branch: `gh pr view <branch>` resolves through
+    // GitHub's search index, which lags seconds behind PR creation — the
+    // initial review of a fresh PR died on exactly that (PR #4953), leaving
+    // the "Reviewing…" placeholder dangling forever. By-number is an exact
+    // REST get. Branch stays as the fallback for callers without a number.
+    const details = await getPrDetails(pr.number ? String(pr.number) : pr.headRef);
     if (!details) {
-      console.warn(`[github] no PR details for ${pr.headRef}; skipping review`);
+      console.warn(`[github] no PR details for #${pr.number} (${pr.headRef}); review not started`);
+      // Don't leave the placeholder pointing at a session that was never
+      // created — say what happened. The SHA was not recorded as reviewed,
+      // so the next push (or a manual "review" trigger) retries.
+      if (placeholderId)
+        await editIssueComment(
+          placeholderId,
+          `${REVIEW_MARKER}\n### 🤖 Michael review\n\n⚠️ Couldn't fetch the PR details to start the review — it will retry on the next push, or ask Michael to review manually.`,
+        ).catch(() => {});
       return null;
     }
 

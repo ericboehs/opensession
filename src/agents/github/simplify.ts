@@ -25,9 +25,10 @@ export async function runSimplify(
   }
   const author = authorForLogin(requestedBy);
   try {
-    const details = await getPrDetails(pr.headRef);
+    // By number, not branch — by-branch lookups lag for fresh PRs (see runReview).
+    const details = await getPrDetails(pr.number ? String(pr.number) : pr.headRef);
     if (!details) {
-      console.warn(`[github] no PR details for ${pr.headRef}; skipping simplify`);
+      console.warn(`[github] no PR details for #${pr.number} (${pr.headRef}); skipping simplify`);
       return;
     }
     if (details.state !== "OPEN") return;
