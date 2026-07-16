@@ -11,6 +11,7 @@ import { cpus, loadavg } from "node:os";
 import type { RouteContext } from "./context";
 import { activeAgentRunCount } from "../agent-runner";
 import { getAgents } from "../agents-registry";
+import { configuredServer } from "../config";
 import { IS_DEV, buildFrontend, frontend } from "../frontend-build";
 import { getPins } from "../pins";
 import { runErrors } from "../session-cache";
@@ -90,10 +91,15 @@ export async function handleSystemRoutes(
 	if (path === "/backstage/api/keypad" && req.method === "GET") {
 		const user = url.searchParams.get("user") || "Anonymous";
 		const control = getSessionControl();
+		// Canonical open-in-app link per session (the macropad opens it on
+		// keypress) — same shape as the frontend's chatPath (share-link.ts):
+		// workspace-scoped when the chat belongs to a Project.
+		const uiBase = configuredServer().publicBaseUrl;
 		const sessions: Array<{
 			id: string;
 			title: string;
 			status: "idle" | "working" | "needs_input" | "done" | "error";
+			url: string;
 		}> = [];
 		for (const key of getPins(user)) {
 			if (sessions.length >= 8) break;
@@ -116,7 +122,15 @@ export async function handleSystemRoutes(
 							: s.claudeSessionId || s.codexThreadId || s.opencodeSessionId
 								? "done"
 								: "idle";
-			sessions.push({ id: s.id, title: s.title || "Untitled", status });
+			const sessionUrl = s.projectId
+				? `${uiBase}/workspace/${encodeURIComponent(s.projectId)}/chat/${encodeURIComponent(s.id)}`
+				: `${uiBase}/session/${encodeURIComponent(s.id)}`;
+			sessions.push({
+				id: s.id,
+				title: s.title || "Untitled",
+				status,
+				url: sessionUrl,
+			});
 		}
 		return Response.json({ sessions });
 	}
