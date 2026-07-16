@@ -525,7 +525,8 @@ registerSessionControl({
 					if (event.type === "done") {
 						engineSessionId = event.sessionId || engineSessionId;
 						if (event.provider) effectiveProvider = event.provider;
-						if (event.model) effectiveModel = event.model;
+						// Same dial guard as the init handler above.
+						if (event.model && !dialPreset(model)) effectiveModel = event.model;
 						if (event.usageLimitExhausted)
 							runFailure =
 								event.result || "Usage limit reached on every account";
