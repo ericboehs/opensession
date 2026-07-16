@@ -47,6 +47,7 @@ import { isOpencodeSessionId } from "./opencode-transcript";
 import { wrapContext, stripContext } from "./prompt-context";
 import { activeRunRecords, type ActiveRunRecord } from "./run-journal";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
+import { createSlackPostScanner, linkThreadInIndex } from "./slack-links";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import {
 	engineSessionPatch,
@@ -442,9 +443,46 @@ export function resumeDrainedSessions(alreadyResumed: Set<string>): void {
 		);
 }
 
+/** Per-session Slack-post scanners for recovered (reattached/resumed) runs —
+ *  see the capture block in recordRecoveredRunEvent. Cleared on done/error. */
+const recoveredSlackScanners = new Map<
+	string,
+	ReturnType<typeof createSlackPostScanner>
+>();
+
 export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent): void {
 	const session = findSession(bksSessionId);
 	if (!session || session.source !== "backstage") return;
+
+	// Capture Slack posts so a reply in the posted thread routes back to this
+	// session (slack-links index). runAutomation does the same for normal runs;
+	// this covers runs that were REATTACHED/resumed after a restart — their
+	// events no longer flow through runAutomation's loop (that's how the
+	// 2026-07-16 dispute runs lost their thread links).
+	{
+		let scan = recoveredSlackScanners.get(bksSessionId);
+		if (!scan) {
+			scan = createSlackPostScanner();
+			recoveredSlackScanners.set(bksSessionId, scan);
+		}
+		const post = scan(event);
+		if (post) {
+			const threads = session.slackThreads || [];
+			if (
+				!threads.some(
+					(t) => t.channel === post.channel && t.threadTs === post.threadTs,
+				)
+			) {
+				touchBackstageSession(bksSessionId, {
+					slackThreads: [...threads, { channel: post.channel, threadTs: post.threadTs }],
+				});
+				linkThreadInIndex(bksSessionId, post.channel, post.threadTs);
+				invalidateSessionsCache();
+			}
+		}
+		if (event.type === "done" || event.type === "error")
+			recoveredSlackScanners.delete(bksSessionId);
+	}
 
 	if (event.type === "model_switch") {
 		const to = event.toModel || "";
