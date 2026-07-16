@@ -60,6 +60,9 @@ export interface UnifiedSession {
   prReviewDecision?: string;
   /** Person keys ("kent") of teammates with a pending review request. */
   prReviewRequested?: string[];
+  /** Person keys whose latest submitted PR review stands (approved /
+   *  changes requested / commented). Open PRs only. */
+  prReviewedBy?: string[];
   prAuthor?: string;
   prUpdatedAt?: string;
   prChecks?: { total: number; passed: number; failed: number; pending: number };

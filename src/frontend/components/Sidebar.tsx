@@ -701,6 +701,23 @@ function wsPrApproved(r: { chats: UnifiedSession[] }): boolean {
 		!wsPrMerged(r) && r.chats.some((c) => c.prReviewDecision === "APPROVED")
 	);
 }
+// Has `person` (lowercase person key) already given their review on the row's
+// PR? Their latest submitted review counts whatever the outcome — approve,
+// request changes, or comment — unless the author re-requested them since:
+// a pending re-request puts the PR back in their queue, matching GitHub's own
+// requested-reviewers behavior. Keeps "Needs review" honest when the reviewer
+// reviewed on GitHub instead of clicking "Mark as reviewed".
+function wsPrReviewGivenBy(
+	r: { chats: UnifiedSession[] },
+	person: string,
+): boolean {
+	const has = (list?: string[]) =>
+		(list || []).some((p) => p.toLowerCase() === person);
+	return (
+		r.chats.some((c) => has(c.prReviewedBy)) &&
+		!r.chats.some((c) => has(c.prReviewRequested))
+	);
+}
 
 const EXPANDED_KEY = "michael-sidebar-expanded";
 
@@ -1602,6 +1619,10 @@ export function Sidebar({
 			(r) =>
 				!wsPrMerged(r) &&
 				!wsPrApproved(r) &&
+				// You already reviewed the PR on GitHub (approve/changes/comment,
+				// no re-request since) → your part is done, the row moves to
+				// "Reviewed" instead of nagging you here.
+				!wsPrReviewGivenBy(r, me) &&
 				r.chats.some(
 					(c) =>
 						c.reviewRequest?.to?.toLowerCase() === me &&
@@ -1626,13 +1647,18 @@ export function Sidebar({
 				r.chats.some(
 					(c) =>
 						c.reviewRequest?.by?.toLowerCase() === me &&
-						!c.reviewRequest?.accepted,
+						!c.reviewRequest?.accepted &&
+						// The reviewer already gave their review on GitHub → the
+						// request landed; the row belongs in "Reviewed", not here.
+						!wsPrReviewGivenBy(r, c.reviewRequest.to.toLowerCase()),
 				),
 		);
 	}, [wsRows, currentUser, needsReviewRows]);
-	// Reviewed: the request landed — the reviewer signed off, either via the info
-	// panel's "Mark as reviewed" (`reviewRequest.accepted`) or by approving the
-	// PR on GitHub (`prReviewDecision === "APPROVED"`, wsPrApproved). Shown to
+	// Reviewed: the request landed — the reviewer signed off via the info
+	// panel's "Mark as reviewed" (`reviewRequest.accepted`), approved the PR on
+	// GitHub (`prReviewDecision === "APPROVED"`, wsPrApproved), or submitted
+	// their review on GitHub in any form (approve/changes/comment, no pending
+	// re-request — wsPrReviewGivenBy). Shown to
 	// both parties (asker or reviewer) so a session you sent out reads as done
 	// instead of vanishing back into the status lanes, and the reviewer sees their
 	// sign-off confirmed. Accepted/approved rows leave Needs / Awaiting and land
@@ -1649,7 +1675,15 @@ export function Sidebar({
 				);
 			});
 			if (!mineRequest) return false;
-			return r.chats.some((c) => c.reviewRequest?.accepted) || wsPrApproved(r);
+			return (
+				r.chats.some((c) => c.reviewRequest?.accepted) ||
+				wsPrApproved(r) ||
+				r.chats.some(
+					(c) =>
+						c.reviewRequest &&
+						wsPrReviewGivenBy(r, c.reviewRequest.to.toLowerCase()),
+				)
+			);
 		});
 	}, [wsRows, currentUser]);
 	// Every workspace pulled into a review band (Needs / Awaiting / Reviewed) —

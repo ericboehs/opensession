@@ -541,6 +541,9 @@ interface PrInfo {
   mergeable: string;
   /** Person keys ("kent") of teammates with a pending review request. */
   reviewRequested: string[];
+  /** Person keys whose latest submitted PR review stands (approved /
+   *  changes requested / commented). Populated for open PRs only. */
+  reviewedBy: string[];
   /** Assignee GitHub logins — bot-authored PRs carry the requester here. */
   assignees: string[];
 }
@@ -680,7 +683,7 @@ async function refreshPrCache(): Promise<void> {
         // via reviewDecision (see deriveReviewDecision). latestReviews is cheap
         // (~4s across every open PR, unlike statusCheckRollup), so it covers the
         // full open window rather than a scoped slice.
-        ghJson<Array<{ number: number; latestReviews?: Array<{ state?: string }> }>>([
+        ghJson<Array<{ number: number; latestReviews?: Array<{ state?: string; author?: { login?: string } }> }>>([
           "pr", "list", "--repo", repo.ghRepo, "--state", "open",
           "--limit", String(repo.openLimit), "--json", "number,latestReviews",
         ]),
@@ -699,9 +702,21 @@ async function refreshPrCache(): Promise<void> {
       }
 
       const reviewByNumber = new Map<number, string>();
+      const reviewedByNumber = new Map<number, string[]>();
       for (const r of reviews || []) {
         const decision = deriveReviewDecision(r.latestReviews);
         if (decision) reviewByNumber.set(r.number, decision);
+        // Teammates whose latest submitted review stands (approve / changes /
+        // comment) — lets the sidebar tell "you already gave your review" apart
+        // from "still on you" instead of only seeing the aggregate decision.
+        const people = new Set<string>();
+        for (const rev of r.latestReviews || []) {
+          const s = (rev.state || "").toUpperCase();
+          if (s !== "APPROVED" && s !== "CHANGES_REQUESTED" && s !== "COMMENTED") continue;
+          const p = githubLoginToPersonKey(rev.author?.login);
+          if (p) people.add(p);
+        }
+        if (people.size) reviewedByNumber.set(r.number, [...people]);
       }
 
       const toInfo = (pr: BulkPr): PrInfo => ({
@@ -723,6 +738,7 @@ async function refreshPrCache(): Promise<void> {
         reviewRequested: (pr.reviewRequests || [])
           .map((r) => githubLoginToPersonKey(r.login))
           .filter((p): p is string => !!p),
+        reviewedBy: reviewedByNumber.get(pr.number) || [],
         assignees: (pr.assignees || [])
           .map((a) => a.login)
           .filter((l): l is string => !!l),
@@ -874,6 +890,7 @@ export function getAllSessions(): UnifiedSession[] {
         session.prChangedFiles = pr.changedFiles;
         session.prReviewDecision = pr.reviewDecision;
         session.prReviewRequested = pr.reviewRequested;
+        session.prReviewedBy = pr.reviewedBy;
         session.prAuthor = pr.author;
         session.prUpdatedAt = pr.updatedAt;
         session.prChecks = pr.checks;
