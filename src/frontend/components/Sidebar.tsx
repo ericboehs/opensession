@@ -90,6 +90,19 @@ function isArchiveChord(e: KeyboardEvent): boolean {
 	return (k === "e" && !e.shiftKey) || (k === "a" && e.shiftKey);
 }
 
+/** True when an editable element owns focus and should keep the archive
+ * chords for itself. The main composer textarea is exempt: it autofocuses on
+ * every session open (and ⌘↑/⌘↓ workspace cycling re-focuses it), which left
+ * the advertised ⌘E dead almost all the time — and the chord types nothing,
+ * so firing there only costs the browser's niche find-selection default.
+ * Rename fields, search boxes, etc. keep the guard. */
+function editableSwallowsArchiveChord(target: EventTarget | null): boolean {
+	const editable = (target as HTMLElement | null)?.closest(
+		"input, textarea, select, [contenteditable='true'], [contenteditable='']",
+	);
+	return !!editable && !editable.classList.contains("composer-textarea");
+}
+
 // Long-press (touch) tuning for the mobile action sheet.
 const LONG_PRESS_MS = 450; // hold before the sheet opens
 const LONG_PRESS_SLOP = 10; // px of finger travel that cancels it (a scroll)
@@ -1739,13 +1752,7 @@ export function Sidebar({
 				)
 			)
 				return;
-			const target = e.target as HTMLElement | null;
-			if (
-				target?.closest(
-					"input, textarea, select, [contenteditable='true'], [contenteditable='']",
-				)
-			)
-				return;
+			if (editableSwallowsArchiveChord(e.target)) return;
 			const inList = wsRowOrder.some(
 				(r) => r.chats.length > 0 && r.chats.some((c) => c.id === selectedId),
 			);
@@ -1771,13 +1778,7 @@ export function Sidebar({
 				!e.altKey
 			)
 				return;
-			const target = e.target as HTMLElement | null;
-			if (
-				target?.closest(
-					"input, textarea, select, [contenteditable='true'], [contenteditable='']",
-				)
-			)
-				return;
+			if (editableSwallowsArchiveChord(e.target)) return;
 			const row = wsRowOrder.find(
 				(r) => r.chats.length > 0 && r.chats.some((c) => c.id === selectedId),
 			);

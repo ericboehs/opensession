@@ -2052,12 +2052,14 @@ export function SessionViewer({
 			) {
 				return;
 			}
+			// Same composer exemption as the sidebar's archive chords: the
+			// composer autofocuses, so an unconditional editable-focus bail
+			// would leave ⌘E dead almost always. Other inputs keep the guard.
 			const target = e.target as HTMLElement | null;
-			if (
-				target?.closest(
-					"input, textarea, select, [contenteditable='true'], [contenteditable='']",
-				)
-			) {
+			const editable = target?.closest(
+				"input, textarea, select, [contenteditable='true'], [contenteditable='']",
+			);
+			if (editable && !editable.classList.contains("composer-textarea")) {
 				return;
 			}
 			// Only the unarchive toggle lives here now — the sidebar owns ⌘E (and
