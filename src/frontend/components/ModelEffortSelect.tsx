@@ -123,11 +123,12 @@ const PROVIDER_LABELS: Record<string, string> = {
 	groq: "Groq",
 	mistral: "Mistral",
 	deepseek: "DeepSeek",
+	moonshotai: "Moonshot AI",
 };
 
 /** Section order in the grouped main list; unlisted providers follow in
  * config order. */
-const PROVIDER_ORDER = ["dial", "anthropic", "openai", "xai", "meta"];
+const PROVIDER_ORDER = ["dial", "anthropic", "openai", "xai", "meta", "moonshotai"];
 
 /** Preferred display order for the opencode main list (by id tail); anything
  * unlisted keeps its registry/config order after these. */
@@ -149,6 +150,7 @@ const OPENCODE_TAIL_ORDER = [
 	"gpt-5.4",
 	"gpt-5.4-mini",
 	"gpt-5.3-codex-spark",
+	"kimi-k3",
 ];
 
 /**
