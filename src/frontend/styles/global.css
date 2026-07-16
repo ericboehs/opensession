@@ -847,6 +847,14 @@ body.resizing-x {
 .sidebar-workspace--scrolled {
 	border-bottom-color: var(--border);
 }
+/* No top divider on mobile: on phones the sidebar IS the full home page, so this
+   on-scroll Sessions-header divider read as a bare hairline stranded across the
+   top of the page. Desktop keeps it (the sidebar is a rail there). */
+@media (max-width: 720px) {
+	.sidebar-workspace--scrolled {
+		border-bottom-color: transparent;
+	}
+}
 .sidebar-workspace-head {
 	display: flex;
 	align-items: center;
