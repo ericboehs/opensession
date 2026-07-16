@@ -1643,14 +1643,6 @@ function App() {
 							onOpenReports={() => navigate({ view: "reports" })}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenReview={openReviewForSession}
-							onOpenPr={(repo, branch) =>
-								navigate({ view: "pr", repo, branch })
-							}
-							selectedPr={
-								route.view === "pr"
-									? { repo: route.repo, branch: route.branch }
-									: null
-							}
 							onOpenSupportThread={(threadId) =>
 								navigate({ view: "support", threadId })
 							}

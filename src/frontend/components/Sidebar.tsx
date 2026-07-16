@@ -33,7 +33,7 @@ import {
 import { Reorder, useDragControls } from "motion/react";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, markUnread, onReadsChanged } from "../lib/reads";
-import { chatPath, prPath, absoluteLink, copyToClipboard } from "../lib/share-link";
+import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { providerFromUrl } from "../lib/provider";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { getWsTimePref, onWsTimeChanged } from "../lib/workspace-time";
@@ -207,10 +207,6 @@ interface Props {
 	onSelect: (session: UnifiedSession) => void;
 	/** Foreground a session's Review view-tab (from a chat row's context menu). */
 	onOpenReview: (session: UnifiedSession) => void;
-	/** Open the session-less PR preview for a PR row with no chat behind it. */
-	onOpenPr: (repo: string, branch: string) => void;
-	/** The PR preview currently open (highlights its row), or null. */
-	selectedPr?: { repo: string; branch: string } | null;
 	/** Open the session-less ticket preview for a Support row with no session. */
 	onOpenSupportThread: (threadId: string) => void;
 	/** The support preview currently open (highlights its row), or null. */
@@ -760,7 +756,8 @@ interface FilterState {
 	groupBy: GroupBy;
 	repo: string; // a repo id, or "all"
 	// "me" (your workspaces — the default), "everyone" (literally all
-	// workspaces), or a lowercased person key for a specific teammate.
+	// workspaces), "unassigned" (the explicit backlog view), or a lowercased
+	// person key for a specific teammate.
 	person: string;
 	sort: SortBy;
 }
@@ -812,8 +809,6 @@ export function Sidebar({
 	onOpenReports,
 	onSelect,
 	onOpenReview,
-	onOpenPr,
-	selectedPr = null,
 	onOpenSupportThread,
 	selectedSupportThreadId = null,
 	onNewSession,
@@ -994,13 +989,6 @@ export function Sidebar({
 		x: number;
 		y: number;
 	} | null>(null);
-	// Right-click menu on a PR-lane row (copy link / open on GitHub) — PR rows
-	// that no chat represents yet, so they have no workspace menu.
-	const [prMenu, setPrMenu] = useState<{
-		pr: PrRow;
-		x: number;
-		y: number;
-	} | null>(null);
 	const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
 	const [projectDraft, setProjectDraft] = useState("");
 	function commitProjectRename() {
@@ -1047,16 +1035,6 @@ export function Sidebar({
 			window.removeEventListener("scroll", close, true);
 		};
 	}, [projectMenu]);
-	useEffect(() => {
-		if (!prMenu) return;
-		const close = () => setPrMenu(null);
-		window.addEventListener("click", close);
-		window.addEventListener("scroll", close, true);
-		return () => {
-			window.removeEventListener("click", close);
-			window.removeEventListener("scroll", close, true);
-		};
-	}, [prMenu]);
 	useEffect(() => {
 		if (!folderMenu) return;
 		const close = () => setFolderMenu(null);
@@ -1154,110 +1132,6 @@ export function Sidebar({
 		return m;
 	}, [sessions]);
 
-	// A PR row in the "In review" lane. Chats that own a PR (their branch is
-	// its head branch) are already lane rows wearing the PR's status — these
-	// rows cover every OTHER open PR: `session` set means a chat owns the PR
-	// through an attached repo (the row opens that chat); null means no chat
-	// anywhere — the row opens the session-less PR preview, where the first
-	// message creates a session on the PR's branch.
-	interface PrRow {
-		url: string;
-		repo: string;
-		branch: string;
-		number?: number;
-		title: string;
-		isDraft: boolean;
-		checksFailed: boolean;
-		updatedAt: string;
-		session: UnifiedSession | null;
-	}
-
-	// Open PRs of the focus person (the Person filter, defaulting to you;
-	// "everyone" lifts the person lens) that no chat row already represents,
-	// honoring the repo filter and search. A PR is a person's when their GitHub
-	// account authored it (identity table, resolved server-side), or — for
-	// bot-authored PRs, which Michael opens as tella-butler — when they started
-	// the chat that owns it.
-	const prLaneRows = useMemo(() => {
-		const focus =
-			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
-		const q = search.toLowerCase();
-
-		// PRs represented by a live chat row already: any non-archived session
-		// whose primary repo+branch is the PR's head. Attached-repo branches get
-		// their own PR row that opens the owning chat (its row only wears the
-		// primary PR).
-		const primaryKeys = new Set<string>();
-		const attachedByKey = new Map<string, UnifiedSession>();
-		for (const s of sessions) {
-			if (s.archived) continue;
-			// A human's chat owns its PR and represents it in the sidebar, so we drop
-			// that PR from the PR lane. Automation sessions (e.g. github-pr-review)
-			// are different: they claim the author's branch but show under "GitHub
-			// (automation)", not the author — so letting them suppress the row hides
-			// the PR from its own author's default "me" view (it's in neither lane).
-			// Don't let an automation session claim a PR-lane row; the PR then shows
-			// attributed to its author (pr.person).
-			if (s.branch && !s.automation)
-				primaryKeys.add(`${sessionRepo(s)}:${s.branch}`);
-			for (const ar of s.attachedRepos || []) {
-				const key = `${ar.repo}:${ar.branch}`;
-				const prev = attachedByKey.get(key);
-				if (!prev || s.lastActivity > prev.lastActivity)
-					attachedByKey.set(key, s);
-			}
-		}
-
-		const rows: PrRow[] = [];
-		for (const pr of openPrs || []) {
-			const key = `${pr.repo}:${pr.branch}`;
-			if (primaryKeys.has(key)) continue;
-			const session = attachedByKey.get(key) || null;
-			const person =
-				pr.person ||
-				(session && !session.automation && session.startedBy
-					? session.startedBy.toLowerCase()
-					: null);
-			if (focus !== "everyone" && person !== focus) continue;
-			rows.push({
-				url: pr.url,
-				repo: pr.repo,
-				branch: pr.branch,
-				number: pr.number,
-				title: pr.title,
-				isDraft: pr.isDraft,
-				checksFailed: (pr.checks?.failed || 0) > 0,
-				updatedAt: pr.updatedAt,
-				session,
-			});
-		}
-
-		let visible = rows;
-		if (filter.repo !== "all")
-			visible = visible.filter((r) => r.repo === filter.repo);
-		if (q)
-			visible = visible.filter(
-				(r) =>
-					r.title.toLowerCase().includes(q) ||
-					r.branch.toLowerCase().includes(q) ||
-					String(r.number || "").includes(q.replace(/^#/, "")),
-			);
-		// "Created" sorts by PR number (creation order); "Updated" by activity.
-		return visible.sort((a, b) =>
-			filter.sort === "created"
-				? (b.number || 0) - (a.number || 0)
-				: (b.updatedAt || "").localeCompare(a.updatedAt || ""),
-		);
-	}, [
-		sessions,
-		openPrs,
-		currentUser,
-		search,
-		filter.person,
-		filter.repo,
-		filter.sort,
-	]);
-
 	// Distinct repos across the (non-archived) sessions, most-used first, for the
 	// Repo filter dropdown. Built off every session (not the search-filtered set)
 	// so the options don't churn while you type.
@@ -1287,19 +1161,10 @@ export function Sidebar({
 			e.count++;
 			entries.set(key, e);
 		}
-		// Teammates whose GitHub account has open PRs get an option too, even
-		// with no sessions — the Open PRs section can still show their work.
-		for (const pr of openPrs || []) {
-			if (!pr.person || entries.has(pr.person)) continue;
-			const label = [...TEAM, "Michael"].find(
-				(n) => n.toLowerCase() === pr.person,
-			);
-			if (label) entries.set(pr.person, { label, count: 0 });
-		}
 		return Array.from(entries.entries())
 			.sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
 			.map(([key, { label }]) => ({ key, label }));
-	}, [sessions, openPrs]);
+	}, [sessions]);
 
 	// Every non-archived chat, narrowed by the repo/person filters and search.
 	// Rows are built per-workspace below; a chat matching the filter surfaces its
@@ -1312,7 +1177,11 @@ export function Sidebar({
 		// "everyone" keep every chat so workspace rows stay whole (your
 		// workspaces can contain teammates' chats, and pinned rows survive) —
 		// the owner lens is applied per-row in focusWsRows instead.
-		if (filter.person !== "me" && filter.person !== "everyone")
+		if (
+			filter.person !== "me" &&
+			filter.person !== "everyone" &&
+			filter.person !== "unassigned"
+		)
 			visible = visible.filter(
 				(s) =>
 					!s.automation &&
@@ -1724,7 +1593,11 @@ export function Sidebar({
 			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
 		return wsRows.filter(
 			(r) =>
-				(focus === "everyone" || r.owner === focus) &&
+				(focus === "unassigned"
+					? r.status === "pending"
+					: focus === "everyone"
+						? r.status !== "pending"
+						: r.owner === focus && r.status !== "pending") &&
 				!reviewBandKeys.has(r.key) &&
 				!pinSet.has(r.key) &&
 				!r.chats.some((c) => pinSet.has(c.id)) &&
@@ -1752,7 +1625,11 @@ export function Sidebar({
 				.filter(
 					(r) =>
 						rowFolderId(r) === folder.id &&
-						(focus === "everyone" || r.owner === focus) &&
+						(focus === "unassigned"
+							? r.status === "pending"
+							: focus === "everyone"
+								? r.status !== "pending"
+								: r.owner === focus && r.status !== "pending") &&
 						!reviewBandKeys.has(r.key) &&
 						!pinSet.has(r.key) &&
 						!r.chats.some((c) => pinSet.has(c.id)),
@@ -1801,7 +1678,6 @@ export function Sidebar({
 		reviewedRows.length === 0 &&
 		pinnedWsRows.length === 0 &&
 		focusWsRows.length === 0 &&
-		prLaneRows.length === 0 &&
 		folders.length === 0;
 
 	function archiveWorkspaceWithNext(row: WsRow) {
@@ -2558,88 +2434,6 @@ export function Sidebar({
 		);
 	}
 
-	// A PR row in the "In review" lane: a chat-owned (attached-repo) PR opens
-	// its chat; an unowned PR opens the session-less PR preview, where the
-	// first message creates a session on the PR's head branch.
-	function renderPrRow(r: PrRow) {
-		const selected = r.session
-			? r.session.id === selectedId
-			: !!selectedPr &&
-				selectedPr.repo === r.repo &&
-				selectedPr.branch === r.branch;
-		return (
-			<button
-				key={`pr:${r.url}`}
-				className={`sidebar-item group flex items-center gap-2 min-w-0 ${
-					selected ? "sidebar-item-selected" : ""
-				}`}
-				onClick={() => {
-					if (r.session) onSelect(r.session);
-					else onOpenPr(r.repo, r.branch);
-				}}
-				onContextMenu={(e) => {
-					e.preventDefault();
-					setProjectMenu(null);
-					setPrMenu({ pr: r, x: e.clientX, y: e.clientY });
-				}}
-				title={`${r.number ? `#${r.number} ` : ""}${r.title} — ${r.repo}`}
-			>
-				<IconPullRequest
-					size={22}
-					className={`shrink-0 ${
-						r.checksFailed
-							? "text-red"
-							: r.isDraft
-								? "text-faint"
-								: "text-green"
-					}`}
-				/>
-				{filter.repo === "all" && <RepoTile name={r.repo} />}
-				<span className="sidebar-item-title">{r.title}</span>
-				{r.isDraft && (
-					<span className="text-faint text-[10.5px] max-[720px]:text-[12px] tracking-[-0.01em] shrink-0">
-						draft
-					</span>
-				)}
-				<span
-					role="button"
-					tabIndex={0}
-					className="ml-auto hidden group-hover:inline-flex items-center shrink-0 text-faint hover:text-fg"
-					title={`Open PR on ${providerFromUrl(r.url).name}`}
-					onClick={(e) => {
-						e.stopPropagation();
-						window.open(r.url, "_blank", "noopener");
-					}}
-					onKeyDown={(e) => {
-						if (e.key === "Enter" || e.key === " ") {
-							e.stopPropagation();
-							window.open(r.url, "_blank", "noopener");
-						}
-					}}
-				>
-					<svg
-						width="17"
-						height="17"
-						viewBox="0 0 16 16"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="1.4"
-					>
-						<path
-							d="M6.5 3.5H3.8A1.3 1.3 0 0 0 2.5 4.8v7.4a1.3 1.3 0 0 0 1.3 1.3h7.4a1.3 1.3 0 0 0 1.3-1.3V9.5"
-							strokeLinecap="round"
-						/>
-						<path
-							d="M9.5 2.5h4v4M13.2 2.8L7.5 8.5"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						/>
-					</svg>
-				</span>
-			</button>
-		);
-	}
-
 	// Quick "mark done" straight from a Support row — optimistic removal (the
 	// ticket leaves Plain's Todo queue), restored by a refetch if Plain says no.
 	async function markSupportRowDone(threadId: string) {
@@ -2722,12 +2516,11 @@ export function Sidebar({
 	// of workspace rows. `ns` namespaces the per-lane collapse keys so the same
 	// lane can appear once per repo with independent open/closed state; the
 	// default (status grouping) passes "" to keep the original `status:<key>`
-	// keys and their persisted state. The review lane also absorbs the PR rows.
-	function renderStatusLanes(rows: WsRow[], prRows: PrRow[], ns: string) {
+	// keys and their persisted state.
+	function renderStatusLanes(rows: WsRow[], ns: string) {
 		return MINE_STATUS_META.map((meta) => {
 			const items = rows.filter((r) => r.status === meta.key);
-			const lanePrRows = meta.key === "review" ? prRows : [];
-			if (items.length === 0 && lanePrRows.length === 0) return null;
+			if (items.length === 0) return null;
 			const gkey = `${ns}status:${meta.key}`;
 			const open = isOpen(gkey);
 			return (
@@ -2739,9 +2532,7 @@ export function Sidebar({
 						<SidebarGroupIcon status={meta.key} color={meta.dotColor} />
 						<span className="sidebar-group-name">{meta.label}</span>
 						{/* Count rides directly behind the lane name, not pinned right. */}
-						<span className="sidebar-group-count">
-							{items.length + lanePrRows.length}
-						</span>
+						<span className="sidebar-group-count">{items.length}</span>
 						<IconChevronDown
 							className="sidebar-group-chevron"
 							size={22}
@@ -2751,17 +2542,6 @@ export function Sidebar({
 					{items
 						.filter((r) => open || r.chats.some((c) => c.id === selectedId))
 						.map(renderWsRow)}
-					{lanePrRows
-						.filter(
-							(r) =>
-								open ||
-								(r.session
-									? r.session.id === selectedId
-									: !!selectedPr &&
-										selectedPr.repo === r.repo &&
-										selectedPr.branch === r.branch),
-						)
-						.map(renderPrRow)}
 				</div>
 			);
 		});
@@ -2772,17 +2552,16 @@ export function Sidebar({
 	// with any stragglers appended; a band is force-open while it holds the
 	// selected row so the open session never hides inside a collapsed repo.
 	function renderRepoGroups() {
-		const byRepo = new Map<string, { rows: WsRow[]; prs: PrRow[] }>();
+		const byRepo = new Map<string, WsRow[]>();
 		const bucket = (repo: string) => {
 			let b = byRepo.get(repo);
 			if (!b) {
-				b = { rows: [], prs: [] };
+				b = [];
 				byRepo.set(repo, b);
 			}
 			return b;
 		};
-		for (const r of focusWsRows) bucket(wsRowRepo(r)).rows.push(r);
-		for (const pr of prLaneRows) bucket(pr.repo).prs.push(pr);
+		for (const r of focusWsRows) bucket(wsRowRepo(r)).push(r);
 		const order = [
 			...repos,
 			...Array.from(byRepo.keys()).filter((r) => !repos.includes(r)),
@@ -2790,17 +2569,11 @@ export function Sidebar({
 		return order
 			.filter((repo) => byRepo.has(repo))
 			.map((repo) => {
-				const b = byRepo.get(repo)!;
+				const rows = byRepo.get(repo)!;
 				const gkey = `repo:${repo}`;
-				const hasSelected =
-					b.rows.some((r) => r.chats.some((c) => c.id === selectedId)) ||
-					b.prs.some((r) =>
-						r.session
-							? r.session.id === selectedId
-							: !!selectedPr &&
-								selectedPr.repo === r.repo &&
-								selectedPr.branch === r.branch,
-					);
+				const hasSelected = rows.some((r) =>
+					r.chats.some((c) => c.id === selectedId),
+				);
 				const open = isOpen(gkey) || hasSelected;
 				return (
 					<div className="sidebar-repo-group" key={gkey}>
@@ -2812,7 +2585,7 @@ export function Sidebar({
 							<span className="sidebar-group-name">{repoLabel(repo)}</span>
 							{/* Count rides directly behind the repo name, not pinned right. */}
 							<span className="sidebar-group-count">
-								{b.rows.length + b.prs.length}
+								{rows.length}
 							</span>
 							<IconChevronDown
 								className="sidebar-group-chevron"
@@ -2842,7 +2615,7 @@ export function Sidebar({
 						</button>
 						{open && (
 							<div className="sidebar-repo-lanes">
-								{renderStatusLanes(b.rows, b.prs, `repo:${repo}::`)}
+								{renderStatusLanes(rows, `repo:${repo}::`)}
 							</div>
 						)}
 					</div>
@@ -2933,6 +2706,8 @@ export function Sidebar({
 					<span className="sidebar-workspace-title" ref={titleRef}>
 						{filter.person === "me"
 							? "Workspaces"
+							: filter.person === "unassigned"
+								? "Unassigned workspaces"
 							: filter.person === "everyone"
 								? "All workspaces"
 								: `${people.find((p) => p.key === filter.person)?.label || filter.person}'s workspaces`}
@@ -3200,37 +2975,6 @@ export function Sidebar({
 							y={projectMenu.y}
 							entries={entries}
 							onClose={() => setProjectMenu(null)}
-						/>
-					);
-				})()}
-			{prMenu &&
-				(() => {
-					const r = prMenu.pr;
-					const link = r.session
-						? absoluteLink(chatPath(r.session))
-						: absoluteLink(prPath(r.repo, r.branch));
-					const entries: CtxEntry[] = [
-						{
-							kind: "item",
-							icon: <IconLink size={20} />,
-							label: "Copy link",
-							shortcut: "⌘⇧C",
-							onClick: () =>
-								copyToClipboard(link, () => onToast?.("Link copied")),
-						},
-						{
-							kind: "item",
-							icon: <IconPullRequest size={20} />,
-							label: `Open PR on ${providerFromUrl(r.url).name}`,
-							onClick: () => window.open(r.url, "_blank", "noopener"),
-						},
-					];
-					return (
-						<SidebarCtxMenu
-							x={prMenu.x}
-							y={prMenu.y}
-							entries={entries}
-							onClose={() => setPrMenu(null)}
 						/>
 					);
 				})()}
@@ -3822,13 +3566,14 @@ export function Sidebar({
 				    new-session actions) — no second in-list heading. ── */}
 				<div className="sidebar-group">
 					{/* Status groups over the focus person's workspaces. The Person
-					    filter defaults to you; picking a teammate shows their groups
-					    instead, and "Everyone" shows all workspaces. "Group by: Repo"
+					    filter defaults to you; picking a teammate shows their active groups,
+					    "Unassigned" shows Backlog, and "Everyone" shows active workspaces.
+					    "Group by: Repo"
 					    nests those same status lanes under one band per repo. Empty
 					    lanes/bands are hidden — only groups with sessions render. */}
 					{filter.groupBy === "repo"
 						? renderRepoGroups()
-						: renderStatusLanes(focusWsRows, prLaneRows, "")}
+						: renderStatusLanes(focusWsRows, "")}
 				</div>
 
 				{archivedBand && (
@@ -4156,9 +3901,8 @@ function FilterPopover({
 		})),
 	];
 
-	// You first (the default), then teammates, "Everyone" last — selecting
-	// Everyone literally shows all workspaces, which is rarely what you want,
-	// so it never leads the list.
+	// You first (the default), then teammates, the explicit Backlog lens, and
+	// "Everyone" last. Backlog stays out of every owner-focused view.
 	const meKey = currentUser.toLowerCase();
 	const personDot = (key: string) => (
 		<span
@@ -4175,6 +3919,7 @@ function FilterPopover({
 				label,
 				icon: personDot(key),
 			})),
+		{ value: "unassigned", label: "Unassigned" },
 		{ value: "everyone", label: "Everyone" },
 	];
 
