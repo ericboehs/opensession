@@ -895,6 +895,47 @@ export function SessionViewer({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [models, defaultModel, model, effort]);
 
+	// ⌃⇧↑/⌃⇧↓ page the transcript up/down — keyboard scrolling that works while
+	// the composer is focused. A programmatic scroll carries no reader gesture,
+	// so useChatScroll won't re-engage auto-follow from it: a Down that would
+	// land at the live edge goes through scrollToLatest, which resumes following.
+	useEffect(() => {
+		function onKeyDown(e: KeyboardEvent) {
+			const arrow =
+				e.key === "ArrowUp" || e.code === "ArrowUp"
+					? "ArrowUp"
+					: e.key === "ArrowDown" || e.code === "ArrowDown"
+						? "ArrowDown"
+						: null;
+			if (
+				e.defaultPrevented ||
+				!arrow ||
+				!e.ctrlKey ||
+				!e.shiftKey ||
+				e.metaKey ||
+				e.altKey
+			)
+				return;
+			const el = messagesRef.current;
+			if (!el) return;
+			e.preventDefault();
+			const delta = Math.max(120, el.clientHeight * 0.8);
+			if (arrow === "ArrowDown") {
+				const remaining = el.scrollHeight - el.clientHeight - el.scrollTop;
+				if (remaining - delta < 48) {
+					scrollToLatest();
+					return;
+				}
+			}
+			el.scrollBy({
+				top: arrow === "ArrowUp" ? -delta : delta,
+				behavior: "smooth",
+			});
+		}
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [messagesRef, scrollToLatest]);
+
 	// A "new tab" while this session is open is a fresh chat *in this session*:
 	// clear the composer and jump to the live edge. We skip the first run (and
 	// session switches, which remount this with whatever the counter's at) and
