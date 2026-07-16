@@ -1350,6 +1350,16 @@ export async function runAutomationApi(id: string) {
 	});
 }
 
+/** Re-fire an automation replaying the triggering event of one of its past
+ *  runs (the run is identified by its session id). */
+export async function retriggerAutomationApi(sessionId: string) {
+	await request<void>(`/automations/retrigger`, {
+		method: "POST",
+		body: { sessionId },
+		label: "Failed to retrigger",
+	});
+}
+
 // ── Scheduled prompts (composer "send later") ──
 
 export interface ScheduledPrompt {

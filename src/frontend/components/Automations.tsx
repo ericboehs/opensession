@@ -6,6 +6,7 @@ import {
   updateAutomationApi,
   deleteAutomationApi,
   runAutomationApi,
+  retriggerAutomationApi,
   fetchModels,
   fetchAutomationTemplates,
   draftAutomationApi,
@@ -188,6 +189,15 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
   async function handleRunNow(a: Automation) {
     try {
       await runAutomationApi(a.id);
+      setTimeout(load, 800);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function handleRetrigger(sessionId: string) {
+    try {
+      await retriggerAutomationApi(sessionId);
       setTimeout(load, 800);
     } catch (e: any) {
       setError(e.message);
@@ -506,7 +516,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
                   {(sel.runs?.length ?? 0) > 0 && (
                     <>
                       <TriggerGraph runs={sel.runs!} />
-                      <RunLedger runs={sel.runs!} onOpenSession={onOpenSession} />
+                      <RunLedger runs={sel.runs!} onOpenSession={onOpenSession} onRetrigger={handleRetrigger} />
                     </>
                   )}
                 </div>
@@ -642,9 +652,11 @@ function formatDuration(ms: number): string {
 function RunLedger({
   runs,
   onOpenSession,
+  onRetrigger,
 }: {
   runs: AutomationRun[];
   onOpenSession: (sessionId: string) => void;
+  onRetrigger: (sessionId: string) => void;
 }) {
   return (
     <div className="mt-2.5 border-t border-line pt-2 flex flex-col gap-1">
@@ -679,6 +691,19 @@ function RunLedger({
           >
             view session
           </a>
+          {r.status !== "running" && (
+            <button
+              className="automation-session-link shrink-0 bg-transparent border-none p-0 font-[inherit] text-[12px]"
+              title={
+                r.trigger === "event" || r.trigger === "webhook"
+                  ? "Start a fresh run replaying this run's triggering event"
+                  : "Start a fresh run of this automation"
+              }
+              onClick={() => onRetrigger(r.sessionId)}
+            >
+              retrigger
+            </button>
+          )}
         </div>
       ))}
     </div>
