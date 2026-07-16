@@ -150,6 +150,13 @@ export interface UnifiedSession {
    */
   manualStatus?: "needsinput" | "inprogress" | "review" | "merged" | "pending";
   /**
+   * True when `title` is a manual rename (title-override registry) rather than
+   * a derived/generated one. The sidebar names shared-worktree rows after the
+   * branch because generated titles drift — a manual rename is explicit user
+   * intent and should win there too.
+   */
+  titleOverridden?: boolean;
+  /**
    * A pending "please review this" pointed at a teammate, set from the info
    * panel's Reviewer picker. Surfaces the session in a "Needs review" band at
    * the top of the reviewer's sidebar. Set from the review-request registry in

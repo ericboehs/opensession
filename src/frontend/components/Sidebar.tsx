@@ -990,6 +990,26 @@ export function Sidebar({
 		}
 		setEditingProjectId(null);
 	}
+	// Inline rename for workspace-less rows (slack/linear/solo chats). These
+	// used window.prompt(), which iOS standalone PWAs silently suppress —
+	// Rename tapped, nothing happened. Same inline editor as workspace rows;
+	// an empty commit clears the manual title back to the derived one.
+	const [editingChatId, setEditingChatId] = useState<string | null>(null);
+	const [chatDraft, setChatDraft] = useState("");
+	function startChatRename(chat: { id: string; title: string }) {
+		setChatDraft(chat.title);
+		setEditingChatId(chat.id);
+	}
+	function commitChatRename(chat: UnifiedSession) {
+		if (editingChatId) onRename(chat, chatDraft.trim());
+		setEditingChatId(null);
+	}
+	/** Is this row's title currently being inline-edited (workspace or chat)? */
+	function rowRenameEditing(row: WsRow): boolean {
+		return row.workspace
+			? editingProjectId === row.workspace.id
+			: !!row.chats[0] && editingChatId === row.chats[0].id;
+	}
 	function commitFolderRename() {
 		if (editingFolderId) {
 			const name = folderDraft.trim();
@@ -1421,9 +1441,17 @@ export function Sidebar({
 		for (const [dir, chats] of byWorktree) {
 			chats.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
 			// The branch is the row's stable name (chat titles drift as generated
-			// titles land; the branch names the shared piece of work).
+			// titles land; the branch names the shared piece of work). A manual
+			// rename is explicit user intent though — it wins over the branch,
+			// otherwise renaming a slack/linear session looks like a no-op.
+			const renamed = chats.find((c) => c.titleOverridden);
 			rows.push(
-				mkRow(`wt:${dir}`, null, chats[0].branch || chats[0].title, chats),
+				mkRow(
+					`wt:${dir}`,
+					null,
+					renamed?.title || chats[0].branch || chats[0].title,
+					chats,
+				),
 			);
 		}
 		for (const s of loose) rows.push(mkRow(s.id, null, s.title, [s]));
@@ -1910,7 +1938,7 @@ export function Sidebar({
 		wsHoverCloseT.current = null;
 	}
 	function wsRowHoverEnter(row: WsRow, el: HTMLElement) {
-		if (row.workspace && editingProjectId === row.workspace.id) return;
+		if (rowRenameEditing(row)) return;
 		cancelWsHoverTimers();
 		wsHoverOpenT.current = setTimeout(() => {
 			setWsHover({ row, anchor: el.getBoundingClientRect() });
@@ -1974,7 +2002,7 @@ export function Sidebar({
 		wsPressOrigin.current = null;
 	}
 	function wsRowTouchStart(row: WsRow, e: React.TouchEvent) {
-		if (row.workspace && editingProjectId === row.workspace.id) return;
+		if (rowRenameEditing(row)) return;
 		if (e.touches.length !== 1) return;
 		const t = e.touches[0];
 		wsLongPressed.current = false;
@@ -2045,7 +2073,7 @@ export function Sidebar({
 		wsSwipeOrigin.current = null;
 		wsSwiping.current = false;
 		setWsDraggingKey(null);
-		if (row.workspace && editingProjectId === row.workspace.id) return;
+		if (rowRenameEditing(row)) return;
 		if (wasSwiping) {
 			e.preventDefault();
 			if (Math.abs(swipeOffset) >= fullSwipeThreshold(rowWidth)) {
@@ -2205,7 +2233,7 @@ export function Sidebar({
 	// double-click renames inline.
 	function renderWsRow(row: WsRow) {
 		const active = row.chats.some((s) => s.id === selectedId);
-		const editing = row.workspace && editingProjectId === row.workspace.id;
+		const editing = rowRenameEditing(row);
 		const waiting = row.status === "needsinput";
 		// The "in progress" ticker start: the earliest running chat's start, so a
 		// workspace with several live chats shows how long it's been busy overall.
@@ -2360,15 +2388,29 @@ export function Sidebar({
 				{editing ? (
 					<input
 						className="sidebar-item-rename"
-						value={projectDraft}
+						value={row.workspace ? projectDraft : chatDraft}
 						autoFocus
-						onChange={(e) => setProjectDraft(e.target.value)}
+						onChange={(e) =>
+							row.workspace
+								? setProjectDraft(e.target.value)
+								: setChatDraft(e.target.value)
+						}
 						onClick={(e) => e.stopPropagation()}
 						onDoubleClick={(e) => e.stopPropagation()}
-						onBlur={commitProjectRename}
+						onBlur={() =>
+							row.workspace
+								? commitProjectRename()
+								: commitChatRename(row.chats[0])
+						}
 						onKeyDown={(e) => {
-							if (e.key === "Enter") commitProjectRename();
-							else if (e.key === "Escape") setEditingProjectId(null);
+							if (e.key === "Enter")
+								row.workspace
+									? commitProjectRename()
+									: commitChatRename(row.chats[0]);
+							else if (e.key === "Escape")
+								row.workspace
+									? setEditingProjectId(null)
+									: setEditingChatId(null);
 							e.stopPropagation();
 						}}
 					/>
@@ -2382,11 +2424,7 @@ export function Sidebar({
 								setEditingProjectId(row.workspace.id);
 							} else if (row.chats[0]) {
 								// Solo chat rows rename the chat itself.
-								const title = window
-									.prompt("Rename chat", row.chats[0].title)
-									?.trim();
-								if (title !== undefined && title !== null)
-									onRename(row.chats[0], title);
+								startChatRename(row.chats[0]);
 							}
 						}}
 					>
@@ -3068,10 +3106,7 @@ export function Sidebar({
 							kind: "item",
 							icon: <IconPencil size={20} />,
 							label: "Rename",
-							onClick: () => {
-								const t = window.prompt("Rename chat", first.title)?.trim();
-								if (t !== undefined) onRename(first, t);
-							},
+							onClick: () => startChatRename(first),
 						});
 					if (first)
 						entries.push({
@@ -3996,11 +4031,7 @@ export function Sidebar({
 									setEditingProjectId(ws.id);
 								} else if (row.chats[0]) {
 									// Solo chat rows rename the chat itself.
-									const title = window
-										.prompt("Rename chat", row.chats[0].title)
-										?.trim();
-									if (title !== undefined && title !== null)
-										onRename(row.chats[0], title);
+									startChatRename(row.chats[0]);
 								}
 							}}
 							onMarkUnread={

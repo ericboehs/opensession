@@ -957,7 +957,10 @@ export function getAllSessions(): UnifiedSession[] {
     const override =
       getTitleOverride(session.id) ??
       session.aliasIds?.map((a) => getTitleOverride(a)).find(Boolean);
-    if (override) session.title = override;
+    if (override) {
+      session.title = override;
+      session.titleOverridden = true;
+    }
   }
 
   // Apply manual status-lane overrides. Keyed by unified id or any merged alias

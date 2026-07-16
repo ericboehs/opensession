@@ -166,6 +166,8 @@ export interface UnifiedSession {
 	worktreeDir: string | null;
 	startedBy: string | null;
 	title: string;
+	/** True when `title` is a manual rename rather than derived/generated. */
+	titleOverridden?: boolean;
 	lastActivity: string;
 	createdAt: string;
 	isRunning: boolean;
