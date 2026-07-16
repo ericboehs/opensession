@@ -74,6 +74,56 @@ function statusChip(s: UnifiedSession): string {
   return "⚪ Idle";
 }
 
+/** Bare relative duration: "5m" / "2h" / "3d" — no "ago" suffix, callers add it. */
+function relTime(iso?: string): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (!t) return "";
+  const secs = Math.round((Date.now() - t) / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+/**
+ * A one-line "what's this about" blurb: the walkthrough summary if the agent
+ * published one, else the goal/mission text. Stripped of markdown and capped so
+ * the card stays compact.
+ */
+function summaryLine(s: UnifiedSession): string {
+  const raw = (s.walkthrough?.summary || s.goal || "").trim();
+  if (!raw) return "";
+  // First paragraph, markdown stripped to plain-ish text.
+  let text = raw.split(/\n\s*\n/)[0].replace(/\s+/g, " ").trim();
+  text = text
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1") // links/images → their text
+    .replace(/[*_`#>]/g, "") // md emphasis / headings / code / quote
+    .trim();
+  if (text.length > 220) text = text.slice(0, 217).trimEnd() + "…";
+  return text;
+}
+
+/** "+123 −45" diff stat from the PR fields, or "" when unknown. */
+function diffStat(s: UnifiedSession): string {
+  if (s.prAdditions == null && s.prDeletions == null) return "";
+  return `+${s.prAdditions ?? 0} −${s.prDeletions ?? 0}`;
+}
+
+/** A compact review-decision label, or "" when there's nothing worth showing. */
+function reviewLabel(decision?: string): string {
+  switch (decision) {
+    case "APPROVED":
+      return "✅ approved";
+    case "CHANGES_REQUESTED":
+      return "✋ changes requested";
+    default:
+      return "";
+  }
+}
+
 /** Build the Block Kit unfurl body for one session. */
 function unfurlForSession(s: UnifiedSession, url: string): { blocks: any[] } {
   const title = (s.title || s.id).trim();
@@ -82,31 +132,49 @@ function unfurlForSession(s: UnifiedSession, url: string): { blocks: any[] } {
   if (s.repo) bits.push(s.branch ? `${s.repo} · \`${s.branch}\`` : s.repo);
   if (s.model) bits.push(modelLabel(s.model));
   if (s.mode) bits.push(s.mode);
+  if (s.linearIssue?.identifier) bits.push(s.linearIssue.identifier);
   if (s.startedBy) bits.push(`by ${s.startedBy}`);
+  if (s.isRunning && s.runStartedAt) bits.push(`running ${relTime(s.runStartedAt)}`);
+  else if (s.lastActivity) bits.push(`updated ${relTime(s.lastActivity)} ago`);
 
   const blocks: any[] = [
     {
       type: "section",
       text: { type: "mrkdwn", text: `*<${url}|${esc(title)}>*` },
     },
-    {
-      type: "context",
-      elements: [{ type: "mrkdwn", text: bits.join("  ·  ") }],
-    },
   ];
+
+  const summary = summaryLine(s);
+  if (summary) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: esc(summary) },
+    });
+  }
+
+  blocks.push({
+    type: "context",
+    elements: [{ type: "mrkdwn", text: bits.join("  ·  ") }],
+  });
 
   if (s.prUrl) {
     const num = s.prNumber ? `#${s.prNumber}` : "PR";
     const prTitle = s.prTitle ? ` ${esc(s.prTitle)}` : "";
+    const extras: string[] = [];
+    if (s.prIsDraft) extras.push("draft");
+    const diff = diffStat(s);
+    if (diff) extras.push(diff);
     const c = s.prChecks;
-    const checks =
-      c && c.total
-        ? `  ·  checks ${c.passed}/${c.total}${c.failed ? ` (${c.failed} failed)` : ""}`
-        : "";
+    if (c && c.total) {
+      extras.push(`checks ${c.passed}/${c.total}${c.failed ? ` (${c.failed} failed)` : ""}`);
+    }
+    const rev = reviewLabel(s.prReviewDecision);
+    if (rev) extras.push(rev);
+    const tail = extras.length ? `  ·  ${extras.join("  ·  ")}` : "";
     blocks.push({
       type: "context",
       elements: [
-        { type: "mrkdwn", text: `<${s.prUrl}|${num}${prTitle}>${checks}` },
+        { type: "mrkdwn", text: `<${s.prUrl}|${num}${prTitle}>${tail}` },
       ],
     });
   }
