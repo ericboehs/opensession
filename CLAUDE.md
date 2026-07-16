@@ -140,7 +140,7 @@ opportunistically when touched (strangler pattern — never a big-bang rewrite):
   ts.net `:8443` entry keeps serving, so old bookmarks land fine.
 - Bun automatically loads .env, so don't use dotenv
 - HTML imports for frontend bundling (no Vite)
-- All session file access is read-only (never modify ~/.slack-sessions/ or ~/.linear-sessions/)
+- All session file access is read-only (never modify ~/.slack-sessions/ or ~/.linear-sessions/) — sole exception: `src/server/agent-session-sync.ts`, the surgical engine-id/model sync interactive runs use when a fallback/rotation mints a new engine session for a slack/linear-source session (see that module's doc before widening it)
 - Own session store at ~/.opensession-chats/
 - Audit log: every agent run emits structured JSON events (incident-agent style) to ~/.opensession-audit/audit-YYYY-MM-DD.jsonl via src/server/audit.ts — see deploy/README-audit.md for the event catalog and CloudWatch shipping
 - Internal notes and draft replies (Plain, Linear) are always written in English, regardless of the customer's language — note the customer's language so the team can translate before sending. This applies to agent prompts here (src/agents/plain/prompts.ts) and to automation prompts stored in ~/.opensession-automations/.

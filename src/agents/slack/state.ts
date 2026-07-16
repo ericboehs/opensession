@@ -58,7 +58,11 @@ export const GITHUB_REPO = defaultRepo().ghRepo;
 // Runtime state
 // ---------------------------------------------------------------------------
 
-export const activeSessions = new Map<string, SlackSession>();
+// Parked on globalThis: the engine-id sync (server/agent-session-sync.ts)
+// writes into this map from outside the Slack loop, and a hot reload must not
+// fork the loop's copy from the writer's.
+export const activeSessions: Map<string, SlackSession> = ((globalThis as any)
+	.__slackActiveSessions ??= new Map());
 export const pendingAnswers = new Map<string, PendingAnswer>();
 
 // Inbound Slack event dedup, persisted across restarts. Slack retries a delivery

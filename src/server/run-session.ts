@@ -24,6 +24,7 @@ import {
 	RESUME_CONTINUATION_PROMPT,
 	type StreamEvent,
 } from "./agent-runner";
+import { syncAgentSessionEngine } from "./agent-session-sync";
 import {
 	automationDeniedTools,
 	automationMcpServersByName,
@@ -452,7 +453,37 @@ const recoveredSlackScanners = new Map<
 
 export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent): void {
 	const session = findSession(bksSessionId);
-	if (!session || session.source !== "backstage") return;
+	if (!session) return;
+	if (session.source !== "backstage") {
+		// Slack/linear-source sessions: a recovered run's engine-id/model flips
+		// persist into the owning agent's store, same rationale as the init/
+		// model_switch handlers in runSessionPromptInner — a reattached run that
+		// had fallback-minted a new engine session must not leave the session
+		// file pointing at the dead one.
+		if (event.type === "model_switch" && event.toModel) {
+			if (syncAgentSessionEngine(session, { model: event.toModel }))
+				invalidateSessionsCache();
+		} else if (
+			(event.type === "init" || event.type === "done") &&
+			event.sessionId
+		) {
+			if (
+				syncAgentSessionEngine(session, {
+					engineSessionId: event.sessionId,
+					model: event.model || undefined,
+				})
+			)
+				invalidateSessionsCache();
+			if (session.worktreeDir)
+				attachSessionWatchersToEngineTranscript(
+					bksSessionId,
+					event.provider || providerFor(event.model || session.model),
+					session.worktreeDir,
+					event.sessionId,
+				);
+		}
+		return;
+	}
 
 	// Capture Slack posts so a reply in the posted thread routes back to this
 	// session (slack-links index). runAutomation does the same for normal runs;
@@ -1425,6 +1456,19 @@ async function runSessionPromptInner(
 								: {}),
 						});
 						invalidateSessionsCache(); // new watchers must see the new transcriptPath
+					} else if (
+						// Slack/linear-source sessions need the same persistence, into
+						// the owning agent's store — otherwise a fallback/rotation-minted
+						// id lives only in the run journal, the session file keeps
+						// pointing at the dead engine session (frozen transcript), and
+						// queued prompts fork the stale thread (slack-can-you-try,
+						// 2026-07-16).
+						syncAgentSessionEngine(session, {
+							engineSessionId: finalSessionId,
+							model: effectiveModel || undefined,
+						})
+					) {
+						invalidateSessionsCache();
 					}
 					attachSessionWatchersToEngineTranscript(
 						sessionId,
@@ -1463,6 +1507,11 @@ async function runSessionPromptInner(
 							{ model: to, from: event.fromModel, at: new Date().toISOString(), by: reason },
 						],
 					});
+					invalidateSessionsCache();
+				} else if (to && syncAgentSessionEngine(session, { model: to })) {
+					// Keep the slack/linear store's model in step so the next turn
+					// (from the loop or the UI) resumes on the fallback, not the
+					// exhausted model. The new engine id follows via the init event.
 					invalidateSessionsCache();
 				}
 				if (to)
@@ -1589,7 +1638,10 @@ async function runSessionPromptInner(
 		}
 	}
 
-	// Persist activity on our own session store (slack/linear stores are read-only)
+	// Persist activity on our own session store. Slack/linear stores stay the
+	// owning agent's property, with one surgical exception: engine-id/model
+	// flips sync through agent-session-sync so the file never points at a dead
+	// engine session (see that module's doc).
 	if (session.source === "backstage") {
 		touchBackstageSession(
 			session.id,
@@ -1602,6 +1654,11 @@ async function runSessionPromptInner(
 				...(latestUsage ? { usage: latestUsage } : {}),
 			},
 		);
+	} else if (finalSessionId) {
+		syncAgentSessionEngine(session, {
+			engineSessionId: finalSessionId,
+			model: effectiveModel || undefined,
+		});
 	}
 
 	// A terminal failure keeps the session in the "Needs input" bucket until a
