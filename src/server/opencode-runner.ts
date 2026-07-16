@@ -3108,7 +3108,12 @@ async function* runOpencodeAttempt(
       const abortedMsg =
         `opencode engine turn was aborted externally before producing output ` +
         `on account "${bridgeAccountLabel}"`;
-      if (rotation && attemptIndex === 0) {
+      // Not gated on attemptIndex: opencode latches an abort issued while no
+      // message is running and applies it to the NEXT prompt, so a wedge
+      // retry (attempt 1) is a common victim (seen 19:06 2026-07-16, fence
+      // live). The kill consumes the latch, so one more rerun succeeds;
+      // MAX_ACCOUNT_ATTEMPTS bounds the loop.
+      if (rotation && attemptIndex < 3) {
         turnEvent({ direction: "out", kind: "server_respawn_retry", error: abortedMsg });
         bridgeRunEnd("error", abortedMsg);
         rotation.rotate = true;
