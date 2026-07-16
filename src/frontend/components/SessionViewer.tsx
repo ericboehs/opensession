@@ -436,7 +436,7 @@ export function SessionViewer({
 		// "workflows" isn't meaningfully restorable (runs seed async, so the tab
 		// starts hidden and the body would flash PrPanel) — it, and any stored
 		// tab that no longer exists, maps back to Info.
-		const restorable: PanelTab[] = ["info", "changes", "terminal", "pr", "chat", "plain", "sidechats"];
+		const restorable: PanelTab[] = ["info", "changes", "terminal", "chat", "plain", "sidechats"];
 		const tab: PanelTab | null = restorable.includes(stored as PanelTab)
 			? (stored as PanelTab)
 			: stored
@@ -454,6 +454,11 @@ export function SessionViewer({
 		setPanelTab(tab);
 		localStorage.setItem("michael-panel-tab", tab);
 	}
+	// Main chat-area view: the transcript+composer ("chat") or a full-width
+	// PR review ("review") that takes over the whole chat column so the code
+	// diff gets the full width. Only reachable on a code session (hasWorkspace);
+	// the effect below drops back to "chat" whenever there is no workspace.
+	const [mainView, setMainView] = useState<"chat" | "review">("chat");
 	// Bumped by the ⋯ menu's "New side chat" — tells the SideChatsPanel to
 	// create (and open) a fresh side chat as soon as it shows. The panel calls
 	// onCreateConsumed to reset it to 0, so tab remounts don't re-create.
@@ -710,6 +715,11 @@ export function SessionViewer({
 		)
 			setPanelTab("info");
 	}, [workflowsLoaded, panelTab, workflowRuns.length, hasWorkspace]);
+
+	// A session with no code workspace has no Review — never sit on it.
+	useEffect(() => {
+		if (!hasWorkspace && mainView !== "chat") setMainView("chat");
+	}, [hasWorkspace, mainView]);
 
 	// Ask→code promotion: creates a worktree and flips the chat to code mode.
 	// The 5s session poll picks up the mode change and re-renders with the full
@@ -2719,6 +2729,62 @@ export function SessionViewer({
 
 			<div className="viewer-split">
 				<div className="viewer-chat">
+					{hasWorkspace && (
+						<div className="main-view-switch" role="tablist">
+							<button
+								type="button"
+								role="tab"
+								aria-selected={mainView === "chat"}
+								className={`main-view-tab ${mainView === "chat" ? "active" : ""}`}
+								onClick={() => setMainView("chat")}
+							>
+								Chat
+							</button>
+							<button
+								type="button"
+								role="tab"
+								aria-selected={mainView === "review"}
+								className={`main-view-tab ${mainView === "review" ? "active" : ""}`}
+								onClick={() => setMainView("review")}
+							>
+								Review
+								{session.prState && (
+									<span
+										className={`panel-tab-dot ${session.prState === "OPEN" && session.prMergeable === "CONFLICTING" ? "pr-dot-conflict" : `pr-dot-${session.prState.toLowerCase()}`}`}
+									/>
+								)}
+							</button>
+						</div>
+					)}
+					{mainView === "review" && hasWorkspace ? (
+						<div className="viewer-review-main">
+							<PrPanel
+								sessionId={session.id}
+								send={send}
+								split
+								onAddToInput={(text) =>
+									setComposerPrefill((p) => ({
+										seq: (p?.seq ?? 0) + 1,
+										text,
+									}))
+								}
+								repos={[
+									{
+										repo: session.repo || "tella-fusion",
+										primary: true,
+									},
+									...(session.attachedRepos || []).map((r) => ({
+										repo: r.repo,
+										primary: false,
+									})),
+								]}
+								linkedPrs={session.linkedPrs}
+								linkable
+								walkthrough={session.walkthrough}
+							/>
+						</div>
+					) : (
+					<>
 					<div className="viewer-messages-region">
 						<div
 							className="viewer-messages"
@@ -3036,6 +3102,8 @@ export function SessionViewer({
 							</>
 						)}
 					</div>
+					</>
+					)}
 				</div>
 
 				{/* Right region: a sub-agent conversation takes precedence over the
@@ -3107,7 +3175,7 @@ export function SessionViewer({
 								repo={session.repo || undefined}
 								archived={session.archived}
 								send={connected ? send : undefined}
-								onOpenPrTab={() => setPanelTab("pr")}
+								onOpenPrTab={() => setMainView("review")}
 								running={isRunningLive}
 								refreshTick={gitRefreshTick}
 								// Globe (staging deploy) rides inside the strip, left of the
@@ -3154,17 +3222,6 @@ export function SessionViewer({
 										onClick={() => selectPanelTab("terminal")}
 									>
 										Terminal
-									</button>
-									<button
-										className={`panel-tab ${panelTab === "pr" ? "active" : ""}`}
-										onClick={() => selectPanelTab("pr")}
-									>
-										Review
-										{session.prState && (
-											<span
-												className={`panel-tab-dot ${session.prState === "OPEN" && session.prMergeable === "CONFLICTING" ? "pr-dot-conflict" : `pr-dot-${session.prState.toLowerCase()}`}`}
-											/>
-										)}
 									</button>
 									<button
 										className={`panel-tab ${panelTab === "chat" ? "active" : ""}`}
@@ -3239,7 +3296,7 @@ export function SessionViewer({
 									reviewRequestSessionId={effectiveReview?.ownerId}
 									onReviewChange={onReviewChange}
 									send={connected ? send : undefined}
-									onOpenTab={(tab) => selectPanelTab(tab)}
+									onOpenTab={(tab) => (tab === "pr" ? setMainView("review") : selectPanelTab(tab))}
 									onAddToInput={(text) =>
 										setComposerPrefill((p) => ({
 											seq: (p?.seq ?? 0) + 1,
@@ -3283,8 +3340,7 @@ export function SessionViewer({
 								/>
 							) : waitingForWorkspace &&
 							  (panelTab === "changes" ||
-									panelTab === "terminal" ||
-									panelTab === "pr") ? (
+									panelTab === "terminal") ? (
 								// These tabs all read the worktree — hold them behind the
 								// waiting state until the create run finishes preparing it.
 								<WorkspaceWaiting detail="Waiting for the workspace to be ready." />
@@ -3314,32 +3370,7 @@ export function SessionViewer({
 									onOpenSession={(id) => onOpenSession?.(id)}
 									variant="panel"
 								/>
-							) : (
-								<PrPanel
-									sessionId={session.id}
-									send={send}
-									split
-									onAddToInput={(text) =>
-										setComposerPrefill((p) => ({
-											seq: (p?.seq ?? 0) + 1,
-											text,
-										}))
-									}
-									repos={[
-										{
-											repo: session.repo || "tella-fusion",
-											primary: true,
-										},
-										...(session.attachedRepos || []).map((r) => ({
-											repo: r.repo,
-											primary: false,
-										})),
-									]}
-									linkedPrs={session.linkedPrs}
-									linkable
-									walkthrough={session.walkthrough}
-								/>
-							)}
+							) : null}
 						</div>
 					</div>
 				) : null}
