@@ -69,23 +69,27 @@ export function SessionRelations({
 						</span>
 					</Menu.Trigger>
 					<Menu.Popup align="start" className="max-w-[300px]">
-						<Menu.GroupLabel>Delegated workers</Menu.GroupLabel>
-						{workers!.map((w) => (
-							<Menu.Item key={w.id} onClick={() => onOpen(w.id)}>
-								<span
-									className={cn(
-										"h-1.5 w-1.5 shrink-0 rounded-full",
-										w.isRunning ? "bg-green" : "bg-line-strong",
+						{/* GroupLabel MUST live inside a Group — bare it throws Base UI
+						    error #31 and white-screens the app on open. */}
+						<Menu.Group>
+							<Menu.GroupLabel>Delegated workers</Menu.GroupLabel>
+							{workers!.map((w) => (
+								<Menu.Item key={w.id} onClick={() => onOpen(w.id)}>
+									<span
+										className={cn(
+											"h-1.5 w-1.5 shrink-0 rounded-full",
+											w.isRunning ? "bg-green" : "bg-line-strong",
+										)}
+									/>
+									<span className="truncate">{w.title}</span>
+									{shortModel(w.model, models) && (
+										<span className="ml-auto shrink-0 pl-2 text-[11px] text-faint">
+											{shortModel(w.model, models)}
+										</span>
 									)}
-								/>
-								<span className="truncate">{w.title}</span>
-								{shortModel(w.model, models) && (
-									<span className="ml-auto shrink-0 pl-2 text-[11px] text-faint">
-										{shortModel(w.model, models)}
-									</span>
-								)}
-							</Menu.Item>
-						))}
+								</Menu.Item>
+							))}
+						</Menu.Group>
 					</Menu.Popup>
 				</Menu.Root>
 			)}
