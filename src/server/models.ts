@@ -30,6 +30,11 @@ export interface ModelInfo {
   provider: Provider;
   label: string;
   aliases: string[];
+  /** Picker section override ("dial" = The Dial presets); unset = grouped by
+   *  the id's upstream provider segment. */
+  group?: string;
+  /** One-line picker subtitle (dial presets only today). */
+  description?: string;
 }
 
 export const SESSION_EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
@@ -90,6 +95,104 @@ export const KNOWN_MODELS: ModelInfo[] = [
   { id: "gpt-5.4-mini", provider: "codex", label: "GPT-5.4 mini (Codex)", aliases: ["mini"] },
   { id: "gpt-5.3-codex-spark", provider: "codex", label: "GPT-5.3 Codex Spark", aliases: ["spark"] },
 ];
+
+// ── The Dial ──────────────────────────────────────────────────────────────
+//
+// Amp-style task-difficulty presets (https://ampcode.com/news/the-dial): one
+// picker choice bundles the MAIN model + reasoning effort with an ORACLE — a
+// different frontier model wired in as a read-only opencode subagent the main
+// agent consults for plan review, architecture calls and deep debugging. The
+// session stores the preset id (`dial/<tier>`) as its `model`, so tier wiring
+// can change over time without touching stored sessions; everything resolves
+// to concrete models at dispatch (toOpencodeModel + the runner's dial hook).
+
+export interface DialPreset {
+  /** Stored as the session's model id, e.g. "dial/high". */
+  id: string;
+  label: string;
+  /** One-line picker subtitle, Amp-style. */
+  description: string;
+  /** Native id of the MAIN agent model (resolved via toOpencodeModel). */
+  model: string;
+  /** Reasoning effort for the main model (overrides the session's effort). */
+  effort: SessionEffort;
+  /** Which DIAL_ORACLE_AGENTS entry backs this tier's oracle. */
+  oracleAgent: string;
+}
+
+/**
+ * The oracle subagents, keyed by opencode agent name. Defined STATICALLY in
+ * every engine server config (shared servers serve many sessions with
+ * different presets, so the set can't vary per run — and a stable config keeps
+ * the server hash stable). Only dial runs are told about them; other sessions
+ * never get oracle instructions. `variant` rides the agent config through the
+ * open index signature — honored where the engine supports per-agent variants,
+ * harmlessly ignored otherwise.
+ */
+export const DIAL_ORACLE_AGENTS: Record<
+  string,
+  { model: string; variant: SessionEffort; label: string; description: string }
+> = {
+  "oracle-fable": {
+    model: "anthropic/claude-fable-5",
+    variant: "high",
+    label: "Claude Fable 5",
+    description:
+      "Oracle: senior-engineer second opinion on Claude Fable 5 — plan review, " +
+      "architecture decisions, deep debugging, reviewing significant work. Read-only advisor.",
+  },
+  "oracle-sol": {
+    model: "openai/gpt-5.6-sol",
+    variant: "xhigh",
+    label: "GPT-5.6 Sol",
+    description:
+      "Oracle: senior-engineer second opinion on GPT-5.6 Sol at extra-high reasoning — " +
+      "plan review, architecture decisions, deep debugging, reviewing significant work. " +
+      "Read-only advisor.",
+  },
+};
+
+export const DIAL_PRESETS: DialPreset[] = [
+  {
+    id: "dial/ultra",
+    label: "Dial · Ultra",
+    description: "The most capable combo for hard, open-ended tasks — Fable 5 with a Sol oracle",
+    model: "claude-fable-5",
+    effort: "xhigh",
+    oracleAgent: "oracle-sol",
+  },
+  {
+    id: "dial/high",
+    label: "Dial · High",
+    description: "Deep reasoning for hard tasks — Sol at extra-high effort with a Fable 5 oracle",
+    model: "gpt-5.6-sol",
+    effort: "xhigh",
+    oracleAgent: "oracle-fable",
+  },
+  {
+    id: "dial/medium",
+    label: "Dial · Medium",
+    description: "Balanced depth and speed for everyday work — Sol with a Sol-xhigh oracle",
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    oracleAgent: "oracle-sol",
+  },
+  {
+    id: "dial/low",
+    label: "Dial · Low",
+    description: "Fast edits and small tasks — Haiku 4.5 with a Sol oracle",
+    model: "claude-haiku-4-5",
+    effort: "high",
+    oracleAgent: "oracle-sol",
+  },
+];
+
+/** The dial preset behind a model id, or undefined for non-dial ids. */
+export function dialPreset(model?: string | null): DialPreset | undefined {
+  const id = (model || "").trim().toLowerCase();
+  if (!id.startsWith("dial/")) return undefined;
+  return DIAL_PRESETS.find((p) => p.id === id);
+}
 
 /** "claude-opus-4-8" → "Opus 4.8", "gpt-5.4-mini" → "GPT-5.4 mini". Fallback
  * prettifier for model slugs with no native registry entry to borrow from. */
@@ -163,6 +266,26 @@ export function refreshOpencodePickerModels(): void {
         provider: "opencode",
         label: opencodeModelLabel(id),
         aliases: [],
+      });
+    }
+    // Dial presets surface only when their MAIN model is in the live picker
+    // set (an unusable oracle degrades to a failed subagent call, not a broken
+    // session, so the oracle model isn't gated). Registered as opencode
+    // entries so the single-engine picker filter carries them for free.
+    const tails = new Set(
+      KNOWN_MODELS.filter((m) => m.provider === "opencode").map(
+        (m) => m.id.split("/").pop() || ""
+      )
+    );
+    for (const p of DIAL_PRESETS) {
+      if (!tails.has(p.model)) continue;
+      KNOWN_MODELS.push({
+        id: p.id,
+        provider: "opencode",
+        label: p.label,
+        aliases: [],
+        group: "dial",
+        description: p.description,
       });
     }
   } catch {}
@@ -406,6 +529,12 @@ export function toOpencodeModel(model?: string | null): string | undefined {
   const m = (model || "").trim();
   if (!m) return model ?? undefined;
   if (m.startsWith("opencode/")) return m;
+  // Dial presets resolve to their MAIN model here; the preset id itself stays
+  // on the session (and in opts.model) so the runner can wire the oracle.
+  if (m.toLowerCase().startsWith("dial/")) {
+    const p = dialPreset(m);
+    return p ? toOpencodeModel(p.model) : undefined;
+  }
   if (m === BEST_AVAILABLE_CODEX_MODEL || m.startsWith("codex-")) {
     return `opencode/openai/${DEFAULT_CODEX_MODEL}`;
   }
@@ -544,6 +673,15 @@ export function resolveModel(input: string): ModelInfo | null {
   if (s.startsWith("gpt-") || s.startsWith("codex-")) {
     return { id: s, provider: "codex", label: s, aliases: [] };
   }
+  // Dial preset ids resolve even when not surfaced in the picker (e.g. the
+  // bridge got reconfigured under a stored session) — but never through the
+  // generic slash passthrough below, which would mint a bogus opencode/dial/…
+  if (s.startsWith("dial/")) {
+    const p = dialPreset(s);
+    return p
+      ? { id: p.id, provider: "opencode", label: p.label, aliases: [], group: "dial", description: p.description }
+      : null;
+  }
   // OpenCode engine: explicit opencode/<provider>/<model> ids pass through —
   // the only way a session lands on the opencode runner (nothing defaults to it).
   if (s.startsWith("opencode/") && s.slice("opencode/".length).includes("/")) {
@@ -626,16 +764,21 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "gpt-5.3-codex-spark": 400_000,
 };
 
+/** Dial ids price/gauge as their main model; everything else passes through. */
+function pricingKey(model?: string | null): string {
+  const id = resolveModel(model || "")?.id || model || "";
+  return dialPreset(id)?.model || id;
+}
+
 /** Context-window token ceiling for a model (0 if unknown → gauge hidden). */
 export function contextWindowFor(model?: string | null): number {
-  const id = resolveModel(model || getDefaultModel())?.id || model || "";
+  const id = pricingKey(model || getDefaultModel());
   return CONTEXT_WINDOWS[id] ?? 0;
 }
 
 /** Whether we have an authoritative price table entry (vs. a passthrough id). */
 export function hasPricing(model?: string | null): boolean {
-  const id = resolveModel(model || "")?.id || model || "";
-  return id in PRICING;
+  return pricingKey(model) in PRICING;
 }
 
 /**
@@ -652,8 +795,7 @@ export function priceUsageUsd(
     cacheWrite?: number;
   }
 ): number | undefined {
-  const id = resolveModel(model || "")?.id || model || "";
-  const p = PRICING[id];
+  const p = PRICING[pricingKey(model)];
   if (!p) return undefined;
   const M = 1_000_000;
   return (

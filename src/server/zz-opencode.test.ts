@@ -309,6 +309,22 @@ describe("buildOpencodeInstructions", () => {
     expect(s).toContain("mcp__workos__get_impersonation_url");
     expect(s).toContain("internal note");
   });
+  test("dial runs get the oracle block; everyone else never hears of it", () => {
+    const s = buildOpencodeInstructions({
+      isAsk: false,
+      dialOracle: {
+        agent: "oracle-fable",
+        presetLabel: "Dial · High",
+        mainLabel: "GPT-5.6 Sol",
+        oracleLabel: "Claude Fable 5",
+      },
+    });
+    expect(s).toContain("The Dial — your oracle");
+    expect(s).toContain("`oracle-fable` subagent");
+    expect(s).toContain('"Dial · High" preset');
+    expect(s).toContain("advisory");
+    expect(buildOpencodeInstructions({ isAsk: false })).not.toContain("oracle");
+  });
 });
 
 describe("anthropic-bridge message flattening", () => {

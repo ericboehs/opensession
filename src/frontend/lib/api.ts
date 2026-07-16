@@ -1111,6 +1111,10 @@ export interface ModelOption {
 	label: string;
 	aliases: string[];
 	efforts: string[];
+	/** Picker section override ("dial" = The Dial presets). */
+	group?: string;
+	/** One-line subtitle shown under the label (dial presets). */
+	description?: string;
 }
 
 /**

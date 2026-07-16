@@ -113,6 +113,7 @@ export function shortModelLabel(id: string, models: ModelOption[]): string {
 
 /** Friendly names for the upstream providers in the grouped main list. */
 const PROVIDER_LABELS: Record<string, string> = {
+	dial: "The Dial",
 	anthropic: "Anthropic",
 	openai: "OpenAI",
 	xai: "xAI",
@@ -126,11 +127,16 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 /** Section order in the grouped main list; unlisted providers follow in
  * config order. */
-const PROVIDER_ORDER = ["anthropic", "openai", "xai", "meta"];
+const PROVIDER_ORDER = ["dial", "anthropic", "openai", "xai", "meta"];
 
 /** Preferred display order for the opencode main list (by id tail); anything
  * unlisted keeps its registry/config order after these. */
 const OPENCODE_TAIL_ORDER = [
+	// The Dial presets ("dial/<tier>" ids) lead the list, hardest tier first.
+	"ultra",
+	"high",
+	"medium",
+	"low",
 	"claude-fable-5",
 	"claude-opus-4-8",
 	"claude-sonnet-5",
@@ -167,6 +173,10 @@ type ModelMenuOption = {
 	id: string;
 	/** Engine key (ModelOption.provider) for the legacy-fallback group headers. */
 	engine: string;
+	/** Picker section override from the registry ("dial" = The Dial). */
+	group?: string;
+	/** One-line subtitle rendered under the label (dial presets). */
+	description?: string;
 };
 
 /**
@@ -210,14 +220,22 @@ export function ModelEffortSelect({
 		: undefined;
 	const subscriptionLabel = currentAccount ? currentAccount.name : "Auto";
 
-	const optionFor = (id: string): ModelMenuOption => ({
-		value: id === defaultModel ? "" : id,
-		label: shortModelLabel(id, models),
-		id,
-		engine:
-			models.find((m) => m.id === id)?.provider ||
-			(opencodeModelParts(id) ? "opencode" : "claude"),
-	});
+	const optionFor = (id: string): ModelMenuOption => {
+		const info = models.find((m) => m.id === id);
+		return {
+			value: id === defaultModel ? "" : id,
+			// Dial rows drop the "Dial · " prefix — they render under "The Dial"
+			// group header, where the full label would read twice.
+			label:
+				info?.group === "dial"
+					? shortModelLabel(id, models).replace(/^Dial\s*·\s*/, "")
+					: shortModelLabel(id, models),
+			id,
+			engine: info?.provider || (opencodeModelParts(id) ? "opencode" : "claude"),
+			group: info?.group,
+			description: info?.description,
+		};
+	};
 	// Legacy entries keep their FULL registry label ("Claude Sonnet 5",
 	// "GPT-5.5 (Codex)") so they never read as duplicates of the first-class
 	// short names above them.
@@ -268,7 +286,8 @@ export function ModelEffortSelect({
 	const providerOf = (id: string) => opencodeModelParts(id)?.provider || "other";
 	const providerGroups: Array<{ provider: string; label: string; options: ModelMenuOption[] }> = [];
 	for (const option of primaryOptions) {
-		const provider = providerOf(option.id);
+		// A registry group ("dial") overrides provider-segment grouping.
+		const provider = option.group || providerOf(option.id);
 		let group = providerGroups.find((g) => g.provider === provider);
 		if (!group) {
 			group = {
@@ -315,7 +334,14 @@ export function ModelEffortSelect({
 				title={modelDisabled ? modelTitle : undefined}
 				className={cn("justify-between gap-3", selected && "bg-hover", modelDisabled && "opacity-55")}
 			>
-				<span className="min-w-0 truncate">{option.label}</span>
+				{option.description ? (
+					<span className="min-w-0 flex flex-col">
+						<span className="truncate">{option.label}</span>
+						<span className="truncate text-xs text-faint">{option.description}</span>
+					</span>
+				) : (
+					<span className="min-w-0 truncate">{option.label}</span>
+				)}
 				{selected && <IconCheck className="shrink-0 text-dim" size={17} />}
 			</Menu.Item>
 		);

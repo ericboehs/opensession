@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
   BEST_AVAILABLE_CODEX_MODEL,
+  DIAL_ORACLE_AGENTS,
+  DIAL_PRESETS,
+  dialPreset,
   fallbackPlan,
   fallbackTier,
   nextFallbackModel,
@@ -98,6 +101,45 @@ describe("toOpencodeModel", () => {
       expect(mapped).toBe("opencode/anthropic/claude-fable-5");
     } else {
       expect(mapped).toBe("claude-fable-5"); // degrades to native, not broken
+    }
+  });
+});
+
+describe("The Dial", () => {
+  it("resolves preset ids without minting a bogus opencode/dial passthrough", () => {
+    const high = resolveModel("dial/high");
+    expect(high?.id).toBe("dial/high");
+    expect(high?.provider).toBe("opencode");
+    expect(high?.group).toBe("dial");
+    expect(resolveModel("DIAL/HIGH")?.id).toBe("dial/high");
+    expect(resolveModel("dial/nonsense")).toBeNull();
+  });
+
+  it("maps a dial id to its MAIN model at dispatch", () => {
+    // dial/high's main model is Sol (openai) — maps regardless of bridge state.
+    expect(toOpencodeModel("dial/high")).toBe("opencode/openai/gpt-5.6-sol");
+    expect(toOpencodeModel("dial/nonsense")).toBeUndefined();
+  });
+
+  it("bakes effort into the preset — no selectable efforts on dial ids", () => {
+    expect(modelEfforts("dial/high")).toEqual([]);
+    expect(normalizeModelEffort("dial/high", "low")).toBeUndefined();
+  });
+
+  it("looks up presets case-insensitively via dialPreset", () => {
+    expect(dialPreset("dial/ultra")?.oracleAgent).toBe("oracle-sol");
+    expect(dialPreset("dial/high")?.oracleAgent).toBe("oracle-fable");
+    expect(dialPreset("opencode/openai/gpt-5.6-sol")).toBeUndefined();
+    expect(dialPreset(undefined)).toBeUndefined();
+  });
+
+  it("defines every preset's oracle agent and a valid main model + effort", () => {
+    for (const p of DIAL_PRESETS) {
+      expect(DIAL_ORACLE_AGENTS[p.oracleAgent]).toBeDefined();
+      // The preset's effort must be one its main model actually supports
+      // (modelEfforts infers the provider from bare claude-*/gpt-* slugs).
+      expect(modelEfforts(p.model)).toContain(p.effort);
+      expect(resolveModel(p.model)).not.toBeNull();
     }
   });
 });

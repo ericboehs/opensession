@@ -168,7 +168,7 @@ import { audit, summarizeText } from "./audit";
 import { gitIdentityEnv, githubLoginFor, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
-import { normalizeModelEffort } from "./models";
+import { normalizeModelEffort, dialPreset, DIAL_ORACLE_AGENTS, opencodeModelLabel } from "./models";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import {
   registerRunToken,
@@ -881,6 +881,14 @@ export function buildOpencodeInstructions(input: {
    *  tools are already stripped at the engine level; this tells the agent
    *  what's unavailable and what to do instead. */
   deniedToolNotes?: Array<{ message: string; tools: string[] }>;
+  /** The Dial: tells a dial-preset run about its oracle subagent. Only set for
+   *  dial runs — other sessions never learn the oracle agents exist. */
+  dialOracle?: {
+    agent: string;
+    presetLabel: string;
+    mainLabel: string;
+    oracleLabel: string;
+  };
 }): string {
   const parts: string[] = [];
   // Unconditional, every run: a customer-PII PDF was uploaded to gofile.io on
@@ -916,6 +924,26 @@ export function buildOpencodeInstructions(input: {
         "This is a READ-ONLY session — never modify, create, or delete files, never commit, " +
         "never run state-changing commands (the permission config enforces this). Explore with " +
         "read-only shell and git commands, then answer clearly and concisely."
+    );
+  }
+  // Amp-style oracle guidance (decision rules with triggers AND anti-triggers,
+  // per Amp's leaked prompts): the oracle only pays off if the main model
+  // knows when to reach for it — and when not to.
+  if (input.dialOracle) {
+    const d = input.dialOracle;
+    parts.push(
+      `## The Dial — your oracle\nThis session runs on the "${d.presetLabel}" preset: you ` +
+        `(${d.mainLabel}) are paired with an oracle — ${d.oracleLabel}, available as the ` +
+        `\`${d.agent}\` subagent via the task tool. The oracle is a senior engineering ` +
+        "advisor to think with, not an executor.\n" +
+        "Consult it when planning a hard or open-ended task, to review your own significant " +
+        "work after implementing it, for architecture decisions with real tradeoffs, and to " +
+        "debug problems that resist your first attempts. Don't use it for file searches, " +
+        "routine edits, or anything you can settle by reading the code yourself.\n" +
+        "Prompt it with a precise problem description and the relevant file paths and " +
+        "constraints — it sees the same checkout but none of your conversation. Its output " +
+        "is advisory: weigh it, then decide. Briefly tell the user when you consult the " +
+        'oracle and why ("Consulting the oracle on the migration plan").'
     );
   }
   const inprocEarly = (input.inProcessMcp || {}) as Record<string, unknown>;
@@ -1607,6 +1635,31 @@ interface TurnTranscriptState {
  *  well above any realistic personal-subs + shared-pool count. */
 const MAX_ACCOUNT_ATTEMPTS = 64;
 
+/**
+ * The Dial's oracle subagents, STATIC in every server config: shared servers
+ * host many sessions with different presets, so the agent set can't vary per
+ * run — and keeping it identical everywhere keeps config hashes (and thus
+ * server reuse) stable. They're invisible in practice to non-dial runs: only
+ * dial runs get the instructions block that tells the model they exist.
+ * Read-only by construction (advisors, not executors).
+ */
+function dialOracleAgentConfigs(): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const [name, o] of Object.entries(DIAL_ORACLE_AGENTS)) {
+    out[name] = {
+      mode: "subagent",
+      description: o.description,
+      model: o.model,
+      // Rides AgentConfig's open index signature — honored where the engine
+      // supports per-agent variants, harmlessly ignored otherwise.
+      variant: o.variant,
+      tools: { write: false, edit: false, patch: false },
+      permission: { edit: "deny" },
+    };
+  }
+  return out;
+}
+
 export async function* runOpencode(
   opts: RunAgentOpts & { allowOpencode?: boolean; forceSharedServer?: boolean },
   model: string
@@ -1642,6 +1695,13 @@ async function* runOpencodeAttempt(
 ): AsyncGenerator<StreamEvent> {
   const { prompt, cwd, mode, mcpServers, confirmTools, journal, user, author } = opts;
   const isAsk = mode === "ask";
+
+  // The Dial: `model` arrived here already mapped to the preset's concrete
+  // MAIN model (toOpencodeModel), but opts.model still carries the stored
+  // `dial/<tier>` id — that's the hook that overrides the reasoning effort and
+  // switches on the oracle instructions below. Non-dial runs: both undefined.
+  const dial = dialPreset(opts.model);
+  const effort = dial?.effort ?? opts.effort;
 
   // Test hook: pretend usage limits are exhausted on every model, so the
   // fallback chain can be verified without burning real limits. Set
@@ -2082,6 +2142,14 @@ async function* runOpencodeAttempt(
       author,
       droppedForConfirm: confirmUnavailable,
       deniedToolNotes: policy.noteGroups,
+      dialOracle: dial
+        ? {
+            agent: dial.oracleAgent,
+            presetLabel: dial.label,
+            mainLabel: opencodeModelLabel(dial.model),
+            oracleLabel: DIAL_ORACLE_AGENTS[dial.oracleAgent]?.label || dial.oracleAgent,
+          }
+        : undefined,
     });
     const instructionsPath = `${OPENCODE_STATE_DIR}/${serverKey.replace(/[^A-Za-z0-9._-]/g, "_")}-instructions.md`;
     if (!shared) {
@@ -2175,6 +2243,7 @@ async function* runOpencodeAttempt(
               },
               tools: { write: false, edit: false, patch: false },
             },
+            ...dialOracleAgentConfigs(),
           },
         }
       : {
@@ -2187,6 +2256,10 @@ async function* runOpencodeAttempt(
           },
           instructions: [instructionsPath],
           autoshare: false,
+          // Same static oracle set as the shared config — a per-run agent
+          // section would churn this server's config hash when a session
+          // moves on/off a dial preset.
+          agent: dialOracleAgentConfigs(),
           ...(meridianPlugin ? { plugin: meridianPlugin } : {}),
           ...(Object.keys(providerConfig).length ? { provider: providerConfig } : {}),
           ...(isAsk
@@ -2384,7 +2457,7 @@ async function* runOpencodeAttempt(
         confirmTools,
         aws: !!opts.aws,
         model,
-        effort: opts.effort,
+        effort,
         fallbackModel: opts.fallbackModel,
         kind: journal.kind,
         startedAt: new Date().toISOString(),
@@ -2720,7 +2793,7 @@ async function* runOpencodeAttempt(
       ...q,
       body: {
         model: parsed,
-        variant: normalizeModelEffort(model, opts.effort),
+        variant: normalizeModelEffort(model, effort),
         // Shared servers: session context (`system` appends to opencode's own
         // system prompt), read-only agent selection, and this run's tool
         // strips all ride the prompt — per-session servers carry them in
