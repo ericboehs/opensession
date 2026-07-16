@@ -14,6 +14,7 @@ import {
   verifyGitHubSignature,
 } from "../../server/shared/signature";
 import { handleMessageEvent, handleMentionEvent } from "./handlers";
+import { handleLinkShared } from "./unfurl";
 import {
   handlePullRequestReview,
   inviteRelevantUsersToChannel,
@@ -242,6 +243,19 @@ export class SlackAgent implements AgentModule {
             .catch((e) => {
               console.error("[slack] Error handling mention:", e);
             });
+        }
+
+        // Unfurl os.tella.dev session links (Slack can't reach the tailnet-only
+        // host to read OG tags, so we look the session up in-process and post a
+        // preview via chat.unfurl). Deduped on the shared message ts.
+        if (event.type === "link_shared") {
+          const eventId = `unfurl-${event.channel}-${event.message_ts}`;
+          if (!isEventProcessed(eventId)) {
+            markEventProcessed(eventId);
+            handleLinkShared(event).catch((e) => {
+              console.error("[slack] Error unfurling link:", e);
+            });
+          }
         }
 
         // Handle assistant_thread_started events (DM thread opened)
