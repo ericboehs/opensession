@@ -3620,7 +3620,11 @@ export function Sidebar({
 				    to follow along (your navigation shadows theirs); click again to
 				    stop. Band hides itself when nobody else is around. ── */}
 				{(() => {
-					const others = teamViewing.filter((v) => v.user !== currentUser);
+					const others = teamViewing.filter(
+						(v) =>
+							v.user !== currentUser &&
+							KNOWN_PEOPLE.has(v.user.toLowerCase()),
+					);
 					if (others.length === 0) return null;
 					const titleFor = (id: string) =>
 						sessions.find((s) => s.id === id)?.title || id;
