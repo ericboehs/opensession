@@ -32,6 +32,7 @@ import {
 	fetchFileMentions,
 	fetchSkillMentions,
 	promoteChatApi,
+	startPreviewApi,
 	type WorkspaceMediaItem,
 	type ModelOption,
 	type ClaudeAccountOption,
@@ -2076,6 +2077,72 @@ export function SessionViewer({
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [archiving, handleArchive, session.archived]);
+
+	// ⌘O opens the session's preview (starting the dev server if it isn't up —
+	// same semantics as the Preview button); ⌘G opens its GitHub PR. Chords
+	// without a target (no worktree / no PR) fall through to the browser.
+	useEffect(() => {
+		function onKeyDown(e: KeyboardEvent) {
+			if (
+				e.defaultPrevented ||
+				!(e.metaKey || e.ctrlKey) ||
+				e.altKey ||
+				e.shiftKey ||
+				document.querySelector(
+					".palette-backdrop, .composer-schedule-modal-backdrop, .session-delete-overlay",
+				)
+			) {
+				return;
+			}
+			// Same composer exemption as the archive chords above: the composer
+			// autofocuses, so an unconditional editable-focus bail would leave
+			// these dead almost always. Other inputs keep the guard.
+			const target = e.target as HTMLElement | null;
+			const editable = target?.closest(
+				"input, textarea, select, [contenteditable='true'], [contenteditable='']",
+			);
+			if (editable && !editable.classList.contains("composer-textarea")) {
+				return;
+			}
+			const k = e.key.toLowerCase();
+			if (k === "g") {
+				// Primary branch's PR, falling back to the first attached/linked
+				// repo PR on multi-repo sessions.
+				const prUrl = session.prUrl ?? session.prs?.find((p) => p.url)?.url;
+				if (!prUrl) return;
+				e.preventDefault();
+				window.open(prUrl, "_blank", "noopener");
+			} else if (k === "o" && session.worktreeDir) {
+				e.preventDefault();
+				// Popup-blocker-safe mirror of PreviewButton.start(): open the
+				// same-origin interstitial synchronously inside the gesture (it
+				// redirects itself the moment the status endpoint reports running),
+				// then kick the bring-up — a server-side no-op when it already is.
+				const waitUrl =
+					`${BASE_PATH}/preview-wait/${encodeURIComponent(session.id)}` +
+					(session.previewPath
+						? `?path=${encodeURIComponent(session.previewPath)}`
+						: "");
+				const wait = window.open(waitUrl, "_blank");
+				startPreviewApi(session.id)
+					.then((s) => {
+						// Nothing running and nothing started (repo not bootable) —
+						// don't leave the interstitial spinning toward a boot that
+						// will never come.
+						if (!s.running && !s.starting) wait?.close();
+					})
+					.catch(() => wait?.close());
+			}
+		}
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [
+		session.id,
+		session.prUrl,
+		session.prs,
+		session.previewPath,
+		session.worktreeDir,
+	]);
 
 
 	return (

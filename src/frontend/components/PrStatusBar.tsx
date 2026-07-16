@@ -185,6 +185,11 @@ function PrBarButton({
 	);
 }
 
+// Keyboard hint for the open-PR chord (SessionViewer owns the handler).
+const PR_CHORD = /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+	? "⌘G"
+	: "Ctrl+G";
+
 /**
  * The PR chip: a single linked pill — `#1234 ↗`. Left-click opens the PR on
  * GitHub (the trailing arrow marks it as an outbound link); right-click opens a
@@ -217,7 +222,7 @@ function PrNumberChip({
 						href={pr.url}
 						target="_blank"
 						rel="noopener"
-						title={`#${pr.number} ${pr.title}`}
+						title={`#${pr.number} ${pr.title} (${PR_CHORD})`}
 					/>
 				}
 			>
