@@ -1,6 +1,6 @@
 /**
  * Behavior 2: `michael-auto-fix`. Checks out the PR head branch in a dedicated
- * worktree, fixes its own review findings + failing CI, pushes to the PR branch,
+ * worktree, fixes merge conflicts + review findings + failing CI, pushes to the PR branch,
  * polls CI, and re-fixes until green AND a fresh Michael review of the pushed
  * code finds nothing blocking — bounded so it can never run away. The loop is
  * gated on that fresh review rather than the fixer's own self-report, so it can't
@@ -18,7 +18,7 @@ import {
   readPrState,
 } from "./state";
 import { runGithubAgent, authorForLogin, sessionUrl } from "./run";
-import { buildAutoFixPrompt } from "./prompts";
+import { buildAutoFixPrompt, isMergeConflicting } from "./prompts";
 import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, resolveAddressedThreads, BOT_LOGIN } from "./github-rest";
 import { LABEL_AUTOFIX } from "./constants";
 import type { PrRef, ReviewResult } from "./review";
@@ -190,7 +190,11 @@ export async function runAutoFix(
         // Nothing changed this round. The fixer's dispositions (rendered below the
         // outcome) explain what it fixed vs deliberately skipped vs couldn't fix —
         // so a P3-only skip reads as a decision, not an opaque "made no changes".
-        if (ciBefore.green && remaining === "none") { outcome = "✅ Nothing left to fix — CI green and all findings addressed."; break; }
+        if (isMergeConflicting(details)) {
+          outcome = `⚠️ No changes were pushed and the PR still conflicts with \`${details.baseRefName}\`. Handing back to humans.`;
+          break;
+        }
+        if (ciBefore.green && remaining === "none") { outcome = "✅ Nothing left to fix — CI green, no merge conflicts reported, and all findings addressed."; break; }
         outcome = remaining !== "none"
           ? "☑️ No further changes this round — the remaining items were deliberately skipped or couldn't be auto-fixed:"
           : "☑️ The fixer made no further changes.";
@@ -205,6 +209,19 @@ export async function runAutoFix(
       if (ci.failing.length) {
         if (iterations >= 2) { outcome = `⚠️ CI still failing after ${iterations} attempts (${ci.failing.join(", ")}). Handing back to humans.`; break; }
         continue; // green CI is a prerequisite for the review gate — fix the checks next round
+      }
+
+      // Mergeability is a completion gate alongside CI and review. A merge may
+      // resolve one conflict while exposing another as the base branch advances,
+      // so re-read GitHub after the push and let the next iteration address it.
+      const mergeDetails = await getPrDetails(pr.headRef);
+      if (mergeDetails && isMergeConflicting(mergeDetails)) {
+        if (iterations >= MAX_ITERATIONS) {
+          outcome = `⚠️ CI is green but the PR still conflicts with \`${mergeDetails.baseRefName}\` after ${iterations} attempts. Handing back to humans.`;
+          break;
+        }
+        await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: CI green but merge conflicts remain — continuing to fix…`);
+        continue;
       }
 
       // CI is green — gate on a FRESH review of the pushed code, not the fixer's

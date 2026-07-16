@@ -62,7 +62,7 @@ the code consumes (`src/agents/github/webhook.ts`):
 | Event | What happens |
 | --- | --- |
 | `issue_comment`, `pull_request_review_comment` (action `created`) | if the body matches a `GITHUB_MENTION_HANDLES` handle: intent-classified → whole-PR action (review / autofix / simplify / adversarial) or a conversational reply run in a PR-branch worktree |
-| `pull_request` action `labeled` | labels `michael-review` / `michael-auto-fix` / `michael-simplify` / `michael-adversarial` trigger the corresponding behavior (label names hardcoded in `src/agents/github/constants.ts`) |
+| `pull_request` action `labeled` | labels `michael-review` / `michael-auto-fix` / `michael-simplify` / `michael-adversarial` trigger the corresponding behavior (label names hardcoded in `src/agents/github/constants.ts`); auto-fix also merges the current base into conflicting PR branches and resolves the conflicts without force-pushing |
 | `pull_request` `opened`/`reopened`/`synchronize`/`ready_for_review` | auto-review, if the PR is non-draft and either carries `michael-review` or the review automation is enabled |
 | `pull_request` action `closed` + merged | notifies linked sessions; fires the docs-sync automation on `github:pr_merged` |
 | `pull_request_review` | handled by the Slack agent (review → Slack notification) |

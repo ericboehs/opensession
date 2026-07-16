@@ -68,7 +68,7 @@ export function createGithubMcpServer(ctx: GithubToolContext) {
     ),
     tool(
       "auto_fix_pr",
-      "Trigger Michael's auto-fix on a tella-fusion PR: address the review findings and any failing CI, push fixes to the PR branch, and loop until CI is green (bounded, never merges). Use when asked to 'auto-fix PR <n>'. Commits are attributed to you.",
+      "Trigger Michael's auto-fix on a tella-fusion PR: resolve merge conflicts, address review findings and failing CI, push fixes to the PR branch, and loop until CI is green (bounded, never merges). Use when asked to 'auto-fix PR <n>'. Commits are attributed to you.",
       prArg,
       async ({ pr }: { pr: number | string }) => run("autofix", pr),
     ),

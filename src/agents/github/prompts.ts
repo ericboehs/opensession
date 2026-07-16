@@ -235,6 +235,9 @@ export function buildAutoFixPrompt(
   const ci = failingChecks.length
     ? `Failing CI checks to fix:\n${failingChecks.map((c) => `- ${c}`).join("\n")}`
     : "CI is currently green or pending — focus on the review findings.";
+  const conflicts = isMergeConflicting(pr)
+    ? `GitHub reports that this PR conflicts with \`${pr.baseRefName}\`. Resolving those conflicts is required work for this iteration, even if CI is green and there are no review findings. Fetch \`origin/${pr.baseRefName}\`, merge it into the current branch without rebasing, resolve every conflict while preserving both the PR's intent and relevant upstream changes, validate the result, commit the merge resolution, and push it. Never force-push.`
+    : `GitHub does not currently report merge conflicts with \`${pr.baseRefName}\`.`;
 
   return `You are Michael, working on PR #${pr.number} ("${pr.title}") on tella-fusion. You are checked out on the PR's head branch \`${pr.headRefName}\` in a worktree. This is auto-fix iteration ${iteration}.
 
@@ -246,6 +249,8 @@ Context already gathered for this iteration — treat it as current, don't re-de
 Open review feedback to address (inline comments + review summaries; each tagged with its author and, for inline comments, a \`comment <id>\` — fix every actionable point):
 ${reviewSummary || "(none fetched — gather it yourself per the skill's instructions, then assess the diff)"}
 
+${conflicts}
+
 ${ci}
 
 Push to the PR branch with \`git push origin HEAD:${pr.headRefName}\`. NEVER merge the PR (\`gh pr merge\` is forbidden) and never force-push over other people's work.
@@ -254,6 +259,11 @@ End your turn with these three lines (exact keys, one line each) so the loop can
 \`FIXED: <short list of findings you fixed and pushed, or none>\`
 \`SKIPPED: <findings you deliberately left, each as "finding — reason", or none>\`
 \`UNRESOLVED: <findings you tried but couldn't fix, each as "finding — reason", or none>\``;
+}
+
+/** GitHub exposes conflicts through either field while its async mergeability probe settles. */
+export function isMergeConflicting(pr: Pick<PrDetails, "mergeable" | "mergeStateStatus">): boolean {
+  return pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY";
 }
 
 export function buildAdversarialPrompt(pr: PrDetails, steer?: string): string {
