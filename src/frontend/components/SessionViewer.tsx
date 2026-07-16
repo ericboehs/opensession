@@ -847,9 +847,17 @@ export function SessionViewer({
 	// cycling in the Sidebar, and caret start/end moves in the textarea).
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
+			// Match e.code too: with Option held, some layouts/browsers alter
+			// e.key; the physical-key code never changes.
+			const arrow =
+				e.key === "ArrowUp" || e.code === "ArrowUp"
+					? "ArrowUp"
+					: e.key === "ArrowDown" || e.code === "ArrowDown"
+						? "ArrowDown"
+						: null;
 			if (
 				e.defaultPrevented ||
-				(e.key !== "ArrowUp" && e.key !== "ArrowDown") ||
+				!arrow ||
 				!(e.metaKey || e.ctrlKey) ||
 				!e.altKey ||
 				e.shiftKey
@@ -866,7 +874,7 @@ export function SessionViewer({
 					? "high"
 					: supported[0].id;
 			const idx = supported.findIndex((ef) => ef.id === effective);
-			const dir = e.key === "ArrowUp" ? 1 : -1;
+			const dir = arrow === "ArrowUp" ? 1 : -1;
 			const next =
 				supported[(idx + dir + supported.length) % supported.length];
 			if (!next) return;
