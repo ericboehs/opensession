@@ -2277,8 +2277,8 @@ export function Sidebar({
 				{/* 22px slot — same as the group-header pin/eye icon (a 22px box at
 				    6px pad, center 17/27px) so a row's PR/merge mark sits on the exact
 				    icon column of its lane header, not 1px left in a smaller box.
-				    Backlog/pending rows carry no mark: they show the unread dot in
-				    that slot when unread, else an empty placeholder — either way the
+				    Backlog/pending rows carry a quiet gray idle mark, unless the unread
+				    dot takes that slot — either way the
 				    title lines up with the iconned rows (a left indent). */}
 				{(() => {
 					const showUnreadDot =
@@ -2296,7 +2296,7 @@ export function Sidebar({
 								<span className="sidebar-item-status sidebar-status-unread" />
 							</span>
 						);
-					return <WsStatusMark row={row} size={22} placeholder />;
+					return <WsStatusMark row={row} size={22} />;
 				})()}
 				{editing ? (
 					<input
@@ -4755,8 +4755,8 @@ function SidebarItem({
 			<div className="sidebar-item-top">
 				{/* Leading 22px slot — the same status-icon column the workspace rows
 				    use, so a chat row's #number/title line up under them (and under the
-				    lane header) instead of sitting flush-left when it carries no dot.
-				    The live/unread dot rides centered in it; empty otherwise. */}
+				    lane header) instead of sitting flush-left. The live/unread/idle dot
+				    rides centered in it. */}
 				<span
 					className="flex shrink-0 items-center justify-center"
 					style={{ width: 22 }}
@@ -4774,7 +4774,9 @@ function SidebarItem({
 						   drawing the eye (a running/waiting session isn't "unread" in
 						   the same sense). */
 						<span className="sidebar-item-status sidebar-status-unread" />
-					) : null}
+					) : (
+						<span className="sidebar-item-status sidebar-status-idle" />
+					)}
 				</span>
 				{editing ? (
 					<input
@@ -5179,7 +5181,7 @@ interface WsCardRow {
 // Leading status mark for a workspace, Conductor-style: the live dots
 // (blocked question, running) keep their animated form, then the PR lifecycle
 // gets an icon — open PR (green, faint while still a draft) or merged
-// (purple). Backlog rows get nothing; quiet is the signal there. Shared by
+// (purple). Backlog rows get a quiet gray idle dot. Shared by
 // the sidebar row and the hover card head so they always read the same.
 // Live "in progress" ticker: counts up from when the run started, in the
 // in-progress color (yellow). Ticks once a second, isolated to this tiny node
@@ -5209,14 +5211,9 @@ function stripPrTitlePrefix(name: string): string {
 function WsStatusMark({
 	row,
 	size = 20,
-	placeholder = false,
 }: {
 	row: { status: MineStatus; running: boolean; chats: UnifiedSession[] };
 	size?: number;
-	/** When a row carries no status icon (Backlog/pending), still occupy the
-	    icon-width slot so its title lines up with the iconned rows and the lane
-	    header above — a left indent, Conductor-style, instead of flush-left. */
-	placeholder?: boolean;
 }) {
 	// Every mark rides in the same `size`-wide (20px) flex slot so #number/title
 	// line up at one x whichever mark the row carries. It also gives the icons a
@@ -5246,7 +5243,7 @@ function WsStatusMark({
 	}
 	if (row.status === "merged")
 		return slot(<IconGitMerge size={size} className="text-purple" />);
-	return placeholder ? slot(null) : null;
+	return dot("sidebar-status-idle");
 }
 
 // Footer action button base — the color variant carries the status meaning

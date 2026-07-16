@@ -2001,6 +2001,9 @@ body.resizing-x {
 	background: var(--yellow);
 	animation: pulse 1.4s ease-in-out infinite;
 }
+.sidebar-status-idle {
+	background: var(--text-faint);
+}
 .sidebar-status-waiting {
 	background: var(--accent);
 	box-shadow: 0 0 6px var(--accent);
@@ -16350,4 +16353,3 @@ html[data-theme="light"] .pixel-spinner .pixel {
 	background: var(--bg-hover);
 	border-color: var(--text-faint);
 }
-
