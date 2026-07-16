@@ -1480,11 +1480,18 @@ export function Sidebar({
 	// and the focus person's rows — shared by the list rendering below and by
 	// archive-next, so both always agree on what's actually in the sidebar.
 	// Rows a teammate flagged for YOUR review (the info panel's Reviewer picker).
-	// They get their own band at the very top: they're usually someone else's
-	// workspaces, so the owner lens below would otherwise hide them entirely.
+	// Review bands obey the same Person filter as every status lane. In particular,
+	// the default view cannot pull in another person's workspace just because its
+	// review request involves you, and review bands stay out of the Backlog lens.
+	const reviewScopeRows = useMemo(() => {
+		const focus =
+			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
+		if (focus === "unassigned") return [];
+		return wsRows.filter((r) => focus === "everyone" || r.owner === focus);
+	}, [wsRows, filter.person, currentUser]);
 	const needsReviewRows = useMemo(() => {
 		const me = currentUser.toLowerCase();
-		return wsRows.filter(
+		return reviewScopeRows.filter(
 			(r) =>
 				!wsPrMerged(r) &&
 				!wsPrApproved(r) &&
@@ -1498,7 +1505,7 @@ export function Sidebar({
 						!c.reviewRequest?.accepted,
 				),
 		);
-	}, [wsRows, currentUser]);
+	}, [reviewScopeRows, currentUser]);
 	// The mirror of "Needs review": workspaces where YOU asked a teammate to
 	// review (the info panel's Reviewer picker, `reviewRequest.by === me`). They
 	// get their own band so a session you've sent out for review moves out of the
@@ -1508,7 +1515,7 @@ export function Sidebar({
 	const awaitingReviewRows = useMemo(() => {
 		const me = currentUser.toLowerCase();
 		const needsKeys = new Set(needsReviewRows.map((r) => r.key));
-		return wsRows.filter(
+		return reviewScopeRows.filter(
 			(r) =>
 				!needsKeys.has(r.key) &&
 				!wsPrMerged(r) &&
@@ -1522,7 +1529,7 @@ export function Sidebar({
 						!wsPrReviewGivenBy(r, c.reviewRequest.to.toLowerCase()),
 				),
 		);
-	}, [wsRows, currentUser, needsReviewRows]);
+	}, [reviewScopeRows, currentUser, needsReviewRows]);
 	// Reviewed: the request landed — the reviewer signed off via the info
 	// panel's "Mark as reviewed" (`reviewRequest.accepted`), approved the PR on
 	// GitHub (`prReviewDecision === "APPROVED"`, wsPrApproved), or submitted
@@ -1535,7 +1542,7 @@ export function Sidebar({
 	// belongs in the "Done" status lane, not "Reviewed".
 	const reviewedRows = useMemo(() => {
 		const me = currentUser.toLowerCase();
-		return wsRows.filter((r) => {
+		return reviewScopeRows.filter((r) => {
 			if (wsPrMerged(r)) return false;
 			const mineRequest = r.chats.some((c) => {
 				const rq = c.reviewRequest;
@@ -1554,7 +1561,7 @@ export function Sidebar({
 				)
 			);
 		});
-	}, [wsRows, currentUser]);
+	}, [reviewScopeRows, currentUser]);
 	// Every workspace pulled into a review band (Needs / Awaiting / Reviewed) —
 	// excluded from the pinned/status lanes below so it lives in exactly one place.
 	const reviewBandKeys = useMemo(
