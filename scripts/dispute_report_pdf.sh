@@ -138,4 +138,44 @@ fs = d.get('files', [])
 print(fs[0].get('permalink', '') if fs else '')
 ") || die "completeUploadExternal failed: $(trunc "$COMPLETE_JSON")"
 
+# Resolve the ts of the message the share created, so the automation runner
+# can thread-link it (replies in that thread then drive the posting session —
+# see the SLACK_MSG_POSTED scan in src/server/automations.ts). Shares can lag
+# a beat behind completeUploadExternal, so poll files.info briefly. Best
+# effort: a missing ts only loses the thread link, never the upload.
+extract_share_ts() {
+  python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+fs = list(d.get('files') or [])
+if d.get('file'): fs.append(d['file'])
+for f in fs:
+    if not f: continue
+    shares = f.get('shares') or {}
+    for scope in ('public', 'private'):
+        ch = (shares.get(scope) or {}).get('$CHANNEL') or []
+        if ch and ch[0].get('ts'):
+            print(ch[0]['ts']); sys.exit(0)
+sys.exit(1)
+" 2>/dev/null
+}
+MSG_TS=$(echo "$COMPLETE_JSON" | extract_share_ts || true)
+if [[ -z "$MSG_TS" ]]; then
+  for _ in 1 2 3 4 5; do
+    sleep 1
+    INFO_JSON=$(curl -s -G "https://slack.com/api/files.info" \
+      -H "Authorization: Bearer $TOKEN" \
+      --data-urlencode "file=$FILE_ID") || break
+    MSG_TS=$(echo "$INFO_JSON" | extract_share_ts || true)
+    [[ -n "$MSG_TS" ]] && break
+  done
+fi
+if [[ -n "$MSG_TS" ]]; then
+  # Marker line for the automation runner — keep it near the head of stdout
+  # (tool results are truncated to ~500 chars in the event stream).
+  echo "SLACK_MSG_POSTED channel=$CHANNEL ts=$MSG_TS"
+else
+  echo "dispute_report_pdf: could not resolve the shared message ts (thread replies won't route to this run)" >&2
+fi
+
 echo "Uploaded PDF to Slack: ${PERMALINK:-(no permalink)}"

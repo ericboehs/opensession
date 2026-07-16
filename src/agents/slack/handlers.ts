@@ -1024,6 +1024,8 @@ export async function handleMessageEvent(event: any): Promise<void> {
   if (thread_ts) {
     const threadSessionId = sessionForThread(channel, thread_ts);
     if (threadSessionId) {
+      if (await maybeRetriggerAutomation(threadSessionId, text, channel, ts, thread_ts))
+        return;
       const control = tryGetSessionControl();
       if (control) {
         console.log(
@@ -1182,6 +1184,46 @@ function prActionCardBlocks(message: string, bksId: string, running: boolean): a
   ];
 }
 
+/**
+ * A thread reply of "retrigger" under an automation-posted message re-fires
+ * that automation with its original trigger payload (a brand-new run/session)
+ * instead of steering the old session. Returns true when the reply was
+ * consumed here — including a failed retrigger, which is answered in-thread
+ * rather than delivered to the session as a prompt.
+ */
+async function maybeRetriggerAutomation(
+  threadSessionId: string,
+  replyText: string,
+  channel: string,
+  ts: string,
+  threadTs: string,
+): Promise<boolean> {
+  if (!/^retrigger\b/i.test(replyText.trim())) return false;
+  // Dynamic import: handlers.ts is pulled in by the agent loop at startup and
+  // automations.ts pulls in several slack tool modules — avoid a load cycle.
+  const { retriggerAutomationSession } = await import("../../server/automations");
+  const res = retriggerAutomationSession(threadSessionId);
+  if (res.ok) {
+    console.log(
+      `[slack] Retrigger in ${channel}/${threadTs} → automation "${res.name}"`
+    );
+    await addReaction(channel, ts, "repeat");
+    await sendSlackMessage(
+      channel,
+      `:repeat: Re-running *${res.name}* with the original trigger — it'll post fresh results when done.`,
+      threadTs
+    );
+  } else {
+    console.warn(`[slack] Retrigger in ${channel}/${threadTs} failed: ${res.reason}`);
+    await sendSlackMessage(
+      channel,
+      `:warning: Couldn't retrigger this run: ${res.reason}`,
+      threadTs
+    );
+  }
+  return true;
+}
+
 export async function handleMentionEvent(event: any): Promise<void> {
   const { channel, user, ts, thread_ts } = event;
   const text = event.text || "";
@@ -1220,6 +1262,8 @@ export async function handleMentionEvent(event: any): Promise<void> {
   // — if the automation run is still going, the follow-up waits for it rather
   // than steering (the in-thread answer mirror rides the queued message).
   if (threadSessionId) {
+    if (await maybeRetriggerAutomation(threadSessionId, cleanText, channel, ts, thread_ts))
+      return;
     const control = tryGetSessionControl();
     if (control) {
       console.log(

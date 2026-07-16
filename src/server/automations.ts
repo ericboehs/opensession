@@ -856,6 +856,20 @@ export async function runAutomation(
       string,
       { channel?: string; threadTs?: string }
     >();
+    const linkSlackThread = (
+      engineSessionId: string,
+      channel?: string,
+      threadTs?: string,
+    ) => {
+      if (!channel || !threadTs) return;
+      if (slackThreads.some((t) => t.channel === channel && t.threadTs === threadTs))
+        return;
+      slackThreads.push({ channel, threadTs });
+      // Live-link + persist immediately so a fast reply routes even while
+      // the run is still going.
+      linkThreadInIndex(bksId, channel, threadTs);
+      persistSession(engineSessionId);
+    };
     const persistSession = (engineSessionId: string) => {
       const data: BackstageSessionFile = {
         id: bksId,
@@ -876,6 +890,12 @@ export async function runAutomation(
         title: eventTitle || `${automation.name} — ${stamp}`,
         mode: automation.mode,
         automation: automation.name,
+        automationId: automation.id,
+        // Keep the trigger payload so a thread reply of "retrigger" can replay
+        // this exact run (same truncation as the prompt embed).
+        ...(options?.eventContext
+          ? { automationEvent: options.eventContext.slice(0, 10_000) }
+          : {}),
         plainThreadId,
         ...(slackThreads.length ? { slackThreads: [...slackThreads] } : {}),
       };
@@ -1005,17 +1025,19 @@ export async function runAutomation(
           result.match(/"channel"\s*:\s*"([A-Z0-9]+)"/)?.[1] || pending.channel;
         const threadTs =
           pending.threadTs || result.match(/"ts"\s*:\s*"(\d+\.\d+)"/)?.[1];
-        const posted = /"ok"\s*:\s*true/.test(result);
-        if (
-          posted && channel && threadTs &&
-          !slackThreads.some((t) => t.channel === channel && t.threadTs === threadTs)
-        ) {
-          slackThreads.push({ channel, threadTs });
-          // Live-link + persist immediately so a fast reply routes even while
-          // the run is still going.
-          linkThreadInIndex(bksId, channel, threadTs);
-          persistSession(engineSessionId);
+        if (/"ok"\s*:\s*true/.test(result)) {
+          linkSlackThread(engineSessionId, channel, threadTs);
         }
+      }
+      // Slack posts made OUTSIDE the slack MCP (e.g. dispute_report_pdf.sh
+      // uploading the evidence PDF via bash+curl) announce themselves with a
+      // marker line on stdout — scan every tool result for it so those
+      // threads route replies back here too.
+      if (event.type === "tool_result") {
+        const m = (event.content || "").match(
+          /SLACK_MSG_POSTED channel=([CD][A-Z0-9]+) ts=(\d+\.\d+)/,
+        );
+        if (m) linkSlackThread(engineSessionId, m[1], m[2]);
       }
       if (event.type === "model_switch") {
         const to = event.toModel || "";
@@ -1072,6 +1094,50 @@ let eventSessionCallback: ((sessionId: string) => void) | undefined;
 
 export function setEventSessionCallback(cb: (sessionId: string) => void): void {
   eventSessionCallback = cb;
+}
+
+/**
+ * Re-fire the automation behind an automation-created session, replaying the
+ * original triggering event payload (stored on the session file). Used by the
+ * Slack handlers: a thread reply of "retrigger" under a message the run posted
+ * starts a fresh run instead of steering the old session. Fire-and-forget —
+ * the new run posts its own results.
+ */
+export function retriggerAutomationSession(
+  sessionId: string,
+): { ok: true; name: string } | { ok: false; reason: string } {
+  let session: BackstageSessionFile;
+  try {
+    session = JSON.parse(
+      readFileSync(`${SESSIONS_DIR}/${sessionId}.json`, "utf-8"),
+    );
+  } catch {
+    return { ok: false, reason: `session ${sessionId} not found` };
+  }
+  // automationId is stamped since 2026-07-16; older sessions only carry the
+  // automation's name — fall back to matching on that.
+  const automation = session.automationId
+    ? getAutomation(session.automationId)
+    : session.automation
+      ? (listAutomations().find((a) => a.name === session.automation) ?? null)
+      : null;
+  if (!automation) {
+    return {
+      ok: false,
+      reason: `no automation found for session ${sessionId} (${session.automation || "not an automation session"})`,
+    };
+  }
+  if (!automation.enabled) {
+    return { ok: false, reason: `automation "${automation.name}" is disabled` };
+  }
+  // With a stored event payload, replay it as an event run (concurrent-safe,
+  // like the original). Without one (cron/manual automations) run it plainly —
+  // "manual" also gives the still-running skip guard.
+  void runAutomation(automation, eventSessionCallback, {
+    trigger: session.automationEvent ? "event" : "manual",
+    eventContext: session.automationEvent,
+  });
+  return { ok: true, name: automation.name };
 }
 
 /** True when at least one enabled automation watches this Slack channel —

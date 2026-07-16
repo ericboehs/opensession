@@ -325,6 +325,11 @@ export interface BackstageSessionFile {
    *  UnifiedSession.spawnDepth). Stamped by opensession-sessions' spawn_task. */
   spawnDepth?: number;
   automation?: string; // name of the automation that created this session
+  automationId?: string; // id of that automation — lets a Slack thread reply "retrigger" re-fire it
+  /** The triggering event payload of the automation run that created this
+   *  session (truncated like the prompt embed). A "retrigger" replays the
+   *  automation with this exact payload. */
+  automationEvent?: string;
 
   plainThreadId?: string; // Plain thread this session is triaging
   model?: string; // model id for this session's runs; unset = default
