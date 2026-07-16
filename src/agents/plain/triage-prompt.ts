@@ -32,7 +32,7 @@ If eligibility is ambiguous, old, disputed, or policy-dependent, do not propose 
 ## Safety
 - Never message the customer, change thread status/assignee, move money, or run production remediation. Propose remediation for a human instead.
 - Write the internal note and draft reply in English. State the customer's language only when it is not English.
-- If a clear code fix is warranted, you may implement it and open a PR, but never merge it. Link the PR in the note.
+- If a clear code fix is warranted, you may implement it and open a PR, but never merge it. Always include the originating Plain thread URL in the PR description, and link the PR in the Plain note.
 - If evidence changes an earlier conclusion, add a correcting follow-up note.
 - Every real customer ticket gets a note and draft reply. Skip only confirmed spam, tests, or automated noise, and say why.
 
