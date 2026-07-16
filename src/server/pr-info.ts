@@ -485,15 +485,35 @@ export async function getPrDetails(
   return refresh;
 }
 
+/** True for "this branch/number has no PR" — a real answer, not a failure. */
+function isNoPrError(msg: string): boolean {
+  return /no pull requests found|Could not resolve/i.test(msg);
+}
+
 async function fetchPrDetails(
   branch: string,
   repo: string
 ): Promise<PrDetails | null> {
   let data: PrDetails | null = null;
   try {
-    const raw = await $`gh pr view ${branch} --repo ${repo} --json number,title,url,state,isDraft,baseRefName,headRefName,additions,deletions,changedFiles,reviewDecision,author,body,statusCheckRollup,mergeable,mergeStateStatus,comments,files,latestReviews,reviewRequests`
-      .quiet()
-      .text();
+    // Under load GitHub sporadically aborts the GraphQL response mid-stream
+    // ("stream error: … CANCEL; received from peer") — that's transient, and
+    // treating it as "no PR" broke PR actions (PR #4910). Retry transient
+    // failures; a genuine "no pull requests found" stays a fast null.
+    let raw = "";
+    for (let attempt = 1; ; attempt++) {
+      try {
+        raw = await $`gh pr view ${branch} --repo ${repo} --json number,title,url,state,isDraft,baseRefName,headRefName,additions,deletions,changedFiles,reviewDecision,author,body,statusCheckRollup,mergeable,mergeStateStatus,comments,files,latestReviews,reviewRequests`
+          .quiet()
+          .text();
+        break;
+      } catch (e: any) {
+        const msg = String(e?.stderr || e?.message || e).slice(0, 300);
+        if (isNoPrError(msg) || attempt >= 3) throw e;
+        console.warn(`[pr-info] gh pr view ${branch} (${repo}) attempt ${attempt} failed, retrying: ${msg}`);
+        await new Promise((r) => setTimeout(r, attempt * 2000));
+      }
+    }
     const pr = JSON.parse(raw);
     data = {
       number: pr.number,
@@ -532,8 +552,13 @@ async function fetchPrDetails(
       mergeStateStatus: pr.mergeStateStatus || "",
       staging: parseStaging(pr.comments),
     };
-  } catch {
-    data = null; // no PR for this branch (or gh failure) — both fine to cache briefly
+  } catch (e: any) {
+    // No PR for this branch, or a gh failure — both fine to cache briefly. But
+    // say which: the silent version hid a real failure as "no PR" (PR #4910).
+    const msg = String(e?.stderr || e?.message || e).slice(0, 300);
+    if (!isNoPrError(msg))
+      console.warn(`[pr-info] gh pr view ${branch} (${repo}) failed: ${msg}`);
+    data = null;
   }
 
   return data;
