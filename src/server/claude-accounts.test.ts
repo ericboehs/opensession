@@ -146,7 +146,7 @@ describe("dry-pool backpressure", () => {
   test("waitForUsableAccount returns immediately once pick succeeds", async () => {
     accounts.__setUsageCacheForTest("fresh", usage(10));
     const picked = await accounts.waitForUsableAccount({
-      pick: () => accounts.pickAccount(),
+      pick: () => accounts.pickAccount() ?? null,
       maxWaitMs: 5_000,
       pollMs: 10,
     });
@@ -159,7 +159,7 @@ describe("dry-pool backpressure", () => {
     accounts.__setUsageCacheForTest("maxed", maxedWindow(far));
     const t0 = Date.now();
     const picked = await accounts.waitForUsableAccount({
-      pick: () => accounts.pickAccount(),
+      pick: () => accounts.pickAccount() ?? null,
       maxWaitMs: 1_000,
       pollMs: 10,
     });
@@ -172,10 +172,72 @@ describe("dry-pool backpressure", () => {
     accounts.__setUsageCacheForTest("fresh", maxedWindow(soon));
     accounts.__setUsageCacheForTest("maxed", maxedWindow(soon));
     const picked = await accounts.waitForUsableAccount({
-      pick: () => accounts.pickAccount(),
+      pick: () => accounts.pickAccount() ?? null,
       maxWaitMs: 5_000,
       pollMs: 50,
     });
     expect(picked).not.toBeNull();
+  });
+});
+
+describe("refreshUsageIfNearLimit", () => {
+  const agedUsage = (fiveHourPct: number, ageMs: number) => ({
+    fetchedAt: new Date(Date.now() - ageMs).toISOString(),
+    fiveHour: { utilization: fiveHourPct, resetsAt: null },
+    sevenDay: null,
+    extraUsage: null,
+  });
+  const min = 60_000;
+  let refreshed: string[] = [];
+  const arm = () => {
+    refreshed = [];
+    accounts.__setNearLimitRefresherForTest(async (a) => {
+      refreshed.push(a.id);
+      return null;
+    });
+  };
+
+  test("leaves low-utilization accounts alone regardless of cache age", async () => {
+    arm();
+    accounts.__setUsageCacheForTest("fresh", agedUsage(50, 55 * min));
+    expect(await accounts.refreshUsageIfNearLimit("fresh")).toBe(false);
+    expect(refreshed).toEqual([]);
+  });
+
+  test("refreshes a near-limit account with a stale snapshot", async () => {
+    arm();
+    accounts.__setUsageCacheForTest("fresh", agedUsage(92, 6 * min));
+    expect(await accounts.refreshUsageIfNearLimit("fresh")).toBe(true);
+    expect(refreshed).toEqual(["fresh"]);
+  });
+
+  test("cooldown: no second refresh right after the first", async () => {
+    arm();
+    accounts.__setUsageCacheForTest("fresh", agedUsage(92, 6 * min));
+    expect(await accounts.refreshUsageIfNearLimit("fresh")).toBe(true);
+    expect(await accounts.refreshUsageIfNearLimit("fresh")).toBe(false);
+    expect(refreshed).toEqual(["fresh"]);
+  });
+
+  test("trusts a recent snapshot even when near the limit", async () => {
+    arm();
+    accounts.__setUsageCacheForTest("fresh", agedUsage(92, 1 * min));
+    expect(await accounts.refreshUsageIfNearLimit("fresh")).toBe(false);
+    expect(refreshed).toEqual([]);
+  });
+
+  test("lower tier: 75%+ refreshes only once the snapshot is older", async () => {
+    arm();
+    accounts.__setUsageCacheForTest("maxed", agedUsage(78, 10 * min));
+    expect(await accounts.refreshUsageIfNearLimit("maxed")).toBe(false);
+    accounts.__setUsageCacheForTest("maxed", agedUsage(78, 25 * min));
+    expect(await accounts.refreshUsageIfNearLimit("maxed")).toBe(true);
+    expect(refreshed).toEqual(["maxed"]);
+  });
+
+  test("unknown account or empty cache refreshes nothing", async () => {
+    arm();
+    expect(await accounts.refreshUsageIfNearLimit("nope")).toBe(false);
+    expect(refreshed).toEqual([]);
   });
 });

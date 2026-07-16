@@ -746,6 +746,58 @@ export function __setUsageCacheForTest(id: string, usage: AccountUsage): void {
   usageCache.set(id, usage);
 }
 
+// ── Near-limit steering (targeted on-demand refresh) ─────────────────────────
+// The hourly poll leaves a window where an account's cached usage looks fine
+// while its real 5h/scoped utilization has already hit the cap — a turn that
+// starts there dies mid-run on the limit error and redoes all its work on the
+// next account (2026-07-16: a 14-minute turn burned this way). Before a run
+// commits to an account whose CACHED utilization is already high, spend one
+// targeted usage poll so the pick decides on fresh data. Tiered staleness
+// gates plus a hard per-account cooldown keep the extra polling well inside
+// the endpoint's rate limits (hour-long lockouts were observed at ~6 polls/
+// hour/token; this adds at most 3/hour, and only while an account is
+// simultaneously near-limit and being picked for turns).
+const NEAR_LIMIT_TIERS: { utilization: number; maxCacheAgeMs: number }[] = [
+  { utilization: 90, maxCacheAgeMs: 5 * 60 * 1000 },
+  { utilization: 75, maxCacheAgeMs: 20 * 60 * 1000 },
+];
+const NEAR_LIMIT_REFRESH_COOLDOWN_MS = 20 * 60 * 1000;
+const nearLimitRefreshAt = new Map<string, number>();
+type UsageRefresher = (a: ClaudeAccount) => Promise<AccountUsage | null>;
+let nearLimitRefresher: UsageRefresher = refreshAccountUsage;
+
+/**
+ * One bounded, targeted usage refresh for an account the picker is about to
+ * commit a turn to, when its cached utilization is near the cap and the
+ * snapshot is stale. Returns true when a refresh actually ran — the caller
+ * should re-pick afterwards; the same account comes back unless the fresh
+ * data shows it genuinely at the cap (isAccountUsableFor reads the updated
+ * cache). No-op for accounts whose usage can't be polled.
+ */
+export async function refreshUsageIfNearLimit(id: string, model?: string): Promise<boolean> {
+  const account = readStore().find((x) => x.id === id);
+  if (!account) return false;
+  if (account.usageScope === "missing" && !account.credentialsPath) return false;
+  const cached = usageCache.get(id);
+  if (!cached || cached.error) return false;
+  const utilization = accountUtilization(account, model);
+  const age = Date.now() - Date.parse(cached.fetchedAt);
+  const tier = NEAR_LIMIT_TIERS.find((t) => utilization >= t.utilization);
+  // NaN age (unparsable fetchedAt) fails the comparison → no refresh.
+  if (!tier || !(age > tier.maxCacheAgeMs)) return false;
+  const last = nearLimitRefreshAt.get(id) ?? 0;
+  if (Date.now() - last < NEAR_LIMIT_REFRESH_COOLDOWN_MS) return false;
+  nearLimitRefreshAt.set(id, Date.now());
+  await nearLimitRefresher(account);
+  return true;
+}
+
+/** Test seam: replace the network refresh (null restores the real one). */
+export function __setNearLimitRefresherForTest(fn: UsageRefresher | null): void {
+  nearLimitRefresher = fn ?? refreshAccountUsage;
+  nearLimitRefreshAt.clear();
+}
+
 /**
  * Sideline an account after a run hit its usage limit. Uses the 5-hour reset
  * time when known (refreshes usage in the background to confirm), otherwise a

@@ -206,6 +206,7 @@ import {
   getUsableAccountById,
   getAccountById,
   markExhausted,
+  refreshUsageIfNearLimit,
   waitForUsableAccount,
   type ClaudeAccount,
 } from "./claude-accounts";
@@ -1897,6 +1898,30 @@ async function* runOpencodeAttempt(
           };
           err.usageLimitExhausted = true;
           throw err;
+        }
+        // Near-limit steering: the usage cache refreshes only hourly, so a
+        // turn can start on an account that's about to hit its 5h/scoped cap
+        // and lose all its progress to the mid-turn limit error (full
+        // re-prompt on the rotation account, cold cache). When the candidate's
+        // cached usage is already near the cap, spend one targeted poll
+        // (tier/cooldown-bounded in claude-accounts) and re-pick on fresh
+        // data — the same account comes back unless it's genuinely at cap.
+        if (await refreshUsageIfNearLimit(picked.id, parsed.modelID)) {
+          const fresh = repick();
+          if (fresh && fresh.id !== picked.id) {
+            audit({
+              msg: "account_near_limit_steer",
+              run_kind: journal?.kind,
+              bks_session_id: journal?.bksSessionId,
+              model,
+              from_account: picked.name,
+              to_account: fresh.name,
+            });
+            console.warn(
+              `[opencode-runner] ${picked.name} near its usage limit on fresh check — steering turn to ${fresh.name}`
+            );
+            picked = fresh;
+          }
         }
         stickyMeridianAccounts.set(sessionKey, picked.id);
         bridgeTag = `anthropic-${picked.id}`;
