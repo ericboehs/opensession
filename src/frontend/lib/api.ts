@@ -1868,6 +1868,19 @@ export async function savePinsApi(
 	return Array.isArray(body?.pins) ? body.pins : pins;
 }
 
+// ── Reads (per-user unread marks; server mirror of localStorage) ──
+
+export async function saveReadsApi(
+	user: string,
+	reads: Record<string, string>,
+): Promise<void> {
+	await request<{ reads?: Record<string, string> }>("/reads", {
+		method: "PUT",
+		body: { user, reads },
+		label: "Failed to save reads",
+	});
+}
+
 // ── Folders (per-user sidebar sections) ──
 
 export type SidebarFolderDto = { id: string; name: string; keys: string[] };

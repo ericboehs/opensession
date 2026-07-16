@@ -11,6 +11,7 @@ import { getAutoArchiveConfig, setAutoArchiveConfig } from "../auto-archive";
 import { frontend } from "../frontend-build";
 import { getFolders as getUserFolders, setFolders as setUserFolders } from "../folders";
 import { getPins as getUserPins, setPins as setUserPins } from "../pins";
+import { getReads as getUserReads, setReads as setUserReads } from "../reads";
 import { addSessionMemory, describeScope, forgetSessionMemory, listAllMemory, updateMemoryEntry } from "../session-memory";
 import { getTabColors as getUserTabColors, setTabColors as setUserTabColors } from "../tab-colors";
 import { getUiPrefs, patchUiPrefs } from "../ui-prefs";
@@ -182,6 +183,33 @@ export async function handlePrefsRoutes(
 			);
 		}
 		return Response.json({ pins: setUserPins(body.user, body.pins) });
+	}
+
+	// ── Per-user read marks (unread flags) ──
+	// The server mirror of the frontend's localStorage read state
+	// (src/frontend/lib/reads.ts), so consumers that can't see localStorage —
+	// the hardware macropad feed (GET /api/keypad) — can flag sessions with
+	// unread activity. GET reads a user's marks; PUT replaces them wholesale
+	// (the frontend pushes its full map on every mark change), same shape as pins.
+	if (path === "/backstage/api/reads" && req.method === "GET") {
+		const user = url.searchParams.get("user") || "Anonymous";
+		return Response.json({ reads: getUserReads(user) });
+	}
+
+	if (path === "/backstage/api/reads" && req.method === "PUT") {
+		const body = await req.json().catch(() => null);
+		if (
+			!body ||
+			typeof body.user !== "string" ||
+			!body.reads ||
+			typeof body.reads !== "object"
+		) {
+			return Response.json(
+				{ error: "user (string) and reads (object) are required" },
+				{ status: 400 },
+			);
+		}
+		return Response.json({ reads: setUserReads(body.user, body.reads) });
 	}
 
 	// ── Per-user sidebar folders ──

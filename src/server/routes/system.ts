@@ -14,6 +14,7 @@ import { getAgents } from "../agents-registry";
 import { configuredServer } from "../config";
 import { IS_DEV, buildFrontend, frontend } from "../frontend-build";
 import { getPins } from "../pins";
+import { getReads, isUnread } from "../reads";
 import { runErrors } from "../session-cache";
 import { getSessionControl } from "../session-control";
 import { MAX_UPLOAD_BYTES, stageHttpUpload } from "../uploads";
@@ -91,6 +92,10 @@ export async function handleSystemRoutes(
 	if (path === "/backstage/api/keypad" && req.method === "GET") {
 		const user = url.searchParams.get("user") || "Anonymous";
 		const control = getSessionControl();
+		// Per-user read marks (mirrored from the app's localStorage — reads.ts),
+		// so a finished session with activity newer than the last-read mark shows
+		// as unread on the macropad.
+		const reads = getReads(user);
 		// Canonical open-in-app link per session (the macropad opens it on
 		// keypress) — same shape as the frontend's chatPath (share-link.ts):
 		// workspace-scoped when the chat belongs to a Project.
@@ -98,7 +103,7 @@ export async function handleSystemRoutes(
 		const sessions: Array<{
 			id: string;
 			title: string;
-			status: "idle" | "working" | "needs_input" | "done" | "error";
+			status: "idle" | "working" | "needs_input" | "unread" | "error";
 			url: string;
 		}> = [];
 		for (const key of getPins(user)) {
@@ -112,15 +117,20 @@ export async function handleSystemRoutes(
 			// id means it has run before, so an idle session with one is "done";
 			// without one it's a fresh pinned chat that never ran.
 			const lastRunError = runErrors.get(s.id) || s.lastRunError;
-			const status =
-				s.state === "waiting_question"
-					? "needs_input"
+			// Precedence (first match wins) — surface the single most important
+			// thing: error > working > needs_input > unread > idle. The old "done"
+			// (finished, has run before) collapses into idle; "unread" is the
+			// finished-with-new-activity case (lastActivity newer than the user's
+			// read mark). See src/server/reads.ts.
+			const status: "idle" | "working" | "needs_input" | "unread" | "error" =
+				lastRunError
+					? "error"
 					: s.state === "running" || s.state === "queued"
 						? "working"
-						: lastRunError
-							? "error"
-							: s.claudeSessionId || s.codexThreadId || s.opencodeSessionId
-								? "done"
+						: s.state === "waiting_question"
+							? "needs_input"
+							: isUnread(s.lastActivity, reads[s.id])
+								? "unread"
 								: "idle";
 			const sessionUrl = s.projectId
 				? `${uiBase}/workspace/${encodeURIComponent(s.projectId)}/chat/${encodeURIComponent(s.id)}`

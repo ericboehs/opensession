@@ -7,6 +7,10 @@
 // Only sessions you've actually opened get a mark, so sessions you've never
 // looked at (other people's, automations you don't follow) don't all light up
 // as unread — the flag means "new since you last read it", not "never seen".
+
+import { saveReadsApi } from "./api";
+import { getCurrentUser } from "../components/UserPicker";
+
 const KEY = "michael-reads";
 const CHANGE_EVENT = "michael-reads-changed";
 // Bound the map so it can't grow forever; when over cap we drop the
@@ -28,6 +32,13 @@ export function getReads(): ReadMap {
   return read();
 }
 
+// Mirror the full read map to the server (fire-and-forget) so consumers that
+// can't see localStorage — the hardware macropad feed (GET /api/keypad) — can
+// flag unread sessions. Optimistic, like pins: failures are ignored.
+function syncToServer(map: ReadMap): void {
+  void saveReadsApi(getCurrentUser(), map).catch(() => {});
+}
+
 /**
  * Record that a session has been read up to `activity` (its `lastActivity` at
  * the moment it's open). No-op if we already have that exact mark, so calling
@@ -44,6 +55,7 @@ export function markRead(id: string, activity: string): void {
   }
   localStorage.setItem(KEY, JSON.stringify(map));
   window.dispatchEvent(new Event(CHANGE_EVENT));
+  syncToServer(map);
 }
 
 /**
@@ -59,6 +71,7 @@ export function markUnread(id: string): void {
   map[id] = epoch;
   localStorage.setItem(KEY, JSON.stringify(map));
   window.dispatchEvent(new Event(CHANGE_EVENT));
+  syncToServer(map);
 }
 
 /** True when the session has activity newer than the last read mark. */
