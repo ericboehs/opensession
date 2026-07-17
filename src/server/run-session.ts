@@ -190,7 +190,11 @@ export function steerQueuedPrompt(
 	if (index < 0) return false;
 	const [item] = queue.splice(index, 1);
 	if (!item) return false;
-	if (isGitHubQueueItem(item) || (Array.isArray(item.files) && item.files.length > 0)) {
+	// Files can't ride a steer (the fold path is text+images only). GitHub FYI
+	// items CAN steer — folding in is non-interrupting, so it's the right
+	// delivery for them too (they only land in the queue when a steer at
+	// delivery time found nothing steerable).
+	if (Array.isArray(item.files) && item.files.length > 0) {
 		queue.splice(index, 0, item);
 		return false;
 	}

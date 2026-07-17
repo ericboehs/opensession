@@ -125,11 +125,10 @@ registerSessionControl({
 		) {
 			// Busy + owned here → fold into the running turn (delivered at the next
 			// stopping point). Otherwise queue and drain when the external run ends.
-			// FYI events opt out of steering entirely (busy: "queue") — they wait
-			// behind the run instead of interrupting it. Slack-thread replies also
-			// never steer: the in-thread answer mirror only fires on a turn that
-			// carries the slackReplyTo, and a steered message can't (it folds into
-			// a turn that's already running).
+			// busy: "queue" opts out of steering; Slack-thread replies always set it
+			// (and never steer regardless): the in-thread answer mirror only fires
+			// on a turn that carries the slackReplyTo, and a steered message can't
+			// (it folds into a turn that's already running).
 			if (
 				opts?.busy !== "queue" &&
 				!opts?.slackReplyTo &&

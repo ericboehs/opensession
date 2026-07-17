@@ -65,9 +65,11 @@ function matchSessions(control: SessionControl, projectId: string, branch: strin
 async function deliver(control: SessionControl, sessionIds: string[], message: string): Promise<void> {
   for (const id of sessionIds) {
     try {
-      // busy: "queue" — these are FYI events; wait behind an in-flight run
-      // rather than steering (interrupt-and-redirect) it like a human message.
-      const res = await control.deliverToSession(id, message, "GitHub", { busy: "queue" });
+      // Default busy behavior: fold into the running turn as a steer. Steering
+      // is a non-interrupting history append the turn picks up at its next
+      // stopping point (steerOpencodeRun) — exactly right for an FYI; it only
+      // falls back to the queue when nothing is steerable (external run).
+      const res = await control.deliverToSession(id, message, "GitHub");
       console.log(`[github] session notify → ${id}: ${res.status}`);
     } catch (e) {
       console.error(`[github] session notify → ${id} failed:`, e);

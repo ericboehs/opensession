@@ -96,9 +96,11 @@ export interface SessionControl {
    * Deliver a message to a session: steer it into the running turn if busy and
    * owned by this process, queue it behind an external run, or start a fresh
    * turn when idle. Fire-and-forget — returns once the message is placed.
-   * `opts.busy: "queue"` skips the steer: an FYI event (merge/deploy/preview
-   * notifications) must wait its turn, never interrupt-and-redirect a run the
-   * way a human message does.
+   * `opts.busy: "queue"` skips the steer and waits behind the run. Steering is
+   * a non-interrupting fold (picked up at the turn's next stopping point), so
+   * even FYI events (merge/deploy notifications) steer by default now — only
+   * messages that must ride the queue machinery (Slack-thread replies, whose
+   * answer mirror needs its own turn) set "queue".
    * `opts.slackReplyTo` marks the message as coming from a Slack thread — the
    * answering turn's reply is mirrored back into that thread (rides the queue,
    * so it survives a busy run and a restart).
