@@ -146,6 +146,7 @@ import {
   bunProcHandle,
   opencodeDetachActive,
   opencodeServerHealthy,
+  pickFreePort,
   readDetachedRegistry,
   removeDetachedRecord,
   spawnDetachedOpencodeServer,
@@ -210,6 +211,7 @@ import {
   getAccountById,
   markExhausted,
   refreshUsageIfNearLimit,
+  registerMeridianQuotaProvider,
   waitForUsableAccount,
   type ClaudeAccount,
 } from "./claude-accounts";
@@ -611,15 +613,34 @@ export function meridianAccountEnv(account: ClaudeAccount, meridianKey: string):
     // it), so another local process can't ride the proxy. The same key is set
     // as the opencode anthropic provider apiKey.
     MERIDIAN_API_KEY: meridianKey,
-    // Always take an OS-assigned port (never the shared 3456 default) — one
-    // Meridian per opencode server, no cross-server port contention.
-    CLAUDE_PROXY_PORT: "0",
+    // A port we allocate (never the shared 3456 default) — one Meridian per
+    // opencode server, no cross-server contention, and knowing the port lets
+    // us query the proxy's /v1/usage/quota for account usage. Freshly picked
+    // per call and EXCLUDED from the server config hash (ensureOpencodeServer)
+    // so it never forces a respawn; a reused server keeps serving on the port
+    // it originally bound (entry.meridianPort is the truth).
+    CLAUDE_PROXY_PORT: String(pickFreePort()),
     // Deterministic SDK executable (same binary claude-runner uses) instead of
     // Meridian's bundled/platform/PATH probing.
     MERIDIAN_CLAUDE_PATH: CLAUDE_CODE_BIN,
     // Keep non-core schemas out of Anthropic's stable prompt prefix. Meridian
     // makes deferred tools discoverable through the Agent SDK's ToolSearch.
     MERIDIAN_DEFER_TOOL_THRESHOLD: "15",
+  };
+}
+
+/** Reverse of meridianAccountEnv: which Meridian proxy port/account a spawn
+ *  env carries, for recording on the server entry at spawn time. */
+function meridianEnvIdentity(
+  env?: Record<string, string>
+): { meridianPort?: number; accountId?: string } {
+  if (!env?.MERIDIAN_API_KEY) return {};
+  const dir = env.CLAUDE_CONFIG_DIR;
+  return {
+    meridianPort: Number(env.CLAUDE_PROXY_PORT) || undefined,
+    accountId: dir?.startsWith(`${MERIDIAN_CFG_ROOT}/`)
+      ? dir.slice(MERIDIAN_CFG_ROOT.length + 1)
+      : undefined,
   };
 }
 
@@ -1094,6 +1115,11 @@ export interface OpencodeServerEntry {
   /** Stable per-server Meridian proxy API key (meridian-mode servers only) —
    *  reused across runs so the config hash (and thus the server) stays put. */
   meridianKey?: string;
+  /** Loopback port the in-process Meridian proxy bound (we allocate it via
+   *  CLAUDE_PROXY_PORT at spawn) — the usage/telemetry endpoint address. */
+  meridianPort?: number;
+  /** Claude account the Meridian proxy authenticates as (from spawn env). */
+  accountId?: string;
   lastUsed: number;
   activeRuns: number;
   idleTimer?: ReturnType<typeof setTimeout>;
@@ -1342,6 +1368,7 @@ async function spawnOpencodeServer(
         key,
         shared,
         rpcToken: crypto.randomUUID(),
+        ...meridianEnvIdentity(extraEnv),
         lastUsed: Date.now(),
         activeRuns: 0,
       };
@@ -1424,6 +1451,7 @@ async function spawnOpencodeServer(
     key,
     shared,
     rpcToken: crypto.randomUUID(),
+    ...meridianEnvIdentity(extraEnv),
     lastUsed: Date.now(),
     activeRuns: 0,
   };
@@ -1451,9 +1479,12 @@ export async function ensureOpencodeServer(
   opts?: { shared?: boolean }
 ): Promise<OpencodeServerEntry> {
   // extraEnv is part of the identity: a different meridian account/token must
-  // respawn the server (env only applies at spawn).
+  // respawn the server (env only applies at spawn). CLAUDE_PROXY_PORT is the
+  // one exception — it's freshly allocated on every call (meridianAccountEnv),
+  // so hashing it would drain/respawn the server on every run.
+  const { CLAUDE_PROXY_PORT: _proxyPort, ...identityEnv } = extraEnv || {};
   const configHash = Bun.hash(
-    JSON.stringify(config) + "\n" + cwd + "\n" + JSON.stringify(extraEnv || {})
+    JSON.stringify(config) + "\n" + cwd + "\n" + JSON.stringify(identityEnv)
   ).toString(16);
   for (;;) {
     const existing = servers.get(key);
@@ -1494,6 +1525,33 @@ export function clientFor(entry: OpencodeServerEntry): OpencodeClient {
   });
 }
 
+// ── Meridian usage quota (accounts-layer data source) ────────────────────────
+//
+// Every live meridian-mode server carries an in-process Meridian proxy whose
+// /v1/usage/quota endpoint serves the account's rate-limit picture from two
+// sources: Anthropic's OAuth usage endpoint AND SDK-observed rate-limit events
+// from live requests. The SDK half works even for setup-token accounts that
+// 403 on the OAuth endpoint (usageScope "missing") — accounts the accounts
+// layer is otherwise blind to. claude-accounts consumes this through the
+// provider registered below (injection, not an import: this module imports
+// claude-accounts, so the dependency can't point the other way).
+export function meridianQuotaEndpoints(): { accountId: string; url: string; key: string }[] {
+  const out: { accountId: string; url: string; key: string; lastUsed: number }[] = [];
+  for (const e of servers.values()) {
+    if (!e.meridianKey || !e.meridianPort || !e.accountId) continue;
+    if (e.proc.exitCode !== null || e.proc.killed) continue;
+    out.push({
+      accountId: e.accountId,
+      url: `http://127.0.0.1:${e.meridianPort}`,
+      key: e.meridianKey,
+      lastUsed: e.lastUsed,
+    });
+  }
+  // Most recently used first — freshest SDK-observed rate-limit data.
+  return out.sort((a, b) => b.lastUsed - a.lastUsed);
+}
+registerMeridianQuotaProvider(meridianQuotaEndpoints);
+
 // ── Detached servers: registry sync + boot adoption ──────────────────────────
 
 /** Mirror a detached entry's live identity into the adoption registry. Called
@@ -1515,6 +1573,8 @@ function syncDetachedRecord(entry: OpencodeServerEntry): void {
     shared: entry.shared,
     rpcToken: entry.rpcToken,
     meridianKey: entry.meridianKey,
+    meridianPort: entry.meridianPort,
+    accountId: entry.accountId,
     spawnedAt: prev?.spawnedAt || new Date().toISOString(),
   });
 }
@@ -1566,6 +1626,8 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
       shared: newest.shared,
       rpcToken: newest.rpcToken,
       meridianKey: newest.meridianKey,
+      meridianPort: newest.meridianPort,
+      accountId: newest.accountId,
       lastUsed: Date.now(),
       activeRuns: 0,
     };

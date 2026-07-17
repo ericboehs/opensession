@@ -133,6 +133,11 @@ export interface DetachedServerRecord {
   shared?: boolean;
   rpcToken: string;
   meridianKey?: string;
+  /** Loopback port the server's in-process Meridian proxy bound (we allocate
+   *  it via CLAUDE_PROXY_PORT so the usage/telemetry endpoints are reachable). */
+  meridianPort?: number;
+  /** Claude account the server's Meridian proxy authenticates as. */
+  accountId?: string;
   spawnedAt: string;
 }
 
@@ -254,7 +259,7 @@ function detachedChildHandle(
   };
 }
 
-function pickFreePort(): number {
+export function pickFreePort(): number {
   const srv = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,

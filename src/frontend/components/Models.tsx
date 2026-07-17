@@ -35,6 +35,8 @@ interface ClaudeAccountInfo {
 		scopedLimits?: { label: string; utilization: number | null; resetsAt: string | null }[];
 		/** Pay-as-you-go spend past the subscription limits; credits are cents. */
 		extraUsage?: { enabled: boolean; usedCredits: number; monthlyLimit: number } | null;
+		/** "meridian" = observed via a live Meridian proxy, not the OAuth endpoint. */
+		source?: "meridian";
 		error?: string;
 		errorStatus?: number;
 	} | null;
@@ -340,7 +342,7 @@ function ClaudeStatusPill({ a }: { a: ClaudeAccountInfo }) {
 				Usage unknown
 			</span>
 		);
-	if (a.noUsageScope)
+	if (a.noUsageScope && !a.usage)
 		return (
 			<span className="status-pill status-yellow" title="Add OAuth usage credentials to show dashboard usage.">
 				Usage hidden
@@ -488,7 +490,7 @@ function ClaudeAccountsSection() {
 									{" · "}
 									<span className="font-mono">{a.tokenMasked}</span>
 								</div>
-								{a.noUsageScope ? (
+								{a.noUsageScope && !a.usage ? (
 									<div className="text-faint text-[11.5px] mt-1.5">
 										Usage not visible — setup-tokens cannot read the usage endpoint. Add
 										a Claude OAuth credentials path for this account to show usage.
@@ -501,6 +503,12 @@ function ClaudeAccountsSection() {
 											<UsageBar key={s.label} label={s.label} window={s} />
 										))}
 										<ExtraUsageRow extra={a.usage?.extraUsage} />
+										{a.usage?.source === "meridian" && (
+											<div className="text-faint text-[11.5px] mt-1.5">
+												Observed via the Meridian bridge (rate-limit events from live
+												runs) — the token can’t read the usage endpoint directly.
+											</div>
+										)}
 										{a.usage?.error && (
 											<div className="text-red text-[11.5px] mt-1.5">{a.usage.error}</div>
 										)}
