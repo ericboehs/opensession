@@ -1884,6 +1884,12 @@ async function* runOpencodeAttempt(
   const shared = sharedOpencodeEligible(opts);
   const turnId = crypto.randomUUID();
   let ocSessionId = opts.sessionId || "";
+  // Set once a terminal path has run (turn finished, or a runFailure we've
+  // already acted on). A generator torn down mid-turn by its CONSUMER (hot
+  // reload chaos, shutdown) never reaches one — the finally then keeps the
+  // journal record so the next boot can reattach the still-live engine turn
+  // instead of orphaning it (2026-07-17 19:57: zero reattaches at boot #2).
+  let reachedTerminal = false;
   const turnEvent = (fields: Record<string, unknown>) =>
     audit({
       msg: "claude_turn_event",
@@ -2516,6 +2522,14 @@ async function* runOpencodeAttempt(
     // Sharded storage: remember which DB file this engine session lives in so
     // transcript readers / gap backfill can find it after the server is gone.
     if (entry.dbPath) recordOpencodeDbFor(ocSessionId, entry.dbPath);
+    // A resumed session may carry a transcript-mirror gap (e.g. a turn that
+    // ran orphaned after a restart — 2026-07-17: an hour of work invisible
+    // until a manual backfill). Reconcile on EVERY resume, not just reattach.
+    if (!createdFresh) {
+      try {
+        backfillOpencodeTranscriptGap(ocSessionId);
+      } catch {}
+    }
     // In-band steer for this run (see steerOpencodeRun): noReply message →
     // engine history → picked up at the turn's next step boundary. The user
     // line is mirrored into the transcript jsonl here because the SSE pump
@@ -3129,6 +3143,7 @@ async function* runOpencodeAttempt(
     // final-message fetch below would just throw a raw fetch error on a dead
     // server) and let the finally cleanup release the session.
     if (runFailure) {
+      reachedTerminal = true;
       // Fence any abort we fired before a rotation/respawn retry re-prompts
       // the same engine session — a stale abort landing after the retry's turn
       // starts kills it instantly. Bounded so a hung server can't stall the
@@ -3267,6 +3282,7 @@ async function* runOpencodeAttempt(
     }
 
     // Turn finished — read the authoritative final assistant message.
+    reachedTerminal = true;
     const msgs = await client.session.messages({ path: { id: ocSessionId }, ...q });
     const list = (msgs.data || []) as Array<{ info: any; parts: any[] }>;
     const lastAssistant = [...list].reverse().find((m) => m.info?.role === "assistant");
@@ -3429,8 +3445,17 @@ async function* runOpencodeAttempt(
       reapDrainedServer(entry);
     }
     // Keep the journal across an account-rotation retry (the wrapper reruns
-    // the same runKey immediately); cleared for real on the final attempt.
-    if (journal?.bksSessionId && !rotation?.rotate) journalClear(runKey);
+    // the same runKey immediately); cleared for real on the final attempt —
+    // and ONLY when a terminal path actually ran (or the user cancelled,
+    // which aborts the engine turn). Consumer teardown mid-turn keeps the
+    // record so the next boot reattaches the still-live engine turn.
+    if (
+      journal?.bksSessionId &&
+      !rotation?.rotate &&
+      (reachedTerminal || abortController.signal.aborted)
+    ) {
+      journalClear(runKey);
+    }
   }
 }
 
@@ -3490,6 +3515,9 @@ export async function tryReattachOpencodeRun(
 
   async function* attach(): AsyncGenerator<StreamEvent> {
     const abortController = new AbortController();
+    // Same contract as the normal path: consumer teardown mid-turn must NOT
+    // clear the journal (the engine turn lives on the detached server).
+    let reachedTerminal = false;
     const registeredKeys = new Set<string>([runKey, ocSessionId!]);
     if (run.bksSessionId) registeredKeys.add(run.bksSessionId);
     for (const key of registeredKeys) activeOpencodeRuns.set(key, abortController);
@@ -3897,6 +3925,7 @@ export async function tryReattachOpencodeRun(
         void pump.catch(() => {});
       }
 
+      reachedTerminal = true;
       if (runFailure) {
         turnEvent({ direction: "out", kind: "error", error: runFailure });
         yield { type: "error", content: runFailure, provider: PROVIDER, model };
@@ -3998,7 +4027,7 @@ export async function tryReattachOpencodeRun(
       server.activeRuns = Math.max(0, server.activeRuns - 1);
       server.lastUsed = Date.now();
       reapDrainedServer(server);
-      journalClear(runKey);
+      if (reachedTerminal || abortController.signal.aborted) journalClear(runKey);
     }
   }
 
