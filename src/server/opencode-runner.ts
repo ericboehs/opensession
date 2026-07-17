@@ -484,8 +484,8 @@ export function opencodeRunPolicy(opts: {
 
 // ── Meridian bridge (opencode/anthropic/* default path) ──────────────────────
 //
-// VERSION PINNING (package.json): opencode-with-claude 1.6.14 +
-// @rynfar/meridian 1.45.0 + @rynfar/meridian-plugin-opencode-scrub 0.2.0 are
+// VERSION PINNING (package.json): opencode-with-claude 1.6.18 +
+// @rynfar/meridian 1.51.0 + @rynfar/meridian-plugin-opencode-scrub 0.2.0 are
 // pinned EXACT. These versions chase Anthropic's third-party billing-gate
 // behavior (the scrub plugin exists to keep turns on flat subscription quota);
 // bump deliberately after watching the repos' releases, and re-run

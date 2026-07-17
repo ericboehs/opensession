@@ -18,7 +18,7 @@
         "@opencode-ai/sdk": "^1.17.15",
         "@pierre/diffs": "1.2.8",
         "@pierre/trees": "^1.0.0-beta.4",
-        "@rynfar/meridian": "1.45.0",
+        "@rynfar/meridian": "1.51.0",
         "@rynfar/meridian-plugin-opencode-scrub": "0.2.0",
         "@team-plain/typescript-sdk": "^5.12.1",
         "@xterm/addon-fit": "^0.11.0",
@@ -28,7 +28,7 @@
         "e2b": "2.32.0",
         "marked": "^15.0.0",
         "motion": "^12.42.2",
-        "opencode-with-claude": "1.6.14",
+        "opencode-with-claude": "1.6.18",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
         "shiki": "3.23.0",
@@ -395,7 +395,7 @@
 
     "@protobufjs/utf8": ["@protobufjs/utf8@1.1.2", "", {}, "sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug=="],
 
-    "@rynfar/meridian": ["@rynfar/meridian@1.45.0", "", { "dependencies": { "@anthropic-ai/claude-agent-sdk": "^0.2.117", "@anthropic-ai/claude-code": "^2.1.198", "jsonc-parser": "^3.3.1", "libsql": "^0.5.29" }, "bin": { "meridian": "dist/cli.js", "claude-max-proxy": "dist/cli.js" } }, "sha512-040GdZkVDkzceWnsnu8Y13M/kwyv5wqj/GOI/1jh0AgcbPihl/NnQIIV92RDw4aTBE8Y87HG9BhZWfHMYSH6SQ=="],
+    "@rynfar/meridian": ["@rynfar/meridian@1.51.0", "", { "dependencies": { "@anthropic-ai/claude-agent-sdk": "^0.2.117", "@anthropic-ai/claude-code": "^2.1.198", "jsonc-parser": "^3.3.1", "libsql": "^0.5.29" }, "bin": { "meridian": "dist/cli.js", "claude-max-proxy": "dist/cli.js" } }, "sha512-NUGtdzScfpX+nq0Dptyvx9CjM0D7G8m3H1l0wz0xlmejCC12Fr2yPS0+OD1KbtCgp8C9fDViryLc/LaoeGtzHQ=="],
 
     "@rynfar/meridian-plugin-opencode-scrub": ["@rynfar/meridian-plugin-opencode-scrub@0.2.0", "", { "peerDependencies": { "@rynfar/meridian": "*" }, "optionalPeers": ["@rynfar/meridian"] }, "sha512-RaXNkIwPB2NmicdNvDmYLKbLz5KsnAlNt3XfuejstPpMZBbogxhi6JSsU3k6nHGj/yoYmbpLYMGD4Bv4v30Tvg=="],
 
@@ -853,7 +853,7 @@
 
     "openapi-typescript-helpers": ["openapi-typescript-helpers@0.0.15", "", {}, "sha512-opyTPaunsklCBpTK8JGef6mfPhLSnyy5a0IN9vKtx3+4aExf+KxEqYwIy3hqkedXIB97u357uLMJsOnm3GVjsw=="],
 
-    "opencode-with-claude": ["opencode-with-claude@1.6.14", "", { "dependencies": { "@rynfar/meridian": "^1.44.0", "@rynfar/meridian-plugin-opencode-scrub": "^0.2.0" } }, "sha512-34M03CKh5wx1FpB3EGVAQzT2hDBh7tXXcvSTOoKglwVHwOAuKIV7aEBMFOk9kui3cDOtxYTTqu/V9uVXk1wrmA=="],
+    "opencode-with-claude": ["opencode-with-claude@1.6.18", "", { "dependencies": { "@rynfar/meridian": "^1.50.0", "@rynfar/meridian-plugin-opencode-scrub": "^0.2.0" } }, "sha512-fHrWnze6oEn0+1YehXqnh04GxQBEBaEANCQJuGGbIpas6LkEh3L9MNWs3YXb8ARcsemQ+MIXbSIN5Tgu6WXx2A=="],
 
     "package-json-from-dist": ["package-json-from-dist@1.0.1", "", {}, "sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw=="],
 
