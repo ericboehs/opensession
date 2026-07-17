@@ -3165,16 +3165,18 @@ async function* runOpencodeAttempt(
       if (transientFailure && rotation && attemptIndex === 0) {
         // A wedged per-session server is unrecoverable for this session — kill
         // it so the retry cold-boots a fresh proxy instead of hanging again. A
-        // shared server is left alone (other sessions depend on it); the retry
-        // just reconnects / re-picks.
-        if (
-          livenessWedged &&
-          entry &&
-          !entry.shared &&
-          servers.get(entry.key) === entry &&
-          entry.activeRuns <= 1
-        ) {
-          killServer(entry.key, entry, "liveness wedge — respawn on next run");
+        // wedged SHARED server used to be left alone entirely (other sessions
+        // depend on it), which made the respawn a no-op for every session on it
+        // (2026-07-17: four consecutive wedged attempts on one shared codex
+        // server). Now it DRAINS instead: in-flight runs finish on the old
+        // process, and this retry — plus every subsequent ensure — cold-boots
+        // a fresh server under the same key.
+        if (livenessWedged && entry && servers.get(entry.key) === entry) {
+          if (!entry.shared && entry.activeRuns <= 1) {
+            killServer(entry.key, entry, "liveness wedge — respawn on next run");
+          } else if (entry.shared) {
+            drainServer(entry.key, entry, "liveness wedge — drain-respawn");
+          }
         }
         turnEvent({ direction: "out", kind: "server_respawn_retry", error: runFailure });
         bridgeRunEnd("error", runFailure);
@@ -3225,6 +3227,20 @@ async function* runOpencodeAttempt(
         parsed.providerID === "anthropic"
           ? isClaudeUsageLimitError(errMessage, true)
           : isCodexUsageLimitError(errMessage);
+      // Mid-turn transient failures (SQLite "Failed to execute statement"
+      // under write contention, provider 5xx) surface HERE as a session-level
+      // error after the turn ends — a path that used to bypass the transient
+      // retry entirely and kill the turn (every statement-failure death on
+      // 2026-07-17 was terminal). Re-run via the rotation loop: the engine
+      // session holds the partial work, so the retry continues from it the
+      // same way a manual re-prompt would.
+      if (!limit && isTransientRunError(errMessage) && rotation && attemptIndex < 2) {
+        turnEvent({ direction: "out", kind: "server_respawn_retry", error: errMessage });
+        bridgeRunEnd("error", errMessage);
+        rotation.rotate = true;
+        rotation.note = `Transient engine error mid-turn — retrying (attempt ${attemptIndex + 1}).`;
+        return;
+      }
       turnEvent({ direction: "out", kind: "error", error: errMessage });
       bridgeRunEnd("error", errMessage);
       yield {
