@@ -58,7 +58,7 @@ export function isArchivedId(id: string): boolean {
  * chat left. Pass the full current session list so the "last live chat" test
  * can see siblings — call this AFTER the archive registry is written so the
  * just-archived sessions read back as archived. Centralizes what the manual,
- * idle-sweep, and auto-archive paths all need; `setArchived` still handles the
+ * idle-sweep, and Plain-ticket archive paths all need; `setArchived` still handles the
  * lone plain-id case for callers that don't have the full list.
  */
 export function unpinArchivedSessions(

@@ -10,10 +10,8 @@ import {
 } from "./src/server/agent-runner";
 import { enableOpencodeServerDetach } from "./src/server/opencode-detach";
 import { adoptDetachedOpencodeServers } from "./src/server/opencode-runner";
-import { archiveOlderThan } from "./src/server/archive";
 import { startAccountHealthMonitor } from "./src/server/account-health";
-import { makeAskHandler, pendingAsks } from "./src/server/asks";
-import { startAutoArchiveSweep } from "./src/server/auto-archive";
+import { makeAskHandler } from "./src/server/asks";
 import { getWebhookRoutes, setEventSessionCallback, startScheduler } from "./src/server/automations";
 import { startUsagePoller } from "./src/server/claude-accounts";
 import { FRONTEND_SRC, IS_DEV, frontend, scheduleFrontendRebuild, spaEntry } from "./src/server/frontend-build";
@@ -26,7 +24,7 @@ import { envAlias } from "./src/server/rename-compat";
 import { recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, snapshotActiveSessions } from "./src/server/run-session";
 import { handleSandboxWsUpgrade, timerPoisonRequestCheck } from "./src/server/run-ws";
 import { type Sandbox } from "./src/server/sandbox";
-import { findSession, invalidateSessionsCache, runErrors } from "./src/server/session-cache";
+import { findSession, invalidateSessionsCache } from "./src/server/session-cache";
 import { getSessionControl } from "./src/server/session-control";
 import { buildReposNote } from "./src/server/session-repos";
 import { destroySessionSandbox } from "./src/server/session-sandbox";
@@ -438,25 +436,10 @@ if (!g.__backstageBooted) {
 		})();
 	}, 30_000);
 
-	// Archive triage sessions when their Plain ticket is done
+	// Archive triage sessions when their Plain ticket is done.
 	startPlainArchiveSweep(() => {
 		invalidateSessionsCache();
 	});
-
-	// Auto-archive sessions that look done (merged PR, or opt-in green checks) —
-	// per-user, opt-in by repo (Settings → Auto-archive), on by default only for
-	// the backstage repo itself.
-	startAutoArchiveSweep(
-		() =>
-			getAllSessions().map((s) => ({
-				...s,
-				waitingForInput: pendingAsks.has(s.id),
-				lastRunError: runErrors.get(s.id) || s.lastRunError,
-			})),
-		() => {
-			invalidateSessionsCache();
-		},
-	);
 
 	// Poll per-account Claude usage (drives account picking + the Connections UI)
 	startUsagePoller();
@@ -531,15 +514,10 @@ if (!g.__backstageBooted) {
 		// every restart. Paired with the shorter drain above for faster recovery.
 	}, 1500);
 
-	// Ongoing hygiene (every 6h): archive sessions idle for more than a week,
-	// then remove worktrees of archived sessions idle >14 days with no WIP.
+	// Ongoing hygiene (every 6h): remove worktrees of sessions that were manually
+	// archived more than 14 days ago and have no WIP.
 	setInterval(
 		async () => {
-			const count = archiveOlderThan(getAllSessions(), 7);
-			if (count > 0) {
-				console.log(`[archive] Auto-archived ${count} session(s) idle >7 days`);
-				invalidateSessionsCache();
-			}
 			try {
 				const removed = await sweepArchivedWorktrees(getAllSessions(), 14);
 				if (removed.length > 0) {

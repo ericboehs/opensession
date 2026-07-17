@@ -1469,30 +1469,6 @@ export async function fetchAudit(opts: {
 	});
 }
 
-// ── Auto-archive (per-user, opt-in by repo) ──
-
-export interface AutoArchiveConfig {
-	onMerge: boolean;
-	repos: string[];
-	onChecksGreen: boolean;
-	availableRepos: string[];
-}
-
-export async function fetchAutoArchiveConfig(
-	user: string,
-): Promise<AutoArchiveConfig> {
-	return request(`/auto-archive?user=${encodeURIComponent(user)}`, {
-		label: "Failed to fetch auto-archive config",
-	});
-}
-
-export async function updateAutoArchiveConfig(
-	user: string,
-	patch: Partial<Pick<AutoArchiveConfig, "onMerge" | "repos" | "onChecksGreen">>,
-): Promise<AutoArchiveConfig> {
-	return request("/auto-archive", { method: "PUT", body: { user, ...patch } });
-}
-
 // ── Warm preview templates (Settings → Warm previews) ──
 
 export interface WarmTemplateEntry {

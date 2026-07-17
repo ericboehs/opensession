@@ -826,7 +826,7 @@ export async function runAutomation(
     } catch {}
 
     // Tie the session to its Plain thread (if the event carries one) so it
-    // can be auto-archived when the ticket is done, and use the ticket's
+    // can be archived when the ticket is done, and use the ticket's
     // title as the session title
     let plainThreadId: string | undefined;
     let eventTitle: string | undefined;

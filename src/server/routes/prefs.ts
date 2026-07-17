@@ -1,5 +1,5 @@
 /**
- * Per-user/system preferences: Web Push, auto-archive, warm preview templates, memory stores, pinned tabs, UI prefs, tab colors.
+ * Per-user/system preferences: Web Push, warm preview templates, memory stores, pinned tabs, UI prefs, tab colors.
  *
  * Extracted verbatim from the opensession.ts fetch chain. Every handler
  * returns a Response for a matched route or undefined to fall through to the
@@ -7,7 +7,6 @@
  */
 
 import type { RouteContext } from "./context";
-import { getAutoArchiveConfig, setAutoArchiveConfig } from "../auto-archive";
 import { frontend } from "../frontend-build";
 import { getFolders as getUserFolders, setFolders as setUserFolders } from "../folders";
 import { getPins as getUserPins, setPins as setUserPins } from "../pins";
@@ -50,24 +49,6 @@ export async function handlePrefsRoutes(
 		const { removePushSubscription } = await import("../../server/push");
 		removePushSubscription(body.endpoint);
 		return Response.json({ ok: true });
-	}
-
-	// ── Auto-archive (per-user, opt-in by repo) ──
-	if (path === "/backstage/api/auto-archive" && req.method === "GET") {
-		const user = (url.searchParams.get("user") || "").trim();
-		if (!user)
-			return Response.json({ error: "user required" }, { status: 400 });
-		return Response.json({
-			...getAutoArchiveConfig(user),
-			availableRepos: Object.keys(REPOS),
-		});
-	}
-
-	if (path === "/backstage/api/auto-archive" && req.method === "PUT") {
-		const body = await req.json().catch(() => null);
-		if (!body || typeof body.user !== "string" || !body.user.trim())
-			return Response.json({ error: "user required" }, { status: 400 });
-		return Response.json(setAutoArchiveConfig(body.user, body));
 	}
 
 	// ── Warm preview templates (per-repo prebuilt worktrees, scheduled) ──

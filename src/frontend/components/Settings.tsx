@@ -57,8 +57,6 @@ import { Connections } from "./Connections";
 import { ModelsPanel } from "./Models";
 import { ModelProvidersPanel } from "./ModelProviders";
 import {
-	fetchAutoArchiveConfig,
-	updateAutoArchiveConfig,
 	fetchAudit,
 	fetchWarmTemplates,
 	updateWarmTemplate,
@@ -70,7 +68,6 @@ import {
 	fetchPapercuts,
 	setPapercutsRepoEnabled,
 	relativeTime,
-	type AutoArchiveConfig,
 	type WarmTemplateEntry,
 	type MemoryScopeDto,
 	type MemoryEntryDto,
@@ -113,7 +110,6 @@ export type ToolSectionKey =
 
 export type SettingsSectionKey =
 	| "notifications"
-	| "autoArchive"
 	| "composer"
 	| "appearance"
 	| "workspace"
@@ -257,25 +253,6 @@ const SECTIONS: {
 					strokeLinejoin="round"
 				/>
 				<path d="M6.7 12a1.4 1.4 0 0 0 2.6 0" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "autoArchive",
-		label: "Auto-archive",
-		group: "Personal",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
-				<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
-				<path d="M6.5 8.5h3" strokeLinecap="round" />
 			</svg>
 		),
 	},
@@ -498,7 +475,6 @@ function SectionPanel({
 		<>
 			{TOOL_SECTIONS.has(section) && children}
 			{section === "notifications" && <NotificationsPanel />}
-			{section === "autoArchive" && <AutoArchivePanel />}
 			{section === "composer" && <ComposerPanel />}
 			{section === "appearance" && <AppearancePanel />}
 			{section === "workspace" && <WorkspacePanel />}
@@ -1024,120 +1000,6 @@ function ThemeCard({
 			</div>
 			<span className="theme-card-label">{label}</span>
 		</button>
-	);
-}
-
-/**
- * Auto-archive sessions that look done — per user, opt-in by repo. Off
- * everywhere by default except "backstage" itself, since fast self-hosting
- * iteration there means constant manual tidy-up otherwise.
- */
-function AutoArchivePanel() {
-	const user = getCurrentUser();
-	const [cfg, setCfg] = useState<AutoArchiveConfig | null>(null);
-	const [error, setError] = useState<string | null>(null);
-
-	useEffect(() => {
-		fetchAutoArchiveConfig(user)
-			.then(setCfg)
-			.catch((e) => setError(e.message));
-	}, [user]);
-
-	function patch(
-		p: Partial<Pick<AutoArchiveConfig, "onMerge" | "repos" | "onChecksGreen">>,
-	) {
-		if (!cfg) return;
-		const optimistic = { ...cfg, ...p };
-		setCfg(optimistic);
-		updateAutoArchiveConfig(user, p)
-			.then((next) => setCfg({ ...next, availableRepos: cfg.availableRepos }))
-			.catch((e) => setError(e.message));
-	}
-
-	function toggleRepo(repo: string, on: boolean) {
-		if (!cfg) return;
-		const repos = on
-			? [...cfg.repos, repo]
-			: cfg.repos.filter((r) => r !== repo);
-		patch({ repos });
-	}
-
-	if (!cfg)
-		return (
-			<div className="settings-panel">
-				<h1 className="settings-title">Auto-archive</h1>
-				<div className="setting-row-desc">{error || "Loading…"}</div>
-			</div>
-		);
-
-	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Auto-archive</h1>
-			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
-				When a session looks done, Michael archives it for you — sorted under
-				"Auto-archived" in <b>{user}</b>'s Archived list instead of sitting in
-				My sessions. Merged PRs are archived everywhere by default; the
-				pre-merge "checks green" trigger below is per-repo.
-			</div>
-
-			{error && (
-				<div className="form-error" onClick={() => setError(null)}>
-					{error}
-				</div>
-			)}
-
-			<div className="setting-card">
-				<SettingRow
-					title="Archive when its PR merges"
-					desc="Once a session's pull request is merged, archive it. Applies to every repo. A merged PR is done."
-					control={
-						<Toggle
-							label="Archive when its PR merges"
-							checked={cfg.onMerge}
-							onChange={(v) => patch({ onMerge: v })}
-						/>
-					}
-				/>
-				<SettingRow
-					title="Archive once checks are green"
-					desc="Also archive an open (unmerged) PR once every check passes, not just after merge. Good for repos that iterate fast and don't need the PR to stick around once it builds. Applies only to the repos below."
-					control={
-						<Toggle
-							label="Archive once checks are green"
-							checked={cfg.onChecksGreen}
-							onChange={(v) => patch({ onChecksGreen: v })}
-						/>
-					}
-				/>
-			</div>
-
-			<div
-				className="setting-row-desc"
-				style={{ marginTop: 18, marginBottom: 8 }}
-			>
-				Repos for the "checks green" trigger
-			</div>
-			<div className="setting-card">
-				{cfg.availableRepos.map((repo) => (
-					<SettingRow
-						key={repo}
-						title={repo}
-						desc={
-							repo === "backstage"
-								? `Archive on green checks here too. ${PRODUCT_NAME} self-hosts, so sessions finish fast and pile up otherwise.`
-								: `Archive open PRs in ${repo} once their checks pass.`
-						}
-						control={
-							<Toggle
-								label={`Auto-archive ${repo}`}
-								checked={cfg.repos.includes(repo)}
-								onChange={(v) => toggleRepo(repo, v)}
-							/>
-						}
-					/>
-				))}
-			</div>
-		</div>
 	);
 }
 
