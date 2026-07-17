@@ -56,6 +56,8 @@ export interface PrDetails {
   isDraft: boolean;
   baseRefName: string;
   headRefName: string;
+  /** Current head commit, used by correctness-sensitive callers to reject stale data. */
+  headRefOid?: string;
   additions: number;
   deletions: number;
   changedFiles: number;
@@ -485,6 +487,16 @@ export async function getPrDetails(
   return refresh;
 }
 
+/** Bypass the UI's stale-while-revalidate cache for action completion gates. */
+export async function getPrDetailsFresh(
+  branch: string,
+  repo: string = DEFAULT_REPO
+): Promise<PrDetails | null> {
+  const data = await fetchPrDetails(branch, repo);
+  cache.set(cacheKey(repo, branch), { data, ts: Date.now() });
+  return data;
+}
+
 /** True for "this branch/number has no PR" — a real answer, not a failure. */
 function isNoPrError(msg: string): boolean {
   return /no pull requests found|Could not resolve/i.test(msg);
@@ -503,7 +515,7 @@ async function fetchPrDetails(
     let raw = "";
     for (let attempt = 1; ; attempt++) {
       try {
-        raw = await $`gh pr view ${branch} --repo ${repo} --json number,title,url,state,isDraft,baseRefName,headRefName,additions,deletions,changedFiles,reviewDecision,author,body,statusCheckRollup,mergeable,mergeStateStatus,comments,files,latestReviews,reviewRequests`
+        raw = await $`gh pr view ${branch} --repo ${repo} --json number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,reviewDecision,author,body,statusCheckRollup,mergeable,mergeStateStatus,comments,files,latestReviews,reviewRequests`
           .quiet()
           .text();
         break;
@@ -523,6 +535,7 @@ async function fetchPrDetails(
       isDraft: pr.isDraft,
       baseRefName: pr.baseRefName,
       headRefName: pr.headRefName,
+      headRefOid: pr.headRefOid,
       additions: pr.additions,
       deletions: pr.deletions,
       changedFiles: pr.changedFiles,

@@ -8,7 +8,7 @@
  * finishes.
  */
 import { $ } from "bun";
-import { getPrDetails, type PrDetails } from "../../server/pr-info";
+import { getPrDetailsFresh, type PrDetails } from "../../server/pr-info";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import {
   claimLock,
@@ -18,7 +18,8 @@ import {
   readPrState,
 } from "./state";
 import { runGithubAgent, authorForLogin, sessionUrl } from "./run";
-import { buildAutoFixPrompt, isMergeConflicting } from "./prompts";
+import { buildAutoFixPrompt, mergeabilityState, type MergeabilityState } from "./prompts";
+import { checkRegistrationPending } from "./autofix-gates";
 import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, resolveAddressedThreads, BOT_LOGIN } from "./github-rest";
 import { LABEL_AUTOFIX } from "./constants";
 import type { PrRef, ReviewResult } from "./review";
@@ -28,6 +29,9 @@ const MAX_ITERATIONS = 5;
 const WALL_CLOCK_MS = 60 * 60 * 1000; // abandon a loop running longer than an hour
 const CHECK_POLL_MS = 30 * 1000;
 const CHECK_TIMEOUT_MS = 15 * 60 * 1000;
+const CHECK_REGISTRATION_GRACE_MS = 30 * 1000;
+const MERGEABILITY_POLL_MS = 5 * 1000;
+const MERGEABILITY_TIMEOUT_MS = 2 * 60 * 1000;
 
 const REPO = defaultRepo().ghRepo;
 
@@ -57,16 +61,49 @@ function evaluateChecks(details: PrDetails | null): CiState {
 }
 
 /** Poll CI until it settles (or times out). */
-async function waitForChecks(headRef: string): Promise<CiState> {
+async function waitForChecks(
+  headRef: string,
+  expectedHeadSha: string,
+  emptyGraceMs = CHECK_REGISTRATION_GRACE_MS,
+): Promise<CiState> {
   const deadline = Date.now() + CHECK_TIMEOUT_MS;
   let last: CiState = { settled: false, green: false, failing: [] };
+  let matchingHeadSeenAt = 0;
   while (Date.now() < deadline) {
-    const details = await getPrDetails(headRef);
+    const details = await getPrDetailsFresh(headRef);
+    if (details?.headRefOid !== expectedHeadSha) {
+      await new Promise((r) => setTimeout(r, CHECK_POLL_MS));
+      continue;
+    }
+    if (!matchingHeadSeenAt) matchingHeadSeenAt = Date.now();
+    if (checkRegistrationPending(details.checks.length, matchingHeadSeenAt, Date.now(), emptyGraceMs)) {
+      const remainingGrace = emptyGraceMs - (Date.now() - matchingHeadSeenAt);
+      await new Promise((r) => setTimeout(r, Math.min(CHECK_POLL_MS, remainingGrace)));
+      continue;
+    }
     last = evaluateChecks(details);
     if (last.settled) return last;
     await new Promise((r) => setTimeout(r, CHECK_POLL_MS));
   }
   return last; // timed out — return whatever we last saw
+}
+
+interface MergeabilityProbe {
+  state: MergeabilityState;
+  details: PrDetails | null;
+}
+
+/** Wait for GitHub's asynchronous conflict calculation on one exact head SHA. */
+async function waitForMergeability(headRef: string, expectedHeadSha: string): Promise<MergeabilityProbe> {
+  const deadline = Date.now() + MERGEABILITY_TIMEOUT_MS;
+  let probe: MergeabilityProbe = { state: "pending", details: null };
+  while (Date.now() < deadline) {
+    const details = await getPrDetailsFresh(headRef);
+    probe = { state: mergeabilityState(details, expectedHeadSha), details };
+    if (probe.state !== "pending") return probe;
+    await new Promise((r) => setTimeout(r, MERGEABILITY_POLL_MS));
+  }
+  return probe;
 }
 
 export async function runAutoFix(
@@ -136,7 +173,7 @@ export async function runAutoFix(
     const { resolveReviewConfig } = await import("./webhook");
     let lastReviewedSha = "";
     const reviewGate = async (sha: string): Promise<ReviewResult | null> => {
-      const fresh = await getPrDetails(pr.headRef);
+      const fresh = await getPrDetailsFresh(pr.headRef);
       const ref: PrRef = { number: pr.number, headRef: pr.headRef, headSha: sha, title: fresh?.title || pr.title };
       const rr = await runReview(ref, resolveReviewConfig().config, onSessionCreated, /*force*/ true).catch((e) => {
         console.error(`[github] auto-fix gating review failed for PR #${pr.number}:`, e);
@@ -152,7 +189,7 @@ export async function runAutoFix(
         break;
       }
       iterations++;
-      const details = await getPrDetails(pr.headRef);
+      const details = await getPrDetailsFresh(pr.headRef);
       if (!details) { outcome = "⚠️ Could not load PR details — stopping."; break; }
       if (details.state !== "OPEN") { outcome = `PR is ${details.state.toLowerCase()} — stopping.`; break; }
 
@@ -190,20 +227,33 @@ export async function runAutoFix(
         // Nothing changed this round. The fixer's dispositions (rendered below the
         // outcome) explain what it fixed vs deliberately skipped vs couldn't fix —
         // so a P3-only skip reads as a decision, not an opaque "made no changes".
-        if (isMergeConflicting(details)) {
-          outcome = `⚠️ No changes were pushed and the PR still conflicts with \`${details.baseRefName}\`. Handing back to humans.`;
+        if (remaining !== "none") {
+          outcome = "☑️ No further changes this round — the remaining items were deliberately skipped or couldn't be auto-fixed:";
           break;
         }
-        if (ciBefore.green && remaining === "none") { outcome = "✅ Nothing left to fix — CI green, no merge conflicts reported, and all findings addressed."; break; }
-        outcome = remaining !== "none"
-          ? "☑️ No further changes this round — the remaining items were deliberately skipped or couldn't be auto-fixed:"
-          : "☑️ The fixer made no further changes.";
+        const ci = await waitForChecks(pr.headRef, lastPushedSha);
+        if (!ci.settled) { outcome = "⏳ CI didn't settle within the timeout. Handing back to humans."; break; }
+        if (!ci.green) { outcome = `⚠️ CI is still failing (${ci.failing.join(", ")}) and no fixes were pushed. Handing back to humans.`; break; }
+        const merge = await waitForMergeability(pr.headRef, lastPushedSha);
+        if (merge.state === "conflicting" && iterations < MAX_ITERATIONS) {
+          await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: merge conflicts remain — continuing to fix…`);
+          continue;
+        }
+        if (merge.state === "conflicting") {
+          outcome = `⚠️ No changes were pushed and the PR still conflicts with \`${merge.details?.baseRefName || details.baseRefName}\`. Handing back to humans.`;
+          break;
+        }
+        if (merge.state === "pending") {
+          outcome = "⏳ CI is green, but GitHub did not confirm mergeability for the current head. Handing back to humans.";
+          break;
+        }
+        outcome = "✅ Nothing left to fix — CI green, mergeable, and all findings addressed.";
         break;
       }
 
       const sha7 = lastPushedSha.slice(0, 7);
       await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: pushed \`${sha7}\`, waiting for CI…`);
-      const ci = await waitForChecks(pr.headRef);
+      const ci = await waitForChecks(pr.headRef, lastPushedSha);
 
       if (!ci.settled) { outcome = `⏳ Pushed \`${sha7}\` but CI didn't settle within the timeout. Handing back to humans.`; break; }
       if (ci.failing.length) {
@@ -214,14 +264,18 @@ export async function runAutoFix(
       // Mergeability is a completion gate alongside CI and review. A merge may
       // resolve one conflict while exposing another as the base branch advances,
       // so re-read GitHub after the push and let the next iteration address it.
-      const mergeDetails = await getPrDetails(pr.headRef);
-      if (mergeDetails && isMergeConflicting(mergeDetails)) {
+      const merge = await waitForMergeability(pr.headRef, lastPushedSha);
+      if (merge.state === "conflicting") {
         if (iterations >= MAX_ITERATIONS) {
-          outcome = `⚠️ CI is green but the PR still conflicts with \`${mergeDetails.baseRefName}\` after ${iterations} attempts. Handing back to humans.`;
+          outcome = `⚠️ CI is green but the PR still conflicts with \`${merge.details?.baseRefName || details.baseRefName}\` after ${iterations} attempts. Handing back to humans.`;
           break;
         }
         await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: CI green but merge conflicts remain — continuing to fix…`);
         continue;
+      }
+      if (merge.state === "pending") {
+        outcome = `⏳ Pushed \`${sha7}\`, but GitHub did not confirm mergeability for that head. Handing back to humans.`;
+        break;
       }
 
       // CI is green — gate on a FRESH review of the pushed code, not the fixer's
@@ -233,6 +287,38 @@ export async function runAutoFix(
       // the fixer stops pushing changes, or at the iteration cap.
       await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: CI green — reviewing \`${sha7}\`…`);
       const review = await reviewGate(lastPushedSha);
+
+      // Checks can change while a slow review runs. Re-read the exact head before
+      // success; the earlier registration grace means an empty list is now safe.
+      const finalCi = await waitForChecks(pr.headRef, lastPushedSha, 0);
+      if (!finalCi.settled) {
+        outcome = `⏳ Review finished, but CI didn't settle for \`${sha7}\`. Handing back to humans.`;
+        break;
+      }
+      if (!finalCi.green) {
+        if (iterations >= MAX_ITERATIONS) {
+          outcome = `⚠️ CI failed after review (${finalCi.failing.join(", ")}). Handing back to humans.`;
+          break;
+        }
+        await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: CI failed during review — continuing to fix…`);
+        continue;
+      }
+
+      // The base branch may also advance during the review/CI wait, so every
+      // successful exit gets one final fresh, SHA-aware mergeability check.
+      const finalMerge = await waitForMergeability(pr.headRef, lastPushedSha);
+      if (finalMerge.state === "conflicting") {
+        if (iterations >= MAX_ITERATIONS) {
+          outcome = `⚠️ The PR became conflicting with \`${finalMerge.details?.baseRefName || details.baseRefName}\` during review. Handing back to humans.`;
+          break;
+        }
+        await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: base changed during review and conflicts remain — continuing to fix…`);
+        continue;
+      }
+      if (finalMerge.state === "pending") {
+        outcome = "⏳ Review finished, but GitHub did not confirm mergeability for the current head. Handing back to humans.";
+        break;
+      }
 
       if (!review || review.error) {
         // No verdict (review lock contention / model error) — fall back to the

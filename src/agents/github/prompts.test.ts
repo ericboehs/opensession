@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PrDetails } from "../../server/pr-info";
-import { buildAutoFixPrompt, isMergeConflicting } from "./prompts";
+import { buildAutoFixPrompt, mergeabilityState } from "./prompts";
 
 function pr(overrides: Partial<PrDetails> = {}): PrDetails {
   return {
@@ -11,6 +11,7 @@ function pr(overrides: Partial<PrDetails> = {}): PrDetails {
     isDraft: false,
     baseRefName: "main",
     headRefName: "fix/test",
+    headRefOid: "abc123",
     additions: 1,
     deletions: 1,
     changedFiles: 1,
@@ -29,10 +30,13 @@ function pr(overrides: Partial<PrDetails> = {}): PrDetails {
 }
 
 describe("auto-fix merge conflicts", () => {
-  test("recognizes both GitHub conflict signals", () => {
-    expect(isMergeConflicting(pr({ mergeable: "CONFLICTING" }))).toBe(true);
-    expect(isMergeConflicting(pr({ mergeStateStatus: "DIRTY" }))).toBe(true);
-    expect(isMergeConflicting(pr())).toBe(false);
+  test("classifies clear, conflicting, stale, and unknown states", () => {
+    expect(mergeabilityState(pr(), "abc123")).toBe("clear");
+    expect(mergeabilityState(pr({ mergeable: "CONFLICTING" }), "abc123")).toBe("conflicting");
+    expect(mergeabilityState(pr({ mergeStateStatus: "DIRTY" }), "abc123")).toBe("conflicting");
+    expect(mergeabilityState(pr({ mergeable: "UNKNOWN" }), "abc123")).toBe("pending");
+    expect(mergeabilityState(pr(), "new-head")).toBe("pending");
+    expect(mergeabilityState(null, "abc123")).toBe("pending");
   });
 
   test("requires a non-force-pushed base merge when conflicts exist", () => {
@@ -41,5 +45,12 @@ describe("auto-fix merge conflicts", () => {
     expect(prompt).toContain("conflicts with `main`");
     expect(prompt).toContain("merge it into the current branch without rebasing");
     expect(prompt).toContain("Never force-push");
+  });
+
+  test("does not tell the fixer that pending mergeability is conflict-free", () => {
+    const prompt = buildAutoFixPrompt(pr({ mergeable: "UNKNOWN" }), "", [], 1);
+
+    expect(prompt).toContain("still calculating");
+    expect(prompt).toContain("do not assume the branch is conflict-free");
   });
 });

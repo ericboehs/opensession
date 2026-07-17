@@ -235,9 +235,12 @@ export function buildAutoFixPrompt(
   const ci = failingChecks.length
     ? `Failing CI checks to fix:\n${failingChecks.map((c) => `- ${c}`).join("\n")}`
     : "CI is currently green or pending — focus on the review findings.";
-  const conflicts = isMergeConflicting(pr)
+  const mergeability = mergeabilityState(pr);
+  const conflicts = mergeability === "conflicting"
     ? `GitHub reports that this PR conflicts with \`${pr.baseRefName}\`. Resolving those conflicts is required work for this iteration, even if CI is green and there are no review findings. Fetch \`origin/${pr.baseRefName}\`, merge it into the current branch without rebasing, resolve every conflict while preserving both the PR's intent and relevant upstream changes, validate the result, commit the merge resolution, and push it. Never force-push.`
-    : `GitHub does not currently report merge conflicts with \`${pr.baseRefName}\`.`;
+    : mergeability === "clear"
+      ? `GitHub currently reports no merge conflicts with \`${pr.baseRefName}\`.`
+      : `GitHub is still calculating whether this PR conflicts with \`${pr.baseRefName}\`. Check mergeability yourself before finishing; do not assume the branch is conflict-free.`;
 
   return `You are Michael, working on PR #${pr.number} ("${pr.title}") on tella-fusion. You are checked out on the PR's head branch \`${pr.headRefName}\` in a worktree. This is auto-fix iteration ${iteration}.
 
@@ -261,9 +264,16 @@ End your turn with these three lines (exact keys, one line each) so the loop can
 \`UNRESOLVED: <findings you tried but couldn't fix, each as "finding — reason", or none>\``;
 }
 
-/** GitHub exposes conflicts through either field while its async mergeability probe settles. */
-export function isMergeConflicting(pr: Pick<PrDetails, "mergeable" | "mergeStateStatus">): boolean {
-  return pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY";
+export type MergeabilityState = "conflicting" | "clear" | "pending";
+
+/** UNKNOWN is not success: GitHub calculates mergeability asynchronously. */
+export function mergeabilityState(
+  pr: Pick<PrDetails, "mergeable" | "mergeStateStatus" | "headRefOid"> | null,
+  expectedHeadSha?: string,
+): MergeabilityState {
+  if (!pr || (expectedHeadSha && pr.headRefOid !== expectedHeadSha)) return "pending";
+  if (pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY") return "conflicting";
+  return pr.mergeable === "MERGEABLE" ? "clear" : "pending";
 }
 
 export function buildAdversarialPrompt(pr: PrDetails, steer?: string): string {
