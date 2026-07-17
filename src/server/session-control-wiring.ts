@@ -138,10 +138,6 @@ registerSessionControl({
 				)
 			) {
 				recordSteer(id, { content, user });
-				broadcastToSession(id, {
-					type: "notice",
-					message: `Message from ${user || "Michael"} folded into the run — picked up at the next stopping point.`,
-				});
 				return {
 					status: "steered" as const,
 					message: "Folded into the running turn.",

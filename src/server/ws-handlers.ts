@@ -273,10 +273,6 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						// reload/leave); kept out of promptQueues so the drain never
 						// re-delivers it, and cleared when the run finishes.
 						recordSteer(sessionId, { content, user, images: imageUrls });
-						broadcastToSession(sessionId, {
-							type: "notice",
-							message: `Message from ${user || "you"} folded into the run — Michael picks it up at the next stopping point.`,
-						});
 						break;
 					}
 					enqueuePrompt(sessionId, {
