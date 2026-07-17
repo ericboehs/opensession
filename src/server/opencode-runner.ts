@@ -201,6 +201,7 @@ import {
   maskOpenaiAccount,
   opencodeHasNativeOpenaiAuth,
 } from "./opencode-openai-auth";
+import { markCodexExhausted, type CodexAccount } from "./codex-accounts";
 import {
   opencodeTurnTimeoutMs,
   readOpencodeBridgeConfig,
@@ -1908,6 +1909,9 @@ async function* runOpencodeAttempt(
   // Meridian-bridge account for this attempt (anthropic runs): rotation and
   // exhaustion-marking need the id, not just the display label.
   let pickedMeridian: ClaudeAccount | undefined;
+  // Codex account for this attempt (openai runs) — same role as pickedMeridian
+  // for the openai-side sideline + rotate on usage limits.
+  let pickedOpenai: CodexAccount | undefined;
   // The provider's most recent in-turn retry error (opencode retries stream
   // errors internally with backoff and stays silent while doing so — the
   // RetryPart / session.status events are the only visibility we get).
@@ -2174,6 +2178,7 @@ async function* runOpencodeAttempt(
         if (bound.mechanism !== "api-key") {
           bridgeLivenessGuard = true;
           bridgeAccountLabel = picked.name;
+          pickedOpenai = picked;
         }
       }
       // picked.error (no codex accounts) ⇒ fall through to opencode's own
@@ -2698,6 +2703,23 @@ async function* runOpencodeAttempt(
           .catch(() => {});
         signalDone();
       }
+      // Same fail-fast for the openai side (2026-07-17: six "usage limit
+      // reached" retries burned the full 90s guard before dying mislabeled) —
+      // usageLimitHit drives markCodexExhausted + codex-account rotation
+      // downstream.
+      if (
+        parsed.providerID === "openai" &&
+        pickedOpenai &&
+        !runFailure &&
+        isCodexUsageLimitError(message)
+      ) {
+        usageLimitHit = true;
+        runFailure = `OpenAI usage limit on codex account "${bridgeAccountLabel}": ${message.slice(0, 300)}`;
+        engineAbortInFlight = client.session
+          .abort({ path: { id: ocSessionId }, ...q })
+          .catch(() => {});
+        signalDone();
+      }
     };
 
     // ── Permission-ask bridge ────────────────────────────────────────────────
@@ -2982,8 +3004,13 @@ async function* runOpencodeAttempt(
       ? setTimeout(() => {
           if (sawFirstOutput || idle || abortController.signal.aborted) return;
           // Name the real cause when the provider told us (captured retry
-          // errors) instead of guessing "authentication hang".
-          if (lastProviderRetryError && isClaudeUsageLimitError(lastProviderRetryError, true)) {
+          // errors) instead of guessing "authentication hang". Match with the
+          // run's OWN provider's error shape — the Claude matcher missed
+          // OpenAI's "The usage limit has been reached", so codex exhaustion
+          // was mislabeled transient and never rotated accounts (2026-07-17).
+          const limitMatcher =
+            parsed.providerID === "openai" ? isCodexUsageLimitError : (m: string) => isClaudeUsageLimitError(m, true);
+          if (lastProviderRetryError && limitMatcher(lastProviderRetryError)) {
             usageLimitHit = true;
           }
           if (!lastProviderRetryError) livenessWedged = true;
@@ -3152,6 +3179,28 @@ async function* runOpencodeAttempt(
         }
         runFailure +=
           " — no other account is currently usable for this model; use /model to switch models.";
+      }
+      // OpenAI usage limit on the codex account: same treatment as the
+      // meridian branch above — sideline it (markCodexExhausted was previously
+      // never called by ANYTHING, so the picker kept handing out exhausted
+      // accounts, 2026-07-17) and rotate to another codex account when one
+      // exists; the rotation rerun re-picks at bind time, which now skips the
+      // sidelined account. No account left ⇒ terminal with usageLimitExhausted
+      // so agent-runner's model fallback takes over.
+      if (usageLimitHit && pickedOpenai) {
+        markCodexExhausted(pickedOpenai.id, parsed.modelID);
+        const next = pickOpenaiAccount(parsed.modelID, readOpencodeBridgeConfig()?.openaiAccounts);
+        if (rotation && !("error" in next) && next.id !== pickedOpenai.id) {
+          turnEvent({ direction: "out", kind: "account_switch", account: next.name });
+          bridgeRunEnd("error", runFailure);
+          rotation.rotate = true;
+          rotation.note =
+            `OpenAI usage limit hit on codex account "${pickedOpenai.name}" ` +
+            `(${parsed.modelID}); switched to "${next.name}" and retrying.`;
+          return;
+        }
+        runFailure +=
+          " — no other codex account is currently usable; use /model to switch models.";
       }
       // Transient infra failure — recover instead of failing the turn. Covers
       // the silent liveness wedge (the Meridian proxy's first post-boot request
