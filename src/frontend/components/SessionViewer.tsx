@@ -562,7 +562,6 @@ export function SessionViewer({
 		showScrollToBottom,
 		scrollToLatest,
 		anchorToTop,
-		beginTurn,
 		endTurn,
 		relayout,
 		onScroll,
@@ -1493,7 +1492,6 @@ export function SessionViewer({
 		if (!isBusy) {
 			setIsRunningLive(true);
 			onRunningChange?.(session.id, true);
-			beginTurn(); // pin this new turn near the top so its reply streams in below
 			// Show it immediately; it reconciles away when the real transcript entry
 			// arrives (or the queue echo, if the server turns out to be busy).
 			setPending((p) => [
@@ -1508,7 +1506,7 @@ export function SessionViewer({
 			]);
 		} else {
 			// Busy send: show it in the queue flap right away (no transcript
-			// bubble, no beginTurn — a steer folds into the RUNNING turn) — the
+			// bubble — a steer folds into the RUNNING turn) — the
 			// server's queue_update / steer-receipt echo replaces it.
 			setPending((p) => [
 				...p,
