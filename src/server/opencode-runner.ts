@@ -185,6 +185,7 @@ import {
   backfillOpencodeTranscriptGap,
   ensureOpencodeTranscriptFile,
   existingOpencodeTranscriptPath,
+  recordOpencodeDbFor,
   transcriptLineUser,
   transcriptLineRunnerNotice,
   transcriptLineAssistantText,
@@ -232,6 +233,27 @@ export const OPENCODE_BIN =
  *  docker adapter mounts by, or in-container runs break; see
  *  containerStateDirFixups in sandbox/docker.ts). */
 export const OPENCODE_STATE_DIR = `${OPENSESSION_CHATS_DIR}/opencode`;
+
+/** Per-server SQLite shards (2026-07-17 storage review): every `opencode
+ *  serve` process gets its own DB file via the official OPENCODE_DB env var —
+ *  per-session servers one DB per session, shared servers one DB per
+ *  (account × user). One writer per file by construction, so the July 9/17
+ *  cross-process SQLITE_BUSY melts can't recur. Engine sessions that predate
+ *  sharding live in the legacy DBs; a resume that misses on the new shard
+ *  degrades to the existing transcript-seeded fresh session. Kill switch:
+ *  OPENSESSION_OC_DB_SHARD=0 reverts to opencode's default DB locations. */
+const SHARD_DB_DIR = `${OPENCODE_STATE_DIR}/db`;
+
+export function opencodeDbShardActive(): boolean {
+  const v = (envAlias("OPENSESSION_OC_DB_SHARD", "BACKSTAGE_OC_DB_SHARD") || "").trim().toLowerCase();
+  return v !== "0" && v !== "false";
+}
+
+export function shardDbPathForKey(key: string): string {
+  const safe = key.replace(/[^A-Za-z0-9._-]/g, "_");
+  return `${SHARD_DB_DIR}/${safe}.db`;
+}
+
 const SERVER_START_TIMEOUT_MS = 30_000;
 const IDLE_KILL_MS = 30 * 60 * 1000;
 /** Shared servers are the always-warm pool — kept alive far longer than the
@@ -1129,6 +1151,9 @@ export interface OpencodeServerEntry {
   meridianPort?: number;
   /** Claude account the Meridian proxy authenticates as (from spawn env). */
   accountId?: string;
+  /** Per-server SQLite shard this process writes (OPENCODE_DB at spawn) —
+   *  absent on legacy/unsharded servers, which use opencode's default paths. */
+  dbPath?: string;
   lastUsed: number;
   activeRuns: number;
   idleTimer?: ReturnType<typeof setTimeout>;
@@ -1378,6 +1403,7 @@ async function spawnOpencodeServer(
         shared,
         rpcToken: crypto.randomUUID(),
         ...meridianEnvIdentity(extraEnv),
+        dbPath: extraEnv?.OPENCODE_DB,
         lastUsed: Date.now(),
         activeRuns: 0,
       };
@@ -1461,6 +1487,7 @@ async function spawnOpencodeServer(
     shared,
     rpcToken: crypto.randomUUID(),
     ...meridianEnvIdentity(extraEnv),
+    dbPath: extraEnv?.OPENCODE_DB,
     lastUsed: Date.now(),
     activeRuns: 0,
   };
@@ -1487,6 +1514,15 @@ export async function ensureOpencodeServer(
   extraEnv?: Record<string, string>,
   opts?: { shared?: boolean }
 ): Promise<OpencodeServerEntry> {
+  // Per-server DB shard rides extraEnv so it participates in the identity:
+  // flipping sharding on/off (or a key collision after a rename) respawns the
+  // server rather than silently mixing DB files. Derived from the key, so it's
+  // stable across respawns of the same server.
+  if (opencodeDbShardActive()) {
+    const dbPath = shardDbPathForKey(key);
+    mkdirSync(SHARD_DB_DIR, { recursive: true });
+    extraEnv = { ...(extraEnv || {}), OPENCODE_DB: dbPath };
+  }
   // extraEnv is part of the identity: a different meridian account/token must
   // respawn the server (env only applies at spawn). CLAUDE_PROXY_PORT is the
   // one exception — it's freshly allocated on every call (meridianAccountEnv),
@@ -1584,6 +1620,7 @@ function syncDetachedRecord(entry: OpencodeServerEntry): void {
     meridianKey: entry.meridianKey,
     meridianPort: entry.meridianPort,
     accountId: entry.accountId,
+    dbPath: entry.dbPath,
     spawnedAt: prev?.spawnedAt || new Date().toISOString(),
   });
 }
@@ -1637,6 +1674,7 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
       meridianKey: newest.meridianKey,
       meridianPort: newest.meridianPort,
       accountId: newest.accountId,
+      dbPath: newest.dbPath,
       lastUsed: Date.now(),
       activeRuns: 0,
     };
@@ -2451,6 +2489,9 @@ async function* runOpencodeAttempt(
       registeredKeys.add(ocSessionId);
       activeOpencodeRuns.set(ocSessionId, abortController);
     }
+    // Sharded storage: remember which DB file this engine session lives in so
+    // transcript readers / gap backfill can find it after the server is gone.
+    if (entry.dbPath) recordOpencodeDbFor(ocSessionId, entry.dbPath);
     // In-band steer for this run (see steerOpencodeRun): noReply message →
     // engine history → picked up at the turn's next step boundary. The user
     // line is mirrored into the transcript jsonl here because the SSE pump

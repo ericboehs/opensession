@@ -138,6 +138,8 @@ export interface DetachedServerRecord {
   meridianPort?: number;
   /** Claude account the server's Meridian proxy authenticates as. */
   accountId?: string;
+  /** Per-server SQLite shard (OPENCODE_DB at spawn) — absent on legacy servers. */
+  dbPath?: string;
   spawnedAt: string;
 }
 
