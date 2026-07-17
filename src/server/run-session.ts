@@ -970,6 +970,13 @@ export async function maybeLaunchSandboxedRun(
 					// inside the sandbox; host existsSync guards must not gate it).
 					workspace: sandbox.workspace,
 				},
+				...(remoteSandboxReplaced
+					? {
+							claudeSessionId: undefined,
+							codexThreadId: undefined,
+							opencodeSessionId: undefined,
+						}
+					: {}),
 			});
 		}
 		// opensession-* tools reach the container as stdio proxies over the run-rpc
@@ -1023,13 +1030,6 @@ export async function maybeLaunchSandboxedRun(
 		const handle = sandbox.launchRunEager
 			? await sandbox.launchRunEager(spec, runCallbacks)
 			: sandbox.launchRun(spec, runCallbacks);
-		if (remoteSandboxReplaced && session.source === "backstage") {
-			touchBackstageSession(session.id, {
-				claudeSessionId: undefined,
-				codexThreadId: undefined,
-				opencodeSessionId: undefined,
-			});
-		}
 		console.log(`[sandbox] ${session.id}: running in ${sandbox.id} (${sandbox.cwd})`);
 		return Object.assign(handle.events(), {
 			freshEngine: remoteSandboxReplaced || undefined,
