@@ -460,10 +460,13 @@ async function refreshAccountUsage(account: ClaudeAccount): Promise<AccountUsage
   const tok = await usageToken(account);
   if (!tok) return null;
   if ("error" in tok) {
+    // Broken usage credentials: keep the actionable error (the account-health
+    // monitor's owner DMs key off it) but fill the windows from a live
+    // Meridian proxy when one is running, so the picker and UI still see
+    // real utilization instead of nothing.
+    const observed = await fetchMeridianUsage(account.id);
     const usage = {
-      fetchedAt: new Date().toISOString(),
-      fiveHour: null,
-      sevenDay: null,
+      ...(observed ?? { fetchedAt: new Date().toISOString(), fiveHour: null, sevenDay: null }),
       error: tok.error,
     };
     usageCache.set(account.id, usage);
