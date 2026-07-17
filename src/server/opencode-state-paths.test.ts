@@ -27,6 +27,7 @@ import { envAlias, stateDir } from "./rename-compat";
 import {
   MERIDIAN_CFG_ROOT,
   OPENCODE_STATE_DIR,
+  shardDbPathForKey,
 } from "./opencode-runner";
 import { configPath } from "./opencode-config";
 import { BRIDGE_CWD } from "./anthropic-bridge";
@@ -114,6 +115,21 @@ function fakeJwt(expMs: number): string {
   const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
   return `${b64({ alg: "none" })}.${b64({ exp: Math.floor(expMs / 1000) })}.sig`;
 }
+
+describe("shard DB path derivation (pinned)", () => {
+  // PINNED: shard DB paths are a pure function of the server pool key. A
+  // change here orphans every existing shard DB (sessions silently lose
+  // their engine history) — must be deliberate, with a migration.
+  it("derives stable paths from pool keys", () => {
+    const home = process.env.HOME || "/home/ubuntu";
+    expect(shardDbPathForKey("bks-ghpr-5024-review")).toBe(
+      `${home}/.opensession-chats/opencode/db/bks-ghpr-5024-review.db`,
+    );
+    expect(shardDbPathForKey("shared:openai-13fde4f9:michiel")).toBe(
+      `${home}/.opensession-chats/opencode/db/shared_openai-13fde4f9_michiel.db`,
+    );
+  });
+});
 
 describe("remote openai seed material (rotation-proof contract)", () => {
   const scratch = mkdtempSync(join(tmpdir(), "bks-openai-seed-"));

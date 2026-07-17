@@ -692,13 +692,17 @@ export function pickMeridianAccount(
   ids?: string[],
   pinnedId?: string,
   strict?: boolean,
-  stickyId?: string
+  stickyId?: string,
+  out?: { reason?: string }
 ): ClaudeAccount | { error: string } {
   const allowedOwner = (a: ClaudeAccount) => !a.owner || (!!user && userMatchesAny(user, [a.owner]));
   const designated = (id: string) => !ids?.length || ids.includes(id);
   if (pinnedId) {
     const pinned = getUsableAccountById(pinnedId, model);
-    if (pinned && allowedOwner(pinned) && designated(pinnedId)) return pinned;
+    if (pinned && allowedOwner(pinned) && designated(pinnedId)) {
+      if (out) out.reason = "pinned";
+      return pinned;
+    }
     if (strict) {
       const name = getAccountById(pinnedId)?.name || pinnedId;
       return { error: `pinned account ${name} is not currently usable (hard pin — not falling back to the pool)` };
@@ -706,18 +710,27 @@ export function pickMeridianAccount(
   }
   if (stickyId && designated(stickyId)) {
     const sticky = getUsableAccountById(stickyId, model);
-    if (sticky && allowedOwner(sticky)) return sticky;
+    if (sticky && allowedOwner(sticky)) {
+      if (out) out.reason = "sticky";
+      return sticky;
+    }
   }
   if (ids?.length) {
     for (const id of ids) {
       const a = getUsableAccountById(id, model);
-      if (a && allowedOwner(a)) return a;
+      if (a && allowedOwner(a)) {
+        if (out) out.reason = "designated";
+        return a;
+      }
     }
     const known = ids.map((id) => getAccountById(id)?.name || id).join(", ");
     return { error: `no designated meridian bridge account is currently usable (tried: ${known})` };
   }
   const picked = pickAccount(undefined, user, model);
-  if (picked) return picked;
+  if (picked) {
+    if (out) out.reason = picked.owner ? "personal-first" : "pool";
+    return picked;
+  }
   return { error: "no usable Claude account for the meridian bridge (pool exhausted or none configured)" };
 }
 
@@ -1948,17 +1961,20 @@ async function* runOpencodeAttempt(
             cfg!.bridgeAccountIds,
             opts.accountId,
             opts.accountStrict,
-            stickyMeridianAccounts.get(sessionKey)
+            stickyMeridianAccounts.get(sessionKey),
+            meridianPickOut
           );
           return "error" in p ? null : p;
         };
+        const meridianPickOut: { reason?: string } = {};
         let picked = pickMeridianAccount(
           user,
           parsed.modelID,
           cfg!.bridgeAccountIds,
           opts.accountId,
           opts.accountStrict,
-          stickyMeridianAccounts.get(sessionKey)
+          stickyMeridianAccounts.get(sessionKey),
+          meridianPickOut
         );
         if ("error" in picked) {
           // Dry pool at pick time: unattended runs queue for an account to
@@ -2067,6 +2083,7 @@ async function* runOpencodeAttempt(
           model,
           account: picked.name,
           account_id: picked.id.slice(0, 8),
+          pick_reason: meridianPickOut.reason,
           meridian_version: stack.meridianVersion,
           plugin_version: stack.pluginVersion,
         };
@@ -2110,7 +2127,8 @@ async function* runOpencodeAttempt(
       // host auth (`opencode auth login`) — unchanged behavior. See
       // opencode-openai-auth.ts for the seed-access-only rotation-hazard fix.
       const cfg = readOpencodeBridgeConfig();
-      const picked = pickOpenaiAccount(parsed.modelID, cfg?.openaiAccounts);
+      const openaiPickOut: { reason?: string } = {};
+      const picked = pickOpenaiAccount(parsed.modelID, cfg?.openaiAccounts, sessionKey, openaiPickOut);
       if (!("error" in picked)) {
         const bound = bindOpenaiAccount(picked);
         if ("error" in bound) {
@@ -2157,6 +2175,7 @@ async function* runOpencodeAttempt(
           account: maskOpenaiAccount(picked),
           account_id: picked.id.slice(0, 8),
           mechanism: bound.mechanism,
+          pick_reason: openaiPickOut.reason,
         };
         const startedAt = Date.now();
         audit({ ...auditBase, phase: "start" });
@@ -3189,7 +3208,7 @@ async function* runOpencodeAttempt(
       // so agent-runner's model fallback takes over.
       if (usageLimitHit && pickedOpenai) {
         markCodexExhausted(pickedOpenai.id, parsed.modelID);
-        const next = pickOpenaiAccount(parsed.modelID, readOpencodeBridgeConfig()?.openaiAccounts);
+        const next = pickOpenaiAccount(parsed.modelID, readOpencodeBridgeConfig()?.openaiAccounts, sessionKey);
         if (rotation && !("error" in next) && next.id !== pickedOpenai.id) {
           turnEvent({ direction: "out", kind: "account_switch", account: next.name });
           bridgeRunEnd("error", runFailure);

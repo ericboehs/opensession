@@ -161,7 +161,9 @@ export function maskOpenaiAccount(account: CodexAccount): string {
  */
 export function pickOpenaiAccount(
   model: string,
-  ids?: string[]
+  ids?: string[],
+  sessionKey?: string,
+  out?: { reason?: string }
 ): CodexAccount | { error: string } {
   const all = listCodexAccounts();
   if (!all.length) {
@@ -174,12 +176,15 @@ export function pickOpenaiAccount(
   if (ids?.length) {
     for (const id of ids) {
       const a = all.find((x) => x.id === id);
-      if (a) return a;
+      if (a) {
+        if (out) out.reason = "designated";
+        return a;
+      }
     }
     const known = ids.join(", ");
     return { error: `no designated openai account is configured (bridge.openaiAccounts: ${known})` };
   }
-  const picked = pickCodexAccount(undefined, model);
+  const picked = pickCodexAccount(undefined, model, sessionKey, out);
   if (picked) return picked;
   return { error: "no usable codex account for opencode/openai (all currently sidelined)" };
 }

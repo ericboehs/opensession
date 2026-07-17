@@ -248,6 +248,20 @@ describe("fallback graph (nextFallbackModel)", () => {
   });
 });
 
+describe("alias table (pinned)", () => {
+  // PINNED: what users get when they type these. A change here silently
+  // redirects /model shortcuts and default-codex dispatch — deliberate only
+  // (last deliberate change: codex/gpt → 5.6-sol, 2026-07-17 per Michiel).
+  it("resolves the load-bearing aliases", () => {
+    expect(resolveModel("codex")?.id).toBe("gpt-5.6-sol");
+    expect(resolveModel("gpt")?.id).toBe("gpt-5.6-sol");
+    expect(resolveModel("sol")?.id).toBe("gpt-5.6-sol");
+    expect(resolveModel("best")?.id).toBe("codex-best-available");
+    expect(resolveModel("opus")?.id).toBe("claude-opus-4-8");
+    expect(resolveModel("fable")?.id).toBe("claude-fable-5");
+  });
+});
+
 describe("resolveConcreteModel", () => {
   it("resolves best available codex to the strongest usable codex model", () => {
     expect(resolveConcreteModel(BEST_AVAILABLE_CODEX_MODEL)).toBe("gpt-5.6-sol");
