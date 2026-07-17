@@ -439,7 +439,7 @@ registerSessionControl({
 					}
 					if (event.type === "model_switch") {
 						const to = event.toModel || "";
-						const reason = `auto-switch — ${modelLabel(event.fromModel)} out of credits`;
+						const reason = `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`;
 						if (to) {
 							effectiveModel = to;
 							effectiveProvider = providerFor(to);

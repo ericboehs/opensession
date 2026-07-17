@@ -156,6 +156,7 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
   let currentOpts = opts;
   let currentModel = primaryModel;
   const exhaustedModels = new Set<string>();
+  let consecutiveTransient = 0;
 
   for (;;) {
     let currentEngineId = currentOpts.sessionId;
@@ -191,6 +192,33 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
 
     if (!failure) return;
 
+    // Two models in a row dying the TRANSIENT way is an infrastructure
+    // problem (dead rpc socket, wedged bridge, network) — every further rung
+    // would burn its own liveness window and fail identically, and the walk
+    // would end by blaming usage for what is an outage. Stop and say what
+    // actually happened. (2026-07-17 stolen-socket outage: the walk burned
+    // Fable→Sol→Opus→GPT-5.5 for ~12 min per prompt, then told users the
+    // models were "out of usage".)
+    if (failure.transient) {
+      consecutiveTransient++;
+      if (consecutiveTransient >= 2) {
+        yield {
+          type: "error",
+          content:
+            `${modelLabel(currentModel)} also failed with a transient engine error — ` +
+            `${consecutiveTransient} models in a row failed the same way, so this looks like ` +
+            `an infrastructure problem (engine bridge, MCP socket, or network), not a model ` +
+            `or usage issue. Stopping the fallback walk; retry in a minute or ping Michael. ` +
+            `Last error: ${failure.content || "unknown"}`,
+          provider: providerFor(currentModel),
+          model: currentModel,
+        };
+        return;
+      }
+    } else {
+      consecutiveTransient = 0;
+    }
+
     const currentOc = toOpencodeModel(currentModel) || currentModel;
     exhaustedModels.add(currentOc);
     const hop = nextFallbackModel(currentOc, exhaustedModels, preferredFallback);
@@ -221,14 +249,19 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
         failure.transient
       );
       if (!approved) {
+        // Name the real cause — a transient engine failure declined here must
+        // NOT read as "out of usage" (that mislabel sent people chasing
+        // billing during the 2026-07-17 infra outage).
         yield {
           type: "error",
-          content:
-            `${modelLabel(currentModel)} is out of usage. ` +
-            `Declined the fallback to ${modelLabel(hop.id)} — use /model to switch when ready.`,
+          content: failure.transient
+            ? `${modelLabel(currentModel)} hit a transient engine failure. ` +
+              `Declined the fallback to ${modelLabel(hop.id)} — retry this prompt, or use /model to switch.`
+            : `${modelLabel(currentModel)} is out of usage. ` +
+              `Declined the fallback to ${modelLabel(hop.id)} — use /model to switch when ready.`,
           provider: providerFor(currentModel),
           model: currentModel,
-          usageLimitExhausted: true,
+          usageLimitExhausted: failure.transient ? undefined : true,
         };
         return;
       }
@@ -250,7 +283,12 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     // Structured cue: interactive sessions turn this into a durable model-switch
     // divider + model pill update (backstage.ts run loop). Other consumers ignore
     // it and rely on the human-readable text line below.
-    yield { type: "model_switch", fromModel: currentModel, toModel: hop.id };
+    yield {
+      type: "model_switch",
+      fromModel: currentModel,
+      toModel: hop.id,
+      switchReason: failure.transient ? "hit a transient engine error" : "out of credits",
+    };
     yield {
       type: "text_chunk",
       text: `\n\n[runner] ${modelLabel(currentModel)} ${reason}; falling back to ${modelLabel(hop.id)}.\n\n`,

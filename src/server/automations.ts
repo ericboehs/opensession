@@ -1010,7 +1010,7 @@ export async function runAutomation(
           modelHistory.push({
             model: to,
             at: new Date().toISOString(),
-            by: `auto-switch — ${modelLabel(event.fromModel)} out of credits`,
+            by: `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`,
           });
         }
       }

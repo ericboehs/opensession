@@ -534,7 +534,7 @@ export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent
 	if (event.type === "model_switch") {
 		const to = event.toModel || "";
 		if (!to) return;
-		const reason = `auto-switch — ${modelLabel(event.fromModel)} out of credits`;
+		const reason = `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`;
 		touchBackstageSession(bksSessionId, {
 			model: to,
 			modelHistory: [
@@ -1513,7 +1513,7 @@ async function runSessionPromptInner(
 				// model_changed broadcast (pill + divider now) — and move the session
 				// onto the fallback so later prompts don't re-hit the exhausted model.
 				const to = event.toModel || "";
-				const reason = `auto-switch — ${modelLabel(event.fromModel)} out of credits`;
+				const reason = `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`;
 				if (to) {
 					effectiveModel = to;
 					effectiveProvider = providerFor(to);

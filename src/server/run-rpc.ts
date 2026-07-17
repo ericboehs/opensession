@@ -26,6 +26,7 @@ import { timingSafeEqual } from "crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { audit } from "./audit";
 import { canonicalMcpServerId } from "./rename-compat";
 import { rpcSocketPath } from "./run-rpc-protocol";
 
@@ -299,7 +300,19 @@ async function handleRpc(req: Request): Promise<Response> {
  *  re-pointed through globalThis so new code applies without a rebind). */
 export function startRunRpcServer(): void {
   g.__runRpcHandler = handleRpc;
-  if (g.__runRpcServer) return;
+  // `bun test` guard: this runs as a module side effect (interactive-mcp.ts),
+  // so ANY test whose import chain reaches this file would otherwise unlink
+  // and steal the LIVE server's socket, then exit and leave a dead inode at
+  // the path — every interactive run wedges in MCP init until a restart
+  // (2026-07-16 and again 2026-07-17, a fleet-wide outage). bun test sets
+  // NODE_ENV=test; the Bun.main check is a belt for suites that override it.
+  if (process.env.NODE_ENV === "test" || /\.test\.tsx?$/.test(Bun.main || "")) {
+    return;
+  }
+  if (g.__runRpcServer) {
+    startRunRpcSocketHeal();
+    return;
+  }
   const sock = rpcSocketPath(BACKSTAGE_CHATS_DIR);
   try {
     if (existsSync(sock)) unlinkSync(sock);
@@ -318,4 +331,61 @@ export function startRunRpcServer(): void {
     chmodSync(sock, 0o600);
   } catch {}
   console.log(`[run-rpc] listening on ${sock}`);
+  startRunRpcSocketHeal();
+}
+
+/** True when a connect to the socket PATH is answered. Distinguishes a healthy
+ *  bind from the stolen-socket state: an external process (a test run) that
+ *  unlinked + re-bound the path and exited leaves a dead inode there while our
+ *  server keeps "listening" on the orphaned one — connects get refused. */
+async function rpcSocketPathAlive(sock: string): Promise<boolean> {
+  try {
+    await new Promise<void>((resolve, reject) => {
+      Bun.connect({
+        unix: sock,
+        socket: {
+          open(s) {
+            resolve();
+            try {
+              s.end();
+            } catch {}
+          },
+          data() {},
+          close() {},
+          error(_s, e) {
+            reject(e);
+          },
+          connectError(_s, e) {
+            reject(e);
+          },
+        },
+      }).catch(reject);
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Self-heal ticker: if the socket path stops answering (unlinked, or stolen
+ *  by another process that then exited), drop the orphaned listener and
+ *  rebind. Turns the stolen-socket incident class from "every interactive run
+ *  wedges until a human restarts the service" into a ≤30s blip. */
+function startRunRpcSocketHeal(): void {
+  if (g.__runRpcHealTicker) return;
+  g.__runRpcHealTicker = setInterval(() => {
+    void (async () => {
+      if (!g.__runRpcServer) return;
+      const sock = rpcSocketPath(BACKSTAGE_CHATS_DIR);
+      if (await rpcSocketPathAlive(sock)) return;
+      console.warn(`[run-rpc] socket path dead or stolen — rebinding ${sock}`);
+      audit({ msg: "run_rpc_socket_heal", socket: sock });
+      try {
+        (g.__runRpcServer as { stop?: (force?: boolean) => void })?.stop?.(true);
+      } catch {}
+      g.__runRpcServer = undefined;
+      startRunRpcServer();
+    })();
+  }, 30_000);
+  (g.__runRpcHealTicker as { unref?: () => void }).unref?.();
 }

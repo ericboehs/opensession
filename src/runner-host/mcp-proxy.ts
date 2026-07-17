@@ -198,7 +198,13 @@ const server = new Server(
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  const data = await rpc("/mcp/list", {});
+  // tools/list happens during the engine's MCP init, BEFORE the turn's first
+  // output — so its retry budget must stay well under the runner's 90s
+  // liveness guard. With the old 120s default, a dead rpc socket (backstage
+  // down, or the stolen-socket incident 2026-07-17) wedged every interactive
+  // turn into a liveness kill; at 20s the server just comes up with this
+  // proxy marked failed and the run proceeds without opensession-* tools.
+  const data = await rpc("/mcp/list", {}, 20_000);
   return { tools: data.tools || [] };
 });
 

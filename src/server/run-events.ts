@@ -52,6 +52,10 @@ export interface StreamEvent {
   /** On a model_switch: the exhausted model and the fallback it switched to. */
   fromModel?: string;
   toModel?: string;
+  /** On a model_switch: why — "out of credits" (usage) vs a transient engine
+   *  failure. Consumers building modelHistory labels should use this instead
+   *  of assuming out-of-credits (the 2026-07-17 outage was mislabeled). */
+  switchReason?: "out of credits" | "hit a transient engine error";
   toolName?: string;
   toolInput?: unknown;
   toolUseId?: string;
