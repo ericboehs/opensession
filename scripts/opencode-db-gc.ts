@@ -88,7 +88,9 @@ function discoverDbs(): string[] {
 }
 
 function compactEvents(path: string): { deleted: number; aggregates: number } {
-  const db = new Database(path, { readonly: DRY });
+  // bun:sqlite quirk: an options object with `readonly: false` produces zero
+  // open-flags (SQLITE_MISUSE) — write mode must say `readwrite` explicitly.
+  const db = new Database(path, DRY ? { readonly: true } : { readwrite: true });
   let deleted = 0;
   let aggregates = 0;
   try {
