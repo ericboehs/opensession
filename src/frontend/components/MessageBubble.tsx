@@ -1,10 +1,116 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { parseHumanReply, parseAttribution, isGitHubAttribution } from "../lib/humanReply";
 import { useCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
+import { BASE_PATH } from "../lib/base";
+
+// Only this much of a message is markdown-parsed eagerly. marked is
+// superlinear on input size (~25ms at 10KB, ~400ms at 80KB, seconds past
+// 200KB), and a transcript can hold dozens of giant machine-written entries
+// (automation prompts embedding a full PR diff) — parsing them all on open is
+// what made "Loading transcript…" hang for minutes on such sessions. Longer
+// contents render their head plus a "Show full message" expander.
+const EAGER_MD_CHARS = 6000;
+// Expanded content still renders as markdown up to this size; past it the
+// content is machine payload, not prose — a plain <pre> shows it instantly.
+const FULL_MD_CHARS = 32 * 1024;
+
+function sizeLabel(chars: number): string {
+	return chars >= 1024 ? `${Math.round(chars / 1024)} KB` : `${chars} chars`;
+}
+
+/**
+ * Message body that clamps how much markdown is parsed eagerly. Contents the
+ * server clamped for the wire (entry.contentClamped) fetch the full entry on
+ * expand; locally-long contents just reveal in place.
+ */
+export function ClampedBody({
+	content,
+	className,
+	entry,
+	sessionId,
+}: {
+	content: string;
+	className: string;
+	entry?: TranscriptEntry;
+	sessionId?: string;
+}) {
+	const wireClamped = !!entry?.contentClamped;
+	const fullLength = entry?.contentLength ?? content.length;
+	const isLong = wireClamped || content.length > EAGER_MD_CHARS;
+	const [showAll, setShowAll] = useState(false);
+	const [fetched, setFetched] = useState<string | null>(null);
+	const [fetching, setFetching] = useState(false);
+
+	// Cut the eager head at a line boundary so we don't render half a line of
+	// a diff/log as its own paragraph.
+	const head = useMemo(() => {
+		if (!isLong || showAll) return content;
+		const slice = content.slice(0, EAGER_MD_CHARS);
+		const nl = slice.lastIndexOf("\n");
+		return nl > EAGER_MD_CHARS / 2 ? slice.slice(0, nl) : slice;
+	}, [content, isLong, showAll]);
+
+	const shown = showAll ? (fetched ?? content) : head;
+	// Giant expanded payloads skip markdown entirely — see FULL_MD_CHARS.
+	const asMarkdown = shown.length <= FULL_MD_CHARS;
+	const html = useMemo(
+		() => (asMarkdown ? renderMarkdown(shown) : ""),
+		[asMarkdown, shown],
+	);
+
+	const expand = async () => {
+		if (wireClamped && !fetched && entry && sessionId) {
+			setFetching(true);
+			try {
+				const res = await fetch(
+					`${BASE_PATH}/api/sessions/${encodeURIComponent(sessionId)}/entry/${encodeURIComponent(entry.id)}`,
+				);
+				if (res.ok) {
+					const data = await res.json();
+					if (typeof data?.content === "string") setFetched(data.content);
+				}
+			} catch {
+				// keep the wire-clamped text — the tail just stays truncated
+			} finally {
+				setFetching(false);
+			}
+		}
+		setShowAll(true);
+	};
+
+	return (
+		<>
+			{asMarkdown ? (
+				<MarkdownBody className={className} html={html || ""} />
+			) : (
+				<pre
+					className={
+						"my-1 max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface p-3 font-mono text-[12px] leading-relaxed text-fg"
+					}
+				>
+					{shown}
+				</pre>
+			)}
+			{isLong && (
+				<button
+					type="button"
+					onClick={showAll ? () => setShowAll(false) : expand}
+					className="mt-1 cursor-pointer border-0 bg-transparent p-0 text-left font-sans text-[12px] font-medium text-dim hover:text-fg"
+				>
+					{fetching
+						? "Loading…"
+						: showAll
+							? "Collapse"
+							: `Show full message · ${sizeLabel(fullLength)}`}
+				</button>
+			)}
+		</>
+	);
+}
 
 /** Very short relative time for the message label ("now", "5m", "3h", "2d",
  * then a date). Hover shows the full local time. */
@@ -39,6 +145,8 @@ interface Props {
 	 * fall back to "You".
 	 */
 	owner?: string;
+	/** Lets a wire-clamped entry's "Show full message" fetch the full content. */
+	sessionId?: string;
 }
 
 /** Inline images carried on an entry (Read-of-image results, pasted images). */
@@ -119,6 +227,7 @@ function EntryFiles({ files }: { files?: TranscriptEntry["files"] }) {
 export const MessageBubble = React.memo(function MessageBubble({
 	entry,
 	owner,
+	sessionId,
 }: Props) {
 	const me = useCurrentUser();
 	// A routed-back teammate reply (human-in-the-loop): credit the teammate and
@@ -126,9 +235,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 	const humanReply = useMemo(() => {
 		if (entry.type !== "user") return null;
 		const parsed = parseHumanReply(entry.content);
-		return parsed
-			? { name: parsed.name, html: renderMarkdown(parsed.body) }
-			: null;
+		return parsed ? { name: parsed.name, body: parsed.body } : null;
 	}, [entry.type, entry.content]);
 	// A "[Name] …" attributed turn: a named teammate steered/sent into this
 	// session. It's the driver, so it keeps a normal user bubble — but credited
@@ -139,7 +246,6 @@ export const MessageBubble = React.memo(function MessageBubble({
 		return parseAttribution(entry.content);
 	}, [entry.type, entry.content, humanReply]);
 	const displayContent = attribution ? attribution.body : entry.content;
-	const html = useMemo(() => renderMarkdown(displayContent), [displayContent]);
 
 	if (entry.type === "user" && attribution && isGitHubAttribution(attribution.name)) {
 		return (
@@ -164,9 +270,11 @@ export const MessageBubble = React.memo(function MessageBubble({
 					💬 {humanReply.name} · via Slack
 					<MsgTime ts={entry.timestamp} />
 				</div>
-				<MarkdownBody
+				<ClampedBody
 					className="msg-body msg-body-human markdown"
-					html={humanReply.html || ""}
+					content={humanReply.body}
+					entry={entry}
+					sessionId={sessionId}
 				/>
 				<EntryImages images={entry.images} />
 				<EntryVideos videos={entry.videos} />
@@ -194,9 +302,11 @@ export const MessageBubble = React.memo(function MessageBubble({
 					</div>
 				)}
 				{displayContent && (
-					<MarkdownBody
+					<ClampedBody
 						className="msg-body msg-body-user markdown"
-						html={html || ""}
+						content={displayContent}
+						entry={entry}
+						sessionId={sessionId}
 					/>
 				)}
 				<EntryImages images={entry.images} />
@@ -210,9 +320,11 @@ export const MessageBubble = React.memo(function MessageBubble({
 	// the name row was pure noise above each answer.
 	return (
 		<div className="msg msg-assistant">
-			<MarkdownBody
+			<ClampedBody
 				className="msg-body msg-body-assistant markdown"
-				html={html || ""}
+				content={displayContent}
+				entry={entry}
+				sessionId={sessionId}
 			/>
 			<EntryImages images={entry.images} />
 			<EntryVideos videos={entry.videos} />

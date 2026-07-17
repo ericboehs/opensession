@@ -345,6 +345,11 @@ export interface TranscriptEntry {
 	// Non-media composer attachments (staged to disk server-side) — rendered as
 	// downloadable chips on the user bubble; `path` feeds <base>/media?path=.
 	files?: { name: string; path: string }[];
+	// Set when `content` was clamped for the WebSocket wire (server-side, giant
+	// entries only) — `contentLength` is the full length; the full entry is at
+	// GET /api/sessions/:id/entry/:entryId.
+	contentClamped?: boolean;
+	contentLength?: number;
 }
 
 export interface DiffFile {

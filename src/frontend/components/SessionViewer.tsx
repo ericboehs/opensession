@@ -3025,6 +3025,7 @@ export function SessionViewer({
 									<TranscriptBlocks
 										entries={entries}
 										live={isBusy}
+										sessionId={session.id}
 										onFork={canForkSession ? handleFork : undefined}
 										onOpenSubagent={openSubagent}
 										// For automation-owned sessions (e.g. a GitHub PR run), the

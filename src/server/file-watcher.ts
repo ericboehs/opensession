@@ -1,6 +1,6 @@
 import { statSync } from "fs";
 import { existsSync } from "fs";
-import { parseTranscriptFrom } from "./jsonl-parser";
+import { clampEntriesForWire, parseTranscriptFrom } from "./jsonl-parser";
 import type { TranscriptEntry } from "./types";
 
 interface WatchState {
@@ -75,7 +75,7 @@ function pollFile(state: WatchState) {
   const msg = JSON.stringify({
     type: "transcript_append",
     ...(state.sessionId ? { sessionId: state.sessionId } : {}),
-    entries,
+    entries: clampEntriesForWire(entries),
   });
   for (const ws of state.viewers) {
     try {
@@ -97,7 +97,7 @@ function sendTranscriptAppend(
       JSON.stringify({
         type: "transcript_append",
         ...(sessionId ? { sessionId } : {}),
-        entries,
+        entries: clampEntriesForWire(entries),
       })
     );
   } catch {

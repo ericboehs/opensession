@@ -323,13 +323,23 @@ export function buildOpenaiRemoteSeedUpload(
  * returns a provider apiKey override and no seeding. Returns {error} (never
  * throws) so the runner can surface a clean error event.
  */
+/** opencode's openai provider defaults `headerTimeout` to 10s (1.17.15 dist:
+ *  `var Ry=1e4`), which gpt-5.x reasoning turns on big contexts routinely
+ *  exceed before the first response byte — every such call then burns a 10s
+ *  abort + retry and re-pays the prompt (14 retries in one 11-minute turn,
+ *  2026-07-17). 60s lets slow time-to-first-byte responses through while
+ *  keeping genuine wedges bounded; opencode still retries on expiry. */
+const OPENAI_HEADER_TIMEOUT_MS = 60_000;
+
 export function bindOpenaiAccount(account: CodexAccount): OpenaiAccountBinding | { error: string } {
   if (account.kind === "api_key") {
     return {
       account,
       mechanism: "api-key",
       extraEnv: {},
-      providerOverride: { openai: { options: { apiKey: account.value } } },
+      providerOverride: {
+        openai: { options: { apiKey: account.value, headerTimeout: OPENAI_HEADER_TIMEOUT_MS } },
+      },
     };
   }
 
@@ -394,5 +404,12 @@ export function bindOpenaiAccount(account: CodexAccount): OpenaiAccountBinding |
   writeFileSync(outPath, JSON.stringify(seeded));
   chmodSync(outPath, 0o600);
 
-  return { account, mechanism, extraEnv: { XDG_DATA_HOME: dataHome } };
+  return {
+    account,
+    mechanism,
+    extraEnv: { XDG_DATA_HOME: dataHome },
+    // Native OAuth needs no options for auth, but the headerTimeout raise
+    // (constant above) must ride the provider config for oauth accounts too.
+    providerOverride: { openai: { options: { headerTimeout: OPENAI_HEADER_TIMEOUT_MS } } },
+  };
 }

@@ -16,7 +16,7 @@ import { buildForkHandoffNote } from "./fork-handoff";
 import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
-import { parseTranscript, parseTranscriptTail } from "./jsonl-parser";
+import { clampEntriesForWire, parseTranscript, parseTranscriptTail } from "./jsonl-parser";
 import { dialPreset, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
 import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { wrapContext } from "./prompt-context";
@@ -109,7 +109,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					JSON.stringify({
 						type: "transcript_init",
 						sessionId,
-						entries,
+						entries: clampEntriesForWire(entries),
 						truncated,
 					}),
 				);
@@ -197,7 +197,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					JSON.stringify({
 						type: "transcript_init",
 						sessionId: msg.sessionId,
-						entries,
+						entries: clampEntriesForWire(entries),
 						truncated: false,
 					}),
 				);

@@ -941,7 +941,16 @@ export function buildOpencodeInstructions(input: {
       "done or you are genuinely blocked on input only the human can give. This applies " +
       "especially right after the user interrupts or redirects you mid-task: treat the new " +
       "message as a course correction, acknowledge it briefly if useful, and keep working " +
-      "to completion in the same turn."
+      "to completion in the same turn.\n" +
+      // The inverse failure (observed 2026-07-17, bks-019f6fdb on gpt-5.6-sol):
+      // the model did the whole job, opened the PR — and ended the turn on the
+      // bare tool call with zero closing text, so the session UI shows a
+      // dangling tool call as the "answer" and the human can't tell it's done.
+      "Equally, never end your turn on a bare tool call: after your last action, always " +
+      "write a short closing message stating the outcome — what you did, what changed, and " +
+      "any links that matter (e.g. the PR URL you just created). The final text of your " +
+      "turn is what the session UI presents as your answer; mid-turn narration does not " +
+      "replace it."
   );
   if (input.isAsk) {
     parts.push(

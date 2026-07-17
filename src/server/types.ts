@@ -403,6 +403,11 @@ export interface TranscriptEntry {
   // Non-media composer attachments (staged to disk server-side) parsed back out
   // of the uploads note — rendered as downloadable chips on the user bubble.
   files?: { name: string; path: string }[];
+  // Set when `content` was clamped for the UI WebSocket (see
+  // clampEntriesForWire in jsonl-parser.ts) — `contentLength` is the full
+  // length; the UI fetches the whole entry on demand.
+  contentClamped?: boolean;
+  contentLength?: number;
 }
 
 export interface FileWatcherState {

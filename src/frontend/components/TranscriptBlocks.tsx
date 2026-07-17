@@ -24,6 +24,8 @@ interface Props {
 	onOpenSubagent?: (agentId: string, label: string) => void;
 	/** Session owner (startedBy) — credited on un-attributed user turns. */
 	owner?: string;
+	/** Lets wire-clamped entries' "Show full message" fetch the full content. */
+	sessionId?: string;
 }
 
 /**
@@ -46,6 +48,7 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 	onFork,
 	onOpenSubagent,
 	owner,
+	sessionId,
 }: Props) {
 	// Build tool_use → tool_result map
 	const toolResults = new Map<string, TranscriptEntry>();
@@ -111,6 +114,7 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 						toolResults={toolResults}
 						live={Boolean(live) && i === blocks.length - 1}
 						onOpenSubagent={onOpenSubagent}
+						sessionId={sessionId}
 					/>
 				) : block.kind === "footer" ? (
 					<TurnFooter
@@ -125,6 +129,7 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 						key={block.entry.id}
 						entry={block.entry}
 						owner={owner}
+						sessionId={sessionId}
 					/>
 				),
 			)}

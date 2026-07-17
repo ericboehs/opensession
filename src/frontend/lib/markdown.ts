@@ -114,11 +114,39 @@ md.use({
   ],
 });
 
+// Rendered-HTML cache: every session open/switch re-renders all visible
+// bubbles, and marked is the dominant cost of showing a transcript
+// (superlinear on input size). Keyed by the source string, LRU-bounded, and
+// only for small-to-medium inputs so a day of big transcripts can't pin
+// unbounded HTML in memory (callers clamp giant contents before rendering).
+const mdCache = new Map<string, string>();
+const MD_CACHE_MAX = 500;
+const MD_CACHE_INPUT_MAX = 32 * 1024;
+
 /** Render session markdown to HTML (links open in a new tab, images inline). */
 export function renderMarkdown(src: string): string {
-  try {
-    return md.parse(src) as string;
-  } catch {
-    return src;
+  const cacheable = src.length <= MD_CACHE_INPUT_MAX;
+  if (cacheable) {
+    const hit = mdCache.get(src);
+    if (hit !== undefined) {
+      // Refresh LRU position
+      mdCache.delete(src);
+      mdCache.set(src, hit);
+      return hit;
+    }
   }
+  let out: string;
+  try {
+    out = md.parse(src) as string;
+  } catch {
+    out = src;
+  }
+  if (cacheable) {
+    mdCache.set(src, out);
+    if (mdCache.size > MD_CACHE_MAX) {
+      const oldest = mdCache.keys().next().value;
+      if (oldest !== undefined) mdCache.delete(oldest);
+    }
+  }
+  return out;
 }

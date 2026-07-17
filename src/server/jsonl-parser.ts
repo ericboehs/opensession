@@ -768,6 +768,37 @@ export function parseTranscriptTail(
   }
 }
 
+/**
+ * Clamp giant entry contents before they go over the UI WebSocket. Some
+ * entries carry megabyte contents (automation prompts embedding a full PR
+ * diff, huge pasted logs) — shipped whole they make transcript_init/append
+ * payloads cost seconds of transfer + JSON.parse, and the client's markdown
+ * renderer (marked, superlinear) minutes. The UI shows the clamped head with
+ * a "Show full message" affordance that fetches the real thing via
+ * GET /api/sessions/:id/entry/:entryId. Server-side consumers (search,
+ * engineUserTexts, fork/spin-off) keep reading the unclamped parse — this is
+ * a wire concern only, applied at the serialization sites.
+ */
+export const WIRE_CLAMP_BYTES = 32 * 1024;
+function clampEntryForWire(e: TranscriptEntry): TranscriptEntry {
+  if ((e.content?.length ?? 0) <= WIRE_CLAMP_BYTES) return e;
+  return {
+    ...e,
+    content: e.content.slice(0, WIRE_CLAMP_BYTES),
+    contentClamped: true,
+    contentLength: e.content.length,
+  };
+}
+
+/** Wire-clamp a batch; returns the same array when nothing needed clamping. */
+export function clampEntriesForWire(
+  entries: TranscriptEntry[]
+): TranscriptEntry[] {
+  if (!entries.some((e) => (e.content?.length ?? 0) > WIRE_CLAMP_BYTES))
+    return entries;
+  return entries.map(clampEntryForWire);
+}
+
 function safeStringify(v: unknown): string {
   try {
     return JSON.stringify(v);

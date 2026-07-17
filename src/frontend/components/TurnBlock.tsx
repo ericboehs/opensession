@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import {
   ToolCallBlock,
@@ -7,7 +7,7 @@ import {
   toolDisplayName,
   toolSummary,
 } from "./ToolCallBlock";
-import { renderMarkdown } from "../lib/markdown";
+import { ClampedBody } from "./MessageBubble";
 import { IconChevronDown } from "./icons";
 import { cn } from "../ui/cn";
 import {
@@ -23,6 +23,8 @@ interface Props {
   toolResults: Map<string, TranscriptEntry>;
   live: boolean; // this is the active block of a running stream
   onOpenSubagent?: (agentId: string, label: string) => void;
+  /** Lets wire-clamped intermediate notes fetch their full content. */
+  sessionId?: string;
 }
 
 /**
@@ -43,6 +45,7 @@ export const TurnBlock = React.memo(function TurnBlock({
   toolResults,
   live,
   onOpenSubagent,
+  sessionId,
 }: Props) {
   const tools = items.filter((it) => it.type === "tool_use");
   const messages = items.filter((it) => it.type === "assistant");
@@ -171,7 +174,11 @@ export const TurnBlock = React.memo(function TurnBlock({
         <div className="mt-0.5">
           {sections.map((sec) =>
             sec.kind === "msg" ? (
-              <TurnMessage key={sec.entry.id} entry={sec.entry} />
+              <TurnMessage
+                key={sec.entry.id}
+                entry={sec.entry}
+                sessionId={sessionId}
+              />
             ) : (
               <div key={sec.items[0].id} className="relative pl-1">
                 {/* Timeline rail drawn behind the (opaque) tool icons */}
@@ -206,13 +213,20 @@ export const TurnBlock = React.memo(function TurnBlock({
 }, turnBlockPropsEqual);
 
 /** An intermediate assistant note inside the fold — body only, no label. */
-function TurnMessage({ entry }: { entry: TranscriptEntry }) {
-  const html = useMemo(() => renderMarkdown(entry.content), [entry.content]);
+function TurnMessage({
+  entry,
+  sessionId,
+}: {
+  entry: TranscriptEntry;
+  sessionId?: string;
+}) {
   return (
     <div className="my-2 px-1">
-      <div
+      <ClampedBody
         className="msg-body msg-body-assistant markdown"
-        dangerouslySetInnerHTML={{ __html: html || "" }}
+        content={entry.content}
+        entry={entry}
+        sessionId={sessionId}
       />
       {entry.images && entry.images.length > 0 && (
         <div className="msg-images">
@@ -236,6 +250,7 @@ function TurnMessage({ entry }: { entry: TranscriptEntry }) {
 function turnBlockPropsEqual(prev: Props, next: Props): boolean {
   if (prev.live !== next.live) return false;
   if (prev.onOpenSubagent !== next.onOpenSubagent) return false;
+  if (prev.sessionId !== next.sessionId) return false;
   if (prev.items.length !== next.items.length) return false;
   for (let i = 0; i < next.items.length; i++) {
     if (prev.items[i] !== next.items[i]) return false;

@@ -103,6 +103,27 @@ export async function handleSessionsRoutes(
 		return Response.json(mergedSessionTranscript(session));
 	}
 
+	// One transcript entry, unclamped. The WS wire clamps giant entry contents
+	// (clampEntriesForWire) — the bubble's "Show full message" fetches the real
+	// thing here.
+	{
+		const m = path.match(
+			/^\/backstage\/api\/sessions\/(.+)\/entry\/([^/]+)$/,
+		);
+		if (m && req.method === "GET") {
+			const session = findSession(decodeURIComponent(m[1]));
+			if (!session)
+				return Response.json({ error: "Session not found" }, { status: 404 });
+			const entryId = decodeURIComponent(m[2]);
+			const entry = mergedSessionTranscript(session).find(
+				(e) => e.id === entryId,
+			);
+			if (!entry)
+				return Response.json({ error: "Entry not found" }, { status: 404 });
+			return Response.json({ content: entry.content });
+		}
+	}
+
 	// Workspace overview: the opening prompt + all media (screenshots,
 	// videos) across the workspace's member chats — feeds the floating
 	// preview panel in the session viewer. Images come back as
