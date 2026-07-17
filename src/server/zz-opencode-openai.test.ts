@@ -45,7 +45,9 @@ describe("bindOpenaiAccount", () => {
     if (!isBinding(bound)) return;
     expect(bound.mechanism).toBe("api-key");
     expect(bound.extraEnv).toEqual({});
-    expect(bound.providerOverride).toEqual({ openai: { options: { apiKey: "sk-test-abc123" } } });
+    expect(bound.providerOverride).toEqual({
+      openai: { options: { apiKey: "sk-test-abc123", headerTimeout: 60000 } },
+    });
   });
 
   test("home account with missing auth.json → fail-fast error (never hangs)", () => {
