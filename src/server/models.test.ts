@@ -78,7 +78,7 @@ describe("toOpencodeModel", () => {
   it("maps openai/codex tiers onto the opencode engine unconditionally", () => {
     expect(toOpencodeModel("gpt-5.5")).toBe("opencode/openai/gpt-5.5");
     expect(toOpencodeModel("gpt-5.4-mini")).toBe("opencode/openai/gpt-5.4-mini");
-    expect(toOpencodeModel(BEST_AVAILABLE_CODEX_MODEL)).toBe("opencode/openai/gpt-5.5");
+    expect(toOpencodeModel(BEST_AVAILABLE_CODEX_MODEL)).toBe("opencode/openai/gpt-5.6-sol");
   });
   it("passes opencode ids through untouched", () => {
     expect(toOpencodeModel("opencode/anthropic/claude-sonnet-5")).toBe(
@@ -250,10 +250,11 @@ describe("fallback graph (nextFallbackModel)", () => {
 
 describe("resolveConcreteModel", () => {
   it("resolves best available codex to the strongest usable codex model", () => {
-    expect(resolveConcreteModel(BEST_AVAILABLE_CODEX_MODEL)).toBe("gpt-5.5");
+    expect(resolveConcreteModel(BEST_AVAILABLE_CODEX_MODEL)).toBe("gpt-5.6-sol");
   });
 
   it("skips codex models marked exhausted", () => {
+    markCodexModelExhausted("gpt-5.6-sol");
     markCodexModelExhausted("gpt-5.5");
 
     expect(resolveConcreteModel(BEST_AVAILABLE_CODEX_MODEL)).toBe("gpt-5.4");

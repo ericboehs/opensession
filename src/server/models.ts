@@ -87,10 +87,10 @@ export const KNOWN_MODELS: ModelInfo[] = [
   { id: "claude-sonnet-4-6", provider: "claude", label: "Claude Sonnet 4.6", aliases: ["sonnet4.6"] },
   { id: "claude-haiku-4-5", provider: "claude", label: "Claude Haiku 4.5", aliases: ["haiku"] },
   { id: "codex-best-available", provider: "codex", label: "Best available (Codex)", aliases: ["best", "best-available", "best-codex"] },
-  { id: "gpt-5.6-sol", provider: "codex", label: "GPT-5.6 Sol", aliases: ["sol", "gpt5.6"] },
+  { id: "gpt-5.6-sol", provider: "codex", label: "GPT-5.6 Sol", aliases: ["sol", "gpt5.6", "codex", "gpt"] },
   { id: "gpt-5.6-terra", provider: "codex", label: "GPT-5.6 Terra", aliases: ["terra"] },
   { id: "gpt-5.6-luna", provider: "codex", label: "GPT-5.6 Luna", aliases: ["luna"] },
-  { id: "gpt-5.5", provider: "codex", label: "GPT-5.5 (Codex)", aliases: ["codex", "gpt", "gpt5.5"] },
+  { id: "gpt-5.5", provider: "codex", label: "GPT-5.5 (Codex)", aliases: ["gpt5.5"] },
   { id: "gpt-5.4", provider: "codex", label: "GPT-5.4 (Codex)", aliases: ["gpt5.4"] },
   { id: "gpt-5.4-mini", provider: "codex", label: "GPT-5.4 mini (Codex)", aliases: ["mini"] },
   { id: "gpt-5.3-codex-spark", provider: "codex", label: "GPT-5.3 Codex Spark", aliases: ["spark"] },
@@ -292,12 +292,13 @@ export function refreshOpencodePickerModels(): void {
 }
 refreshOpencodePickerModels();
 
-/** Per-provider defaults: claude-fable-5 for Anthropic, gpt-5.5 for OpenAI. */
+/** Per-provider defaults: claude-fable-5 for Anthropic, gpt-5.6-sol for OpenAI. */
 export const DEFAULT_CLAUDE_MODEL = "claude-fable-5";
-export const DEFAULT_CODEX_MODEL = "gpt-5.5";
+export const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
 export const BEST_AVAILABLE_CODEX_MODEL = "codex-best-available";
 
 const CODEX_MODEL_ORDER = [
+  "gpt-5.6-sol",
   "gpt-5.5",
   "gpt-5.4",
   "gpt-5.4-mini",
