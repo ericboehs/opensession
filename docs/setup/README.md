@@ -84,5 +84,5 @@ for the full rules the code enforces.
 | [plain.md](plain.md) | Plain support tickets, the triage automation |
 | [integrations-misc.md](integrations-misc.md) | Stripe, WorkOS, Grafana/Sentry/Tinybird, web push, voice |
 | [engines.md](engines.md) | the OpenCode engine, accounts, model routing |
-| [../self-hosting-sandboxes.md](../self-hosting-sandboxes.md) | Docker/Daytona/E2B sandboxes |
+| [../self-hosting-sandboxes.md](../self-hosting-sandboxes.md) | Docker/Daytona/E2B/Box/Modal/AWS Lambda MicroVM sandboxes |
 | [../portability-audit.md](../portability-audit.md) | what's still hardcoded (Tella-specific) |

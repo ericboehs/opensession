@@ -619,7 +619,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				);
 				// Sandbox opt-in (docs/sandboxes-plan.md): boolean true = the
 				// config's default provider (legacy toggle behavior); a string
-				// names an explicit provider ("docker" | "daytona" | "e2b" | "box"),
+				// names an explicit provider (including "modal" / "lambda-microvm"),
 				// validated against the current config. Forks never sandbox —
 				// they share/fork the source session's engine state and cwd.
 				const sandboxResolved = resolveRequestedSandbox(

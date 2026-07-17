@@ -177,7 +177,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const showSandboxPicker =
     !!sandboxStatus?.enabled && !sandboxStatus.killSwitch && sandboxChoices.length > 0;
   const sandboxLabel = (id: string) =>
-    id === "" ? "Host" : id === "docker" ? "Docker" : id === "daytona" ? "Daytona" : id === "e2b" ? "E2B" : id === "box" ? "Box" : id;
+    id === "" ? "Host" : id === "docker" ? "Docker" : id === "daytona" ? "Daytona" : id === "e2b" ? "E2B" : id === "box" ? "Box" : id === "modal" ? "Modal" : id === "lambda-microvm" ? "AWS Lambda MicroVM" : id;
 
   // Model × environment capability check, driven entirely by the server's
   // matrix (status.modelFamilies — the same source resolveRequestedSandbox
@@ -194,9 +194,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   );
   const sandboxModelWarning = (() => {
     if (!sandboxProvider || !modelFamily) return null;
-    if (modelFamily.environments[sandboxProvider as "docker" | "daytona" | "e2b" | "box"]) return null;
+    if (modelFamily.environments[sandboxProvider as "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm"]) return null;
     const supported = (Object.keys(modelFamily.environments) as Array<
-      "local" | "docker" | "daytona" | "e2b" | "box"
+      "local" | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm"
     >)
       .filter(
         (e) =>
@@ -223,7 +223,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   // the server pool's TTL, and session create then ADOPTS the warmed sandbox
   // (30-45s of runner bootstrap already done). Strictly fire-and-forget: a
   // failure must never surface or block typing.
-  const isRemoteSandbox = sandboxProvider === "daytona" || sandboxProvider === "e2b" || sandboxProvider === "box";
+  const isRemoteSandbox = sandboxProvider === "daytona" || sandboxProvider === "e2b" || sandboxProvider === "box" || sandboxProvider === "modal" || sandboxProvider === "lambda-microvm";
   const [sandboxWarmed, setSandboxWarmed] = useState(false);
   const lastPrewarmAtRef = useRef(0);
   useEffect(() => {

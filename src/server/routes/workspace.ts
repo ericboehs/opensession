@@ -245,7 +245,7 @@ export async function handleWorkspaceRoutes(
 			user?: string;
 			mode?: "share" | "stack" | "ask";
 			/** Sandbox opt-in: true = config default provider, or an explicit
-			 *  provider id ("docker" | "daytona" | "e2b" | "box" — must be configured).
+			 *  provider id (including "modal" / "lambda-microvm" — must be configured).
 			 *  Recorded on the session file; the first prompt launches it. */
 			sandbox?: boolean | string;
 		};

@@ -170,6 +170,8 @@ export function redactUrl(s: string): string {
 
 export interface RemoteSandboxState {
   sandboxId: string;
+  /** Crash-safe idempotency token while a provider create call is in flight. */
+  pendingClientToken?: string;
   provider: SandboxProviderId;
   sessionId: string;
   cwd: string;
@@ -1170,6 +1172,9 @@ export async function resumeRemoteSandboxRun(
   const parts = remoteParts.get(sandbox);
   if (!parts) return null;
   const { driver, launcher } = parts;
+  // Remote providers may preserve processes while suspended. Wake the sandbox
+  // before checking meta/aliveness so restart recovery never duplicates a run.
+  await driver.ensureStarted();
 
   const oldDir = launcher.newRunDir(run.runKey);
   const oldSpec = readJsonSafe<RunHostSpec>(`${oldDir}/${HOST_SPEC_NAME}`);
@@ -1189,7 +1194,7 @@ export async function resumeRemoteSandboxRun(
         yield terminal;
       })();
     }
-    if ((await sandbox.status()) === "running" && (await launcher.alive(oldDir, null))) {
+    if (await launcher.alive(oldDir, null)) {
       if (oldSpec.rpcToken) {
         registerRunToken(oldSpec.rpcToken, { sessionId: oldSpec.bksSessionId, user: oldSpec.user });
       }

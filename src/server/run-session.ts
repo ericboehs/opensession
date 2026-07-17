@@ -63,6 +63,7 @@ import {
 	workspaceExecFor,
 } from "./sandbox";
 import {
+	isRemoteSandboxProvider,
 	isRunnableSandboxProvider,
 	sandboxesEnabled,
 	sandboxProviderConfigured,
@@ -919,7 +920,7 @@ export async function maybeLaunchSandboxedRun(
 		mcpServers?: string[];
 		isAutomationSession: boolean;
 	},
-): Promise<AsyncGenerator<StreamEvent> | null> {
+): Promise<(AsyncGenerator<StreamEvent> & { freshEngine?: boolean }) | null> {
 	const sbProvider = session.sandbox?.provider;
 	if (!isRunnableSandboxProvider(sbProvider)) return null; // "local"/absent/unknown = host
 	if (!sandboxesEnabled()) return null; // kill-switch file — instant revert
@@ -951,6 +952,11 @@ export async function maybeLaunchSandboxedRun(
 				.map((r) => r.dir)
 				.filter(Boolean),
 		});
+		// Remote engine databases live inside the sandbox. A replacement VM cannot
+		// resume the old engine id, even when its git workspace was safely pushed.
+		const remoteSandboxReplaced =
+			isRemoteSandboxProvider(sbProvider) &&
+			session.sandbox?.sandboxId !== sandbox.id;
 		if (
 			session.source === "backstage" &&
 			(session.sandbox?.sandboxId !== sandbox.id ||
@@ -981,7 +987,9 @@ export async function maybeLaunchSandboxedRun(
 			hostId: `rh-${randomUUIDv7()}`,
 			bksSessionId: session.id,
 			prompt: opts.prompt,
-			engineSessionId: opts.engineSessionId || undefined,
+			engineSessionId: remoteSandboxReplaced
+				? undefined
+				: opts.engineSessionId || undefined,
 			cwd: sandbox.cwd,
 			mode: session.mode,
 			model: session.model,
@@ -1015,8 +1023,17 @@ export async function maybeLaunchSandboxedRun(
 		const handle = sandbox.launchRunEager
 			? await sandbox.launchRunEager(spec, runCallbacks)
 			: sandbox.launchRun(spec, runCallbacks);
+		if (remoteSandboxReplaced && session.source === "backstage") {
+			touchBackstageSession(session.id, {
+				claudeSessionId: undefined,
+				codexThreadId: undefined,
+				opencodeSessionId: undefined,
+			});
+		}
 		console.log(`[sandbox] ${session.id}: running in ${sandbox.id} (${sandbox.cwd})`);
-		return handle.events();
+		return Object.assign(handle.events(), {
+			freshEngine: remoteSandboxReplaced || undefined,
+		});
 	} catch (e: any) {
 		// The token was registered mid-try; the failed run will never consume it.
 		unregisterRunToken(rpcToken);
@@ -1382,7 +1399,7 @@ async function runSessionPromptInner(
 		return;
 	}
 
-	let finalSessionId = engineSessionId || "";
+	let finalSessionId = sandboxRun?.freshEngine ? "" : engineSessionId || "";
 	let endedWithError = false;
 	// Terminal failure this run died on (usage limits with no account left,
 	// credit/API errors) — recorded on the session after the loop so the sidebar

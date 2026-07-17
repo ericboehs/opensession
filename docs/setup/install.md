@@ -67,7 +67,7 @@ what the code actually reads, by feature:
 | Stripe | `STRIPE_WEBHOOK_SECRET` | [integrations-misc.md](integrations-misc.md#stripe) |
 | Grafana | `GRAFANA_URL`, `GRAFANA_SERVICE_ACCOUNT_TOKEN`, `LOKI_DATASOURCE_UID`, `SLACK_EXPORT_FAILURE_CHANNEL`, `SLACK_UPLOAD_FAILURE_CHANNEL` | [integrations-misc.md](integrations-misc.md#grafana-poller) |
 | Voice | `OPENAI_API_KEY`, `GROQ_API_KEY`, `WHISPER_CLI`, `WHISPER_MODEL` | [integrations-misc.md](integrations-misc.md#voice--transcription) |
-| Sandboxes | `E2B_API_KEY`, `DAYTONA_API_KEY`, `OPENSESSION_SANDBOX_CONFIG` | [self-hosting-sandboxes](../self-hosting-sandboxes.md) |
+| Sandboxes | `E2B_API_KEY`, `DAYTONA_API_KEY`, `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, `OPENSESSION_SANDBOX_CONFIG` | [self-hosting-sandboxes](../self-hosting-sandboxes.md) |
 | AWS runs | `AGENT_AWS_REGION` | [integrations-misc.md](integrations-misc.md#aws-creds-for-runs-agent_aws_region) |
 | Previews | `PREVIEW_HOST`, `TELLA_LOCAL_ENSURE_UP` | Caddy-fronted live previews (`src/server/preview.ts`) |
 

@@ -17,6 +17,7 @@ import { join } from "path";
 import {
   SANDBOX_MODEL_FAMILIES,
   resolveRequestedSandbox,
+  sandboxConfig,
   sandboxCapabilityStatus,
   sandboxModelFamilyFor,
   sandboxModelSupport,
@@ -28,6 +29,9 @@ let scratch: string;
 let prevEnvConfig: string | undefined;
 let prevDaytonaKey: string | undefined;
 let prevE2bKey: string | undefined;
+let prevModalTokenId: string | undefined;
+let prevModalTokenSecret: string | undefined;
+let prevModalConfigPath: string | undefined;
 const cfgPath = () => join(scratch, "sandbox.json");
 
 beforeAll(() => {
@@ -35,9 +39,15 @@ beforeAll(() => {
   prevEnvConfig = process.env.BACKSTAGE_SANDBOX_CONFIG;
   prevDaytonaKey = process.env.DAYTONA_API_KEY;
   prevE2bKey = process.env.E2B_API_KEY;
+  prevModalTokenId = process.env.MODAL_TOKEN_ID;
+  prevModalTokenSecret = process.env.MODAL_TOKEN_SECRET;
+  prevModalConfigPath = process.env.MODAL_CONFIG_PATH;
   process.env.BACKSTAGE_SANDBOX_CONFIG = cfgPath();
   delete process.env.DAYTONA_API_KEY;
   delete process.env.E2B_API_KEY;
+  delete process.env.MODAL_TOKEN_ID;
+  delete process.env.MODAL_TOKEN_SECRET;
+  process.env.MODAL_CONFIG_PATH = join(scratch, "missing-modal.toml");
 });
 
 afterEach(() => {
@@ -51,6 +61,12 @@ afterAll(() => {
   else process.env.BACKSTAGE_SANDBOX_CONFIG = prevEnvConfig;
   if (prevDaytonaKey !== undefined) process.env.DAYTONA_API_KEY = prevDaytonaKey;
   if (prevE2bKey !== undefined) process.env.E2B_API_KEY = prevE2bKey;
+  if (prevModalTokenId !== undefined) process.env.MODAL_TOKEN_ID = prevModalTokenId;
+  else delete process.env.MODAL_TOKEN_ID;
+  if (prevModalTokenSecret !== undefined) process.env.MODAL_TOKEN_SECRET = prevModalTokenSecret;
+  else delete process.env.MODAL_TOKEN_SECRET;
+  if (prevModalConfigPath !== undefined) process.env.MODAL_CONFIG_PATH = prevModalConfigPath;
+  else delete process.env.MODAL_CONFIG_PATH;
   rmSync(scratch, { recursive: true, force: true });
 });
 
@@ -61,7 +77,14 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
     const s = sandboxCapabilityStatus();
     expect(s.enabled).toBe(false);
     expect(s.defaultProvider).toBe("local");
-    expect(s.providers.map((p) => p.id)).toEqual(["docker", "daytona", "e2b", "box"]);
+    expect(s.providers.map((p) => p.id)).toEqual([
+      "docker",
+      "daytona",
+      "e2b",
+      "box",
+      "modal",
+      "lambda-microvm",
+    ]);
     expect(s.providers.every((p) => !p.configured)).toBe(true);
     expect(s.killSwitch).toBe(!sandboxesEnabled());
   });
@@ -97,6 +120,50 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
     const d = sandboxCapabilityStatus().providers.find((p) => p.id === "daytona")!;
     expect(d.configured).toBe(true);
     expect(d.note).toBeUndefined();
+  });
+
+  test("modal requires both token credentials", () => {
+    write({ provider: "modal", modal: { tokenId: "ak-one-sided" } });
+    expect(sandboxProviderConfigured("modal")).toBe(false);
+    write({
+      provider: "modal",
+      modal: { tokenId: "ak-test", tokenSecret: "as-test" },
+      callbackBaseUrl: "wss://michael.example.ts.net",
+    });
+    const modal = sandboxCapabilityStatus().providers.find((p) => p.id === "modal")!;
+    expect(modal.configured).toBe(true);
+    expect(modal.note).toBeUndefined();
+  });
+
+  test("lambda microvm requires an image identifier", () => {
+    write({ provider: "lambda-microvm", awsLambdaMicrovm: {} });
+    expect(sandboxProviderConfigured("lambda-microvm")).toBe(false);
+    write({
+      provider: "lambda-microvm",
+      awsLambdaMicrovm: { imageIdentifier: "arn:aws:lambda:us-east-1:123:microvm-image/test" },
+      callbackBaseUrl: "wss://michael.example.ts.net",
+    });
+    expect(sandboxProviderConfigured("lambda-microvm")).toBe(true);
+    expect(
+      sandboxCapabilityStatus().providers.find((p) => p.id === "lambda-microvm")?.note,
+    ).toBeUndefined();
+  });
+
+  test("lambda microvm lifecycle values are bounded", () => {
+    write({
+      provider: "lambda-microvm",
+      awsLambdaMicrovm: {
+        imageIdentifier: "arn:aws:lambda:us-east-1:123:microvm-image:test",
+        maximumDurationSeconds: 99_999,
+        idleSuspendSeconds: 45,
+        suspendedDurationSeconds: 90.8,
+      },
+    });
+    expect(sandboxConfig().awsLambdaMicrovm).toMatchObject({
+      maximumDurationSeconds: 28_800,
+      idleSuspendSeconds: undefined,
+      suspendedDurationSeconds: 90,
+    });
   });
 
   test("an explicit callbackBaseUrl also counts as dial-back configured", () => {
@@ -147,6 +214,8 @@ describe("model-family × environment capability matrix", () => {
     expect(sandboxModelSupport("gpt-5.5", null)).toEqual({ ok: true });
     expect(sandboxModelSupport("gpt-5.5", "local")).toEqual({ ok: true });
     expect(sandboxModelSupport("claude-fable-5", "daytona")).toEqual({ ok: true });
+    expect(sandboxModelSupport("claude-fable-5", "modal")).toEqual({ ok: true });
+    expect(sandboxModelSupport("claude-fable-5", "lambda-microvm")).toEqual({ ok: true });
     // opencode/openai runs everywhere: docker mounts the codex material,
     // remote launches upload the rotation-proof seeds (bootstrap.ts).
     expect(sandboxModelSupport("opencode/openai/gpt-5.4-mini", "daytona")).toEqual({ ok: true });
@@ -187,9 +256,19 @@ describe("resolveRequestedSandbox (create-path validation)", () => {
   });
 
   test("explicit configured provider is accepted", () => {
-    write({ provider: "docker", daytona: { apiKey: "dtn_x" } });
+    write({
+      provider: "docker",
+      daytona: { apiKey: "dtn_x" },
+      modal: { tokenId: "ak-test", tokenSecret: "as-test" },
+      awsLambdaMicrovm: { imageIdentifier: "arn:aws:lambda:us-east-1:123:microvm-image/test" },
+    });
     expect(resolveRequestedSandbox("docker")).toEqual({ ok: true, provider: "docker" });
     expect(resolveRequestedSandbox("daytona")).toEqual({ ok: true, provider: "daytona" });
+    expect(resolveRequestedSandbox("modal")).toEqual({ ok: true, provider: "modal" });
+    expect(resolveRequestedSandbox("lambda-microvm")).toEqual({
+      ok: true,
+      provider: "lambda-microvm",
+    });
     expect(resolveRequestedSandbox("DOCKER")).toEqual({ ok: true, provider: "docker" });
   });
 
@@ -211,7 +290,7 @@ describe("resolveRequestedSandbox (create-path validation)", () => {
 
   test("unknown provider string fails; 'local' means host", () => {
     write({ provider: "docker" });
-    const r = resolveRequestedSandbox("modal");
+    const r = resolveRequestedSandbox("fly");
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toContain("Unknown sandbox provider");
     expect(resolveRequestedSandbox("local")).toEqual({ ok: true, provider: null });

@@ -5,7 +5,7 @@
  */
 
 import { getSandboxProvider, type Sandbox } from "./sandbox";
-import { sandboxesEnabled, sandboxProviderConfigured } from "./sandbox/config";
+import { isRemoteSandboxProvider, sandboxesEnabled, sandboxProviderConfigured } from "./sandbox/config";
 import { dockerContainerStatus } from "./sandbox/docker";
 import { touchBackstageSession } from "./session-cache";
 import type { UnifiedSession } from "./types";
@@ -53,8 +53,18 @@ export function destroySessionSandbox(
  */
 export async function activeSandboxFor(session: UnifiedSession): Promise<Sandbox | null> {
 	const sb = session.sandbox;
-	if (sb?.provider !== "docker" || !sb.sandboxId) return null;
+	if (!sb?.provider || !sb.sandboxId) return null;
 	if (!sandboxesEnabled()) return null;
+	if (isRemoteSandboxProvider(sb.provider)) {
+		if (!sandboxProviderConfigured(sb.provider)) return null;
+		try {
+			const sandbox = await getSandboxProvider(sb.provider).get(sb.sandboxId);
+			return sandbox && (await sandbox.status()) === "running" ? sandbox : null;
+		} catch {
+			return null;
+		}
+	}
+	if (sb.provider !== "docker") return null;
 	// Provider-configured, not config-default: a session may have picked
 	// docker explicitly while the config default is another provider.
 	if (!sandboxProviderConfigured("docker")) return null;

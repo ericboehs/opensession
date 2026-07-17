@@ -34,6 +34,16 @@ function configPath(): string {
 }
 const DISABLE_FILE = `${OPENSESSION_CHATS_DIR}/disable-sandboxes`;
 
+function modalConfigHasCredentials(): boolean {
+  try {
+    const path = process.env.MODAL_CONFIG_PATH || `${HOME}/.modal.toml`;
+    const text = readFileSync(path, "utf-8");
+    return /(?:^|\n)token_id\s*=/.test(text) && /(?:^|\n)token_secret\s*=/.test(text);
+  } catch {
+    return false;
+  }
+}
+
 export interface SandboxRepoOverride {
   provider?: SandboxProviderId;
   image?: string;
@@ -154,6 +164,40 @@ export interface SandboxBoxConfig {
   apiUrl?: string;
 }
 
+export interface SandboxModalConfig {
+  /** Modal token credentials. Fall back to MODAL_TOKEN_ID/MODAL_TOKEN_SECRET. */
+  tokenId?: string;
+  tokenSecret?: string;
+  /** Named profile in ~/.modal.toml (or use MODAL_PROFILE / the active profile). */
+  profile?: string;
+  /** Modal App name used to group sandboxes (default opensession-sandboxes). */
+  app?: string;
+  /** Registry image for new sandboxes (default daytonaio/sandbox:0.8.0). */
+  image?: string;
+  environment?: string;
+  endpoint?: string;
+  region?: string;
+  cloud?: string;
+  /** Modal tunnel URLs are public. Require an explicit opt-in before exposing preview ports. */
+  publicPreviews?: boolean;
+}
+
+export interface SandboxAwsLambdaMicrovmConfig {
+  /** ARN or ID of a CREATED Lambda MicroVM image containing the control daemon. */
+  imageIdentifier?: string;
+  imageVersion?: string;
+  executionRoleArn?: string;
+  region?: string;
+  ingressConnectorArn?: string;
+  egressConnectorArn?: string;
+  controlPort?: number;
+  maximumDurationSeconds?: number;
+  /** Opt-in endpoint-idle suspension. Omit for long-running agent safety. */
+  idleSuspendSeconds?: number;
+  suspendedDurationSeconds?: number;
+  logGroup?: string;
+}
+
 export interface SandboxConfig {
   provider: SandboxProviderId;
   /** Container image for the docker provider (Phase 1). */
@@ -198,6 +242,10 @@ export interface SandboxConfig {
   e2b?: SandboxE2bConfig;
   /** ascii.dev Box adapter (provider "box"). */
   box?: SandboxBoxConfig;
+  /** Modal adapter (provider "modal"). */
+  modal?: SandboxModalConfig;
+  /** AWS Lambda MicroVM adapter (provider "lambda-microvm"). */
+  awsLambdaMicrovm?: SandboxAwsLambdaMicrovmConfig;
   /** Clone auth for remote-provider workspaces + runner bootstrap. */
   cloneCredential?: SandboxCloneCredential;
   /** Warm-on-typing prewarm pool (remote providers). Absent = defaults, with
@@ -213,7 +261,15 @@ export interface SandboxConfig {
   runnerSha?: string;
 }
 
-const PROVIDER_IDS = new Set<string>(["local", "docker", "daytona", "e2b", "box"]);
+const PROVIDER_IDS = new Set<string>([
+  "local",
+  "docker",
+  "daytona",
+  "e2b",
+  "box",
+  "modal",
+  "lambda-microvm",
+]);
 
 function asProviderId(v: unknown): SandboxProviderId | undefined {
   return typeof v === "string" && PROVIDER_IDS.has(v)
@@ -311,6 +367,55 @@ export function sandboxConfig(): SandboxConfig {
           raw?.box && typeof raw.box === "object"
             ? { apiKey: str(raw.box.apiKey), apiUrl: str(raw.box.apiUrl) }
             : undefined,
+        modal:
+          raw?.modal && typeof raw.modal === "object"
+            ? {
+                tokenId: str(raw.modal.tokenId),
+                tokenSecret: str(raw.modal.tokenSecret),
+                profile: str(raw.modal.profile),
+                app: str(raw.modal.app),
+                image: str(raw.modal.image),
+                environment: str(raw.modal.environment),
+                endpoint: str(raw.modal.endpoint),
+                region: str(raw.modal.region),
+                cloud: str(raw.modal.cloud),
+                publicPreviews: raw.modal.publicPreviews === true || undefined,
+              }
+            : undefined,
+        awsLambdaMicrovm:
+          raw?.awsLambdaMicrovm && typeof raw.awsLambdaMicrovm === "object"
+            ? {
+                imageIdentifier: str(raw.awsLambdaMicrovm.imageIdentifier),
+                imageVersion: str(raw.awsLambdaMicrovm.imageVersion),
+                executionRoleArn: str(raw.awsLambdaMicrovm.executionRoleArn),
+                region: str(raw.awsLambdaMicrovm.region),
+                ingressConnectorArn: str(raw.awsLambdaMicrovm.ingressConnectorArn),
+                egressConnectorArn: str(raw.awsLambdaMicrovm.egressConnectorArn),
+                controlPort:
+                  typeof raw.awsLambdaMicrovm.controlPort === "number" &&
+                  Number.isInteger(raw.awsLambdaMicrovm.controlPort) &&
+                  raw.awsLambdaMicrovm.controlPort > 0 &&
+                  raw.awsLambdaMicrovm.controlPort < 65536
+                    ? raw.awsLambdaMicrovm.controlPort
+                    : undefined,
+                maximumDurationSeconds:
+                  typeof raw.awsLambdaMicrovm.maximumDurationSeconds === "number" &&
+                  raw.awsLambdaMicrovm.maximumDurationSeconds > 0
+                    ? Math.min(28_800, Math.floor(raw.awsLambdaMicrovm.maximumDurationSeconds))
+                    : undefined,
+                idleSuspendSeconds:
+                  typeof raw.awsLambdaMicrovm.idleSuspendSeconds === "number" &&
+                  raw.awsLambdaMicrovm.idleSuspendSeconds >= 60
+                    ? Math.min(28_800, Math.floor(raw.awsLambdaMicrovm.idleSuspendSeconds))
+                    : undefined,
+                suspendedDurationSeconds:
+                  typeof raw.awsLambdaMicrovm.suspendedDurationSeconds === "number" &&
+                  raw.awsLambdaMicrovm.suspendedDurationSeconds > 0
+                    ? Math.floor(raw.awsLambdaMicrovm.suspendedDurationSeconds)
+                    : undefined,
+                logGroup: str(raw.awsLambdaMicrovm.logGroup),
+              }
+            : undefined,
         cloneCredential:
           raw?.cloneCredential?.type === "https-token" ||
           raw?.cloneCredential?.type === "none"
@@ -388,7 +493,14 @@ export function sandboxTransport(): SandboxTransport {
 // ── Provider capability status (per-session provider picker) ────────────────
 
 /** The providers a session can explicitly pick ("local" = no sandbox). */
-export const RUNNABLE_SANDBOX_PROVIDERS = ["docker", "daytona", "e2b", "box"] as const;
+export const RUNNABLE_SANDBOX_PROVIDERS = [
+  "docker",
+  "daytona",
+  "e2b",
+  "box",
+  "modal",
+  "lambda-microvm",
+] as const;
 export type RunnableSandboxProviderId = (typeof RUNNABLE_SANDBOX_PROVIDERS)[number];
 
 export function isRunnableSandboxProvider(v: unknown): v is RunnableSandboxProviderId {
@@ -400,8 +512,16 @@ export function isRunnableSandboxProvider(v: unknown): v is RunnableSandboxProvi
 
 /** Remote providers have no host mounts — their workspaces are ALWAYS
  *  volume-style (cloned inside the sandbox; no host fallback for runs). */
-export function isRemoteSandboxProvider(v: unknown): v is "daytona" | "e2b" | "box" {
-  return v === "daytona" || v === "e2b" || v === "box";
+export function isRemoteSandboxProvider(
+  v: unknown,
+): v is "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" {
+  return (
+    v === "daytona" ||
+    v === "e2b" ||
+    v === "box" ||
+    v === "modal" ||
+    v === "lambda-microvm"
+  );
 }
 
 /** True when a sandbox config file exists and parses — the operator has set
@@ -455,6 +575,8 @@ const ALL_ENVIRONMENTS: Record<SandboxEnvironmentId, boolean> = {
   daytona: true,
   e2b: true,
   box: true,
+  modal: true,
+  "lambda-microvm": true,
 };
 
 export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
@@ -481,7 +603,7 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
     id: "opencode-other",
     label: "OpenCode (other providers)",
     match: { provider: "opencode" },
-    environments: { local: true, docker: false, daytona: false, e2b: false, box: false },
+    environments: { local: true, docker: false, daytona: false, e2b: false, box: false, modal: false, "lambda-microvm": false },
     hint: "its `opencode auth login` credential only exists on the host",
   },
   {
@@ -491,7 +613,7 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
     id: "codex",
     label: "GPT (Codex)",
     match: { provider: "codex" },
-    environments: { local: true, docker: false, daytona: false, e2b: false, box: false },
+    environments: { local: true, docker: false, daytona: false, e2b: false, box: false, modal: false, "lambda-microvm": false },
     hint: "Codex account state stays on the host; use an opencode/openai/* model to run GPT in a sandbox",
   },
   {
@@ -508,6 +630,8 @@ const ENVIRONMENT_LABELS: Record<SandboxEnvironmentId, string> = {
   daytona: "Daytona",
   e2b: "E2B",
   box: "Box",
+  modal: "Modal",
+  "lambda-microvm": "AWS Lambda MicroVM",
 };
 
 /** The matrix row a model (or the current default, for ""/undefined) falls
@@ -580,6 +704,16 @@ export function sandboxProviderConfigured(id: RunnableSandboxProviderId): boolea
   if (id === "docker") return true;
   if (id === "daytona") return Boolean(cfg.daytona?.apiKey || process.env.DAYTONA_API_KEY);
   if (id === "box") return Boolean(cfg.box?.apiKey || process.env.BOX_API_KEY);
+  if (id === "modal") {
+    return Boolean(
+      ((cfg.modal?.tokenId || process.env.MODAL_TOKEN_ID) &&
+        (cfg.modal?.tokenSecret || process.env.MODAL_TOKEN_SECRET)) ||
+        cfg.modal?.profile ||
+        process.env.MODAL_PROFILE ||
+        modalConfigHasCredentials(),
+    );
+  }
+  if (id === "lambda-microvm") return Boolean(cfg.awsLambdaMicrovm?.imageIdentifier);
   return Boolean(cfg.e2b?.apiKey || process.env.E2B_API_KEY);
 }
 
@@ -593,6 +727,16 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
     enabled && Boolean(cfg.e2b?.apiKey || process.env.E2B_API_KEY);
   const boxConfigured =
     enabled && Boolean(cfg.box?.apiKey || process.env.BOX_API_KEY);
+  const modalConfigured =
+    enabled &&
+    Boolean(
+      ((cfg.modal?.tokenId || process.env.MODAL_TOKEN_ID) &&
+        (cfg.modal?.tokenSecret || process.env.MODAL_TOKEN_SECRET)) ||
+        cfg.modal?.profile ||
+        process.env.MODAL_PROFILE ||
+        modalConfigHasCredentials(),
+    );
+  const lambdaMicrovmConfigured = enabled && Boolean(cfg.awsLambdaMicrovm?.imageIdentifier);
   // Remote sandboxes must dial back over WS: healthy = a public-ingress URL or
   // an explicit callbackBaseUrl is configured, and then the row shows no note.
   // Only an actually-missing dial-back URL surfaces a caveat (no static
@@ -622,6 +766,16 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
       id: "box",
       configured: boxConfigured,
       ...(boxConfigured ? remoteNote : {}),
+    },
+    {
+      id: "modal",
+      configured: modalConfigured,
+      ...(modalConfigured ? remoteNote : {}),
+    },
+    {
+      id: "lambda-microvm",
+      configured: lambdaMicrovmConfigured,
+      ...(lambdaMicrovmConfigured ? remoteNote : {}),
     },
   ];
   return {
@@ -664,7 +818,7 @@ export function resolveRequestedSandbox(
   if (!isRunnableSandboxProvider(id)) {
     return {
       ok: false,
-      error: `Unknown sandbox provider "${requested}" — valid values: docker, daytona, e2b, box (or true for the configured default).`,
+      error: `Unknown sandbox provider "${requested}" — valid values: docker, daytona, e2b, box, modal, lambda-microvm (or true for the configured default).`,
     };
   }
   if (!sandboxProviderConfigured(id)) {
@@ -675,7 +829,11 @@ export function resolveRequestedSandbox(
           ? 'set {"daytona":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or DAYTONA_API_KEY)'
           : id === "box"
             ? 'set {"box":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or BOX_API_KEY)'
-            : 'set {"e2b":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or E2B_API_KEY)';
+            : id === "modal"
+              ? 'set {"modal":{"tokenId":"…","tokenSecret":"…"}} in ~/.opensession-sandbox.json (or MODAL_TOKEN_ID/MODAL_TOKEN_SECRET)'
+              : id === "lambda-microvm"
+                ? 'set {"awsLambdaMicrovm":{"imageIdentifier":"arn:aws:lambda:…:microvm-image/…"}} in ~/.opensession-sandbox.json'
+                : 'set {"e2b":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or E2B_API_KEY)';
     return {
       ok: false,
       error: `Sandbox provider "${id}" is not configured — ${hint}.`,

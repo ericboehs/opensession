@@ -277,9 +277,9 @@ hot-apply — a real restart is needed after changing it.
   dial-back entirely — launchRun there needs a Tier 3 org or self-hosted
   Daytona.
 - `deploy/sandbox/conformance.ts` — the provider conformance matrix
-  (`bun run deploy/sandbox/conformance.ts [docker-socket|docker-ws|daytona|e2b]`):
+  (`bun run deploy/sandbox/conformance.ts [docker-socket|docker-ws|daytona|e2b|box|modal|lambda-microvm]`):
   verify.ts's checks parameterized over providers. Docker entries always run
-  and must stay green; daytona/e2b run only with credentials (else
+  and must stay green; daytona/e2b/box/modal run only with credentials (else
   `SKIPPED: no credentials`) and leave zero sandboxes behind.
 
 ## Host setup + verification

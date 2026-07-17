@@ -85,7 +85,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 ```jsonc
 {
   // Which SandboxProvider new opted-in sessions get.
-  // "local" (default) | "docker" | "daytona" | "e2b" | "box"
+  // "local" | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm"
   "provider": "docker",
 
   // ── Docker provider ────────────────────────────────────────────────
@@ -140,7 +140,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   //  "socket" (default): unix socket in a bind-mounted run dir. Docker only.
   //  "ws": the sandbox DIALS OUT to backstage's /opensession/run-ws +
   //        /opensession/rpc-ws routes (token-authed, seq/ack replay on
-  //        reconnect). Required for remote providers (daytona/e2b force it
+  //        reconnect). Required for remote providers (they force it
   //        regardless of this value); docker can dogfood it.
   "transport": "socket",
   // Base URL sandboxes dial back to for the ws transport. MUST be reachable
@@ -151,7 +151,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 
   // Isolated PUBLIC dial-back listener for remote providers — see the
   // "Public dial-back ingress" section below. When enabled with a
-  // publicBaseUrl, remote (daytona/e2b) launches dial IT back instead of
+  // publicBaseUrl, remote providers dial IT back instead of
   // callbackBaseUrl; docker always stays on callbackBaseUrl.
   "publicIngress": {
     "enabled": false,          // start the listener at boot (needs restart)
@@ -173,6 +173,30 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   "box": {
     "apiKey": "box_…",         // falls back to BOX_API_KEY
     "apiUrl": "…"              // optional (default https://ascii.dev/api/box/v1)
+  },
+  "modal": {
+    "tokenId": "ak-…",        // falls back to MODAL_TOKEN_ID
+    "tokenSecret": "as-…",   // falls back to MODAL_TOKEN_SECRET
+    "profile": "default",     // alternative: named ~/.modal.toml profile
+    "app": "opensession-sandboxes", // optional Modal App name
+    "image": "daytonaio/sandbox:0.8.0", // optional registry image
+    "environment": "main",   // optional Modal environment
+    "region": "us-east",     // optional Modal region
+    "cloud": "aws",           // optional cloud placement
+    "publicPreviews": false    // opt in to public Modal tunnel URLs
+  },
+  "awsLambdaMicrovm": {
+    "imageIdentifier": "arn:aws:lambda:us-east-1:123456789012:microvm-image:opensession",
+    "imageVersion": "1",       // optional; latest active version by default
+    "executionRoleArn": "arn:aws:iam::123456789012:role/OpenSessionMicrovm",
+    "region": "us-east-1",    // falls back to AGENT_AWS_REGION/AWS_REGION
+    "controlPort": 8080,       // must match the image daemon
+    "maximumDurationSeconds": 28800, // AWS hard max: eight hours
+    // Optional: endpoint-idle suspension. Omit for long-running agents: their
+    // outbound WebSocket does not count as endpoint activity.
+    "idleSuspendSeconds": 3600,
+    "suspendedDurationSeconds": 3600, // only used with idleSuspendSeconds
+    "logGroup": "/aws/lambda/microvms/opensession"
   },
 
   // How remote sandboxes authenticate `git clone` (they can't mount host
@@ -202,7 +226,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 
 ## Public dial-back ingress (remote providers)
 
-Remote sandboxes (Daytona/E2B) run on third-party compute and must dial back
+Remote sandboxes (Daytona/E2B/Box/Modal/Lambda MicroVMs) run on remote compute and must dial back
 to backstage's `/opensession/run-ws/<hostId>` and `/opensession/rpc-ws`
 WebSocket routes from the **public internet**. The main server binds the
 tailnet and carries the whole app — never expose it. Instead,
@@ -393,6 +417,70 @@ Box account** — treat it as untested until the conformance suite passes.
 - To certify: `bun run deploy/sandbox/conformance.ts box` with credentials,
   fix what fails, and record the certification in this doc + the plan.
 
+### Modal (implemented, live-certified 2026-07-17)
+
+Modal sandboxes are ephemeral containers created through the official
+Apache-2.0 TypeScript SDK. The adapter (`src/server/sandbox/adapters/modal.ts`)
+uses the same volume-style workspace, remote bootstrap, and WebSocket dial-back
+contract as the other remote providers.
+
+- Config: `provider: "modal"` + both Modal token credentials in the `modal`
+  block, `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET`, or credentials in the
+  active/named `~/.modal.toml` profile (`modal.profile` / `MODAL_PROFILE`).
+- The default registry image is `daytonaio/sandbox:0.8.0`; set `modal.image`
+  to a compatible image with git, curl, and passwordless sudo (or a writable
+  `/home/ubuntu`).
+- `cpus`, `memory`, `idleStopMinutes`, `previewPorts`, `modal.region`, and
+  `modal.cloud` are applied when the sandbox is created. CPU and memory are
+  hard limits as well as reservations.
+- Modal encrypted tunnel URLs are public Internet endpoints. Preview tunnels
+  stay disabled unless `modal.publicPreviews` is explicitly `true`; only use
+  that option for dev servers that are safe to expose publicly.
+- Modal caps a sandbox's lifetime at 24 hours. Idle timeout or lifetime expiry
+  terminates the container and deletes its workspace; the next turn creates a
+  fresh sandbox, so push code-mode work early.
+- No prewarm adapter or Shell-tab remote PTY yet.
+- The live conformance pass covered provisioning, bootstrap, git/exec,
+  idempotent reuse, previews, and cleanup. Modal's SDK file-upload helper uses
+  `ReadableStream.from`, which Bun lacks; the adapter's streamed-stdin fallback
+  was separately verified against a disposable live sandbox with read-back.
+- Re-run with `bun run deploy/sandbox/conformance.ts modal`; remote dial-back
+  requires a public ingress whose token registry belongs to that test process.
+
+### AWS Lambda MicroVMs (experimental, NOT yet certified)
+
+AWS Lambda MicroVMs are Firecracker VMs purpose-built for agent sandboxes. The
+adapter (`src/server/sandbox/adapters/lambda-microvm.ts`) uses the AWS SDK
+control plane and authenticated HTTP requests to the structured command daemon
+in `deploy/sandbox/lambda-microvm/`.
+
+- Build the ARM64 image first using
+  `deploy/sandbox/lambda-microvm/README.md`, then set
+  `awsLambdaMicrovm.imageIdentifier`. Ambient AWS credentials must allow the
+  MicroVM lifecycle/token APIs and `iam:PassRole` when an execution role is set.
+- Runtime disk and background processes survive AWS suspend/resume, and the
+  adapter wakes a suspended VM before command/restart recovery. Automatic idle
+  suspension is disabled by default because an active run's outbound dial-back
+  traffic does not count as endpoint activity to AWS; opt in with
+  `idleSuspendSeconds` only when that tradeoff is acceptable.
+- Every VM has a hard eight-hour lifetime including suspended time. The adapter
+  rotates 30 minutes before expiry only after proving the repo is clean and has
+  no commits ahead of upstream. Runtime disk and engine state are not durable
+  across that rotation, so the next turn starts a fresh engine. EFS-backed
+  rollover remains a follow-up for truly persistent sessions.
+- The image runs on ARM64 and needs enough baseline memory/disk for the runner
+  and target repo. The AWS image configuration, not this per-run adapter,
+  controls those resources.
+- `executionRoleArn` is optional. If used, it must be a dedicated least-
+  privilege role: agent code has root-equivalent control inside the VM and can
+  use every permission granted to that role.
+- Preview ports intentionally return no URL yet. AWS requires expiring auth
+  headers on every request, so browser previews need an OpenSession reverse
+  proxy rather than exposing the raw endpoint.
+- No prewarm adapter or Shell-tab integration yet.
+- To certify: `bun run deploy/sandbox/conformance.ts lambda-microvm` after the
+  image and IAM resources exist.
+
 ## Licensing notes
 
 - **Daytona** is AGPL-3.0. OpenSession consumes it **over its API** (via the
@@ -401,6 +489,8 @@ Box account** — treat it as untested until the conformance suite passes.
   OpenSession's codebase. Self-hosters running Daytona themselves take on
   AGPL's network-service obligations for their Daytona instance.
 - **E2B**: the JS SDK is MIT; the self-host infra repo is Apache-2.0.
+- **Modal**: the official `modal` TypeScript SDK is Apache-2.0.
+- **AWS Lambda MicroVMs**: the AWS SDK client is Apache-2.0.
 - **Docker provider**: plain `docker` CLI against your own daemon; nothing
   vendored.
 - Core imports adapter SDKs only inside `src/server/sandbox/adapters/` —

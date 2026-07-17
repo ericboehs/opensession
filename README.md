@@ -24,7 +24,7 @@ Then read the real setup guide — secrets, accounts, integrations, systemd:
 - **[docs/setup/](docs/setup/README.md)** — overview, requirements, trust model
 - [docs/setup/install.md](docs/setup/install.md) — bare box → running service
 - [docs/self-hosting-sandboxes.md](docs/self-hosting-sandboxes.md) — isolated
-  Docker/Daytona/E2B execution for sessions
+  Docker/Daytona/E2B/Box/Modal/AWS Lambda MicroVM execution for sessions
 
 Portability status: parts of the codebase still carry Tella-specific literals
 (repo registry defaults, Slack channel IDs, Linear OAuth redirect). What is

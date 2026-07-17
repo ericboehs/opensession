@@ -573,7 +573,9 @@ export function resumeInterruptedRuns(
       (run.sandboxProvider === "docker" ||
         run.sandboxProvider === "daytona" ||
         run.sandboxProvider === "e2b" ||
-        run.sandboxProvider === "box")
+        run.sandboxProvider === "box" ||
+        run.sandboxProvider === "modal" ||
+        run.sandboxProvider === "lambda-microvm")
     ) {
       const isDocker = run.sandboxProvider === "docker";
       if (run.bksSessionId) resumed.push(run.bksSessionId);

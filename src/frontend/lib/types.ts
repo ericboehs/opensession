@@ -538,7 +538,7 @@ export type WSClientMessage =
 			/** Optional MCP server allowlist for the opening run. [] means no external MCP servers. */
 			mcpServers?: string[];
 			/** Run in a sandbox: true = server's default provider, or an explicit
-			 *  configured provider id ("docker" | "daytona" | "e2b" | "box"). Omit = host. */
+			 *  configured provider id (including "modal" / "lambda-microvm"). Omit = host. */
 			sandbox?: boolean | string;
 			images?: string[];
 			/** Reasoning effort — persisted on the new session and enforced per run. */

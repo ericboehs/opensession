@@ -2,7 +2,7 @@
  * Sandbox provider CONFORMANCE suite (docs/sandboxes-plan.md §5 Phase 3.3) —
  * the verify.ts checks parameterized over providers. Run MANUALLY:
  *
- *   bun run deploy/sandbox/conformance.ts [docker-socket] [docker-ws] [daytona] [e2b] [box]
+ *   bun run deploy/sandbox/conformance.ts [docker-socket] [docker-ws] [daytona] [e2b] [box] [modal] [lambda-microvm]
  *
  * (no args = the full matrix). Per entry: ensure/reuse, exec argv+stderr
  * semantics, workspace git (bind worktree for docker, in-sandbox volume-style
@@ -98,17 +98,23 @@ async function sh(cmd: string[], cwd?: string): Promise<{ code: number; out: str
 // ── credentials (never logged) ────────────────────────────────────────────────
 
 function liveSandboxFileConfig(): any {
-  try {
-    return JSON.parse(readFileSync(`${HOME}/.backstage-sandbox.json`, "utf-8"));
-  } catch {
-    return {};
+  for (const path of [`${HOME}/.opensession-sandbox.json`, `${HOME}/.backstage-sandbox.json`]) {
+    try {
+      return JSON.parse(readFileSync(path, "utf-8"));
+    } catch {}
   }
+  return {};
 }
 const liveCfg = liveSandboxFileConfig();
 const daytonaKey: string = liveCfg?.daytona?.apiKey || process.env.DAYTONA_API_KEY || "";
 const e2bKey: string = liveCfg?.e2b?.apiKey || process.env.E2B_API_KEY || "";
 const boxKey: string = liveCfg?.box?.apiKey || process.env.BOX_API_KEY || "";
 const boxApiUrl: string = liveCfg?.box?.apiUrl || "https://ascii.dev/api/box/v1";
+const modalTokenId: string = liveCfg?.modal?.tokenId || process.env.MODAL_TOKEN_ID || "";
+const modalTokenSecret: string =
+  liveCfg?.modal?.tokenSecret || process.env.MODAL_TOKEN_SECRET || "";
+const modalProfileAvailable = existsSync(process.env.MODAL_CONFIG_PATH || `${HOME}/.modal.toml`);
+const lambdaMicrovmImage: string = liveCfg?.awsLambdaMicrovm?.imageIdentifier || "";
 
 function githubToken(): string {
   if (process.env.GITHUB_API_TOKEN) return process.env.GITHUB_API_TOKEN;
@@ -231,7 +237,13 @@ console.log(
 
 interface Entry {
   name: string;
-  providerId: "docker" | "daytona" | "e2b" | "box";
+  providerId:
+    | "docker"
+    | "daytona"
+    | "e2b"
+    | "box"
+    | "modal"
+    | "lambda-microvm";
   /** null = run it; string = print SKIPPED reason. */
   skip: string | null;
   /** Scratch config for this entry (credentials included, never logged). */
@@ -324,6 +336,50 @@ const entries: Entry[] = [
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
     expectPort: "url",
+    remote: true,
+  },
+  {
+    name: "modal",
+    providerId: "modal",
+    skip:
+      (modalTokenId && modalTokenSecret) || modalProfileAvailable
+        ? null
+        : "SKIPPED: no credentials (set modal.tokenId/tokenSecret in ~/.opensession-sandbox.json or MODAL_TOKEN_ID/MODAL_TOKEN_SECRET)",
+    config: {
+      provider: "modal",
+      callbackBaseUrl: remoteBase,
+      previewPorts: [8080],
+      modal: {
+        ...(modalTokenId && modalTokenSecret
+          ? { tokenId: modalTokenId, tokenSecret: modalTokenSecret }
+          : {}),
+        ...(liveCfg?.modal?.profile ? { profile: liveCfg.modal.profile } : {}),
+        ...(liveCfg?.modal?.image ? { image: liveCfg.modal.image } : {}),
+        ...(liveCfg?.modal?.environment ? { environment: liveCfg.modal.environment } : {}),
+        publicPreviews: true,
+      },
+      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
+    },
+    repoId: PUB_REPO_ID,
+    branch: PUB_BRANCH,
+    expectPort: "url",
+    remote: true,
+  },
+  {
+    name: "lambda-microvm",
+    providerId: "lambda-microvm",
+    skip: lambdaMicrovmImage
+      ? null
+      : "SKIPPED: no image (set awsLambdaMicrovm.imageIdentifier in ~/.opensession-sandbox.json)",
+    config: {
+      provider: "lambda-microvm",
+      callbackBaseUrl: remoteBase,
+      awsLambdaMicrovm: liveCfg?.awsLambdaMicrovm || {},
+      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
+    },
+    repoId: PUB_REPO_ID,
+    branch: PUB_BRANCH,
+    expectPort: "none",
     remote: true,
   },
 ];
@@ -802,6 +858,56 @@ async function auditBoxLeftovers(): Promise<void> {
   }
 }
 
+async function auditModalLeftovers(): Promise<void> {
+  if ((!modalTokenId || !modalTokenSecret) && !modalProfileAvailable) return;
+  section = "modal";
+  try {
+    const { ModalClient } = await import("modal");
+    const client = new ModalClient({
+      ...(modalTokenId && modalTokenSecret
+        ? { tokenId: modalTokenId, tokenSecret: modalTokenSecret }
+        : {}),
+      environment: liveCfg?.modal?.environment,
+    });
+    const app = await client.apps.fromName(liveCfg?.modal?.app || "opensession-sandboxes", {
+      createIfMissing: true,
+    });
+    const listLeftovers = async () => {
+      const out: Array<{ id: string; session: string }> = [];
+      for await (const sandbox of client.sandboxes.list({
+        appId: app.appId,
+        tags: { "backstage.sandbox": "1" },
+      })) {
+        const tags = await sandbox.getTags();
+        const session = String(tags["backstage.session"] || "");
+        if (session.startsWith("sbxtest-")) out.push({ id: sandbox.sandboxId, session });
+      }
+      return out;
+    };
+    let leftovers = await listLeftovers();
+    if (leftovers.length) {
+      await new Promise((r) => setTimeout(r, 15_000));
+      leftovers = await listLeftovers();
+    }
+    ok(
+      "no backstage-tagged modal sandboxes left behind",
+      leftovers.length === 0,
+      leftovers.map((l) => `${l.id}(${l.session})`).join(",") || "none",
+    );
+    for (const { id } of leftovers) {
+      console.warn(`  cleaning up leftover modal sandbox ${id}`);
+      try {
+        await (await client.sandboxes.fromId(id)).terminate();
+      } catch (e) {
+        console.warn(`  cleanup of ${id} failed:`, String(e).slice(0, 200));
+      }
+    }
+    client.close();
+  } catch (e) {
+    ok("modal leftovers audit ran", false, String(e).slice(0, 200));
+  }
+}
+
 // ── run the matrix ────────────────────────────────────────────────────────────
 
 try {
@@ -815,6 +921,7 @@ try {
   await auditDaytonaLeftovers();
   await auditE2bLeftovers();
   await auditBoxLeftovers();
+  await auditModalLeftovers();
 } finally {
   console.log("\n── cleanup ──");
   // Docker scratch containers/volumes/state for both docker entries.

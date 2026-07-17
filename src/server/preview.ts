@@ -45,6 +45,7 @@ import {
   sandboxHttpsPortFor,
 } from "./sandbox/preview-ports";
 import type { Sandbox } from "./sandbox/provider";
+import { shellQuoteWord } from "./sandbox/adapters/bootstrap";
 import type { Repo } from "./config";
 import { repoForPath } from "./worktree";
 
@@ -738,9 +739,13 @@ async function writeSandboxTunnelsEnv(
 ): Promise<void> {
   const file = assertSafePath(`${worktreeDir}/.tunnels.env`);
   const body = Object.entries(vars)
-    .map(([k, v]) => `${k}=${v}`)
-    .join("\\n");
-  await sandbox.exec(["sh", "-c", `printf '${body}\\n' > ${file}`]);
+    .map(([k, v]) => `${k}=${shellQuoteWord(v)}`)
+    .join("\n");
+  await sandbox.exec([
+    "sh",
+    "-c",
+    `printf '%s\\n' ${shellQuoteWord(body)} > ${shellQuoteWord(file)}`,
+  ]);
   // Keep it out of the session diff: one idempotent line in the repo's shared
   // info/exclude (tella-fusion doesn't gitignore .tunnels.env yet).
   await sandbox.exec([
@@ -836,9 +841,11 @@ export async function startSandboxPreview(
   //    one that outlives the bring-up — either way the file points at the
   //    right group).
   await seedSandboxPortsConf(sandbox, worktreeDir, port);
-  const httpsPort = sandboxHttpsPortFor(sandbox.id, port);
-  const host = await previewHost();
-  const previewUrl = `https://${host}:${httpsPort}`;
+  const entry = portMap[port];
+  const directUrl = typeof entry === "object" ? entry.url : undefined;
+  const httpsPort = directUrl ? null : sandboxHttpsPortFor(sandbox.id, port);
+  const host = directUrl ? null : await previewHost();
+  const previewUrl = directUrl || `https://${host}:${httpsPort}`;
   await writeSandboxTunnelsEnv(sandbox, worktreeDir, {
     PREVIEW_URL: previewUrl,
     [`PREVIEW_URL_${port}`]: previewUrl,
@@ -848,8 +855,8 @@ export async function startSandboxPreview(
   const bootMode = sandbox.bootMode || "fresh";
   const r = await sandbox.exec([
     "sh", "-c",
-    `mkdir -p .ports && nohup setsid env WEBAPP_PORT=${port} PREVIEW_URL=${previewUrl} ` +
-      `BACKSTAGE_BOOT_MODE=${bootMode} ` +
+    `mkdir -p .ports && nohup setsid env WEBAPP_PORT=${port} PREVIEW_URL=${shellQuoteWord(previewUrl)} ` +
+      `BACKSTAGE_BOOT_MODE=${shellQuoteWord(bootMode)} ` +
       `bash -c 'echo $$ > .ports/dev-pgid; exec ${cmd}' >> /tmp/backstage-preview.log 2>&1 &`,
   ]);
   if (r.exitCode !== 0) starting.delete(worktreeDir);

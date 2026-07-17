@@ -69,11 +69,11 @@ export interface CreateSessionOpts {
   user?: string;
   /**
    * Ask for a sandboxed session (docs/sandboxes-plan.md). `true` = the config
-   * default provider; a provider id ("docker" | "daytona" | "e2b" | "box")
+   * default provider; a provider id (including "modal" / "lambda-microvm")
    * picks one explicitly and must be configured (~/.opensession-sandbox.json),
    * else the create fails with a clear error.
    */
-  sandbox?: boolean | "docker" | "daytona" | "e2b" | "box";
+  sandbox?: boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm";
 }
 
 /**

@@ -14,6 +14,8 @@ import { DockerProvider } from "./docker";
 import { DaytonaProvider } from "./adapters/daytona";
 import { E2bProvider } from "./adapters/e2b";
 import { BoxProvider } from "./adapters/box";
+import { ModalProvider } from "./adapters/modal";
+import { LambdaMicrovmProvider } from "./adapters/lambda-microvm";
 import { effectiveSandboxProvider } from "./config";
 import type { SandboxProvider, SandboxProviderId } from "./provider";
 
@@ -53,6 +55,8 @@ const dockerProvider = new DockerProvider();
 const daytonaProvider = new DaytonaProvider();
 const e2bProvider = new E2bProvider();
 const boxProvider = new BoxProvider();
+const modalProvider = new ModalProvider();
+const lambdaMicrovmProvider = new LambdaMicrovmProvider();
 
 /**
  * Resolve a SandboxProvider. `spec` (a provider id, e.g. from a session file's
@@ -75,6 +79,10 @@ export function getSandboxProvider(
       return e2bProvider;
     case "box":
       return boxProvider;
+    case "modal":
+      return modalProvider;
+    case "lambda-microvm":
+      return lambdaMicrovmProvider;
     default:
       throw new Error(`unknown sandbox provider "${id}"`);
   }

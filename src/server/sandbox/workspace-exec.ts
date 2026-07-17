@@ -7,8 +7,7 @@
  * take an optional `WorkspaceExec`; callers derive it per request via
  * `workspaceExecFor(session, dir)`:
  *
- *  - No sandbox (the default, and every failure mode): a host exec via Bun's
- *    `$` in the workspace dir — exactly today's behavior.
+ *  - No sandbox: a host exec via Bun's `$` in the workspace dir.
  *  - ACTIVE docker sandbox (session opted in, provider materialized, config
  *    still says docker, kill-switch absent, container ACTUALLY running): a
  *    `docker exec -w <dir>` in the session's container.
@@ -17,8 +16,8 @@
  * defeat the idle-stop policy. Bind-mode workspaces lose nothing (the host
  * sees the same files through the bind mount, so the host fallback is
  * equivalent); volume-mode workspaces have no host copy, so their read
- * surfaces go quiet (empty diff/status) until the next turn wakes the
- * container. That trade is the mode's contract.
+ * surfaces fail closed until the next turn wakes the container. Falling back
+ * to a stale/nonexistent host path could commit or push the wrong workspace.
  *
  * With Phase 1 bind mounts this routing is functionally redundant — host git
  * sees the same files. The POINT is the seam: volume-only workspaces (below)
@@ -32,6 +31,7 @@
 
 import { $ } from "bun";
 import { sandboxesEnabled, sandboxProviderConfigured } from "./config";
+import { isRemoteSandboxProvider } from "./config";
 import { dockerContainerStatus, rawDockerExec } from "./docker";
 import type { ExecOpts, ExecResult } from "./provider";
 
@@ -93,9 +93,30 @@ export async function workspaceExecFor(
   const cwd = dir || session?.worktreeDir || "";
   const host = hostWorkspaceExec(cwd);
   const sb = session?.sandbox;
-  if (!cwd || sb?.provider !== "docker" || !sb.sandboxId) return host;
+  if (!cwd || !sb?.provider || !sb.sandboxId) return host;
+  const unavailableRemote = Object.assign(
+    async (): Promise<ExecResult> => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: `remote sandbox ${sb.sandboxId} is unavailable`,
+    }),
+    { sandboxed: true, remote: true } as const,
+  );
   try {
-    if (!sandboxesEnabled()) return host; // kill-switch — reads go host-side too
+    if (!sandboxesEnabled()) {
+      return sb.workspace === "volume" ? unavailableRemote : host;
+    }
+    if (isRemoteSandboxProvider(sb.provider)) {
+      if (!sandboxProviderConfigured(sb.provider)) return unavailableRemote;
+      const { getSandboxProvider } = await import("./index");
+      const sandbox = await getSandboxProvider(sb.provider).get(sb.sandboxId);
+      if (!sandbox || (await sandbox.status()) !== "running") return unavailableRemote;
+      return Object.assign(
+        (cmd: string[], opts?: ExecOpts) => sandbox.exec(cmd, opts),
+        { sandboxed: true, remote: true } as const,
+      );
+    }
+    if (sb.provider !== "docker") return host;
     // Provider-configured, not config-default: a session may have picked
     // docker explicitly while the config default is another provider.
     if (!sandboxProviderConfigured("docker")) return host;
@@ -106,6 +127,6 @@ export async function workspaceExecFor(
       { sandboxed: true, remote: sb.workspace === "volume" } as const,
     );
   } catch {
-    return host;
+    return sb.workspace === "volume" ? unavailableRemote : host;
   }
 }
