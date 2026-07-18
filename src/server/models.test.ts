@@ -4,6 +4,7 @@ import {
   DIAL_ORACLE_AGENTS,
   DIAL_PRESETS,
   dialPreset,
+  sameBridgeDialOracle,
   fallbackPlan,
   fallbackTier,
   nextFallbackModel,
@@ -245,6 +246,22 @@ describe("fallback graph (nextFallbackModel)", () => {
     expect(fallbackTier("claude-fable-5")).toBeGreaterThan(fallbackTier("claude-opus-4-8"));
     expect(fallbackTier(sol)).toBeGreaterThan(fallbackTier("claude-opus-4-8"));
     expect(fallbackTier("claude-opus-4-8")).toBeGreaterThan(fallbackTier("claude-sonnet-5"));
+  });
+});
+
+describe("sameBridgeDialOracle", () => {
+  it("keeps same-bridge oracles and substitutes cross-bridge ones", () => {
+    // dial/medium: sol main, sol oracle — same bridge, unchanged.
+    expect(sameBridgeDialOracle("oracle-sol", "openai")).toBe("oracle-sol");
+    // dial/high: sol main (openai server), fable oracle → Terra substitute.
+    expect(sameBridgeDialOracle("oracle-fable", "openai")).toBe("oracle-terra");
+    // dial/ultra: fable main (anthropic server), sol oracle → Opus substitute.
+    expect(sameBridgeDialOracle("oracle-sol", "anthropic")).toBe("oracle-opus");
+    // Fable oracle on an anthropic server stays.
+    expect(sameBridgeDialOracle("oracle-fable", "anthropic")).toBe("oracle-fable");
+    // Unknown provider or agent: status quo.
+    expect(sameBridgeDialOracle("oracle-sol", "google")).toBe("oracle-sol");
+    expect(sameBridgeDialOracle("nonexistent", "openai")).toBe("nonexistent");
   });
 });
 

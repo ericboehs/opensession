@@ -172,7 +172,13 @@ import { audit, summarizeText } from "./audit";
 import { gitIdentityEnv, githubLoginFor, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
-import { normalizeModelEffort, dialPreset, DIAL_ORACLE_AGENTS, opencodeModelLabel } from "./models";
+import {
+  normalizeModelEffort,
+  dialPreset,
+  DIAL_ORACLE_AGENTS,
+  sameBridgeDialOracle,
+  opencodeModelLabel,
+} from "./models";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
 import {
   registerRunToken,
@@ -2309,13 +2315,21 @@ async function* runOpencodeAttempt(
       author,
       droppedForConfirm: confirmUnavailable,
       deniedToolNotes: policy.noteGroups,
+      // The server carries ONE bridge's models, so a cross-provider oracle
+      // (ultra's sol-on-anthropic, high's fable-on-openai) can't resolve
+      // there — substitute the same-bridge alternate (Terra/Opus) so the
+      // consult actually works (Dreaming 2026-07-17: 17 loud errors on
+      // dial/high, silent no-ops on dial/ultra).
       dialOracle: dial
-        ? {
-            agent: dial.oracleAgent,
-            presetLabel: dial.label,
-            mainLabel: opencodeModelLabel(dial.model),
-            oracleLabel: DIAL_ORACLE_AGENTS[dial.oracleAgent]?.label || dial.oracleAgent,
-          }
+        ? (() => {
+            const agent = sameBridgeDialOracle(dial.oracleAgent, parsed.providerID);
+            return {
+              agent,
+              presetLabel: dial.label,
+              mainLabel: opencodeModelLabel(dial.model),
+              oracleLabel: DIAL_ORACLE_AGENTS[agent]?.label || agent,
+            };
+          })()
         : undefined,
     });
     const instructionsPath = `${OPENCODE_STATE_DIR}/${serverKey.replace(/[^A-Za-z0-9._-]/g, "_")}-instructions.md`;

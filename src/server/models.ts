@@ -150,7 +150,45 @@ export const DIAL_ORACLE_AGENTS: Record<
       "plan review, architecture decisions, deep debugging, reviewing significant work. " +
       "Read-only advisor.",
   },
+  // Same-bridge substitutes: an engine server carries ONE bridge's auth, so a
+  // cross-provider oracle (dial/ultra's sol-on-anthropic, dial/high's
+  // fable-on-openai) has no model in that server's catalog — the task call
+  // errored loudly or no-oped silently (Dreaming 2026-07-17). Each bridge gets
+  // a distinct-model alternate so premium presets keep a REAL second opinion.
+  "oracle-terra": {
+    model: "openai/gpt-5.6-terra",
+    variant: "high",
+    label: "GPT-5.6 Terra",
+    description:
+      "Oracle: senior-engineer second opinion on GPT-5.6 Terra at high reasoning — " +
+      "plan review, architecture decisions, deep debugging, reviewing significant work. " +
+      "Read-only advisor.",
+  },
+  "oracle-opus": {
+    model: "anthropic/claude-opus-4-8",
+    variant: "high",
+    label: "Claude Opus 4.8",
+    description:
+      "Oracle: senior-engineer second opinion on Claude Opus 4.8 — plan review, " +
+      "architecture decisions, deep debugging, reviewing significant work. Read-only advisor.",
+  },
 };
+
+/**
+ * The oracle agent a dial run can ACTUALLY consult on its server: the preset's
+ * oracle when its provider matches the server's bridge, else the same-bridge
+ * substitute (openai → Terra, anthropic → Opus). Unknown/native providers keep
+ * the preset's choice (status quo).
+ */
+export function sameBridgeDialOracle(oracleAgent: string, mainProviderID: string): string {
+  const oracle = DIAL_ORACLE_AGENTS[oracleAgent];
+  if (!oracle) return oracleAgent;
+  const oracleProvider = oracle.model.split("/")[0];
+  if (oracleProvider === mainProviderID) return oracleAgent;
+  if (mainProviderID === "openai") return "oracle-terra";
+  if (mainProviderID === "anthropic") return "oracle-opus";
+  return oracleAgent;
+}
 
 export const DIAL_PRESETS: DialPreset[] = [
   {
