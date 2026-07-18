@@ -7,7 +7,7 @@
  * Auth: the same `GITHUB_API_TOKEN` PAT the Slack agent uses (Bearer).
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
-import { defaultRepo } from "../../server/config";
+import { defaultRepo, personaName } from "../../server/config";
 
 const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 /** The PR agent's target — the instance's default repo (config-driven). */
@@ -429,4 +429,35 @@ export async function removeLabel(prNumber: number, label: string, ghRepo: strin
   );
   // 404 = label already gone; treat as success.
   return r.ok || r.status === 404;
+}
+
+/**
+ * All open review feedback on the PR, formatted for a fix prompt — inline
+ * comments AND review summaries, from EVERY reviewer (Michael, Greptile, humans),
+ * each tagged with its author so the agent addresses them all (not just Michael's,
+ * not just CI). Skips outdated inline comments and Michael's own boilerplate review
+ * body. Returns "" when there's nothing. Shared by auto-fix and the review handoff.
+ */
+export async function fetchReviewFindings(prNumber: number, ghRepo?: string): Promise<string> {
+  const [comments, reviews] = await Promise.all([
+    listReviewComments(prNumber, ghRepo),
+    listReviews(prNumber, ghRepo),
+  ]);
+  const lines: string[] = [];
+  for (const c of comments.filter((c) => !c.outdated && c.line != null)) {
+    // `comment <id>` lets the agent reply in that thread after fixing.
+    lines.push(`- [@${c.login} · comment ${c.id}] ${c.path}:${c.line} — ${c.body.replace(/\s+/g, " ").trim().slice(0, 400)}`);
+  }
+  for (const rv of reviews) {
+    // Skip Michael's own short "Michael review · <sha>" boilerplate (the inline
+    // comments above already carry its findings).
+    if (
+      rv.login === BOT_LOGIN &&
+      (rv.body.trim().startsWith(`${personaName()} review`) || rv.body.trim().startsWith("Michael review"))
+    )
+      continue;
+    const state = rv.state ? ` ${rv.state.toLowerCase().replace(/_/g, " ")}` : "";
+    lines.push(`- [@${rv.login} review${state}] ${rv.body.replace(/\s+/g, " ").trim().slice(0, 600)}`);
+  }
+  return lines.join("\n");
 }

@@ -20,7 +20,7 @@ import {
 import { runGithubAgent, authorForLogin, sessionUrl } from "./run";
 import { buildAutoFixPrompt, mergeabilityState, type MergeabilityState } from "./prompts";
 import { checkRegistrationPending } from "./autofix-gates";
-import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, resolveAddressedThreads, AUTOFIX_MARKER, BOT_LOGIN } from "./github-rest";
+import { postIssueComment, editIssueComment, removeLabel, resolveAddressedThreads, fetchReviewFindings, AUTOFIX_MARKER } from "./github-rest";
 import { LABEL_AUTOFIX, labelAliases, repoForFullName } from "./constants";
 import { personaName } from "../../server/config";
 import type { PrRef, ReviewResult } from "./review";
@@ -429,35 +429,4 @@ function formatDispositions(d: Dispositions): string {
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-/**
- * All open review feedback on the PR, formatted for the fix prompt — inline
- * comments AND review summaries, from EVERY reviewer (Michael, Greptile, humans),
- * each tagged with its author so the agent addresses them all (not just Michael's,
- * not just CI). Skips outdated inline comments and Michael's own boilerplate review
- * body. Returns "" when there's nothing.
- */
-async function fetchReviewFindings(prNumber: number, ghRepo?: string): Promise<string> {
-  const [comments, reviews] = await Promise.all([
-    listReviewComments(prNumber, ghRepo),
-    listReviews(prNumber, ghRepo),
-  ]);
-  const lines: string[] = [];
-  for (const c of comments.filter((c) => !c.outdated && c.line != null)) {
-    // `comment <id>` lets the agent reply in that thread after fixing.
-    lines.push(`- [@${c.login} · comment ${c.id}] ${c.path}:${c.line} — ${c.body.replace(/\s+/g, " ").trim().slice(0, 400)}`);
-  }
-  for (const rv of reviews) {
-    // Skip Michael's own short "Michael review · <sha>" boilerplate (the inline
-    // comments above already carry its findings).
-    if (
-      rv.login === BOT_LOGIN &&
-      (rv.body.trim().startsWith(`${personaName()} review`) || rv.body.trim().startsWith("Michael review"))
-    )
-      continue;
-    const state = rv.state ? ` ${rv.state.toLowerCase().replace(/_/g, " ")}` : "";
-    lines.push(`- [@${rv.login} review${state}] ${rv.body.replace(/\s+/g, " ").trim().slice(0, 600)}`);
-  }
-  return lines.join("\n");
 }

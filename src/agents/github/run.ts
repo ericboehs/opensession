@@ -77,9 +77,14 @@ const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
   "https://os.tella.dev";
 
+/** Backstage UI link to any session id (also used for handoff "open session" links). */
+export function uiSessionUrl(sessionId: string): string {
+  return `${UI_BASE}/session/${sessionId}`;
+}
+
 /** Backstage UI link to a run's session, for "open to monitor" links in PR comments. */
 export function sessionUrl(prNumber: number, kind: GithubRunKind, ghRepo?: string): string {
-  return `${UI_BASE}/session/${bksIdFor(prNumber, kind, ghRepo)}`;
+  return uiSessionUrl(bksIdFor(prNumber, kind, ghRepo));
 }
 
 /** Map a GitHub login to a git identity for commit attribution (fix/simplify). */

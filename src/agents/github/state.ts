@@ -9,6 +9,7 @@
  */
 import { stateDir } from "../../server/rename-compat";
 import { prKey } from "./constants";
+import type { HandoffState } from "./handoff-gates";
 import { mkdirSync, readFileSync, existsSync, readdirSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 
@@ -48,6 +49,9 @@ export interface GithubPrState {
   lastReviewedSha?: string;
   autoFix?: AutoFixState;
   simplify?: SimplifyState;
+  /** Review → owning-session fix rounds (handoff.ts); cleared when a review
+   *  comes back satisfied or the PR closes. */
+  handoff?: HandoffState;
   /**
    * Set while a one-shot action (review/simplify/adversarial) is in flight; cleared
    * in its finally. If the process is killed mid-run, this persists so the github

@@ -46,15 +46,17 @@ function readPending(): PendingDeploys {
   }
 }
 
-function projectIdForRepo(fullName: string): string | null {
+/** Registry project id for a GitHub owner/name, or null if unconfigured. */
+export function projectIdForRepo(fullName: string): string | null {
   for (const repo of Object.values(REPOS)) {
     if (repo.ghRepo === fullName) return repo.id;
   }
   return null;
 }
 
-/** Live (non-archived) sessions working on `branch` of `projectId`, primary or attached. */
-function matchSessions(control: SessionControl, projectId: string, branch: string): SessionSummary[] {
+/** Live (non-archived) sessions working on `branch` of `projectId`, primary or attached.
+ *  Also used by handoff.ts to find the session that owns a PR's branch. */
+export function matchSessions(control: SessionControl, projectId: string, branch: string): SessionSummary[] {
   return control.listSessions().filter((s) => {
     if (s.state === "archived") return false;
     if ((s.repo || "tella-fusion") === projectId && s.branch === branch) return true;

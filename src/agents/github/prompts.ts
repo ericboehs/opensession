@@ -266,6 +266,53 @@ End your turn with these three lines (exact keys, one line each) so the loop can
 \`UNRESOLVED: <findings you tried but couldn't fix, each as "finding — reason", or none>\``;
 }
 
+/**
+ * Message delivered INTO the session that owns a PR's branch when the automatic
+ * review of that PR came back unsatisfied (handoff.ts). Not a run prompt — it
+ * arrives mid-session like a teammate's chat message, so it must be
+ * self-contained: the session may know nothing about the review machinery.
+ */
+export function buildHandoffMessage(opts: {
+  prNumber: number;
+  title: string;
+  headRef: string;
+  /** owner/name, for gh api commands. */
+  repoFull: string;
+  round: number;
+  cap: number;
+  verdict?: string;
+  confidence?: number;
+  findingsBlock: string;
+}): string {
+  const verdict = [
+    opts.verdict ? `verdict: ${opts.verdict.replace(/_/g, " ")}` : "",
+    typeof opts.confidence === "number" ? `confidence ${opts.confidence}/5` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const findings = opts.findingsBlock.trim()
+    ? `Open review feedback (every reviewer; inline items carry a \`comment <id>\` for thread replies):\n${opts.findingsBlock.trim()}`
+    : `The findings are on the PR — read them with \`gh pr view ${opts.prNumber} --repo ${opts.repoFull} --comments\` and \`gh api repos/${opts.repoFull}/pulls/${opts.prNumber}/comments\`.`;
+  const remaining = opts.cap - opts.round;
+
+  return `🔍 This session's PR #${opts.prNumber} “${opts.title}” (branch \`${opts.headRef}\`) was just reviewed and is not merge-ready yet${verdict ? ` (${verdict})` : ""}. You wrote this code, so the follow-through is yours — this is fix round ${opts.round}/${opts.cap}.
+
+${findings}
+
+Do this now, in this session's worktree:
+1. Sync the branch first: \`git pull origin ${opts.headRef}\` — someone else may have pushed since your last commit.
+2. Address every actionable finding. If you disagree with one, leave the code unchanged and reply in that thread explaining why — never silently skip.
+3. Commit (stage specific files) and push: \`git push origin HEAD:${opts.headRef}\`.
+4. Reply in each addressed inline thread with what you did, e.g. \`gh api repos/${opts.repoFull}/pulls/${opts.prNumber}/comments/<id>/replies -f body='Fixed in <sha>'\`.
+5. NEVER merge the PR (\`gh pr merge\` is forbidden) and never force-push.
+
+The review re-runs automatically after your push. ${
+    remaining > 0
+      ? `If it still finds problems you'll get at most ${remaining} more round${remaining === 1 ? "" : "s"} here before it's handed to humans.`
+      : "This is the last automatic round — anything still open after it goes to humans."
+  }`;
+}
+
 export type MergeabilityState = "conflicting" | "clear" | "pending";
 
 /** UNKNOWN is not success: GitHub calculates mergeability asynchronously. */

@@ -23,6 +23,7 @@ import {
   labelMatches,
 } from "./constants";
 import { runReview, type PrRef, type ReviewConfig } from "./review";
+import { clearHandoff, isHandoffActive, maybeHandoffFindings } from "./handoff";
 import { isLockHeld } from "./state";
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
 import { SEO_LABEL } from "../loops/seo";
@@ -136,8 +137,11 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     }
 
     // Closed (merged or not): a pending debounced review would fire against a
-    // dead PR — cancel it.
-    if (action === "closed") cancelPendingReview(prKey(pr.number, ghRepo));
+    // dead PR — cancel it, and drop any handoff round tracking.
+    if (action === "closed") {
+      cancelPendingReview(prKey(pr.number, ghRepo));
+      clearHandoff(pr.number, ghRepo);
+    }
 
     // ── Merge → notify linked sessions + queue seo-sweep PRs + fire docs-sync ──
     if (action === "closed" && pr.merged) {
@@ -181,7 +185,10 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       // A `synchronize` from the bot is our own push (auto-fix/simplify/mention) —
       // skip it so we don't review our own work mid-loop. But reviewing a PR the bot
       // *opened* (opened/reopened/ready_for_review) is fine: read-only, no push, no loop.
-      if (senderIsBot && action === "synchronize") return;
+      // Carve-out: while a handoff fix round is active, a bot-credentialed push IS
+      // the owning session's fix (sessions without per-user GitHub auth push as the
+      // bot) — it must be re-reviewed or the handoff loop never closes.
+      if (senderIsBot && action === "synchronize" && !isHandoffActive(pr.number, ghRepo)) return;
       const labeled = (pr.labels || []).some((l) => labelMatches(l.name, LABEL_REVIEW));
       const { autoEnabled } = resolveReviewConfig();
       if (labeled || autoEnabled) {
@@ -199,9 +206,13 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
 
 async function fireReview(ref: PrRef, _byLabel: boolean): Promise<void> {
   const { config } = resolveReviewConfig();
-  await runReview(ref, config, onSessionInvalidate).catch((e) =>
-    console.error(`[github] runReview failed for PR #${ref.number}:`, e),
-  );
+  const result = await runReview(ref, config, onSessionInvalidate).catch((e) => {
+    console.error(`[github] runReview failed for PR #${ref.number}:`, e);
+    return null;
+  });
+  // Unsatisfied review → hand the findings to the session that owns the branch
+  // (its push re-enters this cycle). Satisfied/skipped reviews no-op inside.
+  await maybeHandoffFindings(ref, result);
 }
 
 // ── Push → review debounce ───────────────────────────────────────────────────
