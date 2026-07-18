@@ -42,13 +42,44 @@ export function useCurrentUser(): string {
   return user;
 }
 
-interface AuthStatus {
+export interface AuthStatus {
   required: boolean;
   authenticated: boolean;
   /** Server supports the redirect (authorization-code) sign-in. */
   redirect?: boolean;
   login?: string;
   name?: string;
+}
+
+// Shared auth state: UserGate fetches /api/auth/status once on load; other
+// components (SettingsMenu's account section) read it reactively from here
+// instead of re-fetching.
+const AUTH_STATUS_EVENT = "michael-auth-status-changed";
+let authStatusCache: AuthStatus | null = null;
+
+function setAuthStatusCache(status: AuthStatus) {
+  authStatusCache = status;
+  window.dispatchEvent(new Event(AUTH_STATUS_EVENT));
+}
+
+/** Reactive sign-in state; null until /api/auth/status answers (or when the
+ *  server predates it). `required && authenticated` ⇒ GitHub-verified user. */
+export function useAuthStatus(): AuthStatus | null {
+  const [status, setStatus] = useState(authStatusCache);
+  useEffect(() => {
+    const handler = () => setStatus(authStatusCache);
+    window.addEventListener(AUTH_STATUS_EVENT, handler);
+    return () => window.removeEventListener(AUTH_STATUS_EVENT, handler);
+  }, []);
+  return status;
+}
+
+/** Sign out of the GitHub web session and return to the sign-in screen. */
+export async function signOut(): Promise<void> {
+  try {
+    await fetch(`${BASE_PATH}/api/auth/logout`, { method: "POST" });
+  } catch {}
+  window.location.reload();
 }
 
 /**
@@ -69,6 +100,7 @@ export function UserGate({ children }: { children: React.ReactNode }) {
       .then((body: AuthStatus | null) => {
         if (!body) return; // old server / fetch failed → keep the picker flow
         setAuth(body);
+        setAuthStatusCache(body);
         if (body.required && body.authenticated && body.name) {
           const first = body.name.split(" ")[0];
           if (getCurrentUser() !== first) setStoredUser(first);
@@ -82,7 +114,10 @@ export function UserGate({ children }: { children: React.ReactNode }) {
     return (
       <GithubSignIn
         redirect={auth.redirect === true}
-        onSignedIn={(status) => setAuth(status)}
+        onSignedIn={(status) => {
+          setAuth(status);
+          setAuthStatusCache(status);
+        }}
       />
     );
   }

@@ -5,7 +5,7 @@ import { BottomSheet } from "../ui/sheet";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { IconCheck, IconChevronRight, IconGear } from "./icons";
 import { Tooltip } from "../ui/tooltip";
-import { TEAM, setCurrentUser, useCurrentUser } from "./UserPicker";
+import { TEAM, setCurrentUser, signOut, useAuthStatus, useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { PRODUCT_MARK, PRODUCT_NAME } from "../lib/brand";
 
@@ -94,6 +94,9 @@ function SettingsSheet({
 }) {
 	const currentUser = useCurrentUser();
 	const [open, setOpen] = useState(false);
+	const auth = useAuthStatus();
+	// GitHub sign-in active ⇒ identity is server-verified, no account switcher.
+	const githubAuth = auth?.required && auth.authenticated ? auth : null;
 
 	return (
 		<>
@@ -135,29 +138,57 @@ function SettingsSheet({
 				<BottomSheet label="Michael menu" onClose={() => setOpen(false)}>
 					{(dismiss) => (
 						<div className="overflow-y-auto px-4 pb-4 pt-1">
-							<div className="mb-2 px-1 text-[13px] font-semibold text-faint">
-								Acting as
-							</div>
-							<div className="overflow-hidden rounded-xl border border-line bg-panel">
-								{TEAM.map((name) => (
-									<button
-										key={name}
-										className="flex w-full items-center gap-3 border-x-0 border-b border-t-0 border-solid border-line bg-transparent px-3.5 py-3 text-left last:border-b-0 active:bg-hover"
-										onClick={() => {
-											setCurrentUser(name);
-											dismiss();
-										}}
-									>
-										<Avatar name={name} active={name === currentUser} />
-										<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
-											{name}
+							{githubAuth ? (
+								// GitHub-verified identity: nothing to switch — the server
+								// decides who you are. Show it + a way out.
+								<div className="overflow-hidden rounded-xl border border-line bg-panel">
+									<div className="flex w-full items-center gap-3 border-x-0 border-b border-t-0 border-solid border-line px-3.5 py-3">
+										<Avatar name={currentUser} active />
+										<span className="flex min-w-0 flex-1 flex-col leading-tight">
+											<span className="text-[15px] font-medium text-fg">
+												{currentUser}
+											</span>
+											{githubAuth.login && (
+												<span className="text-[12px] text-faint">
+													Signed in with GitHub · @{githubAuth.login}
+												</span>
+											)}
 										</span>
-										{name === currentUser && (
-											<IconCheck size={22} className="shrink-0 text-accent" />
-										)}
+									</div>
+									<button
+										className="flex w-full items-center gap-3 border-none bg-transparent px-3.5 py-3 text-left text-[15px] font-medium text-dim active:bg-hover"
+										onClick={() => void signOut()}
+									>
+										Sign out
 									</button>
-								))}
-							</div>
+								</div>
+							) : (
+								<>
+									<div className="mb-2 px-1 text-[13px] font-semibold text-faint">
+										Acting as
+									</div>
+									<div className="overflow-hidden rounded-xl border border-line bg-panel">
+										{TEAM.map((name) => (
+											<button
+												key={name}
+												className="flex w-full items-center gap-3 border-x-0 border-b border-t-0 border-solid border-line bg-transparent px-3.5 py-3 text-left last:border-b-0 active:bg-hover"
+												onClick={() => {
+													setCurrentUser(name);
+													dismiss();
+												}}
+											>
+												<Avatar name={name} active={name === currentUser} />
+												<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
+													{name}
+												</span>
+												{name === currentUser && (
+													<IconCheck size={22} className="shrink-0 text-accent" />
+												)}
+											</button>
+										))}
+									</div>
+								</>
+							)}
 
 							<div className="mt-4 overflow-hidden rounded-xl border border-line bg-panel">
 								<button
@@ -205,6 +236,9 @@ export function SettingsMenu({
 }) {
 	const currentUser = useCurrentUser();
 	const isPhone = useIsPhone();
+	const auth = useAuthStatus();
+	// GitHub sign-in active ⇒ identity is server-verified, no account switcher.
+	const githubAuth = auth?.required && auth.authenticated ? auth : null;
 
 	if (isPhone)
 		return (
@@ -287,68 +321,89 @@ export function SettingsMenu({
 				sideOffset={8}
 				className="min-w-[244px] p-3"
 			>
-				<Menu.SubmenuRoot>
-					<Menu.SubmenuTrigger className="gap-[9px] rounded-[7px] px-2 py-1.5">
+				{githubAuth ? (
+					// GitHub-verified identity: nothing to switch — show who the
+					// server says you are.
+					<div className="flex items-center gap-[9px] px-2 py-1.5">
 						<Avatar name={currentUser} active />
 						<span className="flex min-w-0 flex-1 flex-col gap-px leading-tight">
 							<span className="text-[10.5px] font-bold tracking-[-0.01em] text-faint">
-								Acting as
+								Signed in with GitHub
 							</span>
-							<span className="font-medium">{currentUser}</span>
+							<span className="font-medium">
+								{currentUser}
+								{githubAuth.login && (
+									<span className="ml-1.5 font-normal text-faint">
+										@{githubAuth.login}
+									</span>
+								)}
+							</span>
 						</span>
-						<svg
-							className="shrink-0 text-faint"
-							width="14"
-							height="14"
-							viewBox="0 0 10 10"
-							aria-hidden="true"
-						>
-							<path
-								d="M3.5 2L6.5 5L3.5 8"
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="1.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							/>
-						</svg>
-					</Menu.SubmenuTrigger>
-					<Menu.Popup className="min-w-[200px]">
-						<Menu.RadioGroup
-							value={currentUser}
-							onValueChange={(value) => setCurrentUser(String(value))}
-						>
-							{TEAM.map((name) => (
-								<Menu.RadioItem
-									key={name}
-									value={name}
-									closeOnClick
-									className="gap-[9px] rounded-[7px] px-2 py-1.5"
-								>
-									<Avatar name={name} active={name === currentUser} />
-									<span className="min-w-0 flex-1 font-medium">{name}</span>
-									{name === currentUser && (
-										<svg
-											className="shrink-0 text-accent"
-											width="17"
-											height="17"
-											viewBox="0 0 16 16"
-											fill="none"
-										>
-											<path
-												d="M3.5 8.5l3 3 6-7"
-												stroke="currentColor"
-												strokeWidth="1.6"
-												strokeLinecap="round"
-												strokeLinejoin="round"
-											/>
-										</svg>
-									)}
-								</Menu.RadioItem>
-							))}
-						</Menu.RadioGroup>
-					</Menu.Popup>
-				</Menu.SubmenuRoot>
+					</div>
+				) : (
+					<Menu.SubmenuRoot>
+						<Menu.SubmenuTrigger className="gap-[9px] rounded-[7px] px-2 py-1.5">
+							<Avatar name={currentUser} active />
+							<span className="flex min-w-0 flex-1 flex-col gap-px leading-tight">
+								<span className="text-[10.5px] font-bold tracking-[-0.01em] text-faint">
+									Acting as
+								</span>
+								<span className="font-medium">{currentUser}</span>
+							</span>
+							<svg
+								className="shrink-0 text-faint"
+								width="14"
+								height="14"
+								viewBox="0 0 10 10"
+								aria-hidden="true"
+							>
+								<path
+									d="M3.5 2L6.5 5L3.5 8"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="1.5"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								/>
+							</svg>
+						</Menu.SubmenuTrigger>
+						<Menu.Popup className="min-w-[200px]">
+							<Menu.RadioGroup
+								value={currentUser}
+								onValueChange={(value) => setCurrentUser(String(value))}
+							>
+								{TEAM.map((name) => (
+									<Menu.RadioItem
+										key={name}
+										value={name}
+										closeOnClick
+										className="gap-[9px] rounded-[7px] px-2 py-1.5"
+									>
+										<Avatar name={name} active={name === currentUser} />
+										<span className="min-w-0 flex-1 font-medium">{name}</span>
+										{name === currentUser && (
+											<svg
+												className="shrink-0 text-accent"
+												width="17"
+												height="17"
+												viewBox="0 0 16 16"
+												fill="none"
+											>
+												<path
+													d="M3.5 8.5l3 3 6-7"
+													stroke="currentColor"
+													strokeWidth="1.6"
+													strokeLinecap="round"
+													strokeLinejoin="round"
+												/>
+											</svg>
+										)}
+									</Menu.RadioItem>
+								))}
+							</Menu.RadioGroup>
+						</Menu.Popup>
+					</Menu.SubmenuRoot>
+				)}
 
 				<Menu.Separator className="-mx-3 my-3.5" />
 
@@ -375,6 +430,11 @@ export function SettingsMenu({
 					<IconGear size={22} />
 					Settings
 				</Menu.Item>
+				{githubAuth && (
+					<Menu.Item onClick={() => void signOut()} className="text-dim">
+						Sign out
+					</Menu.Item>
+				)}
 			</Menu.Popup>
 		</Menu.Root>
 	);
