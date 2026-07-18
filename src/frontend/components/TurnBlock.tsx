@@ -123,7 +123,7 @@ export const TurnBlock = React.memo(function TurnBlock({
   const lastItem = items[items.length - 1];
 
   return (
-    <div className="mx-auto mb-3 max-w-[var(--chat-col)]">
+    <div className="mx-auto mb-3 max-w-[var(--chat-col)] [content-visibility:auto] [contain-intrinsic-size:auto_80px]">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}

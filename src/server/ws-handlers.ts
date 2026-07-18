@@ -16,7 +16,7 @@ import { buildForkHandoffNote } from "./fork-handoff";
 import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
-import { clampEntriesForWire, parseTranscript, parseTranscriptTail } from "./jsonl-parser";
+import { INIT_WIRE_CLAMP_BYTES, clampEntriesForWire, parseTranscript, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
 import { dialPreset, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
 import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { wrapContext } from "./prompt-context";
@@ -108,17 +108,48 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// (multi-MB) transcript would otherwise block the open for seconds;
 				// `truncated` tells the client to offer "load earlier history", which
 				// comes back as a `load_history` message below.
-				const { entries, truncated, endOffset } = session.transcriptPath
+				//
+				// Two-stage init: ship the last screenful immediately (the spinner
+				// ends as soon as the viewport can fill), then the rest of the tail a
+				// beat later as a `transcript_history` prepend — two small JSON.parses
+				// and a ~12-bubble first render instead of one 40-90 bubble wall.
+				// Both use the tighter INIT wire clamp: the UI eagerly renders only
+				// ~6KB of markdown per bubble and fetches the full entry on demand,
+				// so the fat 32KB clamp only bought transfer time (a heavy tail hit
+				// 1.7MB on the wire). `startOffset` is the pagination cursor for
+				// "load earlier".
+				const { entries, truncated, endOffset, startOffset } = session.transcriptPath
 					? parseTranscriptTail(session.transcriptPath)
-					: { entries: [], truncated: false, endOffset: 0 };
+					: { entries: [], truncated: false, endOffset: 0, startOffset: 0 };
+				const FIRST_PAINT_ENTRIES = 12;
+				const staged = entries.length > FIRST_PAINT_ENTRIES;
+				const head = staged ? entries.slice(-FIRST_PAINT_ENTRIES) : entries;
+				const rest = staged ? entries.slice(0, -FIRST_PAINT_ENTRIES) : [];
 				ws.send(
 					JSON.stringify({
 						type: "transcript_init",
 						sessionId,
-						entries: clampEntriesForWire(entries),
+						entries: clampEntriesForWire(head, INIT_WIRE_CLAMP_BYTES),
 						truncated,
+						startOffset,
 					}),
 				);
+				if (rest.length) {
+					// Small delay so the client paints the first screenful before the
+					// bulk arrives; ids dedupe on the client, so overlap is harmless.
+					const restPayload = JSON.stringify({
+						type: "transcript_history",
+						sessionId,
+						entries: clampEntriesForWire(rest, INIT_WIRE_CLAMP_BYTES),
+						truncated,
+						startOffset,
+					});
+					setTimeout(() => {
+						try {
+							if (ws.data?.watchingSessionId === sessionId) ws.send(restPayload);
+						} catch {}
+					}, 80);
+				}
 
 				// Start file watcher from where the tail parse left off — bytes
 				// appended between the parse and the watch would otherwise be lost.
@@ -184,8 +215,12 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 			}
 
 			case "load_history": {
-				// "Load earlier history" button: the initial watch only sent the tail,
-				// so re-send the full transcript (cached by mtime in jsonl-parser).
+				// "Load earlier history": one PAGE of history — the byte window just
+				// before the client's earliest offset (`beforeOffset`, threaded from
+				// transcript_init/transcript_history startOffset). The old behavior
+				// (re-send the ENTIRE transcript) hit ~15MB wire payloads and a
+				// 600-bubble render on big transcripts; it survives only as the
+				// fallback for clients that don't send an offset.
 				const session = findSession(msg.sessionId);
 				if (!session?.transcriptPath) {
 					ws.send(
@@ -197,6 +232,31 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						}),
 					);
 					return;
+				}
+				const before =
+					typeof msg.beforeOffset === "number" && msg.beforeOffset > 0
+						? msg.beforeOffset
+						: null;
+				if (before !== null) {
+					// ~40 entries per page, and a 1MB soft window cap so a click through
+					// a fat tool-result region ships a partial page instead of 4MB.
+					const page = parseTranscriptWindow(
+						session.transcriptPath,
+						before,
+						undefined,
+						40,
+						1024 * 1024,
+					);
+					ws.send(
+						JSON.stringify({
+							type: "transcript_history",
+							sessionId: msg.sessionId,
+							entries: clampEntriesForWire(page.entries, INIT_WIRE_CLAMP_BYTES),
+							truncated: page.truncated,
+							startOffset: page.startOffset,
+						}),
+					);
+					break;
 				}
 				const entries = parseTranscript(session.transcriptPath);
 				ws.send(

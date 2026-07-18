@@ -265,7 +265,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 
 	if (entry.type === "user" && humanReply) {
 		return (
-			<div className="msg msg-human">
+			<div className="msg msg-human [content-visibility:auto] [contain-intrinsic-size:auto_80px]">
 				<div className="msg-label msg-label-human">
 					💬 {humanReply.name} · via Slack
 					<MsgTime ts={entry.timestamp} />
@@ -294,7 +294,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 		// bubble already says "you". Turns sent by someone else keep the
 		// attribution label.
 		return (
-			<div className="msg msg-user">
+			<div className="msg msg-user [content-visibility:auto] [contain-intrinsic-size:auto_80px]">
 				{fromOther && (
 					<div className="msg-label msg-label-user">
 						{fromOther}
@@ -319,7 +319,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 	// assistant — no speaker label: every left-aligned bubble is the agent, so
 	// the name row was pure noise above each answer.
 	return (
-		<div className="msg msg-assistant">
+		<div className="msg msg-assistant [content-visibility:auto] [contain-intrinsic-size:auto_80px]">
 			<ClampedBody
 				className="msg-body msg-body-assistant markdown"
 				content={displayContent}

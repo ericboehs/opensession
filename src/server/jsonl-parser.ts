@@ -719,11 +719,11 @@ export function parseTranscriptTail(
   path: string,
   maxBytes: number = DEFAULT_TAIL_BYTES,
   minEntries = 40
-): { entries: TranscriptEntry[]; truncated: boolean; endOffset: number } {
-  if (!existsSync(path)) return { entries: [], truncated: false, endOffset: 0 };
+): { entries: TranscriptEntry[]; truncated: boolean; endOffset: number; startOffset: number } {
+  if (!existsSync(path)) return { entries: [], truncated: false, endOffset: 0, startOffset: 0 };
   if (isCodexRolloutPath(path)) {
     const endOffset = fileSizeSafe(path);
-    return { entries: parseTranscript(path), truncated: false, endOffset };
+    return { entries: parseTranscript(path), truncated: false, endOffset, startOffset: 0 };
   }
 
   let win = maxBytes;
@@ -735,7 +735,7 @@ export function parseTranscriptTail(
       ({ buf, truncated, size } = readTailBytes(path, win));
     } catch {
       const endOffset = fileSizeSafe(path);
-      return { entries: parseTranscript(path), truncated: false, endOffset };
+      return { entries: parseTranscript(path), truncated: false, endOffset, startOffset: 0 };
     }
 
     // Drop the leading partial line so we never start mid-JSON-object.
@@ -744,6 +744,9 @@ export function parseTranscriptTail(
       const nl = buf.indexOf(0x0a);
       chunk = nl !== -1 ? buf.subarray(nl + 1) : Buffer.alloc(0);
     }
+    // Where the parsed window begins — the "load earlier" pagination cursor
+    // (parseTranscriptWindow reads the bytes before this offset).
+    const startOffset = size - chunk.length;
     // If the read caught the writer mid-line, the tail after the last newline
     // is half an entry. Point endOffset at the last complete line so the
     // watcher re-reads the whole line once it's finished, instead of starting
@@ -754,16 +757,74 @@ export function parseTranscriptTail(
     const entries = parseClaudeLines(lines);
 
     if (!truncated || entries.length >= minEntries)
-      return { entries, truncated, endOffset };
+      return { entries, truncated, endOffset, startOffset };
     if (win >= MAX_TAIL_BYTES) {
       // A single line larger than the cap (e.g. a huge embedded tool result)
       // would leave the tail empty — fall back to the full parse so the viewer
       // is never blank.
       if (entries.length === 0) {
-        return { entries: parseTranscript(path), truncated: false, endOffset };
+        return { entries: parseTranscript(path), truncated: false, endOffset, startOffset: 0 };
       }
-      return { entries, truncated, endOffset };
+      return { entries, truncated, endOffset, startOffset };
     }
+    win = Math.min(win * 4, MAX_TAIL_BYTES);
+  }
+}
+
+/**
+ * One "load earlier history" page: parse the byte window ENDING at
+ * `beforeOffset` (a `startOffset` from parseTranscriptTail or a previous call
+ * here), growing backwards until it yields `minEntries` entries or reaches the
+ * start of the file. Same partial-line discipline as the tail parse. Replaces
+ * the old full-file resend, whose wire payload hit ~15MB on big transcripts.
+ */
+export function parseTranscriptWindow(
+  path: string,
+  beforeOffset: number,
+  maxBytes: number = DEFAULT_TAIL_BYTES,
+  minEntries = 80,
+  /** Soft window cap: once the window reaches this size, a partial page (any
+   *  entries at all) is returned rather than growing further — a fat
+   *  tool-result region otherwise balloons one click to a multi-MB page. The
+   *  window still grows past the cap when it has yielded NOTHING (a single
+   *  line bigger than the cap), so a click never returns an empty page. */
+  maxWindowBytes: number = MAX_TAIL_BYTES
+): { entries: TranscriptEntry[]; startOffset: number; truncated: boolean } {
+  if (!existsSync(path) || beforeOffset <= 0)
+    return { entries: [], startOffset: 0, truncated: false };
+
+  let win = maxBytes;
+  for (;;) {
+    const start = Math.max(0, beforeOffset - win);
+    const len = beforeOffset - start;
+    let buf: Buffer;
+    try {
+      const fd = openSync(path, "r");
+      try {
+        buf = Buffer.allocUnsafe(len);
+        if (len > 0) readSync(fd, buf, 0, len, start);
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      return { entries: [], startOffset: beforeOffset, truncated: false };
+    }
+
+    let chunk = buf;
+    if (start > 0) {
+      const nl = buf.indexOf(0x0a);
+      chunk = nl !== -1 ? buf.subarray(nl + 1) : Buffer.alloc(0);
+    }
+    const startOffset = beforeOffset - chunk.length;
+    const lines = chunk.toString("utf-8").split("\n").filter((l) => l.trim());
+    const entries = parseClaudeLines(lines);
+
+    if (start === 0 || entries.length >= minEntries)
+      return { entries, startOffset, truncated: startOffset > 0 };
+    if (win >= maxWindowBytes && entries.length > 0)
+      return { entries, startOffset, truncated: startOffset > 0 };
+    if (win >= MAX_TAIL_BYTES)
+      return { entries, startOffset, truncated: startOffset > 0 };
     win = Math.min(win * 4, MAX_TAIL_BYTES);
   }
 }
@@ -780,11 +841,20 @@ export function parseTranscriptTail(
  * a wire concern only, applied at the serialization sites.
  */
 export const WIRE_CLAMP_BYTES = 32 * 1024;
-function clampEntryForWire(e: TranscriptEntry): TranscriptEntry {
-  if ((e.content?.length ?? 0) <= WIRE_CLAMP_BYTES) return e;
+/**
+ * Tighter clamp for the transcript-open payload (initial tail + history
+ * pages): the UI eagerly renders only ~6KB of markdown per bubble
+ * (EAGER_MD_CHARS) and fetches the full entry on "Show more" anyway, so
+ * shipping 32KB per entry there only buys transfer + JSON.parse time — an
+ * entry-heavy tail hit 1.7MB on the wire. Live appends keep the fatter clamp
+ * (no extra fetch mid-conversation for a merely-large message).
+ */
+export const INIT_WIRE_CLAMP_BYTES = 8 * 1024;
+function clampEntryForWire(e: TranscriptEntry, max: number): TranscriptEntry {
+  if ((e.content?.length ?? 0) <= max) return e;
   return {
     ...e,
-    content: e.content.slice(0, WIRE_CLAMP_BYTES),
+    content: e.content.slice(0, max),
     contentClamped: true,
     contentLength: e.content.length,
   };
@@ -792,11 +862,12 @@ function clampEntryForWire(e: TranscriptEntry): TranscriptEntry {
 
 /** Wire-clamp a batch; returns the same array when nothing needed clamping. */
 export function clampEntriesForWire(
-  entries: TranscriptEntry[]
+  entries: TranscriptEntry[],
+  maxBytes: number = WIRE_CLAMP_BYTES
 ): TranscriptEntry[] {
-  if (!entries.some((e) => (e.content?.length ?? 0) > WIRE_CLAMP_BYTES))
+  if (!entries.some((e) => (e.content?.length ?? 0) > maxBytes))
     return entries;
-  return entries.map(clampEntryForWire);
+  return entries.map((e) => clampEntryForWire(e, maxBytes));
 }
 
 function safeStringify(v: unknown): string {

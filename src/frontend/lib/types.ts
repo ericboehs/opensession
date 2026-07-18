@@ -571,6 +571,18 @@ export type WSServerMessage =
 			sessionId?: string;
 			entries: TranscriptEntry[];
 			truncated?: boolean;
+			/** Byte offset the shipped tail begins at — the "load earlier"
+			 *  pagination cursor (absent on older servers → full-resend fallback). */
+			startOffset?: number;
+	  }
+	| {
+			/** Older entries: the bulk of a two-stage init, or one "load earlier"
+			 *  page. Client merges by id and re-sorts by time (prepend semantics). */
+			type: "transcript_history";
+			sessionId?: string;
+			entries: TranscriptEntry[];
+			truncated?: boolean;
+			startOffset?: number;
 	  }
 	| { type: "transcript_append"; sessionId?: string; entries: TranscriptEntry[] }
 	| { type: "session_status"; sessionId?: string; isRunning: boolean }

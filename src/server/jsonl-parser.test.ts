@@ -7,6 +7,7 @@ import {
   parseTranscript,
   parseTranscriptFrom,
   parseTranscriptTail,
+  parseTranscriptWindow,
 } from "./jsonl-parser";
 
 let dir: string;
@@ -225,6 +226,50 @@ describe("parseTranscriptTail", () => {
     const res = parseTranscriptTail(join(dir, "nope.jsonl"));
     expect(res.entries).toEqual([]);
     expect(res.truncated).toBe(false);
+  });
+});
+
+describe("parseTranscriptWindow", () => {
+  it("pages backwards from the tail's startOffset until the whole file is covered", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      lines.push(userLine(`u${i}`, `question ${i} ` + "x".repeat(400)));
+      lines.push(assistantLine(`a${i}`, `answer ${i} ` + "y".repeat(400)));
+    }
+    const path = writeFixture(lines);
+    const full = parseTranscript(path);
+    const tail = parseTranscriptTail(path, 1024, 5);
+    expect(tail.truncated).toBe(true);
+    expect(tail.startOffset).toBeGreaterThan(0);
+
+    // Walk pages until the window reports it reached the start of the file.
+    let collected = [...tail.entries];
+    let cursor = tail.startOffset;
+    let truncated = true;
+    let guard = 0;
+    while (truncated && guard++ < 200) {
+      const page = parseTranscriptWindow(path, cursor, 1024, 5);
+      expect(page.startOffset).toBeLessThan(cursor);
+      collected = [...page.entries, ...collected];
+      cursor = page.startOffset;
+      truncated = page.truncated;
+    }
+    // Pages + tail reassemble the exact full parse, in order, no dupes.
+    expect(collected).toEqual(full);
+    expect(cursor).toBe(0);
+  });
+
+  it("returns empty at offset 0 and for a missing file", () => {
+    const path = writeFixture(BASIC_LINES);
+    expect(parseTranscriptWindow(path, 0).entries).toEqual([]);
+    expect(parseTranscriptWindow(join(dir, "nope.jsonl"), 100).entries).toEqual([]);
+  });
+
+  it("tail startOffset is 0 for an untruncated file", () => {
+    const path = writeFixture(BASIC_LINES);
+    const res = parseTranscriptTail(path);
+    expect(res.truncated).toBe(false);
+    expect(res.startOffset).toBe(0);
   });
 });
 

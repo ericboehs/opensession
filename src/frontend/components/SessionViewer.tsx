@@ -322,6 +322,10 @@ export function SessionViewer({
 	// the "load earlier history" affordance at the top of the conversation.
 	const [historyTruncated, setHistoryTruncated] = useState(false);
 	const [loadingHistory, setLoadingHistory] = useState(false);
+	// Byte offset the loaded history begins at — the "load earlier" pagination
+	// cursor (server: parseTranscriptTail/parseTranscriptWindow startOffset).
+	// null = unknown (old server) → load_history falls back to the full resend.
+	const historyStartRef = useRef<number | null>(null);
 	// Scroll anchor for "Load earlier history": older entries prepend above the
 	// viewport, so keep the reader on the same content by offsetting scrollTop
 	// by the height the prepended history added.
@@ -1020,6 +1024,38 @@ export function SessionViewer({
 					setHistoryTruncated(!!msg.truncated);
 					setLoadingHistory(false);
 					setLoading(false);
+					// Pagination cursor for "load earlier" (the byte offset the shipped
+					// tail begins at). The rest of a two-stage init and each history
+					// page arrive as transcript_history below.
+					if (typeof msg.startOffset === "number") {
+						historyStartRef.current = msg.startOffset;
+					}
+					break;
+				}
+				case "transcript_history": {
+					// Older entries (the bulk of a two-stage init, or one "load
+					// earlier" page): merge by id and re-sort by time — mergeEntries
+					// appends, which is wrong for content older than what's shown.
+					setEntries((prev) => {
+						const known = new Set(prev.map((e) => e.id));
+						const older = msg.entries.filter(
+							(e: TranscriptEntry) => !known.has(e.id),
+						);
+						if (!older.length) return prev;
+						return [...prev, ...older].sort(
+							(a, b) =>
+								new Date(a.timestamp).getTime() -
+								new Date(b.timestamp).getTime(),
+						);
+					});
+					setHistoryTruncated(!!msg.truncated);
+					setLoadingHistory(false);
+					if (typeof msg.startOffset === "number") {
+						historyStartRef.current =
+							historyStartRef.current === null
+								? msg.startOffset
+								: Math.min(historyStartRef.current, msg.startOffset);
+					}
 					break;
 				}
 				case "transcript_append": {
@@ -3013,7 +3049,14 @@ export function SessionViewer({
 															top: el.scrollTop,
 														};
 													setLoadingHistory(true);
-													send({ type: "load_history", sessionId: session.id });
+													send({
+														type: "load_history",
+														sessionId: session.id,
+														...(historyStartRef.current !== null &&
+														historyStartRef.current > 0
+															? { beforeOffset: historyStartRef.current }
+															: {}),
+													});
 												}}
 											>
 												{loadingHistory
