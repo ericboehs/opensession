@@ -183,6 +183,65 @@ export async function handleConnectionsRoutes(
 		}
 	}
 
+	// ── GitHub user auth (PRs as the session owner, opt-in via config) ──
+	// Device-flow connect per teammate; tokens live server-side (0600) and are
+	// never returned here. See src/server/github-auth.ts.
+	if (path === "/backstage/api/connections/github" && req.method === "GET") {
+		const { githubUserAuthSettings, connectedGithubAccounts } = await import(
+			"../github-auth"
+		);
+		const { configuredIdentity } = await import("../config");
+		const settings = githubUserAuthSettings();
+		const accounts = connectedGithubAccounts();
+		const connected = new Set(accounts.map((a) => a.login.toLowerCase()));
+		return Response.json({
+			enabled: settings.enabled,
+			clientIdConfigured: !!settings.clientId,
+			accounts,
+			team: configuredIdentity()
+				.team.filter((m) => m.github)
+				.map((m) => ({
+					name: m.name,
+					github: m.github,
+					connected: connected.has(m.github!.toLowerCase()),
+				})),
+		});
+	}
+
+	if (
+		path === "/backstage/api/connections/github/device" &&
+		req.method === "POST"
+	) {
+		const { startGithubDeviceFlow } = await import("../github-auth");
+		const result = await startGithubDeviceFlow();
+		if ("error" in result) return Response.json(result, { status: 400 });
+		return Response.json(result);
+	}
+
+	if (
+		path === "/backstage/api/connections/github/device/poll" &&
+		req.method === "POST"
+	) {
+		const body = await req.json().catch(() => null);
+		const deviceCode =
+			typeof body?.deviceCode === "string" ? body.deviceCode : "";
+		if (!deviceCode)
+			return Response.json({ error: "deviceCode required" }, { status: 400 });
+		const { pollGithubDeviceFlow } = await import("../github-auth");
+		return Response.json(await pollGithubDeviceFlow(deviceCode));
+	}
+
+	const ghAccountMatch = path.match(
+		/^\/backstage\/api\/connections\/github\/account\/([^/]+)$/,
+	);
+	if (ghAccountMatch && req.method === "DELETE") {
+		const { removeGithubAccount } = await import("../github-auth");
+		const removed = removeGithubAccount(decodeURIComponent(ghAccountMatch[1]));
+		if (!removed)
+			return Response.json({ error: "Not connected" }, { status: 404 });
+		return Response.json({ ok: true });
+	}
+
 	// ── Plain triage router (spam gate + model routing for new tickets) ──
 	// The prompt is editable so routing can be tweaked without a deploy;
 	// the JSON output contract is appended in code and can't be broken here.

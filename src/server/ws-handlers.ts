@@ -70,6 +70,12 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 			return;
 		}
 
+		// GitHub web sign-in active (web-auth.ts): the upgrade stamped this
+		// socket with the cookie's verified identity — it overrides whatever
+		// name the client claims in any message, so attribution and per-user
+		// gating stop trusting self-declared users.
+		if (ws.data?.authUser) msg.user = ws.data.authUser;
+
 		switch (msg.type) {
 			case "ping": {
 				// App-level liveness probe (browsers can't send WS protocol pings).
@@ -920,6 +926,9 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 										? { projectId: msg.projectId }
 										: {}),
 							createdBy: user || "Anonymous",
+							...(ws.data?.authLogin
+								? { createdByLogin: ws.data.authLogin }
+								: {}),
 							createdAt: new Date().toISOString(),
 							lastActivity: new Date().toISOString(),
 							title,

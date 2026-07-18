@@ -319,6 +319,11 @@ export interface BackstageSessionFile {
   /** Agent-published demo walkthrough (opensession-walkthrough). */
   walkthrough?: SessionWalkthrough;
   createdBy: string;
+  /** Verified GitHub login of the creator — stamped when GitHub web sign-in
+   *  is active (web-auth.ts), and backfilled onto older sessions by the
+   *  one-time boot migration (resolved from createdBy via the identity
+   *  table). Absent on automation sessions and unresolvable creators. */
+  createdByLogin?: string;
   createdAt: string;
   lastActivity: string;
   title?: string;

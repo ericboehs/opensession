@@ -14,6 +14,10 @@ export interface RouteContext {
 	 *  responses that embed it (manifest, sw.js scope, redirects) answer in
 	 *  kind so each install/bookmark stays self-consistent. */
 	publicPrefix: string;
+	/** Verified sign-in identity (web-auth.ts) when GitHub web sign-in is
+	 *  active; null when signed out or when the feature is off. When set,
+	 *  handlers should prefer it over any client-supplied `user` field. */
+	authUser?: { login: string; name: string } | null;
 }
 
 export type RouteHandler = (

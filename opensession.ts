@@ -29,6 +29,7 @@ import { getSessionControl } from "./src/server/session-control";
 import { buildReposNote } from "./src/server/session-repos";
 import { destroySessionSandbox } from "./src/server/session-sandbox";
 import { getAllSessions } from "./src/server/sessions";
+import { migrateSessionsToGithubUser, resolveWebAuth, webAuthRequired } from "./src/server/web-auth";
 import { startWebhookServer } from "./src/server/webhook-server";
 import { sweepArchivedWorktrees } from "./src/server/worktree";
 import { type WSClientData, broadcastToAll } from "./src/server/ws-hub";
@@ -177,11 +178,33 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				return Response.redirect(stripped + url.search, 301);
 			}
 
+			// GitHub-backed sign-in gate (src/server/web-auth.ts) — active only
+			// when per-user GitHub auth is opted in (config integrations.github.
+			// userPrAuth). Every API call and the UI WebSocket then require the
+			// HttpOnly session cookie (or a Bearer token from the sessions file,
+			// for curl/CDP callers). Exempt: /api/auth/* (how you get in), the
+			// sandbox run-ws/rpc-ws dial-backs (own per-launch token gate), and
+			// page/asset loads (the sign-in screen must render). The verified
+			// identity rides RouteContext and the WS upgrade data, where it
+			// overrides any client-claimed user name.
+			let authUser: { login: string; name: string } | null = null;
+			if (webAuthRequired()) {
+				authUser = resolveWebAuth(req);
+				if (
+					!authUser &&
+					((path.startsWith("/backstage/api/") &&
+						!path.startsWith("/backstage/api/auth/")) ||
+						path === "/backstage/ws")
+				) {
+					return Response.json({ error: "Sign in required" }, { status: 401 });
+				}
+			}
+
 			// Every API/asset route lives in src/server/routes/* — ordered domain
 			// handlers that return undefined to fall through. Only the WebSocket
 			// upgrades, the SPA fallback and the 404 stay here (they need `server`
 			// or must run last).
-			const ctx: RouteContext = { req, url, path, publicPrefix };
+			const ctx: RouteContext = { req, url, path, publicPrefix, authUser };
 			for (const handler of routeHandlers) {
 				const res = await handler(ctx);
 				if (res) return res;
@@ -189,8 +212,18 @@ const server: import("bun").Server<WSClientData> = hotServe({
 
 			// WebSocket upgrade
 			if (path === "/backstage/ws") {
+				// The verified identity is stamped in the historical picker format
+				// (first name — what createdBy/attribution have always stored);
+				// the GitHub login rides along for createdByLogin stamping.
+				const authFirst = authUser ? authUser.name.split(" ")[0] : null;
 				const upgraded = server.upgrade(req, {
-					data: { watchingSessionId: null, watchingNoteId: null, user: null },
+					data: {
+						watchingSessionId: null,
+						watchingNoteId: null,
+						user: authFirst,
+						authUser: authFirst,
+						authLogin: authUser?.login || null,
+					},
 				});
 				if (!upgraded) {
 					return new Response("WebSocket upgrade failed", { status: 400 });
@@ -680,6 +713,16 @@ if (!g.__backstageBooted) {
 			);
 		}
 		process.on("SIGUSR2", () => scheduleFrontendRebuild("SIGUSR2", 0));
+	}
+
+	// One-time (marker-guarded): when GitHub web sign-in is active, backfill
+	// createdByLogin on pre-existing sessions so they belong to the same
+	// verified person after the identity switch. No-op while the feature is
+	// off — flipping it on in config takes effect at the next boot.
+	try {
+		migrateSessionsToGithubUser();
+	} catch (e) {
+		console.error("[web-auth] session migration failed:", e);
 	}
 
 	g.__backstageBooted = true;

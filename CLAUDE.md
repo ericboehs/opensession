@@ -176,6 +176,44 @@ An MCP server in `mcp-config.json` can carry an optional `allowedUsers: string[]
 - Manage it from the Connections UI (the Add-MCP form has an "Allowed users" field; each server card has a Restrict/Edit-access button → `PUT /api/connections/mcp/:name` with `{allowedUsers}`), or via opensession-admin (`add_mcp_server`'s `allowedUsers`, and `set_mcp_allowed_users` to change it on an existing server). Backing helpers: `addMcpServer` / `setMcpAllowedUsers` in src/server/connections.ts.
 - **A change to the runner-layer filtering needs a real `systemctl restart`** (runner internals don't hot-reload — see "Hot reload & restarts"). Adding/removing/re-scoping a server in `mcp-config.json` itself is read fresh per run, but until the process runs the new `filterMcpServers`, `allowedUsers` is neither enforced nor stripped — so restart after wiring a restricted server.
 
+## Per-user GitHub auth + web sign-in (opt-in, config `integrations.github`)
+
+Off by default — with no config the bot-PR + localStorage-name-picker behavior
+is byte-identical. Opting in (`integrations.github: { userPrAuth: true,
+oauthClientId: "<OAuth app client id>" }`; env OPENSESSION_GITHUB_CLIENT_ID
+wins over the config id) activates BOTH halves at once:
+
+- **PRs as the session owner** (src/server/github-auth.ts): teammates connect
+  their GitHub account via the OAuth *device flow* (Connections UI card, or
+  implicitly by signing in). Tokens live per-login in
+  `~/.opensession-github-auth.json` (0600, never returned by any API). The
+  runner injects them as GH_TOKEN/GITHUB_TOKEN into the engine-server env —
+  interactive kinds only and never a least-privilege run (`policy.unattended`:
+  automations, deniedTools carriers incl. the Slack/Linear loops keep the bot
+  credential, fail-closed). The run user resolves to a login through the SAME
+  identity table as commit attribution, so the mapping is config
+  (identity.team[].github), not code. The PR-attribution instructions swap
+  the `--assignee` bot wording for "authored by them" when the token rides.
+  Injection lives in opencode-runner.ts ⇒ **needs a real restart**.
+- **GitHub web sign-in** (src/server/web-auth.ts + routes/auth.ts): when
+  active, the UI's name picker is replaced by a real sign-in (UserGate →
+  device flow → HttpOnly `opensession_auth` cookie; sessions in
+  `~/.opensession-web-sessions.json`, sliding 90d). Every `/backstage/api/*`
+  request and the UI WebSocket 401 without it (gate in opensession.ts's fetch
+  preamble; exempt: `/api/auth/*`, run-ws/rpc-ws dial-backs, page/asset
+  loads). Only logins on identity.team may sign in. The verified identity
+  OVERRIDES client-claimed `user` on every WS message and stamps
+  `createdByLogin` on new sessions; a one-time boot migration backfills
+  `createdByLogin` onto existing sessions from `createdBy` (marker:
+  `~/.opensession-chats/.github-user-migration.json`). Non-browser callers
+  (curl/CDP recipes) authenticate with `Authorization: Bearer <token>` using a
+  token from the web-sessions file.
+
+GitHub side: one org OAuth App (Settings → Developer settings → OAuth Apps)
+with **"Enable Device Flow"** checked — no client secret is used or stored. If
+the org restricts third-party OAuth app access, approve the app for the org or
+`repo`-scoped tokens won't reach org repos.
+
 ## Self-management tools (Slack + interactive OpenSession sessions)
 
 The `opensession-admin` in-process MCP server (src/agents/slack/admin-tools.ts) lets Michael manage his own setup from Slack: channel memory (remember/list_memory/forget) and — gated to the trusted user (`isAdmin` = no `ALLOWED_SLACK_USER_ID` set, or sender matches it) — automations (list/create/update/delete/run) and MCP connections (list/add/remove). It is wired ONLY into interactive Slack runs (handlers.ts `processMessage`); automation runs never go through there, so they never receive these tools. Do not add `opensession-admin` to automation/`runAgent` paths — that would let untrusted ticket text reconfigure Michael. Channel memory is scoped in src/agents/slack/memory.ts (public channel → shared `workspace` store; private channel/DM → isolated, with read-only workspace view) and auto-injected into the system prompt each run.

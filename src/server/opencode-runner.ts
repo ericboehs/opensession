@@ -170,6 +170,7 @@ import {
 } from "./run-events";
 import { audit, summarizeText } from "./audit";
 import { gitIdentityEnv, githubLoginFor, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
+import { githubAuthEnv, githubUserLoginForRun } from "./github-auth";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import {
@@ -946,6 +947,9 @@ export function buildOpencodeInstructions(input: {
    *  GitHub account, so the body line + assignee are how the human shows up. */
   user?: string;
   author?: GitIdentity | null;
+  /** Set when this run carries the owner's own GitHub token (github-auth.ts):
+   *  PRs are authored by them directly, so skip the bot-attribution assignee. */
+  githubUserLogin?: string | null;
   droppedForConfirm?: string[];
   /** Unattended least-privilege denials (opencodeRunPolicy.noteGroups) — the
    *  tools are already stripped at the engine level; this tells the agent
@@ -1052,14 +1056,18 @@ export function buildOpencodeInstructions(input: {
       "## PR attribution\nWhenever you open a pull request (any repo, via `gh pr create` " +
         "or otherwise):\n" +
         `- End the PR body with this line, using exactly this session URL:\n\n  ${footer}\n` +
-        (requester
-          ? `- The PR opens under the bot GitHub account, so also attribute it to ${requester}` +
-            (login
-              ? ` by assigning them: add \`--assignee ${login}\` to \`gh pr create\` (or ` +
-                `\`gh pr edit --add-assignee ${login}\` for an existing PR). If the assignment ` +
-                "fails, continue without it."
-              : " via the body line above.")
-          : "")
+        (input.githubUserLogin
+          ? `- This session is authenticated as ${requester || input.githubUserLogin}'s own ` +
+            `GitHub account (@${input.githubUserLogin}) — PRs you open are authored by them ` +
+            "directly. Do not add an --assignee for attribution."
+          : requester
+            ? `- The PR opens under the bot GitHub account, so also attribute it to ${requester}` +
+              (login
+                ? ` by assigning them: add \`--assignee ${login}\` to \`gh pr create\` (or ` +
+                  `\`gh pr edit --add-assignee ${login}\` for an existing PR). If the assignment ` +
+                  "fails, continue without it."
+                : " via the body line above.")
+            : "")
     );
   }
   const inproc = (input.inProcessMcp || {}) as Record<string, unknown>;
@@ -2281,6 +2289,22 @@ async function* runOpencodeAttempt(
       confirmTools,
       journalKind: journal?.kind,
     });
+    // Per-user GitHub auth (opt-in — github-auth.ts): the session owner's own
+    // token rides the server env so `gh` acts as them (PRs authored by the
+    // human, not the bot). Trust gate: interactive kinds only, and never a
+    // least-privilege run — automations and deniedTools carriers (interactive
+    // resumes of automation sessions, the Slack/Linear loops with their Stripe
+    // deny-set) keep the bot credential. Deterministic per user, so it's safe
+    // in the shared-server config hash (a token change drain-respawns, same as
+    // an identity change).
+    const githubUserLogin =
+      !policy.unattended && INTERACTIVE_KINDS.has(baseJournalKind(journal?.kind))
+        ? githubUserLoginForRun(user || author?.name)
+        : null;
+    if (githubUserLogin) {
+      serverExtraEnv = { ...(serverExtraEnv || {}), ...githubAuthEnv(user || author?.name) };
+    }
+
     const confirmStrips: Record<string, false> = {};
     const confirmStrippedServers: string[] = [];
     if (shared && policy.confirmToolsForServerDrop) {
@@ -2316,6 +2340,7 @@ async function* runOpencodeAttempt(
       bksSessionId: journal?.bksSessionId,
       user,
       author,
+      githubUserLogin,
       droppedForConfirm: confirmUnavailable,
       deniedToolNotes: policy.noteGroups,
       // The server carries ONE bridge's models, so a cross-provider oracle

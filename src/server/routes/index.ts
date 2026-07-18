@@ -7,6 +7,7 @@
  */
 
 import type { RouteHandler } from "./context";
+import { handleAuthRoutes } from "./auth";
 import { handleMediaRoutes } from "./media";
 import { handleStaticAssetsRoutes } from "./static-assets";
 import { handlePlainRoutes } from "./plain";
@@ -36,6 +37,9 @@ import { handleReportsRoutes } from "./reports";
 export type { RouteContext, RouteHandler } from "./context";
 
 export const routeHandlers: RouteHandler[] = [
+	// First: the sign-in endpoints are exempt from the auth gate (which runs
+	// before dispatch in opensession.ts) and must never be shadowed.
+	handleAuthRoutes,
 	handleMediaRoutes,
 	handleStaticAssetsRoutes,
 	handlePlainRoutes,

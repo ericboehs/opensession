@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { UserAvatar } from "./UserAvatar";
+import { BASE_PATH } from "../lib/base";
 
 export const TEAM = ["Michiel", "Jaap", "Kent", "Grant", "Johnny", "John", "Louise"];
 // Rename shim: read the new key first, fall back to the legacy one (existing
@@ -41,8 +42,43 @@ export function useCurrentUser(): string {
   return user;
 }
 
+interface AuthStatus {
+  required: boolean;
+  authenticated: boolean;
+  login?: string;
+  name?: string;
+}
+
+/**
+ * Identity gate. Default: the historical localStorage name picker. When
+ * GitHub web sign-in is active on the server (config
+ * integrations.github.userPrAuth), the picker is replaced by a real GitHub
+ * sign-in (device flow → HttpOnly cookie) — the server then ignores
+ * client-claimed names, so the localStorage value is display-only and is
+ * synced to the verified identity here.
+ */
 export function UserGate({ children }: { children: React.ReactNode }) {
   const user = useCurrentUser();
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
+
+  useEffect(() => {
+    fetch(`${BASE_PATH}/api/auth/status`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: AuthStatus | null) => {
+        if (!body) return; // old server / fetch failed → keep the picker flow
+        setAuth(body);
+        if (body.required && body.authenticated && body.name) {
+          const first = body.name.split(" ")[0];
+          if (getCurrentUser() !== first) setStoredUser(first);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  if (auth?.required) {
+    if (auth.authenticated) return <>{children}</>;
+    return <GithubSignIn onSignedIn={(status) => setAuth(status)} />;
+  }
 
   if (user !== "Anonymous") return <>{children}</>;
 
@@ -62,6 +98,102 @@ export function UserGate({ children }: { children: React.ReactNode }) {
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function GithubSignIn({ onSignedIn }: { onSignedIn: (status: AuthStatus) => void }) {
+  const [flow, setFlow] = useState<{
+    deviceCode: string;
+    userCode: string;
+    verificationUri: string;
+    interval: number;
+  } | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Poll GitHub (via the server) until the device code is authorized.
+  useEffect(() => {
+    if (!flow) return;
+    let cancelled = false;
+    let intervalMs = Math.max(flow.interval, 5) * 1000;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try {
+        const res = await fetch(`${BASE_PATH}/api/auth/device/poll`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceCode: flow.deviceCode }),
+        });
+        const body = await res.json();
+        if (cancelled) return;
+        if (body.status === "ok") {
+          if (body.name) setStoredUser(body.name.split(" ")[0]);
+          onSignedIn({ required: true, authenticated: true, login: body.login, name: body.name });
+          return;
+        }
+        if (body.status === "slow_down") intervalMs = Math.max(body.interval, 5) * 1000;
+        if (body.status === "error" || body.error) {
+          setError(body.error || "Sign-in failed");
+          setFlow(null);
+          return;
+        }
+      } catch {}
+      if (!cancelled) timer = setTimeout(tick, intervalMs);
+    };
+    timer = setTimeout(tick, intervalMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [flow, onSignedIn]);
+
+  async function start() {
+    setError(null);
+    setStarting(true);
+    try {
+      const res = await fetch(`${BASE_PATH}/api/auth/device`, { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      setFlow(body);
+    } catch (e: any) {
+      setError(e.message);
+    }
+    setStarting(false);
+  }
+
+  return (
+    <div className="user-gate-overlay">
+      <div className="user-gate-card" style={{ maxWidth: 380 }}>
+        <h2>Sign in</h2>
+        {!flow ? (
+          <>
+            <p style={{ margin: "10px 0 16px", fontSize: 13, opacity: 0.75 }}>
+              This workspace uses GitHub sign-in. Your sessions will act as your
+              own GitHub account (PRs are authored by you).
+            </p>
+            <button className="user-gate-btn" onClick={start} disabled={starting} style={{ width: "100%" }}>
+              {starting ? "Starting…" : "Sign in with GitHub"}
+            </button>
+          </>
+        ) : (
+          <p style={{ margin: "10px 0 0", fontSize: 14, lineHeight: 1.7 }}>
+            Enter code{" "}
+            <strong style={{ fontFamily: "var(--mono, monospace)", letterSpacing: "0.12em" }}>
+              {flow.userCode}
+            </strong>{" "}
+            at{" "}
+            <a href={flow.verificationUri} target="_blank" rel="noreferrer">
+              {flow.verificationUri.replace(/^https:\/\//, "")}
+            </a>
+            <br />
+            <span style={{ fontSize: 12, opacity: 0.7 }}>Waiting for GitHub…</span>
+          </p>
+        )}
+        {error && (
+          <p style={{ marginTop: 10, fontSize: 12, color: "var(--red)" }}>{error}</p>
+        )}
       </div>
     </div>
   );

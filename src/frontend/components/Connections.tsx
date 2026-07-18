@@ -298,6 +298,8 @@ export function Connections() {
             })}
           </div>
 
+          <GithubAccounts />
+
           <PlainRouter />
 
           <div className="conn-footnote">
@@ -307,6 +309,217 @@ export function Connections() {
         </>
       )}
     </div>
+  );
+}
+
+interface GithubAuthData {
+  enabled: boolean;
+  clientIdConfigured: boolean;
+  accounts: { login: string; name?: string; connectedAt: string; scopes?: string }[];
+  team: { name: string; github: string; connected: boolean }[];
+}
+
+interface DeviceFlow {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  interval: number;
+}
+
+/**
+ * GitHub user auth — opt-in per-user tokens so interactive sessions open PRs
+ * as the actual session owner instead of the bot. Connect runs GitHub's
+ * device flow: show a code, the person enters it on github.com, we poll until
+ * GitHub hands over their token (stored server-side, never shown here).
+ */
+function GithubAccounts() {
+  const [data, setData] = useState<GithubAuthData | null>(null);
+  const [flow, setFlow] = useState<DeviceFlow | null>(null);
+  const [flowState, setFlowState] = useState<"idle" | "starting" | "waiting">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [justConnected, setJustConnected] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE_PATH}/api/connections/github`);
+      if (res.ok) setData(await res.json());
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Poll the device flow until GitHub reports authorized / expired.
+  useEffect(() => {
+    if (!flow) return;
+    let cancelled = false;
+    let intervalMs = Math.max(flow.interval, 5) * 1000;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try {
+        const res = await fetch(`${BASE_PATH}/api/connections/github/device/poll`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceCode: flow.deviceCode }),
+        });
+        const body = await res.json();
+        if (cancelled) return;
+        if (body.status === "ok") {
+          setFlow(null);
+          setFlowState("idle");
+          setJustConnected(body.login);
+          load();
+          return;
+        }
+        if (body.status === "slow_down") intervalMs = Math.max(body.interval, 5) * 1000;
+        if (body.status === "error") {
+          setError(body.error);
+          setFlow(null);
+          setFlowState("idle");
+          return;
+        }
+      } catch {}
+      if (!cancelled) timer = setTimeout(tick, intervalMs);
+    };
+    timer = setTimeout(tick, intervalMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [flow, load]);
+
+  async function startConnect() {
+    setError(null);
+    setJustConnected(null);
+    setFlowState("starting");
+    try {
+      const res = await fetch(`${BASE_PATH}/api/connections/github/device`, { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      setFlow(body);
+      setFlowState("waiting");
+    } catch (e: any) {
+      setError(e.message);
+      setFlowState("idle");
+    }
+  }
+
+  async function disconnect(login: string) {
+    if (!confirm(`Disconnect @${login}? Their sessions go back to opening PRs as the bot.`)) return;
+    try {
+      const res = await fetch(
+        `${BASE_PATH}/api/connections/github/account/${encodeURIComponent(login)}`,
+        { method: "DELETE" },
+      );
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  if (!data) return null;
+  const active = data.enabled && data.clientIdConfigured;
+
+  return (
+    <>
+      <SectionHeading>GitHub accounts — PRs as yourself</SectionHeading>
+      {error && (
+        <div className="form-error" onClick={() => setError(null)}>{error}</div>
+      )}
+      <div className="overflow-hidden rounded-lg border border-line bg-panel">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <IconTile name="github" size={30} />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-fg">Per-user GitHub auth</div>
+            <div className="text-xs leading-snug text-dim">
+              {active
+                ? "Interactive sessions of a connected teammate open PRs as their own GitHub account. Everyone else (and all automations) keeps the bot."
+                : "Off — sessions open PRs as the bot account. Opt in via config: integrations.github { userPrAuth: true, oauthClientId } in ~/.opensession/config.json."}
+            </div>
+          </div>
+          <StatusChip
+            label={active ? "Enabled" : data.enabled ? "Missing client id" : "Disabled"}
+            dot={active ? "var(--green)" : "var(--yellow)"}
+          />
+          {active && flowState !== "waiting" && (
+            <button
+              className="flex-shrink-0 rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+              onClick={startConnect}
+              disabled={flowState === "starting"}
+            >
+              {flowState === "starting" ? "Starting…" : "Connect account"}
+            </button>
+          )}
+        </div>
+
+        {flow && (
+          <div className="border-t border-line px-4 py-3 text-sm">
+            Enter code{" "}
+            <span className="rounded bg-active px-2 py-0.5 font-mono text-[15px] font-bold tracking-[0.12em] text-fg">
+              {flow.userCode}
+            </span>{" "}
+            at{" "}
+            <a href={flow.verificationUri} target="_blank" rel="noreferrer" className="text-accent underline">
+              {flow.verificationUri}
+            </a>
+            <span className="ml-2 text-xs text-dim">
+              Sign in as the account you want to connect — waiting for GitHub…
+            </span>
+            <button
+              className="ml-3 text-xs text-faint underline"
+              onClick={() => {
+                setFlow(null);
+                setFlowState("idle");
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {justConnected && (
+          <div className="border-t border-line px-4 py-2.5 text-xs text-dim">
+            Connected <span className="font-medium text-fg">@{justConnected}</span>. Their new
+            session runs now open PRs as this account.
+          </div>
+        )}
+
+        {active &&
+          data.team.map((m) => {
+            const account = data.accounts.find(
+              (a) => a.login.toLowerCase() === m.github.toLowerCase(),
+            );
+            return (
+              <div key={m.github} className="flex items-center gap-3 border-t border-line px-4 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-medium text-fg">{m.name}</span>
+                  <span className="ml-2 font-mono text-xs text-faint">@{m.github}</span>
+                </div>
+                {account && (
+                  <span className="text-[11px] text-faint">
+                    since {new Date(account.connectedAt).toLocaleDateString()}
+                  </span>
+                )}
+                <StatusChip
+                  label={m.connected ? "Connected" : "Not connected"}
+                  dot={m.connected ? "var(--green)" : "var(--line-strong, var(--text-faint))"}
+                />
+                {m.connected && (
+                  <button
+                    className="text-xs text-faint underline hover:text-red"
+                    onClick={() => disconnect(m.github)}
+                  >
+                    Disconnect
+                  </button>
+                )}
+              </div>
+            );
+          })}
+      </div>
+    </>
   );
 }
 

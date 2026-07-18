@@ -30,6 +30,11 @@ export interface WSClientData {
 	watchingSessionId: string | null;
 	watchingNoteId: string | null;
 	user: string | null;
+	/** Verified sign-in identity stamped at upgrade (web-auth.ts). When set,
+	 *  it overrides any client-claimed `user` in messages (ws-handlers.ts). */
+	authUser?: string | null;
+	/** Verified GitHub login of the signed-in user (createdByLogin stamping). */
+	authLogin?: string | null;
 }
 
 // sessionId → sockets currently viewing that session (collaboration fan-out)
