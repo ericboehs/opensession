@@ -5,6 +5,30 @@ webhook intake on the [webhook server](install.md#webhook-server), and the
 `gh` CLI for PR operations from sessions. The deploy pipeline (last section)
 is Tella-specific and replaceable.
 
+## The bot account (machine user)
+
+Create a **dedicated GitHub machine-user account** for your instance (Tella's
+is `tella-butler`) — a normal GitHub account, invited to your org with write
+access to the repos the agent works on. Everything bot-shaped hangs off it:
+
+1. its PAT is `GITHUB_API_TOKEN` (scoping below),
+2. the box's `gh` CLI is signed in as it (`gh auth login`),
+3. its SSH key is what `git push` uses from session worktrees,
+4. `GITHUB_BOT_LOGIN=<its login>` — the self-trigger guard (skip our own
+   comments/pushes/reviews) keys on this,
+5. `GITHUB_MENTION_HANDLES=<handles>` — which `@name`s in PR comments wake
+   the mention flow (default `michael,tella-butler`; set your own).
+
+Using one account for all four keeps attribution coherent: PRs, comments,
+reviews, and pushes all read as the same bot. A GitHub App would avoid
+burning a seat, but the current code assumes a plain account (gh CLI +
+git-over-SSH don't speak App installation tokens) — machine user is the
+supported path.
+
+With [per-user GitHub auth](#per-user-github-auth-prs-as-the-session-owner)
+enabled, the bot becomes the *fallback* author: interactive sessions whose
+owner connected their own account open PRs as that person instead.
+
 ## GITHUB_API_TOKEN
 
 Read in `src/agents/github/github-rest.ts` (write-capable REST/GraphQL client
@@ -62,8 +86,8 @@ the code consumes (`src/agents/github/webhook.ts`):
 | Event | What happens |
 | --- | --- |
 | `issue_comment`, `pull_request_review_comment` (action `created`) | if the body matches a `GITHUB_MENTION_HANDLES` handle: intent-classified → whole-PR action (review / autofix / simplify / adversarial) or a conversational reply run in a PR-branch worktree |
-| `pull_request` action `labeled` | labels `michael-review` / `michael-auto-fix` / `michael-simplify` / `michael-adversarial` trigger the corresponding behavior (label names hardcoded in `src/agents/github/constants.ts`); auto-fix also merges the current base into conflicting PR branches and resolves the conflicts without force-pushing |
-| `pull_request` `opened`/`reopened`/`synchronize`/`ready_for_review` | auto-review, if the PR is non-draft and either carries `michael-review` or the review automation is enabled |
+| `pull_request` action `labeled` | labels `os-review` / `os-auto-fix` / `os-simplify` / `os-adversarial` trigger the corresponding behavior (the legacy `michael-*` names are accepted as aliases — `src/agents/github/constants.ts`; create the labels on your repo first); auto-fix also merges the current base into conflicting PR branches and resolves the conflicts without force-pushing |
+| `pull_request` `opened`/`reopened`/`synchronize`/`ready_for_review` | auto-review, if the PR is non-draft and either carries `os-review` or the review automation is enabled |
 | `pull_request` action `closed` + merged | notifies linked sessions; fires the docs-sync automation on `github:pr_merged` |
 | `pull_request_review` | handled by the Slack agent (review → Slack notification) |
 | `workflow_run` | notifies sessions waiting on a merged PR's deploy |
@@ -92,6 +116,52 @@ tellahq/tella-fusion` literally (`src/agents/github/prompts.ts`), and
 `src/server/pr-info.ts` has a `tellahq/tella-fusion` default — pointing the
 PR agent at your own repo means editing those until the prompt-templating
 batch lands ([portability-audit §1c](../portability-audit.md)).
+
+## Per-user GitHub auth (PRs as the session owner)
+
+Opt-in: interactive sessions open PRs as the actual human who owns the
+session instead of the bot, and the web UI's name picker becomes a real
+GitHub sign-in. Off by default — without it everything above is the whole
+story.
+
+1. Create one **OAuth App** in your org (Settings → Developer settings →
+   OAuth Apps): tick **"Enable Device Flow"**, set the callback URL to
+   `<publicBaseUrl>/api/auth/callback`, and generate a client secret. If the
+   org restricts third-party OAuth apps, approve it.
+2. Configure `~/.opensession/config.json`:
+
+   ```json
+   "integrations": {
+     "github": {
+       "userPrAuth": true,
+       "oauthClientId": "<client id>",
+       "oauthClientSecret": "<client secret>"
+     }
+   }
+   ```
+
+   (env `OPENSESSION_GITHUB_CLIENT_ID` / `OPENSESSION_GITHUB_CLIENT_SECRET`
+   win over config; secret omitted = device-flow-only sign-in.)
+3. Restart the service — the token injection is runner-internal and does not
+   hot-reload.
+
+What turns on (`src/server/github-auth.ts`, `web-auth.ts`, `routes/auth.ts`):
+
+- **Sign-in required**: the UI shows "Sign in with GitHub" (redirect flow,
+  device-code fallback); only logins on `identity.team[].github` may sign
+  in. Every `/api/*` call and the UI WebSocket are 401-gated on the HttpOnly
+  session cookie; non-browser callers use `Authorization: Bearer <token>`
+  with a token from `~/.opensession-web-sessions.json`. The verified
+  identity overrides client-claimed user names (WS and HTTP), stamps
+  `createdByLogin` on new sessions, and a one-time boot migration backfills
+  it onto existing ones.
+- **PRs as the owner**: signing in also stores the person's OAuth token
+  (scope `repo read:org`, `~/.opensession-github-auth.json`, 0600). The
+  runner injects it as `GH_TOKEN`/`GITHUB_TOKEN` into interactive,
+  non-least-privilege runs only — automations, unattended kinds, and any
+  run carrying a deny-set keep the bot credential, fail-closed. Manage
+  connections (per-teammate status, disconnect) in the Connections UI.
+- `GET /api/health` stays un-gated (deploy polls / restart detection).
 
 ## Deploy pipeline (Tella-specific, replaceable)
 

@@ -6,6 +6,7 @@
  * button that enqueues a Claude session to fix the review feedback.
  */
 
+import { BOT_LOGIN } from "../github/github-rest";
 import {
   GITHUB_TO_SLACK,
   githubUsernameToSlackId,
@@ -205,10 +206,10 @@ export async function handlePullRequestReview(
   const pr = payload.pull_request;
   if (!review || !pr) return;
 
-  // Ignore reviews from tella-butler (our own bot)
+  // Ignore reviews from our own bot account
   const reviewerLogin = review.user?.login;
-  if (reviewerLogin === "tella-butler") {
-    console.log("[slack] Ignoring PR review from tella-butler (self)");
+  if (reviewerLogin === BOT_LOGIN) {
+    console.log(`[slack] Ignoring PR review from ${BOT_LOGIN} (self)`);
     return;
   }
 

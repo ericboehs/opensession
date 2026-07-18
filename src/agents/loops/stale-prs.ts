@@ -6,6 +6,7 @@
  *
  * Seeded create-if-absent on startup so UI edits (schedule/channel/prompt) are kept.
  */
+import { BOT_LOGIN } from "../github/github-rest";
 import { personaName } from "../../server/config";
 import { listAutomations, createAutomation } from "../../server/automations";
 import { defaultRepo } from "../../server/config";
@@ -24,7 +25,7 @@ Permissions note: this is read-only with respect to the codebase/git — but pos
 (Avoid putting \`reviewRequests\` in --json — it can corrupt gh's output. If you need reviewer/CI detail, fetch it only for the handful of PRs you actually list, via \`gh pr view <n>\` / \`gh pr checks <n>\`.)
 
 ## 2. Summarize the backlog
-- Total open PRs, and split human vs bot (author \`tella-butler\` = bot) and drafts.
+- Total open PRs, and split human vs bot (author \`${BOT_LOGIN}\` = bot) and drafts.
 - Bucket non-draft PRs by age (days since createdAt): >180d, 90-180d, 30-90d, 14-30d, <14d — give counts per bucket.
 - Per-author counts for the worst offenders (top ~5 authors by open-PR count).
 
