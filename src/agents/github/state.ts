@@ -185,6 +185,11 @@ export function releaseLock(behavior: keyof typeof locks, prNumber: number): voi
   locks[behavior].delete(prNumber);
 }
 
+/** Is the lock currently held? (Read-only probe — never claims.) */
+export function isLockHeld(behavior: keyof typeof locks, prNumber: number): boolean {
+  return locks[behavior].has(prNumber);
+}
+
 export function activeCodeLoops(): number[] {
   return locks.code.size ? [...locks.code] : [];
 }

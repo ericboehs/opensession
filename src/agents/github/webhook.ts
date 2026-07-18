@@ -19,6 +19,7 @@ import {
   LABEL_ADVERSARIAL,
 } from "./constants";
 import { runReview, type PrRef, type ReviewConfig } from "./review";
+import { isLockHeld } from "./state";
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
 import { SEO_LABEL } from "../loops/seo";
 
@@ -122,6 +123,10 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       return;
     }
 
+    // Closed (merged or not): a pending debounced review would fire against a
+    // dead PR — cancel it.
+    if (action === "closed") cancelPendingReview(pr.number);
+
     // ── Merge → notify linked sessions + queue seo-sweep PRs + fire docs-sync ──
     if (action === "closed" && pr.merged) {
       import("./session-notify")
@@ -166,7 +171,13 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       if (senderIsBot && action === "synchronize") return;
       const labeled = (pr.labels || []).some((l) => l.name === LABEL_REVIEW);
       const { autoEnabled } = resolveReviewConfig();
-      if (labeled || autoEnabled) void fireReview(ref, false);
+      if (labeled || autoEnabled) {
+        // Pushes debounce (hot PRs got one review per push — #4913: 20 pushes
+        // ≈ $131/day of review spend on 2026-07-17); first reviews of a PR
+        // stay immediate.
+        if (action === "synchronize") scheduleDebouncedReview(ref);
+        else void fireReview(ref, false);
+      }
     }
   } catch (e) {
     console.error("[github] handleGithubPrEvent error:", e);
@@ -178,6 +189,49 @@ async function fireReview(ref: PrRef, _byLabel: boolean): Promise<void> {
   await runReview(ref, config, onSessionInvalidate).catch((e) =>
     console.error(`[github] runReview failed for PR #${ref.number}:`, e),
   );
+}
+
+// ── Push → review debounce ───────────────────────────────────────────────────
+// Each `synchronize` (re)arms a quiet-period timer per PR; the fire reviews
+// whatever HEAD is by then (runReview refetches by number; the review worktree
+// pins to PR HEAD at run time), so a burst of pushes costs ONE review. A
+// continuous pusher is still reviewed within the max-wait cap. If a review is
+// already running at fire time, the debounce re-arms instead of dropping the
+// push (claimLock coalescing would silently skip the new SHA). In-memory: a
+// restart mid-window loses the pending fire — the next push or the victim
+// sweep recovers it. Parked on globalThis so hot reloads don't double-arm.
+const REVIEW_DEBOUNCE_MS = parseInt(process.env.OPENSESSION_REVIEW_DEBOUNCE_MS || "240000");
+const REVIEW_DEBOUNCE_MAX_WAIT_MS = parseInt(
+  process.env.OPENSESSION_REVIEW_DEBOUNCE_MAX_MS || "900000",
+);
+type PendingReview = { timer: ReturnType<typeof setTimeout>; firstPushAt: number };
+const pendingReviewDebounce: Map<number, PendingReview> = ((globalThis as any)
+  .__githubReviewDebounce ??= new Map());
+
+function cancelPendingReview(prNumber: number): void {
+  const pending = pendingReviewDebounce.get(prNumber);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  pendingReviewDebounce.delete(prNumber);
+}
+
+function scheduleDebouncedReview(ref: PrRef): void {
+  const existing = pendingReviewDebounce.get(ref.number);
+  if (existing) clearTimeout(existing.timer);
+  const firstPushAt = existing?.firstPushAt ?? Date.now();
+  const capLeft = Math.max(0, firstPushAt + REVIEW_DEBOUNCE_MAX_WAIT_MS - Date.now());
+  const delay = existing ? Math.min(REVIEW_DEBOUNCE_MS, capLeft) : REVIEW_DEBOUNCE_MS;
+  const timer = setTimeout(() => {
+    if (isLockHeld("review", ref.number)) {
+      pendingReviewDebounce.delete(ref.number);
+      scheduleDebouncedReview(ref);
+      return;
+    }
+    pendingReviewDebounce.delete(ref.number);
+    console.log(`[github] debounced review firing for PR #${ref.number}`);
+    void fireReview(ref, false);
+  }, delay);
+  pendingReviewDebounce.set(ref.number, { timer, firstPushAt });
 }
 
 async function fireAutoFix(ref: PrRef, requestedBy: string): Promise<void> {
