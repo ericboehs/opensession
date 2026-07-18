@@ -221,7 +221,7 @@ function GithubSignIn({
                     cursor: "pointer",
                   }}
                 >
-                  {starting ? "Starting…" : "Use a device code instead (PWA-safe)"}
+                  {starting ? "Starting…" : "Use a device code instead"}
                 </button>
               </>
             ) : (
