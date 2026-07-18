@@ -190,8 +190,14 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			let authUser: { login: string; name: string } | null = null;
 			if (webAuthRequired()) {
 				authUser = resolveWebAuth(req);
+				// GET /api/health stays open: it's the liveness signal for
+				// deploy.sh's post-restart poll, monitors, and the client's
+				// bootId-change detection — all pre-auth by nature.
+				const openHealth =
+					path === "/backstage/api/health" && req.method === "GET";
 				if (
 					!authUser &&
+					!openHealth &&
 					((path.startsWith("/backstage/api/") &&
 						!path.startsWith("/backstage/api/auth/")) ||
 						path === "/backstage/ws")
