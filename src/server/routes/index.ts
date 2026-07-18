@@ -34,6 +34,7 @@ import { handleWorkflowsRoutes } from "./workflows";
 import { handleSideChatsRoutes } from "./side-chats";
 import { handleReportsRoutes } from "./reports";
 import { handleAnalyticsRoutes } from "./analytics";
+import { handleSearchRoutes } from "./search";
 
 export type { RouteContext, RouteHandler } from "./context";
 
@@ -69,4 +70,5 @@ export const routeHandlers: RouteHandler[] = [
 	handleSideChatsRoutes,
 	handleReportsRoutes,
 	handleAnalyticsRoutes,
+	handleSearchRoutes,
 ];

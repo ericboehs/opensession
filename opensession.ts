@@ -41,6 +41,7 @@ import "./src/server/interactive-mcp"; // registerInteractiveMcpBuilder + run-rp
 import "./src/server/queue-state"; // steer-receipt transcript reconcile listener
 import "./src/server/run-session"; // /loop ticker
 import "./src/server/goal-runner"; // goals ticker
+import "./src/server/session-index"; // session search index sweeper
 import "./src/server/session-control-wiring"; // opensession-sessions MCP + Slack-link bridge
 import { websocketHandlers } from "./src/server/ws-handlers";
 import {

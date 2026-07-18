@@ -23,6 +23,7 @@ import { createWalkthroughMcpServer } from "../agents/slack/walkthrough-tools";
 import { createMemoryMcpServer } from "../agents/slack/memory-tools";
 import { createGoalsMcpServer, createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { createPapercutsMcpServer } from "../agents/slack/papercuts-tools";
+import { createSearchMcpServer } from "../agents/slack/search-tools";
 import { createAssetsMcpServer } from "../agents/slack/assets-tools";
 import { createWorkflowsMcpServer } from "../agents/slack/workflow-tools";
 import { papercutsEnabledForRepo } from "./papercuts";
@@ -86,6 +87,10 @@ export function interactiveMcpServers(
 		}),
 		// Long-running goals: create/list/steer persistent, self-pacing missions.
 		"opensession-goals": createGoalsMcpServer({ createdBy, isAdmin: true }),
+		// Search past sessions' distilled records (session-index.ts). Read-only,
+		// but transcripts can hold sensitive material — interactive-only like the
+		// siblings (the automation gate in the run-rpc builder below fails closed).
+		"opensession-search": createSearchMcpServer(),
 		// Human-in-the-loop: ask a teammate and fold the answer back into this
 		// session. Needs the session id so the answer routes home. Withheld (like
 		// the others) from automation runs — see the runSessionPrompt call site.
