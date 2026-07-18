@@ -92,10 +92,14 @@ the code consumes (`src/agents/github/webhook.ts`):
 | `pull_request_review` | handled by the Slack agent (review → Slack notification) |
 | `workflow_run` | notifies sessions waiting on a merged PR's deploy |
 
-Events for other repos are dropped: the agent guards on
-`repository.full_name === defaultRepo().ghRepo` — i.e. the **default repo**
-from `~/.opensession/config.json` (Tella: `tellahq/tella-fusion`). The PR agent
-is effectively single-repo today.
+**Multi-repo**: events are accepted for **any repo in the config registry**
+(`repos` in `~/.opensession/config.json`, matched by `ghRepo`) — a repo joins
+the PR agent by existing in config and pointing its own GitHub webhook (same
+URL + secret) at the intake. Events for unconfigured repos are dropped.
+Per-PR state, locks, worktrees, and session ids are repo-qualified for
+non-default repos (the default repo keeps its historical bare-number keys).
+Merge side effects (docs-sync, SEO tracking, session deploy notifications)
+run for the **default repo only**.
 
 ## Behavior toggles
 
@@ -111,11 +115,9 @@ is effectively single-repo today.
   only the literal string `false` disables — see
   [integrations-misc.md](integrations-misc.md#boot-guards)).
 
-**Requires code edit today:** many agent prompts embed `gh … --repo
-tellahq/tella-fusion` literally (`src/agents/github/prompts.ts`), and
-`src/server/pr-info.ts` has a `tellahq/tella-fusion` default — pointing the
-PR agent at your own repo means editing those until the prompt-templating
-batch lands ([portability-audit §1c](../portability-audit.md)).
+Prompts and `pr-info.ts` defaults are config-driven (they interpolate the
+default repo's `ghRepo`, or the PR's own repo when threaded) — no code edits
+needed to point the PR agent at your repos (portability-audit §1c: done).
 
 ## Per-user GitHub auth (PRs as the session owner)
 
