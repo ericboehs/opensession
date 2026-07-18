@@ -65,7 +65,8 @@
       "enabled": true,
       "docsSyncChannel": "C09BAFFK8F8",
       "userPrAuth": false,
-      "oauthClientId": null
+      "oauthClientId": null,
+      "oauthClientSecret": null
     },
     "stripe": { "enabled": true },
     "grafana": {

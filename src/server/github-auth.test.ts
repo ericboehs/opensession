@@ -35,6 +35,9 @@ let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "bks-github-auth-test-"));
   for (const k of ENV_KEYS) delete process.env[k];
+  // Isolate from the machine's real ~/.opensession/config.json (which may
+  // have the feature enabled): a missing file = {} = built-in defaults.
+  process.env.OPENSESSION_CONFIG = join(dir, "no-config.json");
   process.env.OPENSESSION_GITHUB_AUTH_STORE = join(dir, "github-auth.json");
   process.env.OPENSESSION_WEB_SESSIONS_STORE = join(dir, "web-sessions.json");
 });

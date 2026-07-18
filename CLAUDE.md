@@ -209,10 +209,16 @@ wins over the config id) activates BOTH halves at once:
   (curl/CDP recipes) authenticate with `Authorization: Bearer <token>` using a
   token from the web-sessions file.
 
-GitHub side: one org OAuth App (Settings → Developer settings → OAuth Apps)
-with **"Enable Device Flow"** checked — no client secret is used or stored. If
-the org restricts third-party OAuth app access, approve the app for the org or
-`repo`-scoped tokens won't reach org repos.
+Two sign-in flows, both backed by the same token store: the **redirect
+(authorization-code) flow** is primary when `oauthClientSecret` is configured
+(`/api/auth/login` → GitHub authorize → `/api/auth/callback`, CSRF state
+cookie; the app's registered callback URL must literally be
+`<publicBaseUrl>/api/auth/callback`), and the **device flow** stays as the
+fallback (the "use a device code" link — needed on the iOS PWA, where a
+redirect can return into Safari instead of the PWA, and works without the
+secret). GitHub side: one org OAuth App with "Enable Device Flow" checked and
+the callback URL set. If the org restricts third-party OAuth app access,
+approve the app for the org or `repo`-scoped tokens won't reach org repos.
 
 ## Self-management tools (Slack + interactive OpenSession sessions)
 

@@ -47,8 +47,11 @@ const DEVICE_FLOW_SCOPE = "repo read:org";
 export interface GithubUserAuthSettings {
   /** Feature switch (config `integrations.github.userPrAuth`). */
   enabled: boolean;
-  /** OAuth app client id for the device flow; null = not configured. */
+  /** OAuth app client id (device flow + redirect flow); null = not configured. */
   clientId: string | null;
+  /** OAuth app client secret — enables the redirect (authorization-code)
+   *  sign-in flow. Absent = device flow only. */
+  clientSecret: string | null;
 }
 
 export interface GithubConnectedAccount {
@@ -77,7 +80,12 @@ export function githubUserAuthSettings(): GithubUserAuthSettings {
     (typeof o.oauthClientId === "string" && o.oauthClientId.trim()
       ? o.oauthClientId.trim()
       : null);
-  return { enabled: o.userPrAuth === true, clientId };
+  const clientSecret =
+    process.env.OPENSESSION_GITHUB_CLIENT_SECRET ||
+    (typeof o.oauthClientSecret === "string" && o.oauthClientSecret.trim()
+      ? o.oauthClientSecret.trim()
+      : null);
+  return { enabled: o.userPrAuth === true, clientId, clientSecret };
 }
 
 /** Feature is usable: switched on AND a client id to run the device flow. */
@@ -170,7 +178,16 @@ export async function pollGithubDeviceFlow(deviceCode: string): Promise<DeviceFl
   }
   const token: string | undefined = body.access_token;
   if (!token) return { status: "error", error: "GitHub returned no access token" };
+  return identifyAndStoreToken(token, body.scope);
+}
 
+/** Shared tail of both OAuth flows: learn WHO the token belongs to (GET /user
+ *  with the token itself — the login is ground truth from GitHub, never
+ *  client-supplied) and store it under that login. */
+async function identifyAndStoreToken(
+  token: string,
+  scope?: unknown
+): Promise<DeviceFlowPoll> {
   const userRes = await fetchWithTimeout("https://api.github.com/user", {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -189,12 +206,64 @@ export async function pollGithubDeviceFlow(deviceCode: string): Promise<DeviceFl
     login,
     token,
     ...(typeof user.name === "string" && user.name ? { name: user.name } : {}),
-    ...(typeof body.scope === "string" ? { scopes: body.scope } : {}),
+    ...(typeof scope === "string" ? { scopes: scope } : {}),
     connectedAt: new Date().toISOString(),
   };
   writeStore(store);
-  audit({ kind: "github_auth_connect", login, scopes: body.scope });
+  audit({ kind: "github_auth_connect", login, scopes: scope });
   return { status: "ok", login, ...(user.name ? { name: user.name } : {}) };
+}
+
+// ── Redirect (authorization-code) flow ───────────────────────────────────────
+
+/** Redirect flow available: feature on + client id + client secret. */
+export function githubRedirectFlowAvailable(): boolean {
+  const s = githubUserAuthSettings();
+  return s.enabled && !!s.clientId && !!s.clientSecret;
+}
+
+/** The GitHub authorize URL for the redirect flow (caller provides the state
+ *  it also set as a cookie, and the redirect_uri registered on the app). */
+export function githubAuthorizeUrl(redirectUri: string, state: string): string | null {
+  const { clientId } = githubUserAuthSettings();
+  if (!githubRedirectFlowAvailable() || !clientId) return null;
+  const q = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: DEVICE_FLOW_SCOPE,
+    state,
+  });
+  return `https://github.com/login/oauth/authorize?${q}`;
+}
+
+/** Exchange a callback `code` for a token and store it (same tail as the
+ *  device flow — identity comes from GET /user with the token). */
+export async function exchangeGithubOauthCode(
+  code: string,
+  redirectUri: string
+): Promise<DeviceFlowPoll> {
+  const { clientId, clientSecret } = githubUserAuthSettings();
+  if (!clientId || !clientSecret) {
+    return { status: "error", error: "Redirect flow is not configured (client id/secret)" };
+  }
+  const res = await fetchWithTimeout("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: redirectUri,
+    }),
+  });
+  const body: any = await res.json().catch(() => null);
+  if (!body) return { status: "error", error: `GitHub token endpoint failed (${res.status})` };
+  if (body.error) {
+    return { status: "error", error: body.error_description || body.error };
+  }
+  const token: string | undefined = body.access_token;
+  if (!token) return { status: "error", error: "GitHub returned no access token" };
+  return identifyAndStoreToken(token, body.scope);
 }
 
 // ── Store queries ────────────────────────────────────────────────────────────

@@ -45,6 +45,8 @@ export function useCurrentUser(): string {
 interface AuthStatus {
   required: boolean;
   authenticated: boolean;
+  /** Server supports the redirect (authorization-code) sign-in. */
+  redirect?: boolean;
   login?: string;
   name?: string;
 }
@@ -77,7 +79,12 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 
   if (auth?.required) {
     if (auth.authenticated) return <>{children}</>;
-    return <GithubSignIn onSignedIn={(status) => setAuth(status)} />;
+    return (
+      <GithubSignIn
+        redirect={auth.redirect === true}
+        onSignedIn={(status) => setAuth(status)}
+      />
+    );
   }
 
   if (user !== "Anonymous") return <>{children}</>;
@@ -103,7 +110,13 @@ export function UserGate({ children }: { children: React.ReactNode }) {
   );
 }
 
-function GithubSignIn({ onSignedIn }: { onSignedIn: (status: AuthStatus) => void }) {
+function GithubSignIn({
+  redirect,
+  onSignedIn,
+}: {
+  redirect: boolean;
+  onSignedIn: (status: AuthStatus) => void;
+}) {
   const [flow, setFlow] = useState<{
     deviceCode: string;
     userCode: string;
@@ -111,7 +124,17 @@ function GithubSignIn({ onSignedIn }: { onSignedIn: (status: AuthStatus) => void
     interval: number;
   } | null>(null);
   const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A failed redirect sign-in lands back on /?auth_error=… — surface it.
+  const [error, setError] = useState<string | null>(() => {
+    try {
+      const err = new URLSearchParams(window.location.search).get("auth_error");
+      if (err) {
+        window.history.replaceState(null, "", window.location.pathname);
+        return err;
+      }
+    } catch {}
+    return null;
+  });
 
   // Poll GitHub (via the server) until the device code is authorized.
   useEffect(() => {
@@ -173,9 +196,39 @@ function GithubSignIn({ onSignedIn }: { onSignedIn: (status: AuthStatus) => void
               This workspace uses GitHub sign-in. Your sessions will act as your
               own GitHub account (PRs are authored by you).
             </p>
-            <button className="user-gate-btn" onClick={start} disabled={starting} style={{ width: "100%" }}>
-              {starting ? "Starting…" : "Sign in with GitHub"}
-            </button>
+            {redirect ? (
+              <>
+                <button
+                  className="user-gate-btn"
+                  onClick={() => {
+                    window.location.href = `${BASE_PATH}/api/auth/login`;
+                  }}
+                  style={{ width: "100%" }}
+                >
+                  Sign in with GitHub
+                </button>
+                <button
+                  onClick={start}
+                  disabled={starting}
+                  style={{
+                    marginTop: 10,
+                    width: "100%",
+                    background: "none",
+                    border: "none",
+                    fontSize: 12,
+                    opacity: 0.6,
+                    textDecoration: "underline",
+                    cursor: "pointer",
+                  }}
+                >
+                  {starting ? "Starting…" : "Use a device code instead (PWA-safe)"}
+                </button>
+              </>
+            ) : (
+              <button className="user-gate-btn" onClick={start} disabled={starting} style={{ width: "100%" }}>
+                {starting ? "Starting…" : "Sign in with GitHub"}
+              </button>
+            )}
           </>
         ) : (
           <p style={{ margin: "10px 0 0", fontSize: 14, lineHeight: 1.7 }}>
