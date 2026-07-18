@@ -887,6 +887,21 @@ export function IconStatusRing(p: IconProps) {
   );
 }
 
+// Bar chart (Analytics).
+export function IconChart(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        d="M4 20V14M10 20V6M16 20V10M22 20H2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 // ⋯ more options.
 export function IconDotsHorizontal(p: IconProps) {
   return (

@@ -673,3 +673,97 @@ export interface AskQuestion {
 	options?: Array<{ label: string; description?: string }>;
 	multiSelect?: boolean;
 }
+
+// ── Analytics (sidebar → Analytics; GET /api/analytics) ──
+
+export interface AnalyticsDay {
+	date: string;
+	sessions: number;
+	sessionsByKind: Record<string, number>;
+	turns: number;
+	errors: number;
+	cancelled: number;
+	outputTokens: number;
+	inputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	outputByModel: Record<string, number>;
+	prsOpened: number;
+	prsMerged: number;
+	durationMs: number;
+}
+
+export interface AnalyticsModel {
+	model: string;
+	turns: number;
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+}
+
+export interface AnalyticsPerson {
+	name: string;
+	sessionsCreated: number;
+	sessionsActive: number;
+	turns: number;
+	outputTokens: number;
+}
+
+export interface AnalyticsAutomation {
+	name: string;
+	runs: number;
+	sessionsActive: number;
+	turns: number;
+	outputTokens: number;
+	errors: number;
+}
+
+export interface AnalyticsRepoPrs {
+	repo: string;
+	prsOpened: number;
+	prsMerged: number;
+	allOpened: number;
+	allMerged: number;
+}
+
+export interface AnalyticsPr {
+	repo: string;
+	number: number;
+	title: string;
+	url: string;
+	state: "OPEN" | "MERGED" | "CLOSED";
+	createdAt: string;
+	mergedAt: string | null;
+	headRefName: string;
+	byOpensession: boolean;
+}
+
+export interface AnalyticsSummary {
+	from: string;
+	to: string;
+	days: AnalyticsDay[];
+	totals: {
+		sessions: number;
+		sessionsCreated: number;
+		turns: number;
+		errors: number;
+		cancelled: number;
+		oneshots: number;
+		durationMs: number;
+		outputTokens: number;
+		inputTokens: number;
+		cacheReadTokens: number;
+		cacheWriteTokens: number;
+		prsOpened: number;
+		prsMerged: number;
+		allPrsOpened: number;
+		allPrsMerged: number;
+		activePeople: number;
+	};
+	models: AnalyticsModel[];
+	people: AnalyticsPerson[];
+	automations: AnalyticsAutomation[];
+	repos: AnalyticsRepoPrs[];
+	prs: AnalyticsPr[];
+}

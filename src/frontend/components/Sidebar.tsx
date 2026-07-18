@@ -66,6 +66,7 @@ import {
 	IconStatusRing,
 	IconTrash,
 	IconWatercooler,
+	IconChart,
 	IconFile,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
@@ -218,6 +219,10 @@ interface Props {
 	reportsActive: boolean;
 	/** Open automation-produced recurring reports. */
 	onOpenReports: () => void;
+	/** True while the Analytics surface is open. */
+	analyticsActive: boolean;
+	/** Open the Analytics view (sessions/tokens/models/PRs over time). */
+	onOpenAnalytics: () => void;
 	onSelect: (session: UnifiedSession) => void;
 	/** Foreground a session's Review view-tab (from a chat row's context menu). */
 	onOpenReview: (session: UnifiedSession) => void;
@@ -821,6 +826,8 @@ export function Sidebar({
 	watercoolerUnread,
 	reportsActive,
 	onOpenReports,
+	analyticsActive,
+	onOpenAnalytics,
 	onSelect,
 	onOpenReview,
 	onOpenSupportThread,
@@ -2705,6 +2712,16 @@ export function Sidebar({
 						<IconFile />
 					</span>
 					Reports
+				</button>
+				<button
+					className={`sidebar-nav-item ${analyticsActive ? "active" : ""}`}
+					onClick={onOpenAnalytics}
+					title="Sessions, tokens, models & PRs over time"
+				>
+					<span className="sidebar-nav-icon">
+						<IconChart />
+					</span>
+					Analytics
 				</button>
 			</nav>
 

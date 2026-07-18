@@ -1,0 +1,622 @@
+/**
+ * Analytics: what happened on/because of OpenSession, aggregated for the
+ * Analytics view (sidebar → Analytics). Three sources, all read-only:
+ *
+ * - The audit log (~/.opensession-audit/audit-YYYY-MM-DD.jsonl) for per-turn
+ *   facts: turns, tokens, models, run kinds, errors, cancellations. Day files
+ *   are 10-20MB, so each day is parsed once into a compact rollup and disk-
+ *   cached (keyed by source size — today's growing file recomputes, past days
+ *   never do).
+ * - The session store (~/.opensession-chats) for who created what: person,
+ *   automation, mode, branch, repo.
+ * - `gh pr list` for PRs opened/merged in the range, attributed to OpenSession
+ *   by head-branch ∈ {branches of code-mode sessions} (review sessions are
+ *   ask-mode and don't own their branch, so reviewed-only PRs don't count).
+ */
+
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { $ } from "bun";
+import { stateDir } from "./rename-compat";
+import { OPENSESSION_CHATS_DIR } from "./paths";
+import { configuredRepos } from "./config";
+
+const AUDIT_DIR = stateDir("audit");
+const CACHE_DIR = stateDir("analytics-cache");
+// Bump when the rollup shape changes — stale disk caches recompute.
+const ROLLUP_VERSION = 4;
+
+interface TokenTotals {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+}
+
+interface ModelAgg extends TokenTotals {
+	turns: number;
+}
+
+interface SessionAgg {
+	kind: string;
+	turns: number;
+	output: number;
+	errors: number;
+}
+
+interface DayRollup {
+	date: string;
+	turns: number;
+	errors: number;
+	cancelled: number;
+	durationMs: number;
+	oneshots: number;
+	tokens: TokenTotals;
+	byModel: Record<string, ModelAgg>;
+	/** Turns whose audit events carried no model (pre-2026-07-09 SDK-runner
+	 *  days), keyed by session id — resolved against the session store's
+	 *  `model` at compose time. */
+	unknownModel: Record<string, ModelAgg>;
+	bySession: Record<string, SessionAgg>;
+}
+
+/** "opencode/anthropic/claude-sonnet-4-6" → "claude-sonnet-4-6". */
+function shortModel(model: string): string {
+	return model.replace(/^opencode\/[^/]+\//, "") || "unknown";
+}
+
+function emptyTokens(): TokenTotals {
+	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+}
+
+function rollupAuditDay(date: string): DayRollup {
+	const rollup: DayRollup = {
+		date,
+		turns: 0,
+		errors: 0,
+		cancelled: 0,
+		durationMs: 0,
+		oneshots: 0,
+		tokens: emptyTokens(),
+		byModel: {},
+		unknownModel: {},
+		bySession: {},
+	};
+	const path = `${AUDIT_DIR}/audit-${date}.jsonl`;
+	if (!existsSync(path)) return rollup;
+
+	const promptModel = new Map<string, string>();
+	const sessionOf = (e: Record<string, unknown>): SessionAgg | null => {
+		const id = String(e.bks_session_id || "");
+		if (!id) return null;
+		return (rollup.bySession[id] ||= {
+			// A restart-reattached turn is still its base kind for analytics.
+			kind: String(e.run_kind || "?").replace(/-reattach$/, ""),
+			turns: 0,
+			output: 0,
+			errors: 0,
+		});
+	};
+
+	for (const line of readFileSync(path, "utf-8").split("\n")) {
+		if (!line) continue;
+		// Cheap pre-filter: the firehose kinds (tool_use/result/thinking/text)
+		// are ~95% of lines and irrelevant here — skip them without parsing.
+		const isResult = line.includes('"kind":"result"');
+		const isPrompt = line.includes('"kind":"user_prompt"');
+		const isError = line.includes('"kind":"error"');
+		const isCancelled = line.includes('"kind":"cancelled"');
+		const isOneshot = line.includes('"msg":"opencode_oneshot"');
+		// Engine-run end events carry the turn's wall-clock duration (the
+		// per-turn "result" events don't on the opencode engine).
+		const isRunEnd =
+			line.includes('"phase":"end"') &&
+			(line.includes('"msg":"opencode_meridian_run"') || line.includes('"msg":"opencode_openai_run"'));
+		if (!isResult && !isPrompt && !isError && !isCancelled && !isOneshot && !isRunEnd) continue;
+		let e: Record<string, unknown>;
+		try {
+			e = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (e.msg === "opencode_oneshot") {
+			rollup.oneshots++;
+			continue;
+		}
+		if (e.msg === "opencode_meridian_run" || e.msg === "opencode_openai_run") {
+			rollup.durationMs += Number(e.duration_ms) || 0;
+			continue;
+		}
+		const s = sessionOf(e);
+		switch (String(e.kind || "")) {
+			// Some engines' result events carry no model — remember the turn's
+			// model from its user_prompt so those turns don't land in "unknown".
+			case "user_prompt":
+				if (e.model && e.bks_session_id) {
+					promptModel.set(String(e.bks_session_id), shortModel(String(e.model)));
+				}
+				break;
+			case "result": {
+				rollup.turns++;
+				const input = Number(e.input_tokens) || 0;
+				const output = Number(e.output_tokens) || 0;
+				const cacheRead = Number(e.cache_read_input_tokens) || 0;
+				const cacheWrite = Number(e.cache_creation_input_tokens) || 0;
+				rollup.tokens.input += input;
+				rollup.tokens.output += output;
+				rollup.tokens.cacheRead += cacheRead;
+				rollup.tokens.cacheWrite += cacheWrite;
+				const model = e.model
+					? shortModel(String(e.model))
+					: promptModel.get(String(e.bks_session_id || "")) || "";
+				const m = model
+					? (rollup.byModel[model] ||= { turns: 0, ...emptyTokens() })
+					: (rollup.unknownModel[String(e.bks_session_id || "")] ||= { turns: 0, ...emptyTokens() });
+				m.turns++;
+				m.input += input;
+				m.output += output;
+				m.cacheRead += cacheRead;
+				m.cacheWrite += cacheWrite;
+				if (s) {
+					s.turns++;
+					s.output += output;
+				}
+				break;
+			}
+			case "error":
+				rollup.errors++;
+				if (s) s.errors++;
+				break;
+			case "cancelled":
+				rollup.cancelled++;
+				break;
+		}
+	}
+	return rollup;
+}
+
+/** Rollup with a per-day disk cache keyed on the source file's size. */
+function cachedRollup(date: string): DayRollup {
+	const src = `${AUDIT_DIR}/audit-${date}.jsonl`;
+	const size = existsSync(src) ? statSync(src).size : 0;
+	const cachePath = `${CACHE_DIR}/day-${date}.json`;
+	try {
+		if (existsSync(cachePath)) {
+			const cached = JSON.parse(readFileSync(cachePath, "utf-8"));
+			if (cached.v === ROLLUP_VERSION && cached.size === size) return cached.rollup;
+		}
+	} catch {}
+	const rollup = rollupAuditDay(date);
+	try {
+		mkdirSync(CACHE_DIR, { recursive: true });
+		writeFileSync(cachePath, JSON.stringify({ v: ROLLUP_VERSION, size, rollup }));
+	} catch (e) {
+		console.error("[analytics] rollup cache write failed:", e);
+	}
+	return rollup;
+}
+
+// ── Session store scan ──
+
+interface SessionMeta {
+	id: string;
+	createdAt: string;
+	createdBy: string;
+	mode: string;
+	model: string;
+	branch: string;
+	repo: string | null;
+	/** Set (to the automation's display name) for automation-created sessions. */
+	automationName: string | null;
+	isReview: boolean;
+}
+
+function repoOfWorktree(worktreeDir: string): string | null {
+	if (!worktreeDir) return null;
+	const base = worktreeDir.split("/").pop() || "";
+	for (const repo of Object.values(configuredRepos())) {
+		if (worktreeDir === repo.repo || worktreeDir.startsWith(`${repo.repo}/`)) return repo.id;
+		if (base.startsWith(`${repo.wtPrefix}-`)) return repo.id;
+	}
+	return null;
+}
+
+let sessionMetaCache: { at: number; map: Map<string, SessionMeta> } | null = null;
+
+function loadSessionMeta(): Map<string, SessionMeta> {
+	if (sessionMetaCache && Date.now() - sessionMetaCache.at < 60_000) return sessionMetaCache.map;
+	const map = new Map<string, SessionMeta>();
+	try {
+		for (const file of readdirSync(OPENSESSION_CHATS_DIR)) {
+			if (!file.startsWith("bks-") || !file.endsWith(".json")) continue;
+			try {
+				const s = JSON.parse(readFileSync(`${OPENSESSION_CHATS_DIR}/${file}`, "utf-8"));
+				const id = String(s.id || file.slice(0, -5));
+				const createdBy = String(s.createdBy || "");
+				const autoMatch = createdBy.match(/^(.*) \(automation\)$/);
+				map.set(id, {
+					id,
+					createdAt: String(s.createdAt || ""),
+					createdBy,
+					mode: String(s.mode || ""),
+					model: String(s.model || ""),
+					branch: String(s.branch || ""),
+					repo: repoOfWorktree(String(s.worktreeDir || "")),
+					automationName: autoMatch ? autoMatch[1] : null,
+					isReview: id.startsWith("bks-ghpr-") || createdBy === "GitHub (automation)",
+				});
+			} catch {}
+		}
+	} catch (e) {
+		console.error("[analytics] session scan failed:", e);
+	}
+	sessionMetaCache = { at: Date.now(), map };
+	return map;
+}
+
+// ── PRs via gh ──
+
+export interface AnalyticsPr {
+	repo: string;
+	number: number;
+	title: string;
+	url: string;
+	state: "OPEN" | "MERGED" | "CLOSED";
+	createdAt: string;
+	mergedAt: string | null;
+	headRefName: string;
+	byOpensession: boolean;
+}
+
+const PR_CACHE_TTL_MS = 10 * 60 * 1000;
+const prCache = new Map<string, { at: number; prs: AnalyticsPr[] }>();
+
+async function fetchRepoPrs(repoId: string, ghRepo: string, fromDate: string): Promise<AnalyticsPr[]> {
+	const key = `${ghRepo}:${fromDate}`;
+	const cached = prCache.get(key);
+	if (cached && Date.now() - cached.at < PR_CACHE_TTL_MS) return cached.prs;
+
+	const fields = "number,title,url,state,createdAt,mergedAt,headRefName";
+	const seen = new Map<number, AnalyticsPr>();
+	// Two searches: PRs created in range (any state) + PRs merged in range
+	// (which may have been created before it). Capped at 1000 (the GitHub
+	// search ceiling) — tella-fusion alone opens 400+ PRs in a 30-day window.
+	for (const search of [`created:>=${fromDate}`, `merged:>=${fromDate}`]) {
+		try {
+			const raw = await $`gh pr list --repo ${ghRepo} --state all --limit 1000 --search ${search} --json ${fields}`
+				.quiet()
+				.text();
+			for (const pr of JSON.parse(raw)) {
+				seen.set(pr.number, {
+					repo: repoId,
+					number: pr.number,
+					title: String(pr.title || ""),
+					url: String(pr.url || ""),
+					state: pr.state,
+					createdAt: String(pr.createdAt || ""),
+					mergedAt: pr.mergedAt ? String(pr.mergedAt) : null,
+					headRefName: String(pr.headRefName || ""),
+					byOpensession: false,
+				});
+			}
+		} catch (e) {
+			console.error(`[analytics] gh pr list failed for ${ghRepo}:`, e);
+		}
+	}
+	const prs = [...seen.values()];
+	prCache.set(key, { at: Date.now(), prs });
+	return prs;
+}
+
+// ── The composed summary ──
+
+export interface AnalyticsSummary {
+	from: string;
+	to: string;
+	days: Array<{
+		date: string;
+		sessions: number;
+		sessionsByKind: Record<string, number>;
+		turns: number;
+		errors: number;
+		cancelled: number;
+		outputTokens: number;
+		inputTokens: number;
+		cacheReadTokens: number;
+		cacheWriteTokens: number;
+		outputByModel: Record<string, number>;
+		prsOpened: number;
+		prsMerged: number;
+		durationMs: number;
+	}>;
+	totals: {
+		sessions: number;
+		sessionsCreated: number;
+		turns: number;
+		errors: number;
+		cancelled: number;
+		oneshots: number;
+		durationMs: number;
+		outputTokens: number;
+		inputTokens: number;
+		cacheReadTokens: number;
+		cacheWriteTokens: number;
+		prsOpened: number;
+		prsMerged: number;
+		allPrsOpened: number;
+		allPrsMerged: number;
+		activePeople: number;
+	};
+	models: Array<{ model: string; turns: number } & { [K in keyof TokenTotals as `${K}Tokens`]: number }>;
+	people: Array<{
+		name: string;
+		sessionsCreated: number;
+		sessionsActive: number;
+		turns: number;
+		outputTokens: number;
+	}>;
+	automations: Array<{
+		name: string;
+		runs: number;
+		sessionsActive: number;
+		turns: number;
+		outputTokens: number;
+		errors: number;
+	}>;
+	repos: Array<{
+		repo: string;
+		prsOpened: number;
+		prsMerged: number;
+		allOpened: number;
+		allMerged: number;
+	}>;
+	prs: AnalyticsPr[];
+}
+
+function utcDatesBetween(from: string, to: string): string[] {
+	const dates: string[] = [];
+	const end = new Date(`${to}T00:00:00Z`).getTime();
+	for (let t = new Date(`${from}T00:00:00Z`).getTime(); t <= end; t += 86_400_000) {
+		dates.push(new Date(t).toISOString().slice(0, 10));
+	}
+	return dates;
+}
+
+/** Friendly owner label for run kinds whose sessions live outside our store. */
+function kindOwner(kind: string): string {
+	if (kind === "slack") return "Slack";
+	if (kind === "linear") return "Linear";
+	return "Other";
+}
+
+export async function buildAnalytics(from: string, to: string): Promise<AnalyticsSummary> {
+	const dates = utcDatesBetween(from, to);
+	const meta = loadSessionMeta();
+
+	// PRs: query every repo that has ever hosted a code-mode session, and
+	// attribute by head branch against those sessions' branches.
+	const codeBranches = new Set<string>();
+	const codeRepos = new Set<string>();
+	for (const s of meta.values()) {
+		if (s.mode !== "code" || !s.branch) continue;
+		codeBranches.add(s.branch);
+		if (s.repo) codeRepos.add(s.repo);
+	}
+	const repos = configuredRepos();
+	const allPrs: AnalyticsPr[] = [];
+	await Promise.all(
+		[...codeRepos].map(async (repoId) => {
+			const repo = repos[repoId];
+			if (!repo?.ghRepo) return;
+			allPrs.push(...(await fetchRepoPrs(repoId, repo.ghRepo, from)));
+		}),
+	);
+	for (const pr of allPrs) pr.byOpensession = codeBranches.has(pr.headRefName);
+	const inRange = (iso: string | null) => {
+		const d = (iso || "").slice(0, 10);
+		return d >= from && d <= to;
+	};
+
+	const days: AnalyticsSummary["days"] = [];
+	const totals: AnalyticsSummary["totals"] = {
+		sessions: 0,
+		sessionsCreated: 0,
+		turns: 0,
+		errors: 0,
+		cancelled: 0,
+		oneshots: 0,
+		durationMs: 0,
+		outputTokens: 0,
+		inputTokens: 0,
+		cacheReadTokens: 0,
+		cacheWriteTokens: 0,
+		prsOpened: 0,
+		prsMerged: 0,
+		allPrsOpened: 0,
+		allPrsMerged: 0,
+		activePeople: 0,
+	};
+	const modelAgg = new Map<string, ModelAgg>();
+	interface OwnerAgg {
+		sessionsCreated: number;
+		sessionsActive: Set<string>;
+		turns: number;
+		outputTokens: number;
+		errors: number;
+	}
+	const peopleAgg = new Map<string, OwnerAgg>();
+	const automationAgg = new Map<string, OwnerAgg>();
+	const ownerAgg = (m: Map<string, OwnerAgg>, name: string): OwnerAgg => {
+		let a = m.get(name);
+		if (!a) m.set(name, (a = { sessionsCreated: 0, sessionsActive: new Set(), turns: 0, outputTokens: 0, errors: 0 }));
+		return a;
+	};
+	const allSessions = new Set<string>();
+
+	// People arrive as free-text createdBy strings ("Michiel" vs "michiel") —
+	// merge case variants, preferring a variant that carries real capitals.
+	const personDisplay = new Map<string, string>();
+	const personKey = (name: string): string => {
+		const lower = name.toLowerCase();
+		const stored = personDisplay.get(lower);
+		if (!stored || (stored === stored.toLowerCase() && name !== lower)) {
+			personDisplay.set(lower, name === lower ? name.charAt(0).toUpperCase() + name.slice(1) : name);
+		}
+		return personDisplay.get(lower)!;
+	};
+
+	// Sessions *created* in range, from the store (owner attribution).
+	for (const s of meta.values()) {
+		if (!inRange(s.createdAt)) continue;
+		totals.sessionsCreated++;
+		const agg = s.isReview
+			? ownerAgg(automationAgg, "GitHub review")
+			: s.automationName
+				? ownerAgg(automationAgg, s.automationName)
+				: ownerAgg(peopleAgg, personKey(s.createdBy || "Unknown"));
+		agg.sessionsCreated++;
+	}
+
+	for (const date of dates) {
+		const r = cachedRollup(date);
+		const sessionsByKind: Record<string, number> = {};
+		for (const [id, s] of Object.entries(r.bySession)) {
+			allSessions.add(id);
+			const m = meta.get(id);
+			// Review sessions run with run_kind "prompt"; give them their own
+			// stack slice — they're volume-dominant and qualitatively different.
+			// (Id-prefix fallback: review sessions get pruned from the store.)
+			const isReview = m?.isReview || id.startsWith("bks-ghpr-");
+			const isUnattendedKind =
+				["automation", "plain", "action", "security-scan"].includes(s.kind) || s.kind.startsWith("github");
+			const kind = isReview ? "review" : m?.automationName || (!m && isUnattendedKind) ? "automation" : s.kind;
+			sessionsByKind[kind] = (sessionsByKind[kind] || 0) + 1;
+			const agg = isReview
+				? ownerAgg(automationAgg, "GitHub review")
+				: m?.automationName
+					? ownerAgg(automationAgg, m.automationName)
+					: m
+						? ownerAgg(peopleAgg, personKey(m.createdBy || "Unknown"))
+						: isUnattendedKind
+							? ownerAgg(automationAgg, "Removed automation sessions")
+							: ownerAgg(peopleAgg, kindOwner(s.kind));
+			agg.sessionsActive.add(id);
+			agg.turns += s.turns;
+			agg.outputTokens += s.output;
+			agg.errors += s.errors;
+		}
+		const outputByModel: Record<string, number> = {};
+		const addModel = (model: string, m: ModelAgg) => {
+			outputByModel[model] = (outputByModel[model] || 0) + m.output;
+			const agg = modelAgg.get(model) || { turns: 0, ...emptyTokens() };
+			agg.turns += m.turns;
+			agg.input += m.input;
+			agg.output += m.output;
+			agg.cacheRead += m.cacheRead;
+			agg.cacheWrite += m.cacheWrite;
+			modelAgg.set(model, agg);
+		};
+		for (const [model, m] of Object.entries(r.byModel)) addModel(model, m);
+		for (const [sid, m] of Object.entries(r.unknownModel)) {
+			const storeModel = meta.get(sid)?.model;
+			addModel(storeModel ? shortModel(storeModel) : "unknown", m);
+		}
+		const dayPrs = allPrs.filter((pr) => pr.byOpensession);
+		const prsOpened = dayPrs.filter((pr) => pr.createdAt.slice(0, 10) === date).length;
+		const prsMerged = dayPrs.filter((pr) => pr.mergedAt?.slice(0, 10) === date).length;
+		days.push({
+			date,
+			sessions: Object.keys(r.bySession).length,
+			sessionsByKind,
+			turns: r.turns,
+			errors: r.errors,
+			cancelled: r.cancelled,
+			outputTokens: r.tokens.output,
+			inputTokens: r.tokens.input,
+			cacheReadTokens: r.tokens.cacheRead,
+			cacheWriteTokens: r.tokens.cacheWrite,
+			outputByModel,
+			prsOpened,
+			prsMerged,
+			durationMs: r.durationMs,
+		});
+		totals.turns += r.turns;
+		totals.errors += r.errors;
+		totals.cancelled += r.cancelled;
+		totals.oneshots += r.oneshots;
+		totals.durationMs += r.durationMs;
+		totals.outputTokens += r.tokens.output;
+		totals.inputTokens += r.tokens.input;
+		totals.cacheReadTokens += r.tokens.cacheRead;
+		totals.cacheWriteTokens += r.tokens.cacheWrite;
+	}
+	totals.sessions = allSessions.size;
+
+	const repoAgg = new Map<string, AnalyticsSummary["repos"][number]>();
+	for (const pr of allPrs) {
+		const r = repoAgg.get(pr.repo) || { repo: pr.repo, prsOpened: 0, prsMerged: 0, allOpened: 0, allMerged: 0 };
+		if (inRange(pr.createdAt)) {
+			r.allOpened++;
+			if (pr.byOpensession) r.prsOpened++;
+		}
+		if (pr.mergedAt && inRange(pr.mergedAt)) {
+			r.allMerged++;
+			if (pr.byOpensession) r.prsMerged++;
+		}
+		repoAgg.set(pr.repo, r);
+	}
+	for (const r of repoAgg.values()) {
+		totals.prsOpened += r.prsOpened;
+		totals.prsMerged += r.prsMerged;
+		totals.allPrsOpened += r.allOpened;
+		totals.allPrsMerged += r.allMerged;
+	}
+
+	const models = [...modelAgg.entries()]
+		.map(([model, m]) => ({
+			model,
+			turns: m.turns,
+			inputTokens: m.input,
+			outputTokens: m.output,
+			cacheReadTokens: m.cacheRead,
+			cacheWriteTokens: m.cacheWrite,
+		}))
+		.sort((a, b) => b.outputTokens - a.outputTokens);
+	const people = [...peopleAgg.entries()]
+		.map(([name, a]) => ({
+			name,
+			sessionsCreated: a.sessionsCreated,
+			sessionsActive: a.sessionsActive.size,
+			turns: a.turns,
+			outputTokens: a.outputTokens,
+		}))
+		.filter((p) => p.sessionsCreated > 0 || p.sessionsActive > 0)
+		.sort((a, b) => b.sessionsActive - a.sessionsActive || b.sessionsCreated - a.sessionsCreated);
+	totals.activePeople = people.filter((p) => !["Slack", "Linear", "Other", "Unknown"].includes(p.name)).length;
+	const automations = [...automationAgg.entries()]
+		.map(([name, a]) => ({
+			name,
+			runs: a.sessionsCreated,
+			sessionsActive: a.sessionsActive.size,
+			turns: a.turns,
+			outputTokens: a.outputTokens,
+			errors: a.errors,
+		}))
+		.sort((a, b) => b.sessionsActive - a.sessionsActive || b.runs - a.runs);
+
+	const prs = allPrs
+		.filter((pr) => pr.byOpensession && (inRange(pr.createdAt) || inRange(pr.mergedAt)))
+		.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+		.slice(0, 400);
+
+	return {
+		from,
+		to,
+		days,
+		totals,
+		models,
+		people,
+		automations,
+		repos: [...repoAgg.values()].sort((a, b) => b.allOpened - a.allOpened),
+		prs,
+	};
+}

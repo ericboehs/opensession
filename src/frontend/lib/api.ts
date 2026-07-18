@@ -10,6 +10,7 @@ import type {
 	ReportGroup,
 	ReportMeta,
 	Project,
+	AnalyticsSummary,
 } from "./types";
 
 const BASE = `${BASE_PATH}/api`;
@@ -34,6 +35,16 @@ export async function fetchReports(automationId: string): Promise<ReportMeta[]> 
 
 export function reportRawUrl(automationId: string, reportId: string): string {
 	return `${BASE}/reports/${encodeURIComponent(automationId)}/${encodeURIComponent(reportId)}/raw`;
+}
+
+export async function fetchAnalytics(
+	from: string,
+	to: string,
+): Promise<AnalyticsSummary> {
+	return request<AnalyticsSummary>(
+		`/analytics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+		{ label: "Failed to load analytics" },
+	);
 }
 
 /** Single error shape for every API failure: HTTP status + the server's
