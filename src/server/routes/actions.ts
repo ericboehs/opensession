@@ -6,7 +6,7 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import type { RouteContext } from "./context";
+import { requestUser, type RouteContext } from "./context";
 import { createAction, deleteAction, getAction, introspectScript, listActions, runAction } from "../actions";
 import { invalidateSessionsCache } from "../session-cache";
 
@@ -57,7 +57,7 @@ export async function handleActionsRoutes(
 			values?: Record<string, unknown>;
 			user?: string;
 		};
-		const result = runAction(action, body.values || {}, body.user, () => {
+		const result = runAction(action, body.values || {}, requestUser(ctx, body.user) || undefined, () => {
 			invalidateSessionsCache();
 		});
 		if ("error" in result) return Response.json(result, { status: 400 });

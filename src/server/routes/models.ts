@@ -6,7 +6,7 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import type { RouteContext } from "./context";
+import { requestUser, type RouteContext } from "./context";
 import { KNOWN_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, modelEfforts, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
 import { envAlias } from "../rename-compat";
 import { type Sandbox } from "../sandbox";
@@ -62,7 +62,7 @@ export async function handleModelsRoutes(
 		const body = await req.json().catch(() => null);
 		const provider = typeof body?.provider === "string" ? body.provider : "";
 		const repoId = typeof body?.repo === "string" ? body.repo : "";
-		const user = typeof body?.user === "string" && body.user ? body.user : "anon";
+		const user = requestUser(ctx, body?.user) || "anon";
 		const { requestPrewarm, prewarmRateLimited } = await import(
 			"../../server/sandbox/prewarm"
 		);

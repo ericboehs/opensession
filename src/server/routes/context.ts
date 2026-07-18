@@ -23,3 +23,16 @@ export interface RouteContext {
 export type RouteHandler = (
 	ctx: RouteContext,
 ) => Promise<Response | undefined>;
+
+/**
+ * The request's attributed user: the verified sign-in identity when GitHub
+ * web sign-in is active (first name — matching the historical picker values
+ * routes have always stored), otherwise the client-claimed value. Routes must
+ * use this instead of reading `body.user` directly, so a signed-in teammate
+ * can't act under another name over HTTP either (the WS layer already
+ * enforces this at the socket).
+ */
+export function requestUser(ctx: RouteContext, claimed?: unknown): string {
+	if (ctx.authUser?.name) return ctx.authUser.name.split(" ")[0];
+	return typeof claimed === "string" ? claimed.trim() : "";
+}

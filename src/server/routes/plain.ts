@@ -6,7 +6,7 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import type { RouteContext } from "./context";
+import { requestUser, type RouteContext } from "./context";
 import { listAutomations, runAutomation } from "../automations";
 import { findSession, getCachedSessions, invalidateSessionsCache } from "../session-cache";
 import { type Workspace } from "../workspaces";
@@ -206,8 +206,7 @@ export async function handlePlainRoutes(
 		// name in the message instead: replies get their first name as an
 		// email-style sign-off (unless they already signed), notes get an
 		// author prefix.
-		const senderName =
-			typeof body?.user === "string" ? body.user.trim() : "";
+		const senderName = requestUser(ctx, body?.user);
 		const firstName = senderName.split(/\s+/)[0] || "";
 		try {
 			const { getThreadWithMessages, postNote, sendCustomerReply } =
@@ -237,7 +236,7 @@ export async function handlePlainRoutes(
 				if (!ok) throw new Error("Plain rejected the reply");
 			}
 			console.log(
-				`[plain-reply] ${body?.user || "someone"} sent a ${kind} to ${threadId}`,
+				`[plain-reply] ${requestUser(ctx, body?.user) || "someone"} sent a ${kind} to ${threadId}`,
 			);
 			return Response.json({ ok: true });
 		} catch (e: any) {
@@ -279,7 +278,7 @@ export async function handlePlainRoutes(
 			);
 			plainTodoCache = null; // the queue changed — next poll refetches
 			console.log(
-				`[plain-status] ${body?.user || "someone"} marked ${threadId} ${status}`,
+				`[plain-status] ${requestUser(ctx, body?.user) || "someone"} marked ${threadId} ${status}`,
 			);
 			return Response.json({ ok: true, status });
 		} catch (e: any) {
@@ -317,7 +316,7 @@ export async function handlePlainRoutes(
 			await setThreadPriority(threadId, priority);
 			plainTodoCache = null;
 			console.log(
-				`[plain-priority] ${body?.user || "someone"} set ${threadId} priority ${priority}`,
+				`[plain-priority] ${requestUser(ctx, body?.user) || "someone"} set ${threadId} priority ${priority}`,
 			);
 			return Response.json({ ok: true, priority });
 		} catch (e: any) {
@@ -371,7 +370,7 @@ export async function handlePlainRoutes(
 			}
 			plainTodoCache = null;
 			console.log(
-				`[plain-spam] ${body?.user || "someone"} ${spam ? "marked" : "unmarked"} customer ${customerId} (thread ${threadId}) as spam`,
+				`[plain-spam] ${requestUser(ctx, body?.user) || "someone"} ${spam ? "marked" : "unmarked"} customer ${customerId} (thread ${threadId}) as spam`,
 			);
 			return Response.json({ ok: true, spam, closedThread });
 		} catch (e: any) {
@@ -442,7 +441,7 @@ export async function handlePlainRoutes(
 			);
 			await assignThreadToUser(threadId, userId);
 			console.log(
-				`[plain-assign] ${body?.user || "someone"} ${
+				`[plain-assign] ${requestUser(ctx, body?.user) || "someone"} ${
 					userId ? `assigned ${threadId} to ${userId}` : `unassigned ${threadId}`
 				}`,
 			);
@@ -486,7 +485,7 @@ export async function handlePlainRoutes(
 			await changeThreadLabels(threadId, add, remove);
 			plainTodoCache = null; // labels show on the queue rows
 			console.log(
-				`[plain-labels] ${body?.user || "someone"} changed labels on ${threadId} (+${add.length} −${remove.length})`,
+				`[plain-labels] ${requestUser(ctx, body?.user) || "someone"} changed labels on ${threadId} (+${add.length} −${remove.length})`,
 			);
 			return Response.json({ ok: true });
 		} catch (e: any) {
@@ -516,7 +515,7 @@ export async function handlePlainRoutes(
 			await setThreadTitle(threadId, title.slice(0, 200));
 			plainTodoCache = null; // titles show in the queue
 			console.log(
-				`[plain-title] ${body?.user || "someone"} renamed ${threadId}`,
+				`[plain-title] ${requestUser(ctx, body?.user) || "someone"} renamed ${threadId}`,
 			);
 			return Response.json({ ok: true });
 		} catch (e: any) {

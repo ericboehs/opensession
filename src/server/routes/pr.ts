@@ -6,7 +6,8 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import type { RouteContext } from "./context";
+import { requestUser, type RouteContext } from "./context";
+import { personaName } from "../config";
 import { getPrDetails, getPrDiff, mergePr, postPrComment, submitPrReview } from "../pr-info";
 import { closeTinderPr, commentTinderPr, deleteTinderComment, getSeenPrs, labelTinderPr, listTinderLabels, listTinderPrs, markPrSeen, markPrUnseen, reopenTinderPr } from "../pr-tinder";
 import { findSession, invalidateSessionsCache } from "../session-cache";
@@ -58,24 +59,25 @@ export async function handlePrRoutes(
 		if (m && req.method === "POST") {
 			const number = parseInt(m[1], 10);
 			const body = await req.json().catch(() => ({}));
+			const user = requestUser(ctx, body.user);
 			try {
 				switch (m[2]) {
 					case "keep": {
-						if (!body.user)
+						if (!user)
 							return Response.json(
 								{ error: "user required" },
 								{ status: 400 },
 							);
-						markPrSeen(body.user, number);
+						markPrSeen(user, number);
 						return Response.json({ ok: true });
 					}
 					case "unkeep": {
-						if (!body.user)
+						if (!user)
 							return Response.json(
 								{ error: "user required" },
 								{ status: 400 },
 							);
-						markPrUnseen(body.user, number);
+						markPrUnseen(user, number);
 						return Response.json({ ok: true });
 					}
 					case "close": {
@@ -89,7 +91,7 @@ export async function handlePrRoutes(
 					case "comment": {
 						const r = await commentTinderPr(number, body.body || "");
 						// Commenting is a triage verdict too — don't re-deal the PR.
-						if ("ok" in r && body.user) markPrSeen(body.user, number);
+						if ("ok" in r && user) markPrSeen(user, number);
 						return Response.json(r, { status: "error" in r ? 502 : 200 });
 					}
 					case "uncomment": {
@@ -101,7 +103,7 @@ export async function handlePrRoutes(
 								{ status: 400 },
 							);
 						const r = await deleteTinderComment(Number(body.commentId));
-						if ("ok" in r && body.user) markPrUnseen(body.user, number);
+						if ("ok" in r && user) markPrUnseen(user, number);
 						return Response.json(r, { status: "error" in r ? 502 : 200 });
 					}
 					case "labels": {
@@ -322,11 +324,11 @@ export async function handlePrRoutes(
 				{ status: 400 },
 			);
 
-		const user = body.user || "Someone";
+		const user = requestUser(ctx, body.user) || "Someone";
 		const result = await postPrComment(
 			target.branch,
 			{
-				body: `**${user}** via Michael:\n\n${body.text.trim()}`,
+				body: `**${user}** via ${personaName()}:\n\n${body.text.trim()}`,
 				path: body.path,
 				line: body.line,
 				startLine: body.startLine,
@@ -367,11 +369,11 @@ export async function handlePrRoutes(
 			return Response.json({ error: "Nothing to submit" }, { status: 400 });
 		}
 
-		const user = body?.user || "Someone";
+		const user = requestUser(ctx, body?.user) || "Someone";
 		const summary = body?.summary?.trim();
 		const reviewBody = summary
-			? `**${user}** via Michael:\n\n${summary}`
-			: `Review by **${user}** via Michael.`;
+			? `**${user}** via ${personaName()}:\n\n${summary}`
+			: `Review by **${user}** via ${personaName()}.`;
 		const result = await submitPrReview(
 			target.branch,
 			{
@@ -494,7 +496,7 @@ export async function handlePrRoutes(
 				branch: target.branch,
 				parentSessionId: session.id,
 				reportBack: false,
-				user: body?.user || "Someone",
+				user: requestUser(ctx, body?.user) || "Someone",
 			});
 			return Response.json({ ok: true, bksId: id, openChat: true });
 		}
@@ -503,7 +505,7 @@ export async function handlePrRoutes(
 		const result = await triggerPrAction(
 			kind,
 			details.number,
-			body?.user || "Someone",
+			requestUser(ctx, body?.user) || "Someone",
 		);
 		return Response.json({
 			ok: result.ok,

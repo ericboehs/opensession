@@ -6,7 +6,7 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import type { RouteContext } from "./context";
+import { requestUser, type RouteContext } from "./context";
 import { broadcastToAll } from "../ws-hub";
 
 export async function handleChatRoutes(
@@ -67,7 +67,7 @@ export async function handleChatRoutes(
 
 	if (path === "/backstage/api/chat/messages" && req.method === "POST") {
 		const body = await req.json().catch(() => null);
-		const user = typeof body?.user === "string" ? body.user.trim() : "";
+		const user = requestUser(ctx, body?.user);
 		const text = typeof body?.text === "string" ? body.text.trim() : "";
 		const images = Array.isArray(body?.images) ? body.images : [];
 		const channel =
@@ -139,7 +139,7 @@ export async function handleChatRoutes(
 	// out to every client (same broadcast pattern as new messages).
 	if (path === "/backstage/api/chat/react" && req.method === "POST") {
 		const body = await req.json().catch(() => null);
-		const user = typeof body?.user === "string" ? body.user.trim() : "";
+		const user = requestUser(ctx, body?.user);
 		const messageId =
 			typeof body?.messageId === "string" ? body.messageId : "";
 		const emoji = typeof body?.emoji === "string" ? body.emoji : "";
