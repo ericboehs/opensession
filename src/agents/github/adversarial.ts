@@ -1,5 +1,5 @@
 /**
- * Behavior: `michael-adversarial`. Runs tella-fusion's adversarial-code-review
+ * Behavior: the `os-adversarial` label (legacy `michael-adversarial`). Runs tella-fusion's adversarial-code-review
  * skill (two independent hostile review passes, adjudicated) in code mode, with
  * Michael responsible for implementing the accepted findings, then pushes any
  * resulting changes to the PR branch and posts a summary. One-shot.
@@ -10,7 +10,7 @@ import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state"
 import { runGithubAgent, authorForLogin, finalSummary, sessionUrl } from "./run";
 import { buildAdversarialPrompt } from "./prompts";
 import { postOrEditComment, removeLabel, ADVERSARIAL_MARKER } from "./github-rest";
-import { LABEL_ADVERSARIAL } from "./constants";
+import { LABEL_ADVERSARIAL, labelAliases } from "./constants";
 import type { PrRef } from "./review";
 
 export async function runAdversarial(
@@ -73,7 +73,9 @@ export async function runAdversarial(
     const fin = getOrInitPrState(pr.number, pr.headRef);
     fin.activeRun = undefined;
     writePrState(fin);
-    await removeLabel(pr.number, LABEL_ADVERSARIAL).catch(() => {});
+    for (const name of labelAliases(LABEL_ADVERSARIAL)) {
+      await removeLabel(pr.number, name).catch(() => {});
+    }
     releaseLock("code", pr.number);
   }
 }

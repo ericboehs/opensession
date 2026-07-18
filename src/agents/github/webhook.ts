@@ -17,6 +17,7 @@ import {
   LABEL_AUTOFIX,
   LABEL_SIMPLIFY,
   LABEL_ADVERSARIAL,
+  labelMatches,
 } from "./constants";
 import { runReview, type PrRef, type ReviewConfig } from "./review";
 import { isLockHeld } from "./state";
@@ -111,13 +112,13 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       if (senderIsBot) return;
       const label: string = payload.label?.name || "";
       const requestedBy: string = payload.sender?.login || "";
-      if (label === LABEL_REVIEW) {
+      if (labelMatches(label, LABEL_REVIEW)) {
         void fireReview(ref, true);
-      } else if (label === LABEL_AUTOFIX) {
+      } else if (labelMatches(label, LABEL_AUTOFIX)) {
         void fireAutoFix(ref, requestedBy);
-      } else if (label === LABEL_SIMPLIFY) {
+      } else if (labelMatches(label, LABEL_SIMPLIFY)) {
         void fireSimplify(ref, requestedBy);
-      } else if (label === LABEL_ADVERSARIAL) {
+      } else if (labelMatches(label, LABEL_ADVERSARIAL)) {
         void fireAdversarial(ref, requestedBy);
       }
       return;
@@ -169,7 +170,7 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       // skip it so we don't review our own work mid-loop. But reviewing a PR the bot
       // *opened* (opened/reopened/ready_for_review) is fine: read-only, no push, no loop.
       if (senderIsBot && action === "synchronize") return;
-      const labeled = (pr.labels || []).some((l) => l.name === LABEL_REVIEW);
+      const labeled = (pr.labels || []).some((l) => labelMatches(l.name, LABEL_REVIEW));
       const { autoEnabled } = resolveReviewConfig();
       if (labeled || autoEnabled) {
         // Pushes debounce (hot PRs got one review per push — #4913: 20 pushes

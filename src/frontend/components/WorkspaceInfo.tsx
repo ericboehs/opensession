@@ -775,7 +775,7 @@ const PR_AGENT_ACTIONS: Array<{
 	{
 		kind: "review",
 		label: "Review",
-		hint: "Full review pass (michael-review). Findings are posted on the PR.",
+		hint: "Full review pass (os-review). Findings are posted on the PR.",
 	},
 	{
 		kind: "autofix",
@@ -785,12 +785,12 @@ const PR_AGENT_ACTIONS: Array<{
 	{
 		kind: "simplify",
 		label: "Simplify",
-		hint: "Quality cleanup pass: reuse, simpler shapes, dead code (michael-simplify)",
+		hint: "Quality cleanup pass: reuse, simpler shapes, dead code (os-simplify)",
 	},
 	{
 		kind: "adversarial",
 		label: "Adversarial",
-		hint: "Deeper two-pass adversarial review (michael-adversarial)",
+		hint: "Deeper two-pass adversarial review (os-adversarial)",
 	},
 ];
 

@@ -243,8 +243,8 @@ async function postReview(
   const findingCount = parsed?.findings?.length || 0;
   // Next-steps footer pointing at the action labels.
   const tip = findingCount
-    ? "> 💡 Labels: **`michael-auto-fix`** — I fix these and push until CI passes · **`michael-adversarial`** — deeper two-pass review · **`michael-simplify`** — quality cleanup pass."
-    : "> 💡 Labels: **`michael-adversarial`** — deeper two-pass review · **`michael-simplify`** — quality cleanup pass · **`michael-auto-fix`** — fix anything outstanding and push until CI passes.";
+    ? "> 💡 Labels: **`os-auto-fix`** — I fix these and push until CI passes · **`os-adversarial`** — deeper two-pass review · **`os-simplify`** — quality cleanup pass."
+    : "> 💡 Labels: **`os-adversarial`** — deeper two-pass review · **`os-simplify`** — quality cleanup pass · **`os-auto-fix`** — fix anything outstanding and push until CI passes.";
   const composed = [
     REVIEW_MARKER,
     `### 🤖 Michael review${verdict}${confidence}`,

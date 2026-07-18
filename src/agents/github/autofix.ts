@@ -1,7 +1,7 @@
 /**
- * Behavior 2: `michael-auto-fix`. Checks out the PR head branch in a dedicated
+ * Behavior 2: the `os-auto-fix` label (legacy `michael-auto-fix`). Checks out the PR head branch in a dedicated
  * worktree, fixes merge conflicts + review findings + failing CI, pushes to the PR branch,
- * polls CI, and re-fixes until green AND a fresh Michael review of the pushed
+ * polls CI, and re-fixes until green AND a fresh review of the pushed
  * code finds nothing blocking — bounded so it can never run away. The loop is
  * gated on that fresh review rather than the fixer's own self-report, so it can't
  * stop while Michael's review would still flag a P0/P1. Removes the label when it
@@ -21,7 +21,8 @@ import { runGithubAgent, authorForLogin, sessionUrl } from "./run";
 import { buildAutoFixPrompt, mergeabilityState, type MergeabilityState } from "./prompts";
 import { checkRegistrationPending } from "./autofix-gates";
 import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, resolveAddressedThreads, BOT_LOGIN } from "./github-rest";
-import { LABEL_AUTOFIX } from "./constants";
+import { LABEL_AUTOFIX, labelAliases } from "./constants";
+import { personaName } from "../../server/config";
 import type { PrRef, ReviewResult } from "./review";
 import { defaultRepo } from "../../server/config";
 
@@ -127,7 +128,7 @@ export async function runAutoFix(
     // breakdown) render below it rather than getting glued to the link.
     const [head, ...rest] = text.split("\n");
     const tail = rest.length ? `\n${rest.join("\n")}` : "";
-    const body = `<!-- michael-autofix -->\n🛠️ **Michael auto-fix** — ${head} · ${link}${tail}`;
+    const body = `<!-- michael-autofix -->\n🛠️ **${personaName()} auto-fix** — ${head} · ${link}${tail}`;
     if (statusCommentId) {
       await editIssueComment(statusCommentId, body);
     } else {
@@ -375,7 +376,9 @@ export async function runAutoFix(
     if (fin.autoFix) { fin.autoFix.active = false; writePrState(fin); }
     await updateStatus(`⚠️ Auto-fix errored: ${(e as any)?.message || e}`).catch(() => {});
   } finally {
-    await removeLabel(pr.number, LABEL_AUTOFIX).catch(() => {});
+    for (const name of labelAliases(LABEL_AUTOFIX)) {
+      await removeLabel(pr.number, name).catch(() => {});
+    }
     releaseLock("code", pr.number);
   }
 }

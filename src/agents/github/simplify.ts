@@ -1,5 +1,5 @@
 /**
- * Behavior 3: `michael-simplify`. One `/simplify` pass on the PR's changes in a
+ * Behavior 3: the `os-simplify` label (legacy `michael-simplify`). One `/simplify` pass on the PR's changes in a
  * PR-branch worktree, push, post a summary, then re-run the review on the result.
  * Removes the label when done.
  */
@@ -9,7 +9,7 @@ import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state"
 import { runGithubAgent, authorForLogin, finalSummary, sessionUrl } from "./run";
 import { buildSimplifyPrompt } from "./prompts";
 import { postOrEditComment, removeLabel, SIMPLIFY_MARKER } from "./github-rest";
-import { LABEL_SIMPLIFY } from "./constants";
+import { LABEL_SIMPLIFY, labelAliases } from "./constants";
 import { runReview, type PrRef } from "./review";
 import { resolveReviewConfig } from "./webhook";
 
@@ -99,7 +99,9 @@ export async function runSimplify(
     if (fin.simplify) fin.simplify.active = false;
     fin.activeRun = undefined;
     writePrState(fin);
-    await removeLabel(pr.number, LABEL_SIMPLIFY).catch(() => {});
+    for (const name of labelAliases(LABEL_SIMPLIFY)) {
+      await removeLabel(pr.number, name).catch(() => {});
+    }
     releaseLock("code", pr.number);
   }
 }
