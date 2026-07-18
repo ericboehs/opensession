@@ -278,6 +278,9 @@ const SHARED_CWD = `${OPENCODE_STATE_DIR}/shared-cwd`;
  *  session id so run-rpc can route them to the right backstage session on a
  *  shared server (see opencode-plugin-session-tag.js). */
 const SESSION_TAG_PLUGIN_PATH = join(import.meta.dir, "opencode-plugin-session-tag.js");
+/** Repairs model-stringified object args on MCP tool calls (see the plugin's
+ *  module doc; upstream closed coercion as not-planned). */
+const ARG_COERCE_PLUGIN_PATH = join(import.meta.dir, "opencode-plugin-arg-coerce.js");
 
 const PROVIDER = "opencode" as const;
 
@@ -2399,7 +2402,7 @@ async function* runOpencodeAttempt(
             ),
           },
           autoshare: false,
-          plugin: [...(meridianPlugin || []), SESSION_TAG_PLUGIN_PATH],
+          plugin: [...(meridianPlugin || []), SESSION_TAG_PLUGIN_PATH, ARG_COERCE_PLUGIN_PATH],
           ...(Object.keys(providerConfig).length ? { provider: providerConfig } : {}),
           // Code mode reads files outside the worktree as a matter of course —
           // attachments land in ~/.opensession-chats/uploads — and opencode's
