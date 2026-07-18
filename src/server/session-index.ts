@@ -163,18 +163,27 @@ function parseDistilled(
 	const start = raw.indexOf("{");
 	const end = raw.lastIndexOf("}");
 	if (start === -1 || end <= start) return null;
+	const slice = raw.slice(start, end + 1);
+	let obj: any;
 	try {
-		const obj = JSON.parse(raw.slice(start, end + 1));
-		if (typeof obj?.question !== "string" || !obj.question.trim()) return null;
-		return {
-			question: clamp(obj.question, 300),
-			summary: clamp(String(obj.summary || ""), 700),
-			resolution: clamp(String(obj.resolution || ""), 1000),
-			systems: clamp(String(obj.systems || ""), 600),
-		};
+		obj = JSON.parse(slice);
 	} catch {
-		return null;
+		// Models emit raw newlines/tabs inside JSON strings, which strict
+		// JSON.parse rejects. Control chars carry no meaning we need to keep in
+		// a search record — flatten them to spaces and retry.
+		try {
+			obj = JSON.parse(slice.replace(/[\x00-\x1f]+/g, " "));
+		} catch {
+			return null;
+		}
 	}
+	if (typeof obj?.question !== "string" || !obj.question.trim()) return null;
+	return {
+		question: clamp(obj.question, 300),
+		summary: clamp(String(obj.summary || ""), 700),
+		resolution: clamp(String(obj.resolution || ""), 1000),
+		systems: clamp(String(obj.systems || ""), 600),
+	};
 }
 
 async function distillWithLlm(
@@ -190,7 +199,14 @@ async function distillWithLlm(
 	});
 	if (!text) return null;
 	const parsed = parseDistilled(text);
-	if (!parsed) return null;
+	if (!parsed) {
+		// A silent null here burns the sweep's distill budget with nothing to
+		// show — always leave a trace of what the model actually said.
+		console.warn(
+			`[session-index] distill parse failed for ${s.id}: ${JSON.stringify(text.slice(0, 200))}`,
+		);
+		return null;
+	}
 	// LLM systems + mechanically observed files, deduped by token.
 	const files = [
 		...new Set(`${parsed.systems} ${base.files}`.split(/\s+/).filter(Boolean)),
