@@ -1,3 +1,4 @@
+import { AGENT_NAME } from "../lib/brand";
 import React, {
 	useState,
 	useMemo,
@@ -180,8 +181,8 @@ const personColor = swatchColor;
 // `startedBy` is something other than a real teammate — test labels
 // ("proof-test", "image-test"), action/integration names ("Slack",
 // "Make Michiel editor (action)"), or empty — are hidden rather than shown as
-// stray sections. "Michael" (the assistant) counts as a person here.
-const KNOWN_PEOPLE = new Set([...TEAM, "Michael"].map((n) => n.toLowerCase()));
+// stray sections. The agent persona counts as a person here.
+const KNOWN_PEOPLE = new Set([...TEAM, AGENT_NAME].map((n) => n.toLowerCase()));
 
 interface Props {
 	sessions: UnifiedSession[];
@@ -728,7 +729,7 @@ function wsPrReviewGivenBy(
 	);
 }
 
-const EXPANDED_KEY = "michael-sidebar-expanded";
+const EXPANDED_KEY = "opensession-sidebar-expanded";
 
 const DEFAULT_EXPANDED = [
 	"recently",
@@ -763,7 +764,7 @@ function readExpanded(): Set<string> {
 type GroupBy = "status" | "repo" | "recently";
 type SortBy = "updated" | "created";
 const DEFAULT_PROJECT = "tella-fusion";
-const FILTER_KEY = "michael-sidebar-filter";
+const FILTER_KEY = "opensession-sidebar-filter";
 
 interface FilterState {
 	groupBy: GroupBy;

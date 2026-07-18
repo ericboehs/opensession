@@ -1,3 +1,4 @@
+import "./lib/storage-migrate"; // must run before any lib reads its pref keys
 import { BASE_PATH, stripBasePath } from "./lib/base";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -362,7 +363,7 @@ function App() {
 	const [route, setRoute] = useState<Route>(() => {
 		const parsed = parseRoute(location.pathname);
 		if (parsed.view === "home") {
-			const lastId = localStorage.getItem("michael-last-session");
+			const lastId = localStorage.getItem("opensession-last-session");
 			if (lastId) {
 				const restored: Route = { view: "session", id: lastId };
 				history.replaceState(null, "", routePath(restored));
@@ -419,12 +420,12 @@ function App() {
 	// mobile the page-stack (mobileDetail) governs the sidebar instead; this hides
 	// the static desktop column and swaps in a floating re-open control.
 	const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
-		() => localStorage.getItem("michael-sidebar-collapsed") === "1",
+		() => localStorage.getItem("opensession-sidebar-collapsed") === "1",
 	);
 	function toggleSidebarCollapsed() {
 		setSidebarCollapsed((v) => {
 			const next = !v;
-			localStorage.setItem("michael-sidebar-collapsed", next ? "1" : "0");
+			localStorage.setItem("opensession-sidebar-collapsed", next ? "1" : "0");
 			return next;
 		});
 	}
@@ -453,7 +454,7 @@ function App() {
 	// mobile drawer keeps its own fixed width (CSS media query wins there), so
 	// this only takes effect on the static desktop column.
 	const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
-		const v = Number(localStorage.getItem("michael-sidebar-w"));
+		const v = Number(localStorage.getItem("opensession-sidebar-w"));
 		return v >= 200 && v <= 480 ? v : 252;
 	});
 	const sidebarWidthRef = useRef(sidebarWidth);
@@ -472,7 +473,7 @@ function App() {
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", onUp);
 			localStorage.setItem(
-				"michael-sidebar-w",
+				"opensession-sidebar-w",
 				String(Math.round(sidebarWidthRef.current)),
 			);
 		};
@@ -830,10 +831,10 @@ function App() {
 	// Also feed the sidebar's "Recently opened" list.
 	useEffect(() => {
 		if (route.view === "session") {
-			localStorage.setItem("michael-last-session", route.id);
+			localStorage.setItem("opensession-last-session", route.id);
 			pushRecent(route.id);
 		} else if (route.view === "home") {
-			localStorage.removeItem("michael-last-session");
+			localStorage.removeItem("opensession-last-session");
 		}
 	}, [route]);
 

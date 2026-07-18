@@ -9,7 +9,7 @@ import { TEAM, setCurrentUser, signOut, useAuthStatus, useCurrentUser } from "./
 import { UserAvatar } from "./UserAvatar";
 import { PRODUCT_MARK, PRODUCT_NAME } from "../lib/brand";
 
-// The "Michael menu": the account switcher (who you're acting as), the live
+// The account menu: the account switcher (who you're acting as), the live
 // connection status, and an entry into the full Settings page (theme,
 // notifications, …). On desktop it's a Base UI menu (ui/menu: outside-click/
 // Escape dismissal, keyboard nav and submenu positioning come from the
@@ -119,7 +119,7 @@ function SettingsSheet({
 				</div>
 			) : variant === "brand" ? (
 				<button
-					aria-label="Michael menu"
+					aria-label="Account menu"
 					className="app-logo-button"
 					onClick={() => setOpen(true)}
 				>
@@ -127,7 +127,7 @@ function SettingsSheet({
 				</button>
 			) : (
 				<button
-					aria-label="Michael menu"
+					aria-label="Account menu"
 					className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-md border-none bg-transparent p-0 text-faint active:bg-hover active:text-fg"
 					onClick={() => setOpen(true)}
 				>
@@ -135,7 +135,7 @@ function SettingsSheet({
 				</button>
 			)}
 			{open && (
-				<BottomSheet label="Michael menu" onClose={() => setOpen(false)}>
+				<BottomSheet label="Account menu" onClose={() => setOpen(false)}>
 					{(dismiss) => (
 						<div className="overflow-y-auto px-4 pb-4 pt-1">
 							{githubAuth ? (

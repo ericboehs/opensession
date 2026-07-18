@@ -1,3 +1,4 @@
+import { AGENT_NAME } from "../lib/brand";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { GitStatusInfo, PrDetails } from "../lib/types";
 import {
@@ -361,7 +362,7 @@ export function PrStatusBar({
 		run("merge", () => mergePrApi(sessionId, "squash", repo));
 	}
 
-	// Session-driven actions: ask Michael instead of doing bare git plumbing —
+	// Session-driven actions: ask the agent instead of doing bare git plumbing —
 	// a session-authored PR gets a real title/description, and conflict
 	// resolution needs judgment, not a button.
 	function promptSession(label: string, content: string) {
@@ -394,7 +395,7 @@ export function PrStatusBar({
 	// Primary action for the current headline (right side of the strip).
 	function renderAction(): React.ReactNode {
 		if (prompted)
-			return <span className="pr-bar-prompted">Asked Michael to {prompted} ✓</span>;
+			return <span className="pr-bar-prompted">Asked {AGENT_NAME} to {prompted} ✓</span>;
 		switch (headline.key) {
 			case "merged":
 				return isArchived ? null : (

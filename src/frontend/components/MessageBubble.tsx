@@ -316,7 +316,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 		);
 	}
 
-	// assistant — no speaker label: every left-aligned bubble is Michael, so
+	// assistant — no speaker label: every left-aligned bubble is the agent, so
 	// the name row was pure noise above each answer.
 	return (
 		<div className="msg msg-assistant">

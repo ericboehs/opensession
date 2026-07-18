@@ -7,6 +7,7 @@
  * disabled review automation, recovering interrupted auto-fix loops on restart,
  * health, and a secret-gated manual trigger for testing.
  */
+import { personaName } from "../../server/config";
 import type { AgentModule } from "../types";
 import {
   listAutomations,
@@ -59,7 +60,7 @@ function ensureReviewAutomation(): void {
     prompt: DEFAULT_REVIEW_PROMPT,
     schedule: "",
     mode: "ask",
-    createdBy: "Michael (github agent)",
+    createdBy: `${personaName()} (github agent)`,
     eventKey: PR_EVENT_KEY,
   });
   if ("error" in created) {
@@ -86,7 +87,7 @@ function ensureDocsSyncAutomation(): void {
     prompt: DOCS_SYNC_PROMPT,
     schedule: "",
     mode: "code",
-    createdBy: "Michael (github agent)",
+    createdBy: `${personaName()} (github agent)`,
     eventKey: PR_MERGED_EVENT_KEY,
   });
   if ("error" in created) {

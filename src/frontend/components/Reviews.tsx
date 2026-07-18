@@ -1,3 +1,4 @@
+import { AGENT_NAME } from "../lib/brand";
 import React, { useEffect, useMemo, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { relativeTime } from "../lib/api";
@@ -292,7 +293,7 @@ export function Reviews({
               </div>
               <div className="detail-empty-sub">
                 {prSessions.length === 0
-                  ? "Pull requests opened by Michael sessions show up here."
+                  ? `Pull requests opened by ${AGENT_NAME} sessions show up here.`
                   : filter === "review"
                     ? "All caught up. Nothing needs review."
                     : "No pull requests match this filter."}

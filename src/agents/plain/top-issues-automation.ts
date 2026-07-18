@@ -6,6 +6,7 @@
  * quote from the raw candidates (Haiku judgment, not regex), and posts one rollup
  * to #chat — but only if there are new links since the previous run.
  */
+import { personaName } from "../../server/config";
 import { listAutomations, createAutomation } from "../../server/automations";
 
 const EVENT_KEY = "cron:plain-top-issues";
@@ -27,7 +28,7 @@ export function ensureTopIssuesRollup(): void {
     prompt: PROMPT,
     schedule: "0 14 * * 2,4", // Tue & Thu ~4pm Amsterdam (drifts 1h with DST); keep in sync with RUN_DAYS in top-issues.ts
     mode: "ask",
-    createdBy: "Michael (plain agent)",
+    createdBy: `${personaName()} (plain agent)`,
     eventKey: EVENT_KEY,
     mcpServers: [], // the helper posts to Slack itself (chat.postMessage, unfurl off)
     model: "claude-haiku-4-5",

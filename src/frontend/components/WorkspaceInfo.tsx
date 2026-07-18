@@ -1,3 +1,4 @@
+import { AGENT_NAME } from "../lib/brand";
 import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -764,7 +765,7 @@ function ChecksChip({
 
 /** The GitHub PR agent behaviors, surfaced as one-tap buttons on the info panel.
     Each maps to a michael-* PR label; hitting the button is equivalent to adding
-    that label on GitHub (or @mentioning Michael on the PR), but without leaving
+    that label on GitHub (or @mentioning the agent on the PR), but without leaving
     Backstage. tella-fusion PRs only — the agent is repo-scoped. */
 const PR_AGENT_ACTIONS: Array<{
 	kind: PrAgentAction;
@@ -774,7 +775,7 @@ const PR_AGENT_ACTIONS: Array<{
 	{
 		kind: "review",
 		label: "Review",
-		hint: "Full review pass (michael-review). Michael posts findings on the PR.",
+		hint: "Full review pass (michael-review). Findings are posted on the PR.",
 	},
 	{
 		kind: "autofix",
@@ -840,7 +841,7 @@ function PrAgentActions({
 
 	return (
 		<div className="workspace-info-agent mt-3">
-			<div className="workspace-info-label">Ask Michael</div>
+			<div className="workspace-info-label">Ask {AGENT_NAME}</div>
 			<div className="mt-2 flex flex-wrap gap-1.5">
 				{PR_AGENT_ACTIONS.map((a) => (
 					<button
@@ -857,7 +858,7 @@ function PrAgentActions({
 			</div>
 			{done && (
 				<div className="mt-1.5 text-[11.5px] font-medium text-dim">
-					Started {done.label.toLowerCase()} — Michael will post results on{" "}
+					Started {done.label.toLowerCase()} — {AGENT_NAME} will post results on{" "}
 					{prUrl ? (
 						<a
 							href={prUrl}
@@ -1146,14 +1147,14 @@ function GitStatusRows({
 							{send &&
 								(prompted ? (
 									<span className="pr-bar-prompted wi-git-prompted">
-										Asked Michael ✓
+										Asked {AGENT_NAME} ✓
 									</span>
 								) : (
 									<button
 										type="button"
 										className="pr-bar-btn pr-bar-btn-secondary wi-git-btn"
 										onClick={commit}
-										title="Ask Michael to commit the uncommitted changes and push"
+										title={`Ask ${AGENT_NAME} to commit the uncommitted changes and push`}
 									>
 										<span className="pr-bar-btn-label">Commit</span>
 									</button>

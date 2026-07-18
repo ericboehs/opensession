@@ -6,10 +6,10 @@
 import { fetchPins, savePinsApi } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
 
-const LEGACY_KEY = "michael-pins"; // old per-browser store, migrated once
-const MIGRATED_FLAG = "michael-pins-migrated";
-const CHANGE_EVENT = "michael-pins-changed";
-const USER_CHANGE_EVENT = "michael-user-changed";
+const LEGACY_KEY = "opensession-pins"; // old per-browser store, migrated once
+const MIGRATED_FLAG = "opensession-pins-migrated";
+const CHANGE_EVENT = "opensession-pins-changed";
+const USER_CHANGE_EVENT = "opensession-user-changed";
 
 let cache: string[] = [];
 let loadedFor: string | null = null;
@@ -86,8 +86,8 @@ export function pin(id: string): string[] {
 // "Pin new sessions" preference — per-browser (a workflow habit, like the
 // send-key/theme prefs), default ON. Absence = on; the string "off" is the
 // only stored form, so the default survives a cleared store.
-const PIN_NEW_KEY = "michael-pin-new-sessions";
-const PIN_NEW_EVENT = "michael-pin-new-changed";
+const PIN_NEW_KEY = "opensession-pin-new-sessions";
+const PIN_NEW_EVENT = "opensession-pin-new-changed";
 
 export function getPinNewSessions(): boolean {
 	return localStorage.getItem(PIN_NEW_KEY) !== "off";
@@ -108,8 +108,8 @@ export function onPinNewSessionsChanged(handler: () => void): () => void {
 // heavier than a chat, so pinning every one you spin up floods the Pinned band;
 // off by default. The string "on" is the only stored form, so the default
 // survives a cleared store.
-const PIN_NEW_WS_KEY = "michael-pin-new-workspaces";
-const PIN_NEW_WS_EVENT = "michael-pin-new-workspaces-changed";
+const PIN_NEW_WS_KEY = "opensession-pin-new-workspaces";
+const PIN_NEW_WS_EVENT = "opensession-pin-new-workspaces-changed";
 
 export function getPinNewWorkspaces(): boolean {
 	return localStorage.getItem(PIN_NEW_WS_KEY) === "on";

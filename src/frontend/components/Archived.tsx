@@ -13,7 +13,7 @@ interface Props {
 const DEFAULT_PROJECT = "tella-fusion";
 // Same key the sidebar persists its group/repo/sort choices under, so the
 // archived page opens with the repo filter the sidebar is already showing.
-const SIDEBAR_FILTER_KEY = "michael-sidebar-filter";
+const SIDEBAR_FILTER_KEY = "opensession-sidebar-filter";
 
 type OwnerFilter = "mine" | "everyone";
 type ReasonFilter = "all" | "manual" | "auto";

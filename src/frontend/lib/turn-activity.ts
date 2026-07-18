@@ -13,10 +13,10 @@ import { getCurrentUser } from "../components/UserPicker";
 
 export type TurnActivityPref = "auto" | "expanded" | "collapsed";
 
-const KEY = "michael-turn-activity";
+const KEY = "opensession-turn-activity";
 const PREF_KEY = "turn-activity"; // key inside the server-side ui-prefs map
-const CHANGE_EVENT = "michael-turn-activity-changed";
-const USER_CHANGE_EVENT = "michael-user-changed";
+const CHANGE_EVENT = "opensession-turn-activity-changed";
+const USER_CHANGE_EVENT = "opensession-user-changed";
 
 export function getTurnActivityPref(): TurnActivityPref {
 	const v = localStorage.getItem(KEY);

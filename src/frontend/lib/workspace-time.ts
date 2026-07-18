@@ -7,8 +7,8 @@
 
 export type WsTimePref = "off" | "always" | "hover";
 
-const KEY = "michael-ws-time";
-const CHANGE_EVENT = "michael-ws-time-changed";
+const KEY = "opensession-ws-time";
+const CHANGE_EVENT = "opensession-ws-time-changed";
 
 export function getWsTimePref(): WsTimePref {
 	const v = localStorage.getItem(KEY);

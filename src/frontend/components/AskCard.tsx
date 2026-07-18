@@ -1,3 +1,4 @@
+import { AGENT_NAME } from "../lib/brand";
 import React, { useState } from "react";
 import type { AskQuestion } from "../lib/types";
 
@@ -6,7 +7,7 @@ interface Props {
   onAnswer: (answers: Record<string, string>) => void;
 }
 
-/** Interactive AskUserQuestion card — Michael is waiting on these answers. */
+/** Interactive AskUserQuestion card — the agent is waiting on these answers. */
 export function AskCard({ questions, onAnswer }: Props) {
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [other, setOther] = useState<Record<string, string>>({});
@@ -47,7 +48,7 @@ export function AskCard({ questions, onAnswer }: Props) {
   return (
     <div className="ask-card">
       <div className="ask-card-title">
-        <span className="working-dot" /> Michael needs input
+        <span className="working-dot" /> {AGENT_NAME} needs input
       </div>
 
       {questions.map((q) => (

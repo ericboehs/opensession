@@ -13,7 +13,7 @@ import {
   type ScanProfile,
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
-import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 interface Props {
   onOpenSession: (sessionId: string) => void;
@@ -489,7 +489,7 @@ function NewScanModal({
           <span>
             Interactive mode
             <span className="block text-dim text-[12px] font-medium mt-0.5">
-              Instead of scanning end to end, Michael collaborates with you in a
+              Instead of scanning end to end, {AGENT_NAME} collaborates with you in a
               session to tailor the threat model to your preferences before
               running the scan.
             </span>

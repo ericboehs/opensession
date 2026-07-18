@@ -7,6 +7,7 @@
  * effects: re-run on every hot reload (cheap, and keeps closures current).
  */
 
+import { personaName } from "./config";
 import { type StreamEvent, cancelAgentRun, isAgentSessionBusy, runAgent, steerAgentRun } from "./agent-runner";
 import { makeAskHandler, pendingAsks } from "./asks";
 import { ensureGeneratedTitle } from "./generated-titles";
@@ -307,7 +308,7 @@ registerSessionControl({
 				repo: repo.id,
 				...(projectId ? { projectId } : {}),
 				...(parentSessionId ? { parentSessionId } : {}),
-				createdBy: user || "Michael",
+				createdBy: user || personaName(),
 				createdAt: new Date().toISOString(),
 				lastActivity: new Date().toISOString(),
 				title,

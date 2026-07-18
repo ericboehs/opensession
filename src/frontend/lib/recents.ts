@@ -2,8 +2,8 @@
 // is opened in the viewer (App.tsx) and read by the sidebar's "Recently opened"
 // section. A few extra are kept beyond what's shown so the list survives a
 // handful of archived/deleted sessions.
-const KEY = "michael-recents";
-const CHANGE_EVENT = "michael-recents-changed";
+const KEY = "opensession-recents";
+const CHANGE_EVENT = "opensession-recents-changed";
 const CAP = 20;
 
 function read(): string[] {

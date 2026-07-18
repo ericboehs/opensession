@@ -3,6 +3,7 @@
  * Create-if-absent by eventKey, so UI edits are preserved; the prompt lives in
  * triage-prompt.ts. Seeded from the Plain agent's startup().
  */
+import { personaName } from "../../server/config";
 import { listAutomations, createAutomation } from "../../server/automations";
 import { TRIAGE_PROMPT } from "./triage-prompt";
 
@@ -15,7 +16,7 @@ export function ensureTriageAutomation(): void {
     prompt: TRIAGE_PROMPT,
     schedule: "", // event-triggered only (fired by the Plain webhook)
     mode: "code",
-    createdBy: "Michael (plain agent)",
+    createdBy: `${personaName()} (plain agent)`,
     eventKey: EVENT_KEY,
     mcpServers: [
       "plain",

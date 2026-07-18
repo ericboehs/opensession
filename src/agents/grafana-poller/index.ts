@@ -22,6 +22,7 @@
  * Investigation only — the runs never retry/recover; they open a PR only when
  * highly confident, else discuss in the card thread.
  */
+import { personaName } from "../../server/config";
 import { envAlias, stateDir } from "../../server/rename-compat";
 import { randomUUIDv7 } from "bun";
 import { mkdirSync, readFileSync, existsSync, unlinkSync } from "fs";
@@ -114,7 +115,7 @@ function ensureSeeds(): void {
       prompt: seed.prompt,
       schedule: "",
       mode: "code",
-      createdBy: "Michael (grafana poller)",
+      createdBy: `${personaName()} (grafana poller)`,
       eventKey: seed.eventKey,
       mcpServers: ["TellaInternalSupportMCP", "slack", "grafana"],
       grafanaPoll: seed.grafanaPoll,

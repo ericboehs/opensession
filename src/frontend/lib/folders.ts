@@ -13,8 +13,8 @@ import { getCurrentUser } from "../components/UserPicker";
 
 export type SidebarFolder = { id: string; name: string; keys: string[] };
 
-const CHANGE_EVENT = "michael-folders-changed";
-const USER_CHANGE_EVENT = "michael-user-changed";
+const CHANGE_EVENT = "opensession-folders-changed";
+const USER_CHANGE_EVENT = "opensession-user-changed";
 
 let cache: SidebarFolder[] = [];
 let loadedFor: string | null = null;

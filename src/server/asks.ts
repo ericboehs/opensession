@@ -6,6 +6,7 @@
  * whole time, so whoever answers first (web or Slack) wins.
  */
 
+import { personaName } from "./config";
 import { productName } from "./config";
 import {
 	awaitBlockingAnswer,
@@ -252,7 +253,7 @@ async function escalateAskToSlack(
 		const { question, options } = askToSlackPrompt(questions);
 		const ask = registerAsk({
 			sessionId,
-			createdBy: session?.startedBy || "Michael",
+			createdBy: session?.startedBy || personaName(),
 			person,
 			question,
 			context: `_Nobody picked this up in ${productName()} within 4 minutes, so I'm bringing it to you._`,

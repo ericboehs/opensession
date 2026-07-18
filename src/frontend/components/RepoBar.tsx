@@ -35,7 +35,7 @@ interface Props {
  * switch the primary repo (any session, including a wrong choice made after
  * work started; the old worktree is left on disk so nothing is stranded, and
  * a switch-with-work is confirmed first), detach an attached repo, or attach
- * another (isolated worktree, same as the agent's michael-repos attach_repo
+ * another (isolated worktree, same as the agent's opensession-repos attach_repo
  * tool — both go through POST /api/sessions/:id/attach-repo).
  */
 export function RepoBar({

@@ -6,8 +6,8 @@
 import { fetchTabColors, saveTabColorsApi } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
 
-const CHANGE_EVENT = "michael-tab-colors-changed";
-const USER_CHANGE_EVENT = "michael-user-changed";
+const CHANGE_EVENT = "opensession-tab-colors-changed";
+const USER_CHANGE_EVENT = "opensession-user-changed";
 
 /** The default swatch palette. Keys must stay in sync with server/tab-colors.ts. */
 export const TAB_COLORS: { key: string; label: string; hex: string }[] = [

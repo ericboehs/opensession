@@ -1,3 +1,4 @@
+import { AGENT_NAME } from "../lib/brand";
 import React, { useState } from "react";
 import { Menu } from "../ui/menu";
 import { IconBranches, IconChevronDown } from "./icons";
@@ -35,7 +36,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
       setBranch(suggestBranch(session.title));
       setTask("Implement what we discussed above.");
     } else if (f === "learnings") {
-      setBranch(`michael-learnings-${dateStamp()}`);
+      setBranch(`opensession-learnings-${dateStamp()}`);
       setTask("");
     }
   }
@@ -55,7 +56,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
         user: me,
         createWorkspace: {},
         prompt:
-          `Analyze this finished Michael session ("${session.title}") and report:\n` +
+          `Analyze this finished ${AGENT_NAME} session ("${session.title}") and report:\n` +
           `1. What was asked and what was delivered.\n` +
           `2. What went wrong or was wasted effort (wrong paths, retries, misunderstandings).\n` +
           `3. A rewritten version of the original prompt that would likely have succeeded in one shot.\n` +
@@ -74,7 +75,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
         user: me,
         createWorkspace: {},
         prompt:
-          `Feed the durable learnings from a Michael session back into this repo's documentation.\n\n` +
+          `Feed the durable learnings from a ${AGENT_NAME} session back into this repo's documentation.\n\n` +
           `## Conversation (session "${session.title}")\n\n${context}\n\n## Task\n\n` +
           `Extract durable, non-obvious learnings from the conversation above: gotchas, architecture facts, ` +
           `runbook steps, conventions, anything a teammate or future agent session would benefit from knowing. ` +
@@ -82,7 +83,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
           `the right place — docs/kb/**, AGENTS.md, CLAUDE.md, or a package README — keeping each addition ` +
           `short and factual, matching the surrounding style.` +
           (task.trim() ? `\n\nExtra guidance from ${me}: ${task.trim()}` : "") +
-          `\n\nWhen done, commit on this branch and open a PR titled "docs: learnings from Michael session" ` +
+          `\n\nWhen done, commit on this branch and open a PR titled "docs: learnings from ${AGENT_NAME} session" ` +
           `with a body summarizing what you added and why. Do NOT merge the PR.`,
       });
       return;
@@ -126,7 +127,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
           )}
           <Menu.Item onClick={() => pick("learnings")} className={itemCls}>
             <span className="text-[13px] font-semibold text-fg">Capture learnings → docs PR</span>
-            <span className="text-[11.5px] leading-[1.4] text-faint">Michael adds what was learned here to tella-fusion docs</span>
+            <span className="text-[11.5px] leading-[1.4] text-faint">{AGENT_NAME} adds what was learned here to tella-fusion docs</span>
           </Menu.Item>
           <Menu.Item onClick={() => pick("analyze")} className={itemCls}>
             <span className="text-[13px] font-semibold text-fg">Analyze session</span>
@@ -188,7 +189,7 @@ function buildContext(entries: TranscriptEntry[], budget: number): string {
   const turns = entries
     .filter((e) => e.type === "user" || e.type === "assistant")
     .map((e) => {
-      const who = e.type === "user" ? "User" : "Michael";
+      const who = e.type === "user" ? "User" : AGENT_NAME;
       const limit = e.type === "user" ? 700 : 1500;
       return `**${who}:** ${truncate(e.content.trim(), limit)}`;
     });

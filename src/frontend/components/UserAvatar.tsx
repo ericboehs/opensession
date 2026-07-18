@@ -26,7 +26,7 @@ export function githubLoginFor(name?: string | null): string | null {
 
 /**
  * Squircle user picture: the person's GitHub avatar, falling back to their
- * initial for unknown users (Michael, Anonymous) or when the image fails to
+ * initial for unknown users (the agent persona, Anonymous) or when the image fails to
  * load. `children` render on top of the squircle — the presence facepile uses
  * that for its count badge.
  */

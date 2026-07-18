@@ -12,6 +12,7 @@
  * repo). Seeded create-if-absent on startup so your UI edits (prompt/schedule/enabled)
  * are preserved.
  */
+import { personaName } from "../../server/config";
 import { listAutomations, createAutomation } from "../../server/automations";
 import { defaultRepo } from "../../server/config";
 
@@ -102,7 +103,7 @@ export function ensureSweepLoops(): void {
       prompt: buildSweepPrompt(loop),
       schedule: loop.schedule,
       mode: "code",
-      createdBy: "Michael (loops)",
+      createdBy: `${personaName()} (loops)`,
       eventKey: loop.eventKey,
       mcpServers: loop.mcpServers,
       model: loop.model,

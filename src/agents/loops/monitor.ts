@@ -13,6 +13,7 @@
  * Adding a monitor = adding a config to MONITORS. Seeded create-if-absent on startup
  * so your UI edits (prompt/schedule/enabled) are preserved.
  */
+import { personaName } from "../../server/config";
 import { listAutomations, createAutomation } from "../../server/automations";
 
 export interface MonitorConfig {
@@ -87,7 +88,7 @@ export function ensureMonitors(): void {
       prompt: buildMonitorPrompt(mon),
       schedule: mon.schedule,
       mode: "ask", // observe-only: no worktree, no Write/Edit
-      createdBy: "Michael (loops)",
+      createdBy: `${personaName()} (loops)`,
       eventKey: mon.eventKey,
       mcpServers: mon.mcpServers,
       model: mon.model,

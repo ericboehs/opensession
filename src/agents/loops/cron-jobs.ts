@@ -8,6 +8,7 @@
  * mrr-milestone-check + backstage-status (every-minute — an LLM there is the wrong
  * tool), backup-ami + cleanup-closed-worktrees (infra).
  */
+import { personaName } from "../../server/config";
 import { listAutomations, createAutomation } from "../../server/automations";
 import { defaultRepo } from "../../server/config";
 
@@ -108,7 +109,7 @@ export function ensureCronJobs(): void {
       prompt: job.prompt,
       schedule: job.schedule,
       mode: job.mode,
-      createdBy: "Michael (cron migration)",
+      createdBy: `${personaName()} (cron migration)`,
       eventKey: job.eventKey,
       mcpServers: job.mcpServers,
       model: job.model,

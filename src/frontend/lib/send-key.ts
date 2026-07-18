@@ -6,10 +6,10 @@
 export type SendKeyPref = "enter" | "mod-enter";
 export type BusySendPref = "queue" | "steer";
 
-const KEY = "michael-send-key";
-const BUSY_KEY = "michael-busy-send";
-const CHANGE_EVENT = "michael-send-key-changed";
-const BUSY_CHANGE_EVENT = "michael-busy-send-changed";
+const KEY = "opensession-send-key";
+const BUSY_KEY = "opensession-busy-send";
+const CHANGE_EVENT = "opensession-send-key-changed";
+const BUSY_CHANGE_EVENT = "opensession-busy-send-changed";
 
 export function getSendKeyPref(): SendKeyPref {
 	return localStorage.getItem(KEY) === "mod-enter" ? "mod-enter" : "enter";

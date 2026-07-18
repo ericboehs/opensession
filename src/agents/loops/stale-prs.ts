@@ -6,6 +6,7 @@
  *
  * Seeded create-if-absent on startup so UI edits (schedule/channel/prompt) are kept.
  */
+import { personaName } from "../../server/config";
 import { listAutomations, createAutomation } from "../../server/automations";
 import { defaultRepo } from "../../server/config";
 
@@ -41,7 +42,7 @@ export function ensureStalePrMonitor(): void {
     prompt: PROMPT,
     schedule: "0 16 * * 1", // Mondays ~9am PT (server is UTC)
     mode: "ask", // read-only: no worktree, just gh reads + a Slack post
-    createdBy: "Michael (loops)",
+    createdBy: `${personaName()} (loops)`,
     eventKey: EVENT_KEY,
     mcpServers: ["slack"],
     model: "claude-sonnet-4-6",

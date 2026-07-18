@@ -7,7 +7,7 @@ export const TEAM = ["Michiel", "Jaap", "Kent", "Grant", "Johnny", "John", "Loui
 // browsers + tooling that presets it stay signed in); writes go to the new key.
 const KEY = "opensession-user";
 const LEGACY_KEY = "backstage-user";
-const CHANGE_EVENT = "michael-user-changed";
+const CHANGE_EVENT = "opensession-user-changed";
 
 function setStoredUser(val: string) {
   localStorage.setItem(KEY, val);
@@ -20,7 +20,7 @@ export function getCurrentUser(): string {
   );
 }
 
-/** Switch the current user (used by the Michael dropdown's account switcher). */
+/** Switch the current user (used by the account menu's switcher). */
 export function setCurrentUser(name: string) {
   setStoredUser(name);
 }
@@ -54,7 +54,7 @@ export interface AuthStatus {
 // Shared auth state: UserGate fetches /api/auth/status once on load; other
 // components (SettingsMenu's account section) read it reactively from here
 // instead of re-fetching.
-const AUTH_STATUS_EVENT = "michael-auth-status-changed";
+const AUTH_STATUS_EVENT = "opensession-auth-status-changed";
 let authStatusCache: AuthStatus | null = null;
 
 function setAuthStatusCache(status: AuthStatus) {

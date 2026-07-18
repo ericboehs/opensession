@@ -17,7 +17,7 @@ import {
   type AutomationDraft,
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
-import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 interface AutomationRun {
   at: string;
@@ -212,7 +212,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
         <div>
           <h2 className="page-title">Automations</h2>
           <div className="page-sub">
-            Scheduled Michael sessions — cron runs in UTC (server time).
+            Scheduled {AGENT_NAME} sessions — cron runs in UTC (server time).
           </div>
         </div>
         <button
@@ -850,7 +850,7 @@ function TypeChooser({
         >
           <div className="text-fg text-[14px] font-medium mb-1">Classical automation</div>
           <div className="text-dim text-[12.5px] leading-snug">
-            Trigger Michael sessions based on schedules, internal events, and webhooks.
+            Trigger {AGENT_NAME} sessions based on schedules, internal events, and webhooks.
           </div>
         </button>
         <button
@@ -859,14 +859,14 @@ function TypeChooser({
         >
           <div className="text-fg text-[14px] font-medium mb-1">Watch a channel</div>
           <div className="text-dim text-[12.5px] leading-snug">
-            Michael triages every incoming message in a Slack channel, using the
+            {AGENT_NAME} triages every incoming message in a Slack channel, using the
             channel's memory as standing context.
           </div>
         </button>
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <div className="text-dim text-[12px]">Or describe it and Michael drafts the automation:</div>
+        <div className="text-dim text-[12px]">Or describe it and {AGENT_NAME} drafts the automation:</div>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -1173,7 +1173,7 @@ function AutomationForm({
 
       {isWatch ? (
         <label>
-          Slack channel — what channel should Michael watch?
+          Slack channel — what channel should {AGENT_NAME} watch?
           <input
             value={watchChannel}
             onChange={(e) => setWatchChannel(e.target.value)}
@@ -1236,15 +1236,15 @@ function AutomationForm({
       )}
 
       <label>
-        Instructions — what Michael does {isWatch ? "with each message" : "when triggers activate"}
+        Instructions — what {AGENT_NAME} does {isWatch ? "with each message" : "when triggers activate"}
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={6}
           placeholder={
             isWatch
-              ? "Tell Michael how to handle messages in this channel. e.g. “triage each report: reproduce, check Sentry, file a Linear issue, reply in the thread with what you found.”"
-              : "What should Michael do on each run?"
+              ? `Tell ${AGENT_NAME} how to handle messages in this channel. e.g. “triage each report: reproduce, check Sentry, file a Linear issue, reply in the thread with what you found.”`
+              : `What should ${AGENT_NAME} do on each run?`
           }
         />
       </label>

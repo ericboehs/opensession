@@ -480,7 +480,7 @@ function NotePane({
 	}
 
 	// Spin off an Ask session seeded with the note — "discuss this with
-	// Michael". The App navigates into it on session_created.
+	// the agent". The App navigates into it on session_created.
 	async function discuss() {
 		if (discussing) return;
 		setDiscussing(true);

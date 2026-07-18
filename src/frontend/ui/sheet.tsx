@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { cn } from "./cn";
 
 /**
- * iOS-style bottom sheet for phone surfaces (the Michael menu, Settings). Not
+ * iOS-style bottom sheet for phone surfaces (the account menu, Settings). Not
  * a Base UI wrapper: the popups it replaces already own their open state and
  * a route can drive it, so this is a plain portal that animates itself in on
  * mount and back out before telling the owner to unmount it.

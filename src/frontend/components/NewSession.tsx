@@ -64,7 +64,7 @@ const REPOS = [
 // creating from a repo-filtered view lands on that repo — not always tella-fusion.
 function filteredRepo(): string | null {
   try {
-    const v = JSON.parse(localStorage.getItem("michael-sidebar-filter") || "{}");
+    const v = JSON.parse(localStorage.getItem("opensession-sidebar-filter") || "{}");
     return typeof v.repo === "string" && REPOS.some((p) => p.id === v.repo)
       ? v.repo
       : null;

@@ -10,7 +10,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { Reorder } from "motion/react";
 import { renderMarkdown } from "../lib/markdown";
-import { DEFAULT_DOC_TITLE } from "../lib/brand";
+import { AGENT_NAME, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { isGitHubAttribution, parseHumanReply } from "../lib/humanReply";
 import type {
 	UnifiedSession,
@@ -444,7 +444,7 @@ export function SessionViewer({
 		const workspace =
 			session.mode !== "ask" &&
 			Boolean(session.worktreeDir || session.branch);
-		const stored = localStorage.getItem("michael-panel-tab");
+		const stored = localStorage.getItem("opensession-panel-tab");
 		// "workflows" isn't meaningfully restorable (runs seed async, so the tab
 		// starts hidden and the body would flash PrPanel) — it, and any stored
 		// tab that no longer exists, maps back to Info.
@@ -464,7 +464,7 @@ export function SessionViewer({
 	});
 	function selectPanelTab(tab: PanelTab) {
 		setPanelTab(tab);
-		localStorage.setItem("michael-panel-tab", tab);
+		localStorage.setItem("opensession-panel-tab", tab);
 	}
 	// Main chat-area view: the transcript+composer vs. the full-width PR review
 	// that takes over the whole chat column. Which one shows is now owned by App
@@ -491,20 +491,20 @@ export function SessionViewer({
 	}, []);
 	// Remembered per browser; on phones the panel overlays the chat, so default closed there
 	const [panelOpen, setPanelOpenState] = useState(() => {
-		const stored = localStorage.getItem("michael-panel-open");
+		const stored = localStorage.getItem("opensession-panel-open");
 		if (stored !== null) return stored === "true" && window.innerWidth > 920;
 		return window.innerWidth > 920;
 	});
 
 	function setPanelOpen(open: boolean) {
 		setPanelOpenState(open);
-		localStorage.setItem("michael-panel-open", String(open));
+		localStorage.setItem("opensession-panel-open", String(open));
 	}
 	// Right-panel width (px), drag-resizable from its left edge and persisted
 	// per browser; 0 = the CSS default (44%). Mirrors the left sidebar's resize.
 	// Shared by the Workspace and sub-agent panels via the --panel-w var.
 	const [panelW, setPanelW] = useState<number>(() => {
-		const v = Number(localStorage.getItem("michael-panel-w"));
+		const v = Number(localStorage.getItem("opensession-panel-w"));
 		return v >= 320 && v <= 2400 ? v : 0;
 	});
 	const panelWRef = useRef(panelW);
@@ -530,7 +530,7 @@ export function SessionViewer({
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", onUp);
 			localStorage.setItem(
-				"michael-panel-w",
+				"opensession-panel-w",
 				String(Math.round(panelWRef.current)),
 			);
 		};
@@ -789,7 +789,7 @@ export function SessionViewer({
 		[diffState.repos],
 	);
 
-	// Anchor for the "Michael is working…" elapsed timer. A run that starts
+	// Anchor for the agent-working elapsed timer. A run that starts
 	// while we're watching anchors to now; opening a session mid-run anchors to
 	// the server's journaled run start (runStartedAt — survives switches and
 	// refreshes), falling back to the turn's user prompt in the transcript, so
@@ -1334,7 +1334,7 @@ export function SessionViewer({
 		session.source !== "backstage";
 	const busySendLabel =
 		busySend === "queue"
-			? "Queue for Michael's next turn"
+			? `Queue for ${AGENT_NAME}'s next turn`
 			: "Steer — stop the current turn and deliver now";
 	// Exact engine-state forks use Claude's SDK forkSession. Other backends can
 	// still fork as a new sibling with a transcript handoff.
@@ -3148,7 +3148,7 @@ export function SessionViewer({
 													? busySend === "steer"
 														? "Steer this run…"
 														: "Queue for later…"
-													: "Ask Michael…"
+													: `Ask ${AGENT_NAME}…`
 									}
 									disabled={!connected}
 									sendDisabled={(text) =>

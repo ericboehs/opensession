@@ -92,7 +92,7 @@ import { Tooltip } from "../ui/tooltip";
 import { AGENT_NAME, PRODUCT_NAME } from "../lib/brand";
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
-// from the "Settings" item in the Michael menu. Designed to grow — each area is
+// from the "Settings" item in the account menu. Designed to grow — each area is
 // just another entry in SECTIONS and a matching panel below. The "Tools" group
 // holds the app's tool surfaces (Automations, Goals, …) — those render at their
 // own routes (<base>/automations, …) with this surface as chrome, so the

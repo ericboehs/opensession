@@ -16,6 +16,7 @@
  *   ~/.opensession-seo/pending.jsonl  — merged seo-sweep PRs awaiting validation
  *   ~/.opensession-seo/learnings.md   — measured outcomes; the sweep's memory
  */
+import { personaName } from "../../server/config";
 import { stateDir } from "../../server/rename-compat";
 import { mkdirSync, appendFileSync, existsSync } from "fs";
 import { listAutomations, createAutomation } from "../../server/automations";
@@ -164,7 +165,7 @@ export function ensureSeoLoops(): void {
       prompt: loop.prompt,
       schedule: loop.schedule,
       mode: loop.mode,
-      createdBy: "Michael (loops)",
+      createdBy: `${personaName()} (loops)`,
       eventKey: loop.eventKey,
       mcpServers: loop.mcpServers,
     });

@@ -1,3 +1,4 @@
+import { AGENT_NAME } from "../lib/brand";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { PlainThread, WSServerMessage } from "../lib/types";
 import {
@@ -135,7 +136,7 @@ export function SupportPreview({
 			if (!startingRef.current) return;
 			startingRef.current = false;
 			setStarting(false);
-			setStartError("Michael didn't respond. Check your connection and try again.");
+			setStartError(`${AGENT_NAME} didn't respond. Check your connection and try again.`);
 		}, 15_000);
 		const customer =
 			thread?.customer?.name || thread?.customer?.email || "customer";

@@ -1,3 +1,4 @@
+import { AGENT_NAME } from "../lib/brand";
 import React, { useEffect, useRef, useState } from "react";
 import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import {
@@ -97,7 +98,7 @@ function timeGreeting(user: string) {
 }
 
 /**
- * "Waiting on teammates" — open human asks (questions Michael sent to people
+ * "Waiting on teammates" — open human asks (questions the agent sent to people
  * over Slack and is still waiting on). Renders nothing when there are none,
  * keeping the home hero calm.
  */
@@ -244,7 +245,7 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
     askTimer.current = setTimeout(() => {
       if (!askingRef.current) return;
       setAsking(false);
-      setAskError("Michael didn't respond. Check your connection and try again.");
+      setAskError(`${AGENT_NAME} didn't respond. Check your connection and try again.`);
     }, 15_000);
     onCreateStarted?.({
       prompt: q,
@@ -287,7 +288,7 @@ export function Home({ sessions, connected, send, addHandler, onSelect, onNewSes
       <div className="home-inner">
         <div className="home-hero">
           <div className="home-hello">{timeGreeting(currentUser)}</div>
-          <div className="home-greeting">What should Michael work on?</div>
+          <div className="home-greeting">What should {AGENT_NAME} work on?</div>
           <Composer
             value={question}
             onChange={setQuestion}

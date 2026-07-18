@@ -11,8 +11,8 @@
 import { saveReadsApi } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
 
-const KEY = "michael-reads";
-const CHANGE_EVENT = "michael-reads-changed";
+const KEY = "opensession-reads";
+const CHANGE_EVENT = "opensession-reads-changed";
 // Bound the map so it can't grow forever; when over cap we drop the
 // oldest-inserted marks (object key order is insertion order).
 const CAP = 500;

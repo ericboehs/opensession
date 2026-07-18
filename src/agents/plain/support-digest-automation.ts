@@ -9,6 +9,7 @@
  * opensession-report — surfaced in the frontend Reports view and linked from
  * the sidebar's Support band.
  */
+import { personaName } from "../../server/config";
 import { listAutomations, createAutomation } from "../../server/automations";
 
 const EVENT_KEY = "cron:plain-support-digest";
@@ -43,7 +44,7 @@ export function ensureSupportDigestAutomation(): void {
     prompt: SUPPORT_DIGEST_PROMPT,
     schedule: "0 6 * * *", // ~8am Amsterdam (drifts 1h with DST; cron is UTC)
     mode: "ask",
-    createdBy: "Michael (plain agent)",
+    createdBy: `${personaName()} (plain agent)`,
     eventKey: EVENT_KEY,
     mcpServers: ["plain", "linear"],
     workflows: true, // human-set: cron prompt is our own text (see workflow-tools.ts)

@@ -8,10 +8,10 @@
 import { fetchUiPrefs, saveUiPrefsApi } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
 
-const KEY = "michael-vim-mode";
+const KEY = "opensession-vim-mode";
 const PREF_KEY = "composer-vim"; // key inside the server-side ui-prefs map
-const CHANGE_EVENT = "michael-vim-mode-changed";
-const USER_CHANGE_EVENT = "michael-user-changed";
+const CHANGE_EVENT = "opensession-vim-mode-changed";
+const USER_CHANGE_EVENT = "opensession-user-changed";
 
 export function getVimModePref(): boolean {
 	return localStorage.getItem(KEY) === "on";

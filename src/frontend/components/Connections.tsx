@@ -4,7 +4,7 @@ import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { IconDotsHorizontal, IconTrash, IconSliders, IconHistory, IconPlus } from "./icons";
 import { IconTile, displayName } from "./BrandTile";
-import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 interface McpConnection {
   name: string;
@@ -157,7 +157,7 @@ export function Connections() {
         <div>
           <h2 className="page-title">Connections</h2>
           <div className="page-sub">
-            What Michael is wired into — inbound agents and the MCP tools every session can use.
+            What {AGENT_NAME} is wired into — inbound agents and the MCP tools every session can use.
           </div>
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
@@ -197,7 +197,7 @@ export function Connections() {
         <div className="loading">Checking connections…</div>
       ) : (
         <>
-          <SectionHeading>Agents — how work reaches Michael</SectionHeading>
+          <SectionHeading>Agents — how work reaches {AGENT_NAME}</SectionHeading>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
             {Object.entries(data.agents).map(([name, health]) => {
               const ok = health?.status === "operational";

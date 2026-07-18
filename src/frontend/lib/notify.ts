@@ -34,10 +34,10 @@ export const WHEN_OPTIONS: { value: NotifWhen; label: string }[] = [
 	{ value: "off", label: "Off" },
 ];
 
-const KEY = "michael-notif-settings";
-const CHANGE_EVENT = "michael-notif-changed";
+const KEY = "opensession-notif-settings";
+const CHANGE_EVENT = "opensession-notif-changed";
 // Legacy single on/off flag (pre-Settings); migrated on first read.
-const LEGACY_KEY = "michael-input-alerts";
+const LEGACY_KEY = "opensession-input-alerts";
 
 const DEFAULTS: NotifSettings = {
 	desktop: true,
@@ -202,7 +202,7 @@ export function notifyEvent(
 	try {
 		if (!("Notification" in window) || Notification.permission !== "granted")
 			return;
-		const n = new Notification(title, { body, tag: `michael-${event}` });
+		const n = new Notification(title, { body, tag: `opensession-${event}` });
 		n.onclick = () => {
 			window.focus();
 			onClick();

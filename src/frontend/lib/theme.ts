@@ -9,8 +9,8 @@ export type ThemePref = "system" | "light" | "dark";
 export type EffectiveTheme = "light" | "dark";
 
 // Keep this key in sync with the pre-paint script in index.html.
-const KEY = "michael-theme";
-const CHANGE_EVENT = "michael-theme-changed";
+const KEY = "opensession-theme";
+const CHANGE_EVENT = "opensession-theme-changed";
 
 export function getThemePref(): ThemePref {
 	const v = localStorage.getItem(KEY);
