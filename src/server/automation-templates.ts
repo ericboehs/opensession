@@ -1,3 +1,4 @@
+import { defaultRepo } from "./config";
 /**
  * Automation templates: a data-driven gallery of starting points for common
  * automations. Adding a template is pure data — no code change anywhere else;
@@ -27,12 +28,12 @@ export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
   {
     id: "daily-pr-sweep",
     name: "Daily PR review sweep",
-    description: "Each weekday morning, review every open tella-fusion PR and post a short digest.",
+    description: `Each weekday morning, review every open ${defaultRepo().id} PR and post a short digest.`,
     category: "sweep",
     schedule: "0 7 * * 1-5",
     mode: "ask",
     mcpServers: [],
-    prompt: `Review the open pull requests in tellahq/tella-fusion with the gh CLI.
+    prompt: `Review the open pull requests in ${defaultRepo().ghRepo} with the gh CLI.
 
 For each open PR: read the diff, note whether it looks ready to merge, needs changes (say what), or is blocked on CI/review. Skip drafts unless they've been idle >7 days (flag those as possibly stuck).
 
@@ -78,7 +79,7 @@ Write the rollup in English regardless of ticket language. Rank themes by ticket
     mcpServers: ["linear"],
     prompt: `Draft a user-facing changelog for this week.
 
-Sources: merged PRs in tellahq/tella-fusion from the last 7 days (gh CLI) and Linear issues completed this week. Ignore internal-only changes (refactors, CI, tooling) unless they have visible impact (performance, reliability).
+Sources: merged PRs in ${defaultRepo().ghRepo} from the last 7 days (gh CLI) and Linear issues completed this week. Ignore internal-only changes (refactors, CI, tooling) unless they have visible impact (performance, reliability).
 
 Write it as a short marketing-friendly changelog: features first, then improvements, then fixes. One line each, written for Tella users (screen-recording creators), not engineers. Flag anything you're unsure is user-visible.`,
   },
@@ -90,7 +91,7 @@ Write it as a short marketing-friendly changelog: features first, then improveme
     schedule: "0 9 * * 1-5",
     mode: "ask",
     mcpServers: [],
-    prompt: `Find open PRs in tellahq/tella-fusion that have been idle for more than 3 days (no commits, comments, or reviews).
+    prompt: `Find open PRs in ${defaultRepo().ghRepo} that have been idle for more than 3 days (no commits, comments, or reviews).
 
 For each: who is it waiting on (author to address feedback? a reviewer? CI?), and how long it's been stuck. Skip drafts.
 
@@ -104,7 +105,7 @@ Summarize as a short list ordered by staleness. If nothing is stale, say so in o
     schedule: "0 6 * * 2",
     mode: "code",
     mcpServers: [],
-    prompt: `Check tella-fusion's dependencies for updates and known vulnerabilities.
+    prompt: `Check ${defaultRepo().id}'s dependencies for updates and known vulnerabilities.
 
 1. List outdated packages and any security advisories (bun outdated / npm audit or the lockfile).
 2. Bump only safe updates: patch/minor versions of well-behaved packages. Never bump majors, and never bump anything the repo pins deliberately (check comments/lockfile context first).
@@ -121,7 +122,7 @@ If everything is current, don't open a PR — just report that.`,
     schedule: "0 6 * * 3",
     mode: "code",
     mcpServers: [],
-    prompt: `Hunt for flaky tests in tellahq/tella-fusion.
+    prompt: `Hunt for flaky tests in ${defaultRepo().ghRepo}.
 
 1. Use the gh CLI to scan the last ~50 CI runs on the default branch for tests that both failed and passed on the same commit, or failures on re-run.
 2. Rank the flakes by frequency. For the top offender, read the test and find the root cause (timing assumption, shared state, network dependency, ...).

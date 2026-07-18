@@ -1,6 +1,6 @@
 /**
  * Stale-PR monitor — a weekly digest (no PRs, no closing) that surfaces the open-PR
- * backlog on tellahq/tella-fusion so reviewers can act on it. Observe-and-notify only:
+ * backlog on the default repo so reviewers can act on it. Observe-and-notify only:
  * it reads PRs via `gh` and posts ONE digest to Slack. Distinct from the sweep loops
  * (which open PRs) and the host-health monitor (which checks the VPS).
  *

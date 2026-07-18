@@ -2,6 +2,7 @@
  * PR details for a session branch via the gh CLI, Devin-style "PR" tab.
  * Cached per branch for 30s to keep the UI snappy without hammering GitHub.
  */
+import { defaultRepo } from "./config";
 import { $ } from "bun";
 import { audited } from "./audit";
 
@@ -141,7 +142,7 @@ function buildReviewers(
   return [...byLogin.values()].sort((a, b) => rank(a.state) - rank(b.state));
 }
 
-const DEFAULT_REPO = "tellahq/tella-fusion";
+const DEFAULT_REPO = () => defaultRepo().ghRepo;
 const cache = new Map<string, { data: PrDetails | null; ts: number }>();
 const TTL = 30_000;
 
@@ -159,7 +160,7 @@ const diffCache = new Map<string, { data: PrDiffData | null; ts: number }>();
 
 export async function getPrDiff(
   branch: string,
-  repo: string = DEFAULT_REPO
+  repo: string = DEFAULT_REPO()
 ): Promise<PrDiffData | null> {
   const key = cacheKey(repo, branch);
   const hit = diffCache.get(key);
@@ -194,7 +195,7 @@ export interface PrCommentInput {
 export async function postPrComment(
   branch: string,
   input: PrCommentInput,
-  repo: string = DEFAULT_REPO
+  repo: string = DEFAULT_REPO()
 ): Promise<{ ok: true; url?: string } | { error: string }> {
   const diff = await getPrDiff(branch, repo);
   if (!diff) return { error: "No PR found for this branch" };
@@ -274,7 +275,7 @@ export interface PrReviewInput {
 export async function submitPrReview(
   branch: string,
   input: PrReviewInput,
-  repo: string = DEFAULT_REPO
+  repo: string = DEFAULT_REPO()
 ): Promise<{ ok: true; url?: string } | { error: string }> {
   const diff = await getPrDiff(branch, repo);
   if (!diff) return { error: "No PR found for this branch" };
@@ -338,7 +339,7 @@ export type MergeMethod = "squash" | "merge" | "rebase";
 export async function mergePr(
   branch: string,
   opts: { method?: MergeMethod; deleteBranch?: boolean } = {},
-  repo: string = DEFAULT_REPO
+  repo: string = DEFAULT_REPO()
 ): Promise<{ ok: true; url?: string } | { error: string }> {
   const pr = await getPrDetails(branch, repo);
   if (!pr) return { error: "No PR found for this branch" };
@@ -383,7 +384,7 @@ export async function mergePr(
 export async function editPrReviewers(
   branch: string,
   opts: { add?: string | null; remove?: string | null },
-  repo: string = DEFAULT_REPO
+  repo: string = DEFAULT_REPO()
 ): Promise<{ ok: true } | { error: string }> {
   const args = ["pr", "edit", branch, "--repo", repo];
   if (opts.add) args.push("--add-reviewer", opts.add);
@@ -414,7 +415,7 @@ export async function editPrReviewers(
 export async function updatePrBody(
   branch: string,
   mutate: (body: string) => string,
-  repo: string = DEFAULT_REPO
+  repo: string = DEFAULT_REPO()
 ): Promise<{ ok: true; number: number; url: string } | { error: string }> {
   try {
     const view = Bun.spawn(
@@ -467,7 +468,7 @@ const inflight = new Map<string, Promise<PrDetails | null>>();
  */
 export async function getPrDetails(
   branch: string,
-  repo: string = DEFAULT_REPO
+  repo: string = DEFAULT_REPO()
 ): Promise<PrDetails | null> {
   const key = cacheKey(repo, branch);
   const hit = cache.get(key);
@@ -490,7 +491,7 @@ export async function getPrDetails(
 /** Bypass the UI's stale-while-revalidate cache for action completion gates. */
 export async function getPrDetailsFresh(
   branch: string,
-  repo: string = DEFAULT_REPO
+  repo: string = DEFAULT_REPO()
 ): Promise<PrDetails | null> {
   const data = await fetchPrDetails(branch, repo);
   cache.set(cacheKey(repo, branch), { data, ts: Date.now() });

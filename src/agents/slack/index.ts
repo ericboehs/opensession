@@ -5,6 +5,7 @@
  * Implements the AgentModule interface for the backstage webhook server.
  */
 
+import { defaultRepo } from "../../server/config";
 import { mkdirSync, existsSync, unlinkSync } from "fs";
 import { timingSafeEqual } from "crypto";
 import type { AgentModule } from "../types";
@@ -491,11 +492,11 @@ ${reviewBody ? `Review comment: "${reviewBody}"` : "No overall review comment."}
 ${inlineCommentCount > 0 ? `There are ${inlineCommentCount} inline comments on specific files.` : ""}
 
 Please address this feedback:
-1. Read the PR review comments by running: gh api repos/tellahq/tella-fusion/pulls/${prNumber}/reviews --jq '.[-1]' and gh api repos/tellahq/tella-fusion/pulls/${prNumber}/comments
+1. Read the PR review comments by running: gh api repos/${defaultRepo().ghRepo}/pulls/${prNumber}/reviews --jq '.[-1]' and gh api repos/${defaultRepo().ghRepo}/pulls/${prNumber}/comments
 2. Understand each piece of feedback
 3. Make the necessary code changes to address the review
 4. Commit and push the changes (ALWAYS push \u2014 never leave changes unpushed)
-5. Respond to each individual review comment on the PR by posting replies via: gh api repos/tellahq/tella-fusion/pulls/${prNumber}/comments/{comment_id}/replies -f body="<your response>"
+5. Respond to each individual review comment on the PR by posting replies via: gh api repos/${defaultRepo().ghRepo}/pulls/${prNumber}/comments/{comment_id}/replies -f body="<your response>"
 6. Summarize what you changed in response to the review`;
 
           enqueueMessage(sessionKey, {

@@ -7,6 +7,7 @@
  * in headless runs and would stall the run. `/simplify` is safe (resolves to the
  * built-in, which auto-applies) and is used directly by the simplify behavior.
  */
+import { defaultRepo } from "../../server/config";
 import type { PrDetails } from "../../server/pr-info";
 
 /**
@@ -52,9 +53,9 @@ Before you assert that code is broken — verify, don't recall:
  * main; the merged PR's changes are already in the checkout. The triggering event
  * JSON (with `prNumber`) is appended to this prompt by the automation runner.
  */
-export const DOCS_SYNC_PROMPT = `You are Michael, Tella's engineering assistant. A pull request was just merged into \`tellahq/tella-fusion\`. Review its diff and update the Mintlify docs to reflect any user-facing changes.
+export const DOCS_SYNC_PROMPT = `You are Michael, Tella's engineering assistant. A pull request was just merged into \`${defaultRepo().ghRepo}\`. Review its diff and update the Mintlify docs to reflect any user-facing changes.
 
-Read the "Triggering event" section at the end of this prompt for the merged PR's number. Then run \`gh pr diff <PR_NUMBER> --repo tellahq/tella-fusion\` (and \`gh pr view <PR_NUMBER>\` for the title/description) to see what changed. Read related files in the checkout for context — you have the full repo.
+Read the "Triggering event" section at the end of this prompt for the merged PR's number. Then run \`gh pr diff <PR_NUMBER> --repo ${defaultRepo().ghRepo}\` (and \`gh pr view <PR_NUMBER>\` for the title/description) to see what changed. Read related files in the checkout for context — you have the full repo.
 
 Identify any changes that affect user-facing features, APIs, or behavior that should be reflected in the documentation. Do not include internally flagged features that aren't available to everyone yet.
 
@@ -110,7 +111,7 @@ Content conventions:
 
 You are already on a dedicated \`auto-docs-sync-*\` branch — do not create another.
 
-- If the merged PR needs documentation changes: make the edits, then commit with \`git add\` on the specific paths (never \`git add .\`), push the current branch with \`git push -u origin HEAD\`, and open a PR with \`gh pr create --repo tellahq/tella-fusion --title "Docs sync for #<PR_NUMBER>" --body "<summary of what you updated and why, referencing #<PR_NUMBER>>"\`.
+- If the merged PR needs documentation changes: make the edits, then commit with \`git add\` on the specific paths (never \`git add .\`), push the current branch with \`git push -u origin HEAD\`, and open a PR with \`gh pr create --repo ${defaultRepo().ghRepo} --title "Docs sync for #<PR_NUMBER>" --body "<summary of what you updated and why, referencing #<PR_NUMBER>>"\`.
 - If no documentation changes are needed: do nothing — make no commits and open no PR. End your turn with a one-line explanation of why the merged PR needed no docs update.`;
 
 /**
@@ -205,7 +206,7 @@ export function buildReviewPrompt(
 ): string {
   const header = isUpdate
     ? `You previously reviewed PR #${pr.number} ("${pr.title}"). New commits have been pushed. Re-review the CURRENT diff, focusing on what changed since your last review, and produce a fresh full assessment.`
-    : `Review PR #${pr.number} ("${pr.title}") on tellahq/tella-fusion.`;
+    : `Review PR #${pr.number} ("${pr.title}") on ${defaultRepo().ghRepo}.`;
 
   // No shell in unattended ask-mode runs, so the diff must arrive inline. The
   // fetch failing is rare (gh/network hiccup at dispatch) — in that case tell
@@ -361,7 +362,7 @@ Decide what they need:
 - If they're asking for a code change or fix (the usual case for "fix this in a follow-up PR"), implement it on this branch. ${changesLocation} Keep it tightly scoped to exactly what they asked.
 
 If you made changes, commit them with a clear message (\`git add\` specific paths, never \`git add .\`), push with \`git push -u origin HEAD\`, and open a NEW pull request:
-\`gh pr create --repo tellahq/tella-fusion --base ${opts.baseRef} --head ${opts.branch} --title "<concise title>" --body "<what and why, including 'Follow-up to #${opts.prNumber}'>"\`.
+\`gh pr create --repo ${defaultRepo().ghRepo} --base ${opts.baseRef} --head ${opts.branch} --title "<concise title>" --body "<what and why, including 'Follow-up to #${opts.prNumber}'>"\`.
 NEVER push to PR #${opts.prNumber}'s branch and NEVER run \`gh pr merge\`.
 
 When finished, output the marker \`===MICHAEL-SUMMARY===\` on its own line, then your reply as GitHub markdown — link the new PR you opened, or explain why none was needed. ONLY the text after that marker is posted as the reply — everything before it is working notes that stay private. Do not post anything yourself.`;

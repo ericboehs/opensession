@@ -1,5 +1,5 @@
 /**
- * GitHub PR agent: automated review + auto-fix + simplify for tellahq/tella-fusion.
+ * GitHub PR agent: automated review + auto-fix + simplify for the configured repos.
  *
  * Does NOT own a webhook route — the single GitHub webhook lives in the Slack agent
  * (`POST /github/webhook`), which forwards `pull_request` events to

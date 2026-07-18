@@ -4,6 +4,7 @@
  * MCP tools (slack/github-tools.ts). Resolves the PR, fires the behavior
  * fire-and-forget, and returns a human message to relay.
  */
+import { defaultRepo } from "../../server/config";
 import { getPrDetails, getPrDiff } from "../../server/pr-info";
 import { runReview, type PrRef } from "./review";
 import { runAutoFix } from "./autofix";
@@ -55,7 +56,7 @@ export async function triggerPrAction(
 ): Promise<TriggerResult> {
   const details = await getPrDetails(String(prNumber));
   if (!details) {
-    return { ok: false, message: `I couldn't find PR #${prNumber} on tellahq/tella-fusion.` };
+    return { ok: false, message: `I couldn't find PR #${prNumber} on ${defaultRepo().ghRepo}.` };
   }
   const diff = await getPrDiff(details.headRefName);
   const ref: PrRef = {
