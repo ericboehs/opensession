@@ -1,5 +1,37 @@
 /** Shared identifiers for the github PR agent. */
 
+import { configuredRepos, defaultRepo, type Repo } from "../../server/config";
+
+/**
+ * The configured repo a webhook's `repository.full_name` belongs to, or null.
+ * Events for unconfigured repos are dropped — the GitHub-side webhook config
+ * is the outer gate, this is the inner one. Multi-repo: any repo in the
+ * config registry participates once its GitHub webhook points here.
+ */
+export function repoForFullName(fullName: string | null | undefined): Repo | null {
+  const lower = (fullName || "").trim().toLowerCase();
+  if (!lower) return null;
+  return (
+    Object.values(configuredRepos()).find(
+      (r) => r.ghRepo && r.ghRepo.toLowerCase() === lower,
+    ) || null
+  );
+}
+
+/**
+ * Repo-qualified key for per-PR state files, locks, session ids, and
+ * workspace keys. The DEFAULT repo keeps the bare PR number — back-compat
+ * with every existing state file, `bks-ghpr-N-*` session, and `ghpr-N`
+ * workspace — while other repos prefix their registry id.
+ */
+export function prKey(prNumber: number, ghRepo?: string | null): string {
+  if (!ghRepo || ghRepo.toLowerCase() === defaultRepo().ghRepo.toLowerCase()) {
+    return String(prNumber);
+  }
+  const id = repoForFullName(ghRepo)?.id || ghRepo.replace(/[^A-Za-z0-9._-]/g, "_");
+  return `${id}-${prNumber}`;
+}
+
 /** Internal/automation event key — the seeded automation subscribes to this. */
 export const PR_EVENT_KEY = "github:pull_request";
 /** Name of the seeded (disabled-by-default) review automation. */

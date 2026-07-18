@@ -7,12 +7,15 @@
  * fire-and-forget (GitHub's 10s webhook timeout).
  */
 import { listAutomations, fireAutomationsForEvent } from "../../server/automations";
-import { GITHUB_REPO, BOT_LOGIN } from "./github-rest";
+import { BOT_LOGIN } from "./github-rest";
+import { defaultRepo } from "../../server/config";
 import {
   PR_EVENT_KEY,
   PR_MERGED_EVENT_KEY,
   DOCS_SYNC_BRANCH_PREFIX,
   REVIEW_AUTOMATION_NAME,
+  repoForFullName,
+  prKey,
   LABEL_REVIEW,
   LABEL_AUTOFIX,
   LABEL_SIMPLIFY,
@@ -44,13 +47,14 @@ interface PrPayload {
   merged_at?: string;
 }
 
-function prRef(pr: PrPayload): PrRef | null {
+function prRef(pr: PrPayload, ghRepo?: string): PrRef | null {
   if (!pr || typeof pr.number !== "number" || !pr.head?.ref) return null;
   return {
     number: pr.number,
     headRef: pr.head.ref,
     headSha: pr.head.sha || "",
     title: pr.title || `PR #${pr.number}`,
+    ...(ghRepo ? { ghRepo } : {}),
   };
 }
 
@@ -68,7 +72,14 @@ export function resolveReviewConfig(): { autoEnabled: boolean; config: ReviewCon
 
 export async function handleGithubPrEvent(event: string, payload: any): Promise<void> {
   try {
-    if (payload?.repository?.full_name && payload.repository.full_name !== GITHUB_REPO) return;
+    // Multi-repo: any repo in the config registry participates (the GitHub-side
+    // webhook config is the outer gate). Unconfigured repos are dropped.
+    const eventRepo = payload?.repository?.full_name
+      ? repoForFullName(payload.repository.full_name)
+      : null;
+    if (payload?.repository?.full_name && !eventRepo) return;
+    const ghRepo: string | undefined = eventRepo?.ghRepo;
+    const isDefaultRepo = !ghRepo || ghRepo.toLowerCase() === defaultRepo().ghRepo.toLowerCase();
 
     // Our bot account shows up as `sender` both when we comment/review AND when we
     // push (auto-fix/simplify/mention commits land as a `synchronize`). We must not
@@ -103,7 +114,7 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     if (event !== "pull_request") return;
 
     const pr = payload.pull_request as PrPayload;
-    const ref = prRef(pr);
+    const ref = prRef(pr, ghRepo);
     if (!ref) return;
     const action: string = payload.action || "";
 
@@ -126,10 +137,11 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
 
     // Closed (merged or not): a pending debounced review would fire against a
     // dead PR — cancel it.
-    if (action === "closed") cancelPendingReview(pr.number);
+    if (action === "closed") cancelPendingReview(prKey(pr.number, ghRepo));
 
     // ── Merge → notify linked sessions + queue seo-sweep PRs + fire docs-sync ──
     if (action === "closed" && pr.merged) {
+      if (!isDefaultRepo) return; // docs-sync/SEO/session-notify are default-repo flows
       import("./session-notify")
         .then((m) => m.notifyMergedPrSessions(payload))
         .catch((e) => console.error("[github] notifyMergedPrSessions failed:", e));
@@ -206,33 +218,34 @@ const REVIEW_DEBOUNCE_MAX_WAIT_MS = parseInt(
   process.env.OPENSESSION_REVIEW_DEBOUNCE_MAX_MS || "900000",
 );
 type PendingReview = { timer: ReturnType<typeof setTimeout>; firstPushAt: number };
-const pendingReviewDebounce: Map<number, PendingReview> = ((globalThis as any)
+const pendingReviewDebounce: Map<string, PendingReview> = ((globalThis as any)
   .__githubReviewDebounce ??= new Map());
 
-function cancelPendingReview(prNumber: number): void {
-  const pending = pendingReviewDebounce.get(prNumber);
+function cancelPendingReview(key: string): void {
+  const pending = pendingReviewDebounce.get(key);
   if (!pending) return;
   clearTimeout(pending.timer);
-  pendingReviewDebounce.delete(prNumber);
+  pendingReviewDebounce.delete(key);
 }
 
 function scheduleDebouncedReview(ref: PrRef): void {
-  const existing = pendingReviewDebounce.get(ref.number);
+  const key = prKey(ref.number, ref.ghRepo);
+  const existing = pendingReviewDebounce.get(key);
   if (existing) clearTimeout(existing.timer);
   const firstPushAt = existing?.firstPushAt ?? Date.now();
   const capLeft = Math.max(0, firstPushAt + REVIEW_DEBOUNCE_MAX_WAIT_MS - Date.now());
   const delay = existing ? Math.min(REVIEW_DEBOUNCE_MS, capLeft) : REVIEW_DEBOUNCE_MS;
   const timer = setTimeout(() => {
-    if (isLockHeld("review", ref.number)) {
-      pendingReviewDebounce.delete(ref.number);
+    if (isLockHeld("review", ref.number, ref.ghRepo)) {
+      pendingReviewDebounce.delete(key);
       scheduleDebouncedReview(ref);
       return;
     }
-    pendingReviewDebounce.delete(ref.number);
+    pendingReviewDebounce.delete(key);
     console.log(`[github] debounced review firing for PR #${ref.number}`);
     void fireReview(ref, false);
   }, delay);
-  pendingReviewDebounce.set(ref.number, { timer, firstPushAt });
+  pendingReviewDebounce.set(key, { timer, firstPushAt });
 }
 
 async function fireAutoFix(ref: PrRef, requestedBy: string): Promise<void> {

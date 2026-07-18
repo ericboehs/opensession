@@ -38,14 +38,15 @@ function dropIfStale(
   headRef: string,
   kind: string,
   at: string | undefined,
-  clear: (s: import("./state").GithubPrState) => void
+  clear: (s: import("./state").GithubPrState) => void,
+  ghRepo?: string
 ): boolean {
   const t = Date.parse(at || "");
   if (t && Date.now() - t <= RECOVERY_MAX_AGE_MS) return false;
   console.log(
     `[github] Clearing stale ${kind} recovery flag for PR #${prNumber} (from ${at || "unknown"})`
   );
-  updatePrState(prNumber, headRef, clear);
+  updatePrState(prNumber, headRef, clear, ghRepo);
   return true;
 }
 
@@ -105,9 +106,9 @@ async function recoverFixLoops(): Promise<void> {
   for (const s of interrupted) {
     if (dropIfStale(s.prNumber, s.headRef, "auto-fix", s.autoFix?.startedAt, (st) => {
       if (st.autoFix) st.autoFix.active = false;
-    })) continue;
+    }, s.ghRepo)) continue;
     console.log(`[github] Recovering interrupted auto-fix loop for PR #${s.prNumber}`);
-    const ref: PrRef = { number: s.prNumber, headRef: s.headRef, headSha: "", title: `PR #${s.prNumber}` };
+    const ref: PrRef = { number: s.prNumber, headRef: s.headRef, headSha: "", title: `PR #${s.prNumber}`, ...(s.ghRepo ? { ghRepo: s.ghRepo } : {}) };
     void runAutoFix(ref, s.autoFix?.requestedBy || "", undefined, /*resuming*/ true, s.autoFix?.steer).catch((e) =>
       console.error(`[github] auto-fix recovery failed for PR #${s.prNumber}:`, e),
     );
@@ -123,9 +124,9 @@ async function recoverOneShots(): Promise<void> {
     const run = s.activeRun!;
     if (dropIfStale(s.prNumber, s.headRef, run.kind, run.startedAt, (st) => {
       st.activeRun = undefined;
-    })) continue;
+    }, s.ghRepo)) continue;
     console.log(`[github] Recovering interrupted ${run.kind} for PR #${s.prNumber}`);
-    void triggerPrAction(run.kind, s.prNumber, run.requestedBy, run.steer).catch((e) =>
+    void triggerPrAction(run.kind, s.prNumber, run.requestedBy, run.steer, s.ghRepo).catch((e) =>
       console.error(`[github] ${run.kind} recovery failed for PR #${s.prNumber}:`, e),
     );
   }
@@ -140,10 +141,10 @@ async function recoverMentions(): Promise<void> {
     const m = s.activeMention!;
     if (dropIfStale(s.prNumber, s.headRef, "mention", m.startedAt, (st) => {
       st.activeMention = undefined;
-    })) continue;
+    }, s.ghRepo)) continue;
     console.log(`[github] Recovering interrupted mention for PR #${s.prNumber}`);
     void runConversationalMention(
-      { prNumber: s.prNumber, author: m.author, body: m.body, kind: m.kind, replyToId: m.replyToId, inline: m.inline },
+      { prNumber: s.prNumber, author: m.author, body: m.body, kind: m.kind, replyToId: m.replyToId, inline: m.inline, ghRepo: s.ghRepo },
       /*recovering*/ true,
     ).catch((e) => console.error(`[github] mention recovery failed for PR #${s.prNumber}:`, e));
   }
@@ -162,13 +163,13 @@ async function recoverPendingMentions(): Promise<void> {
   const { dispatchMention } = await import("./mention");
   for (const s of pending) {
     if (s.activeMention || s.activeRun || s.autoFix?.active) {
-      clearPendingMention(s.prNumber); // a more specific recovery owns it
+      clearPendingMention(s.prNumber, s.ghRepo); // a more specific recovery owns it
       continue;
     }
     const p = s.pendingMention!;
     if (dropIfStale(s.prNumber, s.headRef, "pending-mention", p.receivedAt, (st) => {
       st.pendingMention = undefined;
-    })) continue;
+    }, s.ghRepo)) continue;
     console.log(`[github] Recovering dropped mention for PR #${s.prNumber} (from @${p.author})`);
     void dispatchMention({
       prNumber: s.prNumber,
@@ -177,9 +178,10 @@ async function recoverPendingMentions(): Promise<void> {
       author: p.author,
       replyToId: p.replyToId,
       inline: p.inline,
+      ghRepo: s.ghRepo,
     })
       .catch((e) => console.error(`[github] dropped-mention recovery failed for PR #${s.prNumber}:`, e))
-      .finally(() => clearPendingMention(s.prNumber));
+      .finally(() => clearPendingMention(s.prNumber, s.ghRepo));
   }
 }
 
@@ -208,7 +210,8 @@ export class GithubAgent implements AgentModule {
       const headRef = String(body?.headRef || "").trim();
       const behavior = String(body?.behavior || "review");
       if (!prNumber || !headRef) return Response.json({ error: "prNumber and headRef required" }, { status: 400 });
-      const ref: PrRef = { number: prNumber, headRef, headSha: String(body?.headSha || ""), title: `PR #${prNumber}` };
+      const manualGhRepo = typeof body?.ghRepo === "string" && body.ghRepo.trim() ? body.ghRepo.trim() : undefined;
+      const ref: PrRef = { number: prNumber, headRef, headSha: String(body?.headSha || ""), title: `PR #${prNumber}`, ...(manualGhRepo ? { ghRepo: manualGhRepo } : {}) };
       const requestedBy = String(body?.requestedBy || "");
 
       if (behavior === "autofix") {

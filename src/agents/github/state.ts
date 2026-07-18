@@ -8,6 +8,7 @@
  * within one process; the on-disk state guards across restarts.
  */
 import { stateDir } from "../../server/rename-compat";
+import { prKey } from "./constants";
 import { mkdirSync, readFileSync, existsSync, readdirSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 
@@ -39,6 +40,9 @@ export interface SimplifyState {
 export interface GithubPrState {
   prNumber: number;
   headRef: string;
+  /** owner/name when this PR lives outside the default repo (multi-repo);
+   *  absent = the default repo (every pre-existing state file). */
+  ghRepo?: string;
   summaryCommentId?: number;
   reviewedShas: string[];
   lastReviewedSha?: string;
@@ -87,12 +91,12 @@ export interface GithubPrState {
   updatedAt: string;
 }
 
-function statePath(prNumber: number): string {
-  return `${STATE_DIR}/${prNumber}.json`;
+function statePath(prNumber: number, ghRepo?: string): string {
+  return `${STATE_DIR}/${prKey(prNumber, ghRepo)}.json`;
 }
 
-export function readPrState(prNumber: number): GithubPrState | null {
-  const path = statePath(prNumber);
+export function readPrState(prNumber: number, ghRepo?: string): GithubPrState | null {
+  const path = statePath(prNumber, ghRepo);
   if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, "utf-8")) as GithubPrState;
@@ -101,11 +105,12 @@ export function readPrState(prNumber: number): GithubPrState | null {
   }
 }
 
-export function getOrInitPrState(prNumber: number, headRef: string): GithubPrState {
+export function getOrInitPrState(prNumber: number, headRef: string, ghRepo?: string): GithubPrState {
   return (
-    readPrState(prNumber) || {
+    readPrState(prNumber, ghRepo) || {
       prNumber,
       headRef,
+      ...(prKey(prNumber, ghRepo) !== String(prNumber) ? { ghRepo } : {}),
       reviewedShas: [],
       updatedAt: new Date().toISOString(),
     }
@@ -116,15 +121,16 @@ export function writePrState(state: GithubPrState): void {
   state.updatedAt = new Date().toISOString();
   // Keep the reviewed-SHA list bounded.
   if (state.reviewedShas.length > 20) state.reviewedShas = state.reviewedShas.slice(-20);
-  writeJsonAtomic(statePath(state.prNumber), state);
+  writeJsonAtomic(statePath(state.prNumber, state.ghRepo), state);
 }
 
 export function updatePrState(
   prNumber: number,
   headRef: string,
-  patch: (s: GithubPrState) => void
+  patch: (s: GithubPrState) => void,
+  ghRepo?: string
 ): GithubPrState {
-  const s = getOrInitPrState(prNumber, headRef);
+  const s = getOrInitPrState(prNumber, headRef, ghRepo);
   patch(s);
   writePrState(s);
   return s;
@@ -134,16 +140,22 @@ export function updatePrState(
  *  can still recover it. headRef may be unknown here; the run backfills the real one. */
 export function setPendingMention(
   prNumber: number,
-  pending: NonNullable<GithubPrState["pendingMention"]>
+  pending: NonNullable<GithubPrState["pendingMention"]>,
+  ghRepo?: string
 ): void {
-  updatePrState(prNumber, `pr-${prNumber}`, (s) => {
-    s.pendingMention = pending;
-  });
+  updatePrState(
+    prNumber,
+    `pr-${prNumber}`,
+    (s) => {
+      s.pendingMention = pending;
+    },
+    ghRepo,
+  );
 }
 
 /** Clear the pending-mention marker once a run owns the mention or it completes. */
-export function clearPendingMention(prNumber: number): void {
-  const s = readPrState(prNumber);
+export function clearPendingMention(prNumber: number, ghRepo?: string): void {
+  const s = readPrState(prNumber, ghRepo);
   if (!s?.pendingMention) return;
   s.pendingMention = undefined;
   writePrState(s);
@@ -169,27 +181,29 @@ export function listPrStates(): GithubPrState[] {
 // "review" is independent (read-only, main checkout). "code" is shared by
 // auto-fix, simplify, AND mention replies — they all operate on the same
 // PR-branch worktree, so they must not run concurrently on one PR.
-const locks: Record<"review" | "code", Set<number>> = {
+// Keyed by prKey (bare number for the default repo, repoId-number otherwise).
+const locks: Record<"review" | "code", Set<string>> = {
   review: new Set(),
   code: new Set(),
 };
 
 /** Try to claim the lock; false if already held. Release with releaseLock. */
-export function claimLock(behavior: keyof typeof locks, prNumber: number): boolean {
-  if (locks[behavior].has(prNumber)) return false;
-  locks[behavior].add(prNumber);
+export function claimLock(behavior: keyof typeof locks, prNumber: number, ghRepo?: string): boolean {
+  const key = prKey(prNumber, ghRepo);
+  if (locks[behavior].has(key)) return false;
+  locks[behavior].add(key);
   return true;
 }
 
-export function releaseLock(behavior: keyof typeof locks, prNumber: number): void {
-  locks[behavior].delete(prNumber);
+export function releaseLock(behavior: keyof typeof locks, prNumber: number, ghRepo?: string): void {
+  locks[behavior].delete(prKey(prNumber, ghRepo));
 }
 
 /** Is the lock currently held? (Read-only probe — never claims.) */
-export function isLockHeld(behavior: keyof typeof locks, prNumber: number): boolean {
-  return locks[behavior].has(prNumber);
+export function isLockHeld(behavior: keyof typeof locks, prNumber: number, ghRepo?: string): boolean {
+  return locks[behavior].has(prKey(prNumber, ghRepo));
 }
 
-export function activeCodeLoops(): number[] {
+export function activeCodeLoops(): string[] {
   return locks.code.size ? [...locks.code] : [];
 }

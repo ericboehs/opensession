@@ -15,6 +15,7 @@ import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { gitIdentityFor, type GitIdentity } from "../../server/shared/user-mappings";
 import { findOrCreateWorkspaceByKey } from "../../server/workspaces";
 import { repoForPath } from "../../server/worktree";
+import { prKey } from "./constants";
 import type { BackstageSessionFile } from "../../server/types";
 
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
@@ -26,14 +27,14 @@ const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
  * on the same head branch — that catches the originating session, which shares
  * the branch but was created elsewhere. Best-effort: never block a run on this.
  */
-function projectIdForPr(prNumber: number, branch: string, title: string, cwd: string): string | null {
+function projectIdForPr(prNumber: number, branch: string, title: string, cwd: string, ghRepo?: string): string | null {
   try {
     const repo = repoForPath(cwd).id;
     // opts.title is per-kind ("Review · PR #123 <PR title>"). The folder groups
     // ALL kinds for the PR, so name it PR-level: strip the kind + "PR #n" prefix
     // down to the bare PR title (fall back to the full title if it doesn't match).
     const prTitle = title.replace(/^.*?PR #\d+[:\s-]*/i, "").trim() || title;
-    const project = findOrCreateWorkspaceByKey(`ghpr-${prNumber}`, {
+    const project = findOrCreateWorkspaceByKey(`ghpr-${prKey(prNumber, ghRepo)}`, {
       name: `#${prNumber} ${prTitle}`.trim().slice(0, 120),
       repo,
       createdBy: "GitHub (automation)",
@@ -68,8 +69,8 @@ export type GithubRunKind =
   | "followup";
 
 /** Stable, deterministic backstage session id per PR + behavior (one resumable session each). */
-export function bksIdFor(prNumber: number, kind: GithubRunKind): string {
-  return `bks-ghpr-${prNumber}-${kind}`;
+export function bksIdFor(prNumber: number, kind: GithubRunKind, ghRepo?: string): string {
+  return `bks-ghpr-${prKey(prNumber, ghRepo)}-${kind}`;
 }
 
 const UI_BASE =
@@ -77,8 +78,8 @@ const UI_BASE =
   "https://os.tella.dev";
 
 /** Backstage UI link to a run's session, for "open to monitor" links in PR comments. */
-export function sessionUrl(prNumber: number, kind: GithubRunKind): string {
-  return `${UI_BASE}/session/${bksIdFor(prNumber, kind)}`;
+export function sessionUrl(prNumber: number, kind: GithubRunKind, ghRepo?: string): string {
+  return `${UI_BASE}/session/${bksIdFor(prNumber, kind, ghRepo)}`;
 }
 
 /** Map a GitHub login to a git identity for commit attribution (fix/simplify). */
@@ -121,6 +122,8 @@ function readEngineSessionId(
 
 export interface GithubRunOpts {
   prNumber: number;
+  /** owner/name when the PR lives outside the default repo (multi-repo). */
+  ghRepo?: string;
   kind: GithubRunKind;
   prompt: string;
   cwd: string;
@@ -143,11 +146,11 @@ export interface GithubRunResult {
 
 /** Run one headless turn for a PR behavior; returns the agent's accumulated text. */
 export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResult> {
-  const bksId = bksIdFor(opts.prNumber, opts.kind);
+  const bksId = bksIdFor(opts.prNumber, opts.kind, opts.ghRepo);
   const startedAt = new Date();
 
   // Group this and the PR's other chats under one Project folder.
-  const projectId = projectIdForPr(opts.prNumber, opts.branch, opts.title, opts.cwd);
+  const projectId = projectIdForPr(opts.prNumber, opts.branch, opts.title, opts.cwd, opts.ghRepo);
 
   const existingSessionFile = readSessionFile(bksId);
   // Engine sessions are scoped to their directory; a session started under a

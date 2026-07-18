@@ -344,8 +344,8 @@ async function removeLegacySuffixWorktree(
  * there's no un-pushed local work to lose). Push back with
  * `git push origin HEAD:<headRef>`.
  */
-export async function createWorktreeForPrBranch(headRef: string): Promise<string> {
-  const repo = defaultRepo();
+export async function createWorktreeForPrBranch(headRef: string, repoId?: string): Promise<string> {
+  const repo = getRepo(repoId);
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os`;
 
   const reused = await withGitLock(async () => {
@@ -381,8 +381,8 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
  * re-pins to the freshly fetched head, which is safe here because nothing
  * else ever writes in this tree.
  */
-export async function createReviewWorktreeForPrHead(headRef: string): Promise<string> {
-  const repo = defaultRepo();
+export async function createReviewWorktreeForPrHead(headRef: string, repoId?: string): Promise<string> {
+  const repo = getRepo(repoId);
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os-review`;
   return withGitLock(async () => {
     await removeLegacySuffixWorktree(
@@ -412,8 +412,9 @@ export async function createReviewWorktreeForPrHead(headRef: string): Promise<st
 export async function createWorktreeForFollowup(
   branch: string,
   baseRef: string,
+  repoId?: string,
 ): Promise<string> {
-  const repo = defaultRepo();
+  const repo = getRepo(repoId);
   const existing = (await listWorktrees(repo.id)).find((w) => w.branch === branch);
   if (existing) return existing.path;
 

@@ -463,9 +463,11 @@ export async function handlePrRoutes(
 				{ error: "No branch/PR for that repo" },
 				{ status: 400 },
 			);
-		if (target.ghRepo !== "tellahq/tella-fusion")
+		// Multi-repo: any repo in the config registry can host PR-agent runs.
+		const { repoForFullName } = await import("../../agents/github/constants");
+		if (!repoForFullName(target.ghRepo))
 			return Response.json(
-				{ error: "The PR agent only runs on tella-fusion" },
+				{ error: `The PR agent doesn't know the repo ${target.ghRepo}` },
 				{ status: 400 },
 			);
 
@@ -506,6 +508,8 @@ export async function handlePrRoutes(
 			kind,
 			details.number,
 			requestUser(ctx, body?.user) || "Someone",
+			undefined,
+			target.ghRepo,
 		);
 		return Response.json({
 			ok: result.ok,

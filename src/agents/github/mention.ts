@@ -21,6 +21,7 @@ import {
 import { runGithubAgent, authorForLogin, finalSummary, sessionUrl } from "./run";
 import { buildMentionPrompt, buildFollowupMentionPrompt } from "./prompts";
 import { triggerPrAction } from "./trigger";
+import { repoForFullName } from "./constants";
 import {
   postIssueComment,
   editIssueComment,
@@ -73,6 +74,14 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
   const authorLogin: string = comment?.user?.login || "";
   if (authorLogin === BOT_LOGIN) return; // the bot's own pushes' account
 
+  // Multi-repo: resolve which configured repo this comment belongs to; events
+  // for unconfigured repos are dropped (mirrors the webhook gate).
+  const eventRepo = payload?.repository?.full_name
+    ? repoForFullName(payload.repository.full_name)
+    : null;
+  if (payload?.repository?.full_name && !eventRepo) return;
+  const ghRepo: string | undefined = eventRepo?.ghRepo;
+
   let prNumber: number | undefined;
   let inline: { path: string; line?: number; diffHunk?: string } | undefined;
   let replyToId: number | undefined;
@@ -97,19 +106,23 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
   // the process dies in that window — e.g. this webhook landed mid-shutdown-drain,
   // which we still ack 200 so GitHub won't redeliver — startup recovery replays it.
   // The run self-persists its richer activeMention/activeRun only seconds later.
-  setPendingMention(prNumber, {
-    kind,
-    commentId: comment.id,
-    body,
-    author: authorLogin,
-    replyToId,
-    inline,
-    receivedAt: new Date().toISOString(),
-  });
+  setPendingMention(
+    prNumber,
+    {
+      kind,
+      commentId: comment.id,
+      body,
+      author: authorLogin,
+      replyToId,
+      inline,
+      receivedAt: new Date().toISOString(),
+    },
+    ghRepo,
+  );
   try {
-    await dispatchMention({ prNumber, kind, body, author: authorLogin, replyToId, inline });
+    await dispatchMention({ prNumber, kind, body, author: authorLogin, replyToId, inline, ghRepo });
   } finally {
-    clearPendingMention(prNumber);
+    clearPendingMention(prNumber, ghRepo);
   }
 }
 
@@ -125,8 +138,9 @@ export async function dispatchMention(args: {
   author: string;
   replyToId?: number;
   inline?: { path: string; line?: number; diffHunk?: string };
+  ghRepo?: string;
 }): Promise<void> {
-  const { prNumber, kind, body, author, replyToId, inline } = args;
+  const { prNumber, kind, body, author, replyToId, inline, ghRepo } = args;
 
   // A whole-PR action request ("@michael adversarial review plz") → run the dedicated
   // behavior. Classified before any lock, since triggerPrAction claims the "code" lock.
@@ -135,15 +149,15 @@ export async function dispatchMention(args: {
     // Pass the full comment as steer: the classifier reduced it to a verb, but the
     // body may carry specific guidance ("…the Update.call change wasn't needed.
     // /simplify") that the run should honor — not just a generic pass.
-    const res = await triggerPrAction(action, prNumber, author, body);
+    const res = await triggerPrAction(action, prNumber, author, body, ghRepo);
     const ack = `${REPLY_MARKER}\nOn it — ${res.message}`;
-    if (kind === "review" && replyToId) await replyToReviewComment(prNumber, replyToId, ack).catch(() => {});
-    else await postIssueComment(prNumber, ack).catch(() => {});
+    if (kind === "review" && replyToId) await replyToReviewComment(prNumber, replyToId, ack, ghRepo).catch(() => {});
+    else await postIssueComment(prNumber, ack, ghRepo).catch(() => {});
     return;
   }
 
   // Otherwise it's a conversational request — answer (and act) in a worktree session.
-  await runConversationalMention({ prNumber, author, body, kind, replyToId, inline });
+  await runConversationalMention({ prNumber, author, body, kind, replyToId, inline, ghRepo });
 }
 
 export interface ConversationalMentionArgs {
@@ -153,6 +167,7 @@ export interface ConversationalMentionArgs {
   kind: MentionKind;
   replyToId?: number;
   inline?: { path: string; line?: number; diffHunk?: string };
+  ghRepo?: string;
 }
 
 /** Run (or, on restart recovery, re-run) a conversational @mention in a PR-branch worktree. */
@@ -160,14 +175,14 @@ export async function runConversationalMention(
   args: ConversationalMentionArgs,
   recovering = false,
 ): Promise<void> {
-  const { prNumber } = args;
-  if (!claimLock("code", prNumber)) {
+  const { prNumber, ghRepo } = args;
+  if (!claimLock("code", prNumber, ghRepo)) {
     console.log(`[github] a code action is already running for PR #${prNumber}, skipping mention`);
     return;
   }
   let headRef = "";
   try {
-    const details = await getPrDetails(String(prNumber));
+    const details = await getPrDetails(String(prNumber), ghRepo || undefined);
     if (!details) return;
     // Merged/closed PR: you can't push to it, but a mention like "fix this in a
     // follow-up PR" (Kent's case) should still spin up a session — off a fresh
@@ -178,15 +193,16 @@ export async function runConversationalMention(
     }
     headRef = details.headRefName;
     const model = listAutomations().find((a) => a.eventKey === PR_EVENT_KEY)?.model;
-    const link = `[📺 open session](${sessionUrl(prNumber, "mention")})`;
+    const link = `[📺 open session](${sessionUrl(prNumber, "mention", ghRepo)})`;
 
-    const st = getOrInitPrState(prNumber, headRef);
+    const st = getOrInitPrState(prNumber, headRef, ghRepo);
     // Reuse the progress comment only when recovering an interrupted run.
     const reuseId = recovering ? st.activeMention?.progressCommentId : undefined;
     const progressId = await postOrEditComment(
       prNumber,
       reuseId,
       `${REPLY_MARKER}\n🔄 On it — working on @${args.author}'s request… · ${link}`,
+      ghRepo,
     );
     st.activeMention = {
       author: args.author,
@@ -203,10 +219,14 @@ export async function runConversationalMention(
     writePrState(st);
 
     // Code mode in the PR-branch worktree so Michael can make + push changes if asked.
-    const worktreeDir = await createWorktreeForPrBranch(headRef);
+    const worktreeDir = await createWorktreeForPrBranch(
+      headRef,
+      ghRepo ? repoForFullName(ghRepo)?.id : undefined,
+    );
     console.log(`[github] Mention reply on PR #${prNumber} (${args.kind}) from @${args.author}`);
     const result = await runGithubAgent({
       prNumber,
+      ghRepo,
       kind: "mention",
       prompt: buildMentionPrompt({
         prNumber,
@@ -229,15 +249,15 @@ export async function runConversationalMention(
     const out = `${REPLY_MARKER}\n${reply}\n\n<sub>${link}</sub>`;
     if (args.kind === "review" && args.replyToId) {
       // Answer in the inline thread; the progress comment becomes a pointer to it.
-      const ok = await replyToReviewComment(prNumber, args.replyToId, out);
+      const ok = await replyToReviewComment(prNumber, args.replyToId, out, ghRepo);
       if (!ok) console.warn(`[github] failed to post mention thread reply for PR #${prNumber}`);
-      if (progressId) await editIssueComment(progressId, `${REPLY_MARKER}\n✓ Replied in the review thread above. · ${link}`);
+      if (progressId) await editIssueComment(progressId, `${REPLY_MARKER}\n✓ Replied in the review thread above. · ${link}`, ghRepo);
     } else {
       // Conversation reply: turn the progress comment into the answer.
       if (progressId) {
-        if (!(await editIssueComment(progressId, out))) await postIssueComment(prNumber, out);
+        if (!(await editIssueComment(progressId, out, ghRepo))) await postIssueComment(prNumber, out, ghRepo);
       } else {
-        await postIssueComment(prNumber, out);
+        await postIssueComment(prNumber, out, ghRepo);
       }
     }
   } catch (e) {
@@ -245,10 +265,10 @@ export async function runConversationalMention(
   } finally {
     // Clear recovery state on completion; a killed process leaves it set so the
     // github agent re-runs the mention on startup.
-    const fin = getOrInitPrState(prNumber, headRef || `pr-${prNumber}`);
+    const fin = getOrInitPrState(prNumber, headRef || `pr-${prNumber}`, ghRepo);
     fin.activeMention = undefined;
     writePrState(fin);
-    releaseLock("code", prNumber);
+    releaseLock("code", prNumber, ghRepo);
   }
 }
 
@@ -261,32 +281,39 @@ async function runFollowupMention(
   args: ConversationalMentionArgs,
   details: PrDetails,
 ): Promise<void> {
-  const { prNumber } = args;
+  const { prNumber, ghRepo } = args;
   const baseRef = details.baseRefName || "main";
   const stateLabel = details.state === "MERGED" ? "merged" : "closed";
   // Stable per-thread branch suffix (replyToId is the thread root) so a webhook
   // redelivery replays onto the same branch instead of forking a second one.
   const suffix = args.replyToId ? String(args.replyToId) : String(prNumber);
   const branch = `followup-pr-${prNumber}-${suffix}`.slice(0, 80);
-  const link = `[📺 open session](${sessionUrl(prNumber, "followup")})`;
+  const link = `[📺 open session](${sessionUrl(prNumber, "followup", ghRepo)})`;
 
   const progressId = await postOrEditComment(
     prNumber,
     undefined,
     `${REPLY_MARKER}\n🔄 On it — PR #${prNumber} is ${stateLabel}, so I'm starting a fresh follow-up branch off \`${baseRef}\` for @${args.author}'s request… · ${link}`,
+    ghRepo,
   );
 
   const model = listAutomations().find((a) => a.eventKey === PR_EVENT_KEY)?.model;
-  const worktreeDir = await createWorktreeForFollowup(branch, baseRef);
+  const worktreeDir = await createWorktreeForFollowup(
+    branch,
+    baseRef,
+    ghRepo ? repoForFullName(ghRepo)?.id : undefined,
+  );
   console.log(
     `[github] Follow-up mention on ${stateLabel} PR #${prNumber} from @${args.author} → branch ${branch}`,
   );
 
   const result = await runGithubAgent({
     prNumber,
+    ghRepo,
     kind: "followup",
     prompt: buildFollowupMentionPrompt({
       prNumber,
+      ghRepo,
       prTitle: details.title,
       state: stateLabel,
       baseRef,
@@ -307,13 +334,13 @@ async function runFollowupMention(
   const reply = finalSummary(result.text) || "(no reply produced)";
   const out = `${REPLY_MARKER}\n${reply}\n\n<sub>${link}</sub>`;
   if (args.kind === "review" && args.replyToId) {
-    const ok = await replyToReviewComment(prNumber, args.replyToId, out);
+    const ok = await replyToReviewComment(prNumber, args.replyToId, out, ghRepo);
     if (!ok) console.warn(`[github] failed to post follow-up thread reply for PR #${prNumber}`);
     if (progressId)
-      await editIssueComment(progressId, `${REPLY_MARKER}\n✓ Replied in the review thread above. · ${link}`);
+      await editIssueComment(progressId, `${REPLY_MARKER}\n✓ Replied in the review thread above. · ${link}`, ghRepo);
   } else if (progressId) {
-    if (!(await editIssueComment(progressId, out))) await postIssueComment(prNumber, out);
+    if (!(await editIssueComment(progressId, out, ghRepo))) await postIssueComment(prNumber, out, ghRepo);
   } else {
-    await postIssueComment(prNumber, out);
+    await postIssueComment(prNumber, out, ghRepo);
   }
 }

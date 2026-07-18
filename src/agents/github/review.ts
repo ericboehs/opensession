@@ -24,6 +24,7 @@ import {
 } from "./github-rest";
 import { defaultRepo } from "../../server/config";
 import { createReviewWorktreeForPrHead } from "../../server/worktree";
+import { repoForFullName } from "./constants";
 
 const TELLA_FUSION = defaultRepo().repo;
 
@@ -32,6 +33,8 @@ export interface PrRef {
   headRef: string;
   headSha: string;
   title: string;
+  /** owner/name when the PR lives outside the default repo (multi-repo). */
+  ghRepo?: string;
 }
 
 export interface ReviewConfig {
@@ -90,12 +93,13 @@ export async function runReview(
   force = false,
   steer?: string,
 ): Promise<ReviewResult | null> {
-  if (!claimLock("review", pr.number)) {
+  if (!claimLock("review", pr.number, pr.ghRepo)) {
     console.log(`[github] review already running for PR #${pr.number}, skipping`);
     return null;
   }
   try {
-    const state = getOrInitPrState(pr.number, pr.headRef);
+    const prRepo = pr.ghRepo ? repoForFullName(pr.ghRepo) : null;
+    const state = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
     // `force` (manual Slack trigger) reviews even an already-reviewed SHA.
     if (!force && pr.headSha && state.reviewedShas.includes(pr.headSha)) {
       console.log(`[github] PR #${pr.number} @ ${pr.headSha.slice(0, 7)} already reviewed`);
@@ -110,16 +114,17 @@ export async function runReview(
     // Post a fresh "reviewing…" comment immediately (progress ASAP), then collapse
     // the previous review under an "Outdated review" <details>. Each review is its
     // own comment; postReview edits this placeholder with the result.
-    const prevId = state.summaryCommentId ?? (await findActiveReviewComment(pr.number)) ?? undefined;
+    const prevId = state.summaryCommentId ?? (await findActiveReviewComment(pr.number, pr.ghRepo)) ?? undefined;
     const shortSha0 = (pr.headSha || "").slice(0, 7);
     const placeholderId = await postIssueComment(
       pr.number,
-      `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\n🔄 Reviewing${shortSha0 ? ` \`${shortSha0}\`` : ""}… · [📺 open session](${sessionUrl(pr.number, "review")})`,
+      `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\n🔄 Reviewing${shortSha0 ? ` \`${shortSha0}\`` : ""}… · [📺 open session](${sessionUrl(pr.number, "review", pr.ghRepo)})`,
+      pr.ghRepo,
     );
     if (placeholderId) {
       state.summaryCommentId = placeholderId;
       writePrState(state);
-      if (prevId && prevId !== placeholderId) await supersedeReviewComment(prevId).catch(() => {});
+      if (prevId && prevId !== placeholderId) await supersedeReviewComment(prevId, pr.ghRepo).catch(() => {});
     }
     // If the placeholder failed, summaryCommentId keeps prevId and postReview edits it.
 
@@ -128,7 +133,7 @@ export async function runReview(
     // initial review of a fresh PR died on exactly that (PR #4953), leaving
     // the "Reviewing…" placeholder dangling forever. By-number is an exact
     // REST get. Branch stays as the fallback for callers without a number.
-    const details = await getPrDetails(pr.number ? String(pr.number) : pr.headRef);
+    const details = await getPrDetails(pr.number ? String(pr.number) : pr.headRef, pr.ghRepo || undefined);
     if (!details) {
       console.warn(`[github] no PR details for #${pr.number} (${pr.headRef}); review not started`);
       // Don't leave the placeholder pointing at a session that was never
@@ -138,6 +143,7 @@ export async function runReview(
         await editIssueComment(
           placeholderId,
           `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\n⚠️ Couldn't fetch the PR details to start the review — it will retry on the next push, or ask ${personaName()} to review manually.`,
+          pr.ghRepo,
         ).catch(() => {});
       return null;
     }
@@ -145,7 +151,7 @@ export async function runReview(
     // Fetch the diff here (the server has gh + shell) and inline it in the
     // prompt: unattended ask-mode opencode runs have NO bash tool, so the agent
     // cannot run `gh pr diff` itself (PR #4676's review starved on exactly that).
-    const diff = await getPrDiff(pr.headRef);
+    const diff = await getPrDiff(pr.headRef, pr.ghRepo || undefined);
     if (!diff) console.warn(`[github] could not fetch diff for PR #${pr.number}; reviewing without it`);
 
     // Pin a read-only worktree to the PR head so the files the agent Reads are
@@ -153,21 +159,22 @@ export async function runReview(
     // failure, fork PRs whose head isn't in origin) drifts from the diff —
     // that's the "file not found / offset out of range" storm on refactor PRs
     // — so when it happens the prompt says to trust the diff over the disk.
-    let cwd = TELLA_FUSION;
+    let cwd = prRepo?.repo || TELLA_FUSION;
     let checkoutAtHead = false;
     try {
-      cwd = await createReviewWorktreeForPrHead(pr.headRef);
+      cwd = await createReviewWorktreeForPrHead(pr.headRef, prRepo?.id);
       checkoutAtHead = true;
     } catch (e) {
       console.warn(`[github] review worktree for ${pr.headRef} failed, using shared clone:`, e);
     }
 
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
-    const prompt = buildReviewPrompt(base, details, isUpdate, steer, diff?.patch, checkoutAtHead);
+    const prompt = buildReviewPrompt(base, details, isUpdate, steer, diff?.patch, checkoutAtHead, pr.ghRepo);
 
     console.log(`[github] Reviewing PR #${pr.number} @ ${pr.headSha.slice(0, 7)} (${isUpdate ? "update" : "initial"})`);
     const result = await runGithubAgent({
       prNumber: pr.number,
+      ghRepo: pr.ghRepo,
       kind: "review",
       prompt,
       cwd,
@@ -185,7 +192,7 @@ export async function runReview(
     // Record the SHA as reviewed only on a successful run, so a transient failure
     // (model error/timeout) leaves it eligible for retry on the next delivery.
     if (!result.error && pr.headSha) {
-      const s = getOrInitPrState(pr.number, pr.headRef);
+      const s = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
       if (!s.reviewedShas.includes(pr.headSha)) s.reviewedShas.push(pr.headSha);
       s.lastReviewedSha = pr.headSha;
       writePrState(s);
@@ -204,12 +211,12 @@ export async function runReview(
   } finally {
     // Clear the recovery flag on completion; a killed process leaves it set so the
     // github agent re-runs the review on startup.
-    const s = getOrInitPrState(pr.number, pr.headRef);
+    const s = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
     if (s.activeRun?.kind === "review") {
       s.activeRun = undefined;
       writePrState(s);
     }
-    releaseLock("review", pr.number);
+    releaseLock("review", pr.number, pr.ghRepo);
   }
 }
 
@@ -233,7 +240,7 @@ async function postReview(
   runError?: string,
   force = false,
 ): Promise<void> {
-  const state = getOrInitPrState(pr.number, pr.headRef);
+  const state = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
   const shortSha = (pr.headSha || "").slice(0, 7);
 
   // Summary comment (single, edited in place).
@@ -254,7 +261,7 @@ async function postReview(
     "",
     findingCount ? `_${findingCount} inline comment${findingCount === 1 ? "" : "s"} below._` : "",
     tip,
-    `<sub>Reviewed \`${shortSha}\` · earlier reviews collapse above · [open session](${sessionUrl(pr.number, "review")})</sub>`,
+    `<sub>Reviewed \`${shortSha}\` · earlier reviews collapse above · [open session](${sessionUrl(pr.number, "review", pr.ghRepo)})</sub>`,
   ]
     .filter((l) => l !== "")
     .join("\n");
@@ -262,10 +269,10 @@ async function postReview(
   // Edit the placeholder posted at the start; fall back to a new comment if it's gone.
   let id: number | null = state.summaryCommentId ?? null;
   if (id) {
-    const ok = await editIssueComment(id, composed);
-    if (!ok) id = await postIssueComment(pr.number, composed);
+    const ok = await editIssueComment(id, composed, pr.ghRepo);
+    if (!ok) id = await postIssueComment(pr.number, composed, pr.ghRepo);
   } else {
-    id = await postIssueComment(pr.number, composed);
+    id = await postIssueComment(pr.number, composed, pr.ghRepo);
   }
   if (id && id !== state.summaryCommentId) {
     state.summaryCommentId = id;
@@ -278,7 +285,7 @@ async function postReview(
   // finding we already have an open comment on. GitHub only auto-outdates an inline
   // comment when its anchored line changes, so a finding on an unchanged line
   // (e.g. Dockerfile:96) would otherwise get a fresh duplicate every single push.
-  const existingThreads = await listReviewThreads(pr.number).catch(() => []);
+  const existingThreads = await listReviewThreads(pr.number, pr.ghRepo).catch(() => []);
 
   // Anchors (path:line) where we already have an open, still-current bot comment.
   // Skip re-posting these — the existing comment already covers the same spot.
@@ -295,7 +302,7 @@ async function postReview(
   // Formal review with inline comments, anchored to the diff.
   const findings = parsed?.findings || [];
   if (findings.length && pr.headSha) {
-    const diff = await getPrDiff(pr.headRef);
+    const diff = await getPrDiff(pr.headRef, pr.ghRepo || undefined);
     const commitId = diff?.headRefOid || pr.headSha;
     const onDiff = diff ? filterToDiff(findings, diff.patch) : findings;
     const fresh = onDiff.filter((f) => !openBotAnchors.has(`${f.path}:${f.line}`));
@@ -310,7 +317,7 @@ async function postReview(
       console.log(`[github] skipped ${deduped} finding(s) already commented on PR #${pr.number}`);
     }
     if (inline.length) {
-      const ok = await submitReview(pr.number, commitId, `Michael review · \`${shortSha}\``, inline);
+      const ok = await submitReview(pr.number, commitId, `${personaName()} review · \`${shortSha}\``, inline, pr.ghRepo);
       if (!ok) console.warn(`[github] submitReview failed for PR #${pr.number}`);
       if (inline.length < onDiff.length - deduped) {
         console.log(`[github] dropped ${onDiff.length - deduped - inline.length} off-diff finding(s) for PR #${pr.number}`);

@@ -21,7 +21,7 @@ import { runGithubAgent, authorForLogin, sessionUrl } from "./run";
 import { buildAutoFixPrompt, mergeabilityState, type MergeabilityState } from "./prompts";
 import { checkRegistrationPending } from "./autofix-gates";
 import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, resolveAddressedThreads, AUTOFIX_MARKER, BOT_LOGIN } from "./github-rest";
-import { LABEL_AUTOFIX, labelAliases } from "./constants";
+import { LABEL_AUTOFIX, labelAliases, repoForFullName } from "./constants";
 import { personaName } from "../../server/config";
 import type { PrRef, ReviewResult } from "./review";
 import { defaultRepo } from "../../server/config";
@@ -36,9 +36,9 @@ const MERGEABILITY_TIMEOUT_MS = 2 * 60 * 1000;
 
 const REPO = defaultRepo().ghRepo;
 
-async function headSha(headRef: string): Promise<string> {
+async function headSha(headRef: string, ghRepo: string = REPO): Promise<string> {
   try {
-    const raw = await $`gh pr view ${headRef} --repo ${REPO} --json headRefOid`.quiet().text();
+    const raw = await $`gh pr view ${headRef} --repo ${ghRepo} --json headRefOid`.quiet().text();
     return JSON.parse(raw).headRefOid || "";
   } catch {
     return "";
@@ -66,12 +66,13 @@ async function waitForChecks(
   headRef: string,
   expectedHeadSha: string,
   emptyGraceMs = CHECK_REGISTRATION_GRACE_MS,
+  ghRepo?: string,
 ): Promise<CiState> {
   const deadline = Date.now() + CHECK_TIMEOUT_MS;
   let last: CiState = { settled: false, green: false, failing: [] };
   let matchingHeadSeenAt = 0;
   while (Date.now() < deadline) {
-    const details = await getPrDetailsFresh(headRef);
+    const details = await getPrDetailsFresh(headRef, ghRepo || undefined);
     if (details?.headRefOid !== expectedHeadSha) {
       await new Promise((r) => setTimeout(r, CHECK_POLL_MS));
       continue;
@@ -95,11 +96,11 @@ interface MergeabilityProbe {
 }
 
 /** Wait for GitHub's asynchronous conflict calculation on one exact head SHA. */
-async function waitForMergeability(headRef: string, expectedHeadSha: string): Promise<MergeabilityProbe> {
+async function waitForMergeability(headRef: string, expectedHeadSha: string, ghRepo?: string): Promise<MergeabilityProbe> {
   const deadline = Date.now() + MERGEABILITY_TIMEOUT_MS;
   let probe: MergeabilityProbe = { state: "pending", details: null };
   while (Date.now() < deadline) {
-    const details = await getPrDetailsFresh(headRef);
+    const details = await getPrDetailsFresh(headRef, ghRepo || undefined);
     probe = { state: mergeabilityState(details, expectedHeadSha), details };
     if (probe.state !== "pending") return probe;
     await new Promise((r) => setTimeout(r, MERGEABILITY_POLL_MS));
@@ -114,14 +115,14 @@ export async function runAutoFix(
   resuming = false,
   steer?: string,
 ): Promise<void> {
-  if (!claimLock("code", pr.number)) {
+  if (!claimLock("code", pr.number, pr.ghRepo)) {
     console.log(`[github] a code action (fix/simplify) is already running for PR #${pr.number}, skipping auto-fix`);
     return;
   }
 
   const author = authorForLogin(requestedBy);
   let statusCommentId: number | undefined;
-  const link = `[📺 open session](${sessionUrl(pr.number, "autofix")})`;
+  const link = `[📺 open session](${sessionUrl(pr.number, "autofix", pr.ghRepo)})`;
 
   const updateStatus = async (text: string) => {
     // Keep the session link on the header line; any extra lines (disposition
@@ -130,12 +131,12 @@ export async function runAutoFix(
     const tail = rest.length ? `\n${rest.join("\n")}` : "";
     const body = `${AUTOFIX_MARKER}\n🛠️ **${personaName()} auto-fix** — ${head} · ${link}${tail}`;
     if (statusCommentId) {
-      await editIssueComment(statusCommentId, body);
+      await editIssueComment(statusCommentId, body, pr.ghRepo);
     } else {
-      const id = await postIssueComment(pr.number, body);
+      const id = await postIssueComment(pr.number, body, pr.ghRepo);
       if (id) {
         statusCommentId = id;
-        const s = getOrInitPrState(pr.number, pr.headRef);
+        const s = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
         s.autoFix = { ...(s.autoFix || { active: true, iterations: 0, startedAt: new Date().toISOString() }), statusCommentId: id };
         writePrState(s);
       }
@@ -143,7 +144,7 @@ export async function runAutoFix(
   };
 
   try {
-    const prior = readPrState(pr.number)?.autoFix;
+    const prior = readPrState(pr.number, pr.ghRepo)?.autoFix;
     // Reuse the status comment only when recovering an interrupted loop; a fresh
     // re-trigger posts a new comment instead of editing the previous run's.
     statusCommentId = resuming ? prior?.statusCommentId : undefined;
@@ -152,17 +153,20 @@ export async function runAutoFix(
     // A killed-and-recovered loop re-enters with no steer arg; pull it back from state.
     const effectiveSteer = steer ?? (resuming ? prior?.steer : undefined);
 
-    const s = getOrInitPrState(pr.number, pr.headRef);
+    const s = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
     s.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir: prior?.worktreeDir, lastPushedSha: prior?.lastPushedSha, steer: effectiveSteer };
     writePrState(s);
 
     // Post the first status BEFORE the (slow) worktree checkout so the PR shows it's working ASAP.
     await updateStatus(resuming ? `resuming (iteration ${iterations + 1}/${MAX_ITERATIONS})…` : `starting (up to ${MAX_ITERATIONS} iterations) — setting up a worktree…`);
-    const worktreeDir = await createWorktreeForPrBranch(pr.headRef);
+    const worktreeDir = await createWorktreeForPrBranch(
+      pr.headRef,
+      pr.ghRepo ? repoForFullName(pr.ghRepo)?.id : undefined,
+    );
 
     // Baseline to the CURRENT head so an iteration that pushes nothing compares
     // equal (no false "pushed" / false success on iteration 1).
-    const baseSha = prior?.lastPushedSha || (await headSha(pr.headRef));
+    const baseSha = prior?.lastPushedSha || (await headSha(pr.headRef, pr.ghRepo || REPO));
     let lastPushedSha = baseSha;
     let outcome = "";
     let lastDisp: Dispositions | null = null;
@@ -174,8 +178,8 @@ export async function runAutoFix(
     const { resolveReviewConfig } = await import("./webhook");
     let lastReviewedSha = "";
     const reviewGate = async (sha: string): Promise<ReviewResult | null> => {
-      const fresh = await getPrDetailsFresh(pr.headRef);
-      const ref: PrRef = { number: pr.number, headRef: pr.headRef, headSha: sha, title: fresh?.title || pr.title };
+      const fresh = await getPrDetailsFresh(pr.headRef, pr.ghRepo || undefined);
+      const ref: PrRef = { number: pr.number, headRef: pr.headRef, headSha: sha, title: fresh?.title || pr.title, ...(pr.ghRepo ? { ghRepo: pr.ghRepo } : {}) };
       const rr = await runReview(ref, resolveReviewConfig().config, onSessionCreated, /*force*/ true).catch((e) => {
         console.error(`[github] auto-fix gating review failed for PR #${pr.number}:`, e);
         return null;
@@ -190,17 +194,18 @@ export async function runAutoFix(
         break;
       }
       iterations++;
-      const details = await getPrDetailsFresh(pr.headRef);
+      const details = await getPrDetailsFresh(pr.headRef, pr.ghRepo || undefined);
       if (!details) { outcome = "⚠️ Could not load PR details — stopping."; break; }
       if (details.state !== "OPEN") { outcome = `PR is ${details.state.toLowerCase()} — stopping.`; break; }
 
       const ciBefore = evaluateChecks(details);
-      const reviewSummary = await fetchReviewFindings(pr.number);
+      const reviewSummary = await fetchReviewFindings(pr.number, pr.ghRepo);
       await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: working on fixes…`);
 
       const prompt = buildAutoFixPrompt(details, reviewSummary, ciBefore.failing, iterations, effectiveSteer);
       const result = await runGithubAgent({
         prNumber: pr.number,
+        ghRepo: pr.ghRepo,
         kind: "autofix",
         prompt,
         cwd: worktreeDir,
@@ -212,13 +217,13 @@ export async function runAutoFix(
         onSessionCreated,
       });
 
-      const newSha = await headSha(pr.headRef);
+      const newSha = await headSha(pr.headRef, pr.ghRepo || REPO);
       const pushedSomething = !!newSha && newSha !== lastPushedSha;
       lastPushedSha = newSha || lastPushedSha;
       lastDisp = parseDispositions(result.text);
       const remaining = remainingFrom(lastDisp);
 
-      const st = getOrInitPrState(pr.number, pr.headRef);
+      const st = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
       st.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir, lastPushedSha, steer: effectiveSteer };
       writePrState(st);
 
@@ -232,10 +237,10 @@ export async function runAutoFix(
           outcome = "☑️ No further changes this round — the remaining items were deliberately skipped or couldn't be auto-fixed:";
           break;
         }
-        const ci = await waitForChecks(pr.headRef, lastPushedSha);
+        const ci = await waitForChecks(pr.headRef, lastPushedSha, CHECK_REGISTRATION_GRACE_MS, pr.ghRepo);
         if (!ci.settled) { outcome = "⏳ CI didn't settle within the timeout. Handing back to humans."; break; }
         if (!ci.green) { outcome = `⚠️ CI is still failing (${ci.failing.join(", ")}) and no fixes were pushed. Handing back to humans.`; break; }
-        const merge = await waitForMergeability(pr.headRef, lastPushedSha);
+        const merge = await waitForMergeability(pr.headRef, lastPushedSha, pr.ghRepo);
         if (merge.state === "conflicting" && iterations < MAX_ITERATIONS) {
           await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: merge conflicts remain — continuing to fix…`);
           continue;
@@ -254,7 +259,7 @@ export async function runAutoFix(
 
       const sha7 = lastPushedSha.slice(0, 7);
       await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: pushed \`${sha7}\`, waiting for CI…`);
-      const ci = await waitForChecks(pr.headRef, lastPushedSha);
+      const ci = await waitForChecks(pr.headRef, lastPushedSha, CHECK_REGISTRATION_GRACE_MS, pr.ghRepo);
 
       if (!ci.settled) { outcome = `⏳ Pushed \`${sha7}\` but CI didn't settle within the timeout. Handing back to humans.`; break; }
       if (ci.failing.length) {
@@ -265,7 +270,7 @@ export async function runAutoFix(
       // Mergeability is a completion gate alongside CI and review. A merge may
       // resolve one conflict while exposing another as the base branch advances,
       // so re-read GitHub after the push and let the next iteration address it.
-      const merge = await waitForMergeability(pr.headRef, lastPushedSha);
+      const merge = await waitForMergeability(pr.headRef, lastPushedSha, pr.ghRepo);
       if (merge.state === "conflicting") {
         if (iterations >= MAX_ITERATIONS) {
           outcome = `⚠️ CI is green but the PR still conflicts with \`${merge.details?.baseRefName || details.baseRefName}\` after ${iterations} attempts. Handing back to humans.`;
@@ -291,7 +296,7 @@ export async function runAutoFix(
 
       // Checks can change while a slow review runs. Re-read the exact head before
       // success; the earlier registration grace means an empty list is now safe.
-      const finalCi = await waitForChecks(pr.headRef, lastPushedSha, 0);
+      const finalCi = await waitForChecks(pr.headRef, lastPushedSha, 0, pr.ghRepo);
       if (!finalCi.settled) {
         outcome = `⏳ Review finished, but CI didn't settle for \`${sha7}\`. Handing back to humans.`;
         break;
@@ -307,7 +312,7 @@ export async function runAutoFix(
 
       // The base branch may also advance during the review/CI wait, so every
       // successful exit gets one final fresh, SHA-aware mergeability check.
-      const finalMerge = await waitForMergeability(pr.headRef, lastPushedSha);
+      const finalMerge = await waitForMergeability(pr.headRef, lastPushedSha, pr.ghRepo);
       if (finalMerge.state === "conflicting") {
         if (iterations >= MAX_ITERATIONS) {
           outcome = `⚠️ The PR became conflicting with \`${finalMerge.details?.baseRefName || details.baseRefName}\` during review. Handing back to humans.`;
@@ -346,7 +351,7 @@ export async function runAutoFix(
     const dispBlock = lastDisp ? formatDispositions(lastDisp) : "";
     await updateStatus(dispBlock ? `${outcome || "done."}\n\n${dispBlock}` : outcome || "done.");
 
-    const fin = getOrInitPrState(pr.number, pr.headRef);
+    const fin = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
     if (fin.autoFix) { fin.autoFix.active = false; fin.autoFix.iterations = iterations; fin.autoFix.lastPushedSha = lastPushedSha; writePrState(fin); }
 
     // Refresh the pinned review against the fixed code. The auto-fix push won't
@@ -364,7 +369,7 @@ export async function runAutoFix(
     // as resolved, and sweep any of our own now-outdated review threads. Only runs
     // when the fixer actually pushed — a no-op loop resolves nothing.
     if (lastPushedSha && lastPushedSha !== baseSha) {
-      const n = await resolveAddressedThreads(pr.number, /*alsoOutdatedBotThreads*/ true).catch((e) => {
+      const n = await resolveAddressedThreads(pr.number, /*alsoOutdatedBotThreads*/ true, pr.ghRepo).catch((e) => {
         console.error(`[github] resolving addressed threads failed for PR #${pr.number}:`, e);
         return 0;
       });
@@ -372,14 +377,14 @@ export async function runAutoFix(
     }
   } catch (e) {
     console.error(`[github] auto-fix error for PR #${pr.number}:`, e);
-    const fin = getOrInitPrState(pr.number, pr.headRef);
+    const fin = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
     if (fin.autoFix) { fin.autoFix.active = false; writePrState(fin); }
     await updateStatus(`⚠️ Auto-fix errored: ${(e as any)?.message || e}`).catch(() => {});
   } finally {
     for (const name of labelAliases(LABEL_AUTOFIX)) {
-      await removeLabel(pr.number, name).catch(() => {});
+      await removeLabel(pr.number, name, pr.ghRepo).catch(() => {});
     }
-    releaseLock("code", pr.number);
+    releaseLock("code", pr.number, pr.ghRepo);
   }
 }
 
@@ -433,10 +438,10 @@ function formatDispositions(d: Dispositions): string {
  * not just CI). Skips outdated inline comments and Michael's own boilerplate review
  * body. Returns "" when there's nothing.
  */
-async function fetchReviewFindings(prNumber: number): Promise<string> {
+async function fetchReviewFindings(prNumber: number, ghRepo?: string): Promise<string> {
   const [comments, reviews] = await Promise.all([
-    listReviewComments(prNumber),
-    listReviews(prNumber),
+    listReviewComments(prNumber, ghRepo),
+    listReviews(prNumber, ghRepo),
   ]);
   const lines: string[] = [];
   for (const c of comments.filter((c) => !c.outdated && c.line != null)) {
@@ -446,7 +451,11 @@ async function fetchReviewFindings(prNumber: number): Promise<string> {
   for (const rv of reviews) {
     // Skip Michael's own short "Michael review · <sha>" boilerplate (the inline
     // comments above already carry its findings).
-    if (rv.login === BOT_LOGIN && /^Michael review/.test(rv.body.trim())) continue;
+    if (
+      rv.login === BOT_LOGIN &&
+      (rv.body.trim().startsWith(`${personaName()} review`) || rv.body.trim().startsWith("Michael review"))
+    )
+      continue;
     const state = rv.state ? ` ${rv.state.toLowerCase().replace(/_/g, " ")}` : "";
     lines.push(`- [@${rv.login} review${state}] ${rv.body.replace(/\s+/g, " ").trim().slice(0, 600)}`);
   }

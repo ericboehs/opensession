@@ -203,10 +203,11 @@ export function buildReviewPrompt(
   steer?: string,
   diffPatch?: string,
   checkoutAtHead = true,
+  ghRepo?: string,
 ): string {
   const header = isUpdate
     ? `You previously reviewed PR #${pr.number} ("${pr.title}"). New commits have been pushed. Re-review the CURRENT diff, focusing on what changed since your last review, and produce a fresh full assessment.`
-    : `Review PR #${pr.number} ("${pr.title}") on ${defaultRepo().ghRepo}.`;
+    : `Review PR #${pr.number} ("${pr.title}") on ${ghRepo || defaultRepo().ghRepo}.`;
 
   // No shell in unattended ask-mode runs, so the diff must arrive inline. The
   // fetch failing is rare (gh/network hiccup at dispatch) — in that case tell
@@ -336,6 +337,8 @@ export function buildFollowupMentionPrompt(opts: {
   author: string;
   commentBody: string;
   inline?: { path: string; line?: number; diffHunk?: string };
+  /** owner/name when the PR lives outside the default repo (multi-repo). */
+  ghRepo?: string;
 }): string {
   const where = opts.inline
     ? `Their comment is anchored to \`${opts.inline.path}\`${opts.inline.line ? `:${opts.inline.line}` : ""}.${
@@ -362,7 +365,7 @@ Decide what they need:
 - If they're asking for a code change or fix (the usual case for "fix this in a follow-up PR"), implement it on this branch. ${changesLocation} Keep it tightly scoped to exactly what they asked.
 
 If you made changes, commit them with a clear message (\`git add\` specific paths, never \`git add .\`), push with \`git push -u origin HEAD\`, and open a NEW pull request:
-\`gh pr create --repo ${defaultRepo().ghRepo} --base ${opts.baseRef} --head ${opts.branch} --title "<concise title>" --body "<what and why, including 'Follow-up to #${opts.prNumber}'>"\`.
+\`gh pr create --repo ${opts.ghRepo || defaultRepo().ghRepo} --base ${opts.baseRef} --head ${opts.branch} --title "<concise title>" --body "<what and why, including 'Follow-up to #${opts.prNumber}'>"\`.
 NEVER push to PR #${opts.prNumber}'s branch and NEVER run \`gh pr merge\`.
 
 When finished, output the marker \`===MICHAEL-SUMMARY===\` on its own line, then your reply as GitHub markdown — link the new PR you opened, or explain why none was needed. ONLY the text after that marker is posted as the reply — everything before it is working notes that stay private. Do not post anything yourself.`;

@@ -53,17 +53,19 @@ export async function triggerPrAction(
   prNumber: number,
   requestedBy: string,
   steer?: string,
+  ghRepo?: string,
 ): Promise<TriggerResult> {
-  const details = await getPrDetails(String(prNumber));
+  const details = await getPrDetails(String(prNumber), ghRepo || undefined);
   if (!details) {
-    return { ok: false, message: `I couldn't find PR #${prNumber} on ${defaultRepo().ghRepo}.` };
+    return { ok: false, message: `I couldn't find PR #${prNumber} on ${ghRepo || defaultRepo().ghRepo}.` };
   }
-  const diff = await getPrDiff(details.headRefName);
+  const diff = await getPrDiff(details.headRefName, ghRepo || undefined);
   const ref: PrRef = {
     number: prNumber,
     headRef: details.headRefName,
     headSha: diff?.headRefOid || "",
     title: details.title,
+    ...(ghRepo ? { ghRepo } : {}),
   };
 
   const fail = (e: unknown) => console.error(`[github] ${kind} trigger failed for PR #${prNumber}:`, e);
@@ -87,7 +89,7 @@ export async function triggerPrAction(
   return {
     ok: true,
     url: details.url,
-    bksId: bksIdFor(prNumber, kind),
+    bksId: bksIdFor(prNumber, kind, ghRepo),
     done,
     message: `${LABELS[kind]} PR #${prNumber} (“${details.title}”). I'll post the results on the PR: ${details.url}`,
   };
