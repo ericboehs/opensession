@@ -20,7 +20,7 @@ import {
 import { runGithubAgent, authorForLogin, sessionUrl } from "./run";
 import { buildAutoFixPrompt, mergeabilityState, type MergeabilityState } from "./prompts";
 import { checkRegistrationPending } from "./autofix-gates";
-import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, resolveAddressedThreads, BOT_LOGIN } from "./github-rest";
+import { postIssueComment, editIssueComment, removeLabel, listReviewComments, listReviews, resolveAddressedThreads, AUTOFIX_MARKER, BOT_LOGIN } from "./github-rest";
 import { LABEL_AUTOFIX, labelAliases } from "./constants";
 import { personaName } from "../../server/config";
 import type { PrRef, ReviewResult } from "./review";
@@ -128,7 +128,7 @@ export async function runAutoFix(
     // breakdown) render below it rather than getting glued to the link.
     const [head, ...rest] = text.split("\n");
     const tail = rest.length ? `\n${rest.join("\n")}` : "";
-    const body = `<!-- michael-autofix -->\n🛠️ **${personaName()} auto-fix** — ${head} · ${link}${tail}`;
+    const body = `${AUTOFIX_MARKER}\n🛠️ **${personaName()} auto-fix** — ${head} · ${link}${tail}`;
     if (statusCommentId) {
       await editIssueComment(statusCommentId, body);
     } else {

@@ -5,6 +5,7 @@
  * review carrying inline comments (GitHub auto-outdates stale ones across commits).
  * Deduped on head SHA so the same commit isn't reviewed twice.
  */
+import { personaName } from "../../server/config";
 import { getPrDetails, getPrDiff, type PrDetails } from "../../server/pr-info";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
 import { runGithubAgent, sessionUrl } from "./run";
@@ -113,7 +114,7 @@ export async function runReview(
     const shortSha0 = (pr.headSha || "").slice(0, 7);
     const placeholderId = await postIssueComment(
       pr.number,
-      `${REVIEW_MARKER}\n### 🤖 Michael review\n\n🔄 Reviewing${shortSha0 ? ` \`${shortSha0}\`` : ""}… · [📺 open session](${sessionUrl(pr.number, "review")})`,
+      `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\n🔄 Reviewing${shortSha0 ? ` \`${shortSha0}\`` : ""}… · [📺 open session](${sessionUrl(pr.number, "review")})`,
     );
     if (placeholderId) {
       state.summaryCommentId = placeholderId;
@@ -136,7 +137,7 @@ export async function runReview(
       if (placeholderId)
         await editIssueComment(
           placeholderId,
-          `${REVIEW_MARKER}\n### 🤖 Michael review\n\n⚠️ Couldn't fetch the PR details to start the review — it will retry on the next push, or ask Michael to review manually.`,
+          `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\n⚠️ Couldn't fetch the PR details to start the review — it will retry on the next push, or ask ${personaName()} to review manually.`,
         ).catch(() => {});
       return null;
     }
@@ -247,7 +248,7 @@ async function postReview(
     : "> 💡 Labels: **`os-adversarial`** — deeper two-pass review · **`os-simplify`** — quality cleanup pass · **`os-auto-fix`** — fix anything outstanding and push until CI passes.";
   const composed = [
     REVIEW_MARKER,
-    `### 🤖 Michael review${verdict}${confidence}`,
+    `### 🤖 ${personaName()} review${verdict}${confidence}`,
     "",
     summaryBody,
     "",

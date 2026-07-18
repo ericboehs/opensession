@@ -4,6 +4,7 @@
  * Michael responsible for implementing the accepted findings, then pushes any
  * resulting changes to the PR branch and posts a summary. One-shot.
  */
+import { personaName } from "../../server/config";
 import { getPrDetails } from "../../server/pr-info";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
@@ -39,7 +40,7 @@ export async function runAdversarial(
     const progressId = await postOrEditComment(
       pr.number,
       reuseId,
-      `${ADVERSARIAL_MARKER}\n🔍 **Michael adversarial review** — running two independent review passes on PR #${pr.number}… · ${link}`,
+      `${ADVERSARIAL_MARKER}\n🔍 **${personaName()} adversarial review** — running two independent review passes on PR #${pr.number}… · ${link}`,
     );
     s.activeRun = { kind: "adversarial", requestedBy, startedAt, progressCommentId: progressId ?? undefined, steer };
     writePrState(s);
@@ -63,7 +64,7 @@ export async function runAdversarial(
     await postOrEditComment(
       pr.number,
       progressId ?? undefined,
-      `${ADVERSARIAL_MARKER}\n🔍 **Michael adversarial review** — ${result.error ? `errored: ${result.error}` : summary} · ${link}`,
+      `${ADVERSARIAL_MARKER}\n🔍 **${personaName()} adversarial review** — ${result.error ? `errored: ${result.error}` : summary} · ${link}`,
     );
   } catch (e) {
     console.error(`[github] adversarial error for PR #${pr.number}:`, e);

@@ -3,6 +3,7 @@
  * PR-branch worktree, push, post a summary, then re-run the review on the result.
  * Removes the label when done.
  */
+import { personaName } from "../../server/config";
 import { getPrDetails, getPrDiff } from "../../server/pr-info";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import { claimLock, releaseLock, getOrInitPrState, writePrState } from "./state";
@@ -42,7 +43,7 @@ export async function runSimplify(
     const progressId = await postOrEditComment(
       pr.number,
       reuseId,
-      `${SIMPLIFY_MARKER}\n✨ **Michael simplify** — working on PR #${pr.number}… · ${link}`,
+      `${SIMPLIFY_MARKER}\n✨ **${personaName()} simplify** — working on PR #${pr.number}… · ${link}`,
     );
     s.simplify = { active: true, requestedBy, startedAt };
     s.activeRun = { kind: "simplify", requestedBy, startedAt, progressCommentId: progressId ?? undefined, steer };
@@ -67,7 +68,7 @@ export async function runSimplify(
     await postOrEditComment(
       pr.number,
       progressId ?? undefined,
-      `${SIMPLIFY_MARKER}\n✨ **Michael simplify** — ${result.error ? `errored: ${result.error}` : summary} · ${link}`,
+      `${SIMPLIFY_MARKER}\n✨ **${personaName()} simplify** — ${result.error ? `errored: ${result.error}` : summary} · ${link}`,
     );
 
     const fin = getOrInitPrState(pr.number, pr.headRef);

@@ -28,7 +28,7 @@ import {
   replyToReviewComment,
   BOT_LOGIN,
   REPLY_MARKER,
-  MICHAEL_MARKERS,
+  OWN_MARKERS,
 } from "./github-rest";
 import { PR_EVENT_KEY } from "./constants";
 import { classifyPrActionIntent } from "../slack/mention-intent";
@@ -43,7 +43,7 @@ const MENTION_RE = new RegExp(`@(${MENTION_HANDLES.join("|")})\\b`, "i");
 
 function mentionsMichael(body: string): boolean {
   if (!body) return false;
-  if (MICHAEL_MARKERS.some((m) => body.includes(m))) return false; // our own content
+  if (OWN_MARKERS.some((m) => body.includes(m))) return false; // our own content
   return MENTION_RE.test(body);
 }
 

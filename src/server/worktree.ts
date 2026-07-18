@@ -320,8 +320,25 @@ export async function reviveWorktree(branch: string, repoId?: string): Promise<s
 }
 
 /**
+ * Remove a leftover legacy-suffix worktree from the michael-* → os-* rename
+ * (path + its checkout branch, best-effort). Callers hold the git lock; the
+ * PR-agent per-PR locks guarantee nothing is running inside the legacy tree
+ * when its os-* replacement is being set up.
+ */
+async function removeLegacySuffixWorktree(
+  repo: Repo,
+  wtPath: string,
+  branch: string,
+): Promise<void> {
+  if (!existsSync(wtPath)) return;
+  await $`git -C ${repo.repo} worktree remove --force ${wtPath}`.quiet().nothrow();
+  await $`git -C ${repo.repo} branch -D ${branch}`.quiet().nothrow();
+  console.log(`[worktree] removed legacy-suffix worktree ${wtPath}`);
+}
+
+/**
  * Worktree checked out to an EXISTING PR head branch (not branched from main),
- * so commits/pushes land back on that PR. Uses a dedicated `-michael` path so it
+ * so commits/pushes land back on that PR. Uses a dedicated `-os` path so it
  * never clobbers a human/Slack worktree on the same branch. On reuse, hard-resets
  * to the freshly fetched PR head (each fix iteration pushes before yielding, so
  * there's no un-pushed local work to lose). Push back with
@@ -329,9 +346,14 @@ export async function reviveWorktree(branch: string, repoId?: string): Promise<s
  */
 export async function createWorktreeForPrBranch(headRef: string): Promise<string> {
   const repo = defaultRepo();
-  const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael`;
+  const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os`;
 
   const reused = await withGitLock(async () => {
+    await removeLegacySuffixWorktree(
+      repo,
+      `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael`,
+      `${headRef}-michael`,
+    );
     await $`git -C ${repo.repo} fetch origin ${headRef} --quiet`;
     if (existsSync(wtPath)) {
       await $`git -C ${wtPath} fetch origin ${headRef} --quiet`.nothrow();
@@ -339,7 +361,7 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
       return true;
     }
     await $`git -C ${repo.repo} worktree prune`.quiet();
-    await $`git -C ${repo.repo} worktree add ${wtPath} -B ${headRef}-michael origin/${headRef}`;
+    await $`git -C ${repo.repo} worktree add ${wtPath} -B ${headRef}-os origin/${headRef}`;
     return false;
   });
   if (reused) return wtPath;
@@ -352,7 +374,7 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
 
 /**
  * Read-only worktree pinned to a PR's HEAD for review runs. Deliberately
- * separate from the autofix `-michael` worktree: autofix pushes trigger
+ * separate from the autofix `-os` worktree: autofix pushes trigger
  * re-reviews, so a review sharing that tree would hard-reset it out from
  * under the still-running autofix. Reviews are ask-mode (Read/Grep only, no
  * builds), so there's no dep install — a bare checkout is enough. On reuse it
@@ -361,15 +383,20 @@ export async function createWorktreeForPrBranch(headRef: string): Promise<string
  */
 export async function createReviewWorktreeForPrHead(headRef: string): Promise<string> {
   const repo = defaultRepo();
-  const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael-review`;
+  const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os-review`;
   return withGitLock(async () => {
+    await removeLegacySuffixWorktree(
+      repo,
+      `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael-review`,
+      `${headRef}-michael-review`,
+    );
     await $`git -C ${repo.repo} fetch origin ${headRef} --quiet`;
     if (existsSync(wtPath)) {
       await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet();
       return wtPath;
     }
     await $`git -C ${repo.repo} worktree prune`.quiet();
-    await $`git -C ${repo.repo} worktree add ${wtPath} -B ${headRef}-michael-review origin/${headRef}`;
+    await $`git -C ${repo.repo} worktree add ${wtPath} -B ${headRef}-os-review origin/${headRef}`;
     return wtPath;
   });
 }
@@ -414,7 +441,7 @@ export async function createWorktreeForFollowup(
  * interactive sessions opened from a PR row. Unlike `createWorktreeForPrBranch`
  * (the autofix agents' variant) it never hard-resets on reuse — a human may
  * have un-pushed work there — and it checks out the branch itself (not a
- * `-michael` copy), so commits/pushes land straight on the PR. Reuses an
+ * `-os` copy), so commits/pushes land straight on the PR. Reuses an
  * existing worktree for the branch when one exists; prefers the local branch
  * (it may be ahead of origin), falling back to a fresh tracking branch off
  * `origin/<branch>`. Works for shared-checkout repos too (backstage): a PR

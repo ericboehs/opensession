@@ -14,22 +14,34 @@ const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 export const GITHUB_REPO = defaultRepo().ghRepo;
 /** The bot account our token posts as — used to recognise our own comments/events. */
 export const BOT_LOGIN = process.env.GITHUB_BOT_LOGIN || "tella-butler";
-/** Hidden markers Michael stamps on the comments it posts (one per behavior). */
-export const REVIEW_MARKER = "<!-- michael-review -->";
-export const REVIEW_OUTDATED_MARKER = "<!-- michael-review-outdated -->";
-export const REPLY_MARKER = "<!-- michael-reply -->";
-export const AUTOFIX_MARKER = "<!-- michael-autofix -->";
-export const SIMPLIFY_MARKER = "<!-- michael-simplify -->";
-export const ADVERSARIAL_MARKER = "<!-- michael-adversarial -->";
-/** Every marker — used to skip our own comments (no self-trigger loop). */
-export const MICHAEL_MARKERS = [
+/**
+ * Hidden markers the agent stamps on the comments it posts (one per
+ * behavior). New comments carry the os-* form; comments written before the
+ * michael-* → os-* rename carry the legacy form, so every place that MATCHES
+ * a marker must accept both (legacyMarker / hasMarker) — only writes use
+ * these constants directly.
+ */
+export const REVIEW_MARKER = "<!-- os-review -->";
+export const REVIEW_OUTDATED_MARKER = "<!-- os-review-outdated -->";
+export const REPLY_MARKER = "<!-- os-reply -->";
+export const AUTOFIX_MARKER = "<!-- os-autofix -->";
+export const SIMPLIFY_MARKER = "<!-- os-simplify -->";
+export const ADVERSARIAL_MARKER = "<!-- os-adversarial -->";
+
+/** The michael-* form of a marker, as stamped on pre-rename comments. */
+export function legacyMarker(marker: string): string {
+  return marker.replace("<!-- os-", "<!-- michael-");
+}
+/** Every marker, current AND legacy forms — used to skip our own comments
+ *  (no self-trigger loop). Older comments still carry the michael-* form. */
+export const OWN_MARKERS = [
   REVIEW_MARKER,
   REVIEW_OUTDATED_MARKER,
   REPLY_MARKER,
   AUTOFIX_MARKER,
   SIMPLIFY_MARKER,
   ADVERSARIAL_MARKER,
-];
+].flatMap((m) => [m, legacyMarker(m)]);
 
 export function githubConfigured(): boolean {
   return !!GITHUB_TOKEN;
@@ -134,8 +146,15 @@ export async function findActiveReviewComment(prNumber: number): Promise<number 
     `/repos/${GITHUB_REPO}/issues/${prNumber}/comments?per_page=100`,
   );
   if (!list.ok || !Array.isArray(list.data)) return null;
-  // Newest first — supersede the most recent active one.
-  const mine = list.data.reverse().find((c) => typeof c.body === "string" && c.body.startsWith(REVIEW_MARKER));
+  // Newest first — supersede the most recent active one. Match either marker
+  // generation: pre-rename review comments start with the michael-* form.
+  const mine = list.data
+    .reverse()
+    .find(
+      (c) =>
+        typeof c.body === "string" &&
+        (c.body.startsWith(REVIEW_MARKER) || c.body.startsWith(legacyMarker(REVIEW_MARKER))),
+    );
   return mine ? mine.id : null;
 }
 
@@ -143,8 +162,14 @@ export async function findActiveReviewComment(prNumber: number): Promise<number 
 export async function supersedeReviewComment(commentId: number): Promise<void> {
   const old = await getComment(commentId);
   if (!old?.body) return;
-  // Strip the active marker and any previous outdated wrapper, then re-collapse.
-  let inner = old.body.replace(REVIEW_MARKER, "").replace(REVIEW_OUTDATED_MARKER, "").trim();
+  // Strip the active marker and any previous outdated wrapper (either marker
+  // generation), then re-collapse.
+  let inner = old.body
+    .replace(REVIEW_MARKER, "")
+    .replace(REVIEW_OUTDATED_MARKER, "")
+    .replace(legacyMarker(REVIEW_MARKER), "")
+    .replace(legacyMarker(REVIEW_OUTDATED_MARKER), "")
+    .trim();
   const detailsMatch = inner.match(/<details>[\s\S]*?<summary>[\s\S]*?<\/summary>\s*([\s\S]*?)<\/details>/i);
   if (detailsMatch) inner = detailsMatch[1].trim(); // avoid nesting details on re-supersede
   const collapsed = `${REVIEW_OUTDATED_MARKER}\n<details>\n<summary>🕙 Outdated review — superseded by a newer review below</summary>\n\n${inner}\n\n</details>`;
