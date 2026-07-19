@@ -1781,16 +1781,26 @@ interface TurnTranscriptState {
 const MAX_ACCOUNT_ATTEMPTS = 64;
 
 /**
- * The Dial's oracle subagents, STATIC in every server config: shared servers
- * host many sessions with different presets, so the agent set can't vary per
- * run — and keeping it identical everywhere keeps config hashes (and thus
- * server reuse) stable. They're invisible in practice to non-dial runs: only
- * dial runs get the instructions block that tells the model they exist.
+ * The Dial's oracle subagents, STATIC per server: shared servers host many
+ * sessions with different presets, so the agent SET can't vary per run — and
+ * keeping it identical keeps config hashes (and thus server reuse) stable.
+ * They're invisible in practice to non-dial runs: only dial runs get the
+ * instructions block that tells the model they exist.
  * Read-only by construction (advisors, not executors).
+ *
+ * The MODELS are resolved against the server's bridge (`mainProviderID`): a
+ * server carries ONE bridge's auth, so a cross-provider oracle body can't run
+ * there — each agent NAME keeps existing (prompts and the task tool list stay
+ * stable) but is backed by the same-bridge substitute's config. Without this,
+ * any task call naming a cross-bridge oracle dies on "Model not found"
+ * (2026-07-18: bks-ghpr-4997-review's Fable→Sol fallback server advertised
+ * oracle-opus, whose anthropic/claude-opus-4-8 the openai bridge can't
+ * serve). Per-server the bridge is fixed, so hashes stay stable.
  */
-function dialOracleAgentConfigs(): Record<string, Record<string, unknown>> {
+function dialOracleAgentConfigs(mainProviderID: string): Record<string, Record<string, unknown>> {
   const out: Record<string, Record<string, unknown>> = {};
-  for (const [name, o] of Object.entries(DIAL_ORACLE_AGENTS)) {
+  for (const name of Object.keys(DIAL_ORACLE_AGENTS)) {
+    const o = DIAL_ORACLE_AGENTS[sameBridgeDialOracle(name, mainProviderID)];
     out[name] = {
       mode: "subagent",
       description: o.description,
@@ -2453,7 +2463,7 @@ async function* runOpencodeAttempt(
               },
               tools: { write: false, edit: false, patch: false },
             },
-            ...dialOracleAgentConfigs(),
+            ...dialOracleAgentConfigs(parsed.providerID),
           },
         }
       : {
@@ -2469,8 +2479,14 @@ async function* runOpencodeAttempt(
           // Same static oracle set as the shared config — a per-run agent
           // section would churn this server's config hash when a session
           // moves on/off a dial preset.
-          agent: dialOracleAgentConfigs(),
-          ...(meridianPlugin ? { plugin: meridianPlugin } : {}),
+          agent: dialOracleAgentConfigs(parsed.providerID),
+          // Arg-coerce must ride per-session servers too: automations (Plain
+          // triage, github-review) run here, and their MCP calls hit the same
+          // model-stringified-object failures the plugin repairs (2026-07-18:
+          // 3× stripe_api_read "#/parameters of type string" in triage —
+          // the plugin was shared-servers-only). Session-tag stays shared-only
+          // by design (per-session servers host exactly one session).
+          plugin: [...(meridianPlugin || []), ARG_COERCE_PLUGIN_PATH],
           ...(Object.keys(providerConfig).length ? { provider: providerConfig } : {}),
           ...(isAsk
             ? {
