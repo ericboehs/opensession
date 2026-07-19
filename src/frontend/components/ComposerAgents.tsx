@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import type { WorkflowRunSnapshot } from "../../server/workflow-types";
+import type { SessionSubagentSnapshot } from "../lib/api";
 import { cn } from "../ui/cn";
 import { IconChevronDown, IconChevronRight } from "./icons";
 
@@ -17,18 +18,44 @@ import { IconChevronDown, IconChevronRight } from "./icons";
  * to the sidebar for the transcript-level drill-in.
  *
  * `runs` is the caller-filtered list of *running* workflow runs (usually one).
- * When it empties the parent unmounts us, resetting the expand state.
+ * `subagents` (direct task-tool spawns, passed only while one is live) fold
+ * into the same tallies and running-labels list — the phase stepper stays
+ * workflow-only. When both empty the parent unmounts us, resetting the
+ * expand state.
  */
 interface Props {
 	runs: WorkflowRunSnapshot[];
+	subagents?: SessionSubagentSnapshot[];
 	onOpenPanel: () => void;
 }
 
-export function ComposerAgents({ runs, onOpenPanel }: Props) {
+/** The tally/label subset both agent flavors share. */
+interface GlanceAgent {
+	key: string;
+	label: string;
+	status: string;
+	phase?: string;
+}
+
+export function ComposerAgents({ runs, subagents, onOpenPanel }: Props) {
 	const [open, setOpen] = useState(false);
 
 	const stats = useMemo(() => {
-		const agents = runs.flatMap((r) => r.agents);
+		const agents: GlanceAgent[] = [
+			...runs.flatMap((r) =>
+				r.agents.map((a) => ({
+					key: `wf-${r.runId}-${a.seq}`,
+					label: a.label,
+					status: a.status,
+					phase: a.phase,
+				})),
+			),
+			...(subagents ?? []).map((s, i) => ({
+				key: s.id ?? `sub-${i}`,
+				label: s.label,
+				status: s.status,
+			})),
+		];
 		const running = agents.filter((a) => a.status === "running");
 		const done = agents.filter((a) => a.status === "done").length;
 		const pending = agents.filter((a) => a.status === "pending").length;
@@ -74,7 +101,9 @@ export function ComposerAgents({ runs, onOpenPanel }: Props) {
 					<div className="composer-agents-name">
 						{single
 							? single.name
-							: `${runs.length} workflows running`}
+							: runs.length > 0
+								? `${runs.length} workflows running`
+								: "Sub-agents"}
 					</div>
 
 					{steps.length > 1 && (
@@ -114,7 +143,7 @@ export function ComposerAgents({ runs, onOpenPanel }: Props) {
 					{running.length > 0 && (
 						<ul className="composer-agents-list">
 							{running.slice(0, 4).map((a) => (
-								<li key={a.seq}>
+								<li key={a.key}>
 									<i className="composer-agents-dot sm" />
 									<span className="composer-agents-list-label">{a.label}</span>
 									{a.phase && single?.phases?.length !== 1 ? (

@@ -1968,10 +1968,15 @@ export function SessionViewer({
 	// pill → mini-card → full-panel progression. Reuses the queue flap's
 	// tuck-under styling.
 	const runningWorkflowRuns = workflowRuns.filter((r) => r.status === "running");
+	// Sub-agents ride along only while one is live, so a finished batch doesn't
+	// pad a later workflow's tallies (their statuses clamp to done once the
+	// session's run ends, so the flap can't stick around stale either).
+	const anySubagentRunning = subagents.some((s) => s.status === "running");
 	const agentBubble =
-		isPhone && runningWorkflowRuns.length > 0 ? (
+		isPhone && (runningWorkflowRuns.length > 0 || anySubagentRunning) ? (
 			<ComposerAgents
 				runs={runningWorkflowRuns}
+				subagents={anySubagentRunning ? subagents : undefined}
 				onOpenPanel={() => {
 					selectPanelTab("workflows");
 					setPanelOpen(true);
