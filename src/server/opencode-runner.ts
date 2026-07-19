@@ -784,12 +784,18 @@ const ASK_BASH_PERMISSIONS: Record<string, "allow" | "deny"> = {
   // and review agents routinely chain `… && git rev-parse HEAD` — opencode
   // evaluates each sub-command, so an unlisted rev-parse denied the whole line.
   "git rev-parse*": "allow", "git cat-file*": "allow", "git describe*": "allow",
+  "git merge-base*": "allow",
+  // NOTE: sed stays denied even as `sed -n` — "sed -n *" also matches
+  // `sed -n -i …` (in-place edit) and scripts with the `w /path` write
+  // command, so no sed glob is actually read-only. Use head/tail/cat/rg
+  // for line ranges instead.
   // Read-only GitHub inspection (PR-backlog digests, review triage). Only the
-  // non-mutating `gh pr` read verbs — NOT bare "gh *" (that would allow
-  // pr create/merge/close/comment) and NOT "gh api *" (which can -X POST/PATCH
-  // any endpoint). These four only ever read.
+  // non-mutating `gh pr`/`gh run` read verbs — NOT bare "gh *" (that would
+  // allow pr create/merge/close/comment, run rerun/cancel/delete) and NOT
+  // "gh api *" (which can -X POST/PATCH any endpoint). These only ever read.
   "gh pr list*": "allow", "gh pr view*": "allow",
   "gh pr checks*": "allow", "gh pr status*": "allow",
+  "gh run view*": "allow", "gh run list*": "allow", "gh run watch*": "allow",
   // jq: a pure read-only JSON filter (no file writes, no shell-out, no code
   // exec — its language is sandboxed data transformation), so it's on par with
   // grep/wc for the allowlist. Lets ask-mode runs process `gh --json` / API
