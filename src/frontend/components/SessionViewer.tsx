@@ -216,6 +216,15 @@ type PanelTab =
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
+// Hidden for at least this long, returning to the tab is a "reopen" — jump to
+// the live edge even if nothing new arrived. Shorter absences (glancing at a
+// notification) keep the reader's place unless the transcript grew meanwhile.
+const HIDDEN_REOPEN_MS = 30_000;
+// After becoming visible again, keep watching this long for growth that lands
+// late: on the iOS PWA the WebSocket only reconnects after visibility, so what
+// streamed while backgrounded arrives moments after the visibilitychange.
+const RESUME_GROWTH_WINDOW_MS = 8_000;
+
 /** Workspace of the Plain app the tickets live in (for the "jump into Plain" link). */
 const PLAIN_WORKSPACE_ID = "w_01J7WXJG68TFDV9RD1C4JE3W6F";
 function plainThreadUrl(threadId: string): string {
@@ -1365,6 +1374,96 @@ export function SessionViewer({
 			else scrollToLatest("auto");
 		}
 	}, [entries, session.isRunning, scrollToLatest, anchorToTop]);
+
+	// Returning to the app reads like reopening the session, not resuming a
+	// paused one. On the iOS PWA the page survives backgrounding with the scroll
+	// parked wherever it was; on desktop a hidden tab keeps streaming below the
+	// fold. So when the tab turns visible again, jump to the live edge if the
+	// transcript grew while hidden — or if we were away long enough that this is
+	// a reopen, not a glance at another app. Growth often only lands moments
+	// AFTER visibility (the PWA's WebSocket reconnects first, then backfills),
+	// so a short watch window catches late arrivals. A real reader gesture
+	// cancels the pending jump — their hands on the transcript always win.
+	const lastEntryIdRef = useRef<string | null>(null);
+	lastEntryIdRef.current =
+		entries.length > 0 ? entries[entries.length - 1].id : null;
+	const streamLenRef = useRef(0);
+	streamLenRef.current = streamText.length;
+	const hiddenSnapRef = useRef<{
+		at: number;
+		lastEntryId: string | null;
+		streamLen: number;
+	} | null>(null);
+	const resumeWatchRef = useRef<{
+		until: number;
+		lastEntryId: string | null;
+		streamLen: number;
+	} | null>(null);
+	useEffect(() => {
+		hiddenSnapRef.current = null;
+		resumeWatchRef.current = null;
+	}, [session.id]);
+	useEffect(() => {
+		const onVisibility = () => {
+			if (document.visibilityState === "hidden") {
+				hiddenSnapRef.current = {
+					at: Date.now(),
+					lastEntryId: lastEntryIdRef.current,
+					streamLen: streamLenRef.current,
+				};
+				resumeWatchRef.current = null;
+				return;
+			}
+			const snap = hiddenSnapRef.current;
+			hiddenSnapRef.current = null;
+			if (!snap) return;
+			const grew =
+				lastEntryIdRef.current !== snap.lastEntryId ||
+				streamLenRef.current > snap.streamLen;
+			if (grew || Date.now() - snap.at >= HIDDEN_REOPEN_MS) {
+				scrollToLatest("auto");
+			} else {
+				resumeWatchRef.current = {
+					until: performance.now() + RESUME_GROWTH_WINDOW_MS,
+					lastEntryId: snap.lastEntryId,
+					streamLen: snap.streamLen,
+				};
+			}
+		};
+		document.addEventListener("visibilitychange", onVisibility);
+		return () =>
+			document.removeEventListener("visibilitychange", onVisibility);
+	}, [scrollToLatest]);
+	// The late-arrival half of the resume jump: growth landing inside the watch
+	// window (WS backfill after a PWA resume) completes the jump to the edge.
+	useEffect(() => {
+		const watch = resumeWatchRef.current;
+		if (!watch) return;
+		if (performance.now() > watch.until) {
+			resumeWatchRef.current = null;
+			return;
+		}
+		if (
+			lastEntryIdRef.current !== watch.lastEntryId ||
+			streamText.length > watch.streamLen
+		) {
+			resumeWatchRef.current = null;
+			scrollToLatest("auto");
+		}
+	}, [entries, streamText, scrollToLatest]);
+	useEffect(() => {
+		const el = messagesRef.current;
+		if (!el) return;
+		const cancelResumeJump = () => {
+			resumeWatchRef.current = null;
+		};
+		el.addEventListener("touchstart", cancelResumeJump, { passive: true });
+		el.addEventListener("wheel", cancelResumeJump, { passive: true });
+		return () => {
+			el.removeEventListener("touchstart", cancelResumeJump);
+			el.removeEventListener("wheel", cancelResumeJump);
+		};
+	}, [messagesRef]);
 
 	// After any content change: keep a following reader at the live edge, or maintain
 	// the pinned-turn spacer for a turn streaming into the space below (principles 4–6).
