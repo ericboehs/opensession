@@ -4820,9 +4820,13 @@ a.workspace-info-check-row {
 	padding: 12px 14px;
 }
 .subagent-messages {
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
+	/* Block, not flex-column: as flex items the mx-auto transcript turn
+	   wrappers shrink-to-fit, so unbreakable content (code lines) sizes them
+	   to their full 1000px --chat-col cap inside this ~700px panel and the
+	   whole panel scrolls sideways. Block children just fill the panel and
+	   wide content scrolls inside its own pre, like the main chat column.
+	   Vertical rhythm comes from the turn wrappers' own margins. */
+	min-width: 0;
 }
 
 /* ── Diff panel ──────────────────────────────────────────── */
