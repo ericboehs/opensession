@@ -783,11 +783,15 @@ export function parseTranscriptWindow(
   beforeOffset: number,
   maxBytes: number = DEFAULT_TAIL_BYTES,
   minEntries = 80,
-  /** Soft window cap: once the window reaches this size, a partial page (any
-   *  entries at all) is returned rather than growing further — a fat
-   *  tool-result region otherwise balloons one click to a multi-MB page. The
-   *  window still grows past the cap when it has yielded NOTHING (a single
-   *  line bigger than the cap), so a click never returns an empty page. */
+  /** Soft window cap: once the window reaches this size, a partial page is
+   *  returned rather than growing further — a fat tool-result region
+   *  otherwise balloons one click to a multi-MB page. "Partial" still has an
+   *  entry floor (a quarter of `minEntries`): per-entry wire clamping bounds
+   *  the payload regardless of window size, so a 2-entry page only saves
+   *  server read time while costing the reader a click (and an auto-load
+   *  storm — the infinite-scroll sentinel stays in range after a tiny
+   *  prepend). Past the floor the cap wins; below it the window keeps
+   *  growing to MAX_TAIL_BYTES, so a click never returns a near-empty page. */
   maxWindowBytes: number = MAX_TAIL_BYTES
 ): { entries: TranscriptEntry[]; startOffset: number; truncated: boolean } {
   if (!existsSync(path) || beforeOffset <= 0)
@@ -819,9 +823,38 @@ export function parseTranscriptWindow(
     const lines = chunk.toString("utf-8").split("\n").filter((l) => l.trim());
     const entries = parseClaudeLines(lines);
 
-    if (start === 0 || entries.length >= minEntries)
+    if (start === 0 || entries.length >= minEntries) {
+      // A growth pass can overshoot hard — a 4× window jump through a dense
+      // region parses hundreds of entries where `minEntries` were asked, and
+      // one click then renders a wall of bubbles. Trim leading lines back to
+      // ~1.5× the target; byte-summing the dropped lines keeps the
+      // pagination cursor exact. (Entries-per-line is only locally uniform,
+      // so estimate then verify — halving the cut until the page still
+      // clears `minEntries`, shipping the untrimmed window if none does.)
+      if (start !== 0 && entries.length > minEntries * 2) {
+        const rawLines = chunk.toString("utf-8").split("\n");
+        const frac = (minEntries * 1.5) / entries.length;
+        let cut = Math.floor(rawLines.length * (1 - frac));
+        while (cut > 0) {
+          const page = parseClaudeLines(
+            rawLines.slice(cut).filter((l) => l.trim())
+          );
+          if (page.length >= minEntries) {
+            const droppedBytes = rawLines
+              .slice(0, cut)
+              .reduce((a, l) => a + Buffer.byteLength(l, "utf-8") + 1, 0);
+            return {
+              entries: page,
+              startOffset: startOffset + droppedBytes,
+              truncated: true,
+            };
+          }
+          cut = Math.floor(cut / 2);
+        }
+      }
       return { entries, startOffset, truncated: startOffset > 0 };
-    if (win >= maxWindowBytes && entries.length > 0)
+    }
+    if (win >= maxWindowBytes && entries.length >= Math.max(1, Math.ceil(minEntries / 4)))
       return { entries, startOffset, truncated: startOffset > 0 };
     if (win >= MAX_TAIL_BYTES)
       return { entries, startOffset, truncated: startOffset > 0 };

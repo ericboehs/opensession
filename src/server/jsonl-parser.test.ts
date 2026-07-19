@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -263,6 +263,48 @@ describe("parseTranscriptWindow", () => {
     const path = writeFixture(BASIC_LINES);
     expect(parseTranscriptWindow(path, 0).entries).toEqual([]);
     expect(parseTranscriptWindow(join(dir, "nope.jsonl"), 100).entries).toEqual([]);
+  });
+
+  it("keeps an entry floor through fat tool-result regions despite the soft cap", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 30; i++) lines.push(userLine(`h${i}`, `head ${i}`));
+    // Fat region: each line ~200KB — a 256KB soft cap alone fits one entry.
+    for (let i = 0; i < 12; i++)
+      lines.push(assistantLine(`fat${i}`, "z".repeat(200 * 1024)));
+    const path = writeFixture(lines);
+    const end = statSync(path).size;
+    const page = parseTranscriptWindow(path, end, 64 * 1024, 8, 256 * 1024);
+    // Floor = ceil(minEntries/4): the window must keep growing past the soft
+    // cap until the page is actually useful, not ship a 1-entry page.
+    expect(page.entries.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("trims a growth overshoot back near the target page size, cursor exact", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 400; i++)
+      lines.push(userLine(`t${i}`, `msg ${i} ` + "x".repeat(50)));
+    const path = writeFixture(lines);
+    const full = parseTranscript(path);
+    const tail = parseTranscriptTail(path, 512, 4);
+    expect(tail.truncated).toBe(true);
+    let collected = [...tail.entries];
+    let cursor = tail.startOffset;
+    let truncated = true;
+    let guard = 0;
+    while (truncated && guard++ < 200) {
+      // Tiny initial window: growth quadruples, so an untrimmed page would
+      // overshoot to several times minEntries.
+      const page = parseTranscriptWindow(path, cursor, 512, 10);
+      expect(page.entries.length).toBeLessThanOrEqual(30);
+      expect(page.startOffset).toBeLessThan(cursor);
+      collected = [...page.entries, ...collected];
+      cursor = page.startOffset;
+      truncated = page.truncated;
+    }
+    // Trimmed pages + tail still reassemble the exact full parse — the
+    // dropped-line byte accounting must keep the cursor gap-free.
+    expect(collected).toEqual(full);
+    expect(cursor).toBe(0);
   });
 
   it("tail startOffset is 0 for an untruncated file", () => {

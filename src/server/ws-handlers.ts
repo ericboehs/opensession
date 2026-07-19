@@ -239,8 +239,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						? msg.beforeOffset
 						: null;
 				if (before !== null) {
-					// ~40 entries per page, and a 1MB soft window cap so a click through
-					// a fat tool-result region ships a partial page instead of 4MB.
+					// ~40 entries per page; the 1MB soft window cap bounds the server
+					// read through fat tool-result regions, but the parser still
+					// guarantees ≥10 entries per page (see parseTranscriptWindow) —
+					// 2-entry pages made "load earlier" feel broken and kept the
+					// infinite-scroll sentinel in range, chaining loads every ~1.6s.
 					const page = parseTranscriptWindow(
 						session.transcriptPath,
 						before,
