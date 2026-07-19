@@ -31,11 +31,13 @@ import {
 	fetchClaudeAccounts,
 	fetchFileMentions,
 	fetchSkillMentions,
+	fetchSessionSubagents,
 	promoteChatApi,
 	fetchPr,
 	type WorkspaceMediaItem,
 	type ModelOption,
 	type ClaudeAccountOption,
+	type SessionSubagentSnapshot,
 } from "../lib/api";
 import { Composer } from "./Composer";
 import { ComposerAgents } from "./ComposerAgents";
@@ -707,6 +709,12 @@ export function SessionViewer({
 		}).catch(() => {});
 	}
 
+	// Sub-agents the session spawned directly (opencode task-tool children /
+	// SDK Task agents) — shown in the Agents tab next to workflow runs. Seeded
+	// here; the polling effect below (after isBusy exists) keeps them live.
+	const [subagents, setSubagents] = useState<SessionSubagentSnapshot[]>([]);
+	useEffect(() => setSubagents([]), [session.id]);
+
 	// Keep the pin star in sync with the store (changes can come from the tab bar
 	// or the Home screen) and reset when switching sessions.
 	useEffect(() => setPinned(isPinned(session.id)), [session.id]);
@@ -726,10 +734,11 @@ export function SessionViewer({
 			workflowsLoaded &&
 			panelTab === "workflows" &&
 			workflowRuns.length === 0 &&
+			subagents.length === 0 &&
 			!hasWorkspace
 		)
 			setPanelTab("info");
-	}, [workflowsLoaded, panelTab, workflowRuns.length, hasWorkspace]);
+	}, [workflowsLoaded, panelTab, workflowRuns.length, subagents.length, hasWorkspace]);
 
 	// Ask→code promotion: creates a worktree and flips the chat to code mode.
 	// The 5s session poll picks up the mode change and re-renders with the full
@@ -761,13 +770,41 @@ export function SessionViewer({
 	// Workflow runs open the panel too: ask-mode sessions without a workspace
 	// or Plain thread still need somewhere to show the Agents tab.
 	const panelAvailable =
-		hasWorkspace || hasPlain || workflowRuns.length > 0 || canSideChat;
+		hasWorkspace ||
+		hasPlain ||
+		workflowRuns.length > 0 ||
+		subagents.length > 0 ||
+		canSideChat;
 	// A persisted "sidechats" tab is meaningless on a session that can't have
 	// side chats (automation view / a side chat itself) — fall back to Info.
 	useEffect(() => {
 		if (panelTab === "sidechats" && !canSideChat) setPanelTab("info");
 	}, [panelTab, canSideChat]);
 	const isBusy = isRunningLive || isStreaming;
+	// Sub-agent list: fetch on open, then re-poll while the session runs so
+	// live task-tool spawns appear/settle. Keyed on isBusy too: a run starting
+	// after mount restarts the poll loop, and the flip back to idle lands one
+	// final fetch that settles statuses.
+	useEffect(() => {
+		let stale = false;
+		let timer: number | undefined;
+		const load = async () => {
+			try {
+				const d = await fetchSessionSubagents(session.id);
+				if (stale) return;
+				setSubagents(d.subagents);
+				if (d.sessionRunning) timer = window.setTimeout(load, 4000);
+			} catch {
+				// Transient (auth refresh, reload) — the next poll or session
+				// switch retries.
+			}
+		};
+		load();
+		return () => {
+			stale = true;
+			if (timer) window.clearTimeout(timer);
+		};
+	}, [session.id, isBusy]);
 	// Derived, not the raw flag: transcript content or streaming text means the
 	// opening run already started, so the worktree is done — this guards against
 	// a stale sessions poll re-asserting the flag after the workspace_status
@@ -3399,17 +3436,20 @@ export function SessionViewer({
 							    worktree for the agents' cwd), not only once a run exists —
 							    a tab that only appears after the fact is undiscoverable.
 							    The panel's empty state explains how to start one. */}
-							{(hasWorkspace || workflowRuns.length > 0) && (
+							{(hasWorkspace ||
+								workflowRuns.length > 0 ||
+								subagents.length > 0) && (
 								<button
 									className={`panel-tab ${panelTab === "workflows" ? "active" : ""}`}
 									onClick={() => selectPanelTab("workflows")}
 								>
 									Agents
-									{workflowRuns.some((r) => r.status === "running") ? (
+									{workflowRuns.some((r) => r.status === "running") ||
+									subagents.some((s) => s.status === "running") ? (
 										<span className="panel-tab-dot animate-pulse bg-green" />
-									) : workflowRuns.length > 0 ? (
+									) : workflowRuns.length + subagents.length > 0 ? (
 										<span className="panel-tab-count">
-											{workflowRuns.length}
+											{workflowRuns.length + subagents.length}
 										</span>
 									) : null}
 								</button>
@@ -3478,6 +3518,8 @@ export function SessionViewer({
 									sessionId={session.id}
 									runs={workflowRuns}
 									onCancel={cancelWorkflowRun}
+									subagents={subagents}
+									onOpenSubagent={openSubagent}
 								/>
 							) : panelTab === "assets" ? (
 								// Also before the Plain fallthrough: assets exist for

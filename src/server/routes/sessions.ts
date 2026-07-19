@@ -21,6 +21,10 @@ import { resolvePrTarget } from "../session-repos";
 import { destroySessionSandbox } from "../session-sandbox";
 import { deleteSession, engineUserTexts, getAllSessions, mergedSessionTranscript } from "../sessions";
 import { githubLoginFor } from "../shared/user-mappings";
+import {
+	getOpencodeSubagentTranscript,
+	listSessionSubagents,
+} from "../opencode-subagents";
 import { isManualStatus, setStatusOverride } from "../status-overrides";
 import { getSubagentTranscript } from "../subagents";
 import { setTitleOverride } from "../title-overrides";
@@ -202,8 +206,27 @@ export async function handleSessionsRoutes(
 		return Response.json({ matches });
 	}
 
-	// Sub-agent (Task/Agent) conversation for a session. The agentId comes from
-	// a Task tool_result's `agentId` field in the parent transcript.
+	// Every sub-agent this session spawned (opencode task-tool children +
+	// Claude-SDK subagent layout) — feeds the Agents tab's sub-agents card.
+	{
+		const m = path.match(/^\/backstage\/api\/sessions\/(.+)\/subagents$/);
+		if (m && req.method === "GET") {
+			const session = findSession(decodeURIComponent(m[1]));
+			if (!session)
+				return Response.json(
+					{ error: "Session not found" },
+					{ status: 404 },
+				);
+			return Response.json({
+				subagents: listSessionSubagents(session),
+				sessionRunning: session.isRunning,
+			});
+		}
+	}
+
+	// Sub-agent (Task/Agent) conversation for a session. The agentId is either
+	// a Task tool_result's `agentId` (Claude SDK layout) or an opencode child
+	// session id (ses_…) from the task tool / the subagents list above.
 	{
 		const m = path.match(
 			/^\/backstage\/api\/sessions\/(.+)\/subagent\/([^/]+)$/,
@@ -215,12 +238,11 @@ export async function handleSessionsRoutes(
 					{ error: "Session not found" },
 					{ status: 404 },
 				);
-			if (!session.transcriptPath)
-				return Response.json({ error: "No transcript" }, { status: 404 });
-			const sub = getSubagentTranscript(
-				session.transcriptPath,
-				decodeURIComponent(m[2]),
-			);
+			const agentId = decodeURIComponent(m[2]);
+			const sub =
+				(session.transcriptPath
+					? getSubagentTranscript(session.transcriptPath, agentId)
+					: null) ?? getOpencodeSubagentTranscript(session, agentId);
 			if (!sub)
 				return Response.json(
 					{ error: "Sub-agent not found" },

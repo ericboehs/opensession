@@ -83,6 +83,7 @@ export function toolSummary(toolName: string, input: unknown, fallback: string):
       return `${inp.pattern || ""} ${tidyPath((inp.path as string) || "")}`;
     case "Task":
     case "Agent":
+    case "task": // opencode's in-session task tool (same input shape)
       return [inp.subagent_type, inp.description].filter(Boolean).join(": ") || fallback;
     case "Workflow":
       return (inp.name as string) || (inp.description as string) || "orchestration script";
@@ -259,8 +260,15 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
   const inputNode = expanded ? toolInputNode(toolName, entry.toolInput) : null;
 
   // A Task/Agent call whose sub-agent transcript we can open in the sidebar.
-  const isAgent = toolName === "Task" || toolName === "Agent";
-  const agentId = result?.agentId;
+  // Claude-SDK results carry a structured agentId; opencode's task tool only
+  // embeds the child session id in the result text (<task id="ses_…">) — the
+  // subagent route accepts either.
+  const isAgent = toolName === "Task" || toolName === "Agent" || toolName === "task";
+  const agentId =
+    result?.agentId ??
+    (isAgent
+      ? result?.content?.match(/<task id="(ses_[A-Za-z0-9]+)"/)?.[1]
+      : undefined);
   const canOpenSubagent = isAgent && agentId && onOpenSubagent;
 
   return (

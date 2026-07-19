@@ -383,6 +383,33 @@ export async function fetchSubagent(
 	);
 }
 
+/** One sub-agent a session spawned directly (opencode task-tool child or
+ *  Claude-SDK Task agent) — mirrors the server's SessionSubagentSnapshot
+ *  (opencode-subagents.ts). Feeds the Agents tab's sub-agents card. */
+export interface SessionSubagentSnapshot {
+	/** Drill-in key for fetchSubagent; absent while a spawn is still pending. */
+	id?: string;
+	agentType?: string;
+	label: string;
+	status: "pending" | "running" | "done" | "error";
+	/** Epoch ms. */
+	startedAt?: number;
+	endedAt?: number;
+	model?: string;
+	tokensOut?: number;
+	source: "opencode" | "sdk";
+}
+
+export async function fetchSessionSubagents(sessionId: string): Promise<{
+	subagents: SessionSubagentSnapshot[];
+	sessionRunning: boolean;
+}> {
+	return request(
+		`/sessions/${encodeURIComponent(sessionId)}/subagents`,
+		{ label: "Failed to fetch sub-agents" },
+	);
+}
+
 /** A single "@"-mention suggestion. `insert` is what lands in the textarea. */
 export interface FileMention {
 	/** Repo-relative path (files) or session title (sessions), for display. */

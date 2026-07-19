@@ -5,6 +5,7 @@ import type {
 	WorkflowJournalEntry,
 	WorkflowRunSnapshot,
 } from "../../server/workflow-types";
+import type { SessionSubagentSnapshot } from "../lib/api";
 import { cn } from "../ui/cn";
 import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
 import { WorkflowAgentTranscript } from "./WorkflowAgentTranscript";
@@ -33,6 +34,11 @@ interface Props {
 	sessionId: string;
 	runs: WorkflowRunSnapshot[];
 	onCancel: (runId: string) => void;
+	/** Sub-agents the session spawned directly (task tool) — rendered as their
+	 *  own card above the workflow runs. */
+	subagents?: SessionSubagentSnapshot[];
+	/** Opens a sub-agent's conversation in the SubagentPanel sidebar. */
+	onOpenSubagent?: (agentId: string, label: string) => void;
 }
 
 const RUN_PILL: Record<WorkflowRunSnapshot["status"], string> = {
@@ -176,7 +182,13 @@ function DetailPre({ text }: { text: string }) {
 	);
 }
 
-export function WorkflowPanel({ sessionId: _sessionId, runs, onCancel }: Props) {
+export function WorkflowPanel({
+	sessionId: _sessionId,
+	runs,
+	onCancel,
+	subagents,
+	onOpenSubagent,
+}: Props) {
 	// Server list + WS prepends both keep newest-first; re-sorting is cheap
 	// insurance against an out-of-order upsert.
 	const ordered = useMemo(
@@ -187,7 +199,10 @@ export function WorkflowPanel({ sessionId: _sessionId, runs, onCancel }: Props) 
 			),
 		[runs],
 	);
-	const anyRunning = ordered.some((r) => r.status === "running");
+	const subs = subagents ?? [];
+	const anyRunning =
+		ordered.some((r) => r.status === "running") ||
+		subs.some((s) => s.status === "running");
 	// 1s heartbeat for elapsed/duration readouts, only while something is live.
 	const [now, setNow] = useState(() => Date.now());
 	useEffect(() => {
@@ -223,9 +238,12 @@ export function WorkflowPanel({ sessionId: _sessionId, runs, onCancel }: Props) 
 			/>
 		);
 
-	if (ordered.length === 0) return <WorkflowsEmptyState />;
+	if (ordered.length === 0 && subs.length === 0) return <WorkflowsEmptyState />;
 	return (
 		<div className="flex flex-col gap-3 p-3 pb-6">
+			{subs.length > 0 && (
+				<SubagentsCard subagents={subs} now={now} onOpen={onOpenSubagent} />
+			)}
 			{ordered.map((run) => (
 				<RunCard
 					key={run.runId}
@@ -235,6 +253,94 @@ export function WorkflowPanel({ sessionId: _sessionId, runs, onCancel }: Props) 
 					onOpenAgent={onOpenAgent}
 				/>
 			))}
+		</div>
+	);
+}
+
+/** Sub-agents the session spawned directly with the task tool (opencode child
+ *  sessions / Claude-SDK Task agents) — one card in the same visual grammar as
+ *  a workflow run: StatusMark rows with agent-type/model chips, tokens and
+ *  duration. Clicking a row opens the sub-agent's real conversation in the
+ *  SubagentPanel sidebar (the id doubles as the fetchSubagent key). */
+function SubagentsCard({
+	subagents,
+	now,
+	onOpen,
+}: {
+	subagents: SessionSubagentSnapshot[];
+	now: number;
+	onOpen?: (agentId: string, label: string) => void;
+}) {
+	const runningN = subagents.filter((s) => s.status === "running").length;
+	const errorN = subagents.filter((s) => s.status === "error").length;
+	const tokens = subagents.reduce((n, s) => n + (s.tokensOut ?? 0), 0);
+	const meta: string[] = [
+		`${subagents.length} sub-agent${subagents.length === 1 ? "" : "s"}`,
+	];
+	if (runningN) meta.push(`${runningN} running`);
+	if (errorN) meta.push(`${errorN} failed`);
+	if (tokens) meta.push(`${fmtTokens(tokens)} tok`);
+	return (
+		<div className="rounded-md border border-line bg-surface">
+			<div className="px-3 pb-1 pt-2.5">
+				<div className="flex items-center gap-2">
+					<span className="truncate text-sm font-semibold text-fg">
+						Sub-agents
+					</span>
+					{runningN > 0 && (
+						<span className="inline-flex shrink-0 items-center gap-1.5 rounded-sm bg-green-soft px-1.5 py-0.5 text-[11px] font-medium text-green">
+							<span className="size-1.5 animate-pulse rounded-full bg-green" />
+							running
+						</span>
+					)}
+				</div>
+				<div className="mt-0.5 truncate text-xs text-dim tabular-nums">
+					{meta.join(" · ")}
+				</div>
+			</div>
+			<div className="flex flex-col px-1.5 pb-2 pt-1">
+				{subagents.map((s, i) => {
+					const openable = Boolean(s.id && onOpen);
+					const durMs =
+						s.startedAt !== undefined
+							? (s.endedAt ?? (s.status === "running" ? now : undefined)) !==
+								undefined
+								? (s.endedAt ?? now) - s.startedAt
+								: undefined
+							: undefined;
+					return (
+						<button
+							key={s.id ?? `pending-${i}`}
+							className={cn(
+								"flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left transition-colors",
+								openable ? "hover:bg-hover" : "cursor-default",
+							)}
+							onClick={() => {
+								if (s.id && onOpen) onOpen(s.id, s.label);
+							}}
+							title={openable ? "Open this sub-agent's conversation" : undefined}
+						>
+							<StatusMark status={s.status} />
+							<span className="min-w-0 flex-1 truncate text-sm text-fg">
+								{s.label}
+							</span>
+							{s.agentType && <Chip>{s.agentType}</Chip>}
+							{s.model && <Chip>{shortModel(s.model)}</Chip>}
+							{s.tokensOut ? (
+								<span className="shrink-0 text-[11px] text-faint tabular-nums">
+									{fmtTokens(s.tokensOut)} tok
+								</span>
+							) : null}
+							<span className="w-11 shrink-0 text-right text-[11px] text-faint tabular-nums">
+								{durMs !== undefined ? fmtDuration(durMs) : ""}
+							</span>
+							{openable && (
+								<span className="shrink-0 text-[11px] text-faint">→</span>
+							)}
+						</button>
+					);
+				})}
+			</div>
 		</div>
 	);
 }
