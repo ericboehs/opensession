@@ -45,7 +45,11 @@ import {
 	modelLabel,
 	providerFor,
 } from "./models";
-import { isOpencodeSessionId } from "./opencode-transcript";
+import {
+	appendOpencodeTranscript,
+	isOpencodeSessionId,
+	transcriptLineRunnerNotice,
+} from "./opencode-transcript";
 import { wrapContext, stripContext } from "./prompt-context";
 import { activeRunRecords, type ActiveRunRecord } from "./run-journal";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
@@ -1621,8 +1625,20 @@ async function runSessionPromptInner(
 				// Dying on usage limits with no account left reports as a `done`
 				// whose result is the limit notice (not an `error` event) — but it
 				// still needs a human, so treat it as a failure.
-				if (event.usageLimitExhausted)
+				if (event.usageLimitExhausted) {
 					runFailure = event.result || "Usage limit reached on every account";
+					// Durable system line — the toast is stream-only and lastRunError
+					// only shows on the session card; a reloaded transcript otherwise
+					// just ends with no explanation (same fix as terminal errors below).
+					const engineId = finalSessionId || session.claudeSessionId;
+					if (engineId) {
+						try {
+							appendOpencodeTranscript(engineId, [
+								transcriptLineRunnerNotice(`Run stopped: ${runFailure}`),
+							]);
+						} catch {}
+					}
+				}
 				// Fold this run's token/cost into the session total and push it live
 				// to viewers (persisted below with the rest of the session patch).
 				if (event.usage) {
@@ -1665,6 +1681,23 @@ async function runSessionPromptInner(
 				}
 				endedWithError = true;
 				runFailure = event.content || "Run failed";
+				// Persist the terminal failure into the transcript as a system line.
+				// The broadcast below is stream-only and lastRunError only surfaces
+				// on the session card — on reload the transcript just ended mid-turn
+				// with no trace of why (bks-019f7911's 60-min timeout, 2026-07-19).
+				// This is the choke point AFTER agent-runner's rotation/fallback walk,
+				// so only the final, user-facing error lands — one line per dead run.
+				// Skipped when the runner already wrote a friendlier line (timeout).
+				if (!event.noticePersisted) {
+					const engineId = finalSessionId || session.claudeSessionId;
+					if (engineId) {
+						try {
+							appendOpencodeTranscript(engineId, [
+								transcriptLineRunnerNotice(`Run failed: ${runFailure}`),
+							]);
+						} catch {}
+					}
+				}
 				broadcastToSession(sessionId, {
 					type: "error",
 					sessionId,

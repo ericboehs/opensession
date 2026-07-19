@@ -19,6 +19,7 @@ import { interactiveMcpServers } from "./interactive-mcp";
 import { INIT_WIRE_CLAMP_BYTES, clampEntriesForWire, parseTranscript, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
 import { dialPreset, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
 import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
+import { appendOpencodeTranscript, transcriptLineRunnerNotice } from "./opencode-transcript";
 import { wrapContext } from "./prompt-context";
 import { deleteQueuedPrompt, persistQueues, promptQueues, queueWithIds, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, updateQueuedPrompt } from "./queue-state";
 import { abortTurnAndDrain, attachSessionWatchersToEngineTranscript, drainQueue, enqueuePrompt, foldSessionUsage, interruptQueuedPrompt, maybeLaunchSandboxedRun, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, steerQueuedPrompt, watchExternalRunAndDrain } from "./run-session";
@@ -556,6 +557,19 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							user: data.user,
 							graceful: stopped,
 						});
+						// Durable trace in the transcript too: a stopped turn otherwise
+						// just goes silent mid-tool-call, and readers can't tell a
+						// deliberate stop from a crash (the audit line answers it for
+						// Michael, this chip answers it for everyone reading the UI).
+						if (session.claudeSessionId) {
+							try {
+								appendOpencodeTranscript(session.claudeSessionId, [
+									transcriptLineRunnerNotice(
+										`Turn stopped by ${data.user || "someone"} (stop button / Esc).`,
+									),
+								]);
+							} catch {}
+						}
 					}
 					const requeued = requeueSteerReceipts(
 						sessionId,

@@ -86,6 +86,10 @@ export interface StreamEvent {
   usage?: TurnUsage;
   /** This completed Anthropic turn unexpectedly reused almost none of its prompt. */
   cacheMissWarning?: boolean;
+  /** On a terminal `error`: the runner already persisted its own (friendlier)
+   *  system line for this failure (e.g. the turn-timeout notice) — consumers
+   *  that persist terminal errors to the transcript must not add a second. */
+  noticePersisted?: boolean;
   /**
    * Set on a terminal done/error when the run died on usage limits with no
    * account left to rotate to — the dispatcher's cue to try a fallback model.

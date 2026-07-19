@@ -1955,6 +1955,10 @@ async function* runOpencodeAttempt(
   // Set by the proc-exit watcher / turn deadline; checked after the drain loop
   // so both failure modes surface as one clean error event.
   let runFailure: string | undefined;
+  // True when the failure path already wrote its own transcript system line
+  // (turn timeout) — rides the terminal error event so run-session doesn't
+  // persist a second, redundant one.
+  let failureNoticePersisted = false;
   let runEnded = false;
   let failRun: () => void = () => {};
   // Run-level bridge audit closer (see module doc: subscription bridges —
@@ -3107,6 +3111,7 @@ async function* runOpencodeAttempt(
               "Work up to here is saved; send a message to continue."
           ),
         ]);
+        failureNoticePersisted = true;
       }
       engineAbortInFlight = client.session
         .abort({ path: { id: ocSessionId }, ...q })
@@ -3363,6 +3368,7 @@ async function* runOpencodeAttempt(
         provider: PROVIDER,
         model,
         usageLimitExhausted: usageLimitHit || undefined,
+        noticePersisted: failureNoticePersisted || undefined,
       };
       return;
     }
@@ -3674,6 +3680,9 @@ export async function tryReattachOpencodeRun(
     };
     for (const key of registeredKeys) activeOpencodeSteers.set(key, steerFn);
     let runFailure: string | undefined;
+    // Same contract as the primary path's flag: the reattach timeout writes
+    // its own transcript line, and the terminal error event carries the fact.
+    let failureNoticePersisted = false;
     let runEnded = false;
     try {
       yield { type: "init", sessionId: ocSessionId!, provider: PROVIDER, model };
@@ -3953,6 +3962,7 @@ export async function tryReattachOpencodeRun(
                     "Work up to here is saved; send a message to continue."
                 ),
               ]);
+              failureNoticePersisted = true;
             }
             void client.session.abort({ path: { id: ocSessionId! }, ...q }).catch(() => {});
             signalDone();
@@ -4024,7 +4034,13 @@ export async function tryReattachOpencodeRun(
       reachedTerminal = true;
       if (runFailure) {
         turnEvent({ direction: "out", kind: "error", error: runFailure });
-        yield { type: "error", content: runFailure, provider: PROVIDER, model };
+        yield {
+          type: "error",
+          content: runFailure,
+          provider: PROVIDER,
+          model,
+          noticePersisted: failureNoticePersisted || undefined,
+        };
         return;
       }
 
