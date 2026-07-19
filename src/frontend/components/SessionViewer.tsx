@@ -1867,14 +1867,21 @@ export function SessionViewer({
 		pendingBubbles.length > 0 || !!streamText || isBusy || !!ask;
 
 	const queueCount = queued.length + visibleSteered.length + pendingQueue.length;
+	// Steered receipts are NOT queued — they're already delivered into the
+	// running turn and only shown here until it ends. Calling them "queued"
+	// read as "my message didn't go through" (three times, 2026-07-19).
+	const queuedOnlyCount = queued.length + pendingQueue.length;
+	const queueTitle = waitingForWorkspace
+		? `Waiting for workspace · ${queueCount} queued`
+		: queuedOnlyCount === 0
+			? `${visibleSteered.length} steered into the current turn`
+			: visibleSteered.length === 0
+				? `${queuedOnlyCount} queued ${queuedOnlyCount === 1 ? "message" : "messages"}`
+				: `${queuedOnlyCount} queued · ${visibleSteered.length} steered`;
 	const attachedQueue =
 		queueCount > 0 ? (
-			<div className="composer-queue" aria-label="Queued messages">
-				<div className="composer-queue-title">
-					{waitingForWorkspace
-						? `Waiting for workspace · ${queueCount} queued`
-						: `${queueCount} queued ${queueCount === 1 ? "message" : "messages"}`}
-				</div>
+			<div className="composer-queue" aria-label="Queued and steered messages">
+				<div className="composer-queue-title">{queueTitle}</div>
 				{visibleSteered.map((s, i) => {
 					const hr = parseHumanReply(s.content);
 					return (
@@ -1883,10 +1890,12 @@ export function SessionViewer({
 							className={`composer-queue-item composer-queue-steered ${hr ? "is-human" : ""}`}
 						>
 							<div className="composer-queue-actions">
-								<span className="composer-queue-pill">
-									<IconCrosshair size={20} />
-									Steering
-								</span>
+								<Tooltip label="Already delivered into the running turn — shown here until the turn finishes">
+									<span className="composer-queue-pill">
+										<IconCrosshair size={20} />
+										Steered
+									</span>
+								</Tooltip>
 								{s.id && (
 									<Tooltip label="Dismiss — the run keeps going; this message won't be re-sent">
 										<button
