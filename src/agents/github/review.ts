@@ -182,7 +182,16 @@ export async function runReview(
       model: config.model,
       branch: pr.headRef,
       title: `Review · PR #${pr.number} ${details.title}`.slice(0, 100),
-      resume: isUpdate,
+      // Each review is self-contained: the CURRENT full diff is inlined (capped)
+      // and a fresh full assessment is posted (superseding the prior comment), so
+      // we do NOT resume the prior engine session. Resuming accumulated the whole
+      // transcript across every push, and on actively-updated PRs the context grew
+      // past the engine's 1M-token limit — the run then hard-failed with "Prompt is
+      // too long" and could not be compacted (a single over-limit exchange has
+      // nothing to drop). See the 2026-07-11 dream: 12 such failures, all
+      // github-review, e.g. PR #4638 (15 errors / 0 turns). `isUpdate` still drives
+      // the "re-review the current diff" prompt framing above.
+      resume: false,
       onSessionCreated,
     });
 
