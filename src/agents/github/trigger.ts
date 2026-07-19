@@ -7,6 +7,7 @@
 import { defaultRepo } from "../../server/config";
 import { getPrDetails, getPrDiff } from "../../server/pr-info";
 import { runReview, type PrRef } from "./review";
+import { maybeHandoffFindings } from "./handoff";
 import { runAutoFix } from "./autofix";
 import { runSimplify } from "./simplify";
 import { runAdversarial } from "./adversarial";
@@ -73,7 +74,15 @@ export async function triggerPrAction(
   switch (kind) {
     case "review":
       // force=true: an explicit request reviews even an already-reviewed SHA.
-      done = runReview(ref, resolveReviewConfig().config, undefined, true, steer).catch(fail);
+      // Same handoff tail as webhook.ts's fireReview — this branch also serves
+      // the startup recovery of restart-interrupted reviews, and without it an
+      // unsatisfied recovered review reached nobody: the verdict posted but the
+      // owning session never got its fix round (PR #5055, 2026-07-19). SHA
+      // dedup + the round cap inside maybeHandoffFindings keep this safe if a
+      // webhook-fired review races the same SHA.
+      done = runReview(ref, resolveReviewConfig().config, undefined, true, steer)
+        .then((result) => maybeHandoffFindings(ref, result))
+        .catch(fail);
       break;
     case "autofix":
       done = runAutoFix(ref, requestedBy, undefined, false, steer).catch(fail);
