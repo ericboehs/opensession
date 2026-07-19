@@ -772,9 +772,18 @@ const ASK_BASH_PERMISSIONS: Record<string, "allow" | "deny"> = {
   "find *": "allow", "head *": "allow", "tail *": "allow", "wc *": "allow",
   "tree*": "allow", "file *": "allow", "stat *": "allow", "du *": "allow",
   "df*": "allow", "which *": "allow", "pwd": "allow", "echo *": "allow",
+  // Read-only clock reads (timestamp math in digests/triage). Only the read
+  // forms — bare "date */date -s" (setting the clock) needs root and is not
+  // allowed here; these globs cover `date +%s`, `date -u`, `date -d '…'`.
+  "date": "allow", "date +*": "allow", "date -u*": "allow",
+  "date -d*": "allow", "date -r*": "allow",
   "git status*": "allow", "git log*": "allow", "git diff*": "allow",
   "git show*": "allow", "git branch*": "allow", "git blame*": "allow",
   "git grep*": "allow", "git ls-files*": "allow",
+  // git plumbing reads: rev-parse just prints resolved revs/paths (no mutation),
+  // and review agents routinely chain `… && git rev-parse HEAD` — opencode
+  // evaluates each sub-command, so an unlisted rev-parse denied the whole line.
+  "git rev-parse*": "allow", "git cat-file*": "allow", "git describe*": "allow",
   // Read-only GitHub inspection (PR-backlog digests, review triage). Only the
   // non-mutating `gh pr` read verbs — NOT bare "gh *" (that would allow
   // pr create/merge/close/comment) and NOT "gh api *" (which can -X POST/PATCH
