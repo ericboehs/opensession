@@ -573,6 +573,7 @@ export function SessionViewer({
 	const {
 		containerRef: messagesRef,
 		spacerRef,
+		following,
 		newBelow,
 		showScrollToBottom,
 		scrollToLatest,
@@ -1358,8 +1359,14 @@ export function SessionViewer({
 	// track the stream; an idle one opens at the last user turn so its reply reads
 	// from the start, not the absolute bottom (principle 11).
 	const didInitialScroll = useRef(false);
+	// State mirror: the auto-load-history observer must not arm until the
+	// reopen scroll has run — the transcript paints at scrollTop 0, so an
+	// observer attached before the jump sees the "load earlier" sentinel in
+	// view and fires a phantom load from a position the reader never chose.
+	const [initialScrollDone, setInitialScrollDone] = useState(false);
 	useEffect(() => {
 		didInitialScroll.current = false;
+		setInitialScrollDone(false);
 	}, [session.id]);
 	useEffect(() => {
 		const el = messagesRef.current;
@@ -1373,6 +1380,7 @@ export function SessionViewer({
 			if (lastUser) anchorToTop(lastUser);
 			else scrollToLatest("auto");
 		}
+		setInitialScrollDone(true);
 	}, [entries, session.isRunning, scrollToLatest, anchorToTop]);
 
 	// Returning to the app reads like reopening the session, not resuming a
@@ -1481,8 +1489,13 @@ export function SessionViewer({
 		const el = messagesRef.current;
 		if (!anchor || !el) return;
 		historyAnchor.current = null;
+		// A following reader is glued to the live edge — restoring the
+		// pre-prepend position would yank them back up to wherever a (possibly
+		// phantom, see the observer below) load was triggered from. Their
+		// position is the edge; relayout already keeps them there.
+		if (following) return;
 		el.scrollTop = el.scrollHeight - anchor.height + anchor.top;
-	}, [entries, messagesRef]);
+	}, [entries, messagesRef, following]);
 
 	// Ref mirror of loadingHistory: the intersection observer below can fire
 	// again before React re-renders with the new state, so the in-flight guard
@@ -1519,7 +1532,7 @@ export function SessionViewer({
 	// upward scrolling, one page per approach.
 	const loadHistoryTopRef = useRef<HTMLDivElement | null>(null);
 	useEffect(() => {
-		if (!historyTruncated || loadingHistory) return;
+		if (!historyTruncated || loadingHistory || !initialScrollDone) return;
 		const target = loadHistoryTopRef.current;
 		const root = messagesRef.current;
 		if (!target || !root) return;
@@ -1531,9 +1544,22 @@ export function SessionViewer({
 			// the history is often already there when the reader arrives.
 			{ root, rootMargin: "600px 0px 0px 0px" },
 		);
-		io.observe(target);
-		return () => io.disconnect();
-	}, [historyTruncated, loadingHistory, loadEarlierHistory, messagesRef]);
+		// Arm only after the reopen scroll has fully landed: the initial anchor
+		// animates for up to 1.2s from scrollTop 0, and an observer attached
+		// mid-flight still sees the sentinel "in view" and fires a phantom load
+		// whose anchor-restore then fights the reopen jump.
+		const arm = setTimeout(() => io.observe(target), 1500);
+		return () => {
+			clearTimeout(arm);
+			io.disconnect();
+		};
+	}, [
+		historyTruncated,
+		loadingHistory,
+		initialScrollDone,
+		loadEarlierHistory,
+		messagesRef,
+	]);
 
 	// When a turn finishes, release the spacer so the layout settles back.
 	const wasBusyRef = useRef(false);
