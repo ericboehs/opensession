@@ -1385,6 +1385,57 @@ export function SessionViewer({
 		el.scrollTop = el.scrollHeight - anchor.height + anchor.top;
 	}, [entries, messagesRef]);
 
+	// Ref mirror of loadingHistory: the intersection observer below can fire
+	// again before React re-renders with the new state, so the in-flight guard
+	// must be synchronous. Reset rides the state (the transcript /
+	// transcript_history WS cases call setLoadingHistory(false)).
+	const loadingHistoryRef = useRef(false);
+	useEffect(() => {
+		loadingHistoryRef.current = loadingHistory;
+	}, [loadingHistory]);
+	const loadEarlierHistory = useCallback(() => {
+		if (loadingHistoryRef.current) return;
+		loadingHistoryRef.current = true;
+		const el = messagesRef.current;
+		if (el)
+			historyAnchor.current = {
+				height: el.scrollHeight,
+				top: el.scrollTop,
+			};
+		setLoadingHistory(true);
+		send({
+			type: "load_history",
+			sessionId: session.id,
+			...(historyStartRef.current !== null && historyStartRef.current > 0
+				? { beforeOffset: historyStartRef.current }
+				: {}),
+		});
+	}, [messagesRef, send, session.id]);
+
+	// Auto-load when the reader scrolls up to the affordance: nearing the top
+	// of the loaded history pulls the next page in, infinite-scroll style (the
+	// button stays as a manual fallback). The anchor restore above keeps the
+	// reader on the same content after the prepend, which pushes the affordance
+	// back out of the viewport — so the observer only fires again on further
+	// upward scrolling, one page per approach.
+	const loadHistoryTopRef = useRef<HTMLDivElement | null>(null);
+	useEffect(() => {
+		if (!historyTruncated || loadingHistory) return;
+		const target = loadHistoryTopRef.current;
+		const root = messagesRef.current;
+		if (!target || !root) return;
+		const io = new IntersectionObserver(
+			(hits) => {
+				if (hits.some((h) => h.isIntersecting)) loadEarlierHistory();
+			},
+			// Start the fetch a viewport-ish before the affordance is reached so
+			// the history is often already there when the reader arrives.
+			{ root, rootMargin: "600px 0px 0px 0px" },
+		);
+		io.observe(target);
+		return () => io.disconnect();
+	}, [historyTruncated, loadingHistory, loadEarlierHistory, messagesRef]);
+
 	// When a turn finishes, release the spacer so the layout settles back.
 	const wasBusyRef = useRef(false);
 	useEffect(() => {
@@ -3079,27 +3130,11 @@ export function SessionViewer({
 							) : (
 								<>
 									{historyTruncated && (
-										<div className="load-history">
+										<div className="load-history" ref={loadHistoryTopRef}>
 											<button
 												className="load-history-btn"
 												disabled={loadingHistory}
-												onClick={() => {
-													const el = messagesRef.current;
-													if (el)
-														historyAnchor.current = {
-															height: el.scrollHeight,
-															top: el.scrollTop,
-														};
-													setLoadingHistory(true);
-													send({
-														type: "load_history",
-														sessionId: session.id,
-														...(historyStartRef.current !== null &&
-														historyStartRef.current > 0
-															? { beforeOffset: historyStartRef.current }
-															: {}),
-													});
-												}}
+												onClick={loadEarlierHistory}
 											>
 												{loadingHistory
 													? "Loading earlier history…"
