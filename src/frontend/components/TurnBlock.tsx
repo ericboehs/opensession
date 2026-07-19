@@ -123,7 +123,12 @@ export const TurnBlock = React.memo(function TurnBlock({
   const lastItem = items[items.length - 1];
 
   return (
-    <div className="mx-auto mb-3 max-w-[var(--chat-col)] [content-visibility:auto] [contain-intrinsic-size:auto_80px]">
+    <div
+      className="mx-auto mb-3 max-w-[var(--chat-col)] [content-visibility:auto] [contain-intrinsic-size:auto_80px]"
+      // Anchor identity for the history scroll hold: the LAST item survives a
+      // history page merging older items into this turn (the first doesn't).
+      data-eid={lastItem ? `${lastItem.id}#turn` : undefined}
+    >
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -180,7 +185,11 @@ export const TurnBlock = React.memo(function TurnBlock({
                 sessionId={sessionId}
               />
             ) : (
-              <div key={sec.items[0].id} className="relative pl-1">
+              <div
+                key={sec.items[0].id}
+                className="relative pl-1"
+                data-eid={`${sec.items[sec.items.length - 1].id}#sec`}
+              >
                 {/* Timeline rail drawn behind the (opaque) tool icons */}
                 {/* pl-1 (4px) + row px-1 (4px) + half the 22px icon = 19px to the icon centerline */}
                 <span
@@ -221,7 +230,7 @@ function TurnMessage({
   sessionId?: string;
 }) {
   return (
-    <div className="my-2 px-1">
+    <div className="my-2 px-1" data-eid={entry.id}>
       <ClampedBody
         className="msg-body msg-body-assistant markdown"
         content={entry.content}

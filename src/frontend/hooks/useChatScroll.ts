@@ -38,6 +38,8 @@ export interface ChatScroll {
   spacerRef: React.RefObject<HTMLDivElement | null>;
   /** True while the reader is pinned to the live edge and we may auto-advance. */
   following: boolean;
+  /** Live ref of `following` for rAF loops that outrun React renders. */
+  followingLive: React.RefObject<boolean>;
   /** True when content has streamed in below the fold while not following. */
   newBelow: boolean;
   /** True when the latest message is out of view and the return control should show. */
@@ -45,7 +47,7 @@ export interface ChatScroll {
   /** Bring the reader back to the latest reply and resume following. */
   scrollToLatest: (behavior?: ScrollBehavior) => void;
   /** Pin a turn near the top of the viewport (used for reopening at the last turn). */
-  anchorToTop: (target: HTMLElement | null) => void;
+  anchorToTop: (target: HTMLElement | null, behavior?: ScrollBehavior) => void;
   /** Mark that the local reader just sent a turn — pin it to the top next paint. */
   beginTurn: () => void;
   /** The turn finished; release the spacer so the layout settles. */
@@ -175,9 +177,14 @@ export function useChatScroll(): ChatScroll {
     [clearSpacer, setFollowing]
   );
 
-  const anchorToTop = useCallback((target: HTMLElement | null) => {
+  const anchorToTop = useCallback((target: HTMLElement | null, behavior?: ScrollBehavior) => {
     const el = containerRef.current;
     if (!el || !target) return;
+    // Callers may force "auto" (e.g. the reopen anchor: an instant jump can't
+    // be invalidated by the staged-init prepend landing mid-animation).
+    const resolved: ScrollBehavior =
+      behavior ?? (COARSE_POINTER ? "auto" : "smooth");
+    const instant = resolved !== "smooth";
     const delta = target.getBoundingClientRect().top - visibleTop(el) - TOP_GAP;
     if (delta <= 0) {
       // Already at or above the target — don't scroll up. For a pinned turn
@@ -187,16 +194,16 @@ export function useChatScroll(): ChatScroll {
     }
     const finalFromBottom = el.scrollHeight - (el.scrollTop + delta) - el.clientHeight;
     if (pinnedRef.current) pinTopRef.current = el.scrollTop + delta;
-    el.scrollTo({ top: el.scrollTop + delta, behavior: COARSE_POINTER ? "auto" : "smooth" });
+    el.scrollTo({ top: el.scrollTop + delta, behavior: resolved });
     // An instant scroll can land clamped (sub-pixel or scroll-max rounding);
     // record where it actually parked so relayout's hold engages.
-    if (COARSE_POINTER && pinnedRef.current) pinTopRef.current = el.scrollTop;
+    if (instant && pinnedRef.current) pinTopRef.current = el.scrollTop;
     // A reopen-anchor that lands at the live edge anyway keeps following (with
     // a flight so the animation's mid positions don't disengage it). A pinned
     // turn must stop following instead: its padded "edge" is fake, and the
     // reply streams into the reserved space below.
     if (!pinnedRef.current && finalFromBottom < STICK_THRESHOLD) {
-      if (!COARSE_POINTER) autoFlightRef.current = performance.now() + 1200;
+      if (!instant) autoFlightRef.current = performance.now() + 1200;
       return;
     }
     // Leaving the live edge to read from the top is intent: stop following so the
@@ -388,6 +395,7 @@ export function useChatScroll(): ChatScroll {
     containerRef,
     spacerRef,
     following,
+    followingLive: followingRef,
     newBelow,
     showScrollToBottom,
     scrollToLatest,

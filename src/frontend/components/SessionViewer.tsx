@@ -293,6 +293,35 @@ function mergeEntries(
 	return next;
 }
 
+// The element whose position the history hold keeps stable: the first
+// entry-level node ([data-eid]: bubbles, tool rows, turn notes — turn-block
+// roots too) at or straddling the transcript viewport's top edge, preferring
+// the deepest qualifying descendant. Depth matters: anchoring a turn-block
+// ROOT is useless against a history page merging into that turn — the merged
+// rows land inside it above the reader while the root's own top never moves.
+// Anchoring the visible row inside it compensates exactly. (A collapsed turn
+// has no row nodes, so its root is the anchor — correct, since merged rows
+// stay hidden inside the fold.)
+function pickScrollAnchor(el: HTMLElement): HTMLElement | null {
+	const cTop = el.getBoundingClientRect().top;
+	const all = el.querySelectorAll<HTMLElement>("[data-eid]");
+	let anchor: HTMLElement | null = null;
+	for (const n of Array.from(all)) {
+		const r = n.getBoundingClientRect();
+		if (r.height <= 0 || r.bottom <= cTop + 1) continue;
+		if (!anchor) {
+			anchor = n;
+			continue;
+		}
+		// Doc order puts a block's interior rows right after the block root:
+		// keep descending while the qualifying node is inside the current pick;
+		// the first non-descendant qualifying node ends the search.
+		if (anchor.contains(n)) anchor = n;
+		else break;
+	}
+	return anchor;
+}
+
 export function SessionViewer({
 	session,
 	onBack,
@@ -337,10 +366,22 @@ export function SessionViewer({
 	// cursor (server: parseTranscriptTail/parseTranscriptWindow startOffset).
 	// null = unknown (old server) → load_history falls back to the full resend.
 	const historyStartRef = useRef<number | null>(null);
-	// Scroll anchor for "Load earlier history": older entries prepend above the
-	// viewport, so keep the reader on the same content by offsetting scrollTop
-	// by the height the prepended history added.
-	const historyAnchor = useRef<{ height: number; top: number } | null>(null);
+	// Scroll anchor for "Load earlier history" and the staged-init prepend:
+	// older entries prepend above the viewport, so keep the reader on the same
+	// content. See startHistoryHold below — a DOM-element anchor plus a short
+	// rAF hold, because a one-shot scrollTop restore breaks in three ways:
+	// bottom growth (streaming) skews scrollHeight math, prepended bubbles
+	// enter at their content-visibility estimate (80px) and re-size as they
+	// render, and Safari has no native scroll anchoring to compensate.
+	const historyHoldRef = useRef<{
+		node: HTMLElement;
+		top: number;
+		eid: string | null;
+		eidTop: number | null;
+		until: number;
+		raf: number;
+		fallback: { height: number; top: number } | null;
+	} | null>(null);
 	// The composer draft lives INSIDE Composer (uncontrolled mode) so keystrokes
 	// don't re-render this whole component; the text arrives via handleSend.
 	// Same fix as the CommentableDiff draft-text gotcha.
@@ -574,6 +615,7 @@ export function SessionViewer({
 		containerRef: messagesRef,
 		spacerRef,
 		following,
+		followingLive,
 		newBelow,
 		showScrollToBottom,
 		scrollToLatest,
@@ -582,6 +624,115 @@ export function SessionViewer({
 		relayout,
 		onScroll,
 	} = useChatScroll();
+
+	// The hold: keep an anchor element at a stable content offset while history
+	// prepends above it and the new bubbles' heights settle (content-visibility
+	// estimates resolve to real sizes as they render). `overflow-anchor: none`
+	// for the duration so Chrome's native scroll anchoring doesn't compensate
+	// the same shift twice; Safari has no native anchoring, so without this
+	// hold it loses the reader's position outright. Content-space offsets
+	// (rect relative to container + scrollTop) are scroll-invariant, so the
+	// reader's own scrolling composes cleanly with the compensation.
+	const stopHistoryHold = useCallback(() => {
+		const h = historyHoldRef.current;
+		if (!h) return;
+		cancelAnimationFrame(h.raf);
+		historyHoldRef.current = null;
+		const el = messagesRef.current;
+		if (el) el.style.overflowAnchor = "";
+	}, [messagesRef]);
+	const startHistoryHold = useCallback(
+		(
+			node: HTMLElement,
+			ms: number,
+			fallback: { height: number; top: number } | null,
+		) => {
+			const el = messagesRef.current;
+			if (!el) return;
+			stopHistoryHold();
+			el.style.overflowAnchor = "none";
+			const contentTopOf = (n: HTMLElement, c: HTMLElement) =>
+				n.getBoundingClientRect().top -
+				c.getBoundingClientRect().top +
+				c.scrollTop;
+			// Two anchor layers: the tight node for frame-to-frame deltas, and its
+			// nearest [data-eid] ancestor as a *recovery identity* — when a prepend
+			// merges into the anchor's turn block the whole block remounts (its key
+			// is its first item id) and every DOM node dies, but the same entry
+			// re-renders under the same data-eid.
+			const idEl = (node.closest?.("[data-eid]") as HTMLElement | null) ?? null;
+			const hold = {
+				node,
+				top: contentTopOf(node, el),
+				eid: idEl?.dataset.eid ?? null,
+				eidTop: idEl ? contentTopOf(idEl, el) : null,
+				until: performance.now() + ms,
+				raf: 0,
+				fallback,
+			};
+			historyHoldRef.current = hold;
+			const tick = () => {
+				const h = historyHoldRef.current;
+				const c = messagesRef.current;
+				if (!h || h !== hold || !c) return;
+				if (performance.now() > h.until || followingLive.current) {
+					stopHistoryHold();
+					return;
+				}
+				if (h.node.isConnected) {
+					const t = contentTopOf(h.node, c);
+					const d = t - h.top;
+					if (d !== 0) c.scrollTop += d;
+					h.top = t;
+					// Keep the recovery identity fresh: cheap ancestor walk, and the
+					// content offset re-measured so a later remount recovers to the
+					// reader's latest position, not the hold's starting one.
+					const id2 = h.node.closest?.("[data-eid]") as HTMLElement | null;
+					h.eid = id2?.dataset.eid ?? h.eid;
+					h.eidTop = id2 ? contentTopOf(id2, c) : h.eidTop;
+				} else {
+					// Anchor DOM died (block remount). Recover through the entry id:
+					// same content, new nodes — shift by how far it moved.
+					const revived =
+						h.eid && typeof CSS !== "undefined"
+							? c.querySelector<HTMLElement>(
+									`[data-eid="${CSS.escape(h.eid)}"]`,
+								)
+							: null;
+					if (revived && h.eidTop !== null) {
+						const d = contentTopOf(revived, c) - h.eidTop;
+						if (d !== 0) c.scrollTop += d;
+					} else if (h.fallback) {
+						// Last resort: height math. Skewed by content-visibility
+						// estimate resets, but better than staying at a raw offset.
+						c.scrollTop = c.scrollHeight - h.fallback.height + h.fallback.top;
+					}
+					h.fallback = null;
+					const next = revived ?? pickScrollAnchor(c);
+					if (!next) {
+						stopHistoryHold();
+						return;
+					}
+					const nid = (next.closest?.("[data-eid]") as HTMLElement | null) ?? null;
+					h.node = next;
+					h.top = contentTopOf(next, c);
+					h.eid = nid?.dataset.eid ?? null;
+					h.eidTop = nid ? contentTopOf(nid, c) : null;
+				}
+				h.raf = requestAnimationFrame(tick);
+			};
+			hold.raf = requestAnimationFrame(tick);
+		},
+		[messagesRef, stopHistoryHold, followingLive],
+	);
+	// A page's worth of settling outlives its arrival, not the request: slow
+	// fetches shouldn't burn the hold window, so extend it when a load lands.
+	useEffect(() => {
+		if (loadingHistory) return;
+		const h = historyHoldRef.current;
+		if (h) h.until = Math.max(h.until, performance.now() + 2500);
+	}, [loadingHistory]);
+	useEffect(() => stopHistoryHold, [session.id, stopHistoryHold]);
 
 	// Immersive reading on phones (Safari-style): scrolling down through the
 	// transcript slides the top bar, docked tabs and composer off-screen to
@@ -1364,10 +1515,37 @@ export function SessionViewer({
 	// observer attached before the jump sees the "load earlier" sentinel in
 	// view and fires a phantom load from a position the reader never chose.
 	const [initialScrollDone, setInitialScrollDone] = useState(false);
+	// The staged init lands in two commits (a ~12-entry head, then the rest of
+	// the tail ~100ms later). The head is often too short for the anchor to
+	// mean anything — it can land at the padded bottom and keep `following` —
+	// so when the rest prepends inside this window, redo the anchor against
+	// the full tail. One-shot, consumed by the first entries change.
+	const reopenAnchorUntilRef = useRef(0);
 	useEffect(() => {
 		didInitialScroll.current = false;
 		setInitialScrollDone(false);
+		reopenAnchorUntilRef.current = 0;
 	}, [session.id]);
+	const anchorReopen = useCallback(() => {
+		const el = messagesRef.current;
+		if (!el) return;
+		const userEls = el.querySelectorAll<HTMLElement>(".msg-user");
+		const lastUser = userEls[userEls.length - 1];
+		if (lastUser) {
+			// Instant, not smooth: the staged init prepends the rest of the tail
+			// ~100ms after this anchor, and a smooth flight's absolute target
+			// goes stale the moment content lands above it. The hold then keeps
+			// the anchored turn in place through later settling.
+			anchorToTop(lastUser, "auto");
+			startHistoryHold(lastUser, 2500, null);
+		} else scrollToLatest("auto");
+	}, [messagesRef, anchorToTop, startHistoryHold, scrollToLatest]);
+	useLayoutEffect(() => {
+		if (!reopenAnchorUntilRef.current) return;
+		const expired = performance.now() > reopenAnchorUntilRef.current;
+		reopenAnchorUntilRef.current = 0;
+		if (!expired) anchorReopen();
+	}, [entries, anchorReopen]);
 	useEffect(() => {
 		const el = messagesRef.current;
 		if (!el || didInitialScroll.current || entries.length === 0) return;
@@ -1375,13 +1553,11 @@ export function SessionViewer({
 		if (session.isRunning) {
 			scrollToLatest("auto");
 		} else {
-			const userEls = el.querySelectorAll<HTMLElement>(".msg-user");
-			const lastUser = userEls[userEls.length - 1];
-			if (lastUser) anchorToTop(lastUser);
-			else scrollToLatest("auto");
+			anchorReopen();
+			reopenAnchorUntilRef.current = performance.now() + 1500;
 		}
 		setInitialScrollDone(true);
-	}, [entries, session.isRunning, scrollToLatest, anchorToTop]);
+	}, [entries, session.isRunning, scrollToLatest, anchorReopen, messagesRef]);
 
 	// Returning to the app reads like reopening the session, not resuming a
 	// paused one. On the iOS PWA the page survives backgrounding with the scroll
@@ -1480,22 +1656,6 @@ export function SessionViewer({
 		relayout();
 	}, [entries, streamText, queued, visibleSteered, pending, relayout]);
 
-	// "Load earlier history" prepends the older transcript above the viewport:
-	// restore the reader to the content they were on by adding the prepended
-	// height to scrollTop. Declared after relayout() so this write wins the
-	// paint. Layout effect: adjusting before paint avoids a jump-to-top flash.
-	useLayoutEffect(() => {
-		const anchor = historyAnchor.current;
-		const el = messagesRef.current;
-		if (!anchor || !el) return;
-		historyAnchor.current = null;
-		// A following reader is glued to the live edge — restoring the
-		// pre-prepend position would yank them back up to wherever a (possibly
-		// phantom, see the observer below) load was triggered from. Their
-		// position is the edge; relayout already keeps them there.
-		if (following) return;
-		el.scrollTop = el.scrollHeight - anchor.height + anchor.top;
-	}, [entries, messagesRef, following]);
 
 	// Ref mirror of loadingHistory: the intersection observer below can fire
 	// again before React re-renders with the new state, so the in-flight guard
@@ -1509,11 +1669,17 @@ export function SessionViewer({
 		if (loadingHistoryRef.current) return;
 		loadingHistoryRef.current = true;
 		const el = messagesRef.current;
-		if (el)
-			historyAnchor.current = {
-				height: el.scrollHeight,
-				top: el.scrollTop,
-			};
+		if (el && !followingLive.current) {
+			// Anchor on the tightest element at the viewport top — it sits below
+			// everything the prepend inserts, so its content offset shifts by
+			// exactly the added height (what native scroll anchoring would pick).
+			const node = pickScrollAnchor(el);
+			if (node)
+				startHistoryHold(node, 8000, {
+					height: el.scrollHeight,
+					top: el.scrollTop,
+				});
+		}
 		setLoadingHistory(true);
 		send({
 			type: "load_history",
@@ -1522,7 +1688,7 @@ export function SessionViewer({
 				? { beforeOffset: historyStartRef.current }
 				: {}),
 		});
-	}, [messagesRef, send, session.id]);
+	}, [messagesRef, send, session.id, startHistoryHold, followingLive]);
 
 	// Auto-load when the reader scrolls up to the affordance: nearing the top
 	// of the loaded history pulls the next page in, infinite-scroll style (the

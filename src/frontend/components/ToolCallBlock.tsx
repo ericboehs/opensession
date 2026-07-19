@@ -272,7 +272,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
   const canOpenSubagent = isAgent && agentId && onOpenSubagent;
 
   return (
-    <div className="relative">
+    <div className="relative" data-eid={entry.id}>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
