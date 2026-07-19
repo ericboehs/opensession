@@ -265,6 +265,10 @@ export async function opencodeOneShot(
         status: limited ? "usage_limit" : "error",
         error: message.slice(0, 500),
         duration_ms: Date.now() - startedAt,
+        // Name the account on the error path too, not just on success (line ~228):
+        // a wedged account that broke every one-shot for hours was only
+        // identifiable by correlating with the last ok row — logged 2026-07-14.
+        ...(account ? { account: account.name } : {}),
       });
       return null;
     }
