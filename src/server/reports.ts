@@ -50,6 +50,8 @@ export interface ReportGroup {
 	latest: ReportMeta;
 }
 
+let sessionReportIndex: Map<string, ReportMeta[]> | null = null;
+
 /** Path-segment guard for ids that travel through URLs. */
 function safeSegment(s: string): boolean {
 	return /^[\w.-]+$/.test(s);
@@ -77,6 +79,26 @@ function readMeta(automationId: string, sidecar: string): ReportMeta | null {
 	} catch {
 		return null;
 	}
+}
+
+function indexReport(meta: ReportMeta | null): void {
+	if (!sessionReportIndex || !meta?.sessionId) return;
+	const reports = sessionReportIndex.get(meta.sessionId) || [];
+	reports.push(meta);
+	reports.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+	sessionReportIndex.set(meta.sessionId, reports);
+}
+
+function removeIndexedReport(meta: ReportMeta | null): void {
+	if (!sessionReportIndex || !meta?.sessionId) return;
+	const reports = sessionReportIndex
+		.get(meta.sessionId)
+		?.filter(
+			(report) =>
+				report.id !== meta.id || report.automationId !== meta.automationId,
+		);
+	if (reports?.length) sessionReportIndex.set(meta.sessionId, reports);
+	else sessionReportIndex.delete(meta.sessionId);
 }
 
 export function publishReport(input: {
@@ -120,18 +142,24 @@ export function publishReport(input: {
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, `${id}.html`), input.html, "utf8");
 	writeJsonAtomic(join(dir, `${id}.json`), meta);
+	indexReport(meta);
 	// Prune beyond the cap (both files) — newest first, drop the tail.
 	for (const stale of sidecarsFor(input.automationId).slice(
 		MAX_REPORTS_PER_GROUP,
 	)) {
 		try {
+			removeIndexedReport(readMeta(input.automationId, stale));
 			rmSync(join(dir, stale));
 			rmSync(join(dir, stale.replace(/\.json$/, ".html")), {
 				force: true,
 			});
 		} catch {}
 	}
-	broadcastToAll({ type: "reports_changed", automationId: input.automationId });
+	broadcastToAll({
+		type: "reports_changed",
+		automationId: input.automationId,
+		...(input.sessionId ? { sessionId: input.sessionId } : {}),
+	});
 	return meta;
 }
 
@@ -163,6 +191,22 @@ export function listReports(automationId: string): ReportMeta[] {
 	return sidecarsFor(automationId)
 		.map((s) => readMeta(automationId, s))
 		.filter((m): m is ReportMeta => !!m);
+}
+
+/** Every report produced by one session, newest first. */
+export function listReportsForSession(sessionId: string): ReportMeta[] {
+	if (!safeSegment(sessionId) || !existsSync(REPORTS_ROOT)) return [];
+	if (!sessionReportIndex) {
+		sessionReportIndex = new Map();
+		for (const entry of readdirSync(REPORTS_ROOT, { withFileTypes: true })) {
+			if (!entry.isDirectory() || !safeSegment(entry.name)) continue;
+			for (const sidecar of sidecarsFor(entry.name)) {
+				const meta = readMeta(entry.name, sidecar);
+				indexReport(meta);
+			}
+		}
+	}
+	return sessionReportIndex.get(sessionId) || [];
 }
 
 /** The report HTML itself, or null when it doesn't exist. */

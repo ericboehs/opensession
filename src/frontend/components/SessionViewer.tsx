@@ -64,6 +64,10 @@ import { TeamChat } from "./TeamChat";
 import { PlainThreadPanel } from "./PlainThreadPanel";
 import { WorkflowPanel } from "./WorkflowPanel";
 import { AssetsPanel, useSessionAssets } from "./AssetsPanel";
+import {
+	SessionReportsPanel,
+	useSessionReports,
+} from "./SessionReportsPanel";
 import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 import { PreviewButton } from "./PreviewButton";
 import { StagingLink } from "./StagingLink";
@@ -212,7 +216,8 @@ type PanelTab =
 	| "plain"
 	| "sidechats"
 	| "workflows"
-	| "assets";
+	| "assets"
+	| "reports";
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
@@ -606,6 +611,7 @@ export function SessionViewer({
 		session.id,
 		addHandler,
 	);
+	const sessionReports = useSessionReports(session.id, addHandler);
 	const panelResizeHandle = (
 		<div
 			className="panel-resize"
@@ -938,12 +944,17 @@ export function SessionViewer({
 		hasPlain ||
 		workflowRuns.length > 0 ||
 		subagents.length > 0 ||
+		sessionReports.length > 0 ||
 		canSideChat;
 	// A persisted "sidechats" tab is meaningless on a session that can't have
 	// side chats (automation view / a side chat itself) — fall back to Info.
 	useEffect(() => {
 		if (panelTab === "sidechats" && !canSideChat) setPanelTab("info");
 	}, [panelTab, canSideChat]);
+	useEffect(() => {
+		if (panelTab === "reports" && sessionReports.length === 0)
+			setPanelTab("info");
+	}, [panelTab, sessionReports.length]);
 	const isBusy = isRunningLive || isStreaming;
 	// Sub-agent list: fetch on open, then re-poll while the session runs so
 	// live task-tool spawns appear/settle. Keyed on isBusy too: a run starting
@@ -3900,6 +3911,15 @@ export function SessionViewer({
 									<span className="panel-tab-count">{assetFiles.length}</span>
 								</button>
 							)}
+							{sessionReports.length > 0 && (
+								<button
+									className={`panel-tab ${panelTab === "reports" ? "active" : ""}`}
+									onClick={() => selectPanelTab("reports")}
+								>
+									Reports
+									<span className="panel-tab-count">{sessionReports.length}</span>
+								</button>
+							)}
 						</div>
 						<div className="panel-body">
 							{/* Plain-only sessions (no code workspace) show just the timeline. */}
@@ -3963,6 +3983,8 @@ export function SessionViewer({
 									files={assetFiles}
 									refresh={refreshAssets}
 								/>
+							) : panelTab === "reports" ? (
+								<SessionReportsPanel reports={sessionReports} />
 							) : (panelTab === "plain" || !hasWorkspace) && hasPlain ? (
 								<PlainThreadPanel
 									sessionId={session.id}

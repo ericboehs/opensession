@@ -8,6 +8,7 @@ import type { RouteContext } from "./context";
 import {
 	listReportGroups,
 	listReports,
+	listReportsForSession,
 	readReportHtml,
 } from "../reports";
 
@@ -20,6 +21,16 @@ export async function handleReportsRoutes(
 	// One row per automation that has published reports (latest + count).
 	if (path === "/backstage/api/reports") {
 		return Response.json({ groups: listReportGroups() });
+	}
+
+	// The reports published by one run, powering its right-sidebar Reports tab.
+	const sessionMatch = path.match(
+		/^\/backstage\/api\/reports\/session\/([^/]+)$/,
+	);
+	if (sessionMatch) {
+		return Response.json({
+			reports: listReportsForSession(decodeURIComponent(sessionMatch[1])),
+		});
 	}
 
 	// The rendered report itself — served as a document for the detail iframe.

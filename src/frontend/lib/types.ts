@@ -626,6 +626,9 @@ export type WSServerMessage =
 	// mutation) — powers the session's Agents panel.
 	| { type: "workflow_update"; sessionId: string; run: WorkflowRunSnapshot }
 	| { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string }
+	// An automation published a report. sessionId is present for reports tied to
+	// a run and lets that run's Reports tab refresh immediately.
+	| { type: "reports_changed"; automationId: string; sessionId?: string }
 	| {
 			type: "subscription_changed";
 			sessionId: string;

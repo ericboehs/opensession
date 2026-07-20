@@ -33,6 +33,16 @@ export async function fetchReports(automationId: string): Promise<ReportMeta[]> 
 	return result.reports;
 }
 
+export async function fetchSessionReports(
+	sessionId: string,
+): Promise<ReportMeta[]> {
+	const result = await request<{ reports: ReportMeta[] }>(
+		`/reports/session/${encodeURIComponent(sessionId)}`,
+		{ label: "Failed to load session reports" },
+	);
+	return result.reports;
+}
+
 export function reportRawUrl(automationId: string, reportId: string): string {
 	return `${BASE}/reports/${encodeURIComponent(automationId)}/${encodeURIComponent(reportId)}/raw`;
 }
