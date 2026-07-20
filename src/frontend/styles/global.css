@@ -32,6 +32,8 @@
 	--green: #3fb950;
 	--green-soft: rgba(63, 185, 80, 0.14);
 	--yellow: #d29922;
+	--blue: #58a6ff;
+	--blue-soft: rgba(88, 166, 255, 0.13);
 	--red: #f85149;
 	--red-soft: rgba(248, 81, 73, 0.12);
 	--purple: #a371f7;
@@ -93,6 +95,8 @@ html[data-theme="light"] {
 	--green: #1a7f37;
 	--green-soft: rgba(26, 127, 55, 0.12);
 	--yellow: #9a6700;
+	--blue: #0969da;
+	--blue-soft: rgba(9, 105, 218, 0.1);
 	--red: #cf222e;
 	--red-soft: rgba(207, 34, 46, 0.1);
 	--purple: #8250df;
@@ -2005,22 +2009,22 @@ body.resizing-x {
 	background: var(--text-faint);
 }
 .sidebar-status-waiting {
-	background: var(--accent);
-	box-shadow: 0 0 6px var(--accent);
+	background: var(--blue);
+	box-shadow: 0 0 6px var(--blue);
 	animation: pulse 1.2s ease-in-out infinite;
 }
 /* Unread activity since you last opened the session — a solid iMessage-style
    blue dot (no pulse; it's a marker, not a live-status indicator). */
 .sidebar-status-unread {
-	background: var(--accent);
+	background: var(--blue);
 }
 
 /* A session blocked on an AskUserQuestion — draw the eye so it gets answered. */
 .sidebar-item-waiting {
-	background: var(--accent-soft);
+	background: var(--blue-soft);
 }
 .sidebar-item-waiting:hover {
-	background: var(--accent-soft);
+	background: var(--blue-soft);
 }
 .sidebar-item-waiting .sidebar-item-title {
 	font-weight: 600;
@@ -2185,6 +2189,9 @@ body.resizing-x {
 }
 .hovercard-state-accent {
 	color: var(--accent);
+}
+.hovercard-state-blue {
+	color: var(--blue);
 }
 .hovercard-state-green {
 	color: var(--green);

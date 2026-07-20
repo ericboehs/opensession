@@ -328,7 +328,7 @@ const MINE_STATUS_META: Array<{
 	label: string;
 	dotColor: string;
 }> = [
-	{ key: "needsinput", label: "Needs input", dotColor: "var(--accent)" },
+	{ key: "needsinput", label: "Needs input", dotColor: "var(--blue)" },
 	{ key: "inprogress", label: "In progress", dotColor: "var(--yellow)" },
 	{ key: "review", label: "In review", dotColor: "var(--green)" },
 	{ key: "merged", label: "Done", dotColor: "var(--purple)" },
@@ -5268,13 +5268,13 @@ function SessionHoverCard({
 // triages: a blocked question first, then live activity, then PR/lifecycle.
 function hoverState(s: UnifiedSession): {
 	label: string;
-	tone: "accent" | "green" | "purple" | "yellow" | "dim";
+	tone: "accent" | "blue" | "green" | "purple" | "yellow" | "dim";
 	dotClass: string;
 } {
 	if (s.waitingForInput)
 		return {
 			label: "Waiting for your input",
-			tone: "accent",
+			tone: "blue",
 			dotClass: "sidebar-status-waiting",
 		};
 	if (runNeedsAttention(s))
