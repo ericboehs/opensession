@@ -46,10 +46,12 @@ export function onBusySendChanged(handler: () => void): () => void {
 }
 
 // Mirror changes made in another tab (storage events don't fire same-tab).
-window.addEventListener("storage", (e) => {
-	if (e.key === KEY) window.dispatchEvent(new Event(CHANGE_EVENT));
-	if (e.key === BUSY_KEY) window.dispatchEvent(new Event(BUSY_CHANGE_EVENT));
-});
+if (typeof window !== "undefined") {
+	window.addEventListener("storage", (e) => {
+		if (e.key === KEY) window.dispatchEvent(new Event(CHANGE_EVENT));
+		if (e.key === BUSY_KEY) window.dispatchEvent(new Event(BUSY_CHANGE_EVENT));
+	});
+}
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
@@ -70,5 +72,5 @@ export function isSendCombo(
 ): boolean {
 	if (e.key !== "Enter") return false;
 	if (pref === "mod-enter") return e.metaKey || e.ctrlKey;
-	return !e.shiftKey && !e.metaKey && !e.ctrlKey;
+	return !e.shiftKey;
 }
