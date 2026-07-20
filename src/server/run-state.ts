@@ -41,16 +41,16 @@
  *                            terminal-outcome choke point for owned runs)
  *   ask_posed / ask_resolved asks.ts makeAskHandler (offerAskCard is exempt —
  *                            its card doesn't park the run)
- *   cancel                   routes/sessions.ts archive-stop
+ *   cancel                   ws-handlers.ts "cancel" (the UI Stop button) +
+ *                            routes/sessions.ts archive-stop
  *   boot_journal_found       run-journal.ts takeInterruptedRuns
  *   reattach_start/ok/fail, resume_reprompt
  *                            agent-runner.ts resumeInterruptedRuns
- * Not wired yet (call sites live in files other sessions are mid-edit on, or
- * the marker doesn't exist): the WS stop handler's cancel (ws-handlers.ts —
- * such a stop reads as turn_end→idle instead of stopped), engine_died /
- * shutdown_orphaned (opencode-runner.ts / run-session.ts), workspace_prepare/
- * ready (ws-hub.ts), mid-run steer. The leniency edges below keep those gaps
- * silent instead of noisy. Runner-internal wiring needs a real restart.
+ * Not wired yet: engine_died / shutdown_orphaned (opencode-runner.ts /
+ * run-session.ts), workspace_prepare/ready (ws-hub.ts), mid-run steer. The
+ * leniency edges below keep those gaps silent instead of noisy.
+ * Runner-internal wiring needs a real restart; so do WS-handler edits
+ * (they keep serving old code under --hot despite what the docs suggest).
  *
  * State lives in-memory on globalThis (hot-reload safe, restart-fresh — a
  * restart re-derives reality through the boot events, so persisting this map
@@ -158,6 +158,7 @@ export const RUN_STATE_TRANSITIONS: Record<
 		run_registered: "running",
 		turn_end: "stopped",
 		run_failed: "stopped",
+		cancel: "stopped",
 	},
 	failed: {
 		prompt: "starting",

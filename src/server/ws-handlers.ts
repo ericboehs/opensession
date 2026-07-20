@@ -22,6 +22,7 @@ import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { appendOpencodeTranscript, transcriptLineRunnerNotice } from "./opencode-transcript";
 import { wrapContext } from "./prompt-context";
 import { deleteQueuedPrompt, persistQueues, promptQueues, queueWithIds, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, updateQueuedPrompt } from "./queue-state";
+import { transitionRunState } from "./run-state";
 import { abortTurnAndDrain, attachSessionWatchersToEngineTranscript, drainQueue, enqueuePrompt, foldSessionUsage, interruptQueuedPrompt, maybeLaunchSandboxedRun, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, steerQueuedPrompt, watchExternalRunAndDrain } from "./run-session";
 import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
@@ -578,6 +579,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							source: "ui_stop",
 							user: data.user,
 							graceful: stopped,
+						});
+						transitionRunState(sessionId, "cancel", {
+							source: "ui_stop",
+							user: data.user,
 						});
 						// Durable trace in the transcript too: a stopped turn otherwise
 						// just goes silent mid-tool-call, and readers can't tell a

@@ -119,6 +119,10 @@ describe("lifecycle paths", () => {
 		expect(walk("running", ["cancel", "run_failed"])).toBe("stopped");
 	});
 
+	test("a repeated Stop while already stopped absorbs", () => {
+		expect(walk("running", ["cancel", "cancel"])).toBe("stopped");
+	});
+
 	test("un-instrumented recovery paths degrade to run_registered leniency", () => {
 		expect(walk("interrupted", ["run_registered", "turn_end"])).toBe("idle");
 		expect(walk("reattaching", ["run_registered"])).toBe("running");
