@@ -18,7 +18,12 @@ import {
   githubUserLoginForRun,
   removeGithubAccount,
 } from "./github-auth";
-import { resolveWebAuth, teamMemberForLogin, webAuthRequired } from "./web-auth";
+import {
+  keypadBearerAuthorized,
+  resolveWebAuth,
+  teamMemberForLogin,
+  webAuthRequired,
+} from "./web-auth";
 
 const ENV_KEYS = [
   "BACKSTAGE_CONFIG",
@@ -26,6 +31,7 @@ const ENV_KEYS = [
   "OPENSESSION_GITHUB_CLIENT_ID",
   "OPENSESSION_GITHUB_AUTH_STORE",
   "OPENSESSION_WEB_SESSIONS_STORE",
+  "KEYPAD_TOKEN",
 ] as const;
 const saved: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) saved[k] = process.env[k];
@@ -183,5 +189,30 @@ describe("web sign-in resolution", () => {
     expect(
       resolveWebAuth(new Request("http://x/", { headers: { cookie: "opensession_auth=wrong" } })),
     ).toBeNull();
+  });
+});
+
+describe("keypad bearer auth", () => {
+  test("fails closed when KEYPAD_TOKEN is unset", () => {
+    expect(
+      keypadBearerAuthorized(
+        new Request("http://x/api/keypad", {
+          headers: { authorization: "Bearer anything" },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("accepts only the configured bearer token", () => {
+    process.env.KEYPAD_TOKEN = "keypad-test-secret";
+    const request = (authorization?: string) =>
+      new Request("http://x/api/keypad", {
+        headers: authorization ? { authorization } : undefined,
+      });
+
+    expect(keypadBearerAuthorized(request("Bearer keypad-test-secret"))).toBe(true);
+    expect(keypadBearerAuthorized(request("bearer keypad-test-secret"))).toBe(true);
+    expect(keypadBearerAuthorized(request("Bearer wrong-secret"))).toBe(false);
+    expect(keypadBearerAuthorized(request())).toBe(false);
   });
 });

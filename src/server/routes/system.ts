@@ -88,7 +88,8 @@ export async function handleSystemRoutes(
 	// A user's pinned sessions (pinned order, max 8) with a coarse status per
 	// key, for a hardware keypad. Polled ~every 1.5s, so it only touches
 	// in-memory state: the per-user pins file plus the 2s session cache behind
-	// SessionControl. Same auth posture as /api/health (none — network-gated).
+	// SessionControl. The central auth gate accepts either a signed-in web
+	// session or the route-scoped KEYPAD_TOKEN bearer credential.
 	if (path === "/backstage/api/keypad" && req.method === "GET") {
 		const user = url.searchParams.get("user") || "Anonymous";
 		const control = getSessionControl();

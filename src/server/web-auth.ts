@@ -26,7 +26,7 @@
  */
 
 import { chmodSync, existsSync, readdirSync, readFileSync } from "fs";
-import { randomBytes } from "crypto";
+import { randomBytes, timingSafeEqual } from "crypto";
 import { audit } from "./audit";
 import { configuredIdentity } from "./config";
 import { githubUserAuthActive } from "./github-auth";
@@ -90,6 +90,19 @@ function persist(): void {
 /** Sign-in is required exactly when per-user GitHub auth is opted in. */
 export function webAuthRequired(): boolean {
   return githubUserAuthActive();
+}
+
+/** Route-scoped machine auth for the headless macropad bridge. */
+export function keypadBearerAuthorized(req: Request): boolean {
+  const expected = process.env.KEYPAD_TOKEN;
+  if (!expected) return false;
+
+  const match = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
+  if (!match) return false;
+
+  const presented = Buffer.from(match[1]);
+  const configured = Buffer.from(expected);
+  return presented.length === configured.length && timingSafeEqual(presented, configured);
 }
 
 /** The configured team member a GitHub login belongs to, or null. */

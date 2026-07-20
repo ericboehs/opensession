@@ -29,7 +29,12 @@ import { getSessionControl } from "./src/server/session-control";
 import { buildReposNote } from "./src/server/session-repos";
 import { destroySessionSandbox } from "./src/server/session-sandbox";
 import { getAllSessions } from "./src/server/sessions";
-import { migrateSessionsToGithubUser, resolveWebAuth, webAuthRequired } from "./src/server/web-auth";
+import {
+	keypadBearerAuthorized,
+	migrateSessionsToGithubUser,
+	resolveWebAuth,
+	webAuthRequired,
+} from "./src/server/web-auth";
 import { startWebhookServer } from "./src/server/webhook-server";
 import { sweepArchivedWorktrees } from "./src/server/worktree";
 import { type WSClientData, broadcastToAll } from "./src/server/ws-hub";
@@ -196,9 +201,14 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				// bootId-change detection — all pre-auth by nature.
 				const openHealth =
 					path === "/backstage/api/health" && req.method === "GET";
+				const keypadBearer =
+					path === "/backstage/api/keypad" &&
+					req.method === "GET" &&
+					keypadBearerAuthorized(req);
 				if (
 					!authUser &&
 					!openHealth &&
+					!keypadBearer &&
 					((path.startsWith("/backstage/api/") &&
 						!path.startsWith("/backstage/api/auth/")) ||
 						path === "/backstage/ws")
