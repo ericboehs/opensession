@@ -777,7 +777,7 @@ interface FilterState {
 	groupBy: GroupBy;
 	repo: string; // a repo id, or "all"
 	// "me" (your workspaces — the default), "everyone" (literally all
-	// workspaces), "unassigned" (the explicit backlog view), or a lowercased
+	// workspaces), "unassigned" (the aggregate backlog view), or a lowercased
 	// person key for a specific teammate.
 	person: string;
 	sort: SortBy;
@@ -1698,11 +1698,10 @@ export function Sidebar({
 			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
 		return wsRows.filter(
 			(r) =>
-				(focus === "unassigned"
-					? r.status === "pending"
-					: focus === "everyone"
-						? r.status !== "pending"
-						: r.owner === focus && r.status !== "pending") &&
+				(focus === "everyone" ||
+					(focus === "unassigned"
+						? r.status === "pending"
+						: r.owner === focus)) &&
 				!reviewBandKeys.has(r.key) &&
 				!pinSet.has(r.key) &&
 				!r.chats.some((c) => pinSet.has(c.id)) &&
@@ -1730,11 +1729,10 @@ export function Sidebar({
 				.filter(
 					(r) =>
 						rowFolderId(r) === folder.id &&
-						(focus === "unassigned"
-							? r.status === "pending"
-							: focus === "everyone"
-								? r.status !== "pending"
-								: r.owner === focus && r.status !== "pending") &&
+						(focus === "everyone" ||
+							(focus === "unassigned"
+								? r.status === "pending"
+								: r.owner === focus)) &&
 						!reviewBandKeys.has(r.key) &&
 						!pinSet.has(r.key) &&
 						!r.chats.some((c) => pinSet.has(c.id)),
@@ -3669,8 +3667,8 @@ export function Sidebar({
 				    new-session actions) — no second in-list heading. ── */}
 				<div className="sidebar-group">
 					{/* Status groups over the focus person's workspaces. The Person
-					    filter defaults to you; picking a teammate shows their active groups,
-					    "Unassigned" shows Backlog, and "Everyone" shows active workspaces.
+					    filter defaults to you; picking a teammate shows all their groups,
+					    "Unassigned" shows every Backlog, and "Everyone" shows all workspaces.
 					    "Group by: Repo"
 					    nests those same status lanes under one band per repo. Empty
 					    lanes/bands are hidden — only groups with sessions render. */}
@@ -4061,8 +4059,8 @@ function FilterPopover({
 		})),
 	];
 
-	// You first (the default), then teammates, the explicit Backlog lens, and
-	// "Everyone" last. Backlog stays out of every owner-focused view.
+	// You first (the default), then teammates, the aggregate Backlog lens, and
+	// "Everyone" last. Owner-focused views retain their own Backlog rows.
 	const meKey = currentUser.toLowerCase();
 	const personDot = (key: string) => (
 		<span
