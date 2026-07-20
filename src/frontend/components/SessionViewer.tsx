@@ -209,6 +209,7 @@ interface Props {
 
 type PanelTab =
 	| "info"
+	| "staging"
 	| "changes"
 	| "terminal"
 	| "pr"
@@ -2640,6 +2641,12 @@ export function SessionViewer({
 			clearInterval(t);
 		};
 	}, [session.id, stagingRelevant]);
+	const stagingUrl = staging
+		? withPreviewPath(staging.url, session.previewPath)
+		: null;
+	useEffect(() => {
+		if (panelTab === "staging" && !stagingUrl) setPanelTab("info");
+	}, [panelTab, stagingUrl]);
 
 	// ⌘O opens the PR's staging deploy (the Vercel preview StagingLink's globe
 	// points at); ⌘G opens its GitHub PR. Chords without a target (no staging
@@ -3833,6 +3840,14 @@ export function SessionViewer({
 							>
 								Info
 							</button>
+							{stagingUrl && (
+								<button
+									className={`panel-tab ${panelTab === "staging" ? "active" : ""}`}
+									onClick={() => selectPanelTab("staging")}
+								>
+									Staging
+								</button>
+							)}
 							{canSideChat && (
 								<button
 									className={`panel-tab ${panelTab === "sidechats" ? "active" : ""}`}
@@ -3955,6 +3970,14 @@ export function SessionViewer({
 									onOpenSession={(id) => onOpenSession?.(id)}
 									liveMediaCount={liveMediaCount}
 									liveMedia={liveOverviewMedia}
+								/>
+							) : panelTab === "staging" && stagingUrl ? (
+								<iframe
+									className="block h-full min-h-[320px] w-full border-0 bg-white"
+									src={stagingUrl}
+									title="Staging"
+									allow="clipboard-read; clipboard-write; fullscreen"
+									sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads"
 								/>
 							) : panelTab === "sidechats" ? (
 								<SideChatsPanel
