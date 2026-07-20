@@ -1664,7 +1664,12 @@ export function SessionViewer({
 	// upward scrolling, one page per approach.
 	const loadHistoryTopRef = useRef<HTMLDivElement | null>(null);
 	useEffect(() => {
-		if (!historyTruncated || loadingHistory || !initialScrollDone) return;
+		// Opening at the live edge must be a stable resting state. Arming the
+		// generous prefetch margin there can pull in another page shortly after
+		// first paint when the loaded tail is short, causing a visible second
+		// scroll. Wait until the reader actually leaves the edge instead.
+		if (following || !historyTruncated || loadingHistory || !initialScrollDone)
+			return;
 		const target = loadHistoryTopRef.current;
 		const root = messagesRef.current;
 		if (!target || !root) return;
@@ -1676,16 +1681,12 @@ export function SessionViewer({
 			// the history is often already there when the reader arrives.
 			{ root, rootMargin: "600px 0px 0px 0px" },
 		);
-		// Arm only after the reopen scroll has fully landed: the initial anchor
-		// animates for up to 1.2s from scrollTop 0, and an observer attached
-		// mid-flight still sees the sentinel "in view" and fires a phantom load
-		// whose anchor-restore then fights the reopen jump.
-		const arm = setTimeout(() => io.observe(target), 1500);
+		io.observe(target);
 		return () => {
-			clearTimeout(arm);
 			io.disconnect();
 		};
 	}, [
+		following,
 		historyTruncated,
 		loadingHistory,
 		initialScrollDone,
