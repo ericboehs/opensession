@@ -366,7 +366,7 @@ export function opencodeProviderOptions(): Record<string, Record<string, unknown
             name: "GPT OSS 120B",
             reasoning: true,
             tool_call: true,
-            limit: { context: 131_072, output: 65_536 },
+            limit: { context: 131_072, output: 8_192 },
             variants: {
               low: { reasoningEffort: "low" },
               medium: { reasoningEffort: "medium" },
@@ -376,13 +376,13 @@ export function opencodeProviderOptions(): Record<string, Record<string, unknown
           "gemma-4-31b": {
             name: "Gemma 4 31B",
             tool_call: true,
-            limit: { context: 131_072, output: 32_768 },
+            limit: { context: 131_072, output: 8_192 },
           },
           "zai-glm-4.7": {
             name: "Z.ai GLM 4.7",
             reasoning: true,
             tool_call: true,
-            limit: { context: 131_072, output: 32_768 },
+            limit: { context: 131_072, output: 8_192 },
           },
         },
       };

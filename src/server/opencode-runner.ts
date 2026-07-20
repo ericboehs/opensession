@@ -1997,7 +1997,12 @@ async function* runOpencodeAttempt(
   // instructions-file name). The SHARED-server pool key is computed later,
   // once the bridge account is known.
   const sessionKey = journal?.bksSessionId || cwd;
-  const shared = sharedOpencodeEligible(opts);
+  // Cerebras' self-serve tier allows only 30k input tokens/minute. A shared
+  // interactive server carries the complete external + OpenSession MCP catalog,
+  // which exceeds that limit before generation starts. Keep Cerebras on a
+  // compact per-session server; its core coding tools remain available.
+  const compactCerebras = parsed.providerID === "cerebras";
+  const shared = !compactCerebras && sharedOpencodeEligible(opts);
   const turnId = crypto.randomUUID();
   let ocSessionId = opts.sessionId || "";
   // Set once a terminal path has run (turn finished, or a runFailure we've
@@ -2574,13 +2579,15 @@ async function* runOpencodeAttempt(
           },
         }
       : {
-          mcp: {
-            ...externalMcp,
-            ...(prebuiltProxies ??
-              (hasInProcess && journal?.bksSessionId
-                ? proxyOpencodeMcpConfigs(opts.inProcessMcp, rpcToken)
-                : {})),
-          },
+          mcp: compactCerebras
+            ? {}
+            : {
+                ...externalMcp,
+                ...(prebuiltProxies ??
+                  (hasInProcess && journal?.bksSessionId
+                    ? proxyOpencodeMcpConfigs(opts.inProcessMcp, rpcToken)
+                    : {})),
+              },
           instructions: [instructionsPath],
           autoshare: false,
           // Same static oracle/worker set as the shared config — a per-run
@@ -2938,6 +2945,23 @@ async function* runOpencodeAttempt(
       ) {
         usageLimitHit = true;
         runFailure = `OpenAI usage limit on codex account "${bridgeAccountLabel}": ${message.slice(0, 300)}`;
+        engineAbortInFlight = client.session
+          .abort({ path: { id: ocSessionId }, ...q })
+          .catch(() => {});
+        signalDone();
+      }
+      // Third-party providers have no account pool to rotate through. Abort a
+      // Cerebras quota rejection immediately instead of leaving the UI silent
+      // while OpenCode performs several minute-spaced retries. Marking this as
+      // exhausted also lets the normal model fallback policy keep the session
+      // responsive when a prompt still cannot fit its account tier.
+      if (
+        parsed.providerID === "cerebras" &&
+        !runFailure &&
+        /(?:too many requests|tokens per minute|rate limit)/i.test(message)
+      ) {
+        usageLimitHit = true;
+        runFailure = `Cerebras rate limit: ${message.slice(0, 300)}`;
         engineAbortInFlight = client.session
           .abort({ path: { id: ocSessionId }, ...q })
           .catch(() => {});

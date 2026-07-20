@@ -48,7 +48,8 @@ describe("Cerebras provider", () => {
     );
     process.env.OPENSESSION_OPENCODE_CONFIG = config;
 
-    expect(opencodeProviderOptions().cerebras).toMatchObject({
+    const provider = opencodeProviderOptions().cerebras;
+    expect(provider).toMatchObject({
       npm: "@ai-sdk/openai-compatible",
       name: "Cerebras",
       options: {
@@ -61,6 +62,11 @@ describe("Cerebras provider", () => {
         "zai-glm-4.7": { name: "Z.ai GLM 4.7", tool_call: true },
       },
     });
+    expect(
+      Object.values(
+        provider.models as Record<string, { limit: { output: number } }>,
+      ).map((model) => model.limit.output),
+    ).toEqual([8_192, 8_192, 8_192]);
   });
 
   test("uses GPT OSS for fast workers only when Cerebras is available", () => {
