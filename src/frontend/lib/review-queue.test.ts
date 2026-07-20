@@ -1,0 +1,222 @@
+import { describe, expect, test } from "bun:test";
+import type { UnifiedSession } from "./types";
+import {
+	buildReviewQueue,
+	type ReviewQueuePr,
+} from "./review-queue";
+
+const checks = (passed: number, failed = 0, pending = 0) => ({
+	total: passed + failed + pending,
+	passed,
+	failed,
+	pending,
+});
+
+function pr(
+	patch: Partial<ReviewQueuePr> & Pick<ReviewQueuePr, "number" | "branch">,
+): ReviewQueuePr {
+	return {
+		repo: "tella-fusion",
+		url: `https://github.com/tellahq/tella/pull/${patch.number}`,
+		title: `PR ${patch.number}`,
+		isDraft: false,
+		reviewDecision: "",
+		author: "happylinks",
+		person: "michiel",
+		createdAt: "2026-07-20T10:00:00Z",
+		updatedAt: "2026-07-20T12:00:00Z",
+		checks: checks(3),
+		reviewRequested: [],
+		mergeable: "MERGEABLE",
+		...patch,
+	};
+}
+
+function session(
+	patch: Partial<UnifiedSession> & Pick<UnifiedSession, "id" | "branch">,
+): UnifiedSession {
+	return {
+		claudeSessionId: null,
+		source: "backstage",
+		worktreeDir: "/tmp/worktree",
+		startedBy: "Michiel",
+		title: patch.id,
+		lastActivity: "2026-07-20T12:00:00Z",
+		createdAt: "2026-07-20T10:00:00Z",
+		isRunning: false,
+		transcriptPath: null,
+		repo: "tella-fusion",
+		...patch,
+	};
+}
+
+describe("buildReviewQueue", () => {
+	test("puts a green personal PR in ready", () => {
+		const [item] = buildReviewQueue(
+			[pr({ number: 1, branch: "mine" })],
+			[],
+			"Michiel",
+			"happylinks",
+		);
+		expect(item.source).toBe("mine");
+		expect(item.bucket).toBe("ready");
+	});
+
+	test("keeps an unreviewed automation PR in attention", () => {
+		const auto = pr({
+			number: 2,
+			branch: "automation",
+			author: "tella-butler",
+		});
+		const [item] = buildReviewQueue(
+			[auto],
+			[],
+			"Michiel",
+			"happylinks",
+		);
+		expect(item.source).toBe("automation");
+		expect(item.bucket).toBe("attention");
+		expect(item.status).toBe("Review needed");
+	});
+
+	test("keeps a bot-authored PR opt-in despite a human-owned session", () => {
+		const botPr = pr({
+			number: 9,
+			branch: "human-session",
+			author: "tella-butler",
+			person: null,
+		});
+		const [item] = buildReviewQueue(
+			[botPr],
+			[session({ id: "human", branch: "human-session", startedBy: "Michiel" })],
+			"Michiel",
+			"happylinks",
+		);
+		expect(item.source).toBe("automation");
+		expect(item.bucket).toBe("attention");
+	});
+
+	test("direct review requests take precedence over bot authorship", () => {
+		const [item] = buildReviewQueue(
+			[
+				pr({
+					number: 10,
+					branch: "bot-request",
+					author: "tella-butler",
+					person: null,
+					reviewRequested: ["michiel"],
+				}),
+			],
+			[],
+			"Michiel",
+			"happylinks",
+		);
+		expect(item.source).toBe("requested");
+		expect(item.bucket).toBe("attention");
+	});
+
+	test("puts direct review requests in attention", () => {
+		const [item] = buildReviewQueue(
+			[
+				pr({
+					number: 3,
+					branch: "teammate",
+					author: "jfrolich",
+					person: "jaap",
+					reviewRequested: ["michiel"],
+				}),
+			],
+			[],
+			"Michiel",
+			"happylinks",
+		);
+		expect(item.source).toBe("requested");
+		expect(item.bucket).toBe("attention");
+	});
+
+	test("prioritizes failures and conflicts over readiness", () => {
+		const items = buildReviewQueue(
+			[
+				pr({ number: 4, branch: "failed", checks: checks(2, 1) }),
+				pr({ number: 5, branch: "conflict", mergeable: "CONFLICTING" }),
+			],
+			[],
+			"Michiel",
+			"happylinks",
+		);
+		expect(items.map((item) => item.bucket)).toEqual([
+			"attention",
+			"attention",
+		]);
+	});
+
+	test("waits for running or unknown checks", () => {
+		const items = buildReviewQueue(
+			[
+				pr({ number: 6, branch: "running", checks: checks(2, 0, 1) }),
+				pr({ number: 7, branch: "unknown", checks: checks(0) }),
+			],
+			[],
+			"Michiel",
+			"happylinks",
+		);
+		expect(items.map((item) => item.bucket)).toEqual(["waiting", "waiting"]);
+	});
+
+	test("links only a primary-branch session to the detail route", () => {
+		const target = pr({ number: 8, branch: "target" });
+		const [item] = buildReviewQueue(
+			[target],
+			[
+				session({
+					id: "attached-only",
+					branch: "another",
+					attachedRepos: [
+						{ repo: "tella-fusion", branch: "target", dir: "/tmp/target" },
+					],
+				}),
+				session({ id: "primary", branch: "target" }),
+			],
+			"Michiel",
+			"happylinks",
+		);
+		expect(item.sessionId).toBe("primary");
+	});
+
+	test("does not route an open PR through an archived session", () => {
+		const [item] = buildReviewQueue(
+			[pr({ number: 11, branch: "archived" })],
+			[session({ id: "archived", branch: "archived", archived: true })],
+			"Michiel",
+			"happylinks",
+		);
+		expect(item.sessionId).toBeNull();
+	});
+
+	test("uses the active user's GitHub login and reviewer key", () => {
+		const items = buildReviewQueue(
+			[
+				pr({
+					number: 12,
+					branch: "kent-authored",
+					author: "kentdebruin",
+					person: "kent",
+				}),
+				pr({
+					number: 13,
+					branch: "kent-requested",
+					author: "jfrolich",
+					person: "jaap",
+					reviewRequested: ["kent"],
+				}),
+			],
+			[],
+			"Kent",
+			"kentdebruin",
+		);
+		expect(items.map((item) => item.source).sort()).toEqual([
+			"mine",
+			"requested",
+		]);
+	});
+});

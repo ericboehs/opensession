@@ -72,6 +72,7 @@ import {
 import { Tooltip } from "../ui/tooltip";
 import { RepoTile, swatchColor, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
+import { ReviewQueue } from "./ReviewQueue";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -212,6 +213,10 @@ interface Props {
 	onOpenPr: (repo: string, branch: string) => void;
 	/** The session-less PR preview currently open, for row highlighting. */
 	selectedPr?: { repo: string; branch: string } | null;
+	/** Session-backed PR currently open in the full review surface. */
+	selectedReviewId?: string | null;
+	/** Open a session-backed PR in the full review surface. */
+	onOpenSessionReview: (sessionId: string) => void;
 	/** True while the PR Tinder deck is open — highlights its entry. */
 	prTinderActive: boolean;
 	/** Open PR Tinder (swipe triage of the repo's open PRs). */
@@ -828,6 +833,8 @@ export function Sidebar({
 	onOpenAutomation,
 	onOpenPr,
 	selectedPr = null,
+	selectedReviewId = null,
+	onOpenSessionReview,
 	prTinderActive,
 	onOpenPrTinder,
 	supportTinderActive,
@@ -1127,64 +1134,6 @@ export function Sidebar({
 			clearInterval(t);
 		};
 	}, []);
-
-	// Only surface PRs that do not already have an active worktree. Those PRs
-	// already appear in the workspace lanes, while this band is the entry point
-	// for work that has not been picked up yet. The remaining PRs follow the same
-	// repo, person, search, and sort lens as the workspace list.
-	const filteredOpenPrs = useMemo(() => {
-		if (!openPrs) return [];
-		const sessionOwners = new Map<string, string>();
-		const activeWorktrees = new Set<string>();
-		for (const s of sessions) {
-			if (!s.automation && s.startedBy && s.branch) {
-				sessionOwners.set(`${sessionRepo(s)}:${s.branch}`, s.startedBy.toLowerCase());
-			}
-			if (!s.archived && s.worktreeDir && s.branch) {
-				activeWorktrees.add(`${sessionRepo(s)}:${s.branch}`);
-			}
-			if (!s.archived) {
-				for (const repo of s.attachedRepos || []) {
-					if (repo.dir && repo.branch) {
-						activeWorktrees.add(`${repo.repo}:${repo.branch}`);
-					}
-				}
-			}
-		}
-		const focus =
-			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
-		const q = search.trim().toLowerCase();
-		return openPrs
-			.filter((pr) => !activeWorktrees.has(`${pr.repo}:${pr.branch}`))
-			.filter((pr) => filter.repo === "all" || pr.repo === filter.repo)
-			.filter((pr) => {
-				const owner = pr.person || sessionOwners.get(`${pr.repo}:${pr.branch}`) || null;
-				if (focus === "everyone") return true;
-				if (focus === "unassigned") return owner === null;
-				return owner === focus;
-			})
-			.filter(
-				(pr) =>
-					!q ||
-					pr.title.toLowerCase().includes(q) ||
-					pr.branch.toLowerCase().includes(q) ||
-					pr.author.toLowerCase().includes(q) ||
-					pr.repo.toLowerCase().includes(q) ||
-					String(pr.number).includes(q),
-			)
-			.sort((a, b) => {
-				const key = filter.sort === "created" ? "createdAt" : "updatedAt";
-				return (b[key] || "").localeCompare(a[key] || "");
-			});
-	}, [
-		openPrs,
-		sessions,
-		filter.repo,
-		filter.person,
-		filter.sort,
-		currentUser,
-		search,
-	]);
 
 	// The Plain TODO queue for the Support band, polled gently (the server
 	// caches ~30s, so every open browser sharing one fetch is fine). Null until
@@ -2149,7 +2098,9 @@ export function Sidebar({
 	// the point), so we track their *collapsed* state under a "collapsed:" key;
 	// every other group is closed by default and tracked directly.
 	const collapseKey = (key: string) =>
-		key.startsWith("repo:") || key.startsWith("folder:")
+		key.startsWith("repo:") ||
+		key.startsWith("folder:") ||
+		key.startsWith("review:")
 			? `collapsed:${key}`
 			: key;
 
@@ -2167,7 +2118,11 @@ export function Sidebar({
 	// While searching, show everything that matched.
 	const isOpen = (key: string) => {
 		if (search.trim().length > 0) return true;
-		if (key.startsWith("repo:") || key.startsWith("folder:"))
+		if (
+			key.startsWith("repo:") ||
+			key.startsWith("folder:") ||
+			key.startsWith("review:")
+		)
 			return !expanded.has(`collapsed:${key}`);
 		return expanded.has(key);
 	};
@@ -3694,58 +3649,23 @@ export function Sidebar({
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
 
-				{/* Open PRs for the active person/repo lens that do not already have an
-				    active worktree. Rows open the existing session-less PR preview. */}
-				{filteredOpenPrs.length > 0 &&
-					(() => {
-						const open = bandOpen("pullrequests");
-						return (
-							<div className="sidebar-group sidebar-group--band-start">
-								<div className="sidebar-band-label">
-									<button
-										className="sidebar-band-toggle"
-										onClick={() => toggleBand("pullrequests")}
-										title={open ? "Collapse pull requests" : "Expand pull requests"}
-									>
-										<span className="sidebar-band-name">Pull requests</span>
-										<span className="sidebar-group-count">{filteredOpenPrs.length}</span>
-										<IconChevronDown
-											className="sidebar-band-chevron"
-											size={18}
-											style={{ transform: open ? "none" : "rotate(-90deg)" }}
-										/>
-									</button>
-								</div>
-								{open &&
-									filteredOpenPrs.map((pr) => {
-										const selected =
-											selectedPr?.repo === pr.repo &&
-											selectedPr.branch === pr.branch;
-										return (
-											<button
-												key={`${pr.repo}:${pr.branch}`}
-												className={`sidebar-item sidebar-item--twoline${selected ? " sidebar-item-selected" : ""}`}
-												onClick={() => onOpenPr(pr.repo, pr.branch)}
-												title={`${pr.title} · ${pr.repo}#${pr.number}`}
-											>
-												<span className="sidebar-item-top">
-													<IconPullRequest
-														size={17}
-														style={{ color: "var(--green)", flexShrink: 0 }}
-													/>
-													<span className="sidebar-item-title">{pr.title}</span>
-												</span>
-												<span className="sidebar-item-meta">
-													<span>{repoLabel(pr.repo)} #{pr.number}</span>
-													{pr.isDraft && <span>· Draft</span>}
-													<span>· {relativeTime(pr.updatedAt)}</span>
-												</span>
-											</button>
-										);
-									})}
-							</div>
-						);
-					})()}
+				{/* Pull requests are an action inbox: personal PRs, direct review
+				    requests and automation output, grouped by what can happen next. */}
+				{openPrs && openPrs.length > 0 && (
+					<ReviewQueue
+						prs={openPrs}
+						sessions={sessions}
+						currentUser={currentUser}
+						open={bandOpen("pullrequests")}
+						onToggle={() => toggleBand("pullrequests")}
+						groupOpen={(bucket) => isOpen(`review:${bucket}`)}
+						onToggleGroup={(bucket) => toggleGroup(`review:${bucket}`)}
+						selectedPr={selectedPr}
+						selectedReviewId={selectedReviewId}
+						onOpenPr={onOpenPr}
+						onOpenSessionReview={onOpenSessionReview}
+					/>
+				)}
 
 				{/* ── Support: the Plain TODO queue, newest status change first (the
 				    same ordering as Plain's Todo inbox). Rows with a linked session

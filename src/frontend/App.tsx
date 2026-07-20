@@ -1644,6 +1644,8 @@ function App() {
 									? { repo: route.repo, branch: route.branch }
 									: null
 							}
+							selectedReviewId={route.view === "reviews" ? route.id : null}
+							onOpenSessionReview={(id) => navigate({ view: "reviews", id })}
 							prTinderActive={route.view === "prtinder"}
 							onOpenPrTinder={() => navigate({ view: "prtinder" })}
 							supportTinderActive={route.view === "supporttinder"}

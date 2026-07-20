@@ -794,6 +794,8 @@ export interface OpenPrEntry {
 	createdAt: string;
 	updatedAt: string;
 	checks: PrChecksSummary;
+	/** MERGEABLE | CONFLICTING | UNKNOWN — GitHub's async conflict probe. */
+	mergeable: string;
 	/** Person keys of teammates with a pending review request on this PR. */
 	reviewRequested: string[];
 }
@@ -821,6 +823,7 @@ export function getOpenPrs(): OpenPrEntry[] {
 				createdAt: pr.createdAt,
 				updatedAt: pr.updatedAt,
 				checks: pr.checks,
+				mergeable: pr.mergeable,
 				reviewRequested: pr.reviewRequested,
 			});
 		}
