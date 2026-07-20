@@ -45,16 +45,12 @@ const PREVIEW_DOCS_URL =
 export function PreviewButton({
   session,
   onAttachImage,
-  onStatusChange,
   variant = "bar",
 }: {
   session: UnifiedSession;
   /** When set, the snapshot modal offers "Attach to chat" (stages the PNG as a
    *  composer image, like a paste). */
   onAttachImage?: (dataUrl: string) => void;
-  /** Mirrors the polled status to the parent so other preview affordances can
-   *  appear and disappear with the dev server without polling it twice. */
-  onStatusChange?: (status: PreviewStatus | null) => void;
   /** "bar" = the full segmented split button (right panel's action row);
    *  "header" = a single state-colored ▶ icon for the session header, sized to
    *  match the panel-toggle icon it sits beside. Right-click opens the dev
@@ -72,10 +68,6 @@ export function PreviewButton({
   const { copied, copy } = useCopy();
 
   const previewable = isPreviewable(session);
-
-  useEffect(() => {
-    onStatusChange?.(status);
-  }, [onStatusChange, status]);
 
   // Poll the dev-server status while this session is open. Poll faster while a
   // bring-up is in flight so the button flips to the live link promptly; `ss`
