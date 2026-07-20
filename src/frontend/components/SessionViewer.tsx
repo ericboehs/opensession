@@ -622,6 +622,7 @@ export function SessionViewer({
 		newBelow,
 		showScrollToBottom,
 		scrollToLatest,
+		leaveLatest,
 		endTurn,
 		relayout,
 		onScroll,
@@ -1687,10 +1688,11 @@ export function SessionViewer({
 		loadingHistoryRef.current = loadingHistory;
 	}, [loadingHistory]);
 	const loadEarlierHistory = useCallback(() => {
-		if (loadingHistoryRef.current) return;
+		if (!historyTruncated || loadingHistoryRef.current) return;
 		loadingHistoryRef.current = true;
+		leaveLatest();
 		const el = messagesRef.current;
-		if (el && !followingLive.current) {
+		if (el) {
 			// Anchor on the tightest element at the viewport top — it sits below
 			// everything the prepend inserts, so its content offset shifts by
 			// exactly the added height (what native scroll anchoring would pick).
@@ -1709,7 +1711,111 @@ export function SessionViewer({
 				? { beforeOffset: historyStartRef.current }
 				: {}),
 		});
-	}, [messagesRef, send, session.id, startHistoryHold, followingLive]);
+	}, [
+		historyTruncated,
+		leaveLatest,
+		messagesRef,
+		send,
+		session.id,
+		startHistoryHold,
+	]);
+
+	// Auto-load is driven by upward reader intent, never by viewport geometry
+	// alone. That keeps initial hydration and programmatic bottom settling from
+	// fetching history while still preloading a page as the reader approaches it.
+	const historyGestureUntilRef = useRef(0);
+	const historyGestureConsumedRef = useRef(true);
+	const lastHistoryWheelAtRef = useRef(0);
+	const lastHistoryScrollTopRef = useRef(0);
+	const handleMessagesScroll = useCallback(() => {
+		const el = messagesRef.current;
+		const previous = lastHistoryScrollTopRef.current;
+		const current = el?.scrollTop ?? previous;
+		lastHistoryScrollTopRef.current = current;
+		onScroll();
+		if (
+			el &&
+			current < previous - 1 &&
+			current <= 600 &&
+			!historyGestureConsumedRef.current &&
+			performance.now() <= historyGestureUntilRef.current
+		) {
+			historyGestureConsumedRef.current = true;
+			historyGestureUntilRef.current = 0;
+			loadEarlierHistory();
+		}
+	}, [loadEarlierHistory, messagesRef, onScroll]);
+	useEffect(() => {
+		const el = messagesRef.current;
+		if (!el || showReview) return;
+		historyGestureUntilRef.current = 0;
+		historyGestureConsumedRef.current = true;
+		lastHistoryWheelAtRef.current = 0;
+		lastHistoryScrollTopRef.current = el.scrollTop;
+		let touchY: number | null = null;
+		const nearHistory = () => {
+			if (historyGestureConsumedRef.current || el.scrollTop > 600) return;
+			historyGestureConsumedRef.current = true;
+			historyGestureUntilRef.current = 0;
+			loadEarlierHistory();
+		};
+		const onWheel = (event: WheelEvent) => {
+			if (event.deltaY >= 0) return;
+			const now = performance.now();
+			if (now - lastHistoryWheelAtRef.current > 200)
+				historyGestureConsumedRef.current = false;
+			lastHistoryWheelAtRef.current = now;
+			historyGestureUntilRef.current = now + 1200;
+			nearHistory();
+		};
+		const onTouchStart = (event: TouchEvent) => {
+			touchY = event.touches[0]?.clientY ?? null;
+			historyGestureConsumedRef.current = false;
+		};
+		const onTouchMove = (event: TouchEvent) => {
+			const y = event.touches[0]?.clientY;
+			if (y === undefined || touchY === null) return;
+			if (y > touchY + 1) {
+				historyGestureUntilRef.current = performance.now() + 6000;
+				nearHistory();
+			}
+			touchY = y;
+		};
+		const onPointerDown = (event: PointerEvent) => {
+			// Classic scrollbar drags hit the container beyond its content box.
+			if (
+				event.target === el &&
+				(event.offsetX >= el.clientWidth || event.offsetY >= el.clientHeight)
+			) {
+				historyGestureConsumedRef.current = false;
+				historyGestureUntilRef.current = performance.now() + 1500;
+			}
+		};
+		const onKeyDown = (event: KeyboardEvent) => {
+			const upward =
+				event.ctrlKey &&
+				event.shiftKey &&
+				!event.metaKey &&
+				!event.altKey &&
+				event.key === "ArrowUp";
+			if (!upward) return;
+			historyGestureConsumedRef.current = false;
+			historyGestureUntilRef.current = performance.now() + 1200;
+			nearHistory();
+		};
+		el.addEventListener("wheel", onWheel, { passive: true });
+		el.addEventListener("touchstart", onTouchStart, { passive: true });
+		el.addEventListener("touchmove", onTouchMove, { passive: true });
+		el.addEventListener("pointerdown", onPointerDown, { passive: true });
+		window.addEventListener("keydown", onKeyDown);
+		return () => {
+			el.removeEventListener("wheel", onWheel);
+			el.removeEventListener("touchstart", onTouchStart);
+			el.removeEventListener("touchmove", onTouchMove);
+			el.removeEventListener("pointerdown", onPointerDown);
+			window.removeEventListener("keydown", onKeyDown);
+		};
+	}, [session.id, showReview, loadEarlierHistory, messagesRef]);
 
 	// When a turn finishes, release the spacer so the layout settles back.
 	const wasBusyRef = useRef(false);
@@ -3313,7 +3419,7 @@ export function SessionViewer({
 						<div
 							className="viewer-messages"
 							ref={messagesRef}
-							onScroll={onScroll}
+							onScroll={handleMessagesScroll}
 							onClick={handleMessagesClick}
 						>
 							{loading ? (

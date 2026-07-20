@@ -46,6 +46,8 @@ export interface ChatScroll {
   showScrollToBottom: boolean;
   /** Bring the reader back to the latest reply and resume following. */
   scrollToLatest: (behavior?: ScrollBehavior) => void;
+  /** Stop following because the reader is intentionally moving into history. */
+  leaveLatest: () => void;
   /** Pin a turn near the top of the viewport (used for reopening at the last turn). */
   anchorToTop: (target: HTMLElement | null, behavior?: ScrollBehavior) => void;
   /** Mark that the local reader just sent a turn — pin it to the top next paint. */
@@ -164,6 +166,15 @@ export function useChatScroll(): ChatScroll {
     const el = containerRef.current;
     setShowScrollToBottom(Boolean(el && !isFollowing && !latestMessageVisible(el)));
   }, []);
+
+  const leaveLatest = useCallback(() => {
+    autoFlightRef.current = 0;
+    lastGestureRef.current = 0;
+    lastTouchRef.current = 0;
+    scrollbarDragRef.current = false;
+    setFollowing(false);
+    updateScrollToBottomVisibility(false);
+  }, [setFollowing, updateScrollToBottomVisibility]);
 
   const scrollToLatest = useCallback(
     (behavior: ScrollBehavior = "smooth") => {
@@ -399,6 +410,7 @@ export function useChatScroll(): ChatScroll {
     newBelow,
     showScrollToBottom,
     scrollToLatest,
+    leaveLatest,
     anchorToTop,
     beginTurn,
     endTurn,
