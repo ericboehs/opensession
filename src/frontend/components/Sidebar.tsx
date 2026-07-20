@@ -201,6 +201,10 @@ interface Props {
 	/** Open one automation's settings (list + detail). Called with the
 	    automation's NAME — session rows only carry the name, not the id. */
 	onOpenAutomation: (name: string) => void;
+	/** Open a PR that may not have an OpenSession chat yet. */
+	onOpenPr: (repo: string, branch: string) => void;
+	/** The session-less PR preview currently open, for row highlighting. */
+	selectedPr?: { repo: string; branch: string } | null;
 	/** True while the PR Tinder deck is open — highlights its entry. */
 	prTinderActive: boolean;
 	/** Open PR Tinder (swipe triage of the repo's open PRs). */
@@ -815,6 +819,8 @@ export function Sidebar({
 	reviewsActive,
 	onOpenReviews,
 	onOpenAutomation,
+	onOpenPr,
+	selectedPr = null,
 	prTinderActive,
 	onOpenPrTinder,
 	supportTinderActive,
@@ -1115,6 +1121,64 @@ export function Sidebar({
 		};
 	}, []);
 
+	// Only surface PRs that do not already have an active worktree. Those PRs
+	// already appear in the workspace lanes, while this band is the entry point
+	// for work that has not been picked up yet. The remaining PRs follow the same
+	// repo, person, search, and sort lens as the workspace list.
+	const filteredOpenPrs = useMemo(() => {
+		if (!openPrs) return [];
+		const sessionOwners = new Map<string, string>();
+		const activeWorktrees = new Set<string>();
+		for (const s of sessions) {
+			if (!s.automation && s.startedBy && s.branch) {
+				sessionOwners.set(`${sessionRepo(s)}:${s.branch}`, s.startedBy.toLowerCase());
+			}
+			if (!s.archived && s.worktreeDir && s.branch) {
+				activeWorktrees.add(`${sessionRepo(s)}:${s.branch}`);
+			}
+			if (!s.archived) {
+				for (const repo of s.attachedRepos || []) {
+					if (repo.dir && repo.branch) {
+						activeWorktrees.add(`${repo.repo}:${repo.branch}`);
+					}
+				}
+			}
+		}
+		const focus =
+			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
+		const q = search.trim().toLowerCase();
+		return openPrs
+			.filter((pr) => !activeWorktrees.has(`${pr.repo}:${pr.branch}`))
+			.filter((pr) => filter.repo === "all" || pr.repo === filter.repo)
+			.filter((pr) => {
+				const owner = pr.person || sessionOwners.get(`${pr.repo}:${pr.branch}`) || null;
+				if (focus === "everyone") return true;
+				if (focus === "unassigned") return owner === null;
+				return owner === focus;
+			})
+			.filter(
+				(pr) =>
+					!q ||
+					pr.title.toLowerCase().includes(q) ||
+					pr.branch.toLowerCase().includes(q) ||
+					pr.author.toLowerCase().includes(q) ||
+					pr.repo.toLowerCase().includes(q) ||
+					String(pr.number).includes(q),
+			)
+			.sort((a, b) => {
+				const key = filter.sort === "created" ? "createdAt" : "updatedAt";
+				return (b[key] || "").localeCompare(a[key] || "");
+			});
+	}, [
+		openPrs,
+		sessions,
+		filter.repo,
+		filter.person,
+		filter.sort,
+		currentUser,
+		search,
+	]);
+
 	// The Plain TODO queue for the Support band, polled gently (the server
 	// caches ~30s, so every open browser sharing one fetch is fine). Null until
 	// the first fetch lands; fetch errors (Plain not configured, API down) just
@@ -1161,10 +1225,12 @@ export function Sidebar({
 			const p = sessionRepo(s);
 			counts.set(p, (counts.get(p) || 0) + 1);
 		}
+		for (const pr of openPrs || [])
+			counts.set(pr.repo, (counts.get(pr.repo) || 0) + 1);
 		return Array.from(counts.entries())
 			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
 			.map(([name]) => name);
-	}, [sessions]);
+	}, [sessions, openPrs]);
 
 	// Distinct people who started sessions, most-active first, for the Person
 	// filter dropdown. Only recognized teammates (see KNOWN_PEOPLE) are offered;
@@ -1180,10 +1246,16 @@ export function Sidebar({
 			e.count++;
 			entries.set(key, e);
 		}
+		for (const pr of openPrs || []) {
+			if (!pr.person || entries.has(pr.person)) continue;
+			const label =
+				TEAM.find((name) => name.toLowerCase() === pr.person) || pr.person;
+			entries.set(pr.person, { label, count: 1 });
+		}
 		return Array.from(entries.entries())
 			.sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
 			.map(([key, { label }]) => ({ key, label }));
-	}, [sessions]);
+	}, [sessions, openPrs]);
 
 	// Every non-archived chat, narrowed by the repo/person filters and search.
 	// Rows are built per-workspace below; a chat matching the filter surfaces its
@@ -2092,9 +2164,9 @@ export function Sidebar({
 	// The People / Automations bands are open by default, so — like
 	// repo groups — their *collapsed* state is what's persisted. Collapsing one
 	// hides every group within that band. Searching forces them open.
-	const bandOpen = (band: GroupBand | "support") =>
+	const bandOpen = (band: GroupBand | "support" | "pullrequests") =>
 		search.trim().length > 0 ? true : !expanded.has(`collapsed:band:${band}`);
-	function toggleBand(band: GroupBand | "support") {
+	function toggleBand(band: GroupBand | "support" | "pullrequests") {
 		const key = `collapsed:band:${band}`;
 		setExpanded((prev) => {
 			const next = new Set(prev);
@@ -3610,6 +3682,59 @@ export function Sidebar({
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
+
+				{/* Open PRs for the active person/repo lens that do not already have an
+				    active worktree. Rows open the existing session-less PR preview. */}
+				{filteredOpenPrs.length > 0 &&
+					(() => {
+						const open = bandOpen("pullrequests");
+						return (
+							<div className="sidebar-group sidebar-group--band-start">
+								<div className="sidebar-band-label">
+									<button
+										className="sidebar-band-toggle"
+										onClick={() => toggleBand("pullrequests")}
+										title={open ? "Collapse pull requests" : "Expand pull requests"}
+									>
+										<span className="sidebar-band-name">Pull requests</span>
+										<span className="sidebar-group-count">{filteredOpenPrs.length}</span>
+										<IconChevronDown
+											className="sidebar-band-chevron"
+											size={18}
+											style={{ transform: open ? "none" : "rotate(-90deg)" }}
+										/>
+									</button>
+								</div>
+								{open &&
+									filteredOpenPrs.map((pr) => {
+										const selected =
+											selectedPr?.repo === pr.repo &&
+											selectedPr.branch === pr.branch;
+										return (
+											<button
+												key={`${pr.repo}:${pr.branch}`}
+												className={`sidebar-item sidebar-item--twoline${selected ? " sidebar-item-selected" : ""}`}
+												onClick={() => onOpenPr(pr.repo, pr.branch)}
+												title={`${pr.title} · ${pr.repo}#${pr.number}`}
+											>
+												<span className="sidebar-item-top">
+													<IconPullRequest
+														size={17}
+														style={{ color: "var(--green)", flexShrink: 0 }}
+													/>
+													<span className="sidebar-item-title">{pr.title}</span>
+												</span>
+												<span className="sidebar-item-meta">
+													<span>{repoLabel(pr.repo)} #{pr.number}</span>
+													{pr.isDraft && <span>· Draft</span>}
+													<span>· {relativeTime(pr.updatedAt)}</span>
+												</span>
+											</button>
+										);
+									})}
+							</div>
+						);
+					})()}
 
 				{/* ── Support: the Plain TODO queue, newest status change first (the
 				    same ordering as Plain's Todo inbox). Rows with a linked session

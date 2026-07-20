@@ -535,6 +535,7 @@ interface PrInfo {
   changedFiles: number;
   reviewDecision: string;
   author: string;
+  createdAt: string;
   updatedAt: string;
   checks: PrChecksSummary;
   /** MERGEABLE | CONFLICTING | UNKNOWN — GitHub's async conflict probe. */
@@ -642,6 +643,7 @@ async function refreshPrCache(): Promise<void> {
       headRefName: string; url: string; state: string; number: number; title: string;
       isDraft: boolean; additions: number; deletions: number; changedFiles: number;
       reviewDecision: string; author?: { login?: string; name?: string }; updatedAt: string;
+      createdAt: string;
       reviewRequests?: Array<{ login?: string; name?: string; slug?: string }>;
       assignees?: Array<{ login?: string }>;
       // MERGEABLE | CONFLICTING | UNKNOWN. GitHub computes this asynchronously,
@@ -652,7 +654,7 @@ async function refreshPrCache(): Promise<void> {
       mergeable?: string;
     };
     const FIELDS =
-      "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,updatedAt,reviewRequests,assignees,mergeable";
+      "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,createdAt,updatedAt,reviewRequests,assignees,mergeable";
 
     // A session's branch is matched against open PRs, so we must see EVERY open
     // PR — not just the newest N. Fusion carries 200+ open PRs at a time, so a
@@ -730,6 +732,7 @@ async function refreshPrCache(): Promise<void> {
         changedFiles: pr.changedFiles || 0,
         reviewDecision: pr.reviewDecision || reviewByNumber.get(pr.number) || "",
         author: pr.author?.login || pr.author?.name || "",
+        createdAt: pr.createdAt || "",
         updatedAt: pr.updatedAt || "",
         checks: checksByNumber.get(pr.number) || { total: 0, passed: 0, failed: 0, pending: 0 },
         mergeable: pr.mergeable || "UNKNOWN",
@@ -788,6 +791,7 @@ export interface OpenPrEntry {
 	author: string;
 	/** Web user-picker key ("kent"), or null when the author isn't a teammate. */
 	person: string | null;
+	createdAt: string;
 	updatedAt: string;
 	checks: PrChecksSummary;
 	/** Person keys of teammates with a pending review request on this PR. */
@@ -814,6 +818,7 @@ export function getOpenPrs(): OpenPrEntry[] {
 						.map((l) => githubLoginToPersonKey(l))
 						.find((p): p is string => !!p) ??
 					null,
+				createdAt: pr.createdAt,
 				updatedAt: pr.updatedAt,
 				checks: pr.checks,
 				reviewRequested: pr.reviewRequested,

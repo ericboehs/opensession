@@ -1638,6 +1638,12 @@ function App() {
 							onOpenAutomation={(name) =>
 								navigate({ view: "automations", id: name })
 							}
+							onOpenPr={(repo, branch) => navigate({ view: "pr", repo, branch })}
+							selectedPr={
+								route.view === "pr"
+									? { repo: route.repo, branch: route.branch }
+									: null
+							}
 							prTinderActive={route.view === "prtinder"}
 							onOpenPrTinder={() => navigate({ view: "prtinder" })}
 							supportTinderActive={route.view === "supporttinder"}

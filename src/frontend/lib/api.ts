@@ -161,6 +161,7 @@ export interface OpenPr {
 	author: string;
 	/** Web user-picker key ("kent"), or null when the author isn't a teammate. */
 	person: string | null;
+	createdAt: string;
 	updatedAt: string;
 	checks: { total: number; passed: number; failed: number; pending: number };
 	/** Person keys of teammates with a pending review request on this PR. */
