@@ -9727,7 +9727,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .composer-send-queue-main {
 	background: var(--bg-raised);
 	color: var(--accent);
-	border: 1px solid var(--accent-soft);
+	border: 2px solid var(--accent);
 }
 .composer-send-interrupt {
 	background: var(--red-soft);
