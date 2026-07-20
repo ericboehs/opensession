@@ -1991,6 +1991,9 @@ function App() {
 									workspaceChats={projectChats}
 									showReview={reviewActive}
 									onOpenReview={openReview}
+									onOpenPrPage={() =>
+										navigate({ view: "reviews", id: currentSession.id })
+									}
 									allSessions={sessions}
 									allProjects={projects}
 									onNewChat={handleNewChat}

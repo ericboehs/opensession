@@ -206,6 +206,8 @@ interface Props {
 	showReview?: boolean;
 	/** Open/foreground this session's Review view-tab (PR/review triggers). */
 	onOpenReview?: () => void;
+	/** Open this session's dedicated diff-first PR review page. */
+	onOpenPrPage?: () => void;
 }
 
 type PanelTab =
@@ -369,6 +371,7 @@ export function SessionViewer({
 	onReviewChange,
 	showReview = false,
 	onOpenReview,
+	onOpenPrPage,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	// Initial scrolling must wait for this session's transcript_init. During a
@@ -2927,6 +2930,18 @@ export function SessionViewer({
 				// of the panel toggle on desktop; PR status rides its own row.
 				const secondaryActions = (
 					<>
+						{session.prUrl && onOpenPrPage && (
+							<button
+								type="button"
+								className="session-link session-link-pr"
+								onClick={() => {
+									setOverflowOpen(false);
+									onOpenPrPage();
+								}}
+							>
+								Review PR{session.prNumber ? ` #${session.prNumber}` : ""}
+							</button>
+						)}
 						{session.linearIssue?.url && (
 							<a
 								href={session.linearIssue.url}

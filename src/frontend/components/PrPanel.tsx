@@ -302,9 +302,9 @@ export function PrPanel({
   const [mergeAfterReview, setMergeAfterReview] = useState(reviewCanvas === true);
   const [checksOpen, setChecksOpen] = useState(false);
   const [allFilesOpen, setAllFilesOpen] = useState(false);
-  const [diffView, setDiffView] = useState<"diff" | "guide" | "conversation">(() =>
-    reviewCanvas ? "guide" : "diff",
-  );
+  const [diffView, setDiffView] = useState<
+    "intent" | "guide" | "diff" | "checks" | "conversation"
+  >(() => (reviewCanvas ? "guide" : "diff"));
   const [guide, setGuide] = useState<ReviewGuideData | null>(null);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideFailed, setGuideFailed] = useState(false);
@@ -861,8 +861,8 @@ export function PrPanel({
                 <span className="ml-auto text-[10px] text-faint">{files.length}</span>
               </button>
               <button
-                className="flex items-center gap-2 rounded-sm border-0 bg-transparent px-2 py-2 text-left text-xs text-dim hover:bg-hover hover:text-fg"
-                onClick={() => setChecksOpen((value) => !value)}
+                className={`flex items-center gap-2 rounded-sm border-0 px-2 py-2 text-left text-xs ${diffView === "checks" ? "bg-active text-fg" : "bg-transparent text-dim hover:bg-hover hover:text-fg"}`}
+                onClick={() => setDiffView("checks")}
               >
                 <IconCheck size={14} />
                 Checks
@@ -949,10 +949,16 @@ export function PrPanel({
           </aside>
 
           <main className="min-w-0 flex-1 overflow-y-auto bg-surface pb-24">
-            <div className="sticky top-0 z-[7] flex h-[50px] items-center border-b border-line bg-surface/95 px-5 backdrop-blur">
-              <div className="flex gap-1">
+            <div className="sticky top-0 z-[7] flex h-[50px] items-center gap-2 border-b border-line bg-surface/95 px-5 backdrop-blur max-[600px]:px-2">
+              <div className="flex min-w-0 gap-1 overflow-x-auto">
                 <button
-                  className={`rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "guide" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
+                  className={`shrink-0 rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "intent" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
+                  onClick={() => setDiffView("intent")}
+                >
+                  Intent
+                </button>
+                <button
+                  className={`shrink-0 rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "guide" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
                   onClick={() => setDiffView("guide")}
                 >
                   Guide
@@ -964,14 +970,24 @@ export function PrPanel({
                   Files
                 </button>
                 <button
-                  className={`rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "conversation" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
+                  className={`shrink-0 rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "checks" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
+                  onClick={() => setDiffView("checks")}
+                >
+                  Checks
+                </button>
+                <button
+                  className={`shrink-0 rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "conversation" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
                   onClick={() => setDiffView("conversation")}
                 >
                   Conversation
                 </button>
               </div>
-              <span className="ml-auto text-[11px] text-faint">
-                {diffView === "conversation"
+              <span className="ml-auto shrink-0 text-[11px] text-faint max-[600px]:hidden">
+                {diffView === "intent"
+                  ? "PR description"
+                  : diffView === "checks"
+                    ? `${checkSummary.total} checks`
+                    : diffView === "conversation"
                   ? `${comments.length} comment${comments.length === 1 ? "" : "s"}`
                   : pending.length > 0
                   ? `${pending.length} pending comment${pending.length === 1 ? "" : "s"}`
@@ -980,7 +996,14 @@ export function PrPanel({
             </div>
 
             <div className="mx-auto max-w-[980px] px-5 py-6 max-[720px]:px-2">
-              {diffView === "conversation" ? (
+              {diffView === "intent" ? (
+                <IntentView author={pr.author} descriptionHtml={bodyHtml} />
+              ) : diffView === "checks" ? (
+                <ChecksView
+                  checks={checkSummary.checks}
+                  deployments={checkSummary.deployments}
+                />
+              ) : diffView === "conversation" ? (
                 <ConversationView
                   author={pr.author}
                   descriptionHtml={bodyHtml}
@@ -1571,6 +1594,104 @@ export function PrPanel({
   );
 }
 
+function PrDescriptionCard({
+  author,
+  descriptionHtml,
+}: {
+  author: string;
+  descriptionHtml: string;
+}) {
+  if (!descriptionHtml)
+    return (
+      <div className="rounded-md border border-dashed border-line px-4 py-10 text-center text-xs text-faint">
+        This pull request has no description.
+      </div>
+    );
+  return (
+    <article className="rounded-md border border-line bg-panel">
+      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+        <span className="flex size-7 items-center justify-center rounded-full bg-active text-[11px] font-semibold text-fg">
+          {author.slice(0, 1).toUpperCase()}
+        </span>
+        <div>
+          <div className="text-xs font-semibold text-fg">{author}</div>
+          <div className="text-[10px] text-faint">Opened this pull request</div>
+        </div>
+      </div>
+      <div
+        className="markdown px-4 py-4 text-[13px] leading-relaxed text-dim"
+        dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+      />
+    </article>
+  );
+}
+
+function IntentView({
+  author,
+  descriptionHtml,
+}: {
+  author: string;
+  descriptionHtml: string;
+}) {
+  return (
+    <div className="mx-auto max-w-[760px]">
+      <div className="mb-6">
+        <h2 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-fg">
+          Intent
+        </h2>
+        <p className="mt-1 text-xs text-faint">Pull request description</p>
+      </div>
+      <PrDescriptionCard author={author} descriptionHtml={descriptionHtml} />
+    </div>
+  );
+}
+
+function ChecksView({
+  checks,
+  deployments,
+}: {
+  checks: PrCheck[];
+  deployments: PrCheck[];
+}) {
+  const total = checks.length + deployments.length;
+  return (
+    <div className="mx-auto max-w-[760px]">
+      <div className="mb-6">
+        <h2 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-fg">
+          Checks
+        </h2>
+        <p className="mt-1 text-xs text-faint">
+          {total} result{total === 1 ? "" : "s"}
+        </p>
+      </div>
+      {total === 0 ? (
+        <div className="rounded-md border border-dashed border-line px-4 py-10 text-center text-xs text-faint">
+          No checks reported.
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {checks.length > 0 && (
+            <section className="rounded-md border border-line bg-panel p-3">
+              <h3 className="m-0 px-2 pb-2 text-xs font-semibold text-fg">CI checks</h3>
+              {checks.map((check, index) => (
+                <CheckRow key={`${check.name}-${index}`} check={check} />
+              ))}
+            </section>
+          )}
+          {deployments.length > 0 && (
+            <section className="rounded-md border border-line bg-panel p-3">
+              <h3 className="m-0 px-2 pb-2 text-xs font-semibold text-fg">Deployments</h3>
+              {deployments.map((check, index) => (
+                <CheckRow key={`${check.name}-${index}`} check={check} />
+              ))}
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ConversationView({
   author,
   descriptionHtml,
@@ -1591,23 +1712,9 @@ function ConversationView({
         </p>
       </div>
 
-      {descriptionHtml && (
-        <article className="mb-4 rounded-md border border-line bg-panel">
-          <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-            <span className="flex size-7 items-center justify-center rounded-full bg-active text-[11px] font-semibold text-fg">
-              {author.slice(0, 1).toUpperCase()}
-            </span>
-            <div>
-              <div className="text-xs font-semibold text-fg">{author}</div>
-              <div className="text-[10px] text-faint">Opened this pull request</div>
-            </div>
-          </div>
-          <div
-            className="markdown px-4 py-4 text-[13px] leading-relaxed text-dim"
-            dangerouslySetInnerHTML={{ __html: descriptionHtml }}
-          />
-        </article>
-      )}
+      <div className="mb-4">
+        <PrDescriptionCard author={author} descriptionHtml={descriptionHtml} />
+      </div>
 
       {comments.length === 0 ? (
         <div className="rounded-md border border-dashed border-line px-4 py-10 text-center text-xs text-faint">
