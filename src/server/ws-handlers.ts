@@ -29,7 +29,7 @@ import { type Sandbox, hasRemoteWorkspace } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled } from "./sandbox/config";
 import { SESSIONS_DIR, SESSION_EFFORTS, findSession, invalidateSessionsCache, maybePersistEffort, recordRunOutcome, touchBackstageSession } from "./session-cache";
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
-import { engineSessionPatch, engineUserTexts } from "./sessions";
+import { engineSessionPatch, engineUserTexts, mergedSessionTranscript } from "./sessions";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { handleSlashCommand } from "./slash-commands";
 import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } from "./terminals";
@@ -119,9 +119,24 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// so the fat 32KB clamp only bought transfer time (a heavy tail hit
 				// 1.7MB on the wire). `startOffset` is the pagination cursor for
 				// "load earlier".
-				const { entries, truncated, endOffset, startOffset } = session.transcriptPath
+				let { entries, truncated, endOffset, startOffset } = session.transcriptPath
 					? parseTranscriptTail(session.transcriptPath)
 					: { entries: [], truncated: false, endOffset: 0, startOffset: 0 };
+				if (!entries.length) {
+					// No mirror file yet — a fresh session, or an engine-id rotation
+					// whose next run hasn't seeded the new id's file. Without this the
+					// thread renders blank until the next send (which seeds the file);
+					// serve history via the cross-engine fallback (old transcript file
+					// merged with OpenCode's SQLite store) instead. No byte cursor into
+					// a file here, so no "load earlier" paging — the next run's seeded
+					// file restores it.
+					const merged = mergedSessionTranscript(session);
+					if (merged.length) {
+						truncated = merged.length > 120;
+						entries = truncated ? merged.slice(-120) : merged;
+						startOffset = 0;
+					}
+				}
 				const FIRST_PAINT_ENTRIES = 12;
 				const staged = entries.length > FIRST_PAINT_ENTRIES;
 				const head = staged ? entries.slice(-FIRST_PAINT_ENTRIES) : entries;
@@ -224,11 +239,15 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// fallback for clients that don't send an offset.
 				const session = findSession(msg.sessionId);
 				if (!session?.transcriptPath) {
+					// Same no-mirror-file state as the watch fallback: serve the merged
+					// cross-engine history rather than blanking the client's view.
 					ws.send(
 						JSON.stringify({
 							type: "transcript_init",
 							sessionId: msg.sessionId,
-							entries: [],
+							entries: session
+								? clampEntriesForWire(mergedSessionTranscript(session))
+								: [],
 							truncated: false,
 						}),
 					);
