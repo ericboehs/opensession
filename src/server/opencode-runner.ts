@@ -178,6 +178,9 @@ import {
   dialPreset,
   DIAL_ORACLE_AGENTS,
   sameBridgeDialOracle,
+  orchestratorPreset,
+  ORCHESTRATOR_WORKER_AGENTS,
+  orchestratorWorkerForBridge,
   opencodeModelLabel,
 } from "./models";
 import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
@@ -983,6 +986,13 @@ export function buildOpencodeInstructions(input: {
     mainLabel: string;
     oracleLabel: string;
   };
+  /** The Orchestrator: tells an orchestrator-preset run about its worker
+   *  subagents. Only set for orchestrator runs — mirrors dialOracle. */
+  orchestrator?: {
+    presetLabel: string;
+    mainLabel: string;
+    workers: Array<{ agent: string; label: string; modelLabel: string }>;
+  };
 }): string {
   const parts: string[] = [];
   // Unconditional, every run: a customer-PII PDF was uploaded to gofile.io on
@@ -1047,6 +1057,34 @@ export function buildOpencodeInstructions(input: {
         "constraints — it sees the same checkout but none of your conversation. Its output " +
         "is advisory: weigh it, then decide. Briefly tell the user when you consult the " +
         'oracle and why ("Consulting the oracle on the migration plan").'
+    );
+  }
+  // The Dial reversed (Cursor's agent-swarm economics): the frontier main
+  // model leads and delegates execution down to cheap workers. Same
+  // decision-rule style as the oracle block — triggers AND anti-triggers —
+  // because delegation only pays off when the model knows what NOT to hand off.
+  if (input.orchestrator) {
+    const o = input.orchestrator;
+    const workerLines = o.workers
+      .map((w) => `- \`${w.agent}\` (${w.modelLabel}): ${w.label.toLowerCase()} for delegated subtasks.`)
+      .join("\n");
+    parts.push(
+      `## The Orchestrator — your workers\nThis session runs on the "${o.presetLabel}" preset: ` +
+        `you (${o.mainLabel}) are the lead, paired with worker subagents you delegate ` +
+        "execution to via the task tool:\n" +
+        `${workerLines}\n` +
+        "You do the thinking, workers do the typing. Keep for yourself: understanding the " +
+        "problem, design decisions, anything with real tradeoffs, tricky debugging, and the " +
+        "final review and integration of everything workers produce. Delegate: well-scoped " +
+        "implementation subtasks (a function, a module, a migration step, a test file), broad " +
+        "mechanical sweeps, and independent pieces that can run in parallel. Don't delegate " +
+        "work whose spec you can't state crisply — if describing the subtask takes longer " +
+        "than doing it, do it yourself.\n" +
+        "Brief workers self-contained: exact files, constraints, acceptance criteria, and " +
+        "what to report back — they see the same checkout but none of your conversation. " +
+        "Verify their output (read the diff, run the tests) before building on it, and take " +
+        "a subtask over yourself when a worker misses the bar twice. Briefly tell the user " +
+        'when you fan work out ("Delegating the migration + tests to workers").'
     );
   }
   const inprocEarly = (input.inProcessMcp || {}) as Record<string, unknown>;
@@ -1834,6 +1872,33 @@ function dialOracleAgentConfigs(mainProviderID: string): Record<string, Record<s
   return out;
 }
 
+/**
+ * The Orchestrator's worker subagents — same static-per-server contract as the
+ * oracles above (stable agent set ⇒ stable config hash), same per-bridge model
+ * resolution (a server carries ONE bridge's auth), invisible in practice to
+ * non-orchestrator runs. Unlike the oracles they carry NO tools/permission
+ * overrides: workers are executors and must INHERIT the run's write policy
+ * (code mode edits, ask mode's config-level edit-deny stays) — an explicit
+ * allow here would punch a write hole through ask mode.
+ */
+function orchestratorWorkerAgentConfigs(
+  mainProviderID: string
+): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const [name, w] of Object.entries(ORCHESTRATOR_WORKER_AGENTS)) {
+    const b = orchestratorWorkerForBridge(name, mainProviderID);
+    if (!b) continue;
+    out[name] = {
+      mode: "subagent",
+      description: w.description,
+      model: b.model,
+      // Rides AgentConfig's open index signature, like the oracles' variant.
+      variant: b.variant,
+    };
+  }
+  return out;
+}
+
 export async function* runOpencode(
   opts: RunAgentOpts & { allowOpencode?: boolean; forceSharedServer?: boolean },
   model: string
@@ -1870,12 +1935,14 @@ async function* runOpencodeAttempt(
   const { prompt, cwd, mode, mcpServers, confirmTools, journal, user, author } = opts;
   const isAsk = mode === "ask";
 
-  // The Dial: `model` arrived here already mapped to the preset's concrete
-  // MAIN model (toOpencodeModel), but opts.model still carries the stored
-  // `dial/<tier>` id — that's the hook that overrides the reasoning effort and
-  // switches on the oracle instructions below. Non-dial runs: both undefined.
+  // The Dial / The Orchestrator: `model` arrived here already mapped to the
+  // preset's concrete MAIN model (toOpencodeModel), but opts.model still
+  // carries the stored preset id — that's the hook that overrides the
+  // reasoning effort and switches on the oracle/worker instructions below.
+  // Non-preset runs: all undefined.
   const dial = dialPreset(opts.model);
-  const effort = dial?.effort ?? opts.effort;
+  const orch = orchestratorPreset(opts.model);
+  const effort = dial?.effort ?? orch?.effort ?? opts.effort;
 
   // Test hook: pretend usage limits are exhausted on every model, so the
   // fallback chain can be verified without burning real limits. Set
@@ -2393,6 +2460,20 @@ async function* runOpencodeAttempt(
             };
           })()
         : undefined,
+      // Worker names are stable across bridges; only the backing model label
+      // varies (orchestratorWorkerForBridge, same-bridge rule as the oracle).
+      orchestrator: orch
+        ? {
+            presetLabel: orch.label,
+            mainLabel: opencodeModelLabel(orch.model),
+            workers: orch.workerAgents.map((name) => ({
+              agent: name,
+              label: ORCHESTRATOR_WORKER_AGENTS[name]?.label || name,
+              modelLabel:
+                orchestratorWorkerForBridge(name, parsed.providerID)?.label || name,
+            })),
+          }
+        : undefined,
     });
     const instructionsPath = `${OPENCODE_STATE_DIR}/${serverKey.replace(/[^A-Za-z0-9._-]/g, "_")}-instructions.md`;
     if (!shared) {
@@ -2487,6 +2568,7 @@ async function* runOpencodeAttempt(
               tools: { write: false, edit: false, patch: false },
             },
             ...dialOracleAgentConfigs(parsed.providerID),
+            ...orchestratorWorkerAgentConfigs(parsed.providerID),
           },
         }
       : {
@@ -2499,10 +2581,13 @@ async function* runOpencodeAttempt(
           },
           instructions: [instructionsPath],
           autoshare: false,
-          // Same static oracle set as the shared config — a per-run agent
-          // section would churn this server's config hash when a session
-          // moves on/off a dial preset.
-          agent: dialOracleAgentConfigs(parsed.providerID),
+          // Same static oracle/worker set as the shared config — a per-run
+          // agent section would churn this server's config hash when a
+          // session moves on/off a dial or orchestrator preset.
+          agent: {
+            ...dialOracleAgentConfigs(parsed.providerID),
+            ...orchestratorWorkerAgentConfigs(parsed.providerID),
+          },
           // Arg-coerce must ride per-session servers too: automations (Plain
           // triage, github-review) run here, and their MCP calls hit the same
           // model-stringified-object failures the plugin repairs (2026-07-18:

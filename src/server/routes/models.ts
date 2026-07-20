@@ -7,7 +7,7 @@
  */
 
 import { requestUser, type RouteContext } from "./context";
-import { KNOWN_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, modelEfforts, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
+import { KNOWN_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, modelEfforts, refreshOpencodePickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
 import { envAlias } from "../rename-compat";
 import { type Sandbox } from "../sandbox";
 import { sandboxCapabilityStatus } from "../sandbox/config";
@@ -22,6 +22,11 @@ export async function handleModelsRoutes(
 
 	// ── Models available to sessions ──
 	if (path === "/backstage/api/models" && req.method === "GET") {
+		// Re-fold the opencode entries from config on every fetch (cheap, tiny
+		// JSON read — same "read fresh" contract as /sandbox/status below) so a
+		// config flip like the Orchestrator opt-in shows up on the next picker
+		// open, not the next restart/settings-save.
+		refreshOpencodePickerModels();
 		// Single-engine core: the picker surfaces ONLY opencode models.
 		// Native claude/codex ids stay resolvable + executable (the direct
 		// Slack/Linear/Plain agent loops still run them on the SDK), just

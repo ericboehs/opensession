@@ -13,7 +13,7 @@ import { makeAskHandler, pendingAsks } from "./asks";
 import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
-import { dialPreset, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
+import { interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
 import { promptQueues, recordSteer, requeueSteerReceipts } from "./queue-state";
 import { attachSessionWatchersToEngineTranscript, attachSessionWatchersToTranscript, enqueuePrompt, foldSessionUsage, maybeLaunchSandboxedRun, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
@@ -412,7 +412,7 @@ registerSessionControl({
 						// init reports the preset's resolved MAIN model, and adopting it
 						// would disengage the dial (oracle + effort) on the next turn.
 						// model_switch below still adopts: a real fallback ends the dial.
-						if (event.model && !dialPreset(model)) effectiveModel = event.model;
+						if (event.model && !modelPreset(model)) effectiveModel = event.model;
 						// A sandbox session was persisted before launch and its file has
 						// since been touched with the materialized sandboxId — a full
 						// persist() here would rebuild from closure vars and wipe that.
@@ -522,7 +522,7 @@ registerSessionControl({
 						engineSessionId = event.sessionId || engineSessionId;
 						if (event.provider) effectiveProvider = event.provider;
 						// Same dial guard as the init handler above.
-						if (event.model && !dialPreset(model)) effectiveModel = event.model;
+						if (event.model && !modelPreset(model)) effectiveModel = event.model;
 						if (event.usageLimitExhausted)
 							runFailure =
 								event.result || "Usage limit reached on every account";

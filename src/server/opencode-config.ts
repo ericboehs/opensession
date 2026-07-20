@@ -51,8 +51,12 @@
  *         //   subscription bridges above and always override this map.
  *     "turnTimeoutMinutes": 60,      // optional: hard wall-clock cap per opencode
  *         // turn (opencode-runner aborts past it). Default 60.
- *     "bridgeMaxRequestsPerHour": 300 // optional: per-account rolling request
+ *     "bridgeMaxRequestsPerHour": 300, // optional: per-account rolling request
  *         // ceiling on the NATIVE bridge (429 past it). Default 300.
+ *     "orchestrator": true           // optional: surface The Orchestrator presets
+ *         // (models.ts ORCHESTRATOR_PRESETS) in the model picker. Off by
+ *         // default; OPENSESSION_ORCHESTRATOR=1 also enables. Stored preset
+ *         // ids keep resolving either way — this only gates the picker.
  *   }
  *
  * Read fresh per call (tiny file) so edits apply without a restart — except
@@ -122,6 +126,8 @@ export interface OpencodeBridgeConfig {
    *  config as provider.<id>.options. Independent of `enabled` (that flag only
    *  gates the Anthropic bridge). anthropic/openai never live here. */
   providers?: Record<string, OpencodeProviderConfig>;
+  /** Opt-in: surface The Orchestrator presets in the model picker. */
+  orchestrator?: boolean;
 }
 
 function stringArray(v: unknown): string[] | undefined {
@@ -174,6 +180,7 @@ export function normalizeOpencodeConfig(raw: unknown): OpencodeBridgeConfig | nu
         : undefined,
     openaiAccounts: stringArray(bridge?.openaiAccounts),
     providers: providerMap(r.providers),
+    orchestrator: r.orchestrator === true,
   };
 }
 
@@ -215,6 +222,14 @@ export function bridgeMaxRequestsPerHour(): number {
   return (
     readOpencodeBridgeConfig()?.bridgeMaxRequestsPerHour || DEFAULT_BRIDGE_MAX_REQUESTS_PER_HOUR
   );
+}
+
+/** The Orchestrator presets are opt-in (off by default): `"orchestrator": true`
+ *  in the config file, or OPENSESSION_ORCHESTRATOR=1. Gates only the picker —
+ *  stored orchestrator/<name> session ids resolve and run regardless. */
+export function opencodeOrchestratorEnabled(): boolean {
+  if (process.env.OPENSESSION_ORCHESTRATOR === "1") return true;
+  return readOpencodeBridgeConfig()?.orchestrator === true;
 }
 
 /** Opencode model ids to surface in the UI picker (empty when disabled). */

@@ -5,6 +5,11 @@ import {
   DIAL_PRESETS,
   dialPreset,
   sameBridgeDialOracle,
+  ORCHESTRATOR_PRESETS,
+  ORCHESTRATOR_WORKER_AGENTS,
+  orchestratorPreset,
+  orchestratorWorkerForBridge,
+  modelPreset,
   fallbackPlan,
   fallbackTier,
   nextFallbackModel,
@@ -174,6 +179,71 @@ describe("The Dial", () => {
       // (modelEfforts infers the provider from bare claude-*/gpt-* slugs).
       expect(modelEfforts(p.model)).toContain(p.effort);
       expect(resolveModel(p.model)).not.toBeNull();
+    }
+  });
+});
+
+describe("The Orchestrator", () => {
+  it("resolves preset ids without minting a bogus opencode/orchestrator passthrough", () => {
+    const fable = resolveModel("orchestrator/fable");
+    expect(fable?.id).toBe("orchestrator/fable");
+    expect(fable?.provider).toBe("opencode");
+    expect(fable?.group).toBe("orchestrator");
+    expect(resolveModel("ORCHESTRATOR/FABLE")?.id).toBe("orchestrator/fable");
+    expect(resolveModel("orchestrator/nonsense")).toBeNull();
+  });
+
+  it("maps an orchestrator id to its MAIN model at dispatch", () => {
+    expect(toOpencodeModel("orchestrator/sol")).toBe("opencode/openai/gpt-5.6-sol");
+    expect(toOpencodeModel("orchestrator/nonsense")).toBeUndefined();
+  });
+
+  it("bakes effort into the preset — no selectable efforts on orchestrator ids", () => {
+    expect(modelEfforts("orchestrator/fable")).toEqual([]);
+    expect(normalizeModelEffort("orchestrator/fable", "low")).toBeUndefined();
+  });
+
+  it("looks up presets case-insensitively and via the shared modelPreset guard", () => {
+    expect(orchestratorPreset("orchestrator/fable")?.model).toBe("claude-fable-5");
+    expect(orchestratorPreset("opencode/anthropic/claude-fable-5")).toBeUndefined();
+    expect(orchestratorPreset(undefined)).toBeUndefined();
+    expect(modelPreset("orchestrator/sol")?.id).toBe("orchestrator/sol");
+    expect(modelPreset("dial/high")?.id).toBe("dial/high");
+    expect(modelPreset("claude-fable-5")).toBeUndefined();
+  });
+
+  it("defines every preset's workers on both bridges with valid models + efforts", () => {
+    for (const p of ORCHESTRATOR_PRESETS) {
+      expect(modelEfforts(p.model)).toContain(p.effort);
+      expect(resolveModel(p.model)).not.toBeNull();
+      for (const name of p.workerAgents) {
+        const w = ORCHESTRATOR_WORKER_AGENTS[name];
+        expect(w).toBeDefined();
+        // A server carries ONE bridge's auth: every worker NAME must resolve
+        // on both subscription bridges, to a model that supports its variant.
+        for (const bridge of ["anthropic", "openai"]) {
+          const b = orchestratorWorkerForBridge(name, bridge);
+          expect(b).toBeDefined();
+          expect(b!.model.startsWith(`${bridge}/`)).toBe(true);
+          expect(modelEfforts(b!.model)).toContain(b!.variant);
+        }
+      }
+    }
+    // Unknown/third-party bridges keep the oracle status quo: fall back to a
+    // defined backing instead of undefined.
+    expect(orchestratorWorkerForBridge("worker", "xai")).toBeDefined();
+    expect(orchestratorWorkerForBridge("no-such-worker", "anthropic")).toBeUndefined();
+  });
+
+  it("keeps worker models strictly cheaper tiers than every preset main model", () => {
+    for (const p of ORCHESTRATOR_PRESETS) {
+      for (const name of p.workerAgents) {
+        for (const bridge of ["anthropic", "openai"]) {
+          const b = orchestratorWorkerForBridge(name, bridge)!;
+          // fallbackTier keys off native slugs — strip the bridge prefix.
+          expect(fallbackTier(b.model.split("/").pop())).toBeLessThan(fallbackTier(p.model));
+        }
+      }
     }
   });
 });

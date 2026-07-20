@@ -114,6 +114,7 @@ export function shortModelLabel(id: string, models: ModelOption[]): string {
 /** Friendly names for the upstream providers in the grouped main list. */
 const PROVIDER_LABELS: Record<string, string> = {
 	dial: "The Dial",
+	orchestrator: "The Orchestrator",
 	anthropic: "Anthropic",
 	openai: "OpenAI",
 	xai: "xAI",
@@ -128,16 +129,19 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 /** Section order in the grouped main list; unlisted providers follow in
  * config order. */
-const PROVIDER_ORDER = ["dial", "anthropic", "openai", "xai", "meta", "moonshotai"];
+const PROVIDER_ORDER = ["dial", "orchestrator", "anthropic", "openai", "xai", "meta", "moonshotai"];
 
 /** Preferred display order for the opencode main list (by id tail); anything
  * unlisted keeps its registry/config order after these. */
 const OPENCODE_TAIL_ORDER = [
-	// The Dial presets ("dial/<tier>" ids) lead the list, hardest tier first.
+	// The Dial presets ("dial/<tier>" ids) lead the list, hardest tier first,
+	// then The Orchestrator presets ("orchestrator/<name>" ids).
 	"ultra",
 	"high",
 	"medium",
 	"low",
+	"fable",
+	"sol",
 	"claude-fable-5",
 	"claude-opus-4-8",
 	"claude-sonnet-5",
@@ -231,11 +235,12 @@ export function ModelEffortSelect({
 		const info = models.find((m) => m.id === id);
 		return {
 			value: id === defaultModel ? "" : id,
-			// Dial rows drop the "Dial · " prefix — they render under "The Dial"
-			// group header, where the full label would read twice.
+			// Preset rows drop their "Dial · " / "Orchestrator · " prefix — they
+			// render under "The Dial" / "The Orchestrator" group headers, where
+			// the full label would read twice.
 			label:
-				info?.group === "dial"
-					? shortModelLabel(id, models).replace(/^Dial\s*·\s*/, "")
+				info?.group === "dial" || info?.group === "orchestrator"
+					? shortModelLabel(id, models).replace(/^(?:Dial|Orchestrator)\s*·\s*/, "")
 					: shortModelLabel(id, models),
 			id,
 			engine: info?.provider || (opencodeModelParts(id) ? "opencode" : "claude"),

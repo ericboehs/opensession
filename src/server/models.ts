@@ -17,6 +17,7 @@ import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import {
   opencodePickerModels,
+  opencodeOrchestratorEnabled,
   bridgeEnabled,
   opencodeProviders,
   BRIDGE_PROVIDER_IDS,
@@ -30,10 +31,11 @@ export interface ModelInfo {
   provider: Provider;
   label: string;
   aliases: string[];
-  /** Picker section override ("dial" = The Dial presets); unset = grouped by
-   *  the id's upstream provider segment. */
+  /** Picker section override ("dial" = The Dial, "orchestrator" = The
+   *  Orchestrator presets); unset = grouped by the id's upstream provider
+   *  segment. */
   group?: string;
-  /** One-line picker subtitle (dial presets only today). */
+  /** One-line picker subtitle (dial/orchestrator presets only today). */
   description?: string;
 }
 
@@ -232,6 +234,127 @@ export function dialPreset(model?: string | null): DialPreset | undefined {
   return DIAL_PRESETS.find((p) => p.id === id);
 }
 
+// ── The Orchestrator ──────────────────────────────────────────────────────
+//
+// The Dial reversed (Cursor's agent-swarm economics: "few moments in a large
+// task genuinely require frontier intelligence" — workers burn most tokens,
+// so the cheap seats go to execution): a frontier MAIN model leads — plans,
+// decides, reviews, integrates — and delegates well-scoped execution subtasks
+// to cheaper WORKER models wired in as opencode subagents. Same mechanics as
+// the dial throughout: the session stores `orchestrator/<name>` as its model,
+// everything resolves at dispatch, and only orchestrator runs are told the
+// workers exist. Opt-in via opencodeOrchestratorEnabled() — the presets stay
+// out of the picker by default.
+
+export interface OrchestratorPreset {
+  /** Stored as the session's model id, e.g. "orchestrator/fable". */
+  id: string;
+  label: string;
+  /** One-line picker subtitle. */
+  description: string;
+  /** Native id of the MAIN (orchestrator) model (resolved via toOpencodeModel). */
+  model: string;
+  /** Reasoning effort for the main model (overrides the session's effort). */
+  effort: SessionEffort;
+  /** ORCHESTRATOR_WORKER_AGENTS names this preset delegates to. */
+  workerAgents: string[];
+}
+
+/**
+ * The worker subagents, keyed by opencode agent name. Like the oracles they're
+ * defined STATICALLY in every engine server config (stable agent set ⇒ stable
+ * config hash ⇒ server reuse) and invisible in practice to non-orchestrator
+ * runs — only orchestrator runs get the instructions block naming them.
+ *
+ * Worker NAMES are role-based, not model-based: a server carries ONE bridge's
+ * auth, so each name is backed per bridge (`bridges[providerID]`) with that
+ * bridge's cheap model — the orchestrator's prompts and the task tool list
+ * stay identical whichever bridge the run landed on (same lesson as
+ * sameBridgeDialOracle, learned the loud way — see DIAL_ORACLE_AGENTS).
+ */
+export const ORCHESTRATOR_WORKER_AGENTS: Record<
+  string,
+  {
+    label: string;
+    /** Task-tool description the main model sees — when to pick this worker. */
+    description: string;
+    /** Per-bridge backing model + effort variant. */
+    bridges: Record<string, { model: string; variant: SessionEffort; label: string }>;
+  }
+> = {
+  worker: {
+    label: "Worker",
+    description:
+      "Worker: executes one well-scoped implementation subtask end to end — a function, " +
+      "a module, a migration step, a test file. Give it a self-contained brief (exact " +
+      "files, constraints, acceptance criteria); it sees the checkout but none of your " +
+      "conversation. Not for design decisions or final review.",
+    bridges: {
+      anthropic: { model: "anthropic/claude-sonnet-5", variant: "medium", label: "Sonnet 5" },
+      openai: { model: "openai/gpt-5.4", variant: "medium", label: "GPT-5.4" },
+    },
+  },
+  "worker-fast": {
+    label: "Fast worker",
+    description:
+      "Fast worker: quick mechanical subtasks — renames, boilerplate, repetitive sweeps, " +
+      "straightforward lookups. Cheapest and fastest; escalate anything needing judgment " +
+      "to the standard worker or do it yourself.",
+    bridges: {
+      anthropic: { model: "anthropic/claude-haiku-4-5", variant: "high", label: "Haiku 4.5" },
+      openai: { model: "openai/gpt-5.4-mini", variant: "medium", label: "GPT-5.4 mini" },
+    },
+  },
+};
+
+/** The backing (model/variant/label) a worker NAME resolves to on a server's
+ *  bridge. Unknown/third-party providers fall back to the anthropic backing —
+ *  same status quo as the oracles (a bridge worker can't run there anyway). */
+export function orchestratorWorkerForBridge(
+  name: string,
+  mainProviderID: string
+): { model: string; variant: SessionEffort; label: string } | undefined {
+  const w = ORCHESTRATOR_WORKER_AGENTS[name];
+  if (!w) return undefined;
+  return w.bridges[mainProviderID] ?? w.bridges.anthropic;
+}
+
+export const ORCHESTRATOR_PRESETS: OrchestratorPreset[] = [
+  {
+    id: "orchestrator/fable",
+    label: "Orchestrator · Fable 5",
+    description:
+      "Fable 5 high as a delegating lead — plans, reviews and integrates itself, hands execution to cheap workers",
+    model: "claude-fable-5",
+    effort: "high",
+    workerAgents: ["worker", "worker-fast"],
+  },
+  {
+    id: "orchestrator/sol",
+    label: "Orchestrator · Sol",
+    description:
+      "Sol xhigh as a delegating lead — plans, reviews and integrates itself, hands execution to cheap workers",
+    model: "gpt-5.6-sol",
+    effort: "xhigh",
+    workerAgents: ["worker", "worker-fast"],
+  },
+];
+
+/** The orchestrator preset behind a model id, or undefined. */
+export function orchestratorPreset(model?: string | null): OrchestratorPreset | undefined {
+  const id = (model || "").trim().toLowerCase();
+  if (!id.startsWith("orchestrator/")) return undefined;
+  return ORCHESTRATOR_PRESETS.find((p) => p.id === id);
+}
+
+/** The preset (dial or orchestrator) behind a model id. Sessions store the
+ *  preset id itself, so callers that persist runner-reported models must not
+ *  overwrite it — gate on this, not dialPreset, so both preset families keep
+ *  their wiring across turns. */
+export function modelPreset(model?: string | null): DialPreset | OrchestratorPreset | undefined {
+  return dialPreset(model) ?? orchestratorPreset(model);
+}
+
 /** "claude-opus-4-8" → "Opus 4.8", "gpt-5.4-mini" → "GPT-5.4 mini". Fallback
  * prettifier for model slugs with no native registry entry to borrow from. */
 function prettifyModelSlug(slug: string): string {
@@ -325,6 +448,22 @@ export function refreshOpencodePickerModels(): void {
         group: "dial",
         description: p.description,
       });
+    }
+    // The Orchestrator presets: same main-model gating as the dial (a broken
+    // worker degrades to a failed subagent call, so workers aren't gated), but
+    // additionally opt-in — off by default via opencodeOrchestratorEnabled().
+    if (opencodeOrchestratorEnabled()) {
+      for (const p of ORCHESTRATOR_PRESETS) {
+        if (!tails.has(p.model)) continue;
+        KNOWN_MODELS.push({
+          id: p.id,
+          provider: "opencode",
+          label: p.label,
+          aliases: [],
+          group: "orchestrator",
+          description: p.description,
+        });
+      }
     }
   } catch {}
 }
@@ -615,10 +754,15 @@ export function toOpencodeModel(model?: string | null): string | undefined {
   const m = (model || "").trim();
   if (!m) return model ?? undefined;
   if (m.startsWith("opencode/")) return m;
-  // Dial presets resolve to their MAIN model here; the preset id itself stays
-  // on the session (and in opts.model) so the runner can wire the oracle.
+  // Dial/orchestrator presets resolve to their MAIN model here; the preset id
+  // itself stays on the session (and in opts.model) so the runner can wire the
+  // oracle / workers.
   if (m.toLowerCase().startsWith("dial/")) {
     const p = dialPreset(m);
+    return p ? toOpencodeModel(p.model) : undefined;
+  }
+  if (m.toLowerCase().startsWith("orchestrator/")) {
+    const p = orchestratorPreset(m);
     return p ? toOpencodeModel(p.model) : undefined;
   }
   if (m === BEST_AVAILABLE_CODEX_MODEL || m.startsWith("codex-")) {
@@ -646,10 +790,10 @@ export function toOpencodeModel(model?: string | null): string | undefined {
  */
 export function interactiveDefaultModel(): string {
   const o = loadInteractiveOverride();
-  // Dial ids return unresolved: the session must store `dial/<tier>` for the
-  // runner's dial hook (oracle + effort) to engage — toOpencodeModel would
-  // collapse the preset to its bare main model.
-  if (o) return dialPreset(o) ? o : toOpencodeModel(o) || o;
+  // Preset ids (dial/orchestrator) return unresolved: the session must store
+  // the preset id for the runner's hook (oracle/workers + effort) to engage —
+  // toOpencodeModel would collapse the preset to its bare main model.
+  if (o) return modelPreset(o) ? o : toOpencodeModel(o) || o;
   return toOpencodeModel(getDefaultModel()) || getDefaultModel();
 }
 
@@ -764,13 +908,20 @@ export function resolveModel(input: string): ModelInfo | null {
   if (s.startsWith("gpt-") || s.startsWith("codex-")) {
     return { id: s, provider: "codex", label: s, aliases: [] };
   }
-  // Dial preset ids resolve even when not surfaced in the picker (e.g. the
-  // bridge got reconfigured under a stored session) — but never through the
-  // generic slash passthrough below, which would mint a bogus opencode/dial/…
+  // Preset ids resolve even when not surfaced in the picker (bridge
+  // reconfigured under a stored session; orchestrator toggled off) — but never
+  // through the generic slash passthrough below, which would mint a bogus
+  // opencode/dial/… or opencode/orchestrator/… id.
   if (s.startsWith("dial/")) {
     const p = dialPreset(s);
     return p
       ? { id: p.id, provider: "opencode", label: p.label, aliases: [], group: "dial", description: p.description }
+      : null;
+  }
+  if (s.startsWith("orchestrator/")) {
+    const p = orchestratorPreset(s);
+    return p
+      ? { id: p.id, provider: "opencode", label: p.label, aliases: [], group: "orchestrator", description: p.description }
       : null;
   }
   // OpenCode engine: explicit opencode/<provider>/<model> ids pass through —
@@ -855,10 +1006,11 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "gpt-5.3-codex-spark": 400_000,
 };
 
-/** Dial ids price/gauge as their main model; everything else passes through. */
+/** Preset ids (dial/orchestrator) price/gauge as their main model; everything
+ *  else passes through. */
 function pricingKey(model?: string | null): string {
   const id = resolveModel(model || "")?.id || model || "";
-  return dialPreset(id)?.model || id;
+  return modelPreset(id)?.model || id;
 }
 
 /** Context-window token ceiling for a model (0 if unknown → gauge hidden). */

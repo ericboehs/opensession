@@ -40,7 +40,7 @@ import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { parseTranscript } from "./jsonl-parser";
 import {
 	contextWindowFor,
-	dialPreset,
+	modelPreset,
 	interactiveFallbackModel,
 	modelLabel,
 	providerFor,
@@ -462,14 +462,15 @@ const recoveredSlackScanners = new Map<
 >();
 
 /**
- * A dial-preset session keeps its `dial/<tier>` id as the stored model: the
- * runner's init/done events report the preset's resolved MAIN model, and
- * persisting that would silently disengage the dial (oracle + effort) after
- * the first turn. Genuine fallback switches (model_switch) still overwrite —
- * a dial that fell off its main model is disengaged by design.
+ * A preset session (dial/orchestrator) keeps its preset id as the stored
+ * model: the runner's init/done events report the preset's resolved MAIN
+ * model, and persisting that would silently disengage the preset (oracle /
+ * workers + effort) after the first turn. Genuine fallback switches
+ * (model_switch) still overwrite — a preset that fell off its main model is
+ * disengaged by design.
  */
-function keepsDialModel(session: { model?: string }): boolean {
-	return !!dialPreset(session.model);
+function keepsPresetModel(session: { model?: string }): boolean {
+	return !!modelPreset(session.model);
 }
 
 export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent): void {
@@ -491,7 +492,7 @@ export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent
 			if (
 				syncAgentSessionEngine(session, {
 					engineSessionId: event.sessionId,
-					model: keepsDialModel(session) ? undefined : event.model || undefined,
+					model: keepsPresetModel(session) ? undefined : event.model || undefined,
 				})
 			)
 				invalidateSessionsCache();
@@ -557,7 +558,7 @@ export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent
 	const provider = event.provider || providerFor(model);
 	touchBackstageSession(bksSessionId, {
 		...(engineSessionId ? engineSessionPatch(provider, engineSessionId) : {}),
-		...(model && !keepsDialModel(session) ? { model } : {}),
+		...(model && !keepsPresetModel(session) ? { model } : {}),
 	});
 	if (engineSessionId && session.worktreeDir) {
 		attachSessionWatchersToEngineTranscript(
@@ -1490,7 +1491,7 @@ async function runSessionPromptInner(
 							lastEngineProvider: effectiveProvider,
 							...(effectiveModel
 								? {
-										...(keepsDialModel(session) ? {} : { model: effectiveModel }),
+										...(keepsPresetModel(session) ? {} : { model: effectiveModel }),
 										lastEngineModel: effectiveModel,
 									}
 								: {}),
@@ -1505,7 +1506,7 @@ async function runSessionPromptInner(
 						// 2026-07-16).
 						syncAgentSessionEngine(session, {
 							engineSessionId: finalSessionId,
-							model: keepsDialModel(session) ? undefined : effectiveModel || undefined,
+							model: keepsPresetModel(session) ? undefined : effectiveModel || undefined,
 						})
 					) {
 						invalidateSessionsCache();
@@ -1719,7 +1720,7 @@ async function runSessionPromptInner(
 				lastEngineProvider: effectiveProvider,
 				...(effectiveModel
 					? {
-							...(keepsDialModel(session) ? {} : { model: effectiveModel }),
+							...(keepsPresetModel(session) ? {} : { model: effectiveModel }),
 							lastEngineModel: effectiveModel,
 						}
 					: {}),
@@ -1729,7 +1730,7 @@ async function runSessionPromptInner(
 	} else if (finalSessionId) {
 		syncAgentSessionEngine(session, {
 			engineSessionId: finalSessionId,
-			model: keepsDialModel(session) ? undefined : effectiveModel || undefined,
+			model: keepsPresetModel(session) ? undefined : effectiveModel || undefined,
 		});
 	}
 

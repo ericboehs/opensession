@@ -17,7 +17,7 @@ import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { INIT_WIRE_CLAMP_BYTES, clampEntriesForWire, parseTranscript, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
-import { dialPreset, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
+import { interactiveDefaultModel, interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
 import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { appendOpencodeTranscript, transcriptLineRunnerNotice } from "./opencode-transcript";
 import { wrapContext } from "./prompt-context";
@@ -1181,7 +1181,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							// Dial sessions keep `dial/<tier>` stored — init/done report the
 							// preset's resolved MAIN model; adopting it would disengage the
 							// dial next turn. model_switch still adopts (real fallback).
-							if (event.model && !dialPreset(model)) effectiveModel = event.model;
+							if (event.model && !modelPreset(model)) effectiveModel = event.model;
 							// Session was persisted/announced before setup — just record
 							// the engine id so the run is resumable while it streams.
 							touchBackstageSession(
@@ -1281,7 +1281,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						if (event.type === "done") {
 							engineSessionId = event.sessionId || engineSessionId;
 							if (event.provider) effectiveProvider = event.provider;
-							if (event.model && !dialPreset(model)) effectiveModel = event.model;
+							if (event.model && !modelPreset(model)) effectiveModel = event.model;
 							if (event.usageLimitExhausted)
 								runFailure =
 									event.result || "Usage limit reached on every account";
