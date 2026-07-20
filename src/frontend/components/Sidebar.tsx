@@ -690,14 +690,12 @@ function mineStatus(s: UnifiedSession): MineStatus {
 	// moment the question is answered / the run recovers), so it doesn't stomp the
 	// manual pin permanently — it just floats above it while live.
 	if (s.waitingForInput || runNeedsAttention(s)) return "needsinput";
-	// A human-pinned lane wins over everything derived from PR/run state below.
+	// A human-pinned lane wins over the live run state below.
 	if (s.manualStatus) return s.manualStatus;
-	if (s.prState === "MERGED") return "merged";
-	if (s.prState === "OPEN") return "review";
 	if (s.isRunning) return "inprogress";
-	// Everything else is idle-but-unfinished: no open/merged PR, not running,
-	// not blocked. That's "Pending", not "Done" — finishing a session is an
-	// explicit act (Archive), never inferred from a moment of inactivity.
+	// Everything else is idle-but-unfinished. PR lifecycle belongs in the review
+	// UI, not the workspace state shown in the sidebar. Finishing a session is an
+	// explicit act (Archive), never inferred from a merged PR or inactivity.
 	return "pending";
 }
 
@@ -1283,8 +1281,15 @@ export function Sidebar({
 			chats: UnifiedSession[],
 		): WsRow => {
 			chats.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+			// Spawned workers are implementation details of their parent chat. A failed
+			// oracle/task must not leave the whole workspace looking blocked after the
+			// parent recovered. Fall back for an unusual child-only workspace.
+			const stateChats = chats.filter((c) => !c.parentSessionId);
+			const statusSources = stateChats.length > 0 ? stateChats : chats;
 			const status =
-				STATUS_PRIORITY.find((st) => chats.some((c) => mineStatus(c) === st)) ||
+				STATUS_PRIORITY.find((st) =>
+					statusSources.some((c) => mineStatus(c) === st),
+				) ||
 				"pending";
 			return {
 				key,
@@ -1300,7 +1305,7 @@ export function Sidebar({
 				unread: chats.some(
 					(c) => c.id !== selectedId && isUnread(c.id, c.lastActivity, reads),
 				),
-				running: chats.some((c) => c.isRunning),
+				running: statusSources.some((c) => c.isRunning),
 				owner: (workspace?.createdBy || chats[0]?.startedBy || "").toLowerCase(),
 			};
 		};
