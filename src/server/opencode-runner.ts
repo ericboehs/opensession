@@ -482,13 +482,18 @@ export function opencodeRunPolicy(opts: {
   confirmTools?: Record<string, string>;
   journalKind?: string;
 }): OpencodeRunPolicy {
+  // OpenCode's native `question` tool waits for its own TUI to answer. Our
+  // engine runs headlessly and exposes opensession-ask instead, which routes
+  // through the session question card. Leaving both visible lets the model
+  // choose the native tool and wedge the turn with raw JSON in the transcript.
+  const disables: Record<string, false> = { question: false };
   const denied = opts.deniedTools || {};
   const unattended =
     Object.keys(denied).length > 0 || isUnattendedKind(baseJournalKind(opts.journalKind));
   if (!unattended) {
     return {
       unattended,
-      disables: {},
+      disables,
       noteGroups: [],
       confirmToolsForServerDrop: opts.confirmTools,
     };
@@ -503,7 +508,6 @@ export function opencodeRunPolicy(opts: {
         "to review and execute it.";
     }
   }
-  const disables: Record<string, false> = {};
   const byMessage = new Map<string, string[]>();
   for (const [name, message] of Object.entries(merged)) {
     for (const id of opencodeDeniedToolIds(name)) disables[id] = false;

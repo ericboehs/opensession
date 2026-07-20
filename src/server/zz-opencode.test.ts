@@ -107,7 +107,12 @@ describe("opencodeRunPolicy (unattended least-privilege enforcement)", () => {
     const p = opencodeRunPolicy({ journalKind: "prompt", confirmTools: STRIPE_CONFIRM_TOOLS });
     expect(p.unattended).toBe(false);
     expect(p.confirmToolsForServerDrop).toEqual(STRIPE_CONFIRM_TOOLS);
-    expect(p.disables).toEqual({});
+    expect(p.disables).toEqual({ question: false });
+  });
+
+  test("all runs strip OpenCode's native question tool in favor of the OpenSession card", () => {
+    expect(opencodeRunPolicy({ journalKind: "prompt" }).disables.question).toBe(false);
+    expect(opencodeRunPolicy({ journalKind: "automation" }).disables.question).toBe(false);
   });
 
   test("every automation-denied tool is stripped under opencode's <server>_<tool> naming", () => {
