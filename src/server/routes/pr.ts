@@ -301,6 +301,75 @@ export async function handlePrRoutes(
 		const { getReviewGuide } = await import("../../server/review-guide");
 		return Response.json(await getReviewGuide(branch, repo.ghRepo));
 	}
+	if (path === "/backstage/api/pr-preview-review" && req.method === "POST") {
+		const body = await req.json().catch(() => null);
+		const branch = body?.branch?.trim();
+		if (!branch)
+			return Response.json({ error: "branch required" }, { status: 400 });
+		const repo = getRepo(body?.repo || undefined);
+		const event =
+			body?.event === "APPROVE" || body?.event === "REQUEST_CHANGES"
+				? body.event
+				: "COMMENT";
+		const comments = Array.isArray(body?.comments) ? body.comments : [];
+		if (
+			!comments.length &&
+			!body?.summary?.trim() &&
+			event !== "APPROVE"
+		)
+			return Response.json({ error: "Nothing to submit" }, { status: 400 });
+		const user = requestUser(ctx, body?.user) || "Someone";
+		const summary = body?.summary?.trim();
+		const result = await submitPrReview(
+			branch,
+			{
+				event,
+				body: summary
+					? `**${user}** via ${personaName()}:\n\n${summary}`
+					: `Review by **${user}** via ${personaName()}.`,
+				comments: comments
+					.filter((c: any) => c?.text?.trim() && c?.path && c?.line)
+					.map((c: any) => ({
+						path: c.path,
+						line: c.line,
+						startLine: c.startLine,
+						side: c.side,
+						startSide: c.startSide,
+						body: `**${user}**: ${c.text.trim()}`,
+					})),
+			},
+			repo.ghRepo,
+		);
+		if ("error" in result) return Response.json(result, { status: 502 });
+		invalidateSessionsCache();
+		return Response.json(result);
+	}
+	if (path === "/backstage/api/pr-preview-merge" && req.method === "POST") {
+		const body = await req.json().catch(() => ({}));
+		const branch = body?.branch?.trim();
+		if (!branch)
+			return Response.json({ error: "branch required" }, { status: 400 });
+		const repo = getRepo(body?.repo || undefined);
+		const method =
+			body.method === "merge" || body.method === "rebase"
+				? body.method
+				: "squash";
+		try {
+			const result = await mergePr(
+				branch,
+				{ method, deleteBranch: !!body.deleteBranch },
+				repo.ghRepo,
+			);
+			if ("error" in result) return Response.json(result, { status: 502 });
+			invalidateSessionsCache();
+			return Response.json(result);
+		} catch (e: any) {
+			return Response.json(
+				{ error: e.message || String(e) },
+				{ status: 500 },
+			);
+		}
+	}
 
 	// Post a comment on the session's PR (inline when path+line present)
 	if (
@@ -365,7 +434,11 @@ export async function handlePrRoutes(
 				? body.event
 				: "COMMENT";
 		const comments = Array.isArray(body?.comments) ? body.comments : [];
-		if (!comments.length && !body?.summary?.trim()) {
+		if (
+			!comments.length &&
+			!body?.summary?.trim() &&
+			event !== "APPROVE"
+		) {
 			return Response.json({ error: "Nothing to submit" }, { status: 400 });
 		}
 

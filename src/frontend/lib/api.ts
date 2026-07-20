@@ -1108,6 +1108,17 @@ export async function submitPrReviewApi(
 	);
 }
 
+export async function submitPrPreviewReviewApi(
+	repo: string,
+	branch: string,
+	payload: Parameters<typeof submitPrReviewApi>[1],
+) {
+	return request<{ ok: true; url?: string }>("/pr-preview-review", {
+		method: "POST",
+		body: { ...payload, repo, branch },
+	});
+}
+
 export async function mergePrApi(
 	sessionId: string,
 	method: "squash" | "merge" | "rebase" = "squash",
@@ -1125,6 +1136,17 @@ export async function mergePrApi(
 			},
 		},
 	);
+}
+
+export async function mergePrPreviewApi(
+	repo: string,
+	branch: string,
+	method: "squash" | "merge" | "rebase" = "squash",
+) {
+	return request<{ ok: true; url?: string }>("/pr-preview-merge", {
+		method: "POST",
+		body: { repo, branch, method },
+	});
 }
 
 /** GitHub PR agent behaviors (the opensession-* PR labels) fired straight from the

@@ -30,6 +30,8 @@ interface Props {
   placeholder: string;
   disabled?: boolean;
   disabledHint?: string;
+  /** Expand this many leading files on first render (review canvas uses 10). */
+  defaultExpandedFiles?: number;
   onSubmit: (target: CommentTarget, text: string) => Promise<void>;
   /**
    * When provided, changed image files render the actual pictures (before/after)
@@ -103,6 +105,7 @@ const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
 
 export function CommentableDiff({
   patch,
+  defaultExpandedFiles = 0,
   submitLabel,
   placeholder,
   disabled,
@@ -174,6 +177,12 @@ export function CommentableDiff({
     [onDiscard, armed],
   );
   useEffect(() => () => clearTimeout(disarmTimer.current), []);
+
+  useEffect(() => {
+    setExpanded(
+      new Set(files.slice(0, defaultExpandedFiles).map((_, index) => index)),
+    );
+  }, [patch, defaultExpandedFiles]);
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);

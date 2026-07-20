@@ -242,8 +242,43 @@ export function Reviews({
     { key: "all", label: "All", count: counts.all },
   ];
 
+  // Sidebar queue rows deep-link here with a selected session. Give the review
+  // the whole main canvas: the PR info rail and diff already scroll
+  // independently inside PrPanel, so retaining the old table rail only made
+  // the code review cramped and duplicated the queue that remains visible in
+  // the app sidebar.
+  if (selected) {
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-surface">
+        <div className="hidden shrink-0 items-center border-b border-line px-3 py-2 max-[720px]:flex">
+          <button
+            className="inline-flex items-center gap-1.5 rounded-sm border-0 bg-transparent px-2 py-1.5 text-sm font-medium text-fg hover:bg-hover"
+            onClick={() => onSelect("")}
+          >
+            <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+              <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 1 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
+            </svg>
+            Pull requests
+          </button>
+        </div>
+        <div className="min-h-0 flex-1">
+          <PrPanel
+            key={selected.id}
+            sessionId={selected.id}
+            onOpenSession={() => onOpenSession(selected.id)}
+            onAddToInput={(text) => onAddToInput(selected.id, text)}
+            split
+            reviewCanvas
+            send={send}
+            walkthrough={selected.walkthrough}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`reviews ${selected ? "reviews-has-detail" : ""}`}>
+    <div className="reviews">
       <div className="reviews-main">
         <div className="reviews-header">
           <div className="reviews-header-top">
@@ -304,11 +339,10 @@ export function Reviews({
           <div className="reviews-table" role="table">
             {filtered.map((s) => {
               const meta = stateMeta(s);
-              const active = selected?.id === s.id;
               return (
                 <button
                   key={s.prUrl}
-                  className={`reviews-row ${active ? "active" : ""}`}
+                  className="reviews-row"
                   onClick={() => onSelect(s.id)}
                   role="row"
                 >
@@ -387,43 +421,6 @@ export function Reviews({
         )}
       </div>
 
-      {selected && (
-        <aside className="reviews-drawer">
-          <div className="reviews-drawer-head">
-            <button
-              className="reviews-drawer-back"
-              onClick={() => onSelect("")}
-              title="Back to pull requests"
-            >
-              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-                <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 1 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
-              </svg>
-              Pull requests
-            </button>
-            <button
-              className="reviews-drawer-close"
-              onClick={() => onSelect("")}
-              title="Close"
-            >
-              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-                <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.749.749 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.749.749 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
-              </svg>
-            </button>
-            <span className="reviews-drawer-title">{cleanTitle(selected)}</span>
-          </div>
-          <div className="reviews-drawer-body">
-            <PrPanel
-              key={selected.id}
-              sessionId={selected.id}
-              onOpenSession={() => onOpenSession(selected.id)}
-              onAddToInput={(text) => onAddToInput(selected.id, text)}
-              split
-              send={send}
-              walkthrough={selected.walkthrough}
-            />
-          </div>
-        </aside>
-      )}
     </div>
   );
 }

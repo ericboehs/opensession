@@ -1,0 +1,44 @@
+import React, { useMemo } from "react";
+import type { UnifiedSession } from "../lib/types";
+import { PrPanel } from "./PrPanel";
+
+interface Props {
+	repo: string;
+	branch: string;
+	sessions: UnifiedSession[];
+	onOpenSession: (id: string) => void;
+}
+
+/**
+ * Review-canvas adapter for PRs opened from the sidebar queue. A primary-branch
+ * session uses the normal session APIs; an unclaimed PR uses the repo+branch
+ * preview APIs, but both render the exact same review surface.
+ */
+export function PrQueuePreview({ repo, branch, sessions, onOpenSession }: Props) {
+	const session = useMemo(
+		() =>
+			[...sessions]
+				.filter(
+					(item) =>
+						(item.repo || "tella-fusion") === repo && item.branch === branch,
+				)
+				.sort((a, b) =>
+					(b.lastActivity || "").localeCompare(a.lastActivity || ""),
+				)[0] || null,
+		[sessions, repo, branch],
+	);
+
+	return (
+		<div className="h-full min-h-0 bg-surface">
+			<PrPanel
+				sessionId={session?.id || ""}
+				previewTarget={session ? undefined : { repo, branch }}
+				reviewCanvas
+				onOpenSession={
+					session ? () => onOpenSession(session.id) : undefined
+				}
+				walkthrough={session?.walkthrough}
+			/>
+		</div>
+	);
+}

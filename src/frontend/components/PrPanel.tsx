@@ -21,11 +21,19 @@ import {
   linkPrApi,
   unlinkPrApi,
 } from "../lib/api";
+import {
+  fetchPrPreview,
+  fetchPrPreviewDiff,
+  fetchPrPreviewGuide,
+  submitPrPreviewReviewApi,
+  mergePrPreviewApi,
+} from "../lib/api";
 import { toast } from "../ui/toast";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { CommentableDiff, type CommentTarget, type PendingComment } from "./CommentableDiff";
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
+import { githubLoginFor } from "./UserAvatar";
 import { renderMarkdown } from "../lib/markdown";
 import { providerFromUrl, avatarUrl, type Provider } from "../lib/provider";
 import {
@@ -68,6 +76,10 @@ interface Props {
   /** Agent-published walkthrough (session.walkthrough) — rendered at the top
    *  of the info column; its mirrored section is stripped from the PR body. */
   walkthrough?: SessionWalkthrough;
+  /** Diff-first review canvas used by the Pull requests sidebar inbox. */
+  reviewCanvas?: boolean;
+  /** Session-less PR target; uses the same canvas with repo+branch APIs. */
+  previewTarget?: { repo: string; branch: string };
 }
 
 interface PrDiffData {
@@ -232,6 +244,8 @@ export function PrPanel({
   linkable,
   send,
   walkthrough,
+  reviewCanvas,
+  previewTarget,
 }: Props) {
   // Local copy of the linked-PR list so link/unlink applies instantly; the
   // sessions list catches up on its next refresh.
@@ -239,12 +253,22 @@ export function PrPanel({
   const linked = linkedLocal ?? linkedPrs ?? [];
   const targets = useMemo<PrTarget[]>(
     () => [
-      ...(repos ?? []).map((r) => ({
-        key: r.repo,
-        repo: r.repo,
-        primary: r.primary,
-        label: r.repo,
-      })),
+      ...(previewTarget
+        ? [
+            {
+              key: `preview:${previewTarget.repo}:${previewTarget.branch}`,
+              repo: previewTarget.repo,
+              branch: previewTarget.branch,
+              primary: true,
+              label: previewTarget.repo,
+            },
+          ]
+        : (repos ?? []).map((r) => ({
+            key: r.repo,
+            repo: r.repo,
+            primary: r.primary,
+            label: r.repo,
+          }))),
       ...linked.map((lp) => ({
         key: `${lp.repo} ${lp.branch}`,
         repo: lp.repo,
@@ -253,7 +277,7 @@ export function PrPanel({
         label: lp.number ? `${lp.repo} #${lp.number}` : `${lp.repo}:${lp.branch}`,
       })),
     ],
-    [repos, linked],
+    [repos, linked, previewTarget?.repo, previewTarget?.branch],
   );
   const [activeKey, setActiveKey] = useState<string | undefined>(
     () => (targets.find((t) => t.primary) ?? targets[0])?.key,
@@ -287,10 +311,15 @@ export function PrPanel({
   const load = useCallback(async () => {
     try {
       const [prData, diffData, gitData] = await Promise.all([
-        fetchPr(sessionId, active?.repo, active?.branch),
-        fetchPrDiff(sessionId, active?.repo, active?.branch).catch(() => null),
+        previewTarget
+          ? fetchPrPreview(previewTarget.repo, previewTarget.branch)
+          : fetchPr(sessionId, active?.repo, active?.branch),
+        (previewTarget
+          ? fetchPrPreviewDiff(previewTarget.repo, previewTarget.branch)
+          : fetchPrDiff(sessionId, active?.repo, active?.branch)
+        ).catch(() => null),
         // A linked PR has no local worktree in this session — no git state.
-        active?.linked
+        previewTarget || active?.linked
           ? Promise.resolve(null)
           : fetchGitStatus(sessionId, active?.repo).catch(() => null),
       ]);
@@ -302,7 +331,14 @@ export function PrPanel({
     } finally {
       setLoading(false);
     }
-  }, [sessionId, active?.repo, active?.branch, active?.linked]);
+  }, [
+    sessionId,
+    active?.repo,
+    active?.branch,
+    active?.linked,
+    previewTarget?.repo,
+    previewTarget?.branch,
+  ]);
 
   useEffect(() => {
     setLoading(true);
@@ -324,7 +360,13 @@ export function PrPanel({
     } finally {
       setGuideLoading(false);
     }
-  }, [sessionId, active?.repo, active?.branch]);
+  }, [
+    sessionId,
+    active?.repo,
+    active?.branch,
+    previewTarget?.repo,
+    previewTarget?.branch,
+  ]);
 
   // The guide is generated on demand (the first request per head commit takes
   // the model a while) — only fetch once the reviewer opens the Guide tab, and
@@ -349,14 +391,18 @@ export function PrPanel({
 
   async function handleSubmitReview() {
     if (submitting) return;
-    if (pending.length === 0 && !summary.trim()) {
+    if (
+      pending.length === 0 &&
+      !summary.trim() &&
+      reviewEvent !== "APPROVE"
+    ) {
       setReviewError("Add a comment or a summary first");
       return;
     }
     setSubmitting(true);
     setReviewError(null);
     try {
-      const result = await submitPrReviewApi(sessionId, {
+      const payload = {
         user: getCurrentUser(),
         event: reviewEvent,
         summary: summary.trim() || undefined,
@@ -367,14 +413,41 @@ export function PrPanel({
           path: c.path,
           line: c.endLine,
           startLine: c.startLine !== c.endLine ? c.startLine : undefined,
-          side: c.side === "deletions" ? "LEFT" : "RIGHT",
+          side: (c.side === "deletions" ? "LEFT" : "RIGHT") as
+            | "LEFT"
+            | "RIGHT",
         })),
-      });
+      };
+      const result = previewTarget
+        ? await submitPrPreviewReviewApi(
+            previewTarget.repo,
+            previewTarget.branch,
+            payload,
+          )
+        : await submitPrReviewApi(sessionId, payload);
+      let merged = false;
+      if (reviewCanvas && reviewEvent === "APPROVE" && mergeAfterReview) {
+        try {
+          if (previewTarget)
+            await mergePrPreviewApi(
+              previewTarget.repo,
+              previewTarget.branch,
+              "squash",
+            );
+          else
+            await mergePrApi(sessionId, "squash", active?.repo, active?.branch);
+          merged = true;
+        } catch (e: any) {
+          setMergeError(
+            `Review approved, but merge failed: ${e.message || "unknown error"}`,
+          );
+        }
+      }
       setPending([]);
       setSummary("");
       setReviewOpen(false);
-      setReviewEvent("COMMENT");
-      setReviewDone(result.url || "submitted");
+      setReviewEvent(reviewCanvas ? "APPROVE" : "COMMENT");
+      setReviewDone(merged ? "merged" : result.url || "submitted");
       setTimeout(() => setReviewDone(null), 6000);
       await load();
     } catch (e: any) {
@@ -396,7 +469,13 @@ export function PrPanel({
     setMerging(true);
     setMergeError(null);
     try {
-      await mergePrApi(sessionId, "squash", active?.repo, active?.branch);
+      if (previewTarget)
+        await mergePrPreviewApi(
+          previewTarget.repo,
+          previewTarget.branch,
+          "squash",
+        );
+      else await mergePrApi(sessionId, "squash", active?.repo, active?.branch);
       await load();
     } catch (e: any) {
       setMergeError(e.message || "Merge failed");
@@ -576,6 +655,527 @@ export function PrPanel({
   // Bot bookkeeping comments are pure HTML markers — hide them, and strip
   // leading markers from real comments' previews.
   const comments = (pr.comments || []).filter((c) => stripHtmlComments(c.body));
+
+  if (reviewCanvas) {
+    const currentLogin = githubLoginFor(getCurrentUser())?.toLowerCase();
+    const myReview = reviewers.find(
+      (reviewer) => reviewer.login.toLowerCase() === currentLogin,
+    );
+    const needsReview =
+      (pr.author.toLowerCase() === "tella-butler" &&
+        pr.reviewDecision !== "APPROVED") ||
+      myReview?.state === "PENDING";
+    const canMergeAfterReview =
+      pr.state === "OPEN" &&
+      !pr.isDraft &&
+      pr.mergeable !== "CONFLICTING" &&
+      checkSummary.failed === 0 &&
+      checkSummary.pending === 0;
+    const guideSections =
+      guide && diff?.patch ? sectionsWithPatches(guide, diff.patch) : [];
+    const reviewSubmitLabel =
+      reviewEvent === "APPROVE"
+        ? mergeAfterReview && canMergeAfterReview
+          ? "Approve & merge"
+          : "Approve"
+        : reviewEvent === "REQUEST_CHANGES"
+          ? "Request changes"
+          : "Submit review";
+    const openFile = (path: string) => {
+      setDiffView("diff");
+      requestAnimationFrame(() => scrollToFile(path));
+    };
+
+    return (
+      <div
+        className="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface"
+        data-review-canvas="true"
+        ref={rootRef}
+      >
+        {switcher}
+
+        <header className="flex min-h-[78px] shrink-0 items-center gap-5 border-b border-line px-5 py-3">
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex items-center gap-1.5 text-[11px] text-faint">
+              <span>{pr.author}</span>
+              <span>·</span>
+              <a
+                className="cursor-text select-text hover:text-dim"
+                href={pr.url}
+                target="_blank"
+                rel="noopener"
+              >
+                #{pr.number}
+              </a>
+              <span>·</span>
+              <span>{active?.repo || "tella-fusion"}</span>
+            </div>
+            <a
+              className="block truncate text-[17px] font-semibold tracking-[-0.015em] text-fg no-underline hover:text-accent"
+              href={pr.url}
+              target="_blank"
+              rel="noopener"
+            >
+              {pr.title}
+            </a>
+            <div className="mt-1 flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-[11px] text-faint">
+              <span className="truncate font-mono">{pr.headRefName}</span>
+              <span>→</span>
+              <span className="font-mono">{pr.baseRefName}</span>
+              <span>·</span>
+              <span>{pr.changedFiles} files</span>
+              <span className="font-mono text-green">+{pr.additions}</span>
+              <span className="font-mono text-red">−{pr.deletions}</span>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 max-[760px]:hidden">
+            {pr.staging?.url && (
+              <a
+                className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim no-underline hover:border-line-strong hover:bg-hover hover:text-fg"
+                href={pr.staging.url}
+                target="_blank"
+                rel="noopener"
+              >
+                Preview
+              </a>
+            )}
+            {onOpenSession && (
+              <button
+                className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                onClick={onOpenSession}
+              >
+                Open session
+              </button>
+            )}
+            {pr.state === "OPEN" && !pr.isDraft &&
+              (needsReview ? (
+                <button
+                  className="rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface hover:opacity-90"
+                  onClick={() => setReviewOpen(true)}
+                >
+                  Finish review
+                </button>
+              ) : status.key === "ready" ? (
+                <button
+                  className={`rounded-sm border px-3 py-2 text-xs font-semibold ${
+                    confirmMerge
+                      ? "border-green bg-green text-surface"
+                      : "border-green/40 bg-green-soft text-green hover:border-green"
+                  }`}
+                  onClick={handleMerge}
+                  disabled={merging}
+                >
+                  {merging
+                    ? "Merging…"
+                    : confirmMerge
+                      ? "Confirm squash & merge"
+                      : "Squash & merge"}
+                </button>
+              ) : (
+                <button
+                  className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                  onClick={() => setReviewOpen(true)}
+                >
+                  Review
+                </button>
+              ))}
+          </div>
+        </header>
+
+        <div className="flex h-11 shrink-0 overflow-x-auto border-b border-line">
+          <ReviewSignal
+            tone={
+              checkSummary.failed > 0
+                ? "red"
+                : checkSummary.pending > 0
+                  ? "yellow"
+                  : "green"
+            }
+            label={
+              checkSummary.failed > 0
+                ? `${checkSummary.failed} checks failing`
+                : checkSummary.pending > 0
+                  ? `${checkSummary.pending} checks running`
+                  : `${checkSummary.passed} checks passed`
+            }
+            detail={`${checkSummary.total} total`}
+          />
+          <ReviewSignal
+            tone={pr.mergeable === "CONFLICTING" ? "red" : "green"}
+            label={
+              pr.mergeable === "CONFLICTING" ? "Merge conflict" : "No conflicts"
+            }
+            detail={pr.mergeStateStatus || "Cleanly mergeable"}
+          />
+          <ReviewSignal
+            tone={needsReview ? "yellow" : "green"}
+            label={needsReview ? "Your review needed" : status.qualifier || status.label}
+            detail={
+              myReview?.state === "PENDING"
+                ? "Requested directly from you"
+                : pr.author === "tella-butler"
+                  ? "tella-butler pull request"
+                  : pr.reviewDecision === "APPROVED"
+                    ? "Approved"
+                    : "Review status"
+            }
+          />
+          {pr.staging?.url && (
+            <ReviewSignal
+              tone={pr.staging.status === "SUCCESS" ? "green" : "yellow"}
+              label={
+                pr.staging.status === "SUCCESS" ? "Preview ready" : "Preview building"
+              }
+              detail="Open staging build"
+              href={pr.staging.url}
+            />
+          )}
+        </div>
+
+        <div className="flex min-h-0 flex-1">
+          <aside className="w-[274px] shrink-0 overflow-y-auto border-r border-line bg-panel/30 px-4 py-4 max-[900px]:hidden">
+            <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">
+              Review
+            </div>
+            <div className="mb-5 grid gap-0.5">
+              <button
+                className={`flex items-center gap-2 rounded-sm border-0 px-2 py-2 text-left text-xs ${diffView === "guide" ? "bg-active text-fg" : "bg-transparent text-dim hover:bg-hover hover:text-fg"}`}
+                onClick={() => setDiffView("guide")}
+              >
+                <span className="text-blue">✦</span>
+                Review guide
+              </button>
+              <button
+                className={`flex items-center gap-2 rounded-sm border-0 px-2 py-2 text-left text-xs ${diffView === "diff" ? "bg-active text-fg" : "bg-transparent text-dim hover:bg-hover hover:text-fg"}`}
+                onClick={() => setDiffView("diff")}
+              >
+                <IconFile size={14} />
+                Files changed
+                <span className="ml-auto text-[10px] text-faint">{files.length}</span>
+              </button>
+              <button
+                className="flex items-center gap-2 rounded-sm border-0 bg-transparent px-2 py-2 text-left text-xs text-dim hover:bg-hover hover:text-fg"
+                onClick={() => setChecksOpen((value) => !value)}
+              >
+                <IconCheck size={14} />
+                Checks
+                <span className="ml-auto text-[10px] text-faint">{checkSummary.total}</span>
+              </button>
+              <button className="flex items-center gap-2 rounded-sm border-0 bg-transparent px-2 py-2 text-left text-xs text-dim hover:bg-hover hover:text-fg">
+                <IconMessage size={14} />
+                Conversation
+                <span className="ml-auto text-[10px] text-faint">{comments.length}</span>
+              </button>
+            </div>
+
+            {checksOpen && checkSummary.checks.length > 0 && (
+              <div className="mb-5 rounded-sm border border-line bg-panel p-2">
+                {checkSummary.checks.slice(0, 8).map((check, index) => (
+                  <CheckRow key={index} check={check} />
+                ))}
+              </div>
+            )}
+
+            {!!bodyHtml && (
+              <>
+                <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">
+                  Intent
+                </div>
+                <div
+                  className="markdown mb-5 max-h-[150px] overflow-hidden px-2 text-xs leading-relaxed text-dim"
+                  dangerouslySetInnerHTML={{ __html: bodyHtml }}
+                />
+              </>
+            )}
+
+            <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">
+              Review path
+            </div>
+            <div className="mb-5 ml-2 border-l border-line">
+              {guideSections.length > 0 ? (
+                guideSections.map((section, index) => (
+                  <button
+                    key={`${section.title}-${index}`}
+                    className="block w-full border-0 bg-transparent px-3 pb-3 text-left text-[11px] leading-snug text-dim hover:text-fg"
+                    onClick={() =>
+                      document
+                        .getElementById(`review-guide-${index}`)
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                    }
+                  >
+                    <span className="mr-1.5 font-mono text-faint">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    {section.title}
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 pb-2 text-[11px] text-faint">
+                  {guideLoading ? "Writing review guide…" : "Open Guide to generate a path."}
+                </div>
+              )}
+            </div>
+
+            <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">
+              Files
+            </div>
+            <div className="grid gap-0.5">
+              {files.slice(0, 12).map((file) => {
+                const base = file.path.split("/").pop() || file.path;
+                return (
+                  <button
+                    key={file.path}
+                    className="flex min-w-0 items-center gap-2 rounded-sm border-0 bg-transparent px-2 py-1.5 text-left font-mono text-[11px] text-dim hover:bg-hover hover:text-fg"
+                    onClick={() => openFile(file.path)}
+                    title={file.path}
+                  >
+                    <span className="truncate">{base}</span>
+                    <span className="ml-auto shrink-0 text-green">+{file.additions}</span>
+                    <span className="shrink-0 text-red">−{file.deletions}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+
+          <main className="min-w-0 flex-1 overflow-y-auto bg-surface pb-24">
+            <div className="sticky top-0 z-[7] flex h-[50px] items-center border-b border-line bg-surface/95 px-5 backdrop-blur">
+              <div className="flex gap-1">
+                <button
+                  className={`rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "guide" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
+                  onClick={() => setDiffView("guide")}
+                >
+                  Guide
+                </button>
+                <button
+                  className={`rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "diff" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
+                  onClick={() => setDiffView("diff")}
+                >
+                  Files
+                </button>
+              </div>
+              <span className="ml-auto text-[11px] text-faint">
+                {pending.length > 0
+                  ? `${pending.length} pending comment${pending.length === 1 ? "" : "s"}`
+                  : `${files.length} file${files.length === 1 ? "" : "s"}`}
+              </span>
+            </div>
+
+            <div className="mx-auto max-w-[980px] px-5 py-6 max-[720px]:px-2">
+              {!diff?.patch ? (
+                <div className="py-12 text-center text-sm text-faint">
+                  No text diff is available for this pull request.
+                </div>
+              ) : diffView === "guide" ? (
+                guideLoading ? (
+                  <>
+                    <div className="mb-4 rounded-sm border border-line bg-panel px-3 py-2 text-xs text-faint">
+                      Writing the review guide… You can review the file diff while it groups the change by intent.
+                    </div>
+                    <CommentableDiff
+                      patch={diff.patch}
+                      defaultExpandedFiles={10}
+                      submitLabel="Add comment"
+                      placeholder={`Comment on #${diff.number} — added to your pending review…`}
+                      pendingComments={pending}
+                      onRemovePending={handleRemovePending}
+                      onSubmit={handleAddPending}
+                      imageSrcs={prImageSrcs}
+                    />
+                  </>
+                ) : guideFailed ? (
+                  <div className="py-12 text-center text-sm text-faint">
+                    Couldn't generate a guide for this PR.
+                    <button
+                      className="ml-2 border-0 bg-transparent text-accent"
+                      onClick={() => void loadGuide()}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : guide ? (
+                  <>
+                    <div className="mb-7 grid grid-cols-[54px_minmax(0,1fr)] gap-4 px-1">
+                      <div className="font-mono text-[10px] leading-relaxed text-faint">
+                        REVIEW<br />GUIDE
+                      </div>
+                      <div>
+                        <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em] text-fg">
+                          {guide.sections.length} focused review step{guide.sections.length === 1 ? "" : "s"}
+                        </h2>
+                        <p className="mt-1 max-w-[680px] text-xs leading-relaxed text-dim">
+                          Review the change by intent rather than alphabetically. Comments stay pending until you finish the review.
+                        </p>
+                      </div>
+                    </div>
+                    {guideSections.map((section, index, all) => (
+                      <section
+                        id={`review-guide-${index}`}
+                        className="mb-8 scroll-mt-[64px]"
+                        key={`${section.title}-${index}`}
+                      >
+                        <div className="mb-3 grid grid-cols-[54px_minmax(0,1fr)] gap-4 px-1">
+                          <div className="font-mono text-[10px] text-faint">
+                            {String(index + 1).padStart(2, "0")} / {String(all.length).padStart(2, "0")}
+                          </div>
+                          <div>
+                            <div className="text-[13px] font-semibold text-fg">{section.title}</div>
+                            <div className="mt-1 text-[11.5px] leading-relaxed text-dim">
+                              {section.explanation}
+                            </div>
+                          </div>
+                        </div>
+                        {section.patch && (
+                          <CommentableDiff
+                            patch={section.patch}
+                            defaultExpandedFiles={Math.max(
+                              0,
+                              10 -
+                                all
+                                  .slice(0, index)
+                                  .reduce(
+                                    (count, previous) =>
+                                      count + previous.files.length,
+                                    0,
+                                  ),
+                            )}
+                            submitLabel="Add comment"
+                            placeholder={`Comment on #${diff.number} — added to your pending review…`}
+                            pendingComments={pending}
+                            onRemovePending={handleRemovePending}
+                            onSubmit={handleAddPending}
+                            imageSrcs={prImageSrcs}
+                          />
+                        )}
+                      </section>
+                    ))}
+                  </>
+                ) : null
+              ) : (
+                <CommentableDiff
+                  patch={diff.patch}
+                  defaultExpandedFiles={10}
+                  submitLabel="Add comment"
+                  placeholder={`Comment on #${diff.number} — added to your pending review…`}
+                  pendingComments={pending}
+                  onRemovePending={handleRemovePending}
+                  onSubmit={handleAddPending}
+                  imageSrcs={prImageSrcs}
+                />
+              )}
+            </div>
+          </main>
+        </div>
+
+        <div className="pointer-events-none absolute bottom-4 left-[290px] right-4 z-10 flex min-h-[54px] items-center rounded-md border border-line-strong bg-panel/95 px-3 py-2 shadow-[0_12px_35px_rgba(0,0,0,0.3)] backdrop-blur max-[900px]:left-4">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-medium text-fg">
+              {reviewDone === "merged"
+                ? "Approved and merged"
+                : reviewDone
+                  ? "Review submitted"
+                  : pending.length > 0
+                    ? `${pending.length} pending comment${pending.length === 1 ? "" : "s"}`
+                    : "No pending comments"}
+            </div>
+            <div className="mt-0.5 truncate text-[10px] text-faint">
+              Comments are sent together when you finish the review
+            </div>
+          </div>
+          <div className="pointer-events-auto ml-3 flex shrink-0 gap-2">
+            {onOpenSession && (
+              <button
+                className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs text-dim hover:bg-hover hover:text-fg"
+                onClick={onOpenSession}
+              >
+                Open session
+              </button>
+            )}
+            {pr.state === "OPEN" && !pr.isDraft && (
+              <button
+                className="rounded-sm border border-green/40 bg-green-soft px-3 py-2 text-xs font-semibold text-green hover:border-green"
+                onClick={() => setReviewOpen(true)}
+              >
+                Finish review
+              </button>
+            )}
+          </div>
+        </div>
+
+        {reviewOpen && (
+          <>
+            <button
+              className="absolute inset-0 z-20 cursor-default border-0 bg-black/25"
+              aria-label="Close review form"
+              onClick={() => setReviewOpen(false)}
+            />
+            <div className="absolute bottom-5 right-5 z-30 w-[430px] max-w-[calc(100%-40px)] rounded-md border border-line-strong bg-panel p-4 shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
+              <div className="mb-3 flex items-center">
+                <span className="text-sm font-semibold text-fg">Finish review for #{pr.number}</span>
+                <button
+                  className="ml-auto border-0 bg-transparent text-lg text-faint hover:text-fg"
+                  onClick={() => setReviewOpen(false)}
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <textarea
+                className="h-20 w-full resize-none rounded-sm border border-line bg-surface p-2.5 text-xs text-fg outline-none focus:border-line-strong"
+                placeholder="Review summary (optional for approval)…"
+                value={summary}
+                onChange={(event) => setSummary(event.target.value)}
+              />
+              <div className="my-2.5 grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    ["COMMENT", "Comment"],
+                    ["APPROVE", "Approve"],
+                    ["REQUEST_CHANGES", "Request changes"],
+                  ] as Array<[ReviewEvent, string]>
+                ).map(([event, label]) => (
+                  <button
+                    key={event}
+                    className={`rounded-sm border px-2 py-2 text-[11px] ${reviewEvent === event ? "border-green/50 bg-green-soft text-green" : "border-line bg-surface text-dim hover:border-line-strong hover:text-fg"}`}
+                    onClick={() => setReviewEvent(event)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {reviewEvent === "APPROVE" && canMergeAfterReview && (
+                <label className="mb-3 flex cursor-pointer items-center gap-2 px-0.5 text-[11px] text-dim">
+                  <input
+                    type="checkbox"
+                    checked={mergeAfterReview}
+                    onChange={(event) => setMergeAfterReview(event.target.checked)}
+                  />
+                  Squash and merge immediately after approval
+                </label>
+              )}
+              {reviewError && <div className="mb-2 text-xs text-red">{reviewError}</div>}
+              {mergeError && <div className="mb-2 text-xs text-red">{mergeError}</div>}
+              <div className="flex justify-end gap-2">
+                <button
+                  className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs text-dim hover:bg-hover hover:text-fg"
+                  onClick={() => setReviewOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface disabled:opacity-50"
+                  onClick={handleSubmitReview}
+                  disabled={submitting}
+                >
+                  {submitting ? "Submitting…" : reviewSubmitLabel}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`pr-panel ${split ? "pr-panel-split" : ""}`} ref={rootRef}>
@@ -944,6 +1544,63 @@ export function PrPanel({
       )}
       </div>
     </div>
+  );
+}
+
+function ReviewSignal({
+  tone,
+  label,
+  detail,
+  href,
+}: {
+  tone: "green" | "yellow" | "red";
+  label: string;
+  detail: string;
+  href?: string;
+}) {
+  const content = (
+    <>
+      <span
+        className={`flex size-[18px] shrink-0 items-center justify-center rounded-full border ${
+          tone === "green"
+            ? "border-green/40 text-green"
+            : tone === "red"
+              ? "border-red/40 text-red"
+              : "border-yellow/40 text-yellow"
+        }`}
+      >
+        {tone === "green" ? (
+          <IconCheck size={11} />
+        ) : tone === "red" ? (
+          <IconX size={11} />
+        ) : (
+          <IconClock size={11} />
+        )}
+      </span>
+      <span>
+        <span
+          className={`block text-[11px] font-semibold leading-tight ${
+            tone === "green"
+              ? "text-green"
+              : tone === "red"
+                ? "text-red"
+                : "text-yellow"
+          }`}
+        >
+          {label}
+        </span>
+        <span className="block text-[9px] leading-tight text-faint">{detail}</span>
+      </span>
+    </>
+  );
+  const className =
+    "flex min-w-[155px] items-center gap-2 border-r border-line px-4 no-underline";
+  return href ? (
+    <a className={className} href={href} target="_blank" rel="noopener">
+      {content}
+    </a>
+  ) : (
+    <div className={className}>{content}</div>
   );
 }
 

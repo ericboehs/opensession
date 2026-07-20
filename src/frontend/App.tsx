@@ -20,7 +20,7 @@ import { Notes, type NotesSelection } from "./components/Notes";
 import { Archived } from "./components/Archived";
 import { Reviews } from "./components/Reviews";
 import { TeamChat } from "./components/TeamChat";
-import { PrPreview } from "./components/PrPreview";
+import { PrQueuePreview } from "./components/PrQueuePreview";
 import { SupportPreview } from "./components/SupportPreview";
 import { Reports } from "./components/Reports";
 import { Analytics } from "./components/Analytics";
@@ -1344,9 +1344,7 @@ function App() {
 				? "Archived"
 				: route.view === "new"
 					? "New session"
-					: route.view === "pr"
-						? "Pull request"
-						: "";
+					: "";
 
 	// Mobile top-bar brand: logo only, as the account/settings sheet trigger.
 	// On desktop that menu lives in the footer user row instead, so the top stays
@@ -1873,13 +1871,10 @@ function App() {
 							}}
 						/>
 						{route.view === "pr" ? (
-							<PrPreview
+							<PrQueuePreview
 								key={`${route.repo}:${route.branch}`}
 								repo={route.repo}
 								branch={route.branch}
-								connected={connected}
-								send={send}
-								addHandler={addHandler}
 								sessions={sessions}
 								onOpenSession={(id) => navigate({ view: "session", id })}
 							/>
