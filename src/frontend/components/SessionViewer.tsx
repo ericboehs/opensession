@@ -2591,17 +2591,16 @@ export function SessionViewer({
 			if (editable && !editable.classList.contains("composer-textarea")) {
 				return;
 			}
-			// Only the unarchive toggle lives here now — the sidebar owns ⌘E (and
-			// the legacy ⌘⇧A) for archiving a live session (it advances to the next
-			// entry, which needs the sidebar's row ordering). An archived session
-			// isn't in that list, so the sidebar handler no-ops on it and we handle
-			// unarchive here.
+			// The sidebar handles live sessions when it can, because it knows which
+			// visible row comes next. Keep this listener as the route-level fallback:
+			// the viewer remains mounted even when the sidebar cannot handle the open
+			// session. `defaultPrevented` above ensures only one handler fires.
 			const k = e.key.toLowerCase();
 			const archiveChord =
 				(e.metaKey || e.ctrlKey) &&
 				!e.altKey &&
 				((k === "e" && !e.shiftKey) || (k === "a" && e.shiftKey));
-			if (archiveChord && !archiving && session.archived) {
+			if (archiveChord && !archiving) {
 				e.preventDefault();
 				void handleArchive();
 			}
