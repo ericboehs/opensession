@@ -55,8 +55,9 @@ function classify(
 	const checks = pr.checks;
 	const decision = (pr.reviewDecision || "").toUpperCase();
 	const conflicting = pr.mergeable === "CONFLICTING";
-	const green =
-		checks.total > 0 && checks.failed === 0 && checks.pending === 0;
+	// No reported checks means no known CI blocker. This matches the merge action
+	// elsewhere in the sidebar and avoids parking PRs outside the rollup window.
+	const green = checks.failed === 0 && checks.pending === 0;
 
 	if (pr.isDraft) return { bucket: "waiting", status: "Draft" };
 	if (conflicting)

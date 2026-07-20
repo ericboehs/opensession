@@ -150,7 +150,7 @@ describe("buildReviewQueue", () => {
 		]);
 	});
 
-	test("waits for running or unknown checks", () => {
+	test("waits for running checks but treats no reported checks as unblocked", () => {
 		const items = buildReviewQueue(
 			[
 				pr({ number: 6, branch: "running", checks: checks(2, 0, 1) }),
@@ -160,7 +160,7 @@ describe("buildReviewQueue", () => {
 			"Michiel",
 			"happylinks",
 		);
-		expect(items.map((item) => item.bucket)).toEqual(["waiting", "waiting"]);
+		expect(items.map((item) => item.bucket)).toEqual(["waiting", "ready"]);
 	});
 
 	test("links only a primary-branch session to the detail route", () => {
