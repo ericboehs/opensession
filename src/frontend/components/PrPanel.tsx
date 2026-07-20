@@ -834,7 +834,7 @@ export function PrPanel({
 
         <div className="flex min-h-0 flex-1">
           <aside className="w-[274px] shrink-0 overflow-y-auto border-r border-line bg-panel/30 px-4 py-4 max-[900px]:hidden">
-            <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">
+            <div className="mb-2 px-2 text-[11px] font-medium text-faint">
               Review
             </div>
             <div className="mb-5 grid gap-0.5">
@@ -878,17 +878,17 @@ export function PrPanel({
 
             {!!bodyHtml && (
               <>
-                <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">
+                <div className="mb-2 px-2 text-[11px] font-medium text-faint">
                   Intent
                 </div>
                 <div
-                  className="markdown mb-5 max-h-[150px] overflow-hidden px-2 text-xs leading-relaxed text-dim"
+                  className="markdown mb-5 px-2 text-xs leading-relaxed text-dim"
                   dangerouslySetInnerHTML={{ __html: bodyHtml }}
                 />
               </>
             )}
 
-            <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">
+            <div className="mb-2 px-2 text-[11px] font-medium text-faint">
               Review path
             </div>
             <div className="mb-5 ml-2 border-l border-line">
@@ -916,7 +916,7 @@ export function PrPanel({
               )}
             </div>
 
-            <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">
+            <div className="mb-2 px-2 text-[11px] font-medium text-faint">
               Files
             </div>
             <div className="grid gap-0.5">
@@ -996,8 +996,8 @@ export function PrPanel({
                 ) : guide ? (
                   <>
                     <div className="mb-7 grid grid-cols-[54px_minmax(0,1fr)] gap-4 px-1">
-                      <div className="font-mono text-[10px] leading-relaxed text-faint">
-                        REVIEW<br />GUIDE
+                      <div className="text-[11px] font-medium leading-relaxed text-faint">
+                        Review guide
                       </div>
                       <div>
                         <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em] text-fg">
