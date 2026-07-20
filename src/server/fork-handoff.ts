@@ -112,6 +112,11 @@ export function buildEngineSwitchHandoffNote(input: {
 	 *  coming back to a session it ran before) — then it already remembers the
 	 *  turns up to the switch and only needs the other engine's turns since. */
 	targetResuming?: boolean;
+	/** Same engine, replacement session: the stored engine session could not
+	 *  be resumed (e.g. the run landed on a server whose DB doesn't hold it)
+	 *  and a fresh one replaced it — the model is unchanged but its internal
+	 *  conversation state is gone. */
+	sameEngineRestart?: boolean;
 	entries: TranscriptEntry[];
 	maxEntries?: number;
 	maxChars?: number;
@@ -144,10 +149,14 @@ export function buildEngineSwitchHandoffNote(input: {
 
 	return [
 		"## Engine handoff",
-		`This ${productName()} session was just switched mid-conversation from ${fromLabel} to you. You are continuing the *same* session, not starting a new task.`,
-		input.targetResuming
-			? "You resumed your own earlier thread in this session, so you remember the conversation up to the switch — the transcript below covers the turns the other engine ran in between, which you were not part of."
-			: "The previous engine cannot transfer its internal conversation state to you, so treat the transcript below as the conversation so far and continue seamlessly.",
+		input.sameEngineRestart
+			? `Your engine session in this ${productName()} conversation could not be resumed, so a fresh one replaced it mid-conversation. You are continuing the *same* session, not starting a new task.`
+			: `This ${productName()} session was just switched mid-conversation from ${fromLabel} to you. You are continuing the *same* session, not starting a new task.`,
+		input.sameEngineRestart
+			? "Your internal memory of the conversation was lost with the old engine session, so treat the transcript below as the conversation so far and continue seamlessly."
+			: input.targetResuming
+				? "You resumed your own earlier thread in this session, so you remember the conversation up to the switch — the transcript below covers the turns the other engine ran in between, which you were not part of."
+				: "The previous engine cannot transfer its internal conversation state to you, so treat the transcript below as the conversation so far and continue seamlessly.",
 		lines.length
 			? `Conversation transcript:\n${lines.join("\n")}`
 			: "No prior transcript entries were available.",

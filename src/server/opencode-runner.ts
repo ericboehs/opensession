@@ -203,6 +203,8 @@ import {
   transcriptLineToolResult,
 } from "./opencode-transcript";
 import { parseTranscript } from "./jsonl-parser";
+import { buildEngineSwitchHandoffNote } from "./fork-handoff";
+import { wrapContext } from "./prompt-context";
 import { ensureAnthropicBridge } from "./anthropic-bridge";
 import { ensureAgentAwsCredsFile } from "./aws-creds";
 import {
@@ -2752,11 +2754,32 @@ async function* runOpencodeAttempt(
     // Legacy sessions (runs from before persistence existed) backfill from
     // SQLite inside ensure.
     let seedEntries = createdFresh ? opts.seedTranscriptEntries : undefined;
+    // Prior-session recovery entries, tracked separately from seedEntries: an
+    // opts.seedTranscriptEntries seed (cross-engine switch) already had its
+    // handoff note prepended by the caller — only this path must add its own.
+    let restartRecovered: typeof seedEntries;
     if (createdFresh && !seedEntries?.length && priorOcSessionId) {
       const priorPath = existingOpencodeTranscriptPath(priorOcSessionId);
-      if (priorPath) seedEntries = parseTranscript(priorPath);
+      if (priorPath) {
+        restartRecovered = parseTranscript(priorPath);
+        seedEntries = restartRecovered;
+      }
     }
     ensureOpencodeTranscriptFile(ocSessionId, seedEntries);
+    // The seed above restores only the UI transcript; the replacement engine
+    // session's model context is empty. Hand the model the recovered history
+    // too — fenced, so it renders invisibly — or the turn starts amnesiac
+    // while the UI history looks continuous (bks-019f818d, 2026-07-20).
+    const enginePrompt = restartRecovered?.length
+      ? `${wrapContext(
+          buildEngineSwitchHandoffNote({
+            fromProvider: "opencode",
+            toProvider: "opencode",
+            sameEngineRestart: true,
+            entries: restartRecovered,
+          })
+        )}\n\n${prompt}`
+      : prompt;
     // Account-rotation retries rerun this whole attempt with the same prompt —
     // appending the user line again gave one send two or three identical
     // bubbles (3× "FINISH ITTT", doubled resume prompts, 2026-07-09). But a
@@ -3172,7 +3195,7 @@ async function* runOpencodeAttempt(
         ...(shared && instructions ? { system: instructions } : {}),
         ...(promptAgent ? { agent: promptAgent } : {}),
         ...(Object.keys(promptTools).length ? { tools: promptTools } : {}),
-        parts: [{ type: "text", text: prompt }, ...(imageParts(opts.images) as any[])],
+        parts: [{ type: "text", text: enginePrompt }, ...(imageParts(opts.images) as any[])],
       } as any,
     });
     if (sent.error) {

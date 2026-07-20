@@ -1314,9 +1314,14 @@ async function runSessionPromptInner(
 	// (MCP allowlist + tool denials) — otherwise a resume would silently hand it
 	// every MCP server and drop the customer/identity write denials.
 	const isAutomationSession = !!session.automation;
+	// No explicit allowlist → undefined, not []: an empty array is truthy, so
+	// sharedOpencodeEligible would kick every follow-up prompt off the shared
+	// server pool onto a dedicated server whose empty shard DB can't resume the
+	// engine session — turn 2 of every UI-created session started amnesiac
+	// while the seeded UI transcript looked continuous (bks-019f818d, 2026-07-20).
 	const mcpServers = isAutomationSession
 		? automationMcpServersByName(session.automation!)
-		: (session.mcpServers && session.mcpServers.length) ? session.mcpServers : [];
+		: (session.mcpServers && session.mcpServers.length) ? session.mcpServers : undefined;
 	const deniedTools = isAutomationSession ? automationDeniedTools() : undefined;
 
 	// @session:<id> mentions → footer resolving them for the agent's
