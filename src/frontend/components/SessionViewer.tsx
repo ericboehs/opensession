@@ -38,6 +38,7 @@ import {
 	type ModelOption,
 	type ClaudeAccountOption,
 	type SessionSubagentSnapshot,
+	type PreviewStatus,
 } from "../lib/api";
 import { Composer } from "./Composer";
 import { ComposerAgents } from "./ComposerAgents";
@@ -209,6 +210,7 @@ interface Props {
 
 type PanelTab =
 	| "info"
+	| "preview"
 	| "staging"
 	| "changes"
 	| "terminal"
@@ -2654,9 +2656,20 @@ export function SessionViewer({
 	const stagingUrl = staging
 		? withPreviewPath(staging.url, session.previewPath)
 		: null;
+	const [previewStatus, setPreviewStatus] = useState<PreviewStatus | null>(null);
+	const previewUrl =
+		previewStatus?.running && previewStatus.previewUrl
+			? withPreviewPath(previewStatus.previewUrl, session.previewPath)
+			: null;
+	useEffect(() => setPreviewStatus(null), [session.id]);
 	useEffect(() => {
-		if (panelTab === "staging" && !stagingUrl) setPanelTab("info");
-	}, [panelTab, stagingUrl]);
+		if (
+			(panelTab === "preview" && !previewUrl) ||
+			(panelTab === "staging" && !stagingUrl)
+		) {
+			setPanelTab("info");
+		}
+	}, [panelTab, previewUrl, stagingUrl]);
 
 	// ⌘O opens the PR's staging deploy (the Vercel preview StagingLink's globe
 	// points at); ⌘G opens its GitHub PR. Chords without a target (no staging
@@ -3124,6 +3137,7 @@ export function SessionViewer({
 						<PreviewButton
 							session={session}
 							onAttachImage={(img) => setImages((prev) => [...prev, img])}
+							onStatusChange={setPreviewStatus}
 							variant="header"
 						/>
 					)}
@@ -3818,6 +3832,7 @@ export function SessionViewer({
 										onAttachImage={(img) =>
 											setImages((prev) => [...prev, img])
 										}
+										onStatusChange={setPreviewStatus}
 									/>
 									<StagingLink session={session} />
 								</div>
@@ -3850,6 +3865,14 @@ export function SessionViewer({
 							>
 								Info
 							</button>
+							{previewUrl && (
+								<button
+									className={`panel-tab ${panelTab === "preview" ? "active" : ""}`}
+									onClick={() => selectPanelTab("preview")}
+								>
+									Preview
+								</button>
+							)}
 							{stagingUrl && (
 								<button
 									className={`panel-tab ${panelTab === "staging" ? "active" : ""}`}
@@ -3980,6 +4003,14 @@ export function SessionViewer({
 									onOpenSession={(id) => onOpenSession?.(id)}
 									liveMediaCount={liveMediaCount}
 									liveMedia={liveOverviewMedia}
+								/>
+							) : panelTab === "preview" && previewUrl ? (
+								<iframe
+									className="block h-full min-h-[320px] w-full border-0 bg-white"
+									src={previewUrl}
+									title="Preview"
+									allow="clipboard-read; clipboard-write; fullscreen"
+									sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads"
 								/>
 							) : panelTab === "staging" && stagingUrl ? (
 								<iframe
