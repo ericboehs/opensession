@@ -355,6 +355,10 @@ export function SessionViewer({
 	onOpenReview,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
+	// Initial scrolling must wait for this session's transcript_init. During a
+	// session switch, entries from the previous session remain rendered until the
+	// WebSocket response arrives and must not consume the new session's scroll.
+	const transcriptReadySessionRef = useRef<string | null>(null);
 	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
 	// render the empty chat immediately instead of a "Loading transcript…" flash.
 	const [loading, setLoading] = useState(!!session.transcriptPath);
@@ -1217,6 +1221,7 @@ export function SessionViewer({
 						(a, b) =>
 							new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
 					);
+					transcriptReadySessionRef.current = session.id;
 					setEntries(merged);
 					setHistoryTruncated(!!msg.truncated);
 					setLoadingHistory(false);
@@ -1507,23 +1512,28 @@ export function SessionViewer({
 
 	// Every session opens at the live edge. Do this in a layout effect so the
 	// transcript never paints at scrollTop 0 before moving to the end.
-	const didInitialScroll = useRef(false);
+	const initiallyScrolledSessionRef = useRef<string | null>(null);
 	// State mirror: the auto-load-history observer must not arm until the
 	// reopen scroll has run — the transcript paints at scrollTop 0, so an
 	// observer attached before the jump sees the "load earlier" sentinel in
 	// view and fires a phantom load from a position the reader never chose.
 	const [initialScrollDone, setInitialScrollDone] = useState(false);
 	useLayoutEffect(() => {
-		didInitialScroll.current = false;
 		setInitialScrollDone(false);
 	}, [session.id]);
 	useLayoutEffect(() => {
 		const el = messagesRef.current;
-		if (!el || didInitialScroll.current || entries.length === 0) return;
-		didInitialScroll.current = true;
+		if (
+			!el ||
+			transcriptReadySessionRef.current !== session.id ||
+			initiallyScrolledSessionRef.current === session.id ||
+			entries.length === 0
+		)
+			return;
+		initiallyScrolledSessionRef.current = session.id;
 		scrollToLatest("auto");
 		setInitialScrollDone(true);
-	}, [entries, scrollToLatest, messagesRef]);
+	}, [entries, session.id, scrollToLatest, messagesRef]);
 
 	// Returning to the app reads like reopening the session, not resuming a
 	// paused one. On the iOS PWA the page survives backgrounding with the scroll
