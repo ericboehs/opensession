@@ -619,7 +619,6 @@ export function SessionViewer({
 		newBelow,
 		showScrollToBottom,
 		scrollToLatest,
-		anchorToTop,
 		endTurn,
 		relayout,
 		onScroll,
@@ -1506,58 +1505,25 @@ export function SessionViewer({
 		setStreamBy(null);
 	}, [session.id]);
 
-	// Reopen where the reader left off. A running session jumps to the live edge to
-	// track the stream; an idle one opens at the last user turn so its reply reads
-	// from the start, not the absolute bottom (principle 11).
+	// Every session opens at the live edge. Do this in a layout effect so the
+	// transcript never paints at scrollTop 0 before moving to the end.
 	const didInitialScroll = useRef(false);
 	// State mirror: the auto-load-history observer must not arm until the
 	// reopen scroll has run — the transcript paints at scrollTop 0, so an
 	// observer attached before the jump sees the "load earlier" sentinel in
 	// view and fires a phantom load from a position the reader never chose.
 	const [initialScrollDone, setInitialScrollDone] = useState(false);
-	// The staged init lands in two commits (a ~12-entry head, then the rest of
-	// the tail ~100ms later). The head is often too short for the anchor to
-	// mean anything — it can land at the padded bottom and keep `following` —
-	// so when the rest prepends inside this window, redo the anchor against
-	// the full tail. One-shot, consumed by the first entries change.
-	const reopenAnchorUntilRef = useRef(0);
-	useEffect(() => {
+	useLayoutEffect(() => {
 		didInitialScroll.current = false;
 		setInitialScrollDone(false);
-		reopenAnchorUntilRef.current = 0;
 	}, [session.id]);
-	const anchorReopen = useCallback(() => {
-		const el = messagesRef.current;
-		if (!el) return;
-		const userEls = el.querySelectorAll<HTMLElement>(".msg-user");
-		const lastUser = userEls[userEls.length - 1];
-		if (lastUser) {
-			// Instant, not smooth: the staged init prepends the rest of the tail
-			// ~100ms after this anchor, and a smooth flight's absolute target
-			// goes stale the moment content lands above it. The hold then keeps
-			// the anchored turn in place through later settling.
-			anchorToTop(lastUser, "auto");
-			startHistoryHold(lastUser, 2500, null);
-		} else scrollToLatest("auto");
-	}, [messagesRef, anchorToTop, startHistoryHold, scrollToLatest]);
 	useLayoutEffect(() => {
-		if (!reopenAnchorUntilRef.current) return;
-		const expired = performance.now() > reopenAnchorUntilRef.current;
-		reopenAnchorUntilRef.current = 0;
-		if (!expired) anchorReopen();
-	}, [entries, anchorReopen]);
-	useEffect(() => {
 		const el = messagesRef.current;
 		if (!el || didInitialScroll.current || entries.length === 0) return;
 		didInitialScroll.current = true;
-		if (session.isRunning) {
-			scrollToLatest("auto");
-		} else {
-			anchorReopen();
-			reopenAnchorUntilRef.current = performance.now() + 1500;
-		}
+		scrollToLatest("auto");
 		setInitialScrollDone(true);
-	}, [entries, session.isRunning, scrollToLatest, anchorReopen, messagesRef]);
+	}, [entries, scrollToLatest, messagesRef]);
 
 	// Returning to the app reads like reopening the session, not resuming a
 	// paused one. On the iOS PWA the page survives backgrounding with the scroll
