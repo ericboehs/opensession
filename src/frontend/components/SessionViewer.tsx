@@ -2563,16 +2563,18 @@ export function SessionViewer({
 
 	// Archive is the reversible "I'm done with this" — unlike delete it keeps the
 	// session (and worktree) and just tucks it into the Archived view, so no
-	// confirm step. Unarchiving from here (viewing an already-archived session)
-	// brings it back. Either way we hop out to the list the same way delete does.
+	// confirm step. Unarchiving from here keeps the session selected as it moves
+	// back into the live sidebar.
 	const handleArchive = useCallback(async () => {
 		const next = !session.archived;
 		setArchiving(true);
 		setOverflowOpen(false);
 		try {
 			const { stoppedRun } = await archiveSessionApi(session.id, next);
-			if (next) onArchived?.(stoppedRun);
-			onBack();
+			if (next) {
+				onArchived?.(stoppedRun);
+				onBack();
+			}
 		} catch (e: any) {
 			alert(`${next ? "Archive" : "Unarchive"} failed: ${e.message}`);
 			setArchiving(false);
