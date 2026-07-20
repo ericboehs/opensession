@@ -2599,14 +2599,15 @@ export function SessionViewer({
 			const archiveChord =
 				(e.metaKey || e.ctrlKey) &&
 				!e.altKey &&
-				((k === "e" && !e.shiftKey) || (k === "a" && e.shiftKey));
+				(((k === "e" || e.code === "KeyE") && !e.shiftKey) ||
+					((k === "a" || e.code === "KeyA") && e.shiftKey));
 			if (archiveChord && !archiving) {
 				e.preventDefault();
 				void handleArchive();
 			}
 		}
-		window.addEventListener("keydown", onKeyDown);
-		return () => window.removeEventListener("keydown", onKeyDown);
+		window.addEventListener("keydown", onKeyDown, true);
+		return () => window.removeEventListener("keydown", onKeyDown, true);
 	}, [archiving, handleArchive, session.archived]);
 
 	// Staging deploy for the ⌘O chord — mirrors StagingLink's poll (same
