@@ -10,7 +10,7 @@ import type { RouteContext } from "./context";
 import { getAgents } from "../agents-registry";
 import { addMcpServer, getConnections, removeMcpServer, setMcpAllowedUsers } from "../connections";
 import { refreshOpencodePickerModels } from "../models";
-import { BRIDGE_PROVIDER_IDS, PROVIDER_ID_RE, addPickerModel, maskProviderKey, opencodeProviders, readOpencodeBridgeConfig, removeOpencodeProvider, removePickerModel, setOpencodeProvider } from "../opencode-config";
+import { BRIDGE_PROVIDER_IDS, PROVIDER_ID_RE, addPickerModel, defaultPickerModelsForProvider, maskProviderKey, opencodeProviders, readOpencodeBridgeConfig, removeOpencodeProvider, removePickerModel, setOpencodeProvider } from "../opencode-config";
 
 export async function handleConnectionsRoutes(
 	ctx: RouteContext,
@@ -122,13 +122,19 @@ export async function handleConnectionsRoutes(
 			: undefined;
 		try {
 			setOpencodeProvider(id, { apiKey, baseURL });
-			if (models) {
+			const pickerModels = readOpencodeBridgeConfig()?.pickerModels || [];
+			const providerModels =
+				models ??
+				(pickerModels.some((m) => m.startsWith(`opencode/${id}/`))
+					? undefined
+					: [...defaultPickerModelsForProvider(id)]);
+			if (providerModels) {
 				// `models` replaces this provider's picker entries wholesale.
 				const prefix = `opencode/${id}/`;
-				for (const m of readOpencodeBridgeConfig()?.pickerModels || []) {
+				for (const m of pickerModels) {
 					if (m.startsWith(prefix)) removePickerModel(m);
 				}
-				for (const m of models) {
+				for (const m of providerModels) {
 					// Accept "grok-4", "xai/grok-4" or "opencode/xai/grok-4".
 					let tail = m.trim();
 					if (tail.startsWith("opencode/"))
@@ -139,13 +145,13 @@ export async function handleConnectionsRoutes(
 			}
 			refreshOpencodePickerModels();
 			const stored = opencodeProviders()[id] || {};
-			const pickerModels = readOpencodeBridgeConfig()?.pickerModels || [];
+			const savedPickerModels = readOpencodeBridgeConfig()?.pickerModels || [];
 			return Response.json({
 				provider: {
 					id,
 					apiKeyMasked: maskProviderKey(stored.apiKey),
 					...(stored.baseURL ? { baseURL: stored.baseURL } : {}),
-					models: pickerModels.filter((m) =>
+					models: savedPickerModels.filter((m) =>
 						m.startsWith(`opencode/${id}/`),
 					),
 				},

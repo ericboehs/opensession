@@ -30,6 +30,10 @@ const COMMON_PROVIDER_IDS = [
 	"together",
 ];
 
+const PROVIDER_MODEL_DEFAULTS: Record<string, string> = {
+	cerebras: "gpt-oss-120b, gemma-4-31b, zai-glm-4.7",
+};
+
 export function ModelProvidersPanel() {
 	const [providers, setProviders] = useState<ProviderInfo[] | null>(null);
 	const [showAdd, setShowAdd] = useState(false);
@@ -270,7 +274,9 @@ function AddProviderForm({
 						className="mono-input"
 						value={models}
 						onChange={(e) => setModels(e.target.value)}
-						placeholder="grok-4, grok-4-mini"
+						placeholder={
+							PROVIDER_MODEL_DEFAULTS[cleanId] || "grok-4, grok-4-mini"
+						}
 					/>
 				</label>
 			</div>

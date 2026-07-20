@@ -93,6 +93,20 @@ export interface OpencodeProviderConfig {
   baseURL?: string;
 }
 
+/** Cerebras' public, open-weight model catalog. Kept here so adding a key in
+ * Settings is enough to make the provider useful; OpenCode 1.17's bundled
+ * models.dev snapshot predates Cerebras, so we inject it as an OpenAI-compatible
+ * custom provider until the native catalog catches up. */
+export const CEREBRAS_PICKER_MODELS = [
+  "gpt-oss-120b",
+  "gemma-4-31b",
+  "zai-glm-4.7",
+] as const;
+
+export function defaultPickerModelsForProvider(id: string): readonly string[] {
+  return id === "cerebras" ? CEREBRAS_PICKER_MODELS : [];
+}
+
 /** Valid provider ids — matches opencode's own provider slugs. */
 export const PROVIDER_ID_RE = /^[a-z0-9-]+$/;
 
@@ -333,15 +347,48 @@ export function removeOpencodeProvider(id: string): boolean {
  * their bridge providerOverride so anthropic/openai always win; belt-and-
  * suspenders, bridge provider ids are skipped here too.
  */
-export function opencodeProviderOptions(): Record<string, { options: Record<string, string> }> {
-  const out: Record<string, { options: Record<string, string> }> = {};
+export function opencodeProviderOptions(): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {};
   for (const [id, p] of Object.entries(opencodeProviders())) {
     if (BRIDGE_PROVIDER_IDS.has(id)) continue;
     const options: Record<string, string> = {
       ...(p.apiKey ? { apiKey: p.apiKey } : {}),
       ...(p.baseURL ? { baseURL: p.baseURL } : {}),
     };
-    if (Object.keys(options).length) out[id] = { options };
+    if (!Object.keys(options).length) continue;
+    if (id === "cerebras") {
+      out[id] = {
+        npm: "@ai-sdk/openai-compatible",
+        name: "Cerebras",
+        options: { ...options, baseURL: p.baseURL || "https://api.cerebras.ai/v1" },
+        models: {
+          "gpt-oss-120b": {
+            name: "GPT OSS 120B",
+            reasoning: true,
+            tool_call: true,
+            limit: { context: 131_072, output: 65_536 },
+            variants: {
+              low: { reasoningEffort: "low" },
+              medium: { reasoningEffort: "medium" },
+              high: { reasoningEffort: "high" },
+            },
+          },
+          "gemma-4-31b": {
+            name: "Gemma 4 31B",
+            tool_call: true,
+            limit: { context: 131_072, output: 32_768 },
+          },
+          "zai-glm-4.7": {
+            name: "Z.ai GLM 4.7",
+            reasoning: true,
+            tool_call: true,
+            limit: { context: 131_072, output: 32_768 },
+          },
+        },
+      };
+    } else {
+      out[id] = { options };
+    }
   }
   return out;
 }

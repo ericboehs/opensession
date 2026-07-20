@@ -222,7 +222,7 @@ describe("The Orchestrator", () => {
         // A server carries ONE bridge's auth: every worker NAME must resolve
         // on both subscription bridges, to a model that supports its variant.
         for (const bridge of ["anthropic", "openai"]) {
-          const b = orchestratorWorkerForBridge(name, bridge);
+          const b = orchestratorWorkerForBridge(name, bridge, new Set());
           expect(b).toBeDefined();
           expect(b!.model.startsWith(`${bridge}/`)).toBe(true);
           expect(modelEfforts(b!.model)).toContain(b!.variant);

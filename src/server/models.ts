@@ -66,6 +66,7 @@ export function modelEfforts(model: string): SessionEffort[] {
     if (slug.startsWith("claude-haiku-4-5")) return ["high", "max"];
     if (/^claude-(?:fable|opus|sonnet)-/.test(slug)) return CLAUDE_EFFORTS;
   }
+  if (provider === "cerebras" && slug === "gpt-oss-120b") return ["low", "medium", "high"];
   if (provider === "meta" && slug === "muse-spark-1.1") return OPENAI_EFFORTS;
   return [];
 }
@@ -266,11 +267,10 @@ export interface OrchestratorPreset {
  * config hash ⇒ server reuse) and invisible in practice to non-orchestrator
  * runs — only orchestrator runs get the instructions block naming them.
  *
- * Worker NAMES are role-based, not model-based: a server carries ONE bridge's
- * auth, so each name is backed per bridge (`bridges[providerID]`) with that
- * bridge's cheap model — the orchestrator's prompts and the task tool list
- * stay identical whichever bridge the run landed on (same lesson as
- * sameBridgeDialOracle, learned the loud way — see DIAL_ORACLE_AGENTS).
+ * Worker NAMES are role-based, not model-based. Each name has a same-bridge
+ * fallback, while configured third-party providers can supply a universal
+ * backing: `worker-fast` prefers Cerebras GPT OSS when its key is available.
+ * The orchestrator's prompts and task tool list stay identical either way.
  */
 export const ORCHESTRATOR_WORKER_AGENTS: Record<
   string,
@@ -303,19 +303,26 @@ export const ORCHESTRATOR_WORKER_AGENTS: Record<
     bridges: {
       anthropic: { model: "anthropic/claude-haiku-4-5", variant: "high", label: "Haiku 4.5" },
       openai: { model: "openai/gpt-5.4-mini", variant: "medium", label: "GPT-5.4 mini" },
+      cerebras: { model: "cerebras/gpt-oss-120b", variant: "medium", label: "GPT OSS 120B" },
     },
   },
 };
 
-/** The backing (model/variant/label) a worker NAME resolves to on a server's
- *  bridge. Unknown/third-party providers fall back to the anthropic backing —
- *  same status quo as the oracles (a bridge worker can't run there anyway). */
+/** The backing (model/variant/label) a worker NAME resolves to. A configured
+ *  Cerebras provider wins for worker-fast; otherwise workers stay on the main
+ *  bridge, with unknown providers falling back to Anthropic. */
 export function orchestratorWorkerForBridge(
   name: string,
-  mainProviderID: string
+  mainProviderID: string,
+  availableProviderIDs = new Set(
+    Object.entries(opencodeProviders())
+      .filter(([, config]) => !!config.apiKey)
+      .map(([id]) => id)
+  )
 ): { model: string; variant: SessionEffort; label: string } | undefined {
   const w = ORCHESTRATOR_WORKER_AGENTS[name];
   if (!w) return undefined;
+  if (name === "worker-fast" && availableProviderIDs.has("cerebras")) return w.bridges.cerebras;
   return w.bridges[mainProviderID] ?? w.bridges.anthropic;
 }
 
@@ -358,6 +365,9 @@ export function modelPreset(model?: string | null): DialPreset | OrchestratorPre
 /** "claude-opus-4-8" → "Opus 4.8", "gpt-5.4-mini" → "GPT-5.4 mini". Fallback
  * prettifier for model slugs with no native registry entry to borrow from. */
 function prettifyModelSlug(slug: string): string {
+  if (slug === "gpt-oss-120b") return "GPT OSS 120B";
+  if (slug === "gemma-4-31b") return "Gemma 4 31B";
+  if (slug === "zai-glm-4.7") return "Z.ai GLM 4.7";
   if (slug.startsWith("gpt-")) {
     const m = slug.slice(4).match(/^(\d+(?:[.-]\d+)*)(?:-(.+))?$/);
     if (m) return `GPT-${m[1].replace(/-/g, ".")}${m[2] ? ` ${m[2].replace(/-/g, " ")}` : ""}`;

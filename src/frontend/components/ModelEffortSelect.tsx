@@ -86,6 +86,9 @@ export function opencodeModelParts(
  * transcript weave before /api/models has loaded — and keeps friendly names
  * correct even while the server still serves pre-rename labels. */
 export function friendlyModelSlug(slug: string): string {
+	if (slug === "gpt-oss-120b") return "GPT OSS 120B";
+	if (slug === "gemma-4-31b") return "Gemma 4 31B";
+	if (slug === "zai-glm-4.7") return "Z.ai GLM 4.7";
 	if (slug.startsWith("gpt-")) {
 		const m = slug.slice(4).match(/^(\d+(?:[.-]\d+)*)(?:-(.+))?$/);
 		if (m) return `GPT-${m[1].replace(/-/g, ".")}${m[2] ? ` ${m[2].replace(/-/g, " ")}` : ""}`;
@@ -125,11 +128,12 @@ const PROVIDER_LABELS: Record<string, string> = {
 	mistral: "Mistral",
 	deepseek: "DeepSeek",
 	moonshotai: "Moonshot AI",
+	cerebras: "Cerebras",
 };
 
 /** Section order in the grouped main list; unlisted providers follow in
  * config order. */
-const PROVIDER_ORDER = ["dial", "orchestrator", "anthropic", "openai", "xai", "meta", "moonshotai"];
+const PROVIDER_ORDER = ["dial", "orchestrator", "anthropic", "openai", "cerebras", "xai", "meta", "moonshotai"];
 
 /** Preferred display order for the opencode main list (by id tail); anything
  * unlisted keeps its registry/config order after these. */
@@ -155,6 +159,9 @@ const OPENCODE_TAIL_ORDER = [
 	"gpt-5.4-mini",
 	"gpt-5.3-codex-spark",
 	"kimi-k3",
+	"gpt-oss-120b",
+	"gemma-4-31b",
+	"zai-glm-4.7",
 ];
 
 /**
