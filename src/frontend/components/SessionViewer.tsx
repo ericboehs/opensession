@@ -1512,6 +1512,9 @@ export function SessionViewer({
 	// Every session opens at the live edge. Do this in a layout effect so the
 	// transcript never paints at scrollTop 0 before moving to the end.
 	const initiallyScrolledSessionRef = useRef<string | null>(null);
+	const [initialScrollSession, setInitialScrollSession] = useState<string | null>(
+		null,
+	);
 	useLayoutEffect(() => {
 		const el = messagesRef.current;
 		if (
@@ -1523,7 +1526,61 @@ export function SessionViewer({
 			return;
 		initiallyScrolledSessionRef.current = session.id;
 		scrollToLatest("auto");
-	}, [entries, session.id, scrollToLatest, messagesRef]);
+		setInitialScrollSession(session.id);
+	}, [entries, session.id, showReview, scrollToLatest, messagesRef]);
+	// Message blocks use content-visibility with estimated heights. Those estimates
+	// resolve after the first scroll calculation without a React update, growing the
+	// transcript above the viewport. Hold the bottom through that initial browser
+	// layout pass, but release immediately if the reader touches the transcript.
+	useLayoutEffect(() => {
+		if (initialScrollSession !== session.id) return;
+		const el = messagesRef.current;
+		if (!el) return;
+
+		let stopped = false;
+		const keepAtLatest = () => {
+			if (!stopped) el.scrollTop = el.scrollHeight;
+		};
+		const sizes = new ResizeObserver(keepAtLatest);
+		const observeChildren = () => {
+			for (const child of el.children) sizes.observe(child);
+		};
+		const children = new MutationObserver(() => {
+			observeChildren();
+			keepAtLatest();
+		});
+		let expiry: ReturnType<typeof setTimeout> | undefined;
+		const stop = () => {
+			if (stopped) return;
+			stopped = true;
+			sizes.disconnect();
+			children.disconnect();
+			if (expiry) clearTimeout(expiry);
+			el.removeEventListener("wheel", stop);
+			el.removeEventListener("touchstart", stop);
+			el.removeEventListener("pointerdown", stop);
+			window.removeEventListener("keydown", stopForScrollKey);
+		};
+		const stopForScrollKey = (event: KeyboardEvent) => {
+			if (
+				["PageUp", "PageDown", "Home", "End"].includes(event.key) ||
+				(event.ctrlKey &&
+					event.shiftKey &&
+					(event.key === "ArrowUp" || event.key === "ArrowDown"))
+			)
+				stop();
+		};
+
+		observeChildren();
+		children.observe(el, { childList: true });
+		el.addEventListener("wheel", stop, { passive: true });
+		el.addEventListener("touchstart", stop, { passive: true });
+		el.addEventListener("pointerdown", stop, { passive: true });
+		window.addEventListener("keydown", stopForScrollKey);
+		expiry = setTimeout(stop, 3000);
+		keepAtLatest();
+		return stop;
+	}, [initialScrollSession, session.id, showReview, messagesRef]);
 
 	// Returning to the app reads like reopening the session, not resuming a
 	// paused one. On the iOS PWA the page survives backgrounding with the scroll
