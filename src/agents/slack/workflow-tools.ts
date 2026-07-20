@@ -18,6 +18,7 @@
  */
 
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { z } from "zod";
 import { startWorkflow, cancelWorkflow } from "../../server/workflow-runner";
 import {
@@ -258,10 +259,34 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 					} catch {
 						result = String(run.result);
 					}
-					if (result.length > 20_000)
-						result = result.slice(0, 20_000) + "\n… (truncated)";
 					lines.push("Result:");
-					lines.push(result);
+					if (result.length > 20_000) {
+						// Spill the full value to a scratch file so it isn't lost to
+						// the tool-output cap. /tmp/opencode/** is readable by the
+						// Read tool in BOTH shell and ask-mode runs (see
+						// ASK_EXTERNAL_DIR_PERMISSIONS in opencode-runner.ts), so the
+						// agent can read the untruncated result instead of replaying
+						// the whole workflow with a compacted return shape (the
+						// "resume_workflow just to reshape the return" papercut).
+						let spillPath = "";
+						try {
+							const dir = "/tmp/opencode/workflow-results";
+							mkdirSync(dir, { recursive: true });
+							spillPath = `${dir}/${run.runId}.txt`;
+							writeFileSync(spillPath, result);
+						} catch {
+							spillPath = "";
+						}
+						lines.push(
+							result.slice(0, 20_000) + "\n… (truncated at 20,000 chars)",
+						);
+						if (spillPath)
+							lines.push(
+								`Full result (${result.length} chars) written to ${spillPath} — Read that file for the complete value instead of re-running the workflow.`,
+							);
+					} else {
+						lines.push(result);
+					}
 				}
 				return text(lines.join("\n"));
 			},
