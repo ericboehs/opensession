@@ -2013,10 +2013,10 @@ body.resizing-x {
 	box-shadow: 0 0 6px var(--blue);
 	animation: pulse 1.2s ease-in-out infinite;
 }
-/* Unread activity since you last opened the session — a solid iMessage-style
-   blue dot (no pulse; it's a marker, not a live-status indicator). */
+/* A completed session with unread activity — solid green means the result is
+   ready; opening it returns the marker to the quiet gray idle state. */
 .sidebar-status-unread {
-	background: var(--blue);
+	background: var(--green);
 }
 
 /* A session blocked on an AskUserQuestion — draw the eye so it gets answered. */
