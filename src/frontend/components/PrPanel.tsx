@@ -289,7 +289,9 @@ export function PrPanel({
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<PendingComment[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [reviewEvent, setReviewEvent] = useState<ReviewEvent>("COMMENT");
+  const [reviewEvent, setReviewEvent] = useState<ReviewEvent>(() =>
+    reviewCanvas ? "APPROVE" : "COMMENT",
+  );
   const [summary, setSummary] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -297,9 +299,12 @@ export function PrPanel({
   const [merging, setMerging] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeAfterReview, setMergeAfterReview] = useState(reviewCanvas === true);
   const [checksOpen, setChecksOpen] = useState(false);
   const [allFilesOpen, setAllFilesOpen] = useState(false);
-  const [diffView, setDiffView] = useState<"diff" | "guide">("diff");
+  const [diffView, setDiffView] = useState<"diff" | "guide" | "conversation">(() =>
+    reviewCanvas ? "guide" : "diff",
+  );
   const [guide, setGuide] = useState<ReviewGuideData | null>(null);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideFailed, setGuideFailed] = useState(false);
@@ -352,7 +357,9 @@ export function PrPanel({
     setGuideLoading(true);
     setGuideFailed(false);
     try {
-      const data = await fetchReviewGuide(sessionId, active?.repo, active?.branch);
+      const data = previewTarget
+        ? await fetchPrPreviewGuide(previewTarget.repo, previewTarget.branch)
+        : await fetchReviewGuide(sessionId, active?.repo, active?.branch);
       if (data) setGuide(data);
       else setGuideFailed(true);
     } catch {
@@ -833,7 +840,7 @@ export function PrPanel({
         </div>
 
         <div className="flex min-h-0 flex-1">
-          <aside className="w-[274px] shrink-0 overflow-y-auto border-r border-line bg-panel/30 px-4 py-4 max-[900px]:hidden">
+          <aside className="w-[520px] shrink-0 overflow-y-auto border-r border-line bg-panel/30 px-4 py-4 max-[1100px]:hidden">
             <div className="mb-2 px-2 text-[11px] font-medium text-faint">
               Review
             </div>
@@ -861,7 +868,10 @@ export function PrPanel({
                 Checks
                 <span className="ml-auto text-[10px] text-faint">{checkSummary.total}</span>
               </button>
-              <button className="flex items-center gap-2 rounded-sm border-0 bg-transparent px-2 py-2 text-left text-xs text-dim hover:bg-hover hover:text-fg">
+              <button
+                className={`flex items-center gap-2 rounded-sm border-0 px-2 py-2 text-left text-xs ${diffView === "conversation" ? "bg-active text-fg" : "bg-transparent text-dim hover:bg-hover hover:text-fg"}`}
+                onClick={() => setDiffView("conversation")}
+              >
                 <IconMessage size={14} />
                 Conversation
                 <span className="ml-auto text-[10px] text-faint">{comments.length}</span>
@@ -953,16 +963,30 @@ export function PrPanel({
                 >
                   Files
                 </button>
+                <button
+                  className={`rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "conversation" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
+                  onClick={() => setDiffView("conversation")}
+                >
+                  Conversation
+                </button>
               </div>
               <span className="ml-auto text-[11px] text-faint">
-                {pending.length > 0
+                {diffView === "conversation"
+                  ? `${comments.length} comment${comments.length === 1 ? "" : "s"}`
+                  : pending.length > 0
                   ? `${pending.length} pending comment${pending.length === 1 ? "" : "s"}`
                   : `${files.length} file${files.length === 1 ? "" : "s"}`}
               </span>
             </div>
 
             <div className="mx-auto max-w-[980px] px-5 py-6 max-[720px]:px-2">
-              {!diff?.patch ? (
+              {diffView === "conversation" ? (
+                <ConversationView
+                  author={pr.author}
+                  descriptionHtml={bodyHtml}
+                  comments={comments}
+                />
+              ) : !diff?.patch ? (
                 <div className="py-12 text-center text-sm text-faint">
                   No text diff is available for this pull request.
                 </div>
@@ -1067,7 +1091,7 @@ export function PrPanel({
           </main>
         </div>
 
-        <div className="pointer-events-none absolute bottom-4 left-[290px] right-4 z-10 flex min-h-[54px] items-center rounded-md border border-line-strong bg-panel/95 px-3 py-2 shadow-[0_12px_35px_rgba(0,0,0,0.3)] backdrop-blur max-[900px]:left-4">
+        <div className="pointer-events-none absolute bottom-4 left-[536px] right-4 z-10 flex min-h-[54px] items-center rounded-md border border-line-strong bg-panel/95 px-3 py-2 shadow-[0_12px_35px_rgba(0,0,0,0.3)] backdrop-blur max-[1100px]:left-4">
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium text-fg">
               {reviewDone === "merged"
@@ -1543,6 +1567,96 @@ export function PrPanel({
         </div>
       )}
       </div>
+    </div>
+  );
+}
+
+function ConversationView({
+  author,
+  descriptionHtml,
+  comments,
+}: {
+  author: string;
+  descriptionHtml: string;
+  comments: PrComment[];
+}) {
+  return (
+    <div className="mx-auto max-w-[760px]">
+      <div className="mb-6">
+        <h2 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-fg">
+          Conversation
+        </h2>
+        <p className="mt-1 text-xs text-faint">
+          {comments.length} comment{comments.length === 1 ? "" : "s"}
+        </p>
+      </div>
+
+      {descriptionHtml && (
+        <article className="mb-4 rounded-md border border-line bg-panel">
+          <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+            <span className="flex size-7 items-center justify-center rounded-full bg-active text-[11px] font-semibold text-fg">
+              {author.slice(0, 1).toUpperCase()}
+            </span>
+            <div>
+              <div className="text-xs font-semibold text-fg">{author}</div>
+              <div className="text-[10px] text-faint">Opened this pull request</div>
+            </div>
+          </div>
+          <div
+            className="markdown px-4 py-4 text-[13px] leading-relaxed text-dim"
+            dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+          />
+        </article>
+      )}
+
+      {comments.length === 0 ? (
+        <div className="rounded-md border border-dashed border-line px-4 py-10 text-center text-xs text-faint">
+          No comments yet.
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {comments.map((comment, index) => {
+            const body = stripHtmlComments(comment.body);
+            const timestamp = comment.createdAt
+              ? new Date(comment.createdAt).toLocaleString()
+              : null;
+            return (
+              <article
+                className="rounded-md border border-line bg-panel"
+                key={`${comment.url || comment.createdAt || index}`}
+              >
+                <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+                  <span className="flex size-7 items-center justify-center rounded-full bg-active text-[11px] font-semibold text-fg">
+                    {(comment.author || "?").slice(0, 1).toUpperCase()}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-fg">
+                      {comment.author || "Unknown"}
+                    </div>
+                    {timestamp && (
+                      <div className="text-[10px] text-faint">{timestamp}</div>
+                    )}
+                  </div>
+                  {comment.url && (
+                    <a
+                      className="text-[11px] text-faint no-underline hover:text-fg"
+                      href={comment.url}
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      Open on GitHub
+                    </a>
+                  )}
+                </div>
+                <div
+                  className="markdown px-4 py-4 text-[13px] leading-relaxed text-dim"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
+                />
+              </article>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
