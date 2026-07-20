@@ -1803,7 +1803,13 @@ export function Sidebar({
 		const rowIdx = candidates.findIndex((r) =>
 			r.chats.some((c) => c.id === selectedId),
 		);
-		if (rowIdx < 0) return;
+		if (rowIdx < 0) {
+			// The open chat can be hidden by the current person/repo/search lens.
+			// Archiving the active chat must not depend on it being rendered.
+			const chat = sessions.find((s) => s.id === selectedId && !s.archived);
+			if (chat) onArchive(chat, null);
+			return;
+		}
 		const row = candidates[rowIdx];
 		const chat = row.chats.find((c) => c.id === selectedId);
 		if (!chat) return;
@@ -1836,17 +1842,17 @@ export function Sidebar({
 			)
 				return;
 			if (editableSwallowsArchiveChord(e.target)) return;
-			const inList = wsRowOrder.some(
-				(r) => r.chats.length > 0 && r.chats.some((c) => c.id === selectedId),
+			const canArchive = sessions.some(
+				(s) => s.id === selectedId && !s.archived,
 			);
-			if (!inList) return;
+			if (!canArchive) return;
 			e.preventDefault();
 			closeWsHover();
 			archiveOpenChatWithNext();
 		}
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [wsRowOrder, selectedId, onArchive]);
+	}, [wsRowOrder, sessions, selectedId, onArchive]);
 
 	// ⌘⌥⇧A escalates the chat archive (⌘E/⌘⇧A) to the whole active workspace.
 	// The Alt modifier is the only thing that separates the two handlers, so
