@@ -34,7 +34,7 @@ import { CommentableDiff, type CommentTarget, type PendingComment } from "./Comm
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
 import { githubLoginFor } from "./UserAvatar";
-import { renderMarkdown } from "../lib/markdown";
+import { renderMarkdown, renderPrCommentMarkdown } from "../lib/markdown";
 import { providerFromUrl, avatarUrl, type Provider } from "../lib/provider";
 import {
   IconArrowUp,
@@ -1650,7 +1650,7 @@ function ConversationView({
                 </div>
                 <div
                   className="markdown px-4 py-4 text-[13px] leading-relaxed text-dim"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
+                  dangerouslySetInnerHTML={{ __html: renderPrCommentMarkdown(body) }}
                 />
               </article>
             );

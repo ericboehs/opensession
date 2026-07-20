@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { renderMarkdown } from "./markdown";
+import { renderMarkdown, renderPrCommentMarkdown } from "./markdown";
 
 describe("renderMarkdown session links", () => {
   it("turns a session-id codespan into a link", () => {
@@ -53,5 +53,37 @@ describe("renderMarkdown strikethrough (double-tilde only)", () => {
 
   it("still renders real ~~strikethrough~~", () => {
     expect(renderMarkdown("this is ~~struck~~ text")).toContain("<del>struck</del>");
+  });
+});
+
+describe("renderPrCommentMarkdown GitHub details", () => {
+  it("renders collapsible reviews and subtext", () => {
+    const html = renderPrCommentMarkdown(`<details> <summary>Outdated review</summary>
+**Michael review** · request changes
+
+<sub>Reviewed 3147253 · open session</sub>
+</details>`);
+
+    expect(html).toContain('<details class="md-details">');
+    expect(html).toContain("<summary>Outdated review</summary>");
+    expect(html).toContain("<strong>Michael review</strong>");
+    expect(html).toContain("<sub>Reviewed 3147253 · open session</sub>");
+  });
+
+  it("continues to escape untrusted HTML", () => {
+    const html = renderPrCommentMarkdown(
+      "<details><summary>Safe</summary><script>alert(1)</script></details>",
+    );
+    expect(html).toContain('<details class="md-details">');
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html).not.toContain("<script>");
+  });
+
+  it("does not allow attributes on whitelisted tags", () => {
+    const html = renderPrCommentMarkdown(
+      '<details open onclick="alert(1)"><summary>Unsafe</summary>Body</details>',
+    );
+    expect(html).toContain("&lt;details open onclick=&quot;alert(1)&quot;&gt;");
+    expect(html).not.toContain('<details open onclick="alert(1)">');
   });
 });

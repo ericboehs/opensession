@@ -150,3 +150,57 @@ export function renderMarkdown(src: string): string {
   }
   return out;
 }
+
+function withoutSingleParagraph(html: string): string {
+  const trimmed = html.trim();
+  const match = /^<p>([\s\S]*)<\/p>$/.exec(trimmed);
+  return match ? match[1] : trimmed;
+}
+
+function renderPrMarkdownWithSub(src: string): string {
+  const subs: string[] = [];
+  const prepared = src.replace(/<sub>([\s\S]*?)<\/sub>/gi, (_match, content) => {
+    const token = `OPENSESSIONSUBTOKEN${subs.length}END`;
+    subs.push(content);
+    return token;
+  });
+  let html = renderMarkdown(prepared);
+  subs.forEach((content, index) => {
+    const token = `OPENSESSIONSUBTOKEN${index}END`;
+    html = html.replaceAll(
+      token,
+      `<sub>${withoutSingleParagraph(renderMarkdown(content))}</sub>`,
+    );
+  });
+  return html;
+}
+
+/**
+ * Render GitHub PR prose while preserving its common collapsible-review markup.
+ * The whitelist is deliberately exact and attribute-free; all other HTML still
+ * goes through renderMarkdown's escaping renderer.
+ */
+export function renderPrCommentMarkdown(src: string): string {
+  const details: Array<{ summary: string; body: string }> = [];
+  const prepared = src.replace(
+    /<details>\s*<summary>([\s\S]*?)<\/summary>\s*([\s\S]*?)<\/details>/gi,
+    (_match, summary, body) => {
+      const token = `OPENSESSIONDETAILSTOKEN${details.length}END`;
+      details.push({ summary, body });
+      return `\n\n${token}\n\n`;
+    },
+  );
+  let html = renderPrMarkdownWithSub(prepared);
+  details.forEach(({ summary, body }, index) => {
+    const token = `OPENSESSIONDETAILSTOKEN${index}END`;
+    const rendered =
+      `<details class="md-details">` +
+      `<summary>${withoutSingleParagraph(renderPrMarkdownWithSub(summary))}</summary>` +
+      `<div class="md-details-body">${renderPrMarkdownWithSub(body)}</div>` +
+      `</details>`;
+    html = html
+      .replace(`<p>${token}</p>`, rendered)
+      .replace(token, rendered);
+  });
+  return html;
+}

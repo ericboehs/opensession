@@ -8426,6 +8426,45 @@ a.workspace-info-check-row {
 	margin: 12px 0;
 }
 
+.markdown .md-details {
+	margin: 8px 0;
+	border: 1px solid var(--border);
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
+	background: var(--bg-surface);
+	overflow: hidden;
+}
+.markdown .md-details > summary {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	padding: 9px 11px;
+	cursor: pointer;
+	font-weight: 600;
+	color: var(--text);
+	list-style: none;
+}
+.markdown .md-details > summary::-webkit-details-marker {
+	display: none;
+}
+.markdown .md-details > summary::before {
+	content: "›";
+	color: var(--text-faint);
+	font-size: 17px;
+	line-height: 1;
+	transition: transform 0.12s ease;
+}
+.markdown .md-details[open] > summary::before {
+	transform: rotate(90deg);
+}
+.markdown .md-details-body {
+	padding: 10px 12px;
+	border-top: 1px solid var(--border);
+}
+.markdown sub {
+	font-size: 0.78em;
+	color: var(--text-faint);
+}
+
 /* ── Home dashboard ──────────────────────────────────────── */
 
 .home {
