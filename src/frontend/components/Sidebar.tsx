@@ -79,11 +79,18 @@ const AUTOMATION_COLOR = "#d29922";
 // chat and bails on Alt, so the Alt-carrying escalation here never
 // double-fires it.
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+const isChromium = /Chrome|Chromium|CriOS|Edg|OPR/.test(navigator.userAgent);
 const ARCHIVE_WS_SHORTCUT_KEYS = isApple
 	? ["⌘", "⌥", "⇧", "A"]
 	: ["Ctrl", "Alt", "Shift", "A"];
-// ⌘E is the advertised archive chord; ⌘⇧A stays alive as a legacy alias.
-const ARCHIVE_SHORTCUT_KEYS = isApple ? ["⌘", "E"] : ["Ctrl", "E"];
+// Chromium reserves ⌘E before the page sees it; advertise the working alias.
+const ARCHIVE_SHORTCUT_KEYS = isChromium
+	? isApple
+		? ["⌘", "⇧", "A"]
+		: ["Ctrl", "Shift", "A"]
+	: isApple
+		? ["⌘", "E"]
+		: ["Ctrl", "E"];
 
 /** ⌘E (primary) or ⌘⇧A (legacy) — the archive-this-chat chord. */
 function isArchiveChord(e: KeyboardEvent): boolean {
@@ -2495,9 +2502,9 @@ export function Sidebar({
 									: "Archive workspace"
 							}
 							shortcut={
-								// Single-chat workspace: archiving the workspace ≡ archiving
-								// the open chat, so advertise the short ⌘E chord. The ⌘⌥⇧A
-								// escalation only matters when there's more than one chat.
+								// Single-chat workspace: archiving the workspace is archiving
+								// the open chat, so advertise its browser-compatible chord. The
+								// ⌘⌥⇧A escalation only matters with more than one chat.
 								active
 									? row.chats.length > 1
 										? ARCHIVE_WS_SHORTCUT_KEYS

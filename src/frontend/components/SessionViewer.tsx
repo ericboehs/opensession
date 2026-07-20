@@ -221,6 +221,14 @@ type PanelTab =
 	| "reports";
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+const isChromium = /Chrome|Chromium|CriOS|Edg|OPR/.test(navigator.userAgent);
+const archiveShortcutLabel = isChromium
+	? isApple
+		? "⌘⇧A"
+		: "Ctrl+Shift+A"
+	: isApple
+		? "⌘E"
+		: "Ctrl+E";
 
 // Hidden for at least this long, returning to the tab is a "reopen" — jump to
 // the live edge even if nothing new arrived. Shorter absences (glancing at a
@@ -2840,8 +2848,8 @@ export function SessionViewer({
 						disabled={archiving}
 						title={
 							session.archived
-								? `Unarchive session (${isApple ? "⌘E" : "Ctrl+E"})`
-								: `Archive session (${isApple ? "⌘E" : "Ctrl+E"})`
+								? `Unarchive session (${archiveShortcutLabel})`
+								: `Archive session (${archiveShortcutLabel})`
 						}
 					>
 						<IconArchive size={22} />
@@ -2855,7 +2863,7 @@ export function SessionViewer({
 									: "Archive session"}
 						</span>
 						<span className="btn-viewer-shortcut">
-							{isApple ? "⌘E" : "Ctrl+E"}
+							{archiveShortcutLabel}
 						</span>
 					</button>
 				);
