@@ -539,7 +539,8 @@ function CardBody({
  * effort, pin a subscription, set a goal, dictate, and @-mention repo files.
  * Model / subscription / goal changes route through the /model, /sub and /goal
  * slash commands (persisted + broadcast server-side), exactly like SessionViewer.
- * Non-backstage sessions (Slack/Linear-owned) keep the model fixed — that's the
+ * Slack sessions can switch models too (the /model command syncs the loop's
+ * store server-side); Linear-owned sessions keep the model fixed — that's the
  * owning agent's call — but still get attachments and effort.
  */
 function CatchUpComposer({
@@ -670,11 +671,11 @@ function CatchUpComposer({
 				defaultModel={defaultModel}
 				model={model}
 				onModelChange={handleModelChange}
-				modelDisabled={!isBackstage}
+				modelDisabled={!isBackstage && target.source !== "slack"}
 				modelTitle={
-					isBackstage
+					isBackstage || target.source === "slack"
 						? "Switch the model for this session"
-						: "Set the model from the owning agent (/model in the Slack thread)"
+						: "Set the model from the owning agent (its session file is agent-owned)"
 				}
 				effort={effort}
 				onEffortChange={setEffort}

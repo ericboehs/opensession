@@ -3677,11 +3677,15 @@ export function SessionViewer({
 									defaultModel={defaultModel}
 									model={model}
 									onModelChange={handleModelChange}
-									modelDisabled={session.source !== "backstage"}
+									modelDisabled={
+										session.source !== "backstage" &&
+										session.source !== "slack"
+									}
 									modelTitle={
-										session.source !== "backstage"
-											? "Set the model from the owning agent (/model in the Slack thread)"
-											: "Switch the model for this session"
+										session.source === "backstage" ||
+										session.source === "slack"
+											? "Switch the model for this session"
+											: "Set the model from the owning agent (its session file is agent-owned)"
 									}
 									effort={effort}
 									onEffortChange={setEffort}

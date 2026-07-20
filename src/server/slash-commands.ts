@@ -17,6 +17,8 @@ import {
 	providerFor,
 	resolveModel,
 } from "./models";
+import { engineFamily } from "./agent-runner";
+import { syncAgentSessionEngine } from "./agent-session-sync";
 import { touchBackstageSession } from "./session-cache";
 import { broadcastToSession } from "./ws-hub";
 import type { UnifiedSession } from "./types";
@@ -43,10 +45,14 @@ export function handleSlashCommand(
 		return null;
 	}
 	if (session.source !== "backstage") {
-		if (text.startsWith("/model") && session.source === "slack") {
-			return "Set the model from Slack instead — send /model <name> in the Slack thread (its session file is agent-owned).";
+		// /model works on slack-source sessions too: persistence goes through
+		// syncAgentSessionEngine — the one sanctioned writer into
+		// ~/.slack-sessions (patches the file AND the loop's in-memory copy) —
+		// so the UI picker/composer can switch a Slack thread's model without
+		// racing the owning loop. Everything else stays agent-owned.
+		if (!(session.source === "slack" && text.startsWith("/model"))) {
+			return "Slash commands only work on backstage-created sessions (Slack/Linear session files are agent-owned).";
 		}
-		return "Slash commands only work on backstage-created sessions (Slack/Linear session files are agent-owned).";
 	}
 
 	if (text === "/help") {
@@ -83,14 +89,24 @@ export function handleSlashCommand(
 			].join("\n");
 		}
 		const prevModel = session.model || getDefaultModel();
-		const prevProvider = providerFor(session.model);
-		touchBackstageSession(session.id, {
-			model: resolved.id,
-			modelHistory: [
-				...(session.modelHistory || []),
-				{ model: resolved.id, from: prevModel, at: new Date().toISOString(), by: user },
-			],
-		});
+		if (session.source === "slack") {
+			if (resolveModel(prevModel)?.id === resolved.id) {
+				return `Already on ${resolved.id}.`;
+			}
+			// Slack session files don't carry modelHistory; the sync writer
+			// patches the model field only (existing files, atomic).
+			if (!syncAgentSessionEngine(session, { model: resolved.id })) {
+				return "Couldn't update the Slack session file — send /model <name> in the Slack thread instead.";
+			}
+		} else {
+			touchBackstageSession(session.id, {
+				model: resolved.id,
+				modelHistory: [
+					...(session.modelHistory || []),
+					{ model: resolved.id, from: prevModel, at: new Date().toISOString(), by: user },
+				],
+			});
+		}
 		// Everyone watching sees the switch (pill + inline divider) immediately
 		broadcastToSession(session.id, {
 			type: "model_changed",
@@ -99,11 +115,15 @@ export function handleSlashCommand(
 			from: prevModel,
 			by: user,
 		});
-		const switchedProvider = prevProvider !== resolved.provider;
+		// Compare underlying engine families, not resolveModel providers: a
+		// stored opencode/<provider>/<model> id reports provider "opencode",
+		// which would false-positive against a native id's "claude"/"codex".
+		const switchedProvider =
+			engineFamily(prevModel) !== engineFamily(resolved.id);
 		return (
 			`Model set to ${resolved.id} (${modelLabel(resolved.id)}). Applies from the next prompt.` +
 			(switchedProvider
-				? resolved.provider === "codex"
+				? engineFamily(resolved.id) === "openai"
 					? " Heads up: this hands the wheel to Codex on the next prompt. The Codex engine can't share Claude's internal thread, so it gets a transcript handoff of the conversation so far and continues from there (switching back to a Claude model resumes its own history)."
 					: " Heads up: this hands the wheel back to Claude on the next prompt. Claude resumes its own earlier history (if any) and gets a transcript handoff of the turns Codex ran in between."
 				: "")
