@@ -16,6 +16,7 @@ import { clearSessionFileArchive } from "../plain-archive";
 import { editPrReviewers } from "../pr-info";
 import { promptQueues, requeueSteerReceipts, stoppedSessions } from "../queue-state";
 import { getReviewRequest, setReviewAccepted, setReviewRequest } from "../review-requests";
+import { transitionRunState } from "../run-state";
 import { findSession, getCachedSessions, invalidateSessionsCache, runErrors } from "../session-cache";
 import { resolvePrTarget } from "../session-repos";
 import { destroySessionSandbox } from "../session-sandbox";
@@ -312,6 +313,7 @@ export async function handleSessionsRoutes(
 				source: "archive",
 				graceful: stopped,
 			});
+			transitionRunState(session.id, "cancel", { source: "archive" });
 			requeueSteerReceipts(session.id, engineUserTexts(session));
 			stoppedRun = true;
 		}

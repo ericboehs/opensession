@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { getAllSessions } from "./sessions";
 import { activeRunRecords } from "./run-journal";
+import { transitionRunState } from "./run-state";
 import { isAgentSessionBusy } from "./agent-runner";
 import { SESSION_EFFORTS as MODEL_EFFORTS } from "./models";
 import { writeJsonAtomic } from "./shared/atomic-write";
@@ -122,6 +123,7 @@ export function recordRunOutcome(
 ): void {
 	const session = findSession(sessionId);
 	const id = session?.id || sessionId;
+	transitionRunState(id, errorMessage ? "run_failed" : "turn_end");
 	if (errorMessage) {
 		const entry = {
 			message: errorMessage.slice(0, 500),

@@ -114,6 +114,20 @@ describe("lifecycle paths", () => {
 		expect(walk("stopped", ["prompt", "run_registered"])).toBe("running");
 	});
 
+	test("stopped absorbs the cancelled run's own teardown", () => {
+		expect(walk("running", ["cancel", "turn_end"])).toBe("stopped");
+		expect(walk("running", ["cancel", "run_failed"])).toBe("stopped");
+	});
+
+	test("un-instrumented recovery paths degrade to run_registered leniency", () => {
+		expect(walk("interrupted", ["run_registered", "turn_end"])).toBe("idle");
+		expect(walk("reattaching", ["run_registered"])).toBe("running");
+	});
+
+	test("a new ask overwriting a pending one stays ask_blocked", () => {
+		expect(walk("ask_blocked", ["ask_posed"])).toBe("ask_blocked");
+	});
+
 	test("restart recovery: journal adoption → reattach", () => {
 		expect(
 			walk("idle", [
@@ -158,7 +172,6 @@ describe("illegal combinations are rejected (the zombie class)", () => {
 		["idle", "ask_resolved"], // answer with nobody waiting
 		["running", "ask_resolved"], // ask already gone
 		["idle", "steer"], // steer with no live run
-		["stopped", "turn_end"], // teardown racing a Stop that already landed
 		["idle", "reattach_ok"], // reattach completion nobody started
 		["interrupted", "turn_end"], // dead run reporting a clean finish
 	];

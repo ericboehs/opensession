@@ -10,6 +10,7 @@
  */
 
 import { takeInterruptedRuns } from "./run-journal";
+import { transitionRunState } from "./run-state";
 import type { StreamEvent, ImageInput } from "./run-events";
 import {
   runOpencode,
@@ -413,6 +414,7 @@ const pendingStarts: Set<string> = ((globalThis as any).__pendingSessionStarts ?
 /** Mark a session as starting a run (call synchronously, before any await). */
 export function markSessionStarting(id: string): void {
   pendingStarts.add(id);
+  transitionRunState(id, "prompt");
 }
 
 /** Clear a starting mark (call in a `finally` once the run has ended). */
@@ -617,7 +619,10 @@ export function resumeInterruptedRuns(
         );
         continue;
       }
-      if (run.bksSessionId) resumed.push(run.bksSessionId);
+      if (run.bksSessionId) {
+        resumed.push(run.bksSessionId);
+        transitionRunState(run.bksSessionId, "resume_reprompt", { run_key: run.runKey });
+      }
       console.log(
         `[runner] Re-running interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} from scratch (never got an engine session)`
       );
@@ -665,12 +670,20 @@ export function resumeInterruptedRuns(
         // null means the server is gone (or was a direct child) and we fall
         // back to the classic continuation re-prompt below.
         if (run.serverKey) {
+          if (run.bksSessionId)
+            transitionRunState(run.bksSessionId, "reattach_start", { run_key: run.runKey });
           const reattached = await tryReattachOpencodeRun(run, {
             onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
           }).catch((e) => {
             console.warn(`[runner] Reattach probe failed for ${run.runKey}:`, e);
             return null;
           });
+          if (run.bksSessionId)
+            transitionRunState(
+              run.bksSessionId,
+              reattached ? "reattach_ok" : "reattach_fail",
+              { run_key: run.runKey },
+            );
           if (reattached) {
             console.log(
               `[runner] Reattached ${run.kind || "run"} ${run.bksSessionId || run.runKey} to its live engine turn (server ${run.serverKey})`
@@ -687,6 +700,8 @@ export function resumeInterruptedRuns(
         console.log(
           `[runner] Resuming interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} (started ${run.startedAt}, model ${run.model || "default"})`
         );
+        if (run.bksSessionId)
+          transitionRunState(run.bksSessionId, "resume_reprompt", { run_key: run.runKey });
         for await (const event of runAgent({
           prompt: RESUME_CONTINUATION_PROMPT,
           sessionId: run.claudeSessionId,

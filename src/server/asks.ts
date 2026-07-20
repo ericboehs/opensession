@@ -14,6 +14,7 @@ import {
 	registerAsk,
 } from "./human-asks";
 import { resolveTeammate } from "./shared/user-mappings";
+import { transitionRunState } from "./run-state";
 import { findSession } from "./session-cache";
 import { broadcastToSession } from "./ws-hub";
 
@@ -141,6 +142,9 @@ export function makeAskHandler(sessionId: string) {
 					settled = true;
 					clearTimeout(timeoutId);
 					pendingAsks.delete(sessionId);
+					transitionRunState(sessionId, "ask_resolved", {
+						answered: a !== null,
+					});
 					// If the web UI answered after we'd already pinged Slack, retract the
 					// Slack ask so the teammate isn't left answering a moot question.
 					if (escalatedAskId) cancelAsk(escalatedAskId);
@@ -185,6 +189,7 @@ export function makeAskHandler(sessionId: string) {
 					questions,
 					resolve: (a) => finish(a),
 				});
+				transitionRunState(sessionId, "ask_posed");
 				broadcastToSession(sessionId, {
 					type: "ask_question",
 					sessionId,

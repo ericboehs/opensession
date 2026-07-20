@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias } from "./rename-compat";
+import { transitionRunState } from "./run-state";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
 // Overridable so a detached run host (src/runner-host/host.ts) journals to its
@@ -66,8 +67,17 @@ function writeRunJournal(journal: Record<string, ActiveRunRecord>): void {
 
 export function journalSet(record: ActiveRunRecord): void {
   const journal = readRunJournal();
+  const rejournal = record.runKey in journal;
   journal[record.runKey] = record;
   writeRunJournal(journal);
+  // A fallback hop re-journals the same runKey mid-run — that's the running
+  // self-edge, not a new registration, so keep the event but tag it.
+  if (record.bksSessionId)
+    transitionRunState(record.bksSessionId, "run_registered", {
+      run_key: record.runKey,
+      kind: record.kind,
+      rejournal: rejournal || undefined,
+    });
 }
 
 export function journalClear(runKey: string): void {
@@ -110,5 +120,12 @@ export function takeInterruptedRuns(): ActiveRunRecord[] {
     (r) => !isRunActiveInProcess(r.runKey)
   );
   if (entries.length > 0) writeRunJournal({});
+  for (const r of entries) {
+    if (r.bksSessionId)
+      transitionRunState(r.bksSessionId, "boot_journal_found", {
+        run_key: r.runKey,
+        kind: r.kind,
+      });
+  }
   return entries;
 }

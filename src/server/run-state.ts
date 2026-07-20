@@ -31,23 +31,26 @@
  * (delivery obligations), manualStatus (human display pin), detached-vs-child
  * (a `running` attribute that only matters at shutdown).
  *
- * Wiring plan (follow-up — call sites live in files other sessions are
- * mid-edit on; this module ships with zero call sites so it can land without
- * touching them, and transitions are additive observation, not control flow):
- *   prompt / start_aborted   run-session.ts runSessionPrompt (markSessionStarting
- *                            + stop-latch clear, ~:1084)
- *   run_registered/turn_end/run_failed/engine_died
- *                            opencode-runner.ts run start + finally;
- *                            host-registry.ts register/unregisterHostRun
- *   ask_posed / ask_resolved asks.ts makeAskHandler / resolve
- *   cancel                   the Stop path that sets stoppedSessions +
- *                            requeueSteerReceipts callers
- *   boot_journal_found, reattach_start/ok/fail, resume_reprompt
- *                            run-journal.ts takeInterruptedRuns, opencode-
- *                            runner.ts tryReattachOpencodeRun, agent-runner.ts
- *                            continuation fallback
- *   shutdown_orphaned        run-session.ts snapshotActiveSessions
- * Everything listed is runner-internal: wiring needs a real restart to apply.
+ * Wiring (transitions are additive observation, not control flow — nothing
+ * branches on this state yet). Everything keys on the bks session id:
+ *   prompt                   agent-runner.ts markSessionStarting (called by
+ *                            every run path before its first await)
+ *   run_registered           run-journal.ts journalSet (run start + fallback
+ *                            re-journal; self-edge while running)
+ *   turn_end / run_failed    session-cache.ts recordRunOutcome (the one
+ *                            terminal-outcome choke point for owned runs)
+ *   ask_posed / ask_resolved asks.ts makeAskHandler (offerAskCard is exempt —
+ *                            its card doesn't park the run)
+ *   cancel                   routes/sessions.ts archive-stop
+ *   boot_journal_found       run-journal.ts takeInterruptedRuns
+ *   reattach_start/ok/fail, resume_reprompt
+ *                            agent-runner.ts resumeInterruptedRuns
+ * Not wired yet (call sites live in files other sessions are mid-edit on, or
+ * the marker doesn't exist): the WS stop handler's cancel (ws-handlers.ts —
+ * such a stop reads as turn_end→idle instead of stopped), engine_died /
+ * shutdown_orphaned (opencode-runner.ts / run-session.ts), workspace_prepare/
+ * ready (ws-hub.ts), mid-run steer. The leniency edges below keep those gaps
+ * silent instead of noisy. Runner-internal wiring needs a real restart.
  *
  * State lives in-memory on globalThis (hot-reload safe, restart-fresh — a
  * restart re-derives reality through the boot events, so persisting this map
@@ -97,10 +100,13 @@ export type RunEvent =
  * waiting on).
  *
  * Deliberate leniency edges, so half-wired paths degrade to logging instead of
- * false alarms: `run_registered` straight from idle/stopped/failed (a run
- * path whose reserve step isn't instrumented yet — e.g. the Slack/Linear
- * loops), and self-edges for queue-while-busy (`prompt`), mid-run `steer`,
- * and rotation re-registration (`run_registered` while running).
+ * false alarms: `run_registered` straight from idle/stopped/failed/interrupted/
+ * reattaching (a run path whose reserve/recovery marker isn't instrumented —
+ * e.g. the Slack/Linear loops, or a domain-specific boot recovery); self-edges
+ * for queue-while-busy (`prompt`), mid-run `steer`, rotation re-registration
+ * (`run_registered` while running), and ask-overwrite (`ask_posed` while
+ * ask_blocked); and `stopped` absorbing the cancelled run's own teardown
+ * (`turn_end`/`run_failed` land after the Stop that caused them).
  */
 export const RUN_STATE_TRANSITIONS: Record<
 	RunState,
@@ -145,10 +151,13 @@ export const RUN_STATE_TRANSITIONS: Record<
 		shutdown_orphaned: "interrupted",
 		prompt: "ask_blocked",
 		steer: "ask_blocked",
+		ask_posed: "ask_blocked",
 	},
 	stopped: {
 		prompt: "starting",
 		run_registered: "running",
+		turn_end: "stopped",
+		run_failed: "stopped",
 	},
 	failed: {
 		prompt: "starting",
@@ -160,6 +169,7 @@ export const RUN_STATE_TRANSITIONS: Record<
 		cancel: "idle",
 		engine_died: "interrupted",
 		boot_journal_found: "interrupted",
+		run_registered: "running",
 	},
 	reattaching: {
 		reattach_ok: "running",
@@ -167,6 +177,7 @@ export const RUN_STATE_TRANSITIONS: Record<
 		run_failed: "failed",
 		cancel: "stopped",
 		engine_died: "interrupted",
+		run_registered: "running",
 	},
 };
 
