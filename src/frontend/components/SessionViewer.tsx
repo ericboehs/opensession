@@ -618,7 +618,6 @@ export function SessionViewer({
 	const {
 		containerRef: messagesRef,
 		spacerRef,
-		following,
 		followingLive,
 		newBelow,
 		showScrollToBottom,
@@ -1513,14 +1512,6 @@ export function SessionViewer({
 	// Every session opens at the live edge. Do this in a layout effect so the
 	// transcript never paints at scrollTop 0 before moving to the end.
 	const initiallyScrolledSessionRef = useRef<string | null>(null);
-	// State mirror: the auto-load-history observer must not arm until the
-	// reopen scroll has run — the transcript paints at scrollTop 0, so an
-	// observer attached before the jump sees the "load earlier" sentinel in
-	// view and fires a phantom load from a position the reader never chose.
-	const [initialScrollDone, setInitialScrollDone] = useState(false);
-	useLayoutEffect(() => {
-		setInitialScrollDone(false);
-	}, [session.id]);
 	useLayoutEffect(() => {
 		const el = messagesRef.current;
 		if (
@@ -1532,7 +1523,6 @@ export function SessionViewer({
 			return;
 		initiallyScrolledSessionRef.current = session.id;
 		scrollToLatest("auto");
-		setInitialScrollDone(true);
 	}, [entries, session.id, scrollToLatest, messagesRef]);
 
 	// Returning to the app reads like reopening the session, not resuming a
@@ -1633,10 +1623,8 @@ export function SessionViewer({
 	}, [entries, streamText, queued, visibleSteered, pending, relayout]);
 
 
-	// Ref mirror of loadingHistory: the intersection observer below can fire
-	// again before React re-renders with the new state, so the in-flight guard
-	// must be synchronous. Reset rides the state (the transcript /
-	// transcript_history WS cases call setLoadingHistory(false)).
+	// Ref mirror keeps rapid clicks from sending duplicate history requests
+	// before React re-renders with the disabled button.
 	const loadingHistoryRef = useRef(false);
 	useEffect(() => {
 		loadingHistoryRef.current = loadingHistory;
@@ -1665,44 +1653,6 @@ export function SessionViewer({
 				: {}),
 		});
 	}, [messagesRef, send, session.id, startHistoryHold, followingLive]);
-
-	// Auto-load when the reader scrolls up to the affordance: nearing the top
-	// of the loaded history pulls the next page in, infinite-scroll style (the
-	// button stays as a manual fallback). The anchor restore above keeps the
-	// reader on the same content after the prepend, which pushes the affordance
-	// back out of the viewport — so the observer only fires again on further
-	// upward scrolling, one page per approach.
-	const loadHistoryTopRef = useRef<HTMLDivElement | null>(null);
-	useEffect(() => {
-		// Opening at the live edge must be a stable resting state. Arming the
-		// generous prefetch margin there can pull in another page shortly after
-		// first paint when the loaded tail is short, causing a visible second
-		// scroll. Wait until the reader actually leaves the edge instead.
-		if (following || !historyTruncated || loadingHistory || !initialScrollDone)
-			return;
-		const target = loadHistoryTopRef.current;
-		const root = messagesRef.current;
-		if (!target || !root) return;
-		const io = new IntersectionObserver(
-			(hits) => {
-				if (hits.some((h) => h.isIntersecting)) loadEarlierHistory();
-			},
-			// Start the fetch a viewport-ish before the affordance is reached so
-			// the history is often already there when the reader arrives.
-			{ root, rootMargin: "600px 0px 0px 0px" },
-		);
-		io.observe(target);
-		return () => {
-			io.disconnect();
-		};
-	}, [
-		following,
-		historyTruncated,
-		loadingHistory,
-		initialScrollDone,
-		loadEarlierHistory,
-		messagesRef,
-	]);
 
 	// When a turn finishes, release the spacer so the layout settles back.
 	const wasBusyRef = useRef(false);
@@ -3407,7 +3357,7 @@ export function SessionViewer({
 							) : (
 								<>
 									{historyTruncated && (
-										<div className="load-history" ref={loadHistoryTopRef}>
+										<div className="load-history">
 											<button
 												className="load-history-btn"
 												disabled={loadingHistory}
