@@ -337,20 +337,47 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
     }
     console.log(`[warm-template] ${repoId}: refreshing template to ${sha} (${dir})`);
 
+    // Step logging + watchdog: a wedged subprocess await must FAIL the
+    // refresh, not hang it forever (seen live 2026-07-21: an in-server
+    // install await never settled while the same commands finished instantly
+    // by hand). A timed-out step's work keeps running detached; fail() +
+    // the finally below clear the lock so seeding/spares move on.
+    const step = async <T>(name: string, ms: number, run: () => Promise<T>): Promise<T> => {
+      console.log(`[warm-template] ${repoId}: ${name}…`);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${name} timed out after ${Math.round(ms / 1000)}s`)),
+          ms,
+        );
+      });
+      try {
+        return await Promise.race([run(), timeout]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
     // 3. Advance the tree. reset --hard touches TRACKED files only — the
     //    whole point is that gitignored build artifacts survive, so the
     //    rebuild below is incremental. This is our dedicated detached
     //    worktree; the shared-checkout no-reset rule doesn't apply here.
-    await $`git -C ${dir} reset --hard origin/${repo.defaultBranch}`.quiet();
+    await step("reset", 2 * 60_000, () =>
+      $`git -C ${dir} reset --hard origin/${repo.defaultBranch}`.quiet().then(() => {}),
+    );
 
     // 4. Deps + env seeding (same helper the session worktrees use). This is
     //    also the verification: a template whose install fails is never
     //    marked ok.
-    await installWorktreeDeps(repo, dir, `warm-template:${repoId}`);
+    await step("install deps", 10 * 60_000, () =>
+      installWorktreeDeps(repo, dir, `warm-template:${repoId}`),
+    );
 
     // 5. Capture the seedable manifest (only on success, so a failed refresh
     //    keeps seeding from the last good state).
-    const raw = await $`git -C ${dir} ls-files -o -i --exclude-standard --directory`.text();
+    const raw = await step("capture manifest", 2 * 60_000, () =>
+      $`git -C ${dir} ls-files -o -i --exclude-standard --directory`.text(),
+    );
     const manifest = seedableManifest(raw.split("\n"));
     if (!manifest.length) return void (await fail("refresh produced no node_modules to seed"));
     writeFileSync(manifestFile(repoId), manifest.join("\n") + "\n");
