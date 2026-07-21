@@ -829,6 +829,7 @@ body.resizing-x {
 	width: 100%;
 	flex: 1;
 	min-height: 0;
+	overflow-y: auto;
 }
 
 .sidebar-header {
@@ -865,6 +866,20 @@ body.resizing-x {
 	gap: 6px;
 	margin-bottom: 1px;
 	min-width: 0;
+}
+.sidebar-workspace-toggle {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+	padding: 0;
+	background: none;
+	border: none;
+	font: inherit;
+	cursor: pointer;
+}
+.sidebar-workspace-toggle:hover .sidebar-band-chevron {
+	visibility: visible;
 }
 .sidebar-workspace-title {
 	font-size: 12px;
@@ -1154,38 +1169,29 @@ body.resizing-x {
 }
 
 .sidebar-list {
-	flex: 1;
-	min-height: 0;
-	overflow-y: auto;
+	flex: none;
+	overflow-y: visible;
 	/* Tight horizontal padding so the active/hover pill sits close to the
 	   sidebar edges (it "overflows" past the content inset, Conductor-style),
 	   and so row content lands on the shared columns: leading icons under the
 	   group-header icons, trailing times/numbers flush-right under the header's
 	   filter/＋ buttons. */
-	padding: 1px 10px 24px 10px;
+	padding: 1px 10px 0 10px;
 }
 
-/* Pull requests, Support, People and Automations sit below the workspace pane.
-   Their headings stay put while long row lists scroll independently, rather
-   than disappearing beneath the Workspaces header with the workspace rows. */
+/* These bands are siblings of the workspace list, but participate in the
+   sidebar's single scroll flow rather than creating nested scroll panes. */
 .sidebar-independent-section {
-	display: flex;
-	flex: 0 1 auto;
-	flex-direction: column;
-	min-height: 0;
-	max-height: 22%;
+	display: block;
+	flex: none;
 	margin-right: 10px;
 	margin-left: 10px;
 }
 .sidebar-independent-section.sidebar-group--band-start {
-	margin-top: 0;
-}
-.sidebar-independent-section > .sidebar-band-label {
-	flex: none;
+	margin-top: 28px;
 }
 .sidebar-independent-scroll {
-	min-height: 0;
-	overflow-y: auto;
+	overflow-y: visible;
 	padding-bottom: 6px;
 }
 
@@ -12633,17 +12639,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		padding-right: 4px;
 	}
 	.sidebar-independent-section {
-		display: block;
-		flex: none;
-		max-height: none;
 		margin-right: 4px;
-		margin-left: 10px;
-	}
-	.sidebar-independent-section.sidebar-group--band-start {
-		margin-top: 28px;
-	}
-	.sidebar-independent-scroll {
-		overflow-y: visible;
 	}
 
 	/* One horizontally-scrollable line of tap cards (Slack-home style) rather

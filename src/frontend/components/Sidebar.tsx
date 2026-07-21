@@ -2147,9 +2147,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// The People / Automations bands are open by default, so — like
 	// repo groups — their *collapsed* state is what's persisted. Collapsing one
 	// hides every group within that band. Searching forces them open.
-	const bandOpen = (band: GroupBand | "support" | "pullrequests") =>
+	const bandOpen = (
+		band: GroupBand | "support" | "pullrequests" | "workspaces",
+	) =>
 		search.trim().length > 0 ? true : !expanded.has(`collapsed:band:${band}`);
-	function toggleBand(band: GroupBand | "support" | "pullrequests") {
+	const workspacesOpen = bandOpen("workspaces");
+	function toggleBand(
+		band: GroupBand | "support" | "pullrequests" | "workspaces",
+	) {
 		const key = `collapsed:band:${band}`;
 		setExpanded((prev) => {
 			const next = new Set(prev);
@@ -2780,15 +2785,29 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				className={`sidebar-workspace${listScrolled ? " sidebar-workspace--scrolled" : ""}`}
 			>
 				<div className="sidebar-workspace-head" ref={headRef}>
-					<span className="sidebar-workspace-title" ref={titleRef}>
-						{filter.person === "me"
-							? "Workspaces"
-							: filter.person === "unassigned"
-								? "Unassigned workspaces"
-							: filter.person === "everyone"
-								? "All workspaces"
-								: `${people.find((p) => p.key === filter.person)?.label || filter.person}'s workspaces`}
-					</span>
+					<button
+						className="sidebar-workspace-toggle"
+						onClick={() => toggleBand("workspaces")}
+						aria-expanded={workspacesOpen}
+						title={workspacesOpen ? "Collapse workspaces" : "Expand workspaces"}
+					>
+						<span className="sidebar-workspace-title" ref={titleRef}>
+							{filter.person === "me"
+								? "Workspaces"
+								: filter.person === "unassigned"
+									? "Unassigned workspaces"
+									: filter.person === "everyone"
+										? "All workspaces"
+										: `${people.find((p) => p.key === filter.person)?.label || filter.person}'s workspaces`}
+						</span>
+						<IconChevronDown
+							className="sidebar-band-chevron"
+							size={18}
+							style={{
+								transform: workspacesOpen ? "none" : "rotate(-90deg)",
+							}}
+						/>
+					</button>
 					{/* Repo filter chip, inline behind the title when it fits. */}
 					{filter.repo !== "all" && repoInline && (
 						<RepoFilterChip
@@ -3125,17 +3144,18 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					);
 				})()}
 
-			<div
-				className="sidebar-list"
-				onScroll={(e) => {
+			{workspacesOpen && (
+				<div
+					className="sidebar-list"
+					onScroll={(e) => {
 					const scrolled = e.currentTarget.scrollTop > 0;
 					setListScrolled((prev) => {
 						if (prev === scrolled) return prev;
 						onListScrolledChange?.(scrolled);
 						return scrolled;
 					});
-				}}
-			>
+					}}
+				>
 				{workspaceListEmpty && (
 					<div className="sidebar-workspace-empty">
 						{hasWorkspaceFilter
@@ -3656,7 +3676,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
-			</div>
+				</div>
+			)}
 
 			{/* Pull requests are an action inbox: personal PRs, direct review
 			    requests and automation output, grouped by what can happen next. */}
