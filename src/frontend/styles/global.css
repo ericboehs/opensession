@@ -1801,8 +1801,7 @@ body.resizing-x {
 	.sidebar-item:hover .sidebar-item-meta {
 		padding-right: 0;
 	}
-	.sidebar-ws-row:hover .sidebar-group-count,
-	.sidebar-ws-row:hover .sidebar-ws-unread {
+	.sidebar-ws-row:hover .sidebar-group-count {
 		display: inline-flex;
 	}
 	/* No hover to reveal the row's new-session action on touch, so keep it
@@ -1833,8 +1832,7 @@ body.resizing-x {
 	.sidebar-item:hover .sidebar-item-meta {
 		padding-right: 0;
 	}
-	.sidebar-ws-row:hover .sidebar-group-count,
-	.sidebar-ws-row:hover .sidebar-ws-unread {
+	.sidebar-ws-row:hover .sidebar-group-count {
 		display: inline-flex;
 	}
 	.sidebar-ws-row:hover .sidebar-ws-time,
@@ -14959,25 +14957,21 @@ html[data-theme="light"] .palette-card .palette-create {
 	gap: 7px;
 }
 
-/* Workspace row hover actions: pin + archive side by side, replacing the
-   count badge while hovered. Absolutely positioned (and the row is the
-   positioning context) so revealing them can never change the row's height. */
+/* Workspace row hover actions: pin + archive side by side. Absolutely
+   positioned (and the row is the positioning context) so revealing them can
+   never change the row's height. */
 .sidebar-ws-row {
 	position: relative;
 }
-.sidebar-ws-unread {
-	flex: 0 0 auto;
+.sidebar-workspace-attention {
+	display: block;
+	position: absolute;
+	left: -5px;
+	top: 7px;
 	width: 7px;
 	height: 7px;
-	margin-left: auto;
 	border-radius: 50%;
 	background: var(--green);
-}
-.sidebar-group-count + .sidebar-ws-unread,
-.sidebar-ws-ticker + .sidebar-ws-unread,
-.sidebar-ws-time + .sidebar-ws-unread,
-.sidebar-ws-draft + .sidebar-ws-unread {
-	margin-left: 4px;
 }
 .sidebar-ws-actions {
 	display: none;
@@ -15010,8 +15004,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	.sidebar-swipe-row.is-open .sidebar-ws-row:hover .sidebar-ws-actions {
 		display: none;
 	}
-	.sidebar-ws-row:hover .sidebar-group-count,
-	.sidebar-ws-row:hover .sidebar-ws-unread {
+	.sidebar-ws-row:hover .sidebar-group-count {
 		display: none;
 	}
 }

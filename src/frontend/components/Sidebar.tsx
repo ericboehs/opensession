@@ -2338,12 +2338,18 @@ export function Sidebar({
 					}}
 					title={row.name}
 				>
-				{/* PR lifecycle stays in the leading status column. Quiet rows retain
-				    the alignment slot without painting a gray "nothing new" dot. */}
+				{/* Keep the PR glyph in its original 22px column; attention sits just
+				    before it without shifting the icon or workspace title. */}
 				<span
-					className="flex shrink-0 items-center justify-center"
+					className="relative flex shrink-0 items-center justify-center"
 					style={{ width: 22, height: 22 }}
 				>
+					{(row.unread || waiting) && (
+						<span
+							className="sidebar-workspace-attention"
+							title={waiting ? "Needs your attention" : "New activity"}
+						/>
+					)}
 					<WsPrStatusMark chats={row.chats} size={20} />
 				</span>
 				{editing ? (
@@ -2392,9 +2398,6 @@ export function Sidebar({
 						{stripPrTitlePrefix(row.name)}
 					</span>
 				)}
-				{row.chats.length > 1 && (
-					<span className="sidebar-group-count">{row.chats.length}</span>
-				)}
 				{/* A live run always earns its elapsed ticker. The idle "last used"
 				    time is opt-in (Settings → Appearance): revealed on hover by
 				    default, or pinned always. It's shown on hover in every mode —
@@ -2418,13 +2421,7 @@ export function Sidebar({
 						<IconPencil size={20} />
 					</span>
 				)}
-				{(row.unread || waiting) && (
-					<span
-						className="sidebar-ws-unread"
-						title={waiting ? "Needs your attention" : "New activity"}
-					/>
-				)}
-				{/* Hover actions: pin + archive, side by side (replace the count). */}
+				{/* Hover actions: pin + archive, side by side. */}
 				<span className="sidebar-ws-actions">
 					<span
 						role="button"
@@ -5306,7 +5303,13 @@ function WsPrStatusMark({
 	size: number;
 }) {
 	const chat = frontingPrChat(chats);
-	if (!chat) return null;
+	if (!chat) {
+		return (
+			<span title="No pull request">
+				<IconPullRequest size={size} className="text-faint" />
+			</span>
+		);
+	}
 	if (chat.prState === "MERGED") {
 		return (
 			<span title="PR merged">
