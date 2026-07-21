@@ -306,6 +306,10 @@ interface Props {
 	onToast?: (message: string) => void;
 }
 
+export interface SidebarHandle {
+	archiveSelected: () => void;
+}
+
 // Groups are rendered in three visually separated bands (spacing between each):
 //   "personal"    — My sessions (split by status), Pinned
 //   "people"      — one group per other teammate (+ ownerless source groups)
@@ -823,7 +827,7 @@ function sessionRepo(s: UnifiedSession): string {
 }
 
 
-export function Sidebar({
+export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	sessions,
 	projects,
 	notes,
@@ -871,7 +875,7 @@ export function Sidebar({
 	headerActionsEl = null,
 	onListScrolledChange,
 	onToast,
-}: Props) {
+}, ref) {
 	const isPhone = useIsPhone();
 	const [search, setSearch] = useState("");
 	// Groups are collapsed by default; the expanded set persists per browser
@@ -1781,6 +1785,10 @@ export function Sidebar({
 		}
 		onArchive(chat, next);
 	}
+
+	React.useImperativeHandle(ref, () => ({
+		archiveSelected: archiveOpenChatWithNext,
+	}));
 
 	// ⌘E (or the legacy ⌘⇧A) archives the open chat and lands on the next entry
 	// in the sidebar, rather than dropping back to Home. This lives here (not in
@@ -3944,7 +3952,7 @@ export function Sidebar({
 				})()}
 		</div>
 	);
-}
+});
 
 // ── Filter popover ─────────────────────────────────────────────────────────
 // A small floating panel (anchored under the filter button) with three controls:

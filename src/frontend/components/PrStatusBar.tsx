@@ -145,6 +145,8 @@ interface Props {
 	send?: (msg: any) => void;
 	/** Clicking the headline jumps to the PR tab. */
 	onOpenPrTab?: () => void;
+	/** Archive via the owning viewer so it can select the neighboring sidebar row. */
+	onArchive?: () => void;
 	/** "header" renders just the PR chip + primary action for the chat header
 	    (shown while the Workspace panel is closed); default is the full strip. */
 	variant?: "bar" | "header";
@@ -302,6 +304,7 @@ export function PrStatusBar({
 	archived,
 	send,
 	onOpenPrTab,
+	onArchive,
 	variant = "bar",
 	leading,
 	running,
@@ -426,7 +429,8 @@ export function PrStatusBar({
 						disabled={!!busy}
 						onClick={() =>
 							run("archive", async () => {
-								await archiveSessionApi(sessionId, true);
+								if (onArchive) onArchive();
+								else await archiveSessionApi(sessionId, true);
 								setIsArchived(true);
 							})
 						}

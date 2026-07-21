@@ -120,6 +120,8 @@ type QueueReceipt = {
 interface Props {
 	session: UnifiedSession;
 	onBack: () => void;
+	/** Archive through the sidebar so the nearest visible row becomes active. */
+	onArchive?: () => void;
 	/** Called after a successful archive (not unarchive), with whether archiving
 	    gracefully stopped an in-flight owned turn — so the parent can toast. */
 	onArchived?: (stoppedRun: boolean) => void;
@@ -341,6 +343,7 @@ function pickScrollAnchor(el: HTMLElement): HTMLElement | null {
 export function SessionViewer({
 	session,
 	onBack,
+	onArchive,
 	onArchived,
 	send,
 	addHandler,
@@ -2571,6 +2574,10 @@ export function SessionViewer({
 		const next = !session.archived;
 		setArchiving(true);
 		setOverflowOpen(false);
+		if (next && onArchive) {
+			onArchive();
+			return;
+		}
 		try {
 			const { stoppedRun } = await archiveSessionApi(session.id, next);
 			if (next) {
@@ -2581,7 +2588,7 @@ export function SessionViewer({
 			alert(`${next ? "Archive" : "Unarchive"} failed: ${e.message}`);
 			setArchiving(false);
 		}
-	}, [onArchived, onBack, session.archived, session.id]);
+	}, [onArchive, onArchived, onBack, session.archived, session.id]);
 
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
@@ -3169,6 +3176,7 @@ export function SessionViewer({
 							repo={session.repo || undefined}
 							archived={session.archived}
 							send={connected ? send : undefined}
+							onArchive={handleArchive}
 							variant="header"
 							running={isRunningLive}
 							refreshTick={gitRefreshTick}
@@ -3860,6 +3868,7 @@ export function SessionViewer({
 								archived={session.archived}
 								send={connected ? send : undefined}
 								onOpenPrTab={() => onOpenReview?.()}
+								onArchive={handleArchive}
 								running={isRunningLive}
 								refreshTick={gitRefreshTick}
 								// Globe (staging deploy) rides inside the strip, left of the

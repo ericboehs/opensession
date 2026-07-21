@@ -2,7 +2,7 @@ import "./lib/storage-migrate"; // must run before any lib reads its pref keys
 import { BASE_PATH, stripBasePath } from "./lib/base";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, type SidebarHandle } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
 import { ToastHost, toast } from "./ui/toast";
 import { SessionViewer } from "./components/SessionViewer";
@@ -622,6 +622,7 @@ function App() {
 	// Keep the latest route readable from stable callbacks — `navigate` is
 	// recreated each render, but effects/handlers can capture an older copy.
 	const routeRef = useRef(route);
+	const sidebarRef = useRef<SidebarHandle>(null);
 	routeRef.current = route;
 	// The mobile layout is an iOS-style navigation stack: the sidebar is the root
 	// (depth 0) and every non-home route is a *single* panel pushed over it
@@ -1621,6 +1622,7 @@ function App() {
 							</div>
 						</div>
 						<Sidebar
+							ref={sidebarRef}
 							sessions={sessions}
 							projects={projects}
 							notes={notes.map((n) => ({ id: n.id, title: n.title }))}
@@ -1961,6 +1963,7 @@ function App() {
 									key={currentSession.id}
 									session={currentSession}
 									onBack={goBack}
+									onArchive={() => sidebarRef.current?.archiveSelected()}
 									onArchived={(stoppedRun) => {
 										if (stoppedRun)
 											showToast("Archived · stopped the running turn");
