@@ -3219,18 +3219,6 @@ body.resizing-x {
 	border: 1px solid var(--border-strong);
 	color: var(--text-dim);
 }
-.session-link-pr {
-	color: var(--green);
-	border-color: rgba(63, 185, 80, 0.4);
-}
-.session-link-pr-merged {
-	color: var(--purple);
-	border-color: rgba(163, 113, 247, 0.4);
-}
-.session-link-pr-closed {
-	color: var(--red);
-	border-color: rgba(248, 81, 73, 0.4);
-}
 .session-link-linear {
 	color: #7b86e8;
 	border-color: rgba(94, 106, 210, 0.5);
