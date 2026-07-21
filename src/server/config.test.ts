@@ -60,6 +60,8 @@ describe("config loader", () => {
       "infra",
       "shared-infra",
       "tella-fusion",
+      "tella-mac",
+      "tella-windows",
     ]);
     expect(repos["tella-fusion"]).toMatchObject({
       id: "tella-fusion",

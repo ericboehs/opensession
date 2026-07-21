@@ -48,13 +48,15 @@ interface Worktree {
 }
 
 // Repos a session can run against. tella-fusion is the default.
-// Keep in sync with REPOS in src/server/worktree.ts.
+// Keep in sync with the built-in repos in src/server/config.ts.
 const REPOS = [
   { id: "tella-fusion", label: "tella-fusion" },
   { id: "backstage", label: "opensession" },
   { id: "gitops", label: "gitops" },
   { id: "infra", label: "infra" },
   { id: "shared-infra", label: "shared-infra" },
+  { id: "tella-mac", label: "tella-mac" },
+  { id: "tella-windows", label: "tella-windows" },
   { id: "gstreamer", label: "gstreamer" },
   { id: "gst-plugins-rs", label: "gst-plugins-rs" },
 ];

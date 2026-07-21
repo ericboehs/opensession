@@ -217,10 +217,12 @@ function builtinRepos(): Record<string, Repo> {
       ghRepo: "tellahq/backstage",
       sharedCheckout: true,
     },
-    // Infra / GitOps / media repos — normal worktree + PR flow (none self-host).
+    // Infra / GitOps / desktop / media repos — normal worktree + PR flow (none self-host).
     gitops: { id: "gitops", repo: "/home/ubuntu/projects/gitops", wtPrefix: "gitops", defaultBranch: "main", ghRepo: "tellahq/gitops" },
     infra: { id: "infra", repo: "/home/ubuntu/projects/infra", wtPrefix: "infra", defaultBranch: "main", ghRepo: "tellahq/infra" },
     "shared-infra": { id: "shared-infra", repo: "/home/ubuntu/projects/shared-infra", wtPrefix: "shared-infra", defaultBranch: "main", ghRepo: "tellahq/shared-infra" },
+    "tella-mac": { id: "tella-mac", repo: "/home/ubuntu/projects/tella-mac", wtPrefix: "tella-mac", defaultBranch: "main", ghRepo: "tellahq/tella-mac" },
+    "tella-windows": { id: "tella-windows", repo: "/home/ubuntu/projects/tella-windows", wtPrefix: "tella-windows", defaultBranch: "main", ghRepo: "tellahq/tella-windows" },
     gstreamer: { id: "gstreamer", repo: "/home/ubuntu/projects/gstreamer", wtPrefix: "gstreamer", defaultBranch: "tla_main", ghRepo: "tellahq/gstreamer" },
     "gst-plugins-rs": { id: "gst-plugins-rs", repo: "/home/ubuntu/projects/gst-plugins-rs", wtPrefix: "gst-plugins-rs", defaultBranch: "tla_main", ghRepo: "tellahq/gst-plugins-rs" },
   };

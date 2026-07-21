@@ -87,7 +87,7 @@ export function createReposMcpServer(ctx: ReposToolContext) {
       {
         repo: z
           .string()
-          .describe("Repo id to attach (e.g. 'gitops', 'infra', 'shared-infra', 'gstreamer', 'gst-plugins-rs'). See list_repos."),
+          .describe("Repo id to attach (e.g. 'gitops', 'infra', 'tella-mac', 'tella-windows', 'gstreamer'). See list_repos."),
         branch: z
           .string()
           .optional()
