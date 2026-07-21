@@ -1587,6 +1587,8 @@ export interface WarmTemplateEntry {
 	enabled: boolean;
 	intervalHours: number;
 	refreshing: boolean;
+	/** Prebuilt dep spares ready for instant adoption by new worktrees. */
+	spares: number;
 	state: {
 		sha?: string;
 		refreshedAt?: string;

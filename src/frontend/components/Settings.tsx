@@ -398,7 +398,7 @@ const SECTIONS: {
 	},
 	{
 		key: "warmPreviews",
-		label: "Warm previews",
+		label: "Warm deps",
 		group: "Workspace",
 		icon: (
 			<svg
@@ -1302,8 +1302,8 @@ function WarmPreviewsPanel() {
 		};
 	}, []);
 
-	// A refresh boots a real dev server (minutes) — poll while one runs so the
-	// status line flips to "Warm at <sha>" on its own.
+	// Poll while a refresh runs so the status line flips to "Warm at <sha>"
+	// on its own.
 	useEffect(() => {
 		if (!repos?.some((e) => e.refreshing)) return;
 		let alive = true;
@@ -1325,19 +1325,19 @@ function WarmPreviewsPanel() {
 	if (!repos)
 		return (
 			<div className="settings-panel">
-				<h1 className="settings-title">Warm previews</h1>
+				<h1 className="settings-title">Warm deps</h1>
 				<div className="setting-row-desc">{error || "Loading…"}</div>
 			</div>
 		);
 
 	return (
 		<div className="settings-panel">
-			<h1 className="settings-title">Warm previews</h1>
+			<h1 className="settings-title">Warm deps</h1>
 			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
-				Keep a prebuilt template worktree per repo, refreshed from its default
-				branch on a schedule (deps installed, dev server booted once so build
-				caches are hot). New session worktrees copy those artifacts, so the
-				Preview button starts in seconds instead of doing a cold build.
+				Keep a template worktree per repo with node_modules installed,
+				refreshed from its default branch on a schedule. Prebuilt spares of
+				those dep trees are adopted into new session worktrees near-instantly,
+				instead of every session paying a cold install.
 			</div>
 
 			{error && (
@@ -1350,15 +1350,13 @@ function WarmPreviewsPanel() {
 				{repos.map((entry) => {
 					const s = entry.state;
 					const status = entry.refreshing
-						? "Refreshing now — building the template…"
+						? "Refreshing now — updating the template…"
 						: !entry.enabled
-							? "Off — fresh worktrees build cold."
+							? "Off — fresh worktrees install cold."
 							: s?.ok
-								? `Warm at ${s.sha} · refreshed ${warmAgo(s.refreshedAt)}${
-										s.lastDurationMs
-											? ` · took ${Math.round(s.lastDurationMs / 60_000)}m`
-											: ""
-									}`
+								? `Warm at ${s.sha} · refreshed ${warmAgo(s.refreshedAt)} · ${
+										entry.spares
+									} spare${entry.spares === 1 ? "" : "s"} ready`
 								: s?.lastError
 									? `Last refresh failed: ${s.lastError}`
 									: "Enabled — first refresh runs shortly.";
@@ -1395,7 +1393,7 @@ function WarmPreviewsPanel() {
 										</>
 									)}
 									<Toggle
-										label={`Warm previews for ${entry.repoId}`}
+										label={`Warm deps for ${entry.repoId}`}
 										checked={entry.enabled}
 										onChange={(v) =>
 											apply(updateWarmTemplate(entry.repoId, { enabled: v }))

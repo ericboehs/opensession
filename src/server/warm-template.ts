@@ -1,8 +1,14 @@
 /**
- * Warm preview templates — per-repo prebuilt worktrees kept fresh from the
- * default branch on a schedule, so a new session's dev server starts warm
- * instead of paying bun install + ReScript's ~2.6k-module initial build +
- * Turbopack's cold first-page compile (minutes) in every fresh worktree.
+ * Warm dep templates — per-repo prebuilt node_modules kept fresh from the
+ * default branch on a schedule, so a fresh worktree gets its deps ~instantly
+ * instead of paying a cold bun install (~20-25s) at create time.
+ *
+ * (Until 2026-07-21 this also seeded preview build artifacts — .next,
+ * ReScript output, WASM — and verified each refresh by booting the dev
+ * server and warming routes. That "warm preview" concept never proved out:
+ * zero host preview boots across 148 seeds in its last 3 days, while the
+ * seeding itself churned ~16s of disk per create and raced the engine's
+ * turn-start git snapshot. Now it's deps only.)
  *
  * How it works:
  *  - Each enabled repo gets ONE template worktree at
@@ -10,25 +16,19 @@
  *    `origin/<defaultBranch>`. Detached is deliberate: listWorktrees() only
  *    surfaces worktrees with a branch line, so the template can never be
  *    adopted by workspaces/sessions, and there's no branch to accidentally
- *    push. repoForPath() still resolves it (prefix match) so the normal
- *    preview machinery works inside it.
+ *    push.
  *  - A refresh (scheduled every `intervalHours`, or via the Settings
- *    "Refresh now" button) fetches + `reset --hard origin/<defaultBranch>`
- *    (tracked files only — build artifacts survive, so rebuilds are
- *    incremental), installs deps, then REALLY boots the dev server via the
- *    shared preview chain (startPreview → resolvePreviewBoot), curls the
- *    warm routes so the on-demand compiler fills its caches, and stops it.
- *    Booting for real is the verification: a template that can't serve a
- *    page is never marked ok.
- *  - On success it captures a MANIFEST of the template's gitignored build
- *    artifacts (`git ls-files -o -i --exclude-standard --directory`) minus
- *    runtime junk (ports/tunnels/logs/env). Fresh worktrees are seeded from
- *    that manifest right after `git worktree add`: node_modules trees are
- *    HARDLINKED (`cp -al` — package managers replace files, never edit them
- *    in place, so links are safe and ~free), everything else (.next,
- *    ReScript lib/ + in-source *.res.mjs, WASM bindings) is really copied —
- *    compilers may rewrite those in place, and a shared inode would corrupt
- *    the template and every sibling session.
+ *    "Refresh now" button) fetches + `reset --hard origin/<defaultBranch>`,
+ *    installs deps, and captures a MANIFEST of the template's node_modules
+ *    trees (`git ls-files -o -i --exclude-standard --directory`, filtered to
+ *    node_modules entries).
+ *  - SPARES: hardlinking a 253k-file node_modules farm takes ~15s (`cp -al`;
+ *    parallel linking is slower still — ext4 serializes the journal), so the
+ *    link cost is paid in the background instead of at create time. A small
+ *    pool of pre-linked spares sits next to the worktrees; seeding a fresh
+ *    worktree ADOPTS one via rename(2) (~instant, same fs), then the pool
+ *    replenishes itself. Pool empty (burst of creates, first boot) → fall
+ *    back to a direct cp -al from the template, exactly the old behavior.
  *
  * Config (Settings → Warm previews): `<chats>/warm-templates/config.json`
  *   { "repos": { "tella-fusion": { "enabled": true, "intervalHours": 6 } } }
@@ -42,7 +42,17 @@
  * sandbox/adapters/bootstrap.ts and reads the same config.
  */
 import { $ } from "bun";
-import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "fs";
 import { dirname, join } from "path";
 import { configuredPaths, configuredRepos, type Repo } from "./config";
 import { OPENSESSION_CHATS_DIR } from "./paths";
@@ -54,7 +64,9 @@ export interface WarmTemplateRepoConfig {
   enabled: boolean;
   /** Refresh cadence in hours (default 6). */
   intervalHours: number;
-  /** Routes curled after boot to fill the on-demand compiler caches. */
+  /** Legacy (warm-preview era): routes curled after a template dev-server
+   *  boot. Refresh no longer boots anything; kept so stored configs and the
+   *  Settings API shape stay valid. */
   warmRoutes: string[];
 }
 
@@ -146,7 +158,7 @@ export interface WarmTemplateState {
   refreshedAt?: string;
   /** Last refresh wall time (ms). */
   lastDurationMs?: number;
-  /** Whether the last refresh completed (boot verified + manifest captured). */
+  /** Whether the last refresh completed (deps installed + manifest captured). */
   ok?: boolean;
   lastError?: string;
   /** Artifact entries in the manifest (informational, for the UI). */
@@ -191,6 +203,7 @@ const g = globalThis as unknown as {
   __warmTemplateRefreshing?: Map<string, Promise<void>>;
   __warmTemplateSeeding?: Set<string>;
   __warmTemplateSweepTimer?: ReturnType<typeof setInterval>;
+  __warmSpareReplenishing?: Map<string, Promise<void>>;
 };
 const refreshing: Map<string, Promise<void>> = (g.__warmTemplateRefreshing ??= new Map());
 // Worktrees with a seed in flight (one seed per worktree — see seedWorktree…).
@@ -248,14 +261,15 @@ export function isNodeModulesEntry(entry: string): boolean {
   return /(^|\/)node_modules\/$/.test(entry);
 }
 
-// ── Refresh ──────────────────────────────────────────────────────────────────
+/** What actually gets seeded: node_modules trees only. Applied at BOTH
+ *  capture and seed time, so manifests from the warm-preview era (which also
+ *  listed .next/ReScript/WASM artifacts) seed identically to fresh ones.
+ *  Exported for tests. */
+export function seedableManifest(lines: string[]): string[] {
+  return filterManifest(lines).filter(isNodeModulesEntry);
+}
 
-const BOOT_TIMEOUT_MS = 12 * 60_000;
-const ROUTE_WARM_TIMEOUT_MS = 240_000;
-/** Post-warm write-quiescence: how long the tree must go without artifact
- *  writes before the server is stopped, and the cap on waiting for that. */
-const QUIET_WINDOW_S = 25;
-const QUIET_TIMEOUT_MS = 10 * 60_000;
+// ── Refresh ──────────────────────────────────────────────────────────────────
 
 /**
  * Refresh a repo's warm template (idempotent; concurrent calls share one
@@ -296,10 +310,9 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
   try {
     mkdirSync(warmDir(), { recursive: true });
     writeFileSync(refreshLockFile(repoId), `${process.pid} ${new Date().toISOString()}\n`);
-    // Lazy imports: worktree.ts/preview.ts import back into this module's
-    // consumers — keep the static graph acyclic.
+    // Lazy import: worktree.ts imports back into this module's consumers —
+    // keep the static graph acyclic.
     const { withGitLock, installWorktreeDeps } = await import("./worktree");
-    const { startPreview, getPreviewStatus, stopPreview } = await import("./preview");
 
     // 1. Ensure the detached template worktree exists.
     if (!existsSync(dir)) {
@@ -330,78 +343,16 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
     //    worktree; the shared-checkout no-reset rule doesn't apply here.
     await $`git -C ${dir} reset --hard origin/${repo.defaultBranch}`.quiet();
 
-    // 4. Deps + env seeding (same helper the session worktrees use).
+    // 4. Deps + env seeding (same helper the session worktrees use). This is
+    //    also the verification: a template whose install fails is never
+    //    marked ok.
     await installWorktreeDeps(repo, dir, `warm-template:${repoId}`);
 
-    // 5. Boot the dev server for real via the shared preview chain. This is
-    //    both the cache-warmer (ReScript initial build, Turbopack route
-    //    compiles) and the verification that the template actually works.
-    let status = await startPreview(dir);
-    if (!status.bootable) {
-      return void (await fail("repo has no preview boot mechanism (start.sh/previewCommand)"));
-    }
-    const bootDeadline = Date.now() + BOOT_TIMEOUT_MS;
-    while (!status.running && Date.now() < bootDeadline) {
-      await Bun.sleep(5000);
-      status = await getPreviewStatus(dir);
-      if (!status.starting && !status.running) break; // bring-up process died
-    }
-    if (!status.running || !status.webappPort) {
-      await stopPreview(dir).catch(() => {});
-      return void (await fail("dev server did not come up during refresh"));
-    }
-
-    // 6. Warm the configured routes — the request itself triggers the
-    //    on-demand compile; any HTTP response means the route is built.
-    for (const route of cfg.warmRoutes) {
-      const path = route.startsWith("/") ? route : `/${route}`;
-      const deadline = Date.now() + ROUTE_WARM_TIMEOUT_MS;
-      let warmed = false;
-      // localhost, NOT 127.0.0.1: tella-fusion's middleware routes by Host
-      // header (custom-domain catch-all), and a bare IP host falls into the
-      // [domain] handler → HTML 404 — the route never compiles. localhost is
-      // the first-party host dev servers treat as their own.
-      while (!warmed && Date.now() < deadline) {
-        try {
-          const res = await fetch(`http://localhost:${status.webappPort}${path}`, {
-            signal: AbortSignal.timeout(ROUTE_WARM_TIMEOUT_MS),
-            redirect: "manual",
-          });
-          await res.arrayBuffer().catch(() => {});
-          warmed = true;
-        } catch {
-          await Bun.sleep(3000);
-        }
-      }
-      console.log(`[warm-template] ${repoId}: route ${path} ${warmed ? "warmed" : "TIMED OUT"}`);
-    }
-
-    // 6b. The dev boot kicks off background compilers (ReScript's ~2.6k-module
-    //    initial build, Turbopack route compiles) that keep writing artifacts
-    //    well after the port is listening — stopping as soon as routes answer
-    //    captured a PARTIAL template on the first live refresh (the compiled
-    //    API__Session.bs.js was missing, so seeded worktrees 404'd on
-    //    /api/session). Wait until the tree has been write-quiet for a full
-    //    window before stopping; bounded, and noisy runtime paths (logs,
-    //    .next/trace) don't count as build activity.
-    const quietDeadline = Date.now() + QUIET_TIMEOUT_MS;
-    while (Date.now() < quietDeadline) {
-      const recent = await $`find ${dir} \( -path ${`${dir}/.git`} -o -path ${`${dir}/.ports`} -o -name "*.log" -o -path "*/.next/trace*" \) -prune -o -type f -newermt ${`${QUIET_WINDOW_S} seconds ago`} -print -quit`
-        .quiet()
-        .nothrow()
-        .text();
-      if (!recent.trim()) break;
-      await Bun.sleep(5000);
-    }
-
-    // 7. Done with the server — the template only needs the artifacts.
-    await stopPreview(dir).catch(() => {});
-
-    // 8. Capture the artifact manifest (only on success, so a failed refresh
+    // 5. Capture the seedable manifest (only on success, so a failed refresh
     //    keeps seeding from the last good state).
     const raw = await $`git -C ${dir} ls-files -o -i --exclude-standard --directory`.text();
-    const manifest = filterManifest(raw.split("\n"));
-    if (!manifest.length) return void (await fail("refresh produced no build artifacts"));
+    const manifest = seedableManifest(raw.split("\n"));
+    if (!manifest.length) return void (await fail("refresh produced no node_modules to seed"));
     writeFileSync(manifestFile(repoId), manifest.join("\n") + "\n");
 
     writeState({
@@ -414,8 +365,12 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
       manifestEntries: manifest.length,
     });
     console.log(
-      `[warm-template] ${repoId}: template warm at ${sha} — ${manifest.length} artifact entries, ${Math.round((Date.now() - started) / 1000)}s`,
+      `[warm-template] ${repoId}: template warm at ${sha} — ${manifest.length} dep trees, ${Math.round((Date.now() - started) / 1000)}s`,
     );
+
+    // 6. Rotate the spare pool: existing spares hardlink the pre-refresh dep
+    //    trees, so drop the unclaimed ones and rebuild from the fresh state.
+    void replenishSpares(repo).catch(() => {});
   } catch (e) {
     await fail(String((e as any)?.message || e));
   } finally {
@@ -428,10 +383,12 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
 // ── Seeding ──────────────────────────────────────────────────────────────────
 
 /**
- * Copy the warm template's build artifacts into a fresh worktree. Called
- * right after `git worktree add`, before the normal dep install (which then
- * becomes a fast no-op). Best-effort: any failure logs and the worktree just
- * builds cold like today. Returns true when seeding actually ran.
+ * Seed a fresh worktree's node_modules from the warm template. Called right
+ * after `git worktree add`, before the normal dep install (which then
+ * becomes a fast no-op). Fast path: adopt a prebuilt spare via rename(2)
+ * (~instant), so the engine's turn-start git snapshot never races a 253k-file
+ * link farm. Best-effort: any failure logs and the worktree just installs
+ * cold like today. Returns true when seeding actually ran.
  */
 export async function seedWorktreeFromWarmTemplate(repo: Repo, wtPath: string): Promise<boolean> {
   try {
@@ -442,41 +399,68 @@ export async function seedWorktreeFromWarmTemplate(repo: Repo, wtPath: string): 
     if (!state?.ok || !existsSync(mf) || !existsSync(state.dir)) return false;
     if (wtPath === state.dir) return false; // never seed the template itself
 
-    // A refresh mid-flight is rewriting artifacts under us. In-process we can
-    // await it; a refresh in ANOTHER process is visible only via the lock
-    // file — wait briefly, then bail to a cold build rather than copy from a
-    // tree being reset (that race aborted a seed live on 2026-07-09).
-    const inflight = refreshing.get(repo.id);
-    if (inflight) {
-      await Promise.race([inflight, Bun.sleep(60_000)]);
-    }
-    for (let waited = 0; refreshLockHeld(repo.id) && waited < 90_000; waited += 5000) {
-      await Bun.sleep(5000);
-    }
-    if (refreshLockHeld(repo.id)) {
-      console.log(
-        `[warm-template] ${repo.id} template is mid-refresh (another process) — ${wtPath} builds cold`,
-      );
-      return false;
-    }
-
     // One seed per worktree at a time: duplicate create paths racing two
-    // cp -al's into the same node_modules produced "cannot create directory:
+    // seeds into the same node_modules produced "cannot create directory:
     // File exists" and killed the whole seed (bks-019f48d6, 2026-07-09).
     if (seeding.has(wtPath)) return false;
     seeding.add(wtPath);
     try {
       const started = Date.now();
-      const entries = filterManifest(readFileSync(mf, "utf-8").split("\n"));
-      const linkDirs = entries.filter(isNodeModulesEntry);
-      const copyEntries = entries.filter((e) => !isNodeModulesEntry(e));
 
-      // node_modules trees: hardlink farms (~free for multi-GB trees; package
-      // managers replace files rather than editing in place, so shared inodes
-      // are safe). Per-entry best-effort: a conflict with a concurrent writer
+      // Fast path: adopt a spare. Spares own their links (independent of the
+      // template tree), so a template mid-refresh doesn't matter here.
+      const spare = claimSpare(repo);
+      if (spare) {
+        try {
+          const rels = readFileSync(join(spare, SPARE_PATHS_FILE), "utf-8")
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean);
+          let moved = 0;
+          for (const rel of rels) {
+            const src = join(spare, rel);
+            const dst = join(wtPath, rel);
+            if (!existsSync(src) || existsSync(dst)) continue;
+            mkdirSync(dirname(dst), { recursive: true });
+            renameSync(src, dst);
+            moved++;
+          }
+          console.log(
+            `[warm-template] seeded ${wtPath} from ${repo.id} spare (${moved} dep trees) in ${Date.now() - started}ms`,
+          );
+          return moved > 0;
+        } finally {
+          rmSync(spare, { recursive: true, force: true });
+          void replenishSpares(repo).catch(() => {});
+        }
+      }
+
+      // Cold path (pool empty: first boot or a burst of creates): hardlink
+      // straight from the template. A refresh mid-flight is rewriting the
+      // template under us — in-process we can await it; a refresh in ANOTHER
+      // process is visible only via the lock file — wait briefly, then bail
+      // to a cold install rather than link from a tree being reset (that
+      // race aborted a seed live on 2026-07-09).
+      const inflight = refreshing.get(repo.id);
+      if (inflight) {
+        await Promise.race([inflight, Bun.sleep(60_000)]);
+      }
+      for (let waited = 0; refreshLockHeld(repo.id) && waited < 90_000; waited += 5000) {
+        await Bun.sleep(5000);
+      }
+      if (refreshLockHeld(repo.id)) {
+        console.log(
+          `[warm-template] ${repo.id} template is mid-refresh (another process) — ${wtPath} installs cold`,
+        );
+        return false;
+      }
+
+      // Hardlink farms (~free disk for multi-GB trees; package managers
+      // replace files rather than editing in place, so shared inodes are
+      // safe). Per-entry best-effort: a conflict with a concurrent writer
       // (e.g. an already-running bun install) must not abort the other
-      // entries or the copy stage below — bun install reconciles whatever
-      // landed.
+      // entries — bun install reconciles whatever landed.
+      const linkDirs = seedableManifest(readFileSync(mf, "utf-8").split("\n"));
       for (const entry of linkDirs) {
         const src = join(state.dir, entry).replace(/\/$/, "");
         const dst = join(wtPath, entry).replace(/\/$/, "");
@@ -489,41 +473,132 @@ export async function seedWorktreeFromWarmTemplate(repo: Repo, wtPath: string): 
           );
         }
       }
-
-      // Everything else (.next, ReScript lib/ + in-source *.res.mjs, WASM
-      // bindings): real copies in ONE rsync pass — compilers may rewrite
-      // these in place, and hardlinks would cross-corrupt sessions +
-      // template. --ignore-existing keeps concurrent writers safe.
-      if (copyEntries.length) {
-        const listFile = join(warmDir(), `.seed-${process.pid}-${Date.now()}.list`);
-        writeFileSync(listFile, copyEntries.join("\n") + "\n");
-        try {
-          const r =
-            await $`rsync -a -r --ignore-existing --files-from=${listFile} ${state.dir}/ ${wtPath}/`
-              .quiet()
-              .nothrow();
-          if (r.exitCode !== 0) {
-            console.warn(
-              `[warm-template] artifact copy into ${wtPath} was partial (rsync exit ${r.exitCode})`,
-            );
-          }
-        } finally {
-          try {
-            unlinkSync(listFile);
-          } catch {}
-        }
-      }
+      void replenishSpares(repo).catch(() => {});
 
       console.log(
-        `[warm-template] seeded ${wtPath} from ${repo.id} template (${state.sha}) in ${Math.round((Date.now() - started) / 1000)}s`,
+        `[warm-template] seeded ${wtPath} from ${repo.id} template (${state.sha}) in ${Math.round((Date.now() - started) / 1000)}s (no spare available)`,
       );
       return true;
     } finally {
       seeding.delete(wtPath);
     }
   } catch (e) {
-    console.warn(`[warm-template] seeding ${wtPath} failed (worktree builds cold):`, e);
+    console.warn(`[warm-template] seeding ${wtPath} failed (worktree installs cold):`, e);
     return false;
+  }
+}
+
+// ── Spare dep pools ──────────────────────────────────────────────────────────
+//
+// A spare is a pre-hardlinked copy of the template's node_modules trees,
+// built in the background so a fresh worktree can adopt its deps with a
+// rename instead of paying the ~15s cp -al at create time (parallel linking
+// is slower still — ext4 serializes the metadata journal, measured 27s at
+// 8-way). Layout:
+//   <worktreesDir>/.warm-spares/<wtPrefix>/spare-<sha>-<rand>/<rel paths...>
+// plus a .spare-paths file listing the node_modules rel paths inside.
+// Claiming renames the spare dir to *.claimed-<rand> — atomic; the loser's
+// rename throws and tries the next spare. Same filesystem as the worktrees
+// by construction (sibling of the template), so rename(2) always applies.
+
+const SPARE_TARGET = 2;
+const SPARE_PATHS_FILE = ".spare-paths";
+
+function sparesDir(repo: Repo): string {
+  return join(configuredPaths().worktreesDir, ".warm-spares", repo.wtPrefix);
+}
+
+function listSpares(repo: Repo): string[] {
+  try {
+    return readdirSync(sparesDir(repo))
+      .filter((n) => n.startsWith("spare-") && !n.includes(".claimed-"))
+      .map((n) => join(sparesDir(repo), n));
+  } catch {
+    return [];
+  }
+}
+
+function claimSpare(repo: Repo): string | null {
+  for (const spare of listSpares(repo)) {
+    const claimed = `${spare}.claimed-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      renameSync(spare, claimed);
+      return claimed;
+    } catch {} // lost the race to a concurrent create — try the next one
+  }
+  return null;
+}
+
+const replenishing: Map<string, Promise<void>> = (g.__warmSpareReplenishing ??= new Map());
+
+/** Top the spare pool back up to SPARE_TARGET (serialized per repo). */
+function replenishSpares(repo: Repo): Promise<void> {
+  const inflight = replenishing.get(repo.id);
+  if (inflight) return inflight;
+  const run = doReplenish(repo).finally(() => {
+    if (replenishing.get(repo.id) === run) replenishing.delete(repo.id);
+  });
+  replenishing.set(repo.id, run);
+  return run;
+}
+
+async function doReplenish(repo: Repo): Promise<void> {
+  if (!warmTemplateConfig(repo.id).enabled) return;
+  const dir = sparesDir(repo);
+  mkdirSync(dir, { recursive: true });
+  // Sweep leftovers: half-built spares and claimed dirs that were never
+  // consumed (consumption deletes its claim within seconds) are junk after
+  // an hour.
+  for (const n of readdirSync(dir)) {
+    if (!n.startsWith(".building-") && !n.includes(".claimed-")) continue;
+    const p = join(dir, n);
+    try {
+      if (Date.now() - statSync(p).mtimeMs > 3_600_000) rmSync(p, { recursive: true, force: true });
+    } catch {}
+  }
+  for (;;) {
+    const state = warmTemplateState(repo.id);
+    if (!state?.ok || !state.sha || !existsSync(state.dir)) return;
+    // Template mid-rewrite: don't link from a tree being reset. The
+    // post-refresh rotate (or the next sweep tick) picks this back up.
+    if (refreshLockHeld(repo.id) || refreshing.has(repo.id)) return;
+    // Unclaimed spares from an older template link outdated deps — drop them
+    // so sessions start current; the loop below rebuilds fresh ones.
+    for (const p of listSpares(repo)) {
+      if (!p.includes(`spare-${state.sha}-`)) {
+        try {
+          rmSync(p, { recursive: true, force: true });
+        } catch {}
+      }
+    }
+    if (listSpares(repo).length >= SPARE_TARGET) return;
+    const mf = manifestFile(repo.id);
+    if (!existsSync(mf)) return;
+    const entries = seedableManifest(readFileSync(mf, "utf-8").split("\n")).map((e) =>
+      e.replace(/\/$/, ""),
+    );
+    if (!entries.length) return;
+    const building = join(dir, `.building-${Math.random().toString(36).slice(2, 8)}`);
+    const buildStarted = Date.now();
+    try {
+      mkdirSync(building, { recursive: true });
+      for (const rel of entries) {
+        const src = join(state.dir, rel);
+        if (!existsSync(src)) continue;
+        const dst = join(building, rel);
+        mkdirSync(dirname(dst), { recursive: true });
+        await $`cp -al ${src} ${dst}`.quiet();
+      }
+      writeFileSync(join(building, SPARE_PATHS_FILE), entries.join("\n") + "\n");
+      renameSync(building, join(dir, `spare-${state.sha}-${Math.random().toString(36).slice(2, 8)}`));
+      console.log(
+        `[warm-template] built ${repo.id} dep spare (${entries.length} trees) in ${Math.round((Date.now() - buildStarted) / 1000)}s`,
+      );
+    } catch (e) {
+      rmSync(building, { recursive: true, force: true });
+      console.warn(`[warm-template] spare build for ${repo.id} failed:`, e);
+      return;
+    }
   }
 }
 
@@ -539,12 +614,15 @@ async function sweepWarmTemplates(): Promise<void> {
     const state = warmTemplateState(repo.id);
     const ageMs = state?.refreshedAt ? Date.now() - Date.parse(state.refreshedAt) : Infinity;
     const due = !state?.ok || ageMs > cfg.intervalHours * 3_600_000;
-    if (!due) continue;
-    // Serialized: one template rebuild at a time — a rebuild is a real dev
-    // server boot and shouldn't stack across repos.
-    await refreshWarmTemplate(repo.id).catch((e) =>
-      console.warn(`[warm-template] scheduled refresh of ${repo.id} failed:`, e),
-    );
+    if (due) {
+      // Serialized: one template rebuild at a time.
+      await refreshWarmTemplate(repo.id).catch((e) =>
+        console.warn(`[warm-template] scheduled refresh of ${repo.id} failed:`, e),
+      );
+    }
+    // Keep the spare pool topped up (cheap no-op when full) — this is also
+    // what fills it after a process boot.
+    void replenishSpares(repo).catch(() => {});
   }
 }
 
@@ -569,6 +647,8 @@ export interface WarmTemplateStatusEntry {
   enabled: boolean;
   intervalHours: number;
   refreshing: boolean;
+  /** Prebuilt dep spares ready for instant adoption. */
+  spares: number;
   state: WarmTemplateState | null;
 }
 
@@ -582,6 +662,7 @@ export function warmTemplateStatus(): WarmTemplateStatusEntry[] {
         enabled: cfg.enabled,
         intervalHours: cfg.intervalHours,
         refreshing: warmTemplateRefreshing(r.id),
+        spares: listSpares(r).length,
         state: warmTemplateState(r.id),
       };
     });

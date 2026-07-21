@@ -104,11 +104,11 @@ async function seedWebappEnv(webappDir: string): Promise<void> {
  * promise never surfaces as an unhandled rejection.
  */
 /**
- * Fresh-worktree setup: seed build artifacts from the repo's warm preview
- * template when one is enabled + ready (node_modules hardlinks, prebuilt
- * .next/ReScript/WASM output — see warm-template.ts), then the normal dep
- * install (a fast no-op over a seeded tree). Both halves are best-effort;
- * a cold build is always the fallback.
+ * Fresh-worktree setup: seed node_modules from the repo's warm template when
+ * one is enabled + ready (ideally by adopting a prebuilt spare via rename —
+ * see warm-template.ts), then the normal dep install (a fast no-op over a
+ * seeded tree). Both halves are best-effort; a cold install is always the
+ * fallback.
  */
 async function seedAndInstallWorktree(
   repo: Repo,

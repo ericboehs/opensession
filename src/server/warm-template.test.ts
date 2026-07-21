@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { filterManifest, isNodeModulesEntry } from "./warm-template";
+import { filterManifest, isNodeModulesEntry, seedableManifest } from "./warm-template";
 
 // The manifest is `git ls-files -o -i --exclude-standard --directory` output
 // from the template worktree: fully-ignored dirs collapsed with a trailing
@@ -42,6 +42,27 @@ describe("filterManifest", () => {
     expect(
       filterManifest(["packages/logger/dist/", "src/environment.res.mjs", "catalog.res.mjs"]),
     ).toEqual(["packages/logger/dist/", "src/environment.res.mjs", "catalog.res.mjs"]);
+  });
+});
+
+describe("seedableManifest", () => {
+  test("keeps only node_modules trees — warm-preview-era manifests seed identically", () => {
+    // A manifest captured before 2026-07-21 also lists .next/ReScript/WASM
+    // artifacts; the same filter runs at capture AND seed time, so those
+    // entries are ignored wherever they come from.
+    const legacy = [
+      "node_modules/",
+      "packages/core/webapp/node_modules/",
+      "packages/core/webapp/.next/",
+      "packages/core/webapp/lib/",
+      "packages/core/webapp/src/frontend/App.res.mjs",
+      ".ports.conf",
+      "dev-server.log",
+    ];
+    expect(seedableManifest(legacy)).toEqual([
+      "node_modules/",
+      "packages/core/webapp/node_modules/",
+    ]);
   });
 });
 
