@@ -11,6 +11,7 @@
 
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
+import { timezoneForUser } from "../../server/shared/user-mappings";
 import {
 	addTodo,
 	getTodo,
@@ -50,6 +51,9 @@ function fmt(t: {
 }
 
 export function createTodosMcpServer(ctx: TodosToolContext) {
+	// Baked into the tool descriptions so the model computes reminder times in
+	// the list owner's local timezone (identity.team[].timezone).
+	const tz = timezoneForUser(ctx.user);
 	const tools = [
 		tool(
 			"add_todo",
@@ -72,7 +76,7 @@ export function createTodosMcpServer(ctx: TodosToolContext) {
 					.string()
 					.optional()
 					.describe(
-						"Optional reminder as an ISO 8601 UTC datetime (e.g. 2026-07-22T07:00:00Z) — the user gets a push notification + Slack DM at that moment. Set it whenever they say things like \"remind me tomorrow\" or \"tomorrow\": compute from the current date, and when no time is given default to 09:00 in their local timezone (Europe/Amsterdam unless you know otherwise).",
+						`Optional reminder as an ISO 8601 UTC datetime (e.g. 2026-07-22T07:00:00Z) — the user gets a push notification + Slack DM at that moment. Set it whenever they say things like "remind me tomorrow" or "tomorrow": compute from the current date in the user's timezone (${tz}), defaulting to 09:00 local when no time is given, then convert to UTC.`,
 					),
 			},
 			async (args: {
@@ -164,7 +168,7 @@ export function createTodosMcpServer(ctx: TodosToolContext) {
 					.string()
 					.optional()
 					.describe(
-						"New reminder, ISO 8601 UTC datetime ('' clears it). Rescheduling makes it fire again.",
+						`New reminder, ISO 8601 UTC datetime ('' clears it; compute from the user's timezone, ${tz}). Rescheduling makes it fire again.`,
 					),
 				status: z
 					.enum(["open", "done", "dropped"])

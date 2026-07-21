@@ -220,6 +220,14 @@ export function gitIdentityFor(user?: string | null): GitIdentity | null {
  * exact match. Returns false for an anonymous/unknown user against a non-empty
  * list (fail-closed: unidentified callers don't get restricted servers).
  */
+/** IANA timezone for a teammate ref (name/alias/Slack id/email/login),
+ *  falling back to Europe/Amsterdam — the team's home base. */
+export function timezoneForUser(ref?: string | null): string {
+  const id = gitIdentityFor(ref);
+  const member = id ? identity.team.find((m) => m.name === id.name) : undefined;
+  return member?.timezone || "Europe/Amsterdam";
+}
+
 export function userMatchesAny(
   user: string | null | undefined,
   allowed: string[]

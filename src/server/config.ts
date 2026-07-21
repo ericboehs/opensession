@@ -80,6 +80,9 @@ export interface TeamMember {
   github?: string;
   /** Emails their Linear account uses (may differ from the git email). */
   linearEmails?: string[];
+  /** IANA timezone, e.g. "Europe/Amsterdam" — used wherever we compute
+   *  local times for a person (todo reminders). Unset = Europe/Amsterdam. */
+  timezone?: string;
   /**
    * Include in the GitHub→Slack notification map (GITHUB_TO_SLACK). Default
    * true when both `github` and `slackId` are set; set false to keep someone
@@ -236,13 +239,13 @@ function builtinRepos(): Record<string, Repo> {
  * config changes zero behavior.
  */
 const DEFAULT_TEAM: TeamMember[] = [
-  { name: "Michiel Westerbeek", email: "happylinks@gmail.com", aliases: ["michiel"], slackId: "UT41L6GCC", github: "happylinks", linearEmails: ["michiel@tella.tv"] },
-  { name: "Jaap Frolich", email: "jfrolich@gmail.com", aliases: ["jaap"], slackId: "U08EWERLX8D", github: "jfrolich", linearEmails: ["jaap@tella.com"] },
-  { name: "Kent de Bruin", email: "52224550+kentdebruin@users.noreply.github.com", aliases: ["kent"], slackId: "U08S8B3P83X", github: "kentdebruin", linearEmails: ["kent@tella.com"] },
-  { name: "Grant Shaddick", email: "grant@tella.com", aliases: ["grant"], slackId: "USU9S2YRF", github: "9ranty", linearEmails: ["grant@tella.tv"] },
-  { name: "Johnny Lin", email: "67078496+johnnylinsf@users.noreply.github.com", aliases: ["johnny"], slackId: "U0866D7PCCU", github: "johnnylinsf", linearEmails: ["johnny@tella.tv"] },
-  { name: "John Soutar", email: "john@tella.com", aliases: ["john"], slackId: "U08CXTV7ML2", github: "soutar", linearEmails: ["john@tella.com"] },
-  { name: "Louise de Sadeleer", email: "54376811+louisedesadeleer@users.noreply.github.com", aliases: ["louise"], slackId: "U08JGAT5KNK", github: "louisedesadeleer", linearEmails: ["louise@tella.com"], githubToSlack: false },
+  { name: "Michiel Westerbeek", email: "happylinks@gmail.com", aliases: ["michiel"], slackId: "UT41L6GCC", github: "happylinks", linearEmails: ["michiel@tella.tv"], timezone: "Europe/Amsterdam" },
+  { name: "Jaap Frolich", email: "jfrolich@gmail.com", aliases: ["jaap"], slackId: "U08EWERLX8D", github: "jfrolich", linearEmails: ["jaap@tella.com"], timezone: "Europe/Amsterdam" },
+  { name: "Kent de Bruin", email: "52224550+kentdebruin@users.noreply.github.com", aliases: ["kent"], slackId: "U08S8B3P83X", github: "kentdebruin", linearEmails: ["kent@tella.com"], timezone: "Europe/Amsterdam" },
+  { name: "Grant Shaddick", email: "grant@tella.com", aliases: ["grant"], slackId: "USU9S2YRF", github: "9ranty", linearEmails: ["grant@tella.tv"], timezone: "Europe/Amsterdam" },
+  { name: "Johnny Lin", email: "67078496+johnnylinsf@users.noreply.github.com", aliases: ["johnny"], slackId: "U0866D7PCCU", github: "johnnylinsf", linearEmails: ["johnny@tella.tv"], timezone: "America/Los_Angeles" },
+  { name: "John Soutar", email: "john@tella.com", aliases: ["john"], slackId: "U08CXTV7ML2", github: "soutar", linearEmails: ["john@tella.com"], timezone: "Europe/London" },
+  { name: "Louise de Sadeleer", email: "54376811+louisedesadeleer@users.noreply.github.com", aliases: ["louise"], slackId: "U08JGAT5KNK", github: "louisedesadeleer", linearEmails: ["louise@tella.com"], githubToSlack: false, timezone: "Europe/Lisbon" },
   { name: "Thibault Saunier", email: "tsaunier@igalia.com", aliases: ["thibault"], slackId: "U065GD4757C", github: "thiblahute", linearEmails: ["tsaunier@igalia.com"] },
 ];
 
@@ -313,6 +316,7 @@ function parseTeamMember(v: unknown): TeamMember | undefined {
       github: str(o.github),
       linearEmails: strArray(o.linearEmails),
       githubToSlack: bool(o.githubToSlack),
+      timezone: str(o.timezone),
     }),
   };
 }
