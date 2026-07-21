@@ -2393,7 +2393,7 @@ export function SessionViewer({
 	// Responsive header: when the top bar gets narrow (small window, sidebar +
 	// workspace panel both open), the title truncates first (CSS), then the
 	// Share button collapses into the ⋯ menu so it never overlaps the title.
-	// (Pin and Spin off live in the ⋯ menu at every width.) Measured on the
+	// (Pin stays inline beside Preview on desktop; Spin off lives in the ⋯ menu.) Measured on the
 	// header element itself so it tracks the real available width regardless
 	// of the surrounding chrome.
 	const headerRef = useRef<HTMLDivElement>(null);
@@ -2836,18 +2836,20 @@ export function SessionViewer({
 						</button>
 					</>
 				);
-				// Star (pin) and Spin off live in the ⋯ menu at every width,
-				// alongside Delete — occasional actions, not header chrome.
+				// Pin stays in the menu on phones, where Preview isn't in the top bar.
+				// Spin off lives here at every width alongside the destructive actions.
 				const overflowActions = (
 					<>
-						<button
-							className={`btn-viewer-pin ${pinned ? "active" : ""}`}
-							onClick={() => togglePin(session.id)}
-							aria-pressed={pinned}
-						>
-							<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
-							{pinned ? "Unpin tab" : "Pin as tab"}
-						</button>
+						{isPhone && (
+							<button
+								className={`btn-viewer-pin ${pinned ? "active" : ""}`}
+								onClick={() => togglePin(session.id)}
+								aria-pressed={pinned}
+							>
+								<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
+								{pinned ? "Unpin tab" : "Pin as tab"}
+							</button>
+						)}
 						<SpinOffMenu
 							session={session}
 							entries={entries}
@@ -3114,8 +3116,8 @@ export function SessionViewer({
 					{/* Share rides inline when there's room, else collapses behind ⋯
 					    so it never crowds the title. It sits before Workspace so the
 					    Workspace toggle stays rightmost. On phones the secondary
-					    controls fold in too. The ⋯ menu is always present — Star,
-					    Spin off and Delete live only in there. */}
+					    controls fold in too. The ⋯ menu is always present — Spin off
+					    and Delete live only in there. */}
 					{!compactHeader && !isPhone && shareAction(false)}
 					<div className="viewer-overflow" ref={overflowRef}>
 						<button
@@ -3142,6 +3144,19 @@ export function SessionViewer({
 							</div>
 						)}
 					</div>
+					{!isPhone && (
+						<Tooltip label={pinned ? "Unpin tab" : "Pin as tab"} side="bottom">
+							<button
+								type="button"
+								className={`viewer-code-icon ${pinned ? "text-yellow" : ""}`}
+								onClick={() => togglePin(session.id)}
+								aria-label={pinned ? "Unpin tab" : "Pin as tab"}
+								aria-pressed={pinned}
+							>
+								<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
+							</button>
+						</Tooltip>
+					)}
 					{/* Code-workspace testing affordances as state-colored icons, docked
 					    immediately left of the side-panel toggle. Each self-gates
 					    (renders null when not applicable). The play button stays put;

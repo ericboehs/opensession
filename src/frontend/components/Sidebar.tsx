@@ -4892,6 +4892,19 @@ function SidebarItem({
 					))}
 				</div>
 			)}
+			<Tooltip label={pinned ? "Unpin session" : "Pin session"}>
+				<span
+					className={`sidebar-item-pin${pinned ? " is-on" : ""}`}
+					role="button"
+					aria-label={pinned ? "Unpin session" : "Pin session"}
+					onClick={(e) => {
+						e.stopPropagation();
+						onTogglePin();
+					}}
+				>
+					<IconPin size={19} fill={pinned ? "currentColor" : "none"} />
+				</span>
+			</Tooltip>
 			<Tooltip
 				label="Archive session"
 				shortcut={selected ? ARCHIVE_SHORTCUT_KEYS : undefined}

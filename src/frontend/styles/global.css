@@ -1667,14 +1667,12 @@ body.resizing-x {
 	padding-bottom: 7px;
 }
 
-/* Archive button — hover-revealed on desktop, always visible on touch screens.
-   On hover it takes the timestamp's place at the far right (the meta fades out)
-   so it lines up flush with the row edge instead of crowding in front of the
-   time. */
-.sidebar-item-x {
+/* Pin + archive actions — hover-revealed on desktop. On hover they take the
+   metadata's place at the far right so they don't crowd the title. */
+.sidebar-item-x,
+.sidebar-item-pin {
 	display: none;
 	position: absolute;
-	right: 7px;
 	top: 50%;
 	transform: translateY(-50%);
 	width: 26px;
@@ -1690,11 +1688,19 @@ body.resizing-x {
 	background: var(--bg-hover);
 	box-shadow: -6px 0 5px -2px var(--bg-hover);
 }
-.sidebar-item-selected .sidebar-item-x {
+.sidebar-item-x {
+	right: 7px;
+}
+.sidebar-item-pin {
+	right: 35px;
+}
+.sidebar-item-selected .sidebar-item-x,
+.sidebar-item-selected .sidebar-item-pin {
 	background: var(--bg-active);
 	box-shadow: -6px 0 5px -2px var(--bg-active);
 }
-.sidebar-item:hover .sidebar-item-x {
+.sidebar-item:hover .sidebar-item-x,
+.sidebar-item:hover .sidebar-item-pin {
 	display: flex;
 }
 /* Step the inline meta aside on hover so the archive button can sit where it was
@@ -1705,9 +1711,11 @@ body.resizing-x {
 	opacity: 0;
 }
 .sidebar-item:hover .sidebar-item-meta {
-	padding-right: 30px;
+	padding-right: 58px;
 }
-.sidebar-item-x:hover {
+.sidebar-item-x:hover,
+.sidebar-item-pin:hover,
+.sidebar-item-pin.is-on {
 	color: var(--text);
 	background: var(--bg-active);
 }
@@ -1743,6 +1751,7 @@ body.resizing-x {
 	transition: none;
 }
 .sidebar-swipe-row.is-open .sidebar-item-x,
+.sidebar-swipe-row.is-open .sidebar-item-pin,
 .sidebar-swipe-row.is-open .sidebar-ws-actions {
 	display: none;
 }
@@ -1792,6 +1801,7 @@ body.resizing-x {
 		background: none;
 	}
 	.sidebar-item:hover .sidebar-item-x,
+	.sidebar-item:hover .sidebar-item-pin,
 	.sidebar-ws-row:hover .sidebar-ws-actions {
 		display: none;
 	}
@@ -1823,6 +1833,7 @@ body.resizing-x {
 }
 @media (max-width: 720px) {
 	.sidebar-item:hover .sidebar-item-x,
+	.sidebar-item:hover .sidebar-item-pin,
 	.sidebar-ws-row:hover .sidebar-ws-actions {
 		display: none;
 	}
