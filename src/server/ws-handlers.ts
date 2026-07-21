@@ -37,7 +37,7 @@ import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } fro
 import { type BackstageSessionFile, type SessionUsage } from "./types";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
-import { createWorktree, createWorktreeForExistingBranch, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreePathFor } from "./worktree";
+import { createWorktree, createWorktreeForExistingBranch, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
 import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import { watch } from "fs";
@@ -999,6 +999,12 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					// Terminal failure the opening run died on — recorded after the
 					// loop so the fresh session surfaces as "Needs input".
 					let runFailure: string | null = null;
+					// Actual worktree HEAD when it drifted from the recorded branch
+					// (the agent switched/renamed branches during the opening turn).
+					const headBranchPatch = () => {
+						const head = sessionBranch ? worktreeHeadBranch(wtPath) : null;
+						return head && head !== sessionBranch ? { branch: head } : {};
+					};
 					const persist = () => {
 						const sessionData: BackstageSessionFile = {
 							id: bksId,
@@ -1016,6 +1022,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							...(createAccountId ? { accountId: createAccountId } : {}),
 							...(modelHistory.length ? { modelHistory } : {}),
 							branch: sessionBranch,
+							...headBranchPatch(),
 							worktreeDir: wtPath,
 							repo: repoForPath(wtPath).id,
 							...(workspace
@@ -1323,6 +1330,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 									: {}),
 								...(effectiveModel ? { model: effectiveModel } : {}),
 								...(modelHistory.length ? { modelHistory } : {}),
+								// The opening turn may have switched branches in the
+								// worktree (same sync as runSessionPromptInner's run-end
+								// patch) — keep the record on the actual HEAD.
+								...headBranchPatch(),
 							},
 						);
 						// Persist opening-run usage regardless of which branch ran

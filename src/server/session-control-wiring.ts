@@ -28,7 +28,7 @@ import { rebuildIndex } from "./slack-links";
 import { handleSlashCommand } from "./slash-commands";
 import { type BackstageSessionFile, type SessionUsage, type UnifiedSession } from "./types";
 import { type Workspace, createWorkspace, getWorkspace } from "./workspaces";
-import { createWorktree, getRepo, listWorktrees, repoForPath } from "./worktree";
+import { createWorktree, getRepo, listWorktrees, repoForPath, worktreeHeadBranch } from "./worktree";
 import { broadcastToAll, broadcastToSession } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import { existsSync, watch } from "fs";
@@ -294,6 +294,12 @@ registerSessionControl({
 		// Terminal failure the opening run died on — recorded after the loop so
 		// the fresh session surfaces as "Needs input".
 		let runFailure: string | null = null;
+		// Actual worktree HEAD when it drifted from the recorded branch (the
+		// agent switched/renamed branches during the opening turn).
+		const headBranchPatch = () => {
+			const head = !isAsk && sessionBranch ? worktreeHeadBranch(wtPath) : null;
+			return head && head !== sessionBranch ? { branch: head } : {};
+		};
 		const persist = () => {
 			const sessionData: BackstageSessionFile = {
 				id: bksId,
@@ -304,6 +310,7 @@ registerSessionControl({
 				...(effectiveModel ? { model: effectiveModel } : {}),
 				...(modelHistory.length ? { modelHistory } : {}),
 				branch: isAsk ? "" : sessionBranch,
+				...headBranchPatch(),
 				worktreeDir: wtPath,
 				repo: repo.id,
 				...(projectId ? { projectId } : {}),
@@ -561,6 +568,8 @@ registerSessionControl({
 							...engineSessionPatch(effectiveProvider, engineSessionId),
 							...(effectiveModel ? { model: effectiveModel } : {}),
 							...(modelHistory.length ? { modelHistory } : {}),
+							// Same run-end branch sync as runSessionPromptInner.
+							...headBranchPatch(),
 						},
 					);
 				if (latestUsage)
