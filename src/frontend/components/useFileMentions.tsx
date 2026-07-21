@@ -244,8 +244,9 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
         const isSession = item.kind === "session";
         const isSkill = item.kind === "skill";
         const isDir = item.kind === "dir";
+        const isPerson = item.kind === "person";
         const path = item.display;
-        const slash = isSession || isSkill ? -1 : path.lastIndexOf("/");
+        const slash = isSession || isSkill || isPerson ? -1 : path.lastIndexOf("/");
         const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
         const base = slash >= 0 ? path.slice(slash + 1) : path;
         return (
@@ -261,9 +262,10 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
             onMouseEnter={() => setActiveIdx(i)}
           >
             {isSession && <span className="mention-repo">session</span>}
-            {!isSession && !isSkill && item.repo && <span className="mention-repo">{item.repo}</span>}
+            {isPerson && <span className="mention-repo">person</span>}
+            {!isSession && !isSkill && !isPerson && item.repo && <span className="mention-repo">{item.repo}</span>}
             <span className="mention-base">{isSkill ? `/${base}` : isDir ? `${base}/` : base}</span>
-            {isSession || isSkill
+            {isSession || isSkill || isPerson
               ? item.sub && <span className="mention-dir">{item.sub}</span>
               : dir && <span className="mention-dir">{dir}</span>}
           </div>

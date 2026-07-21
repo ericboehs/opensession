@@ -3,7 +3,9 @@ import type { TranscriptEntry } from "../lib/types";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { getCurrentUser } from "./UserPicker";
 import { renderMarkdown } from "../lib/markdown";
+import { fetchFileMentions } from "../lib/api";
 import { TranscriptBlocks } from "./TranscriptBlocks";
+import { useFileMentions } from "./useFileMentions";
 import { IconChevronLeft, IconAtSign, IconArrowUp } from "./icons";
 
 /** Reconcile incoming entries by id (mirror of SessionViewer's local helper). */
@@ -73,10 +75,20 @@ export function SideChatConversation({
 	const [draft, setDraft] = useState("");
 	const [pending, setPending] = useState<string | null>(null);
 	const bodyRef = useRef<HTMLDivElement | null>(null);
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	// Stick to the live edge only while the reader is already there, so a
 	// streaming reply doesn't yank them up from scrollback.
 	const followRef = useRef(true);
 	const streamSeqRef = useRef(0);
+
+	// "@"-mentions: files (this session's repo), other sessions, teammates —
+	// same suggestions endpoint as the main composer.
+	const mentions = useFileMentions({
+		value: draft,
+		onChange: setDraft,
+		textareaRef,
+		mentionFetch: (q) => fetchFileMentions(q, sideChatId),
+	});
 
 	// Second socket: watch this side chat only, and tear it down on unmount /
 	// id change. transcript_init resets, everything else merges — all gated to
@@ -297,8 +309,13 @@ export function SideChatConversation({
 				)}
 			</div>
 
-			<div className="flex items-end gap-2 border-t border-line px-3 py-2">
+			<div
+				className="flex items-end gap-2 border-t border-line px-3 py-2"
+				ref={mentions.inputWrapRef}
+			>
+				{mentions.popup}
 				<textarea
+					ref={textareaRef}
 					className="max-h-40 min-h-[36px] flex-1 resize-none rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] font-medium text-fg outline-none placeholder:text-dim focus:border-fg/30"
 					rows={1}
 					value={draft}
@@ -307,7 +324,11 @@ export function SideChatConversation({
 					}
 					disabled={!connected}
 					onChange={(e) => setDraft(e.target.value)}
+					onKeyUp={mentions.sync}
+					onClick={mentions.sync}
+					onBlur={() => setTimeout(mentions.close, 120)}
 					onKeyDown={(e) => {
+						if (mentions.handleKeyDown(e)) return;
 						if (e.key === "Enter" && !e.shiftKey) {
 							e.preventDefault();
 							handleSend();

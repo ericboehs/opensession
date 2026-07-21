@@ -9746,7 +9746,9 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(16px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
 	padding: 4px;
-	z-index: 7000;
+	/* Above palettes (6000) AND the Desk/modal tier (10000-10001) — the
+	   caret-anchored suggestion popup must win wherever a composer lives. */
+	z-index: 10500;
 }
 .mention-item {
 	display: flex;

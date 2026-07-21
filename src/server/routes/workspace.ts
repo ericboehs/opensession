@@ -15,6 +15,7 @@ import { SESSIONS_DIR, findSession, getCachedSessions, invalidateSessionsCache, 
 import { attachRepo, switchPrimaryRepo, workspaceOwningWorktree } from "../session-repos";
 import { getAllSessions, getTranscriptPath } from "../sessions";
 import { writeJsonAtomic } from "../shared/atomic-write";
+import { configuredIdentity } from "../config";
 import { searchSkills } from "../skills";
 import { handleSlashCommand } from "../slash-commands";
 import { suggestBranchName } from "../suggest-branch";
@@ -65,7 +66,11 @@ export async function handleWorkspaceRoutes(
 			}
 		}
 		if (!repos.length) {
-			const proj = getRepo(url.searchParams.get("repo") || undefined);
+			// Sessions with a repo but no worktree (chat-only, the Desk) search
+			// their repo's main checkout rather than the global default.
+			const proj = getRepo(
+				url.searchParams.get("repo") || session?.repo || undefined,
+			);
 			repos.push({ repo: proj.id, dir: proj.repo, primary: true });
 		}
 		// Sandbox exec only for the session's own workspace (never for the
@@ -129,8 +134,30 @@ export async function handleWorkspaceRoutes(
 							sub: s.branch || s.source,
 						}))
 				: [];
+		// Teammates too (inserted as @<FirstName>) — so a prompt can reference
+		// people ("ask @John about GPUs"); the humans tools resolve the name.
+		const people =
+			ql.length >= 1
+				? configuredIdentity()
+						.team.filter(
+							(m) =>
+								m.name.toLowerCase().includes(ql) ||
+								(m.aliases || []).some((a) => a.includes(ql)),
+						)
+						.slice(0, 4)
+						.map((m) => ({
+							display: m.name,
+							insert: m.name.split(" ")[0],
+							kind: "person" as const,
+							sub: "teammate",
+						}))
+				: [];
 		return Response.json({
-			files: [...out.slice(0, 24 - sessionHits.length), ...sessionHits],
+			files: [
+				...out.slice(0, 24 - sessionHits.length - people.length),
+				...sessionHits,
+				...people,
+			],
 		});
 	}
 

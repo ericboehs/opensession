@@ -432,7 +432,7 @@ export interface FileMention {
 	/** Repo label, set only when more than one repo is searched (cross-repo). */
 	repo?: string;
 	/** Entry type; absent means a file. */
-	kind?: "session" | "skill" | "dir";
+	kind?: "session" | "skill" | "dir" | "person";
 	/** Subtitle for non-file entries (e.g. a session's branch, a skill's description). */
 	sub?: string;
 }
