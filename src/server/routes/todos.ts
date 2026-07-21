@@ -1,0 +1,91 @@
+/**
+ * Todos + Desk routes: the Desk overlay's HTTP surface — the per-user todo
+ * list (src/server/todos.ts) and the get-or-create standing Desk session
+ * (src/server/desk.ts).
+ */
+
+import type { RouteContext } from "./context";
+import { requestUser } from "./context";
+import { ensureDeskSession } from "../desk";
+import { findSession } from "../session-cache";
+import { addTodo, listTodos, updateTodo, type TodoStatus } from "../todos";
+
+const STATUSES = new Set(["open", "done", "dropped", "all"]);
+
+export async function handleTodosRoutes(
+	ctx: RouteContext,
+): Promise<Response | undefined> {
+	const { req, url, path } = ctx;
+
+	if (path === "/backstage/api/todos" && req.method === "GET") {
+		const user = requestUser(ctx, url.searchParams.get("user"));
+		const status = url.searchParams.get("status") || "open";
+		if (!STATUSES.has(status))
+			return Response.json({ error: `bad status "${status}"` }, { status: 400 });
+		return Response.json({
+			todos: listTodos({
+				user: user || undefined,
+				status: status as TodoStatus | "all",
+			}),
+		});
+	}
+
+	if (path === "/backstage/api/todos" && req.method === "POST") {
+		const body = await req.json().catch(() => null);
+		if (!body || typeof body.text !== "string" || !body.text.trim())
+			return Response.json({ error: "expected { text: string }" }, { status: 400 });
+		const user = requestUser(ctx, body.user);
+		if (!user) return Response.json({ error: "missing user" }, { status: 400 });
+		try {
+			const todo = addTodo({
+				user,
+				text: body.text,
+				note: typeof body.note === "string" ? body.note : undefined,
+				due: typeof body.due === "string" ? body.due : undefined,
+				source: { kind: "manual", by: user },
+			});
+			return Response.json({ todo });
+		} catch (e: any) {
+			return Response.json({ error: e?.message || String(e) }, { status: 400 });
+		}
+	}
+
+	const patchMatch = path.match(/^\/backstage\/api\/todos\/(todo-[A-Za-z0-9-]+)$/);
+	if (patchMatch && req.method === "PATCH") {
+		const body = await req.json().catch(() => null);
+		if (!body) return Response.json({ error: "expected a JSON body" }, { status: 400 });
+		if (body.status !== undefined && !STATUSES.has(body.status))
+			return Response.json({ error: `bad status "${body.status}"` }, { status: 400 });
+		try {
+			const todo = updateTodo(
+				patchMatch[1],
+				{
+					status: body.status as TodoStatus | undefined,
+					text: typeof body.text === "string" ? body.text : undefined,
+					note:
+						body.note === null || typeof body.note === "string"
+							? body.note
+							: undefined,
+					due:
+						body.due === null || typeof body.due === "string"
+							? body.due
+							: undefined,
+				},
+				requestUser(ctx, body.user) || undefined,
+			);
+			return Response.json({ todo });
+		} catch (e: any) {
+			return Response.json({ error: e?.message || String(e) }, { status: 400 });
+		}
+	}
+
+	if (path === "/backstage/api/desk/ensure" && req.method === "POST") {
+		const body = await req.json().catch(() => null);
+		const user = requestUser(ctx, body?.user);
+		if (!user) return Response.json({ error: "missing user" }, { status: 400 });
+		const { sessionId } = ensureDeskSession(user);
+		return Response.json({ sessionId, session: findSession(sessionId) ?? null });
+	}
+
+	return undefined;
+}

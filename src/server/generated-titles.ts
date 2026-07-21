@@ -69,6 +69,12 @@ export async function ensureGeneratedTitle(
 	model?: string,
 ): Promise<string | null> {
 	if (getGeneratedTitle(id)) return null; // already have one
+	// Desk sessions keep their fixed title (direct file read — importing the
+	// sessions cache here would be an import cycle).
+	try {
+		const f = `${BACKSTAGE_CHATS_DIR}/${id}.json`;
+		if (existsSync(f) && JSON.parse(readFileSync(f, "utf-8")).desk) return null;
+	} catch {}
 	const source = prompt.trim().slice(0, 2000);
 	if (!source) return null;
 

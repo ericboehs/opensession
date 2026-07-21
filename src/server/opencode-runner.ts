@@ -376,6 +376,7 @@ export const SHARED_INPROCESS_SERVERS = [
   "opensession-workflows",
   "opensession-assets",
   "opensession-search",
+  "opensession-todos",
 ];
 
 /**

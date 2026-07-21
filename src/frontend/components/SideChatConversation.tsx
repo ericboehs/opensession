@@ -29,10 +29,17 @@ interface SideChatConversationProps {
 	sideChatId: string;
 	/** Return to the list. */
 	onBack: () => void;
-	/** Insert @session:<id> into the MAIN composer. */
-	onMention: (sessionId: string) => void;
+	/** Insert @session:<id> into the MAIN composer. Omitted by hosts with no
+	 *  main composer (the Desk overlay) — hides the Mention button. */
+	onMention?: (sessionId: string) => void;
 	/** The side chat's title (from the parent panel's list) — header label. */
 	title?: string;
+	/** Host renders its own chrome (the Desk overlay) — skip the header row. */
+	hideHeader?: boolean;
+	/** Replaces the side-chat empty-state copy. */
+	emptyState?: React.ReactNode;
+	/** Composer placeholder (default "Ask this side chat…"). */
+	placeholder?: string;
 }
 
 /**
@@ -47,6 +54,9 @@ export function SideChatConversation({
 	onBack,
 	onMention,
 	title,
+	hideHeader,
+	emptyState,
+	placeholder,
 }: SideChatConversationProps) {
 	const { connected, send, addHandler } = useWebSocket();
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
@@ -209,32 +219,36 @@ export function SideChatConversation({
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
-			<div className="flex items-center gap-2 border-b border-line px-3 py-2">
-				<button
-					className="flex items-center rounded-md p-1 text-dim hover:bg-surface hover:text-fg"
-					onClick={onBack}
-					aria-label="Back to side chats"
-				>
-					<IconChevronLeft size={20} />
-				</button>
-				<span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-fg">
-					{title || "Side chat"}
-				</span>
-				{isRunning && (
-					<span
-						className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-green"
-						title="Running"
-					/>
-				)}
-				<button
-					className="flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 text-[12px] font-medium text-dim hover:bg-surface hover:text-fg"
-					onClick={() => onMention(sideChatId)}
-					title="Mention this side chat in the main thread"
-				>
-					<IconAtSign size={20} />
-					Mention
-				</button>
-			</div>
+			{!hideHeader && (
+				<div className="flex items-center gap-2 border-b border-line px-3 py-2">
+					<button
+						className="flex items-center rounded-md p-1 text-dim hover:bg-surface hover:text-fg"
+						onClick={onBack}
+						aria-label="Back to side chats"
+					>
+						<IconChevronLeft size={20} />
+					</button>
+					<span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-fg">
+						{title || "Side chat"}
+					</span>
+					{isRunning && (
+						<span
+							className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-green"
+							title="Running"
+						/>
+					)}
+					{onMention && (
+						<button
+							className="flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 text-[12px] font-medium text-dim hover:bg-surface hover:text-fg"
+							onClick={() => onMention(sideChatId)}
+							title="Mention this side chat in the main thread"
+						>
+							<IconAtSign size={20} />
+							Mention
+						</button>
+					)}
+				</div>
+			)}
 
 			<div
 				className="min-h-0 flex-1 overflow-y-auto px-3 py-2"
@@ -243,8 +257,8 @@ export function SideChatConversation({
 			>
 				{!hasContent ? (
 					<div className="mx-auto mt-6 max-w-[320px] text-center text-[13px] font-medium leading-relaxed text-dim">
-						Ask this side chat anything — it shares this session's repo but runs
-						read-only, and won't touch your main conversation.
+						{emptyState ??
+							"Ask this side chat anything — it shares this session's repo but runs read-only, and won't touch your main conversation."}
 					</div>
 				) : (
 					<>
@@ -271,7 +285,9 @@ export function SideChatConversation({
 					className="max-h-40 min-h-[36px] flex-1 resize-none rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] font-medium text-fg outline-none placeholder:text-dim focus:border-fg/30"
 					rows={1}
 					value={draft}
-					placeholder={connected ? "Ask this side chat…" : "Not connected"}
+					placeholder={
+						connected ? placeholder || "Ask this side chat…" : "Not connected"
+					}
 					disabled={!connected}
 					onChange={(e) => setDraft(e.target.value)}
 					onKeyDown={(e) => {

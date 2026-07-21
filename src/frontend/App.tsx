@@ -33,7 +33,8 @@ import { SessionTabs, type ViewTab } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdatePill } from "./components/UpdatePill";
-import { IconSearch, IconSidebarLeft } from "./components/icons";
+import { IconDesk, IconSearch, IconSidebarLeft } from "./components/icons";
+import { DeskOverlay } from "./components/DeskOverlay";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useBackSwipe } from "./hooks/useBackSwipe";
@@ -746,6 +747,9 @@ function App() {
 	// The ⌘K session-search command palette. Like the new-session palette it's an
 	// overlay driven by its own state so it can open over any view.
 	const [searchOpen, setSearchOpen] = useState(false);
+	// The Desk overlay (⌘J / the floating desk button): todo list + standing
+	// concierge session on top of whatever view is open.
+	const [deskOpen, setDeskOpen] = useState(false);
 	const searchOpenRef = useRef(searchOpen);
 	searchOpenRef.current = searchOpen;
 	const closePalette = React.useCallback(() => {
@@ -805,6 +809,13 @@ function App() {
 			if ((e.metaKey || e.ctrlKey) && k === "n") {
 				e.preventDefault();
 				paletteOpenRef.current ? closePalette() : openPalette();
+				return;
+			}
+			if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && k === "j") {
+				// Summon/dismiss the Desk overlay. Esc-close is handled by the
+				// overlay itself (Base UI dialog / the bottom sheet).
+				e.preventDefault();
+				setDeskOpen((o) => !o);
 				return;
 			}
 			if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && k === "b") {
@@ -2126,6 +2137,28 @@ function App() {
 						</svg>
 					</button>
 				)}
+
+				{/* The Desk trigger — desktop: floating bottom-right; phones: a second
+				    FAB beside the new-session + on the root page (see .desk-fab). */}
+				{(!isPhone || !mobileDetail) && (
+					<button
+						className="desk-fab"
+						onClick={() => setDeskOpen(true)}
+						aria-label="Open Desk"
+						title="Desk (⌘J)"
+					>
+						<IconDesk size={24} />
+					</button>
+				)}
+
+				{/* ⌘J Desk overlay — todo list + standing concierge session. */}
+				<DeskOverlay
+					open={deskOpen}
+					onClose={() => setDeskOpen(false)}
+					phone={isPhone}
+					addHandler={addHandler}
+					onOpenSession={(id) => navigate({ view: "session", id })}
+				/>
 
 				{/* ⌘K session-search palette — overlays every view. */}
 				{searchOpen && (

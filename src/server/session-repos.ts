@@ -20,6 +20,7 @@ import {
 	renderSessionMemoryNote,
 	sessionMemoryScopes,
 } from "./session-memory";
+import { DESK_NOTE } from "./desk";
 import { findSession, touchBackstageSession } from "./session-cache";
 import type { AttachedRepo, LinkedPr, UnifiedSession } from "./types";
 
@@ -101,6 +102,9 @@ export async function buildSessionNote(
 ): Promise<string | undefined> {
 	return (
 		[
+			// The standing Desk session gets its concierge charter first — role
+			// discipline for the summonable overlay (see desk.ts).
+			session.desk ? DESK_NOTE : "",
 			buildReposNote(session),
 			await memoryNoteFor(user, sessionRepoIds(session)),
 		]

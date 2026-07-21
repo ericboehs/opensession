@@ -23,6 +23,7 @@ import { createWalkthroughMcpServer } from "../agents/slack/walkthrough-tools";
 import { createMemoryMcpServer } from "../agents/slack/memory-tools";
 import { createGoalsMcpServer, createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { createPapercutsMcpServer } from "../agents/slack/papercuts-tools";
+import { createTodosMcpServer } from "../agents/slack/todos-tools";
 import { createSearchMcpServer } from "../agents/slack/search-tools";
 import { createAssetsMcpServer } from "../agents/slack/assets-tools";
 import { createWorkflowsMcpServer } from "../agents/slack/workflow-tools";
@@ -177,6 +178,14 @@ export function interactiveMcpServers(
 					// Per-session scratch assets (previewed in the Assets tab).
 					// Works in Ask mode — writes land outside the checkout.
 					"opensession-assets": createAssetsMcpServer({ sessionId }),
+					// The user's Desk todo list — add/list/complete/drop/update.
+					// Interactive-only like the siblings (the automation branch below
+					// fails closed): untrusted ticket text must not write to a
+					// human's list.
+					"opensession-todos": createTodosMcpServer({
+						sessionId,
+						user: createdBy,
+					}),
 					// Friction log — log_papercut/list_papercuts, per-repo toggle in
 					// Settings → Papercuts (dropped here when the repo opted out).
 					...papercutsServerFor(sessionId, "prompt", createdBy),

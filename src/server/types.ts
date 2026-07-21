@@ -76,6 +76,8 @@ export interface UnifiedSession {
   /** Set on a side chat — the parent session it was spawned from and
    *  @-mentions back into. Suppressed from the left sidebar. */
   sideChatOf?: string;
+  /** The user's standing Desk (concierge) session — hidden from lists. */
+  desk?: boolean;
   /** How many spawn_task hops away from a human-created session this is
    *  (opensession-sessions spawn_task loop guard: refused at depth ≥ 2). Absent =
    *  0 = created by a human or by create_session. */
@@ -336,6 +338,9 @@ export interface BackstageSessionFile {
   /** Set on a side chat — the parent session it was spawned from and
    *  @-mentions back into. Suppressed from the left sidebar. */
   sideChatOf?: string;
+  /** The user's standing Desk (concierge) session — fixed title, suppressed
+   *  from the session lists, opened via the Desk overlay. */
+  desk?: boolean;
   /** spawn_task hop count from a human-created session (loop guard; see
    *  UnifiedSession.spawnDepth). Stamped by opensession-sessions' spawn_task. */
   spawnDepth?: number;

@@ -1304,6 +1304,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		for (const s of filtered) {
 			if (s.automation) continue; // automations render in their own band
 			if (s.sideChatOf) continue; // side chats live in the parent's panel, not the sidebar
+			if (s.desk) continue; // the Desk session lives in the ⌘J overlay, not the sidebar
 			if (s.projectId) {
 				const list = byWs.get(s.projectId) || [];
 				list.push(s);

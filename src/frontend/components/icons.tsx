@@ -912,3 +912,16 @@ export function IconDotsHorizontal(p: IconProps) {
     </Svg>
   );
 }
+
+// The Desk: a screen on a desk (hand-drawn on the same 24 grid).
+export function IconDesk(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="8.25" y="4.75" width="7.5" height="4.5" rx="1" />
+      <path {...stroke} d="M12 9.25V11.25" />
+      <path {...stroke} d="M3.75 11.25H20.25" />
+      <path {...stroke} d="M5.75 11.25V19.25" />
+      <path {...stroke} d="M18.25 11.25V19.25" />
+    </Svg>
+  );
+}

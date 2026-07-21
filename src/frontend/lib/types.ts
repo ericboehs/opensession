@@ -64,6 +64,20 @@ export interface SupportThread {
 	customer: { name: string | null; email: string | null };
 }
 
+/** One item on a user's Desk todo list (mirror of src/server/todos.ts). */
+export interface TodoItem {
+	id: string;
+	user: string;
+	text: string;
+	status: "open" | "done" | "dropped";
+	createdAt: string;
+	updatedAt: string;
+	completedAt?: string;
+	note?: string;
+	due?: string;
+	source: { kind: "session" | "manual"; sessionId?: string; by?: string };
+}
+
 export interface ReportMeta {
 	id: string;
 	title: string;
@@ -210,6 +224,9 @@ export interface UnifiedSession {
 	/** Set on a side chat — the parent session it was spawned from and
 	 *  @-mentions back into. Suppressed from the left sidebar. */
 	sideChatOf?: string;
+	/** The user's standing Desk (concierge) session — fixed title, hidden from
+	 *  the session lists, opened via the Desk overlay (⌘J). */
+	desk?: boolean;
 	/** Secondary repos this session also works in (cross-repo sessions). */
 	attachedRepos?: Array<{ repo: string; branch: string; dir: string }>;
 	/** PRs manually linked to this session (beyond branch/attached-repo ones). */
@@ -629,6 +646,8 @@ export type WSServerMessage =
 	// An automation published a report. sessionId is present for reports tied to
 	// a run and lets that run's Reports tab refresh immediately.
 	| { type: "reports_changed"; automationId: string; sessionId?: string }
+	// The Desk todo list changed (any mutation, any surface — see todos.ts).
+	| { type: "todos_changed"; user: string }
 	| { type: "notice"; sessionId?: string; message: string }
 	// Dynamic workflow run snapshot changed (workflow-store broadcasts every
 	// mutation) — powers the session's Agents panel.

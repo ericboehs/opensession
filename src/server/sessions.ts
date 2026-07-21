@@ -452,6 +452,7 @@ function scanBackstageSessions(): UnifiedSession[] {
         null,
       parentSessionId: data.parentSessionId,
       sideChatOf: data.sideChatOf,
+      desk: data.desk,
       spawnDepth: data.spawnDepth,
       attachedRepos: data.attachedRepos,
       linkedPrs: data.linkedPrs,
