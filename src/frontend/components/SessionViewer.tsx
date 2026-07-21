@@ -3448,7 +3448,7 @@ export function SessionViewer({
 							<PrPanel
 								sessionId={session.id}
 								send={send}
-								split
+								reviewCanvas
 								onAddToInput={(text) =>
 									setComposerPrefill((p) => ({
 										seq: (p?.seq ?? 0) + 1,
