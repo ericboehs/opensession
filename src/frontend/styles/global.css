@@ -14965,6 +14965,20 @@ html[data-theme="light"] .palette-card .palette-create {
 .sidebar-ws-row {
 	position: relative;
 }
+.sidebar-ws-unread {
+	flex: 0 0 auto;
+	width: 7px;
+	height: 7px;
+	margin-left: auto;
+	border-radius: 50%;
+	background: var(--green);
+}
+.sidebar-group-count + .sidebar-ws-unread,
+.sidebar-ws-ticker + .sidebar-ws-unread,
+.sidebar-ws-time + .sidebar-ws-unread,
+.sidebar-ws-draft + .sidebar-ws-unread {
+	margin-left: 4px;
+}
 .sidebar-ws-actions {
 	display: none;
 	align-items: center;

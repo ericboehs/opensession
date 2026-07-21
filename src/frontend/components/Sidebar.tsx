@@ -2338,30 +2338,14 @@ export function Sidebar({
 					}}
 					title={row.name}
 				>
-				{/* 22px slot — same as the group-header pin/eye icon (a 22px box at
-				    6px pad, center 17/27px) so a row's PR/merge mark sits on the exact
-				    icon column of its lane header, not 1px left in a smaller box.
-				    Backlog/pending rows carry a quiet gray idle mark, unless the unread
-				    dot takes that slot — either way the
-				    title lines up with the iconned rows (a left indent). */}
-				{(() => {
-					const showUnreadDot =
-						row.unread &&
-						!waiting &&
-						!row.running &&
-						row.status !== "review" &&
-						row.status !== "merged";
-					if (showUnreadDot)
-						return (
-							<span
-								className="flex shrink-0 items-center justify-center"
-								style={{ width: 22, height: 22 }}
-							>
-								<span className="sidebar-item-status sidebar-status-unread" />
-							</span>
-						);
-					return <WsStatusMark row={row} size={22} />;
-				})()}
+				{/* PR lifecycle stays in the leading status column. Quiet rows retain
+				    the alignment slot without painting a gray "nothing new" dot. */}
+				<span
+					className="flex shrink-0 items-center justify-center"
+					style={{ width: 22, height: 22 }}
+				>
+					<WsPrStatusMark chats={row.chats} size={20} />
+				</span>
 				{editing ? (
 					<input
 						className="sidebar-item-rename"
@@ -2433,6 +2417,12 @@ export function Sidebar({
 					<span className="sidebar-ws-draft" title="Unsent draft. Return to finish it.">
 						<IconPencil size={20} />
 					</span>
+				)}
+				{(row.unread || waiting) && (
+					<span
+						className="sidebar-ws-unread"
+						title={waiting ? "Needs your attention" : "New activity"}
+					/>
 				)}
 				{/* Hover actions: pin + archive, side by side (replace the count). */}
 				<span className="sidebar-ws-actions">
@@ -4851,8 +4841,8 @@ function SidebarItem({
 			<div className="sidebar-item-top">
 				{/* Leading 22px slot — the same status-icon column the workspace rows
 				    use, so a chat row's #number/title line up under them (and under the
-				    lane header) instead of sitting flush-left. The live/unread/idle dot
-				    rides centered in it. */}
+				    lane header) instead of sitting flush-left. Quiet rows deliberately
+				    leave it empty rather than showing a gray "nothing new" dot. */}
 				<span
 					className="flex shrink-0 items-center justify-center"
 					style={{ width: 22 }}
@@ -4870,9 +4860,7 @@ function SidebarItem({
 						   drawing the eye (a running/waiting session isn't "unread" in
 						   the same sense). */
 						<span className="sidebar-item-status sidebar-status-unread" />
-					) : (
-						<span className="sidebar-item-status sidebar-status-idle" />
-					)}
+					) : null}
 				</span>
 				{editing ? (
 					<input
@@ -5302,6 +5290,60 @@ function RunTicker({ startMs }: { startMs: number }) {
 // hovercard keep the full name (and the PR number lives there + in the PR tab).
 function stripPrTitlePrefix(name: string): string {
 	return name.replace(/^PR\s*#\d+(:|\s*[—–-])\s*/i, "");
+}
+
+function frontingPrChat(chats: UnifiedSession[]): UnifiedSession | undefined {
+	return [...chats]
+		.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""))
+		.find((chat) => chat.prUrl);
+}
+
+function WsPrStatusMark({
+	chats,
+	size,
+}: {
+	chats: UnifiedSession[];
+	size: number;
+}) {
+	const chat = frontingPrChat(chats);
+	if (!chat) return null;
+	if (chat.prState === "MERGED") {
+		return (
+			<span title="PR merged">
+				<IconGitMerge size={size} className="text-purple" />
+			</span>
+		);
+	}
+	const failed = (chat.prChecks?.failed || 0) > 0;
+	const pending = (chat.prChecks?.pending || 0) > 0;
+	const changesRequested = chat.prReviewDecision === "CHANGES_REQUESTED";
+	const className =
+		chat.prState === "CLOSED" || failed || changesRequested
+			? "text-red"
+			: pending
+				? "text-yellow"
+				: chat.prIsDraft
+					? "text-faint"
+					: "text-green";
+	const label =
+		chat.prState === "CLOSED"
+			? "PR closed"
+			: changesRequested
+				? "PR changes requested"
+				: failed
+					? "PR checks failing"
+					: pending
+						? "PR checks running"
+						: chat.prIsDraft
+							? "Draft PR"
+							: chat.prReviewDecision === "APPROVED"
+								? "PR approved"
+								: "PR open";
+	return (
+		<span title={label}>
+			<IconPullRequest size={size} className={className} />
+		</span>
+	);
 }
 
 function WsStatusMark({
