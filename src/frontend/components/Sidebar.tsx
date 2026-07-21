@@ -73,6 +73,7 @@ import { Tooltip } from "../ui/tooltip";
 import { RepoTile, swatchColor, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { ReviewQueue } from "./ReviewQueue";
+import { PixelSpinner } from "./PixelSpinner";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -2350,7 +2351,11 @@ export function Sidebar({
 							title={waiting ? "Needs your attention" : "New activity"}
 						/>
 					)}
-					<WsPrStatusMark chats={row.chats} size={20} />
+					{row.running ? (
+						<PixelSpinner className="text-yellow" interval={3000} />
+					) : (
+						<WsPrStatusMark chats={row.chats} size={18} />
+					)}
 				</span>
 				{editing ? (
 					<input
@@ -4827,7 +4832,11 @@ function SidebarItem({
 							title={waiting ? "Needs your attention" : "New activity"}
 						/>
 					)}
-					<WsPrStatusMark chats={[session]} size={20} />
+					{session.isRunning ? (
+						<PixelSpinner className="text-yellow" interval={3000} />
+					) : (
+						<WsPrStatusMark chats={[session]} size={18} />
+					)}
 				</span>
 				{editing ? (
 					<input
