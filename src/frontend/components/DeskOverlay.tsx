@@ -345,9 +345,10 @@ function DeskBody({
 						placeholder="Ask your Desk…"
 						emptyState={
 							<>
-								This is your Desk — tell Michael what's on your plate, ask
-								what to do next, or have it spin up sessions for you. Items
-								you mention land on the list above.
+								This is your Desk. Say what needs doing and it lands on the
+								list above. Ask for real work and Michael spins up a session
+								for it. Try "put reviewing Kent's PR on my list" or "start a
+								session to fix the export bug".
 							</>
 						}
 					/>
