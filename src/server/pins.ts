@@ -11,6 +11,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { stateDir } from "./rename-compat";
+import { broadcastToAll } from "./ws-hub";
 
 const PINS_DIR = stateDir("pins");
 
@@ -68,4 +69,13 @@ export function setPins(user: string, pins: unknown): string[] {
     writeJsonAtomic(fileFor(user), { pins: clean });
   } catch {}
   return clean;
+}
+
+/** Add a session to the front of a user's pin list without disturbing order. */
+export function pinForUser(user: string, id: string): string[] {
+  const pins = getPins(user);
+  if (pins.includes(id)) return pins;
+  const next = setPins(user, [id, ...pins]);
+  broadcastToAll({ type: "pins_changed", user, pins: next });
+  return next;
 }

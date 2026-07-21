@@ -40,10 +40,15 @@ import type { QueuedMessage, SessionQueue } from "./queue";
 import { sessionQueues } from "./queue";
 import { isStopMessage, cancelSession } from "./cancel";
 import { pollForVercelPreview } from "./github-reviews";
-import { gitIdentityFor } from "../../server/shared/user-mappings";
+import {
+  gitIdentityFor,
+  slackIdToFirstName,
+} from "../../server/shared/user-mappings";
 import { worktreePathFor } from "../../server/worktree";
 import { sessionForThread } from "../../server/slack-links";
 import { tryGetSessionControl } from "../../server/session-control";
+import { pinForUser } from "../../server/pins";
+import { getUiPrefs } from "../../server/ui-prefs";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { runAgent, cancelAgentRun } from "../../server/agent-runner";
 import {
@@ -80,6 +85,73 @@ import {
 import type { SlackSession, PendingAnswer } from "./state";
 
 const ALLOWED_USER_ID = process.env.ALLOWED_SLACK_USER_ID;
+
+function pinSlackSession(sessionId: string, slackUserId: string): void {
+  const user = slackIdToFirstName(slackUserId);
+  if (!user || getUiPrefs(user)["pin-new-sessions"] === "off") return;
+  pinForUser(user, sessionId);
+}
+
+async function postOpenSessionCard(
+  channel: string,
+  threadTs: string,
+  sessionId: string,
+): Promise<void> {
+  const result = await postSlackBlocks(
+    channel,
+    `Continuing in ${productName()}.`,
+    [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: ":hourglass_flowing_sand: *Continuing session…*",
+        },
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: `:desktop_computer: Open in ${productName()}`,
+              emoji: true,
+            },
+            url: `${UI_BASE}/session/${encodeURIComponent(sessionId)}`,
+            action_id: `backstage:${sessionId}`,
+          },
+        ],
+      },
+    ],
+    threadTs,
+  );
+  if (!result?.ok) throw new Error(result?.error || "chat.postMessage failed");
+}
+
+async function activateLinkedSession(
+  sessionId: string,
+  text: string,
+  channel: string,
+  threadTs: string,
+  slackUserId: string,
+): Promise<{ status: string; message: string }> {
+  const control = tryGetSessionControl();
+  if (!control) return { status: "error", message: "Session control unavailable." };
+  const res = await control.deliverToSession(
+    sessionId,
+    text,
+    slackIdToFirstName(slackUserId) || slackUserId,
+    { busy: "queue", slackReplyTo: { channel, threadTs } },
+  );
+  if (res.status !== "error") {
+    pinSlackSession(sessionId, slackUserId);
+    await postOpenSessionCard(channel, threadTs, sessionId).catch((e) =>
+      console.warn(`[slack] Failed to post linked-session card for ${sessionId}:`, e),
+    );
+  }
+  return res;
+}
 
 // Cache admin MCP servers per session to avoid rebuilding identical tool objects
 // on every message. Invalidated when memory changes (detected via hash).
@@ -509,6 +581,7 @@ export async function processMessage(
   const threadTs = msg.threadTs;
 
   // Load or create session
+  let createdSession = false;
   let session: SlackSession | undefined = activeSessions.get(sessionKey);
   if (!session) {
     session = (await loadSession(sessionKey)) ?? undefined;
@@ -530,6 +603,7 @@ export async function processMessage(
       lastActivity: new Date().toISOString(),
     };
     activeSessions.set(sessionKey, session);
+    createdSession = true;
     // Persist immediately — the "Open in Backstage" link posted below points
     // at slack-<channel>-<ts>, which only resolves once this file exists.
     await saveSession(session);
@@ -540,6 +614,8 @@ export async function processMessage(
     await sendSlackMessage(channel, "No active session found.", threadTs);
     return;
   }
+
+  if (createdSession) pinSlackSession(`slack-${sessionKey}`, msg.userId);
 
   // Set up abort controller
   const abortController = new AbortController();
@@ -1026,18 +1102,17 @@ export async function handleMessageEvent(event: any): Promise<void> {
     if (threadSessionId) {
       if (await maybeRetriggerAutomation(threadSessionId, text, channel, ts, thread_ts))
         return;
-      const control = tryGetSessionControl();
-      if (control) {
+      if (tryGetSessionControl()) {
         console.log(
           `[slack] DM thread reply in ${channel}/${thread_ts} → session ${threadSessionId}`
         );
-        await addReaction(channel, ts, "eyes");
-        const userInfo = await getUserInfo(user);
-        const res = await control.deliverToSession(
+        void addReaction(channel, ts, "eyes").catch(() => {});
+        const res = await activateLinkedSession(
           threadSessionId,
           text,
-          userInfo?.real_name || user,
-          { busy: "queue", slackReplyTo: { channel, threadTs: thread_ts } },
+          channel,
+          thread_ts,
+          user,
         );
         // Stale link (session deleted) → fall through to the normal DM flow.
         if (res.status !== "error") return;
@@ -1264,18 +1339,17 @@ export async function handleMentionEvent(event: any): Promise<void> {
   if (threadSessionId) {
     if (await maybeRetriggerAutomation(threadSessionId, cleanText, channel, ts, thread_ts))
       return;
-    const control = tryGetSessionControl();
-    if (control) {
+    if (tryGetSessionControl()) {
       console.log(
         `[slack] Thread reply in ${channel}/${thread_ts} → session ${threadSessionId}`
       );
-      await addReaction(channel, ts, "eyes");
-      const info = await getUserInfo(user);
-      const res = await control.deliverToSession(
+      void addReaction(channel, ts, "eyes").catch(() => {});
+      const res = await activateLinkedSession(
         threadSessionId,
         cleanText,
-        info?.real_name || user,
-        { busy: "queue", slackReplyTo: { channel, threadTs: thread_ts } },
+        channel,
+        thread_ts,
+        user,
       );
       // A stale link (session deleted since the index was built) falls through
       // to the normal mention flow instead of eating the message.

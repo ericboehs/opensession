@@ -613,6 +613,7 @@ export type WSServerMessage =
 			type: "global_presence";
 			viewing: Array<{ user: string; sessionId: string }>;
 	  }
+	| { type: "pins_changed"; user: string; pins: string[] }
 	| { type: "term_data"; data: string }
 	| { type: "term_exit"; code?: number }
 	// Where the Shell tab's PTY landed (sandboxed sessions run their shell

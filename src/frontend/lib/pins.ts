@@ -3,7 +3,7 @@
 // API stays synchronous (an in-memory cache) so callers don't change: the cache
 // is hydrated from the server on load and on user switch, and writes are
 // optimistic — update the cache + fire the change event immediately, then PUT.
-import { fetchPins, savePinsApi } from "./api";
+import { fetchPins, fetchUiPrefs, savePinsApi, saveUiPrefsApi } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
 
 const LEGACY_KEY = "opensession-pins"; // old per-browser store, migrated once
@@ -83,20 +83,27 @@ export function pin(id: string): string[] {
 	return next;
 }
 
-// "Pin new sessions" preference — per-browser (a workflow habit, like the
-// send-key/theme prefs), default ON. Absence = on; the string "off" is the
-// only stored form, so the default survives a cleared store.
+// "Pin new" preferences. localStorage is the synchronous cache; ui-prefs is
+// the source of truth so Slack and other devices can honor the same setting.
 const PIN_NEW_KEY = "opensession-pin-new-sessions";
 const PIN_NEW_EVENT = "opensession-pin-new-changed";
+const PIN_NEW_PREF_KEY = "pin-new-sessions";
+const PIN_NEW_WS_PREF_KEY = "pin-new-workspaces";
+let pinPrefsWriteStamp = 0;
+let pinPrefsLoadedFor: string | null = null;
 
 export function getPinNewSessions(): boolean {
 	return localStorage.getItem(PIN_NEW_KEY) !== "off";
 }
 
 export function setPinNewSessions(on: boolean): void {
+	pinPrefsWriteStamp++;
 	if (on) localStorage.removeItem(PIN_NEW_KEY);
 	else localStorage.setItem(PIN_NEW_KEY, "off");
 	window.dispatchEvent(new Event(PIN_NEW_EVENT));
+	void saveUiPrefsApi(getCurrentUser(), {
+		[PIN_NEW_PREF_KEY]: on ? "on" : "off",
+	}).catch(() => {});
 }
 
 export function onPinNewSessionsChanged(handler: () => void): () => void {
@@ -104,10 +111,6 @@ export function onPinNewSessionsChanged(handler: () => void): () => void {
 	return () => window.removeEventListener(PIN_NEW_EVENT, handler);
 }
 
-// "Pin new workspaces" preference — per-browser, default OFF. A new workspace is
-// heavier than a chat, so pinning every one you spin up floods the Pinned band;
-// off by default. The string "on" is the only stored form, so the default
-// survives a cleared store.
 const PIN_NEW_WS_KEY = "opensession-pin-new-workspaces";
 const PIN_NEW_WS_EVENT = "opensession-pin-new-workspaces-changed";
 
@@ -116,14 +119,66 @@ export function getPinNewWorkspaces(): boolean {
 }
 
 export function setPinNewWorkspaces(on: boolean): void {
+	pinPrefsWriteStamp++;
 	if (on) localStorage.setItem(PIN_NEW_WS_KEY, "on");
 	else localStorage.removeItem(PIN_NEW_WS_KEY);
 	window.dispatchEvent(new Event(PIN_NEW_WS_EVENT));
+	void saveUiPrefsApi(getCurrentUser(), {
+		[PIN_NEW_WS_PREF_KEY]: on ? "on" : "off",
+	}).catch(() => {});
 }
 
 export function onPinNewWorkspacesChanged(handler: () => void): () => void {
 	window.addEventListener(PIN_NEW_WS_EVENT, handler);
 	return () => window.removeEventListener(PIN_NEW_WS_EVENT, handler);
+}
+
+async function hydratePinPrefs(user: string) {
+	pinPrefsLoadedFor = user;
+	const stampAtStart = pinPrefsWriteStamp;
+	let prefs: Record<string, string>;
+	try {
+		prefs = await fetchUiPrefs(user);
+	} catch {
+		return;
+	}
+	if (pinPrefsWriteStamp !== stampAtStart || pinPrefsLoadedFor !== user) return;
+
+	const sessionPref = prefs[PIN_NEW_PREF_KEY];
+	if (sessionPref === "on" || sessionPref === "off") {
+		const on = sessionPref === "on";
+		if (on !== getPinNewSessions()) {
+			if (on) localStorage.removeItem(PIN_NEW_KEY);
+			else localStorage.setItem(PIN_NEW_KEY, "off");
+			window.dispatchEvent(new Event(PIN_NEW_EVENT));
+		}
+	} else if (!getPinNewSessions()) {
+		void saveUiPrefsApi(user, { [PIN_NEW_PREF_KEY]: "off" }).catch(() => {});
+	}
+
+	const workspacePref = prefs[PIN_NEW_WS_PREF_KEY];
+	if (workspacePref === "on" || workspacePref === "off") {
+		const on = workspacePref === "on";
+		if (on !== getPinNewWorkspaces()) {
+			if (on) localStorage.setItem(PIN_NEW_WS_KEY, "on");
+			else localStorage.removeItem(PIN_NEW_WS_KEY);
+			window.dispatchEvent(new Event(PIN_NEW_WS_EVENT));
+		}
+	} else if (getPinNewWorkspaces()) {
+		void saveUiPrefsApi(user, { [PIN_NEW_WS_PREF_KEY]: "on" }).catch(() => {});
+	}
+}
+
+void hydratePinPrefs(getCurrentUser());
+window.addEventListener(USER_CHANGE_EVENT, () =>
+	void hydratePinPrefs(getCurrentUser()),
+);
+
+/** Apply an authoritative server push without writing the same list back. */
+export function receivePins(user: string, pins: string[]): void {
+	if (user !== getCurrentUser()) return;
+	cache = Array.from(new Set(pins.filter((id) => typeof id === "string")));
+	emit();
 }
 
 /**

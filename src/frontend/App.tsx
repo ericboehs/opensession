@@ -73,6 +73,7 @@ import {
 	onPinsChanged,
 	getPinNewSessions,
 	getPinNewWorkspaces,
+	receivePins,
 } from "./lib/pins";
 import {
 	getTabColors,
@@ -868,6 +869,10 @@ function App() {
 	// When a session is created from the New Session form or Ask box, jump straight into it
 	useEffect(() => {
 		return addHandler((msg) => {
+			if (msg.type === "pins_changed") {
+				receivePins(msg.user, msg.pins);
+				return;
+			}
 			if (msg.type === "global_presence") {
 				setTeamViewing(msg.viewing);
 				return;
