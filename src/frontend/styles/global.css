@@ -5145,6 +5145,8 @@ a.workspace-info-check-row {
 	min-width: 0;
 	flex: 1;
 	overflow: hidden;
+	cursor: text;
+	user-select: text;
 	font-family: var(--mono);
 	font-size: 12.5px;
 }

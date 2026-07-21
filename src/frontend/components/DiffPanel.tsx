@@ -203,6 +203,7 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
         <CommentableDiff
           key={cur.repo}
           patch={d.rawPatch || ""}
+          defaultExpandedFiles={10}
           groups={
             groups?.repo === cur.repo && groups.patch === d.rawPatch
               ? groups.groups || undefined

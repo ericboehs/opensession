@@ -390,7 +390,7 @@ export function CommentableDiff({
             size={16}
             className={`diff-file-caret ${isOpen ? "diff-file-caret-open" : ""}`}
           />
-          <span className="diff-file-name">
+          <span className="diff-file-name" onClick={(e) => e.stopPropagation()}>
             {dir && <span className="diff-file-dir">{dir}</span>}
             <span className="diff-file-base">{base}</span>
           </span>
