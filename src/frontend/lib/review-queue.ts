@@ -69,6 +69,8 @@ function classify(
 		};
 	if (decision === "CHANGES_REQUESTED")
 		return { bucket: "attention", status: "Changes requested" };
+	if (pr.reviewActive)
+		return { bucket: "waiting", status: "Review running" };
 	if (source === "requested")
 		return { bucket: "attention", status: "Review requested" };
 	if (source === "automation" && decision !== "APPROVED") {

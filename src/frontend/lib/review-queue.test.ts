@@ -62,6 +62,17 @@ describe("buildReviewQueue", () => {
 		expect(item.bucket).toBe("ready");
 	});
 
+	test("waits while an automated OpenSession review is running", () => {
+		const [item] = buildReviewQueue(
+			[pr({ number: 14, branch: "under-review", reviewActive: true })],
+			[],
+			"Michiel",
+			"happylinks",
+		);
+		expect(item.bucket).toBe("waiting");
+		expect(item.status).toBe("Review running");
+	});
+
 	test("keeps an unreviewed automation PR in attention", () => {
 		const auto = pr({
 			number: 2,

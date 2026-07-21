@@ -176,6 +176,8 @@ export interface OpenPr {
 	checks: { total: number; passed: number; failed: number; pending: number };
 	/** Person keys of teammates with a pending review request on this PR. */
 	reviewRequested?: string[];
+	/** An automated OpenSession review is still running for this PR. */
+	reviewActive?: boolean;
 }
 
 /** Every open PR in the repo, attributed to teammates by GitHub author. */

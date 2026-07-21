@@ -19,6 +19,7 @@ import {
   existingOpencodeTranscriptPath,
 } from "./opencode-transcript";
 import { configuredRepos, defaultRepo } from "./config";
+import { isLockHeld, readPrState } from "../agents/github/state";
 import type {
   UnifiedSession,
   SlackSessionFile,
@@ -798,13 +799,17 @@ export interface OpenPrEntry {
 	mergeable: string;
 	/** Person keys of teammates with a pending review request on this PR. */
 	reviewRequested: string[];
+	/** An automated OpenSession review is still running for this PR. */
+	reviewActive: boolean;
 }
 
 export function getOpenPrs(): OpenPrEntry[] {
 	const out: OpenPrEntry[] = [];
 	for (const [repoId, byBranch] of getPrsByRepo()) {
+		const ghRepo = configuredRepos()[repoId]?.ghRepo;
 		for (const [branch, pr] of byBranch) {
 			if (pr.state !== "OPEN") continue;
+			const reviewState = readPrState(pr.number, ghRepo);
 			out.push({
 				repo: repoId,
 				branch,
@@ -825,6 +830,9 @@ export function getOpenPrs(): OpenPrEntry[] {
 				checks: pr.checks,
 				mergeable: pr.mergeable,
 				reviewRequested: pr.reviewRequested,
+				reviewActive:
+					reviewState?.activeRun?.kind === "review" ||
+					isLockHeld("review", pr.number, ghRepo),
 			});
 		}
 	}

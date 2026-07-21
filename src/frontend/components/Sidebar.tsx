@@ -1133,7 +1133,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				})
 				.catch(() => {});
 		load();
-		const t = setInterval(load, 120_000);
+		// The response is backed by the server's PR cache, but also carries live
+		// OpenSession review state. Poll it often enough that a PR moves in and out
+		// of "Review running" promptly without triggering extra GitHub requests.
+		const t = setInterval(load, 15_000);
 		return () => {
 			alive = false;
 			clearInterval(t);
