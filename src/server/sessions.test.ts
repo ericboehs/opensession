@@ -7,6 +7,7 @@ import type { UnifiedSession } from "./types";
 let home: string;
 let priorHome: string | undefined;
 let priorChatsDir: string | undefined;
+let priorCodexHome: string | undefined;
 
 beforeAll(async () => {
 	priorHome = process.env.HOME;
@@ -14,14 +15,19 @@ beforeAll(async () => {
 	process.env.HOME = home;
 	mkdirSync(join(home, ".backstage-chats"), { recursive: true });
 	mkdirSync(join(home, ".slack-sessions"), { recursive: true });
-	// The HOME override only reaches paths.ts if nothing evaluated it yet —
-	// and bun test file order guarantees nothing (another test file importing
-	// the server graph poisons the cached BACKSTAGE_CHATS_DIR with the real
-	// store, which then leaks live sessions into these assertions). The live-
-	// binding seam repoints it regardless of who loaded paths.ts first; the
-	// cache-busted sessions.ts imports below re-read it at their load.
+	// The HOME override only reaches paths.ts / codex-accounts.ts if nothing
+	// evaluated them yet — and bun test file order guarantees nothing
+	// (another test file importing the server graph poisons the cached
+	// BACKSTAGE_CHATS_DIR / codex-accounts' HOME with the real store, which
+	// then leaks live sessions/rollouts into these assertions). The live-
+	// binding seams repoint them regardless of who loaded the module first;
+	// the cache-busted sessions.ts imports below re-read OPENSESSION_CHATS_DIR
+	// at their load (findCodexRollout is reached through a bare import of
+	// ./codex-accounts either way, so it needs the same live-binding seam).
 	const paths = await import("./paths");
 	priorChatsDir = paths.__setChatsDirForTest(join(home, ".backstage-chats"));
+	const codexAccounts = await import("./codex-accounts");
+	priorCodexHome = codexAccounts.__setCodexHomeForTest(home);
 });
 
 afterAll(async () => {
@@ -29,6 +35,9 @@ afterAll(async () => {
 	else process.env.HOME = priorHome;
 	if (priorChatsDir !== undefined) {
 		(await import("./paths")).__setChatsDirForTest(priorChatsDir);
+	}
+	if (priorCodexHome !== undefined) {
+		(await import("./codex-accounts")).__setCodexHomeForTest(priorCodexHome);
 	}
 	rmSync(home, { recursive: true, force: true });
 });

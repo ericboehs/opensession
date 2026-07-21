@@ -36,9 +36,23 @@ import { stripContext } from "./prompt-context";
 const HOME = process.env.HOME || "/home/ubuntu";
 
 /** The opencode SQLite store for the HOME opencode-runner passes through. */
-export const OPENCODE_DB_PATH =
+export let OPENCODE_DB_PATH =
   envAlias("OPENSESSION_OPENCODE_DB", "BACKSTAGE_OPENCODE_DB") ||
   `${HOME}/.local/share/opencode/opencode.db`;
+
+/**
+ * Test seam (bun tests only): repoint the sqlite store AFTER this module has
+ * been evaluated — mirrors paths.ts's __setChatsDirForTest. ES module
+ * bindings are live, so consumers that reference OPENCODE_DB_PATH (including
+ * ones that bare-imported this module before the test set env vars) pick the
+ * new value up regardless of import order. Returns the previous value so
+ * afterAll can restore it.
+ */
+export function __setOpencodeDbPathForTest(path: string): string {
+  const prev = OPENCODE_DB_PATH;
+  OPENCODE_DB_PATH = path;
+  return prev;
+}
 
 // ── Per-server DB sharding: locating a session's database ────────────────────
 //
@@ -149,11 +163,19 @@ export function resolveOpencodeDbFor(ocSessionId: string | null | undefined): st
  * code paths from before this module existed. The dir name follows the hashed
  * -cwd- convention and corresponds to no real checkout path.
  */
-export const OPENCODE_TRANSCRIPTS_DIR =
+export let OPENCODE_TRANSCRIPTS_DIR =
   envAlias(
     "OPENSESSION_OPENCODE_TRANSCRIPTS_DIR",
     "BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR",
   ) || `${HOME}/.claude/projects/-opencode-engine`;
+
+/** Test seam (bun tests only): see __setOpencodeDbPathForTest above — same
+ *  live-binding repoint, for the transcript mirror dir. */
+export function __setOpencodeTranscriptsDirForTest(dir: string): string {
+  const prev = OPENCODE_TRANSCRIPTS_DIR;
+  OPENCODE_TRANSCRIPTS_DIR = dir;
+  return prev;
+}
 
 export function getOpencodeTranscriptPath(ocSessionId: string): string {
   const safe = ocSessionId.replace(/[^A-Za-z0-9._-]/g, "_");

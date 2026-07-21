@@ -6,10 +6,17 @@ import { Database } from "bun:sqlite";
 import type { TranscriptEntry } from "./types";
 
 // Point both stores at scratch dirs BEFORE importing the module under test
-// (cache-busted import so the env overrides are read fresh).
+// (cache-busted import so the env overrides are read fresh). The cache-bust
+// keeps this test's own module instance isolated from the bare-imported one
+// other files (and production code) use — but process.env is process-wide,
+// so it must be restored, or a LATER test's own fresh envAlias(...) read
+// (e.g. opencode-state-paths.test.ts's consistency check) sees this scratch
+// path leak through.
 const scratch = mkdtempSync(join(tmpdir(), "oc-transcript-test-"));
 const dbPath = join(scratch, "opencode.db");
 const transcriptsDir = join(scratch, "transcripts");
+const priorDb = process.env.BACKSTAGE_OPENCODE_DB;
+const priorTranscriptsDir = process.env.BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR;
 process.env.BACKSTAGE_OPENCODE_DB = dbPath;
 process.env.BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR = transcriptsDir;
 
@@ -66,7 +73,13 @@ function seedDb() {
 }
 
 beforeAll(seedDb);
-afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+afterAll(() => {
+  if (priorDb === undefined) delete process.env.BACKSTAGE_OPENCODE_DB;
+  else process.env.BACKSTAGE_OPENCODE_DB = priorDb;
+  if (priorTranscriptsDir === undefined) delete process.env.BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR;
+  else process.env.BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR = priorTranscriptsDir;
+  rmSync(scratch, { recursive: true, force: true });
+});
 
 describe("isOpencodeSessionId", () => {
   test("recognizes ses_ ids only", () => {

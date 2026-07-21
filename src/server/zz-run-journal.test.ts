@@ -2,21 +2,29 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import * as mod from "./run-journal";
+import * as agent from "./agent-runner";
 
+// __setActiveRunsPathForTest repoints the LIVE ACTIVE_RUNS_PATH binding, so
+// agent-runner.ts's own (already-cached, possibly earlier-imported-with-the-
+// real-HOME) bare import of ./run-journal picks the scratch path up too —
+// unlike a plain env-var-before-import, which only affects whichever test
+// file happens to trigger the FIRST bare import of ./run-journal in the
+// whole `bun test` process (order-dependent, and this file previously
+// journaled into — and read back — the developer's real active-runs.json
+// when run as part of the full suite).
 let dir: string;
-let oldJournal: string | undefined;
+let oldJournal: string;
 let oldForceLimit: string | undefined;
 
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "backstage-run-journal-test-"));
-	oldJournal = process.env.BACKSTAGE_RUN_JOURNAL;
 	oldForceLimit = process.env.MICHAEL_FORCE_LIMIT;
-	process.env.BACKSTAGE_RUN_JOURNAL = join(dir, "active-runs.json");
+	oldJournal = mod.__setActiveRunsPathForTest(join(dir, "active-runs.json"));
 });
 
 afterEach(() => {
-	if (oldJournal === undefined) delete process.env.BACKSTAGE_RUN_JOURNAL;
-	else process.env.BACKSTAGE_RUN_JOURNAL = oldJournal;
+	mod.__setActiveRunsPathForTest(oldJournal);
 	if (oldForceLimit === undefined) delete process.env.MICHAEL_FORCE_LIMIT;
 	else process.env.MICHAEL_FORCE_LIMIT = oldForceLimit;
 	rmSync(dir, { recursive: true, force: true });
@@ -24,7 +32,6 @@ afterEach(() => {
 
 describe("run journal", () => {
 	it("preserves human-confirmed tool policy across restart drains", async () => {
-		const mod = await import(`./run-journal.ts?journal=${crypto.randomUUID()}`);
 		mod.journalSet({
 			runKey: "run-1",
 			bksSessionId: "bks-1",
@@ -50,8 +57,7 @@ describe("run journal", () => {
 
 	it("emits recovered run stream events during restart resume", async () => {
 		process.env.MICHAEL_FORCE_LIMIT = "1";
-		const journal = await import(`./run-journal.ts?journal=${crypto.randomUUID()}`);
-		journal.journalSet({
+		mod.journalSet({
 			runKey: "run-2",
 			bksSessionId: "bks-2",
 			claudeSessionId: "engine-2",
@@ -61,7 +67,6 @@ describe("run journal", () => {
 			startedAt: "2026-07-02T00:00:00.000Z",
 		});
 
-		const agent = await import(`./agent-runner.ts?resume=${crypto.randomUUID()}`);
 		const observed = new Promise<{ id: string; event: unknown }>((resolve) => {
 			const resumed = agent.resumeInterruptedRuns(
 				undefined,

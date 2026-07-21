@@ -11,21 +11,29 @@ import { describe, test, expect, afterAll } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-
-// Must be set BEFORE the modules under test are imported — the transcripts
-// dir is a module-level constant.
-const scratch = mkdtempSync(join(tmpdir(), "bks-oc-mirror-"));
-process.env.BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR = scratch;
-
-const { withOpencodeTranscriptMirror } = await import("./sandbox/adapters/bootstrap");
-const { getOpencodeTranscriptPath } = await import("./opencode-transcript");
-const { parseTranscript } = await import("./jsonl-parser");
-const { RESUME_CONTINUATION_PROMPT } = await import("./agent-runner");
+import { withOpencodeTranscriptMirror } from "./sandbox/adapters/bootstrap";
+import {
+  getOpencodeTranscriptPath,
+  __setOpencodeTranscriptsDirForTest,
+} from "./opencode-transcript";
+import { parseTranscript } from "./jsonl-parser";
+import { RESUME_CONTINUATION_PROMPT } from "./agent-runner";
 import type { StreamEvent } from "./run-events";
 import type { RunHostSpec } from "../runner-host/protocol";
 
+// __setOpencodeTranscriptsDirForTest repoints the LIVE OPENCODE_TRANSCRIPTS_DIR
+// binding, so bootstrap.ts's own (already-cached, possibly earlier-imported-
+// with-the-real-value) bare import of ./opencode-transcript picks the scratch
+// dir up too — unlike a plain env-var-before-import, which only affects
+// whichever test file happens to trigger the FIRST bare import of
+// ./opencode-transcript in the whole `bun test` process (order-dependent,
+// and this file previously read/wrote the developer's real transcript
+// mirror dir when run as part of the full suite).
+const scratch = mkdtempSync(join(tmpdir(), "bks-oc-mirror-"));
+const priorTranscriptsDir = __setOpencodeTranscriptsDirForTest(scratch);
+
 afterAll(() => {
-  delete process.env.BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR;
+  __setOpencodeTranscriptsDirForTest(priorTranscriptsDir);
   rmSync(scratch, { recursive: true, force: true });
 });
 

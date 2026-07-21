@@ -13,9 +13,23 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 // Overridable so a detached run host (src/runner-host/host.ts) journals to its
 // own per-host file instead of read-modify-writing the shared journal from
 // multiple processes concurrently.
-const ACTIVE_RUNS_PATH =
+let ACTIVE_RUNS_PATH =
   envAlias("OPENSESSION_RUN_JOURNAL", "BACKSTAGE_RUN_JOURNAL") ||
   `${OPENSESSION_CHATS_DIR}/active-runs.json`;
+
+/**
+ * Test seam (bun tests only): repoint the journal file AFTER this module has
+ * been evaluated — mirrors paths.ts's __setChatsDirForTest. ES module
+ * bindings are live, so callers that reach this module's functions through
+ * ANOTHER already-cached module (e.g. agent-runner.ts's bare import of this
+ * file) pick the new value up regardless of which file imported it first.
+ * Returns the previous value so afterAll can restore it.
+ */
+export function __setActiveRunsPathForTest(path: string): string {
+  const prev = ACTIVE_RUNS_PATH;
+  ACTIVE_RUNS_PATH = path;
+  return prev;
+}
 
 export interface ActiveRunRecord {
   runKey: string;
