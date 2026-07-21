@@ -5672,10 +5672,14 @@ a.workspace-info-check-row {
 	}
 }
 
-/* PR chip: one linked pill — "#1234 ↗". Left-click opens the PR on GitHub (the
-   trailing arrow marks the outbound link); right-click opens the actions menu
-   (Open in GitHub / Copy link / Copy number). The tone colour flows to text,
-   border and the hover tint via currentColor. */
+/* The PR number opens OpenSession's review; the adjacent outbound action opens
+   the provider. Keeping both controls grouped makes the internal path primary
+   without hiding GitHub. */
+.pr-num-chip-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
 .pr-num-chip {
 	display: inline-flex;
 	align-items: center;
@@ -5700,11 +5704,25 @@ a.workspace-info-check-row {
 .pr-num-chip:active {
 	background: color-mix(in srgb, currentColor 18%, transparent);
 }
-.pr-num-chip-arrow {
-	width: 20px;
-	height: 20px;
-	margin-right: -2px;
-	opacity: 0.8;
+.pr-num-chip-external {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	padding: 0;
+	border: 1px solid var(--border);
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
+	background: var(--control-surface);
+	box-shadow: var(--control-shadow);
+	text-decoration: none;
+	transition: background-color 120ms ease, scale 120ms ease;
+}
+.pr-num-chip-external:hover {
+	background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.pr-num-chip-external:active {
+	scale: 0.96;
 }
 /* Toned chips get a soft tinted fill (not the neutral white control surface) so
    the pill reads as its status colour — e.g. a green "Ready to merge" chip sits
@@ -5897,6 +5915,10 @@ a.workspace-info-check-row {
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 0 11px;
 	font-size: 13px;
+}
+.pr-head .pr-num-chip-external {
+	width: 32px;
+	height: 32px;
 }
 .pr-head .pr-bar-btn {
 	min-height: 32px;

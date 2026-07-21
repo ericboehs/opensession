@@ -1,4 +1,5 @@
 import { AGENT_NAME } from "../lib/brand";
+import { BASE_PATH } from "../lib/base";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { GitStatusInfo, PrDetails } from "../lib/types";
 import {
@@ -192,20 +193,21 @@ const PR_CHORD = /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 	: "Ctrl+G";
 
 /**
- * The PR chip: a single linked pill — `#1234 ↗`. Left-click opens the PR on
- * GitHub (the trailing arrow marks it as an outbound link); right-click opens a
- * context menu with the secondary actions (Open in GitHub / Copy link / Copy
- * number). This replaced the old segmented split button — one target, no
- * divider, and the less-common copy actions tuck into the menu.
+ * The PR chip links to OpenSession's review by default. GitHub remains a
+ * separate outbound action, while the context menu holds copy actions.
  */
 function PrNumberChip({
+	sessionId,
 	pr,
 	tone,
 }: {
+	sessionId: string;
 	pr: PrDetails;
 	tone: PrHeadline["tone"];
 }) {
 	const [copied, setCopied] = useState<"link" | "number" | null>(null);
+	const provider = providerFromUrl(pr.url);
+	const reviewUrl = `${BASE_PATH}/reviews/${encodeURIComponent(sessionId)}`;
 
 	const copy = useCallback((kind: "link" | "number", text: string) => {
 		navigator.clipboard?.writeText(text).then(() => {
@@ -215,53 +217,73 @@ function PrNumberChip({
 	}, []);
 
 	return (
-		<ContextMenu.Root>
-			<ContextMenu.Trigger
-				render={
-					<a
-						className={`pr-num-chip pr-num-chip-${tone}`}
-						href={pr.url}
-						target="_blank"
-						rel="noopener"
-						title={`#${pr.number} ${pr.title} (${PR_CHORD})`}
-					/>
-				}
-			>
-				#{pr.number}
-				<IconArrowUpRight size={20} className="pr-num-chip-arrow" />
-			</ContextMenu.Trigger>
-			<ContextMenu.Popup>
-				<ContextMenu.Item
+		<div className="pr-num-chip-group">
+			<ContextMenu.Root>
+				<ContextMenu.Trigger
 					render={
 						<a
-							href={pr.url}
-							target="_blank"
-							rel="noopener"
-							className="no-underline"
+							className={`pr-num-chip pr-num-chip-${tone}`}
+							href={reviewUrl}
+							title={`Review #${pr.number}: ${pr.title}`}
 						/>
 					}
 				>
-					<IconArrowUpRight size={20} />
-					<span className="grow">Open on {providerFromUrl(pr.url).name}</span>
-				</ContextMenu.Item>
-				<ContextMenu.Item
-					closeOnClick={false}
-					onClick={() => copy("link", pr.url)}
+					#{pr.number}
+				</ContextMenu.Trigger>
+				<ContextMenu.Popup>
+					<ContextMenu.Item
+						render={
+							<a
+								href={pr.url}
+								target="_blank"
+								rel="noopener"
+								className="no-underline"
+							/>
+						}
+					>
+						<IconArrowUpRight size={20} />
+						<span className="grow">Open on {provider.name}</span>
+					</ContextMenu.Item>
+					<ContextMenu.Item
+						closeOnClick={false}
+						onClick={() => copy("link", pr.url)}
+					>
+						{copied === "link" ? (
+							<IconCheck size={20} />
+						) : (
+							<IconCopy size={20} />
+						)}
+						<span className="grow">
+							{copied === "link" ? "Copied" : "Copy link"}
+						</span>
+					</ContextMenu.Item>
+					<ContextMenu.Item
+						closeOnClick={false}
+						onClick={() => copy("number", `#${pr.number}`)}
+					>
+						{copied === "number" ? (
+							<IconCheck size={20} />
+						) : (
+							<IconHash size={20} />
+						)}
+						<span className="grow">
+							{copied === "number" ? "Copied" : "Copy number"}
+						</span>
+					</ContextMenu.Item>
+				</ContextMenu.Popup>
+			</ContextMenu.Root>
+			<Tooltip label={`Open on ${provider.name} (${PR_CHORD})`}>
+				<a
+					className={`pr-num-chip-external pr-num-chip-${tone}`}
+					href={pr.url}
+					target="_blank"
+					rel="noopener"
+					aria-label={`Open pull request #${pr.number} on ${provider.name}`}
 				>
-					{copied === "link" ? <IconCheck size={20} /> : <IconCopy size={20} />}
-					<span className="grow">{copied === "link" ? "Copied" : "Copy link"}</span>
-				</ContextMenu.Item>
-				<ContextMenu.Item
-					closeOnClick={false}
-					onClick={() => copy("number", `#${pr.number}`)}
-				>
-					{copied === "number" ? <IconCheck size={20} /> : <IconHash size={20} />}
-					<span className="grow">
-						{copied === "number" ? "Copied" : "Copy number"}
-					</span>
-				</ContextMenu.Item>
-			</ContextMenu.Popup>
-		</ContextMenu.Root>
+					<IconArrowUpRight size={18} />
+				</a>
+			</Tooltip>
+		</div>
 	);
 }
 
@@ -501,7 +523,7 @@ export function PrStatusBar({
 	if (variant === "header") {
 		return (
 			<div className="pr-head">
-				<PrNumberChip pr={pr!} tone={headline.tone} />
+				<PrNumberChip sessionId={sessionId} pr={pr!} tone={headline.tone} />
 				{error && (
 					<span className="pr-bar-error" title={error}>
 						{error}
@@ -515,7 +537,7 @@ export function PrStatusBar({
 	return (
 		<div className={`pr-bar pr-bar-${headline.tone}`}>
 			{leading}
-			{pr && <PrNumberChip pr={pr} tone={headline.tone} />}
+			{pr && <PrNumberChip sessionId={sessionId} pr={pr} tone={headline.tone} />}
 			{headline.key !== "no-pr" && (
 				<Tooltip label="Open the PR tab">
 					<button
