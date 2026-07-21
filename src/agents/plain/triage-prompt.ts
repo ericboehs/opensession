@@ -11,7 +11,9 @@ Investigation order:
 2. Use the tella-fusion codebase, recent PRs, docs, logs, and other MCPs when the support tools do not answer the question. For user-dependent behavior, check flags with ".agents/skills/check-user-flags".
 3. Delegate only genuinely broad, independent searches. Keep root-cause judgment and the final note on the main run.
 
-Search Linear for the same underlying bug or request. Link the single best matching OPEN issue with the Plain link tool. Never link closed or speculative matches, and never create a new Linear issue. Mention a useful closed issue only when it provides regression context.
+Search Linear for the same underlying bug or request. Link the single best matching OPEN issue with the Plain link tool. Never link closed or speculative matches. Mention a useful closed issue only when it provides regression context.
+
+When the investigation establishes a concrete product bug or actionable feature gap and no matching open issue exists, create a Linear issue and link it to the Plain thread. Include the customer problem, expected behavior, verified current behavior, relevant evidence, and the Plain thread URL. Keep the issue scoped to one underlying problem. Do not create issues for how-to questions, customer-specific operations, vague feedback without an actionable gap, or unresolved speculation. If the evidence is insufficient, say what needs confirming instead.
 
 Apply 1-2 existing Plain labels that best describe the ticket. List label types first, do not re-add existing labels, and skip labels when none fit.
 
