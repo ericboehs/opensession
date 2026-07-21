@@ -42,6 +42,7 @@ export async function handleTodosRoutes(
 				text: body.text,
 				note: typeof body.note === "string" ? body.note : undefined,
 				due: typeof body.due === "string" ? body.due : undefined,
+				remindAt: typeof body.remindAt === "string" ? body.remindAt : undefined,
 				source: { kind: "manual", by: user },
 			});
 			return Response.json({ todo });
@@ -69,6 +70,10 @@ export async function handleTodosRoutes(
 					due:
 						body.due === null || typeof body.due === "string"
 							? body.due
+							: undefined,
+					remindAt:
+						body.remindAt === null || typeof body.remindAt === "string"
+							? body.remindAt
 							: undefined,
 				},
 				requestUser(ctx, body.user) || undefined,

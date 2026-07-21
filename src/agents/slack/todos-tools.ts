@@ -29,10 +29,19 @@ function text(s: string) {
 	return { content: [{ type: "text" as const, text: s }] };
 }
 
-function fmt(t: { id: string; text: string; status: string; note?: string; due?: string; createdAt: string }): string {
+function fmt(t: {
+	id: string;
+	text: string;
+	status: string;
+	note?: string;
+	due?: string;
+	remindAt?: string;
+	createdAt: string;
+}): string {
 	const extras = [
 		t.status !== "open" ? t.status : "",
 		t.due ? `due ${t.due}` : "",
+		t.remindAt ? `reminder ${t.remindAt}` : "",
 		t.note ? `note: ${t.note}` : "",
 	]
 		.filter(Boolean)
@@ -59,14 +68,26 @@ export function createTodosMcpServer(ctx: TodosToolContext) {
 					.string()
 					.optional()
 					.describe("Optional due date, YYYY-MM-DD."),
+				remindAt: z
+					.string()
+					.optional()
+					.describe(
+						"Optional reminder as an ISO 8601 UTC datetime (e.g. 2026-07-22T07:00:00Z) — the user gets a push notification + Slack DM at that moment. Set it whenever they say things like \"remind me tomorrow\" or \"tomorrow\": compute from the current date, and when no time is given default to 09:00 in their local timezone (Europe/Amsterdam unless you know otherwise).",
+					),
 			},
-			async (args: { text: string; note?: string; due?: string }) => {
+			async (args: {
+				text: string;
+				note?: string;
+				due?: string;
+				remindAt?: string;
+			}) => {
 				try {
 					const item = addTodo({
 						user: ctx.user,
 						text: args.text,
 						note: args.note,
 						due: args.due,
+						remindAt: args.remindAt,
 						source: {
 							kind: "session",
 							sessionId: ctx.sessionId,
@@ -139,6 +160,12 @@ export function createTodosMcpServer(ctx: TodosToolContext) {
 				text: z.string().optional().describe("New text."),
 				note: z.string().optional().describe("New context note ('' clears it)."),
 				due: z.string().optional().describe("New due date YYYY-MM-DD ('' clears it)."),
+				remindAt: z
+					.string()
+					.optional()
+					.describe(
+						"New reminder, ISO 8601 UTC datetime ('' clears it). Rescheduling makes it fire again.",
+					),
 				status: z
 					.enum(["open", "done", "dropped"])
 					.optional()
@@ -149,6 +176,7 @@ export function createTodosMcpServer(ctx: TodosToolContext) {
 				text?: string;
 				note?: string;
 				due?: string;
+				remindAt?: string;
 				status?: TodoStatus;
 			}) => {
 				try {
@@ -159,6 +187,7 @@ export function createTodosMcpServer(ctx: TodosToolContext) {
 							text: args.text,
 							note: args.note === "" ? null : args.note,
 							due: args.due === "" ? null : args.due,
+							remindAt: args.remindAt === "" ? null : args.remindAt,
 							status: args.status,
 						},
 						ctx.user,

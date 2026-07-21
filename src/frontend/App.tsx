@@ -751,6 +751,29 @@ function App() {
 	// The Desk overlay (⌘J / the floating desk button): todo list + standing
 	// concierge session on top of whatever view is open.
 	const [deskOpen, setDeskOpen] = useState(false);
+	// Open-todo count for the Desk FAB badge — refreshed on every todos_changed
+	// broadcast (any surface mutating the list: overlay, agent tools, other tabs).
+	const [todoCount, setTodoCount] = useState(0);
+	useEffect(() => {
+		let stale = false;
+		const load = async () => {
+			try {
+				const res = await fetch(
+					`${BASE_PATH}/api/todos?user=${encodeURIComponent(getCurrentUser())}`,
+				);
+				const data = (await res.json()) as { todos?: unknown[] };
+				if (!stale) setTodoCount(data.todos?.length ?? 0);
+			} catch {}
+		};
+		void load();
+		const unsub = addHandler((msg) => {
+			if (msg.type === "todos_changed") void load();
+		});
+		return () => {
+			stale = true;
+			unsub();
+		};
+	}, [addHandler]);
 	const searchOpenRef = useRef(searchOpen);
 	searchOpenRef.current = searchOpen;
 	const closePalette = React.useCallback(() => {
@@ -2153,6 +2176,11 @@ function App() {
 						title="Desk (⌘J)"
 					>
 						<IconDesk size={24} />
+						{todoCount > 0 && (
+							<span className="desk-fab-badge">
+								{todoCount > 9 ? "9+" : todoCount}
+							</span>
+						)}
 					</button>
 				)}
 

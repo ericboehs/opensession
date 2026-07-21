@@ -75,6 +75,9 @@ export interface TodoItem {
 	completedAt?: string;
 	note?: string;
 	due?: string;
+	/** Reminder: push + Slack DM fire once this ISO datetime passes. */
+	remindAt?: string;
+	remindedAt?: string;
 	source: { kind: "session" | "manual"; sessionId?: string; by?: string };
 }
 

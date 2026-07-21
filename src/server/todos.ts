@@ -14,9 +14,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { randomUUIDv7 } from "bun";
 import { audit } from "./audit";
+import { sendPushToUser } from "./push";
 import { stateDir } from "./rename-compat";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import { resolveTeammate } from "./shared/user-mappings";
 import { broadcastToAll } from "./ws-hub";
+import { openDirectMessage, sendSlackMessage } from "../agents/slack/slack-api";
 
 const TODOS_DIR = stateDir("todos");
 const TODOS_PATH = `${TODOS_DIR}/todos.json`;
@@ -44,6 +47,11 @@ export interface TodoItem {
 	note?: string;
 	/** Optional ISO due date (YYYY-MM-DD). */
 	due?: string;
+	/** Optional reminder: ISO datetime; the reminder ticker pushes + Slack-DMs
+	 *  the owner once this passes (while the item is still open). */
+	remindAt?: string;
+	/** Set once the reminder fired, so it fires exactly once. */
+	remindedAt?: string;
 	source: TodoSource;
 }
 
@@ -77,6 +85,7 @@ export function addTodo(input: {
 	text: string;
 	note?: string;
 	due?: string;
+	remindAt?: string;
 	source: TodoSource;
 }): TodoItem {
 	const text = (input.text || "").trim().slice(0, MAX_TEXT_CHARS);
@@ -93,6 +102,7 @@ export function addTodo(input: {
 		updatedAt: now,
 		...(input.note ? { note: input.note.trim().slice(0, MAX_NOTE_CHARS) } : {}),
 		...(input.due ? { due: input.due } : {}),
+		...(input.remindAt ? { remindAt: input.remindAt } : {}),
 		source: input.source,
 	};
 	const store = readStore();
@@ -143,6 +153,7 @@ export function updateTodo(
 		text?: string;
 		note?: string | null;
 		due?: string | null;
+		remindAt?: string | null;
 	},
 	by?: string,
 ): TodoItem {
@@ -162,6 +173,14 @@ export function updateTodo(
 		item.note = patch.note.trim().slice(0, MAX_NOTE_CHARS);
 	if (patch.due === null) delete item.due;
 	else if (typeof patch.due === "string") item.due = patch.due;
+	if (patch.remindAt === null) {
+		delete item.remindAt;
+		delete item.remindedAt;
+	} else if (typeof patch.remindAt === "string") {
+		item.remindAt = patch.remindAt;
+		// A (re)scheduled reminder fires again.
+		delete item.remindedAt;
+	}
 	item.updatedAt = now;
 	writeStore(store);
 	audit({
@@ -173,4 +192,66 @@ export function updateTodo(
 	});
 	changed(item.user);
 	return item;
+}
+
+// ── Reminders ────────────────────────────────────────────────────────────────
+// A 30s sweep fires each open todo's remindAt exactly once: Web Push to the
+// owner's devices + a Slack DM (prefixed as Michael, per the messaging rule).
+// Started once from opensession.ts's __backstageBooted block.
+
+const SWEEP_MS = 30_000;
+
+async function sweepReminders(): Promise<void> {
+	const store = readStore();
+	const now = new Date().toISOString();
+	const due = store.items.filter(
+		(t) => t.status === "open" && t.remindAt && !t.remindedAt && t.remindAt <= now,
+	);
+	if (!due.length) return;
+	for (const t of due) t.remindedAt = now;
+	writeStore(store);
+	for (const t of due) {
+		audit({ kind: "todo_reminder", user: t.user, message: t.text });
+		try {
+			await sendPushToUser(
+				t.user,
+				{
+					title: "Reminder",
+					body: t.text,
+					url: "/",
+					tag: `todo-reminder-${t.id}`,
+				},
+				{ dedupeKey: `todo-reminder-${t.id}` },
+			);
+		} catch (e) {
+			console.error("[todos] reminder push failed:", e);
+		}
+		try {
+			const teammate = resolveTeammate(t.user);
+			if (teammate) {
+				const channel = await openDirectMessage(teammate.slackId);
+				if (channel)
+					await sendSlackMessage(
+						channel,
+						`It's Michael — reminder from your Desk: ${t.text}`,
+					);
+			}
+		} catch (e) {
+			console.error("[todos] reminder Slack DM failed:", e);
+		}
+		changed(t.user);
+	}
+}
+
+let reminderTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Start the reminder sweep. Call once from the __backstageBooted block. */
+export function startTodoReminderTicker(): void {
+	if (reminderTimer) return;
+	reminderTimer = setInterval(() => {
+		sweepReminders().catch((e) =>
+			console.error("[todos] reminder sweep failed:", e),
+		);
+	}, SWEEP_MS);
+	console.log("[todos] reminder ticker started");
 }

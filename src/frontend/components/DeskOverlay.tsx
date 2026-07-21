@@ -33,6 +33,18 @@ interface DeskOverlayProps {
 	onOpenSession: (sessionId: string) => void;
 }
 
+/** Compact reminder stamp: time today, weekday+time within a week, else date. */
+function formatRemind(iso: string): string {
+	const d = new Date(iso);
+	if (Number.isNaN(d.getTime())) return iso;
+	const now = new Date();
+	const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+	if (d.toDateString() === now.toDateString()) return time;
+	if (Math.abs(d.getTime() - now.getTime()) < 6 * 86_400_000)
+		return `${d.toLocaleDateString([], { weekday: "short" })} ${time}`;
+	return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 function TodoRow({
 	todo,
 	onToggle,
@@ -71,6 +83,17 @@ function TodoRow({
 			{todo.due && (
 				<span className="shrink-0 text-[11.5px] font-medium text-faint">
 					{todo.due}
+				</span>
+			)}
+			{todo.remindAt && !done && (
+				<span
+					className={
+						"shrink-0 text-[11.5px] font-medium " +
+						(todo.remindedAt ? "text-faint line-through" : "text-dim")
+					}
+					title={todo.remindedAt ? "Reminder sent" : "Reminder scheduled"}
+				>
+					{formatRemind(todo.remindAt)}
 				</span>
 			)}
 			{todo.source.sessionId && (
