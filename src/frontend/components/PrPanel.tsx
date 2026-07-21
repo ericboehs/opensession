@@ -824,15 +824,23 @@ export function PrPanel({
                 Open session
               </button>
             )}
-            {pr.state === "OPEN" && !pr.isDraft &&
-              (needsReview ? (
-                <button
-                  className="rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface hover:opacity-90"
-                  onClick={() => setReviewOpen(true)}
-                >
-                  Finish review
-                </button>
-              ) : status.key === "ready" ? (
+            {pr.state === "OPEN" && !pr.isDraft && (
+              <>
+                {needsReview ? (
+                  <button
+                    className="rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface hover:opacity-90"
+                    onClick={() => setReviewOpen(true)}
+                  >
+                    Finish review
+                  </button>
+                ) : status.key !== "ready" ? (
+                  <button
+                    className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                    onClick={() => setReviewOpen(true)}
+                  >
+                    Review
+                  </button>
+                ) : null}
                 <button
                   className={`rounded-sm border px-3 py-2 text-xs font-semibold ${
                     confirmMerge
@@ -848,14 +856,8 @@ export function PrPanel({
                       ? "Confirm squash & merge"
                       : "Squash & merge"}
                 </button>
-              ) : (
-                <button
-                  className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
-                  onClick={() => setReviewOpen(true)}
-                >
-                  Review
-                </button>
-              ))}
+              </>
+            )}
           </div>
         </header>
 
