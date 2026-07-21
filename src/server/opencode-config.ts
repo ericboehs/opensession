@@ -94,9 +94,10 @@ export interface OpencodeProviderConfig {
 }
 
 /** Cerebras' public, open-weight model catalog. Kept here so adding a key in
- * Settings is enough to make the provider useful; OpenCode 1.17's bundled
- * models.dev snapshot predates Cerebras, so we inject it as an OpenAI-compatible
- * custom provider until the native catalog catches up. */
+ * Settings is enough to make the provider useful. models.dev has since grown a
+ * native cerebras entry (@ai-sdk/cerebras), but we keep the explicit
+ * OpenAI-compatible injection: it carries the `interleaved` reasoning-echo
+ * field the native catalog lacks, plus our variant/limit tuning. */
 export const CEREBRAS_PICKER_MODELS = [
   "gpt-oss-120b",
   "gemma-4-31b",
@@ -365,6 +366,10 @@ export function opencodeProviderOptions(): Record<string, Record<string, unknown
           "gpt-oss-120b": {
             name: "GPT OSS 120B",
             reasoning: true,
+            // Cerebras rejects the openai-compatible default `reasoning_content`
+            // on assistant history messages (400 Bad Request on every second
+            // turn) but accepts `reasoning` — route the echo through that field.
+            interleaved: { field: "reasoning" },
             tool_call: true,
             limit: { context: 131_072, output: 8_192 },
             variants: {
@@ -381,6 +386,7 @@ export function opencodeProviderOptions(): Record<string, Record<string, unknown
           "zai-glm-4.7": {
             name: "Z.ai GLM 4.7",
             reasoning: true,
+            interleaved: { field: "reasoning" },
             tool_call: true,
             limit: { context: 131_072, output: 8_192 },
           },

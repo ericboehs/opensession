@@ -57,9 +57,17 @@ describe("Cerebras provider", () => {
         baseURL: "https://api.cerebras.ai/v1",
       },
       models: {
-        "gpt-oss-120b": { name: "GPT OSS 120B", tool_call: true },
+        "gpt-oss-120b": {
+          name: "GPT OSS 120B",
+          tool_call: true,
+          interleaved: { field: "reasoning" },
+        },
         "gemma-4-31b": { name: "Gemma 4 31B", tool_call: true },
-        "zai-glm-4.7": { name: "Z.ai GLM 4.7", tool_call: true },
+        "zai-glm-4.7": {
+          name: "Z.ai GLM 4.7",
+          tool_call: true,
+          interleaved: { field: "reasoning" },
+        },
       },
     });
     expect(
