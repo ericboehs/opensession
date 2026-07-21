@@ -195,6 +195,7 @@ import {
   backfillOpencodeTranscriptGap,
   ensureOpencodeTranscriptFile,
   existingOpencodeTranscriptPath,
+  opencodeTurnLooksCompleted,
   recordOpencodeDbFor,
   transcriptLineUser,
   transcriptLineRunnerNotice,
@@ -3737,6 +3738,16 @@ export async function tryReattachOpencodeRun(
     const mine = statuses?.[ocSessionId];
     busy = !!mine && mine.type !== "idle";
   } catch {
+    return null;
+  }
+  if (!busy && opencodeTurnLooksCompleted(ocSessionId) === false) {
+    // The server reports idle but the store's trailing message never
+    // completed. Shared serverKeys survive drain-respawns, so this probe can
+    // land on a NEW server instance that never ran the turn — "finalizing
+    // from the engine store" would then fabricate a clean result for a turn
+    // that died with the old instance (bks-019f8530, 2026-07-21). A
+    // confirmed-incomplete turn falls back to the continuation re-prompt
+    // (caller handles null); no signal keeps the finalize path.
     return null;
   }
   const model = run.model || "";

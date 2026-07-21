@@ -503,6 +503,44 @@ export function hasOpencodeTranscript(
 }
 
 /**
+ * Did this session's LAST engine turn end cleanly? Reads the store directly:
+ * true  = trailing message is an assistant message with `time.completed`;
+ * false = trailing message is a user prompt with no assistant reply, or an
+ *         assistant message that never completed — the turn died mid-flight;
+ * null  = no messages / store unreadable (no signal — caller keeps its default).
+ */
+export function opencodeTurnLooksCompleted(
+  sessionId: string | null | undefined
+): boolean | null {
+  if (!sessionId) return null;
+  const dbPath = resolveOpencodeDbFor(sessionId);
+  if (!existsSync(dbPath)) return null;
+  let db: Database;
+  try {
+    db = new Database(dbPath, { readonly: true });
+  } catch {
+    return null;
+  }
+  try {
+    const row = db
+      .query(
+        "SELECT data FROM message WHERE session_id = ? ORDER BY time_created DESC, id DESC LIMIT 1"
+      )
+      .get(sessionId) as { data: string } | null;
+    if (!row) return null;
+    const data = JSON.parse(row.data) as MessageData & {
+      time?: { created?: number; completed?: number };
+    };
+    if (data.role === "user") return false;
+    return typeof data.time?.completed === "number";
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
+/**
  * The session's transcript as TranscriptEntry[] — user/assistant text plus
  * tool_use/tool_result pairs, in message order. Synthetic parts (opencode's
  * own injected text) are skipped, and `<backstage:context>` fences (engine
