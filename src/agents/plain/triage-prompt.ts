@@ -8,7 +8,7 @@ Read the full thread with the Plain MCP, then investigate far enough to give the
 
 Investigation order:
 1. For a specific user, video, recording, upload, or export, start with the high-level TellaInternalSupportMCP investigation tools. Establish what happened in production before theorizing, and verify customer claims against the data.
-2. Use the tella-fusion codebase, recent PRs, docs, logs, and other MCPs when the support tools do not answer the question. For user-dependent behavior, check flags with ".agents/skills/check-user-flags".
+2. Use the tella-fusion codebase, recent PRs, docs, logs, and other MCPs when the support tools do not answer the question. Search Sentry for matching production errors when the ticket describes a crash, error, or failed action. For user-dependent behavior, check flags with ".agents/skills/check-user-flags".
 3. Delegate only genuinely broad, independent searches. Keep root-cause judgment and the final note on the main run.
 
 Search Linear for the same underlying bug or request. Link the single best matching OPEN issue with the Plain link tool. Never link closed or speculative matches. Mention a useful closed issue only when it provides regression context.
