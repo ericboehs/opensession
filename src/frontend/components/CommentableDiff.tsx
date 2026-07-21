@@ -2,9 +2,11 @@ import React, { useMemo, useState, useRef, useCallback, useEffect } from "react"
 import { parsePatchFiles } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import type { SelectedLineRange, FileDiffMetadata, DiffLineAnnotation } from "@pierre/diffs";
+import type { DiffFileGroup } from "../lib/types";
 import { IconChevronRight, IconUndo } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { useResolvedTheme } from "./CodeHighlight";
+import { PixelSpinner } from "./PixelSpinner";
 
 export interface CommentTarget {
   path: string;
@@ -40,6 +42,10 @@ interface Props {
    * endpoint). Non-image files are unaffected.
    */
   imageSrcs?: (file: FileDiffMetadata) => DiffImageSrcs | null;
+  /** AI-generated logical categories. Omitted while generation is pending or
+   *  unavailable, preserving the ordinary flat file list. */
+  groups?: DiffFileGroup[];
+  groupsLoading?: boolean;
   /**
    * Review-batching mode: when provided, already-added comments render inline as
    * pending cards (the parent owns the list and submits them as one review).
@@ -115,6 +121,8 @@ export function CommentableDiff({
   onRemovePending,
   onDiscard,
   imageSrcs,
+  groups,
+  groupsLoading,
 }: Props) {
   const reviewMode = pendingComments !== undefined;
   const theme = useResolvedTheme();
@@ -129,7 +137,12 @@ export function CommentableDiff({
   // Files render collapsed by default (just the header row) — mounting a
   // FileDiff parses + highlights on the main thread, so a large change would
   // otherwise block the tab. `expanded` holds the indices the user opened.
-  const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(
+    () => new Set(files.slice(0, defaultExpandedFiles).map((_, index) => index)),
+  );
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const toggle = useCallback((i: number) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -140,10 +153,35 @@ export function CommentableDiff({
   }, []);
   const allOpen = expanded.size >= files.length && files.length > 0;
   const toggleAll = useCallback(() => {
-    setExpanded((prev) => (prev.size >= files.length ? new Set() : new Set(files.map((_, i) => i))));
+    setExpanded((prev) => {
+      if (prev.size >= files.length) return new Set();
+      setCollapsedGroups(new Set());
+      return new Set(files.map((_, i) => i));
+    });
   }, [files]);
 
   const stats = useMemo(() => files.map(fileStats), [files]);
+  const groupedFiles = useMemo(() => {
+    if (!groups?.length) return null;
+    const byPath = new Map(files.map((file, index) => [file.name, index]));
+    const used = new Set<number>();
+    const resolved = groups.flatMap((group) => {
+      const indices = group.files.flatMap((path) => {
+        const index = byPath.get(path);
+        if (index === undefined || used.has(index)) return [];
+        used.add(index);
+        return [index];
+      });
+      return indices.length ? [{ ...group, indices }] : [];
+    });
+    const remaining = files.flatMap((_, index) => (used.has(index) ? [] : [index]));
+    if (remaining.length) resolved.push({ title: "Other", files: [], indices: remaining });
+    return resolved.length >= 2 ? resolved : null;
+  }, [files, groups]);
+
+  useEffect(() => {
+    setCollapsedGroups(new Set());
+  }, [groups]);
 
   // Discard is destructive + irreversible, so it's a two-click arm/confirm:
   // the first click arms a row (button flips to "Discard changes?"), the second
@@ -308,110 +346,169 @@ export function CommentableDiff({
     return <div className="panel-placeholder">Nothing to display</div>;
   }
 
+  const renderFile = (file: FileDiffMetadata, i: number) => {
+    const pend = pendingByFile.get(file.name) || NO_ANNOTATIONS;
+    const isDraftFile = draft?.fileIndex === i;
+    // Keep a file open while it holds a draft (the comment form lives inside
+    // the diff) or already-added pending comments (so they stay visible).
+    const isOpen = expanded.has(i) || isDraftFile || pend.length > 0;
+    const s = stats[i];
+    const slash = file.name.lastIndexOf("/");
+    const dir = slash >= 0 ? file.name.slice(0, slash + 1) : "";
+    const base = slash >= 0 ? file.name.slice(slash + 1) : file.name;
+    const annotations = isDraftFile
+      ? [
+          ...pend,
+          {
+            side: (draft!.range.side === "deletions" ? "deletions" : "additions") as "additions" | "deletions",
+            lineNumber: Math.max(draft!.range.start, draft!.range.end),
+            metadata: { kind: "draft" as const },
+          },
+        ]
+      : pend;
+
+    return (
+      <div className="diff-file" key={`${file.name}-${i}`} data-diff-file={file.name}>
+        <div
+          className="diff-file-header"
+          role="button"
+          tabIndex={0}
+          aria-expanded={isOpen}
+          onClick={() => {
+            disarm();
+            toggle(i);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              disarm();
+              toggle(i);
+            }
+          }}
+        >
+          <IconChevronRight
+            size={16}
+            className={`diff-file-caret ${isOpen ? "diff-file-caret-open" : ""}`}
+          />
+          <span className="diff-file-name">
+            {dir && <span className="diff-file-dir">{dir}</span>}
+            <span className="diff-file-base">{base}</span>
+          </span>
+          {pend.length > 0 && <span className="diff-file-comments">{pend.length}</span>}
+          {onDiscard && (
+            <Tooltip
+              label={
+                discarding === file.name
+                  ? "Discarding…"
+                  : armed === file.name
+                    ? "Click again to discard"
+                    : "Discard changes"
+              }
+            >
+              <button
+                type="button"
+                className={`diff-file-discard ${armed === file.name ? "diff-file-discard-armed" : ""}`}
+                disabled={discarding === file.name}
+                aria-label="Discard this file's changes (reset to base)"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDiscard(file);
+                }}
+              >
+                <IconUndo size={20} />
+              </button>
+            </Tooltip>
+          )}
+          <span className="diff-file-stats">
+            {s.add > 0 && <span className="diff-add">+{s.add}</span>}
+            {s.del > 0 && <span className="diff-del">−{s.del}</span>}
+          </span>
+        </div>
+        {isOpen &&
+          (imageSrcs && IMAGE_EXT.test(file.name) ? (
+            <ImageDiffRow file={file} srcs={imageSrcs(file)} />
+          ) : (
+            <FileDiffRow
+              key={theme}
+              file={file}
+              fileIndex={i}
+              theme={theme}
+              annotations={annotations}
+              selectedLines={isDraftFile ? draft!.range : null}
+              onSelect={handleSelect}
+              renderAnnotation={renderAnnotation}
+            />
+          ))}
+      </div>
+    );
+  };
+
   return (
     <div className="commentable-diff">
       {confirmation && <div className="diff-comment-confirmation">{confirmation}</div>}
       <div className="diff-file-toolbar">
+        {groupsLoading && (
+          <span className="diff-groups-loading" role="status">
+            <PixelSpinner cycling={false} className="text-faint" />
+            Organizing files…
+          </span>
+        )}
+        {!groupsLoading && groupedFiles && (
+          <span className="diff-groups-ready">AI organized</span>
+        )}
         <button type="button" className="diff-file-toggle-all" onClick={toggleAll}>
           {allOpen ? "Collapse all" : "Expand all"}
         </button>
       </div>
-      {files.map((file, i) => {
-        const pend = pendingByFile.get(file.name) || NO_ANNOTATIONS;
-        const isDraftFile = draft?.fileIndex === i;
-        // Keep a file open while it holds a draft (the comment form lives inside
-        // the diff) or already-added pending comments (so they stay visible).
-        const isOpen = expanded.has(i) || isDraftFile || pend.length > 0;
-        const s = stats[i];
-        const slash = file.name.lastIndexOf("/");
-        const dir = slash >= 0 ? file.name.slice(0, slash + 1) : "";
-        const base = slash >= 0 ? file.name.slice(slash + 1) : file.name;
-        const annotations = isDraftFile
-          ? [
-              ...pend,
-              {
-                side: (draft!.range.side === "deletions" ? "deletions" : "additions") as "additions" | "deletions",
-                lineNumber: Math.max(draft!.range.start, draft!.range.end),
-                metadata: { kind: "draft" as const },
-              },
-            ]
-          : pend;
-
-        return (
-          <div className="diff-file" key={`${file.name}-${i}`} data-diff-file={file.name}>
-            <div
-              className="diff-file-header"
-              role="button"
-              tabIndex={0}
-              aria-expanded={isOpen}
-              onClick={() => {
-                disarm();
-                toggle(i);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  disarm();
-                  toggle(i);
-                }
-              }}
-            >
-              <IconChevronRight
-                size={16}
-                className={`diff-file-caret ${isOpen ? "diff-file-caret-open" : ""}`}
-              />
-              <span className="diff-file-name">
-                {dir && <span className="diff-file-dir">{dir}</span>}
-                <span className="diff-file-base">{base}</span>
-              </span>
-              {pend.length > 0 && <span className="diff-file-comments">{pend.length}</span>}
-              {onDiscard && (
-                <Tooltip
-                  label={
-                    discarding === file.name
-                      ? "Discarding…"
-                      : armed === file.name
-                        ? "Click again to discard"
-                        : "Discard changes"
+      {groupedFiles
+        ? groupedFiles.map((group) => {
+            const groupKey = `${group.title}\0${group.indices.join(",")}`;
+            const collapsed = collapsedGroups.has(groupKey);
+            const totals = group.indices.reduce(
+              (sum, index) => ({
+                add: sum.add + stats[index].add,
+                del: sum.del + stats[index].del,
+              }),
+              { add: 0, del: 0 },
+            );
+            return (
+              <section className="diff-file-group" key={groupKey}>
+                <button
+                  type="button"
+                  className="diff-file-group-header"
+                  data-diff-group-files={JSON.stringify(
+                    group.indices.map((index) => files[index].name),
+                  )}
+                  aria-expanded={!collapsed}
+                  onClick={() =>
+                    setCollapsedGroups((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(groupKey)) next.delete(groupKey);
+                      else next.add(groupKey);
+                      return next;
+                    })
                   }
                 >
-                  <button
-                    type="button"
-                    className={`diff-file-discard ${armed === file.name ? "diff-file-discard-armed" : ""}`}
-                    disabled={discarding === file.name}
-                    aria-label="Discard this file's changes (reset to base)"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDiscard(file);
-                    }}
-                  >
-                    <IconUndo size={20} />
-                  </button>
-                </Tooltip>
-              )}
-              <span className="diff-file-stats">
-                {s.add > 0 && <span className="diff-add">+{s.add}</span>}
-                {s.del > 0 && <span className="diff-del">−{s.del}</span>}
-              </span>
-            </div>
-            {isOpen &&
-              (imageSrcs && IMAGE_EXT.test(file.name) ? (
-                <ImageDiffRow file={file} srcs={imageSrcs(file)} />
-              ) : (
-                <FileDiffRow
-                  key={theme}
-                  file={file}
-                  fileIndex={i}
-                  theme={theme}
-                  annotations={annotations}
-                  selectedLines={isDraftFile ? draft!.range : null}
-                  onSelect={handleSelect}
-                  renderAnnotation={renderAnnotation}
-                />
-              ))}
-          </div>
-        );
-      })}
+                  <IconChevronRight
+                    size={16}
+                    className={`diff-file-caret ${collapsed ? "" : "diff-file-caret-open"}`}
+                  />
+                  <span className="diff-file-group-title">{group.title}</span>
+                  <span className="diff-file-group-count">{group.indices.length}</span>
+                  <span className="diff-file-group-stats">
+                    {totals.add > 0 && <span className="diff-add">+{totals.add}</span>}
+                    {totals.del > 0 && <span className="diff-del">−{totals.del}</span>}
+                  </span>
+                </button>
+                {!collapsed && (
+                  <div className="diff-file-group-files">
+                    {group.indices.map((index) => renderFile(files[index], index))}
+                  </div>
+                )}
+              </section>
+            );
+          })
+        : files.map(renderFile)}
       <div className="diff-comment-hint">
         {reviewMode
           ? "Click a line number (drag for a range) to add a comment. They stay pending until you finish the review."

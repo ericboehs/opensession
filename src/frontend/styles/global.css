@@ -5022,8 +5022,29 @@ a.workspace-info-check-row {
 
 .diff-file-toolbar {
 	display: flex;
+	align-items: center;
 	justify-content: flex-end;
 	margin-bottom: -4px;
+}
+.diff-groups-loading,
+.diff-groups-ready {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	margin-right: auto;
+	color: var(--text-faint);
+	font-size: 12px;
+}
+.diff-groups-ready::before {
+	content: "";
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: var(--accent);
+}
+.diff-groups-loading .pixel-spinner {
+	width: 12px;
+	height: 12px;
 }
 .diff-file-toggle-all {
 	background: none;
@@ -5037,6 +5058,55 @@ a.workspace-info-check-row {
 }
 .diff-file-toggle-all:hover {
 	color: var(--text);
+}
+
+/* AI-organized file categories. Group headers are deliberately quieter than
+   file rows: they provide scan structure without competing with filenames. */
+.diff-file-group {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+}
+.diff-file-group + .diff-file-group {
+	margin-top: 4px;
+}
+.diff-file-group-header {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	width: 100%;
+	padding: 4px 3px;
+	border: none;
+	background: transparent;
+	color: var(--text-dim);
+	font-family: var(--sans);
+	text-align: left;
+	cursor: pointer;
+}
+.diff-file-group-header:hover {
+	color: var(--text);
+}
+.diff-file-group-title {
+	font-size: 13px;
+	font-weight: 650;
+}
+.diff-file-group-count {
+	color: var(--text-faint);
+	font-size: 11.5px;
+}
+.diff-file-group-stats {
+	display: flex;
+	gap: 8px;
+	margin-left: auto;
+	font-family: var(--mono);
+	font-size: 11.5px;
+}
+.diff-file-group-files {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+	padding-left: 12px;
+	border-left: 1px solid var(--border);
 }
 
 /* Collapsible per-file row — the header is always shown; the diff body mounts

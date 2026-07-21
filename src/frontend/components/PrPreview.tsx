@@ -1,10 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PrDetails, UnifiedSession, WSServerMessage } from "../lib/types";
+import type {
+	DiffFileGroup,
+	PrDetails,
+	UnifiedSession,
+	WSServerMessage,
+} from "../lib/types";
 import {
 	API_BASE,
 	fetchModels,
 	fetchPrPreview,
 	fetchPrPreviewDiff,
+	fetchPrPreviewDiffGroups,
 	fetchPrPreviewGuide,
 	relativeTime,
 	type ModelOption,
@@ -61,6 +67,12 @@ export function PrPreview({
 	const draftKey = `pr-preview:${repo}:${branch}`;
 	const [pr, setPr] = useState<PrDetails | null>(null);
 	const [diff, setDiff] = useState<PrDiffData | null>(null);
+	const [diffGroups, setDiffGroups] = useState<{
+		oid: string;
+		groups: DiffFileGroup[] | null;
+	} | null>(null);
+	const [diffGroupsLoading, setDiffGroupsLoading] = useState(false);
+	const [diffGroupsRetry, setDiffGroupsRetry] = useState(0);
 	const [tab, setTab] = useState<"overview" | "changes" | "guide">("overview");
 	const [guide, setGuide] = useState<ReviewGuideData | null>(null);
 	const [guideLoading, setGuideLoading] = useState(false);
@@ -102,6 +114,40 @@ export function PrPreview({
 		const interval = setInterval(load, 60000);
 		return () => clearInterval(interval);
 	}, [load]);
+
+	useEffect(() => {
+		const files = pr?.files || [];
+		if (!diff?.patch || files.length < 3) {
+			setDiffGroups(null);
+			setDiffGroupsLoading(false);
+			return;
+		}
+		setDiffGroups(null);
+		setDiffGroupsLoading(true);
+		let live = true;
+		let retryTimer: ReturnType<typeof setTimeout> | undefined;
+		const retryLater = () => {
+			retryTimer = setTimeout(() => setDiffGroupsRetry((attempt) => attempt + 1), 125_000);
+		};
+		fetchPrPreviewDiffGroups(repo, files, diff.patch)
+			.then((result) => {
+				if (!live) return;
+				setDiffGroups({ oid: diff.headRefOid, groups: result.groups });
+				if (!result.groups) retryLater();
+			})
+			.catch(() => {
+				if (!live) return;
+				setDiffGroups({ oid: diff.headRefOid, groups: null });
+				retryLater();
+			})
+			.finally(() => {
+				if (live) setDiffGroupsLoading(false);
+			});
+		return () => {
+			live = false;
+			if (retryTimer) clearTimeout(retryTimer);
+		};
+	}, [repo, branch, diff?.headRefOid, pr?.files?.length, diffGroupsRetry]);
 
 	useEffect(() => {
 		fetchModels()
@@ -490,6 +536,12 @@ export function PrPreview({
 								<div className="pr-diff-section">
 									<CommentableDiff
 										patch={diff.patch}
+										groups={
+											diffGroups?.oid === diff.headRefOid
+												? diffGroups.groups || undefined
+												: undefined
+										}
+										groupsLoading={diffGroupsLoading}
 										submitLabel="Add comment"
 										placeholder=""
 										disabled

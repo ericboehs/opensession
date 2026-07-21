@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import type {
   GitStatusInfo,
+  DiffFileGroup,
   PrCheck,
   PrComment,
   PrDetails,
@@ -13,6 +14,7 @@ import {
   API_BASE,
   fetchPr,
   fetchPrDiff,
+  fetchPrDiffGroups,
   fetchGitStatus,
   fetchReviewGuide,
   gitPushApi,
@@ -286,6 +288,12 @@ export function PrPanel({
   const [pr, setPr] = useState<PrDetails | null>(null);
   const [git, setGit] = useState<GitStatusInfo | null>(null);
   const [diff, setDiff] = useState<PrDiffData | null>(null);
+  const [diffGroups, setDiffGroups] = useState<{
+    oid: string;
+    groups: DiffFileGroup[] | null;
+  } | null>(null);
+  const [diffGroupsLoading, setDiffGroupsLoading] = useState(false);
+  const [diffGroupsRetry, setDiffGroupsRetry] = useState(0);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<PendingComment[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -352,6 +360,53 @@ export function PrPanel({
     const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
   }, [load]);
+
+  useEffect(() => {
+    const files = pr?.files || [];
+    if (!diff?.patch || files.length < 3) {
+      setDiffGroups(null);
+      setDiffGroupsLoading(false);
+      return;
+    }
+    setDiffGroups(null);
+    setDiffGroupsLoading(true);
+    let live = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const retryLater = () => {
+      retryTimer = setTimeout(() => setDiffGroupsRetry((attempt) => attempt + 1), 125_000);
+    };
+    fetchPrDiffGroups(
+      sessionId,
+      files,
+      diff.patch,
+      active?.repo,
+      active?.branch,
+    )
+      .then((result) => {
+        if (!live) return;
+        setDiffGroups({ oid: diff.headRefOid, groups: result.groups });
+        if (!result.groups) retryLater();
+      })
+      .catch(() => {
+        if (!live) return;
+        setDiffGroups({ oid: diff.headRefOid, groups: null });
+        retryLater();
+      })
+      .finally(() => {
+        if (live) setDiffGroupsLoading(false);
+      });
+    return () => {
+      live = false;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [
+    sessionId,
+    active?.repo,
+    active?.branch,
+    diff?.headRefOid,
+    pr?.files?.length,
+    diffGroupsRetry,
+  ]);
 
   const loadGuide = useCallback(async () => {
     setGuideLoading(true);
@@ -536,7 +591,22 @@ export function PrPanel({
     const root = rootRef.current;
     if (!root) return;
     const el = root.querySelector<HTMLElement>(`[data-diff-file="${CSS.escape(path)}"]`);
-    if (!el) return;
+    if (!el) {
+      const group = [...root.querySelectorAll<HTMLElement>("[data-diff-group-files]")].find(
+        (header) => {
+          try {
+            return JSON.parse(header.dataset.diffGroupFiles || "[]").includes(path);
+          } catch {
+            return false;
+          }
+        },
+      );
+      if (group?.getAttribute("aria-expanded") === "false") {
+        group.click();
+        requestAnimationFrame(() => scrollToFile(path));
+      }
+      return;
+    }
     el.scrollIntoView({ behavior: "smooth", block: "start" });
     const header = el.querySelector<HTMLElement>(".diff-file-header");
     if (header && header.getAttribute("aria-expanded") === "false") header.click();
@@ -878,14 +948,6 @@ export function PrPanel({
               </button>
             </div>
 
-            {checksOpen && checkSummary.checks.length > 0 && (
-              <div className="mb-5 rounded-sm border border-line bg-panel p-2">
-                {checkSummary.checks.slice(0, 8).map((check, index) => (
-                  <CheckRow key={index} check={check} />
-                ))}
-              </div>
-            )}
-
             {!!bodyHtml && (
               <>
                 <div className="mb-2 px-2 text-[11px] font-medium text-faint">
@@ -964,7 +1026,7 @@ export function PrPanel({
                   Guide
                 </button>
                 <button
-                  className={`rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "diff" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
+                  className={`shrink-0 rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "diff" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
                   onClick={() => setDiffView("diff")}
                 >
                   Files
@@ -1524,6 +1586,8 @@ export function PrPanel({
             ) : (
               <CommentableDiff
                 patch={diff.patch}
+                groups={diffGroups?.oid === diff.headRefOid ? diffGroups.groups || undefined : undefined}
+                groupsLoading={diffGroupsLoading}
                 submitLabel="Add comment"
                 placeholder={`Comment on #${diff.number} — added to your pending review…`}
                 pendingComments={pending}

@@ -7,6 +7,7 @@
  */
 
 import type { RouteContext } from "./context";
+import type { DiffGroupFile } from "../diff-groups";
 import { type SessionDiff, discardSessionFile, getSessionDiff } from "../git-diff";
 import { getGitStatus, gitPull, gitPush } from "../git-status";
 import { imageContentType, imageHeaders } from "../image-mime";
@@ -16,6 +17,17 @@ import { getRepo, repoForPath } from "../worktree";
 import { $ } from "bun";
 import { existsSync } from "fs";
 import { resolve } from "path";
+
+function isDiffGroupFile(file: unknown): file is DiffGroupFile {
+	if (typeof file !== "object" || file === null) return false;
+	const candidate = file as Partial<DiffGroupFile>;
+	return (
+		typeof candidate.path === "string" &&
+		candidate.path.length <= 1000 &&
+		typeof candidate.additions === "number" &&
+		typeof candidate.deletions === "number"
+	);
+}
 
 export async function handleSessionGitRoutes(
 	ctx: RouteContext,
@@ -87,6 +99,41 @@ export async function handleSessionGitRoutes(
 		);
 
 		return Response.json({ repos });
+	}
+
+	// AI file categories for the live worktree diff. This mirrors PR grouping,
+	// but targets the top-level session Changes tab (including uncommitted edits).
+	if (
+		path.match(/^\/backstage\/api\/sessions\/(.+)\/diff-groups$/) &&
+		req.method === "POST"
+	) {
+		const sessionId = decodeURIComponent(
+			path.match(/^\/backstage\/api\/sessions\/(.+)\/diff-groups$/)![1],
+		);
+		const session = findSession(sessionId);
+		if (!session)
+			return Response.json({ error: "Session not found" }, { status: 404 });
+		const body = (await req.json().catch(() => ({}))) as {
+			repo?: string;
+			files?: unknown[];
+			patch?: string;
+		};
+		const repoIds = [
+			session.repo ||
+				(session.worktreeDir ? repoForPath(session.worktreeDir).id : "tella-fusion"),
+			...(session.attachedRepos || []).map((repo) => repo.repo),
+		];
+		if (!body.repo || !repoIds.includes(body.repo))
+			return Response.json({ error: "Repo not in session" }, { status: 400 });
+		if (!Array.isArray(body.files) || typeof body.patch !== "string")
+			return Response.json({ error: "Invalid diff metadata" }, { status: 400 });
+		const files = body.files.filter(isDiffGroupFile);
+		if (files.length !== body.files.length)
+			return Response.json({ error: "Invalid diff metadata" }, { status: 400 });
+		const { getDiffFileGroups } = await import("../diff-groups");
+		return Response.json({
+			groups: await getDiffFileGroups(getRepo(body.repo).ghRepo, files, body.patch),
+		});
 	}
 
 	// Discard one file's changes in a session worktree (hover action on a

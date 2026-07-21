@@ -17,6 +17,25 @@ import { getOpenPrs } from "../sessions";
 import { getRepo } from "../worktree";
 import { watch } from "fs";
 
+function validDiffGroupingInput(body: any): {
+	files: Array<{
+		path: string;
+		additions: number;
+		deletions: number;
+	}>;
+	patch: string;
+} | null {
+	if (!Array.isArray(body?.files) || typeof body?.patch !== "string") return null;
+	const files = body.files.filter(
+		(file: any) =>
+			typeof file?.path === "string" &&
+			file.path.length <= 1000 &&
+			typeof file.additions === "number" &&
+			typeof file.deletions === "number",
+	);
+	return files.length === body.files.length ? { files, patch: body.patch } : null;
+}
+
 export async function handlePrRoutes(
 	ctx: RouteContext,
 ): Promise<Response | undefined> {
@@ -165,6 +184,34 @@ export async function handlePrRoutes(
 		return Response.json(await getPrDiff(target.branch, target.ghRepo));
 	}
 
+	// AI-powered file categories for the PR Changes view. Kept separate from
+	// the diff endpoint so loading a review never blocks on model generation.
+	if (
+		path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-diff-groups$/) &&
+		req.method === "POST"
+	) {
+		const sessionId = decodeURIComponent(
+			path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-diff-groups$/)![1],
+		);
+		const session = findSession(sessionId);
+		if (!session)
+			return Response.json({ error: "Session not found" }, { status: 404 });
+		const target = resolvePrTarget(
+			session,
+			url.searchParams.get("repo"),
+			url.searchParams.get("branch"),
+		);
+		if (!target) return Response.json({ groups: null });
+		const body = await req.json().catch(() => ({}));
+		const { getDiffFileGroups } = await import("../diff-groups");
+		const input = validDiffGroupingInput(body);
+		if (!input)
+			return Response.json({ error: "Invalid diff metadata" }, { status: 400 });
+		return Response.json({
+			groups: await getDiffFileGroups(target.ghRepo, input.files, input.patch),
+		});
+	}
+
 	// Link a PR to the session (a follow-up PR, or one in another repo/branch).
 	// Body: { url } or { repo, number } or { repo, branch }.
 	if (
@@ -290,6 +337,17 @@ export async function handlePrRoutes(
 			return Response.json({ error: "branch required" }, { status: 400 });
 		const repo = getRepo(url.searchParams.get("repo") || undefined);
 		return Response.json(await getPrDiff(branch, repo.ghRepo));
+	}
+	if (path === "/backstage/api/pr-preview-diff-groups" && req.method === "POST") {
+		const repo = getRepo(url.searchParams.get("repo") || undefined);
+		const body = await req.json().catch(() => ({}));
+		const input = validDiffGroupingInput(body);
+		if (!input)
+			return Response.json({ error: "Invalid diff metadata" }, { status: 400 });
+		const { getDiffFileGroups } = await import("../diff-groups");
+		return Response.json({
+			groups: await getDiffFileGroups(repo.ghRepo, input.files, input.patch),
+		});
 	}
 	// Session-less review guide for the preview's Guide tab — getReviewGuide
 	// only needs branch+ghRepo (same generation/cache as the session route).

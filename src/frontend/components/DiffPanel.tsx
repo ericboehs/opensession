@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, startTransition } from "react";
-import type { RepoDiff } from "../lib/types";
-import { API_BASE, fetchDiff, discardDiffFile } from "../lib/api";
+import type { DiffFileGroup, RepoDiff } from "../lib/types";
+import { API_BASE, fetchDiff, fetchDiffGroups, discardDiffFile } from "../lib/api";
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
@@ -80,9 +80,56 @@ export function useSessionDiff(
 
 export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) {
   const [active, setActive] = useState(0);
+  const [groups, setGroups] = useState<{
+    repo: string;
+    patch: string;
+    groups: DiffFileGroup[] | null;
+  } | null>(null);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [groupsRetry, setGroupsRetry] = useState(0);
   // Use the caller's shared diff state when given; otherwise self-poll.
   const self = useSessionDiff(sessionId, { enabled: !diff, isRunning });
   const { repos, loading, error, reload } = diff ?? self;
+
+  const changed = (repos || []).filter(
+    (repo) => repo.diff.rawPatch?.trim() || repo.diff.files.length > 0,
+  );
+  const cur = changed[Math.min(active, changed.length - 1)] || changed[0] || null;
+  const groupPatch = cur?.diff.rawPatch || "";
+  const groupFileCount = cur?.diff.files.length || 0;
+
+  useEffect(() => {
+    if (!cur || !groupPatch || groupFileCount < 3) {
+      setGroups(null);
+      setGroupsLoading(false);
+      return;
+    }
+    let live = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    setGroups(null);
+    setGroupsLoading(true);
+    const retryLater = () => {
+      retryTimer = setTimeout(() => setGroupsRetry((attempt) => attempt + 1), 125_000);
+    };
+    fetchDiffGroups(sessionId, cur.repo, cur.diff.files, groupPatch)
+      .then((result) => {
+        if (!live) return;
+        setGroups({ repo: cur.repo, patch: groupPatch, groups: result.groups });
+        if (!result.groups) retryLater();
+      })
+      .catch(() => {
+        if (!live) return;
+        setGroups({ repo: cur.repo, patch: groupPatch, groups: null });
+        retryLater();
+      })
+      .finally(() => {
+        if (live) setGroupsLoading(false);
+      });
+    return () => {
+      live = false;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [sessionId, cur?.repo, groupPatch, groupFileCount, groupsRetry]);
 
   async function handleDiscard(repo: string, path: string, oldPath?: string) {
     await discardDiffFile(sessionId, path, repo, oldPath);
@@ -113,11 +160,10 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
   if (!repos || !repos.length) return <DiffEmptyState isRunning={isRunning} />;
 
   // Repos that actually have changes; if none, show the empty state.
-  const changed = repos.filter((r) => r.diff.rawPatch?.trim() || r.diff.files.length > 0);
   if (!changed.length) return <DiffEmptyState isRunning={isRunning} />;
 
   const multi = changed.length > 1;
-  const cur = changed[Math.min(active, changed.length - 1)] || changed[0];
+  if (!cur) return <DiffEmptyState isRunning={isRunning} />;
   const d = cur.diff;
 
   return (
@@ -157,6 +203,12 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
         <CommentableDiff
           key={cur.repo}
           patch={d.rawPatch || ""}
+          groups={
+            groups?.repo === cur.repo && groups.patch === d.rawPatch
+              ? groups.groups || undefined
+              : undefined
+          }
+          groupsLoading={groupsLoading}
           submitLabel="Send to Michael"
           placeholder={`Leave feedback on these lines. Michael picks it up in this session…`}
           disabled={!canSend}

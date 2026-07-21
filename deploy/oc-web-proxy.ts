@@ -41,17 +41,17 @@ type WsData = {
   buf: (string | Uint8Array)[];
 };
 
-const server = Bun.serve<WsData, {}>({
+const server: Bun.Server<WsData> = Bun.serve<WsData>({
   port: PORT,
   hostname: HOST,
   idleTimeout: 0, // long-lived SSE/WS; never idle-close
-  async fetch(req) {
+  async fetch(req): Promise<Response | undefined> {
     const inUrl = new URL(req.url);
 
     // WebSocket upgrade (opencode web terminal).
     if ((req.headers.get("upgrade") || "").toLowerCase() === "websocket") {
       const wsUrl = `${TARGET.replace(/^http/, "ws")}${inUrl.pathname}${inUrl.search}`;
-      const ok = server.upgrade(req, { data: { wsUrl, buf: [] } });
+      const ok: boolean = server.upgrade(req, { data: { wsUrl, buf: [] } });
       return ok ? undefined : new Response("upgrade failed", { status: 400 });
     }
 

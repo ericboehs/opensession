@@ -330,8 +330,7 @@ export const ORCHESTRATOR_PRESETS: OrchestratorPreset[] = [
   {
     id: "orchestrator/fable",
     label: "Orchestrator · Fable 5",
-    description:
-      "Fable 5 high as a delegating lead — plans, reviews and integrates itself, hands execution to cheap workers",
+    description: "Fable 5 high leads planning, review, and integration",
     model: "claude-fable-5",
     effort: "high",
     workerAgents: ["worker", "worker-fast"],
@@ -339,13 +338,23 @@ export const ORCHESTRATOR_PRESETS: OrchestratorPreset[] = [
   {
     id: "orchestrator/sol",
     label: "Orchestrator · Sol",
-    description:
-      "Sol xhigh as a delegating lead — plans, reviews and integrates itself, hands execution to cheap workers",
+    description: "Sol xhigh leads planning, review, and integration",
     model: "gpt-5.6-sol",
     effort: "xhigh",
     workerAgents: ["worker", "worker-fast"],
   },
 ];
+
+function orchestratorPickerDescription(preset: OrchestratorPreset): string {
+  const mainProviderID = preset.model.startsWith("claude-") ? "anthropic" : "openai";
+  const workers = preset.workerAgents.flatMap((name) => {
+    const backing = orchestratorWorkerForBridge(name, mainProviderID);
+    if (!backing) return [];
+    const role = name === "worker-fast" ? "fast worker" : "worker";
+    return [`${role}: ${backing.label} ${backing.variant}`];
+  });
+  return `${preset.description}; delegates to ${workers.join(" and ")}`;
+}
 
 /** The orchestrator preset behind a model id, or undefined. */
 export function orchestratorPreset(model?: string | null): OrchestratorPreset | undefined {
@@ -471,7 +480,7 @@ export function refreshOpencodePickerModels(): void {
           label: p.label,
           aliases: [],
           group: "orchestrator",
-          description: p.description,
+          description: orchestratorPickerDescription(p),
         });
       }
     }

@@ -935,6 +935,46 @@ export async function fetchDiff(
 	);
 }
 
+export async function fetchDiffGroups(
+	sessionId: string,
+	repo: string,
+	files: import("./types").DiffFile[],
+	patch: string,
+): Promise<{ groups: import("./types").DiffFileGroup[] | null }> {
+	return request(`/sessions/${encodeURIComponent(sessionId)}/diff-groups`, {
+		method: "POST",
+		body: { repo, files, patch },
+		label: "Failed to organize changed files",
+	});
+}
+
+export async function fetchPrDiffGroups(
+	sessionId: string,
+	files: import("./types").PrFile[],
+	patch: string,
+	repo?: string,
+	branch?: string,
+): Promise<{ groups: import("./types").DiffFileGroup[] | null }> {
+	const qs = prTargetQs(repo, branch);
+	return request(`/sessions/${encodeURIComponent(sessionId)}/pr-diff-groups${qs}`, {
+		method: "POST",
+		body: { files, patch },
+		label: "Failed to organize changed files",
+	});
+}
+
+export async function fetchPrPreviewDiffGroups(
+	repo: string,
+	files: import("./types").PrFile[],
+	patch: string,
+): Promise<{ groups: import("./types").DiffFileGroup[] | null }> {
+	return request(`/pr-preview-diff-groups?repo=${encodeURIComponent(repo)}`, {
+		method: "POST",
+		body: { files, patch },
+		label: "Failed to organize changed files",
+	});
+}
+
 /**
  * Discard one file's changes in a session worktree (hover action on a diff
  * row). Resets the file to its base-branch state so it drops out of the diff.

@@ -384,6 +384,11 @@ export interface SessionDiffResponse {
 	error?: string;
 }
 
+export interface DiffFileGroup {
+	title: string;
+	files: string[];
+}
+
 export interface PrCheck {
 	name: string;
 	status: string;
@@ -621,14 +626,14 @@ export type WSServerMessage =
 	// The session's scratch assets folder changed (agent wrote/deleted a
 	// file) — the Assets tab refetches its tree on this.
 	| { type: "assets_changed"; sessionId: string }
+	// An automation published a report. sessionId is present for reports tied to
+	// a run and lets that run's Reports tab refresh immediately.
+	| { type: "reports_changed"; automationId: string; sessionId?: string }
 	| { type: "notice"; sessionId?: string; message: string }
 	// Dynamic workflow run snapshot changed (workflow-store broadcasts every
 	// mutation) — powers the session's Agents panel.
 	| { type: "workflow_update"; sessionId: string; run: WorkflowRunSnapshot }
 	| { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string }
-	// An automation published a report. sessionId is present for reports tied to
-	// a run and lets that run's Reports tab refresh immediately.
-	| { type: "reports_changed"; automationId: string; sessionId?: string }
 	| {
 			type: "subscription_changed";
 			sessionId: string;
