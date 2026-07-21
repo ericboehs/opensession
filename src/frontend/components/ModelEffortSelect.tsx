@@ -340,9 +340,8 @@ export function ModelEffortSelect({
 	const renderModelOption = (option: ModelMenuOption) => {
 		const selected = isSelected(option);
 		const nextEfforts = models.find((m) => m.id === option.id)?.efforts ?? [];
-		return (
+		const item = (
 			<Menu.Item
-				key={option.value || option.id}
 				onClick={() => {
 					onModelChange(option.value);
 					if (onEffortChange && !nextEfforts.includes(effort ?? "")) {
@@ -357,15 +356,20 @@ export function ModelEffortSelect({
 				{option.description ? (
 					<span className="flex min-w-0 flex-1 flex-col">
 						<span className="truncate">{option.label}</span>
-						<Tooltip label={option.description} side="right" multiline>
-							<span className="truncate text-xs text-faint">{option.description}</span>
-						</Tooltip>
+						<span className="truncate text-xs text-faint">{option.description}</span>
 					</span>
 				) : (
 					<span className="min-w-0 truncate">{option.label}</span>
 				)}
 				{selected && <IconCheck className="shrink-0 text-dim" size={17} />}
 			</Menu.Item>
+		);
+		return option.description ? (
+			<Tooltip key={option.value || option.id} label={option.description} side="right" multiline>
+				{item}
+			</Tooltip>
+		) : (
+			React.cloneElement(item, { key: option.value || option.id })
 		);
 	};
 
