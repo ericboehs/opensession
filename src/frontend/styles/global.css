@@ -2095,15 +2095,6 @@ body.resizing-x {
 .sidebar-meta-sep {
 	opacity: 0.5;
 }
-.sidebar-meta-pr {
-	color: var(--green);
-}
-.sidebar-meta-merged {
-	color: var(--purple);
-}
-.sidebar-meta-closed {
-	color: var(--red);
-}
 .sidebar-meta-linear {
 	color: #7b86e8;
 }

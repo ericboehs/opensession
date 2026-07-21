@@ -4535,7 +4535,6 @@ function SidebarItem({
 	onRename: (title: string) => void;
 }) {
 	const isPhone = useIsPhone();
-	const running = session.isRunning;
 	const waiting = !!session.waitingForInput || runNeedsAttention(session);
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState("");
@@ -4718,26 +4717,6 @@ function SidebarItem({
 	}
 	// No idle "time since" here — times only appear while a run is live (the
 	// hovercard/details still carry last activity).
-	if (session.prUrl) {
-		metaParts.push(
-			<span
-				key="pr"
-				className={
-					session.prState === "MERGED"
-						? "sidebar-meta-merged"
-						: session.prState === "CLOSED"
-							? "sidebar-meta-closed"
-							: "sidebar-meta-pr"
-				}
-			>
-				{session.prState === "MERGED"
-					? "merged"
-					: session.prState === "CLOSED"
-						? "closed"
-						: "PR open"}
-			</span>,
-		);
-	}
 	if (session.linearIssue) {
 		metaParts.push(
 			<span key="lin" className="sidebar-meta-linear">
@@ -4836,28 +4815,19 @@ function SidebarItem({
 			}}
 		>
 			<div className="sidebar-item-top">
-				{/* Leading 22px slot — the same status-icon column the workspace rows
-				    use, so a chat row's #number/title line up under them (and under the
-				    lane header) instead of sitting flush-left. Quiet rows deliberately
-				    leave it empty rather than showing a gray "nothing new" dot. */}
+				{/* Match workspace rows: attention sits before the fixed PR glyph, and
+				    merged PRs keep the glyph itself purple instead of adding metadata. */}
 				<span
-					className="flex shrink-0 items-center justify-center"
-					style={{ width: 22 }}
+					className="relative flex shrink-0 items-center justify-center"
+					style={{ width: 22, height: 22 }}
 				>
-					{waiting || running ? (
+					{(unread || waiting) && (
 						<span
-							className={`sidebar-item-status ${
-								waiting
-									? "sidebar-status-waiting"
-									: "sidebar-status-running"
-							}`}
+							className="sidebar-workspace-attention"
+							title={waiting ? "Needs your attention" : "New activity"}
 						/>
-					) : unread ? (
-						/* Unread dot — only when there's no live status dot already
-						   drawing the eye (a running/waiting session isn't "unread" in
-						   the same sense). */
-						<span className="sidebar-item-status sidebar-status-unread" />
-					) : null}
+					)}
+					<WsPrStatusMark chats={[session]} size={20} />
 				</span>
 				{editing ? (
 					<input
@@ -5313,7 +5283,7 @@ function WsPrStatusMark({
 	if (chat.prState === "MERGED") {
 		return (
 			<span title="PR merged">
-				<IconGitMerge size={size} className="text-purple" />
+				<IconPullRequest size={size} className="text-purple" />
 			</span>
 		);
 	}
