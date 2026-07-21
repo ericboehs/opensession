@@ -198,29 +198,6 @@ type ModelMenuOption = {
 	description?: string;
 };
 
-function ModelDescription({ children }: { children: string }) {
-	const ref = React.useRef<HTMLSpanElement>(null);
-	const [truncated, setTruncated] = React.useState(false);
-
-	React.useLayoutEffect(() => {
-		const element = ref.current;
-		if (!element) return;
-		const update = () => setTruncated(element.scrollWidth > element.clientWidth);
-		update();
-		const observer = new ResizeObserver(update);
-		observer.observe(element);
-		return () => observer.disconnect();
-	}, [children]);
-
-	return (
-		<Tooltip label={truncated ? children : null} side="right" multiline>
-			<span ref={ref} className="truncate text-xs text-faint">
-				{children}
-			</span>
-		</Tooltip>
-	);
-}
-
 /**
  * Combined model + reasoning-effort pill (Claude-app-style): one trigger on the
  * composer's right edge opening the model list, with the effort level behind an
@@ -380,7 +357,9 @@ export function ModelEffortSelect({
 				{option.description ? (
 					<span className="flex min-w-0 flex-1 flex-col">
 						<span className="truncate">{option.label}</span>
-						<ModelDescription>{option.description}</ModelDescription>
+						<Tooltip label={option.description} side="right" multiline>
+							<span className="truncate text-xs text-faint">{option.description}</span>
+						</Tooltip>
 					</span>
 				) : (
 					<span className="min-w-0 truncate">{option.label}</span>
