@@ -26,6 +26,7 @@ interface ReviewFilter {
 	automation: boolean;
 	other: boolean;
 	repo: string;
+	session: "all" | "with" | "without";
 }
 
 const DEFAULT_FILTER: ReviewFilter = {
@@ -34,6 +35,7 @@ const DEFAULT_FILTER: ReviewFilter = {
 	automation: false,
 	other: false,
 	repo: "all",
+	session: "all",
 };
 
 function readFilter(): ReviewFilter {
@@ -46,6 +48,10 @@ function readFilter(): ReviewFilter {
 			automation: saved.automation === true,
 			other: saved.other === true,
 			repo: typeof saved.repo === "string" ? saved.repo : "all",
+			session:
+				saved.session === "with" || saved.session === "without"
+					? saved.session
+					: "all",
 		};
 	} catch {
 		return DEFAULT_FILTER;
@@ -159,6 +165,8 @@ export function ReviewQueue({
 
 	const visible = allItems.filter((item) => {
 		if (filter.repo !== "all" && item.pr.repo !== filter.repo) return false;
+		if (filter.session === "with" && !item.sessionId) return false;
+		if (filter.session === "without" && item.sessionId) return false;
 		return filter[item.source];
 	});
 	const byBucket = new Map<ReviewBucket, ReviewQueueItem[]>(
@@ -175,7 +183,8 @@ export function ReviewQueue({
 		!filter.requested ||
 		filter.automation ||
 		filter.other ||
-		filter.repo !== "all";
+		filter.repo !== "all" ||
+		filter.session !== "all";
 
 	return (
 		<div className="sidebar-group sidebar-group--band-start">
@@ -235,13 +244,13 @@ export function ReviewQueue({
 								<Menu.Separator />
 								<Menu.Group>
 									<Menu.GroupLabel>Repository</Menu.GroupLabel>
-									<RepoItem
+									<SelectionItem
 										label="All repositories"
 										selected={filter.repo === "all"}
 										onClick={() => setFilter({ repo: "all" })}
 									/>
 									{repos.map((repo) => (
-										<RepoItem
+										<SelectionItem
 											key={repo}
 											label={repo}
 											selected={filter.repo === repo}
@@ -251,6 +260,25 @@ export function ReviewQueue({
 								</Menu.Group>
 							</>
 						)}
+						<Menu.Separator />
+						<Menu.Group>
+							<Menu.GroupLabel>Session</Menu.GroupLabel>
+							<SelectionItem
+								label="All pull requests"
+								selected={filter.session === "all"}
+								onClick={() => setFilter({ session: "all" })}
+							/>
+							<SelectionItem
+								label="Have session"
+								selected={filter.session === "with"}
+								onClick={() => setFilter({ session: "with" })}
+							/>
+							<SelectionItem
+								label="No session"
+								selected={filter.session === "without"}
+								onClick={() => setFilter({ session: "without" })}
+							/>
+						</Menu.Group>
 					</Menu.Popup>
 				</Menu.Root>
 			</div>
@@ -333,7 +361,7 @@ function FilterItem({
 	);
 }
 
-function RepoItem({
+function SelectionItem({
 	label,
 	selected,
 	onClick,
