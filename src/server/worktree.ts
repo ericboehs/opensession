@@ -1,5 +1,6 @@
 import { $ } from "bun";
-import { existsSync } from "fs";
+import { existsSync, readFileSync, statSync } from "fs";
+import { resolve as resolvePath } from "path";
 import type { UnifiedSession } from "./types";
 import { stopPreview } from "./preview";
 import { configuredPaths, configuredRepos, defaultRepo, type Repo } from "./config";
@@ -45,6 +46,27 @@ export function repoForPath(p: string): Repo {
     if (p === r.repo || p.startsWith(`${worktreesDir()}/${r.wtPrefix}-`)) return r;
   }
   return defaultRepo();
+}
+
+/** Actual HEAD branch of a checkout/worktree, or null (detached/missing). Sync
+ *  + cheap (two tiny file reads, no git subprocess): follows the `.git`
+ *  file/dir to its HEAD ref. An agent can switch branches inside its worktree
+ *  mid-run, so the session record's `branch` is a claim, not a fact — use this
+ *  when the actual branch matters (PR lookups, review handoff, merge notify). */
+export function worktreeHeadBranch(dir: string | null | undefined): string | null {
+  if (!dir) return null;
+  try {
+    let gitDir = `${dir}/.git`;
+    if (statSync(gitDir).isFile()) {
+      const m = readFileSync(gitDir, "utf-8").match(/^gitdir: (.+)$/m);
+      if (!m) return null;
+      gitDir = resolvePath(dir, m[1].trim());
+    }
+    const ref = readFileSync(`${gitDir}/HEAD`, "utf-8").match(/^ref: refs\/heads\/(.+)$/m);
+    return ref ? ref[1].trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 // Serialize git operations that mutate the shared repo's worktrees. Concurrent

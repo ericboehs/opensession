@@ -20,7 +20,7 @@ import { engineSessionPatch } from "./sessions";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { gitIdentityFor } from "./shared/user-mappings";
 import { writeJsonAtomic } from "./shared/atomic-write";
-import { createWorktree, getRepo, reviveWorktree } from "./worktree";
+import { createWorktree, getRepo, reviveWorktree, worktreeHeadBranch } from "./worktree";
 import { invalidateSessionsCache, SESSIONS_DIR } from "./session-cache";
 import { attachSessionWatchersToEngineTranscript } from "./run-session";
 import type { BackstageSessionFile } from "./types";
@@ -138,7 +138,9 @@ export async function runGoal(goal: Goal): Promise<void> {
 					? { lastEngineProvider: effectiveProvider }
 					: {}),
 				...(effectiveModel ? { model: effectiveModel } : {}),
-				branch: goal.mode === "code" ? branch : "",
+				// Actual worktree HEAD wins over the recorded name — the agent may
+				// have switched branches mid-run (see run-session.ts's same sync).
+				branch: goal.mode === "code" ? worktreeHeadBranch(cwd) || branch : "",
 				worktreeDir: cwd,
 				...(goal.mode === "code" ? { repo: getRepo(goal.repo).id } : {}),
 				createdBy,

@@ -77,7 +77,7 @@ import { ensureGeneratedTitle } from "./generated-titles";
 import { gitIdentityFor } from "./shared/user-mappings";
 import { writeFileAtomic, writeJsonAtomic } from "./shared/atomic-write";
 import { startWatching } from "./file-watcher";
-import { getRepo, repoForPath, reviveWorktree } from "./worktree";
+import { getRepo, repoForPath, reviveWorktree, worktreeHeadBranch } from "./worktree";
 import { createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { sendSlackMessage } from "../agents/slack/slack-api";
 import type { RunHostSpec } from "../runner-host/protocol";
@@ -1718,6 +1718,13 @@ async function runSessionPromptInner(
 	// flips sync through agent-session-sync so the file never points at a dead
 	// engine session (see that module's doc).
 	if (session.source === "backstage") {
+		// The agent may have switched branches in its worktree during the turn
+		// (e.g. renaming an auto-generated branch before opening a PR). Keep the
+		// record on the actual HEAD so PR lookups, the PR tab, and the review
+		// handoff keep resolving this session.
+		const headBranch = session.branch
+			? worktreeHeadBranch(session.worktreeDir)
+			: null;
 		touchBackstageSession(
 			session.id,
 			{
@@ -1730,6 +1737,9 @@ async function runSessionPromptInner(
 						}
 					: {}),
 				...(latestUsage ? { usage: latestUsage } : {}),
+				...(headBranch && headBranch !== session.branch
+					? { branch: headBranch }
+					: {}),
 			},
 		);
 	} else if (finalSessionId) {

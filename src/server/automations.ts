@@ -13,7 +13,7 @@ import { getAccountById } from "./claude-accounts";
 import { runAgent } from "./agent-runner";
 import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
 import { readOpencodeBridgeConfig } from "./opencode-config";
-import { createWorktree, getRepo, listWorktrees, REPOS } from "./worktree";
+import { createWorktree, getRepo, listWorktrees, REPOS, worktreeHeadBranch } from "./worktree";
 import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
 import { stateDir } from "./rename-compat";
@@ -882,7 +882,10 @@ export async function runAutomation(
         // Keep the automation's account pin on the session so interactive
         // resumes of this session run on the same subscription.
         ...(automation.accountId ? { accountId: automation.accountId } : {}),
-        branch,
+        // Code-mode runs can rename their auto-generated branch before opening
+        // a PR — record the worktree's actual HEAD so PR lookups and the
+        // review handoff keep resolving this session.
+        branch: (branch && worktreeHeadBranch(cwd)) || branch,
         worktreeDir: cwd,
         createdBy: `${automation.name} (automation)`,
         createdAt: startedAt.toISOString(),

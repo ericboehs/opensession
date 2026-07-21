@@ -11,11 +11,10 @@
  * the preview URL + Ready state, so a chat notification would just be redundant.)
  */
 import { stateDir } from "../../server/rename-compat";
-import { existsSync, readFileSync, statSync } from "fs";
-import { resolve as resolvePath } from "path";
+import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { tryGetSessionControl, type SessionControl, type SessionSummary } from "../../server/session-control";
-import { REPOS } from "../../server/worktree";
+import { REPOS, worktreeHeadBranch } from "../../server/worktree";
 
 const PENDING_PATH = `${stateDir("github")}/pending-deploys.json`;
 const DEPLOY_WORKFLOW_PATH = ".github/workflows/deploy.yml";
@@ -53,24 +52,6 @@ export function projectIdForRepo(fullName: string): string | null {
     if (repo.ghRepo === fullName) return repo.id;
   }
   return null;
-}
-
-/** Actual HEAD branch of a worktree, or null. Sync + cheap (two tiny file
- *  reads, no git subprocess): follows the `.git` file/dir to its HEAD ref. */
-export function worktreeHeadBranch(dir: string | null | undefined): string | null {
-  if (!dir) return null;
-  try {
-    let gitDir = `${dir}/.git`;
-    if (statSync(gitDir).isFile()) {
-      const m = readFileSync(gitDir, "utf-8").match(/^gitdir: (.+)$/m);
-      if (!m) return null;
-      gitDir = resolvePath(dir, m[1].trim());
-    }
-    const ref = readFileSync(`${gitDir}/HEAD`, "utf-8").match(/^ref: refs\/heads\/(.+)$/m);
-    return ref ? ref[1].trim() : null;
-  } catch {
-    return null;
-  }
 }
 
 /** Live (non-archived) sessions working on `branch` of `projectId`, primary or attached.
