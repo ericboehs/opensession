@@ -6,7 +6,7 @@
 
 import type { RouteContext } from "./context";
 import { requestUser } from "./context";
-import { ensureDeskSession } from "../desk";
+import { clearDesk, ensureDeskSession } from "../desk";
 import { findSession } from "../session-cache";
 import { addTodo, listTodos, updateTodo, type TodoStatus } from "../todos";
 
@@ -83,8 +83,21 @@ export async function handleTodosRoutes(
 		const body = await req.json().catch(() => null);
 		const user = requestUser(ctx, body?.user);
 		if (!user) return Response.json({ error: "missing user" }, { status: 400 });
-		const { sessionId } = ensureDeskSession(user);
-		return Response.json({ sessionId, session: findSession(sessionId) ?? null });
+		const { sessionId, clearedAt } = ensureDeskSession(user);
+		return Response.json({
+			sessionId,
+			clearedAt: clearedAt ?? null,
+			session: findSession(sessionId) ?? null,
+		});
+	}
+
+	// Hide the chat before now in the overlay (display marker only — the full
+	// transcript stays in the expanded session view).
+	if (path === "/backstage/api/desk/clear" && req.method === "POST") {
+		const body = await req.json().catch(() => null);
+		const user = requestUser(ctx, body?.user);
+		if (!user) return Response.json({ error: "missing user" }, { status: 400 });
+		return Response.json(clearDesk(user));
 	}
 
 	return undefined;

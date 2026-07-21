@@ -1,25 +1,26 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { TodoItem, UnifiedSession, WSServerMessage } from "../lib/types";
+import { createPortal } from "react-dom";
+import type { TodoItem, WSServerMessage } from "../lib/types";
 import { BASE_PATH } from "../lib/base";
 import { getCurrentUser } from "./UserPicker";
 import { SideChatConversation } from "./SideChatConversation";
-import { Modal } from "../ui/modal";
-import { BottomSheet } from "../ui/sheet";
-import {
-	IconCheck,
-	IconDesk,
-	IconExpand,
-	IconX,
-} from "./icons";
+import { IconCheck, IconDesk, IconExpand, IconX } from "./icons";
 
 /**
  * The Desk — a summonable overlay (⌘J / the floating desk button) on top of
  * whatever you're doing: your todo list up top, your standing concierge
- * session below. Quick capture, quick asks, then leave. The chat is a normal
- * durable session (desk: true, hidden from the session lists) driven through
- * SideChatConversation's scoped second socket; the todo list is the store
- * behind the opensession-todos tools every interactive session carries, so
- * items added from any conversation appear here live (todos_changed).
+ * session below. Quick capture, quick asks, then leave.
+ *
+ * Persistence is the point: after the first summon the body STAYS MOUNTED
+ * (hidden, not unmounted) — the chat's scoped socket keeps watching and the
+ * todo list keeps syncing in the background, so every later ⌘J is instant
+ * with the transcript and list already in place. No enter/exit animations
+ * either; summon-dismiss-summon should feel like toggling a HUD.
+ *
+ * The chat is a normal durable session (desk: true, hidden from the session
+ * lists) pinned to a fast model+effort server-side; "Clear" sets a display
+ * marker (server-stored) so the modal starts visually fresh while the full
+ * transcript stays in the expanded session view.
  */
 
 interface DeskOverlayProps {
@@ -45,10 +46,10 @@ function TodoRow({
 }) {
 	const done = todo.status === "done";
 	return (
-		<div className="group flex items-start gap-2.5 rounded-md px-2 py-1.5 hover:bg-surface">
+		<div className="group flex items-center gap-2.5 rounded-md px-2 py-1 hover:bg-surface">
 			<button
 				className={
-					"mt-[1px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border transition-colors " +
+					"flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border transition-colors " +
 					(done
 						? "border-green bg-green text-panel"
 						: "border-line-strong text-transparent hover:border-fg/50")
@@ -58,34 +59,32 @@ function TodoRow({
 			>
 				<IconCheck size={20} className="h-[13px] w-[13px]" />
 			</button>
-			<div className="min-w-0 flex-1">
-				<div
-					className={
-						"text-[13px] font-medium leading-snug " +
-						(done ? "text-dim line-through" : "text-fg")
-					}
+			<span
+				className={
+					"min-w-0 flex-1 truncate text-[13px] font-medium " +
+					(done ? "text-dim line-through" : "text-fg")
+				}
+				title={todo.note ? `${todo.text} — ${todo.note}` : todo.text}
+			>
+				{todo.text}
+			</span>
+			{todo.due && (
+				<span className="shrink-0 text-[11.5px] font-medium text-faint">
+					{todo.due}
+				</span>
+			)}
+			{todo.source.sessionId && (
+				<button
+					className="shrink-0 text-[11.5px] font-medium text-faint underline decoration-dotted underline-offset-2 hover:text-dim"
+					onClick={() => onOpenSession(todo.source.sessionId!)}
+					title="Open the session that added this"
 				>
-					{todo.text}
-				</div>
-				{(todo.note || todo.due || todo.source.sessionId) && (
-					<div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] font-medium text-faint">
-						{todo.due && <span>due {todo.due}</span>}
-						{todo.note && <span className="truncate">{todo.note}</span>}
-						{todo.source.sessionId && (
-							<button
-								className="shrink-0 underline decoration-dotted underline-offset-2 hover:text-dim"
-								onClick={() => onOpenSession(todo.source.sessionId!)}
-								title="Open the session that added this"
-							>
-								from session
-							</button>
-						)}
-					</div>
-				)}
-			</div>
+					source
+				</button>
+			)}
 			{!done && (
 				<button
-					className="mt-[1px] shrink-0 rounded p-0.5 text-faint opacity-0 transition-opacity hover:text-fg group-hover:opacity-100"
+					className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-opacity hover:text-fg group-hover:opacity-100"
 					onClick={() => onDrop(todo)}
 					title="Drop (decided not to do this)"
 				>
@@ -97,17 +96,20 @@ function TodoRow({
 }
 
 function DeskBody({
+	active,
+	phone,
 	onClose,
 	addHandler,
 	onOpenSession,
-}: Omit<DeskOverlayProps, "open" | "phone">) {
+}: Omit<DeskOverlayProps, "open"> & { active: boolean }) {
 	const user = getCurrentUser();
 	const [sessionId, setSessionId] = useState<string | null>(null);
+	const [clearedAt, setClearedAt] = useState<string | undefined>(undefined);
 	const [ensureError, setEnsureError] = useState<string | null>(null);
 	const [todos, setTodos] = useState<TodoItem[] | null>(null);
 	const [draft, setDraft] = useState("");
 	const [showDone, setShowDone] = useState(false);
-	// Optimistic status flips layered over the last fetch.
+	const rootRef = useRef<HTMLDivElement | null>(null);
 	const loadSeq = useRef(0);
 
 	const load = useCallback(async () => {
@@ -124,7 +126,8 @@ function DeskBody({
 		}
 	}, [user]);
 
-	// The standing Desk session: get-or-create once per open.
+	// One-time boot (the body stays mounted after the first summon): resolve
+	// the standing Desk session + the clear marker, and load the list.
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
@@ -137,9 +140,11 @@ function DeskBody({
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
 				const data = (await res.json()) as {
 					sessionId: string;
-					session: UnifiedSession | null;
+					clearedAt: string | null;
 				};
-				if (!cancelled) setSessionId(data.sessionId);
+				if (cancelled) return;
+				setSessionId(data.sessionId);
+				if (data.clearedAt) setClearedAt(data.clearedAt);
 			} catch (e: any) {
 				if (!cancelled) setEnsureError(e?.message || "Failed to open the Desk");
 			}
@@ -159,6 +164,14 @@ function DeskBody({
 			}),
 		[addHandler, load],
 	);
+
+	// On summon: drop the caret straight into the composer (desktop — a phone
+	// keyboard popping open unasked is hostile).
+	useEffect(() => {
+		if (!active || phone) return;
+		const ta = rootRef.current?.querySelector("textarea");
+		(ta as HTMLTextAreaElement | null)?.focus();
+	}, [active, phone]);
 
 	async function patchTodo(id: string, patch: Record<string, unknown>) {
 		try {
@@ -201,17 +214,36 @@ function DeskBody({
 		}
 	}
 
+	async function clearChat() {
+		try {
+			const res = await fetch(`${BASE_PATH}/api/desk/clear`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ user }),
+			});
+			const data = (await res.json()) as { clearedAt?: string };
+			if (data.clearedAt) setClearedAt(data.clearedAt);
+		} catch {}
+	}
+
 	const open = (todos || []).filter((t) => t.status === "open");
 	const done = (todos || []).filter((t) => t.status === "done");
 
 	return (
-		<div className="flex h-full min-h-0 flex-col">
+		<div ref={rootRef} className="flex h-full min-h-0 flex-col">
 			{/* Header */}
-			<div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-3">
+			<div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
 				<IconDesk size={22} className="text-dim" />
 				<span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-fg">
 					Desk
 				</span>
+				<button
+					className="shrink-0 rounded-md px-1.5 py-0.5 text-[12px] font-medium text-faint hover:bg-surface hover:text-fg"
+					onClick={clearChat}
+					title="Clear the chat here — the full transcript stays in the expanded session"
+				>
+					Clear
+				</button>
 				{sessionId && (
 					<button
 						className="flex shrink-0 items-center rounded-md p-1 text-faint hover:bg-surface hover:text-fg"
@@ -234,7 +266,7 @@ function DeskBody({
 			</div>
 
 			{/* Todos */}
-			<div className="max-h-[42%] shrink-0 overflow-y-auto overscroll-contain border-b border-line px-2 py-2">
+			<div className="max-h-[38%] shrink-0 overflow-y-auto overscroll-contain border-b border-line px-2 py-1.5">
 				{todos === null ? (
 					<div className="px-2 py-1 text-[13px] font-medium text-dim">
 						Loading…
@@ -258,9 +290,9 @@ function DeskBody({
 								Nothing on your list.
 							</div>
 						)}
-						<div className="mt-1 flex items-center gap-2 px-2">
+						<div className="mt-1 flex items-center gap-2 px-2 pb-0.5">
 							<input
-								className="h-8 min-w-0 flex-1 rounded-md border border-line bg-surface px-2 text-[13px] font-medium text-fg outline-none placeholder:text-faint focus:border-fg/30"
+								className="h-7 min-w-0 flex-1 rounded-md border border-line bg-surface px-2 text-[13px] font-medium text-fg outline-none placeholder:text-faint focus:border-fg/30"
 								value={draft}
 								placeholder="Add a todo…"
 								onChange={(e) => setDraft(e.target.value)}
@@ -308,6 +340,8 @@ function DeskBody({
 						sideChatId={sessionId}
 						onBack={onClose}
 						hideHeader
+						effort="low"
+						hideBefore={clearedAt}
 						placeholder="Ask your Desk…"
 						emptyState={
 							<>
@@ -334,30 +368,54 @@ export function DeskOverlay({
 	addHandler,
 	onOpenSession,
 }: DeskOverlayProps) {
-	if (!open) return null;
-	if (phone) {
-		return (
-			<BottomSheet onClose={onClose} label="Desk" className="h-[90dvh]">
-				<DeskBody
-					onClose={onClose}
-					addHandler={addHandler}
-					onOpenSession={onOpenSession}
-				/>
-			</BottomSheet>
-		);
-	}
-	return (
-		<Modal.Root open onOpenChange={(o) => !o && onClose()}>
-			<Modal.Content
-				widthClassName="max-w-[560px]"
-				className="h-[72vh] gap-0 overflow-hidden p-0"
+	// Mount on first summon, never unmount after — see the module doc.
+	const [booted, setBooted] = useState(false);
+	useEffect(() => {
+		if (open) setBooted(true);
+	}, [open]);
+
+	// Esc dismisses. Capture phase so it wins over the app's palette handlers.
+	useEffect(() => {
+		if (!open) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.stopPropagation();
+				onClose();
+			}
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	}, [open, onClose]);
+
+	if (!booted) return null;
+
+	return createPortal(
+		<div
+			className={
+				"fixed inset-0 z-[10000] " + (open ? "" : "invisible pointer-events-none")
+			}
+			role="dialog"
+			aria-modal={open || undefined}
+			aria-label="Desk"
+			aria-hidden={!open}
+		>
+			<div className="absolute inset-0 bg-black/45" onClick={onClose} />
+			<div
+				className={
+					phone
+						? "absolute inset-x-0 bottom-0 flex h-[85dvh] flex-col overflow-hidden rounded-t-[22px] [corner-shape:squircle] bg-raised pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]"
+						: "absolute left-1/2 top-1/2 flex h-[540px] max-h-[80vh] w-[92vw] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[22px] [corner-shape:squircle] border border-line-strong bg-raised shadow-[0_24px_70px_rgba(0,0,0,0.45)]"
+				}
 			>
 				<DeskBody
+					active={open}
+					phone={phone}
 					onClose={onClose}
 					addHandler={addHandler}
 					onOpenSession={onOpenSession}
 				/>
-			</Modal.Content>
-		</Modal.Root>
+			</div>
+		</div>,
+		document.body,
 	);
 }

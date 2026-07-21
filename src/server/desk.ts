@@ -19,11 +19,12 @@ import {
 	SESSIONS_DIR,
 	findSession,
 	invalidateSessionsCache,
+	touchBackstageSession,
 } from "./session-cache";
 import type { BackstageSessionFile } from "./types";
 
 interface DeskStore {
-	users: Record<string, { sessionId?: string }>;
+	users: Record<string, { sessionId?: string; clearedAt?: string }>;
 }
 
 const CONFIG_DIR = stateDir("desk");
@@ -39,13 +40,32 @@ function readStore(): DeskStore {
 	return { users: {} };
 }
 
+/** Desk turns should feel instant: quick capture / list ops / delegation,
+ *  not deep reasoning — so the session defaults to Sonnet on low effort
+ *  rather than the interactive dial. /model in the expanded view overrides. */
+const DESK_MODEL = "opencode/anthropic/claude-sonnet-5";
+const DESK_EFFORT = "low";
+
 /** Get-or-create the user's Desk session (same direct-mint shape as side
  *  chats: ask mode, no worktree; repo backstage so it reads the OpenSession
  *  checkout when it needs context). */
-export function ensureDeskSession(user: string): { sessionId: string } {
+export function ensureDeskSession(user: string): {
+	sessionId: string;
+	clearedAt?: string;
+} {
 	const store = readStore();
 	const st = store.users[user] ?? (store.users[user] = {});
-	if (st.sessionId && findSession(st.sessionId)) return { sessionId: st.sessionId };
+	const existing = st.sessionId ? findSession(st.sessionId) : undefined;
+	if (st.sessionId && existing) {
+		// Backfill the fast-model default onto Desks minted before it existed —
+		// but never clobber a deliberate /model choice.
+		if (!existing.model)
+			touchBackstageSession(st.sessionId, {
+				model: DESK_MODEL,
+				effort: DESK_EFFORT,
+			});
+		return { sessionId: st.sessionId, clearedAt: st.clearedAt };
+	}
 	const bksId = `bks-${randomUUIDv7()}`;
 	const now = new Date().toISOString();
 	const data: BackstageSessionFile = {
@@ -60,13 +80,26 @@ export function ensureDeskSession(user: string): { sessionId: string } {
 		createdAt: now,
 		lastActivity: now,
 		title: "Desk",
+		model: DESK_MODEL,
+		effort: DESK_EFFORT,
 	};
 	writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
 	invalidateSessionsCache();
 	st.sessionId = bksId;
 	writeJsonAtomic(CONFIG_PATH, store);
 	console.log(`[desk] created Desk session ${bksId} for ${user}`);
-	return { sessionId: bksId };
+	return { sessionId: bksId, clearedAt: st.clearedAt };
+}
+
+/** "Clear" in the Desk overlay: hide everything before now from the modal's
+ *  chat view. A display marker only — the transcript itself is untouched and
+ *  fully visible in the expanded session view. */
+export function clearDesk(user: string): { clearedAt: string } {
+	const store = readStore();
+	const st = store.users[user] ?? (store.users[user] = {});
+	st.clearedAt = new Date().toISOString();
+	writeJsonAtomic(CONFIG_PATH, store);
+	return { clearedAt: st.clearedAt };
 }
 
 /** The role charter prepended to every Desk-session prompt (run-session.ts). */

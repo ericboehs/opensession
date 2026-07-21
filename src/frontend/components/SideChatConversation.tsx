@@ -40,6 +40,12 @@ interface SideChatConversationProps {
 	emptyState?: React.ReactNode;
 	/** Composer placeholder (default "Ask this side chat…"). */
 	placeholder?: string;
+	/** Reasoning effort sent with each prompt (default "high"). The Desk
+	 *  passes "low" — concierge turns should feel instant. */
+	effort?: string;
+	/** Hide entries at or before this ISO timestamp (the Desk's "Clear"
+	 *  marker). Display-only — the transcript itself is untouched. */
+	hideBefore?: string;
 }
 
 /**
@@ -57,6 +63,8 @@ export function SideChatConversation({
 	hideHeader,
 	emptyState,
 	placeholder,
+	effort,
+	hideBefore,
 }: SideChatConversationProps) {
 	const { connected, send, addHandler } = useWebSocket();
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
@@ -208,14 +216,19 @@ export function SideChatConversation({
 			sessionId: sideChatId,
 			content,
 			user: getCurrentUser(),
-			effort: "high",
+			effort: effort || "high",
 		});
 		setPending(content);
 		setDraft("");
 		followRef.current = true;
 	}
 
-	const hasContent = entries.length > 0 || !!streamText || !!pending;
+	// The Desk's "Clear" marker: everything at/before it stays out of this view
+	// (locally-minted system lines have fresh timestamps and survive).
+	const visibleEntries = hideBefore
+		? entries.filter((e) => !e.timestamp || e.timestamp > hideBefore)
+		: entries;
+	const hasContent = visibleEntries.length > 0 || !!streamText || !!pending;
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
@@ -262,7 +275,7 @@ export function SideChatConversation({
 					</div>
 				) : (
 					<>
-						<TranscriptBlocks entries={entries} live={isRunning} />
+						<TranscriptBlocks entries={visibleEntries} live={isRunning} />
 						{streamText && (
 							<div className="msg msg-assistant msg-streaming">
 								<div
@@ -271,8 +284,12 @@ export function SideChatConversation({
 								/>
 							</div>
 						)}
+						{/* Optimistic echo of the just-sent message — rendered as a normal
+						    sent bubble (not the dimmed "sending" look) so it reads as
+						    delivered the instant Enter lands; reconciles away when the
+						    real user entry arrives. */}
 						{pending && (
-							<div className="msg msg-user msg-sending">
+							<div className="msg msg-user">
 								<div className="msg-body msg-body-user">{pending}</div>
 							</div>
 						)}
