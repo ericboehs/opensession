@@ -345,10 +345,9 @@ function DeskBody({
 						placeholder="Ask your Desk…"
 						emptyState={
 							<>
-								This is your Desk. Say what needs doing and it lands on the
-								list above. Ask for real work and Michael spins up a session
-								for it. Try "put reviewing Kent's PR on my list" or "start a
-								session to fix the export bug".
+								Capture todos and kick off sessions: try "put reviewing
+								Kent's PR on my list" or "start a session to fix the export
+								bug".
 							</>
 						}
 					/>
