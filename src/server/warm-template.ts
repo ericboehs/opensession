@@ -283,6 +283,14 @@ export function refreshWarmTemplate(repoId: string, opts?: { force?: boolean }):
     if (refreshing.get(repoId) === run) refreshing.delete(repoId);
   });
   refreshing.set(repoId, run);
+  // Rotate the spare pool AFTER the refresh settles — calling from inside
+  // doRefresh trips replenish's own mid-refresh guard (refreshing map + lock
+  // file are still held there) and silently no-ops. Harmless after a failed
+  // refresh: the state.ok gate inside replenish handles that.
+  void run.then(() => {
+    const repo = configuredRepos()[repoId];
+    if (repo) void replenishSpares(repo).catch(() => {});
+  });
   return run;
 }
 
@@ -395,9 +403,8 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
       `[warm-template] ${repoId}: template warm at ${sha} — ${manifest.length} dep trees, ${Math.round((Date.now() - started) / 1000)}s`,
     );
 
-    // 6. Rotate the spare pool: existing spares hardlink the pre-refresh dep
-    //    trees, so drop the unclaimed ones and rebuild from the fresh state.
-    void replenishSpares(repo).catch(() => {});
+    // (Spare-pool rotation happens in refreshWarmTemplate once this promise
+    // settles — from here the mid-refresh guards would still block it.)
   } catch (e) {
     await fail(String((e as any)?.message || e));
   } finally {
