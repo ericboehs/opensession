@@ -1155,6 +1155,7 @@ body.resizing-x {
 
 .sidebar-list {
 	flex: 1;
+	min-height: 0;
 	overflow-y: auto;
 	/* Tight horizontal padding so the active/hover pill sits close to the
 	   sidebar edges (it "overflows" past the content inset, Conductor-style),
@@ -1162,6 +1163,30 @@ body.resizing-x {
 	   group-header icons, trailing times/numbers flush-right under the header's
 	   filter/＋ buttons. */
 	padding: 1px 10px 24px 10px;
+}
+
+/* Pull requests, Support, People and Automations sit below the workspace pane.
+   Their headings stay put while long row lists scroll independently, rather
+   than disappearing beneath the Workspaces header with the workspace rows. */
+.sidebar-independent-section {
+	display: flex;
+	flex: 0 1 auto;
+	flex-direction: column;
+	min-height: 0;
+	max-height: 22%;
+	margin-right: 10px;
+	margin-left: 10px;
+}
+.sidebar-independent-section.sidebar-group--band-start {
+	margin-top: 0;
+}
+.sidebar-independent-section > .sidebar-band-label {
+	flex: none;
+}
+.sidebar-independent-scroll {
+	min-height: 0;
+	overflow-y: auto;
+	padding-bottom: 6px;
 }
 
 /* "Archived" — an icon-led row styled as a peer of the My-sessions status buckets
@@ -12606,6 +12631,19 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		   "trailing times flush-right under the header buttons" the base
 		   .sidebar-list rule is after. */
 		padding-right: 4px;
+	}
+	.sidebar-independent-section {
+		display: block;
+		flex: none;
+		max-height: none;
+		margin-right: 4px;
+		margin-left: 10px;
+	}
+	.sidebar-independent-section.sidebar-group--band-start {
+		margin-top: 28px;
+	}
+	.sidebar-independent-scroll {
+		overflow-y: visible;
 	}
 
 	/* One horizontally-scrollable line of tap cards (Slack-home style) rather

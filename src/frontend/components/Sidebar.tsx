@@ -3653,33 +3653,34 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
+			</div>
 
-				{/* Pull requests are an action inbox: personal PRs, direct review
-				    requests and automation output, grouped by what can happen next. */}
-				{openPrs && openPrs.length > 0 && (
-					<ReviewQueue
-						prs={openPrs}
-						sessions={sessions}
-						currentUser={currentUser}
-						open={bandOpen("pullrequests")}
-						onToggle={() => toggleBand("pullrequests")}
-						groupOpen={(bucket) => isOpen(`review:${bucket}`)}
-						onToggleGroup={(bucket) => toggleGroup(`review:${bucket}`)}
-						selectedPr={selectedPr}
-						selectedReviewId={selectedReviewId}
-						onOpenPr={onOpenPr}
-						onOpenSessionReview={onOpenSessionReview}
-					/>
-				)}
+			{/* Pull requests are an action inbox: personal PRs, direct review
+			    requests and automation output, grouped by what can happen next. */}
+			{openPrs && openPrs.length > 0 && (
+				<ReviewQueue
+					prs={openPrs}
+					sessions={sessions}
+					currentUser={currentUser}
+					open={bandOpen("pullrequests")}
+					onToggle={() => toggleBand("pullrequests")}
+					groupOpen={(bucket) => isOpen(`review:${bucket}`)}
+					onToggleGroup={(bucket) => toggleGroup(`review:${bucket}`)}
+					selectedPr={selectedPr}
+					selectedReviewId={selectedReviewId}
+					onOpenPr={onOpenPr}
+					onOpenSessionReview={onOpenSessionReview}
+				/>
+			)}
 
-				{/* ── Support: the Plain TODO queue, newest status change first (the
-				    same ordering as Plain's Todo inbox). Rows with a linked session
-				    open it; the rest open the session-less ticket preview. ── */}
-				{(supportThreads?.length || 0) > 0 &&
+			{/* ── Support: the Plain TODO queue, newest status change first (the
+			    same ordering as Plain's Todo inbox). Rows with a linked session
+			    open it; the rest open the session-less ticket preview. ── */}
+			{(supportThreads?.length || 0) > 0 &&
 					(() => {
 						const open = bandOpen("support");
 						return (
-							<div className="sidebar-group sidebar-group--band-start">
+							<div className="sidebar-independent-section sidebar-group--band-start">
 								<div className="sidebar-band-label">
 									<button
 										className="sidebar-band-toggle"
@@ -3695,7 +3696,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 										/>
 									</button>
 								</div>
-								{open && supportThreads!.map(renderSupportRow)}
+								{open && (
+									<div className="sidebar-independent-scroll">
+										{supportThreads!.map(renderSupportRow)}
+									</div>
+								)}
 							</div>
 						);
 					})()}
@@ -3714,7 +3719,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						sessions.find((s) => s.id === id)?.title || id;
 					const open = bandOpen("people");
 					return (
-						<div className="sidebar-group sidebar-group--band-start">
+						<div className="sidebar-independent-section sidebar-group--band-start">
 							<div className="sidebar-band-label">
 								<button
 									className="sidebar-band-toggle"
@@ -3730,9 +3735,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									/>
 								</button>
 							</div>
-							{open &&
-								others.map((v) => (
-									<button
+							{open && (
+								<div className="sidebar-independent-scroll">
+									{others.map((v) => (
+										<button
 										key={v.user}
 										className={`flex items-center gap-2 w-full min-w-0 text-left text-[14px] max-[720px]:text-[16px] bg-transparent border-0 cursor-pointer rounded-md px-2 py-2 max-[720px]:py-2.5 hover:bg-hover ${
 											followUser === v.user ? "bg-active" : ""
@@ -3759,8 +3765,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 												following
 											</span>
 										)}
-									</button>
-								))}
+										</button>
+									))}
+								</div>
+							)}
 						</div>
 					);
 				})()}
@@ -3769,7 +3777,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				    teammate there to see their status lanes instead of yours. */}
 				{/* ── Automations (one collapsible band, one group per automation) ── */}
 				{groups.length > 0 && (
-					<div className="sidebar-group sidebar-group--automations sidebar-group--band-start">
+					<div className="sidebar-independent-section sidebar-group--automations sidebar-group--band-start">
 						<div className="sidebar-band-label">
 							<button
 								className="sidebar-band-toggle"
@@ -3789,10 +3797,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								/>
 							</button>
 						</div>
-						{bandOpen("automations") &&
-							groups.map((group) => {
-								const open = isOpen(group.key);
-								return (
+						{bandOpen("automations") && (
+							<div className="sidebar-independent-scroll">
+								{groups.map((group) => {
+									const open = isOpen(group.key);
+									return (
 									<React.Fragment key={group.key}>
 										<button
 											className="sidebar-group-header"
@@ -3860,11 +3869,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 												);
 											})}
 									</React.Fragment>
-								);
-							})}
+									);
+								})}
+							</div>
+						)}
 					</div>
 				)}
-			</div>
 			{wsHover && (
 				<WsHoverCard
 					row={wsHover.row}

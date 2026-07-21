@@ -187,7 +187,7 @@ export function ReviewQueue({
 		filter.session !== "all";
 
 	return (
-		<div className="sidebar-group sidebar-group--band-start">
+		<div className="sidebar-independent-section sidebar-group--band-start">
 			<div className="sidebar-band-label flex items-center gap-1">
 				<button
 					className="sidebar-band-toggle min-w-0 flex-1"
@@ -284,7 +284,7 @@ export function ReviewQueue({
 			</div>
 
 			{open && (
-				<div className="mt-1">
+				<div className="sidebar-independent-scroll mt-1">
 					{GROUPS.map((group) => {
 						const items = byBucket.get(group.key) || [];
 						const groupIsOpen = groupOpen(group.key);
