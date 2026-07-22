@@ -6,9 +6,19 @@ directories:
   output: dist
 files:
   - src/**/*
+# macOS 26 (Tahoe) renders apps that only ship a legacy .icns on a system
+# backplate (looks like a border). The real icon is the Icon Composer document
+# build/AppIcon.icon, compiled to build/Assets.car by scripts/compile-icon.sh
+# (needs Xcode 26; artifacts are committed so CI never compiles). Assets.car +
+# CFBundleIconName below make Tahoe render the native Liquid Glass icon; the
+# icns stays as the pre-Tahoe fallback. Artwork source of truth:
+# output/os1-icons/ at the repository root.
+extraResources:
+  - from: build/Assets.car
+    to: Assets.car
 mac:
   category: public.app-category.developer-tools
-  icon: build/icon-512.png
+  icon: build/icon.icns
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
@@ -23,6 +33,7 @@ mac:
     - target: zip
       arch: [arm64]
   extendInfo:
+    CFBundleIconName: AppIcon
     CFBundleURLTypes:
       - CFBundleURLName: OS¹ deep link
         CFBundleURLSchemes: [os1]

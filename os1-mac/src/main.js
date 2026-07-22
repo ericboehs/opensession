@@ -99,6 +99,9 @@ function createWindow() {
     // manifest declares display_override: window-controls-overlay).
     titleBarStyle: "hidden",
     titleBarOverlay: true,
+    // No dedicated titlebar band in the frontend: its first content row (54px)
+    // is the titlebar, so center the ~12px traffic lights on it ((54 - 12) / 2).
+    trafficLightPosition: { x: 18, y: 21 },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       sandbox: true,
