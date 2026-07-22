@@ -266,7 +266,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 	if (entry.type === "user" && humanReply) {
 		return (
 			<div
-				className="msg msg-human [content-visibility:auto] [contain-intrinsic-size:auto_80px]"
+				className="msg msg-human"
 				data-eid={entry.id}
 			>
 				<div className="msg-label msg-label-human">
@@ -298,7 +298,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 		// attribution label.
 		return (
 			<div
-				className="msg msg-user [content-visibility:auto] [contain-intrinsic-size:auto_80px]"
+				className="msg msg-user"
 				data-eid={entry.id}
 			>
 				{fromOther && (
@@ -326,7 +326,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 	// the name row was pure noise above each answer.
 	return (
 		<div
-			className="msg msg-assistant [content-visibility:auto] [contain-intrinsic-size:auto_80px]"
+			className="msg msg-assistant"
 			data-eid={entry.id}
 		>
 			<ClampedBody

@@ -124,7 +124,7 @@ export const TurnBlock = React.memo(function TurnBlock({
 
   return (
     <div
-      className="mx-auto mb-3 max-w-[var(--chat-col)] [content-visibility:auto] [contain-intrinsic-size:auto_80px]"
+      className="mx-auto mb-3 max-w-[var(--chat-col)]"
       // Anchor identity for the history scroll hold: the LAST item survives a
       // history page merging older items into this turn (the first doesn't).
       data-eid={lastItem ? `${lastItem.id}#turn` : undefined}

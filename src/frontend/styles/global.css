@@ -695,12 +695,14 @@ html.wco .app-body.sidebar-collapsed .detail-topbar-title {
 		background: transparent;
 	}
 	/* Pinned surface: a full-width backing pseudo-element in the sidebar's OWN
-	   material (same wash + blur as .sidebar-container), so a stuck header
-	   matches the sidebar color exactly instead of stacking a second darker
-	   layer, and spans edge to edge regardless of how deep the header is inset
-	   (the ±400px overhang is clipped by the sidebar's overflow-x). The strong
-	   blur turns rows sliding beneath into an unreadable smear rather than a
-	   legible ghost. Hairline rides the pseudo so it's full-width too. */
+	   material layered over the opaque sidebar base, so a stuck header matches
+	   the sidebar color exactly instead of stacking a second darker layer, and
+	   spans edge to edge regardless of how deep the header is inset (the
+	   ±400px overhang is clipped by the sidebar's overflow-x). Opaque on
+	   purpose — this used to backdrop-blur the rows sliding beneath, but
+	   toggling a blur from the scroll listener re-rasterized the whole sidebar
+	   mid-scroll (visible flashing on loaded machines). Hairline rides the
+	   pseudo so it's full-width too. */
 	.sidebar-sticky-head.is-stuck::before,
 	.sidebar-status-group > .sidebar-group-header.is-stuck::before,
 	.sidebar-group--pinned > .sidebar-group-header.is-stuck::before,
@@ -713,9 +715,9 @@ html.wco .app-body.sidebar-collapsed .detail-topbar-title {
 		left: -400px;
 		right: -400px;
 		z-index: -1;
-		background: var(--sidebar-material);
-		-webkit-backdrop-filter: blur(24px) saturate(150%);
-		backdrop-filter: blur(24px) saturate(150%);
+		background:
+			linear-gradient(var(--sidebar-material), var(--sidebar-material)),
+			var(--bg-raised);
 		box-shadow: 0 1px 0 0 color-mix(in srgb, var(--border) 60%, transparent);
 	}
 	/* One invariant row height prevents the outgoing and incoming sticky labels
@@ -836,9 +838,12 @@ html.wco .app-body.sidebar-collapsed .detail-topbar-title {
 	min-height: 0;
 }
 
-/* macOS-style desktop sidebar material. The gradient is only a faint glass
-   sheen; the backdrop blur does the real work when the native shell supplies
-   a translucent window surface. Keep the phone root page opaque below. */
+/* macOS-style desktop sidebar material: a faint glass sheen over the wash,
+   compositing onto the opaque --bg-raised base above. No backdrop-filter —
+   the vibrancy-era blur sampled nothing but our own flat background since the
+   shell went opaque, while forcing the compositor to re-rasterize the whole
+   sidebar whenever anything behind it repainted (scroll-flash amplifier).
+   Keep the phone root page opaque below. */
 @media (min-width: 721px) {
 	.sidebar-container {
 		background:
@@ -847,9 +852,8 @@ html.wco .app-body.sidebar-collapsed .detail-topbar-title {
 				var(--sidebar-material-sheen),
 				transparent 180px
 			),
-			var(--sidebar-material);
-		-webkit-backdrop-filter: blur(28px) saturate(155%);
-		backdrop-filter: blur(28px) saturate(155%);
+			linear-gradient(var(--sidebar-material), var(--sidebar-material)),
+			var(--bg-raised);
 	}
 }
 
@@ -1859,7 +1863,10 @@ body.resizing-x {
 	transform: translateX(var(--swipe-x, 0));
 	transition: transform 210ms cubic-bezier(0.22, 1, 0.36, 1);
 	touch-action: pan-y;
-	will-change: transform;
+	/* No will-change here: it promoted EVERY sidebar row to its own compositor
+	   layer (dozens of retina-sized layers just sitting in the list), a real
+	   GPU-memory tax on loaded machines. The swipe transform still animates
+	   fine — is-dragging rows get promoted implicitly by the transform. */
 }
 .sidebar-swipe-row > .sidebar-item:hover {
 	background: var(--bg-hover);
