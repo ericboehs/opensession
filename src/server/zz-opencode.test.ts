@@ -317,7 +317,10 @@ describe("buildOpencodeInstructions", () => {
     }
   });
   test("ask mode gets the read-only guardrail", () => {
-    expect(buildOpencodeInstructions({ isAsk: true })).toContain("READ-ONLY");
+    const s = buildOpencodeInstructions({ isAsk: true });
+    expect(s).toContain("READ-ONLY with respect to the checkout and shell");
+    expect(s).toContain("does not prohibit intentional changes");
+    expect(s).toContain("shared notes");
   });
   test("code mode gets the session link, dropped servers are named", () => {
     const s = buildOpencodeInstructions({

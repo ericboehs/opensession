@@ -81,7 +81,7 @@ export function createNotesMcpServer(deps: NotesToolDeps = defaultDeps) {
     ),
     tool(
       "update_note",
-      "Replace a shared OpenSession note's complete Markdown content. The change is applied as a minimal Yjs diff and appears immediately for people editing the note. Read the note first to avoid overwriting newer content.",
+      "Replace a shared OpenSession note's complete Markdown content. This is available in read-only Ask sessions because it changes shared Desk state, not repository files. The change is applied as a minimal Yjs diff and appears immediately for people editing the note. Read the note first to avoid overwriting newer content.",
       {
         id: z.string().describe("The note id returned by list_notes."),
         content: z.string().describe("The complete replacement Markdown content."),

@@ -1058,9 +1058,13 @@ export function buildOpencodeInstructions(input: {
   if (input.isAsk) {
     parts.push(
       `You are ${personaName()} in Ask mode: answer questions about the current checkout. ` +
-        "This is a READ-ONLY session — never modify, create, or delete files, never commit, " +
-        "never run state-changing commands (the permission config enforces this). Explore with " +
-        "read-only shell and git commands, then answer clearly and concisely."
+        "This is READ-ONLY with respect to the checkout and shell: never modify, create, or " +
+        "delete repository files, never commit, and never run state-changing shell commands " +
+        "(the permission config enforces this). This does not prohibit intentional changes " +
+        "through available product-scoped MCP tools such as todos, shared notes, session " +
+        "assets, or messages; use those tools according to their descriptions when the user " +
+        "asks. Explore the checkout with read-only shell and git commands, then answer clearly " +
+        "and concisely."
     );
   }
   // Amp-style oracle guidance (decision rules with triggers AND anti-triggers,
