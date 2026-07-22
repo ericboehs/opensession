@@ -30,7 +30,7 @@ const popupClasses =
 	"min-w-[180px] overflow-hidden rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0";
 
 const popupInnerClasses =
-	"max-h-[min(60vh,420px)] overflow-y-auto overflow-x-hidden overscroll-contain p-2";
+	"max-h-[min(60vh,420px)] overflow-y-auto overflow-x-hidden overscroll-contain p-1.5";
 
 function Popup({
 	className,
@@ -95,7 +95,7 @@ function ContextPopup({
 /** Shared row styling for anything that behaves like a menu item. Highlight
  * via Base UI's data-highlighted so keyboard navigation lights rows up too. */
 const itemClasses =
-	"flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-2 text-left text-[13px] text-fg outline-none data-[highlighted]:bg-hover";
+	"flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-fg outline-none data-[highlighted]:bg-hover";
 
 function Item({
 	className,
@@ -143,7 +143,7 @@ function CheckboxItem({
 }
 
 function Separator({ className }: { className?: string }) {
-	return <BaseMenu.Separator className={cn("my-2 h-px bg-line", className)} />;
+	return <BaseMenu.Separator className={cn("my-1.5 h-px bg-line", className)} />;
 }
 
 function GroupLabel({ className, ...props }: { className?: string; children?: React.ReactNode }) {
@@ -151,7 +151,7 @@ function GroupLabel({ className, ...props }: { className?: string; children?: Re
 		<BaseMenu.GroupLabel
 			{...props}
 			className={cn(
-				"px-2.5 pb-1.5 text-[11px] font-semibold tracking-[-0.01em] text-faint",
+				"px-2 pb-1 text-[11px] font-semibold tracking-[-0.01em] text-faint",
 				className,
 			)}
 		/>
