@@ -85,7 +85,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 ```jsonc
 {
   // Which SandboxProvider new opted-in sessions get.
-  // "local" | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm"
+  // "local" | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" | "macos"
   "provider": "docker",
 
   // ── Docker provider ────────────────────────────────────────────────
@@ -198,6 +198,15 @@ to `provider: "local"` (today's host behavior). Env override for the path:
     "suspendedDurationSeconds": 3600, // only used with idleSuspendSeconds
     "logGroup": "/aws/lambda/microvms/opensession"
   },
+  "macos": {
+    // Fixed Tailscale-reachable Mac. SSH remains host-key checked and uses
+    // BatchMode; put the private key path here, never key material itself.
+    "host": "mac-mini.your-tailnet.ts.net",
+    "user": "opensession",     // optional; SSH config default when omitted
+    "port": 22,                 // optional
+    "identityFile": "/home/ubuntu/.ssh/opensession-mac", // optional
+    "remoteHome": "/Users/opensession"
+  },
 
   // How remote sandboxes authenticate `git clone` (they can't mount host
   // creds). "none" = public clone; "https-token" injects the token into the
@@ -226,7 +235,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 
 ## Public dial-back ingress (remote providers)
 
-Remote sandboxes (Daytona/E2B/Box/Modal/Lambda MicroVMs) run on remote compute and must dial back
+Remote sandboxes (Daytona/E2B/Box/Modal/Lambda MicroVMs/macOS) run on remote compute and must dial back
 to backstage's `/opensession/run-ws/<hostId>` and `/opensession/rpc-ws`
 WebSocket routes from the **public internet**. The main server binds the
 tailnet and carries the whole app — never expose it. Instead,
@@ -481,6 +490,113 @@ in `deploy/sandbox/lambda-microvm/`.
 - To certify: `bun run deploy/sandbox/conformance.ts lambda-microvm` after the
   image and IAM resources exist.
 
+### Fixed macOS node (first functional provider)
+
+The `macos` provider runs the existing remote run host on one pre-provisioned
+Apple Silicon Mac. Backstage reaches it over noninteractive SSH, but each agent
+host is started as a unique Aqua `LaunchAgent` in `gui/$UID`. It therefore
+survives the SSH connection and runs in the logged-in desktop session, with the
+existing run-ws/rpc-ws, MCP proxy, steering, cancel, and restart-reattach
+machinery unchanged.
+
+**Provision the Mac once:**
+
+1. Create a dedicated **standard** local user (for example `opensession`), log
+   that user into the desktop, and keep the desktop logged in and unlocked
+   while the node is enabled. Do not run the node as an administrator.
+2. Join the Mac to the same Tailscale network as Backstage. Enable Remote Login
+   for only the dedicated user and restrict SSH to the Mac's Tailscale address
+   in the host firewall. Put Backstage's dedicated public key in that user's
+   `~/.ssh/authorized_keys`; keep the private key only on the Backstage host.
+3. Install full Xcode and select it with `sudo xcode-select -s
+   /Applications/Xcode.app/Contents/Developer`. Open Xcode once to accept its
+   license and finish first-launch components. Verify the Xcode command-line
+   tools expose Python 3 with `/usr/bin/python3 --version`; descriptor-confined
+   artifact imports use it on the Mac.
+4. As the dedicated user, install Bun, Claude Code, and the pinned OpenCode
+   version, then clone and install the Backstage runner at the configured SHA:
+
+   ```sh
+   curl -fsSL https://bun.sh/install | bash
+   curl -fsSL https://claude.ai/install.sh | bash
+   ~/.bun/bin/bun add -g opencode-ai@1.17.15
+   mkdir -p ~/.claude && test -s ~/.claude/settings.json || printf '{}\n' > ~/.claude/settings.json
+   mkdir -p ~/projects
+   git clone https://github.com/tellahq/backstage.git ~/projects/tella-backstage
+   git -C ~/projects/tella-backstage checkout --detach <runnerSha>
+   cd ~/projects/tella-backstage && ~/.bun/bin/bun install --frozen-lockfile
+   ```
+
+5. Set `runnerSha` in `~/.opensession-sandbox.json` to the same commit and set
+   `callbackBaseUrl` to a Tailscale-reachable Backstage WebSocket base. The
+   provider refuses non-Darwin, non-arm64, missing Xcode/Aqua, missing tools,
+   an OpenCode pin mismatch, or a runner SHA mismatch before cloning a session
+   workspace. The Linux Backstage host must also expose `/usr/bin/python3` for
+   descriptor-confined local artifact writes.
+6. Grant only the TCC permissions needed by the intended repo-local visual
+   tooling (typically Screen Recording, Accessibility, and Automation). TCC
+   prompts must be accepted interactively in the dedicated user's desktop;
+   validate the exact binaries/wrappers the scripts execute before unattended
+   use.
+
+Each child session gets an isolated clone under
+`~/.opensession-workspaces/<session>/<repo>` on the Mac. The Linux parent's
+`cwd` is never reused, attached repos are refused, private-repo clone auth uses
+the existing scoped `cloneCredential`, and deleting the session deletes that
+remote clone. The node must not hold release signing keys, App Store Connect
+credentials, production cloud credentials, or a developer's general-purpose
+SSH/GitHub credentials. Remote agent launches receive only the same per-run
+Claude/OpenAI account slices and MCP policy already used by other remote
+providers.
+
+This first provider has one fixed node and no visual-job scheduler. All runs
+serialize on a durable, node-wide **foreground lease** (a lockdir under
+`~/.opensession-node/foreground-lease` on the Mac — not merely per-session
+locking): a second session's run is refused with a clear "node is busy" error
+instead of silently contending for the desktop, keyboard, and screen. A lease
+whose owner is no longer running is reclaimed automatically after a short
+stale window. The lease, the run's remote spec/run directory, per-run
+credential seed material (the scoped Claude/OpenAI account files and the
+OpenAI seed dir), and the matching LaunchAgent plists/host logs are all
+removed when a run ends normally, on cancellation, on session `destroy()`,
+and when a later run reclaims a stale lease.
+
+Lease acquisition, LaunchAgent publication, and teardown are serialized across
+Backstage processes by an OS-backed `flock` on the Mac. Its detached holder
+is renewed while a launch is staging and expires after five minutes if the
+controlling process disappears; teardown does not release the foreground lease
+or credential files until launchd and the recorded run-host PID both confirm
+the previous host is gone.
+
+**Trust boundary: this is a single-user, single-machine node — it is NOT a
+multi-tenant sandbox.** Every session that runs here shares one Unix account
+on one dedicated Mac. Per-run cleanup removes scoped credentials and run-host
+state, but a later run still executes as the SAME account and can read
+another session's persisted worktree under
+`~/.opensession-workspaces/<session>/<repo>` if it chooses to — nothing
+enforces per-session filesystem isolation the way a container or VM does for
+the other providers. Only enable `macos` for deployments with exactly one
+trusted OpenSession user (or a group of users who already trust each other's
+session output), and keep the dedicated machine free of any secret,
+credential, or data that user should not incidentally be able to reach from a
+differently-authored session on the same node. Isolating untrusted sessions
+from each other requires a separate macOS user, VM, or node per tenant — not
+this provider as shipped.
+
+Artifact transfer uses the `import_remote_asset` tool on the
+`opensession-assets` MCP server: give it a path relative to the session's
+remote workspace root (for example a screenshot or recording a repo-local
+script wrote under `.build/opensession/artifacts/`) and Backstage fetches the
+file over the same noninteractive SSH transport. The transfer streams into a
+descriptor-confined local writer, is capped at 500 MB, and is size- and
+SHA-256-verified before atomic publication in the session's assets folder. No
+Linux SSH credential or reverse connection is ever exposed to the remote
+child. Imported video files (`.mp4`/`.webm`/`.mov`) print a
+`BACKSTAGE_VIDEO:` marker so the session viewer plays them inline; images
+appear in the Assets tab immediately. The Shell tab intentionally reports
+unavailable for macOS sessions until the provider has a remote PTY; it never
+falls back to an unrelated Linux host shell.
+
 ## Licensing notes
 
 - **Daytona** is AGPL-3.0. OpenSession consumes it **over its API** (via the
@@ -491,6 +607,7 @@ in `deploy/sandbox/lambda-microvm/`.
 - **E2B**: the JS SDK is MIT; the self-host infra repo is Apache-2.0.
 - **Modal**: the official `modal` TypeScript SDK is Apache-2.0.
 - **AWS Lambda MicroVMs**: the AWS SDK client is Apache-2.0.
+- **macOS**: uses the system OpenSSH client and launchd; no provider SDK.
 - **Docker provider**: plain `docker` CLI against your own daemon; nothing
   vendored.
 - Core imports adapter SDKs only inside `src/server/sandbox/adapters/` —

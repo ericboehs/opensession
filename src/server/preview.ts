@@ -685,9 +685,13 @@ export async function getSandboxPreviewStatus(
     starting: !webapp?.running && isStarting(worktreeDir),
     previewUrl,
     bootable:
-      !!webapp?.running ||
-      (await resolvePreviewBoot(worktreeDir, repoForPath(worktreeDir), sandboxExists(sandbox))) !=
-        null,
+      sandbox.provider !== "macos" &&
+      (!!webapp?.running ||
+        (await resolvePreviewBoot(
+          worktreeDir,
+          repoForPath(worktreeDir),
+          sandboxExists(sandbox),
+        )) != null),
     services,
   };
 }

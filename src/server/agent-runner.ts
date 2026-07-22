@@ -542,7 +542,13 @@ export function resumeInterruptedRuns(
   reposNoteFor?: (bksSessionId: string) => string | undefined,
   onEvent?: (bksSessionId: string, event: StreamEvent) => void,
 ): string[] {
-  const interrupted = takeInterruptedRuns();
+  const interrupted = takeInterruptedRuns(
+    (run) =>
+      run.sandboxProvider === "macos" &&
+      !run.kind?.startsWith("github-") &&
+      !run.kind?.startsWith("slack") &&
+      !run.kind?.startsWith("workflow"),
+  );
   const resumed: string[] = [];
 
   for (const run of interrupted) {
@@ -577,7 +583,8 @@ export function resumeInterruptedRuns(
         run.sandboxProvider === "e2b" ||
         run.sandboxProvider === "box" ||
         run.sandboxProvider === "modal" ||
-        run.sandboxProvider === "lambda-microvm")
+        run.sandboxProvider === "lambda-microvm" ||
+        run.sandboxProvider === "macos")
     ) {
       const isDocker = run.sandboxProvider === "docker";
       if (run.bksSessionId) resumed.push(run.bksSessionId);
@@ -586,9 +593,25 @@ export function resumeInterruptedRuns(
           const resume = isDocker
             ? (await import("./sandbox/docker")).resumeDockerSandboxRun
             : (await import("./sandbox/adapters/bootstrap")).resumeRemoteSandboxRun;
-          const events = await resume(run, {
-            onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
-          });
+          const events = await (async () => {
+            for (let attempt = 0; ; attempt++) {
+              try {
+                return await resume(run, {
+                  onAskUser: run.bksSessionId ? askHandlerFor?.(run.bksSessionId) : undefined,
+                });
+              } catch (error) {
+                const lockContended =
+                  run.sandboxProvider === "macos" &&
+                  error instanceof Error &&
+                  error.message.includes("being mutated by another process");
+                if (!lockContended || attempt >= 10) throw error;
+                console.warn(
+                  `[runner] macOS resume for ${run.runKey} is waiting for a stale mutation lock`,
+                );
+                await Bun.sleep(30_000);
+              }
+            }
+          })();
           if (!events) {
             console.warn(
               `[runner] Sandbox ${run.sandboxId} for interrupted run ${run.runKey} is gone — the session's next prompt recreates it`

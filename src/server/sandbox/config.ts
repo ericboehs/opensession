@@ -198,6 +198,26 @@ export interface SandboxAwsLambdaMicrovmConfig {
   logGroup?: string;
 }
 
+/** Fixed macOS execution node reached over Tailscale SSH. Credentials stay in
+ * the operator-owned config file; no host key or private key is checked in. */
+export interface SandboxMacosConfig {
+  host?: string;
+  user?: string;
+  port?: number;
+  identityFile?: string;
+  remoteHome?: string;
+}
+
+function macosConfigValid(config: SandboxMacosConfig | undefined): boolean {
+  return Boolean(
+    config?.host &&
+      !config.host.startsWith("-") &&
+      !/\s/.test(config.host) &&
+      config.remoteHome?.startsWith("/") &&
+      (!config.user || /^[A-Za-z0-9._-]+$/.test(config.user)),
+  );
+}
+
 export interface SandboxConfig {
   provider: SandboxProviderId;
   /** Container image for the docker provider (Phase 1). */
@@ -246,6 +266,8 @@ export interface SandboxConfig {
   modal?: SandboxModalConfig;
   /** AWS Lambda MicroVM adapter (provider "lambda-microvm"). */
   awsLambdaMicrovm?: SandboxAwsLambdaMicrovmConfig;
+  /** Fixed macOS SSH execution node (provider "macos"). */
+  macos?: SandboxMacosConfig;
   /** Clone auth for remote-provider workspaces + runner bootstrap. */
   cloneCredential?: SandboxCloneCredential;
   /** Warm-on-typing prewarm pool (remote providers). Absent = defaults, with
@@ -269,6 +291,7 @@ const PROVIDER_IDS = new Set<string>([
   "box",
   "modal",
   "lambda-microvm",
+  "macos",
 ]);
 
 function asProviderId(v: unknown): SandboxProviderId | undefined {
@@ -416,6 +439,22 @@ export function sandboxConfig(): SandboxConfig {
                 logGroup: str(raw.awsLambdaMicrovm.logGroup),
               }
             : undefined,
+        macos:
+          raw?.macos && typeof raw.macos === "object"
+            ? {
+                host: str(raw.macos.host),
+                user: str(raw.macos.user),
+                port:
+                  typeof raw.macos.port === "number" &&
+                  Number.isInteger(raw.macos.port) &&
+                  raw.macos.port > 0 &&
+                  raw.macos.port < 65536
+                    ? raw.macos.port
+                    : undefined,
+                identityFile: str(raw.macos.identityFile),
+                remoteHome: str(raw.macos.remoteHome),
+              }
+            : undefined,
         cloneCredential:
           raw?.cloneCredential?.type === "https-token" ||
           raw?.cloneCredential?.type === "none"
@@ -500,6 +539,7 @@ export const RUNNABLE_SANDBOX_PROVIDERS = [
   "box",
   "modal",
   "lambda-microvm",
+  "macos",
 ] as const;
 export type RunnableSandboxProviderId = (typeof RUNNABLE_SANDBOX_PROVIDERS)[number];
 
@@ -514,13 +554,14 @@ export function isRunnableSandboxProvider(v: unknown): v is RunnableSandboxProvi
  *  volume-style (cloned inside the sandbox; no host fallback for runs). */
 export function isRemoteSandboxProvider(
   v: unknown,
-): v is "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" {
+): v is "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" | "macos" {
   return (
     v === "daytona" ||
     v === "e2b" ||
     v === "box" ||
     v === "modal" ||
-    v === "lambda-microvm"
+    v === "lambda-microvm" ||
+    v === "macos"
   );
 }
 
@@ -577,6 +618,7 @@ const ALL_ENVIRONMENTS: Record<SandboxEnvironmentId, boolean> = {
   box: true,
   modal: true,
   "lambda-microvm": true,
+  macos: true,
 };
 
 export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
@@ -603,7 +645,7 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
     id: "opencode-other",
     label: "OpenCode (other providers)",
     match: { provider: "opencode" },
-    environments: { local: true, docker: false, daytona: false, e2b: false, box: false, modal: false, "lambda-microvm": false },
+    environments: { local: true, docker: false, daytona: false, e2b: false, box: false, modal: false, "lambda-microvm": false, macos: false },
     hint: "its `opencode auth login` credential only exists on the host",
   },
   {
@@ -613,7 +655,7 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
     id: "codex",
     label: "GPT (Codex)",
     match: { provider: "codex" },
-    environments: { local: true, docker: false, daytona: false, e2b: false, box: false, modal: false, "lambda-microvm": false },
+    environments: { local: true, docker: false, daytona: false, e2b: false, box: false, modal: false, "lambda-microvm": false, macos: false },
     hint: "Codex account state stays on the host; use an opencode/openai/* model to run GPT in a sandbox",
   },
   {
@@ -632,6 +674,7 @@ const ENVIRONMENT_LABELS: Record<SandboxEnvironmentId, string> = {
   box: "Box",
   modal: "Modal",
   "lambda-microvm": "AWS Lambda MicroVM",
+  macos: "macOS",
 };
 
 /** The matrix row a model (or the current default, for ""/undefined) falls
@@ -714,6 +757,7 @@ export function sandboxProviderConfigured(id: RunnableSandboxProviderId): boolea
     );
   }
   if (id === "lambda-microvm") return Boolean(cfg.awsLambdaMicrovm?.imageIdentifier);
+  if (id === "macos") return macosConfigValid(cfg.macos);
   return Boolean(cfg.e2b?.apiKey || process.env.E2B_API_KEY);
 }
 
@@ -737,6 +781,7 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
         modalConfigHasCredentials(),
     );
   const lambdaMicrovmConfigured = enabled && Boolean(cfg.awsLambdaMicrovm?.imageIdentifier);
+  const macosConfigured = enabled && macosConfigValid(cfg.macos);
   // Remote sandboxes must dial back over WS: healthy = a public-ingress URL or
   // an explicit callbackBaseUrl is configured, and then the row shows no note.
   // Only an actually-missing dial-back URL surfaces a caveat (no static
@@ -749,6 +794,11 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
     ? {}
     : {
         note: "no dial-back URL configured — set publicIngress.publicBaseUrl (or callbackBaseUrl) so sandboxes can reach this server; see docs/self-hosting-sandboxes.md",
+      };
+  const macosNote = cfg.callbackBaseUrl
+    ? {}
+    : {
+        note: "no Tailscale dial-back URL configured — set callbackBaseUrl so the Mac can reach this server; see docs/self-hosting-sandboxes.md",
       };
   const providers: SandboxProviderStatusEntry[] = [
     { id: "docker", configured: enabled },
@@ -776,6 +826,11 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
       id: "lambda-microvm",
       configured: lambdaMicrovmConfigured,
       ...(lambdaMicrovmConfigured ? remoteNote : {}),
+    },
+    {
+      id: "macos",
+      configured: macosConfigured,
+      ...(macosConfigured ? macosNote : {}),
     },
   ];
   return {
@@ -818,7 +873,7 @@ export function resolveRequestedSandbox(
   if (!isRunnableSandboxProvider(id)) {
     return {
       ok: false,
-      error: `Unknown sandbox provider "${requested}" — valid values: docker, daytona, e2b, box, modal, lambda-microvm (or true for the configured default).`,
+      error: `Unknown sandbox provider "${requested}" — valid values: docker, daytona, e2b, box, modal, lambda-microvm, macos (or true for the configured default).`,
     };
   }
   if (!sandboxProviderConfigured(id)) {
@@ -833,6 +888,8 @@ export function resolveRequestedSandbox(
               ? 'set {"modal":{"tokenId":"…","tokenSecret":"…"}} in ~/.opensession-sandbox.json (or MODAL_TOKEN_ID/MODAL_TOKEN_SECRET)'
               : id === "lambda-microvm"
                 ? 'set {"awsLambdaMicrovm":{"imageIdentifier":"arn:aws:lambda:…:microvm-image/…"}} in ~/.opensession-sandbox.json'
+                : id === "macos"
+                  ? 'set {"macos":{"host":"mac.example.ts.net","remoteHome":"/Users/opensession"}} in ~/.opensession-sandbox.json'
                 : 'set {"e2b":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or E2B_API_KEY)';
     return {
       ok: false,

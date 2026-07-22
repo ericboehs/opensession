@@ -35,6 +35,8 @@ import { automationRunMcpForSession, selfImproveMcpForSession } from "./automati
 import { findSession, touchBackstageSession } from "./session-cache";
 import { attachRepo, linkPr, sessionRepoIds, switchPrimaryRepo } from "./session-repos";
 import { makeAskHandler } from "./asks";
+import { assetsDirFor, importAssetStream, MAX_IMPORT_BYTES } from "./session-assets";
+import { fetchMacosAsset } from "./sandbox/adapters/macos";
 
 /** The session's primary repo id, for the papercuts toggle (undefined =
  *  chat-only session, which logs under no repo and is always enabled). */
@@ -177,7 +179,38 @@ export function interactiveMcpServers(
 					}),
 					// Per-session scratch assets (previewed in the Assets tab).
 					// Works in Ask mode — writes land outside the checkout.
-					"opensession-assets": createAssetsMcpServer({ sessionId }),
+					"opensession-assets": createAssetsMcpServer({
+						sessionId,
+						// import_remote_asset: only wired to a purpose for macOS
+						// execution-node sessions (session.sandbox.provider ===
+						// "macos") — the session/sandbox lookup lives here so
+						// assets-tools.ts stays free of sandbox-specific imports,
+						// matching the closure pattern used by opensession-repos
+						// and opensession-preview above.
+						importRemoteAsset: async ({ remotePath, destPath }) => {
+							const s = findSession(sessionId);
+							if (!s?.sandbox || s.sandbox.provider !== "macos" || !s.sandbox.sandboxId) {
+								throw new Error(
+									"import_remote_asset only works on sessions actively running on the macos execution-node sandbox",
+								);
+							}
+							const fetched = await fetchMacosAsset({
+								sandboxId: s.sandbox.sandboxId,
+								sessionId,
+								remotePath,
+								maxBytes: MAX_IMPORT_BYTES,
+								consume: (chunks, expected) =>
+									importAssetStream(sessionId, destPath, chunks, expected),
+							});
+							const asset = fetched.value;
+							return {
+								size: asset.size,
+								remoteAbsPath: fetched.remoteAbsPath,
+								localAbsPath: `${assetsDirFor(sessionId)}/${asset.path}`,
+								localRelPath: asset.path,
+							};
+						},
+					}),
 					// The user's Desk todo list — add/list/complete/drop/update.
 					// Interactive-only like the siblings (the automation branch below
 					// fails closed): untrusted ticket text must not write to a
