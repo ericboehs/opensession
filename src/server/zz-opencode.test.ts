@@ -264,6 +264,14 @@ describe("proxyOpencodeMcpConfigs", () => {
 });
 
 describe("buildOpencodeInstructions", () => {
+  test("every run requires confirmation before publishing to public repositories", () => {
+    for (const isAsk of [true, false]) {
+      const s = buildOpencodeInstructions({ isAsk });
+      expect(s).toContain("Public repositories require confirmation");
+      expect(s).toContain("explicit user confirmation in the current conversation");
+      expect(s).toContain("before creating a fork, pushing a branch, opening a pull request");
+    }
+  });
   test("ask mode gets the read-only guardrail", () => {
     expect(buildOpencodeInstructions({ isAsk: true })).toContain("READ-ONLY");
   });

@@ -135,7 +135,7 @@
  */
 
 import { personaName, productName } from "./config";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import type { Subprocess } from "bun";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
@@ -274,8 +274,12 @@ const IDLE_KILL_MS = 30 * 60 * 1000;
  *  per-session 30-min kill (they serve every eligible interactive session on
  *  their account, and their whole point is no cold boots / MCP reconnects).
  *  Still bounded so an abandoned pool member (e.g. its account went unusable
- *  and every session rotated away) doesn't linger forever. */
-const SHARED_IDLE_KILL_MS = 6 * 60 * 60 * 1000;
+ *  and every session rotated away) doesn't linger forever. 2h, not the old 6h:
+ *  the Anthropic prompt cache is dead after ~1h anyway, so past that an idle
+ *  server only buys skipping a ~5s cold boot — and at (accounts × users)
+ *  fan-out the fleet reached 46 servers / 25GB RSS and pushed the box 14GB
+ *  into swap (2026-07-22). */
+const SHARED_IDLE_KILL_MS = 2 * 60 * 60 * 1000;
 /** Neutral cwd for shared servers — sessions bring their own directory via
  *  the per-call `?directory=` query (verified live 2026-07-09: opencode
  *  instantiates per-directory app instances; bash/tools run in the session's
@@ -377,6 +381,7 @@ export const SHARED_INPROCESS_SERVERS = [
   "opensession-assets",
   "opensession-search",
   "opensession-todos",
+  "opensession-notes",
 ];
 
 /**
@@ -1011,6 +1016,17 @@ export function buildOpencodeInstructions(input: {
       "controlled channel fails, stop and report the failure instead of escalating to a " +
       "third-party host."
   );
+  // Unconditional, every run: a Codex-backed session opened a PR against an
+  // open-source repository without first obtaining the user's permission.
+  parts.push(
+    "## Public repositories require confirmation\nNEVER publish changes to an open-source " +
+      "or public repository without explicit user confirmation in the current conversation. " +
+      "A request to investigate, implement, or prepare a change is not permission to publish " +
+      "it. Local edits and commits are allowed, but before creating a fork, pushing a branch, " +
+      "opening a pull request, or otherwise writing to any public/open-source repository, stop " +
+      "and ask the user. This rule overrides bias-to-action and generic commit/push/PR defaults; " +
+      "automatic PR creation applies only to Tella's private repositories."
+  );
   // Observed 2026-07-10 (bks-019f4b70): twice in one session the model ended
   // its turn on a plan sentence ("I'll rebase X, then …") with zero tool
   // calls, both times on the first turn after a mid-run interrupt — the user
@@ -1432,6 +1448,39 @@ function idleKillMsFor(entry: OpencodeServerEntry): number {
   return entry.shared ? SHARED_IDLE_KILL_MS : IDLE_KILL_MS;
 }
 
+/** When the server last did real work: every turn writes its DB shard, so the
+ *  shard's mtime is the honest last-activity signal (used by adoption and the
+ *  idle sweep — `lastUsed` alone lies after restarts and lost timers). */
+function dbLastActivityMs(dbPath?: string): number | null {
+  if (!dbPath) return null;
+  try {
+    return statSync(dbPath).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+// Belt-and-braces idle sweep. Each entry's idle kill rides a setTimeout that
+// can silently die (the bun --hot timer-poisoning failure killed every timer
+// in the process while health stayed green), and before 2026-07-22 nothing
+// re-checked survivors — the shared fleet grew to 46 servers / 25GB RSS and
+// 14GB of swap. This scan is the backstop: kill anything past its idle TTL by
+// the most generous signal available (pool bookkeeping or DB activity).
+// Parked on globalThis so hot reloads don't stack intervals.
+const IDLE_SWEEP_MS = 10 * 60 * 1000;
+if (!g.__opencodeIdleSweep) {
+  g.__opencodeIdleSweep = setInterval(() => {
+    for (const [key, entry] of servers) {
+      if (entry.activeRuns > 0 || entry.draining) continue;
+      const lastActivity = Math.max(entry.lastUsed, dbLastActivityMs(entry.dbPath) ?? 0);
+      if (Date.now() - lastActivity >= idleKillMsFor(entry)) {
+        killServer(key, entry, "idle sweep");
+      }
+    }
+  }, IDLE_SWEEP_MS);
+  g.__opencodeIdleSweep.unref?.();
+}
+
 function scheduleIdleKill(key: string): void {
   const entry = servers.get(key);
   if (!entry) return;
@@ -1768,7 +1817,12 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
       meridianPort: newest.meridianPort,
       accountId: newest.accountId,
       dbPath: newest.dbPath,
-      lastUsed: Date.now(),
+      // Real last-activity, not adoption time: every turn writes the server's
+      // DB shard, so its mtime is when the server last did work. Stamping
+      // Date.now() here granted every survivor a fresh idle lease per restart —
+      // with frequent restarts the shared fleet never aged out and grew to
+      // 46 servers / 25GB RSS (2026-07-22). Fresh-DB fallback: now.
+      lastUsed: dbLastActivityMs(newest.dbPath) ?? Date.now(),
       activeRuns: 0,
     };
     servers.set(key, entry);
