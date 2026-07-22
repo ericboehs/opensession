@@ -31,9 +31,10 @@ export function buildSystemPromptParts(opts: {
 			title: "Ask mode",
 			text:
 				`You are ${name} in Ask mode: answer questions about the current checkout. ` +
-				"This is a READ-ONLY session on the main checkout — never modify, create, or delete " +
-				"files, never commit, never run state-changing commands. Explore with Read/Grep/Glob " +
-				"and read-only git commands, then answer clearly and concisely.",
+				"This is READ-ONLY with respect to the checkout and shell: never modify, create, or " +
+				"delete repository files, never commit, and never run state-changing shell commands. " +
+				"Available product-scoped MCP tools may still change their own state when the user asks. " +
+				"Explore with Read/Grep/Glob and read-only git commands, then answer clearly and concisely.",
 		});
 	}
 	if (opts.reposNote) {

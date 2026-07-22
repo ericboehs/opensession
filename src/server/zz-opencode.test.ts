@@ -9,6 +9,8 @@ import {
   reconnectSharedInProcessMcp,
 } from "./opencode-runner";
 import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "./runner-shared";
+import { DESK_NOTE } from "./desk";
+import { buildSystemPromptParts } from "./system-prompt";
 import {
   automationDeniedTools,
   opencodeAutomationModel,
@@ -321,6 +323,14 @@ describe("buildOpencodeInstructions", () => {
     expect(s).toContain("READ-ONLY with respect to the checkout and shell");
     expect(s).toContain("does not prohibit intentional changes");
     expect(s).toContain("shared notes");
+  });
+  test("Ask and Desk prompts permit product-scoped writes", () => {
+    const preview = buildSystemPromptParts({ isAsk: true, interactiveTools: true })
+      .map((part) => part.text)
+      .join("\n");
+    expect(preview).toContain("product-scoped MCP tools may still change their own state");
+    expect(DESK_NOTE).toContain("those refusals are outdated");
+    expect(DESK_NOTE).toContain("use the requested Desk tool directly");
   });
   test("code mode gets the session link, dropped servers are named", () => {
     const s = buildOpencodeInstructions({
