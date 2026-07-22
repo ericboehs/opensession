@@ -35,10 +35,10 @@ Claude Code stores its macOS login in the Keychain item
 model picker. If neither login exists, startup fails with an actionable error.
 
 OpenSession does not rotate either CLI's refresh token. It re-reads current
-access credentials for each run, copies the macOS Claude credential into a
-private `~/os1` cache for the bridge, and gives OpenCode an access-only Codex
-seed with an invalid refresh token. If a CLI access token has expired, run that
-CLI once to refresh its own login and retry.
+access credentials for each run, copies only the macOS Claude access token and
+expiry into a private `~/os1` cache for the bridge, and gives OpenCode an
+access-only Codex seed with an invalid refresh token. If a CLI access token has
+expired, run that CLI once to refresh its own login and retry.
 
 ## Start OpenSession
 

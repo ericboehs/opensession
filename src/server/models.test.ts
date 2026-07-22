@@ -146,13 +146,32 @@ describe("local profile models", () => {
   it("maps the local default straight through OpenCode and disables fallback", () => {
     const home = mkdtempSync(join(tmpdir(), "local-models-"));
     mkdirSync(`${home}/.codex`, { recursive: true });
-    writeFileSync(`${home}/.codex/auth.json`, JSON.stringify({ tokens: { access_token: "codex-access" } }));
+    const payload = Buffer.from(
+      JSON.stringify({ exp: Math.floor((Date.now() + 60_000) / 1000) }),
+    ).toString("base64url");
+    writeFileSync(
+      `${home}/.codex/auth.json`,
+      JSON.stringify({ tokens: { access_token: `header.${payload}.signature` } }),
+    );
     process.env.HOME = home;
     process.env.OPENSESSION_PROFILE = "local";
     process.env.OPENSESSION_MODEL = "openai/gpt-5.5";
     expect(localProfileDefaultModel()).toBe("openai/gpt-5.5");
     expect(interactiveDefaultModel()).toBe("opencode/openai/gpt-5.5");
     expect(interactiveFallbackModel()).toBeUndefined();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("rejects an explicit default whose CLI provider is unavailable", () => {
+    const home = mkdtempSync(join(tmpdir(), "local-models-"));
+    mkdirSync(`${home}/.claude`, { recursive: true });
+    writeFileSync(`${home}/.claude/.credentials.json`, JSON.stringify({
+      claudeAiOauth: { accessToken: "claude-access", refreshToken: "claude-refresh", expiresAt: Date.now() + 60_000 },
+    }));
+    process.env.HOME = home;
+    process.env.OPENSESSION_PROFILE = "local";
+    process.env.OPENSESSION_MODEL = "openai/gpt-5.5";
+    expect(() => localProfileDefaultModel()).toThrow("CLI subscription credentials were not found");
     rmSync(home, { recursive: true, force: true });
   });
 });

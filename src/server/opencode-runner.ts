@@ -174,7 +174,7 @@ import { githubAuthEnv, githubUserLoginForRun } from "./github-auth";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import { isLocalProfile } from "./profile";
-import { localClaudeAccount } from "./local-engine-auth";
+import { localClaudeAccount, localProviderError } from "./local-engine-auth";
 import {
   normalizeModelEffort,
   dialPreset,
@@ -2068,6 +2068,13 @@ async function* runOpencodeAttempt(
     };
     return;
   }
+  if (isLocalProfile()) {
+    const localAuthError = localProviderError(parsed.providerID);
+    if (localAuthError) {
+      yield { type: "error", content: localAuthError, provider: PROVIDER, model };
+      return;
+    }
+  }
 
   const runKey = opts.sessionId || journal?.bksSessionId || crypto.randomUUID();
   if (activeOpencodeRuns.has(runKey)) {
@@ -2427,6 +2434,9 @@ async function* runOpencodeAttempt(
       // scoped store + rotation-proof seeds per launch (bootstrap.ts), so a
       // sandbox hitting this was created before those fixes (recreate it) or
       // the host truly has no usable codex account.
+      if ("error" in picked && isLocalProfile()) {
+        throw new Error(`opencode/openai: ${picked.error}`);
+      }
       if ("error" in picked && !opencodeHasNativeOpenaiAuth()) {
         // Also exhaustion-shaped (no account can serve this model here) —
         // flagged so the fallback graph can route to another family rather

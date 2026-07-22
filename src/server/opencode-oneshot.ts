@@ -37,6 +37,7 @@ import { envAlias } from "./rename-compat";
 import { audit } from "./audit";
 import { isLocalProfile } from "./profile";
 import { bindOpenaiAccount, pickOpenaiAccount } from "./opencode-openai-auth";
+import { localProviderError } from "./local-engine-auth";
 
 const DEFAULT_ONESHOT_MODEL = "opencode/anthropic/claude-haiku-4-5";
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -121,6 +122,13 @@ export async function opencodeOneShot(
     // there is no other engine anymore, so this is a hard skip.
     console.warn(`[oneshot:${label}] model "${requested}" doesn't resolve to an opencode id — skipping`);
     return null;
+  }
+  if (localProfile) {
+    const localAuthError = localProviderError(parsed.providerID);
+    if (localAuthError) {
+      console.warn(`[oneshot:${label}] ${localAuthError} — skipping`);
+      return null;
+    }
   }
 
   const startedAt = Date.now();
