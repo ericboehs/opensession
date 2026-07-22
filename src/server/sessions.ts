@@ -463,6 +463,7 @@ function scanBackstageSessions(): UnifiedSession[] {
         (data.createdBy?.endsWith(" (automation)")
           ? data.createdBy.slice(0, -" (automation)".length)
           : undefined),
+      automationId: data.automationId,
       archived: data.archived || undefined,
       archivedReason: data.archivedReason,
       plainThreadId: data.plainThreadId,

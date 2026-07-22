@@ -101,6 +101,9 @@ export interface UnifiedSession {
   /** Agent-published demo walkthrough (opensession-walkthrough). */
   walkthrough?: SessionWalkthrough;
   automation?: string;
+  /** Stable automation id for linking back to its settings. Older sessions may
+   *  only have `automation`, which the settings route also accepts by name. */
+  automationId?: string;
   archived?: boolean;
   /** Why this session is archived — powers the "Auto-archived" filter. */
   archivedReason?: "manual" | "idle" | "auto" | "plain";

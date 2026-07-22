@@ -262,6 +262,8 @@ export interface UnifiedSession {
 	 *  rendered in the Review tab and mirrored to the PR description. */
 	walkthrough?: SessionWalkthrough;
 	automation?: string;
+	/** Stable automation id for linking back to its settings. */
+	automationId?: string;
 	archived?: boolean;
 	/** Why this session is archived — powers the "Auto-archived" filter. */
 	archivedReason?: "manual" | "idle" | "auto" | "plain";

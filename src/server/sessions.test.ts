@@ -84,6 +84,8 @@ describe("getAllSessions", () => {
 			model: "gpt-5.5",
 			codexThreadId: "codex-thread-1",
 			projectId: null,
+			automation: "Nightly review",
+			automationId: "auto-nightly-review",
 		});
 		writeSession("bks-fable-orchestrator", {
 			title: "Fable orchestrator with workspace",
@@ -105,6 +107,8 @@ describe("getAllSessions", () => {
 			model: "gpt-5.5",
 			codexThreadId: "codex-thread-1",
 			projectId: null,
+			automation: "Nightly review",
+			automationId: "auto-nightly-review",
 		});
 
 		const fable = sessions.find((s: UnifiedSession) => s.id === "bks-fable-orchestrator");

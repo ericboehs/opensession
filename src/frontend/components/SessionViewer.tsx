@@ -2965,6 +2965,15 @@ export function SessionViewer({
 				// of the panel toggle on desktop; PR status rides its own row.
 				const secondaryActions = (
 					<>
+						{session.automation && (
+							<a
+								href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`}
+								className="session-link"
+								title={`Open ${session.automation} settings`}
+							>
+								Automation
+							</a>
+						)}
 						{session.linearIssue?.url && (
 							<a
 								href={session.linearIssue.url}
