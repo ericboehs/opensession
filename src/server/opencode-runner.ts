@@ -174,7 +174,11 @@ import { githubAuthEnv, githubUserLoginForRun } from "./github-auth";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import { isLocalProfile } from "./profile";
-import { localClaudeAccount, localProviderError } from "./local-engine-auth";
+import {
+  localClaudeAccount,
+  localOpencodeDataRoot,
+  localProviderError,
+} from "./local-engine-auth";
 import {
   normalizeModelEffort,
   dialPreset,
@@ -2286,7 +2290,10 @@ async function* runOpencodeAttempt(
         const meridianKey =
           servers.get(shared ? sharedServerKey(bridgeTag, user) : sessionKey)?.meridianKey ||
           crypto.randomUUID();
-        serverExtraEnv = meridianAccountEnv(picked, meridianKey);
+        serverExtraEnv = {
+          ...meridianAccountEnv(picked, meridianKey),
+          ...(isLocalProfile() ? { XDG_DATA_HOME: localOpencodeDataRoot("anthropic") } : {}),
+        };
         // Ensure the server-side fingerprint scrub is present before this
         // server's proxy starts (engine-agnostic billing — see fn doc).
         ensureMeridianProxyScrub();

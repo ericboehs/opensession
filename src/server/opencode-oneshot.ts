@@ -37,7 +37,7 @@ import { envAlias } from "./rename-compat";
 import { audit } from "./audit";
 import { isLocalProfile } from "./profile";
 import { bindOpenaiAccount, pickOpenaiAccount } from "./opencode-openai-auth";
-import { localProviderError } from "./local-engine-auth";
+import { localOpencodeDataRoot, localProviderError } from "./local-engine-auth";
 
 const DEFAULT_ONESHOT_MODEL = "opencode/anthropic/claude-haiku-4-5";
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -163,7 +163,10 @@ export async function opencodeOneShot(
           account = picked;
           stickyAccounts.set(serverKey, picked.id);
           const meridianKey = peekOpencodeServer(serverKey)?.meridianKey || crypto.randomUUID();
-          extraEnv = meridianAccountEnv(picked, meridianKey);
+          extraEnv = {
+            ...meridianAccountEnv(picked, meridianKey),
+            ...(localProfile ? { XDG_DATA_HOME: localOpencodeDataRoot("anthropic") } : {}),
+          };
           plugin = [stack.pluginPath];
           providerOverride = {
             anthropic: { options: { baseURL: "http://127.0.0.1:1", apiKey: meridianKey } },

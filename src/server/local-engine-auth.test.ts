@@ -8,6 +8,7 @@ import {
   discoverLocalEngineCredentials,
   localClaudeAccount,
   localCodexAccount,
+  localOpencodeDataRoot,
   localProviderError,
 } from "./local-engine-auth";
 
@@ -64,9 +65,9 @@ describe("local engine credential discovery", () => {
       home,
       platform: "darwin",
       keychainCachePath: cachePath,
-      keychainReader: () => {
-        service = CLAUDE_KEYCHAIN_SERVICE;
-        return claudeCredentials();
+      keychainReader: (requestedService) => {
+        service = requestedService;
+        return { raw: claudeCredentials() };
       },
     });
 
@@ -82,6 +83,17 @@ describe("local engine credential discovery", () => {
   it("fails clearly when neither CLI is logged in", () => {
     process.env.HOME = tempHome();
     expect(() => assertLocalEngineCredentials()).toThrow("Log into Claude Code");
+  });
+
+  it("preserves a macOS Keychain access failure in the startup error", () => {
+    const home = tempHome();
+    const found = discoverLocalEngineCredentials({
+      home,
+      platform: "darwin",
+      keychainReader: () => ({ raw: null, error: "macOS Keychain is locked" }),
+    });
+    expect(found.providers).toEqual([]);
+    expect(found.errors).toContain("macOS Keychain is locked");
   });
 
   it("synthesizes stable pool accounts and refuses an expired Claude access token", () => {
@@ -104,8 +116,15 @@ describe("local engine credential discovery", () => {
     process.env.HOME = home;
 
     expect(localProviderError("anthropic")).toBeNull();
+    expect(localClaudeAccount()).toEqual({
+      id: "local-claude-cli",
+      name: "Local Claude Code",
+      token: "claude-access",
+      createdAt: "1970-01-01T00:00:00.000Z",
+    });
     expect(localProviderError("openai")).toContain("Codex CLI credentials");
     expect(localProviderError("xai")).toContain("only supports Claude Code");
+    expect(localOpencodeDataRoot("anthropic")).toBe(`${home}/os1/auth/opencode-anthropic`);
   });
 
   it("does not advertise expired or malformed CLI access tokens", () => {
@@ -114,11 +133,13 @@ describe("local engine credential discovery", () => {
     mkdirSync(`${home}/.codex`, { recursive: true });
     writeFileSync(`${home}/.claude/.credentials.json`, claudeCredentials(Date.now() - 1));
     writeFileSync(`${home}/.codex/auth.json`, JSON.stringify({ tokens: { access_token: "not-a-jwt" } }));
+    process.env.HOME = home;
 
     const found = discoverLocalEngineCredentials({ home, platform: "linux" });
     expect(found.providers).toEqual([]);
     expect(found.errors.join(" ")).toContain("expired");
     expect(found.errors.join(" ")).toContain("valid unexpired ChatGPT access token");
+    expect(localProviderError("anthropic")).toContain("expired");
 
     writeFileSync(`${home}/.codex/auth.json`, codexCredentials(Date.now() - 60_000));
     expect(discoverLocalEngineCredentials({ home, platform: "linux" }).providers).toEqual([]);

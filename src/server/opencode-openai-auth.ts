@@ -93,12 +93,12 @@
 import { envAlias, stateDir } from "./rename-compat";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { pickCodexAccount, listCodexAccounts, type CodexAccount } from "./codex-accounts";
-import { isLocalProfile, localProfileRoot } from "./profile";
-import { localCodexAccount } from "./local-engine-auth";
+import { isLocalProfile } from "./profile";
+import { localCodexAccount, localOpencodeDataRoot } from "./local-engine-auth";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 export const OPENAI_DATA_ROOT = isLocalProfile()
-  ? `${localProfileRoot()}/auth/opencode-openai`
+  ? localOpencodeDataRoot("openai")
   : `${stateDir("opencode")}/openai-data`;
 
 /** Deliberately invalid refresh token seeded into opencode's auth.json: it
@@ -255,6 +255,11 @@ export function buildSeededOpenaiAuth(
     };
   }
   const expMs = jwtExpMs(access);
+  if (isLocalProfile() && expMs === null) {
+    return {
+      error: `codex account "${account.name}" ChatGPT access token is malformed — run \`codex login\`, then retry`,
+    };
+  }
   if (expMs !== null && expMs <= Date.now()) {
     return {
       error: `codex account "${account.name}" ChatGPT access token is expired — run a codex turn (or \`codex login\`) to refresh it, then retry`,

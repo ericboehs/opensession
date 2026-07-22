@@ -39,6 +39,8 @@ access credentials for each run, copies only the macOS Claude access token and
 expiry into a private `~/os1` cache for the bridge, and gives OpenCode an
 access-only Codex seed with an invalid refresh token. If a CLI access token has
 expired, run that CLI once to refresh its own login and retry.
+Native `opencode auth login` state is isolated from local-profile model servers
+and is never used as a fallback.
 
 ## Start OpenSession
 
@@ -139,6 +141,7 @@ Defaults are isolated from a hosted OpenSession installation:
 | Repositories cloned through the API | `~/os1/repos/<repo-id>` |
 | Optional MCP configuration | `~/os1/mcp-config.json` |
 | Claude Keychain bridge cache | `~/os1/auth/claude/.credentials.json` |
+| Anthropic OpenCode isolation state | `~/os1/auth/opencode-anthropic/` |
 | OpenAI access-only seeds | `~/os1/auth/opencode-openai/` |
 
 Existing path, port, and binary overrides still win, including `OPENSESSION_CONFIG`,

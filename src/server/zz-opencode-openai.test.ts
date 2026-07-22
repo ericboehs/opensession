@@ -6,7 +6,7 @@
  * temp dirs — no real codex store, no network.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -16,6 +16,13 @@ import {
   type OpenaiAccountBinding,
 } from "./opencode-openai-auth";
 import type { CodexAccount } from "./codex-accounts";
+
+const savedProfile = process.env.OPENSESSION_PROFILE;
+
+afterEach(() => {
+  if (savedProfile === undefined) delete process.env.OPENSESSION_PROFILE;
+  else process.env.OPENSESSION_PROFILE = savedProfile;
+});
 
 /** Fabricate a JWT whose payload carries the given `exp` (seconds). */
 function fakeJwt(expSeconds: number): string {
@@ -68,6 +75,18 @@ describe("bindOpenaiAccount", () => {
     const bound = bindOpenaiAccount(homeAccount(dir));
     expect("error" in bound).toBe(true);
     if ("error" in bound) expect(bound.error).toContain("expired");
+  });
+
+  test("local home account with malformed ChatGPT token → fail-fast login error", () => {
+    const dir = mkdtempSync(join(tmpdir(), "oc-openai-malformed-"));
+    writeFileSync(
+      join(dir, "auth.json"),
+      JSON.stringify({ auth_mode: "chatgpt", tokens: { access_token: "not-a-jwt" } }),
+    );
+    process.env.OPENSESSION_PROFILE = "local";
+    const bound = bindOpenaiAccount(homeAccount(dir));
+    expect("error" in bound).toBe(true);
+    if ("error" in bound) expect(bound.error).toContain("malformed");
   });
 
   test("home account with a valid ChatGPT token → seeds access-only oauth (rotation-safe)", () => {

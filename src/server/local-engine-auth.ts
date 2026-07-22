@@ -21,7 +21,7 @@ interface ClaudeOauthCredentials {
 export interface LocalEngineDiscoveryOptions {
   home?: string;
   platform?: NodeJS.Platform;
-  keychainReader?: () => string | null;
+  keychainReader?: (service: string) => { raw: string | null; error?: string };
   keychainCachePath?: string;
 }
 
@@ -42,11 +42,14 @@ export interface LocalEngineCredentials {
 function parseClaudeCredentials(raw: string): ClaudeOauthCredentials | null {
   try {
     const oauth = JSON.parse(raw)?.claudeAiOauth;
-    if (!oauth?.accessToken || !oauth?.refreshToken) return null;
+    const expiresAt = Number(oauth?.expiresAt);
+    if (!oauth?.accessToken || !oauth?.refreshToken || !Number.isFinite(expiresAt) || expiresAt <= 0) {
+      return null;
+    }
     return {
       accessToken: oauth.accessToken,
       refreshToken: oauth.refreshToken,
-      expiresAt: Number(oauth.expiresAt) || 0,
+      expiresAt,
     };
   } catch {
     return null;
@@ -55,8 +58,9 @@ function parseClaudeCredentials(raw: string): ClaudeOauthCredentials | null {
 
 function jwtExpiryMs(token: string): number | null {
   try {
-    const payload = token.split(".")[1];
-    if (!payload) return null;
+    const parts = token.split(".");
+    if (parts.length !== 3 || parts.some((part) => !part)) return null;
+    const payload = parts[1];
     const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf-8"));
     return typeof claims.exp === "number" ? claims.exp * 1000 : null;
   } catch {
@@ -76,17 +80,28 @@ function validCodexAuth(path: string): boolean {
   }
 }
 
-function readClaudeKeychain(): string | null {
+function readClaudeKeychain(): { raw: string | null; error?: string } {
   try {
     const result = Bun.spawnSync(
       ["security", "find-generic-password", "-s", CLAUDE_KEYCHAIN_SERVICE, "-w"],
       { stdout: "pipe", stderr: "pipe", timeout: 3_000 },
     );
-    if (result.exitCode !== 0) return null;
+    if (result.exitCode !== 0) {
+      const detail = result.stderr.toString().trim().slice(0, 200);
+      return {
+        raw: null,
+        error: `macOS Keychain item "${CLAUDE_KEYCHAIN_SERVICE}" could not be read${detail ? `: ${detail}` : ""}`,
+      };
+    }
     const value = result.stdout.toString().trim();
-    return value || null;
-  } catch {
-    return null;
+    return value
+      ? { raw: value }
+      : { raw: null, error: `macOS Keychain item "${CLAUDE_KEYCHAIN_SERVICE}" was empty` };
+  } catch (error) {
+    return {
+      raw: null,
+      error: `macOS Keychain item "${CLAUDE_KEYCHAIN_SERVICE}" could not be read: ${error instanceof Error ? error.message : error}`,
+    };
   }
 }
 
@@ -123,9 +138,13 @@ export function discoverLocalEngineCredentials(
 
   const claudePath = `${home}/.claude/.credentials.json`;
   if (platform === "darwin") {
-    const raw = (options.keychainReader || readClaudeKeychain)();
+    const keychain = options.keychainReader
+      ? options.keychainReader(CLAUDE_KEYCHAIN_SERVICE)
+      : readClaudeKeychain();
+    const raw = keychain.raw;
+    if (keychain.error) errors.push(keychain.error);
     const oauth = raw ? parseClaudeCredentials(raw) : null;
-    if (raw && oauth && (oauth.expiresAt <= 0 || oauth.expiresAt > Date.now())) {
+    if (raw && oauth && oauth.expiresAt > Date.now()) {
       const cachePath =
         options.keychainCachePath || `${localProfileRoot()}/auth/claude/.credentials.json`;
       try {
@@ -147,7 +166,7 @@ export function discoverLocalEngineCredentials(
     try {
       const raw = readFileSync(claudePath, "utf-8");
       const oauth = parseClaudeCredentials(raw);
-      if (oauth && (oauth.expiresAt <= 0 || oauth.expiresAt > Date.now())) {
+      if (oauth && oauth.expiresAt > Date.now()) {
         claude = { credentialsPath: claudePath, source: "file", oauth };
         providers.push("anthropic");
       } else if (oauth) {
@@ -185,7 +204,7 @@ export function localClaudeAccount(): ClaudeAccount | { error: string } {
         "Claude Code credentials were not found; run `claude` and log in, then restart OpenSession",
     };
   }
-  const { oauth, credentialsPath } = credentials.claude;
+  const { oauth } = credentials.claude;
   if (oauth.expiresAt > 0 && oauth.expiresAt <= Date.now()) {
     return {
       error:
@@ -197,7 +216,6 @@ export function localClaudeAccount(): ClaudeAccount | { error: string } {
     id: LOCAL_CLAUDE_ACCOUNT_ID,
     name: "Local Claude Code",
     token: oauth.accessToken,
-    credentialsPath,
     createdAt: "1970-01-01T00:00:00.000Z",
   };
 }
@@ -226,9 +244,19 @@ export function localProviderError(provider: string): string | null {
   }
   const credentials = discoverLocalEngineCredentials();
   if (credentials.providers.includes(provider)) return null;
-  return provider === "anthropic"
-    ? "Claude Code credentials were not found; run `claude` and log in, then restart OpenSession"
-    : "Codex CLI credentials were not found or its access token is expired; run `codex login`, then restart OpenSession";
+  const sourceError = credentials.errors.find((error) =>
+    provider === "anthropic" ? error.includes("Claude") : error.includes("Codex"),
+  );
+  const login = provider === "anthropic" ? "run `claude` and log in" : "run `codex login`";
+  return sourceError
+    ? `${sourceError}; ${login}, then restart OpenSession`
+    : `${provider === "anthropic" ? "Claude Code" : "Codex CLI"} credentials were not found; ${login}, then restart OpenSession`;
+}
+
+/** Empty provider-local OpenCode state keeps native `opencode auth login`
+ * credentials outside the local-profile authentication boundary. */
+export function localOpencodeDataRoot(provider: LocalEngineProvider): string {
+  return `${localProfileRoot()}/auth/opencode-${provider}`;
 }
 
 export function assertLocalEngineCredentials(): void {
