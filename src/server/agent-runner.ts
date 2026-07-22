@@ -130,6 +130,24 @@ export interface RunAgentOpts {
   >;
 }
 
+/** The engine call signature runOnModel dispatches to — what a test fake
+ *  must implement (the INNER contract: emit init → chunks/tools → one
+ *  terminal done/error; runAgent's fallback walk wraps it). */
+export type EngineRunner = (
+  opts: RunAgentOpts,
+  model: string
+) => AsyncGenerator<StreamEvent>;
+
+// Test seam: lets a deterministic fake engine stand in for runOpencode so the
+// consumer stack (runAgent's fallback walk, runSessionPrompt's event loop,
+// queue drain, run-state transitions) is testable without spending model
+// tokens or touching a live engine. Never set outside tests — parked on a
+// plain module local, NOT globalThis, so a hot reload always clears it.
+let engineForTest: EngineRunner | null = null;
+export function __setEngineForTest(fn: EngineRunner | null): void {
+  engineForTest = fn;
+}
+
 function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerator<StreamEvent> {
   // Single engine: map native ids (claude-*, gpt-*, codex-best-available)
   // onto their opencode form; explicit opencode/<provider>/<model> ids pass
@@ -137,6 +155,7 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncGenerat
   // runner's clear error (e.g. anthropic bridge disabled).
   const requested = model || getDefaultModel();
   const mapped = toOpencodeModel(requested) || requested;
+  if (engineForTest) return engineForTest(opts, mapped);
   return runOpencode(opts, mapped);
 }
 

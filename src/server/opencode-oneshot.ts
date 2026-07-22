@@ -109,6 +109,9 @@ export async function opencodeOneShot(
   prompt: string,
   opts: OneShotOpts = {}
 ): Promise<string | null> {
+  // One-shots are real model calls on a real engine server — never from bun
+  // test (title/branch-name callers all tolerate null and fall back).
+  if (process.env.NODE_ENV === "test") return null;
   const localProfile = isLocalProfile();
   const requested = localProfile
     ? envAlias("OPENSESSION_ONESHOT_MODEL", "BACKSTAGE_ONESHOT_MODEL") ||

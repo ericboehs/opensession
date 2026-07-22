@@ -51,6 +51,10 @@ function pruneOldFiles(): void {
  */
 export function audit(event: Record<string, unknown>): void {
   try {
+    // bun test shares this module with the live audit paths — keep fake-run /
+    // FSM test events out of the real ~/.opensession-audit files (they feed
+    // the digest and Dreaming). No test asserts on audit output today.
+    if (process.env.NODE_ENV === "test") return;
     ensureAuditDir();
     const now = new Date();
     const line = JSON.stringify({
