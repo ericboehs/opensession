@@ -479,12 +479,18 @@ html.wco .sidebar-user-row {
 }
 /* Collapsed sidebar takes the chrome row (and its nav) with it — show the
    floating fallback cluster in the detail pane instead, next to the sidebar
-   re-open control, and inset the header text past both. */
+   re-open control, and inset the header text past both. With no sidebar the
+   detail pane starts at x=0, so the traffic lights overlay ITS left edge:
+   everything shifts right of env(titlebar-area-x) (0 in fullscreen, where the
+   lights hide and the row packs left again). */
+html.wco .sidebar-reopen {
+	left: calc(env(titlebar-area-x, 78px) + 6px);
+}
 html.wco .wco-nav-pane {
 	display: none;
 	position: absolute;
 	top: 13px;
-	left: 50px;
+	left: calc(env(titlebar-area-x, 78px) + 48px);
 	z-index: 20;
 }
 html.wco .app-body.sidebar-collapsed .detail-pane .wco-nav-pane {
@@ -492,7 +498,7 @@ html.wco .app-body.sidebar-collapsed .detail-pane .wco-nav-pane {
 }
 html.wco .app-body.sidebar-collapsed .viewer-header,
 html.wco .app-body.sidebar-collapsed .detail-topbar-title {
-	padding-left: 118px;
+	padding-left: calc(env(titlebar-area-x, 78px) + 118px);
 }
 html.wco .wco-nav-btn {
 	display: inline-flex;
@@ -16597,3 +16603,4 @@ html[data-theme="light"] .palette-card .palette-create {
 	background: var(--bg-hover);
 	border-color: var(--text-faint);
 }
+
