@@ -20,6 +20,7 @@ import { initHumanAsks } from "./src/server/human-asks";
 import { interactiveMcpServers } from "./src/server/interactive-mcp";
 import { OPENSESSION_CHATS_DIR } from "./src/server/paths";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
+import { startPrReviewNotificationTicker } from "./src/server/pr-review-notifications";
 import { startPublicIngress } from "./src/server/public-ingress";
 import { envAlias } from "./src/server/rename-compat";
 import { recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, snapshotActiveSessions } from "./src/server/run-session";
@@ -462,6 +463,7 @@ if (!g.__backstageBooted) {
 	setEventSessionCallback(() => {
 		invalidateSessionsCache();
 	});
+	startPrReviewNotificationTicker();
 
 	// Scheduled prompts ("send this to this session at 5pm") — deliver due ones
 	// through the SessionControl registry, exactly like a typed message.

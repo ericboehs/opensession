@@ -15,6 +15,7 @@ import { transcriptMatchSnippet } from "../jsonl-parser";
 import { clearSessionFileArchive } from "../plain-archive";
 import { editPrReviewers } from "../pr-info";
 import { promptQueues, requeueSteerReceipts, stoppedSessions } from "../queue-state";
+import { markPrReviewNotified } from "../pr-review-notifications";
 import { getReviewRequest, setReviewAccepted, setReviewRequest } from "../review-requests";
 import { transitionRunState } from "../run-state";
 import { findSession, getCachedSessions, invalidateSessionsCache, runErrors } from "../session-cache";
@@ -437,22 +438,22 @@ export async function handleSessionsRoutes(
 		// setting a reviewer adds them, re-assigning swaps, clearing removes.
 		// Only for sessions with a branch/PR whose reviewer maps to a GitHub
 		// login — a phone buzz always fires below regardless.
-		{
-			const addLogin = reviewer ? githubLoginFor(reviewer) : null;
-			const removeLogin =
-				prevReviewer && prevReviewer !== reviewer
-					? githubLoginFor(prevReviewer)
-					: null;
-			const target = resolvePrTarget(session, body?.repo);
-			if (target && (addLogin || removeLogin)) {
-				void editPrReviewers(
-					target.branch,
-					{ add: addLogin, remove: removeLogin },
-					target.ghRepo,
-				).catch(() => {});
-			}
+		const addLogin = reviewer ? githubLoginFor(reviewer) : null;
+		const removeLogin =
+			prevReviewer && prevReviewer !== reviewer
+				? githubLoginFor(prevReviewer)
+				: null;
+		const target = resolvePrTarget(session, body?.repo);
+		if (target && (addLogin || removeLogin)) {
+			void editPrReviewers(
+				target.branch,
+				{ add: addLogin, remove: removeLogin },
+				target.ghRepo,
+			).catch(() => {});
 		}
 		if (reviewer) {
+			if (target && addLogin)
+				markPrReviewNotified(target.ghRepo, target.branch, reviewer);
 			// Best-effort phone buzz — never let a push hiccup fail the request.
 			void (async () => {
 				try {

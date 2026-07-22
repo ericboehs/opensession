@@ -129,11 +129,37 @@ export function githubUsernameToSlackId(username: string): string | null {
  * sidebar's Open PRs section shows a person's PRs whether they authored them
  * from their own account or Michael opened them from a session they started.
  */
-export function githubLoginToPersonKey(login?: string | null): string | null {
+export function githubLoginToPersonKeyFromTeam(
+  login: string | null | undefined,
+  team: TeamMember[],
+): string | null {
   if (!login) return null;
   const lower = login.toLowerCase();
-  const p = TEAM_GIT_IDENTITY.find((x) => x.github?.toLowerCase() === lower);
-  return p ? p.aliases[0] : null;
+  const member = team.find((m) => m.github?.toLowerCase() === lower);
+  if (!member) return null;
+  return member.aliases?.[0]?.toLowerCase() || member.name.split(" ")[0].toLowerCase();
+}
+
+export function githubLoginToPersonKey(login?: string | null): string | null {
+  return githubLoginToPersonKeyFromTeam(login, identity.team);
+}
+
+/** Resolve a web-picker person key to the canonical first name used by push
+ * subscriptions. This intentionally covers configured members without a git
+ * email; receiving notifications should not depend on commit attribution. */
+export function personKeyToDisplayName(
+  ref?: string | null,
+  team: TeamMember[] = identity.team,
+): string | null {
+  if (!ref) return null;
+  const key = ref.trim().toLowerCase();
+  const member = team.find((m) => {
+    const aliases = m.aliases?.length
+      ? m.aliases.map((alias) => alias.toLowerCase())
+      : [m.name.split(" ")[0].toLowerCase()];
+    return aliases.includes(key) || m.name.toLowerCase() === key;
+  });
+  return member?.name.split(" ")[0] || null;
 }
 
 export function linearEmailToGithubUsername(email: string | null): string | null {

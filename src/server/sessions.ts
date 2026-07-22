@@ -571,7 +571,7 @@ function prRepos() {
 // repos (multi-repo sessions share branch names) never collides.
 let prCache: { data: Map<string, Map<string, PrInfo>>; ts: number } = { data: new Map(), ts: 0 };
 const PR_CACHE_TTL = 60_000;
-let prRefreshing = false;
+let prRefreshPromise: Promise<Set<string>> | null = null;
 
 interface RollupCheck { status?: string; conclusion?: string; state?: string }
 
@@ -637,9 +637,16 @@ async function ghJson<T>(args: string[]): Promise<T | null> {
   }
 }
 
-async function refreshPrCache(): Promise<void> {
-  if (prRefreshing) return;
-  prRefreshing = true;
+export function refreshPrCache(): Promise<Set<string>> {
+  if (prRefreshPromise) return prRefreshPromise;
+  prRefreshPromise = refreshPrCacheInner().finally(() => {
+    prRefreshPromise = null;
+  });
+  return prRefreshPromise;
+}
+
+async function refreshPrCacheInner(): Promise<Set<string>> {
+  const freshRepos = new Set<string>();
   try {
     type BulkPr = {
       headRefName: string; url: string; state: string; number: number; title: string;
@@ -693,12 +700,15 @@ async function refreshPrCache(): Promise<void> {
         ]),
       ]);
 
-      if (!openPrs && !recentAll) {
-        // Both calls failed for this repo — keep its stale data.
+      if (!openPrs) {
+        // The open list is authoritative. A successful recent-history query
+        // cannot prove an open PR disappeared, so preserve this repo's stale
+        // snapshot and do not let notification consumers compare against it.
         const stale = prCache.data.get(repo.id);
         if (stale) next.set(repo.id, stale);
         return;
       }
+			freshRepos.add(repo.id);
 
       const checksByNumber = new Map<number, PrChecksSummary>();
       for (const r of rollups || []) {
@@ -765,9 +775,8 @@ async function refreshPrCache(): Promise<void> {
   } catch (e) {
     console.error("Failed to fetch PRs:", e);
     prCache.ts = Date.now(); // back off on failure too
-  } finally {
-    prRefreshing = false;
   }
+  return freshRepos;
 }
 
 /**

@@ -8,8 +8,10 @@ import {
   resolveTeammate,
   githubLoginFor,
   githubLoginToPersonKey,
+	githubLoginToPersonKeyFromTeam,
   githubUsernameToSlackId,
   linearEmailToGithubUsername,
+	personKeyToDisplayName,
   slackIdToFirstName,
   userMatchesAny,
 } from "./user-mappings";
@@ -131,9 +133,20 @@ describe("identity table derivation (audit 1f)", () => {
     expect(resolveTeammate("nobody-known")).toBeNull();
     expect(githubLoginFor("michiel")).toBe("happylinks");
     expect(githubLoginToPersonKey("kentdebruin")).toBe("kent");
+		expect(
+			githubLoginToPersonKeyFromTeam("ada", [
+				{ name: "Ada Lovelace", aliases: ["ada"], github: "ada" },
+			]),
+		).toBe("ada");
     expect(githubUsernameToSlackId("louisedesadeleer")).toBeNull(); // historical omission preserved
     expect(githubUsernameToSlackId("happylinks")).toBe("UT41L6GCC");
     expect(linearEmailToGithubUsername("jaap@tella.com")).toBe("jfrolich");
+		expect(personKeyToDisplayName("michiel")).toBe("Michiel");
+		expect(
+			personKeyToDisplayName("ada", [
+				{ name: "Ada Lovelace", aliases: ["ada"], github: "ada" },
+			]),
+		).toBe("Ada");
     expect(slackIdToFirstName("U086HCZURPM")).toBe("Grant");
     expect(userMatchesAny("grant", ["Grant"])).toBe(true);
     expect(userMatchesAny("someone-else", ["Grant"])).toBe(false);
