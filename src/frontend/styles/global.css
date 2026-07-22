@@ -445,6 +445,9 @@ html.wco .app {
    and on Windows (controls on the right), where the default padding wins. */
 html.wco .sidebar-brand {
 	padding-left: max(env(titlebar-area-x, 78px), calc(var(--sidebar-icon-left) - 8px));
+	/* Continue the header rows' divider (.viewer-header / .pr-bar) across the
+	   sidebar so the top line runs the full window width. */
+	border-bottom: 1px solid var(--border);
 }
 /* The whole first row doubles as the titlebar — everything interactive in it
    opts back out so it stays clickable. */
@@ -14891,8 +14894,8 @@ html[data-theme="light"] .palette-card .palette-create {
 .session-tab-new-menu {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
-	padding: 8px;
+	gap: 1px;
+	padding: 4px;
 	min-width: 250px;
 }
 .session-tab-new-menu-item {
@@ -14902,9 +14905,9 @@ html[data-theme="light"] .palette-card .palette-create {
 	background: none;
 	border: none;
 	color: var(--text);
-	font-size: 14px;
-	padding: 9px 11px;
-	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
+	font-size: 13px;
+	padding: 6px 8px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	white-space: nowrap;
 }
@@ -16599,4 +16602,3 @@ html[data-theme="light"] .palette-card .palette-create {
 	background: var(--bg-hover);
 	border-color: var(--text-faint);
 }
-
