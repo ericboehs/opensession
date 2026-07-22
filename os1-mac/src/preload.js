@@ -7,4 +7,17 @@ contextBridge.exposeInMainWorld("os1", {
   desktop: true,
   setBadge: (count) => ipcRenderer.send("os1:set-badge", Number(count) || 0),
   clearBadge: () => ipcRenderer.send("os1:set-badge", 0),
+  // App auto-update (Squirrel.Mac, driven by main.js). `onState(cb)` reports
+  // the current state immediately and again on every change, and returns an
+  // unsubscribe. States: idle | available (= downloading) | downloaded.
+  // `install()` restarts the app into a downloaded update.
+  updates: {
+    onState: (cb) => {
+      const listener = (_e, state) => cb(state);
+      ipcRenderer.on("os1:update-state", listener);
+      ipcRenderer.invoke("os1:update-state").then(cb).catch(() => {});
+      return () => ipcRenderer.removeListener("os1:update-state", listener);
+    },
+    install: () => ipcRenderer.send("os1:update-install"),
+  },
 });

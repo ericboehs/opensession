@@ -1,7 +1,7 @@
 {
   "name": "os1-mac",
   "productName": "OS¹",
-  "version": "0.1.2",
+  "version": "0.3.0",
   "description": "macOS desktop app for OS¹ — a thin shell around https://os.tella.dev",
   "private": true,
   "main": "src/main.js",

@@ -1,7 +1,7 @@
 // OS¹ desktop — thin shell around https://os.tella.dev.
 // The frontend ships from the server (bun --hot), so this app rarely changes:
 // it only owns the window, navigation policy, notifications, badge and deep links.
-const { app, BrowserWindow, shell, session, ipcMain } = require("electron");
+const { app, BrowserWindow, shell, session, ipcMain, autoUpdater } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
@@ -18,6 +18,57 @@ const stateFile = () => path.join(app.getPath("userData"), "window-state.json");
 
 let win = null;
 let quitting = false;
+
+// ---- Auto-update ------------------------------------------------------------
+// Electron's built-in Squirrel.Mac updater against the OpenSession server's
+// release proxy (src/server/routes/os1-update.ts server-side). The server
+// compares versions and answers 204 (current) or JSON {url,...}; on a hit
+// Squirrel downloads the signed zip immediately, so "available" doubles as
+// "downloading". State mirrors to the renderer (window.os1.updates in
+// preload.js), which shows the update toast and calls install to restart.
+let updateState = { state: "idle", version: null };
+
+function setUpdateState(next) {
+  updateState = next;
+  if (win && !win.isDestroyed()) {
+    win.webContents.send("os1:update-state", updateState);
+  }
+}
+
+function initAutoUpdate() {
+  // Dev runs (`electron .`) are unsigned — Squirrel refuses to initialize.
+  if (!app.isPackaged || process.platform !== "darwin") return;
+  try {
+    autoUpdater.setFeedURL({
+      url: `${APP_ORIGIN}/api/os1-mac/update?version=${encodeURIComponent(app.getVersion())}`,
+      serverType: "json",
+    });
+  } catch (err) {
+    console.error("[update] setFeedURL failed", err);
+    return;
+  }
+  autoUpdater.on("update-available", () => {
+    setUpdateState({ state: "available", version: null });
+  });
+  autoUpdater.on("update-downloaded", (_e, _notes, releaseName) => {
+    setUpdateState({ state: "downloaded", version: releaseName || null });
+  });
+  autoUpdater.on("error", (err) => {
+    // Offline / tailnet-down is normal; log and retry on the next tick.
+    console.error("[update]", err);
+  });
+  const check = () => {
+    if (updateState.state === "downloaded") return; // already staged
+    try {
+      autoUpdater.checkForUpdates();
+    } catch (err) {
+      console.error("[update] check failed", err);
+    }
+  };
+  // Give launch (and the tailnet) a moment before the first check.
+  setTimeout(check, 15 * 1000);
+  setInterval(check, 4 * 60 * 60 * 1000);
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -88,13 +139,12 @@ function createWindow() {
     ...state,
     minWidth: 700,
     minHeight: 480,
-    // Keep Chromium's canvas transparent so the frontend sidebar can reveal
-    // the native macOS visual-effect surface. The web app paints its detail
-    // pane opaque; only its translucent sidebar exposes this material.
-    transparent: true,
-    backgroundColor: "#00000000",
-    vibrancy: "sidebar",
-    visualEffectState: "active",
+    // Opaque window. The transparent+vibrancy setup was removed 2026-07-22 to
+    // chase whole-window flashes: a transparent window has no opaque backing
+    // store, so any frame Chromium's compositor drops (occlusion eviction,
+    // wake, resize, GPU reset) punches through to the raw desktop blur. The
+    // color matches the frontend's dark --bg so pre-paint frames blend in.
+    backgroundColor: "#1b1b1b",
     // The frontend already lays itself out for Window Controls Overlay (its PWA
     // manifest declares display_override: window-controls-overlay).
     titleBarStyle: "hidden",
@@ -187,7 +237,23 @@ app.whenReady().then(async () => {
     app.setBadgeCount(Number.isFinite(count) && count > 0 ? Math.floor(count) : 0);
   });
 
+  ipcMain.handle("os1:update-state", (e) =>
+    inWindow(e.senderFrame?.url ?? "")
+      ? updateState
+      : { state: "idle", version: null },
+  );
+  ipcMain.on("os1:update-install", (e) => {
+    if (!inWindow(e.senderFrame?.url ?? "")) return;
+    if (updateState.state !== "downloaded") return;
+    // quitAndInstall closes every window; flip `quitting` first so the
+    // close-to-hide handler doesn't cancel the relaunch.
+    quitting = true;
+    autoUpdater.quitAndInstall();
+  });
+
   createWindow();
+
+  initAutoUpdate();
 
   app.on("activate", showWindow);
 });

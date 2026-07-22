@@ -39,6 +39,7 @@ import { handleSideChatsRoutes } from "./side-chats";
 import { handleReportsRoutes } from "./reports";
 import { handleAnalyticsRoutes } from "./analytics";
 import { handleSearchRoutes } from "./search";
+import { handleOs1UpdateRoutes } from "./os1-update";
 
 export type { RouteContext, RouteHandler } from "./context";
 
@@ -50,6 +51,7 @@ export const routeHandlers: RouteHandler[] = [
 	handleStaticAssetsRoutes,
 	handlePlainRoutes,
 	handleSystemRoutes,
+	handleOs1UpdateRoutes,
 	handleSessionTransferRoutes,
 	// Local profile only: local ids fall through; every other session id is
 	// forwarded before a local route can turn the ownership miss into a 404.

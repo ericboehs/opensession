@@ -108,6 +108,22 @@ Releasing: `git tag v0.1.0 && git push origin v0.1.0`.
 Local `bun run dist` produces an unsigned build (signing/notarization are
 skipped with a warning when no identity/credentials are present).
 
+## Auto-update
+
+The packaged app keeps itself current via Electron's built-in Squirrel.Mac
+updater. It polls `https://os.tella.dev/api/os1-mac/update?version=<installed>`
+on launch and every 4 hours — served by `src/server/routes/os1-update.ts` in
+this repository, which compares versions against the latest GitHub release and
+proxies the signed arm64 zip out of it (Squirrel can't reach the private repo
+itself). When an update is found Squirrel downloads it in the background; the
+web frontend shows a persistent bottom-right toast (`DesktopUpdateToast`,
+driven by `window.os1.updates` from `src/preload.js`) that flips to "Restart
+to update" once the download is staged, and restarting installs + relaunches.
+
+Shipping an update is unchanged: bump `version` in `package.json`, tag, push
+the tag. Installed apps (≥ 0.2.0) pick it up on their next check. Dev runs
+(`electron .`, unsigned) skip the updater entirely.
+
 ## Follow-ups tracked
 
 - **Dock badge**: the web app sets its badge via `navigator.setAppBadge` in the

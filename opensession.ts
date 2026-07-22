@@ -258,10 +258,16 @@ const server: import("bun").Server<WSClientData> = hotServe({
 					path === "/backstage/api/keypad" &&
 					req.method === "GET" &&
 					keypadBearerAuthorized(req);
+				// The OS¹ mac shell's Squirrel updater fetches the update feed and
+				// zip with a plain NSURLSession (no cookies); tailnet-only exposure
+				// makes these safe to leave open, like /api/health.
+				const openOs1Update =
+					path.startsWith("/backstage/api/os1-mac/") && req.method === "GET";
 				if (
 					!authUser &&
 					!openHealth &&
 					!keypadBearer &&
+					!openOs1Update &&
 					((path.startsWith("/backstage/api/") &&
 						!path.startsWith("/backstage/api/auth/")) ||
 						path === "/backstage/ws")

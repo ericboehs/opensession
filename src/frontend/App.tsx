@@ -34,6 +34,7 @@ import { SessionTabs, type ViewTab } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdatePill } from "./components/UpdatePill";
+import { DesktopUpdateToast } from "./components/DesktopUpdateToast";
 import { IconDesk, IconSearch, IconSidebarLeft } from "./components/icons";
 import { DeskOverlay } from "./components/DeskOverlay";
 import { useSessions } from "./hooks/useSessions";
@@ -1428,6 +1429,7 @@ function App() {
 			<RestartOverlay connected={connected} addHandler={addHandler} />
 			<MediaLightboxHost />
 			<ToastHost />
+			<DesktopUpdateToast />
 			<div className="app">
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
 				    on a pushed page (a session or other view) the brand is replaced by
