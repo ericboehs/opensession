@@ -55,6 +55,7 @@ import {
   unlinkSync,
 } from "fs";
 import { BACKSTAGE_CHATS_DIR } from "../paths";
+import { isLocalProfile } from "../profile";
 import { REPOS } from "../worktree";
 import { writeJsonAtomic } from "../shared/atomic-write";
 import {
@@ -591,6 +592,7 @@ async function auditProviderOrphans(now: number): Promise<void> {
  *  schedulers, so --hot reloads don't stack timers). Unref'd — it must
  *  never keep a test/CLI process alive on its own. */
 export function ensurePrewarmSweep(): void {
+  if (isLocalProfile()) return;
   const g = globalThis as unknown as { __sandboxPrewarmSweepTimer?: ReturnType<typeof setInterval> };
   if (g.__sandboxPrewarmSweepTimer) return;
   const t = setInterval(() => {

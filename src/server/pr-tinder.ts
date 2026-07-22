@@ -14,7 +14,7 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { defaultRepo } from "./config";
 import { stateDir } from "./rename-compat";
 
-const REPO = defaultRepo().ghRepo;
+const repoName = () => defaultRepo().ghRepo;
 const STATE_PATH = stateDir("prtinder.json");
 const SEEN_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -47,7 +47,7 @@ const PR_TTL = 60_000;
 export async function listTinderPrs(): Promise<TinderPr[]> {
   if (prCache && Date.now() - prCache.ts < PR_TTL) return prCache.data;
   const raw =
-    await $`gh pr list --repo ${REPO} --state open --limit 300 --json ${PR_FIELDS}`
+    await $`gh pr list --repo ${repoName()} --state open --limit 300 --json ${PR_FIELDS}`
       .quiet()
       .text();
   const data: TinderPr[] = JSON.parse(raw).map((pr: any) => ({
@@ -79,7 +79,7 @@ const LABEL_TTL = 10 * 60_000;
 export async function listTinderLabels(): Promise<Array<{ name: string; color: string }>> {
   if (labelCache && Date.now() - labelCache.ts < LABEL_TTL) return labelCache.data;
   try {
-    const raw = await $`gh label list --repo ${REPO} --limit 200 --json name,color`
+    const raw = await $`gh label list --repo ${repoName()} --limit 200 --json name,color`
       .quiet()
       .text();
     const data = (JSON.parse(raw) as Array<{ name: string; color: string }>).sort(
@@ -159,11 +159,11 @@ export async function closeTinderPr(
     async () => {
       if (reason?.trim()) {
         const c = await ghRun([
-          "pr", "comment", String(number), "--repo", REPO, "--body", reason.trim(),
+          "pr", "comment", String(number), "--repo", repoName(), "--body", reason.trim(),
         ]);
         if ("error" in c) return c;
       }
-      const r = await ghRun(["pr", "close", String(number), "--repo", REPO]);
+      const r = await ghRun(["pr", "close", String(number), "--repo", repoName()]);
       if ("ok" in r) prCache = null;
       return r;
     },
@@ -175,7 +175,7 @@ export async function reopenTinderPr(number: number): Promise<ActionResult> {
   return audited(
     { context: "pr-tinder", action: "pr_reopen", args: { number } },
     async () => {
-      const r = await ghRun(["pr", "reopen", String(number), "--repo", REPO]);
+      const r = await ghRun(["pr", "reopen", String(number), "--repo", repoName()]);
       if ("ok" in r) prCache = null;
       return r;
     },
@@ -195,7 +195,7 @@ export async function commentTinderPr(
     { context: "pr-tinder", action: "pr_comment", args: { number } },
     async () => {
       const proc = Bun.spawn(
-        ["gh", "pr", "comment", String(number), "--repo", REPO, "--body", body.trim()],
+        ["gh", "pr", "comment", String(number), "--repo", repoName(), "--body", body.trim()],
         { stdout: "pipe", stderr: "pipe" },
       );
       const [out, err, code] = await Promise.all([
@@ -220,7 +220,7 @@ export async function deleteTinderComment(
     { context: "pr-tinder", action: "pr_comment_delete", args: { commentId } },
     () =>
       ghRun([
-        "api", "-X", "DELETE", `repos/${REPO}/issues/comments/${commentId}`,
+        "api", "-X", "DELETE", `repos/${repoName()}/issues/comments/${commentId}`,
       ]),
   );
 }
@@ -240,7 +240,7 @@ export async function labelTinderPr(
       args: { number, add: opts.add, remove: opts.remove },
     },
     async () => {
-      const r = await ghRun(["pr", "edit", String(number), "--repo", REPO, ...flagged]);
+      const r = await ghRun(["pr", "edit", String(number), "--repo", repoName(), ...flagged]);
       if ("ok" in r) prCache = null;
       return r;
     },

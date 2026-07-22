@@ -18,6 +18,7 @@ import { handlePrRoutes } from "./pr";
 import { handleSessionGitRoutes } from "./session-git";
 import { handlePreviewRoutes } from "./preview";
 import { handleWorkspaceRoutes } from "./workspace";
+import { handleLocalReposRoutes } from "./local-repos";
 import { handleAutomationsRoutes } from "./automations";
 import { handleHumanAsksRoutes } from "./human-asks";
 import { handleChatRoutes } from "./chat";
@@ -54,6 +55,7 @@ export const routeHandlers: RouteHandler[] = [
 	handlePrRoutes,
 	handleSessionGitRoutes,
 	handlePreviewRoutes,
+	handleLocalReposRoutes,
 	handleWorkspaceRoutes,
 	handleAutomationsRoutes,
 	handleHumanAsksRoutes,

@@ -8,6 +8,7 @@ import {
   configuredPaths,
   configuredServer,
   configuredIdentity,
+  configPath,
   defaultRepo,
   personaName,
   productName,
@@ -23,6 +24,9 @@ const ENV_KEYS = [
   "BACKSTAGE_CLAUDE_BIN",
   "BACKSTAGE_OPENCODE_BIN",
   "BACKSTAGE_MCP_CONFIG",
+  "OPENSESSION_PROFILE",
+  "OPENSESSION_CONFIG",
+  "OPENSESSION_WORKTREES_DIR",
 ] as const;
 const saved: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) saved[k] = process.env[k];
@@ -88,6 +92,20 @@ describe("config loader", () => {
     expect(identity.slackNames["U0A7T08405R"]).toBe("Michael");
 
     expect(configuredServer().caddyAdmin).toBe("http://localhost:2019");
+  });
+
+  test("local profile starts with an empty registry and local paths", () => {
+    delete process.env.BACKSTAGE_CONFIG;
+    delete process.env.OPENSESSION_CONFIG;
+    delete process.env.OPENSESSION_WORKTREES_DIR;
+    delete process.env.BACKSTAGE_WORKTREES_DIR;
+    process.env.OPENSESSION_PROFILE = "local";
+
+    expect(configuredRepos()).toEqual({});
+    expect(configuredPaths().worktreesDir).toBe(`${process.env.HOME}/os1/worktrees`);
+    expect(configPath()).toBe(`${process.env.HOME}/os1/config.json`);
+    expect(configuredIdentity()).toEqual({ team: [], slackNames: {} });
+    expect(() => defaultRepo()).toThrow("No repositories are registered");
   });
 
   test("partial file → merges over defaults", () => {

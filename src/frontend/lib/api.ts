@@ -495,6 +495,7 @@ export interface RepoInfo {
 	id: string;
 	defaultBranch: string;
 	sharedCheckout: boolean;
+	default?: boolean;
 }
 
 export async function fetchRepos(): Promise<RepoInfo[]> {

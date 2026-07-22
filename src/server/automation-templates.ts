@@ -1,4 +1,5 @@
 import { defaultRepo } from "./config";
+import { isLocalProfile } from "./profile";
 /**
  * Automation templates: a data-driven gallery of starting points for common
  * automations. Adding a template is pure data — no code change anywhere else;
@@ -24,7 +25,7 @@ export interface AutomationTemplate {
   eventKey?: string;
 }
 
-export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
+export const AUTOMATION_TEMPLATES: AutomationTemplate[] = isLocalProfile() ? [] : [
   {
     id: "daily-pr-sweep",
     name: "Daily PR review sweep",

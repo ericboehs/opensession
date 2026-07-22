@@ -33,6 +33,7 @@ import { githubUserAuthActive } from "./github-auth";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { githubLoginFor } from "./shared/user-mappings";
+import { isLocalProfile } from "./profile";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 /** Env override is for tests; read once at first use (the map loads lazily). */
@@ -89,7 +90,7 @@ function persist(): void {
 
 /** Sign-in is required exactly when per-user GitHub auth is opted in. */
 export function webAuthRequired(): boolean {
-  return githubUserAuthActive();
+  return !isLocalProfile() && githubUserAuthActive();
 }
 
 /** Route-scoped machine auth for the headless macropad bridge. */

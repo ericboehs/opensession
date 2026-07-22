@@ -8,7 +8,7 @@ import { join, resolve, relative } from "path";
 import { defaultRepo } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
-const DOCS_ROOT = `${defaultRepo().repo}/docs`;
+const docsRoot = () => `${defaultRepo().repo}/docs`;
 
 export interface WikiNode {
   name: string;
@@ -31,8 +31,8 @@ function isDoc(name: string): boolean {
 }
 
 export function getWikiTree(): WikiNode[] {
-  if (!existsSync(DOCS_ROOT)) return [];
-  return walk(DOCS_ROOT, "");
+  if (!existsSync(docsRoot())) return [];
+  return walk(docsRoot(), "");
 }
 
 function walk(abs: string, rel: string): WikiNode[] {
@@ -74,14 +74,15 @@ function walk(abs: string, rel: string): WikiNode[] {
 
 /** Resolve a user-supplied relative path safely inside the docs root. */
 function safeResolve(relPath: string): string | null {
-  const abs = resolve(DOCS_ROOT, relPath);
+  const root = docsRoot();
+  const abs = resolve(root, relPath);
   let real: string;
   try {
     real = realpathSync(abs);
   } catch {
     return null;
   }
-  const rootReal = realpathSync(DOCS_ROOT);
+  const rootReal = realpathSync(root);
   if (real !== rootReal && !real.startsWith(rootReal + "/")) return null;
   return real;
 }
@@ -154,5 +155,5 @@ function makeSnippet(line: string, idx: number, qlen: number): string {
 }
 
 export function getDocsRootRelative(): string {
-  return relative(HOME, DOCS_ROOT);
+  return relative(HOME, docsRoot());
 }

@@ -14,6 +14,7 @@ import {
 import { createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { runAgent, isAgentSessionBusy } from "./agent-runner";
 import { defaultRepo } from "./config";
+import { isLocalProfile } from "./profile";
 import { getGoal, listGoals, saveGoal, type Goal } from "./goals";
 import { DEFAULT_FALLBACK_MODEL, providerFor } from "./models";
 import { engineSessionPatch } from "./sessions";
@@ -263,7 +264,7 @@ export async function runGoal(goal: Goal): Promise<void> {
 
 // Goals ticker: wake due goals (self-pacing, so this only fires them).
 // Guarded so a hot reload doesn't stack a second interval.
-if (!g.__backstageBooted) {
+if (!g.__backstageBooted && !isLocalProfile()) {
 	setInterval(() => {
 		const now = Date.now();
 		for (const goal of listGoals()) {

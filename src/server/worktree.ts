@@ -1,9 +1,10 @@
 import { $ } from "bun";
-import { existsSync, readFileSync, statSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "fs";
 import { resolve as resolvePath } from "path";
 import type { UnifiedSession } from "./types";
 import { stopPreview } from "./preview";
 import { configuredPaths, configuredRepos, defaultRepo, type Repo } from "./config";
+import { isLocalProfile } from "./profile";
 
 // The Repo type + registry defaults live in config.ts now (the registry is
 // config-driven: `repos` in ~/.opensession/config.json merges over the built-in
@@ -522,7 +523,23 @@ async function resolveStartPoint(
     (await $`git -C ${repoDir} rev-parse --verify --quiet origin/${base}`.nothrow()).exitCode === 0
   )
     return `origin/${base}`;
-  return `origin/${defaultBranch}`;
+  if (!isLocalProfile()) return `origin/${defaultBranch}`;
+  if (
+    (await $`git -C ${repoDir} rev-parse --verify --quiet ${defaultBranch}`.nothrow()).exitCode === 0
+  ) return defaultBranch;
+  return "HEAD";
+}
+
+async function defaultStartPoint(repo: Repo): Promise<string> {
+  const remote = `origin/${repo.defaultBranch}`;
+  if (!isLocalProfile()) return remote;
+  if (
+    (await $`git -C ${repo.repo} rev-parse --verify --quiet ${remote}`.nothrow()).exitCode === 0
+  ) return remote;
+  if (
+    (await $`git -C ${repo.repo} rev-parse --verify --quiet ${repo.defaultBranch}`.nothrow()).exitCode === 0
+  ) return repo.defaultBranch;
+  return "HEAD";
 }
 
 /**
@@ -622,9 +639,11 @@ export async function createWorktree(
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${branch}`;
   const base = opts?.base;
 
+  if (isLocalProfile()) mkdirSync(worktreesDir(), { recursive: true });
+
   await withGitLock(async () => {
     await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`.nothrow();
-    let startPoint = `origin/${repo.defaultBranch}`;
+    let startPoint = await defaultStartPoint(repo);
     if (base) {
       // Stacked worktree: fetch the base (it may be remote-only), then branch off it.
       await $`git -C ${repo.repo} fetch origin ${base} --quiet`.nothrow();

@@ -13,7 +13,7 @@
  * through (see routes/index.ts for the dispatch order).
  */
 
-import type { RouteContext } from "./context";
+import { requestUser, type RouteContext } from "./context";
 import { SESSIONS_DIR, findSession, getCachedSessions, invalidateSessionsCache } from "../session-cache";
 import { writeJsonAtomic } from "../shared/atomic-write";
 import { type BackstageSessionFile } from "../types";
@@ -56,7 +56,7 @@ export async function handleSideChatsRoutes(
 			sideChatOf: parentId,
 			...(parent.repo ? { repo: parent.repo } : {}),
 			...(parent.model ? { model: parent.model } : {}),
-			createdBy: body.user || "Anonymous",
+			createdBy: requestUser(ctx, body.user) || "Anonymous",
 			createdAt: now,
 			lastActivity: now,
 			title: body.title || "Side chat",

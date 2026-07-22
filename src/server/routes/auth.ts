@@ -28,6 +28,7 @@ import {
 } from "../github-auth";
 import { configuredServer } from "../config";
 import { randomBytes } from "crypto";
+import { isLocalProfile, localProfileUser } from "../profile";
 
 const STATE_COOKIE = "opensession_oauth_state";
 
@@ -55,6 +56,14 @@ export async function handleAuthRoutes(
 	if (!path.startsWith("/backstage/api/auth/")) return undefined;
 
 	if (path === "/backstage/api/auth/status" && req.method === "GET") {
+		if (isLocalProfile()) {
+			return Response.json({
+				required: false,
+				authenticated: true,
+				local: true,
+				name: localProfileUser(),
+			});
+		}
 		const identity = resolveWebAuth(req);
 		return Response.json({
 			required: webAuthRequired(),

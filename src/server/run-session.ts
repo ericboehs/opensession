@@ -31,6 +31,7 @@ import {
 	selfImproveMcpForSession,
 } from "./automations";
 import { defaultRepo } from "./config";
+import { isLocalProfile } from "./profile";
 import {
 	buildChatContextNote,
 	buildEngineSwitchHandoffNote,
@@ -1904,7 +1905,7 @@ export function sideChatIdsToInline(
 
 // Loop ticker: fire due session loops (skips busy/archived sessions).
 // Guarded so a hot reload doesn't stack a second interval.
-if (!g.__backstageBooted) {
+if (!g.__backstageBooted && !isLocalProfile()) {
 	setInterval(() => {
 		for (const session of getCachedSessions()) {
 			const loop = session.loop;

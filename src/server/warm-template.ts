@@ -56,6 +56,7 @@ import {
 import { dirname, join } from "path";
 import { configuredPaths, configuredRepos, type Repo } from "./config";
 import { OPENSESSION_CHATS_DIR } from "./paths";
+import { isLocalProfile } from "./profile";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -664,6 +665,7 @@ async function sweepWarmTemplates(): Promise<void> {
  *  a test/CLI process alive). Cheap no-op every tick while nothing is
  *  enabled, so it's armed unconditionally at module load. */
 export function ensureWarmTemplateScheduler(): void {
+  if (isLocalProfile()) return;
   if (g.__warmTemplateSweepTimer) return;
   const t = setInterval(() => {
     sweepWarmTemplates().catch((e) => console.warn("[warm-template] sweep failed:", e));

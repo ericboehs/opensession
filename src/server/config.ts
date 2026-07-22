@@ -19,12 +19,14 @@
 
 import { readFileSync, statSync } from "fs";
 import { envAlias, statePath } from "./rename-compat";
+import { isLocalProfile, localProfileRoot } from "./profile";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
-function configPath(): string {
+export function configPath(): string {
   return (
     envAlias("OPENSESSION_CONFIG", "BACKSTAGE_CONFIG") ||
+    (isLocalProfile() ? `${localProfileRoot()}/config.json` : undefined) ||
     statePath(".opensession/config.json", ".backstage/config.json")
   );
 }
@@ -439,16 +441,17 @@ export function configuredServer(): ResolvedServer {
   const s = getConfig().server || {};
   const envPort = parseInt(process.env.PORT || "");
   const envWebhookPort = parseInt(process.env.WEBHOOK_PORT || "");
+  const port = Number.isFinite(envPort) ? envPort : s.port ?? 3850;
   return {
     host: process.env.HOST || s.host || "127.0.0.1",
-    port: Number.isFinite(envPort) ? envPort : s.port ?? 3850,
+    port,
     webhookPort: Number.isFinite(envWebhookPort) ? envWebhookPort : s.webhookPort ?? 3848,
     // Canonical UI origin (os.tella.dev, 2026-07-10): the app serves at the
     // bare domain root, no path prefix. Old prefixed links 301 there.
     publicBaseUrl:
       envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
       s.publicBaseUrl ||
-      "https://os.tella.dev",
+      (isLocalProfile() ? `http://127.0.0.1:${port}` : "https://os.tella.dev"),
     previewHost: process.env.PREVIEW_HOST || s.previewHost || "michael.taila5d766.ts.net",
     caddyAdmin: s.caddyAdmin || "http://localhost:2019",
   };
@@ -456,12 +459,13 @@ export function configuredServer(): ResolvedServer {
 
 export function configuredPaths(): ResolvedPaths {
   const p = getConfig().paths || {};
+  const localRoot = localProfileRoot();
   return {
     claudeBin: envAlias("OPENSESSION_CLAUDE_BIN", "BACKSTAGE_CLAUDE_BIN") || p.claudeBin || "/home/ubuntu/.local/bin/claude",
     opencodeBin: envAlias("OPENSESSION_OPENCODE_BIN", "BACKSTAGE_OPENCODE_BIN") || p.opencodeBin || null,
-    worktreesDir: envAlias("OPENSESSION_WORKTREES_DIR", "BACKSTAGE_WORKTREES_DIR") || p.worktreesDir || "/home/ubuntu/worktrees",
+    worktreesDir: envAlias("OPENSESSION_WORKTREES_DIR", "BACKSTAGE_WORKTREES_DIR") || p.worktreesDir || (isLocalProfile() ? `${localRoot}/worktrees` : "/home/ubuntu/worktrees"),
     wtScript: p.wtScript || "/home/ubuntu/bin/wt",
-    mcpConfig: envAlias("OPENSESSION_MCP_CONFIG", "BACKSTAGE_MCP_CONFIG") || p.mcpConfig || `${HOME}/projects/tella-backstage/mcp-config.json`,
+    mcpConfig: envAlias("OPENSESSION_MCP_CONFIG", "BACKSTAGE_MCP_CONFIG") || p.mcpConfig || (isLocalProfile() ? `${localRoot}/mcp-config.json` : `${HOME}/projects/tella-backstage/mcp-config.json`),
   };
 }
 
@@ -473,7 +477,7 @@ export function configuredPaths(): ResolvedPaths {
  * tella-fusion checkout path.
  */
 export function configuredRepos(): Record<string, Repo> {
-  const merged = builtinRepos();
+  const merged = isLocalProfile() ? {} : builtinRepos();
   for (const [id, entry] of Object.entries(getConfig().repos || {})) {
     const base = merged[id];
     if (base) {
@@ -506,11 +510,13 @@ export function configuredRepos(): Record<string, Repo> {
  *  falling back to tella-fusion (always present via the built-ins). */
 export function defaultRepo(): Repo {
   const repos = configuredRepos();
-  return (
+  const repo = (
     Object.values(repos).find((r) => r.default) ||
     repos["tella-fusion"] ||
     Object.values(repos)[0]
   );
+  if (!repo) throw new Error("No repositories are registered");
+  return repo;
 }
 
 /**
@@ -547,6 +553,7 @@ export function productMark(): string {
  */
 export function configuredIdentity(): ResolvedIdentity {
   const id = getConfig().identity;
+  if (!id && isLocalProfile()) return { team: [], slackNames: {} };
   if (!id) return { team: DEFAULT_TEAM, slackNames: DEFAULT_SLACK_NAMES };
   return { team: id.team ?? [], slackNames: id.slackNames ?? {} };
 }

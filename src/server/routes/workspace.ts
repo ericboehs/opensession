@@ -6,7 +6,7 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import type { RouteContext } from "./context";
+import { requestUser, type RouteContext } from "./context";
 import { searchRepoEntries } from "../file-index";
 import { runSessionPrompt } from "../run-session";
 import { type Sandbox, hasRemoteWorkspace, workspaceExecFor } from "../sandbox";
@@ -217,7 +217,7 @@ export async function handleWorkspaceRoutes(
 			name: body.name,
 			repo: body.repo,
 			color: body.color,
-			createdBy: body.user || "Anonymous",
+			createdBy: requestUser(ctx, body.user) || "Anonymous",
 		});
 		return Response.json({ project });
 	}
@@ -339,7 +339,7 @@ export async function handleWorkspaceRoutes(
 				const ws = createWorkspace({
 					name: src.title || src.branch || "Workspace",
 					repo: src.repo,
-					createdBy: body.user || src.startedBy || "Anonymous",
+					createdBy: requestUser(ctx, body.user) || src.startedBy || "Anonymous",
 					...(src.branch ? { branch: src.branch } : {}),
 					...(src.worktreeDir ? { worktreeDir: src.worktreeDir } : {}),
 				});
@@ -360,7 +360,7 @@ export async function handleWorkspaceRoutes(
 			worktreeDir,
 			...(repoId ? { repo: repoId } : {}),
 			...(workspaceId ? { projectId: workspaceId } : {}),
-			createdBy: body.user || "Anonymous",
+			createdBy: requestUser(ctx, body.user) || "Anonymous",
 			createdAt: new Date().toISOString(),
 			lastActivity: new Date().toISOString(),
 			title: "New chat",

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, fetchSandboxStatus, requestSandboxPrewarm, suggestBranch, fetchClaudeAccounts, type ClaudeAccountOption, type ModelOption, type SandboxStatusInfo } from "../lib/api";
-import { getCurrentUser } from "./UserPicker";
+import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fetchConnections, fetchSandboxStatus, requestSandboxPrewarm, suggestBranch, fetchClaudeAccounts, fetchRepos, type ClaudeAccountOption, type ModelOption, type SandboxStatusInfo } from "../lib/api";
+import { getCurrentUser, useAuthStatus } from "./UserPicker";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { ImageThumbs } from "./ImageThumbs";
@@ -49,7 +49,7 @@ interface Worktree {
 
 // Repos a session can run against. tella-fusion is the default.
 // Keep in sync with the built-in repos in src/server/config.ts.
-const REPOS = [
+const CLOUD_REPOS = [
   { id: "tella-fusion", label: "tella-fusion" },
   { id: "backstage", label: "opensession" },
   { id: "gitops", label: "gitops" },
@@ -67,7 +67,7 @@ const REPOS = [
 function filteredRepo(): string | null {
   try {
     const v = JSON.parse(localStorage.getItem("opensession-sidebar-filter") || "{}");
-    return typeof v.repo === "string" && REPOS.some((p) => p.id === v.repo)
+    return typeof v.repo === "string" && CLOUD_REPOS.some((p) => p.id === v.repo)
       ? v.repo
       : null;
   } catch {
@@ -81,7 +81,7 @@ function readPrefill() {
   // An explicit ?repo= wins (legacy ?project= still honored); otherwise fall
   // back to the sidebar's repo filter, then to tella-fusion.
   const repoParam = params.get("repo") ?? params.get("project");
-  const repo = REPOS.some((p) => p.id === repoParam)
+  const repo = CLOUD_REPOS.some((p) => p.id === repoParam)
     ? repoParam!
     : filteredRepo() || "tella-fusion";
   return {
@@ -105,10 +105,24 @@ function slugifyBranch(text: string): string {
 }
 
 export function NewSession({ onBack, send, addHandler, connected, prefillPrompt, projectId, forceRepo, forceBranch, onCreateStarted }: Props) {
+  const auth = useAuthStatus();
   const [prefill] = useState(readPrefill);
   const [mode, setMode] = useState<"ask" | "code">(prefill.mode);
   // In a Project, default to the folder's shared repo; else the prefill/filter repo.
   const [repo, setRepo] = useState(forceRepo || prefill.repo);
+  const [repos, setRepos] = useState(CLOUD_REPOS);
+  useEffect(() => {
+    if (!auth?.local) return;
+    fetchRepos().then((items) => {
+      const localRepos = items.map((item) => ({ id: item.id, label: item.id }));
+      setRepos(localRepos);
+      setRepo((current) => {
+        if (forceRepo && localRepos.some((item) => item.id === forceRepo)) return forceRepo;
+        if (localRepos.some((item) => item.id === current)) return current;
+        return localRepos.find((item, index) => items[index]?.default)?.id || localRepos[0]?.id || "";
+      });
+    }).catch(() => setRepos([]));
+  }, [auth?.local, forceRepo]);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   // In a Project, default to a sibling's branch so the new chat reuses its
   // worktree; the user can still switch to "New branch" to fork a fresh one.
@@ -331,6 +345,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   // Inside a Project, snap back to the shared sibling branch, not "New branch".
   useEffect(() => {
     setSelectedWorktree(forceBranch || "__new__");
+    if (!repo) {
+      setWorktrees([]);
+      return;
+    }
     fetchWorktrees(repo)
       .then(setWorktrees)
       .catch(() => setWorktrees([]));
@@ -467,6 +485,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const canCreate =
     !creating &&
     connected &&
+		!!repo &&
     // Unsupported model × environment combo: the server would reject the
     // create with the same message (resolveRequestedSandbox) — block here so
     // the wall is discovered before submit, not after.
@@ -519,7 +538,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             className="palette-trigger palette-trigger-strong"
             title="Repository"
             value={repo}
-            options={REPOS.map((p) => ({
+            options={repos.map((p) => ({
               value: p.id,
               label: p.label,
               icon: <RepoTile name={p.id} />,
@@ -531,7 +550,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
           >
             <RepoTile name={repo} />
             <span className="palette-trigger-label">
-              {REPOS.find((p) => p.id === repo)?.label || repo}
+              {repos.find((p) => p.id === repo)?.label || repo || "No repositories"}
             </span>
             <IconChevronDown className="palette-chevron" size={22} />
           </PaletteSelect>

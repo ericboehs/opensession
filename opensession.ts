@@ -20,6 +20,7 @@ import { initHumanAsks } from "./src/server/human-asks";
 import { interactiveMcpServers } from "./src/server/interactive-mcp";
 import { OPENSESSION_CHATS_DIR } from "./src/server/paths";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
+import { isLocalProfile, localProfileUser } from "./src/server/profile";
 import { startPrReviewNotificationTicker } from "./src/server/pr-review-notifications";
 import { startPublicIngress } from "./src/server/public-ingress";
 import { envAlias } from "./src/server/rename-compat";
@@ -195,8 +196,10 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			// page/asset loads (the sign-in screen must render). The verified
 			// identity rides RouteContext and the WS upgrade data, where it
 			// overrides any client-claimed user name.
-			let authUser: { login: string; name: string } | null = null;
-			if (webAuthRequired()) {
+			let authUser: { login: string; name: string } | null = isLocalProfile()
+				? { login: "", name: localProfileUser() }
+				: null;
+			if (!isLocalProfile() && webAuthRequired()) {
 				authUser = resolveWebAuth(req);
 				// GET /api/health stays open: it's the liveness signal for
 				// deploy.sh's post-restart poll, monitors, and the client's
@@ -234,7 +237,11 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				// The verified identity is stamped in the historical picker format
 				// (first name — what createdBy/attribution have always stored);
 				// the GitHub login rides along for createdByLogin stamping.
-				const authFirst = authUser ? authUser.name.split(" ")[0] : null;
+				const authFirst = authUser
+					? isLocalProfile()
+						? authUser.name
+						: authUser.name.split(" ")[0]
+					: null;
 				const upgraded = server.upgrade(req, {
 					data: {
 						watchingSessionId: null,
@@ -399,6 +406,8 @@ async function loadAgents(): Promise<AgentModule[]> {
 // any of it — the already-running agents/timers keep going untouched (only a
 // real restart reloads their code, and that restart is now graceful, below).
 if (!g.__backstageBooted) {
+	const localProfile = isLocalProfile();
+	if (!localProfile) {
 	// Detached engine servers (src/server/opencode-detach.ts): opt this — and
 	// only this — process into spawning `opencode serve` in transient systemd
 	// user scopes, so in-flight turns survive a `systemctl restart`. Runner-host
@@ -502,6 +511,11 @@ if (!g.__backstageBooted) {
 
 	// Desk todo reminders: push + Slack DM when a remindAt passes (todos.ts)
 	startTodoReminderTicker();
+	} else {
+		agents = [];
+		g.__agents = agents;
+		console.log("[profile] Local profile active: background agents and schedulers are disabled");
+	}
 
 	// Resume Claude runs a previous process left in-flight (restart/crash), then
 	// wake any session that finished its turn during the shutdown drain (so the
@@ -512,13 +526,15 @@ if (!g.__backstageBooted) {
 		// Adopt detached `opencode serve` scopes that survived the restart FIRST —
 		// resumeInterruptedRuns reattaches journaled runs to these adopted pool
 		// entries (tryReattachOpencodeRun) instead of re-prompting their sessions.
-		try {
-			const adopted = await adoptDetachedOpencodeServers();
-			if (adopted > 0) {
-				console.log(`[runner] Adopted ${adopted} detached opencode server(s) from before restart`);
+		if (!localProfile) {
+			try {
+				const adopted = await adoptDetachedOpencodeServers();
+				if (adopted > 0) {
+					console.log(`[runner] Adopted ${adopted} detached opencode server(s) from before restart`);
+				}
+			} catch (e) {
+				console.error("[runner] Detached-server adoption failed:", e);
 			}
-		} catch (e) {
-			console.error("[runner] Detached-server adoption failed:", e);
 		}
 		const resumedIds = resumeInterruptedRuns(
 			() => {
@@ -572,7 +588,7 @@ if (!g.__backstageBooted) {
 
 	// Ongoing hygiene (every 6h): remove worktrees of sessions that were manually
 	// archived more than 14 days ago and have no WIP.
-	setInterval(
+	if (!localProfile) setInterval(
 		async () => {
 			try {
 				const removed = await sweepArchivedWorktrees(getAllSessions(), 14);

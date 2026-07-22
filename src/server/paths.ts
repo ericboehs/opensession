@@ -16,6 +16,7 @@
 
 import { existsSync } from "fs";
 import { envAlias, stateDir } from "./rename-compat";
+import { isLocalProfile, localProfileRoot } from "./profile";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const CHATS_LEGACY = `${HOME}/.backstage-sessions`;
@@ -26,6 +27,7 @@ function resolveChatsDir(): string {
   // the live store — set it BEFORE importing any src/server module).
   const fromEnv = envAlias("OPENSESSION_CHATS_DIR", "BACKSTAGE_CHATS_DIR");
   if (fromEnv) return fromEnv;
+  if (isLocalProfile()) return `${localProfileRoot()}/sessions`;
   // `~/.opensession-chats` → `~/.backstage-chats` dual-read, then the
   // pre-workspaces legacy name, then create-new at the primary name.
   const resolved = stateDir("chats");

@@ -45,6 +45,7 @@ export function useCurrentUser(): string {
 export interface AuthStatus {
   required: boolean;
   authenticated: boolean;
+  local?: boolean;
   /** Server supports the redirect (authorization-code) sign-in. */
   redirect?: boolean;
   login?: string;
@@ -101,9 +102,9 @@ export function UserGate({ children }: { children: React.ReactNode }) {
         if (!body) return; // old server / fetch failed → keep the picker flow
         setAuth(body);
         setAuthStatusCache(body);
-        if (body.required && body.authenticated && body.name) {
-          const first = body.name.split(" ")[0];
-          if (getCurrentUser() !== first) setStoredUser(first);
+        if ((body.local || body.required) && body.authenticated && body.name) {
+          const user = body.local ? body.name : body.name.split(" ")[0];
+          if (getCurrentUser() !== user) setStoredUser(user);
         }
       })
       .catch(() => {});
@@ -121,6 +122,8 @@ export function UserGate({ children }: { children: React.ReactNode }) {
       />
     );
   }
+
+  if (auth?.local && auth.authenticated) return <>{children}</>;
 
   if (user !== "Anonymous") return <>{children}</>;
 

@@ -26,6 +26,7 @@ import { getCachedSessions } from "./session-cache";
 import { mergedSessionTranscript } from "./sessions";
 import { opencodeOneShot } from "./opencode-oneshot";
 import { audit } from "./audit";
+import { isLocalProfile } from "./profile";
 import {
 	SessionSearchStore,
 	type SearchHit,
@@ -321,7 +322,7 @@ export async function sweepSessionIndex(): Promise<{
 
 // Sweeper ticker — one interval process-wide; hot reloads must not stack a
 // second one (same guard as goal-runner's ticker).
-if (!g.__backstageBooted) {
+if (!g.__backstageBooted && !isLocalProfile()) {
 	setTimeout(() => void sweepSessionIndex().catch(() => {}), FIRST_SWEEP_DELAY_MS);
 	setInterval(() => void sweepSessionIndex().catch(() => {}), SWEEP_MS);
 }
