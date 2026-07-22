@@ -15443,8 +15443,8 @@ html[data-theme="light"] .palette-card .palette-create {
 }
 
 .pixel-spinner .pixel {
-  width: 4px;
-  height: 4px;
+  width: 3px;
+  height: 3px;
   border-radius: calc(1px * var(--rf)); corner-shape: var(--cs);
   background: rgba(148, 163, 184, 0.15);
   transition:
