@@ -824,13 +824,16 @@ body.resizing-x {
 }
 
 .sidebar {
-	--sidebar-scrollbar-w: 8px;
 	display: flex;
 	flex-direction: column;
 	width: 100%;
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
+	scrollbar-width: none;
+}
+.sidebar::-webkit-scrollbar {
+	display: none;
 }
 
 .sidebar-header {
@@ -1194,27 +1197,6 @@ body.resizing-x {
 .sidebar-independent-scroll {
 	overflow-y: visible;
 	padding-bottom: 6px;
-}
-
-/* Chromium reserves space for our styled scrollbar even when the OS normally
-   uses overlay scrollbars. Subtract that gutter from desktop right insets so
-   rows retain the same visible distance from both outer sidebar edges. */
-@media (min-width: 721px) {
-	.sidebar-band-label.sidebar-tools-head {
-		padding-right: calc(10px - var(--sidebar-scrollbar-w));
-	}
-	.sidebar-nav {
-		padding-right: calc(var(--sidebar-nav-x) - var(--sidebar-scrollbar-w));
-	}
-	.sidebar-workspace {
-		padding-right: calc(18px - var(--sidebar-scrollbar-w));
-	}
-	.sidebar-list {
-		padding-right: calc(10px - var(--sidebar-scrollbar-w));
-	}
-	.sidebar-independent-section {
-		margin-right: calc(10px - var(--sidebar-scrollbar-w));
-	}
 }
 
 /* "Archived" — an icon-led row styled as a peer of the My-sessions status buckets
