@@ -3287,6 +3287,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 											key={e.key}
 											value={e.key}
 											dragListener={canDragPins}
+											transition={{ duration: 0 }}
 											onDragStart={() => setPinDragKey(e.key)}
 											onDragEnd={commitPinReorder}
 											whileDrag={{ scale: 1.01 }}
