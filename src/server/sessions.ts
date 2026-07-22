@@ -519,8 +519,11 @@ function getRunningPids(): Map<string, number> {
 
 // PR cache: branch → rich PR info, refreshed every 60s. A single batched
 // `gh pr list` carries everything the Reviews table renders as columns
-// (diffstat, review decision, a CI checks rollup summary, author), so the list
-// never has to N+1 fetch per PR — only the detail pane does.
+// (diffstat, review decision, author), so the list never has to N+1 fetch per
+// PR — only the detail pane does. The bulk cache carries NO CI checks: the
+// statusCheckRollup bulk query cost ~111 GraphQL points per refresh (rollup
+// cost scales with check runs) and alone exhausted the 5000/hr GraphQL quota
+// — real checks come from the cheap per-PR detail query (pr-info.ts).
 interface PrChecksSummary {
   total: number;
   passed: number;
@@ -552,14 +555,14 @@ interface PrInfo {
   assignees: string[];
 }
 // Repos the bulk PR cache covers — the active dev repos whose PRs the sidebar
-// Open PRs section and Reviews table surface. Fusion carries 200+ open PRs and
-// GitHub's GraphQL 504s on wide statusCheckRollup queries there, so limits are
-// per-repo. Repos not listed here fall back to session-derived PR info only.
-// The ghRepo target resolves through the config-driven registry (worktree.ts
-// REPOS), so a config override of either repo's GitHub target flows through.
+// Open PRs section and Reviews table surface. Fusion carries 200+ open PRs, so
+// limits are per-repo. Repos not listed here fall back to session-derived PR
+// info only. The ghRepo target resolves through the config-driven registry
+// (worktree.ts REPOS), so a config override of either repo's GitHub target
+// flows through.
 const PR_REPO_LIMITS = [
-	{ id: "tella-fusion", openLimit: 500, recentLimit: 200, rollupLimit: 60 },
-	{ id: "backstage", openLimit: 100, recentLimit: 100, rollupLimit: 30 },
+	{ id: "tella-fusion", openLimit: 500, recentLimit: 200 },
+	{ id: "backstage", openLimit: 100, recentLimit: 100 },
 ] as const;
 function prRepos() {
 	return PR_REPO_LIMITS.flatMap((limits) => {
@@ -630,32 +633,6 @@ function noteGhRateLimited() {
     );
     ghBackoffProbe = null;
   })();
-}
-
-interface RollupCheck { status?: string; conclusion?: string; state?: string }
-
-// Collapse GitHub's per-check rollup into the four counts the UI shows. A check
-// is "pending" until COMPLETED; once complete its conclusion decides pass/fail.
-// Skipped/neutral checks count toward the total but are neither pass nor fail,
-// matching how GitHub's merge box treats them.
-function summarizeChecks(rollup: RollupCheck[] | undefined): PrChecksSummary {
-  const summary: PrChecksSummary = { total: 0, passed: 0, failed: 0, pending: 0 };
-  for (const c of rollup || []) {
-    summary.total++;
-    // StatusContext (legacy commit statuses) report `state`; CheckRun reports
-    // status + conclusion.
-    const status = (c.status || "").toUpperCase();
-    const conclusion = (c.conclusion || c.state || "").toUpperCase();
-    if (status && status !== "COMPLETED") {
-      summary.pending++;
-    } else if (["FAILURE", "TIMED_OUT", "ERROR", "STARTUP_FAILURE", "ACTION_REQUIRED", "CANCELLED"].includes(conclusion)) {
-      summary.failed++;
-    } else if (conclusion === "SUCCESS") {
-      summary.passed++;
-    }
-    // SKIPPED / NEUTRAL / "" fall through — counted in total only.
-  }
-  return summary;
 }
 
 // GitHub only populates a PR's `reviewDecision` when branch protection *requires*
@@ -743,12 +720,9 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
     //   - `--state open` with a generous limit → all open PRs (the live matches)
     //   - `--state all` window → recently merged/closed (Reviews "merged" view +
     //     sessions whose PR just landed)
-    // GitHub's GraphQL also 504s asking for statusCheckRollup across hundreds of
-    // PRs, so the CI rollup stays a small scoped call over the most recent open
-    // PRs (the ones a reviewer actually triages); others show no checks column.
     const next = new Map<string, Map<string, PrInfo>>();
     await Promise.all(prRepos().map(async (repo) => {
-      const [openPrs, recentAll, rollups, reviews] = await Promise.all([
+      const [openPrs, recentAll, reviews] = await Promise.all([
         ghJson<BulkPr[]>([
           "pr", "list", "--repo", repo.ghRepo, "--state", "open",
           "--limit", String(repo.openLimit), "--json", FIELDS,
@@ -757,13 +731,9 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
           "pr", "list", "--repo", repo.ghRepo, "--state", "all",
           "--limit", String(repo.recentLimit), "--json", FIELDS,
         ]),
-        ghJson<Array<{ number: number; statusCheckRollup?: RollupCheck[] }>>([
-          "pr", "list", "--repo", repo.ghRepo, "--state", "open",
-          "--limit", String(repo.rollupLimit), "--json", "number,statusCheckRollup",
-        ]),
         // Review state per open PR, to fill in an approval GitHub won't report
         // via reviewDecision (see deriveReviewDecision). latestReviews is cheap
-        // (~4s across every open PR, unlike statusCheckRollup), so it covers the
+        // (~4s and ~2 GraphQL points across every open PR), so it covers the
         // full open window rather than a scoped slice.
         ghJson<Array<{ number: number; latestReviews?: Array<{ state?: string; author?: { login?: string } }> }>>([
           "pr", "list", "--repo", repo.ghRepo, "--state", "open",
@@ -780,11 +750,6 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
         return;
       }
 			freshRepos.add(repo.id);
-
-      const checksByNumber = new Map<number, PrChecksSummary>();
-      for (const r of rollups || []) {
-        checksByNumber.set(r.number, summarizeChecks(r.statusCheckRollup));
-      }
 
       const reviewByNumber = new Map<number, string>();
       const reviewedByNumber = new Map<number, string[]>();
@@ -817,7 +782,10 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
         author: pr.author?.login || pr.author?.name || "",
         createdAt: pr.createdAt || "",
         updatedAt: pr.updatedAt || "",
-        checks: checksByNumber.get(pr.number) || { total: 0, passed: 0, failed: 0, pending: 0 },
+        // Always empty in the bulk cache (see PR_REPO_LIMITS comment) — the UI
+        // treats zero checks as "no known CI blocker"; the detail pane has the
+        // real rollup.
+        checks: { total: 0, passed: 0, failed: 0, pending: 0 },
         mergeable: pr.mergeable || "UNKNOWN",
         // Individual review requests only — team requests ("Infra reviewers")
         // have no login and we can't cheaply resolve their membership.
