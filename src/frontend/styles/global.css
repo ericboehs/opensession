@@ -697,11 +697,29 @@ html.wco .wco-nav-btn:hover {
 		z-index: 20;
 		background: transparent;
 	}
-	.sidebar-sticky-head.is-stuck {
-		background: color-mix(in srgb, var(--bg-raised) 72%, transparent);
-		-webkit-backdrop-filter: blur(10px);
-		backdrop-filter: blur(10px);
-		box-shadow: 0 1px 0 0 color-mix(in srgb, var(--border) 70%, transparent);
+	/* Pinned surface: a full-width backing pseudo-element in the sidebar's OWN
+	   material (same wash + blur as .sidebar-container), so a stuck header
+	   matches the sidebar color exactly instead of stacking a second darker
+	   layer, and spans edge to edge regardless of how deep the header is inset
+	   (the ±400px overhang is clipped by the sidebar's overflow-x). The strong
+	   blur turns rows sliding beneath into an unreadable smear rather than a
+	   legible ghost. Hairline rides the pseudo so it's full-width too. */
+	.sidebar-sticky-head.is-stuck::before,
+	.sidebar-status-group > .sidebar-group-header.is-stuck::before,
+	.sidebar-group--pinned > .sidebar-group-header.is-stuck::before,
+	.sidebar-group--review > .sidebar-group-header.is-stuck::before,
+	.sidebar-repo-group > .sidebar-repo-head.is-stuck::before {
+		content: "";
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: -400px;
+		right: -400px;
+		z-index: -1;
+		background: var(--sidebar-material);
+		-webkit-backdrop-filter: blur(24px) saturate(150%);
+		backdrop-filter: blur(24px) saturate(150%);
+		box-shadow: 0 1px 0 0 color-mix(in srgb, var(--border) 60%, transparent);
 	}
 	/* One invariant row height prevents the outgoing and incoming sticky labels
 	   from peeking around each other while one section pushes the next away. */
@@ -719,17 +737,6 @@ html.wco .wco-nav-btn:hover {
 	.sidebar-workspace.sidebar-sticky-head .sidebar-workspace-head {
 		width: 100%;
 		margin-bottom: 0;
-	}
-	/* Independent bands are inset by their parent. Paint through that gutter
-	   without changing layout width (negative margins caused horizontal scroll). */
-	.sidebar-independent-section > .sidebar-sticky-head {
-		box-shadow: none;
-	}
-	.sidebar-independent-section > .sidebar-sticky-head.is-stuck {
-		box-shadow:
-			-10px 0 0 color-mix(in srgb, var(--bg-raised) 72%, transparent),
-			10px 0 0 color-mix(in srgb, var(--bg-raised) 72%, transparent),
-			0 1px 0 0 color-mix(in srgb, var(--border) 70%, transparent);
 	}
 	.sidebar-workspace-fallback {
 		margin-right: 12px;
@@ -1762,15 +1769,8 @@ body.resizing-x {
 		background: transparent;
 	}
 
-	.sidebar-status-group > .sidebar-group-header.is-stuck,
-	.sidebar-group--pinned > .sidebar-group-header.is-stuck,
-	.sidebar-group--review > .sidebar-group-header.is-stuck,
-	.sidebar-repo-group > .sidebar-repo-head.is-stuck,
-	.sidebar-folder-section > .sidebar-folder-header.is-stuck {
-		background: color-mix(in srgb, var(--bg-raised) 72%, transparent);
-		-webkit-backdrop-filter: blur(10px);
-		backdrop-filter: blur(10px);
-	}
+	/* Pinned backing for these nested headers is the shared full-width
+	   ::before rule beside .sidebar-sticky-head.is-stuck above. */
 
 	.sidebar-repo-lanes .sidebar-status-group > .sidebar-group-header {
 		top: 74px;
