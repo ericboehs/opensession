@@ -830,6 +830,9 @@ body.resizing-x {
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
+	/* Keep the always-visible desktop scrollbar from taking a gutter out of the
+	   sidebar's content width. Browsers without overlay support retain `auto`. */
+	overflow-y: overlay;
 }
 
 .sidebar-header {
