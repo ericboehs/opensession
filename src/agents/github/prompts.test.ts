@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PrDetails } from "../../server/pr-info";
-import { buildAutoFixPrompt, mergeabilityState } from "./prompts";
+import { buildAutoFixPrompt, buildReviewPrompt, mergeabilityState } from "./prompts";
 
 function pr(overrides: Partial<PrDetails> = {}): PrDetails {
   return {
@@ -52,5 +52,14 @@ describe("auto-fix merge conflicts", () => {
 
     expect(prompt).toContain("still calculating");
     expect(prompt).toContain("do not assume the branch is conflict-free");
+  });
+});
+
+describe("review diff context", () => {
+  test("reads the complete diff from the pinned worktree instead of inlining it", () => {
+    const prompt = buildReviewPrompt("Review carefully.", pr(), false);
+
+    expect(prompt).toContain("git diff --find-renames origin/main...HEAD");
+    expect(prompt).not.toContain("===BEGIN PR DIFF===");
   });
 });

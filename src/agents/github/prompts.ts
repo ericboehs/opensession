@@ -119,55 +119,6 @@ You are already on a dedicated \`auto-docs-sync-*\` branch — do not create ano
 - If the merged PR needs documentation changes: make the edits, then commit with \`git add\` on the specific paths (never \`git add .\`), push the current branch with \`git push -u origin HEAD\`, and open a PR with \`gh pr create --repo ${defaultRepo().ghRepo} --title "Docs sync for #<PR_NUMBER>" --body "<summary of what you updated and why, referencing #<PR_NUMBER>>"\`.
 - If no documentation changes are needed: do nothing — make no commits and open no PR. End your turn with a one-line explanation of why the merged PR needed no docs update.`;
 
-/**
- * Cap on the inlined diff (chars, ~50k tokens). Unattended ask-mode runs have
- * no shell (see opencode-runner.ts ASK_BASH note), so the dispatcher inlines
- * the diff rather than asking the agent to run `gh pr diff` it can't run.
- */
-const DIFF_INLINE_CAP = 200_000;
-
-/**
- * Render the PR diff for inline inclusion in the review prompt. Delimited with
- * sentinel lines instead of a markdown fence because diffs of .md files can
- * contain \`\`\` themselves. Oversized diffs are cut at a file boundary and the
- * dropped file paths are listed so the reviewer knows what it didn't see.
- */
-export function diffBlock(patch: string, checkoutAtHead = true): string {
-  let body = patch.trimEnd();
-  let note = "";
-  if (body.length > DIFF_INLINE_CAP) {
-    const cut = body.lastIndexOf("\ndiff --git ", DIFF_INLINE_CAP);
-    const kept = body.slice(0, cut > 0 ? cut : DIFF_INLINE_CAP);
-    const dropped = [...body.slice(kept.length).matchAll(/^diff --git a\/.* b\/(.*)$/gm)]
-      .map((m) => m[1]);
-    body = kept;
-    note = `\n\n[Diff truncated at ${DIFF_INLINE_CAP} chars. Files NOT shown: ${
-      dropped.join(", ") || "(tail of the last file above)"
-    } — ${
-      checkoutAtHead
-        ? "read them in the checkout"
-        : "they are NOT reliably on disk (see the checkout note above), so don't thrash on failed Reads"
-    } and say in your summary that they weren't diff-reviewed.]`;
-  }
-  const checkoutNote = checkoutAtHead
-    ? "Your checkout is pinned to the PR's HEAD: the diff IS applied to the files on\n" +
-      "disk. Use the diff for what changed and Read/Grep on the checkout for surrounding context."
-    : "WARNING: the checkout could NOT be pinned to this PR's head for this run, so files on\n" +
-      "disk may not match the diff (renamed/added paths may be missing, line numbers may be\n" +
-      "off). Trust the diff over the checkout; if a Read fails or looks stale, say so instead\n" +
-      "of retrying path variations, and lower your confidence accordingly.";
-  return [
-    "## The diff",
-    "",
-    "The PR's diff is inlined below (this run has no shell — do not try to run `gh` or `git`).",
-    checkoutNote,
-    "",
-    "===BEGIN PR DIFF===",
-    body,
-    "===END PR DIFF===" + note,
-  ].join("\n");
-}
-
 /** Hidden machine-readable contract the review agent must satisfy at the end of its turn. */
 const REVIEW_OUTPUT_CONTRACT = `
 ## Output format (required)
@@ -206,20 +157,16 @@ export function buildReviewPrompt(
   pr: PrDetails,
   isUpdate: boolean,
   steer?: string,
-  diffPatch?: string,
-  checkoutAtHead = true,
   ghRepo?: string,
 ): string {
   const header = isUpdate
     ? `You previously reviewed PR #${pr.number} ("${pr.title}"). New commits have been pushed. Re-review the CURRENT diff, focusing on what changed since your last review, and produce a fresh full assessment.`
     : `Review PR #${pr.number} ("${pr.title}") on ${ghRepo || defaultRepo().ghRepo}.`;
 
-  // No shell in unattended ask-mode runs, so the diff must arrive inline. The
-  // fetch failing is rare (gh/network hiccup at dispatch) — in that case tell
-  // the agent to say so rather than review blind.
-  const diffSection = diffPatch?.trim()
-    ? diffBlock(diffPatch, checkoutAtHead)
-    : `## The diff\n\nThe diff could not be fetched at dispatch time and this run has no shell. Do NOT guess at the changes: report in your summary that the diff was unavailable, verdict "comment", confidence 1, findings [].`;
+  const diffSection = `## The diff
+
+Your checkout is pinned to the PR's HEAD and both refs are fetched. Run
+\`git diff --find-renames origin/${pr.baseRefName}...HEAD\` to inspect the complete PR diff, then use Read/Grep on the checkout for surrounding context. Do not use a working-tree-only \`git diff\`; this checkout is clean.`;
 
   return [
     base.trim(),

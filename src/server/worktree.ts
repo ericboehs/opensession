@@ -401,9 +401,14 @@ export async function createWorktreeForPrBranch(headRef: string, repoId?: string
  * under the still-running autofix. Reviews are ask-mode (Read/Grep only, no
  * builds), so there's no dep install — a bare checkout is enough. On reuse it
  * re-pins to the freshly fetched head, which is safe here because nothing
- * else ever writes in this tree.
+ * else ever writes in this tree. Both head and base are fetched so the review
+ * agent can inspect the complete PR with a local three-dot git diff.
  */
-export async function createReviewWorktreeForPrHead(headRef: string, repoId?: string): Promise<string> {
+export async function createReviewWorktreeForPrHead(
+  headRef: string,
+  repoId?: string,
+  baseRef?: string,
+): Promise<string> {
   const repo = getRepo(repoId);
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os-review`;
   return withGitLock(async () => {
@@ -412,7 +417,7 @@ export async function createReviewWorktreeForPrHead(headRef: string, repoId?: st
       `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael-review`,
       `${headRef}-michael-review`,
     );
-    await $`git -C ${repo.repo} fetch origin ${headRef} --quiet`;
+    await $`git -C ${repo.repo} fetch origin ${headRef} ${baseRef || repo.defaultBranch} --quiet`;
     if (existsSync(wtPath)) {
       await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet();
       return wtPath;

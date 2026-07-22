@@ -23,7 +23,7 @@ import { buildHandoffMessage } from "./prompts";
 import { uiSessionUrl } from "./run";
 import type { PrRef, ReviewResult } from "./review";
 
-const MAX_ROUNDS = parseInt(process.env.OPENSESSION_REVIEW_HANDOFF_ROUNDS || "3");
+const MAX_ROUNDS = parseInt(process.env.OPENSESSION_REVIEW_HANDOFF_ROUNDS || "6");
 /** An abandoned round stops holding the bot-push review carve-out open after this. */
 const ACTIVE_TTL_MS = 24 * 60 * 60 * 1000;
 

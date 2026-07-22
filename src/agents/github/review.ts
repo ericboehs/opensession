@@ -148,28 +148,25 @@ export async function runReview(
       return null;
     }
 
-    // Fetch the diff here (the server has gh + shell) and inline it in the
-    // prompt: unattended ask-mode opencode runs have NO bash tool, so the agent
-    // cannot run `gh pr diff` itself (PR #4676's review starved on exactly that).
-    const diff = await getPrDiff(pr.headRef, pr.ghRepo || undefined);
-    if (!diff) console.warn(`[github] could not fetch diff for PR #${pr.number}; reviewing without it`);
-
     // Pin a read-only worktree to the PR head so the files the agent Reads are
-    // the exact tree the diff describes. The shared clone fallback (fetch
-    // failure, fork PRs whose head isn't in origin) drifts from the diff —
-    // that's the "file not found / offset out of range" storm on refactor PRs
-    // — so when it happens the prompt says to trust the diff over the disk.
+    // the exact tree the local git diff describes. Without that guarantee, fail
+    // the run instead of reviewing a stale shared checkout.
     let cwd = prRepo?.repo || TELLA_FUSION;
-    let checkoutAtHead = false;
     try {
-      cwd = await createReviewWorktreeForPrHead(pr.headRef, prRepo?.id);
-      checkoutAtHead = true;
+      cwd = await createReviewWorktreeForPrHead(pr.headRef, prRepo?.id, details.baseRefName);
     } catch (e) {
-      console.warn(`[github] review worktree for ${pr.headRef} failed, using shared clone:`, e);
+      console.warn(`[github] review worktree for ${pr.headRef} failed:`, e);
+      if (placeholderId)
+        await editIssueComment(
+          placeholderId,
+          `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\n⚠️ Couldn't prepare the PR checkout to review the diff — it will retry on the next push, or ask ${personaName()} to review manually.`,
+          pr.ghRepo,
+        ).catch(() => {});
+      return { findings: 0, blocking: 0, error: "Could not prepare the PR review worktree" };
     }
 
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
-    const prompt = buildReviewPrompt(base, details, isUpdate, steer, diff?.patch, checkoutAtHead, pr.ghRepo);
+    const prompt = buildReviewPrompt(base, details, isUpdate, steer, pr.ghRepo);
 
     console.log(`[github] Reviewing PR #${pr.number} @ ${pr.headSha.slice(0, 7)} (${isUpdate ? "update" : "initial"})`);
     const result = await runGithubAgent({
@@ -182,8 +179,8 @@ export async function runReview(
       model: config.model,
       branch: pr.headRef,
       title: `Review · PR #${pr.number} ${details.title}`.slice(0, 100),
-      // Each review is self-contained: the CURRENT full diff is inlined (capped)
-      // and a fresh full assessment is posted (superseding the prior comment), so
+      // Each review is self-contained: it reads the CURRENT full diff from the
+      // pinned worktree and posts a fresh full assessment, so
       // we do NOT resume the prior engine session. Resuming accumulated the whole
       // transcript across every push, and on actively-updated PRs the context grew
       // past the engine's 1M-token limit — the run then hard-failed with "Prompt is
