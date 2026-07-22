@@ -1,9 +1,25 @@
 // OS¹ desktop — thin shell around https://os.tella.dev.
 // The frontend ships from the server (bun --hot), so this app rarely changes:
 // it only owns the window, navigation policy, notifications, badge and deep links.
-const { app, BrowserWindow, shell, session, ipcMain, autoUpdater } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  shell,
+  session,
+  ipcMain,
+  autoUpdater,
+  systemPreferences,
+} = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+
+// AppKit can show its persistent-window crash-recovery prompt before Electron
+// finishes launching. On macOS 26 that modal can trap the browser process and
+// leave the app in a startup crash loop. OS¹ restores its own window bounds, so
+// native persistent UI state is both redundant and unsafe here.
+if (process.platform === "darwin") {
+  systemPreferences.setUserDefault("ApplePersistenceIgnoreState", "boolean", true);
+}
 
 // OS1_URL is a dev-only escape hatch for pointing the shell at a local
 // OpenSession checkout (`bun --hot run opensession.ts`, then
