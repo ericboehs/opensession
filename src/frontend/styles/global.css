@@ -5142,6 +5142,7 @@ a.workspace-info-check-row {
 .diff-file-header {
 	display: flex;
 	align-items: center;
+	position: relative;
 	gap: 8px;
 	width: 100%;
 	padding: 8px 10px;
@@ -5216,30 +5217,35 @@ a.workspace-info-check-row {
 .diff-file-discard-armed ~ .diff-file-stats,
 .diff-file-discard:focus-visible ~ .diff-file-stats,
 .diff-file-discard:disabled ~ .diff-file-stats {
-	display: none;
+	visibility: hidden;
 }
 
-/* Borderless icon-only discard, revealed in the stats' place on row hover (or
-   when the button is focused/armed/in-flight). */
+/* Borderless icon-only discard, overlaid on the stats so revealing the larger
+   icon cannot change the row's dimensions. */
 .diff-file-discard {
-	display: none;
+	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	flex-shrink: 0;
-	margin-left: auto;
+	position: absolute;
+	top: 50%;
+	right: 8px;
+	transform: translateY(-50%);
 	padding: 2px;
 	border: none;
 	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	background: transparent;
 	color: var(--text-faint);
 	cursor: pointer;
-	transition: color 0.1s ease, background 0.1s ease;
+	opacity: 0;
+	pointer-events: none;
+	transition: color 0.1s ease, background 0.1s ease, opacity 0.1s ease;
 }
 .diff-file-header:hover .diff-file-discard,
 .diff-file-discard:focus-visible,
 .diff-file-discard-armed,
 .diff-file-discard:disabled {
-	display: inline-flex;
+	opacity: 1;
+	pointer-events: auto;
 }
 .diff-file-discard:hover {
 	color: var(--red);
