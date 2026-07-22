@@ -19,11 +19,6 @@ import { Tooltip } from "../ui/tooltip";
  * in index.html, which also covers the Electron desktop shell where the
  * display-mode media query never matches.
  */
-/** True when running under Window Controls Overlay (the desktop shell or an
- * installed PWA). `html.wco` is set before the bundle runs by the detection
- * script in index.html, so reading it at render time is reliable. */
-export const isWco = () => document.documentElement.classList.contains("wco");
-
 export function TitleBar({ pane }: { pane?: boolean }) {
 	return (
 		<div className={pane ? "wco-nav wco-nav-pane" : "wco-nav"}>

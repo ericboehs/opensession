@@ -18,6 +18,16 @@
  *
  * ⚠️  Writes are real: prompts, steers, archives etc. hit production. This is
  * a live frontend against the live backend — treat clicks accordingly.
+ *
+ * HMR invariants (Bun dev pipeline):
+ * - Component modules must export ONLY React components — one stray helper
+ *   export (a hook/util/const) disqualifies the module from Fast Refresh and
+ *   silently downgrades every edit of it to a full page reload (all session
+ *   data refetched). Put shared helpers in src/frontend/lib/ instead.
+ * - CSS hot-swaps land in document.adoptedStyleSheets (not the original
+ *   <link>) — check computed styles, not styleSheets, when verifying.
+ * - Big working-tree churn (rebase/checkout) can leave the watcher serving a
+ *   stale build with no error — restart this server after git surgery.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
