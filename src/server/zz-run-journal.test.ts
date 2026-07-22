@@ -1,12 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "fs";
+import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import * as mod from "./run-journal";
@@ -38,31 +31,6 @@ afterEach(() => {
 });
 
 describe("run journal", () => {
-	it("fails closed when the journal cannot be persisted", () => {
-		const blockedParent = join(dir, "not-a-directory");
-		writeFileSync(blockedParent, "blocked");
-		mod.__setActiveRunsPathForTest(join(blockedParent, "active-runs.json"));
-
-		expect(() =>
-			mod.journalSet({
-				runKey: "unpersisted-run",
-				cwd: "/tmp",
-				startedAt: "2026-07-22T00:00:00.000Z",
-			}),
-		).toThrow();
-	});
-
-	it("does not remove a replacement lock when a stale owner releases", () => {
-		const lockPath = join(dir, "active-runs.json.lock");
-		mkdirSync(lockPath);
-		writeFileSync(join(lockPath, "owner"), "replacement-owner");
-
-		mod.__releaseRunJournalLockForTest(lockPath, "stale-owner");
-
-		expect(existsSync(lockPath)).toBe(true);
-		expect(readFileSync(join(lockPath, "owner"), "utf8")).toBe("replacement-owner");
-	});
-
 	it("preserves human-confirmed tool policy across restart drains", async () => {
 		mod.journalSet({
 			runKey: "run-1",
@@ -85,72 +53,6 @@ describe("run journal", () => {
 		expect(run.deniedTools).toEqual({ mcp__danger__delete: "No deletes" });
 		expect(run.fallbackModel).toBe("gpt-5.5");
 		expect(mod.activeRunRecords()).toEqual([]);
-	});
-
-	it("retains selected interrupted records until asynchronous recovery acknowledges them", () => {
-		mod.journalSet({
-			runKey: "mac-run",
-			bksSessionId: "bks-mac",
-			prompt: "continue",
-			cwd: "/remote/workspace",
-			sandboxId: "macos-bks-mac",
-			sandboxProvider: "macos",
-			startedAt: "2026-07-22T00:00:00.000Z",
-		});
-
-		const [run] = mod.takeInterruptedRuns((record) => record.sandboxProvider === "macos");
-		expect(run.runKey).toBe("mac-run");
-		expect(mod.activeRunRecords().map((record) => record.runKey)).toEqual(["mac-run"]);
-		mod.journalClear("mac-run");
-		expect(mod.activeRunRecords()).toEqual([]);
-	});
-
-	it("atomically replaces an interrupted run record during recovery handoff", () => {
-		mod.journalSet({
-			runKey: "old-run",
-			bksSessionId: "bks-mac",
-			cwd: "/remote/workspace",
-			sandboxId: "macos-bks-mac",
-			sandboxProvider: "macos",
-			startedAt: "2026-07-22T00:00:00.000Z",
-		});
-
-		mod.journalReplace("old-run", {
-			runKey: "replacement-run",
-			bksSessionId: "bks-mac",
-			cwd: "/remote/workspace",
-			sandboxId: "macos-bks-mac",
-			sandboxProvider: "macos",
-			startedAt: "2026-07-22T00:01:00.000Z",
-		});
-
-		expect(mod.activeRunRecords().map((record) => record.runKey)).toEqual([
-			"replacement-run",
-		]);
-	});
-
-	it("recovers only the newest record from a legacy macOS replacement pair", () => {
-		for (const [runKey, startedAt] of [
-			["old-run", "2026-07-22T00:00:00.000Z"],
-			["replacement-run", "2026-07-22T00:01:00.000Z"],
-		] as const) {
-			mod.journalSet({
-				runKey,
-				bksSessionId: "bks-mac",
-				cwd: "/remote/workspace",
-				sandboxId: "macos-bks-mac",
-				sandboxProvider: "macos",
-				startedAt,
-			});
-		}
-
-		const interrupted = mod.takeInterruptedRuns(
-			(record) => record.sandboxProvider === "macos",
-		);
-		expect(interrupted.map((record) => record.runKey)).toEqual(["replacement-run"]);
-		expect(mod.activeRunRecords().map((record) => record.runKey)).toEqual([
-			"replacement-run",
-		]);
 	});
 
 	it("emits recovered run stream events during restart resume", async () => {

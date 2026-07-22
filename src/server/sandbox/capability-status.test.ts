@@ -84,7 +84,6 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
       "box",
       "modal",
       "lambda-microvm",
-      "macos",
     ]);
     expect(s.providers.every((p) => !p.configured)).toBe(true);
     expect(s.killSwitch).toBe(!sandboxesEnabled());
@@ -165,49 +164,6 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
       idleSuspendSeconds: undefined,
       suspendedDurationSeconds: 90,
     });
-  });
-
-  test("macos requires a host and absolute remote home in config", () => {
-    write({ provider: "macos", macos: { host: "mac-mini.tailnet.ts.net" } });
-    expect(sandboxProviderConfigured("macos")).toBe(false);
-    write({
-      provider: "macos",
-      macos: { host: "mac-mini.tailnet.ts.net", remoteHome: "Users/opensession" },
-    });
-    expect(sandboxProviderConfigured("macos")).toBe(false);
-    write({
-      provider: "macos",
-      macos: {
-        host: "mac-mini.tailnet.ts.net",
-        user: "opensession",
-        port: 2222,
-        identityFile: "/home/ubuntu/.ssh/mac-mini",
-        remoteHome: "/Users/opensession",
-      },
-      callbackBaseUrl: "wss://os.tailnet.ts.net",
-    });
-    expect(sandboxConfig().macos).toEqual({
-      host: "mac-mini.tailnet.ts.net",
-      user: "opensession",
-      port: 2222,
-      identityFile: "/home/ubuntu/.ssh/mac-mini",
-      remoteHome: "/Users/opensession",
-    });
-    expect(sandboxProviderConfigured("macos")).toBe(true);
-    expect(
-      sandboxCapabilityStatus().providers.find((provider) => provider.id === "macos")?.note,
-    ).toBeUndefined();
-  });
-
-  test("macos specifically requires the tailnet callback URL", () => {
-    write({
-      provider: "macos",
-      macos: { host: "mac-mini.tailnet.ts.net", remoteHome: "/Users/opensession" },
-      publicIngress: { enabled: true, publicBaseUrl: "wss://public.example.com" },
-    });
-    const macos = sandboxCapabilityStatus().providers.find((provider) => provider.id === "macos")!;
-    expect(macos.configured).toBe(true);
-    expect(macos.note).toContain("Tailscale dial-back URL");
   });
 
   test("an explicit callbackBaseUrl also counts as dial-back configured", () => {
@@ -305,7 +261,6 @@ describe("resolveRequestedSandbox (create-path validation)", () => {
       daytona: { apiKey: "dtn_x" },
       modal: { tokenId: "ak-test", tokenSecret: "as-test" },
       awsLambdaMicrovm: { imageIdentifier: "arn:aws:lambda:us-east-1:123:microvm-image/test" },
-      macos: { host: "mac-mini.tailnet.ts.net", remoteHome: "/Users/opensession" },
     });
     expect(resolveRequestedSandbox("docker")).toEqual({ ok: true, provider: "docker" });
     expect(resolveRequestedSandbox("daytona")).toEqual({ ok: true, provider: "daytona" });
@@ -314,7 +269,6 @@ describe("resolveRequestedSandbox (create-path validation)", () => {
       ok: true,
       provider: "lambda-microvm",
     });
-    expect(resolveRequestedSandbox("macos")).toEqual({ ok: true, provider: "macos" });
     expect(resolveRequestedSandbox("DOCKER")).toEqual({ ok: true, provider: "docker" });
   });
 

@@ -34,60 +34,12 @@ function text(s: string) {
 }
 
 function fmtSize(n: number): string {
-	if (n < 1024) return `${n} B`;
-	if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-	return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-const VIDEO_ASSET_EXTENSIONS = new Set([".mp4", ".webm", ".mov"]);
-
-/** Whether an asset path's extension warrants a `BACKSTAGE_VIDEO:` marker so
- *  the session viewer plays it inline (see jsonl-parser.ts's VIDEO_MARKER). */
-export function isVideoAssetPath(path: string): boolean {
-	const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
-	return VIDEO_ASSET_EXTENSIONS.has(ext);
-}
-
-/** The import_remote_asset success message — a plain function so the
- *  BACKSTAGE_VIDEO marker logic is testable without invoking the MCP tool
- *  handler (matches the sessions-tools.ts pattern of extracting a pure
- *  helper out of the tool()-wrapped closure). */
-export function formatImportedAssetMessage(input: {
-	remoteAbsPath: string;
-	localRelPath: string;
-	localAbsPath: string;
-	size: number;
-}): string {
-	const lines = [
-		`Imported ${input.remoteAbsPath} (${fmtSize(input.size)}) → ${input.localRelPath}.`,
-		"It's visible in this session's Assets tab now.",
-	];
-	if (isVideoAssetPath(input.localAbsPath)) {
-		lines.push(`BACKSTAGE_VIDEO: ${input.localAbsPath}`);
-	}
-	return lines.join("\n");
-}
-
-export interface ImportedRemoteAsset {
-	size: number;
-	remoteAbsPath: string;
-	localAbsPath: string;
-	localRelPath: string;
-}
-
-export function createAssetsMcpServer(ctx: {
-	sessionId: string;
-	/** Resolves the session's active macOS execution-node sandbox and fetches
-	 *  one file from its remote workspace into the local assets folder.
-	 *  Undefined in contexts where no sandbox lookup is wired (e.g. tests) —
-	 *  the tool reports that plainly rather than throwing. Wired from
-	 *  interactive-mcp.ts, which owns the session/sandbox lookup so this
-	 *  module stays free of sandbox-specific imports. */
-	importRemoteAsset?: (input: {
-		remotePath: string;
-		destPath: string;
-	}) => Promise<ImportedRemoteAsset>;
-}) {
+export function createAssetsMcpServer(ctx: { sessionId: string }) {
   const tools = [
     tool(
       "write_asset",
@@ -160,52 +112,22 @@ export function createAssetsMcpServer(ctx: {
         }
       }
     ),
-		tool(
-			"delete_asset",
-			"Delete a file (or a whole subfolder) from this session's assets folder.",
-			{
-				path: z.string().describe("Relative path inside the assets folder."),
-			},
-			async (args: { path: string }) => {
-				try {
-					deleteAsset(ctx.sessionId, args.path);
-					return text(`Deleted ${args.path}.`);
-				} catch (e: any) {
-					return text(`Couldn't delete ${args.path}: ${e?.message || String(e)}`);
-				}
-			}
-		),
-		tool(
-			"import_remote_asset",
-			"Import a file from this session's remote macOS execution-node workspace into the local Assets folder — the artifact-transfer counterpart to write_asset for sessions running on the `macos` sandbox provider (e.g. screenshots/video written under `.build/opensession/artifacts/` by a repo-local script). Give a path RELATIVE to the session's remote workspace root; the file is fetched over the existing SSH control transport and written directly into this session's local assets folder as raw bytes (binary-safe, no base64 round trip). Only available for sessions actively running on the macos sandbox — local/non-macos sessions and paths outside the remote workspace are rejected. Imported videos (.mp4/.webm/.mov) additionally print a BACKSTAGE_VIDEO marker so the session viewer plays them inline; images appear in the Assets tab immediately.",
-			{
-				remotePath: z
-					.string()
-					.describe(
-						"Path to the file, relative to the session's remote workspace root on the Mac (no leading /, no ..), e.g. '.build/opensession/artifacts/demo.mp4'."
-					),
-				destPath: z
-					.string()
-					.optional()
-					.describe(
-						"Destination path inside the local assets folder. Defaults to the remote file's basename."
-					),
-			},
-			async (args: { remotePath: string; destPath?: string }) => {
-				if (!ctx.importRemoteAsset) {
-					return text("import_remote_asset is unavailable in this context.");
-				}
-				const destPath =
-					args.destPath?.trim() || args.remotePath.split("/").filter(Boolean).pop() || "asset";
-				try {
-					const result = await ctx.importRemoteAsset({ remotePath: args.remotePath, destPath });
-					return text(formatImportedAssetMessage(result));
-				} catch (e: any) {
-					return text(`Couldn't import ${args.remotePath}: ${e?.message || String(e)}`);
-				}
-			}
-		),
-	];
+    tool(
+      "delete_asset",
+      "Delete a file (or a whole subfolder) from this session's assets folder.",
+      {
+        path: z.string().describe("Relative path inside the assets folder."),
+      },
+      async (args: { path: string }) => {
+        try {
+          deleteAsset(ctx.sessionId, args.path);
+          return text(`Deleted ${args.path}.`);
+        } catch (e: any) {
+          return text(`Couldn't delete ${args.path}: ${e?.message || String(e)}`);
+        }
+      }
+    ),
+  ];
 
   return createSdkMcpServer({ name: "opensession-assets", version: "1.0.0", tools });
 }

@@ -16,7 +16,6 @@ import { E2bProvider } from "./adapters/e2b";
 import { BoxProvider } from "./adapters/box";
 import { ModalProvider } from "./adapters/modal";
 import { LambdaMicrovmProvider } from "./adapters/lambda-microvm";
-import { MacosProvider } from "./adapters/macos";
 import { effectiveSandboxProvider } from "./config";
 import type { SandboxProvider, SandboxProviderId } from "./provider";
 
@@ -58,7 +57,6 @@ const e2bProvider = new E2bProvider();
 const boxProvider = new BoxProvider();
 const modalProvider = new ModalProvider();
 const lambdaMicrovmProvider = new LambdaMicrovmProvider();
-const macosProvider = new MacosProvider();
 
 /**
  * Resolve a SandboxProvider. `spec` (a provider id, e.g. from a session file's
@@ -85,8 +83,6 @@ export function getSandboxProvider(
       return modalProvider;
     case "lambda-microvm":
       return lambdaMicrovmProvider;
-    case "macos":
-      return macosProvider;
     default:
       throw new Error(`unknown sandbox provider "${id}"`);
   }

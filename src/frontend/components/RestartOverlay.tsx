@@ -35,11 +35,6 @@ interface Props {
 export function RestartOverlay({ connected, addHandler }: Props) {
   const [phase, setPhase] = useState<"ok" | "reconnecting" | "restarting">("ok");
   const [backOnline, setBackOnline] = useState(false);
-  // Who likely caused the restart: `by` on server_restarting (pre-restart
-  // overlay), `restartBy` on the new server's hello (post-restart toast).
-  const [restartBy, setRestartBy] = useState<string | null>(null);
-  const restartByRef = useRef<string | null>(null);
-  restartByRef.current = restartBy;
   const bootId = useRef<string | null>(null);
   const sawDown = useRef(false);
   // Set when the server explicitly told us it's going down. The old instance
@@ -65,10 +60,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     if (id === bootId.current) return;
     bootId.current = id;
     if (phaseRef.current !== "restarting" && !explicit.current) {
-      const by = restartByRef.current;
-      toast(
-        `${PRODUCT_NAME} restarted${by ? ` (${by})` : ""}. Reconnected to the new server.`,
-      );
+      toast(`${PRODUCT_NAME} restarted. Reconnected to the new server.`);
     }
   };
 
@@ -87,16 +79,8 @@ export function RestartOverlay({ connected, addHandler }: Props) {
       addHandler((msg) => {
         if (msg.type === "server_restarting") {
           explicit.current = true;
-          if (msg.by) setRestartBy(msg.by);
           setPhase("restarting");
         } else if (msg.type === "hello") {
-          // Adopt the attribution BEFORE the bootId compare fires the
-          // "restarted" toast so the toast can name the culprit — setState
-          // is async, so write the ref directly too.
-          if (msg.restartBy) {
-            restartByRef.current = msg.restartBy;
-            setRestartBy(msg.restartBy);
-          }
           handleBootId(msg.bootId);
         }
       }),
@@ -215,9 +199,6 @@ export function RestartOverlay({ connected, addHandler }: Props) {
             ? "Refreshing…"
             : "Hang tight. The page will refresh automatically once it's back up."}
         </div>
-        {!backOnline && restartBy && (
-          <div className="restart-by">Triggered by {restartBy}</div>
-        )}
       </div>
     </div>
   );

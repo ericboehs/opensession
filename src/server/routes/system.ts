@@ -8,11 +8,11 @@
 
 import { readFileSync, statfsSync } from "node:fs";
 import { cpus, loadavg } from "node:os";
-import { type RouteContext, requestUser } from "./context";
+import type { RouteContext } from "./context";
 import { activeAgentRunCount } from "../agent-runner";
 import { getAgents } from "../agents-registry";
 import { configuredServer } from "../config";
-import { IS_DEV, buildFrontend, frontend, sharedCheckoutEditors } from "../frontend-build";
+import { IS_DEV, buildFrontend, frontend } from "../frontend-build";
 import { getPins } from "../pins";
 import { getReads, isUnread } from "../reads";
 import { runErrors } from "../session-cache";
@@ -158,10 +158,7 @@ export async function handleSystemRoutes(
 		}
 		try {
 			const version = await buildFrontend();
-			// Attribute the refresh nudge: the signed-in caller when web auth is
-			// on, else the session(s) active in this checkout (curl from a run).
-			const by = requestUser(ctx) || sharedCheckoutEditors(true);
-			broadcastToAll({ type: "frontend_updated", version, ...(by ? { by } : {}) });
+			broadcastToAll({ type: "frontend_updated", version });
 			return Response.json({ ok: true, version });
 		} catch (e) {
 			return Response.json(

@@ -8133,31 +8133,19 @@ a.workspace-info-check-row {
 }
 .update-toast-body {
 	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	gap: 2px;
+	align-items: center;
+	gap: 9px;
 	flex: 1;
 	min-width: 0;
 }
 .update-toast-text {
-	max-width: 100%;
+	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	font-size: 13px;
 	font-weight: 500;
 	color: var(--text);
-	line-height: 1.3;
-}
-/* Who caused the update (session attribution) — dim second line, truncates. */
-.update-toast-by {
-	max-width: 100%;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	font-size: 12px;
-	font-weight: 500;
-	color: var(--text-dim);
 	line-height: 1.3;
 }
 .update-toast-actions {
@@ -8321,19 +8309,6 @@ a.workspace-info-check-row {
 /* markdown content */
 .markdown p {
 	margin: 0 0 6px;
-}
-/* Session attribution on the restart card ("Triggered by …"). */
-.restart-by {
-	margin-top: 6px;
-	font-size: 12px;
-	font-weight: 500;
-	line-height: 1.4;
-	color: var(--text-dim);
-	opacity: 0.8;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	max-width: 100%;
 }
 
 .markdown a {

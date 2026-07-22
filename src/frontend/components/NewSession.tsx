@@ -193,7 +193,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const showSandboxPicker =
     !!sandboxStatus?.enabled && !sandboxStatus.killSwitch && sandboxChoices.length > 0;
   const sandboxLabel = (id: string) =>
-    id === "" ? "Host" : id === "docker" ? "Docker" : id === "daytona" ? "Daytona" : id === "e2b" ? "E2B" : id === "box" ? "Box" : id === "modal" ? "Modal" : id === "lambda-microvm" ? "AWS Lambda MicroVM" : id === "macos" ? "macOS" : id;
+    id === "" ? "Host" : id === "docker" ? "Docker" : id === "daytona" ? "Daytona" : id === "e2b" ? "E2B" : id === "box" ? "Box" : id === "modal" ? "Modal" : id === "lambda-microvm" ? "AWS Lambda MicroVM" : id;
 
   // Model × environment capability check, driven entirely by the server's
   // matrix (status.modelFamilies — the same source resolveRequestedSandbox
@@ -210,9 +210,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   );
   const sandboxModelWarning = (() => {
     if (!sandboxProvider || !modelFamily) return null;
-    if (modelFamily.environments[sandboxProvider as "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" | "macos"]) return null;
+    if (modelFamily.environments[sandboxProvider as "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm"]) return null;
     const supported = (Object.keys(modelFamily.environments) as Array<
-      "local" | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" | "macos"
+      "local" | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm"
     >)
       .filter(
         (e) =>

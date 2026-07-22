@@ -4,17 +4,7 @@
  * agent-runner.resumeInterruptedRuns resumes on boot. All engines journal
  * through these functions.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "fs";
-import { randomUUID } from "crypto";
-import { dirname } from "path";
+import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias } from "./rename-compat";
 import { transitionRunState } from "./run-state";
@@ -81,73 +71,19 @@ function readRunJournal(): Record<string, ActiveRunRecord> {
   }
 }
 
-function writeRunJournal(journal: Record<string, ActiveRunRecord>): boolean {
+function writeRunJournal(journal: Record<string, ActiveRunRecord>): void {
   try {
     writeJsonAtomic(ACTIVE_RUNS_PATH, journal);
-    return true;
   } catch (e) {
     console.error("[runner] Failed to write run journal:", e);
-    return false;
   }
 }
-
-const journalLockWait = new Int32Array(new SharedArrayBuffer(4));
-
-function withRunJournalLock<T>(action: () => T): T {
-  const lockPath = `${ACTIVE_RUNS_PATH}.lock`;
-  const ownerPath = `${lockPath}/owner`;
-  const owner = `${process.pid}-${randomUUID()}`;
-  mkdirSync(dirname(ACTIVE_RUNS_PATH), { recursive: true });
-  const deadline = Date.now() + 5_000;
-  while (true) {
-    try {
-      mkdirSync(lockPath);
-      try {
-        writeFileSync(ownerPath, owner, { flag: "wx" });
-      } catch (error) {
-        rmSync(lockPath, { recursive: true, force: true });
-        throw error;
-      }
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      try {
-        if (Date.now() - statSync(lockPath).mtimeMs > 30_000) {
-          const stalePath = `${lockPath}.stale-${owner}`;
-          renameSync(lockPath, stalePath);
-          rmSync(stalePath, { recursive: true, force: true });
-          continue;
-        }
-      } catch {}
-      if (Date.now() >= deadline) throw new Error("timed out acquiring run journal lock");
-      Atomics.wait(journalLockWait, 0, 0, 10);
-    }
-  }
-  try {
-    return action();
-  } finally {
-    releaseRunJournalLock(lockPath, owner);
-  }
-}
-
-function releaseRunJournalLock(lockPath: string, owner: string): void {
-  try {
-    if (readFileSync(`${lockPath}/owner`, "utf8") === owner) {
-      rmSync(lockPath, { recursive: true, force: true });
-    }
-  } catch {}
-}
-
-export const __releaseRunJournalLockForTest = releaseRunJournalLock;
 
 export function journalSet(record: ActiveRunRecord): void {
-  const rejournal = withRunJournalLock(() => {
-    const journal = readRunJournal();
-    const replacing = record.runKey in journal;
-    journal[record.runKey] = record;
-    if (!writeRunJournal(journal)) throw new Error(`failed to journal run ${record.runKey}`);
-    return replacing;
-  });
+  const journal = readRunJournal();
+  const rejournal = record.runKey in journal;
+  journal[record.runKey] = record;
+  writeRunJournal(journal);
   // A fallback hop re-journals the same runKey mid-run — that's the running
   // self-edge, not a new registration, so keep the event but tag it.
   if (record.bksSessionId)
@@ -159,31 +95,11 @@ export function journalSet(record: ActiveRunRecord): void {
 }
 
 export function journalClear(runKey: string): void {
-  withRunJournalLock(() => {
-    const journal = readRunJournal();
-    if (!(runKey in journal)) return;
+  const journal = readRunJournal();
+  if (runKey in journal) {
     delete journal[runKey];
-    if (!writeRunJournal(journal)) throw new Error(`failed to clear journaled run ${runKey}`);
-  });
-}
-
-/** Atomically hand recovery ownership from an interrupted run to its
- * replacement, so a crash can never leave both records recoverable. */
-export function journalReplace(oldRunKey: string, record: ActiveRunRecord): void {
-  withRunJournalLock(() => {
-    const journal = readRunJournal();
-    delete journal[oldRunKey];
-    journal[record.runKey] = record;
-    if (!writeRunJournal(journal)) {
-      throw new Error(`failed to journal replacement run ${record.runKey}`);
-    }
-  });
-  if (record.bksSessionId)
-    transitionRunState(record.bksSessionId, "run_registered", {
-      run_key: record.runKey,
-      kind: record.kind,
-      rejournal: true,
-    });
+    writeRunJournal(journal);
+  }
 }
 
 /** Snapshot of the runs currently journaled as in-flight (does not clear). */
@@ -211,52 +127,13 @@ function isRunActiveInProcess(runKey: string): boolean {
   return false;
 }
 
-/** Drain interrupted runs left by a previous process. Records selected by
- * retain stay journaled until their asynchronous recovery explicitly clears
- * them, so a transient recovery failure remains retryable after restart. */
-export function takeInterruptedRuns(
-  retain?: (record: ActiveRunRecord) => boolean,
-): ActiveRunRecord[] {
-  const entries = withRunJournalLock(() => {
-    const journal = readRunJournal();
-    const candidates = Object.values(journal).filter(
-      (r) => !isRunActiveInProcess(r.runKey)
-    );
-    const retained = new Set(
-      candidates.filter((record) => retain?.(record)).map((record) => record.runKey),
-    );
-    // Older builds could crash between journaling a macOS replacement and
-    // clearing its predecessor. A fixed node permits only one foreground run
-    // per session, so recover only the newest record from such a legacy pair.
-    const newestMacRun = new Map<string, ActiveRunRecord>();
-    for (const record of candidates) {
-      if (
-        !retained.has(record.runKey) ||
-        record.sandboxProvider !== "macos" ||
-        !record.sandboxId ||
-        !record.bksSessionId
-      ) continue;
-      const key = `${record.sandboxId}\0${record.bksSessionId}`;
-      const current = newestMacRun.get(key);
-      if (!current || record.startedAt >= current.startedAt) newestMacRun.set(key, record);
-    }
-    const superseded = new Set<string>();
-    for (const record of candidates) {
-      if (record.sandboxProvider !== "macos" || !record.sandboxId || !record.bksSessionId) continue;
-      const newest = newestMacRun.get(`${record.sandboxId}\0${record.bksSessionId}`);
-      if (newest && newest.runKey !== record.runKey) superseded.add(record.runKey);
-    }
-    const recoverable = candidates.filter((record) => !superseded.has(record.runKey));
-    if (recoverable.length > 0) {
-      for (const record of candidates) {
-        if (superseded.has(record.runKey) || !retained.has(record.runKey)) {
-          delete journal[record.runKey];
-        }
-      }
-      if (!writeRunJournal(journal)) throw new Error("failed to drain interrupted run journal");
-    }
-    return recoverable;
-  });
+/** Drain interrupted runs left by a previous process (clears the journal). */
+export function takeInterruptedRuns(): ActiveRunRecord[] {
+  const journal = readRunJournal();
+  const entries = Object.values(journal).filter(
+    (r) => !isRunActiveInProcess(r.runKey)
+  );
+  if (entries.length > 0) writeRunJournal({});
   for (const r of entries) {
     if (r.bksSessionId)
       transitionRunState(r.bksSessionId, "boot_journal_found", {

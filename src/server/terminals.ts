@@ -27,8 +27,6 @@
  *    echo, a dead-looking tab (bit us 2026-07-09). No published port, no
  *    extra HTTPS surface — the SDK socket terminates at backstage and the
  *    browser only ever speaks the existing tailnet-gated session WS.
- *  - macOS fixed node: unavailable until the provider has a remote PTY. It
- *    fails closed rather than opening an unrelated Linux host shell.
  *
  * Trust model: the web UI is Tailscale- + team-gated and interactive users are
  * already admin-equivalent (sessions run arbitrary Bash via prompts), so a
@@ -70,7 +68,7 @@ export interface TerminalOpts {
   send: (msg: object) => void;
 }
 
-type TermTargetKind = "host" | "docker" | "daytona" | "macos";
+type TermTargetKind = "host" | "docker" | "daytona";
 
 /** A shell realized as a host process wrapped in a Bun PTY (host + docker). */
 interface SpawnTarget {
@@ -99,14 +97,7 @@ interface RemoteTarget {
   connect: (io: RemotePtyIo) => Promise<RemotePtyHandle>;
 }
 
-interface UnavailableTarget {
-  kind: "unavailable";
-  target: "macos";
-  displayCwd: string;
-  message: string;
-}
-
-type TermTarget = SpawnTarget | RemoteTarget | UnavailableTarget;
+type TermTarget = SpawnTarget | RemoteTarget;
 
 function clampCols(cols: number | undefined): number {
   return Math.max(20, Math.min(500, Math.round(cols || 100)));
@@ -151,23 +142,15 @@ function hostShellTarget(session: TerminalSessionInfo | null | undefined, notice
 }
 
 /**
- * Decide where the session's shell runs. Existing providers preserve their
- * host-shell fallback; the fixed macOS node explicitly fails closed because
- * its volume workspace has no corresponding host checkout.
+ * Decide where the session's shell runs. Never throws — every failure mode
+ * degrades to the host shell with a notice (same fail-open shape as
+ * workspace-exec, except a terminal deliberately WAKES a stopped docker
+ * container: it's an interactive gesture, not a background read).
  */
 async function resolveTarget(
   session: TerminalSessionInfo | null | undefined,
 ): Promise<TermTarget> {
   const sb = session?.sandbox;
-  if (sb?.provider === "macos") {
-    const cwd = session?.worktreeDir || HOME;
-    return {
-      kind: "unavailable",
-      target: "macos",
-      displayCwd: cwd,
-      message: "The Shell tab is unavailable for macOS execution-node sessions.",
-    };
-  }
   if (!sb?.sandboxId || !sb.provider || sb.provider === "local") {
     return hostShellTarget(session);
   }
@@ -270,12 +253,6 @@ export async function startSessionTerminal(
           `sandbox terminal unavailable (${String(e?.message || e).slice(0, 160)}) — opened a host shell instead`,
         );
       }
-    }
-    if (target.kind === "unavailable") {
-      pendingStarts.delete(ws);
-      opts.send({ type: "term_notice", message: target.message });
-      opts.send({ type: "term_exit", code: 1 });
-      return;
     }
   } finally {
     clearTimeout(slow);
