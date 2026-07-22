@@ -1,0 +1,46 @@
+appId: dev.tella.os1
+productName: OS¹
+artifactName: OS1-${version}-${arch}.${ext}
+directories:
+  buildResources: build
+  output: dist
+files:
+  - src/**/*
+# macOS 26 (Tahoe) renders apps that only ship a legacy .icns on a system
+# backplate (looks like a border). The real icon is the Icon Composer document
+# build/AppIcon.icon, compiled to build/Assets.car by scripts/compile-icon.sh
+# (needs Xcode 26; artifacts are committed so CI never compiles). Assets.car +
+# CFBundleIconName below make Tahoe render the native Liquid Glass icon; the
+# icns stays as the pre-Tahoe fallback. Artwork source of truth:
+# output/os1-icons/ at the repository root.
+extraResources:
+  - from: build/Assets.car
+    to: Assets.car
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Universal links: once the Developer ID provisioning profile for
+  # dev.tella.os1 exists (README "Universal links"), switch both entitlements
+  # lines above to build/entitlements.mac.applinks.plist and add:
+  # provisioningProfile: build/os1.provisionprofile
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  extendInfo:
+    CFBundleIconName: AppIcon
+    CFBundleURLTypes:
+      - CFBundleURLName: OS¹ deep link
+        CFBundleURLSchemes: [os1]
+  # Reads APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID from the env in
+  # CI; skipped (with a warning) when they're absent, e.g. local unsigned builds.
+  notarize: true
+dmg:
+  # Sign the DMG container too (the app inside is signed + notarized + stapled
+  # regardless) so `spctl --type open` accepts the disk image itself.
+  sign: true

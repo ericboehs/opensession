@@ -98,6 +98,7 @@ import {
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
 import { PixelSpinner } from "./PixelSpinner";
 import { Button } from "../ui/button";
+import { Menu } from "../ui/menu";
 import { Tooltip } from "../ui/tooltip";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { toast } from "../ui/toast";
@@ -2504,27 +2505,9 @@ export function SessionViewer({
 	}, [composerPrefillExternal, onComposerPrefillConsumed, isPhone]);
 
 	const [overflowOpen, setOverflowOpen] = useState(false);
-	const overflowRef = useRef<HTMLDivElement>(null);
 	// The title (repo tile + name) opens a deeper full-screen info page — a
 	// separate surface from the ⋯ quick-actions menu (overflowOpen).
 	const [infoPageOpen, setInfoPageOpen] = useState(false);
-	useEffect(() => {
-		if (!overflowOpen) return;
-		const onDoc = (e: MouseEvent) => {
-			if (overflowRef.current?.contains(e.target as Node)) return;
-			// The Spin off flavor picker is a Base UI popup portaled to <body> —
-			// a click inside it must not close the ⋯ menu it was opened from.
-			if ((e.target as Element | null)?.closest?.('[role="menu"]')) return;
-			// The heading + chat-bar are toggles for this menu (phone): let their
-			// own onClick handle open/close instead of this outside-click closing
-			// on the same tap that's meant to toggle it.
-			if ((e.target as Element | null)?.closest?.(".session-settings-trigger"))
-				return;
-			setOverflowOpen(false);
-		};
-		document.addEventListener("mousedown", onDoc);
-		return () => document.removeEventListener("mousedown", onDoc);
-	}, [overflowOpen]);
 	// The mobile top-bar title (rendered by App, outside this component) opens the
 	// same settings menu — it toggles via a window event so it doesn't need a prop
 	// thread through App's render.
@@ -2784,25 +2767,27 @@ export function SessionViewer({
 				// menu when it gets narrow. Inline it's a bare text chip (the header
 				// is already dense with icons); in the menu it takes a leading icon
 				// so it lines up with the other icon+label rows.
-				const shareAction = (inMenu: boolean) => (
-					<button
-						className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
-						onClick={handleShare}
-						title="Copy a link to this session"
-					>
-						{inMenu && (
+				const shareAction = (inMenu: boolean) =>
+					inMenu ? (
+						<Menu.Item onClick={handleShare} title="Copy a link to this session">
 							<CopyCheck copied={copied} idle={<IconLink size={20} />} size={20} />
-						)}
-						{copied ? "Copied" : "Share"}
-					</button>
-				);
+							<span className="grow">{copied ? "Copied" : "Share"}</span>
+						</Menu.Item>
+					) : (
+						<button
+							className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
+							onClick={handleShare}
+							title="Copy a link to this session"
+						>
+							{copied ? "Copied" : "Share"}
+						</button>
+					);
 				// New chat in this workspace — phone-only, since desktop has the
 				// always-visible + in the tab strip. On a phone the strip (and its
 				// hover-revealed +) is hidden, so the ⋯ menu is the only way to add a
 				// sibling chat. Shares the workspace worktree, like the + default.
 				const newChatAction = isPhone && onNewChat && (
-					<button
-						className="btn-viewer-newchat"
+					<Menu.Item
 						onClick={() => {
 							setOverflowOpen(false);
 							onNewChat("share");
@@ -2810,16 +2795,15 @@ export function SessionViewer({
 						title="Start a new chat in this workspace"
 					>
 						<IconPlus size={22} />
-						New chat in workspace
-					</button>
+						<span className="grow">New chat in workspace</span>
+					</Menu.Item>
 				);
 				// New side chat — spawns a durable side chat (shares the repo, ask
 				// mode, out of the main thread) and opens it in the side panel.
 				// Phone-only like newChatAction above it: on desktop the Side chats
 				// tab is the affordance.
 				const newSideChatAction = isPhone && canSideChat && (
-					<button
-						className="btn-viewer-newchat"
+					<Menu.Item
 						onClick={() => {
 							setOverflowOpen(false);
 							setSubagentStack([]);
@@ -2830,8 +2814,8 @@ export function SessionViewer({
 						title="Start a side chat that doesn't interrupt the main conversation"
 					>
 						<IconMessage size={22} />
-						New side chat
-					</button>
+						<span className="grow">New side chat</span>
+					</Menu.Item>
 				);
 				// Copy transcript. These normally live on a tab's right-click menu,
 				// but a lone-chat workspace has no tab strip (and phones hide it at
@@ -2841,8 +2825,7 @@ export function SessionViewer({
 					isPhone || (workspaceChats?.length ?? 1) <= 1;
 				const transcriptActions = showTranscriptActions && (
 					<>
-						<button
-							className="btn-viewer-newchat"
+						<Menu.Item
 							onClick={() => {
 								setOverflowOpen(false);
 								void copySessionTranscript(session, "concise", toast);
@@ -2850,13 +2833,12 @@ export function SessionViewer({
 							title="Copy a trimmed transcript of this chat"
 						>
 							<IconCopy size={20} />
-							Copy concise transcript
+							<span className="grow">Copy concise transcript</span>
 							<span className="btn-viewer-shortcut">
 								{isApple ? "⌘⌥C" : "Ctrl+Alt+C"}
 							</span>
-						</button>
-						<button
-							className="btn-viewer-newchat"
+						</Menu.Item>
+						<Menu.Item
 							onClick={() => {
 								setOverflowOpen(false);
 								void copySessionTranscript(session, "full", toast);
@@ -2864,16 +2846,16 @@ export function SessionViewer({
 							title="Copy the complete transcript of this chat"
 						>
 							<IconFile size={20} />
-							Copy full transcript
-						</button>
+							<span className="grow">Copy full transcript</span>
+						</Menu.Item>
 					</>
 				);
 				// Pin and Spin off live here at every width alongside the other
 				// session-level actions, keeping the visible header focused on status.
 				const overflowActions = (
 					<>
-						<button
-							className={`btn-viewer-pin ${pinned ? "active" : ""}`}
+						<Menu.Item
+							className={pinned ? "text-yellow" : undefined}
 							onClick={() => {
 								setOverflowOpen(false);
 								togglePin(session.id);
@@ -2881,11 +2863,11 @@ export function SessionViewer({
 							aria-pressed={pinned}
 						>
 							<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
-							{pinned ? "Unpin tab" : "Pin as tab"}
+							<span className="grow">{pinned ? "Unpin tab" : "Pin as tab"}</span>
 							<span className="btn-viewer-shortcut">
 								{isApple ? "⌘P" : "Ctrl+P"}
 							</span>
-						</button>
+						</Menu.Item>
 						<SpinOffMenu
 							session={session}
 							entries={entries}
@@ -2898,8 +2880,7 @@ export function SessionViewer({
 				// above Delete in the menu so the safe choice reads first. When the
 				// session is already archived this becomes Unarchive.
 				const archiveAction = (
-					<button
-						className="btn-viewer-archive"
+					<Menu.Item
 						onClick={handleArchive}
 						disabled={archiving}
 						title={
@@ -2909,7 +2890,7 @@ export function SessionViewer({
 						}
 					>
 						<IconArchive size={22} />
-						<span>
+						<span className="grow">
 							{archiving
 								? session.archived
 									? "Unarchiving…"
@@ -2921,19 +2902,20 @@ export function SessionViewer({
 						<span className="btn-viewer-shortcut">
 							{archiveShortcutLabel}
 						</span>
-					</button>
+					</Menu.Item>
 				);
 				// Delete is destructive, so it never rides in the visible action bar —
 				// it always lives inside the ⋯ menu, one deliberate hop away.
 				const deleteAction = !showDeleteConfirm ? (
-					<button
-						className="btn-viewer-delete"
+					<Menu.Item
+						closeOnClick={false}
+						className="text-dim data-[highlighted]:bg-red-soft data-[highlighted]:text-red"
 						onClick={() => setShowDeleteConfirm(true)}
 						title="Delete session"
 					>
 						<IconTrash size={22} />
-						Delete session
-					</button>
+						<span className="grow">Delete session</span>
+					</Menu.Item>
 				) : (
 					<div className="viewer-delete-confirm">
 						{session.worktreeDir && !isAsk && (
@@ -2966,9 +2948,15 @@ export function SessionViewer({
 				// ⋯ + the Workspace toggle beside the centered title. The code
 				// affordances (Preview, Staging) sit as state-colored icons just left
 				// of the panel toggle on desktop; PR status rides its own row.
-				const secondaryActions = (
+				const secondaryActions = (inMenu: boolean) => (
 					<>
-						{session.automation && (
+						{session.automation && (inMenu ? (
+							<Menu.Item
+								render={<a href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`} />}
+							>
+								<span className="grow">Automation</span>
+							</Menu.Item>
+						) : (
 							<a
 								href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`}
 								className="session-link"
@@ -2976,8 +2964,14 @@ export function SessionViewer({
 							>
 								Automation
 							</a>
-						)}
-						{session.linearIssue?.url && (
+						))}
+						{session.linearIssue?.url && (inMenu ? (
+							<Menu.Item
+								render={<a href={session.linearIssue.url} target="_blank" rel="noopener" />}
+							>
+								<span className="grow">{session.linearIssue.identifier}</span>
+							</Menu.Item>
+						) : (
 							<a
 								href={session.linearIssue.url}
 								target="_blank"
@@ -2986,8 +2980,12 @@ export function SessionViewer({
 							>
 								{session.linearIssue.identifier}
 							</a>
-						)}
-						{hasPlain && (
+						))}
+						{hasPlain && (inMenu ? (
+							<Menu.Item render={<a href={plainUrl} target="_blank" rel="noopener" />}>
+								<span className="grow">Plain ↗</span>
+							</Menu.Item>
+						) : (
 							<a
 								href={plainUrl}
 								target="_blank"
@@ -2996,7 +2994,7 @@ export function SessionViewer({
 							>
 								Plain ↗
 							</a>
-						)}
+						))}
 					</>
 				);
 				const header = (
@@ -3126,7 +3124,7 @@ export function SessionViewer({
 					)}
 				</div>
 				<div className="viewer-header-actions">
-					{!isPhone && secondaryActions}
+					{!isPhone && secondaryActions(false)}
 					{/* Everyone with the session open, Figma/Notion-style, right
 					    before Share. You're always in it (rightmost); others stack
 					    in front with their GitHub picture. */}
@@ -3152,21 +3150,23 @@ export function SessionViewer({
 					    controls fold in too. The ⋯ menu is always present — Spin off
 					    and Delete live only in there. */}
 					{!compactHeader && !isPhone && shareAction(false)}
-					<div className="viewer-overflow" ref={overflowRef}>
-						<button
-							className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
-							onClick={() => setOverflowOpen((o) => !o)}
-							title="More actions"
-							aria-label="More actions"
-							aria-expanded={overflowOpen}
-						>
-							⋯
-						</button>
-						{overflowOpen && (
-							<div className="viewer-overflow-menu">
-								{/* iOS-style quick-actions menu. The workspace overview + repo/model
-								    settings live on the title’s info page instead; this stays lean. */}
-								{isPhone && secondaryActions}
+					<Menu.Root open={overflowOpen} onOpenChange={setOverflowOpen}>
+						<div className="viewer-overflow">
+							<Menu.Trigger
+								className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
+								title="More actions"
+								aria-label="More actions"
+							>
+								⋯
+							</Menu.Trigger>
+							<Menu.Popup
+								align="end"
+								sideOffset={6}
+								className="min-w-[240px] max-w-[min(300px,calc(100vw-24px))]"
+							>
+								{/* Quick session actions use the same focus, spacing, collision,
+								    and dismissal behavior as every other app menu. */}
+								{isPhone && secondaryActions(true)}
 								{(compactHeader || isPhone) && shareAction(true)}
 								{newChatAction}
 								{newSideChatAction}
@@ -3174,9 +3174,9 @@ export function SessionViewer({
 								{overflowActions}
 								{archiveAction}
 								{deleteAction}
-							</div>
-						)}
-					</div>
+							</Menu.Popup>
+						</div>
+					</Menu.Root>
 					{/* Code-workspace testing affordances as state-colored icons, docked
 					    immediately left of the side-panel toggle. Each self-gates
 					    (renders null when not applicable). The play button stays put;
@@ -3284,7 +3284,7 @@ export function SessionViewer({
 										.join("  ·  ")}
 									</div>
 								</div>
-								<div className="viewer-overflow-menu session-info-list">
+								<div className="session-info-list">
 									{panelAvailable && (
 										<button
 											className="btn-viewer-panelrow"

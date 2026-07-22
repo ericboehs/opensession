@@ -188,7 +188,7 @@ export function ReviewQueue({
 
 	return (
 		<div className="sidebar-independent-section sidebar-group--band-start">
-			<div className="sidebar-band-label flex items-center gap-1">
+			<div className="sidebar-band-label sidebar-sticky-head flex items-center gap-1">
 				<button
 					className="sidebar-band-toggle min-w-0 flex-1"
 					onClick={onToggle}

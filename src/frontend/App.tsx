@@ -29,6 +29,7 @@ import { UserGate, getCurrentUser } from "./components/UserPicker";
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { TitleBar } from "./components/TitleBar";
+import { isWco } from "./lib/wco";
 import { Settings, type SettingsSectionKey } from "./components/Settings";
 import { SessionTabs, type ViewTab } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
@@ -415,6 +416,11 @@ function App() {
 			setAppBadge?: (n?: number) => Promise<void>;
 			clearAppBadge?: () => Promise<void>;
 		};
+		// The OS¹ desktop app (tellahq/os1-mac) exposes window.os1: the Badging
+		// API doesn't reach Electron's dock, so mirror the count through its
+		// bridge there.
+		const os1 = (window as { os1?: { setBadge: (n: number) => void } }).os1;
+		os1?.setBadge(chatUnread);
 		if (!nav.setAppBadge) return;
 		if (chatUnread > 0) nav.setAppBadge(chatUnread).catch(() => {});
 		else nav.clearAppBadge?.().catch(() => {});
@@ -1421,9 +1427,6 @@ function App() {
 			<MediaLightboxHost />
 			<ToastHost />
 			<div className="app">
-					{/* Reclaimed titlebar in installed-PWA Window Controls Overlay
-					    mode (desktop). Hidden (display:none) everywhere else. */}
-					<TitleBar />
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
 				    on a pushed page (a session or other view) the brand is replaced by
 				    a Back chevron that pops back to the root, iOS-style. On desktop the
@@ -1594,49 +1597,73 @@ function App() {
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
 						}
 					>
-						{/* Desktop brand row: the whole Backstage brand (logo + wordmark)
-						    opens the account/settings menu on the left, and the collapse
-						    toggle on the right. Hidden on mobile, where the top bar carries
-						    the brand instead. */}
-						<div className="sidebar-brand">
-							<SettingsMenu
-								variant="top"
-								onOpenSettings={() => navigate({ view: "settings" })}
-								connected={connected}
-							/>
-							<div className="sidebar-brand-actions">
-								<Tooltip
-									label="Search sessions"
-									side="bottom"
-									shortcut={["⌘", "K"]}
-								>
-									<button
-										className="sidebar-toggle-btn"
-										onClick={() => setSearchOpen(true)}
-										aria-label="Search sessions"
+						{/* Desktop brand row. Web: the whole Backstage brand (logo +
+						    wordmark) opens the account/settings menu on the left, and the
+						    search/collapse cluster sits on the right. Desktop shell (wco):
+						    the row is pure window chrome — search + collapse tuck in beside
+						    the traffic lights, back/forward sit at the row's right edge,
+						    and the signed-in user moves to its own row below (no app brand
+						    inside the app's own titlebar). Hidden on mobile, where the top
+						    bar carries the brand instead. */}
+						{(() => {
+							const wco = isWco();
+							const brandActions = (
+								<div className="sidebar-brand-actions">
+									{!wco && (
+										<Tooltip
+											label="Search sessions"
+											side="bottom"
+											shortcut={["⌘", "K"]}
+										>
+											<button
+												className="sidebar-toggle-btn"
+												onClick={() => setSearchOpen(true)}
+												aria-label="Search sessions"
+											>
+												{/* Optically larger than the panel glyph beside it: the
+												    magnifier is a small circle + thin handle, so it needs more
+												    nominal size to carry the same weight as the globe/play/panel
+												    icons in the session header. */}
+												<IconSearch size={26} />
+											</button>
+										</Tooltip>
+									)}
+									<Tooltip
+										label="Hide sidebar"
+										side="bottom"
+										shortcut={["⌘", "B"]}
 									>
-										{/* Optically larger than the panel glyph beside it: the
-										    magnifier is a small circle + thin handle, so it needs more
-										    nominal size to carry the same weight as the globe/play/panel
-										    icons in the session header. */}
-										<IconSearch size={26} />
-									</button>
-								</Tooltip>
-								<Tooltip
-									label="Hide sidebar"
-									side="bottom"
-									shortcut={["⌘", "B"]}
-								>
-									<button
-										className="sidebar-toggle-btn"
-										onClick={toggleSidebarCollapsed}
-										aria-label="Hide sidebar"
-									>
-										{panelIcon}
-									</button>
-								</Tooltip>
-							</div>
-						</div>
+										<button
+											className="sidebar-toggle-btn"
+											onClick={toggleSidebarCollapsed}
+											aria-label="Hide sidebar"
+										>
+											{panelIcon}
+										</button>
+									</Tooltip>
+								</div>
+							);
+							return wco ? (
+								<div className="sidebar-brand">
+									{brandActions}
+									<SettingsMenu
+										variant="user"
+										onOpenSettings={() => navigate({ view: "settings" })}
+										connected={connected}
+									/>
+									<TitleBar onSearch={() => setSearchOpen(true)} />
+								</div>
+							) : (
+								<div className="sidebar-brand">
+									<SettingsMenu
+										variant="top"
+										onOpenSettings={() => navigate({ view: "settings" })}
+										connected={connected}
+									/>
+									{brandActions}
+								</div>
+							);
+						})()}
 						<Sidebar
 							ref={sidebarRef}
 							sessions={sessions}
@@ -1838,6 +1865,10 @@ function App() {
 					</div>
 
 					<main className="detail-pane" ref={detailPaneRef}>
+						{/* WCO back/forward fallback: the primary cluster lives in the
+						    sidebar's top chrome row, which vanishes when the sidebar is
+						    collapsed — this floating copy shows only then (CSS-gated). */}
+						<TitleBar pane />
 						{/* Floating re-open control, shown only while the desktop sidebar
 						    is collapsed (CSS-gated). Mirrors the brand-row toggle so the
 						    sidebar can always be brought back. */}
