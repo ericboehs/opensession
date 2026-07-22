@@ -19,19 +19,8 @@ import {
 import { loadOverview, overviewCache } from "../lib/workspace-overview";
 import { openLightbox } from "./MediaLightbox";
 import { useCurrentUser, TEAM } from "./UserPicker";
-import { getPins, onPinsChanged, togglePin, reorderPins, pin as pinKey, unpin as unpinKeys } from "../lib/pins";
-import {
-	getFolders,
-	onFoldersChanged,
-	createFolder,
-	renameFolder,
-	deleteFolder,
-	moveToFolder,
-	reorderFolderKeys,
-	reorderFolders,
-	type SidebarFolder,
-} from "../lib/folders";
-import { Reorder, useDragControls } from "motion/react";
+import { getPins, onPinsChanged, togglePin, reorderPins } from "../lib/pins";
+import { Reorder } from "motion/react";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, markUnread, onReadsChanged } from "../lib/reads";
 import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
@@ -42,7 +31,6 @@ import { UserAvatar } from "./UserAvatar";
 import { shortTime, elapsedClock } from "../lib/time";
 import {
 	IconChevronDown,
-	IconChevronRight,
 	IconArchive,
 	IconBell,
 	IconFilter,
@@ -59,8 +47,6 @@ import {
 	IconEye,
 	IconStack,
 	IconPin,
-	IconFolder,
-	IconFolderPlus,
 	IconLink,
 	IconMail,
 	IconStatusRing,
@@ -380,16 +366,6 @@ type CtxEntry =
 			kind: "status";
 			current: MineStatus | null;
 			onPick: (status: MineStatus | null) => void;
-	  }
-	| {
-			// "Move to folder" with a hover flyout listing the user's folders —
-			// same sub-panel mechanics as "Set status". Picking the current folder
-			// removes the row from it (toggle), and "New folder…" creates + moves.
-			kind: "folder";
-			folders: { id: string; name: string }[];
-			currentId: string | null;
-			onPick: (folderId: string | null) => void;
-			onNew: () => void;
 	  };
 
 function CtxItem({
@@ -466,10 +442,10 @@ function SidebarCtxMenu({
 	entries: CtxEntry[];
 	onClose: () => void;
 }) {
-	// Flyout state (status / folder sub-panel) + hover grace so the pointer can
+	// Flyout state + hover grace so the pointer can
 	// cross the gap between the menu and the panel.
 	const [sub, setSub] = useState<{
-		kind: "status" | "folder";
+		kind: "status";
 		rect: DOMRect;
 	} | null>(null);
 	const closeT = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -485,9 +461,6 @@ function SidebarCtxMenu({
 
 	const statusEntry = entries.find(
 		(e): e is Extract<CtxEntry, { kind: "status" }> => e.kind === "status",
-	);
-	const folderEntry = entries.find(
-		(e): e is Extract<CtxEntry, { kind: "folder" }> => e.kind === "folder",
 	);
 	const check = (on: boolean) =>
 		on ? <IconCheck size={20} style={{ color: "var(--text-dim)" }} /> : undefined;
@@ -512,8 +485,7 @@ function SidebarCtxMenu({
 				{entries.map((entry, i) => {
 					if (entry.kind === "sep")
 						return <div key={i} style={CTX_SEP_STYLE} />;
-					if (entry.kind === "status" || entry.kind === "folder") {
-						const kind = entry.kind;
+					if (entry.kind === "status") {
 						return (
 							<button
 								key={i}
@@ -527,7 +499,7 @@ function SidebarCtxMenu({
 								onMouseEnter={(e) => {
 									cancelClose();
 									setSub({
-										kind,
+										kind: "status",
 										rect: e.currentTarget.getBoundingClientRect(),
 									});
 								}}
@@ -535,7 +507,7 @@ function SidebarCtxMenu({
 								onClick={(e) => {
 									cancelClose();
 									setSub({
-										kind,
+										kind: "status",
 										rect: e.currentTarget.getBoundingClientRect(),
 									});
 								}}
@@ -549,19 +521,9 @@ function SidebarCtxMenu({
 										color: "var(--text-dim)",
 									}}
 								>
-									{kind === "status" ? (
-										<IconStatusRing size={20} />
-									) : (
-										<IconFolder size={20} />
-									)}
+									<IconStatusRing size={20} />
 								</span>
-								<span style={{ flex: 1 }}>
-									{kind === "status" ? "Set status" : "Move to folder"}
-								</span>
-								<IconChevronRight
-									size={20}
-									style={{ color: "var(--text-faint)", marginRight: -4 }}
-								/>
+								<span style={{ flex: 1 }}>Set status</span>
 							</button>
 						);
 					}
@@ -615,54 +577,6 @@ function SidebarCtxMenu({
 						trailing={check(statusEntry.current === null)}
 						onClick={() => {
 							statusEntry.onPick(null);
-							onClose();
-						}}
-					/>
-				</div>
-			)}
-			{sub?.kind === "folder" && folderEntry && (
-				<div
-					className="sidebar-ctx-menu"
-					style={{
-						...CTX_MENU_STYLE,
-						left: subLeft,
-						top: subTop,
-						minWidth: SUB_W,
-					}}
-					onClick={(e) => e.stopPropagation()}
-					onMouseEnter={cancelClose}
-					onMouseLeave={scheduleClose}
-				>
-					{folderEntry.folders.map((f) => (
-						<CtxItem
-							key={f.id}
-							icon={<IconFolder size={20} />}
-							label={f.name}
-							trailing={check(folderEntry.currentId === f.id)}
-							onClick={() => {
-								folderEntry.onPick(
-									folderEntry.currentId === f.id ? null : f.id,
-								);
-								onClose();
-							}}
-						/>
-					))}
-					{folderEntry.currentId && (
-						<CtxItem
-							icon={<span />}
-							label="Remove from folder"
-							onClick={() => {
-								folderEntry.onPick(null);
-								onClose();
-							}}
-						/>
-					)}
-					{folderEntry.folders.length > 0 && <div style={CTX_SEP_STYLE} />}
-					<CtxItem
-						icon={<IconFolderPlus size={20} />}
-						label="New folder…"
-						onClick={() => {
-							folderEntry.onNew();
 							onClose();
 						}}
 					/>
@@ -938,32 +852,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const pinOrderPending = useRef<string[] | null>(null);
 	const [pinDragKey, setPinDragKey] = useState<string | null>(null);
 	const pinJustDragged = useRef(false);
-	// Sidebar folders (per-user sections between Pinned and the status lanes).
-	const [folders, setFoldersState] = useState<SidebarFolder[]>(getFolders);
-	const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
-	const [folderDraft, setFolderDraft] = useState("");
-	const [folderMenu, setFolderMenu] = useState<{
-		id: string;
-		x: number;
-		y: number;
-	} | null>(null);
-	// Drag-to-reorder the folder sections themselves (header is the handle) —
-	// same draft/commit pattern as the pinned rows.
-	const [folderOrderDraft, setFolderOrderDraft] = useState<string[] | null>(
-		null,
-	);
-	const folderOrderPending = useRef<string[] | null>(null);
-	const [folderDragId, setFolderDragId] = useState<string | null>(null);
-	const folderJustDragged = useRef(false);
-	// Cross-section drag: every folder section (and the Pinned band) registers
-	// itself as a drop zone; while a row drags, the zone under the pointer other
-	// than the row's own is highlighted, and the drop moves the row there
-	// instead of committing a same-list reorder. Ref mirrors the state so drop
-	// handlers (closures from the drag's start render) read the latest value.
-	const dropZones = useRef(new Map<string, HTMLElement>());
-	const [dragOverZone, setDragOverZone] = useState<string | null>(null);
-	const dragOverZoneRef = useRef<string | null>(null);
-	const dragSourceZone = useRef<string | null>(null);
 	const [recents, setRecents] = useState<string[]>(getRecents);
 	// Per-session last-read marks, driving the unread dot. Kept in sync via the
 	// same event the viewer fires when it marks a session read.
@@ -1030,41 +918,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}, [filter.repo, filter.person]);
 
 	useEffect(() => onPinsChanged(() => setPins(getPins())), []);
-	useEffect(() => onFoldersChanged(() => setFoldersState(getFolders())), []);
 	useEffect(() => onRecentsChanged(() => setRecents(getRecents())), []);
-
-	// ── Cross-section drag helpers ──
-	const registerDropZone = (id: string) => (el: HTMLElement | null) => {
-		if (el) dropZones.current.set(id, el);
-		else dropZones.current.delete(id);
-	};
-	function trackRowDrag(e: unknown) {
-		const ev = e as { clientY?: number; touches?: { clientY: number }[] };
-		const y =
-			typeof ev?.clientY === "number" ? ev.clientY : ev?.touches?.[0]?.clientY;
-		if (typeof y !== "number") return;
-		let zone: string | null = null;
-		for (const [id, el] of dropZones.current) {
-			const r = el.getBoundingClientRect();
-			if (y >= r.top && y <= r.bottom) {
-				zone = id;
-				break;
-			}
-		}
-		const next = zone && zone !== dragSourceZone.current ? zone : null;
-		if (dragOverZoneRef.current !== next) {
-			dragOverZoneRef.current = next;
-			setDragOverZone(next);
-		}
-	}
-	/** Read + clear the cross-section drop target (called from drop handlers). */
-	function takeDropZone(): string | null {
-		const target = dragOverZoneRef.current;
-		dragOverZoneRef.current = null;
-		dragSourceZone.current = null;
-		setDragOverZone(null);
-		return target;
-	}
 	useEffect(() => onReadsChanged(() => setReads(getReads())), []);
 	// Re-render when a composer draft appears/disappears — rows check hasDraft()
 	// during render to show the Slack-style "unsent draft" pencil.
@@ -1110,13 +964,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			? editingProjectId === row.workspace.id
 			: !!row.chats[0] && editingChatId === row.chats[0].id;
 	}
-	function commitFolderRename() {
-		if (editingFolderId) {
-			const name = folderDraft.trim();
-			if (name) renameFolder(editingFolderId, name);
-		}
-		setEditingFolderId(null);
-	}
 	useEffect(() => {
 		if (!projectMenu) return;
 		const close = () => setProjectMenu(null);
@@ -1127,16 +974,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			window.removeEventListener("scroll", close, true);
 		};
 	}, [projectMenu]);
-	useEffect(() => {
-		if (!folderMenu) return;
-		const close = () => setFolderMenu(null);
-		window.addEventListener("click", close);
-		window.addEventListener("scroll", close, true);
-		return () => {
-			window.removeEventListener("click", close);
-			window.removeEventListener("scroll", close, true);
-		};
-	}, [folderMenu]);
 
 	// The Archived row counts *my* archived sessions (Michiel's scope), and honors
 	// the active repo filter — same lens as the archived page it opens.
@@ -1539,54 +1376,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return { pinned, toggle };
 	}
 
-	// ── Folder membership ──
-	// Folder keys use the same vocabulary as pins (`workspace:<id>` / chat id),
-	// so a row matches a folder through any of its identity keys — same aliasing
-	// rules as pin matching above.
-	const folderKeyToId = useMemo(() => {
-		const m = new Map<string, string>();
-		for (const f of folders) for (const k of f.keys) m.set(k, f.id);
-		return m;
-	}, [folders]);
-	/** Every key a row could be filed under (canonical first, then legacy). */
-	function rowIdentityKeys(row: WsRow): string[] {
-		return [
-			...(row.workspace ? [`workspace:${row.workspace.id}`] : []),
-			row.key,
-			...row.chats.flatMap((c) => [c.id, ...(c.aliasIds || [])]),
-		].filter((k, i, a) => a.indexOf(k) === i);
-	}
-	/** The one key we file/pin a row under going forward. */
-	const rowCanonicalKey = (row: WsRow) =>
-		row.workspace ? `workspace:${row.workspace.id}` : row.key;
-	function rowFolderId(row: WsRow): string | null {
-		for (const k of rowIdentityKeys(row)) {
-			const id = folderKeyToId.get(k);
-			if (id) return id;
-		}
-		return null;
-	}
-	/** Move a row into a folder (or out of all folders when null). Filing a
-	    pinned row also unpins it — a row lives in exactly one section. */
-	function moveRowToFolder(row: WsRow, folderId: string | null) {
-		const allKeys = rowIdentityKeys(row);
-		if (folderId) {
-			const pinnedKeys = allKeys.filter((k) => pins.includes(k));
-			if (pinnedKeys.length) setPins(unpinKeys(pinnedKeys));
-			moveToFolder(allKeys, [rowCanonicalKey(row)], folderId);
-		} else {
-			moveToFolder(allKeys, [], null);
-		}
-	}
-	/** Prompt-create a folder and file the row in it (the flyout's "New
-	    folder…" — also the mobile path for creating folders). */
-	function createFolderWithRow(row: WsRow) {
-		const name = window.prompt("Folder name", "New folder")?.trim();
-		if (!name) return;
-		const f = createFolder(name);
-		moveRowToFolder(row, f.id);
-	}
-
 	// Pinned rows (pinned via their own key or a legacy pin on a member chat)
 	// and the focus person's rows — shared by the list rendering below and by
 	// archive-next, so both always agree on what's actually in the sidebar.
@@ -1717,51 +1506,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						: r.owner === focus)) &&
 				!reviewBandKeys.has(r.key) &&
 				!pinSet.has(r.key) &&
-				!r.chats.some((c) => pinSet.has(c.id)) &&
-				// Foldered rows live in their folder section, not the lanes.
-				!rowFolderId(r),
+				!r.chats.some((c) => pinSet.has(c.id)),
 		);
-	}, [wsRows, pins, filter.person, currentUser, reviewBandKeys, folderKeyToId]);
-
-	// One section per folder: its rows in the folder's manual key order. Review
-	// bands and Pinned win over folder membership (same "a row lives in one
-	// place" rule as the lanes) — unpinning drops the row back into its folder.
-	const folderSections = useMemo(() => {
-		const pinSet = new Set(pins);
-		const focus =
-			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
-		return folders.map((folder) => {
-			const keyIdx = new Map(folder.keys.map((k, i) => [k, i] as const));
-			const rowIdx = (r: WsRow) => {
-				const hits = rowIdentityKeys(r)
-					.map((k) => keyIdx.get(k))
-					.filter((i): i is number => i !== undefined);
-				return hits.length ? Math.min(...hits) : Infinity;
-			};
-			const rows = wsRows
-				.filter(
-					(r) =>
-						rowFolderId(r) === folder.id &&
-						(focus === "everyone" ||
-							(focus === "unassigned"
-								? r.status === "pending"
-								: r.owner === focus)) &&
-						!reviewBandKeys.has(r.key) &&
-						!pinSet.has(r.key) &&
-						!r.chats.some((c) => pinSet.has(c.id)),
-				)
-				.sort((a, b) => rowIdx(a) - rowIdx(b));
-			return { folder, rows };
-		});
-	}, [
-		folders,
-		wsRows,
-		pins,
-		filter.person,
-		currentUser,
-		reviewBandKeys,
-		folderKeyToId,
-	]);
+	}, [wsRows, pins, filter.person, currentUser, reviewBandKeys]);
 
 	// Workspace rows in the sidebar's visual order (Pinned band first, then the
 	// status lanes) — archiveWorkspaceWithNext walks this to pick the row that
@@ -1772,7 +1519,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			...awaitingReviewRows,
 			...reviewedRows,
 			...pinnedWsRows,
-			...folderSections.flatMap((s) => s.rows),
 			...MINE_STATUS_META.flatMap((meta) =>
 				focusWsRows.filter((r) => r.status === meta.key),
 			),
@@ -1782,7 +1528,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			awaitingReviewRows,
 			reviewedRows,
 			pinnedWsRows,
-			folderSections,
 			focusWsRows,
 		],
 	);
@@ -1793,8 +1538,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		awaitingReviewRows.length === 0 &&
 		reviewedRows.length === 0 &&
 		pinnedWsRows.length === 0 &&
-		focusWsRows.length === 0 &&
-		folders.length === 0;
+		focusWsRows.length === 0;
 
 	function archiveWorkspaceWithNext(row: WsRow) {
 		// Chatless rows can't be opened, so they're not "next" candidates.
@@ -2160,13 +1904,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		}
 	}
 
-	// Repo groups and folder sections are open by default (grouping is itself
+	// Repo and review groups are open by default (grouping is itself
 	// the point), so we track their *collapsed* state under a "collapsed:" key;
 	// every other group is closed by default and tracked directly.
 	const collapseKey = (key: string) =>
-		key.startsWith("repo:") ||
-		key.startsWith("folder:") ||
-		key.startsWith("review:")
+		key.startsWith("repo:") || key.startsWith("review:")
 			? `collapsed:${key}`
 			: key;
 
@@ -2186,7 +1928,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		if (search.trim().length > 0) return true;
 		if (
 			key.startsWith("repo:") ||
-			key.startsWith("folder:") ||
 			key.startsWith("review:")
 		)
 			return !expanded.has(`collapsed:${key}`);
@@ -2982,19 +2723,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							<IconFilter size={24} />
 						</button>
 						</Tooltip>
-						<Tooltip label="New folder">
-						<button
-							className="sidebar-new-btn inline-flex items-center justify-center"
-							aria-label="New folder"
-							onClick={() => {
-								const f = createFolder("New folder");
-								setFolderDraft(f.name);
-								setEditingFolderId(f.id);
-							}}
-						>
-							<IconFolderPlus size={24} />
-						</button>
-						</Tooltip>
 						<Tooltip
 							label="New session"
 							shortcut={
@@ -3128,14 +2856,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						label: pinned ? "Unpin" : "Pin",
 						onClick: togglePinNow,
 					});
-					if (menuRow)
-						entries.push({
-							kind: "folder",
-							folders: folders.map((f) => ({ id: f.id, name: f.name })),
-							currentId: rowFolderId(menuRow),
-							onPick: (fid) => moveRowToFolder(menuRow, fid),
-							onNew: () => createFolderWithRow(menuRow),
-						});
 					if (chats.length > 0)
 						entries.push({
 							kind: "status",
@@ -3219,76 +2939,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						/>
 					);
 				})()}
-			{folderMenu &&
-				(() => {
-					const f = folders.find((x) => x.id === folderMenu.id);
-					if (!f) return null;
-					const idx = folders.findIndex((x) => x.id === f.id);
-					const rowCount =
-						folderSections.find((s) => s.folder.id === f.id)?.rows.length ?? 0;
-					const swap = (a: number, b: number) => {
-						const ids = folders.map((x) => x.id);
-						[ids[a], ids[b]] = [ids[b], ids[a]];
-						reorderFolders(ids);
-					};
-					const entries: CtxEntry[] = [
-						{
-							kind: "item",
-							icon: <IconPencil size={20} />,
-							label: "Rename",
-							onClick: () => {
-								setFolderDraft(f.name);
-								setEditingFolderId(f.id);
-							},
-						},
-					];
-					// Keyboard-free reordering — the touch path (drag is desktop-only),
-					// and a quick fallback on desktop too.
-					if (idx > 0)
-						entries.push({
-							kind: "item",
-							icon: (
-								<IconChevronDown
-									size={20}
-									style={{ transform: "rotate(180deg)" }}
-								/>
-							),
-							label: "Move up",
-							onClick: () => swap(idx, idx - 1),
-						});
-					if (idx < folders.length - 1)
-						entries.push({
-							kind: "item",
-							icon: <IconChevronDown size={20} />,
-							label: "Move down",
-							onClick: () => swap(idx, idx + 1),
-						});
-					entries.push({ kind: "sep" });
-					entries.push({
-						kind: "item",
-						icon: <IconTrash size={20} />,
-						danger: true,
-						label: "Delete folder",
-						onClick: () => {
-							if (
-								rowCount === 0 ||
-								window.confirm(
-									`Delete folder "${f.name}"? Its ${rowCount} session${rowCount === 1 ? "" : "s"} return to the lanes.`,
-								)
-							)
-								deleteFolder(f.id);
-						},
-					});
-					return (
-						<SidebarCtxMenu
-							x={folderMenu.x}
-							y={folderMenu.y}
-							entries={entries}
-							onClose={() => setFolderMenu(null)}
-						/>
-					);
-				})()}
-
 			{workspacesOpen && (
 				<div
 					className="sidebar-list"
@@ -3542,8 +3192,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					// per-user server state, so a desktop reorder shows up on the phone.
 					const canDragPins = !isPhone && entries.length > 1;
 					const commitPinReorder = () => {
-						const draggedKey = pinDragKey;
-						const dropZone = takeDropZone();
 						setPinDragKey(null);
 						pinJustDragged.current = true;
 						// The drop's click fires synchronously after pointerup; clear the
@@ -3554,24 +3202,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						const orderKeys = pinOrderPending.current;
 						pinOrderPending.current = null;
 						setPinOrderDraft(null);
-						// Dropped over a folder section: file the row there instead of
-						// reordering — unpin it (a row lives in one section) and add its
-						// canonical key to the folder. Only workspace rows can be filed:
-						// notes and loose chats (automation runs) don't exist in wsRows,
-						// so a folder entry for them would render nothing.
-						if (dropZone?.startsWith("folder:") && draggedKey?.startsWith("ws:")) {
-							const entry = entryMap.get(draggedKey);
-							if (entry) {
-								const canonical = draggedKey.slice(3);
-								setPins(unpinKeys(entry.pinKeys));
-								moveToFolder(
-									[...entry.pinKeys, canonical],
-									[canonical],
-									dropZone.slice("folder:".length),
-								);
-								return;
-							}
-						}
 						if (!orderKeys) return;
 						// New pins array: the visible entries' keys take the slots that
 						// visible keys already occupy (in the new order), so pins hidden
@@ -3590,12 +3220,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					};
 					const pinnedCount = entries.length;
 					return (
-						<div
-							className={`sidebar-group sidebar-group--pinned${
-								dragOverZone === "pinned" ? " is-drop-target" : ""
-							}`}
-							ref={registerDropZone("pinned")}
-						>
+						<div className="sidebar-group sidebar-group--pinned">
 							{/* Same header treatment as the status lanes below. */}
 							<button
 								className="sidebar-group-header"
@@ -3630,11 +3255,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 											key={e.key}
 											value={e.key}
 											dragListener={canDragPins}
-											onDragStart={() => {
-												setPinDragKey(e.key);
-												dragSourceZone.current = "pinned";
-											}}
-											onDrag={trackRowDrag}
+											onDragStart={() => setPinDragKey(e.key)}
 											onDragEnd={commitPinReorder}
 											whileDrag={{ scale: 1.01 }}
 											className={`sidebar-pin-entry${pinDragKey === e.key ? " is-reordering" : ""}`}
@@ -3656,152 +3277,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						</div>
 					);
 				})()}
-
-				{/* ── Folders: user-made sections between Pinned and the lanes.
-				    Section order and each folder's row order are per-user server
-				    state; headers drag to reorder sections (desktop), rows drag
-				    within/between sections and to/from Pinned. ── */}
-				{folders.length > 0 &&
-					(() => {
-						const searching = search.trim().length > 0;
-						// While searching, hide sections with no matching rows — empty
-						// "name ———" kickers would just be noise between results.
-						const visibleSections = folderSections.filter(
-							(s) => !searching || s.rows.length > 0,
-						);
-						if (!visibleSections.length) return null;
-						const displaySections = folderOrderDraft
-							? [...visibleSections].sort((a, b) => {
-									const ai = folderOrderDraft.indexOf(a.folder.id);
-									const bi = folderOrderDraft.indexOf(b.folder.id);
-									return (
-										(ai < 0 ? Infinity : ai) - (bi < 0 ? Infinity : bi)
-									);
-								})
-							: visibleSections;
-						const canDragFolders =
-							!isPhone && !searching && visibleSections.length > 1;
-						const commitFolderOrder = () => {
-							setFolderDragId(null);
-							folderJustDragged.current = true;
-							setTimeout(() => {
-								folderJustDragged.current = false;
-							}, 0);
-							const order = folderOrderPending.current;
-							folderOrderPending.current = null;
-							setFolderOrderDraft(null);
-							if (!order) return;
-							// Visible sections take the slots visible sections already
-							// occupy; sections hidden by a search keep their positions.
-							const visibleIds = new Set(
-								visibleSections.map((s) => s.folder.id),
-							);
-							const queue = order.filter((id) => visibleIds.has(id));
-							reorderFolders(
-								folders.map((f) =>
-									visibleIds.has(f.id) ? (queue.shift() ?? f.id) : f.id,
-								),
-							);
-						};
-						const handleRowDrop = (
-							folderId: string,
-							row: WsRow,
-							orderedKeys: string[] | null,
-						) => {
-							const dropZone = takeDropZone();
-							const allKeys = rowIdentityKeys(row);
-							const canonical = rowCanonicalKey(row);
-							// Dropped on the Pinned band: pinning relocates the row (it
-							// leaves its folder — a row lives in one section).
-							if (dropZone === "pinned") {
-								moveToFolder(allKeys, [], null);
-								setPins(pinKey(canonical));
-								return;
-							}
-							// Dropped on another folder: refile it there.
-							if (dropZone?.startsWith("folder:")) {
-								const fid = dropZone.slice("folder:".length);
-								if (fid !== folderId) {
-									moveToFolder(allKeys, [canonical], fid);
-									return;
-								}
-							}
-							if (!orderedKeys) return;
-							// Same-folder reorder: visible rows' keys take the slots that
-							// visible keys already occupy in the folder, so keys hidden by
-							// filters keep their exact positions (same trick as pins).
-							const section = folderSections.find(
-								(s) => s.folder.id === folderId,
-							);
-							const folder = folders.find((f) => f.id === folderId);
-							if (!section || !folder) return;
-							const inFolder = new Set(folder.keys);
-							const rowByKey = new Map(
-								section.rows.map((r) => [r.key, r] as const),
-							);
-							const flat = orderedKeys.flatMap((k) => {
-								const r = rowByKey.get(k);
-								return r
-									? rowIdentityKeys(r).filter((x) => inFolder.has(x))
-									: [];
-							});
-							const visible = new Set(flat);
-							const queue = [...flat];
-							reorderFolderKeys(
-								folderId,
-								folder.keys.map((k) =>
-									visible.has(k) ? (queue.shift() ?? k) : k,
-								),
-							);
-						};
-						return (
-							<Reorder.Group
-								as="div"
-								axis="y"
-								className="sidebar-folders"
-								values={displaySections.map((s) => s.folder.id)}
-								onReorder={(ids: string[]) => {
-									folderOrderPending.current = ids;
-									setFolderOrderDraft(ids);
-								}}
-							>
-								{displaySections.map(({ folder, rows }) => (
-									<FolderSection
-										key={folder.id}
-										folder={folder}
-										rows={rows}
-										open={isOpen(`folder:${folder.id}`)}
-										onToggle={() => toggleGroup(`folder:${folder.id}`)}
-										editing={editingFolderId === folder.id}
-										draft={folderDraft}
-										onDraftChange={setFolderDraft}
-										onCommitRename={commitFolderRename}
-										onCancelRename={() => setEditingFolderId(null)}
-										isPhone={isPhone}
-										canDragFolder={
-											canDragFolders && editingFolderId !== folder.id
-										}
-										canDragRows={!isPhone}
-										dragging={folderDragId === folder.id}
-										isDropTarget={dragOverZone === `folder:${folder.id}`}
-										justDraggedRef={folderJustDragged}
-										registerZone={registerDropZone(`folder:${folder.id}`)}
-										onFolderDragStart={() => setFolderDragId(folder.id)}
-										onFolderDragEnd={commitFolderOrder}
-										onMenu={(x, y) => setFolderMenu({ id: folder.id, x, y })}
-										onRowDragStart={() => {
-											dragSourceZone.current = `folder:${folder.id}`;
-										}}
-										onRowDrag={trackRowDrag}
-										onRowDrop={(row, orderedKeys) =>
-											handleRowDrop(folder.id, row, orderedKeys)
-										}
-										renderRow={renderWsRow}
-									/>
-								))}
-							</Reorder.Group>
-						);
-					})()}
 
 				{/* ── Workspaces: status lanes live directly under the Workspaces
 				    header above (which carries the filter, new-workspace and
@@ -4453,253 +3928,6 @@ const RepoFilterChip = React.forwardRef<
 		</span>
 	);
 });
-
-// ── Folder section ──────────────────────────────────────────────────────────
-// One sidebar folder: a quiet kicker header (name + hairline + count/chevron,
-// per the Pinned-band's visual language but section-styled, not indented) over
-// a drag-to-reorder row list. The section itself is a Reorder.Item in the
-// folders Reorder.Group — the header is its drag handle (desktop) — and each
-// row is a Reorder.Item in the section's own Reorder.Group. Cross-section
-// moves are the parent's job: rows report drags via onRowDrag and the parent
-// resolves the drop zone in onRowDrop. Generic over the row shape so the
-// component can live at module level while WsRow stays private to Sidebar.
-function FolderSection<Row extends { key: string }>({
-	folder,
-	rows,
-	open,
-	onToggle,
-	editing,
-	draft,
-	onDraftChange,
-	onCommitRename,
-	onCancelRename,
-	isPhone,
-	canDragFolder,
-	canDragRows,
-	dragging,
-	isDropTarget,
-	justDraggedRef,
-	registerZone,
-	onFolderDragStart,
-	onFolderDragEnd,
-	onMenu,
-	onRowDragStart,
-	onRowDrag,
-	onRowDrop,
-	renderRow,
-}: {
-	folder: SidebarFolder;
-	rows: Row[];
-	open: boolean;
-	onToggle: () => void;
-	editing: boolean;
-	draft: string;
-	onDraftChange: (v: string) => void;
-	onCommitRename: () => void;
-	onCancelRename: () => void;
-	isPhone: boolean;
-	canDragFolder: boolean;
-	canDragRows: boolean;
-	dragging: boolean;
-	isDropTarget: boolean;
-	justDraggedRef: React.MutableRefObject<boolean>;
-	registerZone: (el: HTMLElement | null) => void;
-	onFolderDragStart: () => void;
-	onFolderDragEnd: () => void;
-	onMenu: (x: number, y: number) => void;
-	onRowDragStart: (row: Row) => void;
-	onRowDrag: (e: unknown) => void;
-	onRowDrop: (row: Row, orderedKeys: string[] | null) => void;
-	renderRow: (row: Row) => React.ReactNode;
-}) {
-	const controls = useDragControls();
-	const sectionEl = useRef<HTMLDivElement | null>(null);
-	const renameInput = useRef<HTMLInputElement | null>(null);
-	// Entering edit mode (create or rename): focus the input ourselves and
-	// scroll the section into view. The folders region can sit well below the
-	// fold (big review/pinned bands above it), and mount-time autoFocus doesn't
-	// reliably scroll a transformed Reorder.Item into view in Safari — which
-	// made the header's New-folder button look like a no-op.
-	useEffect(() => {
-		if (!editing) return;
-		renameInput.current?.focus({ preventScroll: true });
-		sectionEl.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-	}, [editing]);
-	// In-flight row order during a drag (same draft/commit pattern as Pinned).
-	const [rowOrderDraft, setRowOrderDraft] = useState<string[] | null>(null);
-	const rowOrderPending = useRef<string[] | null>(null);
-	const [rowDragKey, setRowDragKey] = useState<string | null>(null);
-	const rowJustDragged = useRef(false);
-	// Touch long-press on the header opens the folder menu (rename/reorder/
-	// delete) — same tuning as the row long-press sheet.
-	const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const pressOrigin = useRef<{ x: number; y: number } | null>(null);
-	const longPressed = useRef(false);
-	const clearPress = () => {
-		if (pressTimer.current) clearTimeout(pressTimer.current);
-		pressTimer.current = null;
-		pressOrigin.current = null;
-	};
-
-	const orderedRows = useMemo(() => {
-		if (!rowOrderDraft) return rows;
-		const idx = new Map(rowOrderDraft.map((k, i) => [k, i] as const));
-		return [...rows].sort(
-			(a, b) => (idx.get(a.key) ?? Infinity) - (idx.get(b.key) ?? Infinity),
-		);
-	}, [rows, rowOrderDraft]);
-
-	return (
-		<Reorder.Item
-			as="div"
-			value={folder.id}
-			dragListener={false}
-			dragControls={controls}
-			onDragStart={onFolderDragStart}
-			onDragEnd={onFolderDragEnd}
-			className={`sidebar-folder-section${open ? " is-open" : ""}${
-				dragging ? " is-reordering" : ""
-			}${isDropTarget ? " is-drop-target" : ""}`}
-			ref={(el: HTMLDivElement | null) => {
-				sectionEl.current = el;
-				registerZone(el);
-			}}
-		>
-			<button
-				type="button"
-				className="sidebar-folder-header"
-				onPointerDown={(e) => {
-					// The header doubles as the section's drag handle on desktop.
-					if (canDragFolder && !editing) controls.start(e);
-				}}
-				onClick={(e) => {
-					if (justDraggedRef.current || longPressed.current) {
-						longPressed.current = false;
-						e.preventDefault();
-						return;
-					}
-					if (!editing) onToggle();
-				}}
-				onContextMenu={(e) => {
-					e.preventDefault();
-					if (longPressed.current || pressOrigin.current) return;
-					onMenu(e.clientX, e.clientY);
-				}}
-				onTouchStart={(e) => {
-					const t = e.touches[0];
-					if (!t) return;
-					pressOrigin.current = { x: t.clientX, y: t.clientY };
-					longPressed.current = false;
-					pressTimer.current = setTimeout(() => {
-						longPressed.current = true;
-						onMenu(t.clientX, t.clientY);
-					}, LONG_PRESS_MS);
-				}}
-				onTouchMove={(e) => {
-					const t = e.touches[0];
-					const o = pressOrigin.current;
-					if (!t || !o) return;
-					if (Math.hypot(t.clientX - o.x, t.clientY - o.y) > LONG_PRESS_SLOP)
-						clearPress();
-				}}
-				onTouchEnd={(e) => {
-					clearPress();
-					// Release after a long-press: the menu is up — swallow the ghost
-					// click so it can't immediately toggle the section under it.
-					if (longPressed.current) e.preventDefault();
-				}}
-				onTouchCancel={clearPress}
-				title={folder.name}
-			>
-				{editing ? (
-					<input
-						ref={renameInput}
-						className="sidebar-item-rename sidebar-folder-rename"
-						value={draft}
-						onFocus={(e) => e.currentTarget.select()}
-						onChange={(e) => onDraftChange(e.target.value)}
-						onClick={(e) => e.stopPropagation()}
-						onPointerDown={(e) => e.stopPropagation()}
-						onBlur={onCommitRename}
-						onKeyDown={(e) => {
-							if (e.key === "Enter") onCommitRename();
-							else if (e.key === "Escape") onCancelRename();
-							e.stopPropagation();
-						}}
-					/>
-				) : (
-					<span className="sidebar-folder-name">{folder.name}</span>
-				)}
-				<span className="sidebar-folder-rule" />
-				<span className="sidebar-folder-count">{rows.length}</span>
-				<IconChevronRight
-					className="sidebar-folder-chevron"
-					size={20}
-					style={{ transform: open ? "rotate(90deg)" : "none" }}
-				/>
-			</button>
-			{open && (
-				<Reorder.Group
-					as="div"
-					axis="y"
-					className={`sidebar-pin-list sidebar-folder-list${
-						rowDragKey ? " is-drag-active" : ""
-					}`}
-					values={orderedRows.map((r) => r.key)}
-					onReorder={(keys: string[]) => {
-						rowOrderPending.current = keys;
-						setRowOrderDraft(keys);
-					}}
-				>
-					{orderedRows.map((row) => (
-						<Reorder.Item
-							as="div"
-							key={row.key}
-							value={row.key}
-							dragListener={canDragRows}
-							onDragStart={() => {
-								setRowDragKey(row.key);
-								onRowDragStart(row);
-							}}
-							onDrag={onRowDrag}
-							onDragEnd={() => {
-								setRowDragKey(null);
-								rowJustDragged.current = true;
-								setTimeout(() => {
-									rowJustDragged.current = false;
-								}, 0);
-								const order = rowOrderPending.current;
-								rowOrderPending.current = null;
-								setRowOrderDraft(null);
-								onRowDrop(row, order);
-							}}
-							whileDrag={{ scale: 1.01 }}
-							className={`sidebar-pin-entry${
-								rowDragKey === row.key ? " is-reordering" : ""
-							}`}
-							onClickCapture={(ev: React.MouseEvent) => {
-								// Swallow the click that lands on the row right after a drop.
-								if (rowJustDragged.current) {
-									ev.preventDefault();
-									ev.stopPropagation();
-								}
-							}}
-						>
-							{renderRow(row)}
-						</Reorder.Item>
-					))}
-					{rows.length === 0 && (
-						<div className="sidebar-folder-empty">
-							{isPhone
-								? "Empty — long-press a session to move it here"
-								: "Empty — drag sessions here"}
-						</div>
-					)}
-				</Reorder.Group>
-			)}
-		</Reorder.Item>
-	);
-}
 
 function SidebarItem({
 	session,

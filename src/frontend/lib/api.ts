@@ -1987,30 +1987,6 @@ export async function saveReadsApi(
 	});
 }
 
-// ── Folders (per-user sidebar sections) ──
-
-export type SidebarFolderDto = { id: string; name: string; keys: string[] };
-
-export async function fetchFolders(user: string): Promise<SidebarFolderDto[]> {
-	const body = await request<{ folders?: SidebarFolderDto[] }>(
-		`/folders?user=${encodeURIComponent(user)}`,
-		{ label: "Failed to fetch folders" },
-	);
-	return Array.isArray(body?.folders) ? body.folders : [];
-}
-
-export async function saveFoldersApi(
-	user: string,
-	folders: SidebarFolderDto[],
-): Promise<SidebarFolderDto[]> {
-	const body = await request<{ folders?: SidebarFolderDto[] }>("/folders", {
-		method: "PUT",
-		body: { user, folders },
-		label: "Failed to save folders",
-	});
-	return Array.isArray(body?.folders) ? body.folders : folders;
-}
-
 // ── UI prefs (per-user cross-device view preferences) ──
 
 export async function fetchUiPrefs(
