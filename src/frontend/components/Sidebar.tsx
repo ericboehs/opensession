@@ -2782,25 +2782,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				</button>
 			</nav>
 
-			{/* Pull requests are an action inbox: personal PRs, direct review
-			    requests and automation output, grouped by what can happen next. Keep
-			    it above Workspaces so a long workspace list cannot bury review asks. */}
-			{openPrs && openPrs.length > 0 && (
-				<ReviewQueue
-					prs={openPrs}
-					sessions={sessions}
-					currentUser={currentUser}
-					open={bandOpen("pullrequests")}
-					onToggle={() => toggleBand("pullrequests")}
-					groupOpen={(bucket) => isOpen(`review:${bucket}`)}
-					onToggleGroup={(bucket) => toggleGroup(`review:${bucket}`)}
-					selectedPr={selectedPr}
-					selectedReviewId={selectedReviewId}
-					onOpenPr={onOpenPr}
-					onOpenSessionReview={onOpenSessionReview}
-				/>
-			)}
-
 			<div
 				className={`sidebar-workspace${listScrolled ? " sidebar-workspace--scrolled" : ""}`}
 			>
@@ -3697,6 +3678,24 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					<div className="sidebar-group">{archivedBand}</div>
 				)}
 				</div>
+			)}
+
+			{/* Pull requests are an action inbox: personal PRs, direct review
+			    requests and automation output, grouped by what can happen next. */}
+			{openPrs && openPrs.length > 0 && (
+				<ReviewQueue
+					prs={openPrs}
+					sessions={sessions}
+					currentUser={currentUser}
+					open={bandOpen("pullrequests")}
+					onToggle={() => toggleBand("pullrequests")}
+					groupOpen={(bucket) => isOpen(`review:${bucket}`)}
+					onToggleGroup={(bucket) => toggleGroup(`review:${bucket}`)}
+					selectedPr={selectedPr}
+					selectedReviewId={selectedReviewId}
+					onOpenPr={onOpenPr}
+					onOpenSessionReview={onOpenSessionReview}
+				/>
 			)}
 
 			{/* ── Support: the Plain TODO queue, newest status change first (the
