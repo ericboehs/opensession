@@ -36,6 +36,7 @@ import { localProfileDefaultModel, toOpencodeModel } from "./models";
 import { envAlias } from "./rename-compat";
 import { audit } from "./audit";
 import { isLocalProfile } from "./profile";
+import { bindOpenaiAccount, pickOpenaiAccount } from "./opencode-openai-auth";
 
 const DEFAULT_ONESHOT_MODEL = "opencode/anthropic/claude-haiku-4-5";
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -123,7 +124,9 @@ export async function opencodeOneShot(
   }
 
   const startedAt = Date.now();
-  const serverKey = localProfile ? "oneshot:local" : `oneshot:${parsed.providerID}`;
+  const serverKey = localProfile
+    ? `oneshot:local:${parsed.providerID}`
+    : `oneshot:${parsed.providerID}`;
   // Two attempts max: an unhealthy meridian account (a usage limit, or a wedged
   // subscription/provider fault that only ever reaches us as our own 120s
   // timeout — opencode swallows the real error into an internal retry loop) is
@@ -136,7 +139,7 @@ export async function opencodeOneShot(
       let providerOverride: Record<string, unknown> | undefined;
       let extraEnv: Record<string, string> | undefined;
       let plugin: string[] | undefined;
-      if (!localProfile && parsed.providerID === "anthropic") {
+      if (parsed.providerID === "anthropic") {
         const cfg = readOpencodeBridgeConfig();
         const bridgeMode = cfg?.enabled ? cfg.bridgeMode : "off";
         if (bridgeMode === "meridian") {
@@ -166,18 +169,23 @@ export async function opencodeOneShot(
           console.warn(`[oneshot:${label}] anthropic bridge disabled — skipping`);
           return null;
         }
+      } else if (localProfile && parsed.providerID === "openai") {
+        const picked = pickOpenaiAccount(parsed.modelID, undefined, serverKey);
+        if ("error" in picked) throw new Error(`opencode/openai: ${picked.error}`);
+        const bound = bindOpenaiAccount(picked);
+        if ("error" in bound) throw new Error(`opencode/openai: ${bound.error}`);
+        extraEnv = bound.extraEnv;
+        providerOverride = bound.providerOverride;
       }
 
       mkdirSync(ONESHOT_CWD, { recursive: true });
       // Same merge as full runs: configured third-party providers UNDER the
       // bridge override (anthropic/openai always win); key omitted when both
       // are empty so the no-providers config hash is unchanged.
-      const providerConfig = localProfile
-        ? {}
-        : {
-            ...opencodeProviderOptions(),
-            ...(providerOverride || {}),
-          };
+      const providerConfig = {
+        ...(localProfile ? {} : opencodeProviderOptions()),
+        ...(providerOverride || {}),
+      };
       const config: Record<string, unknown> = {
         mcp: {},
         autoshare: false,

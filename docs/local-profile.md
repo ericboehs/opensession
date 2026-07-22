@@ -11,25 +11,34 @@ The profile is deliberately smaller than a hosted installation:
 - GitHub web sign-in and the user picker are replaced by one local identity.
 - Repositories start empty and are registered explicitly.
 - Sessions and worktrees stay under `~/os1` by default.
-- OpenCode uses credentials from your native `opencode auth login`; OpenSession
-  does not inject Meridian, managed Claude accounts, Codex account pools, cloud
-  credentials, or provider overrides.
+- Model access comes from the Claude Code and Codex CLI subscriptions already
+  logged in on the Mac. OpenSession uses its bundled local bridges; it never
+  requires or reads an `opencode auth login` credential.
 - Agent loops, webhooks, automations, schedulers, public ingress, remote sandbox
   prewarming, and cloud account pollers do not start.
 
 ## Prerequisites
 
-Install [Bun](https://bun.sh), Git, and
-[OpenCode](https://opencode.ai/docs). Authenticate each model provider you want
-to use:
+Install [Bun](https://bun.sh), Git, [OpenCode](https://opencode.ai/docs), and at
+least one of the Claude Code or Codex CLIs. Log into the subscriptions you want
+to use with their own CLIs:
 
 ```sh
-opencode auth login
+claude
+codex login
 ```
 
-This writes OpenCode's normal user-level credentials. The local profile passes
-your `HOME`, `XDG_CONFIG_HOME`, and `XDG_DATA_HOME` through to OpenCode instead
-of creating a managed account environment.
+Claude Code stores its macOS login in the Keychain item
+`Claude Code-credentials`; Linux CLI credentials at
+`~/.claude/.credentials.json` are also supported. Codex is read from
+`~/.codex/auth.json`. Only providers with discovered credentials appear in the
+model picker. If neither login exists, startup fails with an actionable error.
+
+OpenSession does not rotate either CLI's refresh token. It re-reads current
+access credentials for each run, copies the macOS Claude credential into a
+private `~/os1` cache for the bridge, and gives OpenCode an access-only Codex
+seed with an invalid refresh token. If a CLI access token has expired, run that
+CLI once to refresh its own login and retry.
 
 ## Start OpenSession
 
@@ -99,8 +108,9 @@ session cannot be removed; the endpoint returns HTTP 409 instead.
 
 ## Models
 
-The local picker offers native Anthropic and OpenAI model ids. The default is
-`anthropic/claude-sonnet-5`; override it for a run with, for example:
+The local picker offers Anthropic models when Claude Code credentials are found
+and OpenAI models when Codex credentials are found. Claude is preferred when
+both are available; override the default for a run with, for example:
 
 ```sh
 OPENSESSION_PROFILE=local \
@@ -108,9 +118,9 @@ OPENSESSION_MODEL=openai/gpt-5.5 \
 bun run opensession.ts
 ```
 
-Model ids are sent directly to OpenCode. Automatic cross-provider fallback is
-disabled in the local profile, so authentication or quota failures remain
-visible instead of silently switching accounts or providers.
+Model ids run through the local subscription bridge. Automatic cross-provider
+fallback is disabled in the local profile, so authentication or quota failures
+remain visible instead of silently switching subscriptions.
 
 Local utility calls such as generated titles and branch suggestions use the
 same configured provider. For an OpenAI-only login, set `OPENSESSION_MODEL` as
@@ -128,6 +138,8 @@ Defaults are isolated from a hosted OpenSession installation:
 | Session worktrees | `~/os1/worktrees` |
 | Repositories cloned through the API | `~/os1/repos/<repo-id>` |
 | Optional MCP configuration | `~/os1/mcp-config.json` |
+| Claude Keychain bridge cache | `~/os1/auth/claude/.credentials.json` |
+| OpenAI access-only seeds | `~/os1/auth/opencode-openai/` |
 
 Existing path, port, and binary overrides still win, including `OPENSESSION_CONFIG`,
 `OPENSESSION_CHATS_DIR`, `OPENSESSION_WORKTREES_DIR`,
@@ -153,7 +165,8 @@ session on a new branch. Verify that:
 
 - The UI opens without GitHub sign-in or a name picker.
 - The registered repository is selected.
-- The model turn uses the provider authenticated by `opencode auth login`.
+- Only providers logged into through Claude Code or Codex appear in the picker.
+- A model turn runs on that CLI subscription without an OpenCode login prompt.
 - The code session's checkout appears under `~/os1/worktrees`.
 - No files are created in the hosted profile's `~/.opensession-chats` store.
 

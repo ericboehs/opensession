@@ -845,7 +845,7 @@ body.resizing-x {
 /* Workspace header: "My sessions" title row (+ optional repo chip + action
    icons), with the session search bar directly below it. */
 .sidebar-workspace {
-	padding: 12px 12px 2px 20px;
+	padding: 12px 11px 2px 20px;
 	/* Transparent by default so toggling the color on scroll never shifts layout;
 	   turns into a visible divider under the header once the list scrolls. */
 	border-bottom: 1px solid transparent;
@@ -1923,6 +1923,9 @@ body.resizing-x {
 .sidebar-item-selected:hover {
 	background: var(--bg-active);
 }
+.sidebar-item-selected .sidebar-item-title {
+	color: var(--text);
+}
 
 .sidebar-item-top {
 	display: flex;
@@ -1967,8 +1970,8 @@ body.resizing-x {
 	font-weight: 600;
 }
 
-/* Unread: brighten + embolden the title so it reads as "new", the way an
-   unread chat does in iMessage/WhatsApp. */
+/* Read conversations stay quiet. Unread ones brighten + embolden like Slack;
+	 unlike a blocked session, they don't also need an attention dot. */
 .sidebar-item-unread .sidebar-item-title {
 	font-weight: 600;
 	color: var(--text);
@@ -1981,6 +1984,7 @@ body.resizing-x {
 .sidebar-item-title {
 	font-size: 14px;
 	font-weight: 500;
+	color: var(--text-dim);
 	line-height: 1.35;
 	white-space: nowrap;
 	overflow: hidden;
@@ -8133,19 +8137,31 @@ a.workspace-info-check-row {
 }
 .update-toast-body {
 	display: flex;
-	align-items: center;
-	gap: 9px;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
 	flex: 1;
 	min-width: 0;
 }
 .update-toast-text {
-	min-width: 0;
+	max-width: 100%;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	font-size: 13px;
 	font-weight: 500;
 	color: var(--text);
+	line-height: 1.3;
+}
+/* Who caused the update (session attribution) — dim second line, truncates. */
+.update-toast-by {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-dim);
 	line-height: 1.3;
 }
 .update-toast-actions {
@@ -8304,6 +8320,19 @@ a.workspace-info-check-row {
 	font-size: 12.5px;
 	line-height: 1.5;
 	color: var(--text-dim);
+}
+/* Session attribution on the restart card ("Triggered by …"). */
+.restart-by {
+	margin-top: 6px;
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.4;
+	color: var(--text-dim);
+	opacity: 0.8;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 100%;
 }
 
 /* markdown content */

@@ -174,6 +174,7 @@ import { githubAuthEnv, githubUserLoginForRun } from "./github-auth";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import { isLocalProfile } from "./profile";
+import { localClaudeAccount } from "./local-engine-auth";
 import {
   normalizeModelEffort,
   dialPreset,
@@ -723,6 +724,7 @@ export function pickMeridianAccount(
   stickyId?: string,
   out?: { reason?: string }
 ): ClaudeAccount | { error: string } {
+  if (isLocalProfile()) return localClaudeAccount();
   const allowedOwner = (a: ClaudeAccount) => !a.owner || (!!user && userMatchesAny(user, [a.owner]));
   const designated = (id: string) => !ids?.length || ids.includes(id);
   if (pinnedId) {
@@ -1343,20 +1345,14 @@ export function steerOpencodeRun(id: string, text: string, images?: ImageInput[]
   return true;
 }
 
-/** Minimal env for the opencode server process (mirrors codexEnv). HOME is
- *  passed so OpenCode finds its own auth store (`opencode auth login`);
- *  backstage tokens never are. */
+/** Minimal env for the opencode server process (mirrors codexEnv). Provider
+ * auth is bound explicitly before spawn; OpenCode's native auth store is not
+ * part of the local-profile contract. Backstage tokens never are. */
 export function opencodeEnv(author?: GitIdentity | null): Record<string, string> {
   return {
     PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
     HOME,
     LANG: process.env.LANG || "en_US.UTF-8",
-    ...(isLocalProfile() && process.env.XDG_CONFIG_HOME
-      ? { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME }
-      : {}),
-    ...(isLocalProfile() && process.env.XDG_DATA_HOME
-      ? { XDG_DATA_HOME: process.env.XDG_DATA_HOME }
-      : {}),
     ...gitIdentityEnv(author),
   };
 }
@@ -2170,11 +2166,7 @@ async function* runOpencodeAttempt(
     // provider-half of the shared pool key ("plain" = no per-run auth env,
     // e.g. API-key providers configured in opencode itself).
     let bridgeTag = "plain";
-    if (isLocalProfile() && (parsed.providerID === "anthropic" || parsed.providerID === "openai")) {
-      // Local installs use the user's native `opencode auth login` credential.
-      // One stable tag means no bridge/codex account selection or pool fan-out.
-      bridgeTag = "local";
-    } else if (parsed.providerID === "anthropic") {
+    if (parsed.providerID === "anthropic") {
       const cfg = readOpencodeBridgeConfig();
       const bridgeMode = cfg?.enabled ? cfg.bridgeMode : "off";
       if (bridgeMode === "meridian") {
@@ -2599,12 +2591,10 @@ async function* runOpencodeAttempt(
     // always win. When both are empty the `provider` key is omitted entirely —
     // keeps the config hash (and thus server reuse) identical for setups with
     // no providers configured.
-    const providerConfig = isLocalProfile()
-      ? {}
-      : {
-          ...opencodeProviderOptions(),
-          ...(providerOverride || {}),
-        };
+    const providerConfig = {
+      ...(isLocalProfile() ? {} : opencodeProviderOptions()),
+      ...(providerOverride || {}),
+    };
 
     // Per-prompt policy for shared runs: everything a per-session server
     // bakes into its config rides the prompt body instead. Ask mode selects
@@ -3503,58 +3493,63 @@ async function* runOpencodeAttempt(
       // instead of failing the turn. No account left ⇒ terminal error with
       // usageLimitExhausted so agent-runner's model fallback takes over.
       if (usageLimitHit && pickedMeridian) {
-        markExhausted(pickedMeridian.id, parsed.modelID);
-        if (rotation) {
-          const repickNext = () => {
-            const p = pickMeridianAccount(
-              user,
-              parsed.modelID,
-              readOpencodeBridgeConfig()?.bridgeAccountIds
-            );
-            return "error" in p ? null : p;
-          };
-          let next: ClaudeAccount | null = repickNext();
-          if (!next) {
-            // Whole pool capped mid-run: unattended runs queue for the pool
-            // to free (same backpressure as the pick-time branch) so the turn
-            // retries on a fresh account instead of dying with the cascade.
-            const waitMs = poolWaitMsFor(journal?.kind);
-            if (waitMs > 0) {
-              next = await waitForUsableAccount({
-                pick: repickNext,
+        if (isLocalProfile()) {
+          runFailure +=
+            " — the local Claude Code subscription is unavailable; retry after its limit resets or switch models.";
+        } else {
+          markExhausted(pickedMeridian.id, parsed.modelID);
+          if (rotation) {
+            const repickNext = () => {
+              const p = pickMeridianAccount(
                 user,
-                model: parsed.modelID,
-                maxWaitMs: waitMs,
-                onWaitStart: (earliestReset) => {
-                  audit({
-                    msg: "account_pool_wait",
-                    run_kind: journal?.kind,
-                    bks_session_id: journal?.bksSessionId,
-                    model,
-                    reason: "mid-run usage limit; pool dry",
-                    earliest_reset: new Date(earliestReset).toISOString(),
-                    max_wait_ms: waitMs,
-                  });
-                  console.warn(
-                    `[opencode-runner] mid-run usage limit and pool dry for ${model} — ` +
-                      `waiting up to ${Math.round(waitMs / 60000)}m before retrying`
-                  );
-                },
-              });
+                parsed.modelID,
+                readOpencodeBridgeConfig()?.bridgeAccountIds,
+              );
+              return "error" in p ? null : p;
+            };
+            let next: ClaudeAccount | null = repickNext();
+            if (!next) {
+              // Whole pool capped mid-run: unattended runs queue for the pool
+              // to free (same backpressure as the pick-time branch) so the turn
+              // retries on a fresh account instead of dying with the cascade.
+              const waitMs = poolWaitMsFor(journal?.kind);
+              if (waitMs > 0) {
+                next = await waitForUsableAccount({
+                  pick: repickNext,
+                  user,
+                  model: parsed.modelID,
+                  maxWaitMs: waitMs,
+                  onWaitStart: (earliestReset) => {
+                    audit({
+                      msg: "account_pool_wait",
+                      run_kind: journal?.kind,
+                      bks_session_id: journal?.bksSessionId,
+                      model,
+                      reason: "mid-run usage limit; pool dry",
+                      earliest_reset: new Date(earliestReset).toISOString(),
+                      max_wait_ms: waitMs,
+                    });
+                    console.warn(
+                      `[opencode-runner] mid-run usage limit and pool dry for ${model} — ` +
+                        `waiting up to ${Math.round(waitMs / 60000)}m before retrying`,
+                    );
+                  },
+                });
+              }
+            }
+            if (next) {
+              turnEvent({ direction: "out", kind: "account_switch", account: next.name });
+              bridgeRunEnd("error", runFailure);
+              rotation.rotate = true;
+              rotation.note =
+                `Claude usage limit hit on account "${pickedMeridian.name}" ` +
+                `(${parsed.modelID}); switched to "${next.name}" and retrying.`;
+              return;
             }
           }
-          if (next) {
-            turnEvent({ direction: "out", kind: "account_switch", account: next.name });
-            bridgeRunEnd("error", runFailure);
-            rotation.rotate = true;
-            rotation.note =
-              `Claude usage limit hit on account "${pickedMeridian.name}" ` +
-              `(${parsed.modelID}); switched to "${next.name}" and retrying.`;
-            return;
-          }
+          runFailure +=
+            " — no other account is currently usable for this model; use /model to switch models.";
         }
-        runFailure +=
-          " — no other account is currently usable for this model; use /model to switch models.";
       }
       // OpenAI usage limit on the codex account: same treatment as the
       // meridian branch above — sideline it (markCodexExhausted was previously
@@ -3564,19 +3559,28 @@ async function* runOpencodeAttempt(
       // sidelined account. No account left ⇒ terminal with usageLimitExhausted
       // so agent-runner's model fallback takes over.
       if (usageLimitHit && pickedOpenai) {
-        markCodexExhausted(pickedOpenai.id, parsed.modelID);
-        const next = pickOpenaiAccount(parsed.modelID, readOpencodeBridgeConfig()?.openaiAccounts, sessionKey);
-        if (rotation && !("error" in next) && next.id !== pickedOpenai.id) {
-          turnEvent({ direction: "out", kind: "account_switch", account: next.name });
-          bridgeRunEnd("error", runFailure);
-          rotation.rotate = true;
-          rotation.note =
-            `OpenAI usage limit hit on codex account "${pickedOpenai.name}" ` +
-            `(${parsed.modelID}); switched to "${next.name}" and retrying.`;
-          return;
+        if (isLocalProfile()) {
+          runFailure +=
+            " — the local Codex subscription is unavailable; retry after its limit resets or switch models.";
+        } else {
+          markCodexExhausted(pickedOpenai.id, parsed.modelID);
+          const next = pickOpenaiAccount(
+            parsed.modelID,
+            readOpencodeBridgeConfig()?.openaiAccounts,
+            sessionKey,
+          );
+          if (rotation && !("error" in next) && next.id !== pickedOpenai.id) {
+            turnEvent({ direction: "out", kind: "account_switch", account: next.name });
+            bridgeRunEnd("error", runFailure);
+            rotation.rotate = true;
+            rotation.note =
+              `OpenAI usage limit hit on codex account "${pickedOpenai.name}" ` +
+              `(${parsed.modelID}); switched to "${next.name}" and retrying.`;
+            return;
+          }
+          runFailure +=
+            " — no other codex account is currently usable; use /model to switch models.";
         }
-        runFailure +=
-          " — no other codex account is currently usable; use /model to switch models.";
       }
       // Transient infra failure — recover instead of failing the turn. Covers
       // the silent liveness wedge (the Meridian proxy's first post-boot request

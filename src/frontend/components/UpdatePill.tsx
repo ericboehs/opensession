@@ -20,9 +20,15 @@ interface Props {
  */
 export function UpdatePill({ addHandler, variant = "toast" }: Props) {
   const [show, setShow] = useState(false);
+  const [by, setBy] = useState<string | null>(null);
 
   useEffect(
-    () => addHandler((msg) => msg.type === "frontend_updated" && setShow(true)),
+    () =>
+      addHandler((msg) => {
+        if (msg.type !== "frontend_updated") return;
+        setShow(true);
+        if (msg.by) setBy(msg.by);
+      }),
     [addHandler]
   );
 
@@ -35,7 +41,7 @@ export function UpdatePill({ addHandler, variant = "toast" }: Props) {
         onClick={() => location.reload()}
         role="status"
         aria-live="polite"
-        title="A new update is available. Tap to refresh."
+        title={`A new update is available${by ? ` (${by})` : ""}. Tap to refresh.`}
       >
         Update
       </button>
@@ -46,6 +52,7 @@ export function UpdatePill({ addHandler, variant = "toast" }: Props) {
     <div className="update-toast" role="status" aria-live="polite">
       <div className="update-toast-body">
         <span className="update-toast-text">New update available</span>
+        {by && <span className="update-toast-by">{by}</span>}
       </div>
       <div className="update-toast-actions">
         <button

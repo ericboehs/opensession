@@ -702,12 +702,17 @@ export type WSServerMessage =
 			questions: AskQuestion[];
 	  }
 	| { type: "ask_resolved"; sessionId: string; questionId: string }
-	| { type: "server_restarting" }
+	// `by` on restart/update notices names the session(s) that likely caused
+	// it (best-effort, from in-flight runs in the server checkout) — absent
+	// when the trigger wasn't an opensession session.
+	| { type: "server_restarting"; by?: string }
 	// First frame on every socket: the server process's bootId, so a reconnect
 	// can tell a real restart (changed) from a transient blip (unchanged).
 	// Absent on old servers — clients fall back to /api/health's bootId.
-	| { type: "hello"; bootId: string }
-	| { type: "frontend_updated"; version: string }
+	// `restartBy` (when the boot was seconds after a shutdown) names the
+	// session that likely triggered that restart.
+	| { type: "hello"; bootId: string; restartBy?: string }
+	| { type: "frontend_updated"; version: string; by?: string }
 	// Collaborative notes.
 	| { type: "note_state"; noteId: string; update: string }
 	| { type: "note_update"; noteId: string; update: string }

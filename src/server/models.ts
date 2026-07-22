@@ -24,6 +24,7 @@ import {
 } from "./opencode-config";
 import { envAlias, stateDir } from "./rename-compat";
 import { isLocalProfile, localProfileRoot } from "./profile";
+import { discoverLocalEngineCredentials } from "./local-engine-auth";
 
 export type Provider = "claude" | "codex" | "opencode";
 
@@ -100,7 +101,7 @@ export const KNOWN_MODELS: ModelInfo[] = [
   { id: "gpt-5.3-codex-spark", provider: "codex", label: "GPT-5.3 Codex Spark", aliases: ["spark"] },
 ];
 
-/** Native OpenCode ids offered by a local install; auth comes from OpenCode. */
+/** Provider/model ids offered when the matching local CLI subscription exists. */
 export const LOCAL_PROFILE_MODELS: ModelInfo[] = [
   { id: "anthropic/claude-sonnet-5", provider: "opencode", label: "Claude Sonnet 5", aliases: [] },
   { id: "anthropic/claude-opus-4-8", provider: "opencode", label: "Claude Opus 4.8", aliases: [] },
@@ -110,16 +111,31 @@ export const LOCAL_PROFILE_MODELS: ModelInfo[] = [
   { id: "openai/gpt-5.4-mini", provider: "opencode", label: "GPT-5.4 mini", aliases: [] },
 ];
 
+export function localProfileModels(): ModelInfo[] {
+  const providers = new Set(discoverLocalEngineCredentials().providers);
+  return LOCAL_PROFILE_MODELS.filter((model) =>
+    providers.has(model.id.split("/")[0] as "anthropic" | "openai"),
+  );
+}
+
 export function localProfileDefaultModel(): string {
-  const requested =
-    envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL") ||
-    loadInteractiveOverride() ||
-    loadOverride();
-  if (!requested) return LOCAL_PROFILE_MODELS[0].id;
+  const models = localProfileModels();
+  if (!models.length) {
+    throw new Error(
+      "No local model subscriptions found. Log into Claude Code with `claude` and/or Codex with `codex login`.",
+    );
+  }
+  const envRequested = envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL");
+  const requested = envRequested || loadInteractiveOverride() || loadOverride();
+  if (!requested) return models[0].id;
   const native = (toOpencodeModel(requested) || requested).replace(/^opencode\//, "");
-  return LOCAL_PROFILE_MODELS.some((model) => model.id === native)
-    ? native
-    : LOCAL_PROFILE_MODELS[0].id;
+  if (models.some((model) => model.id === native)) return native;
+  if (envRequested) {
+    throw new Error(
+      `OPENSESSION_MODEL=${envRequested} is unavailable because its CLI subscription credentials were not found`,
+    );
+  }
+  return models[0].id;
 }
 
 // ── The Dial ──────────────────────────────────────────────────────────────

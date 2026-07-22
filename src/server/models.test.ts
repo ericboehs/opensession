@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import {
   BEST_AVAILABLE_CODEX_MODEL,
   DIAL_ORACLE_AGENTS,
@@ -19,6 +22,7 @@ import {
   interactiveFallbackModel,
   LOCAL_PROFILE_MODELS,
   localProfileDefaultModel,
+  localProfileModels,
   normalizeModelEffort,
   opencodeModelLabel,
   resolveConcreteModel,
@@ -28,11 +32,14 @@ import {
 
 const savedProfile = process.env.OPENSESSION_PROFILE;
 const savedModel = process.env.OPENSESSION_MODEL;
+const savedHome = process.env.HOME;
 afterEach(() => {
   if (savedProfile === undefined) delete process.env.OPENSESSION_PROFILE;
   else process.env.OPENSESSION_PROFILE = savedProfile;
   if (savedModel === undefined) delete process.env.OPENSESSION_MODEL;
   else process.env.OPENSESSION_MODEL = savedModel;
+  if (savedHome === undefined) delete process.env.HOME;
+  else process.env.HOME = savedHome;
 });
 
 describe("opencodeModelLabel", () => {
@@ -121,19 +128,32 @@ describe("toOpencodeModel", () => {
 });
 
 describe("local profile models", () => {
-  it("offers only native Anthropic and OpenAI ids", () => {
+  it("offers only providers whose CLI credentials exist", () => {
+    const home = mkdtempSync(join(tmpdir(), "local-models-"));
+    mkdirSync(`${home}/.claude`, { recursive: true });
+    writeFileSync(
+      `${home}/.claude/.credentials.json`,
+      JSON.stringify({
+        claudeAiOauth: { accessToken: "claude-access", refreshToken: "claude-refresh", expiresAt: Date.now() + 60_000 },
+      }),
+    );
+    process.env.HOME = home;
     expect(LOCAL_PROFILE_MODELS.length).toBeGreaterThan(0);
-    expect(
-      LOCAL_PROFILE_MODELS.every((model) => /^(anthropic|openai)\//.test(model.id)),
-    ).toBe(true);
+    expect(localProfileModels().every((model) => model.id.startsWith("anthropic/"))).toBe(true);
+    rmSync(home, { recursive: true, force: true });
   });
 
   it("maps the local default straight through OpenCode and disables fallback", () => {
+    const home = mkdtempSync(join(tmpdir(), "local-models-"));
+    mkdirSync(`${home}/.codex`, { recursive: true });
+    writeFileSync(`${home}/.codex/auth.json`, JSON.stringify({ tokens: { access_token: "codex-access" } }));
+    process.env.HOME = home;
     process.env.OPENSESSION_PROFILE = "local";
     process.env.OPENSESSION_MODEL = "openai/gpt-5.5";
     expect(localProfileDefaultModel()).toBe("openai/gpt-5.5");
     expect(interactiveDefaultModel()).toBe("opencode/openai/gpt-5.5");
     expect(interactiveFallbackModel()).toBeUndefined();
+    rmSync(home, { recursive: true, force: true });
   });
 });
 

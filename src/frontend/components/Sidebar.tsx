@@ -2217,14 +2217,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					className="relative flex shrink-0 items-center justify-center"
 					style={{ width: 22, height: 22 }}
 				>
-					{!isPhone && (row.unread || waiting) && (
+					{!isPhone && waiting && (
 						<span
 							className="sidebar-workspace-attention"
-							title={waiting ? "Needs your attention" : "New activity"}
+							title="Needs your attention"
 						/>
 					)}
 					{row.running ? (
-						<PixelSpinner className="text-dim" />
+						<PixelSpinner className="text-yellow" />
 					) : (
 						<WsPrStatusMark chats={row.chats} size={18} />
 					)}
@@ -2298,10 +2298,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<IconPencil size={20} />
 					</span>
 				)}
-				{isPhone && (row.unread || waiting) && (
+				{isPhone && waiting && (
 					<span
 						className="sidebar-workspace-attention sidebar-workspace-attention--trailing"
-						title={waiting ? "Needs your attention" : "New activity"}
+						title="Needs your attention"
 					/>
 				)}
 				{/* Hover actions: pin + archive, side by side. */}
@@ -3908,8 +3908,8 @@ function SidebarItem({
 }: {
 	session: UnifiedSession;
 	selected: boolean;
-	/** New activity since this session was last opened — draws an iMessage-style
-	    unread dot and bolds the title. */
+	/** New activity since this session was last opened — brightens and bolds the
+	    title, like an unread Slack conversation. */
 	unread: boolean;
 	/** The current user's own session — the owner name is redundant, so it's
 	    dropped and the timestamp moves up onto the title line. */
@@ -4207,14 +4207,14 @@ function SidebarItem({
 					className="relative flex shrink-0 items-center justify-center"
 					style={{ width: 22, height: 22 }}
 				>
-					{(unread || waiting) && (
+					{waiting && (
 						<span
 							className="sidebar-workspace-attention"
-							title={waiting ? "Needs your attention" : "New activity"}
+							title="Needs your attention"
 						/>
 					)}
 					{session.isRunning ? (
-						<PixelSpinner className="text-dim" />
+						<PixelSpinner className="text-yellow" />
 					) : (
 						<WsPrStatusMark chats={[session]} size={18} />
 					)}

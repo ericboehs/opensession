@@ -7,7 +7,7 @@
  */
 
 import { requestUser, type RouteContext } from "./context";
-import { KNOWN_MODELS, LOCAL_PROFILE_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, localProfileDefaultModel, modelEfforts, refreshOpencodePickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
+import { KNOWN_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, localProfileDefaultModel, localProfileModels, modelEfforts, refreshOpencodePickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
 import { envAlias } from "../rename-compat";
 import { type Sandbox } from "../sandbox";
 import { sandboxCapabilityStatus } from "../sandbox/config";
@@ -24,8 +24,9 @@ export async function handleModelsRoutes(
 	// ── Models available to sessions ──
 	if (path === "/backstage/api/models" && req.method === "GET") {
 		if (isLocalProfile()) {
+			const models = localProfileModels();
 			return Response.json({
-				models: LOCAL_PROFILE_MODELS.map((model) => ({
+				models: models.map((model) => ({
 					...model,
 					efforts: modelEfforts(model.id),
 				})),

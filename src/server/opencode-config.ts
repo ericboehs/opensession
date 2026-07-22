@@ -74,6 +74,7 @@
 import { envAlias, stateDir } from "./rename-compat";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { chmodSync, existsSync, readFileSync } from "fs";
+import { isLocalProfile } from "./profile";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
@@ -200,6 +201,9 @@ export function normalizeOpencodeConfig(raw: unknown): OpencodeBridgeConfig | nu
 }
 
 export function readOpencodeBridgeConfig(): OpencodeBridgeConfig | null {
+  // Local installs always use the bundled bridge with their Claude Code CLI
+  // credential; they neither need nor read the hosted bridge config file.
+  if (isLocalProfile()) return { enabled: true, bridgeMode: "meridian" };
   const path = configPath();
   if (!existsSync(path)) return null;
   try {
