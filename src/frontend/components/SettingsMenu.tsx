@@ -27,13 +27,16 @@ import {
 // instead, with the account switcher inlined as a tappable list rather than a
 // hover submenu.
 //
-// Four trigger shapes via `variant`:
+// Trigger shapes via `variant`:
 //   "chevron" — a small chevron.
 //   "brand"   — the mobile top bar logo.
 //   "top"     — the whole Backstage brand (logo + wordmark) in the desktop
 //               sidebar's top row, as one hover area that opens the account
 //               menu. The logo carries the connection dot; the chevron only
 //               shows on hover (or while the menu is open).
+//   "user"    — avatar + name in the same top-row slot, for the desktop shell
+//               (html.wco), where the app shouldn't re-brand itself inside its
+//               own titlebar. The avatar carries the connection dot.
 //   "footer"  — a full-width user row (avatar · name · connection state) at the
 //               bottom of the desktop sidebar, plus a sibling gear button that
 //               goes straight to the Settings page (bypassing the menu).
@@ -102,7 +105,7 @@ function SettingsSheet({
 	onOpenSettings?: () => void;
 	connected?: boolean;
 	allToolsHidden: boolean;
-	variant?: "chevron" | "brand" | "top" | "footer";
+	variant?: "chevron" | "brand" | "top" | "user" | "footer";
 }) {
 	const currentUser = useCurrentUser();
 	const [open, setOpen] = useState(false);
@@ -260,7 +263,7 @@ export function SettingsMenu({
 }: {
 	onOpenSettings?: () => void;
 	connected?: boolean;
-	variant?: "chevron" | "brand" | "top" | "footer";
+	variant?: "chevron" | "brand" | "top" | "user" | "footer";
 }) {
 	const currentUser = useCurrentUser();
 	const isPhone = useIsPhone();
@@ -290,6 +293,7 @@ export function SettingsMenu({
 
 	const footer = variant === "footer";
 	const top = variant === "top";
+	const user = variant === "user";
 
 	return (
 		<Menu.Root>
@@ -311,6 +315,36 @@ export function SettingsMenu({
 						</button>
 					</Tooltip>
 				</div>
+			) : user ? (
+				<Menu.Trigger
+					aria-label="Account menu"
+					className="group flex min-w-0 items-center gap-2 rounded-md border-none bg-transparent py-1 pl-1 pr-1.5 text-fg hover:bg-hover data-[popup-open]:bg-hover"
+				>
+					<span className="relative inline-flex shrink-0">
+						<UserAvatar name={currentUser} size={24} />
+						{/* Same corner connection dot the brand logo carries. */}
+						<span
+							className="app-logo-status"
+							style={{ background: connected ? "var(--green)" : "var(--red)" }}
+							title={connected ? "Connected" : "Reconnecting…"}
+						/>
+					</span>
+					<span className="truncate text-[14px] font-semibold leading-none tracking-[-0.01em]">
+						{currentUser}
+					</span>
+					<span className="relative top-px -ml-0.5 inline-flex items-center text-faint opacity-0 transition-opacity group-hover:opacity-100 group-data-[popup-open]:opacity-100">
+						<svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true">
+							<path
+								d="M2 3.5L5 6.5L8 3.5"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="1.5"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							/>
+						</svg>
+					</span>
+				</Menu.Trigger>
 			) : top ? (
 				<Menu.Trigger
 					aria-label="Account menu"

@@ -417,21 +417,24 @@ a {
 	}
 }
 
-/* The reclaimed PWA titlebar (see TitleBar.tsx) only exists in Window Controls
-   Overlay mode — hidden everywhere else. */
-.wco-titlebar {
+/* The reclaimed PWA back/forward cluster and the desktop-shell user row (see
+   TitleBar.tsx / App.tsx) only exist in Window Controls Overlay mode — hidden
+   everywhere else. */
+.wco-nav,
+.sidebar-user-row {
 	display: none;
 }
 
 /* Window Controls Overlay (desktop PWA + the OS¹ desktop app): the OS titlebar
    is replaced by just the window-control buttons overlaid on our own chrome —
-   no OS bar, no centered title text. We own the full window, so we paint our
-   own titlebar band across the top (`.wco-titlebar`): it fills the reclaimed
-   strip with the sidebar colour so the traffic lights sit on our surface (not
-   a bare white band), it's a drag region so the window still moves, and it
-   carries the back/forward the browser chrome no longer provides. Everything
-   below it — including the sidebar brand row (the OS¹ logo) — flows beneath,
-   so the logo lands under the controls instead of colliding with them.
+   no OS bar, no centered title text, and NO dedicated titlebar band of our
+   own. The window's whole first content row IS the titlebar: on the sidebar
+   it's a pure chrome row — traffic lights (centered on the row by the shell's
+   trafficLightPosition), then search + collapse, back/forward at the right
+   edge — and it continues through the detail pane's 54px header and the right
+   panel's PR strip. Every segment is a drag region so grabbing anywhere along
+   the top moves the window; the signed-in user sits on their own row below
+   the chrome row.
 
    Keyed off `html.wco` (set by the detection script in index.html), NOT the
    `(display-mode: window-controls-overlay)` media query: Electron (the OS¹
@@ -440,25 +443,56 @@ a {
 html.wco .app {
 	border-top: none;
 }
-html.wco .wco-titlebar {
-	display: flex;
-	align-items: center;
-	flex-shrink: 0;
-	height: env(titlebar-area-height, 34px);
-	/* Clear the window controls: traffic lights on the left on macOS
-	   (titlebar-area-x ≈ their width); on Windows they're on the right and
-	   titlebar-area-x is 0, so this is a no-op there. */
-	padding-left: env(titlebar-area-x, 0px);
-	background: var(--bg-raised);
-	border-bottom: 1px solid var(--border);
+/* Sidebar top row clears the traffic lights. env(titlebar-area-x) is the
+   controls' right edge on macOS; it drops to 0 in fullscreen (lights hidden)
+   and on Windows (controls on the right), where the default padding wins. */
+html.wco .sidebar-brand {
+	padding-left: max(env(titlebar-area-x, 78px), calc(var(--sidebar-icon-left) - 8px));
+}
+/* The whole first row doubles as the titlebar — everything interactive in it
+   opts back out so it stays clickable. */
+html.wco .sidebar-brand,
+html.wco .viewer-header,
+html.wco .detail-topbar-title,
+html.wco .pr-bar {
 	-webkit-app-region: drag;
 	app-region: drag;
 }
-html.wco .wco-titlebar-nav {
+html.wco :is(.sidebar-brand, .viewer-header, .detail-topbar-title, .pr-bar)
+	:is(button, a, input, select, textarea, [role="button"], [tabindex]) {
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
+/* Back/forward at the right edge of the sidebar's chrome row. */
+html.wco .wco-nav {
 	display: flex;
 	align-items: center;
 	gap: 2px;
-	padding-left: 8px;
+}
+/* The signed-in user on their own row beneath the chrome row. */
+html.wco .sidebar-user-row {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+	min-width: 0;
+	padding: 0 12px 8px calc(var(--sidebar-icon-left) - 8px);
+}
+/* Collapsed sidebar takes the chrome row (and its nav) with it — show the
+   floating fallback cluster in the detail pane instead, next to the sidebar
+   re-open control, and inset the header text past both. */
+html.wco .wco-nav-pane {
+	display: none;
+	position: absolute;
+	top: 13px;
+	left: 50px;
+	z-index: 20;
+}
+html.wco .app-body.sidebar-collapsed .detail-pane .wco-nav-pane {
+	display: flex;
+}
+html.wco .app-body.sidebar-collapsed .viewer-header,
+html.wco .app-body.sidebar-collapsed .detail-topbar-title {
+	padding-left: 118px;
 }
 html.wco .wco-nav-btn {
 	display: inline-flex;
@@ -472,7 +506,6 @@ html.wco .wco-nav-btn {
 	background: transparent;
 	color: var(--text-dim);
 	cursor: pointer;
-	/* Buttons opt out of the drag region so they stay clickable. */
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }

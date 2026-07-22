@@ -28,7 +28,7 @@ import { Analytics } from "./components/Analytics";
 import { UserGate, getCurrentUser } from "./components/UserPicker";
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { SettingsMenu } from "./components/SettingsMenu";
-import { TitleBar } from "./components/TitleBar";
+import { TitleBar, isWco } from "./components/TitleBar";
 import { Settings, type SettingsSectionKey } from "./components/Settings";
 import { SessionTabs, type ViewTab } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
@@ -1426,9 +1426,6 @@ function App() {
 			<MediaLightboxHost />
 			<ToastHost />
 			<div className="app">
-					{/* Reclaimed titlebar in installed-PWA Window Controls Overlay
-					    mode (desktop). Hidden (display:none) everywhere else. */}
-					<TitleBar />
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
 				    on a pushed page (a session or other view) the brand is replaced by
 				    a Back chevron that pops back to the root, iOS-style. On desktop the
@@ -1599,49 +1596,74 @@ function App() {
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
 						}
 					>
-						{/* Desktop brand row: the whole Backstage brand (logo + wordmark)
-						    opens the account/settings menu on the left, and the collapse
-						    toggle on the right. Hidden on mobile, where the top bar carries
-						    the brand instead. */}
-						<div className="sidebar-brand">
-							<SettingsMenu
-								variant="top"
-								onOpenSettings={() => navigate({ view: "settings" })}
-								connected={connected}
-							/>
-							<div className="sidebar-brand-actions">
-								<Tooltip
-									label="Search sessions"
-									side="bottom"
-									shortcut={["⌘", "K"]}
-								>
-									<button
-										className="sidebar-toggle-btn"
-										onClick={() => setSearchOpen(true)}
-										aria-label="Search sessions"
+						{/* Desktop brand row. Web: the whole Backstage brand (logo +
+						    wordmark) opens the account/settings menu on the left, and the
+						    search/collapse cluster sits on the right. Desktop shell (wco):
+						    the row is pure window chrome — search + collapse tuck in beside
+						    the traffic lights, back/forward sit at the row's right edge,
+						    and the signed-in user moves to its own row below (no app brand
+						    inside the app's own titlebar). Hidden on mobile, where the top
+						    bar carries the brand instead. */}
+						{(() => {
+							const brandActions = (
+								<div className="sidebar-brand-actions">
+									<Tooltip
+										label="Search sessions"
+										side="bottom"
+										shortcut={["⌘", "K"]}
 									>
-										{/* Optically larger than the panel glyph beside it: the
-										    magnifier is a small circle + thin handle, so it needs more
-										    nominal size to carry the same weight as the globe/play/panel
-										    icons in the session header. */}
-										<IconSearch size={26} />
-									</button>
-								</Tooltip>
-								<Tooltip
-									label="Hide sidebar"
-									side="bottom"
-									shortcut={["⌘", "B"]}
-								>
-									<button
-										className="sidebar-toggle-btn"
-										onClick={toggleSidebarCollapsed}
-										aria-label="Hide sidebar"
+										<button
+											className="sidebar-toggle-btn"
+											onClick={() => setSearchOpen(true)}
+											aria-label="Search sessions"
+										>
+											{/* Optically larger than the panel glyph beside it: the
+											    magnifier is a small circle + thin handle, so it needs more
+											    nominal size to carry the same weight as the globe/play/panel
+											    icons in the session header. */}
+											<IconSearch size={26} />
+										</button>
+									</Tooltip>
+									<Tooltip
+										label="Hide sidebar"
+										side="bottom"
+										shortcut={["⌘", "B"]}
 									>
-										{panelIcon}
-									</button>
-								</Tooltip>
-							</div>
-						</div>
+										<button
+											className="sidebar-toggle-btn"
+											onClick={toggleSidebarCollapsed}
+											aria-label="Hide sidebar"
+										>
+											{panelIcon}
+										</button>
+									</Tooltip>
+								</div>
+							);
+							return isWco() ? (
+								<>
+									<div className="sidebar-brand">
+										{brandActions}
+										<TitleBar />
+									</div>
+									<div className="sidebar-user-row">
+										<SettingsMenu
+											variant="user"
+											onOpenSettings={() => navigate({ view: "settings" })}
+											connected={connected}
+										/>
+									</div>
+								</>
+							) : (
+								<div className="sidebar-brand">
+									<SettingsMenu
+										variant="top"
+										onOpenSettings={() => navigate({ view: "settings" })}
+										connected={connected}
+									/>
+									{brandActions}
+								</div>
+							);
+						})()}
 						<Sidebar
 							ref={sidebarRef}
 							sessions={sessions}
@@ -1843,6 +1865,10 @@ function App() {
 					</div>
 
 					<main className="detail-pane" ref={detailPaneRef}>
+						{/* WCO back/forward fallback: the primary cluster lives in the
+						    sidebar's top chrome row, which vanishes when the sidebar is
+						    collapsed — this floating copy shows only then (CSS-gated). */}
+						<TitleBar pane />
 						{/* Floating re-open control, shown only while the desktop sidebar
 						    is collapsed (CSS-gated). Mirrors the brand-row toggle so the
 						    sidebar can always be brought back. */}
