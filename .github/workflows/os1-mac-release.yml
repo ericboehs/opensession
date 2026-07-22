@@ -47,7 +47,7 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$DOMAINS"
-          grep -q 'applinks:os.tella.dev' <<< "$DOMAINS" || { echo '::error::Provisioning profile does not authorize applinks:os.tella.dev'; exit 1; }
+          grep -Eq '(^|[[:space:]])(\*|applinks:os\.tella\.dev)($|[[:space:]])' <<< "$DOMAINS" || { echo '::error::Provisioning profile does not authorize applinks:os.tella.dev'; exit 1; }
 
       - name: Build, sign & notarize
         run: |
@@ -67,7 +67,7 @@ jobs:
           codesign -d --entitlements :- "$APP" > /tmp/os1-entitlements.plist
           /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.associated-domains' /tmp/os1-entitlements.plist | grep -q 'applinks:os.tella.dev'
           security cms -D -i "$APP/Contents/embedded.provisionprofile" > /tmp/os1-embedded-profile.plist
-          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.associated-domains' /tmp/os1-embedded-profile.plist | grep -q 'applinks:os.tella.dev'
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.associated-domains' /tmp/os1-embedded-profile.plist | grep -Eq '(^|[[:space:]])(\*|applinks:os\.tella\.dev)($|[[:space:]])'
 
       - name: Notarize & staple DMG
         run: |
