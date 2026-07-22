@@ -918,6 +918,9 @@ export function proxyOpencodeMcpConfigs(
   rpcToken: string | undefined
 ): Record<string, Record<string, unknown>> {
   if (!inProcessMcp || !rpcToken) return {};
+  // This participates in the OpenCode server config hash. Adding a proxy must
+  // replace shared servers whose per-directory tool catalog is already cached.
+  const catalog = Object.keys(inProcessMcp).sort().join(",");
   const out: Record<string, Record<string, unknown>> = {};
   for (const name of Object.keys(inProcessMcp)) {
     out[name] = {
@@ -927,6 +930,7 @@ export function proxyOpencodeMcpConfigs(
         BKS_RPC_SOCKET: rpcSocketPath(OPENSESSION_CHATS_DIR),
         BKS_RPC_TOKEN: rpcToken,
         BKS_MCP_SERVER: name,
+        BKS_MCP_CATALOG: catalog,
       },
       enabled: true,
       timeout: PROXY_MCP_TIMEOUT_MS,

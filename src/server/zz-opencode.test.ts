@@ -257,6 +257,7 @@ describe("proxyOpencodeMcpConfigs", () => {
     expect(entry.command[0]).toContain("bun");
     expect(entry.environment.BKS_RPC_TOKEN).toBe("tok-1");
     expect(entry.environment.BKS_MCP_SERVER).toBe("michael-sessions");
+    expect(entry.environment.BKS_MCP_CATALOG).toBe("michael-ask,michael-sessions");
   });
   test("empty without token or servers (fail closed)", () => {
     expect(proxyOpencodeMcpConfigs({ "michael-admin": {} }, undefined)).toEqual({});
