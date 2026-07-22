@@ -483,6 +483,14 @@ html.wco :is(.sidebar-brand, .viewer-header, .detail-topbar-title, .pr-bar)
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
+/* Chromium withholds pointer events from native drag regions. While a menu is
+   mounted, temporarily return the chrome to the page so its outside press can
+   dismiss the menu; native dragging resumes as soon as the popup unmounts. */
+html.wco:has(.app-menu-popup)
+	:is(.sidebar-brand, .viewer-header, .detail-topbar-title, .pr-bar) {
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
 /* The chrome row itself (collapse + avatar left, back/forward + search at the
    right edge) is shared by web and the desktop shell — only the traffic-light
    inset and drag regions above are shell-specific. */

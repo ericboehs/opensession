@@ -54,7 +54,7 @@ function Popup({
 				collisionPadding={8}
 				className="z-[10001] outline-none"
 			>
-				<BaseMenu.Popup className={cn(popupClasses, className)}>
+				<BaseMenu.Popup className={cn("app-menu-popup", popupClasses, className)}>
 					<div className={popupInnerClasses}>{children}</div>
 				</BaseMenu.Popup>
 			</BaseMenu.Positioner>
