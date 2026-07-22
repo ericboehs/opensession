@@ -15003,9 +15003,25 @@ html[data-theme="light"] .palette-card .palette-create {
 	background: var(--green);
 }
 .sidebar-workspace-attention--trailing {
-	position: static;
-	flex: 0 0 auto;
+	position: relative;
+	left: auto;
+	top: auto;
+	flex: 0 0 28px;
+	width: 28px;
+	height: 22px;
 	margin-left: auto;
+	background: transparent;
+}
+.sidebar-workspace-attention--trailing::after {
+	content: "";
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 7px;
+	height: 7px;
+	transform: translate(-50%, -50%);
+	border-radius: 50%;
+	background: var(--green);
 }
 .sidebar-ws-actions {
 	display: none;
