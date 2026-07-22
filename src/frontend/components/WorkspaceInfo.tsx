@@ -1382,7 +1382,7 @@ export function WorkspaceInfo({
 	return (
 		<div className="workspace-info-panel">
 			<div className="workspace-info-head">
-				<div className="workspace-info-title">{title}</div>
+				<div className="workspace-info-title selectable">{title}</div>
 				{meta && <div className="workspace-info-meta">{meta}</div>}
 				<div className="workspace-info-status">
 					{chips.map((chip) =>
