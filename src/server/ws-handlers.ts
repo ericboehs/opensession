@@ -5,6 +5,7 @@
  * transport sockets are delegated to run-ws.ts before any of this runs.
  */
 
+import { existsSync, statSync } from "node:fs";
 import type { WebSocketHandler } from "bun";
 import type { WSClientData } from "./ws-hub";
 import { type StreamEvent, cancelAgentRun, interruptAndSteerAgentRun, isAgentSessionBusy, markSessionStarting, runAgent, steerAgentRun, stopAgentRunTurn, unmarkSessionStarting } from "./agent-runner";
@@ -351,6 +352,45 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						? msg.beforeOffset
 						: null;
 				if (before !== null) {
+					const rev = transcriptRev(session.transcriptPath);
+					let fileSize: number | null = null;
+					try {
+						if (existsSync(session.transcriptPath)) {
+							fileSize = statSync(session.transcriptPath).size;
+						}
+					} catch {
+						fileSize = null;
+					}
+					if (
+						msg.beforeRev !== rev ||
+						fileSize === null ||
+						before > fileSize
+					) {
+						if (fileSize === null) {
+							ws.send(
+								JSON.stringify({
+									type: "transcript_init",
+									sessionId: msg.sessionId,
+									entries: clampEntriesForWire(mergedSessionTranscript(session)),
+									truncated: false,
+								}),
+							);
+							break;
+						}
+						const tail = parseTranscriptTail(session.transcriptPath);
+						ws.send(
+							JSON.stringify({
+								type: "transcript_init",
+								sessionId: msg.sessionId,
+								entries: clampEntriesForWire(tail.entries, INIT_WIRE_CLAMP_BYTES),
+								truncated: tail.truncated,
+								startOffset: tail.startOffset,
+								endOffset: tail.endOffset,
+								rev,
+							}),
+						);
+						break;
+					}
 					// ~40 entries per page; the 1MB soft window cap bounds the server
 					// read through fat tool-result regions, but the parser still
 					// guarantees ≥10 entries per page (see parseTranscriptWindow) —

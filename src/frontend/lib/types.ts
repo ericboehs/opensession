@@ -509,7 +509,12 @@ export type WSClientMessage =
 			sinceRev?: string;
 	  }
 	| { type: "unwatch"; sessionId: string }
-	| { type: "load_history"; sessionId: string }
+	| {
+			type: "load_history";
+			sessionId: string;
+			beforeOffset?: number;
+			beforeRev?: string;
+	  }
 	| {
 			type: "prompt";
 			sessionId: string;

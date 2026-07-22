@@ -95,13 +95,13 @@ function latestMessageVisible(container: HTMLElement): boolean {
   return latestRect.bottom > containerRect.top && latestRect.top < containerRect.bottom;
 }
 
-export function useChatScroll(): ChatScroll {
+export function useChatScroll(initialFollowing = true): ChatScroll {
   const containerRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
   // followingRef is the live value read inside handlers; `following` mirrors it for
   // rendering. Default true so a fresh, running session tracks the stream.
-  const followingRef = useRef(true);
-  const [following, setFollowingState] = useState(true);
+  const followingRef = useRef(initialFollowing);
+  const [following, setFollowingState] = useState(initialFollowing);
   const [newBelow, setNewBelow] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   // Whether the latest turn is currently pinned to the top (spacer active).
@@ -135,6 +135,9 @@ export function useChatScroll(): ChatScroll {
   // the container itself past clientWidth; overlay scrollbars aren't
   // detectable — those readers re-engage via wheel/touch or the jump button).
   const scrollbarDragRef = useRef(false);
+  // A cached session can mount while intentionally reading history. Its first
+  // relayout describes restored content, not content that arrived below it.
+  const hasRelayoutRef = useRef(false);
 
   const distanceFromBottom = useCallback(() => {
     const el = containerRef.current;
@@ -256,6 +259,8 @@ export function useChatScroll(): ChatScroll {
   const relayout = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
+    const hadLayout = hasRelayoutRef.current;
+    hasRelayoutRef.current = true;
     if (pinnedRef.current) {
       // Own the position for the duration of the pin: at scroll-max the
       // browser's scroll anchoring keeps the bottom edge stable across content
@@ -301,7 +306,11 @@ export function useChatScroll(): ChatScroll {
     // selection is the reader actively working with the text (principle 3).
     if (followingRef.current && !selectionWithin(el)) {
       el.scrollTop = el.scrollHeight; // instant: a smooth animation per token janks
-    } else if (!followingRef.current && distanceFromBottom() > STICK_THRESHOLD) {
+    } else if (
+      hadLayout &&
+      !followingRef.current &&
+      distanceFromBottom() > STICK_THRESHOLD
+    ) {
       setNewBelow(true); // content arrived out of view — let the UI announce it
     }
     updateScrollToBottomVisibility();

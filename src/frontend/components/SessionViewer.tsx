@@ -315,6 +315,80 @@ function mergeEntries(
 	return next;
 }
 
+type CachedTranscriptView = {
+	entries: TranscriptEntry[];
+	cursor: { sessionId: string; rev: string; offset: number } | null;
+	historyTruncated: boolean;
+	historyStart: number | null;
+	scrollTop: number;
+	following: boolean;
+	anchorEid: string | null;
+	anchorTop: number | null;
+};
+
+// SessionViewer remounts on navigation. Keep a small LRU of the expensive
+// transcript view state so moving between nearby sessions is instant without
+// retaining an unbounded workday's worth of conversations in the browser.
+const transcriptViewCache = new Map<string, CachedTranscriptView>();
+const TRANSCRIPT_VIEW_CACHE_MAX = 6;
+
+function cachedTranscriptView(sessionId: string): CachedTranscriptView | null {
+	const hit = transcriptViewCache.get(sessionId);
+	if (!hit) return null;
+	transcriptViewCache.delete(sessionId);
+	transcriptViewCache.set(sessionId, hit);
+	return hit;
+}
+
+function peekCachedTranscriptView(sessionId: string): CachedTranscriptView | null {
+	return transcriptViewCache.get(sessionId) ?? null;
+}
+
+function cacheTranscriptView(sessionId: string, view: CachedTranscriptView) {
+	transcriptViewCache.delete(sessionId);
+	transcriptViewCache.set(sessionId, view);
+	while (transcriptViewCache.size > TRANSCRIPT_VIEW_CACHE_MAX) {
+		const oldest = transcriptViewCache.keys().next().value;
+		if (oldest === undefined) break;
+		transcriptViewCache.delete(oldest);
+	}
+}
+
+function withModelSwitches(
+	entries: TranscriptEntry[],
+	history: UnifiedSession["modelHistory"],
+): TranscriptEntry[] {
+	const switches: TranscriptEntry[] = (history || []).map((h) => ({
+		id: `model-switch-${h.at}`,
+		type: "system" as const,
+		content: switchDividerText(h.model, h.from, h.by),
+		timestamp: h.at,
+	}));
+	if (switches.length === 0) return entries;
+	const persistedContent = new Set(switches.map((entry) => entry.content));
+	const base = entries.filter(
+		(entry) =>
+			!entry.id.startsWith("model-switch-live-") ||
+			!persistedContent.has(entry.content),
+	);
+	const current = new Map(base.map((entry) => [entry.id, entry] as const));
+	if (
+		base.length === entries.length &&
+		switches.every((entry) => {
+			const existing = current.get(entry.id);
+			return (
+				existing?.content === entry.content &&
+				existing.timestamp === entry.timestamp
+			);
+		})
+	)
+		return entries;
+	return mergeEntries(base, switches).sort(
+		(a, b) =>
+			new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+	);
+}
+
 // The element whose position the history hold keeps stable: the first
 // entry-level node ([data-eid]: bubbles, tool rows, turn notes — turn-block
 // roots too) at or straddling the transcript viewport's top edge, preferring
@@ -378,11 +452,16 @@ export function SessionViewer({
 	onOpenReview,
 	onOpenWorkspace,
 }: Props) {
-	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
+	const [cachedTranscript] = useState(() => peekCachedTranscriptView(session.id));
+	const [entries, setEntries] = useState<TranscriptEntry[]>(
+		() => withModelSwitches(cachedTranscript?.entries ?? [], session.modelHistory),
+	);
 	// Initial scrolling must wait for this session's transcript_init. During a
 	// session switch, entries from the previous session remain rendered until the
 	// WebSocket response arrives and must not consume the new session's scroll.
-	const transcriptReadySessionRef = useRef<string | null>(null);
+	const transcriptReadySessionRef = useRef<string | null>(
+		cachedTranscript ? session.id : null,
+	);
 	// Reconnect resume cursor: endOffset/rev of the last transcript frame the
 	// server sent (transcript_init/append). On a re-watch of the SAME session
 	// with entries still mounted, it rides the watch message as
@@ -392,18 +471,24 @@ export function SessionViewer({
 		sessionId: string;
 		rev: string;
 		offset: number;
-	} | null>(null);
+	} | null>(cachedTranscript?.cursor ?? null);
 	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
 	// render the empty chat immediately instead of a "Loading transcript…" flash.
-	const [loading, setLoading] = useState(!!session.transcriptPath);
+	const [loading, setLoading] = useState(
+		!cachedTranscript && !!session.transcriptPath,
+	);
 	// The initial transcript is the tail only when the file is large; these drive
 	// the "load earlier history" affordance at the top of the conversation.
-	const [historyTruncated, setHistoryTruncated] = useState(false);
+	const [historyTruncated, setHistoryTruncated] = useState(
+		cachedTranscript?.historyTruncated ?? false,
+	);
 	const [loadingHistory, setLoadingHistory] = useState(false);
 	// Byte offset the loaded history begins at — the "load earlier" pagination
 	// cursor (server: parseTranscriptTail/parseTranscriptWindow startOffset).
 	// null = unknown (old server) → load_history falls back to the full resend.
-	const historyStartRef = useRef<number | null>(null);
+	const historyStartRef = useRef<number | null>(
+		cachedTranscript?.historyStart ?? null,
+	);
 	// Scroll anchor for "Load earlier history" and the staged-init prepend:
 	// older entries prepend above the viewport, so keep the reader on the same
 	// content. See startHistoryHold below — a DOM-element anchor plus a short
@@ -658,6 +743,7 @@ export function SessionViewer({
 		containerRef: messagesRef,
 		spacerRef,
 		followingLive,
+		following,
 		newBelow,
 		showScrollToBottom,
 		scrollToLatest,
@@ -665,7 +751,32 @@ export function SessionViewer({
 		endTurn,
 		relayout,
 		onScroll,
-	} = useChatScroll();
+	} = useChatScroll(cachedTranscript?.following ?? true);
+
+	// Keep the cached snapshot current as live frames and history pages land.
+	// Scroll position is updated synchronously in handleMessagesScroll below.
+	useEffect(() => {
+		if (transcriptReadySessionRef.current !== session.id) return;
+		const previous = cachedTranscriptView(session.id);
+		const el = messagesRef.current;
+		const anchor = el ? pickScrollAnchor(el) : null;
+		cacheTranscriptView(session.id, {
+			entries,
+			cursor: transcriptCursorRef.current,
+			historyTruncated,
+			historyStart: historyStartRef.current,
+			scrollTop: el?.scrollTop ?? previous?.scrollTop ?? 0,
+			following,
+			anchorEid: anchor?.dataset.eid ?? previous?.anchorEid ?? null,
+			anchorTop:
+				anchor && el
+					? anchor.getBoundingClientRect().top - el.getBoundingClientRect().top
+					: previous?.anchorTop ?? null,
+		});
+	}, [entries, following, historyTruncated, messagesRef, session.id]);
+	useEffect(() => {
+		setEntries((prev) => withModelSwitches(prev, session.modelHistory));
+	}, [session.modelHistory]);
 
 	// The hold: keep an anchor element at a stable content offset while history
 	// prepends above it and the new bubbles' heights settle (content-visibility
@@ -1286,19 +1397,8 @@ export function SessionViewer({
 					break;
 				}
 				case "transcript_init": {
-					// Weave persisted model switches into the conversation as dividers
-					const switches: TranscriptEntry[] = (session.modelHistory || []).map(
-						(h) => ({
-							id: `model-switch-${h.at}`,
-							type: "system" as const,
-							content: switchDividerText(h.model, h.from, h.by),
-							timestamp: h.at,
-						}),
-					);
-					const merged = [...msg.entries, ...switches].sort(
-						(a, b) =>
-							new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-					);
+					// Weave persisted model switches into the conversation as dividers.
+					const merged = withModelSwitches(msg.entries, session.modelHistory);
 					transcriptReadySessionRef.current = session.id;
 					if (typeof msg.endOffset === "number" && msg.rev) {
 						transcriptCursorRef.current = {
@@ -1444,7 +1544,7 @@ export function SessionViewer({
 						setEntries((prev) => [
 							...prev,
 							{
-								id: `model-switch-${Date.now()}`,
+								id: `model-switch-live-${Date.now()}`,
 								type: "system",
 								content: switchDividerText(msg.model, msg.from, msg.by),
 								timestamp: new Date().toISOString(),
@@ -1606,10 +1706,53 @@ export function SessionViewer({
 
 	// Every session opens at the live edge. Do this in a layout effect so the
 	// transcript never paints at scrollTop 0 before moving to the end.
-	const initiallyScrolledSessionRef = useRef<string | null>(null);
+	const initiallyScrolledSessionRef = useRef<string | null>(
+		cachedTranscript ? session.id : null,
+	);
 	const [initialScrollSession, setInitialScrollSession] = useState<string | null>(
 		null,
 	);
+	const restoredCachedScrollRef = useRef(false);
+	useLayoutEffect(() => {
+		if (!cachedTranscript || restoredCachedScrollRef.current || showReview) return;
+		const el = messagesRef.current;
+		if (!el) return;
+		restoredCachedScrollRef.current = true;
+		if (cachedTranscript.following) {
+			el.scrollTop = el.scrollHeight;
+			setInitialScrollSession(session.id);
+			return;
+		}
+		el.scrollTop = Math.min(
+			cachedTranscript.scrollTop,
+			Math.max(0, el.scrollHeight - el.clientHeight),
+		);
+		const anchor = cachedTranscript.anchorEid
+			? el.querySelector<HTMLElement>(
+					`[data-eid="${CSS.escape(cachedTranscript.anchorEid)}"]`,
+				)
+			: null;
+		if (anchor && cachedTranscript.anchorTop !== null) {
+			const containerTop = el.getBoundingClientRect().top;
+			// Restore by content identity first: raw scrollTop came from intrinsic
+			// estimates, while the entry id survives remounts and settling heights.
+			el.scrollTop +=
+				anchor.getBoundingClientRect().top -
+				containerTop -
+				cachedTranscript.anchorTop;
+			startHistoryHold(anchor, 3000, null);
+			return;
+		}
+		const fallback = pickScrollAnchor(el);
+		if (fallback) startHistoryHold(fallback, 3000, null);
+	}, [
+		cachedTranscript,
+		entries,
+		messagesRef,
+		session.id,
+		showReview,
+		startHistoryHold,
+	]);
 	useLayoutEffect(() => {
 		const el = messagesRef.current;
 		if (
@@ -1798,11 +1941,16 @@ export function SessionViewer({
 				});
 		}
 		setLoadingHistory(true);
+		const cursor = transcriptCursorRef.current;
 		send({
 			type: "load_history",
 			sessionId: session.id,
 			...(historyStartRef.current !== null && historyStartRef.current > 0
-				? { beforeOffset: historyStartRef.current }
+				? {
+						beforeOffset: historyStartRef.current,
+						beforeRev:
+							cursor?.sessionId === session.id ? cursor.rev : undefined,
+					}
 				: {}),
 		});
 	}, [
@@ -1827,6 +1975,19 @@ export function SessionViewer({
 		const current = el?.scrollTop ?? previous;
 		lastHistoryScrollTopRef.current = current;
 		onScroll();
+		const cached = transcriptViewCache.get(session.id);
+		if (el && cached) {
+			const anchor = pickScrollAnchor(el);
+			cacheTranscriptView(session.id, {
+				...cached,
+				scrollTop: current,
+				following: followingLive.current,
+				anchorEid: anchor?.dataset.eid ?? null,
+				anchorTop: anchor
+					? anchor.getBoundingClientRect().top - el.getBoundingClientRect().top
+					: null,
+			});
+		}
 		if (
 			el &&
 			current < previous - 1 &&
@@ -1838,7 +1999,7 @@ export function SessionViewer({
 			historyGestureUntilRef.current = 0;
 			loadEarlierHistory();
 		}
-	}, [loadEarlierHistory, messagesRef, onScroll]);
+	}, [followingLive, loadEarlierHistory, messagesRef, onScroll, session.id]);
 	useEffect(() => {
 		const el = messagesRef.current;
 		if (!el || showReview) return;
