@@ -12485,7 +12485,10 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   targets just like workspace rows — same 16px text, taller rows. */
 	.sidebar-group-header {
 		font-size: 16px;
-		padding: 11px 6px;
+		padding: 11px 8px 11px 6px;
+	}
+	.sidebar-independent-section > .sidebar-band-label {
+		padding-right: 8px;
 	}
 	.sidebar-group-count {
 		font-size: 13px;
@@ -15172,7 +15175,7 @@ html[data-theme="light"] .palette-card .palette-create {
 		align-items: center;
 		justify-content: center;
 		position: fixed;
-		right: 18px;
+		right: 12px;
 		bottom: calc(18px + env(safe-area-inset-bottom, 0px));
 		width: 58px;
 		height: 58px;
