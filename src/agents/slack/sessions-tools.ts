@@ -257,7 +257,7 @@ export interface SpawnTaskArgs {
   model?: string;
   mode?: "ask" | "code";
   /** true = config default provider; or an explicit configured provider id. */
-  sandbox?: boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm";
+  sandbox?: boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" | "macos";
 }
 
 export type SpawnTaskResult =
@@ -548,7 +548,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
             .optional()
             .describe("Create an unrelated standalone session instead of a child of the current session."),
           sandbox: z
-            .union([z.boolean(), z.enum(["docker", "daytona", "e2b", "box", "modal", "lambda-microvm"])])
+            .union([z.boolean(), z.enum(["docker", "daytona", "e2b", "box", "modal", "lambda-microvm", "macos"])])
             .optional()
             .describe("Run the session in an isolated sandbox: true = the server's default provider, or an explicit provider id (must be configured server-side, else the create fails with a clear error). Omit for a host run."),
         },
@@ -562,7 +562,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           parentSessionId?: string;
           reportBack?: boolean;
           standalone?: boolean;
-          sandbox?: boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm";
+          sandbox?: boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" | "macos";
         }) => {
           if (!args.prompt?.trim()) return text("Need a prompt to start a session.");
           if (args.mode === "code" && !args.branch?.trim()) {
@@ -652,7 +652,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           branch: z.string().optional().describe("Branch for code mode when the child can't share this session's worktree (standalone or different repo)."),
           model: z.string().optional().describe("Optional model id (e.g. 'gpt-5.5' for a Codex worker, or a Claude model id)."),
           mode: z.enum(["ask", "code"]).optional().describe("'code' (default) can edit files / open PRs; 'ask' is read-only."),
-          sandbox: z.union([z.boolean(), z.enum(["docker", "daytona", "e2b", "box", "modal", "lambda-microvm"])]).optional().describe("Run the child in an isolated sandbox: true = the server's default provider, or an explicit configured provider id."),
+          sandbox: z.union([z.boolean(), z.enum(["docker", "daytona", "e2b", "box", "modal", "lambda-microvm", "macos"])]).optional().describe("Run the child in an isolated sandbox: true = the server's default provider, or an explicit configured provider id."),
         },
         async (args: SpawnTaskArgs) => {
           const res = await spawnTaskImpl(args, ctx);

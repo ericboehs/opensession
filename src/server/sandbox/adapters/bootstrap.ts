@@ -9,9 +9,9 @@
  *    in-sandbox — bun, the backstage repo bundle (config `runnerBundleUrl`
  *    tarball, or a git clone of `runnerRepoUrl`/this checkout's origin at
  *    `runnerSha`), `bun install`, and the Claude Code CLI — all under
- *    /home/ubuntu so the runner's hardcoded absolute paths (claude CLI, repo
- *    bundle, HOST_ENTRY) resolve exactly like they do on the host and in the
- *    docker image (path parity is the contract; see deploy/sandbox/README.md).
+ *    /home/ubuntu so existing Linux providers retain path parity with the host
+ *    and docker image. Pre-provisioned hosts pass `RemoteRuntimePaths` instead
+ *    and verify their payload rather than invoking this Linux installer.
  *    COLD-START COST: several minutes on the first ensure of a fresh sandbox
  *    (bun install pulls the full dep tree incl. the ~223MB vendored codex
  *    binary). The fast path — Daytona snapshots / E2B custom templates with
@@ -51,10 +51,16 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync } from "fs";
-import { dirname } from "path";
+import { basename, dirname } from "path";
 import { OPENSESSION_CHATS_DIR } from "../../paths";
 import { envAlias, stateDir } from "../../rename-compat";
-import { journalSet, journalClear, type ActiveRunRecord } from "../../run-journal";
+import {
+  activeRunRecords,
+  journalSet,
+  journalClear,
+  journalReplace,
+  type ActiveRunRecord,
+} from "../../run-journal";
 import type { StreamEvent } from "../../run-events";
 import { RESUME_CONTINUATION_PROMPT } from "../../agent-runner";
 import { accountsForRemoteUpload } from "../../claude-accounts";
@@ -84,7 +90,6 @@ import { writeJsonAtomic } from "../../shared/atomic-write";
 import { HostHandle, type HandleCallbacks, type HostLauncher } from "../../host-client";
 import {
   HOST_SPEC_NAME,
-  HOST_ENTRY,
   REPO_ROOT,
   type RunHostSpec,
 } from "../../../runner-host/protocol";
@@ -100,25 +105,66 @@ import type {
   SandboxStatus,
 } from "../provider";
 
-/** Absolute paths INSIDE the sandbox — kept byte-identical to the host/docker
- *  layout so the runner's hardcoded paths resolve (do not "tidy" these). */
-export const REMOTE_HOME = "/home/ubuntu";
-export const REMOTE_BUN = `${REMOTE_HOME}/.bun/bin/bun`;
-export const REMOTE_CLAUDE = `${REMOTE_HOME}/.local/bin/claude`;
-export const REMOTE_OPENCODE = `${REMOTE_HOME}/.bun/bin/opencode`;
+const RUNS_BASE = `${OPENSESSION_CHATS_DIR}/sandbox-runs`;
+
+/** Absolute paths inside a remote execution node. The Linux defaults remain
+ * byte-identical for the API-backed providers; fixed hosts such as macOS pass
+ * their own path object rather than pretending the remote home is /home/ubuntu. */
+export interface RemoteRuntimePaths {
+  home: string;
+  bun: string;
+  claude: string;
+  opencode: string;
+  runnerRepo: string;
+  hostEntry: string;
+  openaiSeedDir: string;
+  path: string;
+  warmBase: string;
+  runsBase: string;
+}
+
+export function remoteRuntimePaths(
+  home = "/home/ubuntu",
+  runnerRepo = `${home}/projects/tella-backstage`,
+  path = `${home}/.bun/bin:${home}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+  runsBase = `${home}/.opensession-chats/sandbox-runs`,
+): RemoteRuntimePaths {
+  return {
+    home,
+    bun: `${home}/.bun/bin/bun`,
+    claude: `${home}/.local/bin/claude`,
+    opencode: `${home}/.bun/bin/opencode`,
+    runnerRepo,
+    hostEntry: `${runnerRepo}/src/runner-host/host.ts`,
+    openaiSeedDir: `${home}/.opensession-openai-seeds`,
+    path,
+    warmBase: `${home}/.bks-warm`,
+    runsBase,
+  };
+}
+
+export const DEFAULT_REMOTE_RUNTIME = remoteRuntimePaths(
+  "/home/ubuntu",
+  "/home/ubuntu/projects/tella-backstage",
+  "/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  RUNS_BASE,
+);
+export const REMOTE_HOME = DEFAULT_REMOTE_RUNTIME.home;
+export const REMOTE_BUN = DEFAULT_REMOTE_RUNTIME.bun;
+export const REMOTE_CLAUDE = DEFAULT_REMOTE_RUNTIME.claude;
+export const REMOTE_OPENCODE = DEFAULT_REMOTE_RUNTIME.opencode;
 /** Same pin as deploy/sandbox/Dockerfile's OPENCODE_VERSION (host runs this
  *  too) — bump BOTH together. Part of bootstrapSignature, so a bump
  *  invalidates existing sandboxes/prewarms and re-bootstraps them. */
 export const REMOTE_OPENCODE_VERSION = "1.17.15";
-export const REMOTE_REPO = REPO_ROOT; // /home/ubuntu/projects/tella-backstage
+export const REMOTE_REPO = DEFAULT_REMOTE_RUNTIME.runnerRepo;
 const BOOTSTRAP_MARKER = `${REMOTE_HOME}/.bks-bootstrapped`;
 /** Where per-launch openai seed material lands in-sandbox — threaded to the
  *  run host via the OPENSESSION_OPENAI_SEED_DIR env (openaiRemoteSeedDir()),
  *  never derived independently on the two sides. */
-export const REMOTE_OPENAI_SEED_DIR = `${REMOTE_HOME}/.opensession-openai-seeds`;
-const REMOTE_PATH = `${REMOTE_HOME}/.bun/bin:${REMOTE_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
+export const REMOTE_OPENAI_SEED_DIR = DEFAULT_REMOTE_RUNTIME.openaiSeedDir;
+const REMOTE_PATH = DEFAULT_REMOTE_RUNTIME.path;
 
-const RUNS_BASE = `${OPENSESSION_CHATS_DIR}/sandbox-runs`;
 const STATE_DIR = `${OPENSESSION_CHATS_DIR}/sandboxes`;
 
 // ── The wire each adapter implements ─────────────────────────────────────────
@@ -127,6 +173,8 @@ export interface RemoteExecOpts {
   cwd?: string;
   env?: Record<string, string>;
   timeoutMs?: number;
+  /** Provider-native detached-launch identifier (macOS LaunchAgent label). */
+  launchId?: string;
 }
 
 export interface RemoteDriver {
@@ -181,7 +229,7 @@ export interface RemoteSandboxState {
   lastActivityAt: string;
 }
 
-function sanitizeName(s: string): string {
+export function sanitizeName(s: string): string {
   return s.replace(/[^a-zA-Z0-9_.-]+/g, "-").replace(/^[^a-zA-Z0-9]+/, "");
 }
 
@@ -334,8 +382,8 @@ export async function remoteCloneUrl(repo: {
 export async function assertDialbackReachable(
   driver: RemoteDriver,
   label: string,
+  wsBase = remoteSandboxCallbackBaseUrl(),
 ): Promise<void> {
-  const wsBase = remoteSandboxCallbackBaseUrl();
   const httpBase = wsBase.replace(/^ws(s?):\/\//, "http$1://");
   const probe = await driver.exec(
     `command -v curl >/dev/null 2>&1 || { echo __BKS_NO_CURL__; exit 0; }; ` +
@@ -564,8 +612,9 @@ export async function warmRemoteWorkspace(
   driver: RemoteDriver,
   repo: { id: string; repo: string; ghRepo?: string; defaultBranch: string; depsInstall?: string },
   label: string,
+  runtime: RemoteRuntimePaths = DEFAULT_REMOTE_RUNTIME,
 ): Promise<void> {
-  const dir = `${REMOTE_WARM_BASE}/${sanitizeName(repo.id)}`;
+  const dir = `${runtime.warmBase}/${sanitizeName(repo.id)}`;
   const log = (msg: string) => console.log(`[sandbox:${label}] warm workspace: ${msg}`);
   const has = await driver.exec(`test -d ${shellQuoteWord(dir)}/.git`);
   if (has.exitCode !== 0) {
@@ -583,10 +632,10 @@ export async function warmRemoteWorkspace(
   // Deps: same convention as worktree.ts's installWorktreeDeps, expressed
   // in-sandbox (config depsInstall → tella-fusion webapp install → root
   // install when a package.json exists).
-  const bunEnv = `HOME=${REMOTE_HOME} PATH=${shellQuoteWord(REMOTE_PATH)}`;
+  const bunEnv = `HOME=${shellQuoteWord(runtime.home)} PATH=${shellQuoteWord(runtime.path)}`;
   const deps = repo.depsInstall
     ? `cd ${shellQuoteWord(dir)} && ${bunEnv} sh -c ${shellQuoteWord(repo.depsInstall)}`
-    : `cd ${shellQuoteWord(dir)} && ${bunEnv} sh -c 'if [ -f packages/core/webapp/package.json ]; then cd packages/core/webapp && ${REMOTE_BUN} install; elif [ -f package.json ]; then ${REMOTE_BUN} install; fi'`;
+    : `cd ${shellQuoteWord(dir)} && ${bunEnv} sh -c 'if [ -f packages/core/webapp/package.json ]; then cd packages/core/webapp && ${shellQuoteWord(runtime.bun)} install; elif [ -f package.json ]; then ${shellQuoteWord(runtime.bun)} install; fi'`;
   log("installing deps…");
   const r = await driver.exec(deps, { timeoutMs: 900_000 });
   if (r.exitCode !== 0) {
@@ -603,12 +652,13 @@ export async function setupRemoteWorkspace(
   branch: string,
   defaultBranch: string,
   repoId?: string,
+  runtime: RemoteRuntimePaths = DEFAULT_REMOTE_RUNTIME,
 ): Promise<void> {
   let cloned = await driver.exec(`test -d ${shellQuoteWord(cwd)}/.git`);
   if (cloned.exitCode !== 0 && repoId) {
     // Adopt a prewarmed clone (warmRemoteWorkspace) when one is waiting —
     // the mv is instant and carries node_modules with it.
-    const warmDir = `${REMOTE_WARM_BASE}/${sanitizeName(repoId)}`;
+    const warmDir = `${runtime.warmBase}/${sanitizeName(repoId)}`;
     const adopted = await driver.exec(
       `test -d ${shellQuoteWord(warmDir)}/.git && mkdir -p ${shellQuoteWord(dirname(cwd))} && mv ${shellQuoteWord(warmDir)} ${shellQuoteWord(cwd)}`,
     );
@@ -673,6 +723,14 @@ function sessionRunsDir(sessionId: string): string {
   return `${RUNS_BASE}/${sanitizeName(sessionId)}`;
 }
 
+function remoteRunDir(
+  runtime: RemoteRuntimePaths,
+  sessionId: string,
+  hostDir: string,
+): string {
+  return `${runtime.runsBase}/${sanitizeName(sessionId)}/${sanitizeName(basename(hostDir))}`;
+}
+
 function readJsonSafe<T>(path: string): T | null {
   try {
     if (!existsSync(path)) return null;
@@ -683,32 +741,55 @@ function readJsonSafe<T>(path: string): T | null {
 }
 
 /**
- * HostLauncher over a RemoteDriver. Run-dir paths are identical host-side and
- * in-sandbox: spec.json exists in BOTH (host mirror feeds restart-resume;
- * the in-sandbox copy feeds HOST_ENTRY), meta/journal/log are sandbox-only.
+ * HostLauncher over a RemoteDriver. The Linux providers retain path parity;
+ * fixed remote hosts can use a different run base. spec.json exists in BOTH
+ * locations (host mirror feeds restart-resume); meta/journal/log are remote.
  */
-export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): HostLauncher {
+export function makeRemoteLauncher(
+  driver: RemoteDriver,
+  sessionId: string,
+  runtime: RemoteRuntimePaths = DEFAULT_REMOTE_RUNTIME,
+  callbackBaseUrl: () => string = remoteSandboxCallbackBaseUrl,
+): HostLauncher {
   return {
     async alive(dir) {
-      const meta = await driver.exec(`cat ${shellQuoteWord(`${dir}/meta.json`)} 2>/dev/null`);
-      if (meta.exitCode !== 0) return false;
+      const remoteDir = remoteRunDir(runtime, sessionId, dir);
+      const meta = await driver.exec(`cat ${shellQuoteWord(`${remoteDir}/meta.json`)} 2>/dev/null`);
+      if (meta.exitCode !== 0) {
+        if (meta.exitCode === 1) return false;
+        throw new Error(
+          `remote run metadata probe failed (${meta.exitCode}): ${(meta.stderr || meta.stdout).trim().slice(0, 500)}`,
+        );
+      }
       let pid = 0;
       try {
         pid = Number(JSON.parse(meta.stdout)?.pid) || 0;
       } catch {}
       if (!pid) return false;
-      return (await driver.exec(`kill -0 ${pid}`)).exitCode === 0;
+      const spec = `${remoteDir}/${HOST_SPEC_NAME}`;
+      const probe = await driver.exec(
+        `command=$(ps -p ${pid} -o command= 2>/dev/null || true); ` +
+          `if kill -0 ${pid} 2>/dev/null; then ` +
+          `case "$command" in *${shellQuoteWord(runtime.hostEntry)}*${shellQuoteWord(spec)}*) exit 0;; esac; fi; ` +
+          `exit 1`,
+      );
+      if (probe.exitCode === 0) return true;
+      if (probe.exitCode === 1) return false;
+      throw new Error(
+        `remote run liveness probe failed (${probe.exitCode}): ${(probe.stderr || probe.stdout).trim().slice(0, 500)}`,
+      );
     },
     newRunDir: (hostId) => `${sessionRunsDir(sessionId)}/${sanitizeName(hostId)}`,
     connector: (_dir, spec) => (spec.wsToken ? runWsConnector(spec.hostId) : undefined),
     async writeSpec(dir, spec) {
       mkdirSync(dir, { recursive: true });
       writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec); // host mirror (resume)
-      const mk = await driver.exec(`mkdir -p ${shellQuoteWord(dir)}`);
+      const remoteDir = remoteRunDir(runtime, sessionId, dir);
+      const mk = await driver.exec(`mkdir -p ${shellQuoteWord(remoteDir)}`);
       if (mk.exitCode !== 0) {
         throw new Error(`remote run dir create failed: ${mk.stderr.trim().slice(0, 300)}`);
       }
-      await driver.writeFile(`${dir}/${HOST_SPEC_NAME}`, JSON.stringify(spec));
+      await driver.writeFile(`${remoteDir}/${HOST_SPEC_NAME}`, JSON.stringify(spec));
     },
     async launch(hostId, dir) {
       const spec = readJsonSafe<RunHostSpec>(`${dir}/${HOST_SPEC_NAME}`);
@@ -721,6 +802,7 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
       const mark = (step: string) =>
         console.log(`[sandbox-remote] launch ${hostId.slice(0, 11)}: ${step} (+${Date.now() - t0}ms)`);
       await driver.ensureStarted();
+      const remoteDir = remoteRunDir(runtime, sessionId, dir);
       mark("sandbox started");
       // Scoped Claude account upload — only what THIS run may use (pinned
       // account, else pool + the run user's own personal accounts; see the
@@ -728,10 +810,10 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
       // a previously-uploaded wider file never lingers.
       const accounts = accountsForRemoteUpload(spec.user, spec.accountId);
       await driver.writeFile(
-        `${REMOTE_HOME}/.backstage-claude-accounts.json`,
+        `${runtime.home}/.backstage-claude-accounts.json`,
         JSON.stringify({ accounts }, null, 2) + "\n",
       );
-      await driver.exec(`chmod 600 ${REMOTE_HOME}/.backstage-claude-accounts.json`);
+      await driver.exec(`chmod 600 ${shellQuoteWord(`${runtime.home}/.backstage-claude-accounts.json`)}`);
       // OpenCode bridge config: read IN-SANDBOX by the runner's opencode
       // dispatch (bridge mode, turn timeout). docker gets it as an ro mount;
       // without it every opencode/anthropic/* run in a remote sandbox dies
@@ -750,10 +832,10 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
         stateDir("opencode.json");
       if (existsSync(ocCfgSrc)) {
         await driver.writeFile(
-          `${REMOTE_HOME}/.backstage-opencode.json`,
+          `${runtime.home}/.backstage-opencode.json`,
           readFileSync(ocCfgSrc, "utf-8"),
         );
-        await driver.exec(`chmod 600 ${REMOTE_HOME}/.backstage-opencode.json`);
+        await driver.exec(`chmod 600 ${shellQuoteWord(`${runtime.home}/.backstage-opencode.json`)}`);
       }
       // OpenAI/ChatGPT-subscription material for opencode/openai/* dispatched
       // IN-SANDBOX. The raw CODEX_HOME/auth.json is NEVER uploaded — its
@@ -779,7 +861,7 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
           `[sandbox-remote] openai seed for ${maskOpenaiAccount(account)} skipped: ${reason}`,
         );
       }
-      const codexStorePath = `${REMOTE_HOME}/.backstage-codex-accounts.json`;
+      const codexStorePath = `${runtime.home}/.backstage-codex-accounts.json`;
       if (openaiUpload.accounts.length) {
         await driver.writeFile(
           codexStorePath,
@@ -787,12 +869,12 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
         );
         // Fresh seed dir per launch — stale per-account seeds never linger.
         await driver.exec(
-          `chmod 600 ${codexStorePath} && rm -rf ${shellQuoteWord(REMOTE_OPENAI_SEED_DIR)}`,
+          `chmod 600 ${shellQuoteWord(codexStorePath)} && rm -rf ${shellQuoteWord(runtime.openaiSeedDir)}`,
         );
         for (const seed of openaiUpload.seeds) {
-          const seedPath = openaiSeedAuthPath(REMOTE_OPENAI_SEED_DIR, seed.accountId);
+          const seedPath = openaiSeedAuthPath(runtime.openaiSeedDir, seed.accountId);
           await driver.exec(
-            `mkdir -p ${shellQuoteWord(dirname(seedPath))} && chmod 700 ${shellQuoteWord(REMOTE_OPENAI_SEED_DIR)} ${shellQuoteWord(dirname(seedPath))}`,
+            `mkdir -p ${shellQuoteWord(dirname(seedPath))} && chmod 700 ${shellQuoteWord(runtime.openaiSeedDir)} ${shellQuoteWord(dirname(seedPath))}`,
           );
           await driver.writeFile(seedPath, seed.content);
           await driver.exec(`chmod 600 ${shellQuoteWord(seedPath)}`);
@@ -810,35 +892,37 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
         });
       } else {
         await driver.exec(
-          `rm -f ${codexStorePath} && rm -rf ${shellQuoteWord(REMOTE_OPENAI_SEED_DIR)}`,
+          `rm -f ${shellQuoteWord(codexStorePath)} && rm -rf ${shellQuoteWord(runtime.openaiSeedDir)}`,
         );
       }
       mark("accounts uploaded");
       // Remote sandboxes dial back over the public ingress when it's enabled
       // (publicIngress.publicBaseUrl), else the plain callbackBaseUrl. Docker
       // stays on sandboxCallbackBaseUrl — its bridge path never leaves the box.
-      const base = remoteSandboxCallbackBaseUrl();
+      const base = callbackBaseUrl();
       registerRunWsHost(hostId, spec.wsToken);
       try {
         const env: Record<string, string> = {
-          HOME: REMOTE_HOME,
-          PATH: REMOTE_PATH,
+          HOME: runtime.home,
+          PATH: runtime.path,
           NODE_ENV: "production",
           // Deterministic opencode resolution (bootstrap installed it here) —
           // don't depend on PATH probing inside the run host.
           // New env names primary; deprecated aliases ride along so a
           // pinned/older remote runner bundle keeps working.
-          OPENSESSION_OPENCODE_BIN: REMOTE_OPENCODE,
-          BACKSTAGE_OPENCODE_BIN: REMOTE_OPENCODE,
-          OPENSESSION_RUN_JOURNAL: `${dir}/journal.json`,
-          BACKSTAGE_RUN_JOURNAL: `${dir}/journal.json`,
+          OPENSESSION_OPENCODE_BIN: runtime.opencode,
+          BACKSTAGE_OPENCODE_BIN: runtime.opencode,
+          OPENSESSION_CLAUDE_BIN: runtime.claude,
+          BACKSTAGE_CLAUDE_BIN: runtime.claude,
+          OPENSESSION_RUN_JOURNAL: `${remoteDir}/journal.json`,
+          BACKSTAGE_RUN_JOURNAL: `${remoteDir}/journal.json`,
           // Where bindOpenaiAccount finds the uploaded rotation-proof openai
           // seeds (only set when something was uploaded this launch). Old
           // alias rides along like the other env pairs.
           ...(openaiUpload.accounts.length
             ? {
-                OPENSESSION_OPENAI_SEED_DIR: REMOTE_OPENAI_SEED_DIR,
-                BACKSTAGE_OPENAI_SEED_DIR: REMOTE_OPENAI_SEED_DIR,
+                OPENSESSION_OPENAI_SEED_DIR: runtime.openaiSeedDir,
+                BACKSTAGE_OPENAI_SEED_DIR: runtime.openaiSeedDir,
               }
             : {}),
           // Dial-back on the primary prefix — the ingress/main serve accept
@@ -862,7 +946,8 @@ export function makeRemoteLauncher(driver: RemoteDriver, sessionId: string): Hos
         // (connectWithWait) anyway — after the bound, proceed and let that
         // decide.
         const bg = driver.execBackground(
-          `${envPrefix(env)}${REMOTE_BUN} run ${HOST_ENTRY} ${dir}/${HOST_SPEC_NAME} >> ${dir}/host.log 2>&1`,
+          `${envPrefix(env)}${shellQuoteWord(runtime.bun)} run ${shellQuoteWord(runtime.hostEntry)} ${shellQuoteWord(`${remoteDir}/${HOST_SPEC_NAME}`)} >> ${shellQuoteWord(`${remoteDir}/host.log`)} 2>&1`,
+          { env, launchId: hostId },
         );
         const bgTimeout = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 30_000));
         const raced = await Promise.race([bg.then(() => "ok" as const), bgTimeout]);
@@ -1014,6 +1099,7 @@ async function* withRunJournal(
   events: AsyncGenerator<StreamEvent>,
   record: ActiveRunRecord,
   touch: () => void,
+  cleanup?: () => Promise<void>,
 ): AsyncGenerator<StreamEvent> {
   journalSet(record);
   touch();
@@ -1026,8 +1112,42 @@ async function* withRunJournal(
       yield ev;
     }
   } finally {
-    journalClear(record.runKey);
+    let cleaned = true;
+    try {
+      await cleanupRemoteRunWithRetry(record, cleanup);
+    } catch (cleanupError) {
+      cleaned = false;
+      console.warn(
+        `[sandbox-remote] cleanup for journaled run ${record.runKey} failed; retaining it for restart recovery:`,
+        cleanupError,
+      );
+    }
+    if (cleaned) journalClear(record.runKey);
     touch();
+  }
+}
+
+export async function cleanupRemoteRunWithRetry(
+  record: ActiveRunRecord,
+  cleanup?: () => Promise<void>,
+  retryDelayMs = 30_000,
+): Promise<void> {
+  if (!cleanup) return;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await cleanup();
+      return;
+    } catch (error) {
+      const lockContended =
+        record.sandboxProvider === "macos" &&
+        error instanceof Error &&
+        error.message.includes("being mutated by another process");
+      if (!lockContended || attempt >= 10) throw error;
+      console.warn(
+        `[sandbox-remote] cleanup for ${record.runKey} is waiting for a stale macOS mutation lock`,
+      );
+      await Bun.sleep(retryDelayMs);
+    }
   }
 }
 
@@ -1039,6 +1159,13 @@ export interface RemoteSandboxParts {
   sessionId: string;
   cwd: string;
   driver: RemoteDriver;
+  runtime?: RemoteRuntimePaths;
+  callbackBaseUrl?: () => string;
+  /** Optional fixed-node lifecycle hooks. API-backed providers omit these. */
+  beforeRun?(spec: RunHostSpec): Promise<void>;
+  afterLaunch?(spec: RunHostSpec): Promise<void>;
+  afterRun?(spec: RunHostSpec): Promise<void>;
+  recoverStaleRun?(sessionId: string, runId: string): Promise<void>;
   ports(): Promise<PortMap>;
   status(): Promise<SandboxStatus>;
   /** Activity ping (state file + provider-native keepalive, e.g. E2B's
@@ -1047,10 +1174,25 @@ export interface RemoteSandboxParts {
 }
 
 /** Internal accessor resume uses to reach a handle's driver/launcher. */
-const remoteParts = new WeakMap<object, { driver: RemoteDriver; launcher: HostLauncher }>();
+const remoteParts = new WeakMap<
+  object,
+  {
+    driver: RemoteDriver;
+    launcher: HostLauncher;
+    remoteRunDir(dir: string): string;
+    afterRun?: RemoteSandboxParts["afterRun"];
+    recoverStaleRun?: RemoteSandboxParts["recoverStaleRun"];
+  }
+>();
 
 export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
-  const launcher = makeRemoteLauncher(parts.driver, parts.sessionId);
+  const runtime = parts.runtime || DEFAULT_REMOTE_RUNTIME;
+  const launcher = makeRemoteLauncher(
+    parts.driver,
+    parts.sessionId,
+    runtime,
+    parts.callbackBaseUrl,
+  );
   const touch = () => {
     try {
       void parts.touchActivity();
@@ -1076,13 +1218,24 @@ export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
       spec.wsToken ??= crypto.randomUUID(); // remote runs are always WS
       const record = recordForSpec(spec, parts.sandboxId, parts.providerId);
       let handle: HostHandle | undefined;
+      let acquired = false;
       const t0 = Date.now();
       const mark = (step: string) =>
         console.log(`[sandbox-remote] launch ${spec.hostId.slice(0, 11)}: ${step} (+${Date.now() - t0}ms)`);
+      // The fixed macOS node can outlive this process. Journal before touching
+      // its lease so crashes during acquisition/spec write/launch are recoverable.
+      journalSet(record);
+      touch();
       try {
-        await launcher.writeSpec!(dir, spec);
-        mark("spec written");
-        await launcher.launch(spec.hostId, dir);
+        await parts.beforeRun?.(spec);
+        acquired = true;
+        try {
+          await launcher.writeSpec!(dir, spec);
+          mark("spec written");
+          await launcher.launch(spec.hostId, dir);
+        } finally {
+          await parts.afterLaunch?.(spec);
+        }
         handle = new HostHandle(dir, spec, callbacks, launcher);
         await handle.connectWithWait(45_000);
         mark("host attached");
@@ -1093,13 +1246,28 @@ export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
         try {
           rmSync(dir, { recursive: true, force: true });
         } catch {}
+        let cleaned = !acquired;
+        if (acquired) {
+          try {
+            await parts.afterRun?.(spec);
+            cleaned = true;
+          } catch (cleanupError) {
+            console.warn(
+              `[sandbox-remote] launch cleanup for ${spec.hostId} failed; retaining its journal entry:`,
+              cleanupError,
+            );
+          }
+        }
+        if (cleaned) journalClear(record.runKey);
+        touch();
         throw e;
       }
       const ocRef: OcSessionRef = { id: spec.engineSessionId || "" };
-      const gen = withRunJournal(
+      const events = withRunJournal(
         withOpencodeTranscriptMirror(handle.events(), spec, ocRef),
         record,
         touch,
+        async () => parts.afterRun?.(spec),
       );
       // Steers fold into the running turn in-sandbox, so they never come back
       // as dial-back user frames — mirror DELIVERED steers into the current
@@ -1113,7 +1281,7 @@ export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
         return delivered;
       };
       return {
-        events: () => gen,
+        events: () => events,
         steerable: providerFor(spec.model) !== "codex",
         steer: (text) => mirrorSteer(text, hostSteer(spec.bksSessionId, text)),
         interruptSteer: (text) =>
@@ -1148,7 +1316,13 @@ export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
     ports: () => parts.ports(),
     status: () => parts.status(),
   };
-  remoteParts.set(sandboxHandle, { driver: parts.driver, launcher });
+  remoteParts.set(sandboxHandle, {
+    driver: parts.driver,
+    launcher,
+    remoteRunDir: (dir) => remoteRunDir(runtime, parts.sessionId, dir),
+    afterRun: parts.afterRun,
+    recoverStaleRun: parts.recoverStaleRun,
+  });
   return sandboxHandle;
 }
 
@@ -1166,21 +1340,44 @@ export async function resumeRemoteSandboxRun(
   try {
     sandbox = await getSandboxProvider(run.sandboxProvider).get(run.sandboxId);
   } catch (e) {
-    console.warn(`[sandbox-remote] resume: provider.get(${run.sandboxId}) failed:`, e);
+    throw new Error(`sandbox provider failed while recovering ${run.sandboxId}`, { cause: e });
   }
-  if (!sandbox) return null;
+  if (!sandbox) {
+    journalClear(run.runKey);
+    return null;
+  }
   const parts = remoteParts.get(sandbox);
-  if (!parts) return null;
-  const { driver, launcher } = parts;
+  if (!parts) throw new Error(`sandbox ${run.sandboxId} has no remote recovery state`);
+  const {
+    driver,
+    launcher,
+    remoteRunDir: toRemoteRunDir,
+    afterRun,
+    recoverStaleRun,
+  } = parts;
+  const finishRemoteRun = async (spec: RunHostSpec) => {
+    try {
+      await cleanupRemoteRunWithRetry(run, afterRun ? () => afterRun(spec) : undefined);
+      journalClear(run.runKey);
+    } catch (cleanupError) {
+      console.warn(
+        `[sandbox-remote] resumed run cleanup for ${spec.hostId} failed; retaining its journal entry:`,
+        cleanupError,
+      );
+    }
+  };
   // Remote providers may preserve processes while suspended. Wake the sandbox
   // before checking meta/aliveness so restart recovery never duplicates a run.
   await driver.ensureStarted();
 
   const oldDir = launcher.newRunDir(run.runKey);
+  const oldRemoteDir = toRemoteRunDir(oldDir);
   const oldSpec = readJsonSafe<RunHostSpec>(`${oldDir}/${HOST_SPEC_NAME}`);
   if (oldSpec?.wsToken) {
     // Ended while we were down? meta.json lives in-sandbox only.
-    const meta = await driver.exec(`cat ${shellQuoteWord(`${oldDir}/meta.json`)} 2>/dev/null`);
+    const meta = await driver.exec(
+      `cat ${shellQuoteWord(`${oldRemoteDir}/meta.json`)} 2>/dev/null`,
+    );
     let done: StreamEvent | undefined;
     try {
       done = meta.exitCode === 0 ? JSON.parse(meta.stdout)?.done : undefined;
@@ -1191,7 +1388,11 @@ export async function resumeRemoteSandboxRun(
       } catch {}
       const terminal = done;
       return (async function* () {
-        yield terminal;
+        try {
+          yield terminal;
+        } finally {
+          await finishRemoteRun(oldSpec);
+        }
       })();
     }
     if (await launcher.alive(oldDir, null)) {
@@ -1208,11 +1409,13 @@ export async function resumeRemoteSandboxRun(
         handle.abandon();
         throw e;
       }
-      return withRunJournal(
+      const events = withRunJournal(
         withOpencodeTranscriptMirror(handle.events(), oldSpec),
         { ...run, startedAt: run.startedAt },
         () => {},
+        async () => afterRun?.(oldSpec),
       );
+      return events;
     }
   }
 
@@ -1220,6 +1423,7 @@ export async function resumeRemoteSandboxRun(
   // same sandbox so the engine session's in-sandbox state is reused.
   const prompt = run.claudeSessionId ? RESUME_CONTINUATION_PROMPT : run.prompt;
   if (!prompt) return null;
+  await recoverStaleRun?.(run.bksSessionId, run.runKey);
   const rpcToken = oldSpec?.proxyMcpServers?.length ? crypto.randomUUID() : undefined;
   if (rpcToken) registerRunToken(rpcToken, { sessionId: run.bksSessionId, user: run.user });
   const spec: RunHostSpec = {
@@ -1250,5 +1454,19 @@ export async function resumeRemoteSandboxRun(
     if (oldDir && existsSync(oldDir)) rmSync(oldDir, { recursive: true, force: true });
   } catch {}
   console.log(`[sandbox-remote] relaunching interrupted run ${run.runKey} in ${run.sandboxId} as ${spec.hostId}`);
-  return sandbox.launchRun(spec, { onAskUser: cb.onAskUser }).events();
+  if (!sandbox.launchRunEager) return null;
+  const replacement = recordForSpec(spec, run.sandboxId, run.sandboxProvider as SandboxProviderId);
+  journalReplace(run.runKey, replacement);
+  try {
+    const relaunched = await sandbox.launchRunEager(spec, { onAskUser: cb.onAskUser });
+    return relaunched.events();
+  } catch (error) {
+    // launchRunEager retains the replacement record when remote cleanup is
+    // incomplete. Restore the interrupted record only when it cleared the
+    // replacement after a clean failed launch.
+    if (!activeRunRecords().some((record) => record.runKey === replacement.runKey)) {
+      journalSet(run);
+    }
+    throw error;
+  }
 }

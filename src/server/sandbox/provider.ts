@@ -30,7 +30,8 @@ export type SandboxProviderId =
   | "e2b"
   | "box"
   | "modal"
-  | "lambda-microvm";
+  | "lambda-microvm"
+  | "macos";
 
 /**
  * Everything a provider needs to create-or-reuse the sandbox for a session.

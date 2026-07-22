@@ -11,12 +11,73 @@ import type { DiffGroupFile } from "../diff-groups";
 import { type SessionDiff, discardSessionFile, getSessionDiff } from "../git-diff";
 import { getGitStatus, gitPull, gitPush } from "../git-status";
 import { imageContentType, imageHeaders } from "../image-mime";
-import { hasRemoteWorkspace, workspaceExecFor } from "../sandbox";
+import { hasRemoteWorkspace, workspaceExecFor, type WorkspaceExec } from "../sandbox";
+import { fetchMacosAsset } from "../sandbox/adapters/macos";
 import { findSession } from "../session-cache";
 import { getRepo, repoForPath } from "../worktree";
 import { $ } from "bun";
+import { createHash, randomUUID } from "crypto";
 import { existsSync } from "fs";
 import { resolve } from "path";
+
+const MAX_REMOTE_IMAGE_BYTES = 50 * 1024 * 1024;
+
+async function readMacosWorkspaceImage(
+	sandboxId: string,
+	sessionId: string,
+	remotePath: string,
+): Promise<ArrayBuffer> {
+	const result = await fetchMacosAsset({
+		sandboxId,
+		sessionId,
+		remotePath,
+		maxBytes: MAX_REMOTE_IMAGE_BYTES,
+		consume: async (chunks, expected) => {
+			const buffers: Buffer[] = [];
+			const hash = createHash("sha256");
+			let size = 0;
+			for await (const chunk of chunks) {
+				const buffer = Buffer.from(chunk);
+				buffers.push(buffer);
+				hash.update(buffer);
+				size += buffer.byteLength;
+			}
+			if (size !== expected.size || hash.digest("hex") !== expected.sha256) {
+				throw new Error("remote worktree image failed its integrity check");
+			}
+			return Uint8Array.from(Buffer.concat(buffers, size)).buffer;
+		},
+	});
+	return result.value;
+}
+
+async function materializeMacosBaseImage(
+	exec: WorkspaceExec,
+	revision: string,
+	read: (temporary: string) => Promise<ArrayBuffer>,
+): Promise<ArrayBuffer | null> {
+	const temporary = `.git/.opensession-image-${randomUUID()}`;
+	try {
+		const materialized = await exec([
+			"sh",
+			"-c",
+			'git show "$1" > "$2"',
+			"opensession-image",
+			revision,
+			temporary,
+		]);
+		if (materialized.exitCode !== 0) return null;
+		return await read(temporary);
+	} finally {
+		await exec(["rm", "-f", "--", temporary]);
+	}
+}
+
+export const __materializeMacosBaseImageForTest = materializeMacosBaseImage;
+
+export function isMissingMacosAssetError(error: unknown): boolean {
+	return error instanceof Error && error.message.includes("remote asset not found");
+}
 
 function isDiffGroupFile(file: unknown): file is DiffGroupFile {
 	if (typeof file !== "object" || file === null) return false;
@@ -263,14 +324,51 @@ export async function handleSessionGitRoutes(
 		const dir = isPrimary
 			? session.worktreeDir
 			: (session.attachedRepos || []).find((r) => r.repo === repoId)?.dir;
-		if (!dir || !existsSync(dir)) return new Response("No worktree", { status: 404 });
+		const remote = isPrimary && hasRemoteWorkspace(session);
+		if (!dir || (!existsSync(dir) && !remote))
+			return new Response("No worktree", { status: 404 });
 		// Keep reads inside the worktree — the path comes from the client.
 		const abs = resolve(dir, filePath);
 		if (abs !== dir && !abs.startsWith(`${dir}/`))
 			return new Response("Bad path", { status: 400 });
 		try {
+			const exec = remote ? await workspaceExecFor(session, dir) : null;
+			const macosSandboxId =
+				session.sandbox?.provider === "macos" ? session.sandbox.sandboxId : undefined;
 			if (url.searchParams.get("side") === "base") {
 				const repoConf = getRepo(repoId || primaryRepo);
+				if (exec) {
+					const mergeBase = await exec([
+						"git",
+						"merge-base",
+						"HEAD",
+						`origin/${repoConf.defaultBranch}`,
+					]);
+					if (mergeBase.exitCode !== 0)
+						return new Response("Not in base", { status: 404 });
+					const revision = `${mergeBase.stdout.trim()}:${filePath}`;
+					if (macosSandboxId) {
+						const bytes = await materializeMacosBaseImage(exec, revision, (temporary) =>
+							readMacosWorkspaceImage(macosSandboxId, sessionId, temporary),
+						);
+						if (!bytes) return new Response("Not in base", { status: 404 });
+						return new Response(bytes, {
+							headers: imageHeaders(contentType, "private, max-age=300"),
+						});
+					}
+					const image = await exec([
+						"sh",
+						"-c",
+						'tmp=$(mktemp) || exit; trap \'rm -f "$tmp"\' EXIT; git show "$1" > "$tmp" || exit; base64 < "$tmp"',
+						"opensession-image",
+						revision,
+					]);
+					if (image.exitCode !== 0)
+						return new Response("Not in base", { status: 404 });
+					return new Response(Buffer.from(image.stdout.replace(/\s/g, ""), "base64"), {
+						headers: imageHeaders(contentType, "private, max-age=300"),
+					});
+				}
 				const base = (
 					await $`git -C ${dir} merge-base HEAD origin/${repoConf.defaultBranch}`
 						.quiet()
@@ -285,6 +383,32 @@ export async function handleSessionGitRoutes(
 					return new Response("Not in base", { status: 404 });
 				return new Response(bytes, {
 					headers: imageHeaders(contentType, "private, max-age=300"),
+				});
+			}
+			if (exec) {
+				if (macosSandboxId) {
+					try {
+						return new Response(
+							await readMacosWorkspaceImage(macosSandboxId, sessionId, filePath),
+							{ headers: imageHeaders(contentType, "no-cache") },
+						);
+					} catch (error) {
+						if (isMissingMacosAssetError(error)) {
+							return new Response("Not found", { status: 404 });
+						}
+						throw error;
+					}
+				}
+				const image = await exec([
+					"sh",
+					"-c",
+					'base64 < "$1"',
+					"opensession-image",
+					filePath,
+				]);
+				if (image.exitCode !== 0) return new Response("Not found", { status: 404 });
+				return new Response(Buffer.from(image.stdout.replace(/\s/g, ""), "base64"), {
+					headers: imageHeaders(contentType, "no-cache"),
 				});
 			}
 			const f = Bun.file(abs);

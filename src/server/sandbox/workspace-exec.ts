@@ -83,8 +83,8 @@ export function hasRemoteWorkspace(
  * Resolve the exec for a session's workspace. `dir` defaults to the session's
  * primary `worktreeDir`; pass an attached repo's dir explicitly to target it
  * (attached repos are host worktrees, so they resolve to host exec unless the
- * sandbox actually mounts them). Never throws — every failure mode falls back
- * to the host exec, which is exactly the no-sandbox behavior.
+ * sandbox actually mounts them). Never throws. Host-visible workspaces retain
+ * the no-sandbox fallback; volume workspaces fail closed while unavailable.
  */
 export async function workspaceExecFor(
   session: WorkspaceExecSession | null | undefined,
@@ -93,15 +93,16 @@ export async function workspaceExecFor(
   const cwd = dir || session?.worktreeDir || "";
   const host = hostWorkspaceExec(cwd);
   const sb = session?.sandbox;
-  if (!cwd || !sb?.provider || !sb.sandboxId) return host;
   const unavailableRemote = Object.assign(
     async (): Promise<ExecResult> => ({
       exitCode: 1,
       stdout: "",
-      stderr: `remote sandbox ${sb.sandboxId} is unavailable`,
+      stderr: `remote sandbox ${sb?.sandboxId || sb?.provider || "workspace"} is unavailable`,
     }),
     { sandboxed: true, remote: true } as const,
   );
+  if (!cwd || !sb?.provider) return host;
+  if (!sb.sandboxId) return sb.workspace === "volume" ? unavailableRemote : host;
   try {
     if (!sandboxesEnabled()) {
       return sb.workspace === "volume" ? unavailableRemote : host;

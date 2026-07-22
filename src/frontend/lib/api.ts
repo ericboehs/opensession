@@ -1383,7 +1383,7 @@ export interface SandboxModelFamilyInfo {
 	id: string;
 	label: string;
 	match: { provider: "claude" | "codex" | "opencode"; idPrefix?: string };
-	environments: Record<"local" | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm", boolean>;
+	environments: Record<"local" | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" | "macos", boolean>;
 	hint?: string;
 }
 
@@ -1393,7 +1393,7 @@ export interface SandboxStatusInfo {
 	enabled: boolean;
 	defaultProvider: string;
 	providers: Array<{
-		id: "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm";
+		id: "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" | "macos";
 		configured: boolean;
 		note?: string;
 	}>;

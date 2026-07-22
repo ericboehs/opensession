@@ -39,6 +39,11 @@ export async function handlePreviewRoutes(
 				return Response.json(
 					await getSandboxPreviewStatus(sbx, session.worktreeDir!),
 				);
+			if (session.sandbox?.workspace === "volume")
+				return Response.json(
+					{ error: "Remote session workspace is unavailable" },
+					{ status: 503 },
+				);
 			if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
 				return Response.json({
 					hasPortsConf: false,
@@ -68,6 +73,11 @@ export async function handlePreviewRoutes(
 			const sbx = session.worktreeDir
 				? await activeSandboxFor(session)
 				: null;
+			if (!sbx && session.sandbox?.workspace === "volume")
+				return Response.json(
+					{ error: "Remote session workspace is unavailable" },
+					{ status: 503 },
+				);
 			if (!session.worktreeDir || (!existsSync(session.worktreeDir) && !sbx))
 				return Response.json(
 					{ error: "Session has no worktree" },
@@ -123,6 +133,11 @@ export async function handlePreviewRoutes(
 				return Response.json(
 					await startSandboxPreview(sbx, session.worktreeDir!),
 				);
+			if (session.sandbox?.workspace === "volume")
+				return Response.json(
+					{ error: "Remote session workspace is unavailable" },
+					{ status: 503 },
+				);
 			if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
 				return Response.json({
 					hasPortsConf: false,
@@ -157,6 +172,11 @@ export async function handlePreviewRoutes(
 			if (sbx)
 				return Response.json(
 					await stopSandboxPreview(sbx, session.worktreeDir!),
+				);
+			if (session.sandbox?.workspace === "volume")
+				return Response.json(
+					{ error: "Remote session workspace is unavailable" },
+					{ status: 503 },
 				);
 			if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
 				return Response.json({
