@@ -8,6 +8,7 @@
 
 import type { RouteHandler } from "./context";
 import { proxyCloudSessionRequest } from "../cloud-proxy";
+import { handleSessionTransferRoutes } from "./session-transfer";
 import { handleAuthRoutes } from "./auth";
 import { handleMediaRoutes } from "./media";
 import { handleStaticAssetsRoutes } from "./static-assets";
@@ -49,6 +50,7 @@ export const routeHandlers: RouteHandler[] = [
 	handleStaticAssetsRoutes,
 	handlePlainRoutes,
 	handleSystemRoutes,
+	handleSessionTransferRoutes,
 	// Local profile only: local ids fall through; every other session id is
 	// forwarded before a local route can turn the ownership miss into a 404.
 	proxyCloudSessionRequest,

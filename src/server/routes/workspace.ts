@@ -192,6 +192,7 @@ export async function handleWorkspaceRoutes(
 		return Response.json({
 			repos: Object.values(REPOS).map((p) => ({
 				id: p.id,
+				ghRepo: p.ghRepo,
 				defaultBranch: p.defaultBranch,
 				sharedCheckout: !!p.sharedCheckout,
 			})),

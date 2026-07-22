@@ -108,6 +108,92 @@ Removal only updates the registry. It never deletes the checkout, cloned
 repository, worktrees, or session data. A repository still referenced by a
 session cannot be removed; the endpoint returns HTTP 409 instead.
 
+## Upgrade a local session to the cloud
+
+Configure the hosted OpenSession URL and a web-session bearer token in
+`~/os1/config.json`:
+
+```json
+{
+  "cloud": {
+    "upstream": "https://os.example.com",
+    "token": "<web-session-token>"
+  }
+}
+```
+
+`OPENSESSION_CLOUD_UPSTREAM` and `OPENSESSION_CLOUD_TOKEN` override those
+keys. The local and hosted repository ids may differ; OpenSession maps them by
+their case-insensitive GitHub `owner/name` (`ghRepo`). The authenticated hosted
+`GET /backstage/api/repos` response includes `id`, `ghRepo`, `defaultBranch`,
+and `sharedCheckout` for this mapping.
+
+Upgrade an idle local code session:
+
+```sh
+curl -sS -X POST \
+  http://127.0.0.1:3850/backstage/api/sessions/bks-019f8a5b-c122-7000-aebd-3cf01eb664ca/upgrade
+```
+
+The request has no body. The worktree must be on the session's recorded branch
+with no staged, unstaged, or untracked files. OpenSession never commits during
+an upgrade. It pushes the current `HEAD` to `origin`, imports the session into
+the matching hosted repository, then atomically archives the local session with
+an `upgradedTo` marker. A dirty worktree returns HTTP 409 and an
+`uncommittedFiles` array. A running session, detached or mismatched branch,
+missing GitHub remote, missing cloud repository, push failure, and hosted API
+failure all leave the local session unarchived.
+
+Success returns HTTP 200:
+
+```json
+{
+  "id": "bks-019f8a5b-c122-7000-aebd-3cf01eb664ca",
+  "url": "https://os.example.com/session/bks-019f8a5b-c122-7000-aebd-3cf01eb664ca"
+}
+```
+
+### Hosted import API
+
+The upgrade route calls the authenticated hosted endpoint directly. It can
+also be curl-tested with a web-session bearer token:
+
+```sh
+curl -sS https://os.example.com/backstage/api/sessions/import \
+  -H "Authorization: Bearer $OPENSESSION_CLOUD_TOKEN" \
+  --json @- <<'JSON'
+{
+  "session": {
+    "id": "bks-019f8a5b-c122-7000-aebd-3cf01eb664ca",
+    "title": "Continue local work",
+    "createdBy": "Ada",
+    "createdAt": "2026-07-22T10:00:00.000Z",
+    "lastActivity": "2026-07-22T10:05:00.000Z",
+    "mode": "code",
+    "model": "opencode/anthropic/claude-sonnet-5"
+  },
+  "transcriptJsonl": "{\"type\":\"user\",\"uuid\":\"u1\",\"timestamp\":\"2026-07-22T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Continue this\"}]}}\n",
+  "repo": "hosted-repo-id",
+  "branch": "feature/local-work"
+}
+JSON
+```
+
+The hosted endpoint accepts only this allowlisted session subset: `id`,
+`title`, `createdBy`, `createdAt`, `lastActivity`, `mode`, `model`, `effort`,
+`modelHistory`, and `usage`. Local filesystem paths, engine ids, account pins,
+automation ownership, sandboxes, and MCP configuration are ignored. The repo
+must be registered, the branch must exist on its `origin`, the id must be a
+lowercase `bks-` UUIDv7, and an existing id returns HTTP 409. Success returns
+HTTP 201 with the same `{ "id", "url" }` shape as the local route.
+
+The hosted session stores the shipped Claude-shape JSONL under a synthetic
+OpenCode session id. Its first hosted prompt deliberately starts a fresh engine
+session: the normal same-engine recovery path seeds the new transcript mirror
+and injects a bounded, hidden transcript handoff into model context. The real
+hosted engine id then replaces the synthetic id, while the UI history keeps the
+same message ids and remains continuous.
+
 ## Cloud sessions
 
 The local app can merge sessions from a hosted OpenSession instance into the

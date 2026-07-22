@@ -466,6 +466,8 @@ function scanBackstageSessions(): UnifiedSession[] {
       automationId: data.automationId,
       archived: data.archived || undefined,
       archivedReason: data.archivedReason,
+      upgradedTo: data.upgradedTo,
+      importedFrom: data.importedFrom,
       plainThreadId: data.plainThreadId,
       model: data.model,
       effort: data.effort,
