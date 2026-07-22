@@ -15487,13 +15487,13 @@ html[data-theme="light"] .palette-card .palette-create {
     background 0.15s,
     box-shadow 0.15s,
     opacity 0.15s;
-  animation-duration: 1.6s;
+  animation-duration: 1.4s;
   animation-iteration-count: infinite;
   animation-timing-function: ease-out;
 }
 
 /* Slow variant — for calm, ambient indicators (e.g. the Changes tab empty
- * state) where the default 1.6s cadence reads as jittery rather than lively. */
+ * state) where the default 1.4s cadence reads as jittery rather than lively. */
 .pixel-spinner.pixel-spinner-slow .pixel {
   animation-duration: 2.4s;
 }
@@ -16351,22 +16351,22 @@ html[data-theme="light"] .palette-card .palette-create {
 .pixel-spinner.diagonal-br .pixel:nth-child(2),
 .pixel-spinner.diagonal-br .pixel:nth-child(4) {
   animation-name: pixel-snake-trail;
-  animation-delay: 240ms;
+  animation-delay: 210ms;
 }
 .pixel-spinner.diagonal-br .pixel:nth-child(3),
 .pixel-spinner.diagonal-br .pixel:nth-child(5),
 .pixel-spinner.diagonal-br .pixel:nth-child(7) {
   animation-name: pixel-snake-trail;
-  animation-delay: 480ms;
+  animation-delay: 420ms;
 }
 .pixel-spinner.diagonal-br .pixel:nth-child(6),
 .pixel-spinner.diagonal-br .pixel:nth-child(8) {
   animation-name: pixel-snake-trail;
-  animation-delay: 720ms;
+  animation-delay: 630ms;
 }
 .pixel-spinner.diagonal-br .pixel:nth-child(9) {
   animation-name: pixel-snake-trail;
-  animation-delay: 960ms;
+  animation-delay: 840ms;
 }
 
 /* Frame */
