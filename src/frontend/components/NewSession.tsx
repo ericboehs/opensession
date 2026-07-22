@@ -61,6 +61,22 @@ const CLOUD_REPOS = [
   { id: "gst-plugins-rs", label: "gst-plugins-rs" },
 ];
 
+const LAST_REPO_KEY = "opensession-new-session-repo";
+
+function lastSelectedRepo(): string | null {
+  try {
+    return localStorage.getItem(LAST_REPO_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberSelectedRepo(repo: string) {
+  try {
+    localStorage.setItem(LAST_REPO_KEY, repo);
+  } catch {}
+}
+
 // The repo the sidebar is currently filtered to (persisted by Sidebar.tsx under
 // this key). When set to a real repo, a new session should default to it so
 // creating from a repo-filtered view lands on that repo — not always tella-fusion.
@@ -78,12 +94,13 @@ function filteredRepo(): string | null {
 /** Deep-link prefill: <base>/new?mode=ask|code&prompt=…&branch=…&repo= */
 function readPrefill() {
   const params = new URLSearchParams(location.search);
-  // An explicit ?repo= wins (legacy ?project= still honored); otherwise fall
-  // back to the sidebar's repo filter, then to tella-fusion.
+  // An explicit ?repo= wins (legacy ?project= still honored); otherwise keep
+  // the user's last picker choice across closes/reloads, then use the sidebar
+  // filter or tella-fusion for first-time visitors.
   const repoParam = params.get("repo") ?? params.get("project");
   const repo = CLOUD_REPOS.some((p) => p.id === repoParam)
     ? repoParam!
-    : filteredRepo() || "tella-fusion";
+    : lastSelectedRepo() || filteredRepo() || "tella-fusion";
   return {
     mode: params.get("mode") === "ask" ? ("ask" as const) : ("code" as const),
     prompt: params.get("prompt") || "",
@@ -543,7 +560,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               label: p.label,
               icon: <RepoTile name={p.id} />,
             }))}
-            onChange={setRepo}
+            onChange={(nextRepo) => {
+              setRepo(nextRepo);
+              rememberSelectedRepo(nextRepo);
+            }}
             disabled={creating}
             ariaLabel="Repository"
             isPhone={isPhone}
