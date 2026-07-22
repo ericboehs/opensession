@@ -24,9 +24,13 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   # Universal links: once the Developer ID provisioning profile for
-  # dev.tella.os1 exists (README "Universal links"), switch both entitlements
-  # lines above to build/entitlements.mac.applinks.plist and add:
+  # dev.tella.os1 exists (README "Universal links"), switch ONLY `entitlements`
+  # above to build/entitlements.mac.applinks.plist and add:
   # provisioningProfile: build/os1.provisionprofile
+  # Leave `entitlementsInherit` on entitlements.mac.plist — the Electron helpers
+  # have no provisioning profile, and macOS SIGKILLs a helper that claims the
+  # associated-domains entitlement without one ("GPU process isn't usable.
+  # Goodbye."). The release workflow encodes exactly this split.
   target:
     - target: dmg
       arch: [arm64]

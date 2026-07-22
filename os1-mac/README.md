@@ -79,9 +79,14 @@ allowed navigation origin); the device-flow fallback link works too. The
   `/.well-known/apple-app-site-association` for app ID
   `6GUXT43C8B.dev.tella.os1` (backstage PR #67). Signed CI builds install the
   Developer ID profile from the `OS1_PROVISIONING_PROFILE_BASE64` repository
-  secret and use `build/entitlements.mac.applinks.plist`; the release fails if
-  either the signed entitlement or embedded profile is missing. Local unsigned
-  builds keep using `build/entitlements.mac.plist` and need no profile.
+  secret and sign the top-level app with `build/entitlements.mac.applinks.plist`;
+  the release fails if either the signed entitlement or embedded profile is
+  missing. The Electron helpers keep inheriting `build/entitlements.mac.plist`
+  (no associated-domains): they carry no provisioning profile, and macOS
+  SIGKILLs any helper that claims a restricted entitlement it can't back with
+  one — which surfaces as `GPU process isn't usable. Goodbye.` at launch. Local
+  unsigned builds use `build/entitlements.mac.plist` for both and need no
+  profile.
   Caveat: os.tella.dev resolves to a tailnet IP, so Apple's AASA CDN cannot
   fetch the association file. The entitlement therefore also lists the
   `?mode=developer` alternate, which fetches directly — each team device must

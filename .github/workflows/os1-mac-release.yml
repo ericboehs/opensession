@@ -51,9 +51,17 @@ jobs:
 
       - name: Build, sign & notarize
         run: |
+          # Only the top-level app carries the associated-domains entitlement
+          # (it's the one that embeds the provisioning profile). The Electron
+          # helpers inherit entitlements.mac.plist and have NO profile: macOS
+          # SIGKILLs any helper that claims a restricted entitlement it can't
+          # back with a profile, and Electron then aborts with
+          # "GPU process isn't usable. Goodbye." So entitlementsInherit must
+          # stay on the plain plist — see the "Verify universal-link signing"
+          # step, which guards this split.
           bunx electron-builder --mac --publish never \
             --config.mac.entitlements=build/entitlements.mac.applinks.plist \
-            --config.mac.entitlementsInherit=build/entitlements.mac.applinks.plist \
+            --config.mac.entitlementsInherit=build/entitlements.mac.plist \
             --config.mac.provisioningProfile=build/os1.provisionprofile
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -68,6 +76,17 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.associated-domains' /tmp/os1-entitlements.plist | grep -q 'applinks:os.tella.dev'
           security cms -D -i "$APP/Contents/embedded.provisionprofile" > /tmp/os1-embedded-profile.plist
           /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.associated-domains' /tmp/os1-embedded-profile.plist | grep -Eq '(^|[[:space:]])(\*|applinks:os\.tella\.dev)($|[[:space:]])'
+          # The Electron helpers inherit entitlements.mac.plist and have no
+          # provisioning profile, so none of them may claim associated-domains —
+          # macOS SIGKILLs a helper that does ("GPU process isn't usable.
+          # Goodbye."). This guards the entitlements/entitlementsInherit split
+          # in the build step against regressing across releases.
+          while IFS= read -r -d '' helper; do
+            if codesign -d --entitlements :- "$helper" 2>/dev/null | grep -q 'com.apple.developer.associated-domains'; then
+              echo "::error::Electron helper claims associated-domains without a provisioning profile: $helper"
+              exit 1
+            fi
+          done < <(find "$APP/Contents/Frameworks" -name '*.app' -print0)
 
       - name: Notarize & staple DMG
         run: |
