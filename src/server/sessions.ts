@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync, unlinkSync } from "fs";
+import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { existsSync } from "fs";
 import {
@@ -574,6 +574,64 @@ let prCache: { data: Map<string, Map<string, PrInfo>>; ts: number } = { data: ne
 const PR_CACHE_TTL = 60_000;
 let prRefreshPromise: Promise<Set<string>> | null = null;
 
+// The cache is also snapshotted to disk after every successful refresh and
+// seeded from there on boot. Without this, a restart during a GitHub outage or
+// rate-limit window boots with an empty cache that no refresh can fill, and the
+// sidebar's PR queue silently vanishes (2026-07-22). ts stays 0 so the first
+// access still refreshes immediately; the snapshot only serves as stale data.
+const PR_CACHE_FILE = `${HOME}/.opensession-pr-cache.json`;
+try {
+  const raw: Record<string, Record<string, PrInfo>> = JSON.parse(
+    readFileSync(PR_CACHE_FILE, "utf8"),
+  );
+  prCache.data = new Map(
+    Object.entries(raw).map(([repo, byBranch]) => [
+      repo,
+      new Map(Object.entries(byBranch)),
+    ]),
+  );
+} catch {}
+
+function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
+  try {
+    const obj: Record<string, Record<string, PrInfo>> = {};
+    for (const [repo, byBranch] of data) obj[repo] = Object.fromEntries(byBranch);
+    writeFileSync(PR_CACHE_FILE, JSON.stringify(obj));
+  } catch (e) {
+    console.error("Failed to persist PR cache:", e);
+  }
+}
+
+// When gh reports rate-limit exhaustion, stop refreshing until GitHub's stated
+// reset (plus slack) instead of re-firing 8 doomed GraphQL calls a minute. The
+// cache keeps serving its stale (possibly disk-seeded) snapshot meanwhile.
+let ghBackoffUntil = 0;
+let ghBackoffProbe: Promise<void> | null = null;
+function noteGhRateLimited() {
+  if (Date.now() < ghBackoffUntil || ghBackoffProbe) return;
+  // Fallback first, in case the probe below fails (core quota can be gone too).
+  ghBackoffUntil = Date.now() + 15 * 60_000;
+  // rate_limit is REST (core quota), so it usually still answers when GraphQL
+  // — what `gh pr list` runs on — is exhausted.
+  ghBackoffProbe = (async () => {
+    try {
+      const proc = Bun.spawn(
+        ["gh", "api", "rate_limit", "--jq", ".resources.graphql.reset"],
+        { stdout: "pipe", stderr: "ignore" },
+      );
+      const raw = await new Response(proc.stdout).text();
+      if ((await proc.exited) === 0) {
+        const reset = parseInt(raw.trim(), 10) * 1000;
+        if (reset > Date.now()) ghBackoffUntil = reset + 30_000;
+      }
+    } catch {}
+    console.error(
+      `gh rate-limited; pausing PR refresh until ${new Date(ghBackoffUntil).toISOString()}`,
+    );
+    ghBackoffProbe = null;
+  })();
+}
+
 interface RollupCheck { status?: string; conclusion?: string; state?: string }
 
 // Collapse GitHub's per-check rollup into the four counts the UI shows. A check
@@ -629,9 +687,16 @@ function getPrsByRepo(): Map<string, Map<string, PrInfo>> {
 
 async function ghJson<T>(args: string[]): Promise<T | null> {
   try {
-    const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "ignore" });
-    const raw = await new Response(proc.stdout).text();
-    if ((await proc.exited) !== 0 || !raw.trim()) return null;
+    const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
+    const [raw, err] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    if ((await proc.exited) !== 0) {
+      if (/rate limit/i.test(err)) noteGhRateLimited();
+      return null;
+    }
+    if (!raw.trim()) return null;
     return JSON.parse(raw) as T;
   } catch {
     return null;
@@ -648,6 +713,11 @@ export function refreshPrCache(): Promise<Set<string>> {
 
 async function refreshPrCacheInner(): Promise<Set<string>> {
   const freshRepos = new Set<string>();
+  if (Date.now() < ghBackoffUntil) {
+    // Rate-limited — keep serving the stale snapshot, don't burn calls.
+    prCache.ts = Date.now();
+    return freshRepos;
+  }
   try {
     type BulkPr = {
       headRefName: string; url: string; state: string; number: number; title: string;
@@ -773,6 +843,7 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
       next.set(repo.id, map);
     }));
     prCache = { data: next, ts: Date.now() };
+    if (freshRepos.size) persistPrCache(next);
   } catch (e) {
     console.error("Failed to fetch PRs:", e);
     prCache.ts = Date.now(); // back off on failure too
