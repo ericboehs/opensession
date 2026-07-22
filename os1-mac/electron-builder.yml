@@ -1,0 +1,35 @@
+appId: dev.tella.os1
+productName: OS¹
+artifactName: OS1-${version}-${arch}.${ext}
+directories:
+  buildResources: build
+  output: dist
+files:
+  - src/**/*
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon-512.png
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Universal links: once the Developer ID provisioning profile for
+  # dev.tella.os1 exists (README "Universal links"), switch both entitlements
+  # lines above to build/entitlements.mac.applinks.plist and add:
+  # provisioningProfile: build/os1.provisionprofile
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  extendInfo:
+    CFBundleURLTypes:
+      - CFBundleURLName: OS¹ deep link
+        CFBundleURLSchemes: [os1]
+  # Reads APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID from the env in
+  # CI; skipped (with a warning) when they're absent, e.g. local unsigned builds.
+  notarize: true
+dmg:
+  # Sign the DMG container too (the app inside is signed + notarized + stapled
+  # regardless) so `spctl --type open` accepts the disk image itself.
+  sign: true

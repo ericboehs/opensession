@@ -9,6 +9,10 @@
 	   as inset wells instead of blending in. */
 	--bg: #1b1b1b;
 	--bg-raised: #212121;
+	/* Desktop sidebar material: a translucent charcoal wash over the native
+	   window/backdrop. */
+	--sidebar-material: rgba(33, 33, 33, 0.66);
+	--sidebar-material-sheen: rgba(255, 255, 255, 0.035);
 	/* Surface for the session top bar + tab strip. Matches --bg-raised in dark;
 	   in light it's pulled a touch toward white so the bar reads cleaner. */
 	--topbar-bg: #212121;
@@ -74,6 +78,8 @@
 html[data-theme="light"] {
 	--bg: #ffffff;
 	--bg-raised: #f7f6f4;
+	--sidebar-material: rgba(247, 246, 244, 0.72);
+	--sidebar-material-sheen: rgba(255, 255, 255, 0.42);
 	--topbar-bg: #fcfbfa;
 	/* Pure white, a hair brighter than the warm topbar, + a barely-there shadow —
 	   the clean lifted chip from the Codex reference. */
@@ -343,7 +349,7 @@ button {
 	.slack-avatar,
 	.viewer-branch-editable,
 	.viewer-branch-rename,
-	.viewer-overflow-menu,
+	.session-info-list,
 	.btn-viewer-overflow,
 	.session-link,
 	.btn-panel-toggle,
@@ -417,65 +423,123 @@ a {
 	}
 }
 
-/* The reclaimed PWA titlebar (see TitleBar.tsx) only exists in Window Controls
-   Overlay mode — hidden everywhere else. */
-.wco-titlebar {
+/* The reclaimed PWA back/forward cluster (see TitleBar.tsx) only exists in
+   Window Controls Overlay mode — hidden everywhere else. */
+.wco-nav {
 	display: none;
 }
 
-/* Window Controls Overlay (desktop PWA): the OS titlebar is replaced by just
-   the window-control buttons overlaid on our own chrome — no OS bar, no
-   centered title text. We own the full window, so we paint our own titlebar
-   band across the top (`.wco-titlebar`): it fills the reclaimed strip with the
-   sidebar colour so the traffic lights sit on our surface (not a bare white
-   band), it's a drag region so the window still moves, and it carries the
-   back/forward the browser chrome no longer provides. Everything below it —
-   including the sidebar brand row (the OS¹ logo) — flows beneath, so the logo
-   lands under the controls instead of colliding with them. */
-@media (display-mode: window-controls-overlay) {
-	.app {
-		border-top: none;
-	}
-	.wco-titlebar {
-		display: flex;
-		align-items: center;
-		flex-shrink: 0;
-		height: env(titlebar-area-height, 34px);
-		/* Clear the window controls: traffic lights on the left on macOS
-		   (titlebar-area-x ≈ their width); on Windows they're on the right and
-		   titlebar-area-x is 0, so this is a no-op there. */
-		padding-left: env(titlebar-area-x, 0px);
-		background: var(--bg-raised);
-		border-bottom: 1px solid var(--border);
-		-webkit-app-region: drag;
-		app-region: drag;
-	}
-	.wco-titlebar-nav {
-		display: flex;
-		align-items: center;
-		gap: 2px;
-		padding-left: 8px;
-	}
-	.wco-nav-btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 28px;
-		height: 28px;
-		padding: 0;
-		border: none;
-		border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
+/* Window Controls Overlay (desktop PWA + the OS¹ desktop app): the OS titlebar
+   is replaced by just the window-control buttons overlaid on our own chrome —
+   no OS bar, no centered title text, and NO dedicated titlebar band of our
+   own. The window's whole first content row IS the titlebar: on the sidebar
+   it's a pure chrome row — traffic lights (centered on the row by the shell's
+   trafficLightPosition), then collapse + the avatar account trigger, with
+   back/forward/search at the right edge — and it continues through the detail pane's
+   54px header and the right panel's PR strip. Every segment is a drag region
+   so grabbing anywhere along the top moves the window.
+
+   Keyed off `html.wco` (set by the detection script in index.html), NOT the
+   `(display-mode: window-controls-overlay)` media query: Electron (the OS¹
+   desktop shell, tellahq/os1-mac) exposes the WCO geometry and env() vars but
+   keeps display-mode at "browser", so the media query never matches there. */
+html.wco .app {
+	border-top: none;
+}
+/* The native shell supplies the window's visual-effect backdrop. Let it reach
+   the web content instead of stopping at the document's opaque --bg canvas;
+   the detail pane is deliberately repainted below so only the sidebar takes
+   on the macOS material. */
+@media (min-width: 721px) {
+	html.wco,
+	html.wco body,
+	html.wco #root,
+	html.wco .app,
+	html.wco .app-body {
 		background: transparent;
-		color: var(--text-dim);
-		cursor: pointer;
-		/* Buttons opt out of the drag region so they stay clickable. */
-		-webkit-app-region: no-drag;
-		app-region: no-drag;
 	}
-	.wco-nav-btn:hover {
-		background: var(--bg-hover);
-		color: var(--text);
+
+	html.wco .detail-pane {
+		background: var(--bg);
 	}
+}
+/* Sidebar top row clears the traffic lights. env(titlebar-area-x) is the
+   controls' right edge on macOS; it drops to 0 in fullscreen (lights hidden)
+   and on Windows (controls on the right), where the default padding wins. */
+html.wco .sidebar-brand {
+	padding-left: max(env(titlebar-area-x, 78px), calc(var(--sidebar-icon-left) - 8px));
+	/* Continue the header rows' divider (.viewer-header / .pr-bar) across the
+	   sidebar so the top line runs the full window width. */
+	border-bottom: 1px solid var(--border);
+}
+/* The whole first row doubles as the titlebar — everything interactive in it
+   opts back out so it stays clickable. */
+html.wco .sidebar-brand,
+html.wco .viewer-header,
+html.wco .detail-topbar-title,
+html.wco .pr-bar {
+	-webkit-app-region: drag;
+	app-region: drag;
+}
+html.wco :is(.sidebar-brand, .viewer-header, .detail-topbar-title, .pr-bar)
+	:is(button, a, input, select, textarea, [role="button"], [tabindex]) {
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
+/* Chrome row packs left (actions + avatar); back/forward push to the right
+   edge via their own margin. */
+html.wco .sidebar-brand {
+	justify-content: flex-start;
+}
+html.wco .wco-nav {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+html.wco .sidebar-brand > .wco-nav {
+	margin-left: auto;
+}
+/* Collapsed sidebar takes the chrome row (and its nav) with it — show the
+   floating fallback cluster in the detail pane instead, next to the sidebar
+   re-open control, and inset the header text past both. With no sidebar the
+   detail pane starts at x=0, so the traffic lights overlay ITS left edge:
+   everything shifts right of env(titlebar-area-x) (0 in fullscreen, where the
+   lights hide and the row packs left again). */
+html.wco .sidebar-reopen {
+	left: calc(env(titlebar-area-x, 78px) + 6px);
+}
+html.wco .wco-nav-pane {
+	display: none;
+	position: absolute;
+	top: 13px;
+	left: calc(env(titlebar-area-x, 78px) + 48px);
+	z-index: 20;
+}
+html.wco .app-body.sidebar-collapsed .detail-pane .wco-nav-pane {
+	display: flex;
+}
+html.wco .app-body.sidebar-collapsed .viewer-header,
+html.wco .app-body.sidebar-collapsed .detail-topbar-title {
+	padding-left: calc(env(titlebar-area-x, 78px) + 118px);
+}
+html.wco .wco-nav-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: none;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
+html.wco .wco-nav-btn:hover {
+	background: var(--bg-hover);
+	color: var(--text);
 }
 
 /* The top bar is mobile-only: on desktop the brand + user controls live in the
@@ -614,6 +678,75 @@ a {
 .sidebar-band-label.sidebar-tools-head {
 	padding: 12px 10px 2px;
 }
+/* The three primary sidebar bands replace one another at the top of the single
+   desktop scroll rail. While pinned they get a frosted surface (translucent +
+   backdrop blur) so rows sliding beneath read as intentional depth rather than
+   getting chopped by an opaque slab; at rest they stay fully transparent
+   (is-stuck is displacement-based, so the first section never paints a pill
+   while unscrolled). */
+.sidebar-sticky-section {
+	display: block;
+	flex: none;
+	min-width: 0;
+	max-width: 100%;
+}
+@media (min-width: 721px) {
+	.sidebar-sticky-head {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		background: transparent;
+	}
+	.sidebar-sticky-head.is-stuck {
+		background: color-mix(in srgb, var(--bg-raised) 72%, transparent);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
+		box-shadow: 0 1px 0 0 color-mix(in srgb, var(--border) 70%, transparent);
+	}
+	/* One invariant row height prevents the outgoing and incoming sticky labels
+	   from peeking around each other while one section pushes the next away. */
+	.sidebar-band-label.sidebar-tools-head.sidebar-sticky-head,
+	.sidebar-workspace.sidebar-sticky-head,
+	.sidebar-independent-section > .sidebar-band-label.sidebar-sticky-head {
+		display: flex;
+		align-items: center;
+		height: 44px;
+		min-height: 44px;
+		margin-top: 0;
+		padding-top: 7px;
+		padding-bottom: 7px;
+	}
+	.sidebar-workspace.sidebar-sticky-head .sidebar-workspace-head {
+		width: 100%;
+		margin-bottom: 0;
+	}
+	/* Independent bands are inset by their parent. Paint through that gutter
+	   without changing layout width (negative margins caused horizontal scroll). */
+	.sidebar-independent-section > .sidebar-sticky-head {
+		box-shadow: none;
+	}
+	.sidebar-independent-section > .sidebar-sticky-head.is-stuck {
+		box-shadow:
+			-10px 0 0 color-mix(in srgb, var(--bg-raised) 72%, transparent),
+			10px 0 0 color-mix(in srgb, var(--bg-raised) 72%, transparent),
+			0 1px 0 0 color-mix(in srgb, var(--border) 70%, transparent);
+	}
+	.sidebar-workspace-fallback {
+		margin-right: 12px;
+		margin-left: 20px;
+	}
+}
+@media (max-width: 720px) {
+	/* Preserve the existing phone layout: Tools has no heading there, so its
+	   wrapper must not become an extra flex/scroll layer around the card strip. */
+	.sidebar-tools-section {
+		display: contents;
+	}
+	.sidebar-workspace-fallback {
+		margin-right: 14px;
+		margin-left: 16px;
+	}
+}
 .sidebar-nav {
 	display: flex;
 	flex-direction: column;
@@ -697,6 +830,23 @@ a {
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
+}
+
+/* macOS-style desktop sidebar material. The gradient is only a faint glass
+   sheen; the backdrop blur does the real work when the native shell supplies
+   a translucent window surface. Keep the phone root page opaque below. */
+@media (min-width: 721px) {
+	.sidebar-container {
+		background:
+			linear-gradient(
+				180deg,
+				var(--sidebar-material-sheen),
+				transparent 180px
+			),
+			var(--sidebar-material);
+		-webkit-backdrop-filter: blur(28px) saturate(155%);
+		backdrop-filter: blur(28px) saturate(155%);
+	}
 }
 
 /* Brand row at the top of the desktop sidebar: Michael menu left, collapse
@@ -801,7 +951,9 @@ a {
 	width: 7px;
 	height: 100%;
 	cursor: col-resize;
-	z-index: 6;
+	/* Stay above both primary (20) and nested (15) sticky headers so the
+	   hover/drag hairline remains one uninterrupted edge while scrolling. */
+	z-index: 30;
 }
 .sidebar-resize::after {
 	content: "";
@@ -828,6 +980,7 @@ body.resizing-x {
 	width: 100%;
 	flex: 1;
 	min-height: 0;
+	overflow-x: hidden;
 	overflow-y: auto;
 	scrollbar-width: none;
 }
@@ -1187,6 +1340,7 @@ body.resizing-x {
 .sidebar-independent-section {
 	display: block;
 	flex: none;
+	min-width: 0;
 	margin-right: 10px;
 	margin-left: 10px;
 }
@@ -1195,6 +1349,7 @@ body.resizing-x {
 }
 .sidebar-independent-scroll {
 	overflow-y: visible;
+	min-width: 0;
 	padding-bottom: 6px;
 }
 
@@ -1585,6 +1740,50 @@ body.resizing-x {
    the drag gesture sees the pointer. */
 .sidebar-pin-list.is-drag-active .sidebar-pin-entry > * {
 	pointer-events: none;
+}
+
+/* Keep the active lane visible beneath its section title while the sidebar's
+   single scroll surface moves. Each sticky button remains inside its own
+   group, so the next lane naturally pushes it away instead of stacking over
+   it. Repo status lanes sit one row lower because their repo header occupies
+   the first sub-header slot. */
+@media (min-width: 721px) {
+	.sidebar-status-group > .sidebar-group-header,
+	.sidebar-group--pinned > .sidebar-group-header,
+	.sidebar-group--review > .sidebar-group-header,
+	.sidebar-repo-group > .sidebar-repo-head,
+	.sidebar-folder-section > .sidebar-folder-header {
+		position: sticky;
+		top: 44px;
+		z-index: 15;
+		height: 30px;
+		min-height: 30px;
+		/* Draw no pill while the label is in its normal flow position. */
+		background: transparent;
+	}
+
+	.sidebar-status-group > .sidebar-group-header.is-stuck,
+	.sidebar-group--pinned > .sidebar-group-header.is-stuck,
+	.sidebar-group--review > .sidebar-group-header.is-stuck,
+	.sidebar-repo-group > .sidebar-repo-head.is-stuck,
+	.sidebar-folder-section > .sidebar-folder-header.is-stuck {
+		background: color-mix(in srgb, var(--bg-raised) 72%, transparent);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
+	}
+
+	.sidebar-repo-lanes .sidebar-status-group > .sidebar-group-header {
+		top: 74px;
+		z-index: 14;
+	}
+
+	.sidebar-status-group > .sidebar-group-header:hover,
+	.sidebar-group--pinned > .sidebar-group-header:hover,
+	.sidebar-group--review > .sidebar-group-header:hover,
+	.sidebar-repo-group > .sidebar-repo-head:hover,
+	.sidebar-folder-section > .sidebar-folder-header:hover {
+		background: var(--bg-hover);
+	}
 }
 
 /* Other people's sessions stack a "name · time" meta line under the title, so
@@ -2967,8 +3166,8 @@ body.resizing-x {
 	padding: 4px;
 }
 
-/* ⋯ overflow: the secondary actions collapse in here when they'd otherwise
-   crowd the title. */
+/* ⋯ overflow: the secondary actions collapse in the shared Menu popup when
+   they'd otherwise crowd the title. */
 .viewer-overflow {
 	position: relative;
 	display: inline-flex;
@@ -2990,76 +3189,6 @@ body.resizing-x {
 	color: var(--text);
 	background: var(--bg-hover);
 }
-.viewer-overflow-menu {
-	position: absolute;
-	top: calc(100% + 6px);
-	right: 0;
-	z-index: 50;
-	display: flex;
-	flex-direction: column;
-	align-items: stretch;
-	gap: 1px;
-	min-width: 200px;
-	padding: 6px;
-	background: var(--bg-panel);
-	border: 1px solid var(--border-strong);
-	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
-	corner-shape: squircle;
-	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
-	/* iOS-style pop: scale up from the ⋯ it's anchored to. */
-	transform-origin: top right;
-	animation: overflow-menu-in 0.16s cubic-bezier(0.32, 0.72, 0, 1);
-}
-@keyframes overflow-menu-in {
-	from {
-		opacity: 0;
-		transform: scale(0.92) translateY(-4px);
-	}
-	to {
-		opacity: 1;
-		transform: scale(1) translateY(0);
-	}
-}
-/* Stack the collapsed actions as a tidy full-width list. On phones the
-   secondary controls (Linear/Plain links, Preview, PR) fold in here too. */
-.viewer-overflow-menu > button,
-.viewer-overflow-menu > a,
-.viewer-overflow-menu > .preview-wrap,
-.viewer-overflow-menu > .spinoff,
-.viewer-overflow-menu > .spinoff > .btn-panel-toggle,
-.viewer-overflow-menu > .viewer-delete-confirm {
-	width: 100%;
-}
-/* Rows read like Base UI Menu.Item (ui/menu.tsx): borderless, full-strength
-   text at rest, a soft rounded highlight on hover — not individually bordered
-   pills. The per-item border/pill styling from the base button rules is
-   overridden here so the menu matches every other dropdown in the app. */
-.viewer-overflow-menu > button,
-.viewer-overflow-menu > a,
-.viewer-overflow-menu > .spinoff > .btn-panel-toggle {
-	justify-content: flex-start;
-	text-align: left;
-	gap: 8px;
-	border: 1px solid transparent;
-	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
-	padding: 6px 8px;
-	font-size: 13px;
-	color: var(--text);
-	background: none;
-}
-.viewer-overflow-menu > button:hover,
-.viewer-overflow-menu > a:hover,
-.viewer-overflow-menu > .spinoff > .btn-panel-toggle:hover {
-	color: var(--text);
-	border-color: transparent;
-	background: var(--bg-hover);
-}
-.viewer-overflow-menu > .viewer-delete-confirm {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-}
-
 /* Squircle user picture (GitHub avatar, initial fallback) — see UserAvatar.tsx.
    Size + font-size come inline from the component; the count badge the
    presence facepile nests inside sits outside the avatar, so no overflow
@@ -3799,13 +3928,6 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 .btn-viewer-pin.active {
 	color: var(--yellow);
 }
-/* Destructive cue stays (red text + soft red wash) but borderless, so Delete
-   reads as a row like the rest — not a boxed-in button. */
-.viewer-overflow-menu > .btn-viewer-delete:hover {
-	color: var(--red);
-	background: var(--red-soft);
-}
-
 .viewer-delete-confirm {
 	display: flex;
 	gap: 6px;
@@ -11744,9 +11866,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		color: var(--text-dim);
 	}
 
-	/* Reuse the ⋯ menu row styles, but as a static, full-width card list on
-	   the page instead of a floating dropdown. */
-	.viewer-overflow-menu.session-info-list {
+	/* Static, full-width settings list on the session info page. */
+	.session-info-list {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
 		position: static;
 		inset: auto;
 		width: auto;
@@ -11762,6 +11886,23 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		/* It's part of the page (which animates in) — no popover entrance. */
 		animation: none;
 		transform: none;
+	}
+	.session-info-list > button {
+		width: 100%;
+		justify-content: flex-start;
+		text-align: left;
+		gap: 8px;
+		border: 1px solid transparent;
+		border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
+		padding: 8px 10px;
+		font-size: 13px;
+		color: var(--text);
+		background: none;
+	}
+	.session-info-list > button:hover {
+		color: var(--text);
+		border-color: transparent;
+		background: var(--bg-hover);
 	}
 
 	/* The workspace overview (Info-tab content) embedded below the actions:
@@ -11982,12 +12123,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.viewer-header-actions .btn-viewer-overflow.active {
 		background: var(--accent-soft);
 		border-color: var(--accent-soft);
-	}
-	/* The ⋯ menu is the phone's single action sheet — give it a comfortable,
-	   bounded width so the rows read as a tidy list, not a hairline column. */
-	.viewer-overflow-menu {
-		min-width: 236px;
-		max-width: min(300px, calc(100vw - 24px));
 	}
 	/* Icon-only workspace toggle on phones — the label is kept on desktop */
 	.btn-panel-toggle-label {
@@ -14853,8 +14988,8 @@ html[data-theme="light"] .palette-card .palette-create {
 .session-tab-new-menu {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
-	padding: 8px;
+	gap: 1px;
+	padding: 4px;
 	min-width: 250px;
 }
 .session-tab-new-menu-item {
@@ -14864,9 +14999,9 @@ html[data-theme="light"] .palette-card .palette-create {
 	background: none;
 	border: none;
 	color: var(--text);
-	font-size: 14px;
-	padding: 9px 11px;
-	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
+	font-size: 13px;
+	padding: 6px 8px;
+	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
 	white-space: nowrap;
 }

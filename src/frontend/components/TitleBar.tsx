@@ -1,42 +1,62 @@
-import { IconChevronLeft, IconChevronRight } from "./icons";
+import { IconChevronLeft, IconChevronRight, IconSearch } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 
 /**
- * Desktop PWA titlebar for Window Controls Overlay mode.
+ * Back/forward cluster for Window Controls Overlay mode.
  *
- * When the app runs as an installed desktop PWA with
+ * When the app runs as the OS¹ desktop shell or an installed desktop PWA with
  * `display_override: window-controls-overlay`, the OS titlebar collapses to
  * just the window-control buttons overlaid on our own content — which also
- * takes the browser's back/forward buttons with it. This strip fills that
- * reclaimed band: it's a drag region (so the window still moves) and carries
- * in-app back/forward wired to the same history the router drives (pushState /
- * popstate). Rendered always but `display:none` outside WCO — the visibility +
- * the traffic-light inset live in the `(display-mode: window-controls-overlay)`
- * block in global.css.
+ * takes the browser's back/forward buttons with it. There is no dedicated
+ * titlebar band: the window's first content row is the titlebar (drag regions
+ * + traffic-light inset live in the `html.wco` rules in global.css). The
+ * cluster carries the in-app back/forward, wired to the same history the
+ * router drives (pushState / popstate), and sits at the right edge of the
+ * sidebar's top chrome row. The `pane` variant is a floating fallback in the
+ * detail pane, shown only while the sidebar is collapsed (its row — and the
+ * primary cluster with it — is display:none then). Rendered always but
+ * `display:none` outside WCO — the class is set by the WCO detection script
+ * in index.html, which also covers the Electron desktop shell where the
+ * display-mode media query never matches.
  */
-export function TitleBar() {
+export function TitleBar({
+	pane,
+	onSearch,
+}: {
+	pane?: boolean;
+	onSearch?: () => void;
+}) {
 	return (
-		<div className="wco-titlebar">
-			<div className="wco-titlebar-nav">
-				<Tooltip label="Back" side="bottom">
+		<div className={pane ? "wco-nav wco-nav-pane" : "wco-nav"}>
+			<Tooltip label="Back" side="bottom">
+				<button
+					className="wco-nav-btn"
+					onClick={() => history.back()}
+					aria-label="Back"
+				>
+					<IconChevronLeft size={20} />
+				</button>
+			</Tooltip>
+			<Tooltip label="Forward" side="bottom">
+				<button
+					className="wco-nav-btn"
+					onClick={() => history.forward()}
+					aria-label="Forward"
+				>
+					<IconChevronRight size={20} />
+				</button>
+			</Tooltip>
+			{onSearch && (
+				<Tooltip label="Search sessions" side="bottom" shortcut={["⌘", "K"]}>
 					<button
 						className="wco-nav-btn"
-						onClick={() => history.back()}
-						aria-label="Back"
+						onClick={onSearch}
+						aria-label="Search sessions"
 					>
-						<IconChevronLeft size={20} />
+						<IconSearch size={20} />
 					</button>
 				</Tooltip>
-				<Tooltip label="Forward" side="bottom">
-					<button
-						className="wco-nav-btn"
-						onClick={() => history.forward()}
-						aria-label="Forward"
-					>
-						<IconChevronRight size={20} />
-					</button>
-				</Tooltip>
-			</div>
+			)}
 		</div>
 	);
 }
