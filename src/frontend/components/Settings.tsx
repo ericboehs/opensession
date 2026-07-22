@@ -105,8 +105,7 @@ export type ToolSectionKey =
 	| "automations"
 	| "goals"
 	| "actions"
-	| "security"
-	| "notes";
+	| "security";
 
 export type SettingsSectionKey =
 	| "notifications"
@@ -127,7 +126,6 @@ const TOOL_SECTIONS = new Set<SettingsSectionKey>([
 	"goals",
 	"actions",
 	"security",
-	"notes",
 ]);
 
 const SECTIONS: {
@@ -211,27 +209,6 @@ const SECTIONS: {
 					strokeLinejoin="round"
 				/>
 				<path d="M6.1 8l1.3 1.3 2.5-2.6" strokeLinecap="round" strokeLinejoin="round" />
-			</svg>
-		),
-	},
-	{
-		key: "notes",
-		label: "Notes",
-		group: "Tools",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path
-					d="M3 2.5h7a2 2 0 0 1 2 2v9l-3-1.8-3 1.8-3-1.8V2.5z"
-					strokeLinejoin="round"
-					transform="translate(0.5,0)"
-				/>
 			</svg>
 		),
 	},

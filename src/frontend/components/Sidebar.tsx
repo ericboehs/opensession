@@ -2880,7 +2880,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								aria-label="Choose toolbar tools"
 								title="Choose toolbar tools"
 							>
-								<IconDotsHorizontal size={18} />
+								<IconDotsHorizontal size={22} />
 							</Menu.Trigger>
 							<Menu.Popup side="bottom" align="end" sideOffset={4}>
 								<Menu.Group>

@@ -205,15 +205,14 @@ function parseRoute(pathname: string): Route {
 	// Back-compat: Connections moved into Settings (a Workspace section).
 	if (pathname === "/connections")
 		return { view: "settings", section: "connections" };
-	// <base>/settings/<section>: a settings section, or a tool key (tools
-	// live in the Settings surface but keep their own canonical routes).
+	// <base>/settings/<section>: a settings section, or a legacy tool key.
 	const settingsMatch = pathname.match(/^\/settings(?:\/(.+))?$/);
 	if (settingsMatch) {
-		const key = settingsMatch[1] as SettingsSectionKey | undefined;
+		const key = settingsMatch[1];
 		if (key && isToolView(key))
 			return key === "notes" ? { view: "notes", sel: null } : { view: key };
-		if (key && SETTINGS_SECTIONS.has(key))
-			return { view: "settings", section: key };
+		if (key && SETTINGS_SECTIONS.has(key as SettingsSectionKey))
+			return { view: "settings", section: key as SettingsSectionKey };
 		return { view: "settings" };
 	}
 	if (pathname === "/archived") return { view: "archived" };
@@ -620,7 +619,9 @@ function App() {
 
 	// Settings (and the tool surfaces it hosts) render as a full page on
 	// desktop, but as a bottom sheet over the root list on phones.
-	const settingsActive = route.view === "settings" || isToolView(route.view);
+	const settingsActive =
+		route.view === "settings" ||
+		(isToolView(route.view) && route.view !== "notes");
 	const isPhone = useIsPhone();
 
 	// A pushed detail page is showing (anything but the sidebar-root home view).
@@ -1542,9 +1543,7 @@ function App() {
 						}
 						onShowRoot={() => navigate({ view: "settings" })}
 						onSelect={(key) =>
-							key === "notes"
-								? navigate({ view: "notes", sel: null })
-								: isToolView(key)
+							isToolView(key)
 									? navigate({ view: key })
 									: navigate({ view: "settings", section: key })
 						}
@@ -1576,35 +1575,6 @@ function App() {
 								onSelect={(id) =>
 									navigate({ view: "actions", id: id || undefined })
 								}
-							/>
-						) : route.view === "notes" ? (
-							<Notes
-								sel={route.sel}
-								notes={notes}
-								refreshNotes={refreshNotes}
-								pinnedNoteIds={
-									new Set(
-										pins
-											.filter((p) => p.startsWith("note:"))
-											.map((p) => p.slice(5)),
-									)
-								}
-								onTogglePinNote={(id) => setPins(togglePin(`note:${id}`))}
-								onSelectNote={(id) =>
-									navigate({ view: "notes", sel: { kind: "note", id } })
-								}
-								onSelectDoc={(path) =>
-									navigate({
-										view: "notes",
-										sel: path ? { kind: "doc", path } : null,
-									})
-								}
-								sessions={sessions.map((s) => ({ id: s.id, title: s.title }))}
-								onOpenSession={(id) => navigate({ view: "session", id })}
-								user={getCurrentUser()}
-								connected={connected}
-								send={send}
-								addHandler={addHandler}
 							/>
 						) : null}
 					</Settings>
@@ -1943,6 +1913,35 @@ function App() {
 							/>
 						) : route.view === "analytics" ? (
 							<Analytics />
+						) : route.view === "notes" ? (
+							<Notes
+								sel={route.sel}
+								notes={notes}
+								refreshNotes={refreshNotes}
+								pinnedNoteIds={
+									new Set(
+										pins
+											.filter((p) => p.startsWith("note:"))
+											.map((p) => p.slice(5)),
+									)
+								}
+								onTogglePinNote={(id) => setPins(togglePin(`note:${id}`))}
+								onSelectNote={(id) =>
+									navigate({ view: "notes", sel: { kind: "note", id } })
+								}
+								onSelectDoc={(path) =>
+									navigate({
+										view: "notes",
+										sel: path ? { kind: "doc", path } : null,
+									})
+								}
+								sessions={sessions.map((s) => ({ id: s.id, title: s.title }))}
+								onOpenSession={(id) => navigate({ view: "session", id })}
+								user={getCurrentUser()}
+								connected={connected}
+								send={send}
+								addHandler={addHandler}
+							/>
 						) : route.view === "support" ? (
 							<SupportPreview
 								key={route.threadId}
