@@ -19,13 +19,14 @@ export async function handleStaticAssetsRoutes(
 	// pick them up; data-URI apple-touch-icons don't work on iOS. Short cache
 	// + must-revalidate so a refreshed design isn't pinned by a stale copy.
 	const iconFiles: Record<string, string> = {
-		"/backstage/apple-touch-icon.png": "apple-touch-icon.png", // 180×180
-		"/backstage/icon-192.png": "icon-192.png",
-		"/backstage/icon.png": "icon.png", // 512×512
+		"/backstage/apple-touch-icon.png": `${FRONTEND_SRC}/apple-touch-icon.png`, // 180×180
+		"/backstage/icon-192.png": `${FRONTEND_SRC}/icon-192.png`,
+		"/backstage/icon.png": `${FRONTEND_SRC}/icon.png`, // 512×512
+		"/backstage/mac-app-icon.png": `${FRONTEND_SRC}/../../os1-mac/build/icon-512.png`,
 	};
 	if (iconFiles[path]) {
 		return new Response(
-			Bun.file(`${FRONTEND_SRC}/${iconFiles[path]}`),
+			Bun.file(iconFiles[path]),
 			{
 				headers: {
 					"Content-Type": "image/png",
